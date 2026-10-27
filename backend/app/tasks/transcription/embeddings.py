@@ -13,6 +13,7 @@ from app.core import stage_timing
 from app.core.constants import get_speaker_index_v4
 from app.db.session_utils import session_scope
 from app.services.file_provenance import record_inline_voiceprints
+from app.services.privacy.gates import voiceprints_allowed
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.utils.task_utils import update_task_status
 
@@ -83,6 +84,10 @@ def _process_speaker_embeddings_native(
     """
 
     import numpy as np
+
+    if not voiceprints_allowed(ctx.file_id):
+        logger.info("Voiceprints are off by policy for file %s; no speaker matching", ctx.file_id)
+        return
 
     total_start = time.perf_counter()
 
@@ -296,6 +301,12 @@ def _store_native_centroids_in_v4_staging(
     from app.models.media import Speaker
     from app.services.opensearch_service import bulk_add_speaker_embeddings_v4
     from app.services.opensearch_service import ensure_v4_index_exists
+
+    if not voiceprints_allowed(ctx.file_id):
+        logger.info(
+            "Voiceprints are off by policy for file %s; no v4 centroids stored", ctx.file_id
+        )
+        return
 
     if not ensure_v4_index_exists():
         logger.warning("v4 staging: Could not create/verify speakers_v4 index, skipping")

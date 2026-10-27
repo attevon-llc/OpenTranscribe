@@ -43,6 +43,8 @@ def _make_preprocess_result() -> PreprocessResult:
 class _StubEngineConfig:
     class _TC:
         enable_diarization = True
+        enable_native_embeddings = True
+        request_gender = True
         concurrent_requests = 1
         device = "cpu"
         diarizer_backend = "native"
@@ -62,7 +64,7 @@ def test_gpu_raw_stage_joins_async_diarization_before_returning_on_empty_transcr
         last_provider = "native"
         last_model = "community-1"
 
-        def diarize(self, audio, wav_path=None, allow_local_fallback=True):
+        def diarize(self, audio, wav_path=None, allow_local_fallback=True, **_per_call):
             release_event.wait(timeout=5)
             diarize_thread_finished.set()
             return (MagicMock(), {}, {})

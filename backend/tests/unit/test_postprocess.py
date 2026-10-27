@@ -76,7 +76,7 @@ class TestEnrichAndDispatch:
         assert calls["index"] == ((42, "abc-def-123", 7), {"pipeline_task_id": None})
         assert calls["summarize"] == ((42, "abc-def-123"), {"tasks_to_run": None})
         assert calls["attrs"] == (("abc-def-123", 7, None), {})
-        assert calls["cluster"] == (("abc-def-123", 7, None), {})
+        assert calls["cluster"] == (("abc-def-123", 7, None), {"file_id": 42})
         assert calls["facts"] == ((42,), {"pipeline_task_id": None})
         assert len(plans) == 1
 
@@ -90,7 +90,7 @@ class TestEnrichAndDispatch:
 
         assert calls["summarize"] == ((1, "uuid-1"), {"tasks_to_run": downstream})
         assert calls["attrs"] == (("uuid-1", 1, downstream), {})
-        assert calls["cluster"] == (("uuid-1", 1, downstream), {})
+        assert calls["cluster"] == (("uuid-1", 1, downstream), {"file_id": 1})
 
     def test_propagates_pipeline_task_id_to_indexing(self, fanout):
         """pipeline_task_id is forwarded into _index_transcript for benchmark markers."""
@@ -167,6 +167,7 @@ class TestSpeakerEmbeddingQueueRouting:
         base.update(overrides)
         return base
 
+    @pytest.mark.usefixtures("privacy_allows_all")
     @patch(f"{_POSTPROCESS}.enrich_and_dispatch")
     @patch(f"{_POSTPROCESS}.send_completion_notification")
     @patch(f"{_POSTPROCESS}.send_progress_notification")

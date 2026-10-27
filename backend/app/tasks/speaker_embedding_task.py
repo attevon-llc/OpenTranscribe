@@ -19,6 +19,7 @@ from app.models.media import Speaker
 from app.models.media import TranscriptSegment
 from app.services.file_provenance import record_stage
 from app.services.file_provenance import voiceprint_facts
+from app.services.privacy.gates import voiceprints_allowed
 from app.utils import benchmark_timing
 
 logger = logging.getLogger(__name__)
@@ -297,6 +298,40 @@ def _complete_and_meter_parent(db, file_id: int, task_id: str, pipeline_task_id:
     )
 
 
+def _skip_for_policy(
+    file_uuid: str,
+    task_id: str,
+    inputs: dict,
+    pipeline_task_id: str | None,
+    closes_pipeline: bool,
+) -> dict:
+    """Finish the voiceprint stage without computing anything because policy forbids it.
+
+    Does what the normal tail does that is not about voiceprints: completes this task row,
+    completes and meters the parent run when this stage is its terminus, tells the user, and
+    releases the temp audio.
+    """
+    from app.services.minio_service import cleanup_temp_audio
+    from app.utils.task_utils import update_task_status
+
+    file_id = inputs["file_id"]
+    logger.info("Voiceprints are off by policy for file %s; skipping the voiceprint stage", file_id)
+    with session_scope() as db:
+        update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+        if closes_pipeline:
+            _complete_and_meter_parent(db, file_id, task_id, pipeline_task_id)
+    try:
+        from app.tasks.transcription.notifications import send_completion_notification
+
+        send_completion_notification(inputs["user_id"], file_id)
+    except Exception as notify_err:
+        logger.warning(f"Failed to send completion notification: {notify_err}")
+    with contextlib.suppress(Exception):
+        cleanup_temp_audio(file_uuid)
+    _close_pipeline_task(pipeline_task_id if closes_pipeline else None)
+    return {"status": "skipped", "reason": "voiceprints_disabled_by_policy"}
+
+
 @celery_app.task(bind=True, name="extract_speaker_embeddings", priority=GPUPriority.NEAR_REALTIME)
 def extract_speaker_embeddings_task(
     self,
@@ -343,6 +378,12 @@ def extract_speaker_embeddings_task(
                 update_task_status(db, task_id, "completed", progress=1.0, completed=True)
             _close_pipeline_task(close_id)
             return {"status": "skipped", "message": "No segments to process"}
+
+        if not voiceprints_allowed(inputs["file_id"]):
+            # Dispatched before the switch flipped (or by a path that does not consult the
+            # plan). Nothing is extracted, matched or stored, but the run still completes:
+            # this stage may be its terminus.
+            return _skip_for_policy(file_uuid, task_id, inputs, pipeline_task_id, closes_pipeline)
 
         _set_task_progress(task_id, 0.2)
 
@@ -609,6 +650,16 @@ def _load_reassignment_plan(
         if not media_file:
             logger.error(f"Media file not found for segment {segment_uuid}")
             return {"skip": {"status": "error", "reason": "media_file_not_found"}}
+
+        # Moving a segment shifts a stored voiceprint, and taking one back out of the source is
+        # a voiceprint write too: with the policy off for the file's owner and organization
+        # neither happens (the DB reassignment itself has already committed).
+        if not voiceprints_allowed(int(media_file.id), db):
+            logger.info(
+                f"Voiceprints are off by policy for file {media_file.id}; "
+                f"skipping the embedding update for segment {segment_uuid}"
+            )
+            return {"skip": {"status": "skipped", "reason": "voiceprints_disabled_by_policy"}}
 
         from app.services.speaker_cleanup import clusters_holding_speakers
 

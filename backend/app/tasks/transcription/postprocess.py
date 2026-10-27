@@ -30,6 +30,7 @@ from app.core.task_liveness import run_heartbeat
 from app.db.session_utils import session_scope
 from app.services import post_processing_status
 from app.services.file_provenance import record_inline_voiceprints
+from app.services.privacy.gates import voiceprints_allowed
 from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
 from app.utils.task_utils import update_task_status_with_duration
@@ -406,6 +407,11 @@ def _dispatch_embedding_stage(gpu_result: dict) -> bool:
     from app.tasks.speaker_embedding_task import extract_speaker_embeddings_task
 
     file_id, user_id = gpu_result["file_id"], gpu_result["user_id"]
+    if not voiceprints_allowed(file_id):
+        # Planned before the switch flipped. Not handed off, so the caller completes and
+        # meters the run itself, exactly as when the stage could not be queued.
+        logger.info("Voiceprints are off by policy for file %s; no voiceprint stage", file_id)
+        return False
     send_progress_notification(
         user_id,
         file_id,
@@ -577,7 +583,7 @@ def enrich_and_dispatch(
         logger.warning(f"Summarization dispatch failed for file {file_id}: {e}")
 
     plan.update(_dispatch_speaker_attributes(file_uuid, user_id, downstream_tasks))
-    clustering = _dispatch_speaker_clustering(file_uuid, user_id, downstream_tasks)
+    clustering = _dispatch_speaker_clustering(file_uuid, user_id, downstream_tasks, file_id=file_id)
     if clustering is not None:
         plan[PostProcessingTask.SPEAKER_CLUSTERING] = clustering
 
@@ -596,6 +602,10 @@ def _process_native_embeddings(
     """Process speaker embeddings using native PyAnnote centroids (no GPU)."""
     from app.services.permission_service import PermissionService
     from app.services.speaker_matching_service import SpeakerMatchingService
+
+    if not voiceprints_allowed(file_id):
+        logger.info("Voiceprints are off by policy for file %s; no speaker matching", file_id)
+        return
 
     step_start = time.perf_counter()
 
@@ -636,7 +646,11 @@ def _store_v4_centroids(
     native_embeddings_serialized: dict,
     speaker_mapping: dict,
 ) -> None:
-    """Store native centroids in v4 staging index (fire-and-forget)."""
+    """Store native centroids in v4 staging index (fire-and-forget).
+
+    The policy gate lives in ``_store_native_centroids_in_v4_staging``, the one function every
+    caller of the staging write goes through.
+    """
     from .core import TranscriptionContext
     from .core import _store_native_centroids_in_v4_staging
 
@@ -753,14 +767,18 @@ def _dispatch_speaker_attributes(
 
 
 def _dispatch_speaker_clustering(
-    file_uuid: str, user_id: int, downstream_tasks: list[str] | None
+    file_uuid: str, user_id: int, downstream_tasks: list[str] | None, *, file_id: int
 ) -> PostProcessingState | None:
     """Dispatch speaker clustering (fire-and-forget).
 
     Returns None when the downstream stage list owns the dispatch (and reports it).
+    Clusters are built from voiceprints, so none is queued while the policy forbids them.
     """
     if downstream_tasks is not None and "speaker_clustering" in downstream_tasks:
         return None
+    if not voiceprints_allowed(file_id):
+        logger.info("Voiceprints are off by policy for file %s; no speaker clustering", file_id)
+        return PostProcessingState.SKIPPED
     try:
         from app.tasks.speaker_clustering import cluster_speakers_for_file
 

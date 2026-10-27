@@ -85,6 +85,8 @@ def voiceprint_seams(monkeypatch, scope_of):
 
     for module in (embeddings, postprocess, speaker_embedding_task):
         monkeypatch.setattr(module, "session_scope", scope_of)
+    # The privacy gates read the file's policy in their own short session.
+    monkeypatch.setattr("app.services.privacy.gates.session_scope", scope_of)
     for module in (embeddings, postprocess):
         monkeypatch.setattr(module, "update_task_status", lambda *a, **k: None)
     monkeypatch.setattr("app.utils.task_utils.update_task_status", lambda *a, **k: None)

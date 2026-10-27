@@ -90,6 +90,10 @@ class LocalDiarizationProvider(DiarizationProvider):
             min_speakers=config.min_speakers,
             max_speakers=config.max_speakers,
             num_speakers=config.num_speakers,
+            # Only ever a restriction: a job the privacy policy forbids neither returns
+            # centroids nor has its audio classified for gender.
+            **({} if config.return_centroids else {"enable_native_embeddings": False}),
+            **({} if config.request_gender else {"request_gender": False}),
         )
 
         audio = load_audio(audio_path)
@@ -100,7 +104,7 @@ class LocalDiarizationProvider(DiarizationProvider):
             progress_callback(0.3, "Running speaker diarization")
 
         diarize_df, overlap_info, native_embeddings = _run_diarize(
-            diarizer, audio, config.sidecar_wav_path
+            diarizer, audio, config.sidecar_wav_path, tc=trans_config
         )
 
         segments: list[DiarizeSegment] = [

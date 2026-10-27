@@ -29,25 +29,25 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 
 ### 🎧 **Advanced Transcription**
 - **High-Accuracy Speech Recognition**: Powered by WhisperX with faster-whisper backend
-- **Ultra-Fast Default Model**: large-v3-turbo model (6x faster than large-v3, excellent accuracy for English)
+- **Fast Default Model**: large-v3-turbo, a much faster variant of large-v3 with excellent English accuracy (it cannot translate; pick large-v3 for translation)
 - **Word-Level Timestamps**: Native word-level timing for all 100+ languages via batched inference
 - **100+ Language Support**: Transcribe in 100+ languages with optional English translation
 - **Configurable Source Language**: Auto-detect or specify source language for improved accuracy
 - **Translation Toggle**: Choose to keep original language or translate non-English audio to English
-- **Batch Processing**: ~40x realtime speed (full pipeline including diarization) on GPU with large-v3-turbo default model
+- **Batch Processing**: ~40x realtime for the full pipeline including diarization, measured on an RTX A6000 with the large-v3-turbo default (see `docs/TRANSCRIPTION_OPTIMIZATION.md`); your speed depends on hardware
 - **Pagination for Large Transcripts**: Efficient display of long transcripts without browser hanging
 - **Audio Waveform Visualization**: Interactive waveform player with precise timing and click-to-seek
 - **Browser Recording**: Built-in microphone recording with real-time audio level monitoring
 - **Recording Controls**: Pause/resume recording with duration tracking and quality settings
 
 ### 👥 **Smart Speaker Management**
-- **Automatic Speaker Diarization**: Identify different speakers using PyAnnote v4 with enhanced accuracy
+- **Automatic Speaker Diarization**: Identify different speakers with the native diarization engine (the diar-native sidecar, built on the `pyannote/speaker-diarization-community-1` weights) by default, with the in-process PyAnnote v4 pipeline as automatic failover; or detect speakers with a cloud provider
 - **Speaker Overlap Detection**: Detect and handle multiple simultaneous speakers with advanced PyAnnote v4 capabilities
-- **Diarization Boundary Correction**: Word-boundary smoothing (default on, ~−32% word speaker error rate) collapses short wrong-speaker islands at turn boundaries, plus an opt-in acoustic backchannel re-check that re-embeds disputed words by voiceprint — both tuned live from the admin Speech Processing panel (no restart)
+- **Diarization Boundary Correction**: Word-boundary smoothing (default on, ~−32% word speaker error rate) collapses short wrong-speaker islands at turn boundaries, plus an opt-in acoustic backchannel re-check that re-embeds disputed words by voiceprint — both tuned live by a super admin under Settings → Speaker Identification → Speaker Engine (no restart)
 - **Cross-Video Speaker Recognition**: AI-powered voice fingerprinting to identify speakers across different media files
 - **Speaker Profile System**: Create and manage global speaker profiles that persist across all transcriptions
 - **Intelligent Speaker Suggestions**: Consolidated speaker identification with confidence scoring and automatic profile matching
-- **LLM-Enhanced Speaker Recognition**: Content-based speaker identification using conversational context analysis
+- **LLM-Enhanced Speaker Recognition**: Content-based speaker-name suggestions from conversational context. A suggestion is shown with its confidence and only becomes the speaker's name when you accept it; a name otherwise comes from a person or a voiceprint match
 - **Profile Embedding Service**: Advanced voice similarity matching using vector embeddings for cross-video speaker linking
 - **Smart Speaker Status Tracking**: Comprehensive speaker verification status with computed fields for UI optimization
 - **Auto-Profile Creation**: Automatic speaker profile creation and assignment when speakers are labeled
@@ -62,19 +62,19 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Profile Avatars**: Visual speaker profile avatars for easy identification across the media library
 
 ### 🎬 **Rich Media Support**
-- **Universal Format Support**: Audio (MP3, WAV, FLAC, M4A) and Video (MP4, MOV, AVI, MKV)
+- **Universal Format Support**: Audio (MP3, WAV, FLAC, M4A) and Video (MP4, MOV, AVI, MKV), and more. Formats browsers cannot play (AIFF, WMA, AVI and similar) get a playable copy for the player
 - **Universal Media URL Support**: Process videos from 1800+ platforms via yt-dlp (YouTube, Dailymotion, Twitter/X, TikTok, and more)
 - **Smart Platform Handling**: User-friendly error messages with platform-specific guidance for authentication-required videos
 - **YouTube Playlist Processing**: Extract and queue all videos from playlists for batch transcription
-- **Large File Support**: Upload files up to 4GB for GoPro and high-quality video content
+- **Large File Support**: Upload files up to 15 GB by default (`MAX_UPLOAD_BYTES`) for GoPro and high-quality video content
 - **Interactive Media Player**: Click transcript to navigate playback
 - **Custom File Titles**: Edit display names for media files with real-time search index updates
 - **Advanced Upload Manager**: Floating, draggable upload manager with real-time progress tracking
 - **Concurrent Upload Processing**: Multiple file uploads with queue management and retry logic
 - **Intelligent Upload System**: Duplicate detection, hash verification, and automatic recovery
 - **Metadata Extraction**: Comprehensive file information using ExifTool
-- **Subtitle Export**: Generate SRT/VTT files for accessibility
-- **Transcript Documents**: Export Markdown, Word (.docx) and PDF with numbered lines you can cite by page and line, with right-to-left and CJK support
+- **Subtitle Export**: Generate SRT/VTT files for accessibility; captions are cut by one server-side segmenter (broadcast line rules, per-script line breaking) shared by the player, subtitle downloads and burned-in video
+- **Transcript Documents**: Export Word (.docx) and PDF with numbered lines you can cite by page and line, with right-to-left and CJK support, plus Markdown (.md) with YAML front matter for note-taking tools. Redaction policy is applied server-side
 - **File Reprocessing**: Re-run AI analysis while preserving user comments and annotations
 - **Auto-Recovery System**: Intelligent detection and recovery of stuck or failed file processing
 
@@ -91,16 +91,13 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 ### 🔍 **Powerful Search & Discovery**
 - **Hybrid Search**: Combine keyword and semantic search capabilities
 - **OpenSearch Neural Search**: Native neural search engine for advanced vector-based semantic search
-- **Full-Text Indexing**: Lightning-fast content search with OpenSearch 3.4.0 (Apache Lucene 10)
-- **9.5x Faster Vector Search**: Significantly improved neural search performance
-- **25% Faster Queries**: Enhanced full-text search with lower latency
+- **Full-Text Indexing**: Fast content search with OpenSearch 3.4.0 (Apache Lucene 10); summaries are indexed and searched as their own source alongside title, transcript and speaker
 - **Advanced Filtering**: Filter by speaker, date, tags, duration, and more with searchable dropdowns
 - **Tag Management**: A full tag surface beside Collections — create, rename, merge and delete with an impact preview, search and sort a large library, and see every file a tag touches. Names resolve normalized-exact (`Q3 Review` = `q3-review`), so one word never becomes three near-duplicates
 - **Tag Sharing**: Give a tag to specific people or groups so they use your word instead of coining their own, or publish it to the whole deployment — which folds identically-named tags into it. Tags also travel with shared media automatically, computed from the file rather than copied
 - **Bulk Organizing**: Apply tags and collections across a gallery selection; one selected file gets the full chip editor, several get add-only with per-tag coverage counts
 - **Collections System**: Group related media files into organized collections for better project management
 - **Speaker Usage Counts**: See which speakers appear most frequently across your media library
-- **Hybrid Search Fixed**: Critical OpenSearch 3.4 compatibility fix — semantic/vector search now fully operational with dramatically improved result quality
 
 ### 💬 **AI Chat (RAG) over your transcripts**
 - **Ask questions across your recordings**: answers grounded in what was actually said, streamed token by token, with numbered citations that deep-link to the exact moment in the player
@@ -113,7 +110,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Redaction is honoured** — retrieved excerpts are re-masked before they reach a provider, and masking fails closed
 - **Usage visibility**: `GET /usage/me` shows tokens and estimated cost per model, so you can see what you are spending
 - **Test it without a model**: `./opentr.sh start dev --with-mock-llm` runs an OpenAI-compatible mock so chat works with no GPU, API key, or internet — including scenario models that exercise the real error paths
-- **Chat is the only feature that needs a provider** — search (including semantic search), transcription, diarization and redaction all run on local models. See [Working Without an AI Model](https://docs.opentranscribe.app/docs/user-guide/without-an-ai-model)
+- **Chat needs a provider, and so do the other features that write prose** (summaries, topic suggestions, speaker-name hints) — search (including semantic search), transcription, diarization and redaction all run on local models. See [Working Without an AI Model](https://docs.opentranscribe.app/docs/user-guide/without-an-ai-model)
 - **How it works, and how we know it works**: the retrieval stack is standard components named explicitly — BM25 + kNN fused by Reciprocal Rank Fusion (all OpenSearch-native), a parent-document digest tier, query routing, and two-stage reranking. What we wrote ourselves is what respects **speaker boundaries**. See [RAG design](https://docs.opentranscribe.app/docs/developer-guide/rag-design-and-validation) and [RAG evaluation](https://docs.opentranscribe.app/docs/developer-guide/rag-evaluation), which records the measured numbers and the ways a retrieval benchmark can quietly mislead you
 
 ### 🚫 **No AI Provider? Most of It Still Works**
@@ -144,14 +141,14 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 
 ### 💬 **Collaboration Features**
 - **Time-Stamped Comments**: Add annotations at specific moments
-- **User Management**: Role-based access control (admin/user) with personalized settings
+- **User Management**: Role-based access control (user / admin / super admin) with personalized settings
 - **User Groups**: Organize users into groups for streamlined permission management
 - **Collection Sharing**: Share collections with viewer or editor permissions per user or group
 - **Cross-User Prompt Sharing**: Share custom AI prompts across users and teams
 - **Recording Settings Management**: User-specific audio recording preferences with quality controls
 - **Export Options**: Download transcripts in multiple formats
 - **Real-Time Updates**: Live progress tracking with detailed WebSocket notifications
-- **Enhanced Progress Tracking**: 13 granular processing stages with descriptive messages
+- **Enhanced Progress Tracking**: Per-stage progress with descriptive messages, grouped as Main processing, Finishing and AI enrichment
 - **Smart Notification System**: Persistent notifications with unread count badges and progress updates
 - **WebSocket Integration**: Real-time updates for transcription, summarization, and upload progress
 - **Collection Management**: Create, organize, and share collections of related media files
@@ -170,7 +167,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Recording Session Management**: Persistent recording state with navigation warnings
 
 ### 🤖 **AI-Powered Features**
-- **Comprehensive LLM Integration**: Support for 6+ providers (OpenAI, Claude, vLLM, Ollama, etc.)
+- **Comprehensive LLM Integration**: Seven provider types (OpenAI, Anthropic Claude, vLLM, Ollama, OpenRouter, Amazon Bedrock, and any custom OpenAI-compatible endpoint)
 - **Custom Prompt Management**: Create and manage AI prompts for different content types
 - **Encrypted Configuration Storage**: Secure API key storage with user-specific settings
 - **Provider Connection Testing**: Validate LLM configurations before use
@@ -202,29 +199,29 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 ### 🛡️ **Content Moderation & Privacy**
 - **Read-Time Redaction**: Mask PII, profanity, and toxicity at every display/export surface with `[CATEGORY]` placeholders — the full original transcript is always kept in the database, masking is a read-time transform (no destructive edits)
 - **Per-User, On by Default**: Each user controls categories, masking style, custom words, and allowlist (Settings → Privacy & Redaction → Content Redaction) with no recompute on change
-- **Admin Enforcement Floor**: Admins can force PII/toxicity/profanity masking and mandate censored exports for all users (Settings → Privacy & Redaction → Redaction Policy)
+- **Admin Enforcement Floor**: Super admins can force PII/toxicity/profanity masking and mandate censored exports for all users (Settings → Privacy & Redaction → Redaction Policy)
 - **Detect-Once, Cache-Forever**: Detection runs once per transcript in a dedicated `celery-redaction` CPU service; spans cache on the transcript so enable/disable and category changes are instant
 - **Multiple Detectors**: Presidio + spaCy/GLiNER (PII), toxic-bert / multilingual XLM-R (toxicity), wordlist (profanity), plus an optional LLM detector
 
-### ⚙️ **Speech Processing (Admin)**
-- **Runtime-Tunable Engine Settings**: Admins adjust runtime-safe transcription/diarization engine settings — boundary-correction toggles and knobs, transcriber/diarizer backend selection — via Settings → Speaker Identification → Speaker Engine with no container restart
+### ⚙️ **Speech Processing (Super Admin)**
+- **Runtime-Tunable Engine Settings**: Super admins adjust runtime-safe transcription/diarization engine settings — boundary-correction toggles and knobs, transcriber/diarizer backend selection — via Settings → Speaker Identification → Speaker Engine with no container restart
 
 ### ⚡ **Performance & Scaling**
 - **Multi-GPU Worker Scaling**: Optional parallel processing on dedicated GPUs for high-throughput systems, including an optional ASR/diarization **GPU split** (`--with-gpu-split`) that runs transcription and diarization on separate GPUs
 - **Hybrid Mode**: Automatic CPU transcription + GPU diarization for small-VRAM GPUs (Linux/WSL2 with an NVIDIA GPU only — a containerized deployment on Apple Silicon has no Docker Metal passthrough and runs CPU-only via the `--lite` image, not MPS)
 - **Combined Transcription Engine**: Unified, backend-pluggable engine with admin-tunable runtime settings and per-worker metrics
-- **Fast Uploads**: Optional presigned direct-to-MinIO uploads with content-hash (imohash) deduplication and a shared-memory WAV handoff that removes redundant downloads from the processing pipeline
+- **Fast Uploads**: Presigned direct-to-MinIO uploads (the default path; the API-proxied route is a fallback that `API_MEDIATED_UPLOAD_ENABLED=false` removes) with content-hash (imohash) deduplication, and a shared-volume WAV handoff that removes redundant downloads from the processing pipeline
 - **Pipeline Timing Instrumentation**: Opt-in end-to-end wall-clock timing (`ENABLE_BENCHMARK_TIMING`) with admin timing endpoints
-- **Specialized Worker Queues**: 8 dedicated queues — gpu (transcription), cloud-asr, cpu (waveform), download (YouTube), nlp (AI features), embedding, utility, redaction
+- **Specialized Worker Queues**: dedicated queues per workload — gpu (transcription), cloud-asr, cpu (waveform), download (YouTube), nlp (AI features), embedding, utility, redaction — plus gpu-transcribe / gpu-diarize for the GPU split and cpu-transcribe for CPU transcription
 - **Parallel Waveform Processing**: CPU-based waveform generation runs simultaneously with GPU transcription
-- **Non-Blocking Architecture**: LLM tasks don't delay next transcription (45-75s faster per 3-hour file)
-- **Configurable Concurrency**: GPU(1-4), CPU(8), Download(3), NLP(4) workers for optimal resource utilization
+- **Non-Blocking Architecture**: LLM tasks run on their own queue and don't delay the next transcription
+- **Configurable Concurrency**: Per-queue worker concurrency (defaults: GPU 1 via `GPU_CONCURRENT_REQUESTS`, CPU 8, Download 5, NLP 4, Cloud-ASR 16, Redaction 2) for optimal resource utilization
 - **Enhanced Speaker Detection**: Support for 20+ speakers (can scale to 50+ for large conferences)
 - **Accurate GPU Monitoring**: nvidia-smi integration for real-time system-wide memory tracking
-- **Blackwell GPU Support**: NVIDIA GB10x/GB20x (DGX Spark) supported via `--blackwell` flag
+- **Blackwell GPU Support**: NVIDIA GB10x/GB20x (DGX Spark) detected automatically (compute capability 12.x) and run on the dedicated `:blackwell` image; build it with `scripts/docker-build-push.sh --blackwell backend`
 
 ### 📱 **Enhanced User Experience**
-- **Progressive Web App**: Installable PWA with offline capabilities and bottom navigation bar for mobile
+- **Installable Web App**: Add to home screen via the web app manifest. OpenTranscribe needs the server for every screen, so there is no offline mode and it ships no service worker
 - **Mobile-Responsive Overhaul**: Full mobile-first redesign optimized for phones, tablets, and desktop
 - **UI Internationalization**: Interface available in 12 languages (English, Spanish, French, German, Italian, Portuguese, Dutch, Chinese, Japanese, Korean, Russian, Arabic)
 - **Interactive Waveform Player**: Click-to-seek audio visualization with precise timing
@@ -244,7 +241,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 ### **Frontend**
 - **Svelte** - Reactive UI framework with excellent performance
 - **TypeScript** - Type-safe development with modern JavaScript and comprehensive ESLint integration
-- **Progressive Web App** - Offline capabilities and native-like experience
+- **Installable web app** - Web app manifest for add-to-home-screen (no service worker, no offline mode)
 - **Internationalization (i18n)** - Multi-language UI support with 12 languages
 - **Responsive Design** - Seamless experience across all devices
 - **Advanced UI Components** - Draggable upload manager, modal consistency, and real-time status updates
@@ -253,24 +250,24 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 ### **Backend**
 - **FastAPI** - High-performance async Python web framework
 - **SQLAlchemy 2.0** - Modern ORM with type safety
-- **Celery + Redis** - Multi-queue distributed task processing for AI workloads (8 dedicated queues)
-  - **GPU Queue** (concurrency=1-4): GPU-intensive transcription and diarization
-  - **Cloud-ASR Queue**: Cloud speech-to-text provider jobs
+- **Celery + Redis** - Multi-queue distributed task processing for AI workloads (dedicated queue per workload)
+  - **GPU Queue** (concurrency=`GPU_CONCURRENT_REQUESTS`, default 1): GPU-intensive transcription and diarization
+  - **Cloud-ASR Queue** (concurrency=16): Cloud speech-to-text provider jobs
   - **CPU Queue** (concurrency=8): Waveform generation and audio processing
-  - **Download Queue** (concurrency=3): Parallel YouTube video/playlist downloads
+  - **Download Queue** (concurrency=5): Parallel YouTube video/playlist downloads
   - **NLP Queue** (concurrency=4): LLM API calls and AI features
-  - **Embedding Queue**: Speaker voice embedding extraction and matching
-  - **Utility Queue** (concurrency=2): Health checks and maintenance tasks
-  - **Redaction Queue**: PII/profanity/toxicity detection (detect-once, cache-forever)
+  - **Embedding Queue** (concurrency=1): Speaker voice embedding extraction and matching
+  - **Utility Queue**: Health checks and maintenance tasks (served by the CPU worker)
+  - **Redaction Queue** (concurrency=2): PII/profanity/toxicity detection (detect-once, cache-forever)
 - **WebSocket** - Real-time communication for live updates
 
 ### **AI/ML Stack**
 - **WhisperX** - Advanced speech recognition with 100+ language support
-- **large-v3-turbo Model** - Default ultra-fast transcription model with 6x speed improvement over large-v3
+- **large-v3-turbo Model** - Default fast transcription model, much faster than large-v3
 - **Native Word-Level Timestamps** - Always-on via faster-whisper cross-attention DTW (no separate alignment model needed)
-- **PyAnnote v4** - Advanced speaker diarization with speaker overlap detection capabilities
+- **Native diarization engine (diar-native)** - Default speaker diarization sidecar, with **PyAnnote v4** as the in-process failover
 - **Faster-Whisper** - Optimized inference engine
-- **Multi-Provider LLM Integration** - Support for vLLM, OpenAI, Ollama, Anthropic Claude, and OpenRouter
+- **Multi-Provider LLM Integration** - Support for vLLM, OpenAI, Ollama, Anthropic Claude, OpenRouter, and Amazon Bedrock
 - **Local LLM Support** - Privacy-focused processing with vLLM and Ollama
 - **Intelligent Context Processing** - Section-by-section analysis handles unlimited transcript lengths
 - **Universal Model Compatibility** - Works with any model size from 3B to 200B+ parameters
@@ -283,9 +280,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Native AWS S3 Backend** - Optional `STORAGE_BACKEND=s3` targets a real S3 (or S3-compatible) endpoint directly, with SigV4 signing and IAM-role credentials (no static keys required) for AWS-native deployments
 - **OpenSearch 3.4.0** - Full-text and neural search engine with Apache Lucene 10
   - Native neural search for advanced semantic capabilities
-  - 9.5x faster vector search performance
-  - 25% faster queries with lower latency
-  - 75% lower p90 latency for aggregations
+  - Upstream's 3.x release notes report large vector-search, query and aggregation latency gains (OpenSearch's figures, not measured by this project)
 - **Docker** - Containerized deployment with multi-stage builds
 - **NGINX** - Production web server
 - **Complete Offline Support** - Full airgapped/offline deployment capability
@@ -626,7 +621,7 @@ If the database is ever lost but the MinIO media survives, [**Storage Recovery**
 ```
 🤖 LLM Configuration → 📝 Custom Prompts → 🔍 Content Analysis → 📊 BLUF Summaries
 ```
-- Configure multiple LLM providers (OpenAI, Claude, vLLM, Ollama, etc.)
+- Configure multiple LLM providers (OpenAI, Claude, vLLM, Ollama, OpenRouter, Amazon Bedrock, etc.)
 - Create custom prompts for different content types (meetings, interviews, podcasts)
 - Test provider connections and validate configurations
 - Generate structured summaries with action items and key decisions
@@ -672,7 +667,7 @@ If the database is ever lost but the MinIO media survives, [**Storage Recovery**
 ```
 🔔 Progress Updates → 📊 Status Tracking → 🔄 WebSocket Integration → ✅ Completion Alerts
 ```
-- Persistent notification panel with unread count badges
+- Persistent notification panel with unread count badges; routine notifications clear themselves (a read one after 24 hours by default, unread after 14 days, capped at 100 — change it with **Keep notifications for** in the panel, per browser), while errors and anything needing action stay
 - Real-time updates for transcription, summarization, and upload progress
 - WebSocket integration for instant status updates
 - Smart notification grouping and auto-refresh systems
@@ -681,7 +676,7 @@ If the database is ever lost but the MinIO media survives, [**Storage Recovery**
 ```
 📄 Multiple Formats → 📺 Subtitle Files → 🔗 API Access → 🎬 Media Downloads
 ```
-- Export transcripts as TXT, JSON, or CSV
+- Export transcripts as TXT, JSON, CSV, Markdown, Word (.docx) or PDF
 - Generate SRT/VTT subtitle files with embedded timing
 - Access data programmatically via comprehensive REST API
 - Media downloads use short-lived presigned MinIO URLs with live SSE progress — the download button is a dropdown offering video-with-subtitles, original video, and audio (MP3/WAV/original)
@@ -1004,9 +999,12 @@ For production use, ensure you:
 # Start development with hot reload
 ./opentr.sh start dev
 
-# Backend development
+# Backend development (host venv at backend/venv; the two-step install mirrors Dockerfile.prod)
 cd backend/
+python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
+pip install --no-deps -r requirements-nodeps.txt   # whisperx / faster-whisper / gliner
+pip install -r requirements-dev.txt
 pytest tests/                    # Run tests
 ruff format app/                 # Format code
 ruff check app/                  # Lint code
@@ -1026,10 +1024,10 @@ Releases run through one script — don't hand-run `git tag`, `docker push`, or
 
 ```bash
 ./scripts/release.sh status            # where am I?
-./scripts/release.sh reset 0.5.0       # clear rehearsal history before a real run
-./scripts/release.sh preflight 0.5.0   # seconds — fails fast on the usual suspects
-./scripts/release.sh run 0.5.0         # the whole sequence
-./scripts/release.sh run 0.5.0 --dry-run   # print every command, execute nothing
+./scripts/release.sh reset 0.6.0       # clear rehearsal history before a real run
+./scripts/release.sh preflight 0.6.0   # seconds — fails fast on the usual suspects
+./scripts/release.sh run 0.6.0         # the whole sequence
+./scripts/release.sh run 0.6.0 --dry-run   # print every command, execute nothing
 ```
 
 Twelve stages, each independently runnable, skippable (`--skip`) and resumable
@@ -1046,7 +1044,7 @@ end to end on real data: a **fresh install** via the documented one-liner, and a
 **in-place upgrade from the previous published release** — including a file
 uploaded *after* the upgrade, to prove the upgraded stack still does its job.
 
-📖 **Full guide: [Developer Guide → Releasing](https://attevon-llc.github.io/OpenTranscribe/docs/developer-guide/releasing)**
+📖 **Full guide: [Developer Guide → Releasing](https://docs.opentranscribe.app/docs/developer-guide/releasing)**
 
 ### **Testing**
 
@@ -1078,8 +1076,9 @@ npm run check:i18n               # locale key-parity across all 12 languages
 # Browser end-to-end (Playwright via pytest, against the live stack)
 ./scripts/e2e/run-e2e.sh                     # full e2e suite, headless
 ./scripts/e2e/run-e2e-smoke.sh               # quick read-mostly subset
-./scripts/e2e/run-e2e.sh -m upload           # one marker: upload/search/settings/
+./scripts/e2e/run-e2e.sh -m upload           # one marker, e.g. upload/search/settings/
                                              # transcription/gallery/auth/visual
+                                             # (full list: backend/tests/e2e/pytest.ini)
 pytest backend/tests/e2e/test_a11y.py -v     # axe-core accessibility
 pytest backend/tests/e2e/test_visual_regression.py -v   # screenshot baselines
 ```
@@ -1114,12 +1113,9 @@ python3 scripts/analyze-test-timing.py <junit.xml> [--baseline baseline.xml]
   <test>` settled in one pass what two plausible hypotheses had cost two full measurement
   cycles.
 
-Current (measured 2026-08-13): backend **6,623 passed / 62 real skips / 104 s** (from
-4,752 / 458 / 511 s); frontend **669 passed / 76 files / 21.6 s**; e2e **341 collected**.
-A residual ~9 s DDL cluster remains (the `ddl_exclusive` advisory-lock queue); the
-sub-second barriers are gone. **Re-derive rather than trust these** — the values printed
-here previously were wrong by 1,294 backend and 188 frontend tests;
-`./scripts/run-backend-tests.sh --summary` answers in seconds.
+Test counts and timings drift quickly, so none are printed here. **Re-derive them**:
+`./scripts/run-backend-tests.sh --summary` and `cd frontend && npm run test` answer in
+seconds, and `./scripts/run-integration-tests.sh` reports the full gate.
 
 ### **Contributing**
 We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
@@ -1327,13 +1323,13 @@ For government deployments, OpenTranscribe includes features aligned with FedRAM
 - Session management with configurable timeouts (AC-12)
 
 ### **Data Privacy**
-- All processing happens locally - no data sent to external services
+- Local by default: with the built-in models, transcription, speaker detection, search and redaction run on your own hardware. Audio leaves it only if you choose a cloud transcription provider or pyannote.ai, and transcript text only if you configure a cloud LLM provider
 - Optional: Disable external model downloads for air-gapped environments
-- User data is encrypted at rest and in transit
+- Media files in MinIO are encrypted at rest (AES-256-GCM server-side encryption, enabled by the installer); API keys and other stored secrets are encrypted at the application layer. Transcript text in PostgreSQL and OpenSearch is not application-layer encrypted, so use full-disk or volume encryption (see [Security Hardening](docs-site/docs/operations/security-hardening.md)); `backup --encrypt` produces GPG-encrypted dumps
 - Configurable data retention policies
 
 ### **Access Control**
-- Role-based permissions (admin/user)
+- Role-based permissions (user / admin / super admin)
 - File ownership validation
 - API rate limiting on authentication endpoints
 - Secure session management with JWT refresh token rotation

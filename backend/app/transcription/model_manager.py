@@ -171,6 +171,11 @@ class ModelManager:
         native_selected = config.diarizer_backend.lower() == "native"
         native_cached = type(diarizer).__name__ == "NativeSpeakerDiarizer"
         if not native_selected:
+            if not native_cached:
+                # PyAnnote is pinned now, so a cached instance that was built as the fallback
+                # for a sidecar outage is simply the pinned engine: its recorded reason would
+                # otherwise log a FALLBACK warning and count a fallback on every pinned run.
+                diarizer.last_fallback_reason = None
             return not native_cached
 
         from app.transcription.diarizer_native import sidecar_ready

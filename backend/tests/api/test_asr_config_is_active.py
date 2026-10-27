@@ -299,3 +299,77 @@ def test_deleting_works_where_the_member_default_runs(
     db_session.expire_all()
     assert db_session.get(type(shared), shared_id) is None
     assert _active_id(db_session, normal_user) is None
+
+
+# --- deleting every configuration treats each shared one like a single delete ------------------
+
+
+def _refuse_every_holder(monkeypatch):
+    """Make the plan say the member's pipeline would break once their pointer is cleared."""
+    from app.services.asr_switch_plan import SwitchOutcome
+    from app.services.pipeline_plan import PlanIssue
+
+    issue = PlanIssue(code="diarizer_config_missing", severity="error", step="diarization")
+
+    def _assess(db, user_id, target, *, request=None, refused_steps=None):
+        return SwitchOutcome(plan=None, refusal=issue)  # type: ignore[arg-type]
+
+    monkeypatch.setattr("app.api.endpoints.asr_settings.assess_asr_switch", _assess)
+
+
+def test_delete_all_clears_the_pointers_of_members_of_a_shared_config(
+    client, other_user, other_user_auth_headers, normal_user, db_session, add_asr_config
+):
+    shared = _member_on_shared(db_session, add_asr_config, other_user, normal_user)
+    private = add_asr_config("assemblyai", "universal", owner=other_user, active=True)
+    shared_id, private_id = shared.id, private.id
+
+    response = client.delete(f"{_BASE}/all", headers=other_user_auth_headers)
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    db_session.expire_all()
+    assert db_session.get(type(shared), shared_id) is None
+    assert db_session.get(type(private), private_id) is None
+    assert _active_id(db_session, normal_user) is None, (
+        "the member must not keep a dangling pointer"
+    )
+    assert _active_id(db_session, other_user) is None
+
+
+def test_delete_all_is_refused_when_a_member_of_a_shared_config_would_be_stranded(
+    client,
+    other_user,
+    other_user_auth_headers,
+    normal_user,
+    db_session,
+    add_asr_config,
+    monkeypatch,
+):
+    shared = _member_on_shared(db_session, add_asr_config, other_user, normal_user)
+    private = add_asr_config("assemblyai", "universal", owner=other_user, active=True)
+    _refuse_every_holder(monkeypatch)
+
+    response = client.delete(f"{_BASE}/all", headers=other_user_auth_headers)
+
+    assert response.status_code == status.HTTP_409_CONFLICT, response.text
+    assert response.json()["detail"]["code"] == "diarizer_config_missing"
+    db_session.expire_all()
+    assert db_session.get(type(shared), shared.id) is not None, "nothing may be deleted"
+    assert db_session.get(type(private), private.id) is not None
+    assert _active_id(db_session, normal_user) == str(shared.id)
+    assert _active_id(db_session, other_user) == str(private.id)
+
+
+def test_delete_all_ignores_the_assessment_when_no_config_is_shared(
+    client, other_user, other_user_auth_headers, db_session, add_asr_config, monkeypatch
+):
+    """Control: the refusal above comes from the shared config's member, not from the call."""
+    mine = add_asr_config("assemblyai", "universal", owner=other_user, active=True)
+    mine_id = mine.id
+    _refuse_every_holder(monkeypatch)
+
+    response = client.delete(f"{_BASE}/all", headers=other_user_auth_headers)
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    db_session.expire_all()
+    assert db_session.get(type(mine), mine_id) is None

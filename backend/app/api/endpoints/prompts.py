@@ -31,6 +31,8 @@ from app.auth.audit import audit_logger
 from app.auth.audit import request_org_id
 from app.db.base import get_db
 from app.middleware.audit import get_request_context
+from app.services.platform_access import TenancyMode
+from app.services.platform_access import tenancy_mode
 from app.utils.pagination import paginate
 from app.utils.tenant_sharing import owner_in_tenant
 from app.utils.tenant_sharing import shared_visible_in_tenant
@@ -694,11 +696,14 @@ def share_prompt(
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
-    """Toggle sharing on a prompt. The owner, or an admin of the same tenant, can toggle.
+    """Toggle sharing on a prompt. The owner, or an admin of the prompt's tenant, can toggle.
 
     A prompt outside the caller's tenant answers 404, the same as a missing one, so its
-    existence is not disclosed. A platform role without a support-access grant is scoped to
-    its own tenant like any other admin; a write grant assumes the granted tenant.
+    existence is not disclosed. A personal workspace is its own tenant: in a multi-tenant
+    deployment nobody but the owner reaches a personal prompt, and the platform role only
+    does through a write support grant for that user. Inside an organization the authority
+    is the org admin role or a write grant (which assumes the granted tenant), never the
+    platform role alone. A single-tenant deployment keeps instance-wide admin access.
     """
     current_user = ctx.user
     prompt = get_prompt_by_uuid(db, prompt_uuid)
@@ -712,8 +717,18 @@ def share_prompt(
         )
         if not in_tenant:
             raise HTTPException(status_code=404, detail="Prompt not found")
-    if prompt.user_id != current_user.id and current_user.role not in ("admin", "super_admin"):
-        raise HTTPException(status_code=403, detail="Not authorized to share this prompt")
+        may_administer = ctx.is_org_admin or ctx.bypass.allows(
+            org_id=ctx.org_id,
+            owner_id=int(prompt.user_id) if prompt.user_id is not None else None,
+            need="write",
+            resource_type="prompt",
+            resource_uuid=str(prompt.uuid),
+        )
+        if not may_administer:
+            if ctx.org_id is None and tenancy_mode(db) is TenancyMode.MULTI:
+                # Another person's personal workspace: indistinguishable from a missing prompt.
+                raise HTTPException(status_code=404, detail="Prompt not found")
+            raise HTTPException(status_code=403, detail="Not authorized to share this prompt")
     if prompt.is_system_default:
         raise HTTPException(status_code=400, detail="Cannot share system prompts")
 

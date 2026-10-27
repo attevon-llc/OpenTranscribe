@@ -415,7 +415,7 @@ this file is for.
   `frontend-build` runs it in full at **pre-push**. On a PR that hook is the only `vite build`
   in CI at all, so `.github/workflows/pre-commit.yml` invokes both stages; see
   `backend/tests/unit/test_precommit_stage_ci_parity.py`.
-- **Requirements resolve check** — `check-requirements-resolve.py [--only FILE]`: `pip install --dry-run` of requirements.txt, -nodeps (`--no-deps`), -dev, -lite and -ci, failing on ResolutionImpossible and on any package lite/CI/dev resolve at a different version than prod (CI job `Requirements resolve`; run with the images' Python 3.13; ~5 min, needs network; offline logic in `test_check_requirements_resolve.py`).
+- **Requirements resolve check** — `check-requirements-resolve.py [--only FILE]` (a variant named in `--only` also pulls in requirements.txt, the drift reference): `pip install --dry-run` of requirements.txt, -nodeps (`--no-deps`), -dev, -lite and -ci, failing on ResolutionImpossible and on any package lite/CI/dev resolve at a different version than prod (CI job `Requirements resolve`; run with the images' Python 3.13; ~5 min, needs network; offline logic in `test_check_requirements_resolve.py`).
 - **mypy hook negative control** — `mypy-hook-negative-control.sh [--ref REF]` (issue #1271). Builds a
   throwaway repo from `git archive REF` under an `ot-redcheck.` temp dir, drops
   `mypy_negative_control_fixture.py.txt` into it as `backend/app/zz_mypy_negative_control.py`, runs the

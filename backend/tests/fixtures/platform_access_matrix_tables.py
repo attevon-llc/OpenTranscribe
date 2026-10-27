@@ -150,7 +150,7 @@ CONTENT_GUARDS: dict[str, str] = {
     "POST /api/my-files/request-recovery": "caller",
     "POST /api/my-files/{file_uuid}/retry": "bypass",
     "POST /api/prompts/active/set": "caller",
-    "POST /api/prompts/shared/{prompt_uuid}/toggle": "caller",
+    "POST /api/prompts/shared/{prompt_uuid}/toggle": "bypass",
     "POST /api/prompts/{prompt_uuid}/clone": "caller",
     "POST /api/speaker-clusters/batch-verify": "caller",
     "POST /api/speaker-clusters/{cluster_uuid}/analyze-outliers": "caller",
@@ -293,14 +293,6 @@ INLINE_ROLE_ROUTES: dict[str, tuple[str, str]] = {
         "retry-ceiling",
         "the role is forwarded to the per-file handlers, which skip the retry ceiling and allow force for admins; each file still passes the chokepoint with ctx.bypass",
     ),
-    "GET /api/files/{file_uuid}/summary-status": (
-        "display-hint",
-        "the role only decides the can_generate hint in the response; the file was resolved with ctx.bypass first",
-    ),
-    "POST /api/files/{file_uuid}/summarize": (
-        "settings-override",
-        "an admin may generate a summary while the system-wide switch is off; the file was resolved with ctx.bypass and the summary is the file owner's",
-    ),
     "GET /api/search/index-health": (
         "platform-ops",
         "non-admins get document counts scoped to themselves, admins the deployment totals; counts only, no content",
@@ -316,11 +308,6 @@ INLINE_ROLE_ROUTES: dict[str, tuple[str, str]] = {
     "PUT /api/user-settings/media-sources/{source_uuid}": (
         "display-hint",
         "a helper reads the owner's role to fill the owner_role label on the response; no access decision",
-    ),
-    "POST /api/prompts/shared/{prompt_uuid}/toggle": (
-        "owner-or-tenant-admin",
-        "the owner, or an admin of the prompt's own tenant, may change sharing; a prompt outside the "
-        "caller's tenant answers 404 via _in_tenant, and a write support grant assumes the granted tenant",
     ),
 }
 

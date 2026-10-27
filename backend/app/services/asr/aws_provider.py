@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 import uuid
 from collections.abc import Callable
@@ -49,8 +50,25 @@ _AWS_THROTTLE_CODES = frozenset(
         "TooManyRequestsException",
         "LimitExceededException",
         "RequestLimitExceeded",
+        # STS (GetCallerIdentity) and the older query-protocol services spell it this way.
+        "Throttling",
+        "RequestThrottled",
     }
 )
+
+#: How long a resolved account id is trusted. The account behind a set of credentials does
+#: not change while they are in use; the bound only covers credentials that were swapped.
+BUCKET_OWNER_CACHE_SECONDS = 3600
+_monotonic = time.monotonic
+_owner_cache: dict[tuple[str, str], tuple[str, float]] = {}
+_owner_cache_lock = threading.Lock()
+
+
+def clear_bucket_owner_cache() -> None:
+    """Forget every resolved account id (tests; credentials rotated onto another account)."""
+    with _owner_cache_lock:
+        _owner_cache.clear()
+
 
 # AWS Transcribe LanguageCode is BCP-47 (e.g. "en-US"), NOT a bare ISO-639 code ("en").
 # Map common ISO codes to a sensible AWS default; pass through codes already BCP-47.
@@ -136,16 +154,63 @@ class AWSTranscribeProvider(ASRProvider):
 
         ``AWS_TRANSCRIBE_BUCKET_OWNER`` wins when set (a bucket in another account of the
         deployer's organization); otherwise it is the caller's own account, from STS, which
-        needs no IAM permission.
+        needs no IAM permission. The STS answer is cached per credentials and region for
+        ``BUCKET_OWNER_CACHE_SECONDS``, so a job costs no extra round trip; a failed lookup
+        is never cached.
+
+        Raises:
+            ASRRateLimitedError: STS throttled the call (retryable).
+            RuntimeError: STS could not be reached or refused, or returned no account. A VPC
+                with no STS endpoint must set ``AWS_TRANSCRIBE_BUCKET_OWNER``.
         """
         override = os.getenv(BUCKET_OWNER_ENV, "").strip()
         if override:
             return override
-        account = self._boto_client("sts").get_caller_identity().get("Account")
+        key = (self._access_key_id or "", self._region)
+        with _owner_cache_lock:
+            cached = _owner_cache.get(key)
+        if cached is not None and _monotonic() < cached[1]:
+            return cached[0]
+        account = self._lookup_account_id()
+        with _owner_cache_lock:
+            _owner_cache[key] = (account, _monotonic() + BUCKET_OWNER_CACHE_SECONDS)
+        return account
+
+    def _lookup_account_id(self) -> str:
+        """STS ``GetCallerIdentity``, with its failures classified (never a raw botocore trace)."""
+        from botocore.exceptions import BotoCoreError
+        from botocore.exceptions import ClientError
+
+        needs_override = (
+            f"Set {BUCKET_OWNER_ENV} to the 12-digit account id that owns the bucket "
+            "(required where STS is not reachable, for example a VPC with no STS endpoint)."
+        )
+        try:
+            account = self._boto_client("sts").get_caller_identity().get("Account")
+        except ClientError as exc:
+            code = str(exc.response.get("Error", {}).get("Code", ""))
+            sanitized = self._sanitize_error(str(exc), self._secret_access_key)
+            if code in _AWS_THROTTLE_CODES:
+                from .errors import ASRRateLimitedError
+
+                logger.warning("AWS STS rate-limited while resolving the account id: %s", sanitized)
+                raise ASRRateLimitedError(
+                    f"AWS STS rate limited: {sanitized}", provider="aws"
+                ) from exc
+            raise RuntimeError(
+                f"Could not determine the AWS account id from STS ({code or 'error'}). "
+                f"{needs_override}"
+            ) from exc
+        except BotoCoreError as exc:
+            sanitized = self._sanitize_error(str(exc), self._secret_access_key)
+            raise RuntimeError(
+                f"Could not reach AWS STS to determine the account id ({sanitized}). "
+                f"{needs_override}"
+            ) from exc
         if not account:
             raise RuntimeError(
-                "Could not determine the AWS account id for the S3 bucket-owner check. "
-                f"Set {BUCKET_OWNER_ENV} to the 12-digit account id that owns the bucket."
+                f"Could not determine the AWS account id for the S3 bucket-owner check. "
+                f"{needs_override}"
             )
         return str(account)
 

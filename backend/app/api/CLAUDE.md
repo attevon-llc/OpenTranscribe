@@ -281,7 +281,10 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   `pipeline_issues`; `POST /asr-settings` returns `auto_activated` (a first config that would
   break speaker detection is saved but not activated) and `pipeline_issues`; delete promotes
   the first remaining config that keeps the choice runnable, else clears, and answers the
-  switch shape too (`config_uuid` + `pipeline_issues`, #1236). A #1109-locked source is never
+  switch shape too (`config_uuid` + `pipeline_issues`, #1236). `PUT /asr-settings/config/{uuid}`
+  with `is_active: false` is a switch as well (an off configuration is treated as absent, #1207):
+  it asks the plan for every user whose active pointer names the config, the owner and the members
+  of a shared one, and answers the same 409. A #1109-locked source is never
   refused on the diarization step. `DELETE /asr-settings/config/{uuid}` and `/all` answer
   `ASRConfigDeleted` (the switch shape plus `deleted` and `diarizer_source_reverted`, #1226):
   a deleted config named as someone's speaker detector (`asr_config`) resets that choice for

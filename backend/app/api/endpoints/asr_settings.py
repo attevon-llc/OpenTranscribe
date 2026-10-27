@@ -218,6 +218,28 @@ def _refuse_if_introduced(outcome: SwitchOutcome) -> None:
         )
 
 
+def _refuse_if_switching_off_strands_holders(
+    db: Session, config: Any, request: Request | None
+) -> None:
+    """409 when turning ``config`` off would send a user who runs on it to a broken default.
+
+    An inactive configuration is treated as absent (#1207), so switching one off IS a switch
+    for every user whose active pointer names it: its owner, and anyone it is shared with.
+    Each is assessed like ``clear-active`` (#1225, #1228); the first refusal wins.
+    """
+    holders = [
+        int(row[0])
+        for row in db.query(models.UserSetting.user_id)
+        .filter(
+            models.UserSetting.setting_key == "active_asr_config_id",
+            models.UserSetting.setting_value == str(config.id),
+        )
+        .all()
+    ]
+    for holder_id in holders:
+        _refuse_if_introduced(assess_asr_switch(db, holder_id, None, request=request))
+
+
 def _get_active_asr_config_id(db: Session, user_id: int) -> int | None:
     """Return the stored active ASR config integer ID, or None."""
     setting = (
@@ -668,18 +690,27 @@ def create_asr_config(
 
 @router.put("/config/{config_uuid}")
 def update_asr_config(  # noqa: C901
+    request: Request,
     config_uuid: UUID,
     settings_in: schemas.UserASRSettingsUpdate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
-    """Update an existing ASR configuration (on lite, never into a ``local`` one, #1228)."""
+    """Update an existing ASR configuration (on lite, never into a ``local`` one, #1228).
+
+    Turning a configuration OFF is refused with 409 ``{code, message}`` when a user whose
+    active pointer names it (the owner, or a member of a shared one) would fall back to a
+    default the stored speaker detection or the deployment cannot run (#1225, #1228).
+    """
     from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
 
     if settings_in.provider is not None and settings_in.provider.value == "local":
         refuse_on_lite("local_asr_unavailable")
 
     config = _get_config_or_404(db, config_uuid, current_user.id)
+    turning_off = "is_active" in settings_in.model_fields_set and settings_in.is_active is False
+    if turning_off and config.is_active:
+        _refuse_if_switching_off_strands_holders(db, config, request)
     supplies_key = any(
         isinstance(getattr(settings_in, field), str) and getattr(settings_in, field).strip()
         for field in ("api_key", "access_key_id")

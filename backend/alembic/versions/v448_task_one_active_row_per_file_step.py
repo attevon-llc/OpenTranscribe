@@ -24,7 +24,17 @@ What
 
 The table is locked ``SHARE ROW EXCLUSIVE`` first (readers continue, writers wait) so no worker
 can insert a violating row between the cleanup and the index build, which would fail the build
-and abort startup. The table is small and the lock is held for the length of two UPDATEs.
+and abort startup. The lock is held for the two UPDATEs and a NON-concurrent index build, so
+the time writers wait grows with the size of ``task``; nothing here measures that size, so it is
+not assumed to be small. Two things bound the cost:
+
+* ``lock_timeout`` (``LOCK_TIMEOUT``) applies to the ``LOCK TABLE`` only. If a long transaction
+  already holds a conflicting lock, the statement would otherwise queue and every Celery write
+  to ``task`` would queue behind IT; instead the upgrade fails after the timeout with a message
+  naming the cause, and the next start retries. The caller's own ``lock_timeout`` is restored
+  as soon as the lock is held, so the rest of the migration chain is unaffected.
+* Operators of a large ``task`` table should run the upgrade in a quiet period (the
+  upgrade guide says so).
 
 Idempotent: both UPDATEs match nothing on a second run and the index is ``IF NOT EXISTS``.
 
@@ -47,9 +57,30 @@ depends_on = None
 
 INDEX_NAME = "uq_task_active_per_file_type"
 
-#: Module-level so the consistency test replays the real statements.
-UPGRADE_SQL = f"""
-    LOCK TABLE task IN SHARE ROW EXCLUSIVE MODE;
+#: How long the upgrade waits for the table lock before giving up with a clear message.
+LOCK_TIMEOUT = "30s"
+
+
+def build_upgrade_sql(lock_timeout: str = LOCK_TIMEOUT) -> str:
+    """The upgrade statements; ``lock_timeout`` is a parameter so a test can use a short one."""
+    return f"""
+    DO $lock$
+    DECLARE
+        previous text := current_setting('lock_timeout');
+    BEGIN
+        PERFORM set_config('lock_timeout', '{lock_timeout}', true);
+        BEGIN
+            LOCK TABLE task IN SHARE ROW EXCLUSIVE MODE;
+        EXCEPTION WHEN lock_not_available THEN
+            RAISE EXCEPTION
+                'v448 could not lock the task table within {lock_timeout} because another '
+                'transaction holds a conflicting lock on it'
+                USING HINT = 'Stop the Celery workers or end the long-running transaction, '
+                             'then start the backend again; the upgrade is safe to retry.';
+        END;
+        PERFORM set_config('lock_timeout', previous, true);
+    END
+    $lock$;
 
     -- (a) active rows with a newer completed row of the same step for the same file
     WITH superseded AS (
@@ -103,6 +134,10 @@ UPGRADE_SQL = f"""
         ON task (media_file_id, task_type)
         WHERE status IN ('pending', 'in_progress');
 """
+
+
+#: Module-level so the consistency test replays the real statements.
+UPGRADE_SQL = build_upgrade_sql()
 
 DOWNGRADE_SQL = f"""
     DROP INDEX IF EXISTS {INDEX_NAME};

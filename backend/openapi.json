@@ -29009,7 +29009,7 @@
         ]
       },
       "put": {
-        "description": "Update an existing ASR configuration (on lite, never into a ``local`` one, #1228).",
+        "description": "Update an existing ASR configuration (on lite, never into a ``local`` one, #1228).\n\nTurning a configuration OFF is refused with 409 ``{code, message}`` when a user whose\nactive pointer names it (the owner, or a member of a shared one) would fall back to a\ndefault the stored speaker detection or the deployment cannot run (#1225, #1228).",
         "operationId": "update_asr_config_api_asr_settings_config__config_uuid__put",
         "parameters": [
           {
@@ -41597,7 +41597,7 @@
     },
     "/api/search/degraded-embeddings": {
       "get": {
-        "description": "Preview the files stranded text-only by a neural-search degraded window (#626).\n\nRead-only survey — pairs with ``POST /search/reembed-degraded``, which requires this\npreview to be confirmed rather than dispatching on click.",
+        "description": "Preview the files stranded text-only by a neural-search degraded window (#626).\n\nRead-only survey — pairs with ``POST /search/reembed-degraded``, which requires this\npreview to be confirmed rather than dispatching on click.\n\n``total_files`` is the size of what a re-embed would touch. In a multi-tenant\ndeployment ``files`` names only the files of the caller's active tenant (the caller's\nown rows, unless the request's bypass sees the whole scope); the rest are counted in\n``outside_scope_files`` and never named. A single-tenant deployment lists everything.",
         "operationId": "get_degraded_embeddings_api_search_degraded_embeddings_get",
         "parameters": [
           {
@@ -44256,7 +44256,7 @@
     },
     "/api/speakers/debug/cross-media-by-name": {
       "get": {
-        "description": "Debug endpoint to test cross-media logic for a specific speaker name.\n\nThe route is admin-gated, but in multi-tenant mode the queries stay inside the\ncaller's active tenant: it returns speaker names and file titles.",
+        "description": "Debug endpoint to test cross-media logic for a specific speaker name.\n\nThe route is admin-gated, but it returns speaker names and file titles, so it stays\ninside the request's active tenant, and reads other users' rows there only where the\nrequest's bypass sees all of the scope (single-tenant mode, or an organization\nsupport-access grant). Otherwise it is the caller's own.",
         "operationId": "debug_cross_media_by_name_api_speakers_debug_cross_media_by_name_get",
         "parameters": [
           {

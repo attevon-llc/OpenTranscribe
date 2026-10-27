@@ -94,3 +94,28 @@ def test_a_single_tenant_admin_still_assigns_to_another_user(world, monkeypatch)
     [row] = _rows(w.db, name)
     assert row.user_id == w.owner.id
     assert row.created_by == w.admin.id
+
+
+def test_a_plain_user_cannot_assign_a_source_to_anyone_else(world):
+    """The assignment is an admin's tool: from anyone else the field is ignored, not honoured."""
+    w = world
+    name = f"ignored-{uuid.uuid4().hex[:8]}"
+    served = w.client.post(CREATE, headers=w.owner_headers, json=_body(name, w.admin.uuid))
+    assert served.status_code == 200, served.text
+    [row] = _rows(w.db, name)
+    assert row.user_id == w.owner.id, "the source belongs to the caller, not the named account"
+    assert row.created_by == w.owner.id
+
+
+def test_a_plain_user_in_a_single_tenant_deployment_cannot_assign_either(world, monkeypatch):
+    w = world
+    monkeypatch.setattr(settings, "TENANCY_MODE", "single")
+    reset_tenancy_mode_cache()
+    try:
+        name = f"ignored-{uuid.uuid4().hex[:8]}"
+        served = w.client.post(CREATE, headers=w.owner_headers, json=_body(name, w.admin.uuid))
+    finally:
+        reset_tenancy_mode_cache()
+    assert served.status_code == 200, served.text
+    [row] = _rows(w.db, name)
+    assert row.user_id == w.owner.id

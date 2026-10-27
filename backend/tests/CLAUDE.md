@@ -145,8 +145,8 @@ what it appears to. A green one from the wrong schema is worse.
     corpus, the ceiling drops to **zero**, not to 8 — 8 would be quietly re-legitimizing the room
     this worked example just used.
 - Registered (pyproject): `slow`, `unit`, `pki`, `e2e`, `integration`, `gpu`, `models`,
-  `multi_gpu`, `opt_in_gate`. `addopts` =
-  `-n auto --dist loadgroup --tb=short -q --strict-markers -m 'not integration and not gpu'`;
+  `ddl_exclusive`, `multi_gpu`, `export_capability`, `opt_in_gate`. `addopts` =
+  `-n auto --dist loadgroup --tb=short -q --strict-markers --durations=25 --timeout=300 -m 'not integration and not gpu'`;
   `norecursedirs=["tests/e2e"]`. **`--strict-markers` makes an unregistered marker a collection
   error** — register any new marker in `[tool.pytest.ini_options] markers` or collection fails.
   (The e2e markers live in `tests/e2e/pytest.ini`, which is a separate rootdir config.)
@@ -172,7 +172,7 @@ what it appears to. A green one from the wrong schema is worse.
   longer existed. **Grep for `gate_enabled("<VAR>")`, never for the bare name**, and see
   `unit/test_gate_run_env_vars_are_live.py`. Verified 2026-09-07: those seven have **zero**
   `gate_enabled` call sites in `backend/tests`. What remains live:
-  `RUN_SEARCH_QUALITY_TESTS`→`test_search_quality` (self-seeding — injects
+  `RUN_SEARCH_QUALITY_TESTS`→`test_search_quality` (plus two tests in `e2e/test_search.py`; self-seeding — injects
   its own 6-meeting corpus via `app/scripts/corpus_injection` through a throwaway `searchqual-`
   user, see `tests/fixtures/search_corpus.py`; still deliberately never in CI, since CI forces
   `SKIP_OPENSEARCH=True`), `RUN_SCHEMA_DRIFT_TESTS`→`unit/test_schema_drift` (needs the live
@@ -184,14 +184,14 @@ what it appears to. A green one from the wrong schema is worse.
   `integration/test_export_toolchain_in_shipped_images`.
 - **MinIO/OpenSearch tests auto-enable by TCP probe.** Root conftest `_service_reachable`
   (0.3 s) `setdefault`s `SKIP_S3` from `localhost:5178` and `SKIP_OPENSEARCH` from
-  `localhost:5180`, then points the clients at those host ports; an explicit shell value wins.
+  `localhost:5180` (or whatever `MINIO_PORT` / `OPENSEARCH_PORT` you exported), then points the clients at those host ports; an explicit shell value wins.
   Stack down → those suites **skip silently**, so a green local run proves less than it looks.
 
 ## Test-quality gate — `scripts/audit-tests.py` + `audit-allowlist.txt`
 
 **Runs on every commit** (`.pre-commit-config.yaml`: `audit-tests-selftest` then `audit-tests`)
 and in the `backend-tests` CI job. Before this it was in neither — `rg audit-tests` found only
-prose. 16 AST detectors; full inventory and the calibration traps live in `scripts/CLAUDE.md`.
+prose. 21 AST detectors; full inventory and the calibration traps live in `scripts/CLAUDE.md`.
 What matters when you are writing a test here:
 
 - **`tests/e2e` is scanned too.** It used to be excluded, which hid 21 findings in the only
@@ -225,7 +225,7 @@ What matters when you are writing a test here:
   clear a finding.
 - **Run `python3 scripts/audit-tests.py --selftest` after touching a detector**, and give any
   new one a must-fire *and* a must-stay-clean fixture. `unit/test_audit_tests_selftest.py` runs
-  all 54 cases under pytest for the same reason: a detector that matches nothing reports zero
+  the `--selftest` cases under pytest (the count is printed by `--selftest`) for the same reason: a detector that matches nothing reports zero
   findings, which is indistinguishable from a clean suite.
 
 ## ⚠️ A gate test may not depend on the dev deployment's DATA, or on a fixed wall-clock budget
@@ -669,9 +669,11 @@ but it will saturate every core, so don't start one beside a benchmark.
 
 **Two traps the script handles, and you must not undo.** `-n0` is appended via
 `PYTEST_ADDOPTS` to override pyproject's `-n auto`: without it every mutant forks one xdist
-worker per core against the shared DB. And the `RUN_*` gates are exported, because three of the
-selected test files are behind a module-level `skipif` and **a skipped test kills no mutant** —
-an ungated run reports false survivors that look exactly like real findings.
+worker per core against the shared DB. The script also still exports the seven old security-suite
+`RUN_*` gates (its `GATES` array), but those are dead (see "Markers and gates"): no selected file
+is gated any more, so they select nothing. Keep the principle, though: **a skipped test kills no
+mutant**, so a gated or skipping file in a module's `MODULE_TESTS` reports false survivors that
+look exactly like real findings.
 
 **Reading a surviving mutant.** `--results` lists ids; `--show <id>` prints the diff.
 `killed` = genuinely checked. `survived` = the finding; add the missing assertion, or conclude

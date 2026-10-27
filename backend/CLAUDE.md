@@ -35,8 +35,8 @@ step: if a package is only ever installed inside the image, it belongs in one of
 service from `Dockerfile.prod`, bind-mounts `./backend:/app` over it, and runs
 `uvicorn --reload`. So dev and prod share one dependency set — pinning `requirements.txt` aligns
 the dev containers, the prod containers and the venv in a single move. (Only the *frontend* has a
-`Dockerfile.dev`, for Vite HMR.) `Dockerfile.lite` and `Dockerfile.blackwell` install the same
-`requirements.txt` too.
+`Dockerfile.dev`, for Vite HMR.) `Dockerfile.blackwell` installs the same
+`requirements.txt` too; `Dockerfile.lite` installs `requirements-lite.txt` (table below).
 
 ⚠️ **Interpreter parity is NOT guaranteed, only package parity.** `Dockerfile.prod` is
 `python:3.13-slim-trixie`; this host ships 3.11 and 3.12, so `backend/venv` currently runs

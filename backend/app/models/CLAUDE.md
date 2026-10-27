@@ -8,7 +8,7 @@ authority. See `backend/app/db/CLAUDE.md`.
 
 ## Key files
 
-- `media.py` (~925 lines — the deliberate exception to the ~300-line rule): `MediaFile`,
+- `media.py` (~1,360 lines — the deliberate exception to the ~300-line rule): `MediaFile`,
   `TranscriptSegment`, `Speaker`/`SpeakerProfile`/`SpeakerCluster`/`SpeakerMatch`, `Collection`,
   `Tag`, `Task`, `Analytics`, `Comment`. `SpeakerCannotLink`, `SpeakerProfileBlacklist` and
   `SpeakerCorrectionCarryover` (`v438`, a correction held by its time spans across a re-run,
@@ -52,7 +52,7 @@ authority. See `backend/app/db/CLAUDE.md`.
 - `file_facts.py` — `FileFacts` (`v390`), a **1:1 sidecar** on `media_file` holding the
   deterministic ingest artifacts (#383 Phase 2): `facts`, `digest`, `keyphrases` JSONB plus
   `generator_version` / `source_fingerprint` lifecycle state. A sidecar rather than columns on
-  `media_file` because that row is ~70 columns and is loaded whole by every gallery page,
+  `media_file` because that row is ~95 columns and is loaded whole by every gallery page,
   while these have two readers — and because Stage 3 needs a narrow "which digests are stale"
   scan. Its FK is the schema's one deliberate `ON DELETE CASCADE` on a derived row, and it is
   **named explicitly** so the ORM declares the object Postgres actually enforces.

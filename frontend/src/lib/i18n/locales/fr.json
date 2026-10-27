@@ -3980,6 +3980,7 @@
   "orgAudit.event.holdPlace": "A placé une conservation légale",
   "orgAudit.event.holdRelease": "A levé une conservation légale",
   "orgAudit.event.holdRefused": "A été bloqué par une conservation légale",
+  "orgAudit.event.transcriptEditedHeld": "A modifié une transcription alors que le fichier était sous conservation légale",
   "holds.navLabel": "Conservations légales",
   "holds.title": "Conservations légales",
   "holds.description": "Une conservation légale empêche, tant qu'elle est en vigueur, que des fichiers soient supprimés, purgés par la rétention, effacés avec un compte ou régénérés par un retraitement. Vous pouvez conserver des fichiers précis ou une collection entière, y compris les fichiers qui y seront ajoutés plus tard. Le motif n'est visible que des administrateurs de votre organisation.",

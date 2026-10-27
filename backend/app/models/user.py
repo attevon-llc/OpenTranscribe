@@ -18,6 +18,7 @@ from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
+from app.auth.constants import auth_type_check_sql
 from app.db.base import Base
 from app.utils.uuid7 import uuid7
 
@@ -217,16 +218,16 @@ class User(Base):
             "is_superuser = (role = 'super_admin')",
             name="ck_user_superuser_matches_role",
         ),
-        # v377/v380/v383. ⚠️ The body is a LITERAL on purpose — do NOT rebuild it
-        # from ``app.auth.constants.VALID_AUTH_TYPES`` the way ``group.py`` builds
-        # its CHECK bodies from ``MEMBERSHIP_SOURCES_SQL``. ``auth/constants.py``
-        # requires this CHECK to be a **superset** of ``VALID_AUTH_TYPES``, so a
-        # value may be admitted by the database before any code supports it (that
-        # ordering is what lets a widening migration ship ahead of its provider).
-        # Deriving the body from the constant would encode equality and make the
-        # supported ordering illegal. Widen this string only when the DDL widens.
+        # v377/v380/v383. The body is rendered from
+        # ``app.auth.constants.DB_ADMITTED_AUTH_TYPES``, the single source of the set
+        # the database admits (issue #866). ⚠️ Do NOT render it from ``VALID_AUTH_TYPES``
+        # instead: the CHECK is required to be a **superset** of that list, so a value
+        # may be admitted by the database before any code supports it (that ordering is
+        # what lets a widening migration ship ahead of its provider), and deriving it
+        # from the supported list would encode equality. Widen the constant only in the
+        # commit that widens the DDL.
         CheckConstraint(
-            "auth_type IN ('local', 'ldap', 'oidc', 'pki', 'proxy', 'saml')",
+            auth_type_check_sql(),
             name="ck_user_auth_type_valid",
         ),
         # v381. The approval helpers read the column fail-safe; this is what keeps

@@ -135,7 +135,7 @@ changing `provider` **clears** it.
   from a row is how #300 happened — the job path dropped `access_key_id`, so AWS jobs silently ran under
   whatever boto3 resolved from `AWS_ACCESS_KEY_ID`/IAM while "Test connection" passed. Decryption
   failure raises `ValueError`; `create_for_user` catches it and degrades to env/local.
-- Per-vendor: **aws** needs two creds and round-trips through an S3 bucket it may auto-create, wants
+- Per-vendor: **aws** needs two creds and round-trips through the S3 bucket named by `AWS_TRANSCRIBE_BUCKET` (REQUIRED, no default since #1235: bucket names are global, so a guessable default could ship audio to another account; `transcribe()` and `validate_connection()` fail before any network call when it is unset; every S3 call carries `ExpectedBucketOwner`, STS account or `AWS_TRANSCRIBE_BUCKET_OWNER`; it is env, not DB, because it is deployment infrastructure and `user_asr_settings` has no column for it), wants
   BCP-47 (`en-US`) codes, and its custom vocabulary must pre-exist in AWS. **azure** needs a region, and
   diarization requires `ConversationTranscriber` — `SpeechRecognizer` silently returns no speakers.
   **google** takes a service-account JSON only (applied by mutating `GOOGLE_APPLICATION_CREDENTIALS`)

@@ -64,6 +64,14 @@ off by default.
 
 - **Back up first** (`./opentranscribe.sh backup`, or `./opentr.sh backup` in a clone). The
   migration chain is one-way: rolling back means restoring that backup.
+- **Amazon Transcribe now requires `AWS_TRANSCRIBE_BUCKET` (behaviour change, #1235).** If you use
+  the AWS provider and never set it, the old fallback bucket `opentranscribe-tmp-<region>` was
+  being used; it is gone. Create a private S3 bucket in your own AWS account (same region as
+  `AWS_REGION`), set `AWS_TRANSCRIBE_BUCKET` to its name and restart, or AWS jobs and the Test
+  connection button will fail with a message naming the setting. The credentials must be able to
+  read, write and delete objects in that bucket. If the bucket belongs to a different account than
+  the credentials, also set `AWS_TRANSCRIBE_BUCKET_OWNER` to that account id. Objects left in the
+  old `opentranscribe-tmp-<region>` bucket, if you own it, can be deleted.
 - **Twenty-one migrations, `v397` to `v447`, run automatically at backend start.** They add columns
   and tables. The data changes are small and targeted: on installs with organizations, `v420`,
   `v422` and `v430` move tags, collections and legacy speaker/vocabulary rows into the right
@@ -985,6 +993,39 @@ off by default.
   Advanced chat panel keeps its unsaved edits when you switch tabs. Watch Sources accepts an
   `initialTab`, and `watch-sources-email` / `watch-sources-global` open those tabs for a
   super_admin (settings search finds Email Notifications directly).
+- **Transcript edits on a legally held file are now audited, and tag-share events no longer carry the
+  tag name (#1307).** Editing a held file's transcript stays allowed (a hold blocks destruction, not
+  correction), but it left no trace. Each edit of a segment's text or times, and each speaker
+  reassignment, made while the file is held now writes a `content.transcript.edit` event with the
+  segment id, the fields changed and who holds the file, never the text. Sharing or unsharing a tag
+  wrote the tag's name into `resource.share` / `resource.unshare` events, where an audit reader who
+  cannot see the tag would learn it; the name is gone and the tag is identified by id, as
+  collections already were. Existing events keep the name they were written with.
+- **Falling back from the native diarization sidecar to PyAnnote is no longer silent (#1184).**
+  Every fallback run logs a WARNING with the reason, a worker that starts without the sidecar
+  logs an ERROR, and a new counter `diarization_runs_total{backend,reason}` records every run.
+  **Require Diarization Sidecar** (`engine.diarizer_require_sidecar`) now also refuses the
+  fallback when the engine is first built, and drops a fallback engine that was already cached,
+  not only when a request fails mid-job. The system status reports `unavailable` while strict
+  mode is refusing work. Default behaviour is unchanged apart from the logging and metric.
+- **Amazon Transcribe no longer falls back to a guessable bucket name (#1235).** Without
+  `AWS_TRANSCRIBE_BUCKET` the provider used `opentranscribe-tmp-<region>`; S3 bucket names are
+  global, so audio could be uploaded to a bucket owned by someone else. The setting is now
+  required (the connection test and every AWS job fail at once with a message naming it), and
+  every S3 call carries `ExpectedBucketOwner`. **See Upgrade Notes.**
+- **A registered external provider whose `auth_type` the database does not admit now fails with a
+  message that names the fix (#866).** `external_sync` wrote the provider's string straight into the
+  CHECK-constrained `user.auth_type`, so a provider outside the core set failed its first login with
+  a bare CheckViolation. The admitted set now has a single home (`DB_ADMITTED_AUTH_TYPES`) that the
+  model CHECKs are rendered from, a test pins the newest migration to it, registering an unlisted
+  provider logs a warning, and the first JIT login checks the live constraint. A test also forbids
+  any new migration from rewriting unlisted `auth_type` values to `local`. Editions that register a
+  provider must widen both CHECKs in their own additive migration, as before.
+- **A large "summarize everything" turn now pulls fewer sections per recording (#991).**
+  `sections_budget` divided a character budget by a file count and compared the result with a
+  section count, so it returned its ceiling of three sections per file until a scope passed 4,000
+  recordings. It now divides by the cost of one section per file: 1-5 recordings get three
+  sections each, 6-8 get two, and 9 or more get one. Chat turns over small scopes are unchanged.
 - **Export failures are no longer silent (#1278).** A transcript export or clipboard copy that the
   server refused (redaction scan unfinished, policy unavailable) used to log to the console and
   leave a button that did nothing; each now shows a translated message. The gallery's bulk export

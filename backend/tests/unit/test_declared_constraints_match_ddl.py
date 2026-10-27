@@ -382,11 +382,11 @@ def test_the_auth_type_check_is_a_superset_of_the_code_and_not_derived_from_it(d
 
     A value must be able to exist in the DDL before any code supports it, which is how a
     widening migration ships ahead of its provider. So the CHECK body on ``user`` and
-    ``user_invitation`` is written as a literal string; building it from
-    ``VALID_AUTH_TYPES`` the way ``group.py`` builds its bodies from
-    ``MEMBERSHIP_SOURCES_SQL`` would encode equality and make that ordering illegal. The
-    assertion here is therefore ``<=``, deliberately not ``==``: this test must keep passing
-    on the day the database admits a seventh value.
+    ``user_invitation`` is rendered from ``DB_ADMITTED_AUTH_TYPES`` (the single source,
+    #866), never from ``VALID_AUTH_TYPES``: building it from the supported list would
+    encode equality and make that ordering illegal. The assertion here is therefore
+    ``<=``, deliberately not ``==``: this test must keep passing on the day the database
+    admits a seventh value.
     """
     conn = db_session.connection()
     supported = set(VALID_AUTH_TYPES)

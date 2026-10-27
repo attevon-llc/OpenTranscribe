@@ -454,6 +454,8 @@ def get_models_info() -> dict[str, dict[str, Any]]:
             "effective": "unknown",
             "effective_description": "unknown diarization engine",
             "using_fallback": False,
+            "require_sidecar": False,
+            "refusing": False,
         }
 
     models: dict[str, dict[str, Any]] = {
@@ -474,6 +476,8 @@ def get_models_info() -> dict[str, dict[str, Any]]:
             "configured_description": diarizer_status["configured_description"],
             "effective_backend": diarizer_status["effective"],
             "using_fallback": diarizer_status["using_fallback"],
+            "require_sidecar": diarizer_status["require_sidecar"],
+            "refusing": diarizer_status["refusing"],
         },
     }
 

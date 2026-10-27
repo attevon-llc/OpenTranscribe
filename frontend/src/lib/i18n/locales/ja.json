@@ -3980,6 +3980,7 @@
   "orgAudit.event.holdPlace": "法的保全を設定した",
   "orgAudit.event.holdRelease": "法的保全を解除した",
   "orgAudit.event.holdRefused": "法的保全により制限された",
+  "orgAudit.event.transcriptEditedHeld": "ファイルが法的保全の対象である間に文字起こしを編集した",
   "holds.navLabel": "法的保全",
   "holds.title": "法的保全",
   "holds.description": "法的保全が有効な間は、ファイルの削除、保持期間による削除、アカウントとともに消去すること、再処理による再生成ができなくなります。特定のファイルまたはコレクション全体（後から追加されたファイルを含む）を保全できます。理由は組織の管理者にのみ表示されます。",

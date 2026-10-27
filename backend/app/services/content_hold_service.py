@@ -244,6 +244,59 @@ def finish_hold_change(
     )
 
 
+def record_edit_on_held_file(
+    db: Session,
+    request: Request | None,
+    actor: User,
+    file: MediaFile,
+    *,
+    kind: str,
+    segment_uuid: str,
+    fields: Iterable[str] = (),
+    bypass: Any = None,
+) -> bool:
+    """Audit a transcript edit made while ``file`` is under a legal hold (issue #1307).
+
+    A hold blocks destruction, not correction, so the edit goes ahead; what the hold changes
+    is that the edit is now on the record. Call it AFTER the edit committed, so the event never
+    describes a change that rolled back. A file nobody holds writes nothing (the ordinary edit
+    is not a governance event), and the event is always recorded, not opt-in: held files are few
+    and this is the trail the hold exists to keep.
+
+    Args:
+        kind: ``segment_edit`` (text or times) or ``segment_speaker`` (reassignment).
+        segment_uuid: The segment's uuid. An id, never its text.
+        fields: Names of the columns changed (``text``, ``start_time``, ``end_time``). Never
+            their values.
+        bypass: The request's platform bypass, so a support-access grant is recorded.
+
+    Returns:
+        Whether an event was written. Never raises.
+    """
+    try:
+        state = hold_states(db, [int(file.id)]).get(int(file.id))
+        if state is None or not state.held:
+            return False
+        return record_content_event(
+            db,
+            request,
+            event=AuditEventType.CONTENT_TRANSCRIPT_EDIT,
+            actor=actor,
+            resource=AuditedResource.file(file),
+            details={
+                "kind": kind,
+                "segment_uuid": segment_uuid,
+                "fields": sorted(fields),
+                "held_by": state.held_by,
+            },
+            dedup=False,
+            bypass=bypass,
+        )
+    except Exception:  # noqa: BLE001 - an audit failure must not fail the edit
+        logger.warning("held-file edit audit failed (edit unaffected)", exc_info=True)
+        return False
+
+
 def record_hold_refusal(
     db: Session,
     request: Request | None,

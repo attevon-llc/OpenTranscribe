@@ -5,6 +5,7 @@ import logging
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Request
 from fastapi import status
 from sqlalchemy.orm import Session
 
@@ -251,6 +252,8 @@ def update_segment_speaker(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
+    *,
+    request: Request,
 ):
     """
     Update the speaker assignment for a transcript segment.
@@ -326,6 +329,20 @@ def update_segment_speaker(
     segment.speaker_id = new_speaker_id  # type: ignore[assignment]
     db.commit()
     db.refresh(segment)
+
+    # Editing a held file is allowed, but it is audited (issue #1307). After the commit, so a
+    # rolled-back edit leaves no event; writes nothing for a file nobody holds.
+    from app.services.content_hold_service import record_edit_on_held_file
+
+    record_edit_on_held_file(
+        db,
+        request,
+        current_user,
+        media_file,
+        kind="segment_speaker",
+        segment_uuid=segment_uuid,
+        bypass=ctx.bypass,
+    )
 
     # Handle side effects of speaker change (cleanup orphans, refresh analytics, embeddings)
     cleanup_residual = _handle_speaker_change(

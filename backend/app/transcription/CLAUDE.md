@@ -128,6 +128,24 @@ an empty `/models` and crash-looping on exit 8. A failure here is never fatal â€
 > PyAnnote was the *de-facto* engine. Still-open relatives: **#656** (no retry policy before the
 > fallback is removed), **#703** (`celery-worker-gpu-transcribe` consumes a queue nothing
 > publishes to).
+>
+> **It is no longer silent (#1184).** Every run is counted in `diarization_runs_total{backend,reason}`
+> (`transcription/diarization_runs.py`, called from `engine/stages._run_diarize`, the one call
+> site the sequential path, the overlapped thread and rediarize share): `native/served`,
+> `pyannote/pinned` (chosen), or `pyannote/<reason>` for an unplanned fallback with `reason` one
+> of `unreachable`, `timeout`, `backpressure`, `sidecar_not_ready`, `error`. A fallback run logs a
+> WARNING with the reason on EVERY run, and a worker that starts with the sidecar down logs one
+> ERROR. The reason rides on the diarizer instance (`last_fallback_reason`, like
+> `last_provider`). **Strict mode is `engine.diarizer_require_sidecar`** (DB, then
+> `ENGINE_DIARIZER_REQUIRE_SIDECAR`, default false; the issue's proposed `DIAR_NATIVE_REQUIRED` was
+> not added because this setting already existed, #656 Step 6, and has an admin toggle). Strict
+> mode now refuses the fallback at BUILD time too (`ModelManager._build_diarizer`, and a cached
+> fallback engine is dropped by `_diarizer_current`), not just mid-job, raising
+> `DiarSidecarUnavailableError`. The admin stats `models.diarization` carries `require_sidecar`
+> and `refusing` (`effective_backend` is `unavailable` while strict mode is refusing work).
+> Not done: a failing container healthcheck for a strict worker whose sidecar is down. The
+> `worker_ready` preload swallows errors by design and the shared pool healthcheck is
+> engine-agnostic, so strict mode fails the TASKS instead of the worker.
 
 **`diar-server` now BUNDLES the OpenBLAS upstream validated on** (issue #721). It is built
 `openblas-system`, so it links whatever the *image* provides; `Dockerfile.prod` /

@@ -157,6 +157,10 @@ variable reference. Defaults below come from `.env.example`'s "GPU AND TRANSCRIP
 # Engine selection. SystemSettings `engine.diarizer_backend` (Settings → Speaker Identification → Speaker Engine) wins over
 # this; both are re-read on every diarization call, so neither needs a worker restart.
 ENGINE_DIARIZER_BACKEND=native   # native (default) | pyannote
+# Strict mode: fail a diarization task when the sidecar cannot serve, never fall back to
+# in-process PyAnnote. DB setting `engine.diarizer_require_sidecar` ("Require Diarization
+# Sidecar" in Settings) wins over this. Recommended for production.
+#ENGINE_DIARIZER_REQUIRE_SIDECAR=false
 
 # Worker -> sidecar HTTP client (backend/app/transcription/diarizer_native.py)
 DIAR_NATIVE_URL=http://diar-native:8701
@@ -184,6 +188,7 @@ DIAR_NATIVE_LAZY_SESSIONS=1
 | Variable | Read by | Takes effect after |
 |---|---|---|
 | `ENGINE_DIARIZER_BACKEND` | `TranscriptionConfig._resolve_diarizer_backend()`, resolved fresh on every diarization call | nothing to restart — live immediately, and a DB `engine.diarizer_backend` setting overrides it anyway |
+| `ENGINE_DIARIZER_REQUIRE_SIDECAR` | `diarizer_native.diarizer_require_sidecar()`, re-read on every diarization call | nothing to restart; the DB `engine.diarizer_require_sidecar` setting overrides it |
 | `DIAR_NATIVE_URL`, `DIAR_NATIVE_SHARED_DIR`, `DIAR_NATIVE_TIMEOUT_S`, `DIAR_NATIVE_GENDER` | module-level constants in `diarizer_native.py`, read once when the **celery worker** process imports it | restarting/recreating the celery worker container(s) |
 | `DIAR_NATIVE_MODE`, `DIAR_NATIVE_MAX_INFLIGHT`, `DIAR_NATIVE_LAZY_SESSIONS`, `DIAR_NATIVE_GPU`, `DIAR_NATIVE_LOG_LEVEL`, `DIAR_NATIVE_LOG_FORMAT` | the `diar-server` Rust binary, at its own process start | recreating the `diar-native` container only |
 | `DIAR_NATIVE_MODELS_DIR` | the compose bind-mount source for both `backend` and `diar-native`, and `native_provision.ensure_native_models` | recreating **both** the `backend` and `diar-native` containers |
@@ -456,7 +461,7 @@ AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
 AWS_REGION=us-east-1
 AWS_ASR_MODEL=standard
-AWS_TRANSCRIBE_BUCKET=  # S3 bucket for intermediate output
+AWS_TRANSCRIBE_BUCKET=  # REQUIRED for AWS: a private S3 bucket you own, same region as AWS_REGION
 
 # Speechmatics
 SPEECHMATICS_API_KEY=
@@ -1176,7 +1181,7 @@ speaker detection is refused with it (choose Off for speaker detection, or use `
 | OpenAI | `openai` | reuses `OPENAI_API_KEY`; `OPENAI_ASR_MODEL` (`gpt-4o-transcribe`) |
 | Google Cloud Speech | `google` | `GOOGLE_CLOUD_CREDENTIALS` (path to the service-account JSON), `GOOGLE_ASR_MODEL` (`chirp-3`) |
 | Azure Speech | `azure` | `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION` (`eastus`), `AZURE_ASR_MODEL` (`whisper`) |
-| Amazon Transcribe | `aws` | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_ASR_MODEL`, `AWS_TRANSCRIBE_BUCKET` |
+| Amazon Transcribe | `aws` | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_ASR_MODEL`, `AWS_TRANSCRIBE_BUCKET` (required), `AWS_TRANSCRIBE_BUCKET_OWNER` (optional) |
 | Speechmatics | `speechmatics` | `SPEECHMATICS_API_KEY`, `SPEECHMATICS_MODEL` |
 | Gladia | `gladia` | `GLADIA_API_KEY`, `GLADIA_MODEL` |
 
@@ -1188,9 +1193,21 @@ Changing them affects storage and Bedrock too. They remain in `.env.example` for
 that reason.
 :::
 
-Amazon Transcribe additionally needs `AWS_TRANSCRIBE_BUCKET` to already exist —
-Transcribe writes intermediate output there, and the bucket must be in
-`AWS_REGION`.
+Amazon Transcribe additionally **requires** `AWS_TRANSCRIBE_BUCKET`: the audio is
+uploaded there for Transcribe to read and the result is written back, and both are
+deleted after each job. There is **no default**. S3 bucket names are global, so a
+guessable name could send your audio to another account's bucket; with the setting
+empty, the Test connection button and every AWS job fail immediately with a message
+naming it. Use a private bucket in your own account, in `AWS_REGION`. Every S3 call
+carries `ExpectedBucketOwner` (your account id, looked up from STS, or
+`AWS_TRANSCRIBE_BUCKET_OWNER` when the bucket lives in another account), so S3 refuses
+with 403 if the bucket is not owned by the expected account. If the bucket does not
+exist, the first job creates it in your account.
+
+The bucket is an environment setting, not an admin-UI one, because it is deployment
+infrastructure rather than a per-user choice. The credentials you enter in
+Settings are used for the S3 calls too, so they must belong to the account that owns the
+bucket (or have access to it, with `AWS_TRANSCRIBE_BUCKET_OWNER` set).
 
 Worker concurrency for cloud providers is `CLOUD_ASR_CONCURRENCY` (compose
 default **16**), not a per-provider setting.
@@ -1387,7 +1404,8 @@ stored encrypted rather than in a file.
 | `AZURE_SPEECH_REGION` | any Azure region id | `eastus` | **Must match the region the key was issued for**, or every request returns 401. |
 | `AZURE_ASR_MODEL` | `whisper`, `conversation` | `whisper` | Azure recognition model. |
 | `AWS_ASR_MODEL` | `standard`, `medical` | `standard` | Amazon Transcribe tier. |
-| `AWS_TRANSCRIBE_BUCKET` | S3 bucket name | *(empty)* | Bucket Transcribe writes intermediate output to. **Must already exist and be in `AWS_REGION`.** |
+| `AWS_TRANSCRIBE_BUCKET` | S3 bucket name | *(empty)* | **Required for the AWS provider; no default.** Private bucket you own, in `AWS_REGION`, used for the temporary audio and result (deleted after each job). Created on first use if missing. |
+| `AWS_TRANSCRIBE_BUCKET_OWNER` | 12-digit AWS account id | *(empty)* | Account that must own the bucket (`ExpectedBucketOwner`). Empty means the caller's own account, looked up from STS. Set it only for a bucket in another account. |
 | `SPEECHMATICS_API_KEY` | string | *(empty)* | Speechmatics credential. |
 | `SPEECHMATICS_MODEL` | `standard`, `enhanced` | `standard` | Operating point. `enhanced` is slower and more accurate. |
 | `GLADIA_API_KEY` | string | *(empty)* | Gladia credential. |
@@ -1408,7 +1426,7 @@ DEEPGRAM_MODEL=nova-3
 # .env — no static keys; the EC2/ECS role supplies credentials
 ASR_PROVIDER=aws
 AWS_REGION=us-east-1
-AWS_TRANSCRIBE_BUCKET=my-transcribe-scratch   # must exist, same region
+AWS_TRANSCRIBE_BUCKET=my-transcribe-scratch   # required, no default; your bucket, same region
 AWS_ASR_MODEL=standard
 ```
 

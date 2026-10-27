@@ -81,6 +81,16 @@ class EmailDeliveryError(OpenTranscribeError):
     """
 
 
+class ExternalProviderNotAdmittedError(OpenTranscribeError):
+    """A registry-based provider's ``auth_type`` is not admitted by the database.
+
+    Raised by ``auth/auth_type_admission.py`` before ``external_sync`` writes
+    ``user.auth_type``, in place of the bare ``CheckViolation`` Postgres would raise
+    at commit. The fix is a migration in the edition that registered the provider
+    (issue #866), so the message names it.
+    """
+
+
 class ExternalIdentityLinkRefusedError(OpenTranscribeError):
     """A registry-based external identity may not be linked/synced to a user.
 

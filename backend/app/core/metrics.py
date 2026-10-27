@@ -115,6 +115,7 @@ search_indexing_retries_total: Counter
 search_indexing_files_awaiting_reindex: Gauge
 task_rows_superseded_total: Counter
 task_rows_superseded_active: Gauge
+diarization_runs_total: Counter
 
 
 def _register() -> None:
@@ -148,6 +149,7 @@ def _register() -> None:
     global task_rows_superseded_total
     global task_rows_superseded_active
     global search_indexing_files_awaiting_reindex
+    global diarization_runs_total
 
     if _COLLECTORS_REGISTERED:
         return
@@ -328,6 +330,18 @@ def _register() -> None:
         "Active (pending/in_progress) task rows that a newer completed row of the same step "
         "for the same file has superseded: what the recovery sweep resolves on its next run. "
         "Should be zero; alert if it stays above zero for longer than a sweep interval.",
+    )
+
+    # Diarization runs by the engine that served them (issue #1184). Incremented in the GPU
+    # worker by ``app.transcription.diarization_runs`` (served on the worker's
+    # WORKER_METRICS_PORT when enabled). ``reason`` is "served" for the native sidecar, "pinned"
+    # for an admin-chosen in-process PyAnnote, and the cause of an UNPLANNED fallback otherwise
+    # (unreachable, timeout, backpressure, sidecar_not_ready, error).
+    diarization_runs_total = Counter(
+        "diarization_runs_total",
+        "Diarization runs by the backend that served them and why: reason=served (native), "
+        "pinned (PyAnnote by choice) or the cause of a fallback from the native sidecar.",
+        ["backend", "reason"],
     )
 
     _COLLECTORS_REGISTERED = True

@@ -93,7 +93,7 @@ services:
       # a stats reply from MainProcess is the same proof `inspect ping` gave. Prefork
       # (GPU_WORKER_POOL=prefork): the child-process and respawn-storm checks apply.
       test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py gpu-transcription@$$HOSTNAME"]
-      interval: 30s
+      interval: 45s
       timeout: 10s
       retries: 3
       start_period: 60s

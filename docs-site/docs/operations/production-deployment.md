@@ -781,7 +781,7 @@ Every service in the stack has a Docker health check. These are used for startup
 | OpenSearch | `curl -sS http://localhost:9200` | 5s | Verifies cluster status endpoint |
 | Backend | `curl -f http://localhost:8080/health` | 10s | Verifies API is serving requests |
 | Frontend (prod) | `wget --spider -q http://127.0.0.1:8080` | 10s | Verifies static assets are served |
-| Celery Workers | `celery inspect ping -d <hostname>` | 30s | Verifies worker responds to control commands |
+| Celery Workers | `celery inspect ping -d <hostname>` | 45s | Verifies worker responds to control commands |
 | Celery Beat | Checks `/app/celerybeat-schedule` mtime < 300s | 30s | Verifies scheduler is writing heartbeats |
 | Flower | `curl -fs http://127.0.0.1:5555/${FLOWER_URL_PREFIX:-flower}/healthcheck` | 30s | Verifies Flower's own healthcheck endpoint (bypasses basic auth) |
 

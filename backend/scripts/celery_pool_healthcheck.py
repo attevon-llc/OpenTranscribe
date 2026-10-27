@@ -73,7 +73,7 @@ INSPECT_REPLY_TIMEOUT_S = 5.0
 INSPECT_TIMEOUT_S = 8
 
 # A prior sample older than this is not compared against — the probe interval is
-# 30s, so this tolerates four missed probes before falling back to "cannot judge".
+# 45s, so this tolerates three missed probes before falling back to "cannot judge".
 SAMPLE_STALE_AFTER_S = 150.0
 
 

@@ -625,6 +625,10 @@ off by default.
 
 ### Changed
 
+- **Celery worker healthchecks run every 45 seconds instead of 30 (#1247).** That cuts probe
+  subprocess churn by a third and leaves the pool-aware prefork checks from #631 unchanged. A dead
+  worker is detected after about 135 seconds at `retries: 3`, not about 90. Credit: PR #1247 by
+  @jc230285.
 - **A held file can no longer be reprocessed or retried, and a refusal says who holds it
   (#1276).** The 409 `FILE_UNDER_LEGAL_HOLD` that a delete of a held file already answered now also
   carries `held_by` (`platform`, `organization` or both), and a reprocess or retry of a held file

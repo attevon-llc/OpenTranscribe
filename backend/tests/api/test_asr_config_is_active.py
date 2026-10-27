@@ -191,3 +191,111 @@ def test_switching_off_a_shared_config_a_member_uses_is_refused(
     assert response.json()["detail"]["code"] == "local_asr_unavailable"
     assert _row_is_active(db_session, shared) is True
     assert _active_id(db_session, normal_user) == str(shared.id)
+
+
+# --- unsharing or deleting a shared configuration moves its members the same way -------------
+
+
+def _member_on_shared(db_session, add_asr_config, owner, member):
+    shared = add_asr_config("deepgram", "nova-3", owner=owner, shared=True)
+    db_session.add(
+        UserSetting(
+            user_id=member.id, setting_key="active_asr_config_id", setting_value=str(shared.id)
+        )
+    )
+    db_session.commit()
+    return shared
+
+
+def _is_shared(db_session, cfg) -> bool:
+    db_session.expire_all()
+    row = db_session.get(type(cfg), cfg.id)
+    return False if row is None else bool(row.is_shared)
+
+
+def test_unsharing_a_config_a_member_uses_is_refused_when_the_default_is_unrunnable(
+    client,
+    other_user,
+    other_user_auth_headers,
+    normal_user,
+    db_session,
+    add_asr_config,
+    pipeline_env,
+):
+    pipeline_env("lite")
+    shared = _member_on_shared(db_session, add_asr_config, other_user, normal_user)
+
+    response = client.put(
+        f"{_BASE}/config/{shared.uuid}", json={"is_shared": False}, headers=other_user_auth_headers
+    )
+
+    assert response.status_code == status.HTTP_409_CONFLICT, response.text
+    assert response.json()["detail"]["code"] == "local_asr_unavailable"
+    assert _is_shared(db_session, shared) is True
+    assert _active_id(db_session, normal_user) == str(shared.id)
+
+
+def test_unsharing_works_where_the_member_default_runs(
+    client, other_user, other_user_auth_headers, normal_user, db_session, add_asr_config
+):
+    """Control: on a full deployment the member falls back to local Whisper, as before."""
+    shared = _member_on_shared(db_session, add_asr_config, other_user, normal_user)
+
+    response = client.put(
+        f"{_BASE}/config/{shared.uuid}", json={"is_shared": False}, headers=other_user_auth_headers
+    )
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    assert _is_shared(db_session, shared) is False
+    assert _active_id(db_session, normal_user) is None
+
+
+def test_unsharing_is_not_refused_over_the_owners_own_pointer(
+    client, normal_user, user_token_headers, db_session, add_asr_config, pipeline_env
+):
+    """Only members are assessed: the owner keeps the config, so nothing moves for them."""
+    pipeline_env("lite")
+    mine = add_asr_config("deepgram", "nova-3", active=True, shared=True)
+
+    response = client.put(
+        f"{_BASE}/config/{mine.uuid}", json={"is_shared": False}, headers=user_token_headers
+    )
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    assert _is_shared(db_session, mine) is False
+    assert _active_id(db_session, normal_user) == str(mine.id)
+
+
+def test_deleting_a_config_a_member_uses_is_refused_when_the_default_is_unrunnable(
+    client,
+    other_user,
+    other_user_auth_headers,
+    normal_user,
+    db_session,
+    add_asr_config,
+    pipeline_env,
+):
+    pipeline_env("lite")
+    shared = _member_on_shared(db_session, add_asr_config, other_user, normal_user)
+
+    response = client.delete(f"{_BASE}/config/{shared.uuid}", headers=other_user_auth_headers)
+
+    assert response.status_code == status.HTTP_409_CONFLICT, response.text
+    assert response.json()["detail"]["code"] == "local_asr_unavailable"
+    assert db_session.get(type(shared), shared.id) is not None
+    assert _active_id(db_session, normal_user) == str(shared.id)
+
+
+def test_deleting_works_where_the_member_default_runs(
+    client, other_user, other_user_auth_headers, normal_user, db_session, add_asr_config
+):
+    """Control: on a full deployment the delete goes through and the member's pointer clears."""
+    shared = _member_on_shared(db_session, add_asr_config, other_user, normal_user)
+    shared_id = shared.id
+
+    response = client.delete(f"{_BASE}/config/{shared.uuid}", headers=other_user_auth_headers)
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    db_session.expire_all()
+    assert db_session.get(type(shared), shared_id) is None
+    assert _active_id(db_session, normal_user) is None

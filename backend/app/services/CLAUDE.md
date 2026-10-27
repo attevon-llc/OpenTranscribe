@@ -55,7 +55,7 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   The speaker-ID LLM never gets the gender cross-reference from a non-local provider
   (`speaker_identification_task._with_gender_context`). A speaker's tenant is its FILE's (`media_file.organization_id`):
   `speaker.organization_id` is never stamped by the pipeline, so purge and every reader join through the file
-  (`PurgeScope.speaker_filters`), and every writer that rebuilds a speaker document passes the file's organization
+  (`PurgeScope.speaker_filters`, the profile rename, `require_speaker_access`, the segment speaker assignment; `tests/unit/test_speaker_tenant_discipline.py` fails on any new read of the speaker row's own column), and every writer that rebuilds a speaker document passes the file's organization
   (`PreparedFile.organization_id`, the merge plan's `organization_id`) or the voiceprint reads as personal. A removal
   or erasure is never gated by the switch (`speaker_cleanup.profile_move_impact` drops only the aggregate a voice
   would JOIN while off). User docs: `docs-site/docs/features/privacy-controls.md`.

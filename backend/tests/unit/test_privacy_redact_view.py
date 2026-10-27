@@ -234,7 +234,12 @@ def test_inferred_gender_is_withheld_and_a_confirmed_one_is_not(db_session, norm
         file,
         name="SPEAKER_00",
         predicted_gender="male",
-        attribute_confidence={"gender": 0.93, "age_range": 0.6, "gender_alignment": "match"},
+        attribute_confidence={
+            "gender": 0.93,
+            "age_range": 0.6,
+            "alignment": "match",
+            "alignment_hint": "Zylofenix Quorra",
+        },
         gender_confirmed_by_user=False,
     )
     confirmed = _speaker(

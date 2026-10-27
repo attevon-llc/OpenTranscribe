@@ -52,9 +52,12 @@ _DENY = Decision(False, "instance")
 
 Scope = tuple[int, int | None]
 
-#: Keys of ``Speaker.attribute_confidence`` that are derived from the inferred gender (the
-#: model's confidence, and the voice-versus-metadata alignment judged from it).
-_INFERRED_GENDER_KEYS = frozenset({"gender", "gender_alignment", "gender_alignment_hint"})
+#: Keys of the STORED ``Speaker.attribute_confidence`` bag that are derived from the inferred
+#: gender: the model's confidence, and the voice-versus-name alignment judged from it. These
+#: are the stored names; the response fields ``gender_alignment`` / ``gender_alignment_hint``
+#: are split out of them by ``schemas.media.split_attribute_confidence`` (the purge drops the
+#: same three keys).
+_INFERRED_GENDER_KEYS = frozenset({"gender", "alignment", "alignment_hint"})
 
 
 class PrivacyView:

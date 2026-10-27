@@ -155,3 +155,29 @@ def test_segment_speaker_reassignment_response_withholds_inferred_gender_while_o
 
     assert off.status_code == status.HTTP_200_OK, off.text
     _assert_withheld(off.json()["speaker"])
+
+
+def test_file_detail_withholds_the_voice_versus_name_alignment_while_off(
+    client, user_token_headers, world, db_session
+):
+    """The alignment compares the inferred gender with a name's: it is inferred gender too."""
+    world["inferred"].attribute_confidence = {
+        **STORED,
+        "alignment": "mismatch",
+        "alignment_hint": "Zylofenix Quorra",
+    }
+    db_session.commit()
+    url = f"/api/files/{world['file'].uuid}"
+
+    on = client.get(url, headers=user_token_headers).json()
+    assert _speakers_by_name(on)["SPEAKER_00"]["gender_alignment"] == "mismatch"
+
+    set_instance_switch(db_session, "gender", False)
+    off = client.get(url, headers=user_token_headers).json()
+
+    for speaker in (
+        _speakers_by_name(off)["SPEAKER_00"],
+        _segment_speakers_by_name(off)["SPEAKER_00"],
+    ):
+        assert speaker["gender_alignment"] is None
+        assert speaker["gender_alignment_hint"] is None

@@ -54,6 +54,14 @@ route behind the account gate that reads no request context must be listed there
 | `lifecycle` | the base context | never read, so a stale header cannot lock anyone out |
 | `platform-op:<tier>:<category>` | gated by the admin or super_admin dependency | see below |
 
+A route can earn a second row, `platform-op:inline:<category>`, when its handler tests the signed-in
+user's role itself (`current_user.is_admin` / `.role`, `getattr(current_user, "role")`, `ctx.user`, a
+renamed user parameter, or a module-level helper handed the user). The scan runs on **every**
+route, so taking the request context does not make such a handler "caller-scoped"; each one needs
+an `INLINE_ROLE_ROUTES` entry with a written reason, and a new one is `UNCLASSIFIED` until it has
+one. It does not follow a helper two calls deep, a method, or another module; the leak sweep is
+the backstop for those.
+
 Platform-operation categories (a route's category is derived, and `UNCLASSIFIED` fails the test):
 
 | Category | What it may do | Proof |

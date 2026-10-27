@@ -131,7 +131,7 @@ noted. Admin (`get_current_admin_user`) unless stated.
 | `DELETE /speaker-attributes/migration/progress` | super_admin; clears stale Redis progress, refuses while running |
 | `GET /embeddings/migration/mode` | super_admin; pure config read (declares an unused `db` dependency) |
 | `POST /tasks/system/fix-file/{uuid}` | Per-file version of the stuck-file fix; admin sees any file |
-| `GET /tags/unused` · `DELETE /tags/cleanup` | `/cleanup` is caller-scoped by default; `scope=all_users` needs `confirm=true`. See Gotchas |
+| `GET /tags/unused` · `DELETE /tags/cleanup` | `/cleanup` is caller-scoped by default; `scope=all_users` needs `confirm=true` and, in a multi-tenant deployment, a super_admin (`ctx.bypass.deployment_scope_writable`). See Gotchas |
 | `POST /files/waveforms/generate` · `GET /files/waveforms/status` | Bulk waveform backfill + coverage. Admin via an **inline** `is_admin` check, not a dependency |
 | `POST /files/{uuid}/waveform/generate` · `POST /files/{uuid}/analytics/refresh` | Per-file recompute |
 | `DELETE /files/{uuid}/force` · `POST /files/{uuid}/{retry,recover,cancel}` | Recovery verbs on `files/management.py`; see the `get_current_user` gotcha |

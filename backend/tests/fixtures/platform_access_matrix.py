@@ -201,18 +201,137 @@ def uses_bypass(source: str) -> bool:
     )
 
 
-def reads_caller_role(source: str) -> bool:
-    """Whether the handler's code tests ``current_user.is_admin`` or ``current_user.role``."""
+#: Attributes of the signed-in user that carry the platform role.
+ROLE_ATTRS = frozenset({"is_admin", "role", "is_super_admin", "is_superuser"})
+#: Names a handler gives the request context; ``<ctx>.user`` is the signed-in user.
+CONTEXT_NAMES = frozenset({"ctx", "context", "req_ctx"})
+USER_DEPENDENCIES = frozenset(
+    {
+        "get_current_user",
+        "get_current_active_user",
+        "get_current_admin_user",
+        "get_current_active_superuser",
+        "get_current_super_admin_user",
+        "get_optional_current_user",
+    }
+)
+
+
+def _function_node(tree: ast.AST) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            return node
+    return None
+
+
+def _caller_params(fn: ast.FunctionDef | ast.AsyncFunctionDef | None) -> set[str]:
+    """Parameter names a handler binds to the signed-in user, whatever it calls them."""
+    names = {"current_user"}
+    if fn is None:
+        return names
+    args = fn.args
+    positional = args.posonlyargs + args.args
+    defaults: list[ast.expr | None] = [None] * (len(positional) - len(args.defaults))
+    defaults += list(args.defaults)
+    for arg, default in [
+        *zip(positional, defaults, strict=True),
+        *zip(args.kwonlyargs, args.kw_defaults, strict=True),
+    ]:
+        if not (isinstance(default, ast.Call) and default.args):
+            continue
+        if getattr(default.func, "id", getattr(default.func, "attr", "")) != "Depends":
+            continue
+        target = default.args[0]
+        if getattr(target, "id", getattr(target, "attr", "")) in USER_DEPENDENCIES:
+            names.add(arg.arg)
+    return names
+
+
+def _reads_role_of(tree: ast.AST, is_subject: Any) -> bool:
+    """Whether ``tree`` reads a role attribute (directly or via ``getattr``) of a subject."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr in ROLE_ATTRS and is_subject(node.value):
+            return True
+        if (
+            isinstance(node, ast.Call)
+            and getattr(node.func, "id", None) == "getattr"
+            and len(node.args) >= 2
+            and is_subject(node.args[0])
+            and isinstance(node.args[1], ast.Constant)
+            and node.args[1].value in ROLE_ATTRS
+        ):
+            return True
+    return False
+
+
+def _names_the_context_user(node: ast.AST, names: set[str]) -> bool:
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "user"
+        and isinstance(node.value, ast.Name)
+        and node.value.id in names
+    )
+
+
+def reads_caller_role(source: str, helpers: dict[str, str] | None = None) -> bool:
+    """Whether a handler tests the signed-in user's role anywhere it can be seen.
+
+    Three shapes, all of them found by reading CODE (a docstring cannot count):
+
+    * a direct read: ``current_user.is_admin`` or ``.role`` (or ``.is_super_admin`` /
+      ``.is_superuser``), on the parameter bound to the user dependency under any name and on
+      ``ctx.user``;
+    * ``getattr(current_user, "role", ...)``, which the attribute scan alone missed;
+    * a role read inside a module-level helper the handler hands the user (or the context) to,
+      one call deep. ``helpers`` maps a function name to its source. A role flag passed in as a
+      plain boolean is a direct read at the call site, so it is already found.
+
+    A helper reached through two calls, a method, or another module is NOT followed; that limit
+    is the reason the sweep in ``test_support_access_matrix`` exists beside this scan.
+    """
     tree = _handler_tree(source)
     if tree is None:
         return False
-    return any(
-        isinstance(n, ast.Attribute)
-        and n.attr in {"is_admin", "role"}
-        and isinstance(n.value, ast.Name)
-        and n.value.id == "current_user"
-        for n in ast.walk(tree)
-    )
+    fn = _function_node(tree)
+    callers = _caller_params(fn)
+
+    def is_caller(node: ast.AST) -> bool:
+        return (isinstance(node, ast.Name) and node.id in callers) or _names_the_context_user(
+            node, set(CONTEXT_NAMES)
+        )
+
+    if _reads_role_of(tree, is_caller):
+        return True
+    for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call)):
+        name = getattr(call.func, "id", None)
+        helper_source = (helpers or {}).get(name or "")
+        if not helper_source:
+            continue
+        helper_tree = _handler_tree(helper_source)
+        helper_fn = _function_node(helper_tree) if helper_tree is not None else None
+        if helper_tree is None or helper_fn is None:
+            continue
+        params = [a.arg for a in helper_fn.args.posonlyargs + helper_fn.args.args]
+        handed: set[str] = set()
+        for index, arg in enumerate(call.args):
+            if (is_caller(arg) or _is_context(arg)) and index < len(params):
+                handed.add(params[index])
+        for keyword in call.keywords:
+            if keyword.arg and (is_caller(keyword.value) or _is_context(keyword.value)):
+                handed.add(keyword.arg)
+        if handed and _reads_role_of(
+            helper_tree,
+            lambda node, handed=handed: (
+                (isinstance(node, ast.Name) and node.id in handed)
+                or _names_the_context_user(node, handed)
+            ),
+        ):
+            return True
+    return False
+
+
+def _is_context(node: ast.AST) -> bool:
+    return isinstance(node, ast.Name) and node.id in CONTEXT_NAMES
 
 
 def _header_state(names: set[str]) -> str:
@@ -232,10 +351,47 @@ def classify_route(
     source: str,
     content_guards: dict[str, str] | None = None,
     inline_routes: dict[str, tuple[str, str]] | None = None,
-) -> Row | None:
-    """The matrix row for one route, or ``None`` when it is not a platform-access path."""
-    content_guards = CONTENT_GUARDS if content_guards is None else content_guards
+    helpers: dict[str, str] | None = None,
+) -> list[Row]:
+    """The matrix rows for one route: none when it is not a platform-access path.
+
+    A route has its dependency-derived row (content, org-admin, lifecycle, platform-op) AND, when
+    the handler tests the caller's role itself, a second ``platform-op:inline:*`` row. The role
+    test is looked for on EVERY route: a handler that takes the request context and then asks
+    ``current_user.is_admin`` is not "caller-scoped" just because the context was injected.
+    """
     inline_routes = INLINE_ROLE_ROUTES if inline_routes is None else inline_routes
+    key = f"{method} {path}"
+    rows: list[Row] = []
+    row = _dependency_row(method, path, names, source, content_guards)
+    if row is not None:
+        rows.append(row)
+    if reads_caller_role(source, helpers):
+        category, why = inline_routes.get(
+            key, ("UNCLASSIFIED", "add the route to INLINE_ROLE_ROUTES with a written reason")
+        )
+        rows.append(
+            Row(
+                "route",
+                key,
+                f"platform-op:inline:{category}",
+                _header_state(names),
+                why,
+                SWEEP_TEST,
+            )
+        )
+    return rows
+
+
+def _dependency_row(
+    method: str,
+    path: str,
+    names: set[str],
+    source: str,
+    content_guards: dict[str, str] | None,
+) -> Row | None:
+    """The row the route's dependency tree earns, or ``None`` for a self-scoped/public route."""
+    content_guards = CONTENT_GUARDS if content_guards is None else content_guards
     key = f"{method} {path}"
     header = _header_state(names)
     admin = bool(names & ADMIN_DEPS)
@@ -281,11 +437,6 @@ def classify_route(
             "base context: the grant header is never read, so a stale one cannot break it",
             f"{ENFORCEMENT_TEST}::test_lifecycle_routes_ignore_a_stale_header",
         )
-    if reads_caller_role(source):
-        category, why = inline_routes.get(
-            key, ("UNCLASSIFIED", "add the route to INLINE_ROLE_ROUTES with a written reason")
-        )
-        return Row("route", key, f"platform-op:inline:{category}", header, why, SWEEP_TEST)
     return None
 
 
@@ -322,20 +473,34 @@ def handler_sources(app: Any) -> dict[str, str]:
     return sources
 
 
+def module_helpers(endpoint: Any, cache: dict[str, dict[str, str]]) -> dict[str, str]:
+    """Source of every function defined in the handler's own module, for the one-call-deep scan."""
+    module = inspect.getmodule(endpoint)
+    if module is None:
+        return {}
+    if module.__name__ not in cache:
+        cache[module.__name__] = {
+            name: handler_source(func)
+            for name, func in inspect.getmembers(module, inspect.isfunction)
+            if func.__module__ == module.__name__
+        }
+    return cache[module.__name__]
+
+
 def route_rows(app: Any) -> list[Row]:
     rows: list[Row] = []
+    helper_cache: dict[str, dict[str, str]] = {}
     for route in app.routes:
         dependant = getattr(route, "dependant", None)
         if dependant is None:
             continue
         names = dependency_names(dependant)
         source = handler_source(route.endpoint)
+        helpers = module_helpers(route.endpoint, helper_cache)
         for method in sorted(getattr(route, "methods", None) or ()):
             if method in {"HEAD", "OPTIONS"}:
                 continue
-            row = classify_route(method, route.path, names, source)
-            if row is not None:
-                rows.append(row)
+            rows.extend(classify_route(method, route.path, names, source, None, None, helpers))
     return rows
 
 
@@ -359,6 +524,7 @@ ALLOWS_KINDS: dict[str, str] = {
     "api/endpoints/comments.py::_assert_comment_file_in_scope": "comment",
     "api/endpoints/comments.py::delete_comment": "comment",
     "api/endpoints/watch_sources.py::_get_source_or_404": "watch_source",
+    "api/endpoints/watch_sources.py::create_watch_source": "watch_source_owner",
     "api/endpoints/files/crud.py::get_media_file_by_id": "media_file",
     "api/endpoints/files/crud.py::get_media_file_detail": "media_file",
     "api/endpoints/files/__init__.py::get_thumbnail": "thumbnail",

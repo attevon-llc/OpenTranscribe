@@ -10,7 +10,9 @@ from __future__ import annotations
 #: How a content route (one that takes the request context) keeps to the caller's reach. A route
 #: is listed here by "METHOD path"; a content route that is not listed is ``UNCLASSIFIED``.
 #: ``bypass``: the handler itself consults the request bypass (checked against its code by
-#: ``test_platform_access_matrix.py``, so a docstring or comment cannot stand in for the call).
+#: ``test_platform_access_matrix.py``, so a docstring or comment cannot stand in for the call);
+#: ``bypass-scope`` is the same check for a route whose bypass question is the deployment scope
+#: (the shared tag vocabulary) rather than a loaded row.
 #: ``caller``: the handler forwards the context or filters on the caller; the leak sweep in
 #: ``tests/api/test_support_access_matrix.py`` is the evidence for those.
 CONTENT_GUARDS: dict[str, str] = {
@@ -30,8 +32,8 @@ CONTENT_GUARDS: dict[str, str] = {
     "DELETE /api/speaker-profiles/profiles/{profile_uuid}": "caller",
     "DELETE /api/speaker-profiles/profiles/{profile_uuid}/avatar": "caller",
     "DELETE /api/speakers/{speaker_uuid}": "bypass",
-    "DELETE /api/tags": "caller",
-    "DELETE /api/tags/cleanup": "caller",
+    "DELETE /api/tags": "bypass-scope",
+    "DELETE /api/tags/cleanup": "bypass-scope",
     "DELETE /api/tags/files/{file_uuid}/tags/{tag_name}": "bypass",
     "DELETE /api/watch-sources/{source_uuid}": "caller",
     "DELETE /api/watch-sources/{source_uuid}/emails/{config_uuid}": "caller",
@@ -97,10 +99,10 @@ CONTENT_GUARDS: dict[str, str] = {
     "GET /api/tags": "caller",
     "GET /api/tags/collisions": "caller",
     "GET /api/tags/for-files": "caller",
-    "GET /api/tags/impact": "caller",
+    "GET /api/tags/impact": "bypass-scope",
     "GET /api/tags/unused": "caller",
     "GET /api/tags/{tag_uuid}/files": "bypass",
-    "GET /api/tags/{tag_uuid}/shares": "caller",
+    "GET /api/tags/{tag_uuid}/shares": "bypass-scope",
     "GET /api/tasks": "bypass",
     "GET /api/tasks/progress/active": "bypass",
     "GET /api/tasks/{task_id}": "bypass",
@@ -115,7 +117,7 @@ CONTENT_GUARDS: dict[str, str] = {
     "GET /api/watch-sources/{source_uuid}/emails/available": "caller",
     "GET /api/watch-sources/{source_uuid}/files": "caller",
     "GET /api/watch-sources/{source_uuid}/files/stats": "caller",
-    "PATCH /api/tags/{tag_uuid}": "caller",
+    "PATCH /api/tags/{tag_uuid}": "bypass-scope",
     "POST /api/asr-settings/set-active": "caller",
     "POST /api/asr-settings/test-config/{config_uuid}": "caller",
     "POST /api/collections/{collection_uuid}/media": "caller",
@@ -163,8 +165,8 @@ CONTENT_GUARDS: dict[str, str] = {
     "POST /api/speakers/{speaker_uuid}/merge/{target_speaker_uuid}": "bypass",
     "POST /api/speakers/{speaker_uuid}/verify": "bypass",
     "POST /api/tags/files/{file_uuid}/tags": "bypass",
-    "POST /api/tags/promote": "caller",
-    "POST /api/tags/{tag_uuid}/merge": "caller",
+    "POST /api/tags/promote": "bypass-scope",
+    "POST /api/tags/{tag_uuid}/merge": "bypass-scope",
     "POST /api/tasks/retry/{file_uuid}": "bypass",
     "POST /api/user-settings/organization-context/use-shared": "caller",
     "POST /api/watch-sources/{source_uuid}/emails": "caller",
@@ -188,13 +190,20 @@ CONTENT_GUARDS: dict[str, str] = {
 
 CONTENT_GUARD_TEXT = {
     "bypass": "bypass.allows on the loaded row, or sees_all_in_scope inside the tenant",
+    "bypass-scope": (
+        "tenant-owned tags are the caller's own inside the request tenant; the shared vocabulary "
+        "and deployment-wide sweeps are decided by ctx.bypass.deployment_scope_writable "
+        "(any admin in a single-tenant deployment, a super_admin otherwise, never a grant)"
+    ),
     "caller": "caller-scoped through the request context (ctx forwarded or user filter)",
 }
 
-#: Routes that take only ``get_current_active_user`` and then test the caller's role inline. Such a
-#: route is invisible to the dependency walk, so it is found by reading the handler's code for
-#: ``current_user.is_admin`` / ``current_user.role``; one that is not listed here is
-#: ``UNCLASSIFIED``. ``"METHOD path" -> (category, why that category is acceptable)``.
+#: Routes whose handler tests the caller's role inline, whatever else gates them. The dependency
+#: walk cannot see such a test, so it is found by reading the handler's code (and the helpers it
+#: hands the user to) for a role read on the signed-in user; a route that does so and is not listed
+#: here is ``UNCLASSIFIED``. Every route is scanned, including ones that take the request context:
+#: the context does not make an inline role test "caller-scoped".
+#: ``"METHOD path" -> (category, why that category is acceptable)``.
 INLINE_ROLE_ROUTES: dict[str, tuple[str, str]] = {
     "POST /api/files/waveforms/generate": (
         "state-repair",
@@ -222,6 +231,90 @@ INLINE_ROLE_ROUTES: dict[str, tuple[str, str]] = {
     "POST /api/legal/acknowledgments": (
         "settings",
         "only a super_admin may accept the operator acknowledgment; deployment-level record",
+    ),
+    "DELETE /api/admin/users/{user_uuid}": (
+        "account-admin",
+        "the role test only narrows the admin gate: an admin may not act on a super_admin; no tenant content is read or returned",
+    ),
+    "DELETE /api/admin/users/{user_uuid}/sessions": (
+        "account-admin",
+        "the role test only narrows the admin gate: an admin may not revoke a super_admin's sessions; no tenant content",
+    ),
+    "POST /api/admin/users/{user_uuid}/lock": (
+        "account-admin",
+        "the role test only narrows the admin gate: an admin may not lock a super_admin; no tenant content",
+    ),
+    "POST /api/admin/users": (
+        "account-admin",
+        "the role test only narrows the admin gate: only a super_admin may create an elevated-role account; no tenant content",
+    ),
+    "PUT /api/users/{user_uuid}": (
+        "account-admin",
+        "the role test only narrows the admin gate: only a super_admin may touch a super_admin or grant an elevated role; no tenant content",
+    ),
+    "DELETE /api/users/{user_uuid}": (
+        "account-admin",
+        "the role test only narrows the admin gate: only a super_admin may delete a super_admin; no tenant content",
+    ),
+    "POST /api/auth/invitations": (
+        "account-admin",
+        "the role test only narrows the admin gate: only a super_admin may invite into an elevated role; no tenant content",
+    ),
+    "GET /api/support-access/grants": (
+        "grant-lifecycle",
+        "the role test decides whether staff list every grant (super_admin) or only their own; grants carry ids, reasons and expiry, never tenant content",
+    ),
+    "GET /api/support-access/grants/{grant_uuid}": (
+        "grant-lifecycle",
+        "visibility of a grant record to its grantee or a super_admin (helper reads the flag); the record holds ids and expiry, never tenant content",
+    ),
+    "GET /api/support-access/grants/{grant_uuid}/uses": (
+        "grant-lifecycle",
+        "same visibility rule as the grant record; the use log names resource types and uuids, never content",
+    ),
+    "DELETE /api/files/{file_uuid}/force": (
+        "admin-precondition",
+        "the role test is the route's admin precondition; the file is then resolved through get_deletable_file with ctx.bypass, so tenant reach is decided on the row (and by the grant), not by the role",
+    ),
+    "GET /api/files/{file_uuid}/status-detail": (
+        "display-hint",
+        "the role only decides whether the force-delete action is offered in the response; the file was resolved with ctx.bypass first",
+    ),
+    "POST /api/files/{file_uuid}/retry": (
+        "retry-ceiling",
+        "admins skip the retry ceiling, evaluated after the file was resolved with ctx.bypass and editor permission",
+    ),
+    "POST /api/tasks/retry/{file_uuid}": (
+        "retry-ceiling",
+        "admins skip the retry ceiling, evaluated after the chokepoint passed with ctx.bypass and editor permission",
+    ),
+    "POST /api/files/management/bulk-action": (
+        "retry-ceiling",
+        "the role is forwarded to the per-file handlers, which skip the retry ceiling and allow force for admins; each file still passes the chokepoint with ctx.bypass",
+    ),
+    "GET /api/files/{file_uuid}/summary-status": (
+        "display-hint",
+        "the role only decides the can_generate hint in the response; the file was resolved with ctx.bypass first",
+    ),
+    "POST /api/files/{file_uuid}/summarize": (
+        "settings-override",
+        "an admin may generate a summary while the system-wide switch is off; the file was resolved with ctx.bypass and the summary is the file owner's",
+    ),
+    "GET /api/search/index-health": (
+        "platform-ops",
+        "non-admins get document counts scoped to themselves, admins the deployment totals; counts only, no content",
+    ),
+    "GET /api/user-settings/media-sources": (
+        "display-hint",
+        "a helper reads the owner's role to fill the owner_role label on the caller's own and tenant-shared sources; no access decision",
+    ),
+    "POST /api/user-settings/media-sources": (
+        "display-hint",
+        "a helper reads the owner's role to fill the owner_role label on the response; no access decision",
+    ),
+    "PUT /api/user-settings/media-sources/{source_uuid}": (
+        "display-hint",
+        "a helper reads the owner's role to fill the owner_role label on the response; no access decision",
     ),
     "POST /api/prompts/shared/{prompt_uuid}/toggle": (
         "owner-or-admin-override",

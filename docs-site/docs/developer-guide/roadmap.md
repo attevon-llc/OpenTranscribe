@@ -93,8 +93,9 @@ hold.
 
 - **Translation.** Any user-facing copy added or changed ships in all **12** locales, with `ar`
   checked in RTL. `npm run check:i18n` enforces key *parity* only: a key present in all 12 files
-  with English text passes and ships untranslated. It also runs in **CI only**, not as a
-  pre-commit hook, so run it locally before pushing.
+  with English text passes and ships untranslated. It runs in CI and inside the `frontend-check`
+  pre-commit hook, but a commit that touches only locale JSON files does not trigger that hook,
+  so run it locally before pushing.
 - **Light and dark parity.** Every UI change is looked at in both themes, in a browser. A
   type-check is not a look.
 - **The tests could fail.** New tests are watched failing before the fix. `audit-tests.py` and its
@@ -466,7 +467,9 @@ Do not add issue numbers, counts or dates here. Those live in the tracker and ar
 
 1. Change the **issue's milestone** on GitHub, and its `Target` on the
    [Roadmap project board](https://github.com/orgs/attevon-llc/projects/1).
-2. Run `python3 scripts/generate-roadmap.py` so `/roadmap` reflects it. CI fails if you forget.
+2. Run `python3 scripts/generate-roadmap.py` to refresh the committed snapshot. The published site
+   regenerates `/roadmap` itself on every docs deploy (`deploy-docs.yml`), and `release.sh bump`
+   refreshes the snapshot the docs image ships.
 3. Update the theme, goal or exit criteria **here** only if the *meaning* of the release changed.
 4. If a milestone has picked up a second theme, **split it into a new number** rather than
    widening its goal statement. New numbers are free.

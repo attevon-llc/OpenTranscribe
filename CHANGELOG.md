@@ -966,6 +966,14 @@ off by default.
 
 ### Fixed
 
+- **Transcript edits on a legally held file are now audited, and tag-share events no longer carry the
+  tag name (#1307).** Editing a held file's transcript stays allowed (a hold blocks destruction, not
+  correction), but it left no trace. Each edit of a segment's text or times, and each speaker
+  reassignment, made while the file is held now writes a `content.transcript.edit` event with the
+  segment id, the fields changed and who holds the file, never the text. Sharing or unsharing a tag
+  wrote the tag's name into `resource.share` / `resource.unshare` events, where an audit reader who
+  cannot see the tag would learn it; the name is gone and the tag is identified by id, as
+  collections already were. Existing events keep the name they were written with.
 - **Falling back from the native diarization sidecar to PyAnnote is no longer silent (#1184).**
   Every fallback run logs a WARNING with the reason, a worker that starts without the sidecar
   logs an ERROR, and a new counter `diarization_runs_total{backend,reason}` records every run.

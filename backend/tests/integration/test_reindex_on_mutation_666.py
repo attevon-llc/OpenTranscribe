@@ -22,6 +22,7 @@ from __future__ import annotations
 import os
 import uuid
 from typing import Any
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
@@ -295,6 +296,7 @@ def test_segment_speaker_reassignment_reaches_the_chunk_plane(throwaway_indices,
             db,
             user,
             RequestContext(user=user, org_id=None, org_role=None),
+            request=MagicMock(name="request"),
         )
         _run_real_reindex(dispatch_mock)
 

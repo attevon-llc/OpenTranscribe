@@ -3980,6 +3980,7 @@
   "orgAudit.event.holdPlace": "Aplicó una retención legal",
   "orgAudit.event.holdRelease": "Liberó una retención legal",
   "orgAudit.event.holdRefused": "Fue detenido por una retención legal",
+  "orgAudit.event.transcriptEditedHeld": "Editó una transcripción mientras el archivo estaba bajo una retención legal",
   "holds.navLabel": "Retenciones legales",
   "holds.title": "Retenciones legales",
   "holds.description": "Una retención legal impide, mientras esté en vigor, que los archivos se eliminen, los borre la retención, se supriman junto con una cuenta o se regeneren al reprocesarlos. Puede retener archivos concretos o una colección entera, incluidos los archivos que se añadan después. El motivo solo lo ven los administradores de su organización.",

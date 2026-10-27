@@ -296,8 +296,13 @@ def test_a_conflicting_lock_fails_the_upgrade_fast_with_a_message_naming_the_cau
     holder = engine.connect()
     try:
         holder_tx = holder.begin()
+        # Bounded on both sides: a regression that drops the upgrade's own lock_timeout must
+        # FAIL here after a few seconds. Unbounded, the LOCK would queue behind the holder
+        # forever, hanging the run and every writer to `task` on a shared database.
+        holder.execute(text("SET LOCAL lock_timeout = '5s'"))
         holder.execute(text("LOCK TABLE task IN ROW EXCLUSIVE MODE"))
         conn = db_session.connection()
+        conn.execute(text("SET LOCAL statement_timeout = '5s'"))
         started = time.monotonic()
 
         with pytest.raises(DBAPIError) as err:

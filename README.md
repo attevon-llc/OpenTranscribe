@@ -708,9 +708,9 @@ OpenTranscribe/
 │   │   ├── 📁 models/         # Database models
 │   │   ├── 📁 services/       # Business logic
 │   │   ├── 📁 tasks/          # Background AI processing
-│   │   ├── 📁 transcription/  # Transcription and diarization engine
-│   │   ├── 📁 auth/           # Authentication methods, MFA
-│   │   ├── 📁 core/           # Configuration, constants, Celery wiring
+│   │   ├── transcription/     # Transcription and diarization engine
+│   │   ├── auth/              # Authentication methods, MFA
+│   │   ├── core/              # Configuration, constants, Celery wiring
 │   │   ├── 📁 utils/          # Common utilities
 │   │   └── 📁 db/             # Database configuration and migration runner
 │   ├── 📁 scripts/            # Admin and maintenance scripts
@@ -719,14 +719,14 @@ OpenTranscribe/
 ├── 📁 frontend/               # Svelte frontend application
 │   ├── 📁 src/                # Source code
 │   │   ├── 📁 components/     # Reusable UI components
-│   │   ├── 📁 lib/            # API clients, i18n locales, services
+│   │   ├── lib/               # API clients, i18n locales, services
 │   │   ├── 📁 routes/         # Page components
 │   │   ├── 📁 stores/         # State management
 │   │   └── 📁 styles/         # CSS and themes
 │   └── 📄 README.md           # Frontend documentation
 ├── 📁 database/               # Database initialization
-├── 📁 docs/                   # Guides and design notes
-├── 📁 docs-site/              # Docusaurus documentation site
+├── docs/                      # Guides and design notes
+├── docs-site/                 # Docusaurus documentation site
 ├── 📁 models/                 # AI model cache (runtime, created by the installer; MODEL_CACHE_DIR)
 ├── 📁 scripts/                # Utility scripts
 ├── 📄 docker-compose.yml      # Container orchestration (plus docker-compose.*.yml overlays)

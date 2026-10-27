@@ -49,7 +49,9 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   `purge.py` (via `gdpr_erasure_service._erase_speaker_voiceprints`) deletes, and only once the switch is off.
   `policy_admin.py` is the write side the routes share. Never re-read `speaker_attribute.*` or a user toggle to decide gender:
   `speaker_attribute_settings.resolve_speaker_attribute_flags(..., organization_id=)` already ANDs the policy ceiling; pass the
-  FILE's organization from its row. The speaker-ID LLM never gets the gender cross-reference from a non-local provider
+  FILE's organization from its row. `SpeakerMatchingService` does that itself for a call that names a speaker
+  (`find_and_store_speaker_matches`: the organization argument is only a hint that can narrow, never widen), and refuses
+  an embedding-only call (`match_speaker_to_*`) that states no `organization_id`, because omitted never means personal. The speaker-ID LLM never gets the gender cross-reference from a non-local provider
   (`speaker_identification_task._with_gender_context`). User docs: `docs-site/docs/features/privacy-controls.md`.
 - **Collection visibility** — `collection_visibility.py` is the one place that answers "which
   collections may this caller see, and which files does that make readable" (#1051, #1275).

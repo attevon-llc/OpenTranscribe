@@ -259,6 +259,12 @@ off by default.
   verified stays. One function, `canonical_speaker_label_for_row`, decides it everywhere. Changing a
   voiceprint switch (a person's, an organization's or the deployment's) queues the existing debounced
   re-index for the files such a name decides, so the search index follows the switch both ways.
+- **Speaker matching can no longer be judged in the wrong organization (#1280).**
+  `SpeakerMatchingService.find_and_store_speaker_matches` takes its tenant from the speaker's own file,
+  so a caller that left the organization out (the batch script did) is still held to that
+  organization's voiceprint switch; the argument is now only a hint that can narrow the answer.
+  The embedding-only `match_speaker_to_known_speakers`, `match_speaker_to_profiles` and
+  `match_speaker_to_profile` refuse a call that names no organization instead of treating it as personal.
 - **Delete stored voiceprints and inferred gender (#1280).** Once a switch is off, an organization
   administrator, a super admin or the person themselves can permanently delete what it hid:
   `POST /api/org-admin/policy/purge`, `POST /api/admin/privacy-policy/purge` (personal workspaces,

@@ -399,8 +399,9 @@ crontab -e
 # Add daily backup at 2:00 AM
 0 2 * * * cd /opt/opentranscribe && ./opentranscribe.sh backup
 
-# With log rotation (keep last 30 days)
-0 2 * * * cd /opt/opentranscribe && ./opentranscribe.sh backup && find ./backups -name "*.sql" -mtime +30 -delete
+# With rotation (keep last 30 days; matching on the shared prefix removes each dump together
+# with its .voiceprints.ndjson artifact, which must never be separated from it)
+0 2 * * * cd /opt/opentranscribe && ./opentranscribe.sh backup && find ./backups -name "opentranscribe_backup_*" -mtime +30 -delete
 ```
 
 ### Automated Backup with systemd Timer
@@ -416,7 +417,7 @@ Description=OpenTranscribe Database Backup
 Type=oneshot
 WorkingDirectory=/opt/opentranscribe
 ExecStart=/opt/opentranscribe/opentranscribe.sh backup
-ExecStartPost=/usr/bin/find /opt/opentranscribe/backups -name "*.sql" -mtime +30 -delete
+ExecStartPost=/usr/bin/find /opt/opentranscribe/backups -name "opentranscribe_backup_*" -mtime +30 -delete
 ```
 
 ```ini
@@ -561,8 +562,10 @@ mkdir -p "$BACKUP_DIR"
 
 cd /opt/opentranscribe
 
-# 1. Database (critical)
-docker compose exec -T postgres pg_dump -U postgres opentranscribe | gzip > "$BACKUP_DIR/database.sql.gz"
+# 1. Database + speaker voiceprints (critical). Use the script, not a bare pg_dump: it also
+#    writes the .voiceprints.ndjson artifact, which PostgreSQL does not contain.
+./opentranscribe.sh backup
+cp backups/opentranscribe_backup_* "$BACKUP_DIR/"   # the dump and its artifact travel together
 echo "Database backup complete."
 
 # 2. Configuration (critical)
@@ -793,8 +796,10 @@ docker compose up -d postgres minio redis opensearch
 # 5. Wait for PostgreSQL to be ready
 until docker compose exec postgres pg_isready -U postgres; do sleep 2; done
 
-# 6. Restore the database
-docker compose exec -T postgres psql -U postgres opentranscribe < /path/to/backup/database.sql
+# 6. Restore the database (and the voiceprints artifact that sits beside the dump).
+#    The restore command drops and recreates the database, replays the dump atomically
+#    and verifies the result; do not pipe the dump into psql by hand.
+./opentranscribe.sh restore /path/to/backup/opentranscribe_backup_YYYYMMDD_HHMMSS.sql
 
 # 7. Restore MinIO data
 docker run --rm -v opentranscribe_minio_data:/data -v /path/to/backup:/backup \

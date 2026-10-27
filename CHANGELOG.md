@@ -265,6 +265,11 @@ off by default.
   organization's voiceprint switch; the argument is now only a hint that can narrow the answer.
   The embedding-only `match_speaker_to_known_speakers`, `match_speaker_to_profiles` and
   `match_speaker_to_profile` refuse a call that names no organization instead of treating it as personal.
+- **Removed an unused speaker-suggestion path (#1280).** `speakers._process_single_speaker`, the
+  single-speaker twin of the list builder, had no caller; with it went
+  `SmartSpeakerSuggestionService.consolidate_suggestions`, `_get_profile_suggestions_optimized` and
+  `_execute_profile_knn_search`, which only it reached. The speaker list uses the batched path, which keeps
+  the voiceprint-policy and tenant gates; their tests now drive that path.
 - **Delete stored voiceprints and inferred gender (#1280).** Once a switch is off, an organization
   administrator, a super admin or the person themselves can permanently delete what it hid:
   `POST /api/org-admin/policy/purge`, `POST /api/admin/privacy-policy/purge` (personal workspaces,

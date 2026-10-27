@@ -115,6 +115,9 @@ def canonical_speaker_label(
     confidence: float | None = None,
     suggestion_source: str | None = None,
     suggestion_threshold: float = DEFAULT_SUGGESTION_CONFIDENCE_THRESHOLD,
+    verified: bool | None = None,
+    identity_source: str | None = None,
+    voiceprint_names: bool = True,
 ) -> str:
     """Resolve the one canonical display label for a speaker.
 
@@ -154,14 +157,30 @@ def canonical_speaker_label(
         suggestion_source: ``Speaker.suggestion_source``. Omitted/``None`` means the
             provenance is unknown, which fails closed: the suggestion is ignored.
         suggestion_threshold: Minimum confidence for the suggestion to be shown.
+        verified: ``Speaker.verified``. Only consulted when ``voiceprint_names`` is False: a
+            voiceprint suggestion a person verified is theirs and stays.
+        identity_source: ``Speaker.identity_source`` (see ``utils/speaker_identity_source``).
+            Only consulted when ``voiceprint_names`` is False.
+        voiceprint_names: False when the speaker's file has voiceprints off (#1280): a
+            ``display_name`` a voiceprint wrote (``identity_source = 'voiceprint'``) is
+            skipped, and a voiceprint suggestion is not promoted unless a person verified it
+            on a row whose identity is not machine-made. Everything else resolves as when
+            True; the caller decides the policy, this function only applies it.
 
     Returns:
         A non-empty label. :data:`UNKNOWN_SPEAKER_LABEL` when nothing resolves.
     """
-    if display_name:
+    from app.utils.speaker_identity_source import VOICEPRINT
+    from app.utils.speaker_identity_source import hides_name
+
+    if display_name and not hides_name(identity_source, voiceprint_names):
         return str(display_name)
+    suggestion_withheld = not voiceprint_names and (
+        verified is not True or identity_source == VOICEPRINT
+    )
     if (
-        suggested_name
+        not suggestion_withheld
+        and suggested_name
         and is_embedding_suggestion_source(suggestion_source)
         and confidence is not None
         and confidence >= suggestion_threshold
@@ -174,7 +193,9 @@ def canonical_speaker_label(
     return UNKNOWN_SPEAKER_LABEL
 
 
-def canonical_speaker_label_for_row(row: Any, db: Any = None) -> str:
+def canonical_speaker_label_for_row(
+    row: Any, db: Any = None, *, voiceprint_names: bool | None = None
+) -> str:
     """The label a (re)index would write for this ``Speaker`` row, right now.
 
     Issue #605: eight repair/propagation call sites (``rename_propagation_task``,
@@ -188,18 +209,27 @@ def canonical_speaker_label_for_row(row: Any, db: Any = None) -> str:
     that matches nothing — it logs ``status: success`` and the drift survives.
 
     This wrapper exists so every such call site imports ONE function instead of
-    re-unpacking the same four attributes with its own copy of the rule — a copy
+    re-unpacking the same attributes with its own copy of the rule — a copy
     is exactly how the eight sites drifted in the first place.
 
-    **Honours the privacy policy** (#1280, plan D5): a name that only a voiceprint
-    suggestion supplies is not used while the row's file has voiceprints off, so a label
-    printed by an export, a caption, the search index or the chat roster agrees with the
-    speaker responses that already withhold that suggestion. The policy is asked only when
-    the suggestion is what decides the label (the common row costs no query).
+    **Honours the privacy policy** (#1280, plan D5): while the row's file has voiceprints
+    off, a name a voiceprint produced is left out, whether it is an unverified voiceprint
+    suggestion or a ``display_name`` a voiceprint path wrote (``identity_source =
+    'voiceprint'``). A label printed by an export, a caption, the search index or the chat
+    roster then agrees with the speaker responses. The policy is asked only when the
+    answer could change the label (the common row costs no query).
 
-    ``db`` is a session or a ``PrivacyView`` for a columns-only row (which has no session of
-    its own and must then also expose ``media_file_id`` and ``verified``); an ORM row uses
-    its own session.
+    ``voiceprint_names`` lets a caller that already holds the file's decision pass it:
+    ``True`` = policy-free (what the data says; the stored status columns use this), ``False``
+    = withhold, ``None`` (default) = ask the policy through ``db``. ``db`` is a session or a
+    ``PrivacyView`` for a columns-only row (which has no session of its own and must then
+    also expose ``media_file_id``, ``verified`` and ``identity_source``); an ORM row uses its
+    own session.
+
+    **A columns-only row must select** ``Speaker.identity_source``. When it does not, the row
+    names somebody, and the file's voiceprints are off, this raises ``TypeError`` rather than
+    guess: printing the name could leak a voiceprint's work, and hiding it would hide a
+    person's. A forgotten column therefore fails the first test that turns the switch off.
 
     Args:
         row: Anything exposing ``.name`` / ``.display_name`` / ``.suggested_name``
@@ -207,26 +237,44 @@ def canonical_speaker_label_for_row(row: Any, db: Any = None) -> str:
             columns-only row/tuple with matching attribute names, or a test
             stand-in.
         db: A session or ``PrivacyView`` for a columns-only row; see above.
+        voiceprint_names: The file's voiceprint decision when the caller already has it.
 
     Returns:
         The canonical display label — never empty, never the bare ``"Unknown"``.
+
+    Raises:
+        TypeError: The row lacks ``identity_source``, names somebody, and its file's
+            voiceprints are off (or voiceprint_names is False).
     """
-    suggestion_source = getattr(row, "suggestion_source", None)
     # getattr: a stand-in or columns-only row that predates the provenance rule
     # degrades to "unknown source" (suggestion ignored) rather than raising.
+    lacks_identity = not hasattr(row, "identity_source")
+    identity_source = None if lacks_identity else row.identity_source
 
-    def label(source: str | None) -> str:
+    def label(voiceprints: bool) -> str:
         return canonical_speaker_label(
             row.name,
             display_name=row.display_name,
             suggested_name=getattr(row, "suggested_name", None),
             confidence=getattr(row, "confidence", None),
-            suggestion_source=source,
+            suggestion_source=getattr(row, "suggestion_source", None),
+            verified=getattr(row, "verified", None),
+            identity_source=identity_source,
+            voiceprint_names=voiceprints,
         )
 
-    resolved = label(suggestion_source)
-    if resolved == label(None):
-        return resolved  # no suggestion decides this label: nothing to withhold
-    from app.services.privacy.redact_view import voiceprint_label_hidden
+    shown = label(True)
+    if voiceprint_names is True:
+        return shown
+    withheld = label(False)
+    unknown_name = lacks_identity and is_assigned_speaker_name(row.display_name)
+    if shown == withheld and not unknown_name:
+        return shown  # nothing the policy could change: no query
+    if voiceprint_names is None:
+        from app.services.privacy.redact_view import voiceprints_off_for_row
 
-    return label(None) if voiceprint_label_hidden(row, db) else resolved
+        if not voiceprints_off_for_row(row, db):
+            return shown
+    if unknown_name:
+        raise TypeError("row lacks identity_source; select Speaker.identity_source")
+    return withheld

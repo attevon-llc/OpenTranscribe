@@ -452,6 +452,7 @@ def build_candidate_roster(
         Speaker.confidence,
         Speaker.suggestion_source,
         Speaker.verified,
+        Speaker.identity_source,
         Speaker.profile_id,
         Speaker.media_file_id,
     ).join(MediaFile, MediaFile.id == Speaker.media_file_id)

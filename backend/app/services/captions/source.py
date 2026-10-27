@@ -64,6 +64,7 @@ def speaker_labels_for(
             Speaker.confidence,
             Speaker.suggestion_source,
             Speaker.verified,
+            Speaker.identity_source,
             Speaker.media_file_id,
         )
         .filter(Speaker.id.in_(speaker_ids))

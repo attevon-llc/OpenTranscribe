@@ -173,6 +173,7 @@ def _current_speaker_name(speaker_id: int) -> str | None:
                     Speaker.confidence,
                     Speaker.suggestion_source,
                     Speaker.verified,
+                    Speaker.identity_source,
                     Speaker.media_file_id,
                 )
                 .filter(Speaker.id == speaker_id)

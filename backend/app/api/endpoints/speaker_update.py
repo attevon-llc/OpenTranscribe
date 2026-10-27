@@ -243,25 +243,22 @@ def _update_profile_embedding(
     reassigned away from it (issue #1214). Delegates to ``speaker_cleanup``, which logs
     any residual at ERROR; the label that triggered this has already committed.
     """
-    from app.services.speaker_cleanup import capture_speaker_impact
+    from app.services.speaker_cleanup import profile_move_impact
     from app.services.speaker_cleanup import reconcile_speaker_impact
 
-    # Privacy policy (#1280): rebuilding a profile or cluster voiceprint is a voiceprint
-    # write. The label/profile link the user just made is theirs and stays; the aggregate is
-    # simply not recomputed while the speaker's owner/organization has voiceprints off.
+    # Privacy policy (#1280): only the WRITE side is gated. The profile the speaker left is
+    # reconciled whatever the switch says (its aggregate still averages the voice, #1214);
+    # folding the voice into the new profile is declined while voiceprints are off.
     file_id = db.query(Speaker.media_file_id).filter(Speaker.id == speaker_id).scalar()
-    if file_id is None or not PrivacyView(db).voiceprints(int(file_id)).enabled:
-        logger.info(
-            "Profile embedding rebuild for speaker %s skipped by privacy policy", speaker_id
-        )
-        return
+    voiceprints_on = file_id is not None and PrivacyView(db).voiceprints(int(file_id)).enabled
 
     # Both callers set ``profile_id`` a moment ago and autoflush is off: without the flush
     # the rebuild reads the membership from before the link, and the profile embedding
     # never contains the voice that just joined it (issue #1233).
     db.flush()
-    impact = capture_speaker_impact(db, [speaker_id], removed=False, reindex=False)
-    impact.profile_ids |= {p for p in (old_profile_id, profile_id) if p}
+    impact = profile_move_impact(
+        db, speaker_id, old_profile_id, profile_id, voiceprints_enabled=voiceprints_on
+    )
     reconcile_speaker_impact(db, impact)
 
 

@@ -236,6 +236,39 @@ def capture_speaker_impact(
     return impact
 
 
+def profile_move_impact(
+    db: Session,
+    speaker_id: int,
+    old_profile_id: int | None,
+    new_profile_id: int | None,
+    *,
+    voiceprints_enabled: bool,
+) -> SpeakerImpact:
+    """Impact of a speaker moving between profiles (or into / out of one), read BEFORE reconcile.
+
+    The privacy policy (#1280) restricts what is WRITTEN, never what is erased. The profile
+    the speaker left, and the clusters it belongs to, are always named: their membership
+    bookkeeping runs and an aggregate that still averages the departed voice is rebuilt or,
+    while voiceprints are off and nothing can be rebuilt, erased (``strict`` refuses the
+    recompute and the reconciler erases), exactly as for a deletion. The profile it JOINED is
+    named only while voiceprints are on: folding a voice into an aggregate is the addition
+    the switch forbids, so it is left as it was and re-enabling finds it intact.
+
+    Args:
+        db: The caller's session; only reads.
+        speaker_id: The speaker whose profile link changed.
+        old_profile_id: The profile it left, or ``None``.
+        new_profile_id: The profile it joined, or ``None``.
+        voiceprints_enabled: The policy answer for the speaker's file, read by the caller.
+    """
+    impact = capture_speaker_impact(db, [speaker_id], removed=False, reindex=False)
+    gained = new_profile_id if new_profile_id != old_profile_id else None
+    impact.profile_ids |= {p for p in (old_profile_id, new_profile_id) if p}
+    if not voiceprints_enabled and gained is not None:
+        impact.profile_ids.discard(gained)
+    return impact
+
+
 def reconcile_speaker_impact(db: Session, impact: SpeakerImpact) -> list[dict[str, Any]]:
     """Bring every aggregate the impact names in line with Postgres. Never raises.
 

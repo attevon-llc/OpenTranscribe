@@ -59,7 +59,7 @@ def test_retroactive_matching_reads_voiceprints_only_when_allowed(
 
 
 @pytest.mark.parametrize("allowed", [True, False])
-def test_a_label_rebuilds_the_profile_voiceprint_only_when_allowed(
+def test_a_label_folds_the_voice_into_the_new_profile_only_when_allowed(
     db_session, normal_user, monkeypatch, allowed
 ):
     org = make_org(db_session, voiceprints=allowed)
@@ -72,7 +72,103 @@ def test_a_label_rebuilds_the_profile_voiceprint_only_when_allowed(
 
     speaker_update._update_profile_embedding(db_session, speaker.id, None, 1)
 
-    assert len(rebuilt) == (1 if allowed else 0)
+    # The reconcile runs either way (a removal must never be skipped); only the profile the
+    # voice would JOIN is left out while voiceprints are off.
+    assert len(rebuilt) == 1
+    assert rebuilt[0].profile_ids == ({1} if allowed else set())
+
+
+def _moved_out_of_a_profile(db, user, org, seams):
+    """Two speakers in a promoted cluster and an old profile; the first has just moved to a new one."""
+    from tests.fixtures.speaker_cleanup_seams import VOICE_A
+    from tests.fixtures.speaker_cleanup_seams import VOICE_B
+    from tests.fixtures.speaker_cleanup_seams import make_cluster
+    from tests.fixtures.speaker_cleanup_seams import make_profile
+
+    old, new = make_profile(db, user, "Old"), make_profile(db, user, "New")
+    old.organization_id = new.organization_id = org.id
+    sa = make_speaker(db, user, file_in(db, user, org), name="SPEAKER_00")
+    sb = make_speaker(db, user, file_in(db, user, org), name="SPEAKER_01")
+    seams["voiceprints"].update({str(sa.uuid): VOICE_A, str(sb.uuid): VOICE_B})
+    sb.profile_id = old.id
+    sa.profile_id = new.id  # the PUT already moved it; the aggregates are rebuilt after
+    cluster = make_cluster(db, user, sa, sb, promoted_to=old.id)
+    cluster.organization_id = org.id
+    mixed = [a + b for a, b in zip(VOICE_A, VOICE_B, strict=True)]
+    seams["profiles"][str(old.uuid)] = mixed
+    seams["clusters"][str(cluster.uuid)] = mixed
+    db.commit()
+    return old, new, cluster, sa, sb
+
+
+def _call_speakers_endpoint(db, speaker, old, new):
+    from app.api.endpoints.speakers import _handle_profile_embedding_updates
+
+    return _handle_profile_embedding_updates(db, speaker.id, old.id, new.id, False)
+
+
+def _call_update_task(db, speaker, old, new):
+    speaker_update._update_profile_embedding(db, speaker.id, old.id, new.id)
+    return []
+
+
+@pytest.mark.parametrize("move", [_call_speakers_endpoint, _call_update_task])
+@pytest.mark.parametrize("allowed", [True, False])
+def test_a_speaker_moved_out_of_a_profile_leaves_no_copy_of_its_voice_behind_whatever_the_switch(
+    db_session, normal_user, speaker_os_seams, privacy_world, monkeypatch, allowed, move
+):
+    from app.models.media import Speaker
+    from tests.fixtures.speaker_cleanup_seams import VOICE_A
+    from tests.fixtures.speaker_cleanup_seams import VOICE_B
+    from tests.fixtures.speaker_cleanup_seams import cosine
+
+    org = make_org(db_session, voiceprints=allowed)
+    old, new, cluster, sa, sb = _moved_out_of_a_profile(
+        db_session, normal_user, org, speaker_os_seams
+    )
+    # The real tier-3 backstop in front of the recorded writes, as in production.
+    from app.services.privacy.policy import assert_voiceprint_write_allowed
+
+    def backstop(real):
+        def guarded(*args, **kwargs):
+            owner = kwargs["user_id"]
+            if not assert_voiceprint_write_allowed(owner, kwargs.get("organization_id")):
+                return False
+            return real(*args, **kwargs)
+
+        return guarded
+
+    import app.services.opensearch_service as os_module
+
+    monkeypatch.setattr(
+        os_module, "store_cluster_embedding", backstop(os_module.store_cluster_embedding)
+    )
+    monkeypatch.setattr(
+        os_module, "store_profile_embedding", backstop(os_module.store_profile_embedding)
+    )
+    sa_id, sb_id, cluster_id = sa.id, sb.id, cluster.id
+
+    residual = move(db_session, sa, old, new)
+
+    assert residual == []
+    db_session.expire_all()
+    # Postgres bookkeeping runs in both cases: the mover is no longer in the old profile's cluster.
+    assert db_session.get(Speaker, sa_id).cluster_id is None
+    assert db_session.get(Speaker, sb_id).cluster_id == cluster_id
+    old_embedding = speaker_os_seams["profiles"].get(str(old.uuid))
+    centroid = speaker_os_seams["clusters"].get(str(cluster.uuid))
+    if allowed:
+        # Control: rebuilt from who is left, and the new profile gained the voice.
+        assert cosine(old_embedding, VOICE_B) >= 0.99999
+        assert cosine(centroid, VOICE_B) >= 0.99999
+        assert cosine(speaker_os_seams["profiles"][str(new.uuid)], VOICE_A) >= 0.99999
+    else:
+        # Cannot be rebuilt while off, so the copies that still hold the departed voice are
+        # erased; the profile it joined is left exactly as it was (nothing is added).
+        assert old_embedding is None and str(old.uuid) in speaker_os_seams["erased_profiles"]
+        assert centroid is None and str(cluster.uuid) in speaker_os_seams["erased_clusters"]
+        assert str(new.uuid) not in speaker_os_seams["profiles"]
+        assert str(new.uuid) not in speaker_os_seams["erased_profiles"]
 
 
 # ---------------------------------------------------------------------------

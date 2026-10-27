@@ -143,9 +143,15 @@ def _azure(tmp_path, model: str, monkeypatch) -> list[ASRSegment]:
 
 
 def _aws(tmp_path, model: str, monkeypatch) -> list[ASRSegment]:
+    from tests.unit.test_aws_provider import TEST_BUCKET
     from tests.unit.test_aws_provider import _provider
     from tests.unit.test_aws_provider import _stub_clients
     from tests.unit.test_aws_provider import _wire_provider
+
+    # The provider has no default bucket (#1235). Set it here rather than inheriting a
+    # developer's ambient AWS_TRANSCRIBE_BUCKET: CI has none, and the stack that sets it is
+    # exactly the one these tests used to pass on by accident.
+    monkeypatch.setenv("AWS_TRANSCRIBE_BUCKET", TEST_BUCKET)
 
     item = {
         "type": "pronunciation",

@@ -34,38 +34,45 @@ class FakeOpenSearch:
         user_id: int,
         organization_id: int | None,
         document_type: str | None = None,
+        media_file_id: int | None = None,
     ) -> None:
         doc: dict[str, Any] = {"id": doc_id, "user_id": user_id}
         if organization_id is not None:
             doc["organization_id"] = organization_id
         if document_type is not None:
             doc["document_type"] = document_type
+        if media_file_id is not None:
+            doc["media_file_id"] = media_file_id
         self.docs.append(doc)
 
     def ids(self) -> set[str]:
         return {d["id"] for d in self.docs}
 
-    @staticmethod
-    def _matches(doc: dict[str, Any], query: dict[str, Any]) -> bool:
+    @classmethod
+    def _matches(cls, doc: dict[str, Any], query: dict[str, Any]) -> bool:
         if "match_all" in query:
             return True
         if "ids" in query:
             return doc["id"] in set(query["ids"]["values"])
+        if "term" in query:
+            ((field, value),) = query["term"].items()
+            return bool(doc.get(field) == value)
+        if "terms" in query:
+            ((field, values),) = query["terms"].items()
+            return bool(doc.get(field) in set(values))
+        if "exists" in query:
+            return bool(query["exists"]["field"] in doc)
         clause = query["bool"]
         assert set(clause) <= {"filter", "must_not"}, f"unmodelled clause {set(clause)}"
-        for f in clause.get("filter", []):
-            ((field, value),) = f["term"].items()
-            if doc.get(field) != value:
-                return False
-        for n in clause.get("must_not", []):
-            if "exists" in n:
-                if n["exists"]["field"] in doc:
-                    return False
-            else:
-                ((field, value),) = n["term"].items()
-                if doc.get(field) == value:
-                    return False
-        return True
+        wanted = clause.get("filter", [])
+        if isinstance(wanted, dict):
+            wanted = [wanted]
+        unwanted = clause.get("must_not", [])
+        if isinstance(unwanted, dict):
+            unwanted = [unwanted]
+        return all(cls._matches(doc, f) for f in wanted) and not any(
+            cls._matches(doc, n) for n in unwanted
+        )
 
     def delete_by_query(self, index, body, refresh=True, conflicts="proceed"):
         self.queries.append(body)

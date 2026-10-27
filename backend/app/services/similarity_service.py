@@ -125,7 +125,7 @@ class SimilarityService:
         # Build advanced query with multiple filters (incl. tenant gate)
         must_filters = [
             {"term": {"user_id": user_id}},
-            *_speaker_org_filter_clauses(organization_id),
+            *_speaker_org_filter_clauses(organization_id, user_ids=[user_id]),
         ]
         must_not_filters = []
 

@@ -226,3 +226,124 @@ def test_a_second_pass_over_a_purged_scope_deletes_nothing_and_stays_clean(
         "cluster_docs_deleted": 0,
     }
     assert again.residual().ok
+
+
+# --- the personal-scope kNN gate ----------------------------------------------------------
+
+
+def _personal_hits(index, user_id, **clause_args) -> set[str]:
+    """Documents a personal-scope voiceprint search for ``user_id`` would be allowed to match."""
+    from app.services.opensearch_service.client import _speaker_org_filter_clauses
+
+    query = {
+        "bool": {
+            "filter": [
+                {"term": {"user_id": user_id}},
+                *_speaker_org_filter_clauses(None, **clause_args),
+            ]
+        }
+    }
+    return {d["id"] for d in index.docs if index._matches(d, query)}
+
+
+def test_a_personal_search_does_not_match_an_unstamped_organization_files_voiceprint(
+    gov, index, monkeypatch
+):
+    from app.models.media import MediaFile
+    from app.services.opensearch_service import client as os_client
+
+    org_file = gov.file(gov.alice, org=gov.org)
+    personal_file = gov.file(gov.alice, org=None)
+    index.add("org-file-doc-unstamped", gov.alice.id, None, media_file_id=org_file.id)
+    index.add("personal-file-doc", gov.alice.id, None, media_file_id=personal_file.id)
+    index.add("org-file-doc-stamped", gov.alice.id, gov.org.id, media_file_id=org_file.id)
+    monkeypatch.setattr(
+        os_client,
+        "_org_file_ids_of",
+        lambda user_ids: [
+            int(r[0])
+            for r in gov.db.query(MediaFile.id).filter(
+                MediaFile.user_id.in_(list(user_ids)), MediaFile.organization_id.isnot(None)
+            )
+        ],
+    )
+
+    without = _personal_hits(index, gov.alice.id)
+    with_gate = _personal_hits(index, gov.alice.id, user_ids=[gov.alice.id])
+
+    assert "org-file-doc-unstamped" in without, "control: the stamp alone lets it through"
+    assert with_gate == {"personal-file-doc"}
+
+
+def test_the_personal_gate_fails_closed_when_the_organization_files_cannot_be_listed(
+    gov, index, monkeypatch
+):
+    from app.services.opensearch_service import client as os_client
+
+    index.add("personal-file-doc", gov.alice.id, None, media_file_id=gov.file(gov.alice, None).id)
+    monkeypatch.setattr(os_client, "_org_file_ids_of", lambda user_ids: None)
+
+    assert _personal_hits(index, gov.alice.id, user_ids=[gov.alice.id]) == set()
+
+
+def _filters_of(search_body: dict) -> str:
+    """The filter clauses a recorded kNN request carried, as text to look for a clause in."""
+    import json
+
+    return search_body if isinstance(search_body, str) else json.dumps(search_body)
+
+
+@pytest.fixture()
+def recording_cluster(monkeypatch):
+    """A recording search client plus a patched organization-file listing."""
+    from unittest.mock import MagicMock
+
+    from app.services.opensearch_service import client as os_client
+    from app.services.opensearch_service import matching
+
+    client = MagicMock(name="opensearch")
+    client.search.return_value = {"hits": {"hits": []}}
+    client.msearch.return_value = {"responses": [{"hits": {"hits": []}}]}
+    monkeypatch.setattr(os_client, "opensearch_client", client)
+    monkeypatch.setattr("app.services.opensearch_service.opensearch_client", client)
+    monkeypatch.setattr(matching, "ensure_indices_exist", lambda: None)
+    monkeypatch.setattr(matching, "query_embedding_dimension_mismatch", lambda *a: False)
+    monkeypatch.setattr(os_client, "_org_file_ids_of", lambda user_ids: [901, 902])
+    return client
+
+
+def test_every_personal_speaker_search_carries_the_organization_file_exclusion(
+    recording_cluster, monkeypatch, db_session, normal_user
+):
+    """The gate is only worth anything if each speaker kNN read passes the owners to it."""
+    from app.services import similarity_service
+    from app.services.opensearch_service import matching
+    from app.services.speaker_matching_service import SpeakerMatchingService
+
+    embedding = [0.1, 0.2, 0.3, 0.4]
+    matching.find_matching_speaker(embedding, normal_user.id, organization_id=None)
+    matching.batch_find_matching_speakers(
+        [{"id": 1, "embedding": embedding}], normal_user.id, organization_id=None
+    )
+    matching.msearch_speaker_similarities(
+        [{"speaker_uuid": "u", "embedding": embedding}], normal_user.id, organization_id=None
+    )
+    similarity_service.SimilarityService.opensearch_similarity_search(
+        embedding, normal_user.id, organization_id=None
+    )
+    import numpy as np
+
+    built = SpeakerMatchingService(db_session, None)._build_speaker_match_query(
+        np.array(embedding), normal_user.id, 5, None
+    )
+
+    SpeakerMatchingService(db_session, None).find_unlabeled_speaker_matches(
+        np.array(embedding), normal_user.id, 987_654
+    )
+
+    bodies = [c.kwargs["body"] for c in recording_cluster.search.call_args_list]
+    bodies += [c.kwargs["body"] for c in recording_cluster.msearch.call_args_list]
+    bodies.append(built)
+    assert len(bodies) == 6
+    for body in bodies:
+        assert '"media_file_id": [901, 902]' in _filters_of(body), body

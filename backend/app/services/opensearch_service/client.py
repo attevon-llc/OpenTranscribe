@@ -15,6 +15,7 @@ these answers to decide whether to create, alias, or *delete* an index.
 import logging
 import time
 from collections.abc import Callable
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -79,7 +80,60 @@ else:
 _sentence_transformer_model = None
 
 
-def _speaker_org_filter_clauses(organization_id: int | None) -> list[dict[str, Any]]:
+#: How long a user's list of organization files is reused by the personal-scope kNN gate.
+_ORG_FILES_TTL_SECONDS = 5.0
+#: ``index.max_terms_count`` is 65,536; stay well inside it.
+_ORG_FILES_CAP = 50_000
+_org_files_cache: dict[tuple[int, ...], tuple[float, list[int] | None]] = {}
+
+
+def _org_file_ids_of(user_ids: Iterable[int]) -> list[int] | None:
+    """Ids of the organization files these users own (Postgres), or ``None`` if unknowable.
+
+    A speaker document that predates the tenant backfill carries no ``organization_id``, so it
+    looks personal whatever file it came from. The file id on the document is the part that does
+    not lie, and Postgres knows which files are organization files. Cached for a few seconds
+    because a kNN read runs once per speaker.
+    """
+    key = tuple(sorted({int(u) for u in user_ids}))
+    now = time.monotonic()
+    cached = _org_files_cache.get(key)
+    if cached is not None and now - cached[0] < _ORG_FILES_TTL_SECONDS:
+        return cached[1]
+    found: list[int] | None
+    try:
+        from app.db.base import SessionLocal
+        from app.models.media import MediaFile
+
+        db = SessionLocal()
+        try:
+            rows = (
+                db.query(MediaFile.id)
+                .filter(MediaFile.user_id.in_(key), MediaFile.organization_id.isnot(None))
+                .limit(_ORG_FILES_CAP + 1)
+                .all()
+            )
+        finally:
+            db.close()
+        found = [int(r[0]) for r in rows]
+        if len(found) > _ORG_FILES_CAP:
+            logger.error(
+                "personal-scope voiceprint gate: more than %d organization files for %s; "
+                "failing closed",
+                _ORG_FILES_CAP,
+                key,
+            )
+            found = None
+    except Exception:
+        logger.exception("personal-scope voiceprint gate: could not list organization files")
+        found = None
+    _org_files_cache[key] = (now, found)
+    return found
+
+
+def _speaker_org_filter_clauses(
+    organization_id: int | None, *, user_ids: Iterable[int] | None = None
+) -> list[dict[str, Any]]:
     """Tenant-scope ``bool.filter`` clauses for speaker/voiceprint kNN queries.
 
     Delegates to the shared search-plane helper so the SQL, transcript-search,
@@ -88,10 +142,23 @@ def _speaker_org_filter_clauses(organization_id: int | None) -> list[dict[str, A
     that carries ``organization_id`` (so org voiceprints never match a personal
     search). Community-edition: callers pass None and docs are org-less, so the
     personal gate is a behavior-preserving no-op.
+
+    Personal scope with ``user_ids`` (the owners being searched) also excludes the documents of
+    those users' ORGANIZATION files by file id. Absence of the stamp cannot tell a personal
+    document from an organization one written before the tenant backfill, so a personal search
+    would otherwise match, and link a speaker to, an organization file's voiceprint. If the
+    organization files cannot be listed the clause matches nothing (fail closed).
     """
     from app.services.search.tenant_scope import org_filter_clauses
 
-    return org_filter_clauses(organization_id)
+    clauses = org_filter_clauses(organization_id)
+    if organization_id is None and user_ids is not None:
+        org_files = _org_file_ids_of(user_ids)
+        if org_files is None:
+            clauses.append({"bool": {"must_not": {"match_all": {}}}})
+        elif org_files:
+            clauses.append({"bool": {"must_not": {"terms": {"media_file_id": org_files}}}})
+    return clauses
 
 
 # Bounds a stalled Hub round trip (~80MB model, normally served from local disk

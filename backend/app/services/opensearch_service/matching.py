@@ -91,7 +91,9 @@ def find_matching_speaker(
             filters = [{"term": {"user_id": user_id}}]
 
         # Tenant gate (org term when set, else exclude org-stamped voiceprints).
-        filters.extend(_speaker_org_filter_clauses(organization_id))
+        filters.extend(
+            _speaker_org_filter_clauses(organization_id, user_ids=accessible_user_ids or [user_id])
+        )
 
         # Add collection filter if specified
         if collection_ids:
@@ -188,7 +190,7 @@ def batch_find_matching_speakers(
 
         # Use multi-search for efficient batch processing
         msearch_body: list[dict[str, Any]] = []
-        org_clauses = _speaker_org_filter_clauses(organization_id)
+        org_clauses = _speaker_org_filter_clauses(organization_id, user_ids=[user_id])
 
         for emb_data in embeddings:
             # Add search header
@@ -282,7 +284,7 @@ def msearch_speaker_similarities(
         if first_embedding and query_embedding_dimension_mismatch(active_index, first_embedding):
             return [[] for _ in speaker_data]
         all_results: list[list[dict]] = []
-        org_clauses = _speaker_org_filter_clauses(organization_id)
+        org_clauses = _speaker_org_filter_clauses(organization_id, user_ids=[user_id])
 
         # Process in batches to avoid memory issues
         for batch_start in range(0, len(speaker_data), batch_size):

@@ -385,7 +385,9 @@ class SpeakerMatchingService:
                                 "bool": {
                                     "filter": [
                                         {"term": {"user_id": user_id}},
-                                        *_speaker_org_filter_clauses(organization_id),
+                                        *_speaker_org_filter_clauses(
+                                            organization_id, user_ids=[user_id]
+                                        ),
                                         {
                                             "bool": {
                                                 "must_not": [
@@ -1533,7 +1535,7 @@ class SpeakerMatchingService:
 
         filters = [
             {"term": {"user_id": user_id}},
-            *_speaker_org_filter_clauses(organization_id),
+            *_speaker_org_filter_clauses(organization_id, user_ids=[user_id]),
             {
                 "bool": {
                     "must_not": [

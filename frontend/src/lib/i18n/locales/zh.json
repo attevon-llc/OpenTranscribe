@@ -1150,7 +1150,7 @@
   "userManagement.lockFailed": "无法锁定该账户。",
   "userManagement.unlockAccount": "清除登录锁定",
   "userManagement.unlockAccountFor": "清除 {{name}} 因登录失败导致的锁定",
-  "userManagement.unlockConfirmMessage": "这会清除 {{name}} 因多次登录失败而产生的锁定，但不会重新启用被管理员锁定的账户。",
+  "userManagement.unlockConfirmMessage": "这会清除 {{name}} 因多次登录失败而产生的锁定，并在管理员停用该账户时重新启用它。",
   "userManagement.unlockSuccess": "已清除 {{name}} 的登录锁定",
   "userManagement.unlockNotLocked": "{{name}} 并未被锁定。",
   "userManagement.unlockFailed": "无法清除登录锁定。",

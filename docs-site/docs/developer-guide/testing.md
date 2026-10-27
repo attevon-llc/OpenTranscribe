@@ -40,13 +40,15 @@ ambiguous which mode a change is in, ask — do not guess in either direction.
 ```
 backend/tests/
 ├── conftest.py              # Shared fixtures for unit/integration tests
-├── api/endpoints/           # API endpoint tests
+├── api/                     # API tests (api/endpoints/ for per-router tests)
+├── unit/                    # Unit tests
+├── integration/             # Tests that need a live service
 ├── e2e/                     # End-to-end browser tests
 │   ├── conftest.py          # E2E fixtures
-│   ├── test_login.py        # Login tests (29 tests)
-│   ├── test_registration.py # Registration tests (25 tests)
+│   ├── test_login.py        # Login tests
+│   ├── test_registration.py # Registration tests
 │   └── test_auth_flow.py    # Combined auth flow tests
-└── test_*.py                # Other unit tests
+└── test_*.py                # Other top-level tests
 ```
 
 ## Running Tests
@@ -65,13 +67,16 @@ during ordinary development.
 
 ./scripts/run-dev-tests.sh --full         # backend gate + full e2e + frontend check
 ./scripts/run-dev-tests.sh --fast         # backend gate (e2e smoke subset) + frontend check
-./scripts/run-dev-tests.sh --backend-only # just scripts/run-integration-tests.sh
+./scripts/run-dev-tests.sh --backend-only # just the scripts/run-integration-tests.sh gate
 ./scripts/run-dev-tests.sh --e2e-only     # just the full e2e suite
 ./scripts/run-dev-tests.sh --frontend-only # just the frontend check, no live stack needed
 ```
 
 Mode flags are composable — pass more than one to union their phases (e.g.
-`--backend-only --frontend-only`).
+`--backend-only --frontend-only`). Extra backend-gate flags the release `test` stage and the
+test matrix use are passed straight through: `--e2e-smoke`, `--export-capability`,
+`--search-quality` and `--no-coverage` (see `./scripts/run-dev-tests.sh` with no arguments
+for what each does).
 
 Measured on this host: `--fast` ≈ 22 minutes end to end (integration-marked tests dominate at
 ~9 min; e2e-smoke, GPU-marked tests, and the unit/API suite are each 2–3 min; everything else
@@ -149,8 +154,10 @@ GPU-backed vLLM on `LLM_TEST_GPU_DEVICE_ID`, default GPU 2 — several minutes c
 once warm) and stops it again on exit if this run was the one that started it.
 
 Per-phase logs are written to a fresh `/tmp/ot-run-dev-tests.*` directory and the path is
-printed in the final report. Exit codes match `scripts/release.sh`'s convention: `0` pass, `1`
-gate failed, `2` misuse, `3` precondition unmet (e.g. the dev stack isn't up).
+printed in the final report. Exit codes follow `scripts/release.sh`'s convention: `0` pass, `1`
+gate failed, `2` misuse, `3` precondition unmet (e.g. the dev stack isn't up) — plus `5` for
+NOT MEASURED (a phase verified nothing). It is `5`, not `4`, because `4` already means operator
+abort in the release contract.
 
 ### Prerequisites
 
@@ -186,7 +193,10 @@ End-to-end tests require the dev environment running:
 # Start dev environment
 ./opentr.sh start dev
 
-# Run all E2E tests (headless)
+# Run all E2E tests (headless) through the wrapper — the supported entry point
+./scripts/e2e/run-e2e.sh              # quick subset: ./scripts/e2e/run-e2e-smoke.sh
+
+# Or call pytest directly
 pytest backend/tests/e2e/ -v
 
 # Run with visible browser (for debugging)
@@ -208,7 +218,9 @@ pytest backend/tests/e2e/test_login.py::TestLoginSuccess -v
 | `TestLoginSecurity` | Password hiding, rate limiting |
 | `TestLoginSession` | Session persistence |
 | `TestLoginUI` | UI elements verification |
+| `TestAlternativeAuth` | Alternative sign-in options on the login page |
 | `TestLoginAccessibility` | Keyboard navigation, labels |
+| `TestLoginConsoleErrors` | No browser console errors on login |
 
 ### Registration Tests
 
@@ -357,8 +369,8 @@ shipped every variant of that, so four tools now check for it — and each was c
 against a real instance found here (issue #431).
 
 ```bash
-python3 scripts/audit-tests.py backend/tests   # 21 AST detectors, exits 1 on new offenders
-cd frontend && npm run test:audit              # the vitest sibling, 10 detectors
+python3 scripts/audit-tests.py backend/tests   # AST detectors (--list prints them), exits 1 on new offenders
+cd frontend && npm run test:audit              # the vitest sibling
 npm run test:audit:selftest                    #   ...and ITS self-test
 python3 scripts/analyze-test-timing.py <junit.xml> [--baseline baseline.xml]
 ./scripts/run-mutation-tests.sh --module spans # opt-in, never in the gate or CI
@@ -562,19 +574,11 @@ node ~/bin/browser-tools/browse.js http://localhost:5173 \
 
 ## CI/CD Integration
 
-```yaml
-# Example GitHub Actions workflow
-test:
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v3
-    - name: Run unit tests
-      run: |
-        pip install -r requirements.txt
-        pytest backend/tests/ --ignore=backend/tests/e2e/ -v
-```
-
-E2E tests are typically run separately as they require the full environment.
+GitHub Actions (`.github/workflows/pre-commit.yml`) runs the pre-commit hooks, the backend
+unit/API suite (job "Backend Tests (pytest)", against a fresh Postgres with the CPU-only
+`requirements-ci.txt`) and the frontend vitest suite (job "Frontend Unit Tests (Vitest)").
+The complete suite, including E2E, needs the live stack and runs locally — see
+`./scripts/run-integration-tests.sh` and `./scripts/run-dev-tests.sh` above.
 
 ## Debugging Tips
 

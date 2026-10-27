@@ -11,7 +11,7 @@ trust a change, staged so the cheap, CI-safe checks run first and the expensive,
 run last. [`scripts/release.sh`](releasing.md) is the **release** pipeline — its 12 stages exist
 to cut and publish a version, not to re-derive test coverage. The two compose rather than
 duplicate: Stage 1 here is what `release.sh preflight <v>` and `verify <v>` already run, Stage 3's
-fresh-install/upgrade legs *are* `release.sh rehearse <v>`, and Stage 4 here is nothing more than
+fresh-install/upgrade/lite legs *are* `release.sh rehearse <v>`, and Stage 4 here is nothing more than
 "confirm `scan`/`build`/`publish`/`promote` are wired" — it does not reimplement them. Run this
 matrix on a branch before opening a PR; run `release.sh` when you are actually cutting a version.
 
@@ -115,9 +115,10 @@ still exits 0?" and write that test first.
 | 7 | `python3 scripts/release/check-version-consistency.py` | All version sources agree, single Alembic head |
 | 8 | `backend/venv/bin/python3 scripts/audit-route-coverage.py --json` | Uncovered-route count not increased vs the prior run |
 
-This is exactly what `./scripts/release.sh preflight <v>` and `verify <v>` already run as part of
-cutting a release. Run this stage standalone when you are **not** cutting a release; the release
-pipeline runs the equivalent automatically as part of its own gates.
+This overlaps with, but is not identical to, what `./scripts/release.sh preflight <v>` and
+`verify <v>` run (version consistency, the deployment matrix and the docs build are in both).
+Run this stage standalone when you are **not** cutting a release; the release pipeline runs its
+own gates, defined in `scripts/release/release-criteria.yaml`.
 
 ## Stage 2 — Dev-mode integration
 
@@ -339,6 +340,7 @@ with no vendor key required by **Scenario C inside Stage 3's leg `3`**
 BUILD_MODE=local PUSH_LATEST=false ./scripts/docker-build-push.sh all
 ./scripts/release-tests/test-fresh-install.sh --yes
 REQUIRE_PREVIOUS=1 ./scripts/release-tests/test-upgrade.sh --yes
+./scripts/release-tests/test-lite-mode.sh --yes    # Scenario C, detailed below
 ```
 
 Pass: every assertion in each scenario's `REPORT.md` is `PASS`. This sequence is exactly what
@@ -479,10 +481,10 @@ the reasoning in full.
 not new work.**
 
 ```
-./scripts/release.sh scan <v>
-./scripts/release.sh build <v>       # multi-arch; needs USE_REMOTE_BUILDER=true, else 2-3h under QEMU
-./scripts/release.sh publish <v>
-./scripts/release.sh promote <v>
+./scripts/release.sh build <v>       # local images, every declared arch leg; non-host arches need USE_REMOTE_BUILDER=true, else 2-3h under QEMU
+./scripts/release.sh scan <v>        # scans what build just produced
+./scripts/release.sh publish <v> --yes
+./scripts/release.sh promote <v> --yes
 ```
 
 `scan`'s security-tooling check is a **warn**-severity preflight, not a blocking one — a missing
@@ -499,8 +501,8 @@ The **stage script**, not `release.sh scan`, for the same reason Stage 3 calls `
 `50-scan.sh` does the work, `release.sh` owns the `.release/<version>/` ledger, so the matrix can
 run the gate without writing a ledger entry a real release would then read as current. The
 dispatcher warns up front about any of the three scanners missing from `PATH`, so a thin scan
-does not read as a thorough one. `build`/`publish`/`promote` remain `release.sh`-only: they
-reach Docker Hub and GitHub, and nothing outside the release pipeline should invoke them.
+does not read as a thorough one. `build`/`publish`/`promote` remain `release.sh`-only: `publish` and
+`promote` reach Docker Hub, and nothing outside the release pipeline should invoke them.
 
 ## Time budget
 

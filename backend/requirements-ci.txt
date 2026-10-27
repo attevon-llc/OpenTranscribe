@@ -164,3 +164,32 @@ pytest-cov==7.1.0
 pytest-xdist==3.8.0
 pytest-timeout==2.4.0  # pyproject addopts passes --timeout; absence is a collection error
 pytest-base-url==2.1.0  # unit/test_e2e_base_url_precedence.py proves the REAL plugin/ini interaction (#965); without it the --base-url flag does not exist
+
+# Transitive packages pinned to EXACTLY what requirements.txt pins. This file did not pin them,
+# so `pip install -r requirements-ci.txt` resolved the newest release of each (starlette 1.10.0 against the
+# image's 1.9.0; protobuf, grpcio, multidict 7.x ...) and CI tested a different program from the
+# one the prod image ships. Versions-move-forward: change them in requirements.txt FIRST and copy
+# here. tests/unit/test_requirements_pinned.py and scripts/check-requirements-resolve.py both
+# fail on drift. typer is capped below 0.26 by huggingface-hub 1.17 (see requirements.txt).
+starlette==1.9.0
+anyio==4.15.1
+regex==2026.9.29
+fsspec==2026.9.0
+filelock==4.2.4
+protobuf==7.36.1
+typer==0.25.1
+tokenizers==0.22.2
+botocore==1.43.94
+google-api-core==2.37.0
+google-auth==2.58.0
+googleapis-common-protos==1.75.3
+grpcio==1.84.0
+grpcio-status==1.84.0
+httpcore2==2.13.0
+httpx2==2.13.0
+multidict==6.9.1
+proto-plus==1.28.4
+wcwidth==0.9.3
+av==18.1.0
+phonenumbers==9.0.41
+spacy==3.8.16

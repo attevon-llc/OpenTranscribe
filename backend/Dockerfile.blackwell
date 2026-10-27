@@ -137,7 +137,7 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 # ---------------------------------------------------------------------------
 # Install application dependencies
 # ---------------------------------------------------------------------------
-COPY requirements.txt .
+COPY requirements.txt requirements-nodeps.txt ./
 RUN pip install --no-cache-dir --no-warn-script-location -r requirements.txt
 
 # ---------------------------------------------------------------------------
@@ -175,9 +175,13 @@ RUN pip install --no-cache-dir --force-reinstall \
 # forbids. `tests/unit/test_requirements_pinned.py` fails if this comes back.
 
 # ---------------------------------------------------------------------------
-# Install WhisperX (with --no-deps to preserve NVIDIA torch stack)
+# Install WhisperX, faster-whisper and gliner (second step, --no-deps: preserves the NVIDIA
+# torch stack and keeps the pinned onnxruntime-gpu authoritative)
 # ---------------------------------------------------------------------------
-RUN pip install --no-cache-dir --no-deps "whisperx==3.8.1"
+# Same two-step install as Dockerfile.prod: requirements-nodeps.txt is the only place these
+# are pinned. This used to be an inline `whisperx==3.8.1` (prod ships 3.8.6) and never
+# installed faster-whisper or gliner at all, so the image differed from prod and a venv.
+RUN pip install --no-cache-dir --no-warn-script-location --no-deps -r requirements-nodeps.txt
 
 # ---------------------------------------------------------------------------
 # Install PyAnnote fork with GPU optimizations

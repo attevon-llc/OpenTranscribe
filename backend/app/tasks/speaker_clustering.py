@@ -12,6 +12,7 @@ from app.core.constants import GPUPriority
 from app.core.enums import PostProcessingTask
 from app.db.session_utils import session_scope
 from app.services.post_processing_status import tracks_post_processing
+from app.services.privacy.policy import voiceprints_allowed_for_file
 from app.utils.websocket_notify import send_ws_event
 from app.utils.websocket_notify import send_ws_event_for_file
 
@@ -103,6 +104,12 @@ def cluster_speakers_for_file(self, file_uuid: str, user_id: int):
             if not media_file:
                 logger.warning(f"Media file {file_uuid} not found for clustering")
                 return {"status": "skipped", "reason": "file_not_found"}
+
+            # Privacy policy (#1280), asked fresh at run time: a file queued before its owner
+            # or organization switched voiceprints off must not have a centroid stored.
+            if not voiceprints_allowed_for_file(db, int(media_file.id)):
+                logger.info(f"Clustering for file {file_uuid} skipped by privacy policy")
+                return {"status": "skipped", "reason": "skipped_by_policy"}
 
             # Tracked via active_task_id so `is_file_safe_to_delete` (task_utils.py)
             # can see this task is live and refuse a concurrent delete — clustering

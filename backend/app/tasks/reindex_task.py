@@ -33,34 +33,32 @@ INDEX_STRUCTURE_LOCK_TIMEOUT_SECONDS = 60
 INDEX_STRUCTURE_LOCK_WAIT_SECONDS = 30
 
 
-def _resolve_reindex_speaker_name(row: Any) -> str:
+def _resolve_reindex_speaker_name(row: Any, db: Any = None) -> str:
     """Canonical label for one batch-fetched speaker row.
 
     ``row`` is one of the ``(id, name, display_name, profile_id,
     suggested_name, confidence)`` tuples :func:`_extract_file_metadata`
     batch-fetches. Delegates to
-    :func:`~app.utils.speaker_labels.canonical_speaker_label` — the SINGLE
+    :func:`~app.utils.speaker_labels.canonical_speaker_label_for_row` — the SINGLE
     home for this resolution — instead of this writer's old ``display_name or
     name or "Unknown"`` chain, which emitted a bare ``"Unknown"`` next to
     ``file_facts``'s ``"Unknown Speaker"`` and never considered a confident
     LLM/embedding suggestion.
 
+    A voiceprint-derived name is left out while the file's voiceprints are off (#1280), so a
+    reindex run after a switch is turned off drops the stale label from the index.
+
     Args:
-        row: A row exposing ``.name``, ``.display_name``, ``.suggested_name``
-            and ``.confidence`` attributes.
+        row: A row exposing ``.name``, ``.display_name``, ``.suggested_name``,
+            ``.confidence``, ``.suggestion_source``, ``.verified`` and ``.media_file_id``.
+        db: The session (or a shared ``PrivacyView``) the policy is read through.
 
     Returns:
         The canonical display label.
     """
-    from app.utils.speaker_labels import canonical_speaker_label
+    from app.utils.speaker_labels import canonical_speaker_label_for_row
 
-    return canonical_speaker_label(
-        row.name,
-        display_name=row.display_name,
-        suggested_name=row.suggested_name,
-        confidence=row.confidence,
-        suggestion_source=getattr(row, "suggestion_source", None),
-    )
+    return canonical_speaker_label_for_row(row, db)
 
 
 def _ensure_neural_pipeline_ready() -> bool:
@@ -124,6 +122,7 @@ def _extract_file_metadata(db: Any, media_file: Any) -> dict[str, Any] | None:
     from app.models.media import Speaker
     from app.models.media import TranscriptSegment
     from app.services.permission_service import PermissionService
+    from app.services.privacy.redact_view import PrivacyView
     from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
     from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABELS
 
@@ -160,11 +159,14 @@ def _extract_file_metadata(db: Any, media_file: Any) -> dict[str, Any] | None:
                 Speaker.suggested_name,
                 Speaker.confidence,
                 Speaker.suggestion_source,
+                Speaker.verified,
+                Speaker.media_file_id,
             )
             .filter(Speaker.id.in_(speaker_ids))
             .all()
         )
-        speakers_map = {r.id: _resolve_reindex_speaker_name(r) for r in spk_rows}
+        privacy = PrivacyView(db)
+        speakers_map = {r.id: _resolve_reindex_speaker_name(r, privacy) for r in spk_rows}
         profile_map = {r.id: r.profile_id for r in spk_rows}
 
     # Convert ORM objects to dicts

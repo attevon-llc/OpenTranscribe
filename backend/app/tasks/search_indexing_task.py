@@ -44,16 +44,11 @@ def resolve_chunk_speaker_name(speaker: Any) -> str:
         used to emit for an unattributed segment.
     """
     from app.utils.speaker_labels import canonical_speaker_label
+    from app.utils.speaker_labels import canonical_speaker_label_for_row
 
     if speaker is None:
         return canonical_speaker_label(None)
-    return canonical_speaker_label(
-        speaker.name,
-        display_name=speaker.display_name,
-        suggested_name=speaker.suggested_name,
-        confidence=speaker.confidence,
-        suggestion_source=getattr(speaker, "suggestion_source", None),
-    )
+    return canonical_speaker_label_for_row(speaker)
 
 
 def extract_file_index_metadata(db: Any, media_file: Any, file_id: int) -> dict[str, Any]:

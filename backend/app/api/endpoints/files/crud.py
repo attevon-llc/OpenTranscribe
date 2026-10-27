@@ -41,6 +41,7 @@ from app.services.tag_service import tag_ownership
 from app.utils.db_helpers import owned_in_tenant
 from app.utils.error_handlers import ErrorHandler
 from app.utils.speaker_labels import canonical_speaker_label
+from app.utils.speaker_labels import canonical_speaker_label_for_row
 from app.utils.time_format import format_timestamp_simple as format_timestamp
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
@@ -414,13 +415,7 @@ def _resolve_segment_speaker_name(speaker: Speaker | None) -> str:
     """
     if speaker is None:
         return canonical_speaker_label(None)
-    return canonical_speaker_label(
-        speaker.name,
-        display_name=speaker.display_name,
-        suggested_name=speaker.suggested_name,
-        confidence=speaker.confidence,
-        suggestion_source=speaker.suggestion_source,
-    )
+    return canonical_speaker_label_for_row(speaker)
 
 
 def _build_grouped_segments(formatted_segments: list[Any], index_offset: int = 0) -> list[Any]:
@@ -932,17 +927,14 @@ def get_media_file_detail(
         # instance, including the speakers decorated below (#1152).
         analytics = _get_or_compute_analytics(db, file_id, db_file.status)
 
-        # Get speakers and add computed status. Eager-load the linked profile so
-        # add_computed_status (which reads speaker.profile) doesn't fire one lazy
-        # SELECT per speaker.
+        # Get speakers. Eager-load the linked profile so add_computed_status (which reads
+        # speaker.profile, below) doesn't fire one lazy SELECT per speaker.
         speakers = (
             db.query(Speaker)
             .options(selectinload(Speaker.profile))
             .filter(Speaker.media_file_id == file_id)
             .all()
         )
-        for speaker in speakers:
-            SpeakerStatusService.add_computed_status(speaker)
 
         # Get transcript segments with pagination
         transcript_segments, total_segments = _get_transcript_segments(
@@ -951,13 +943,6 @@ def get_media_file_detail(
 
         # Count merged speaker segments (adjacent same-speaker groups)
         total_speaker_segments = _count_speaker_segments(db, file_id)
-
-        # Add computed status to segment speakers (skip already-processed)
-        processed_speaker_ids = {s.id for s in speakers}
-        for segment in transcript_segments:
-            if segment.speaker and int(segment.speaker.id) not in processed_speaker_ids:
-                SpeakerStatusService.add_computed_status(segment.speaker)
-                processed_speaker_ids.add(int(segment.speaker.id))
 
         # Compute caller's effective permission for frontend
         if db_file.user_id == current_user.id:
@@ -999,7 +984,15 @@ def get_media_file_detail(
             total_speaker_segments = 0
 
         # Last step before serialization: nothing below commits, so the redaction holds.
+        # Redact FIRST, then compute the status from what is left: the status text ("High
+        # confidence match") and the resolved name are derived from the suggestion that the
+        # redaction withholds, so decorating before it served both while voiceprints were off.
         redact_response_speakers(db, speakers, transcript_segments)
+        processed_speaker_ids: set[int] = set()
+        for speaker in [*speakers, *(s.speaker for s in transcript_segments if s.speaker)]:
+            if int(speaker.id) not in processed_speaker_ids:
+                SpeakerStatusService.add_computed_status(speaker)
+                processed_speaker_ids.add(int(speaker.id))
 
         # Build the response
         response = _build_media_file_response(

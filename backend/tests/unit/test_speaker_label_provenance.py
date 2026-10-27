@@ -411,9 +411,12 @@ def test_the_suggestion_service_still_offers_the_llm_suggestion(db_session, norm
         confidence=0.95,
         suggestion_source="llm_analysis",
     )
-    offered = SmartSpeakerSuggestionService.consolidate_suggestions(
-        speaker_id=int(speaker.id), user_id=int(normal_user.id), db=db_session
-    )
+    offered = SmartSpeakerSuggestionService.consolidate_suggestions_batch(
+        speakers=[speaker],
+        user_id=int(normal_user.id),
+        file_org_map={int(speaker.media_file_id): None},
+        voiceprints_off_file_ids=set(),
+    )[int(speaker.id)]
     llm = [s for s in offered if s.suggestion_type == "llm_analysis"]
     assert [(s.name, round(s.confidence, 2)) for s in llm] == [("Joe Rogan", 0.95)]
 

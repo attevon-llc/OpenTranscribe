@@ -49,7 +49,10 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   `purge.py` (via `gdpr_erasure_service._erase_speaker_voiceprints`) deletes, and only once the switch is off.
   `policy_admin.py` is the write side the routes share. Never re-read `speaker_attribute.*` or a user toggle to decide gender:
   `speaker_attribute_settings.resolve_speaker_attribute_flags(..., organization_id=)` already ANDs the policy ceiling; pass the
-  FILE's organization from its row. The speaker-ID LLM never gets the gender cross-reference from a non-local provider
+  FILE's organization from its row. `SpeakerMatchingService` does that itself for a call that names a speaker
+  (`find_and_store_speaker_matches`: the organization argument is only a hint that can narrow, never widen), and refuses
+  an embedding-only call (`match_speaker_to_*`) that states no `organization_id`, because omitted never means personal.
+  The speaker-ID LLM never gets the gender cross-reference from a non-local provider
   (`speaker_identification_task._with_gender_context`). A speaker's tenant is its FILE's (`media_file.organization_id`):
   `speaker.organization_id` is never stamped by the pipeline, so purge and every reader join through the file
   (`PurgeScope.speaker_filters`), and every writer that rebuilds a speaker document passes the file's organization
@@ -456,6 +459,15 @@ suggestion UIs with its confidence and nothing more; accepting it writes `displa
   through a guess.
 - **The LLM task will not overwrite a voiceprint suggestion** — that would replace the evidence
   the label rests on with a guess.
+- **A voiceprint-derived name obeys the privacy switch (#1280).** `canonical_speaker_label_for_row(row, db=None)`
+  leaves a `voice_match`/`profile_match` name out while the row's FILE has voiceprints off (the row stays unverified; a
+  verified one is a person's and stays) and asks the policy only when that suggestion is what decides the label. An ORM
+  `Speaker` finds its own session; a columns-only row must select `verified` and `media_file_id` and be given `db` (or a
+  shared `PrivacyView`). Every printer of a label goes through it (exports, captions, the chunk and reindex writers,
+  `get_speaker_name`, the chat roster, `SpeakerStatusService`), so a new one must too. In a response, redact first and
+  decorate second: `add_computed_status` derives `status_text` and `resolved_display_name` from the suggestion that
+  `redact_speaker_rows` withholds. `services/privacy/label_reindex.py` queues the existing debounced re-index (and facts)
+  for the files such a name decides when a voiceprint switch changes value (called by the three `policy_admin` writers).
 - **Existing indexes**: `services/speaker_label_backfill.py`, an arm of the existing
   `search_index_maintenance` task, re-indexes (per-file, debounced) each completed file with a
   speaker whose old label was an LLM suggestion, refreshes the persisted

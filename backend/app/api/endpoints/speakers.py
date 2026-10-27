@@ -646,69 +646,6 @@ def _build_speaker_dict(
     return speaker_dict
 
 
-def _process_single_speaker(
-    speaker: Speaker,
-    current_user: User,
-    segment_count: int,
-    db: Session,
-    segment_timestamps: list[dict[str, Any]] | None = None,
-) -> dict[str, Any]:
-    """Process a single speaker and build its response dictionary."""
-    from app.services.smart_speaker_suggestion_service import SmartSpeakerSuggestionService
-
-    # Compute status information using SpeakerStatusService
-    status_info = SpeakerStatusService.compute_speaker_status(speaker)
-    # Use setattr to avoid mypy Column type issues
-    speaker.computed_status = status_info["computed_status"]  # type: ignore[assignment]
-    speaker.status_text = status_info["status_text"]  # type: ignore[assignment]
-    speaker.status_color = status_info["status_color"]  # type: ignore[assignment]
-    speaker.resolved_display_name = status_info["resolved_display_name"]  # type: ignore[assignment]
-    speaker.profile_name = status_info["profile_name"]  # type: ignore[assignment,attr-defined]
-    speaker.profile_status = status_info["profile_status"]  # type: ignore[assignment,attr-defined]
-
-    # Get smart, consolidated speaker suggestions
-    smart_suggestions = SmartSpeakerSuggestionService.consolidate_suggestions(
-        speaker_id=speaker.id,
-        user_id=current_user.id,
-        db=db,
-        confidence_threshold=SPEAKER_SUGGESTION_MIN_CONFIDENCE,
-        max_suggestions=SPEAKER_SUGGESTION_MAX_COUNT,
-    )
-
-    # Format suggestions for API response
-    raw_cross_video_matches = SmartSpeakerSuggestionService.format_for_api(smart_suggestions)
-
-    # Get profile suggestions (all non-LLM suggestions)
-    profile_suggestions = _get_profile_suggestions(raw_cross_video_matches)
-
-    # Cross-video matches: only populated via cross-media API for labeled speakers
-    cross_video_matches: list[dict[str, Any]] = []
-
-    # Compute suggested name
-    suggested_name = _compute_suggested_name(speaker)
-
-    # Get suggestion source
-    suggestion_source = _get_suggestion_source(speaker)
-
-    # Compute display flags
-    display_flags = _compute_display_flags(
-        speaker, suggested_name, suggestion_source, profile_suggestions
-    )
-
-    # Build the speaker dictionary
-    return _build_speaker_dict(
-        speaker,
-        current_user,
-        suggested_name,
-        suggestion_source,
-        profile_suggestions,
-        cross_video_matches,
-        display_flags,
-        segment_count,
-        segment_timestamps,
-    )
-
-
 def _process_single_speaker_with_suggestions(
     speaker: Speaker,
     current_user: User,

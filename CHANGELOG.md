@@ -258,6 +258,27 @@ off by default.
   gender alone, because only a person confirming it sets that value. The organization redaction
   floor is stored and served by `/api/org-admin/policy`; its screen follows in v0.7.0 (#1279). A
   community install has no organization layer, so that route answers 404 there.
+- **A voice-matched speaker name follows the voiceprint switch (#1280).** While voiceprints are off
+  for a recording's scope, a name that only a voiceprint match supplied is no longer printed as the
+  speaker's name: not in the file detail or segment pages (`resolved_display_name`, `status_text`,
+  `resolved_speaker_name`, which used to be computed before the redaction ran), not in the
+  `txt`/`json`/`csv`/`md`/`srt`/`vtt` exports, the Word and PDF documents, the captions or the
+  subtitle downloads, and not in the search index or the speaker roster chat resolves names
+  against. The speaker shows as its diarizer label until a person names it; a name a person typed or
+  verified stays. One function, `canonical_speaker_label_for_row`, decides it everywhere. Changing a
+  voiceprint switch (a person's, an organization's or the deployment's) queues the existing debounced
+  re-index for the files such a name decides, so the search index follows the switch both ways.
+- **Speaker matching can no longer be judged in the wrong organization (#1280).**
+  `SpeakerMatchingService.find_and_store_speaker_matches` takes its tenant from the speaker's own file,
+  so a caller that left the organization out (the batch script did) is still held to that
+  organization's voiceprint switch; the argument is now only a hint that can narrow the answer.
+  The embedding-only `match_speaker_to_known_speakers`, `match_speaker_to_profiles` and
+  `match_speaker_to_profile` refuse a call that names no organization instead of treating it as personal.
+- **Removed an unused speaker-suggestion path (#1280).** `speakers._process_single_speaker`, the
+  single-speaker twin of the list builder, had no caller; with it went
+  `SmartSpeakerSuggestionService.consolidate_suggestions`, `_get_profile_suggestions_optimized` and
+  `_execute_profile_knn_search`, which only it reached. The speaker list uses the batched path, which keeps
+  the voiceprint-policy and tenant gates; their tests now drive that path.
 - **Delete stored voiceprints and inferred gender (#1280).** Once a switch is off, an organization
   administrator, a super admin or the person themselves can permanently delete what it hid:
   `POST /api/org-admin/policy/purge`, `POST /api/admin/privacy-policy/purge` (personal workspaces,

@@ -56,10 +56,11 @@ from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import MediaFile
 from app.models.media import Speaker
+from app.services.privacy.redact_view import PrivacyView
 from app.services.search.chunking_service import _NO_SPACE_CHAR_RE
 from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABELS
-from app.utils.speaker_labels import canonical_speaker_label
+from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
 
@@ -278,7 +279,7 @@ class Roster:
     decline_reason: SpeakerResolutionDeclineReason | None = None
 
 
-def _group_speaker_rows(rows: Any) -> dict[str, dict[str, Any]]:
+def _group_speaker_rows(rows: Any, db: Any) -> dict[str, dict[str, Any]]:
     """Group raw ``Speaker`` rows into canonical-label buckets.
 
     Canonical labels come from :func:`canonical_speaker_label`, the single
@@ -288,16 +289,17 @@ def _group_speaker_rows(rows: Any) -> dict[str, dict[str, Any]]:
     excluded — "who said X" about an unlabeled diarization slot is not a
     mention anyone could type. Shared by :func:`build_candidate_roster` so
     every roster this module builds canonicalizes identically.
+
+    A voiceprint-derived name is not a roster name while its file's voiceprints are off
+    (#1280): the model would otherwise be handed, and could resolve a "who said" question to,
+    a name the speaker API no longer shows. ``db`` is the session the policy is read through.
     """
     grouped: dict[str, dict[str, Any]] = {}
+    rows = list(rows)
+    privacy = PrivacyView(db)
+    privacy.preload_files(int(r.media_file_id) for r in rows)
     for row in rows:
-        label = canonical_speaker_label(
-            row.name,
-            display_name=row.display_name,
-            suggested_name=row.suggested_name,
-            confidence=row.confidence,
-            suggestion_source=getattr(row, "suggestion_source", None),
-        )
+        label = canonical_speaker_label_for_row(row, privacy)
         if label in UNKNOWN_SPEAKER_LABELS:
             continue
         bucket = grouped.setdefault(label, {"profile_id": None, "files": set()})
@@ -449,6 +451,7 @@ def build_candidate_roster(
         Speaker.suggested_name,
         Speaker.confidence,
         Speaker.suggestion_source,
+        Speaker.verified,
         Speaker.profile_id,
         Speaker.media_file_id,
     ).join(MediaFile, MediaFile.id == Speaker.media_file_id)
@@ -500,7 +503,7 @@ def build_candidate_roster(
                 seen_row_keys.add(key)
                 all_rows.append(row)
 
-    grouped = _group_speaker_rows(all_rows)
+    grouped = _group_speaker_rows(all_rows, db)
     entries = tuple(
         sorted(
             (

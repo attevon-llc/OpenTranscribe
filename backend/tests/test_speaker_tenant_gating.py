@@ -310,74 +310,64 @@ class TestSpeakerMatchingOrgGate:
 # F4 — smart suggestions: scope resolved from the speaker's file               #
 # --------------------------------------------------------------------------- #
 class TestSuggestionOrgGate:
-    def test_consolidate_suggestions_scopes_by_file_org(self, world, monkeypatch):
+    def test_batch_suggestions_scope_each_speaker_by_its_file_org(self, world, monkeypatch):
         from unittest.mock import MagicMock
 
         from app.services.smart_speaker_suggestion_service import SmartSpeakerSuggestionService
 
         seen_orgs: list[Any] = []
 
-        def fake_knn(client, embedding, user_id, threshold, **kwargs):
-            seen_orgs.append(kwargs.get("organization_id"))
-            return []
+        def fake_embeddings(speaker_uuids):
+            return {u: [0.1] * 256 for u in speaker_uuids}
+
+        def fake_msearch(speaker_embeddings, user_id, threshold, organization_id=None, **kwargs):
+            seen_orgs.append(organization_id)
+            return {u: [] for u in speaker_embeddings}
 
         monkeypatch.setattr(
-            "app.services.smart_speaker_suggestion_service.get_speaker_embedding",
-            lambda suuid: [0.1] * 256,
+            "app.services.opensearch_service.get_speaker_embeddings_batch", fake_embeddings
         )
         monkeypatch.setattr(
             "app.services.smart_speaker_suggestion_service._check_opensearch_profiles_exist",
             lambda *a, **kw: True,
         )
         monkeypatch.setattr(
-            "app.services.smart_speaker_suggestion_service._execute_profile_knn_search",
-            fake_knn,
+            "app.services.opensearch_service.msearch_profile_knn_batch", fake_msearch
         )
         monkeypatch.setattr("app.services.opensearch_service.opensearch_client", MagicMock())
 
-        SmartSpeakerSuggestionService.consolidate_suggestions(
-            int(world.org_speaker.id), int(world.user.id), world.db
+        SmartSpeakerSuggestionService.consolidate_suggestions_batch(
+            speakers=[world.org_speaker, world.personal_speaker],
+            user_id=int(world.user.id),
+            file_org_map={
+                int(world.org_speaker.media_file_id): world.org.id,
+                int(world.personal_speaker.media_file_id): None,
+            },
+            voiceprints_off_file_ids=set(),
         )
-        SmartSpeakerSuggestionService.consolidate_suggestions(
-            int(world.personal_speaker.id), int(world.user.id), world.db
-        )
-        assert seen_orgs == [world.org.id, None]
 
-    def test_profile_knn_filter_bodies(self):
-        """The profile kNN body encodes the tenant gate (pure filter check)."""
-        from app.services.smart_speaker_suggestion_service import _execute_profile_knn_search
+        assert sorted(seen_orgs, key=lambda o: (o is None, o)) == [world.org.id, None]
 
-        captured: list[dict] = []
+    def test_profile_knn_filter_bodies(self, monkeypatch):
+        """The batched profile kNN body encodes the tenant gate (pure filter check)."""
+        from app.services.opensearch_service import profiles
 
-        class _FakeIndices:
-            def exists(self, index=None):
-                return False
-
-            def exists_alias(self, name=None):
-                return False
-
-            def get_mapping(self, index=None):
-                # Unknown mapping -> the dimension guard treats this as
-                # "cannot determine, do not refuse" and proceeds to search.
-                return {}
+        captured: list[list[dict]] = []
 
         class FakeClient:
-            indices = _FakeIndices()
-
-            def search(self, index=None, body=None):
+            def msearch(self, body=None):
                 captured.append(body)
-                return {"hits": {"hits": []}}
+                return {"responses": [{"hits": {"hits": []}}]}
 
-        _execute_profile_knn_search(
-            FakeClient(), np.array([0.1] * 256), user_id=7, threshold=0.5, organization_id=42
-        )
-        org_must = captured[-1]["query"]["knn"]["embedding"]["filter"]["bool"]["must"]
+        monkeypatch.setattr(profiles._client, "opensearch_client", FakeClient())
+        monkeypatch.setattr(profiles, "ensure_indices_exist", lambda: None)
+
+        profiles.msearch_profile_knn_batch({"s": [0.1] * 256}, user_id=7, organization_id=42)
+        org_must = captured[-1][1]["query"]["knn"]["embedding"]["filter"]["bool"]["must"]
         assert {"term": {"organization_id": 42}} in org_must
 
-        _execute_profile_knn_search(
-            FakeClient(), np.array([0.1] * 256), user_id=7, threshold=0.5, organization_id=None
-        )
-        personal_must = captured[-1]["query"]["knn"]["embedding"]["filter"]["bool"]["must"]
+        profiles.msearch_profile_knn_batch({"s": [0.1] * 256}, user_id=7, organization_id=None)
+        personal_must = captured[-1][1]["query"]["knn"]["embedding"]["filter"]["bool"]["must"]
         assert {"bool": {"must_not": {"exists": {"field": "organization_id"}}}} in personal_must
 
 

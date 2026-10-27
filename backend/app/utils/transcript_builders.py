@@ -10,6 +10,7 @@ from typing import Any
 
 from app.core import constants as C  # noqa: N812
 from app.utils.speaker_labels import canonical_speaker_label
+from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
 
@@ -63,20 +64,10 @@ def get_speaker_name(segment) -> str:
     if not segment.speaker:
         return canonical_speaker_label(None)
 
-    speaker = segment.speaker
-    # getattr, not attribute access: the real `Speaker` ORM model always carries
-    # `suggested_name`/`confidence`, but callers across the codebase (and this
-    # module's own test doubles) pass duck-typed stand-ins that model only the
-    # fields their scenario needs. A stand-in missing `suggested_name` must
-    # degrade to "no suggestion" rather than raise — the label a caller cannot
-    # resolve is `UNKNOWN_SPEAKER_LABEL`/the raw name, never an AttributeError.
-    return canonical_speaker_label(
-        speaker.name,
-        display_name=speaker.display_name,
-        suggested_name=getattr(speaker, "suggested_name", None),
-        confidence=getattr(speaker, "confidence", None),
-        suggestion_source=getattr(speaker, "suggestion_source", None),
-    )
+    # `canonical_speaker_label_for_row` tolerates the duck-typed stand-ins callers pass
+    # (a missing `suggested_name` degrades to "no suggestion") and withholds a voiceprint
+    # name while the file's voiceprints are off (#1280).
+    return canonical_speaker_label_for_row(segment.speaker)
 
 
 def build_full_transcript(transcript_segments, redaction_cfg=None) -> str:

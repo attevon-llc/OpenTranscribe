@@ -19,13 +19,13 @@ credit in the advisory, say so in the report — we are glad to give it.
 Security fixes land on the **latest released minor version**, shipped as a
 `0.x.y` patch release cut from that minor's `release/<major>.<minor>` branch —
 see [Cutting a patch
-release](https://attevon-llc.github.io/OpenTranscribe/docs/developer-guide/releasing#cutting-a-patch-release)
+release](https://docs.opentranscribe.app/docs/developer-guide/releasing#cutting-a-patch-release)
 for the mechanism. **Older minors are not patched.** There is no branch and no
 tooling for backporting a fix past the latest minor once a newer one exists —
 if you are running an older minor, upgrading to the latest is the supported
 path to a fix, not a patch on the version you already have. OpenTranscribe is
 self-hosted, so upgrading is under your control: see
-[Upgrading](https://attevon-llc.github.io/OpenTranscribe/docs/operations/upgrading).
+[Upgrading](https://docs.opentranscribe.app/docs/operations/upgrading).
 
 ## What is in scope
 
@@ -65,4 +65,4 @@ If you run OpenTranscribe, the deployment-side essentials are:
 - `ENABLE_API_DOCS` is off by default on purpose: Swagger is anonymously
   reachable wherever it is mounted and enumerates the whole admin surface.
 
-Details: [Deployment configuration](https://attevon-llc.github.io/OpenTranscribe/docs/operations/deployment-configuration).
+Details: [Deployment configuration](https://docs.opentranscribe.app/docs/operations/deployment-configuration).

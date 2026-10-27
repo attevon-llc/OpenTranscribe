@@ -78,7 +78,7 @@ flowchart TB
 - **Redaction Queue**: PII / toxicity / profanity detection (dedicated `celery-redaction` CPU service)
 
 ### Data Layer
-- **PostgreSQL**: Relational data with Alembic-only migrations (no init_db.sql)
+- **PostgreSQL**: Relational data with Alembic-only migrations (`database/init_db.sql` is a legacy reference, not used)
 - **MinIO**: S3-compatible object storage with private buckets and optional AES-256-GCM encryption at rest
 - **OpenSearch 3.4.0**: Full-text and vector search with alias-based speaker indices
 - **Redis**: Task queue broker and caching singleton
@@ -235,10 +235,10 @@ The system includes automatic repair for speaker embedding inconsistencies:
 ## Database Management
 
 All schema changes use **Alembic migrations** exclusively:
-- No `init_db.sql` — the database is bootstrapped entirely through Alembic
+- The database is bootstrapped entirely through Alembic (`database/init_db.sql` is a legacy reference and is not used)
 - Migrations run automatically on backend startup
 - Idempotent SQL (`IF NOT EXISTS`) for safety
-- Migration detection logic in `app/db/migrations.py`
+- Detection of the schema version of an existing, untracked database lives in `app/db/migrations.py` (`_detect_schema_version()`)
 
 ## Architecture Design Decisions
 
@@ -317,6 +317,8 @@ Tasks are separated into queues by resource type to prevent resource contention:
 | `embedding` | varies | Speaker embedding extraction, can be CPU or GPU |
 | `utility` | varies | Maintenance tasks, error handlers, reindexing |
 | `redaction` | 2 | PII / toxicity / profanity detection on a dedicated CPU service; isolates the redaction ML models from the GPU worker |
+
+Three further queues exist for specific topologies: `cpu-transcribe` (lightweight per-file Whisper, drained by the CPU worker), `gpu-transcribe` / `gpu-diarize` (the optional gpu-split workers), and the default `celery` queue (drained by the NLP worker). `CeleryQueues` in `backend/app/core/constants.py` is the single source of truth.
 
 This separation ensures GPU workers are never blocked waiting for a download to complete, and CPU-intensive postprocessing does not compete with GPU transcription for worker slots.
 

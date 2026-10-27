@@ -36,21 +36,30 @@ test" assertion fails. That is the single most common way to waste an hour here.
 ./scripts/release.sh bump 0.5.0          # all five version sources, self-verified
 #   <- write the CHANGELOG section and the blog post here
 ./scripts/release.sh verify              # fast gate: consistency, matrix, docs build
-./scripts/release.sh test                # the existing pre-merge gate
+./scripts/release.sh test                # the existing pre-merge gate (dev stack must be UP)
 ./scripts/release.sh build               # local images, nothing published
 ./scripts/release.sh scan                # scans the LOCAL images
-./opentr.sh stop                         # rehearse needs the live stack down
-./scripts/release.sh rehearse            # fresh-install + upgrade scenarios
+git push -u origin <branch>              # rehearse installs the branch's files from origin
+./opentr.sh stop                         # rehearse and smoke need the live stack down
+./scripts/release.sh rehearse            # fresh-install, upgrade and lite-mode scenarios
 ./scripts/release.sh tag --yes           # ← first step that leaves this machine
 ./scripts/release.sh publish --yes       # :vX.Y.Z only, never :latest
-./scripts/release.sh smoke               # install from Hub; check both arches
+./scripts/release.sh smoke               # install from Hub; check capability and arch
 ./scripts/release.sh promote --yes       # move :latest by digest
 ./scripts/release.sh finish --yes        # GitHub release + assets
 ```
 
-`run` does the whole sequence: `./scripts/release.sh run 0.5.0 --skip scan`.
-`--dry-run` prints without executing. `--from <stage>` resumes. `--json` on any
-stage gives machine-readable criteria and an explicit `next[]`.
+`run` does the whole sequence: `./scripts/release.sh run 0.5.0 --yes --skip scan`
+(without `--yes` it stops at `tag` with exit 4).
+`--dry-run` prints without executing. `--from <stage>` resumes. `--only a,b` runs
+just those stages. `--json` on any stage gives machine-readable criteria and an
+explicit `next[]`. `--patch` (from `release/<major>.<minor>`) verifies the version
+delta is a patch and may waive the rehearsal; see `releasing.md`'s "Cutting a patch
+release". `reset <version>` clears the ledger; `explain <stage>` prints a stage's
+purpose and reversibility.
+
+Exit codes: `0` pass, `1` gate failed, `2` misuse, `3` precondition unmet, `4`
+operator abort.
 
 ## Ordering rules that must not be reordered
 
@@ -58,7 +67,8 @@ stage gives machine-readable criteria and an explicit `next[]`.
   only after the scenarios pass, because `:latest` is what every existing user
   pulls.
 - **`tag` before `publish`** so CI validates the metadata while the 13.8 GB build
-  runs.
+  runs. `tag` also cuts `release/<major>.<minor>` from the tag it just pushed (never
+  from `master`) and, on a patch, asserts the tag is an ancestor of that branch.
 - **`promote` and `finish` LAST.** The GitHub Release is what the installer
   resolves for "latest". There must never be a window where `releases/latest`
   names a version whose images do not exist.
@@ -92,9 +102,14 @@ decision (an accepted CVE with no reachable path), never to make a red run green
   moves. `preflight` prints the stale endpoint and the fix.
 - **`HUGGINGFACE_TOKEN`** in `scripts/release-tests/.env.test-secrets`, or both
   rehearsal scenarios fail at their first transcription — hours in.
-- **The live stack must be STOPPED for `rehearse`.** The scenarios deliberately
-  use the one-liner's stock container names and ports 5173-5180 so they exercise
-  what a real user gets. `release.sh` never stops it for you.
+- **The live stack must be STOPPED for `rehearse` and `smoke`.** The scenarios
+  deliberately use the one-liner's stock container names and ports 5173-5180 so they
+  exercise what a real user gets. Without approval both refuse (exit 3). `rehearse`
+  alone can stop the stack and restart it afterwards when given `--yes`,
+  `RELEASE_AUTO_STOP_STACK=true`, or an interactive `y`; `smoke` never stops it.
+- **The branch under test must be pushed.** `rehearse` downloads the manifest files
+  from `TO_BRANCH` (default: the current branch) and exits 3 if it is not on origin.
+- **`test` is the opposite:** it needs the dev stack UP (it probes Postgres on 5176).
 
 ## Related
 

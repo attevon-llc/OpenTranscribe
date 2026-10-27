@@ -6,7 +6,7 @@ set -e
 # Usage: ./scripts/build-offline-package.sh [version] [--local]
 #
 # Options:
-#   version    Package version (default: git short hash)
+#   version    Package version, with or without a leading v (default: git short hash)
 #   --local    Use locally built Docker images instead of pulling from Docker Hub
 
 # Source shared functions (colors, print helpers, model selection, GPU selection)
@@ -45,6 +45,8 @@ done
 
 # Configuration
 VERSION="${VERSION:-$(git rev-parse --short HEAD)}"
+# The package name below adds its own `v`; accept `v2.1.0` and `2.1.0` alike (`vv2.1.0` otherwise).
+VERSION="${VERSION#v}"
 PACKAGE_NAME="opentranscribe-offline-v${VERSION}"
 BUILD_DIR="./offline-package-build/linux"
 PACKAGE_DIR="${BUILD_DIR}/${PACKAGE_NAME}"

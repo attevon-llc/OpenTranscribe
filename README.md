@@ -60,6 +60,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **GPU-Accelerated Clustering**: Fast speaker clustering using GPU-accelerated embeddings
 - **Gender Detection**: Automatic speaker gender detection for improved labeling suggestions
 - **Profile Avatars**: Visual speaker profile avatars for easy identification across the media library
+- **Corrections That Stick**: Unassigning a speaker from a cluster means "this voice is not that person" — with *Prevent from rejoining this cluster* ticked (the default), no automatic path puts it back, and the correction survives re-processing the file. You can name a speaker inline from the transcript's speaker menu, and removing a speaker removes every stored copy of its voice
 
 ### 🎬 **Rich Media Support**
 - **Universal Format Support**: Audio (MP3, WAV, FLAC, M4A) and Video (MP4, MOV, AVI, MKV), and more. Formats browsers cannot play (AIFF, WMA, AVI and similar) get a playable copy for the player
@@ -149,7 +150,8 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Export Options**: Download transcripts in multiple formats
 - **Real-Time Updates**: Live progress tracking with detailed WebSocket notifications
 - **Enhanced Progress Tracking**: Per-stage progress with descriptive messages, grouped as Main processing, Finishing and AI enrichment
-- **Smart Notification System**: Persistent notifications with unread count badges and progress updates
+- **Smart Notification System**: Persistent notifications with unread count badges and progress updates; each file's card shows its stages in three tiers (Main processing, Finishing, AI enrichment), downloads get one row that moves from preparing to done, and finished jobs show how long processing took
+- **Notification Retention**: Routine read notifications clear themselves on a retention policy you choose in the panel (**Keep notifications for**: 24 hours after reading, 7 days after reading, or never); errors and anything needing action are kept
 - **WebSocket Integration**: Real-time updates for transcription, summarization, and upload progress
 - **Collection Management**: Create, organize, and share collections of related media files
 - **Smart Error Recovery**: User-friendly error messages with specific guidance and auto-recovery options
@@ -176,9 +178,12 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Multi-Model Support**: Works with models from 3B to 200B+ parameters
 - **Local & Cloud Processing**: Support for both local (privacy-first) and cloud AI providers
 - **Cloud ASR Providers**: 9 cloud speech-to-text providers (Deepgram, AssemblyAI, OpenAI Whisper API, Google, AWS Transcribe, Azure, Speechmatics, Gladia, pyannote.ai) as alternatives to local GPU processing — 6 verified end-to-end (Deepgram, AssemblyAI, Gladia, AWS Transcribe, Speechmatics, pyannote.ai)
-- **API-Lite Deployment**: `DEPLOYMENT_MODE=lite` for cloud-ASR-only deployments without requiring a local GPU
+- **API-Lite Deployment**: `DEPLOYMENT_MODE=lite` for cloud-only deployments without requiring a local GPU; lite is cloud-only for both transcription and speaker detection
+- **Composable Processing Pipeline**: Transcription and speaker detection are chosen independently (Settings → Transcription, Settings → Speaker Identification → Speaker Detection). Mix local Whisper or a cloud ASR provider for the words with this server's engine, the same provider's own speakers, the pyannote.ai cloud service, or another saved provider's speaker detection for the speakers. **Settings → Processing pipeline** shows, before the next upload, where each step runs and which providers receive your audio, and each file records which provider and model did each step. See [Speaker Diarization](docs-site/docs/features/speaker-diarization.md)
+- **Local Model Library**: A super admin can download any listed local Whisper model and switch the active one under Settings → Transcription → Provider & Model → Local models (disk-space check, live progress, cancel; only the Whisper workers restart, after running jobs finish)
+- **Cloud Provider Allow-List**: A super admin can limit which cloud transcription providers plain users may choose and forbid users from adding their own keys
 - **Selective Reprocessing**: Re-run only specific pipeline stages (transcription, diarization, summarization) without full reprocessing
-- **Per-Upload Toggles**: Disable diarization or AI summarization on a per-file basis at upload or reprocess time
+- **Per-Upload Toggles**: Turn AI summarization off per file with the wizard's *Generate AI summary* switch; skipping speaker detection for a single file is available through the API (`disable_diarization`), and a user can choose **Off** for speaker detection in Settings → Speaker Identification
 
 ### 🔐 **Enterprise Authentication & Security**
 - **Enterprise Authentication System**: Support for 6 authentication methods, running simultaneously, with hybrid (DB > env > default) configuration
@@ -194,7 +199,9 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **FedRAMP Compliance Features**: Password complexity policies (IA-5), account lockout after failed attempts, classification banners (AC-8)
 - **Enterprise Session Management**: JWT with refresh token rotation, session timeout controls, secure token storage
 - **Password Security**: Password history tracking to prevent reuse, configurable complexity requirements
-- **Rate Limiting**: Protection against brute-force attacks on authentication endpoints
+- **Rate Limiting**: Protection against brute-force attacks on authentication endpoints; a rate-limited response says how long to wait (`Retry-After`) and the UI counts it down
+- **Password Security Levels**: Settings → Authentication → Local offers Basic, Standard (NIST SP 800-63B-4), Hardened and Custom levels with a preview of the exact rules; a breached-password list (built from Have I Been Pwned) is an on-demand download (`./opentranscribe.sh download-models password-blocklist`)
+- **Admin MFA Requirement**: `MFA_REQUIRED_FOR_ADMINS` (off by default) can require administrators to set up MFA
 
 ### 🛡️ **Content Moderation & Privacy**
 - **Read-Time Redaction**: Mask PII, profanity, and toxicity at every display/export surface with `[CATEGORY]` placeholders — the full original transcript is always kept in the database, masking is a read-time transform (no destructive edits)
@@ -202,6 +209,9 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Admin Enforcement Floor**: Super admins can force PII/toxicity/profanity masking and mandate censored exports for all users (Settings → Privacy & Redaction → Redaction Policy)
 - **Detect-Once, Cache-Forever**: Detection runs once per transcript in a dedicated `celery-redaction` CPU service; spans cache on the transcript so enable/disable and category changes are instant
 - **Multiple Detectors**: Presidio + spaCy/GLiNER (PII), toxic-bert / multilingual XLM-R (toxicity), wordlist (profanity), plus an optional LLM detector
+- **Audit Log**: A super admin can review and export (CSV or JSON) security and authentication events under Settings → Administration → Audit Logs, and can switch on content-access auditing (who opened a recording, requested its media or exported a transcript; off by default)
+- **Quarantine & Takedown Review**: Admins can quarantine a file and review it under Settings → Administration → Quarantine; each takedown is recorded with the notice it acts on, owners see why in *My takedown notices*, and a held file cannot be reprocessed or retried
+- **Tenant and Organization Features (off in the community edition)**: The organization admin surfaces — member management, an organization audit log (`org.audit_logs`), organization legal holds (`org.legal_hold`) and an organization takedown queue (`org.takedown`) — are capability-gated and the community edition leaves them off. Where an install does use organizations, tags and collections belong to one organization (collections can be restricted to their creator, the organization's admins and the people they are shared with), and `TENANCY_MODE` (default `auto`) makes administrators use audited, time-boxed support-access grants instead of opening tenant content directly; see [Support access](docs-site/docs/operations/support-access.md)
 
 ### ⚙️ **Speech Processing (Super Admin)**
 - **Runtime-Tunable Engine Settings**: Super admins adjust runtime-safe transcription/diarization engine settings — boundary-correction toggles and knobs, transcriber/diarizer backend selection — via Settings → Speaker Identification → Speaker Engine with no container restart
@@ -218,6 +228,8 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Configurable Concurrency**: Per-queue worker concurrency (defaults: GPU 1 via `GPU_CONCURRENT_REQUESTS`, CPU 8, Download 5, NLP 4, Cloud-ASR 16, Redaction 2) for optimal resource utilization
 - **Enhanced Speaker Detection**: Support for 20+ speakers (can scale to 50+ for large conferences)
 - **Accurate GPU Monitoring**: nvidia-smi integration for real-time system-wide memory tracking
+- **VRAM-Aware GPU Admission**: Each GPU stage reserves its estimated VRAM and waits when it does not fit, GPU concurrency is capped by host memory, and a CUDA out-of-memory error retries with a smaller batch; files held by a worker that died are recovered rather than stranded
+- **Data Integrity Tools**: Settings → Data & Storage → Data Integrity finds and removes orphaned search documents and stored files, and a delete leaves nothing behind in any store
 - **Blackwell GPU Support**: NVIDIA GB10x/GB20x (DGX Spark) detected automatically (compute capability 12.x) and run on the dedicated `:blackwell` image; build it with `scripts/docker-build-push.sh --blackwell backend`
 
 ### 📱 **Enhanced User Experience**
@@ -234,6 +246,10 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Theme Support**: Seamless dark/light mode switching
 - **Keyboard Shortcuts**: Efficient navigation and control via hotkeys
 - **System Statistics**: CPU, memory, disk, and GPU usage visible to all users
+- **Searchable, Regrouped Settings**: Settings is a searchable set of sections (Account, Transcription & Speakers, AI & Chat, Media & Output, Administration, System) that load on demand; entries a user's role cannot open are shown disabled rather than hidden
+- **About Dialog**: Shows the app build next to the server version (and tells you to reload when a stale tab no longer matches the server), plus the AGPL-3.0 licence, a source-code link and the third-party NOTICE
+- **Server-Driven Capabilities**: `GET /api/system/capabilities` reports the edition and which feature surfaces exist; the UI renders only those, and deployment-locked controls (for example model choice or URL import) are enforced on the server
+- **First-Run Setup Wizard**: The first super admin gets a guided one-time setup (password change, SSO/LDAP, security defaults)
 - **Admin Password Reset**: Secure password reset functionality with validation
 
 ## 🛠️ Technology Stack

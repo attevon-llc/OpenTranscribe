@@ -21,6 +21,7 @@ from __future__ import annotations
 import ast
 import textwrap
 
+from tests.unit import test_ddl_marker_discipline as discipline
 from tests.unit.test_ddl_marker_discipline import _any_revision_ddl_constants
 from tests.unit.test_ddl_marker_discipline import _ddl_attributes
 from tests.unit.test_ddl_marker_discipline import _ddl_constants
@@ -168,3 +169,75 @@ def test_the_format_template_shape_resolves() -> None:
     follows the ``.format`` call back to the template.
     """
     assert "CONSTRAINT_SQL" in _revision_ddl_constants("v381_approval_state")
+
+
+def _fake_revision(tmp_path, monkeypatch, source: str) -> frozenset[str]:
+    """Resolve a synthetic revision, bypassing the per-revision cache."""
+    (tmp_path / "v900_synthetic.py").write_text(textwrap.dedent(source))
+    monkeypatch.setattr(discipline, "_VERSIONS_DIR", tmp_path)
+    return discipline._revision_ddl_constants.__wrapped__("v900_synthetic")
+
+
+def test_the_builder_function_shape_resolves() -> None:
+    """MUST FIRE. v448's ``build_upgrade_sql(lock_timeout)`` returns an f-string of DDL.
+
+    The lock tests call it directly and replay ``UPGRADE_SQL = build_upgrade_sql()``; neither
+    is a literal, so before the builder rule they were reported as tests that never run DDL
+    and the over-marking guard demanded the marker be removed from tests that do.
+    """
+    resolved = _revision_ddl_constants("v448_task_one_active_row_per_file_step")
+    assert {"build_upgrade_sql", "UPGRADE_SQL"} <= resolved
+
+
+def test_a_test_replaying_a_builder_is_detected() -> None:
+    """MUST FIRE, end to end through ``_executes_ddl`` on the shape v448's tests use."""
+    assert (
+        _scan("""
+        REVISION = "v448_task_one_active_row_per_file_step"
+
+        def test_a_conflicting_lock_fails_fast(db_session):
+            db_session.connection().execute(text(_module().build_upgrade_sql("300ms")))
+    """)
+        is True
+    )
+
+
+def test_create_unique_index_is_ddl() -> None:
+    """MUST FIRE. ``CREATE UNIQUE INDEX`` blocks writers exactly as ``CREATE INDEX`` does."""
+    assert (
+        _scan("""
+        def test_index(db_session):
+            db_session.connection().execute(text("CREATE UNIQUE INDEX ix ON t (a)"))
+    """)
+        is True
+    )
+
+
+def test_a_builder_that_returns_dml_is_not_detected(tmp_path, monkeypatch) -> None:
+    """MUST STAY CLEAN. A builder, or a constant bound to one, is not DDL by being a builder."""
+    resolved = _fake_revision(
+        tmp_path,
+        monkeypatch,
+        """
+        def build_upgrade_sql(days: int = 3) -> str:
+            return f"UPDATE task SET status = 'failed' WHERE age > {days}"
+
+        UPGRADE_SQL = build_upgrade_sql()
+        """,
+    )
+    assert resolved == frozenset()
+
+
+def test_a_builder_that_returns_ddl_is_detected(tmp_path, monkeypatch) -> None:
+    """MUST FIRE. The control for the case above: only the statement kind differs."""
+    resolved = _fake_revision(
+        tmp_path,
+        monkeypatch,
+        """
+        def build_upgrade_sql(days: int = 3) -> str:
+            return f"CREATE UNIQUE INDEX IF NOT EXISTS ix ON task (a) WHERE age > {days}"
+
+        UPGRADE_SQL = build_upgrade_sql()
+        """,
+    )
+    assert resolved == {"build_upgrade_sql", "UPGRADE_SQL"}

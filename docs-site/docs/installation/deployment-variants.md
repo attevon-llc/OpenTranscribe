@@ -40,6 +40,8 @@ The default install. Whisper (faster-whisper) transcribes on the GPU, and speake
 this server uses the engine the administrator chose: the diar-native sidecar (the default) or
 in-process PyAnnote. Users can still pick a cloud provider for either step in Settings.
 
+If the diar-native sidecar cannot serve a file, the full image falls back to in-process PyAnnote, which is slower, and logs a warning for each run. To fail the task instead of falling back, turn on **Require Diarization Sidecar** (Settings, Speaker Identification, Speaker Engine) or set `ENGINE_DIARIZER_REQUIRE_SIDECAR=true`; see [environment variables](../configuration/environment-variables.md).
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
@@ -58,9 +60,9 @@ curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/s
 On a CPU host the installer recommends the small `base` Whisper model.
 
 :::caution Speaker detection is not switched off by CPU mode
-Each file's speaker detection follows the user's **Speaker detection** setting. On a CPU-only
+Each file's speaker detection follows the user's **Speaker Detection** setting. On a CPU-only
 host, speaker detection on this server runs on the CPU and is slow. To skip it, set **Speaker
-detection** to **Off** in Settings. The old `ENABLE_DIARIZATION` variable is gone; see
+Detection** to **Off** in Settings. The old `ENABLE_DIARIZATION` variable is gone; see
 [environment variables](../configuration/environment-variables.md).
 :::
 
@@ -149,7 +151,7 @@ starts: the file is marked as failed with that message and nothing is sent to a 
 - If a cloud speaker detector fails, the transcript is kept, without speakers; the file can be
   re-diarized later.
 - **Extra billing** and **segment merge** are explained on this page.
-- The columns are the choices under **Settings → Speaker Identification → Speaker detection**:
+- The columns are the choices under **Settings → Speaker Identification → Speaker Detection**:
   "Automatic (recommended)", "Always on this server's GPU" (on a CPU-only host it runs on the
   CPU), "pyannote.ai cloud service" and "Off (one speaker for the whole recording)". "Another provider's speaker detection" (`asr_config`) is offered to users allowed to save their
   own providers.

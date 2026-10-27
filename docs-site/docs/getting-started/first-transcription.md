@@ -97,7 +97,7 @@ flowchart LR
 1. **Queued** - File is waiting in the processing queue
 2. **Preparing audio** - Extracting the audio track (from video if needed) and converting it for transcription
 3. **Transcribing** - Turning speech into text, either with the built-in model on this server or with the cloud provider chosen in **Settings → Transcription**
-4. **Detecting speakers** - Working out who spoke when, as chosen in **Settings → Speaker Identification → Speaker detection provider** (this server, your transcription provider, the pyannote.ai cloud service, or off). Depending on that choice this happens together with transcription or just after the transcript is saved
+4. **Detecting speakers** - Working out who spoke when, as chosen in **Settings → Speaker Identification → Speaker Detection** (this server, your transcription provider, the pyannote.ai cloud service, or off). Depending on that choice this happens together with transcription or just after the transcript is saved
 5. **Voiceprints and matching** - Computing a voiceprint for each speaker on this server and matching it against speakers in your other recordings
 6. **Indexing** - Adding the transcript to the search index
 7. **Complete** - Ready to view!
@@ -321,7 +321,7 @@ Group related files:
 
 ### Speakers Not Detected
 
-- **Check your Speaker detection choice** - under **Settings → Speaker Identification → Speaker detection provider**, make sure it is not **Off**, then look at the file's **Processing** section to see who detected speakers
+- **Check your Speaker detection choice** - under **Settings → Speaker Identification → Speaker Detection**, make sure it is not **Off**, then look at the file's **Processing** section to see who detected speakers
 - **Check the transcription model** - some cloud models return text only or segment timing only; a speaker change inside a segment is then not detected
 - **Check HuggingFace token** - needed when speakers are detected on this server (the full image), because the speaker models are downloaded from HuggingFace
 - **Clear audio** - speakers need distinct voices

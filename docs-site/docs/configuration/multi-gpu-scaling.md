@@ -8,9 +8,9 @@ For systems with multiple GPUs, OpenTranscribe supports parallel GPU workers to 
 
 ## Overview
 
-**Standard Setup**: 1 GPU = 1 worker = 70x realtime (1-hour file in ~50 seconds)
+**Standard Setup**: 1 GPU = 1 worker, about 39x realtime end to end (measured, RTX A6000, `large-v3-turbo`)
 
-**Scaled Setup**: 1 GPU = 4 workers = 280x realtime (4 files simultaneously)
+**Scaled Setup**: 1 GPU = several workers in one container, transcribing several files simultaneously. Total throughput rises with the worker count but sub-linearly (about 51x at 4 workers in the same measurement).
 
 ## When to Use
 
@@ -61,10 +61,12 @@ Edit `.env` to configure which GPU the scaled workers use and how many run:
 # Which GPU to use for scaled workers
 GPU_SCALE_DEVICE_ID=2
 
-# Number of parallel workers
+# Number of parallel workers. If left unset it follows DIAR_NATIVE_MAX_INFLIGHT (default 2),
+# so raise the sidecar's permits together with this value (see docker-compose.gpu-scale.yml)
 GPU_SCALE_WORKERS=4
 
 # Keep the default single-GPU worker running alongside the scaled workers (1) or disable it (0)
+# (.env.example ships 1; the compose default when unset is 0)
 GPU_SCALE_DEFAULT_WORKER=1
 ```
 
@@ -83,10 +85,13 @@ GPU_SCALE_DEFAULT_WORKER=1
 
 ## Performance
 
-| Workers | Throughput | Example (4x 1-hour files) |
-|---------|------------|---------------------------|
-| 1 worker | 70x realtime | ~3 minutes (sequential) |
-| 4 workers | 280x realtime | ~50 seconds (parallel) |
+| Workers | Measured throughput |
+|---------|---------------------|
+| 1 worker | 39.3x realtime |
+| 2 workers | 47.4x realtime |
+| 4 workers | 51.3x realtime |
+
+Figures are full-pipeline throughput (transcription, speaker detection, speaker assignment) on one RTX A6000 with `large-v3-turbo`, from `docs/BENCHMARK_RESULTS.md`; a 4-worker run is not 4x faster. Adding workers mainly improves GPU utilisation; per-file time rises as workers compete.
 
 ## VRAM Requirements
 
@@ -103,7 +108,7 @@ GPU_SCALE_DEFAULT_WORKER=1
 watch -n 1 nvidia-smi
 
 # View scaled worker logs
-docker compose logs -f celery-worker-gpu-scaled
+./opentr.sh logs celery-worker-gpu-scaled
 
 # Monitor task queue
 # Open: http://localhost:5175/flower

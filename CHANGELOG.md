@@ -969,6 +969,9 @@ off by default.
 
 ### Fixed
 
+- **The prompt sharing toggle is scoped to the caller's tenant.** An admin can change sharing on
+  another user's prompt only inside their own tenant; a prompt in another tenant answers 404, and
+  the owner can still toggle their own.
 - **A superseded task row no longer stays "in progress" forever (#1185).** A late write from an
   older run could leave a row `pending` or `in_progress` after a newer run of the same step had
   completed for the same file, so monitoring alerted for good while recovery did nothing (the

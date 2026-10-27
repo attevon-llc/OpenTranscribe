@@ -40871,7 +40871,7 @@
     },
     "/api/prompts/shared/{prompt_uuid}/toggle": {
       "post": {
-        "description": "Toggle sharing on a prompt. Owner or admin can toggle.",
+        "description": "Toggle sharing on a prompt. The owner, or an admin of the same tenant, can toggle.\n\nA prompt outside the caller's tenant answers 404, the same as a missing one, so its\nexistence is not disclosed. A platform role without a support-access grant is scoped to\nits own tenant like any other admin; a write grant assumes the granted tenant.",
         "operationId": "share_prompt_api_prompts_shared__prompt_uuid__toggle_post",
         "parameters": [
           {

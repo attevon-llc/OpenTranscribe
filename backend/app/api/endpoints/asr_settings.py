@@ -985,17 +985,29 @@ def delete_all_asr_configs(
 
     Speaker-detection choices naming any of them are reset like a single delete. On lite,
     where the default is local Whisper, deleting a user's configs is refused (409
-    ``local_asr_unavailable``, #1228).
+    ``local_asr_unavailable``, #1228). Each shared configuration is treated as a single
+    delete treats it: a member who runs on it is assessed first (the whole call is refused,
+    and nothing is deleted, if any member would be stranded), and the members' active
+    pointers are cleared with it.
     """
     from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
 
     owned = db.query(UserASRSettings).filter(UserASRSettings.user_id == current_user.id)
-    uuids = [str(row.uuid) for row in owned.with_entities(UserASRSettings.uuid).all()]
+    rows = owned.all()
+    uuids = [str(row.uuid) for row in rows]
     if uuids:
         # Clearing every config clears the active one, and without a config lite would fall
         # back to local Whisper, which it does not ship (#1228). With nothing configured
         # there is nothing to delete and no fallback to introduce.
         refuse_on_lite("local_asr_unavailable")
+    shared_ids = [int(row.id) for row in rows if row.is_shared]
+    for row in rows:
+        if row.is_shared:
+            _refuse_if_switching_off_strands_holders(
+                db, row, request, exclude_user_id=current_user.id
+            )
+    for config_id in shared_ids:
+        _clear_asr_shared_active_references(db, config_id, exclude_user_id=current_user.id)
     reverted = _reset_diarizer_references(db, uuids, current_user.id)
     owned.delete()
     _clear_active_asr_setting(db, current_user.id)

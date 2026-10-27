@@ -168,18 +168,30 @@ class SpeakerClusteringService:
     def _voiceprint_off_scopes(
         self, user_id: int, organization_id: OrgScope = UNSCOPED
     ) -> set[int | None]:
-        """Organization scopes (None = personal) of this user's clusters with voiceprints off.
+        """Organization scopes (None = personal) of this user's data with voiceprints off.
 
         A concrete ``organization_id`` asks about that one scope. ``UNSCOPED`` asks about
-        every scope the user has a cluster in, which is what a read that spans scopes needs.
+        every scope the user has a cluster OR a speaker in, which is what a read or a rebuild
+        that spans scopes needs: a scope that has speakers and no cluster yet is exactly the
+        one a re-cluster would otherwise group for the first time.
         """
         if isinstance(organization_id, _Unscoped):
-            candidates: set[int | None] = {
-                (int(r[0]) if r[0] is not None else None)
-                for r in self.db.query(SpeakerCluster.organization_id)
+            cluster_scopes = (
+                self.db.query(SpeakerCluster.organization_id)
                 .filter(SpeakerCluster.user_id == user_id)
                 .distinct()
                 .all()
+            )
+            speaker_scopes = (
+                self.db.query(MediaFile.organization_id)
+                .join(Speaker, Speaker.media_file_id == MediaFile.id)
+                .filter(Speaker.user_id == user_id)
+                .distinct()
+                .all()
+            )
+            candidates: set[int | None] = {
+                (int(r[0]) if r[0] is not None else None)
+                for r in (*cluster_scopes, *speaker_scopes)
             }
         else:
             candidates = {organization_id}

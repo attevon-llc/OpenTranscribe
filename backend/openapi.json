@@ -13879,6 +13879,27 @@
         "title": "PurgeAccepted",
         "type": "object"
       },
+      "PurgeAuditRef": {
+        "description": "Where an administrator reads this purge back in the audit log.",
+        "properties": {
+          "event_type": {
+            "description": "The audit event type, e.g. privacy.voiceprints.purge.",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "task_id": {
+            "description": "The same task id is in every event's details.",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_type",
+          "task_id"
+        ],
+        "title": "PurgeAuditRef",
+        "type": "object"
+      },
       "PurgeRequest": {
         "description": "Delete what a switch only hides. Irreversible.\n\n``confirm`` must be the literal ``PURGE``: the UI makes the person type it, and the API\nrefuses anything else (422), so a stray request cannot destroy data.",
         "properties": {
@@ -13910,7 +13931,33 @@
       "PurgeStatus": {
         "description": "``GET /privacy/purge/{task_id}``: readable only by the person who started the purge.",
         "properties": {
+          "audit": {
+            "description": "The audit events (one per target) that record this purge, with its counts.",
+            "items": {
+              "$ref": "#/components/schemas/PurgeAuditRef"
+            },
+            "title": "Audit",
+            "type": "array"
+          },
           "counts": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "type": "object"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What was deleted, once the purge has started, grouped per store (`postgres`, `opensearch`). Counts only, never a name. OpenSearch counts are what the store reported as deleted. A purge runs twice (the second pass about a minute later, to catch a write that raced the switch), so status stays in_progress until the second pass ends and the counts add both passes.",
+            "title": "Counts"
+          },
+          "residual": {
             "anyOf": [
               {
                 "additionalProperties": {
@@ -13922,8 +13969,28 @@
                 "type": "null"
               }
             ],
-            "description": "What was deleted, once the purge has finished. Counts only, never a name. A purge runs twice (the second pass about a minute later, to catch a write that raced the switch), so status stays in_progress until the second pass ends.",
-            "title": "Counts"
+            "description": "What the latest pass measured, in the purged scope, after it ran. Every value must be 0; a non-zero value makes the purge `failed`, never `completed`.",
+            "title": "Residual"
+          },
+          "residual_ok": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "True only when everything was measured and every residual value is 0.",
+            "title": "Residual Ok"
+          },
+          "residual_unverified": {
+            "description": "Measures that could not be taken. They are not zero; they are unknown.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Residual Unverified",
+            "type": "array"
           },
           "status": {
             "enum": [

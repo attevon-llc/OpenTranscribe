@@ -70,7 +70,42 @@ export function privacyErrorKey(error: unknown, fallbackKey: string): string {
   return (code && ERROR_KEYS[code]) || fallbackKey;
 }
 
-/** The sum of the per-kind counts a finished purge reports (names of kinds are not shown). */
-export function purgeCountTotal(counts: Record<string, number> | null | undefined): number {
-  return Object.values(counts ?? {}).reduce((sum, n) => sum + (Number.isFinite(n) ? n : 0), 0);
+type GroupedCounts = Record<string, Record<string, number>> | null | undefined;
+
+const finite = (n: number) => (Number.isFinite(n) ? n : 0);
+
+/** The sum of one store's counts (names of kinds are not shown). */
+export function purgeStoreTotal(counts: GroupedCounts, store: string): number {
+  return Object.values(counts?.[store] ?? {}).reduce((sum, n) => sum + finite(n), 0);
+}
+
+/** The sum of every count a purge reports, over all stores. */
+export function purgeCountTotal(counts: GroupedCounts): number {
+  return Object.keys(counts ?? {}).reduce((sum, store) => sum + purgeStoreTotal(counts, store), 0);
+}
+
+export type PurgeVerification =
+  | { state: 'verified' }
+  | { state: 'remaining'; remaining: number }
+  | { state: 'unverified'; unverified: number }
+  | { state: 'unknown' };
+
+/**
+ * What the post-purge measurement says. Anything left over wins over "could not check", which
+ * wins over "all zero": an unmeasured store is never reported as an empty one.
+ */
+export function purgeVerification(status: {
+  residual: Record<string, number> | null;
+  residual_ok: boolean | null;
+  residual_unverified: string[];
+}): PurgeVerification {
+  // `== null` also covers a server that predates the measurement and omits the fields.
+  if (status.residual == null || status.residual_ok == null) return { state: 'unknown' };
+  const remaining = Object.values(status.residual).reduce((sum, n) => sum + finite(n), 0);
+  if (remaining > 0) return { state: 'remaining', remaining };
+  const unverified = status.residual_unverified ?? [];
+  if (unverified.length > 0) {
+    return { state: 'unverified', unverified: unverified.length };
+  }
+  return status.residual_ok ? { state: 'verified' } : { state: 'unknown' };
 }

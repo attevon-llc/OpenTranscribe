@@ -54,11 +54,30 @@ export interface PurgeAccepted {
 
 export type PurgeState = 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped';
 
-/** `GET /privacy/purge/{task_id}`: counts only, never a name. */
+/** Counts grouped per store: `postgres` (database rows) and `opensearch` (documents). */
+export type PurgeCounts = Record<string, Record<string, number>>;
+
+/** Where an administrator reads the purge back: one audit event per target, same task id. */
+export interface PurgeAuditRef {
+  event_type: string;
+  task_id: string;
+}
+
+/**
+ * `GET /privacy/purge/{task_id}`: counts only, never a name.
+ *
+ * `residual` is what the latest pass measured in the purged scope afterwards: every value must be
+ * 0, and a purge that left something is `failed`, never `completed`. `residual_unverified` names
+ * the measures that could not be taken; those are unknown, not zero.
+ */
 export interface PurgeStatus {
   task_id: string;
   status: PurgeState;
-  counts: Record<string, number> | null;
+  counts: PurgeCounts | null;
+  residual: Record<string, number> | null;
+  residual_ok: boolean | null;
+  residual_unverified: string[];
+  audit: PurgeAuditRef[];
 }
 
 export type PurgeScope = 'personal' | 'all';

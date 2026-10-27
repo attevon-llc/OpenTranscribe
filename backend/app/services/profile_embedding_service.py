@@ -23,6 +23,8 @@ from app.models.media import Speaker
 from app.models.media import SpeakerProfile
 from app.services.opensearch_service import get_speaker_embedding
 from app.services.permission_service import file_ids_in_scope
+from app.services.privacy.policy import Decision
+from app.services.privacy.redact_view import PrivacyView
 
 logger = logging.getLogger(__name__)
 
@@ -373,6 +375,26 @@ class ProfileEmbeddingService:
                     raise ProfileEmbeddingRecomputeError(f"profile {profile_id} has no members")
                 return True
 
+            # Privacy policy (#1280): an averaged profile voiceprint is a voiceprint write.
+            # Clearing an emptied profile above is a delete and stays allowed; computing a
+            # new average is not. Under `strict` (a speaker left the profile) the raise makes
+            # the caller ERASE the stored embedding, which is right: it still holds the
+            # removed voice and cannot be rebuilt while the scope is off.
+            decision = PrivacyView(db).voiceprints_for_scope(
+                int(profile.user_id), profile.organization_id
+            )
+            if not decision.enabled:
+                logger.info(
+                    "Profile %s embedding not recomputed: voiceprints off (%s)",
+                    profile_id,
+                    decision.locked_by,
+                )
+                if strict:
+                    raise ProfileEmbeddingRecomputeError(
+                        f"profile {profile_id} voiceprints disabled by privacy policy"
+                    )
+                return False
+
             # Collect embeddings from all speakers
             embeddings: list[list[float]] = []
             for speaker in speakers:
@@ -499,6 +521,27 @@ class ProfileEmbeddingService:
         return _process_profile_with_embeddings(profile, profile_id, embeddings)
 
     @staticmethod
+    def profiles_off_by_policy(db: Session, profile_ids: list[int]) -> dict[int, Decision]:
+        """The profiles among ``profile_ids`` whose owner scope has voiceprints switched off.
+
+        Returns ``profile_id -> Decision`` for the off ones only (so ``locked_by`` says which
+        layer). A profile that does not exist is not reported here.
+        """
+        if not profile_ids:
+            return {}
+        view = PrivacyView(db)
+        off: dict[int, Decision] = {}
+        for pid, owner, org in (
+            db.query(SpeakerProfile.id, SpeakerProfile.user_id, SpeakerProfile.organization_id)
+            .filter(SpeakerProfile.id.in_(profile_ids))
+            .all()
+        ):
+            decision = view.voiceprints_for_scope(int(owner), org)
+            if not decision.enabled:
+                off[int(pid)] = decision
+        return off
+
+    @staticmethod
     def batch_update_profile_embeddings(db: Session, profile_ids: list[int]) -> dict[int, bool]:
         """
         Update embeddings for multiple profiles in a batch operation.
@@ -531,11 +574,19 @@ class ProfileEmbeddingService:
             speakers_by_profile = ProfileEmbeddingService._group_speakers_by_profile(all_speakers)
             speaker_embeddings = _collect_speaker_embeddings(all_speakers)
 
+            # Privacy policy (#1280): a profile whose scope is off is left exactly as it is
+            # (reported False, never written). Callers that need to tell "skipped" from
+            # "failed" ask `profiles_off_by_policy` first.
+            policy_off = ProfileEmbeddingService.profiles_off_by_policy(db, list(profile_map))
+
             # Process each profile
             for profile_id in profile_ids:
                 profile = profile_map.get(profile_id)
                 if not profile:
                     logger.error(f"Profile {profile_id} not found in batch")
+                    results[profile_id] = False
+                    continue
+                if profile_id in policy_off:
                     results[profile_id] = False
                     continue
 

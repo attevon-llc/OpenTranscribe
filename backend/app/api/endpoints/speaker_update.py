@@ -24,6 +24,8 @@ from app.models.media import SpeakerMatch
 from app.models.media import SpeakerProfile
 from app.services.opensearch_service import get_speaker_embedding
 from app.services.permission_service import file_ids_in_scope
+from app.services.privacy import policy as privacy_policy
+from app.services.privacy.redact_view import PrivacyView
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.utils.db_helpers import org_stamp_is
 from app.utils.speaker_labels import canonical_speaker_label_for_row
@@ -243,6 +245,16 @@ def _update_profile_embedding(
     """
     from app.services.speaker_cleanup import capture_speaker_impact
     from app.services.speaker_cleanup import reconcile_speaker_impact
+
+    # Privacy policy (#1280): rebuilding a profile or cluster voiceprint is a voiceprint
+    # write. The label/profile link the user just made is theirs and stays; the aggregate is
+    # simply not recomputed while the speaker's owner/organization has voiceprints off.
+    file_id = db.query(Speaker.media_file_id).filter(Speaker.id == speaker_id).scalar()
+    if file_id is None or not PrivacyView(db).voiceprints(int(file_id)).enabled:
+        logger.info(
+            "Profile embedding rebuild for speaker %s skipped by privacy policy", speaker_id
+        )
+        return
 
     # Both callers set ``profile_id`` a moment ago and autoflush is off: without the flush
     # the rebuild reads the membership from before the link, and the profile embedding
@@ -587,6 +599,23 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> dict[
             .filter(MediaFile.id == updated_speaker.media_file_id)
             .scalar(),
         }
+        # Privacy policy (#1280), asked fresh at run time: this task is queued, so the switch
+        # may have flipped since the label was saved. Matching reads every voiceprint the
+        # user owns and writes voice_match suggestions, none of which may happen while off.
+        decision = privacy_policy.voiceprint_decision(
+            db,
+            user_id=trigger["user_id"],
+            organization_id=trigger["organization_id"],
+            media_file_id=int(updated_speaker.media_file_id),
+        )
+        if not decision.enabled:
+            logger.info(
+                f"Retroactive matching for speaker {trigger['id']} skipped by privacy policy "
+                f"(locked_by={decision.locked_by})"
+            )
+            db.commit()
+            return {"auto_applied_count": 0, "suggested_count": 0}
+
         logger.info(
             f"Starting retroactive matching for speaker {trigger['id']} "
             f"labeled as '{trigger['display_name']}'"

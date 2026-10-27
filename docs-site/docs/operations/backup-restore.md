@@ -812,7 +812,7 @@ docker compose up -d
 # The backend will run Alembic migrations automatically on startup
 
 # 10. Verify the system
-curl -f http://localhost:5174/api/health
+curl -f http://localhost:5174/health
 ```
 
 ### RTO/RPO Considerations

@@ -21,7 +21,7 @@
 ./scripts/release.sh status              # where am I?
 ./scripts/release.sh reset 0.5.0         # clear rehearsal history before a real run
 ./scripts/release.sh preflight 0.5.0     # seconds — fails fast
-./scripts/release.sh run 0.5.0           # the whole sequence
+./scripts/release.sh run 0.5.0 --yes     # the whole sequence (no --yes: stops at `tag`)
 ```
 
 Twelve stages, each independently runnable, skippable and resumable:
@@ -31,8 +31,8 @@ preflight → bump → verify → test → build → scan → rehearse
           → tag → publish → smoke → promote → finish
 ```
 
-The last four reach outside this repository and each requires `--yes` **and** its
-`ask` rule in `.claude/settings.json`.
+`tag`, `publish`, `promote` and `finish` reach outside this repository and each
+requires `--yes` **and** its `ask` rule in `.claude/settings.json`.
 
 Exit codes are stable so an agent can branch on them: `0` pass, `1` gate failed,
 `2` misuse, `3` precondition unmet, `4` operator abort.

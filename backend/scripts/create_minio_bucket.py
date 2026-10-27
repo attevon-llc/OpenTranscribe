@@ -1,63 +1,24 @@
+"""Create the media bucket by hand, using the application's own storage configuration.
+
+Backend startup already does this (``app.main`` creates ``MEDIA_BUCKET_NAME`` when absent), so
+this is only for provisioning storage before the API has ever started. It deliberately goes
+through ``app.services.minio_service.ensure_bucket_exists`` instead of building its own client:
+the earlier standalone version read ``MINIO_SERVER`` (no other file uses it; the app reads
+``MINIO_HOST``), defaulted to port 9090, and set a public-read policy that no deployment of this
+app wants -- media is served through presigned URLs, and a world-readable bucket bypasses
+quarantine.
+
+Run inside the backend container: ``./opentr.sh shell backend`` then
+``python scripts/create_minio_bucket.py``.
 """
-Simple script to create a MinIO bucket for our application.
-"""
 
-import os
-
-from dotenv import load_dotenv
-from minio import Minio
-from minio.error import S3Error
-
-# Load environment variables
-load_dotenv()
-
-MINIO_SERVER = os.getenv("MINIO_SERVER", "localhost")
-MINIO_PORT = os.getenv("MINIO_PORT", "9090")
-MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER", "minioadmin")
-MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
-MINIO_BUCKET_NAME = os.getenv("MINIO_BUCKET_NAME", "transcribe-app")
-MINIO_SECURE = os.getenv("MINIO_SECURE", "False").lower() == "true"
+from app.core.config import settings
+from app.services.minio_service import ensure_bucket_exists
 
 
-def main():
-    try:
-        # Initialize MinIO client
-        client = Minio(
-            f"{MINIO_SERVER}:{MINIO_PORT}",
-            access_key=MINIO_ROOT_USER,
-            secret_key=MINIO_ROOT_PASSWORD,
-            secure=MINIO_SECURE,
-        )
-
-        # Check if bucket exists, if not create it
-        if not client.bucket_exists(MINIO_BUCKET_NAME):
-            client.make_bucket(MINIO_BUCKET_NAME)
-            print(f"Bucket '{MINIO_BUCKET_NAME}' created successfully")
-
-            # Set public read policy for the bucket
-            import json
-
-            policy = {
-                "Version": "2012-10-17",
-                "Statement": [
-                    {
-                        "Effect": "Allow",
-                        "Principal": {"AWS": "*"},
-                        "Action": ["s3:GetObject"],
-                        "Resource": [f"arn:aws:s3:::{MINIO_BUCKET_NAME}/*"],
-                    }
-                ],
-            }
-
-            # Convert policy dict to JSON string
-            policy_str = json.dumps(policy)
-            client.set_bucket_policy(MINIO_BUCKET_NAME, policy_str)
-            print(f"Public read policy set for bucket '{MINIO_BUCKET_NAME}'")
-        else:
-            print(f"Bucket '{MINIO_BUCKET_NAME}' already exists")
-
-    except S3Error as e:
-        print(f"Error creating bucket: {e}")
+def main() -> None:
+    ensure_bucket_exists()
+    print(f"Bucket '{settings.MEDIA_BUCKET_NAME}' exists")
 
 
 if __name__ == "__main__":

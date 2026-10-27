@@ -170,7 +170,7 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   `except Exception` that would swallow the deferral and report a failure, so each re-raises
   `Retry` first. Any new deferring task needs that arm too.
 - **`transcript_builders.mask_segment_text` fails CLOSED** — a masking error yields
-  `REDACTION_LLM_FAILSAFE_TEXT` (`[redacted]`), never the original text. It used to return the
+  `REDACTION_LLM_FAILSAFE_TEXT` (`[redacted — masking unavailable]`), never the original text. It used to return the
   input, which turned any masking bug into a silent leak. `build_speaker_segments` masks *before*
   truncating to 200 chars so the window can't slice a mask open.
 - **Redaction is OPT-OUT (`DEFAULT_REDACTION_ENABLED = False`) and detection is gated on it.**

@@ -24,7 +24,7 @@ OpenTranscribe separates AI instructions into two layers:
 | **Topic Extraction** | Identifies major topics and themes from transcript content |
 | **Auto-Labeling** | Suggests tags and categories for uploaded media |
 
-The system prompt and default summarization prompt are stored in the database and can be edited through **Settings → AI Summarization Prompts**. Per-collection prompts override the default for files within that collection.
+The system prompt and default summarization prompt are stored in the database and can be edited through **Settings → AI Summarization Prompts**. A collection can name one of your saved prompts as its default, which is used instead of the active prompt for files in that collection.
 
 ## BLUF Summary Format
 
@@ -185,7 +185,7 @@ The context is injected as a preamble before the transcript in all LLM calls. It
 
 ## Per-Collection Prompts
 
-Collections can have their own default summarization prompt, overriding the global default for all files within that collection. This is useful when different types of content need different analysis approaches.
+Collections can have their own default summarization prompt, overriding the active prompt for files within that collection. This is useful when different types of content need different analysis approaches.
 
 ### Use Cases
 
@@ -199,24 +199,25 @@ Collections can have their own default summarization prompt, overriding the glob
 
 ### Setting a Collection Prompt
 
-1. Navigate to the collection
-2. Open collection settings
-3. Enter a custom summarization prompt under **AI Prompt**
-4. Files added to this collection will use the collection prompt instead of the global default
+1. Create the prompt first under **Settings → AI Summarization Prompts**
+2. Open the collection's settings
+3. Choose it as the **Default Summary Prompt** (the other option is *None (use active prompt)*)
+4. Files in this collection use that prompt for auto-summarization instead of the active prompt
 
-If a file belongs to multiple collections, the most specific prompt takes precedence.
+If a file belongs to several collections, the default prompt of the collection it was added to **first** (that has an active default prompt) is used; there is no "most specific" rule.
 
 ## Speaker Identification Prompts
 
 Speaker identification uses multi-signal analysis to suggest names for unlabeled speakers. The model looks for:
 
-| Signal | Confidence | Example |
-|--------|-----------|---------|
-| **Direct name mention** | 0.95 | "Thanks John for that insight" |
-| **Role reference** | 0.85 | "As the CEO, I think..." |
-| **Expertise demonstration** | 0.70 | Deep knowledge in a specific domain |
-| **Speech patterns** | 0.70 | Technical jargon, vocabulary complexity |
-| **Conversational dynamics** | 0.60 | Who asks vs. answers questions, deference patterns |
+The model weighs voice and speech patterns, expertise areas, conversational dynamics (who asks versus answers, deference) and context clues (direct name mentions, role references, file metadata such as title, description and tags). It reports a confidence for each suggestion and is told to return only those at 0.5 or above:
+
+| Confidence | Meaning in the prompt |
+|-----------|-----------------------|
+| 0.9 - 1.0 | Multiple strong indicators align (name mentioned, role, and speech pattern match) |
+| 0.7 - 0.89 | Strong contextual match with a known profile (expertise area and communication style) |
+| 0.5 - 0.69 | Moderate confidence from partial indicators |
+| Below 0.5 | Insufficient evidence; not returned |
 
 ### Improving Speaker ID Accuracy
 
@@ -246,7 +247,7 @@ Temperature controls randomness in outputs. Lower values produce more determinis
 | Data Extraction | 0.1 | Deterministic, structured outputs |
 | Creative Writing | 0.7-1.0 | Allow variety and expressiveness |
 
-OpenTranscribe defaults to 0.1 for summarization and 0.2 for speaker identification. Adjust only if you need more varied output (and accept reduced consistency).
+OpenTranscribe sets 0.1 for summarization and topic extraction and 0.2 for speaker identification in the calls themselves. The **Temperature** field under **Settings → LLM Provider Configuration** is only the fallback for calls that do not set their own, so changing it does not change those three.
 
 :::caution
 Alter either temperature **or** top-p, not both simultaneously. Changing both creates unpredictable behavior.
@@ -273,7 +274,7 @@ Max tokens controls the maximum length of the model's response. For most transcr
 
 ### Anthropic (Claude)
 
-- Claude 3.5 Sonnet or Claude Opus 4 recommended
+- A current Claude Sonnet or Opus model is recommended
 - Excellent at following XML-structured prompts
 - Strong performance on long transcripts (200K+ token context)
 - Supports response prefilling for reliable JSON output

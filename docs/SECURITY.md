@@ -1,39 +1,11 @@
 # Security Policy
 
-## Supported Versions
+## Supported Versions and Reporting a Vulnerability
 
-We actively maintain and provide security updates for the following versions:
-
-| Version | Supported          |
-| ------- | ------------------ |
-| Latest  | :white_check_mark: |
-
-## Reporting a Vulnerability
-
-We take security vulnerabilities seriously. If you discover a security vulnerability in OpenTranscribe, please follow these guidelines:
-
-### Reporting Process
-
-1. **DO NOT** create a public GitHub issue for security vulnerabilities
-2. Email security concerns to: [your-email@domain.com] (replace with your email)
-3. Include as much detail as possible:
-   - Description of the vulnerability
-   - Steps to reproduce
-   - Potential impact
-   - Suggested fixes (if any)
-
-### What to Expect
-
-- **Acknowledgment**: We'll acknowledge receipt of your report within 48 hours
-- **Investigation**: We'll investigate and assess the vulnerability
-- **Updates**: We'll provide regular updates on our progress
-- **Resolution**: We'll work to resolve the issue as quickly as possible
-
-### Response Timeline
-
-- **Critical vulnerabilities**: 24-48 hours for initial response, 7 days for fix
-- **High severity**: 72 hours for initial response, 14 days for fix
-- **Medium/Low severity**: 1 week for initial response, 30 days for fix
+The authoritative policy is [`SECURITY.md`](../SECURITY.md) at the repository root: which versions
+receive fixes, how to report a vulnerability (GitHub private vulnerability reporting, not a
+public issue and not email), and the acknowledgement timeline. This page covers the security
+features and the deployment-side practices only.
 
 ## Security Best Practices for Users
 
@@ -78,7 +50,7 @@ We take security vulnerabilities seriously. If you discover a security vulnerabi
 - Limit database access to necessary services only
 - Regularly backup database with encryption
 
-## Security Features (v0.4.0)
+## Security Features
 
 ### Core Security
 - JWT-based authentication with secure refresh token rotation

@@ -33,7 +33,8 @@ flowchart LR
     B --> C[Drag & Drop]
     B --> D[File Browser]
     B --> E[URL Import]
-    C & D & E --> F[Choose Collections & Tags]
+    B --> R[Record Audio]
+    C & D & E & R --> F[Choose Tags, Collections & Options]
     F --> G[Upload to Storage]
     G --> H[Preprocess]
     H --> I[Transcribe]
@@ -64,6 +65,7 @@ Open **Settings** and look under **Transcription & Speakers**:
   | **Automatic (recommended)** | With the built-in model, speakers are detected on this server. With a cloud provider, that provider detects speakers, or this server does when the model returns text only. |
   | **Always on this server's GPU** | Speakers are detected on this server whichever model transcribes. |
   | **pyannote.ai cloud service** | Audio is sent to pyannote.ai to detect speakers. It needs your own pyannote.ai API key, and pyannote.ai bills that key. This is not the PyAnnote engine an administrator can pick for this server. |
+  | **Another provider's speaker detection** | A saved provider that returns speakers labels who spoke. It transcribes every recording in full and receives the audio; only its speaker labels are used. |
   | **Off (one speaker for the whole recording)** | No speaker detection. Speaker profiles and cross-file speaker matching do not run. |
 
 Some combinations cannot work, for example a cloud model that returns no timestamps together with
@@ -80,8 +82,8 @@ speaker detection. Voiceprints are still computed on the server. See
 
 ### The processing pipeline summary
 
-Settings also shows a read-only **processing pipeline** summary of how your next recording will
-be processed. It lists the four steps (transcription, speaker detection, speaker identification
+**Settings > Transcription & Speakers > Processing pipeline** is a read-only summary of how your
+next recording will be processed. It lists the four steps (transcription, speaker detection, speaker identification
 with voiceprints, and AI features), says where each one runs (this server or a named cloud
 provider), and lists any problem with your current choices together with a link to the setting
 that fixes it. It changes nothing; it reflects your settings.
@@ -108,22 +110,36 @@ says **Location not recorded**.
 
 ## Upload Methods
 
+Click **Add Media** (top right of the gallery toolbar) to open the upload dialog. It is a short
+stepper: **Media**, **Tags** and **Collections** (both optional), **Options** (transcription model and
+the AI summary switch), **Speakers** (the expected speaker range; skipped when speaker detection is
+off or the Fast model is chosen) and **Review**. A large video adds an **Extract** step. Use **Review
+with defaults** to skip ahead with your saved settings. The first step has three tabs, **Upload File**,
+**Media URL** and **Record Audio**.
+
 ### Drag & Drop
-1. Drag files to upload area
+1. Open **Add Media** and drag files onto the drop zone
 2. Multiple files supported
-3. Optionally organize into collections and tags (see below)
-4. Auto-queue processing
+3. Optionally add tags and collections (see below)
+4. Click **Upload**; processing is queued automatically
 
 ![Drag and drop upload zone](/img/screenshots/upload/upload-file-drop.png)
 
 ### File Browser
-1. Click "Upload" button
+1. Click **Add Media**, then click the drop zone to browse
 2. Select file(s)
-3. Optionally organize into collections and tags (see below)
-4. Confirm upload
+3. Optionally add tags and collections (see below)
+4. Click **Upload**
+
+### Large videos: audio extraction
+
+When a video is larger than your threshold, the upload dialog adds an **Extract** step offering
+**Extract Audio** (recommended) or **Upload Full Video**. Extraction runs in your browser before
+anything is sent, so only the much smaller audio track is uploaded. Turn it on or off, set the
+**File Size Threshold**, and choose whether to be asked each time under **Settings > Audio Extraction**.
 
 ### Media URL (1800+ Platforms)
-1. Paste video URL from supported platforms
+1. In **Add Media**, open the **Media URL** tab and paste the video URL
 2. Supported: YouTube, Dailymotion, Twitter/X, TikTok, Vimeo, and 1800+ more
 3. Auto-downloads in web-compatible format and processes
 
@@ -152,16 +168,16 @@ You can configure download quality preferences in **Settings → URL Import Qual
 - **Audio Only**: Download only the audio track (faster, saves storage)
 - **Audio Quality**: Select audio bitrate when downloading audio only
 
-You can also override these defaults per-download by expanding the quality options panel in the URL upload dialog.
+You can also override these defaults per-download with **Download Options** in the **Media URL** tab.
 
 ## Organizing During Upload
 
-When uploading files, you can assign them to **collections** and **tags** directly in the upload dialog:
+When uploading files, you can assign them to **tags** and **collections** directly in the upload dialog:
 
-1. Expand the **Organize** section in the upload dialog
-2. Select one or more existing **collections** or create new ones
-3. Add existing **tags** or type new tag names
-4. Upload the file -- it will be automatically organized
+1. On the **Tags** step, select existing tags or type new tag names
+2. On the **Collections** step, select one or more existing collections or click **Create collection**
+3. Both steps are optional and can be skipped
+4. Upload the file -- it will be organized automatically
 
 This saves time compared to organizing files after upload. Tags and collections can also be managed later from the file detail page.
 
@@ -287,9 +303,9 @@ Administrators: see [Document export](../features/document-export.md) for the ca
 ### Bulk Export
 
 Export subtitles for multiple files at once:
-1. Select files in the gallery using multi-select (checkboxes)
-2. Choose **Export** from the bulk actions menu
-3. Select your format (SRT, VTT, or TXT)
+1. Click **Select Files** in the gallery and tick the files
+2. Open the **Organize** menu
+3. Choose **Export SRT**, **Export WebVTT** or **Export Text**
 4. Files are bundled into a single **ZIP download**
 
 Up to 100 files can be exported in a single bulk operation. Files that are not yet completed are automatically skipped.
@@ -301,7 +317,7 @@ Bulk subtitle export is **asynchronous**: the ZIP is built on the download worke
 When downloading a video file, OpenTranscribe automatically embeds subtitles using FFmpeg:
 - Subtitles are added as a soft subtitle track in the downloaded MP4
 - Speaker labels are included by default
-- Use the **Download Original** option to get the file without embedded subtitles
+- Open the **Download** menu on the transcript actions bar: **Video with subtitles**, **Original video** (without embedded subtitles), or audio as **MP3**, **WAV** or **Original**
 
 ---
 
@@ -313,11 +329,9 @@ After upload, you can update a file's metadata from the detail page:
 
 1. Click on a file to open the detail view
 2. Click the **title** at the top to edit it inline
-3. Press **Enter** or click outside to save
+3. Press **Enter** (or click the save icon) to save, or **Escape** to cancel
 
-Editable fields:
-- **Title** -- Display name shown in the gallery and search results (also updates the search index)
-- **Filename** -- Original filename
+The **title** is the display name shown in the gallery and search results (it also updates the search index).
 
 ### File Status Tracking
 
@@ -350,29 +364,33 @@ retry.
 
 ### Bulk Operations
 
-Select multiple files in the gallery using the checkbox on each card, then use the bulk actions toolbar:
+Click **Select Files** in the gallery toolbar, tick files (or **Select all**), then use the selection toolbar. It groups actions into a **Process** menu, an **Organize** menu and a **Delete** button:
 
-| Action | Description |
-|--------|-------------|
-| **Delete** | Delete selected files and all associated data |
-| **Reprocess** | Re-run the full transcription pipeline |
-| **Selective Reprocess** | Choose specific stages to re-run |
-| **Summarize** | Generate AI summaries for all selected files |
-| **Cancel** | Cancel active processing tasks |
-| **Retry** | Retry failed or cancelled files |
-| **Export** | Bulk export subtitles as a ZIP file |
+| Menu | Action | Description |
+|------|--------|-------------|
+| **Process** | **Reprocess** | Re-run processing; opens the stage picker so you can choose which stages to re-run |
+| **Process** | **AI chat with N** | Start a chat scoped to the selected completed recordings (see [Chatting with Your Transcripts](./chatting-with-transcripts.md)) |
+| **Process** | **Summarize** | Generate AI summaries for the selected files |
+| **Process** | **Redact** | Run content-redaction detection on the selected completed files |
+| **Process** | **Retry Failed** | Retry files that failed processing |
+| **Process** | **Speaker ID** | Run AI speaker identification on the selected completed files |
+| **Process** | **Cancel Processing** | Cancel active transcription tasks |
+| **Organize** | **Add to Collection** | Add the files to a collection |
+| **Organize** | **Add or Edit Tags** | Apply a tag to all selected files (see [Tags](./tags.md)) |
+| **Organize** | **Export SRT / Export WebVTT / Export Text** | Bulk export transcripts as a ZIP |
+| (button) | **Delete N selected** | Delete the files and their data; only a file's owner or an organization admin can delete a file |
 
-All bulk operations report per-file success/failure results.
+Administrators also see **Quarantine** in the Organize menu (see the [Admin Panel](./admin-panel.md)). All bulk operations report per-file success/failure results.
 
 ### Recovering Stuck or Failed Files
 
 If a file is stuck in `processing` status or has failed:
 
-1. **Check the status detail** -- Click the file and look at the error message and recommendations
-2. **Retry** -- For files in `error`, `cancelled`, or `orphaned` status, click **Retry** to re-queue
-3. **Cancel and retry** -- For stuck processing files, click **Cancel** first, then **Retry**
-4. **Recover** -- Use the **Recover** action to attempt automatic recovery of stuck files
-5. **Force delete** (admin only) -- Admins can force-delete files even while processing
+1. **Check the status detail** -- Open the file, or open **Settings > System > File status** and click **Details**, and read the error message and recommendations
+2. **Retry** -- Click **Retry** on a file listed under **Files That Need Attention** in **My Files Status**, or select failed files in the gallery and choose **Retry Failed** from the **Process** menu
+3. **Cancel and retry** -- For stuck processing files, select them and choose **Cancel Processing** from the **Process** menu, then **Retry Failed**
+4. **Recover** -- Click **Request Recovery for All** in **My Files Status** to attempt automatic recovery of stuck files
+5. **Force delete** (admin only) -- Deleting files that are still processing offers to cancel their processing and delete them (**Force Delete Processing Files**)
 
 The system automatically detects stuck files (processing longer than the threshold, default 2 hours) and provides recovery recommendations.
 
@@ -387,19 +405,16 @@ Administrators have access to additional file management capabilities:
 
 ## Speaker Analytics
 
-Once a file completes processing, OpenTranscribe computes detailed analytics automatically (or on-demand if missing). View analytics from the **Analytics** tab on the file detail page.
+Once a file completes processing, OpenTranscribe computes detailed analytics automatically (or on-demand if missing). View analytics in the **Analytics Overview** section of the file detail page (below the transcript actions bar).
 
 ### Talk Time
 
 - **Per-speaker talk time** in seconds and as a percentage of total duration
 - **Total talk time** across all speakers
-- **Silence ratio** -- percentage of the file with no speech detected
 
-### Word Count and Speaking Pace
+### Word Count
 
 - **Word count** per speaker and overall total
-- **Speaking pace** in words per minute (WPM), calculated as total words divided by total talk time
-- Useful for identifying fast or slow speakers in meetings
 
 ### Interruptions
 
@@ -420,9 +435,7 @@ Once a file completes processing, OpenTranscribe computes detailed analytics aut
 
 ### Refreshing Analytics
 
-If speaker names are updated or segments are edited, you can recalculate analytics:
-- Click **Refresh Analytics** on the file detail page
-- Or select **Analytics** as a reprocessing stage during selective reprocess
+If speaker names are updated or segments are edited, you can recalculate analytics by selecting **Analytics** as a stage when you **Reprocess** the file.
 
 ---
 
@@ -432,17 +445,17 @@ Record audio directly in your browser without any external software:
 
 ### Starting a Recording
 
-1. Click the **microphone icon** in the top navigation bar
+1. Click **Add Media** and open the **Record Audio** tab
 2. Grant microphone permission when prompted by your browser
-3. **Select your microphone** from the device dropdown (if you have multiple)
-4. Click **"Start Recording"**
+3. **Select your microphone** from the **Microphone Device** dropdown (if you have multiple)
+4. Click **Start Recording**
 
 ### During Recording
 
 - **Audio level meter** shows real-time volume so you can verify your microphone is working
 - **Duration counter** displays elapsed recording time
 - **Pause/Resume** the recording at any time without losing progress
-- Recording format: WebM with Opus codec at 128 kbps
+- Recording format: WebM with the Opus codec. Quality (**Standard**, **High** or **Maximum**), the maximum duration and auto-stop are set under **Settings > Recording Settings**
 
 ### Finishing a Recording
 

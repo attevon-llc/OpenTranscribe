@@ -17,9 +17,9 @@ The Admin Panel is role-gated. The dividing rule is:
 
 | Role | Access |
 |------|--------|
-| **User** | Profile, recording, transcription, personal settings, own MFA, own active sessions |
-| **Admin** | All user sections plus user management, system statistics, task health, search & indexing, data integrity, embedding consistency/migration, retention, retry settings, and media sources |
-| **Super Admin** | All admin sections plus authentication configuration, role changes, audit logs, ASR provider, speech processing (formerly engine configuration), backups, media mirror, watch sources, and the redaction policy floor |
+| **User** | Profile & Security (own MFA and active sessions), transcription and speaker-identification preferences, chat, AI prompts, watch sources, recording, System Statistics, File status |
+| **Admin** | All user sections plus **User Management**, **Quarantine**, **Takedown notices**, the **Recovery** tab of File status (task health and retry settings), and **Data & Storage** (retention, media cache, data integrity, search index, speaker embeddings) |
+| **Super Admin** | All admin sections plus **Authentication**, **Audit Logs**, role changes, and the controls that change how the deployment runs: the **Backup** tab of Data & Storage (with media mirror), the **Speaker Engine** and **Maintenance** tabs of Speaker Identification, pinning the local transcription model, the watch-source global settings and email configurations, and the **Redaction Policy** (redaction floor) tab of Privacy & Redaction |
 
 :::warning[Changed in v0.5.0]
 Six panels moved from `admin` to `super_admin`: **ASR provider**, **Speech processing**,
@@ -28,7 +28,7 @@ Six panels moved from `admin` to `super_admin`: **ASR provider**, **Speech proce
 upgrading, or hand the work to an existing super admin.
 :::
 
-To access admin features, open **Settings** (gear icon) and scroll to the admin sections in the sidebar.
+To access admin features, open the user menu (top right of the navigation bar), choose **Settings**, and use the **Administration** and **System** groups in the sidebar. Rows above your role stay visible but are greyed out with a tooltip naming the role they need.
 
 ## System Statistics
 
@@ -81,7 +81,7 @@ transactional-mail transport — see [auth email designation](#auth-email-design
 
 ### Pending approvals
 
-When a super admin turns on **Authentication → Local → Require account approval**, every newly
+When a super admin turns on **Authentication → Local Auth → Require administrator approval for new accounts**, every newly
 provisioned account — self-registered *or* created just-in-time by an external identity
 provider — lands in a pending state instead of becoming usable. Administrators approve or reject
 them (`GET`/`POST /api/admin/user-approvals`).
@@ -109,11 +109,11 @@ For each user (except yourself):
 |--------|-------------|
 | **Change role** | `user` / `admin` / **`super_admin`** — the super_admin option is visible only to a super admin, is audited, and raises a confirmation dialog |
 | **Reset password** | Super admin only. Applies the password policy and the reuse history, revokes every session, and optionally flags the account for a forced change on next sign-in. Refused for an account whose identity lives in a directory |
-| **Lock / unlock account** | Lock deactivates the account; unlock is its true inverse — it clears **both** the deactivation and any failed-login lockout |
-| **Force logout** | Revokes every session for the account |
+| **Lock account / Clear login lockout** | Lock deactivates the account and revokes its sessions; the unlock action (**Clear login lockout**) is its true inverse — it clears **both** the deactivation and any failed-login lockout |
+| **Force sign-out** | Revokes every session for the account |
 | **Reset MFA** | Super admin only. Clears the user's TOTP enrolment and backup codes so they can re-enrol |
 | **Toggle local fallback** | Super admin only — allows an external (`pki` / `oidc`) account to also sign in with a local password. Rejected for `ldap` accounts, which never have one |
-| **Recover files** | Triggers file recovery for the user |
+| **Recover stuck files** | Triggers file recovery for the user |
 | **Delete user** | Permanently deletes the account (confirmation required) |
 
 :::note
@@ -134,8 +134,8 @@ The tab opens with the sidecar status and one line saying what the switch is; **
 - **Boundary smoothing** (default **on**): collapses 1--3 word "wrong-speaker islands" at speaker turn boundaries (pure-CPU, runs at finalize)
 - **Acoustic backchannel re-check** (default **off**, experimental, GPU): re-embeds short disputed/overlap words and reassigns them by voiceprint cosine
   - Under **Advanced re-check tuning** (closed by default):
-    - **Cosine margin**: minimum cosine advantage required to relabel a word (default 0.05)
-    - **Max word duration**: only words shorter than this are eligible for re-check (default 1.0 s)
+    - **Re-check Cosine Margin**: minimum cosine advantage required to relabel a word (default 0.05)
+    - **Re-check Max Word Duration (s)**: only words shorter than this are eligible for re-check (default 1.0 s)
 
 ### Speaker separation engine
 
@@ -165,12 +165,12 @@ editable there.
 
 ## Redaction Policy
 
-The admin enforcement floor for content redaction. While per-user redaction preferences live under **Settings → Privacy & Redaction → Content Redaction**, this admin policy is the floor that **overrides** those preferences for all users.
+The admin enforcement floor for content redaction, on the **Redaction Policy** tab of **Settings → Privacy & Redaction** (super admin; the tab is locked for admins). While per-user redaction preferences live on the **Content Redaction** tab, this admin policy is the floor that **overrides** those preferences for all users.
 
-- **Force categories**: force **PII**, **toxicity**, and/or **profanity** redaction on for every user (cannot be disabled per-user)
-- **Mandate censored exports**: require masked output for all subtitle/transcript exports
-- **Mandate mask-before-LLM**: require redaction before transcripts are sent to LLM features
-- **Re-scan / re-index after model upgrade**: trigger a re-scan and re-index of all files following a detection-model upgrade
+- **Forced categories**: **Force PII redaction for all users**, **Force toxic-speech redaction for all users** (with a **Toxicity threshold**) and **Force profanity redaction for all users** (users cannot turn a forced category off, only add more)
+- **Mandate censored exports**: no user can export the unredacted transcript
+- **Mandate masking before every LLM provider (including self-hosted)**: by default only remote providers receive masked text and a local model receives the transcript unmasked; this switch masks it for local models too
+- **Re-scan all files**: recompute detection across existing transcripts, for example after a detection-model upgrade
 
 ## Authentication Configuration
 
@@ -182,15 +182,18 @@ default**, so once you save a panel the stored value wins.
 
 | Tab | Purpose |
 |-----|---------|
-| **Local** | Local password login, self-registration, password policy, MFA enforcement, account lockout, login banner |
-| **LDAP** | Directory connection, search base, bind credentials, attribute mapping, admission and admin groups |
+| **Local Auth** | Local password login, self-registration, password policy, MFA enforcement, account lockout, login banner |
+| **LDAP/AD** | Directory connection, search base, bind credentials, attribute mapping, admission and admin groups |
 | **OIDC** | Any OpenID Connect provider — discovery URL, client ID/secret, callback, roles claim, token-validation controls |
-| **PKI** | X.509 settings, CA path, trusted proxies, mode, revocation checking |
-| **SAML** | SAML 2.0 service provider — IdP metadata/entity ID, ACS/SLS endpoint settings, attribute mapping, admission groups (same group-list syntax as OIDC) |
-| **Mappings** | Bind LDAP/OIDC group claims to an in-app group and/or a role grant, with a dry-run tester ([IdP group mapping](../authentication/groups)) |
-| **SCIM** | Bearer tokens for SCIM 2.0 provisioning from an IdP — create, view status, and revoke (see [SCIM Provisioning](#scim-provisioning) below) |
-| **Session** | Token lifetimes, idle and absolute session timeouts, concurrent-session limit and policy |
-| **Audit** | Who changed which auth setting, and when |
+| **PKI/Certificate** | X.509 settings, CA path, trusted proxies, mode, revocation checking |
+| **Trusted Header** | Identity asserted by a trusted reverse proxy (see [Trusted-header (proxy)](../authentication/proxy)) |
+| **SAML 2.0** | SAML 2.0 service provider — IdP metadata/entity ID, ACS/SLS endpoint settings, attribute mapping, admission groups (same group-list syntax as OIDC) |
+| **Group mappings** | Bind LDAP/OIDC group claims to an in-app group and/or a role grant, with a dry-run tester ([IdP group mapping](../authentication/groups)) |
+| **SCIM provisioning** | Bearer tokens for SCIM 2.0 provisioning from an IdP — create, view status, and revoke (see [SCIM Provisioning](#scim-provisioning) below) |
+| **Directory sync** | Periodic reconciliation of LDAP-backed accounts against the directory: disables accounts the directory no longer reports and re-applies group mappings (off by default; has a dry-run mode and a cap on disables per run) |
+| **Sessions** | Token lifetimes, idle and absolute session timeouts, concurrent-session limit and policy |
+| **Auth Email** | Which email configuration carries authentication mail (see [Auth email designation](#auth-email-designation)) |
+| **Change history** | Who changed which auth setting, and when |
 
 Each tab has **Save**, and LDAP and OIDC have **Test Connection** to verify before committing.
 
@@ -208,7 +211,7 @@ Two behaviours worth knowing:
   incoherent combinations (self-registration on with local login off) are refused with a message
   naming which switch to change first.
 
-The **Audit** tab reads `auth_config_audit` in PostgreSQL and shows configuration changes with
+The **Change history** tab reads `auth_config_audit` in PostgreSQL and shows configuration changes with
 the account that made each one. It is a different source from the **Audit Logs** section below,
 which streams security events from OpenSearch and carries no configuration changes.
 
@@ -270,7 +273,7 @@ security policy lives in the Authentication section above.
 
 ### MFA setup flow
 
-1. A super admin enables MFA at **Authentication → Local → MFA Enabled**
+1. A super admin enables MFA at **Authentication → Local Auth → Multi-Factor Authentication (MFA)** (**Enable TOTP-based MFA**; **Require MFA for administrators** and **Require MFA for all users** make it mandatory)
 2. Users see the MFA setup option in their **Security** settings
 3. Click **Enable MFA** to generate a QR code
 4. Scan with any TOTP authenticator app (Google Authenticator, Microsoft Authenticator, Authy)
@@ -678,22 +681,17 @@ Shows the last run timestamp, number of files deleted, and the next scheduled ru
 
 ## Retry Settings
 
-The **Retry Settings** section controls how failed transcription tasks are retried.
+The **Failed Task Retries** panel, in the same **Recovery** tab, controls how failed transcription tasks are retried.
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| **Limit Retries** | Toggle to cap the number of retry attempts | On |
-| **Max Retries** | Maximum number of retry attempts per task (1-10) | 3 |
+| **Limit retries** | Toggle to cap the number of retry attempts | On |
+| **Max** | Maximum number of retry attempts per task (1-10) | 3 |
 
-When retry limits are disabled, failed tasks will continue retrying indefinitely. Click **Save** to apply changes or **Reset to Defaults** to restore the default values.
+When retry limits are disabled, failed tasks will continue retrying indefinitely. Click **Save** to apply changes or **Reset** to restore the default values.
 
 ## Task Health
 
-The **Task Health** section (visible under System Statistics) shows recent task activity:
+**Settings → System → File status → Recovery** (admins) is the **Task Health Monitor**: it finds stuck work and restarts it. After **Refresh Health Data** it lists stuck tasks and inconsistent files and offers system-wide recovery actions, each behind a confirmation: **Recover Stuck Tasks**, **Fix Inconsistent Files**, **Startup Recovery** and **Recover All User Files**. These affect every user's files and tasks, not only yours.
 
-- Task list with status, file name, duration, and timestamps
-- Counts of pending, running, completed, and failed tasks
-- Success rate percentage
-- Average processing time
-
-This provides a quick operational overview of the transcription pipeline without needing to access the Flower dashboard directly.
+For an operational overview of the pipeline, **System Statistics** shows pending, running, completed and failed task counts, the success rate, average processing time, queue depths, throughput and a **Recent Tasks** list, without needing the Flower dashboard.

@@ -401,5 +401,5 @@ Per-package CSV/Markdown files in this directory:
 
 ## Regenerating this report
 
-See `docs/legal/sbom/README.md` for the exact commands. This report reflects a point-in-time
+See `security-reports/license-compliance/README.md` for the exact commands. This report reflects a point-in-time
 scan of the images tagged above — re-run it whenever dependencies change or before each release.

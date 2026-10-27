@@ -1,7 +1,7 @@
 # =============================================================================
 # OpenTranscribe Backend - Production Dockerfile
 # Multi-stage build optimized for security with non-root user
-# Updated with cuDNN 9 compatibility for PyTorch 2.8.0+cu128
+# Updated with cuDNN 9 compatibility for PyTorch 2.11.0+cu128
 # =============================================================================
 
 # Deno JS runtime — required by yt-dlp for YouTube PO-token generation.

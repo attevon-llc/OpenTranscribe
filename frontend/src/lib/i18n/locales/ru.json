@@ -1150,7 +1150,7 @@
   "userManagement.lockFailed": "Не удалось заблокировать учётную запись.",
   "userManagement.unlockAccount": "Снять блокировку входа",
   "userManagement.unlockAccountFor": "Снять блокировку после неудачных входов для {{name}}",
-  "userManagement.unlockConfirmMessage": "Это снимает блокировку, вызванную неудачными попытками входа {{name}}. Учётная запись, заблокированная администратором, при этом не активируется.",
+  "userManagement.unlockConfirmMessage": "Это снимает блокировку, вызванную неудачными попытками входа {{name}}, и снова активирует учётную запись, если администратор её отключил.",
   "userManagement.unlockSuccess": "Блокировка входа для {{name}} снята",
   "userManagement.unlockNotLocked": "Учётная запись {{name}} не была заблокирована.",
   "userManagement.unlockFailed": "Не удалось снять блокировку входа.",

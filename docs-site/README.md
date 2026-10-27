@@ -1,150 +1,107 @@
 # OpenTranscribe Documentation Site
 
-This directory contains the source code for the OpenTranscribe documentation website built with [Docusaurus](https://docusaurus.io/).
+Source for the OpenTranscribe documentation website, built with [Docusaurus](https://docusaurus.io/)
+3 and published at <https://docs.opentranscribe.app>. The same site is also built into the
+`opentranscribe-docs` image that the app serves at `/docs/` for offline use.
+
+Maintainer notes (generated content, MDX gotchas, what to check when writing pages) are in
+[`CLAUDE.md`](CLAUDE.md). Read it before editing.
 
 ## Quick Start
 
-### Installation
+Requires Node 24 or newer (`package.json` `engines`); `.nvmrc` pins 26, which CI and the Docker
+build use.
 
 ```bash
 cd docs-site
-npm install
+npm ci            # or npm install
+npm start         # dev server with live reload, http://localhost:3000
+npm run build     # static site into build/
+npm run serve     # serve the built site locally
 ```
 
-### Local Development
+`npm run build` fails on any broken link or broken heading anchor (`onBrokenLinks` and
+`onBrokenAnchors` are `throw`), so it doubles as the link checker. If a failed build leaves the
+next one hanging with no progress, run `npx docusaurus clear` and build again.
+
+Other scripts in `package.json`: `typecheck` (`tsc`), `clear`, `swizzle`, `write-heading-ids`,
+`write-translations`, `deploy`.
+
+To build the way the in-app copy is built (pages served under `/docs/`):
 
 ```bash
-npm start
+DOCS_BASE_URL=/docs/ npm run build
 ```
-
-This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
-
-### Build
-
-```bash
-npm run build
-```
-
-This command generates static content into the `build` directory and can be served using any static contents hosting service.
-
-### Test Build Locally
-
-```bash
-npm run serve
-```
-
-This command serves the built website locally to test the production build.
 
 ## Project Structure
 
 ```
 docs-site/
-├── blog/                   # Blog posts (announcements, tutorials)
-├── docs/                   # Documentation markdown files
-│   ├── getting-started/    # Getting started guides
-│   ├── installation/       # Installation guides
-│   ├── user-guide/         # User-facing documentation
-│   ├── features/           # Feature documentation
-│   ├── configuration/      # Configuration guides
-│   ├── api/                # API reference
-│   ├── developer-guide/    # Developer documentation
-│   ├── deployment/         # Deployment guides
-│   ├── use-cases/          # Use case examples
-│   └── faq.md              # Frequently asked questions
-├── src/
-│   ├── components/         # React components
-│   ├── css/                # Custom styles
-│   └── pages/              # Custom pages (homepage, etc.)
-├── static/
-│   ├── img/                # Images and assets
-│   └── screenshots/        # Feature screenshots
-├── docusaurus.config.ts    # Docusaurus configuration
-├── sidebars.ts             # Sidebar navigation
-└── package.json
+  docs/                    Documentation pages
+    getting-started/       Introduction, quick start, first transcription, screenshots
+    installation/          Docker Compose, deployment variants, GPU, offline, troubleshooting
+                           (_generated/ holds partials produced from code; do not hand-edit)
+    authentication/        Auth methods: OIDC, LDAP, Keycloak, SAML, PKI, groups, email
+    configuration/         Environment variables, nginx, multi-GPU, search, password policy
+    features/              Feature documentation
+    user-guide/            End-user guides
+    operations/            Backup, monitoring, hardening, runbooks, fresh deployments
+    developer-guide/       Architecture, testing, releasing, RAG, contributing
+    legal/                 Legal documents
+    faq.md
+  blog/                    Release announcements; authors.yml and tags.yml live here
+  src/
+    pages/                 Custom pages: index.tsx, architecture.tsx, roadmap.tsx
+    components/            React components
+    data/roadmap.json      Data for the roadmap page (generated, see below)
+    css/, theme/           Styling and MDX component overrides
+  static/                  Images (img/, img/screenshots/), architecture/*.html, CNAME
+  architecture-diagrams/   Diagram specs that the architecture page is rendered from
+  docusaurus.config.ts     Site configuration
+  sidebars.ts              Sidebar navigation (an explicit list)
+  Dockerfile, nginx.conf   Image that serves the built site
 ```
 
 ## Writing Documentation
 
 ### Creating a New Page
 
-1. Create a new Markdown file in the appropriate directory under `docs/`
-2. Add frontmatter at the top:
+1. Create a Markdown file in the matching directory under `docs/`.
+2. Add frontmatter:
 
-```markdown
----
-sidebar_position: 1
-title: Page Title
----
+   ```markdown
+   ---
+   title: Page Title
+   ---
 
-# Page Heading
+   # Page Heading
+   ```
 
-Your content here...
-```
+3. **Add the page to `sidebars.ts`.** The sidebar is an explicit list, not generated from the
+   file tree, so a page that is not listed there is not reachable from the navigation.
+4. Run `npm run build` and fix any broken link or anchor it reports.
 
-3. Update `sidebars.ts` if needed to include the new page in navigation
-
-### Documentation Guidelines
-
-- **Use clear, concise language** - Write for developers of all skill levels
-- **Include code examples** - Show, don't just tell
-- **Add screenshots** - Visual aids improve understanding
-- **Link to related pages** - Help users navigate
-- **Keep pages focused** - One topic per page
-- **Update regularly** - Keep docs in sync with code
+Describe the UI with its real labels from `frontend/src/lib/i18n/locales/en.json`, and make
+claims about processing match the code, not intent.
 
 ### Markdown Features
 
-Docusaurus supports extended Markdown features:
+Docusaurus admonitions, tabs and syntax-highlighted code blocks all work, as do Mermaid diagrams
+(`markdown.mermaid` is enabled).
 
-**Admonitions:**
 ```markdown
 :::tip Pro Tip
 This is a helpful tip!
 :::
 
-:::warning Warning
+:::warning
 Be careful with this!
 :::
-
-:::danger Danger
-This can break things!
-:::
-
-:::info Info
-Here's some information.
-:::
 ```
 
-**Code Blocks with Syntax Highlighting:**
-````markdown
-```bash
-./opentranscribe.sh start
-```
-
-```python
-def hello_world():
-    print("Hello, World!")
-```
-````
-
-**Tabs:**
-```markdown
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
-
-<Tabs>
-  <TabItem value="npm" label="npm">
-    npm install
-  </TabItem>
-  <TabItem value="yarn" label="Yarn">
-    yarn install
-  </TabItem>
-</Tabs>
-```
-
-**Comments, blog truncation and explicit heading IDs — MDX form only.** Every `.md` file
-here is compiled as MDX, which parses `{ ... }` as a JavaScript expression and rejects
-HTML comments outright. Use the MDX comment form for all three:
+**Comments, blog truncation and explicit heading IDs: MDX form only.** Every `.md` file here is
+compiled as MDX, which parses `{ ... }` as a JavaScript expression and rejects HTML comments.
+Use the MDX forms:
 
 ```markdown
 {/* an ordinary comment */}
@@ -154,140 +111,92 @@ HTML comments outright. Use the MDX comment form for all three:
 ## A heading with a stable anchor {/* #explicit-id */}
 ```
 
-The CommonMark spellings (`<!-- comment -->`, `<!-- truncate -->`, `## Heading {#id}`)
-fail the build with `Unexpected character !` or `Could not parse expression with acorn`.
-Explicit heading IDs matter because the auto-generated slug changes whenever the heading
-text is reworded, silently breaking every inbound link — `onBrokenAnchors: 'throw'` catches
-those at build time, but only for links inside this site.
+The CommonMark spellings (`<!-- comment -->`, `<!-- truncate -->`, `## Heading {#id}`) fail the
+build. Give a heading an explicit ID when other pages link to it: the auto-generated slug changes
+whenever the heading is reworded, and `onBrokenAnchors: 'throw'` only catches that for links
+inside this site. `npm run write-heading-ids` can add IDs in bulk.
 
-## Deployment
-
-### GitHub Pages (Automatic)
-
-The documentation site automatically deploys to GitHub Pages when changes are pushed to the `master` branch.
-
-**Setup:**
-1. Enable GitHub Pages in repository settings
-2. Set source to "GitHub Actions"
-3. Push changes to `master` branch
-4. GitHub Actions will build and deploy automatically
-
-**URL:** `https://docs.opentranscribe.app` (the custom domain in `static/CNAME`)
-
-### Manual Deployment
-
-#### GitHub Pages (Manual)
-
-```bash
-# Using SSH
-USE_SSH=true npm run deploy
-
-# Using HTTPS
-GIT_USER=<Your GitHub username> npm run deploy
-```
-
-#### Vercel
-
-1. Connect GitHub repository to Vercel
-2. Set root directory to `docs-site`
-3. Vercel auto-deploys on every push
-
-#### Cloudflare Pages
-
-1. Connect GitHub repository to Cloudflare Pages
-2. Set build command: `npm run build`
-3. Set build output directory: `build`
-4. Set root directory: `docs-site`
-
-### Custom Domain
-
-To use a custom domain (e.g., docs.opentranscribe.io):
-
-1. Update `url` in `docusaurus.config.ts`:
-   ```ts
-   url: 'https://docs.opentranscribe.io',
-   ```
-
-2. Add `CNAME` file to `static/` directory:
-   ```
-   docs.opentranscribe.io
-   ```
-
-3. Configure DNS:
-   - Add CNAME record pointing to GitHub Pages or your hosting provider
-   - Wait for DNS propagation (can take 24-48 hours)
-
-## Maintenance
-
-### Updating Dependencies
-
-```bash
-npm update
-```
-
-### Checking for Broken Links
-
-```bash
-npm run build
-```
-
-Docusaurus will error on broken internal links during build.
+Files whose name starts with `_` are partials, never routed; import them as MDX components.
 
 ### Adding Images
 
-1. Place images in `static/img/` or `static/screenshots/`
-2. Reference in Markdown:
-   ```markdown
-   ![Alt text](/img/screenshot.png)
-   ```
+Put images under `static/img/` (screenshots under `static/img/screenshots/<area>/`) and
+reference them with an absolute path:
+
+```markdown
+![Alt text](/img/screenshots/gallery/example.png)
+```
 
 ### Blog Posts
 
-Create blog posts in `blog/` directory:
+Posts live in `blog/` as `YYYY-MM-DD-slug.md`:
 
 ```markdown
 ---
-slug: welcome
-title: Welcome to OpenTranscribe
-authors: [your-name]
-tags: [announcement, release]
+slug: v0.6.0-release
+title: "Post title"
+authors: [opentranscribe]
+tags: [release, features]
 ---
 
-Your blog post content here...
+Summary shown on the blog index.
+
+{/* truncate */}
+
+The rest of the post.
 ```
 
-## Versioning (Future)
+- `slug` must be unique across the blog.
+- `authors` must be keys from `blog/authors.yml` (currently `opentranscribe` and `davidamacey`).
+- Take `tags` from `blog/tags.yml`; add a tag there before using a new one.
+- `draft: true` keeps a post out of the production build (it still shows in `npm start`). Remove
+  it, and rename the file to the publication date, when the release goes out.
 
-When OpenTranscribe needs version-specific docs:
+## Generated Content
 
-```bash
-npm run docusaurus docs:version 1.0
-```
+Three things here are produced from code or from the issue tracker. Edit the source, never the
+output.
 
-This creates a snapshot of docs for version 1.0 that remains unchanged.
+| Output | Source | Regenerate | Drift check |
+| --- | --- | --- | --- |
+| `docs/installation/_generated/*.md` | build/scan scripts, ASR provider catalog, pipeline plan | `backend/venv/bin/python scripts/generate-pipeline-docs.py --write` (repo root) | `scripts/generate-pipeline-docs.py --check` in CI, `backend/tests/unit/test_pipeline_docs_tables.py` |
+| `static/architecture/*.html` (the `/architecture` page) | `architecture-diagrams/specs/*.json` | `scripts/generate-architecture-diagrams.sh [name]`; needs the Archify skill, see [`architecture-diagrams/README.md`](architecture-diagrams/README.md) | `architecture-diagram-drift` pre-commit hook, `backend/tests/unit/test_architecture_diagram_drift.py` |
+| `src/data/roadmap.json` (the `/roadmap` page) | GitHub milestones and `epic:*` issue labels | `python3 scripts/generate-roadmap.py` (repo root, needs an authenticated `gh`) | none; the deploy workflow regenerates it on every build |
 
-## Translations (Future)
+The committed `roadmap.json` is a snapshot used by the offline Docker image; the live site
+regenerates it from the tracker at deploy time.
 
-To add translations:
+## Deployment
 
-1. Update `i18n` config in `docusaurus.config.ts`
-2. Create translation files:
-   ```bash
-   npm run write-translations -- --locale fr
-   ```
-3. Translate files in `i18n/fr/docusaurus-plugin-content-docs/current/`
+The public site deploys to GitHub Pages through `.github/workflows/deploy-docs.yml`:
+
+- A push to `master` that touches `docs-site/**` or `VERSION` builds and deploys.
+- A daily scheduled run (06:17 UTC) redeploys so the roadmap stays current.
+- `workflow_dispatch` runs it on demand.
+- A pull request touching the same paths runs the build job only and never deploys.
+
+The custom domain is set by `static/CNAME` (`docs.opentranscribe.app`) and `url` in
+`docusaurus.config.ts`. The workflow checks out full git history because the homepage version
+badge compares `VERSION` with the newest release tag.
+
+The in-app copy is built by `docs-site/Dockerfile` (Node build stage, then nginx) with
+`DOCS_BASE_URL=/docs/`; `./opentr.sh start prod --build` builds it along with the other images.
+
+Before pushing, the pre-push pre-commit hook `docs-build` runs the same `npm run build`.
+
+## Versioning and Translations
+
+The site is not versioned (`docs` always tracks the default branch, which the announcement bar
+says) and has a single locale, `en`. Docusaurus supports both
+(`docusaurus docs:version`, `write-translations`) but neither is set up.
 
 ## Contributing
 
-See [CONTRIBUTING.md](../docs/CONTRIBUTING.md) for guidelines on contributing to the documentation.
+See [CONTRIBUTING.md](../docs/CONTRIBUTING.md) and the
+[contributing guide](docs/developer-guide/contributing.md).
 
 ## Resources
 
 - [Docusaurus Documentation](https://docusaurus.io/docs)
-- [Markdown Guide](https://www.markdownguide.org/)
-- [Docusaurus Best Practices](https://docusaurus.io/docs/category/guides)
-
-## Support
-
-- **GitHub Issues**: [Report documentation issues](https://github.com/attevon-llc/OpenTranscribe/issues)
-- **GitHub Discussions**: [Ask questions](https://github.com/attevon-llc/OpenTranscribe/discussions)
+- [GitHub Issues](https://github.com/attevon-llc/OpenTranscribe/issues) for documentation problems
+- [GitHub Discussions](https://github.com/attevon-llc/OpenTranscribe/discussions) for questions

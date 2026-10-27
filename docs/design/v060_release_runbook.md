@@ -58,8 +58,8 @@ Then `cd docs-site && npm run build` must pass with no broken links.
 |---|---|
 | Oct 28 | Finish lanes; audits; open and merge both PRs; Gate 0c |
 | Oct 29 | Wave 3 on a fresh master stack (no writers): integration gate, e2e, #1306, #1308 (closes #1313), #1309, #1282 browser pass (light, dark, ar), transformers/GPU transcription check, v448 migration over populated data. Refresh screenshots and baselines. Fix findings |
-| Oct 30 | Fixes from Wave 3; docs, README, blog, upgrade guide final; #1310 roadmap regen; stop the live stack; `release.sh preflight`, `bump`, `verify`, `test`, `build`, `scan` |
-| Oct 31 | `rehearse` (live stack stopped; HuggingFace token is already in `scripts/release-tests/.env.test-secrets`), then with the owner's go: `tag`, `publish`, `smoke`, `promote`, `finish`. Cloud handoff after |
+| Oct 30 | Fixes from Wave 3; docs, README, blog, upgrade guide final; #1310 roadmap regen; `release.sh preflight`, `bump`, write CHANGELOG + blog, `verify`, `test` (dev stack must be UP), `build`, `scan` |
+| Oct 31 | push `release/prep-0.6.0` to origin, `rehearse --yes` (auto-stops and restarts dev; HuggingFace token is already in `scripts/release-tests/.env.test-secrets`), then with the owner's go: `tag`, `publish`, stop the stack again, `smoke`, `promote`, `finish`. Cloud handoff after |
 
 If Wave 3 shows a release blocker, slipping the date is cheaper than shipping it. Cut list if time runs
 out, in order: #1180 profiling (findings only), native-speaker review of translations, optional polish.
@@ -77,6 +77,15 @@ out, in order: #1180 profiling (findings only), native-speaker review of transla
   an NLP/embedding path and the reranker; build the prod backend image and run Trivy to confirm the
   five CVEs are gone. If blocked, `./scripts/release.sh scan 0.6.0 --force-scan "<CVE ids and why>"`
   is pre-approved by the owner.
+- Built-image dependency checks (build the real prod CUDA image first; none of this was possible in
+  CPU venvs): `import torchcodec` and `torchaudio` load without a missing-library error (the repo pins
+  torchcodec 0.11.1 from the cu128 index; the images that ran on staging had PyPI 0.17.0, a CUDA-13
+  build the app never imports; keep whichever loads cleanly), one real GPU transcription with
+  diarization, the NLP/embedding path, the reranker, the toxicity model and GLiNER really loading
+  under transformers 5.10.4 / huggingface-hub 1.17.0 (the models-marked tests now FAIL, not skip, when
+  weights are cached but cannot load), a real model download with progress and resume, and Trivy on the
+  built image to confirm the five CVEs are gone. Run `scripts/check-requirements-resolve.py` once on
+  the release-prep branch.
 - Privacy behavior on real services: sidecar gender false, no docs written to `speakers_v4` when off,
   purge end to end, org panel gating.
 - #1282 browser pass with screenshots: upload tray, notification card, search page, chat, About
@@ -117,18 +126,47 @@ out, in order: #1180 profiling (findings only), native-speaker review of transla
       The downstream list must include `AWS_TRANSCRIBE_BUCKET`, the new seam notes, and migrations
       v440-v448. Note the multi-tenant demo is affected by the tenant-scope fixes until it redeploys.
 
+- [ ] **Security reports**: `security-reports/SECURITY-ADVISORY.md` is stamped "Applies to v0.5.1" and
+      names nginx 1.29.8 (the frontend image is now nginx 1.31.2): refresh it for 0.6.0 from the
+      `scan` stage output. The committed `*-dockle.json` reports show FATAL DKL-DI-0005 ("clear apt-get
+      caches") on the backend and lite images; the release `scan` criteria do not gate on Dockle, so
+      decide: fix the Dockerfile apt cleanup or record the finding in the advisory.
+      `security-scan.sh` usage text omits `lite` and `blackwell`; `generate-roadmap.py`'s docstring still
+      says a deleted CI job calls `--check`.
+- [ ] **License/SBOM report** (`security-reports/license-compliance/`): no release stage regenerates it.
+      Re-run `scripts/generate-sbom-report.py` against the 0.6.0 images (output dir is fixed on the
+      docs-audit branch) so the report matches what ships.
+
 ## Release stage order
 `preflight -> bump -> verify -> test -> build -> scan -> rehearse -> tag -> publish -> smoke -> promote -> finish`.
 Write the CHANGELOG prose and the blog post right AFTER `bump` (it promotes `[Unreleased]` to
 `[0.6.0] - <date>` and opens a fresh one) and BEFORE `verify` (which builds the docs site so a
 duplicate blog slug is caught). Build uses `BUILD_MODE=local ./scripts/docker-build-push.sh` via the
 stage, never a bare `docker build` (it would report version "unknown"). `tag` before `publish`;
-`promote` and `finish` last. `scan` scans the local images; `rehearse` needs `./opentr.sh stop` first.
+`promote` and `finish` last. `scan` scans the local images.
 Run `./scripts/release.sh reset 0.6.0` first (rehearsal history reads as current until reset; a
 preflight run on Oct 28 already wrote a ledger entry).
 `rehearse` refuses (exit 3) while the live stack is up. Exit codes: 0 pass, 1 gate failed, 2 misuse,
 3 precondition unmet, 4 operator abort. A gate override is `--force-<stage> "reason"` and is recorded
 as overridden, never as a pass.
+
+## Stage preconditions the scripts enforce (verified against scripts/release/*.sh)
+- `run X` WITHOUT `--yes` stops at `tag` with exit 4. `tag`, `publish`, `promote`, `finish` need `--yes`.
+- `bump` also refreshes the roadmap snapshot and commits; `verify` runs the visual-baseline gate
+  (`SKIP_VISUAL_BASELINE_FRESHNESS=true` records `waived`, not a pass); `preflight` checks the CHANGELOG.
+- `test` needs the DEV STACK UP (it probes 5176) and runs `run-dev-tests.sh --backend-only --e2e-smoke
+  --export-capability`. If that run is NOT MEASURED (exit 5) the stage maps it to exit 4
+  ("aborted: nothing ran"), which is misleading: read the log, do not assume the gate ran.
+- `rehearse` runs three scenarios (fresh install, upgrade, lite) and exits 3 unless `release/prep-0.6.0`
+  is PUSHED to origin (scenarios A and C download manifests from it): `git push -u origin
+  release/prep-0.6.0` first. The live stack must be down: either `./opentr.sh stop` yourself or pass
+  `--yes` / `RELEASE_AUTO_STOP_STACK=true` so it stops the stack and restarts dev on exit.
+- `smoke` also needs the stack stopped (exit 3 otherwise). Rehearse restarts dev on exit, so stop it
+  again before `smoke`.
+- `tag`: the "is an ancestor of origin/release/0.6" check only bites on a patch; the first cut creates
+  the branch from the tag.
+- `finish` refuses until `release-validate.yml` is green for the tag SHA.
+- `blackwell` appears in `list-platforms` but is skipped by build and publish.
 
 ## Known risks
 - Lane B's transformers 5.10 / huggingface-hub 1.17 move is a major-version jump with whisperx capping

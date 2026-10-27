@@ -5,7 +5,7 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
 
 ## Stack
 
-- **SvelteKit 2 + Svelte 5 + TypeScript + Vite 6**, `@sveltejs/adapter-static` → a pure
+- **SvelteKit 2 + Svelte 5 + TypeScript + Vite 8**, `@sveltejs/adapter-static` → a pure
   **client-side SPA** (`fallback: index.html`, no SSR, no `+page.server.ts`). Data is fetched
   client-side (`onMount`/reactive) from the FastAPI backend.
 - i18n via i18next (**12** locales in `src/lib/i18n/locales`: ar de en es fr it ja ko nl pt ru zh
@@ -15,7 +15,7 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
   Node pinned to 26 (`.nvmrc`).
   Locales are **code-split, one chunk per language** — `src/lib/i18n/index.ts` globs them
   non-eagerly and `ensureLocaleLoaded()` fetches only the active one. Never static-import a
-  locale JSON: that puts all ~2.3 MB back into the entry chunk. Only the active language is
+  locale JSON: that puts all ~6 MB (12 locales) back into the entry chunk. Only the active language is
   loaded (not the `en` fallback), which is safe because `npm run check:i18n` enforces exact
   key parity — keep it green.
   **A link or badge inside a sentence is ONE translated string with a named placeholder**, rendered
@@ -43,13 +43,14 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
   15 failures in `FileUploader.test.ts` at `localStorage.clear()`. The flag removes the global so
   jsdom installs the real thing. **Do not replace it with a hand-rolled Storage shim**:
   `clearUserState`, `auth.logoutOrdering` and `txtExportPrefs` all `vi.spyOn(Storage.prototype, …)`,
-  which cannot hook an object that doesn't inherit from it. Measured equivalent — node:26+flag and
-  node:24 both 189 files / 1747 passed. Enforced by
+  which cannot hook an object that doesn't inherit from it. Measured equivalent at the time — node:26+flag and
+  node:24 both 189 files / 1747 passed (a point-in-time comparison; re-derive the current count with `npm run test`). Enforced by
   `backend/tests/unit/test_node_version_consistency.py`, gated on `.nvmrc` so it lapses if we ever
   drop below 26. If you run bare `npx vitest` on Node 26 you will hit this.
 - `npm run test:audit` — finds tests that pass whether the code works or not (below).
 - **Before committing**: lint + svelte-check + build + test must be green (pre-commit enforces
-  it via `scripts/frontend-check.sh`).
+  it via `scripts/frontend-check.sh`: the commit stage runs it with `--check-only`, i.e. everything
+  except `vite build`, and the build runs at the push stage).
 
 ## Test quality gate — `npm run test:audit`
 

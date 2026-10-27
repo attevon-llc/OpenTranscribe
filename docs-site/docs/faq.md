@@ -114,7 +114,7 @@ See [Offline Installation](./installation/offline-installation.md) for details.
 **Audio:** MP3, WAV, FLAC, M4A, OGG, AAC
 **Video:** MP4, MOV, AVI, MKV, WEBM, FLV
 
-Maximum file size: **4GB**
+Maximum file size: **15 GB** by default (`MAX_UPLOAD_BYTES`, configurable by the administrator)
 
 ### What languages are supported for transcription?
 
@@ -252,7 +252,7 @@ Depends on hardware and content length:
 | 1 hour         | ~5 minutes     | ~60 minutes  |
 | 3 hours        | ~15 minutes    | ~3 hours     |
 
-**Processing speed:** ~70x realtime with GPU and `large-v2` model.
+**Processing speed:** the measured throughput on an RTX A6000 is roughly 35-39x realtime for the full pipeline, including speaker diarization (see `docs/BENCHMARK_RESULTS.md` in the repository). The table above is a rough estimate for a mid-range GPU; real times depend on the model, the diarization settings, the content and your hardware.
 
 ### Can I process multiple files at once?
 

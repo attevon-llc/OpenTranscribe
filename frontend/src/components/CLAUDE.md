@@ -64,7 +64,9 @@ sharing, etc.) that the routes compose. Primitives live in `ui/`.
   bell button (`.notifications-btn`, a visual-regression mask) stays in the navbar and only toggles
   `showNotificationsPanel`; `.notifications-panel` / `.notifications-backdrop` are unchanged.
 - Subfolders: `transcript/`, `speakers/`, `settings/`, `gallery/`, `navbar/`,
-  `fileStatus/`, `collections/`, `sharing/`, `groups/`, `search/`, `upload/`, `ui/`.
+  `fileStatus/`, `collections/`, `sharing/`, `groups/`, `search/`, `upload/`, `ui/`, `chat/`,
+  `fileDetail/`, `tags/`, `supportAccess/` (each with its own `CLAUDE.md`), plus `notifications/`,
+  `mfa/`, `legal/` and `takedown/` (none yet).
   Each subfolder holds the presentational children split out of one oversized coordinator.
 
 ## Conventions / patterns

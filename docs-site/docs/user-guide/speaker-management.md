@@ -17,6 +17,7 @@ Speaker detection is chosen separately from transcription, under **Settings → 
 - **Automatic (recommended)**: speakers are detected on this server when the built-in model transcribes, by the cloud provider when it returns speakers, and on this server when a cloud model returns text only (on a lite deployment that last case is refused; pick another option).
 - **Always on this server's GPU**: this server detects speakers whichever model transcribes. Not available on a lite deployment.
 - **pyannote.ai cloud service**: the audio is sent to pyannote.ai, which bills your own API key.
+- **Another provider's speaker detection**: another saved transcription provider that returns speakers labels who spoke (it transcribes the whole recording and receives the audio).
 - **Off (one speaker for the whole recording)**: no speaker detection.
 
 Details, timing rules and the lite limits are on [Speaker Diarization](../features/speaker-diarization.md#where-speakers-are-detected).
@@ -38,11 +39,10 @@ flowchart TD
     A[New Transcription] --> B[Speaker Detection\nthis server or cloud]
     B --> C[Extract Speaker Embeddings\nalways on this server]
     C --> D[Match Against Global Profiles]
-    D --> E{Match Found?}
-    E -->|Yes, >85%| F[Auto-Assign Speaker Name]
-    E -->|Maybe, 65-85%| G[Suggest with Confidence]
+    D --> E{Match of 75% or more?}
+    E -->|Yes| F[Auto-Assign Speaker Name]
     E -->|No| H[Create New Unknown Speaker]
-    F & G & H --> I[Gender Classification]
+    F & H --> I[Gender Estimate, can be switched off]
     I --> J[LLM Speaker ID Optional]
     J --> K[User Verification]
 ```
@@ -89,9 +89,9 @@ If LLM is configured, get AI-powered speaker name suggestions based on:
 
 ## Global Speakers Page
 
-The dedicated **Speakers** page (accessible from the sidebar) provides a centralized view of all speaker profiles and clusters:
+The dedicated **Speakers** page (the **Speakers** link in the top navigation bar) provides a centralized view of all speaker profiles and clusters. It has three tabs: **Clusters**, **Profiles** and **Review**.
 
-### Speakers Tab
+### Profiles Tab
 - Browse all named speaker profiles
 - View appearance count across files
 - Edit names, avatars, and details
@@ -99,11 +99,14 @@ The dedicated **Speakers** page (accessible from the sidebar) provides a central
 
 ### Clusters Tab
 - **GPU-accelerated pre-clustering** groups unnamed speakers by voice similarity
-- Review suggested clusters and promote them to named profiles
+- Review suggested clusters and **Promote to Profile**, **Merge**, **Split** or **Delete** them
 - **Play/pause audio** directly from cluster cards to verify speaker identity
 - **Unassign and blacklist** -- remove a mis-clustered segment and prevent it from being re-assigned
 - **Outlier analysis** -- identify segments that don't match the cluster well
-- Trigger manual re-clustering when needed
+- Trigger manual re-clustering with **Re-cluster All** when needed
+
+### Review Tab
+Speakers waiting for a decision, each with a suggestion from a profile match, a voice match or an AI suggestion, and a voice sample you can play. Use **Accept** (A), **Skip** (S) or **Assign to profile…**; a suggestion changes the speaker only when you accept it.
 
 ### What removing a speaker removes
 
@@ -150,7 +153,7 @@ cluster. Giving a cluster member a different name (or assigning it to a differen
 takes it out of that cluster.
 
 To undo a correction, name that one speaker yourself: type the profile's name on it in the
-transcript, or use **Accept** or **Assign to profile…** on it in the Inbox (an unassigned
+transcript, or use **Accept** or **Assign to profile…** on it in the **Review** tab (an unassigned
 speaker appears there). That clears the "not this profile" mark, and the "not the same person"
 marks against that profile's speakers, for that one speaker. Bulk actions never clear it.
 
@@ -158,12 +161,13 @@ marks against that profile's speakers, for that one speaker. Bulk actions never 
 
 ### Gender Classification
 
-OpenTranscribe can automatically detect speaker gender attributes:
+OpenTranscribe predicts a speaker's gender from voice characteristics (pitch and timbre). It is an
+**estimate**, not a fact about the person, and it is never used to name anyone:
 
-- **Gender badges** displayed on speaker profiles and cluster cards
-- Used for **gender-informed cluster validation** -- prevents merging speakers of different detected genders
-- Configure in **Settings → Speaker Identification → Voice Attributes**
-- Gender detection runs during the diarization pipeline
+- **Gender badges** appear on speaker cards, always labeled as AI estimates; a **Confirm male** / **Confirm female** control on a profile records a human confirmation
+- Used for **gender-informed cluster validation**: a cluster whose members have mixed predicted genders is flagged (**Mixed genders - review cluster**)
+- The prediction runs during transcription and can be switched off. In **Settings → Speaker Identification → Voice Attributes**, turn off **Enable speaker attribute detection** (or just **Predict gender from voice**), and use **Show predictions on speaker cards** to hide the badges
+- Administrators can run detection on existing files from the **Maintenance** tab of the same section
 
 ## Speaker Analytics
 
@@ -173,9 +177,8 @@ View comprehensive speaker statistics:
 - **Word Count**: Words spoken
 - **Turn-Taking**: Number of speaking turns
 - **Interruptions**: Detected interruptions
-- **Speaking Pace**: Words per minute
 - **Question Frequency**: Questions asked
-- **Cross-Media Appearances**: Videos featuring speaker
+- **Cross-Media Appearances**: Videos featuring speaker (on the Profiles tab)
 
 ## Managing Speakers
 

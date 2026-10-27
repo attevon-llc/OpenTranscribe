@@ -76,7 +76,7 @@ optional `"device": "cpu"|"cuda"` field, but the sidecar's request structs have 
 `deny_unknown_fields` — an OLD sidecar (pre this field) silently ignores an unrecognised
 `device` key and answers 200 having run on CUDA anyway, indistinguishable from success. So
 **nothing may send it without first checking `diarizer_native.sidecar_supports_cpu_device()`**
-(reads `/healthz`'s `supported_devices`, TTL-cached the same way as `sidecar_ready`/
+(reads `/healthz`'s `devices` — the set actually LOADED — never `supported_devices`, which is only what the binary *could* load and is true on every GPU deployment; TTL-cached the same way as `sidecar_ready`/
 `sidecar_healthy` — one cache, not a second one per capability). Implemented for the
 embedding-only path only: `services/native_embedding_client.py`'s `_embed_window` routes to
 CPU when advertised, since every call there is a lightweight 256-d ONNX forward pass and
@@ -125,9 +125,10 @@ an empty `/models` and crash-looping on exit 8. A failure here is never fatal �
 > checking **which container served the diarization**, not by looking for an error. This was the
 > normal case until #654/#655/#665/#672 were fixed together: nothing produced the models
 > directory, and the overlay wired only `celery-worker`, so under gpu-scale and gpu-split
-> PyAnnote was the *de-facto* engine. Still-open relatives: **#656** (no retry policy before the
-> fallback is removed), **#703** (`celery-worker-gpu-transcribe` consumes a queue nothing
-> publishes to).
+> PyAnnote was the *de-facto* engine. **#703** (`celery-worker-gpu-transcribe` consumed a queue nothing
+> published to) is fixed — `tasks/transcription/core.py:_dispatch_gpu_split_diarize_chain` now
+> sets the `gpu-diarize` queue explicitly. Relative not re-verified here: **#656** (no retry
+> policy before the fallback is removed).
 >
 > **It is no longer silent (#1184).** Every run is counted in `diarization_runs_total{backend,reason}`
 > (`transcription/diarization_runs.py`, called from `engine/stages._run_diarize`, the one call

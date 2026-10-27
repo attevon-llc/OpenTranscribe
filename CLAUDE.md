@@ -103,7 +103,7 @@ Run `./opentr.sh` with no arguments for full usage. The ones you'll reach for:
 ./opentr.sh start dev --dry-run              # print compose files + command, start nothing
 ```
 
-`--fresh` refuses to start when any port it needs is already bound (it offers `--port-offset N`) and generates a gitignored `.fresh/<name>.yml` overlay that re-pins every service to `otfresh-<name>-*`. `--port-offset` works by exporting the `*_PORT` vars the compose files already read — never by overlaying a second `ports:` list, which compose would append (issue #343). The offset is remembered in `.fresh/<name>.offset`. **Every** `--with-*` overlay is isolated too (issue #347) — names, ports, and volumes all move — and the overlays used are recorded in `.fresh/<name>.aux`. Do not maintain the list here by hand: it was stale for four overlays at once, and `--with-llm-test` was missing from `opentr.sh`'s dispatch itself, so a fresh stack collided with the main one on `opentranscribe-llm-test-vllm`/5195 and `fresh-destroy` left a multi-GB vLLM holding a GPU. `backend/tests/unit/test_opentr_fresh_aux_isolation.py` now enumerates the flags and fails on any that is neither isolated nor **explicitly exempt with a written reason**. The three exemptions are `--with-watch` / `--with-backup` (they bind live host directories and declare no `container_name` or ports, so there is nothing project-scoped to re-pin — `opentr.sh` warns instead) and `--with-pki` (a prod/nginx overlay that layers onto existing services). ⚠️ `LLM_TEST_GPU_DEVICE_ID` is deliberately **not** offset: a port offset must never renumber a physical card. Details: `scripts/CLAUDE.md`.
+`--fresh` refuses to start when any port it needs is already bound (it offers `--port-offset N`) and generates a gitignored `.fresh/<name>.yml` overlay that re-pins every service to `otfresh-<name>-*`. `--port-offset` works by exporting the `*_PORT` vars the compose files already read — never by overlaying a second `ports:` list, which compose would append (issue #343). The offset is remembered in `.fresh/<name>.offset`. **Every** `--with-*` overlay is isolated too (issue #347) — names, ports, and volumes all move — and the overlays used are recorded in `.fresh/<name>.aux`. Do not maintain the list here by hand: it was stale for four overlays at once, and `--with-llm-test` was missing from `opentr.sh`'s dispatch itself, so a fresh stack collided with the main one on `opentranscribe-llm-test-vllm`/5195 and `fresh-destroy` left a multi-GB vLLM holding a GPU. `backend/tests/unit/test_opentr_fresh_aux_isolation.py` now enumerates the flags and fails on any that is neither isolated nor **explicitly exempt with a written reason**. The three exemptions are `--with-watch` / `--with-backup` (they bind live host directories and declare no `container_name` or ports, so there is nothing project-scoped to re-pin — `opentr.sh` warns instead) and `--with-scratch-tmpfs` (it only changes the driver of the already project-namespaced `pipeline_scratch` volume). `--with-pki` is **not** exempt: its overlay publishes `PKI_HTTPS_PORT`, so it is isolated like the rest. ⚠️ `LLM_TEST_GPU_DEVICE_ID` is deliberately **not** offset: a port offset must never renumber a physical card. Details: `scripts/CLAUDE.md`.
 
 **NAS overlay** (non-fresh `start`): auto-detected from `.env`, announced with a `💾 NAS overlay AUTO-LOADED` banner; `--no-nas` suppresses, `--nas` opts in explicitly. When active it writes a `.opentranscribe-live-data` marker into each bind dir — **if you see that marker, you are looking at live data; do not delete.** Full map: `docs-site/docs/operations/fresh-deployments.md`.
 
@@ -114,7 +114,7 @@ Configure auth via Admin UI (Settings → Authentication); DB config takes prece
 ```bash
 ./opentr.sh start dev --with-ldap-test       # LDAP at localhost:3890, UI :17170 (admin/admin_password)
 ./opentr.sh start dev --with-keycloak-test   # a Keycloak IdP to test OIDC against, localhost:8180 (admin/admin)
-                                             # ⚠️ FIRST START TAKES ~10 MINUTES — see below
+                                             # first start builds a pre-augmented image once; ~25 s to healthy after — see below
 ./opentr.sh start dev --with-authentik-test  # an Authentik IdP to test OIDC against, localhost:9022 (bootstrap: admin@example.com/admin_password)
 ./opentr.sh start prod --build --with-pki    # PKI/mTLS at https://localhost:5182 (prod-only — Vite can't do mTLS)
 ```
@@ -141,18 +141,20 @@ full table: `backend/tests/CLAUDE.md`.
 `--with-mock-asr` is the sibling overlay — a mocked cloud ASR (Gladia stand-in) provider at
 `http://mock-asr:5198`, so `--lite`-mode ASR can be exercised with no vendor account either;
 same fixture/table location.
-⚠️ **Keycloak is slow to start and that is normal, not a hang.** `start-dev` re-runs Quarkus
-augmentation on **every** start (the output lands in `/opt/keycloak/lib/quarkus`, which is not on
-the volume, so nothing is reused), and its `JarResultBuildStep` walks the built tree calling
-`File.setReadable` per entry. Measured 2026-09-06 on this host: **~600 s** before it listens, then
-Quarkus starts in ~16 s. The healthcheck therefore allows `start_period: 900s` — it was 60s + 5×30s
-= 210s, which marked a perfectly healthy Keycloak unhealthy at 3.5 minutes, failed `up --wait`, and
-aborted `run-dev-tests.sh --full` **before a single test ran**. A container sitting at 0.2% CPU
-here is doing I/O-bound work, not deadlocked; check the thread dump before concluding otherwise.
-The real fix is to pre-run `kc.sh build` in a small custom image and start `--optimized` (~16 s);
-that is worth doing and is not yet done. The image is **pinned** (`26.4.7`) like every other
-dependency — it was `:latest`, which meant the gate's auth phase ran against whatever Keycloak
-shipped that morning. `smallstep/step-ca` is still `:latest` and wants the same treatment.
+⚠️ **Keycloak used to take ~10 minutes to start; it is now pre-built (`docker/keycloak/Dockerfile`).**
+The stock image's `start-dev` re-ran Quarkus augmentation on **every** start (the output lands in
+`/opt/keycloak/lib/quarkus`, which is not on the volume, so nothing was reused), and its
+`JarResultBuildStep` walks the built tree calling `File.setReadable` per entry. Measured 2026-09-06
+on this host: **~600 s** before it listened, then Quarkus started in ~16 s. That marked a perfectly
+healthy Keycloak unhealthy at the old 210 s budget, failed `up --wait`, and aborted
+`run-dev-tests.sh --full` **before a single test ran**. A container sitting at 0.2% CPU there was
+doing I/O-bound work, not deadlocked; check the thread dump before concluding otherwise.
+The real fix is **done**: `kc.sh build` runs once in a small custom image and the container starts
+`--optimized` (~19 s to "Listening on", ~25 s to healthy), so `docker-compose.keycloak.yml`'s
+`start_period` is `120s`, not the old `900s` — do not raise it without re-measuring. The image is
+**pinned** (`26.7.3` in both the Dockerfile `FROM` and the compose tag, whose suffix is a hash of
+the build context and is policed by `backend/tests/unit/test_keycloak_image_tag_tracks_dockerfile.py`),
+not `:latest` as it once was. `smallstep/step-ca` is still `:latest` and wants the same treatment.
 
 Combine flags as needed. PKI client certs: `scripts/pki/test-certs/clients/*.p12`.
 Details: `backend/app/auth/CLAUDE.md`, `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/OIDC_SETUP.md`.
@@ -210,8 +212,11 @@ preflight → bump → verify → test → build → scan → rehearse
   ledger — not a pass.
 - **Ledger** lives in `.release/<version>/steps/` (gitignored). Rehearsal history
   reads as current until you `reset`, so reset before a real run.
-- `rehearse` runs both scenarios and **requires the live stack stopped**; it
-  refuses (exit 3) and prints the command rather than stopping it for you.
+- `rehearse` runs **three** scenarios (fresh install, upgrade, lite) and **requires the live
+  stack stopped**: without approval it refuses (exit 3) and prints the command; with `--yes` or
+  `RELEASE_AUTO_STOP_STACK=true` it runs `./opentr.sh stop`, rehearses, and restarts dev from a
+  trap. It also needs the release branch pushed to origin. `smoke` needs the stack stopped too,
+  and `test` needs the dev stack UP (`docs/design/v060_release_runbook.md` has the sequence).
   `test-upgrade.sh` now runs to completion across all 18 phases, including the
   backup/rollback tail — previously masked by a `set -e` harness bug that
   silently truncated the script at the first non-fatal-by-design digest mismatch
@@ -391,10 +396,10 @@ Manual frontend check: `./scripts/frontend-check.sh [--no-claude] [--check-only]
 **Local-first.** GitHub Actions runs the unit/API suite (`backend-tests` job, fresh Postgres + CPU-only `requirements-ci.txt`) and vitest as a safety net; the COMPLETE suite needs the live stack and runs locally:
 
 ```bash
-./scripts/run-integration-tests.sh        # THE pre-merge gate: ungated suite +
-                                          # all RUN_*-gated security suites (both
-                                          # FIPS modes) + integration-marked tests
-                                          # flags: --coverage --e2e-smoke --cleanup
+./scripts/run-integration-tests.sh        # THE pre-merge gate: unit/API suite, the
+                                          # security suites re-run under FIPS_MODE=true,
+                                          # integration + gpu marked tests, schema drift
+                                          # flags: --coverage --e2e-smoke --cleanup (+ more: see its header)
 ```
 
 For a quick "does my current branch work" check during normal development — backend gate + e2e
@@ -421,7 +426,7 @@ no test referenced.
 ```bash
 python3 scripts/audit-tests.py backend/tests        # 21 AST detectors, exits 1 on new offenders
 cd frontend && npm run test:audit                   # the vitest sibling, 10 detectors
-npm run test:audit:selftest                         #   ...and ITS 27-case self-test
+npm run test:audit:selftest                         #   ...and ITS self-test (prints its case count; 32 when last counted)
 python3 scripts/analyze-test-timing.py <junit.xml> [--baseline baseline.xml]
 ./scripts/run-mutation-tests.sh --module spans      # opt-in, never in the gate or CI
 ```
@@ -446,7 +451,9 @@ Current (measured 2026-09-12 via `./scripts/run-integration-tests.sh`'s unit/API
 load — quote the command, not the number, if you are unsure): backend
 **14,746 passed / 79 skipped** in that phase. A prior entry here read 12,882/148 (2026-09-05);
 that is not this run under-reporting, it is the same rot this section warns about — re-derive,
-don't diff against a remembered number.
+don't diff against a remembered number. (Re-checked 2026-10-27: `cd backend && pytest tests --collect-only -q -n0`
+lists ~20,200 test ids across all markers, so the 14,746 above predates ~6 weeks of growth; the passed
+count of the unit/API phase itself was not re-run.)
 
 **These numbers rot — re-derive rather than trust them.** Prior values in this file have been
 wrong by over a thousand tests when checked. `./scripts/run-backend-tests.sh --summary` and
@@ -529,11 +536,12 @@ subsystem, and put new subsystem detail **there**, not in this file.
 | OpenSearch indexing + neural/hybrid search | `backend/app/services/search/CLAUDE.md` |
 | Content redaction (PII / toxicity / profanity) | `backend/app/services/redaction/CLAUDE.md` |
 | Watch sources (local / S3 / SMB auto-import) | `backend/app/services/watch_sources/CLAUDE.md` |
+| Word / PDF transcript documents with numbered lines | `backend/app/services/transcript_document/CLAUDE.md` |
 | Test suite: markers, gates, E2E fixtures | `backend/tests/CLAUDE.md` |
 | Repo scripts + destructive-op warnings | `scripts/CLAUDE.md` |
 | Release pipeline (12 stages, ledger, gates) | `docs-site/docs/developer-guide/releasing.md` |
 | Full local test matrix (4 stages, overlay sub-matrix) | `docs-site/docs/developer-guide/full-test-matrix.md` |
-| Frontend SPA (+ 24 folder-level files) | `frontend/CLAUDE.md` |
+| Frontend SPA (+ one file per folder under `frontend/src/`: `git ls-files 'frontend/src/**/CLAUDE.md'`) | `frontend/CLAUDE.md` |
 | Docs site, generated tables + architecture diagram drift checks | `docs-site/CLAUDE.md` |
 
 > **Cosine score conversion (repo-wide trap):** OpenSearch `cosinesimil` returns `(1 + cosine) / 2`, NOT raw cosine. Every kNN score read must do `raw_cosine = 2.0 * hit["_score"] - 1.0`. All 11 read sites live in the speaker/voiceprint plane under `backend/app/services/` (none in `api/`, and transcript search ranks by RRF, never raw cosine) — all 11 currently correct. **It applies to WRITES too** (issue #674): a threshold sent *into* OpenSearch (`min_score`) needs the inverse, `(1 + raw_cosine) / 2`, and no read-site audit can find a bad one. Both directions are named functions in `backend/app/utils/cosine_space.py` — call them. Full table: `backend/app/services/search/CLAUDE.md`.
@@ -546,7 +554,8 @@ subsystem, and put new subsystem detail **there**, not in this file.
 > off the **provider**, never a global setting.
 >
 > ✅ **The provider keying is BUILT and shipped**, not just decided. `chat/service.py._prepare_context`
-> resolves `redaction.llm_guard.is_local_provider(llm.config)` once per turn and threads it as
+> resolves `redaction.llm_guard.is_local_provider(llm.config)` once per turn (via `_build_mask_kwargs` /
+> `_build_digest_mask_kwargs`) and threads it as
 > `unmask_for_local` to all three masking call sites (`mask_chunks`, and both `mask_digests` calls).
 > A **local** model (a `vllm`/`ollama`/`custom` config whose `base_url` resolves to
 > loopback/RFC1918/link-local/a docker-compose hostname) receives excerpt text unmasked; a
@@ -622,8 +631,8 @@ subsystem, and put new subsystem detail **there**, not in this file.
   - **`npm run check:i18n` enforces key PARITY, not translation.** A key copied into all 12 files
     with English text passes the gate and ships untranslated. Parity is the floor, not the goal.
   - **It runs in three places, and one of them has a gap.** (1) CI runs it explicitly
-    (`.github/workflows/pre-commit.yml:311`, "Check i18n key parity"). (2) It also runs
-    **locally** — `scripts/frontend-check.sh:235` calls `npm run check:i18n`, and that script
+    (`.github/workflows/pre-commit.yml`, step "Check i18n key parity"). (2) It also runs
+    **locally** — `scripts/frontend-check.sh` (the "i18n parity check" step) calls `npm run check:i18n`, and that script
     body **is** the `frontend-check` pre-commit hook (`.pre-commit-config.yaml`, `--check-only`
     at commit stage), so a local `git commit` touching frontend code does run it. (3) The
     residual gap: that hook's `files: ^frontend/src/` + `types_or: [svelte, ts, javascript,

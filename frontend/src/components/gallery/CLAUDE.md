@@ -52,7 +52,7 @@ of that page. They render the file grid/list, header, filters, sort, and bulk-ac
   any more, only these two.
 - `BulkTagModal.svelte` — adds or removes one tag across the selection. Reached from the
   Organize menu, and from the **Tags** button when files are selected.
-- The **Tags** button (`GalleryActionButtons`) sits beside Collections and picks its mode
+- The **Tags** button (`GalleryPrimaryActions`) sits beside Collections and picks its mode
   from the selection, exactly as Collections does: a selection opens this modal, nothing
   selected opens `components/tags/TagManagerModal.svelte`. There is no `/tags` route —
   a tag is metadata over the library, not a destination.

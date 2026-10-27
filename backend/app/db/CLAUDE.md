@@ -10,7 +10,7 @@ pending. `alembic upgrade head` by hand is **production-only**.
 
 ## Key files
 
-- `migrations.py` — the runner plus `_detect_schema_version()`, a ~400-line ladder of
+- `migrations.py` — the runner plus `_detect_schema_version()`, a ~1,400-line ladder of
   `information_schema` probes that maps a schema fingerprint to a revision to stamp.
 - `base.py` — `engine`, `SessionLocal`, `Base`, `get_db()`, `build_libpq_options()`.
   `session_utils.py` — `session_scope()` (the contextmanager tasks use),
@@ -60,8 +60,9 @@ therefore *should* re-run the revision), `v390_add_file_facts`,
 `v391_add_recorded_date_provenance`, `v392_add_redaction_coverage`,
 `v393_add_overlap_timing_columns`, `v394_add_document_tables`,
 `v395_add_watch_source_file_document_id`,
-`v396_add_document_chunk_redaction_cache` (all four on `origin/feat/doc-ingestion`,
-unmerged as of `v397`), `v397_add_platform_super_admin_link_authorized`
+`v396_add_document_chunk_redaction_cache` (all on `origin/feat/doc-ingestion`, still
+unmerged; that branch has since grown to `v399` — it also carries its own `v397_backfill_document_tenancy_and_hash`,
+so the number `v397` is taken twice across the two branches until one is renumbered), `v397_add_platform_super_admin_link_authorized`
 (`user.platform_super_admin_link_authorized` — the escape hatch for
 `account_linking.assert_provider_id_link_permitted`'s super_admin JIT-link refusal,
 issue #993; chained off `v393` rather than `v394` specifically to avoid colliding
@@ -130,7 +131,9 @@ of `master` into this branch was clean at the file level and the fork existed on
 (`v393`→`v394`, `v394`→`v395`, `v395`→`v396`), since master's `v393` was already published;
 `v393_add_overlap_timing_columns` itself was **not** renamed or edited. The same four places
 moved per revision (filename, `revision`/`down_revision`, the detection arm here, `REVISION`
-in the consistency test), plus every prose reference to the old numbers across
+in the consistency test), plus every prose reference to the old numbers across (all of these
+except `test_user_deletion_fk_coverage.py` and this file exist only on `origin/feat/doc-ingestion`,
+not on `master`)
 `app/tasks/document_tasks.py`, `app/services/watch_sources/document_ingest.py`,
 `app/models/document.py`, `tests/unit/test_user_deletion_fk_coverage.py`,
 `docs-site/docs/developer-guide/documents.md`, `docs/handoff/*.md`, and this file.
@@ -224,15 +227,15 @@ Configuration-only assertions would have passed against a backstop that did noth
 - **The `pg_advisory_lock(42)` guard covers the migration — keep it that way.** Fixed in
   issue #284 A1.4: `run_migrations()` takes the lock on a **dedicated `lock_engine` /
   `lock_conn`** held open across `command.upgrade()`, and the `finally` unlocks on that same
-  session (`migrations.py:1058-1074`, `1128-1134`). The bug it replaced is the reason the
+  session (`run_migrations()` in `migrations.py`: acquire near the top, `finally` unlock/close/dispose at the bottom). The bug it replaced is the reason the
   shape matters: `pg_advisory_lock` is **session-scoped**, so taking it inside a
   `with engine.connect()` block — or on a connection returned to a pool that
   `engine.dispose()` then closes — drops the lock *before* the upgrade runs, and unlocking
   from a fresh connection is a no-op because a session cannot release a lock it never held.
   Concurrent replicas then race Alembic. Pinned by
-  `tests/unit/test_celery_reliability.py:109` (lock acquired before the upgrade, on
+  `tests/unit/test_celery_reliability.py::test_lock_is_held_on_a_dedicated_connection_across_the_upgrade` (lock acquired before the upgrade, on
   `lock_conn`, with the `engine.dispose()` ordered so it cannot touch the lock engine) and
-  `:124` (no second engine for the unlock). If you refactor the runner, do not move the
+  `::test_unlock_uses_the_same_session` (no second engine for the unlock). If you refactor the runner, do not move the
   acquire into a context manager and do not introduce an `unlock_engine`.
 - **`_detect_schema_version()` legitimately names the pre-`v380` column spellings.**
   Those probes describe the schema *as it was* at v031 and v170; they are the only
@@ -245,8 +248,10 @@ Configuration-only assertions would have passed against a backstop that did noth
   already failing that way). `tests/unit/_migration_detection.py:
   assert_detected_at_or_after` asserts what the test is actually for: the ladder must
   never stamp *lower* than the revision whose markers the schema carries.
-- Only the **backend** runs migrations — Celery workers do not, and there is **no
-  `RUN_MIGRATIONS` env gate**. A migration failure calls `SystemExit(1)`; the container
+- Only the **backend** runs migrations — Celery workers do not. The one gate is
+  `RUN_MIGRATIONS_ON_STARTUP` (`core/config.py`, default `true`; `false` for an orchestrated
+  deploy whose migrate Job owns them, in which case readiness asserts the schema is at head
+  and fails 503 otherwise). A migration failure calls `SystemExit(1)`; the container
   aborts rather than serving a half-migrated schema.
 - `_repair_skipped_v230()` runs after every successful migration — a permanent post-hook
   that re-applies v230's idempotent DDL for DBs upgraded through the pre-linearisation

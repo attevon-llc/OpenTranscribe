@@ -1179,7 +1179,7 @@
   "userManagement.lockFailed": "계정을 잠글 수 없습니다.",
   "userManagement.unlockAccount": "로그인 잠금 해제",
   "userManagement.unlockAccountFor": "{{name}}님의 로그인 실패로 인한 잠금 해제",
-  "userManagement.unlockConfirmMessage": "{{name}}님의 로그인 실패로 인한 잠금을 해제합니다. 관리자가 잠근 계정을 다시 활성화하지는 않습니다.",
+  "userManagement.unlockConfirmMessage": "{{name}}님의 로그인 실패로 인한 잠금을 해제하고, 관리자가 비활성화한 계정은 다시 활성화합니다.",
   "userManagement.unlockSuccess": "{{name}}님의 로그인 잠금이 해제되었습니다",
   "userManagement.unlockNotLocked": "{{name}}님은 잠긴 상태가 아니었습니다.",
   "userManagement.unlockFailed": "로그인 잠금을 해제할 수 없습니다.",

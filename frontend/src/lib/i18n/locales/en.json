@@ -1179,7 +1179,7 @@
   "userManagement.lockFailed": "Could not lock the account.",
   "userManagement.unlockAccount": "Clear login lockout",
   "userManagement.unlockAccountFor": "Clear the failed-login lockout for {{name}}",
-  "userManagement.unlockConfirmMessage": "This clears the failed-login lockout for {{name}}. It does not re-enable an account that an administrator locked.",
+  "userManagement.unlockConfirmMessage": "This clears the failed-login lockout for {{name}} and re-enables the account if an administrator disabled it.",
   "userManagement.unlockSuccess": "Login lockout cleared for {{name}}",
   "userManagement.unlockNotLocked": "{{name}} was not locked out.",
   "userManagement.unlockFailed": "Could not clear the login lockout.",

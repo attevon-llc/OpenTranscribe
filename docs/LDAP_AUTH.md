@@ -9,7 +9,7 @@ OpenTranscribe supports hybrid authentication combining LDAP/Active Directory wi
 - **Flexible auth**: System supports both email-based (local) and **username-based (LDAP)** login — users can log in with their sAMAccountName, uid, or any configured username attribute
 - **Priority**: Local users checked first when `auth_type='local'` in database
 
-> **v0.4.0 Change**: LDAP configuration is now managed via the Super Admin UI (Settings → Authentication → LDAP/Active Directory). Settings are stored encrypted (AES-256-GCM) in the database. Environment variables (`LDAP_SERVER`, `LDAP_BASE_DN`, etc.) continue to work as an initial seed fallback but database configuration takes precedence once saved.
+> **v0.4.0 Change**: LDAP configuration is now managed via the Super Admin UI (Settings → Authentication → LDAP/Active Directory). Settings are stored encrypted (AES-256-GCM) in the database. Environment variables (`LDAP_SERVER`, `LDAP_SEARCH_BASE`, etc.) continue to work as an initial seed fallback but database configuration takes precedence once saved.
 
 ## Configuration
 

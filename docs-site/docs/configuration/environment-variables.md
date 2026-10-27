@@ -92,6 +92,7 @@ which process actually runs the pipeline.
 # Speaker Detection Ranges
 MIN_SPEAKERS=1         # Minimum speakers to detect
 MAX_SPEAKERS=20        # Maximum speakers to detect (no hard limit, can increase for large events)
+NUM_SPEAKERS=          # Force an exact speaker count, overriding MIN/MAX_SPEAKERS; empty uses the range
 
 # Where v4 (256-dim) voiceprints are computed. Default true: they come from the
 # diarizer's own centroids, or from the diar-native sidecar when a separate
@@ -109,7 +110,7 @@ MODEL_CACHE_DIR=./models
 ### Whether speakers are detected: a user setting, not `ENABLE_DIARIZATION`
 
 Whether speakers are detected, and where, is chosen per user in
-**Settings → Speaker Identification → Speaker detection** (Automatic by default, or this server, the pyannote.ai
+**Settings → Speaker Identification → Speaker Detection** (Automatic by default, or this server, the pyannote.ai
 cloud service, or Off), and can be skipped per file through the upload API
 (`disable_diarization`). Every run is planned from that choice.
 No environment variable turns speaker detection off for a deployment.
@@ -282,9 +283,8 @@ SEARCH_NEURAL_BATCH_SIZE=5
 # Reindex refresh interval: flush Lucene segments every N files (default: 100)
 SEARCH_REINDEX_REFRESH_INTERVAL=100
 
-# Hybrid search over-fetch cap: max candidates per sub-query before RRF merge (default: 200)
-# Increase for large indexes where top-200 misses relevant results
-SEARCH_MAX_OVERFETCH=200
+# Over-fetch ceiling for the client-side sort of collapsed groups (default: 1000)
+SEARCH_MAX_OVERFETCH=1000
 
 # RRF rank constant: lower = more aggressive top-result boosting (default: 30)
 SEARCH_RRF_RANK_CONSTANT=30
@@ -428,9 +428,9 @@ What each line implies:
   (`./opentr.sh start prod --build`); the seams themselves branch on the values above, not on a
   deployment-type flag.
 
-## Cloud ASR Providers
+## Cloud ASR Quick Reference
 
-Configure cloud-based speech recognition as an alternative to local GPU processing.
+Configure cloud-based speech recognition as an alternative to local GPU processing. Details, the per-provider table and the Amazon Transcribe bucket requirement are under [Cloud ASR Providers](#cloud-asr-providers) below.
 
 ```bash
 # ASR Provider Selection
@@ -542,7 +542,7 @@ BEDROCK_MAX_ATTEMPTS=8       # total attempts per call, including the first
 
 ```bash
 # GPU Concurrent Model Sharing (multiple Celery threads share one model copy)
-GPU_CONCURRENT_REQUESTS=1  # auto calculates from VRAM: (total - 9GB) / 2GB, max 4
+GPU_CONCURRENT_REQUESTS=1  # default 1; "auto" = min(VRAM-based, host-memory-based): (total VRAM - 7000 MB) // 4000 MB per task, capped at 12
 GPU_WORKER_POOL=threads    # Default: threads. Use "prefork" only for legacy single-threaded setups
 
 # Model preloading gate: set to true only on GPU workers to prevent CPU workers
@@ -551,7 +551,7 @@ PRELOAD_GPU_MODELS=false   # Set true in GPU worker compose service only
 
 # GPU Worker Max Tasks (restart after N tasks for memory safety)
 GPU_MAX_TASKS=100000       # Default: effectively never restart
-GPU_DEFAULT_BATCH_SIZE=12  # Batch size for default GPU worker (auto-detected if unset)
+GPU_DEFAULT_BATCH_SIZE=auto  # Batch size for the GPU workers (default: auto-detected)
 
 # VRAM Profiling (temporary diagnostic tool)
 ENABLE_VRAM_PROFILING=false  # Captures per-step GPU memory usage and timing data
@@ -580,7 +580,7 @@ With `WORKER_METRICS_PORT` set, the decision is exported as `gpu_worker_concurre
 GPU_SCALE_ENABLED=false
 GPU_SCALE_DEVICE_ID=2
 GPU_SCALE_WORKERS=4
-GPU_SCALE_DEFAULT_WORKER=1   # Scale default worker (0 to disable)
+GPU_SCALE_DEFAULT_WORKER=1   # 1 keeps the default single-GPU worker running next to the scaled ones (.env.example ships 1; compose default when unset: 0)
 GPU_SCALE_MAX_TASKS=500       # Restart scaled worker after N tasks (memory safety)
 ```
 
@@ -1006,6 +1006,33 @@ An explicit value always wins, as a comma-separated list (`CORS_ORIGINS=https://
 
 Before [#1029](https://github.com/attevon-llc/OpenTranscribe/issues/1029), a production deployment that never set the variable allowed the Vite dev origins, so any page served on `localhost:5173` on a user's machine could make credentialed requests. The notifications WebSocket does not depend on this list either: nginx and the Vite dev server both forward the `Host` the browser used, and the backend admits a handshake whose `Origin` matches it. Opening the app at a LAN or server IP (`http://10.0.0.5:5173`, `https://box:5182`) therefore needs no `CORS_ORIGINS` entry. Before the dev proxy was fixed to forward `Host`, a dev stack opened at any address other than `localhost:5173` showed "Reconnecting to live updates" permanently.
 
+## Access, Sessions, Uploads and Startup
+
+These variables are in `.env.example` (commented out unless noted) and matter for how a deployment
+is reached and locked down. Values saved in **Settings → Authentication** win over the environment
+where noted.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `INITIAL_ADMIN_EMAIL` | `admin@example.com` | Email of the bootstrap `super_admin` created on first start. |
+| `INITIAL_ADMIN_PASSWORD` | *(empty)* | Password for that account. Empty on a production (hardened) deployment generates a random one, logged once at startup, which must be changed at first sign-in. A development stack (`ENVIRONMENT=development`) seeds `admin@example.com` / `password` instead. |
+| `ALLOW_OPEN_REGISTRATION` | `true` | Whether anyone can create an account from the registration page. Set `false` when an identity provider owns identity or accounts are admin-provisioned. Also in Settings → Authentication. |
+| `REQUIRE_ACCOUNT_APPROVAL` | `false` | `true` makes new and just-in-time provisioned accounts wait for administrator approval before they can sign in. |
+| `ALLOW_INSECURE_COOKIES` | `false` | Hardened deployments mark auth cookies Secure, which a browser drops over plain HTTP (sign-in appears to succeed, then no session). Set `true` only for a single-tenant install on a trusted LAN with no TLS in front; prefer [HTTPS](./nginx-setup.md). It relaxes nothing else. |
+| `MAX_UPLOAD_BYTES` | `16106127360` (15 GB) | Server-side ceiling on an uploaded file, checked when the upload is prepared and again when it completes. `0` disables the limit. |
+| `ENABLE_API_DOCS` | unset | A hardened deployment hides Swagger UI, ReDoc and the OpenAPI schema (`/api/docs`, `/api/redoc`, `/api/openapi.json`). `true` publishes them. |
+| `RUN_MIGRATIONS_ON_STARTUP` | `true` | Run Alembic migrations when the backend starts. Set `false` where a separate migration job owns the schema; `/health/ready` then fails until the schema is at head. |
+| `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Access-token lifetime. |
+| `JWT_REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh-token lifetime. |
+| `SESSION_IDLE_TIMEOUT_MINUTES` | `15` | Idle timeout. |
+| `SESSION_ABSOLUTE_TIMEOUT_MINUTES` | `480` | Absolute session lifetime. |
+| `MAX_CONCURRENT_SESSIONS` | `5` | Sessions per user; `0` is unlimited. |
+| `CONCURRENT_SESSION_POLICY` | `terminate_oldest` | `terminate_oldest` or `reject` once the limit is reached. |
+
+Authentication-method variables (SAML, trusted-header proxy, PKI revocation, LDAP and OIDC group
+mapping) are listed in `.env.example` and are normally set in Settings → Authentication instead; see
+[Authentication Overview](../authentication/overview.md).
+
 ## File Retention
 
 OpenTranscribe supports admin-configurable automatic file retention ([#134](https://github.com/attevon-llc/OpenTranscribe/issues/134)). Admins can set a retention period (delete files older than N days) to support GDPR compliance and storage management. File deletion is audit-logged and controlled exclusively by super admins via Settings → File Retention.
@@ -1139,20 +1166,13 @@ RATE_LIMIT_API_PER_MINUTE=100
 # Audit Logging (FedRAMP AU-2/AU-3)
 AUDIT_LOG_ENABLED=true
 AUDIT_LOG_FORMAT=json  # or: cef
-AUDIT_LOG_TO_OPENSEARCH=false
+AUDIT_LOG_TO_OPENSEARCH=true   # default true
 
 # Login Banner
 LOGIN_BANNER_ENABLED=false
-LOGIN_BANNER_TITLE=Security Notice
 LOGIN_BANNER_TEXT=This is a restricted system...
+LOGIN_BANNER_CLASSIFICATION=UNCLASSIFIED   # default
 ```
-
-## Next Steps
-
-- [Authentication Overview](../authentication/overview.md)
-- [GPU Setup](../installation/gpu-setup.md)
-- [Multi-GPU Scaling](./multi-gpu-scaling.md)
-- [LLM Integration](../features/llm-integration.md)
 
 ## Cloud ASR Providers
 
@@ -1184,6 +1204,7 @@ speaker detection is refused with it (choose Off for speaker detection, or use `
 | Amazon Transcribe | `aws` | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_ASR_MODEL`, `AWS_TRANSCRIBE_BUCKET` (required), `AWS_TRANSCRIBE_BUCKET_OWNER` (optional) |
 | Speechmatics | `speechmatics` | `SPEECHMATICS_API_KEY`, `SPEECHMATICS_MODEL` |
 | Gladia | `gladia` | `GLADIA_API_KEY`, `GLADIA_MODEL` |
+| pyannote.ai | `pyannote` | `PYANNOTE_API_KEY`, `PYANNOTE_MODEL` (`parakeet`) |
 
 :::warning[AWS variables are shared]
 `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and `AWS_REGION` are **not
@@ -1344,11 +1365,11 @@ laptop or single home server; none of these need setting for a normal install.
 | `SEARCH_BULK_BATCH_SIZE` | 100 | chunks per OpenSearch bulk request |
 | `SEARCH_NEURAL_BATCH_SIZE` | 5 | documents per embedding call |
 | `SEARCH_REINDEX_REFRESH_INTERVAL` | 100 | flush a Lucene segment every N files |
-| `SEARCH_LARGE_TRANSCRIPT_CHUNKS` | — | bulk loads this large disable refresh for the load |
-| `REINDEX_PARALLEL_WORKERS` | — | parallel reindex workers |
+| `SEARCH_LARGE_TRANSCRIPT_CHUNKS` | 500 | bulk loads this large disable refresh for the load |
+| `REINDEX_PARALLEL_WORKERS` | 4 | parallel reindex workers |
 | `SEARCH_COLLAPSE_MAX_CONCURRENT` | 20 | concurrent inner_hits searches; 0 = sequential |
-| `SEARCH_MAX_OVERFETCH` | — | over-fetch ceiling before collapse |
-| `SEARCH_HYBRID_MIN_SCORE` | — | minimum hybrid score to return a hit |
+| `SEARCH_MAX_OVERFETCH` | 1000 | over-fetch ceiling before collapse |
+| `SEARCH_HYBRID_MIN_SCORE` | 0.005 | minimum hybrid score to return a hit |
 | `SEARCH_SEMANTIC_HIGH_CONFIDENCE` | 0.010 | semantic-confidence threshold |
 | `SEARCH_SEMANTIC_SUPPRESS_RATIO` | 0.20 | suppression ratio for weak semantic hits |
 | `OPENSEARCH_CHUNKS_INDEX_SHARDS` | 1 | applied **only at index creation** |
@@ -1399,7 +1420,9 @@ stored encrypted rather than in a file.
 
 | Variable | Valid values / limits | Default | Description |
 |---|---|---|---|
-| `ASR_PROVIDER` | `local` \| `deepgram` \| `assemblyai` \| `openai` \| `google` \| `azure` \| `aws` \| `speechmatics` \| `gladia` | `local` | Engine used when a user has chosen nothing. `local` uses the bundled WhisperX and requires a GPU. |
+| `ASR_PROVIDER` | `local` \| `deepgram` \| `assemblyai` \| `openai` \| `google` \| `azure` \| `aws` \| `speechmatics` \| `gladia` \| `pyannote` | `local` | Engine used when a user has chosen nothing. `local` uses the bundled WhisperX on this server (fast on a GPU, slow on CPU) and is refused on a lite deployment. |
+| `PYANNOTE_API_KEY` | string | *(empty)* | pyannote.ai credential (transcription plus premium speaker detection in one call). |
+| `PYANNOTE_MODEL` | `parakeet`, `whisper-large-v3-turbo` | `parakeet` | pyannote.ai transcription model. |
 | `DEEPGRAM_API_KEY` | string | *(empty)* | Deepgram credential. Empty disables the provider. |
 | `DEEPGRAM_MODEL` | `nova-3`, `nova-2`, `enhanced`, `base` | `nova-3` | Deepgram model id. Older accounts may not have `nova-3`. |
 | `ASSEMBLYAI_API_KEY` | string | *(empty)* | AssemblyAI credential. |
@@ -1492,3 +1515,10 @@ None of the above is required. A deployment with `LLM_PROVIDER` empty and
 `ASR_PROVIDER=local` transcribes normally with no cloud account at all — which is
 the default self-hosted configuration.
 :::
+
+## Next Steps
+
+- [Authentication Overview](../authentication/overview.md)
+- [GPU Setup](../installation/gpu-setup.md)
+- [Multi-GPU Scaling](./multi-gpu-scaling.md)
+- [LLM Integration](../features/llm-integration.md)

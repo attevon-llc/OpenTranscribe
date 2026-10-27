@@ -13,10 +13,10 @@ OpenTranscribe delivers dramatic performance improvements with NVIDIA GPU accele
 | Hardware | Speed | 1-Hour File | 3-Hour Meeting |
 |----------|-------|-------------|----------------|
 | **CPU Only** | 0.5-1x realtime | ~60-120 min | ~3-6 hours |
-| **NVIDIA GPU** | 70x realtime | ~50 seconds | ~2.5 minutes |
+| **NVIDIA GPU** | ~40x realtime | ~1.5 minutes | ~4.5 minutes |
 
-:::tip[70x Faster]
-With GPU acceleration, OpenTranscribe processes audio/video **70 times faster than realtime**. A 3-hour meeting transcribes in just 2.5 minutes!
+:::tip[About 40x faster]
+With GPU acceleration, OpenTranscribe processes audio/video roughly **40 times faster than realtime** end to end (transcription, speaker detection and speaker assignment). Measured on an RTX A6000 with `large-v3-turbo`: 37-40x for single files from 30 minutes to 4 hours, see `docs/BENCHMARK_RESULTS.md`. Your figure depends on the GPU, model and file length.
 :::
 
 ## Prerequisites
@@ -44,7 +44,7 @@ NVIDIA GPUs are not supported on macOS (Apple deprecated CUDA support). macOS us
 ### Software Requirements
 
 - **NVIDIA Driver**: 525.60.13 or newer
-- **CUDA Toolkit**: 11.8 or newer (12.x recommended)
+- **CUDA Toolkit**: not needed on the host. The backend image bundles its own CUDA 12.8 runtime libraries (PyTorch `cu128`, cuDNN 9)
 - **Docker**: 24.0+ with NVIDIA Container Toolkit
 - **Operating System**: Linux (best), Windows with WSL2
 
@@ -189,11 +189,11 @@ curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/s
 ```
 
 The installer will:
-- ✅ Detect NVIDIA GPU
-- ✅ Test GPU accessibility
-- ✅ Configure optimal settings in `.env`
-- ✅ Set CUDA device ID
-- ✅ Enable GPU processing
+- Detect the NVIDIA GPU
+- Test GPU accessibility
+- Configure optimal settings in `.env`
+- Set the CUDA device ID
+- Enable GPU processing
 
 ### Manual Configuration
 
@@ -213,7 +213,7 @@ TORCH_DEVICE=cuda
 # Recommended: float16 for GPUs with Tensor Cores
 COMPUTE_TYPE=float16
 
-# Enable GPU Usage
+# Enable GPU Usage (not listed in .env.example; the default is auto)
 # Options: auto, true, false
 USE_GPU=true
 
@@ -227,9 +227,9 @@ GPU_DEVICE_ID=0
 BATCH_SIZE=auto
 
 # Whisper Model (larger = more accurate but slower)
-# Options: tiny, base, small, medium, large-v1, large-v2, large-v3
-# Recommended: large-v2 for GPU, small for CPU
-WHISPER_MODEL=large-v2
+# Options: tiny, base, small, medium, large-v1, large-v2, large-v3, large-v3-turbo
+# Default and installer pick for GPUs with more than 8GB VRAM: large-v3-turbo
+WHISPER_MODEL=large-v3-turbo
 ```
 
 ## Multi-GPU Configuration
@@ -263,7 +263,7 @@ For high-throughput systems with multiple GPUs, enable parallel GPU workers:
 ```bash
 # .env configuration (GPU_SCALE_ENABLED is not the switch -- see note below)
 GPU_SCALE_DEVICE_ID=2       # Which GPU to use for scaled workers
-GPU_SCALE_WORKERS=4         # Number of parallel workers
+GPU_SCALE_WORKERS=4         # Number of parallel workers (if unset, follows DIAR_NATIVE_MAX_INFLIGHT, default 2)
 
 # The --gpu-scale flag is what enables scaling, not an env var
 ./opentr.sh start dev --gpu-scale
@@ -274,7 +274,7 @@ GPU_SCALE_WORKERS=4         # Number of parallel workers
 - GPU 1: RTX 3080 Ti (12GB) - Default single worker (disabled when scaling)
 - GPU 2: NVIDIA RTX A6000 (49GB) - 4 parallel workers (processes 4 videos simultaneously)
 
-**Performance**: Process 4 transcriptions simultaneously, achieving 280x realtime total throughput.
+**Performance**: Process several transcriptions simultaneously. Throughput rises with the worker count but not linearly; see [Multi-GPU Scaling](../configuration/multi-gpu-scaling.md#performance) for measured figures.
 
 See [Multi-GPU Scaling](../configuration/multi-gpu-scaling.md) for detailed configuration.
 
@@ -292,9 +292,9 @@ See [Multi-GPU Scaling](../configuration/multi-gpu-scaling.md) for detailed conf
 | large-v3 | 5-6GB | 7-8GB |
 
 :::tip[Recommended Settings]
-- **8GB GPU**: large-v2 model, single worker
-- **12GB GPU**: large-v2 model, 2-3 parallel workers
-- **24GB+ GPU**: large-v2 model, 4-6 parallel workers
+- **8GB GPU**: `large-v3-turbo` (the default), single worker
+- **12GB GPU**: `large-v3-turbo`, 2-3 parallel workers
+- **24GB+ GPU**: `large-v3-turbo`, 4-6 parallel workers
 :::
 
 ### Batch Size Tuning
@@ -348,7 +348,7 @@ nvidia-smi --query-gpu=memory.used,memory.total --format=csv -l 1
 
 ```bash
 # Check GPU usage by container
-docker stats celery-worker
+docker stats opentranscribe-celery-worker
 ```
 
 ## Troubleshooting
@@ -373,7 +373,7 @@ docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi
 - Reinstall NVIDIA drivers
 - Install NVIDIA Container Toolkit
 - Restart Docker daemon: `sudo systemctl restart docker`
-- Check `.env` has `USE_GPU=true`
+- Check `./opentranscribe.sh compose-files` lists `docker-compose.gpu.yml` and that `FORCE_CPU_MODE` in `.env` is not `true`
 
 ### Out of Memory Errors
 
@@ -419,7 +419,8 @@ If GPU utilization is low (less than 50%):
 3. **Verify CUDA version**:
    ```bash
    nvidia-smi | grep "CUDA Version"
-   # Should be 11.8+
+   # The backend image is built on CUDA 12.8 libraries; a driver that reports
+   # CUDA 12.x or newer is expected
    ```
 
 ### Mixed GPU/CPU Mode
@@ -450,18 +451,14 @@ If GPU utilization is low (less than 50%):
    ```
 
 Success indicators:
-```
-✅ "Using device: cuda"
-✅ "Loading model on CUDA device 0"
-✅ "GPU memory available: 12288 MB"
-✅ "Transcription completed in 45.2s (70.5x realtime)"
-```
+- The worker log contains `CUDA available with N device(s)` (not `Using CPU (no GPU acceleration available)`)
+- `nvidia-smi` shows memory in use by the worker while a file is transcribing
 
 ### Performance Benchmark
 
 Upload a 1-hour audio file and measure processing time:
 
-- **Expected with GPU**: 45-60 seconds (60-80x realtime)
+- **Expected with GPU**: roughly 1.5 minutes (about 40x realtime) on a high-end card with `large-v3-turbo`
 - **Expected with CPU**: 45-90 minutes (0.7-1.3x realtime)
 
 If GPU performance is significantly slower, review optimization settings.

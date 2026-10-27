@@ -90,7 +90,7 @@ Migration duration varies based on your transcription library size:
 | Large | 4-8+ hours | 500+ files |
 | Extra Large | 12+ hours | 1000+ files |
 
-Times are approximate and depend on CPU performance. Migration runs in the background and doesn't require stopping transcription.
+Times are approximate and depend on hardware. Migration runs in the background, but **transcription is paused while it runs** so the GPU can re-extract embeddings; uploads made meanwhile are queued and resume automatically when the migration finishes.
 
 ## Prerequisites
 
@@ -109,15 +109,10 @@ first, then switch to `--lite`.
 
 ### Check Current Version
 
-View your current PyAnnote version in the admin UI:
-1. Navigate to **Settings** → **System**
-2. Look for **PyAnnote Version** in the system information
-3. Current version should display as **v3** or **v4**
-
-You can also check via the backend logs:
-```bash
-docker logs opentranscribe-backend | grep -i "pyannote"
-```
+View your current embedding version in the admin UI:
+1. Open **Settings** and choose **Data & Storage**, then the **Speaker Embedding System** tab (super admin)
+2. **Current Mode** shows V3 (`pyannote/embedding`, 512-dim) or V4 (WeSpeaker ResNet34-LM, 256-dim), with the **V3 Documents** and **V4 Documents** counts
+3. When the system is still on V3, an **Upgrade Available: V4 Mode** card offers **Start Migration**
 
 ### Disk Space Requirements
 
@@ -138,22 +133,20 @@ docker exec opentranscribe-backend df -h /app  # Inside container
 ### Processing Time Availability
 
 - Migration runs **asynchronously** in the background
-- You can continue uploading and transcribing files during migration
-- Existing files are migrated progressively
+- **Transcription is paused** while it runs; new uploads are queued and process automatically afterwards
+- You can still browse existing transcripts and use the rest of the application
 - Avoid restarting the backend during active migration
 
 ### Backup Recommendations
 
-While migration is safe and reversible, it's good practice to:
+There is no supported one-click rollback (see [Rollback](#rollback-if-needed)), so:
 
 1. **Backup your database** before starting:
    ```bash
-   ./opentr.sh backup
+   ./opentr.sh backup          # or ./opentranscribe.sh backup
    ```
 
-2. **Note your v3 embeddings** - they're preserved in the database and can be reverted
-
-3. **Document current speaker data** if you have custom speaker assignments
+2. **Document current speaker data** if you have custom speaker assignments
 
 ## Migration Process
 
@@ -176,45 +169,22 @@ flowchart TD
 
 ### Starting the Migration
 
-1. Open the **Admin UI** in your browser (http://localhost:5173)
-2. Navigate to **Settings** → **Embeddings**
-3. Click **Migrate to v4** button
-4. Confirm the migration in the modal dialog
-5. Migration begins immediately
+1. Open the **Admin UI** in your browser (http://localhost:5173) as a super admin
+2. Navigate to **Settings** → **Data & Storage** → **Speaker Embedding System**
+3. Click **Start Migration**
+4. Migration begins and the **Migration Progress** card appears
 
 ### Monitoring Progress
 
-Once migration starts, you'll see:
-
-**Real-time Progress Indicator**:
-- Total files to migrate
-- Currently processing file
-- Progress bar (0-100%)
-- Estimated time remaining
-- Files completed / total files
-
-**Status Updates**:
-- WebSocket updates every 5-10 seconds
-- Current file being processed
-- Completed file count
-- Errors (if any) displayed in logs
-
-**Example**:
-```
-Migrating: video_001.mp4 (245 segments, 12 speakers)
-Progress: 45/200 files (22%)
-Estimated time remaining: 2 hours 15 minutes
-Speed: ~1 file per 2 minutes
-```
+The card shows "Processing N of M files", a progress bar, and the estimated time. If some files cannot be processed it offers **Retry Failed Files** and **Skip & Mark Complete**. **Stop Migration** halts it. When all files are processed, click **Finalize Migration** to swap the indices.
 
 ### During Migration
 
 While migration is in progress:
 
 **What you can do:**
-- Upload new files (queued normally)
+- Upload new files (they are queued and process when the migration finishes)
 - Browse existing transcripts
-- Process other files with the transcription queue
 - Access the admin UI and all features
 - Check real-time migration progress
 
@@ -247,7 +217,7 @@ The migration updates all speaker-related data in your transcripts:
 ### Transcript Segments
 
 Each segment in every transcript receives:
-- **New speaker embeddings** (256-dimensional instead of 192)
+- **New speaker embeddings** (256-dimensional instead of 512)
 - **Recalculated speaker assignments** based on v4 model
 - **Refreshed segment metadata** with new embedding timestamps
 - **Updated segment clusters** for speaker grouping
@@ -331,15 +301,10 @@ If you need to restore from backup:
 
 1. **Restore database from backup**:
    ```bash
-   ./opentr.sh restore backups/backup_before_migration.sql
+   ./opentr.sh restore backups/backup_before_migration.sql   # or ./opentranscribe.sh restore <file>
    ```
 
-2. **Clear model cache** (optional):
-   ```bash
-   rm -rf ./models/pyannote
-   ```
-
-3. **Restart backend**:
+2. **Restart backend**:
    ```bash
    ./opentr.sh restart-backend
    ```
@@ -524,7 +489,7 @@ Richer speaker metadata becomes available:
 
 **System behavior without migration:**
 - PyAnnote v3 continues working as before
-- New files uploaded will use whichever version is configured
+- New files use the embedding version the `speakers` alias points at (v3 until you finalize)
 - Performance stays at v3 baseline (~3 seconds per speaker)
 - Speaker overlap detection unavailable
 - No data loss or compatibility issues if you skip migration
@@ -577,29 +542,7 @@ You can check estimated time once migration starts and monitor real-time progres
 
 ### Can I use both v3 and v4 simultaneously?
 
-**Yes, with limitations:**
-
-**Auto-detect mode:**
-- System can automatically use best embeddings available
-- New uploads use current configured version
-- Old v3 embeddings are preserved as fallback
-- Seamless switching between versions
-
-**Practical usage:**
-- Start migration for part of library (e.g., 25% of files)
-- Continue using both versions for different content types
-- Compare performance/quality before full migration
-- Revert if needed without losing data
-
-**Configuration:**
-```bash
-# In .env file
-PYANNOTE_MODE=auto          # Auto-detect best embeddings
-PYANNOTE_VERSION=v4         # Prefer v4 when available
-PYANNOTE_FALLBACK=v3        # Fall back to v3 if needed
-```
-
-This allows gradual migration and testing of v4 features on a subset of your library before committing to full migration.
+Not as a configuration. Both `speakers_v3` and `speakers_v4` exist while a migration runs, but the `speakers` alias points at exactly one of them, and every read and write goes through it. There is no environment variable that selects a version: `PYANNOTE_MODE`, `PYANNOTE_VERSION` and `PYANNOTE_FALLBACK` are read by nothing. The version in use is whichever index the alias points at, shown as **Current Mode** under Settings, Data & Storage, Speaker Embedding System.
 
 ### What if migration fails?
 
@@ -621,12 +564,11 @@ This allows gradual migration and testing of v4 features on a subset of your lib
    - GPU memory: Reduce `GPU_SCALE_WORKERS` if using GPU scaling
 
 3. Retry migration:
-   - Admin UI will show resume option
-   - Click "Retry" to continue from where it stopped
-   - Failed files are processed in next attempt
+   - Click **Retry Failed Files** on the Speaker Embedding System tab to process the failed files again
+   - **Skip & Mark Complete** finishes without them; those files then have no v4 embeddings and speaker matching may not work for them
 
 4. Contact support if migration fails consistently and provide:
    - Backend logs (last 100 lines)
    - System specifications (GPU, RAM, CPU)
    - Library size (number of files)
-   - Error messages from admin UI
+   - Error messages from the Speaker Embedding System tab

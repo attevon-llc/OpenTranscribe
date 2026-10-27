@@ -2,28 +2,28 @@
 
 ## Purpose
 
-Request/response shaping and validation only; logic lives in `app/services`. 25 modules,
-~4.9k lines. This is where the hybrid-ID rule and the "thin frontend" contract are enforced.
+Request/response shaping and validation only; logic lives in `app/services`. 42 modules,
+~8.5k lines (`wc -l backend/app/schemas/*.py`). This is where the hybrid-ID rule and the "thin frontend" contract are enforced.
 
 ## Key files
 
 - `base.py` — `UUIDBaseSchema`: sets `from_attributes=True` **plus** a `@model_validator(mode="before")`
   that strips the internal integer `id` and rewrites the `user` / `media_file` / `speaker` / `profile` /
   `shared_by_user` relations into `*_id` **UUIDs**. Inherit it for anything validated from an ORM row.
-- `media.py` (834 lines, the outlier) — MediaFile, Speaker, TranscriptSegment, Tag, Comment, Task,
+- `media.py` (~1,300 lines, the outlier) — MediaFile, Speaker, TranscriptSegment, Tag, Comment, Task,
   Analytics, Collection + 3 local enums. `validate_whisper_model` gates on `VALID_LOCAL_WHISPER_MODELS`
-  (L18); the whisper-model / `min<=max` / positive-speaker validator trio is duplicated verbatim on
-  `ReprocessRequest` (L92+) and `PrepareUploadRequest` (L198+).
+  (near the top of the file); the whisper-model / `min<=max` / positive-speaker validator trio is
+  duplicated verbatim on `ReprocessRequest` and `PrepareUploadRequest`.
 - `media_source.py:22` — `_validated_hostname` is an **SSRF gate**, not a format check: the value
-  becomes an allowed host that `protected_media_plugins/mediacms.py` fetches server-side. It
+  becomes an allowed host that `services/protected_media_plugins/mediacms.py` fetches server-side. It
   delegates to `app/utils/url_validation.is_safe_url`, which resolves the name and rejects on
   address class. It used to be a regex + a "must contain a dot" rule + a hardcoded first-label
   blocklist that resolved nothing and accepted `169.254.169.254`, `127.0.0.1` and `0.0.0.0`
   (audit A1). **Never reintroduce a local host-safety check here** — `url_validation` is the one
-  implementation. ⚠️ `admin.py:158-205` still re-declares the same shapes with a **regex only**;
-  that path is admin-only and is covered at request time by `mediacms.py`'s
-  `assert_safe_outbound_url` calls, but the schema itself is unguarded.
-- `__init__.py` — a **partial, drifting** re-export; 11 modules are absent (`base`, `admin`, `search`,
+  implementation. ⚠️ `admin.py`'s `validate_hostname` validators (~L150-200) still re-declare the same shapes with a
+  **regex only**; that path is admin-only and is covered at request time by `mediacms.py`'s
+  `resolve_pinned_target` (`_pin_media_url`), but the schema itself is unguarded.
+- `__init__.py` — a **partial, drifting** re-export; 28 of the other modules are absent (`base`, `admin`, `search`,
   `watch_source`, `speaker_cluster`, `topic`, `redaction_settings`, …). Import from the submodule.
   `UserSchema` / `GroupSchema` are aliases that exist only here.
 
@@ -37,21 +37,22 @@ Request/response shaping and validation only; logic lives in `app/services`. 25 
   `class Config:` (`auth_config`, `download_settings`, `transcription_settings`). All work.
 - **No aliases anywhere**: zero `Field(alias=)`, `serialization_alias`, `populate_by_name`. Wire names
   always equal Python names.
-- **Enums are local, not shared.** Only `media.py:14` imports from `core/enums` (`FileStatus`,
-  re-export for back-compat); `ASRProvider`, `LLMProvider`, `SourceType`, `TaskStatus` etc. are each
+- **Enums are local, not shared.** Few schemas import from `core/enums` (`media.py` re-exports `FileStatus` for back-compat;
+  `post_processing.py`, `llm_settings.py` and `takedown_notice.py` import the enums their wire shapes carry);
+  `ASRProvider`, `LLMProvider`, `SourceType`, `TaskStatus` etc. are each
   declared in their own schema module. Defaults for DB-backed settings come from `core/constants.py`.
 
 ## How it connects
 
-- **Pre-formatted display fields — fat backend, thin frontend.** `MediaFile` L475-496:
+- **Pre-formatted display fields — fat backend, thin frontend.** `MediaFile` (the fields near `formatted_duration`):
   `formatted_duration|upload_date|file_age|file_size`, `display_status`, `status_badge_class`,
   `speaker_summary`, `error_reason`/`error_suggestions`/`user_message`, `is_retryable`
   (`error_reason` is the renamed wire field, issue #843 — never `media_file.error_category`,
-  which is the retry-policy column and is not on the wire at all). `TranscriptSegment` L365-370:
+  which is the retry-policy column and is not on the wire at all). `TranscriptSegment`:
   `formatted_timestamp`, `display_timestamp`, `speaker_label` (always the raw `SPEAKER_01`, for colour
-  stability), `resolved_speaker_name`. `Task` L671-673: `age_category`, `formatted_duration`,
+  stability), `resolved_speaker_name`. `Task`: `age_category`, `formatted_duration`,
   **`status_display`** (inverted name vs `MediaFile.display_status`). Producers:
-  `services/formatting_service.py` — `format_media_file()` L158, `format_transcript_segment()` L213.
+  `services/formatting_service.py` — `format_media_file()`, `format_transcript_segment()`.
   **A new computed display value belongs there, never in the SPA.** Two exceptions: `Speaker`'s
   `computed_status`/`status_text`/`status_color`/`resolved_display_name` come from `SpeakerStatusService`,
   and nothing populates `Task.age_category`/`status_display`.
@@ -59,7 +60,7 @@ Request/response shaping and validation only; logic lives in `app/services`. 25 
   `frontend/src/lib/types/{media,speaker,summary,speakerCluster,groups}.ts` and
   `frontend/src/lib/api/*.ts` (asrSettings, llmSettings, authConfig, watchSourcesApi, redactionSettings,
   transcriptionSettings, downloadSettings, prompts). `TranscriptSegment` has two competing TS copies
-  (`stores/transcriptStore.ts:3`, `lib/utils/scrollbarCalculations.ts:6`).
+  (`stores/transcriptStore.ts`, `lib/utils/scrollbarCalculations.ts`).
 
 ## `auth_config.py` is not documentation — it is the write contract
 
@@ -96,10 +97,11 @@ value falls back to. They were dead code while the write path accepted a bare `d
 
 ## Gotchas
 
-- **The hybrid-ID rule (`base.py:26-30`) is broken in exactly two places.** `auth_config.py:36,50`
-  expose `id: int` (served at `api/endpoints/auth_config.py:61,279`, mirrored in
-  `frontend/src/lib/api/authConfig.ts:7`); `admin.py:271-275` `QuarantinedFile` exposes `user_id`,
-  `organization_id`, `quarantined_by` as ints. Don't copy either. `Task.id` is a *string* Celery id by
+- **The hybrid-ID rule (`base.py`'s `UUIDBaseSchema` docstring) is broken in one known place.**
+  `auth_config.py`'s `AuthConfigResponse` and `AuthConfigAuditResponse` expose `id: int` (served by
+  `api/endpoints/auth_config.py`, mirrored in `frontend/src/lib/api/authConfig.ts`). `admin.py`'s
+  `QuarantinedFile` used to expose integer `user_id`/`organization_id`/`quarantined_by` too; it now
+  carries `owner_uuid`/`organization_uuid`/`quarantined_by_email` (issue #576). Don't copy the former. `Task.id` is a *string* Celery id by
   design; `TranscriptSegmentUpdate.id` is request-only.
 - **Some schemas were dead documentation and have been deleted (issue #567 / E8, 2026-08-24).**
   `api/endpoints/search.py` declares no `response_model` at all — it hand-builds a dict instead —
@@ -161,7 +163,7 @@ value falls back to. They were dead code while the write path accepted a bare `d
   `split_attribute_confidence` — which the hand-built speaker LIST dict also calls. Typing the
   field as the raw bag's `dict[str, float]` 500'd file detail, segments and speaker detail for
   every file with a hint. A new key written into that column needs a line in the split.
-- **`ConnectionTestResponse` is defined twice** (`llm_settings.py:152`, `watch_source.py:293`) and
+- **`ConnectionTestResponse` is defined twice** (`llm_settings.py`, `watch_source.py`) and
   `__init__.py` exports only the LLM one — the package-level import silently yields the wrong shape.
-- `sharing.py:24 Share.shared_by` is typed `UserBrief` but `UUIDBaseSchema` maps `shared_by` to a bare
+- `sharing.py` `Share.shared_by` is typed `UserBrief` but `UUIDBaseSchema` maps `shared_by` to a bare
   UUID — safe only because `Share` is built from explicit kwargs, never `model_validate(row)`.

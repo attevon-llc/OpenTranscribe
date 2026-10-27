@@ -4,810 +4,178 @@
   # Services Layer Documentation
 </div>
 
-The services layer provides a clean abstraction for business logic, separating it from API endpoints and database operations. This layer orchestrates complex operations, manages transactions, and provides reusable business functionality.
+The services layer holds the application's business logic, separate from API endpoints (HTTP concerns) and models (data). Endpoints and Celery tasks stay thin and call in here. This directory has roughly 110 top-level modules plus domain subpackages; this README is a map of them. Each large subpackage has its own `CLAUDE.md`, and `services/CLAUDE.md` holds the detailed rules for the trickier modules (erasure, speaker cleanup, storage, LLM features); read those before changing the module they cover.
 
 ## 🎯 Service Layer Principles
 
-### Design Goals
-- **Business Logic Encapsulation**: Keep complex operations out of endpoints
-- **Reusability**: Share common operations across multiple endpoints
-- **Transaction Management**: Handle database transactions consistently
-- **External Service Integration**: Manage third-party API interactions
-- **Error Handling**: Provide consistent error handling patterns
-- **Testing**: Enable easier unit testing of business logic
-
-### Architecture Pattern
-```
-API Endpoints → Service Layer → Data Layer (Models/External APIs)
-     ↓              ↓                    ↓
-  HTTP Logic   Business Logic      Data Operations
-```
-
-## 📁 Service Structure
+- **Business logic encapsulation**: keep complex operations out of endpoints
+- **Reusability**: share operations between endpoints and tasks
+- **One implementation per rule**: many modules exist specifically to be the single place a rule lives (permissions, tenancy, holds, takedown, redaction, provenance); do not add a second copy beside them
+- **Transactions**: services take a `Session`; many never commit and leave that to the caller (check the module docstring)
+- **Errors**: raise the exceptions in `app/core/exceptions.py` (mapped to HTTP statuses in `main.py`); endpoints raise `HTTPException`
 
 ```
-services/
-├── interfaces.py                      # Protocol interfaces (Storage, Search, Cache, Notification)
-├── notification_service.py            # Unified send_task_notification() wrapper
-├── progress_tracker.py                # EWMA ETA progress tracking (preferred)
-├── migration_progress_service.py      # Atomic Lua increments for concurrent batch migrations
-├── file_service.py                    # File management operations
-├── file_cleanup_service.py            # File recovery and cleanup operations
-├── file_retention_service.py          # Admin-configurable auto-deletion policies
-├── llm_service.py                     # Multi-provider LLM (vLLM, OpenAI, Ollama, Claude, OpenRouter)
-├── opensearch_service.py              # Full-text + neural search, ML Commons, alias-based speaker indices
-├── hybrid_search_service.py           # Hybrid BM25+vector search (OS 3.4 crash fix applied)
-├── minio_service.py                   # Object storage operations
-├── analytics_service.py               # Server-side analytics computation
-├── error_categorization_service.py    # Error classification and user guidance
-├── formatting_service.py              # Data formatting and display
-├── profile_embedding_service.py       # Profile centroid management (averaging bug fixed)
-├── speaker_matching_service.py        # Speaker matching with cosine score conversion
-├── smart_speaker_suggestion_service.py # Intelligent speaker suggestion consolidation
-├── speaker_status_service.py          # Speaker verification status management
-├── similarity_service.py              # Speaker similarity with corrected cosine conversion
-├── task_filtering_service.py          # Task and data filtering optimization
-├── asr/                               # ASR service + 8 cloud provider clients
-│   ├── asr_service.py                 # ASR provider dispatch
-│   ├── deepgram_client.py
-│   ├── assemblyai_client.py
-│   ├── openai_asr_client.py
-│   ├── google_asr_client.py
-│   ├── azure_asr_client.py
-│   ├── aws_asr_client.py
-│   ├── speechmatics_client.py
-│   └── gladia_client.py
-└── search/                            # Search sub-services
+API Endpoints / Celery tasks → Service Layer → Data Layer (Models / OpenSearch / MinIO / external APIs)
 ```
 
-## 🔧 Service Design Patterns
-
-### Base Service Pattern
-```python
-class BaseService:
-    """Base service class with common patterns."""
-
-    def __init__(self, db: Session):
-        self.db = db
-
-    def _validate_user_access(self, resource, user: User) -> None:
-        """Common access validation pattern."""
-        if resource.user_id != user.id and not user.is_superuser:
-            raise ErrorHandler.unauthorized_error("Access denied")
-
-    def _handle_database_error(self, operation: str, error: Exception):
-        """Common database error handling."""
-        logger.error(f"Database error in {operation}: {error}")
-        self.db.rollback()
-        raise ErrorHandler.database_error(operation, error)
-```
-
-### Service Method Pattern
-```python
-def service_method(self, data: InputSchema, user: User) -> OutputModel:
-    """Standard service method pattern."""
-    try:
-        # 1. Validation
-        self._validate_input(data)
-
-        # 2. Authorization
-        self._check_permissions(user)
-
-        # 3. Business Logic
-        result = self._perform_operation(data)
-
-        # 4. Database Transaction
-        self.db.commit()
-
-        # 5. Return Result
-        return result
-
-    except Exception as e:
-        self.db.rollback()
-        raise self._handle_error(e)
-```
-
-## 📂 File Service (`file_service.py`)
-
-### Purpose
-Manages all file-related operations including upload, metadata management, and file lifecycle.
-
-### Key Operations
-```python
-class FileService:
-    async def upload_file(self, file: UploadFile, user: User) -> MediaFile:
-        """Complete file upload pipeline."""
-        # Validation, storage, database record creation
-
-    def get_user_files(self, user: User, filters: dict) -> List[MediaFile]:
-        """Retrieve files with advanced filtering."""
-        # Query building, permission checking, filtering
-
-    def update_file_metadata(self, file_id: int, updates: MediaFileUpdate, user: User) -> MediaFile:
-        """Update file metadata with validation."""
-        # Authorization, validation, database update
-
-    def delete_file(self, file_id: int, user: User) -> None:
-        """Complete file deletion (storage + database)."""
-        # Authorization, storage cleanup, database deletion
-```
-
-### Usage Example
-```python
-# In API endpoint
-@router.post("/files", response_model=MediaFileSchema)
-async def upload_file(
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-):
-    file_service = FileService(db)
-    return await file_service.upload_file(file, current_user)
-```
-
-### Features
-- **Complete Upload Pipeline**: Validation → Storage → Database → Task Dispatch
-- **Advanced Filtering**: Complex query building with multiple filter criteria
-- **Permission Management**: User ownership validation
-- **Storage Integration**: MinIO operations with error handling
-- **Tag Management**: File tagging operations
-- **Statistics**: User file statistics and analytics
-
-## 🎙️ Transcription — there is no `transcription_service.py`
-
-`transcription_service.py` was deleted in issue #450. It described a `TranscriptionService` class
-with twelve methods (start/status/segments/speakers/merge/analysis/summarization/search) that was
-**imported by nothing** — no router, no task, no test, no dynamic-import registry — while the live
-routers implemented all twelve independently. Two paths doing the same job, one of them never run.
-
-Where the work actually happens:
-
-- **Dispatch** — `app/tasks/transcription/dispatch.py` (per-file overrides for `source_language`,
-  `translate_to_english`, speaker counts) → the Celery pipeline in `app/tasks/`
-  (see `backend/app/tasks/CLAUDE.md`).
-- **The ASR/diarization engine** — `app/transcription/` (see its `CLAUDE.md` for hybrid mode and
-  boundary correction) behind the pluggable providers in `services/asr/` and
-  `services/diarization/`.
-- **HTTP surface** — `app/api/endpoints/` (files, transcript segments, speakers, tasks).
-- **Speaker merge / identification** — the `speaker_*_service.py` family in this directory.
-
-## 🤖 LLM Service (`llm_service.py`)
-
-### Purpose
-Provides unified interface for multiple LLM providers with intelligent context processing for transcript summarization and speaker identification.
-
-### Key Features
-```python
-async def generate_summary(transcript: str, speaker_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Generate BLUF format summary with intelligent section processing."""
-
-    # Automatic context detection and chunking
-    context_length = await self.get_model_context_length()
-    chunks = self._chunk_transcript_intelligently(transcript, context_length)
-
-    if len(chunks) == 1:
-        # Single-pass processing for short transcripts
-        return await self._process_single_section(chunks[0])
-    else:
-        # Multi-section processing for long transcripts
-        section_summaries = []
-        for chunk in chunks:
-            section_summary = await self._summarize_transcript_section(chunk)
-            section_summaries.append(section_summary)
-
-        # Stitch sections into comprehensive final summary
-        return await self._stitch_section_summaries(section_summaries)
-```
-
-### Supported Providers
-- **vLLM**: Local high-performance inference
-- **OpenAI**: GPT-4, GPT-3.5-turbo
-- **Ollama**: Local consumer GPU inference
-- **Anthropic**: Claude models
-- **OpenRouter**: Multi-provider gateway
-
-### Intelligent Context Processing
-- **Automatic Detection**: Queries model endpoints for actual context limits
-- **Smart Chunking**: Splits at natural boundaries (speakers, topics, sentences)
-- **Section Analysis**: Each chunk processed with full context awareness
-- **Summary Stitching**: Combines sections into comprehensive BLUF format
-- **Universal Compatibility**: Works with 4K to 200K+ token models
-
-## 🗄️ MinIO Service (`minio_service.py`)
-
-### Purpose
-Handles all object storage operations including file upload, download, streaming, and management.
-
-### Key Operations
-```python
-def upload_file(file_content: IO, file_size: int, object_name: str, content_type: str) -> None:
-    """Upload file to MinIO storage."""
-
-
-def download_file(object_name: str) -> Tuple[IO, int, str]:
-    """Download file from MinIO storage."""
-
-
-def upload_bytes(self, bucket_name: str, object_name: str, data: bytes, content_type: str) -> None:
-    """Upload an in-memory bytes payload (e.g. a generated ZIP) to MinIO."""
-
-
-def delete_file(object_name: str) -> None:
-    """Delete file from MinIO storage."""
-
-
-def get_file_url(object_name: str, expires: int = 3600) -> str:
-    """Generate presigned URL for inline file access (playback/thumbnails)."""
-
-
-def get_presigned_download_url(
-    object_name: str, *, download_filename: str, content_type: str
-) -> str:
-    """Generate presigned URL that forces an attachment download."""
-```
-
-### Streaming Features
-```python
-# Media playback and downloads use presigned MinIO URLs, NOT API byte-proxying.
-# The browser streams directly from object storage via the presigned /s3 URL, which
-# supports HTTP range requests (206) natively for video seeking. Clients obtain URLs
-# from GET /files/{uuid}/stream-url (playback) or POST /files/{uuid}/prepare-download.
-```
-
-### Features
-- **Efficient Upload/Download**: Chunked file operations
-- **Presigned Streaming**: Range-capable playback served directly from MinIO (no API proxy)
-- **Presigned URLs**: Secure temporary file access
-- **Error Handling**: Comprehensive MinIO error handling
-- **Metadata Management**: File metadata and content-type handling
-
-## 🧹 File Cleanup Service (`file_cleanup_service.py`)
-
-### Purpose
-Provides automated file recovery, cleanup operations, and system health monitoring for files stuck in processing or error states.
-
-### Key Operations
-```python
-class FileCleanupService:
-    def run_cleanup_cycle(self) -> Dict[str, Any]:
-        """Run a complete cleanup cycle detecting and recovering stuck files."""
-
-    def force_cleanup_orphaned_files(self, db: Session, dry_run: bool = False) -> Dict[str, Any]:
-        """Force cleanup of orphaned files (admin operation)."""
-
-    def get_cleanup_statistics(self, db: Session) -> Dict[str, Any]:
-        """Get current cleanup statistics and system health metrics."""
-```
-
-### Auto-Recovery Features
-```python
-def _attempt_file_recovery(self, db: Session, file_id: int) -> bool:
-    """Attempt to recover a single stuck file with intelligent retry logic."""
-    # Check recovery attempt limits
-    if media_file.recovery_attempts >= self.max_recovery_attempts:
-        # Mark as permanently orphaned and eligible for force deletion
-        media_file.status = FileStatus.ORPHANED
-        media_file.force_delete_eligible = True
-        return False
-
-    # Use enhanced recovery logic from task_utils
-    return recover_stuck_file(db, file_id)
-```
-
-### Health Monitoring
-```python
-def _generate_health_recommendations(self, db: Session) -> List[str]:
-    """Generate system health recommendations based on file states."""
-    recommendations = []
-
-    # Calculate error rates and health metrics
-    error_rate = status_counts.get("error", 0) / max(sum(status_counts.values()), 1)
-    if error_rate > 0.1:  # More than 10% error rate
-        recommendations.append(
-            f"High error rate detected: {error_rate:.1%} of files are in error state. "
-            "Consider investigating processing pipeline health."
-        )
-
-    return recommendations
-```
-
-### Features
-- **Automatic Stuck File Detection**: Identifies files stuck in processing or pending states
-- **Intelligent Recovery**: Multi-step recovery process with retry limits
-- **Health Monitoring**: System health metrics and recommendations
-- **Force Cleanup**: Admin tools for removing orphaned files
-- **Statistics Tracking**: Comprehensive cleanup statistics and performance metrics
-- **Scheduled Operations**: Designed for periodic background execution
-
-### Integration with Task System
-The cleanup service works closely with the new cleanup tasks and enhanced task utilities:
-- Uses `check_for_stuck_files()` from `task_utils.py` for detection
-- Calls `recover_stuck_file()` for automated recovery
-- Integrates with `cancel_active_task()` for safe task cancellation
-- Provides statistics for monitoring and alerting systems
-
-## 📊 Analytics Service (`analytics_service.py`)
-
-### Purpose
-Provides comprehensive server-side analytics computation for media files including speaker analytics, conversation flow analysis, and meeting efficiency metrics.
-
-### Key Operations
-```python
-class AnalyticsService:
-    @staticmethod
-    def compute_analytics(db: Session, media_file_id: int) -> Optional[Dict[str, Any]]:
-        """Compute comprehensive analytics for a media file."""
-        # Speaker talk time analysis, interruption detection, turn-taking patterns
-
-    @staticmethod
-    def save_analytics(db: Session, media_file_id: int, analytics_data: Dict[str, Any]) -> bool:
-        """Save computed analytics to the database."""
-        # Store analytics with user association
-
-    @staticmethod
-    def refresh_analytics(db: Session, media_file_id: int) -> bool:
-        """Refresh analytics by recomputing them."""
-        # Recompute and update existing analytics
-```
-
-### Analytics Features
-- **Speaker Talk Time Analysis**: Percentage breakdowns and total speaking time
-- **Interruption Detection**: Frequency tracking and pattern analysis
-- **Turn-Taking Patterns**: Conversation flow and speaker interaction analysis
-- **Question Frequency**: Track question asking by speaker
-- **Speaking Pace**: Words per minute calculations
-- **Silence Ratio**: Meeting efficiency analysis
-- **Word Count Statistics**: Comprehensive word usage across speakers
-
-## 🎨 Formatting Service (`formatting_service.py`)
-
-### Purpose
-Centralizes all data formatting logic for consistent display across the application, handling dates, durations, file sizes, and speaker information.
-
-### Key Operations
-```python
-class FormattingService:
-    @staticmethod
-    def format_duration(seconds: float) -> str:
-        """Format seconds to MM:SS format."""
-
-    @staticmethod
-    def format_bytes_detailed(size_bytes: int) -> str:
-        """Format file size with appropriate units (B, KB, MB, GB)."""
-
-    @staticmethod
-    def format_speaker_name(speaker: Speaker) -> str:
-        """Format speaker name with verification status indicators."""
-
-    @staticmethod
-    def get_status_badge_class(status: str) -> str:
-        """Generate CSS class for status badges."""
-```
-
-### Formatting Features
-- **Duration Formatting**: Seconds to MM:SS and detailed time formats
-- **File Size Formatting**: Intelligent unit selection with precision
-- **Date and Time**: Timezone-aware formatting with relative time
-- **Speaker Name Resolution**: Fallback handling for unknown speakers
-- **Status Badge Classes**: UI consistency for status indicators
-- **File Age Calculation**: Human-readable relative time display
-
-## 🤖 Smart Speaker Suggestion Service (`smart_speaker_suggestion_service.py`)
-
-### Purpose
-Implements intelligent speaker identification with consolidated suggestions, priority-based filtering, and automated profile matching.
-
-### Key Operations
-```python
-class SmartSpeakerSuggestionService:
-    @staticmethod
-    def get_consolidated_suggestions(
-        db: Session, speaker_id: int, user_id: int
-    ) -> List[ConsolidatedSuggestion]:
-        """Get consolidated speaker suggestions with intelligent filtering."""
-        # Profile-based suggestions prioritized over individual matches
-
-    @staticmethod
-    def filter_and_prioritize_suggestions(
-        suggestions: List[Dict[str, Any]],
-    ) -> List[ConsolidatedSuggestion]:
-        """Filter out unlabeled speakers and consolidate by name."""
-        # Remove SPEAKER_XX format names and consolidate duplicates
-```
-
-### Smart Features
-- **Profile Prioritization**: Verified profiles prioritized over individual matches
-- **Intelligent Consolidation**: Duplicate speaker names merged into single suggestions
-- **Unlabeled Filtering**: Automatic removal of SPEAKER_XX format names
-- **Confidence Scoring**: Advanced confidence calculation with multiple factors
-- **Auto-Accept Logic**: High-confidence suggestions marked for automatic acceptance
-
-## 🔗 Profile Embedding Service (`profile_embedding_service.py`)
-
-### Purpose
-Manages voice embeddings for speaker profiles, enabling cross-video speaker recognition through vector similarity matching.
-
-### Key Operations
-```python
-class ProfileEmbeddingService:
-    @staticmethod
-    def add_speaker_to_profile_embedding(db: Session, speaker_id: int, profile_id: int) -> bool:
-        """Add speaker's voice embedding to profile's consolidated embedding."""
-
-    @staticmethod
-    def calculate_profile_similarity(
-        db: Session, speaker_embedding: List[float], user_id: int
-    ) -> List[Dict[str, Any]]:
-        """Calculate similarity between speaker and all user profiles."""
-```
-
-### Embedding Features
-- **Voice Fingerprinting**: Advanced voice similarity using vector embeddings
-- **Cross-Video Matching**: Identify same speakers across different recordings
-- **Consolidated Embeddings**: Profile-level voice signatures from multiple recordings
-- **Similarity Scoring**: Cosine similarity with confidence thresholds
-- **Automatic Profile Updates**: Real-time embedding consolidation
-
-## 🏷️ Speaker Status Service (`speaker_status_service.py`)
-
-### Purpose
-Manages comprehensive speaker verification status with computed fields for optimized UI display.
-
-### Key Operations
-```python
-class SpeakerStatusService:
-    @staticmethod
-    def add_computed_status(speaker: Speaker) -> None:
-        """Add computed status fields to speaker object."""
-        # Verification status, suggestion availability, confidence levels
-
-    @staticmethod
-    def get_verification_status(speaker: Speaker) -> str:
-        """Get human-readable verification status."""
-```
-
-### Status Features
-- **Verification Tracking**: Comprehensive verification status management
-- **Computed Fields**: UI-optimized fields added to speaker objects
-- **Status Indicators**: Human-readable status text for display
-- **Suggestion Availability**: Track whether suggestions are available
-
-## 🔧 Error Categorization Service (`error_categorization_service.py`)
-
-### Purpose
-Provides intelligent error classification with user-friendly suggestions and retry guidance for improved error handling.
-
-### Key Operations
-```python
-class ErrorCategorizationService:
-    @staticmethod
-    def get_error_info(error_message: str) -> Dict[str, Any]:
-        """Categorize error and provide user-friendly information."""
-        # Error category, suggestions, retry guidance
-
-    @staticmethod
-    def categorize_error(error_message: str) -> str:
-        """Categorize error into predefined categories."""
-```
-
-### Error Features
-- **Intelligent Classification**: Pattern-based error categorization
-- **User-Friendly Suggestions**: Actionable guidance for error resolution
-- **Retry Guidance**: Determine if errors are retryable
-- **Category-Specific Advice**: Tailored suggestions based on error type
-
-## 📋 Task Filtering Service (`task_filtering_service.py`)
-
-### Purpose
-Optimizes data retrieval and filtering for improved performance and user experience.
-
-### Key Operations
-```python
-class TaskFilteringService:
-    @staticmethod
-    def filter_tasks_by_criteria(
-        db: Session, user_id: int, criteria: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
-        """Filter tasks based on various criteria."""
-
-    @staticmethod
-    def optimize_query_performance(query: Any) -> Any:
-        """Optimize database queries for better performance."""
-```
-
-### Filtering Features
-- **Efficient Data Retrieval**: Optimized database queries
-- **Multi-Criteria Filtering**: Complex filtering logic
-- **Performance Optimization**: Query optimization for large datasets
-- **User-Specific Filtering**: Context-aware filtering based on user permissions
-
-## Protocol Interfaces (`interfaces.py`)
-
-Defines `Protocol` interfaces for Storage, Search, Cache, and Notification abstractions. Use these for type hints when writing code that should be testable against mocks.
-
-## Notification Service (`notification_service.py`)
-
-Unified `send_task_notification()` wrapper used by all tasks and services. Import this rather than calling WebSocket send directly.
-
-## Progress Tracker (`progress_tracker.py`)
-
-Preferred progress tracking implementation using EWMA (Exponentially Weighted Moving Average) for ETA estimation. Use this in new tasks rather than manual progress calculations.
-
-## Hybrid Search Service (`hybrid_search_service.py`)
-
-Implements hybrid BM25+neural search. Contains a critical fix for OpenSearch 3.4: using `aggs` (cardinality aggregations) with `hybrid` query + `collapse` + RRF `search_pipeline` causes an `ArrayIndexOutOfBoundsException` in OS 3.4. The fix removes `aggs` from hybrid query bodies; `total_files` is computed from result length instead.
-
-## OpenSearch Service (`opensearch_service.py`)
-
-### Cosine Score Conversion — Critical
-
-OpenSearch `cosinesimil` space type returns `(1 + cosine) / 2`, not raw cosine. A raw cosine of 0.50 appears as 0.75 in OpenSearch scores. All kNN score reads must convert:
+### Shape of a service
+Most services are plain modules of functions that take a `Session`; a few are classes with static methods (`AnalyticsService`, `FormattingService`, `ErrorCategorizationService`, `SpeakerStatusService`, ...) and `LLMService` is an instantiated client. There is no shared base class.
+
+## 📁 Module Map
+
+### Subpackages
+| Package | What it is |
+|---|---|
+| `asr/` | ASR provider abstraction: `base.py`, `types.py`, `factory.py`, `local_provider.py` plus one module per cloud vendor (AssemblyAI, AWS, Azure, Deepgram, Gladia, Google, OpenAI, pyannote.ai, Speechmatics). 10 providers (1 local + 9 cloud). Has `CLAUDE.md`. |
+| `diarization/` | Diarization provider abstraction (`base`, `factory`, `local_provider`, `pyannote_provider`, `asr_adapter`). Has `CLAUDE.md`. |
+| `search/` | Transcript chunking, indexing, hybrid BM25 + neural retrieval, fusion, index health, reindex, ML model management. Has `CLAUDE.md` with the cosine-score gotcha. |
+| `opensearch_service/` | The OpenSearch speaker/voiceprint plane and transcript document store (package: `client`, `aliases`, `indices`, `repair`, `speaker_*`, `matching`, `profiles`, `clusters`, `transcripts`). |
+| `chat/` | RAG chat: planner, retrieval, reranking, prompting, citations, redaction masking, map-reduce summarization, usage. Has `CLAUDE.md`. |
+| `redaction/` | Content redaction (PII, toxicity, profanity): detectors, spans, export policy, reveal audit, LLM egress guard. Has `CLAUDE.md`. |
+| `ingest_artifacts/` | Deterministic (no-LLM) per-file facts, extractive digest and keyphrases. Has `CLAUDE.md`. |
+| `watch_sources/` | Auto-import from local folders, S3 buckets and SMB shares. Has `CLAUDE.md`. |
+| `transcript_document/` | DOCX and PDF transcript documents (layout model plus two renderers). Has `CLAUDE.md`. |
+| `captions/` | The single caption-cue segmenter behind the player track and every subtitle download. |
+| `local_models/` | Local Whisper model library: cache inspection, downloader, per-worker loaded-model reporting. |
+| `privacy/` | Organization privacy policy layer: who may have voiceprints and inferred gender. |
+| `protected_media_plugins/` | Plugins for protected-media download providers (for example MediaCMS). |
+
+### Media, storage and files
+| Module | Purpose |
+|---|---|
+| `minio_service.py`, `storage_backend.py`, `storage_presign_identity.py`, `multipart_upload.py`, `storage_recovery_service.py` | Object storage (MinIO or native S3), presigning, browser-side multipart upload, orphan re-ingestion |
+| `media_download_service.py`, `youtube_rate_limiter.py`, `protected_media_providers.py` | yt-dlp URL ingestion and rate limiting |
+| `media_mirror_engine.py`, `media_mirror_service.py` | Incremental media mirror (MinIO to a configured S3 destination) |
+| `playback_rendition.py` | Browser-playable AAC/M4A renditions for formats browsers cannot decode |
+| `subtitle_service.py`, `video_processing_service.py`, `transcript_export_*.py`, `summary_export_service.py` | Subtitle files, burned-in subtitles, transcript and summary export |
+| `file_cleanup_service.py`, `file_provenance.py`, `file_provenance_view.py`, `imohash_service.py`, `cache_management_service.py` | Stuck-file recovery and purge, per-file processing provenance, fingerprinting, derived-asset caches |
+| `audio_segment_utils.py`, `voiceprint_extractor.py`, `voiceprint_orphan_sweep.py` | Audio helpers and voiceprint extraction/sweeps |
+
+### Pipeline, tasks and progress
+| Module | Purpose |
+|---|---|
+| `pipeline_plan.py`, `pipeline_plan_inputs.py`, `asr_switch_plan.py` | The one decision point for how a recording is processed (engines, queues, validity) |
+| `asr_provider_policy.py` | Which cloud ASR providers users may choose |
+| `task_detection_service.py`, `task_filtering_service.py`, `task_recovery_service.py`, `task_row_supersede.py`, `transcription_retry.py`, `post_processing_status.py` | Task health, listing, recovery, supersede rules, retry policy |
+| `progress_tracker.py`, `notification_service.py`, `download_events.py`, `pipeline_timing_service.py` | EWMA ETA progress tracking, WebSocket notifications (`send_task_notification()`), download events, pipeline timing |
+| `error_categorization_service.py` | User-facing error classification (fixed sentences; the raw exception never reaches a client) |
+| `migration_lock_service.py`, `migration_progress_service.py` | Redis lock and progress for batch migrations |
+
+### Speakers
+`speaker_*_service.py`, `profile_embedding_service.py`, `speaker_matching_service.py`, `smart_speaker_suggestion_service.py`, `speaker_status_service.py`, `speaker_clustering_service.py`, `similarity_service.py`, `embedding_mode_service.py`, `native_embedding_client.py`, `metadata_speaker_extractor.py`, `speaker_attribute_*.py`, `speaker_cleanup.py`, `speaker_correction_carryover.py`, `speaker_label_backfill.py`, `speaker_profile_rename.py`, `speaker_rename_tracker.py`. Anything that deletes a speaker or moves one out of a cluster or profile must go through `speaker_cleanup.py` (see `services/CLAUDE.md`).
+
+### LLM
+| Module | Purpose |
+|---|---|
+| `llm_service.py` | Synchronous multi-provider client (OpenAI, vLLM, Ollama, Anthropic, OpenRouter, Bedrock, custom OpenAI-compatible); summarization, speaker identification, topic extraction, section chunking for long transcripts |
+| `llm_bedrock.py`, `bedrock_settings.py`, `llm_stream.py` | Bedrock provider, its connection settings, streaming parsers |
+| `llm_reasoning.py`, `llm_context_window.py` | Measured per-model reasoning off-switch and context window |
+| `auto_llm_settings.py`, `ai_insights_companion.py`, `auto_label_service.py`, `topic_extraction_service.py` | Per-user automatic AI steps, auto-labelling, topic suggestions |
+
+### Tenancy, access, governance and compliance
+| Module | Purpose |
+|---|---|
+| `permission_service.py`, `collection_visibility.py`, `delete_permissions.py`, `platform_access.py`, `platform_bypass.py`, `organization_service.py` | Sharing, collection visibility, tenancy mode and platform-admin bypass |
+| `hold_guard.py`, `content_hold_service.py`, `content_hold_queries.py` | Legal holds: platform and organization (`hold_guard` is the one answer to "is this file held") |
+| `takedown_*.py` | Abuse/DMCA quarantine, takedown notice records and owner notifications |
+| `content_audit.py`, `org_audit_view.py` | Content-access and governance audit events and the organization audit view |
+| `support_access_*.py` | Support-access grants |
+| `gdpr_erasure_service.py`, `erasure_ledger_service.py` | GDPR Art. 17 erasure and its ledger |
+| `account_lifecycle_service.py`, `session_cap_service.py` | FedRAMP account-expiry and concurrent-session controls |
+| `tenant_stamp_backfill.py` | Stamp legacy rows with a tenant |
+
+### Identity and configuration
+`auth_config_service.py`, `auth_mail_config_service.py`, `account_security_service.py`, `idp_group_mapping_service.py`, `directory_sync_service.py`, `scim_service.py`, `scim_group_service.py`, `scim_token_service.py`, `email_service.py`, `watch_email_service.py`, `watch_settings_service.py`, `system_settings_service.py`, `huggingface_token.py`, `usage_service.py`, `backup_service.py`, `backup_recovery.py`, `backup_alerts.py`, `opensearch_snapshot.py`, `redis_cache_service.py`. The auth methods themselves are in `app/auth/`.
+
+### Tags, groups and analytics
+`tag_service.py`, `tag_operations.py`, `tag_bulk.py`, `tag_collisions.py`, `tag_sharing.py`, `group_file_index_service.py`, `analytics_service.py`, `formatting_service.py`, `interfaces.py`.
+
+## 🧩 Notable Modules
+
+### Protocol interfaces (`interfaces.py`)
+`Protocol` classes `StorageService`, `SearchService`, `CacheService` and `NotificationService` describe the service boundaries that `minio_service`, `opensearch_service`, `redis_cache_service` and `utils/websocket_notify` satisfy. Depend on the Protocol for new seams and for type hints in tests.
+
+### Notification service (`notification_service.py`)
+`send_task_notification()` is the unified wrapper used by tasks and services. Import it instead of calling the WebSocket layer directly. If an event names a media file, route it through `utils/websocket_notify.send_ws_event_for_file` so quarantined files are not disclosed.
+
+### Progress tracker (`progress_tracker.py`)
+Preferred progress tracking, using an EWMA (exponentially weighted moving average) for ETA estimation. Use it in new tasks rather than hand-rolled percentages.
+
+### Transcription has no service module
+There is no `transcription_service.py` (deleted in issue #450; it was imported by nothing). Dispatch is `app/tasks/transcription/dispatch.py`, the engine is `app/transcription/`, the providers are `services/asr/` and `services/diarization/`, and which stages run is decided by `pipeline_plan.py`.
+
+### LLM service (`llm_service.py`)
+A synchronous client on purpose (Celery tasks, no asyncio conflicts). `create_from_user_settings(user_id)` resolves a user's configuration and falls back to `create_from_system_settings()`; both can return `None` when no provider is configured, and callers must handle that. `LLMService.is_configured_for_user(db, user_id)` is the one answer to "is an LLM configured". Summaries use the BLUF format (action items, decisions, speaker analysis) with multi-section stitching for long transcripts, in the 12 output languages of `LLM_OUTPUT_LANGUAGES` (`core/constants.py`). Speaker-identification suggestions are never auto-applied. Details: `services/CLAUDE.md`.
+
+### MinIO / object storage (`minio_service.py`)
+Module-level functions (not a class) for upload, download, delete, presigned URLs and object tagging, plus a small `MinIOService` class for bucket-oriented operations. Media playback and downloads use presigned URLs: clients get them from `GET /files/{uuid}/stream-url` (playback) or `POST /files/{uuid}/prepare-download`, and the browser reads directly from storage (HTTP range requests included), not through an API byte proxy.
 
 ```python
-raw_cosine = 2.0 * hit["_score"] - 1.0
+from app.services import minio_service
+
+minio_service.upload_file(file_content, file_size, object_name, content_type)
+url = minio_service.get_file_url(object_name)            # presigned, inline (playback/thumbnails)
+url = minio_service.get_presigned_download_url(          # presigned, forces download
+    object_name, download_filename=..., content_type=...
+)
+minio_service.delete_file(object_name)
 ```
 
-This conversion is applied at 8 locations across `opensearch_service.py`, `profile_embedding_service.py`, `speaker_matching_service.py`, `smart_speaker_suggestion_service.py`, and `similarity_service.py`.
+`storage_backend.py` owns the differences between bundled MinIO and native AWS S3 (`STORAGE_BACKEND`), and `storage_presign_identity.py` provides the least-privilege identity that signs browser-facing GET URLs. Every presigned URL expiry is clamped by `clamp_presigned_expiry`.
 
-### Speaker Index Alias Architecture
+### File cleanup service (`file_cleanup_service.py`)
+`FileCleanupService` detects files stuck in processing or pending states and recovers them (`run_cleanup_cycle`, `force_cleanup_orphaned_files(db, dry_run=...)`, `get_cleanup_statistics`), with recovery-attempt limits that mark a file `ORPHANED` and force-delete eligible. It uses `check_for_stuck_files()` and `recover_stuck_file()` from `utils/task_utils.py`. The module also holds the full file purge path (`purge_media_file`).
 
-Speaker indices use an alias-based architecture:
-- `speakers_v3`: concrete index, 512-dim (pyannote/embedding)
-- `speakers_v4`: concrete index, 256-dim (WeSpeaker)
-- `speakers`: OpenSearch ALIAS pointing to the active versioned index
+### Analytics service (`analytics_service.py`)
+`AnalyticsService` (static methods `compute_analytics`, `save_analytics`, `refresh_analytics`, `compute_and_save_analytics`) computes per-file analytics: speaker talk time, interruptions, turn-taking, question frequency, speaking pace and silence ratio. `POST /files/{uuid}/analytics/refresh` triggers a recompute.
 
-Use `get_write_index()` and `get_active_versioned_index()` — never reference `speakers_v3`/`speakers_v4` directly outside `opensearch_service.py`.
+### Formatting service (`formatting_service.py`)
+`FormattingService` turns raw rows into display-ready fields (`format_duration`, `format_bytes_detailed`, `format_speaker_name`, `format_transcript_segment` with read-time redaction, `get_status_badge_class`, ...). The API sends these pre-formatted so the SPA only renders.
 
-## OpenSearch Service (`opensearch_service.py`)
+### Speaker services
+- `SmartSpeakerSuggestionService` consolidates profile and individual voice-match suggestions (profile matches win, duplicate names merge, unlabeled `SPEAKER_XX` names are filtered, refused identities are removed with `without_refused`).
+- `ProfileEmbeddingService` maintains profile-level voice embeddings (`update_profile_embedding`, `add_speaker_to_profile_embedding`, `calculate_profile_similarity`).
+- `SpeakerStatusService` computes verification status fields for display (`compute_speaker_status`, `add_computed_status`).
 
-### Purpose
-Manages full-text search, indexing, and search analytics for transcripts and files.
+### Error categorization (`error_categorization_service.py`)
+`ErrorCategorizationService.classify_failure()` is called once at the failure site; it stores a fixed user-facing sentence plus a retry category and logs the raw text server-side only. `UserErrorReason` is the user-facing vocabulary.
 
-### Key Operations
-```python
-def index_transcript(
-    file_id: int, user_id: int, full_transcript: str, speaker_names: List[str], file_title: str
-) -> None:
-    """Index transcript for full-text search."""
+### Task filtering (`task_filtering_service.py`)
+`TaskFilteringService.filter_tasks_by_criteria` applies status, age and date-range filters to task listings and adds computed display fields.
 
-
-# NOTE: there is deliberately NO search function here (#542). The one that existed
-# had zero callers and a semantic branch this index cannot serve. Transcript SEARCH is
-# `services/search/hybrid_search_service.py` over `transcript_chunks`; the gallery's
-# keyword filter builds its own query in `api/endpoints/files/filtering.py`.
-
-
-def add_speaker_embedding(speaker_id: int, embedding_vector: List[float]) -> None:
-    """Store speaker voice embedding for similarity search."""
-
-
-def search_similar_speakers(embedding_vector: List[float], user_id: int) -> List[Dict]:
-    """Find similar speakers using vector search."""
-```
-
-### Search Features
-```python
-def build_search_query(query: str, filters: dict) -> Dict:
-    """Build complex OpenSearch query."""
-    search_body = {
-        "query": {"bool": {"must": [{"match": {"transcript": query}}], "filter": []}},
-        "highlight": {"fields": {"transcript": {}}},
-    }
-
-    # Add filters (date range, speakers, file types, etc.)
-    if filters.get("from_date"):
-        search_body["query"]["bool"]["filter"].append(
-            {"range": {"created_at": {"gte": filters["from_date"]}}}
-        )
-
-    return search_body
-```
-
-### Features
-- **Full-text Search**: Advanced search across transcripts
-- **Faceted Search**: Filter by speakers, dates, file types
-- **Highlighting**: Search term highlighting in results
-- **Vector Search**: Speaker similarity using voice embeddings
-- **Analytics**: Search performance and usage analytics
+### OpenSearch (`opensearch_service/`, `search/`)
+- **Cosine score conversion**: OpenSearch `cosinesimil` returns `(1 + cosine) / 2`, not raw cosine. Every kNN score read converts with `raw_cosine = 2.0 * hit["_score"] - 1.0`, and thresholds sent *into* OpenSearch need the inverse. Both directions are named functions in `utils/cosine_space.py`; call them instead of inlining the arithmetic.
+- **Speaker index aliases**: speaker voiceprints live in versioned indices (`speakers_v3`, 512-dim; `speakers_v4`, 256-dim) behind a `speakers` alias. Use `get_write_index()` and `get_active_versioned_index()` from `opensearch_service/aliases.py`; do not reference the versioned names directly outside that package.
+- **Transcript search** is `search/hybrid_search_service.py` over the `transcript_chunks` index (hybrid BM25 + neural with RRF). OpenSearch 3.4 has hybrid-query quirks documented in `search/CLAUDE.md`.
 
 ## 🔄 Service Integration Patterns
 
-### Cross-Service Operations
-```python
-class FileService:
-    def delete_file(self, file_id: int, user: User) -> None:
-        """Complete file deletion across all services."""
-        try:
-            # 1. Get file information
-            file_obj = self._get_file_with_permission_check(file_id, user)
-
-            # 2. Delete from object storage
-            minio_service.delete_file(file_obj.storage_path)
-
-            # 3. Remove from search index
-            opensearch_service.delete_document(file_id)
-
-            # 4. Cancel any running tasks
-            transcription_service.cancel_file_tasks(file_id)
-
-            # 5. Delete from database (cascades to related records)
-            self.db.delete(file_obj)
-            self.db.commit()
-
-        except Exception as e:
-            self.db.rollback()
-            raise self._handle_deletion_error(e)
-```
-
-### Service Dependencies
-```python
-# Services can call other services when needed
-class SummaryService:
-    def __init__(self, db: Session):
-        self.db = db
-        self.file_service = FileService(db)  # Dependency injection
-
-    def start_summarization(self, file_id: int, user: User):
-        # Use file service for validation
-        file_obj = self.file_service.get_file_by_id(file_id, user)
-        # Continue with transcription logic...
-```
+Cross-service operations are composed in the caller: an endpoint or task calls the permission-aware lookup, then the relevant services in order, and commits once. Deleting a file, for example, is `file_cleanup_service.purge_media_file` (storage objects, search documents, speaker aggregates, rows), guarded by `hold_guard`. Prefer these existing composites over re-implementing the sequence.
 
 ## 🧪 Testing Services
 
-### Service Testing Patterns
+Service tests live under `backend/tests/` (`tests/unit/`, `tests/services/`, `tests/api/`) and run against the live stack's PostgreSQL (see `backend/README.md`). Test the real behaviour; mock only external network services (LLM providers, cloud ASR, SMTP), never the database. `./opentr.sh start dev --with-mock-llm` provides a canned OpenAI-compatible LLM for chat and summarization paths.
+
+## 🔧 Adding a New Service
+
+1. **Define the purpose**: one responsibility; check whether an existing module is already the single home for that rule
+2. **Signature**: take a `Session` (and a tenant/user argument where relevant) rather than opening your own, unless it runs in a Celery task with no request session, in which case use `session_scope()`
+3. **Errors**: raise `app/core/exceptions.py` types; never leak raw exception text to clients
+4. **Tenancy and permissions**: go through `PermissionService`, `collection_visibility` and `utils/db_helpers` instead of hand-written filters
+5. **Queues**: a service imported by a Celery task must not load models onto the wrong queue's worker (GPU, CPU and redaction workers load different models)
+6. **Tests**: add unit tests with a failing case, then run `./scripts/run-backend-tests.sh tests/unit`
+
 ```python
-class TestFileService:
-    def test_upload_file_success(self, db_session, mock_user, mock_upload_file):
-        """Test successful file upload."""
-        file_service = FileService(db_session)
-
-        # Mock external dependencies
-        with patch("app.services.minio_service.upload_file"):
-            result = await file_service.upload_file(mock_upload_file, mock_user)
-
-        assert result.filename == mock_upload_file.filename
-        assert result.user_id == mock_user.id
-
-    def test_delete_file_unauthorized(self, db_session, mock_user, other_user_file):
-        """Test unauthorized file deletion."""
-        file_service = FileService(db_session)
-
-        with pytest.raises(HTTPException) as exc_info:
-            file_service.delete_file(other_user_file.id, mock_user)
-
-        assert exc_info.value.status_code == 403
-```
-
-### Mocking External Services
-```python
-# Mock external service calls in tests
-@patch("app.services.minio_service.upload_file")
-@patch("app.services.opensearch_service.index_transcript")
-def test_complete_transcription_workflow(mock_opensearch, mock_minio, db_session):
-    """Test full transcription workflow with mocked external services."""
-    # Test logic without actual external API calls
-```
-
-## 📊 Error Handling in Services
-
-### Standardized Error Responses
-```python
-from app.utils.error_handlers import ErrorHandler
-
-
-class FileService:
-    def get_file_by_id(self, file_id: int, user: User) -> MediaFile:
-        """Get file with proper error handling."""
-        file_obj = (
-            self.db.query(MediaFile)
-            .filter(MediaFile.id == file_id, MediaFile.user_id == user.id)
-            .first()
-        )
-
-        if not file_obj:
-            raise ErrorHandler.not_found_error("File")
-
-        return file_obj
-
-    def _handle_upload_error(self, error: Exception) -> None:
-        """Handle upload-specific errors."""
-        if isinstance(error, MinIOError):
-            raise ErrorHandler.file_processing_error("storage upload", error)
-        elif isinstance(error, ValidationError):
-            raise ErrorHandler.validation_error(str(error))
-        else:
-            raise ErrorHandler.database_error("file creation", error)
-```
-
-## 🚀 Performance Considerations
-
-### Database Optimization
-```python
-class FileService:
-    def get_user_files_with_stats(self, user: User) -> List[Dict]:
-        """Optimized query with eager loading."""
-        return (
-            self.db.query(MediaFile)
-            .options(
-                joinedload(MediaFile.transcript_segments),
-                joinedload(MediaFile.comments),
-                selectinload(MediaFile.file_tags).joinedload(FileTag.tag),
-            )
-            .filter(MediaFile.user_id == user.id)
-            .all()
-        )
-```
-
-### Caching Strategies
-```python
-from functools import lru_cache
-
-
-class SpeakerService:
-    @lru_cache(maxsize=100)
-    def get_user_speakers_cached(self, user_id: int) -> List[Speaker]:
-        """Cache frequently accessed speaker data."""
-        return self.db.query(Speaker).filter(Speaker.user_id == user_id).all()
-```
-
-## 🔧 Adding New Services
-
-### Service Creation Checklist
-1. **Define Purpose**: Clear single responsibility
-2. **Design Interface**: Public methods and their signatures
-3. **Error Handling**: Use standardized error patterns
-4. **Dependencies**: Inject required services/utilities
-5. **Testing**: Comprehensive unit tests with mocks
-6. **Documentation**: Clear docstrings and examples
-
-### Service Template
-```python
-from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from app.models.user import User
-from app.utils.error_handlers import ErrorHandler
-from app.utils.uuid_helpers import require_resource_owner
 
 
-class NewService:
-    """Service for handling [specific domain] operations."""
-
-    def __init__(self, db: Session):
-        self.db = db
-
-    def create_resource(self, data: CreateSchema, user: User) -> Resource:
-        """Create a new resource with validation."""
-        try:
-            # Validation
-            self._validate_create_data(data)
-
-            # Business logic
-            resource = self._perform_create_operation(data, user)
-
-            # Database transaction
-            self.db.add(resource)
-            self.db.commit()
-            self.db.refresh(resource)
-
-            return resource
-
-        except Exception as e:
-            self.db.rollback()
-            raise self._handle_create_error(e)
-
-    def _validate_create_data(self, data: CreateSchema) -> None:
-        """Private validation method."""
-        # Validation logic
-        pass
-
-    def _handle_create_error(self, error: Exception) -> None:
-        """Private error handling method."""
-        # Error handling logic
-        pass
+def create_resource(db: Session, data: CreateSchema, user: User) -> Resource:
+    """Create a new resource with validation."""
+    resource = Resource(**data.model_dump(), user_id=user.id)
+    db.add(resource)
+    db.commit()
+    db.refresh(resource)
+    return resource
 ```
-
----
-
-The services layer provides a clean, testable, and maintainable way to implement business logic while keeping API endpoints focused on HTTP concerns and database models focused on data representation.

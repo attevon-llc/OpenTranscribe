@@ -585,8 +585,10 @@ create_env_file() {
     # Note: TEMP_DIR no longer needs override - all containers use /app/temp internally
     # Explicit TEMP_DIR=/app/temp set in docker-compose.yml for all backend services
 
-    # Enable offline mode for HuggingFace (uncomment the line)
-    sed -i "s|^#.*HF_HUB_OFFLINE=.*|HF_HUB_OFFLINE=1|g" "$INSTALL_DIR/.env"
+    # Enable offline mode for HuggingFace. .env.example ships the key ACTIVE (HF_HUB_OFFLINE=0), so
+    # the pattern must match it with or without a leading `#` — an uncomment-only pattern matched
+    # nothing and left every install at 0.
+    sed -i "s|^#\?[[:space:]]*HF_HUB_OFFLINE=.*|HF_HUB_OFFLINE=1|g" "$INSTALL_DIR/.env"
 
     # Note: Database schema is managed by Alembic migrations on backend startup
 
@@ -625,7 +627,7 @@ post_install_info() {
     echo -e "${CYAN}Next Steps:${NC}"
     echo -e "  1. ${YELLOW}Edit configuration:${NC}"
     echo -e "     sudo nano $INSTALL_DIR/.env"
-    echo -e "     ${RED}REQUIRED: Set your HUGGINGFACE_TOKEN${NC}\n"
+    echo -e "     (No HUGGINGFACE_TOKEN is needed: models are pre-installed and HF_HUB_OFFLINE=1)\n"
 
     echo -e "  2. ${YELLOW}Start OpenTranscribe:${NC}"
     echo -e "     cd $INSTALL_DIR"

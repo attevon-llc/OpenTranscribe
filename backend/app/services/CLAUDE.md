@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Everything between the API/Celery entry points and the data layer. ~110 modules; endpoints and
+Everything between the API/Celery entry points and the data layer: well over 100 top-level modules plus subpackages (`ls` this directory); endpoints and
 tasks should stay thin and call in here. `interfaces.py` declares the structural `Protocol`
 contracts (`StorageService`, `SearchService`, `CacheService`, `NotificationService`) that
 `minio_service`, `opensearch_service`, `redis_cache_service`, and `utils/websocket_notify`
@@ -209,7 +209,8 @@ second is the specific failure mode they were written to prevent.
   deletes, and is bounded by `directory_sync.max_disables_per_run`. **Disabling without
   revoking would leave the refresh token rotating**, so it revokes too. Settings are six
   `SystemSettings` rows (`directory_sync.*`, defaults in `core/constants.py`) — there are no
-  directory-sync `.env` vars, no endpoint, and no admin panel.
+  directory-sync `.env` vars; the super_admin API is `/admin/directory-sync`
+  (`api/endpoints/directory_sync_settings.py`) and the UI is Settings -> Authentication -> Directory sync.
 - **`auth_mail_config_service.py`** — which `EmailNotificationConfig` carries transactional auth
   mail (`SystemSettings` key `email.auth_config_uuid`). The read half is
   `email_service.load_auth_mail_config`. A designation naming a missing or disabled row is

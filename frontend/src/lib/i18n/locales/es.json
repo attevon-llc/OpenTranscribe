@@ -2917,7 +2917,7 @@
   "userManagement.lockFailed": "No se pudo bloquear la cuenta.",
   "userManagement.unlockAccount": "Quitar bloqueo por intentos fallidos",
   "userManagement.unlockAccountFor": "Quitar el bloqueo por intentos fallidos de {{name}}",
-  "userManagement.unlockConfirmMessage": "Esto quita el bloqueo por intentos de inicio de sesión fallidos de {{name}}. No reactiva una cuenta bloqueada por un administrador.",
+  "userManagement.unlockConfirmMessage": "Esto quita el bloqueo por intentos de inicio de sesión fallidos de {{name}} y reactiva la cuenta si un administrador la desactivó.",
   "userManagement.unlockSuccess": "Bloqueo de inicio de sesión de {{name}} eliminado",
   "userManagement.unlockNotLocked": "{{name}} no estaba bloqueado.",
   "userManagement.unlockFailed": "No se pudo quitar el bloqueo de inicio de sesión.",

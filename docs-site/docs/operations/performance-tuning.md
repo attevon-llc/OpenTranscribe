@@ -12,21 +12,21 @@ This guide covers tuning OpenTranscribe for maximum throughput on your hardware.
 
 ### Batch Size Tuning
 
-Batch size controls how many audio chunks the Whisper encoder processes simultaneously. It is the single most impactful transcription speed parameter. OpenTranscribe auto-detects the optimal batch size based on GPU VRAM, but you can override it.
+Batch size controls how many audio chunks the Whisper encoder processes simultaneously. It is the single most impactful transcription speed parameter. OpenTranscribe auto-detects a safe batch size from the GPU's total VRAM and the configured model (`HardwareConfig._batch_for_model` in `backend/app/utils/hardware_detection.py`), and you can override it.
 
-| GPU VRAM | Auto-Detected Batch Size | Notes |
-|----------|--------------------------|-------|
-| 48 GB+ (A6000, A100) | 32 | Optimal for large-v3-turbo |
-| 24 GB (RTX 3090, A5000) | 24 | Optimal |
-| 16 GB (RTX 4080) | 16 | Good headroom |
-| 12 GB (RTX 3080) | 12 | Can push to 16 with turbo model |
-| 8 GB (RTX 3070) | 8 | Test 12 with turbo model |
-| 6 GB (entry-level) | 4 | Conservative |
+| GPU VRAM | `large-v3-turbo` and other large models | `medium` | `small` |
+|----------|------------------------------------------|----------|---------|
+| 12 GB or more | 16 | 24 | 24 |
+| 8 GB | 8 | 8 | 16 |
+| 6 GB | 4 | 4 | 12 |
+| under 6 GB | 2 | 2 | 2 |
+
+The ceilings come from a VRAM sweep on an RTX A6000 (raw data in `docs/whisper-vram-profile/`) using an 80% of VRAM rule. For `large-v3-turbo` speed stops improving at a batch of 8, so larger cards are capped at 16 because 24 or 32 only add VRAM. `large-v3` and `large-v2` are not profiled separately and use the turbo ceilings.
 
 Override via environment variable:
 
 ```bash
-# In .env
+# In .env (default: auto)
 BATCH_SIZE=24
 ```
 
@@ -48,8 +48,9 @@ Auto-detection logic (from `hardware_detection.py`):
 - Compute 7.5+ (RTX 20xx, 30xx, 40xx, A-series): `int8_float16`
 - Compute 7.0 (V100): `float16`
 - Below 7.0: `float32`
+- CPU: `int8`
 
-Override:
+Override (`WHISPER_COMPUTE_TYPE` wins for transcription; `COMPUTE_TYPE` overrides the detected hardware default; `.env.example` lists `auto | float16 | float32 | int8`):
 
 ```bash
 WHISPER_COMPUTE_TYPE=float16
@@ -73,15 +74,17 @@ WHISPER_BEAM_SIZE=1
 
 | Model | Speed | VRAM | English | Multilingual | Translation |
 |-------|-------|------|---------|--------------|-------------|
-| `large-v3-turbo` (default) | 6x faster | ~6 GB | Excellent | Good | **No** |
+| `large-v3-turbo` (default) | Much faster | ~6 GB | Excellent | Good | **No** |
 | `large-v3` | Slow | ~10 GB | Excellent | Best | Yes |
 | `large-v2` | Slow | ~10 GB | Excellent | Good | Yes |
 
-Use `large-v3-turbo` unless you need translation to English or maximum non-English accuracy. The turbo model uses ~40% less VRAM and processes 6x faster.
+Use `large-v3-turbo` unless you need translation to English or maximum non-English accuracy. The turbo model uses less VRAM and is much faster (upstream reports roughly 6-8x; not measured in this repository).
 
 ```bash
 WHISPER_MODEL=large-v3-turbo
 ```
+
+The local model can also be chosen in the admin UI, which takes precedence over the environment variable.
 
 ### Hybrid Mode {/* #hybrid-mode */}
 
@@ -146,7 +149,7 @@ VRAM variability is caused by PyTorch's caching allocator timing -- the allocato
 
 For multi-GPU or high-VRAM systems, concurrent processing can multiply throughput:
 
-**Shared model weights** via thread pool mode (`GPU_WORKER_POOL=threads`):
+**Shared model weights** via thread pool mode (`GPU_WORKER_POOL=threads`, already the default):
 - 5 concurrent tasks share one copy of model weights (~5.5 GB)
 - vs. prefork mode: 5 separate copies = ~27.5 GB
 - Savings: ~22 GB VRAM for 5 concurrent tasks
@@ -160,9 +163,10 @@ GPU_CONCURRENT_REQUESTS=5  # Number of concurrent transcription tasks
 **Multi-GPU scaling** for systems with multiple GPUs:
 
 ```bash
-GPU_SCALE_ENABLED=true
+# The --gpu-scale flag is what enables scaling (GPU_SCALE_ENABLED does not)
 GPU_SCALE_DEVICE_ID=2       # Which GPU to use
 GPU_SCALE_WORKERS=4         # Parallel workers
+./opentr.sh start dev --gpu-scale
 ```
 
 See the [Multi-GPU Scaling](../configuration/multi-gpu-scaling) documentation for details.
@@ -303,12 +307,12 @@ By default, OpenSearch refreshes indices every 1 second. During bulk operations 
 
 ```bash
 # Set refresh interval to 30 seconds during bulk operations
-curl -X PUT http://localhost:5180/transcripts/_settings \
+curl -X PUT http://localhost:5180/transcript_chunks/_settings \
   -H 'Content-Type: application/json' \
   -d '{"index": {"refresh_interval": "30s"}}'
 
 # Reset to default after bulk operation
-curl -X PUT http://localhost:5180/transcripts/_settings \
+curl -X PUT http://localhost:5180/transcript_chunks/_settings \
   -H 'Content-Type: application/json' \
   -d '{"index": {"refresh_interval": "1s"}}'
 ```
@@ -361,8 +365,10 @@ Each worker type has different concurrency and lifecycle settings:
 | Worker | Queue(s) | Concurrency | max-tasks-per-child | Rationale |
 |--------|----------|-------------|---------------------|-----------|
 | GPU | `gpu` | 1 | 100,000 | Sequential GPU processing; keep models warm |
-| Download | `download` | 3 | 10 | I/O-bound; restart frequently to release file handles |
-| CPU | `cpu,utility` | 8 | 20 | CPU-bound; restart to prevent memory leaks |
+| Download | `download` | 5 | 10 | I/O-bound; restart frequently to release file handles |
+| CPU | `cpu,utility,cpu-transcribe` | 8 | 20 | CPU-bound; restart to prevent memory leaks |
+| Redaction | `redaction` | 2 | 200 | Content-redaction scans; runs under `nice` |
+| Cloud ASR | `cloud-asr` | 16 | 50 | Waiting on cloud provider responses |
 | NLP | `nlp,celery` | 4 | 50 | LLM API calls; moderate concurrency |
 | Embedding | `embedding` | 1 | 500 | Single model loaded; keep warm |
 
@@ -371,8 +377,11 @@ Each worker type has different concurrency and lifecycle settings:
 ```bash
 # In .env
 GPU_CONCURRENT_REQUESTS=1   # GPU worker concurrency (default: 1)
-DOWNLOAD_CONCURRENCY=3      # Download worker concurrency
+DOWNLOAD_CONCURRENCY=5      # Download worker concurrency (default 5)
 NLP_CONCURRENCY=4           # NLP/LLM worker concurrency
+CPU_WORKER_CONCURRENCY=8    # CPU worker concurrency
+REDACTION_CONCURRENCY=2     # Redaction worker concurrency
+CLOUD_ASR_CONCURRENCY=16    # Cloud ASR worker concurrency
 ```
 
 **GPU worker concurrency** should stay at 1 for most setups. The sequential pipeline (transcribe then diarize) is designed for single-task processing to manage VRAM. Only increase for high-VRAM GPUs (48 GB+) with thread pool mode.
@@ -381,12 +390,7 @@ NLP_CONCURRENCY=4           # NLP/LLM worker concurrency
 
 ### Prefetch Multiplier
 
-By default, Celery prefetches tasks. For GPU tasks (which are long-running), prefetching can cause uneven distribution:
-
-```bash
-# Disable prefetching for GPU worker (already recommended for long tasks)
-CELERY_WORKER_PREFETCH_MULTIPLIER=1
-```
+Celery prefetches tasks by default, which causes uneven distribution for long-running GPU tasks. OpenTranscribe already sets `worker_prefetch_multiplier=1` in `backend/app/core/celery.py` for every worker; there is nothing to configure.
 
 ## LLM/vLLM Optimization
 
@@ -402,6 +406,8 @@ OpenTranscribe can send up to 6 concurrent LLM requests per file (4 summary chun
 | `--enable-chunked-prefill` | No | Yes |
 
 ### Expected Performance Impact
+
+These figures are illustrative, from one self-hosted setup, and not a guarantee; measure on your own model and hardware.
 
 | Metric | max-num-seqs=2 | max-num-seqs=6 |
 |--------|---------------|---------------|
@@ -521,7 +527,7 @@ The native pipeline achieves 95% speaker consistency because word-level timestam
 | LLM tasks slow | vLLM concurrent request limit | Increase `--max-num-seqs` | Free (config change) |
 | LLM tasks slow, vLLM GPU at 100% | LLM GPU is the bottleneck | Add dedicated LLM GPU or use cloud API | Hardware/API cost |
 | Database queries slow | PostgreSQL needs tuning | Increase `shared_buffers`, `work_mem` | Free (config change) |
-| Search queries slow | OpenSearch heap too small | Increase `OPENSEARCH_JAVA_OPTS` heap | RAM |
+| Search queries slow | CPU or disk on the OpenSearch host (heap is sized for the embedding model, not for data volume; see above) | Check CPU and disk first; raise `OPENSEARCH_JAVA_OPTS` only if the model needs it | CPU/RAM |
 | Many concurrent users, API slow | Backend needs scaling | ⚠️ **Not yet supported — see below.** Scale Celery workers instead (`REDACTION_CONCURRENCY`, `--gpu-scale`) | CPU/RAM |
 | Download queue backing up | Network bandwidth | Increase `DOWNLOAD_CONCURRENCY`, check bandwidth | Free/network |
 

@@ -262,7 +262,7 @@ database backup. **Default OFF** — enable it in the admin UI under
 
 What it copies:
 
-- **Included**: uploaded originals (`user_*/file_*/…`), thumbnails, and speaker
+- **Included**: uploaded originals (`user_*/file_*/…`), URL-imported originals (`media/<user>/…`), thumbnails, and speaker
   avatars — everything irreplaceable in the media bucket.
 - **Excluded**: regenerable data — preprocessed temp audio (`temp/…`) and,
   defensively, the `derived/` / `bulk/` cache prefixes. (Subtitle-embedded videos
@@ -308,7 +308,7 @@ How it works:
   and a **Run Now** button.
 
 **Restoring from the mirror.** The mirror preserves the bucket's key layout
-(`user_<id>/file_<id>/…`), so restoring is a straight copy back:
+(`user_<id>/file_<id>/…`, `media/<user>/…`), so restoring is a straight copy back:
 
 ```bash
 # Folder mirror → restore into a (new) MinIO with mc
@@ -399,8 +399,9 @@ crontab -e
 # Add daily backup at 2:00 AM
 0 2 * * * cd /opt/opentranscribe && ./opentranscribe.sh backup
 
-# With log rotation (keep last 30 days)
-0 2 * * * cd /opt/opentranscribe && ./opentranscribe.sh backup && find ./backups -name "*.sql" -mtime +30 -delete
+# With rotation (keep last 30 days; matching on the shared prefix removes each dump together
+# with its .voiceprints.ndjson artifact, which must never be separated from it)
+0 2 * * * cd /opt/opentranscribe && ./opentranscribe.sh backup && find ./backups -name "opentranscribe_backup_*" -mtime +30 -delete
 ```
 
 ### Automated Backup with systemd Timer
@@ -416,7 +417,7 @@ Description=OpenTranscribe Database Backup
 Type=oneshot
 WorkingDirectory=/opt/opentranscribe
 ExecStart=/opt/opentranscribe/opentranscribe.sh backup
-ExecStartPost=/usr/bin/find /opt/opentranscribe/backups -name "*.sql" -mtime +30 -delete
+ExecStartPost=/usr/bin/find /opt/opentranscribe/backups -name "opentranscribe_backup_*" -mtime +30 -delete
 ```
 
 ```ini
@@ -518,8 +519,8 @@ For filesystem snapshots, you need to mount a backup directory into the OpenSear
 If you skip OpenSearch backups, you can rebuild indices after restoring PostgreSQL:
 
 1. Start all services
-2. Go to **Admin Settings** in the UI
-3. Use the **Reindex All** function to rebuild search indices from the database
+2. Open **Settings → Data & Storage → Search & Indexing** in the UI
+3. Click **Re-index All Transcripts** to rebuild search indices from the database
 
 ## Configuration Backup
 
@@ -561,8 +562,10 @@ mkdir -p "$BACKUP_DIR"
 
 cd /opt/opentranscribe
 
-# 1. Database (critical)
-docker compose exec -T postgres pg_dump -U postgres opentranscribe | gzip > "$BACKUP_DIR/database.sql.gz"
+# 1. Database + speaker voiceprints (critical). Use the script, not a bare pg_dump: it also
+#    writes the .voiceprints.ndjson artifact, which PostgreSQL does not contain.
+./opentranscribe.sh backup
+cp backups/opentranscribe_backup_* "$BACKUP_DIR/"   # the dump and its artifact travel together
 echo "Database backup complete."
 
 # 2. Configuration (critical)
@@ -644,7 +647,7 @@ This command automatically:
 :::note[MinIO / OpenSearch are not rolled back]
 `opentranscribe.sh backup`/`restore` cover **PostgreSQL only**. After a restore, MinIO (media
 files) and OpenSearch (search indices) may be ahead of or behind the restored database —
-media with no row, rows with no media, stale search hits. Reindex from **Admin → Search**
+media with no row, rows with no media, stale search hits. Reindex from **Settings → Data & Storage → Search & Indexing**
 if the restored database's file list differs from what MinIO/OpenSearch currently have.
 :::
 
@@ -712,7 +715,8 @@ tradeoff explicitly:
 ```bash
 # Stop services that use the database
 docker compose stop backend celery-worker celery-download-worker \
-  celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-beat
+  celery-cpu-worker celery-redaction celery-cloud-asr-worker \
+  celery-nlp-worker celery-embedding-worker celery-beat
 
 # Guarantee an empty target first — pg_restore --clean is NOT enough (it only drops
 # objects the dump itself knows about, so a later migration's table would survive).
@@ -727,7 +731,8 @@ docker compose exec -T postgres pg_restore -U postgres -d opentranscribe -j 4 \
 
 # Restart services
 docker compose start backend celery-worker celery-download-worker \
-  celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-beat
+  celery-cpu-worker celery-redaction celery-cloud-asr-worker \
+  celery-nlp-worker celery-embedding-worker celery-beat
 ```
 
 ### Restoring MinIO Data
@@ -791,8 +796,10 @@ docker compose up -d postgres minio redis opensearch
 # 5. Wait for PostgreSQL to be ready
 until docker compose exec postgres pg_isready -U postgres; do sleep 2; done
 
-# 6. Restore the database
-docker compose exec -T postgres psql -U postgres opentranscribe < /path/to/backup/database.sql
+# 6. Restore the database (and the voiceprints artifact that sits beside the dump).
+#    The restore command drops and recreates the database, replays the dump atomically
+#    and verifies the result; do not pipe the dump into psql by hand.
+./opentranscribe.sh restore /path/to/backup/opentranscribe_backup_YYYYMMDD_HHMMSS.sql
 
 # 7. Restore MinIO data
 docker run --rm -v opentranscribe_minio_data:/data -v /path/to/backup:/backup \
@@ -805,7 +812,7 @@ docker compose up -d
 # The backend will run Alembic migrations automatically on startup
 
 # 10. Verify the system
-curl -f http://localhost:5174/api/health
+curl -f http://localhost:5174/health
 ```
 
 ### RTO/RPO Considerations

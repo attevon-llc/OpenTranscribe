@@ -158,7 +158,7 @@ provider to test against.
    role.
 6. In OpenTranscribe → Settings → Authentication → OIDC:
    - **Server URL** `http://localhost:8180` (must be reachable from the *browser*)
-   - **Internal URL** `http://transcribe-app-keycloak-1:8080` (backend → Keycloak)
+   - **Internal URL** `http://keycloak:8080` (backend → Keycloak, by its compose service name)
    - **Realm** `opentranscribe`, **Client ID** `opentranscribe-app`, **Client Secret** from
      step 3
    - **Callback URL** `http://localhost:5173/login`
@@ -167,6 +167,8 @@ provider to test against.
 For LAN access use the server's IP for both Server URL and Callback URL.
 
 ## Worked example: Authentik
+
+To try this locally, `./opentr.sh start dev --with-authentik-test` starts an Authentik at `http://localhost:9022` (bootstrap login `admin@example.com` / `admin_password`).
 
 1. Create an **OAuth2/OpenID Provider** (confidential, authorization-code flow) and note its
    **slug**; bind an **Application** to it.
@@ -204,9 +206,9 @@ account here** on first login — JIT provisioning was unconditional, and `oidc_
 
 | Setting | Meaning |
 |---|---|
-| `oidc_allowed_groups` | A login must carry at least one of these values in the roles claim. **Empty admits everyone** |
-| `oidc_blocked_groups` | These values deny outright. Evaluated **first** — "blocked" means refused, not "exempt from the allow-list" |
-| `require_account_approval` *(Authentication → Local)* | New accounts land `pending` and need an administrator to approve them |
+| `oidc_allowed_groups` (`OIDC_ALLOWED_GROUPS`) | A login must carry at least one of these values in the roles claim. **Empty admits everyone** |
+| `oidc_blocked_groups` (`OIDC_BLOCKED_GROUPS`) | These values deny outright. Evaluated **first** — "blocked" means refused, not "exempt from the allow-list" |
+| `require_account_approval` *(Authentication → Local Auth)* | New accounts land `pending` and need an administrator to approve them |
 
 Both lists are **semicolon-delimited**, because a group value brokered from a directory is a DN
 and contains commas. Matching is case-insensitive exact, against the claim named by

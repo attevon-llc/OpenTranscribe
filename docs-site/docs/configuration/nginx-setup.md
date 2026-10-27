@@ -84,7 +84,7 @@ NGINX_CERT_KEY=/etc/letsencrypt/live/transcribe.example.com/privkey.pem
 sudo certbot renew --dry-run
 
 # Add cron job
-echo "0 0 1 * * certbot renew --quiet && docker compose restart nginx" | sudo tee -a /etc/crontab
+echo "0 0 1 * * certbot renew --quiet && docker restart opentranscribe-nginx" | sudo tee -a /etc/crontab
 ```
 
 ## Environment Variables
@@ -130,8 +130,8 @@ Expected with self-signed certificates. Options:
 
 ```bash
 # Check NGINX container
-docker compose ps nginx
-docker compose logs nginx
+./opentranscribe.sh status
+./opentranscribe.sh logs nginx
 ```
 
 ### Certificate Expired or No Longer Matches
@@ -144,7 +144,7 @@ For a self-signed certificate (the server's address changed, or it expired):
 ```
 
 then import the new `server.crt` on each device. For Let's Encrypt run `sudo certbot renew` and
-`docker compose restart nginx`.
+`docker restart opentranscribe-nginx`.
 
 ### Microphone Still Not Working
 
@@ -166,7 +166,7 @@ needs adding to the whitelist in `docker-compose.nginx.yml`.
 
 Restart after changes:
 ```bash
-docker compose restart nginx
+docker restart opentranscribe-nginx
 ```
 
 ## Security notes

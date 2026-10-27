@@ -303,14 +303,14 @@ function Test-NvidiaGPU {
             Write-Info "Driver Version: $driverVersion"
             Write-Info "GPU Memory: $gpuMemory"
 
-            # Check driver version (need 450.80.02 or higher)
+            # Check driver version (need 527.41 or higher (CUDA 12))
             $driverVersionNum = [version]($driverVersion -replace '[^0-9.]', '')
-            $minDriverVersion = [version]"450.80.02"
+            $minDriverVersion = [version]"527.41"
 
             if ($driverVersionNum -ge $minDriverVersion) {
                 Write-Success "NVIDIA driver version is compatible ($driverVersion)"
             } else {
-                Write-Warning "NVIDIA driver version is old ($driverVersion, need 450.80.02+)"
+                Write-Warning "NVIDIA driver version is old ($driverVersion, need 527.41+)"
                 Add-Warning "Update NVIDIA drivers for GPU acceleration: https://www.nvidia.com/Download/index.aspx"
             }
 

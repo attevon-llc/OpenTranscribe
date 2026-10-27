@@ -1179,7 +1179,7 @@
   "userManagement.lockFailed": "تعذّر قفل الحساب.",
   "userManagement.unlockAccount": "إلغاء حظر تسجيل الدخول",
   "userManagement.unlockAccountFor": "إلغاء حظر محاولات الدخول الفاشلة لـ {{name}}",
-  "userManagement.unlockConfirmMessage": "يؤدي هذا إلى إلغاء حظر محاولات الدخول الفاشلة لـ {{name}}. ولا يعيد تفعيل حساب قام مشرف بقفله.",
+  "userManagement.unlockConfirmMessage": "يؤدي هذا إلى إلغاء حظر محاولات الدخول الفاشلة لـ {{name}}، ويعيد تفعيل الحساب إذا كان أحد المشرفين قد عطّله.",
   "userManagement.unlockSuccess": "تم إلغاء حظر تسجيل الدخول لـ {{name}}",
   "userManagement.unlockNotLocked": "لم يكن {{name}} محظورًا.",
   "userManagement.unlockFailed": "تعذّر إلغاء حظر تسجيل الدخول.",

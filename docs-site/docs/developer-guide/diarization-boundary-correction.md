@@ -214,10 +214,16 @@ evaluates `finalize_segments` with smoothing **OFF vs ON**, reporting WSER (head
 and DER (cross-checks), and a paired bootstrap over the pooled improvement.
 
 ```bash
-docker compose exec backend python /app/backend/scripts/benchmark_boundary.py \
-    --corpus /app/docs/benchmark-corpus/corpus.json \
-    --models large-v3 --sample 5 --smoothing on --out /app/docs/boundary-benchmark
+./opentr.sh shell backend      # then, inside the container:
+python /app/scripts/benchmark_boundary.py \
+    --corpus <corpus.json visible in the container> \
+    --models large-v3 --sample 5 --smoothing on --out <output dir>
 ```
+
+In dev the container's `/app` is the repo's `backend/` directory, so the script is
+`/app/scripts/benchmark_boundary.py`. The repo's `docs/benchmark-corpus/corpus.json` is outside
+that bind mount: copy it (and the media it lists) somewhere under `backend/`, or add a bind mount,
+and pass that path. `--out` is required; `--cache-dir` defaults to `<out>/cache`.
 
 Reference resolution (`--reference auto`): a positional `*.words.json` is used exactly
 (no mapping); otherwise a `*.ref.rttm` is midpoint-mapped via `assign_words_from_turns`.

@@ -4,20 +4,20 @@ sidebar_position: 2
 
 # Local Transcription Models
 
-A super admin can download and switch the local Whisper model from **Settings → Transcription → Local models**, without stopping the stack. The same list of models is used by the Settings screen, by the server's checks, and by `scripts/download-models.py` for first-time setup, so they cannot disagree.
+A super admin can download and switch the local Whisper model from **Settings → Transcription → Provider & Model → Local models**, without stopping the stack. The same list of models is used by the Settings screen, by the server's checks, and by `scripts/download-models.py` for first-time setup, so they cannot disagree.
 
 ## The model list
 
-Thirteen faster-whisper (CTranslate2) models are offered, from `tiny` to `large-v3` and the turbo and CrisperWhisper builds. Each row shows the download size, an estimated GPU memory need, and whether the model is multilingual, English-only, and able to translate. The memory figures are estimates carried over from earlier documentation, not measurements on your hardware.
+Thirteen faster-whisper (CTranslate2) models are offered, from `tiny` to `large-v3` and the turbo and CrisperWhisper builds. Each row shows the download size, an estimated GPU memory need, whether the model is multilingual or English-only, whether it can translate to English, and its status (**In use**, **Downloaded**, **Downloading**, **Not downloaded** and so on). The memory figures are estimates carried over from earlier documentation, not measurements on your hardware.
 
 Only models on this list can be downloaded or selected. Typing a Hugging Face repository name is refused. A deployment that already runs another model keeps running it, but the switch buttons only accept listed models.
 
 ## Download a model
 
-1. Open **Settings → Transcription → Local models** as a super admin. Plain admins see the section locked; users do not see it.
+1. Open **Settings → Transcription → Provider & Model**, find **Local models**, as a super admin. Other users see the section locked.
 2. Choose **Download** on a model. The panel shows free disk space and checks it before starting.
 3. Watch the progress bar. You can leave the page; progress also arrives as a live update to the admin who started the download.
-4. **Cancel** stops the download and removes only that model's unfinished files.
+4. **Cancel download** stops the download and removes only that model's unfinished files; a partly downloaded model offers **Resume download**.
 
 Only one download runs at a time across the whole deployment. A download interrupted by a restart is reported as failed, and you can start it again. All listed models are public, so no Hugging Face token is needed. If you have saved one under **Speaker Engine**, it is used.
 

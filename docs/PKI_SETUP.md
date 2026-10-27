@@ -11,7 +11,7 @@ PKI authentication allows users to authenticate using X.509 client certificates 
 
 > **v0.4.0 Change**: PKI configuration is now managed via the Super Admin UI (Settings → Authentication → PKI/X.509). Settings are stored encrypted (AES-256-GCM) in the database. Environment variables continue to work as a fallback seed.
 >
-> **OCSP/CRL**: v0.4.0 adds OCSP (Online Certificate Status Protocol) and CRL (Certificate Revocation List) checking. Configure via Admin UI for real-time or periodic revocation checking.
+> **OCSP/CRL**: v0.4.0 adds revocation checking. One switch ("Enable certificate revocation checking", `PKI_VERIFY_REVOCATION`) turns it on; the backend tries OCSP first and falls back to the CRL. The OCSP responder and CRL URLs are read from each client certificate's own extensions (Authority Information Access and CRL Distribution Points), not configured separately.
 >
 > **Super admin password fallback**: Even when PKI is the only enabled auth method, the super admin account can always authenticate with a password. This ensures emergency access and the ability to reconfigure authentication settings if PKI infrastructure fails.
 
@@ -59,7 +59,7 @@ For quick API testing without setting up HTTPS/mTLS:
 
 This creates:
 - Root CA at `scripts/pki/test-certs/ca/ca.crt`
-- Client certificates for: testuser, admin, john.doe, jane.smith
+- Client certificates for: testuser, admin, pkiadmin, john.doe, jane.smith (use `pkiadmin`, not `admin`, for an admin identity: `admin@example.com` collides with the seeded dev super_admin and account linking always refuses that)
 - PKCS12 files for browser import (password: `changeit`)
 
 ### Step 2: Configure OpenTranscribe
@@ -126,7 +126,7 @@ This is the easiest way to test PKI authentication with a real browser.
 **Admin UI (recommended — v0.4.0+):**
 1. Log in as super_admin
 2. Navigate to Settings → Authentication → PKI/X.509
-3. Enable PKI, set CA Certificate Path, and optionally configure OCSP/CRL
+3. Enable PKI, set the CA Certificate Path, and optionally enable certificate revocation checking
 
 **Environment variables (fallback / initial seed):**
 
@@ -373,33 +373,31 @@ PKI_CERT_DN_HEADER=X-Client-Cert-DN
 PKI_ADMIN_DNS=CN=Admin1,OU=IT,O=Company,C=US;CN=Admin2,OU=IT,O=Company,C=US
 ```
 
-### OCSP Revocation Checking (Recommended)
+### Revocation Checking (OCSP, then CRL)
 
-OCSP provides real-time certificate revocation status. When a certificate is added to the OCSP responder's revocation list, access is denied on the next login attempt:
+Turn on **Enable certificate revocation checking** (Settings → Authentication → PKI/X.509 →
+Revocation Checking), or set `PKI_VERIFY_REVOCATION=true`. A CA certificate must be configured
+(`PKI_CA_CERT_PATH`): the environment-settings validation rejects revocation checking without it,
+because there is nothing to verify OCSP responses and CRL signatures against.
 
-| Setting | Description | Example |
-|---------|-------------|---------|
-| **Enable OCSP** | Turn on OCSP checking | `true` |
-| **OCSP Responder URL** | Your CA's OCSP endpoint | `http://ocsp.pki.company.com` |
+For each login the backend:
 
-Configure via Admin UI: Settings → Authentication → PKI/X.509 → Enable OCSP.
+1. Asks the OCSP responder named in the certificate's Authority Information Access extension.
+   This is real-time: a revoked certificate is denied on its next login attempt.
+2. If OCSP is unavailable or inconclusive, downloads and checks the CRL named in the certificate's
+   CRL Distribution Points extension (cached; revocation takes effect within the cache duration).
+3. If both fail, **soft-fail** decides: when enabled, authentication proceeds; when disabled
+   (the production default) the login is denied.
 
-### CRL Revocation Checking (Alternative)
+| Setting | Env var | Default |
+|---------|---------|---------|
+| Enable certificate revocation checking | `PKI_VERIFY_REVOCATION` | `false` |
+| OCSP Timeout (seconds) | `PKI_OCSP_TIMEOUT_SECONDS` | `5` |
+| CRL Cache Duration (seconds) | `PKI_CRL_CACHE_SECONDS` | `3600` |
+| Soft-fail on revocation check errors | `PKI_REVOCATION_SOFT_FAIL` | off in production |
 
-CRL downloads and caches a list of revoked certificates, refreshed periodically:
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| **Enable CRL** | Turn on CRL checking | `false` |
-| **CRL Endpoint URL** | CRL distribution point | `http://pki.company.com/crl` |
-| **CRL Refresh Hours** | How often to refresh the CRL | `24` |
-
-CRL checking is suitable when an OCSP responder is not available. The system caches the CRL locally and refreshes on the configured interval.
-
-**OCSP vs CRL:**
-- OCSP: Real-time check on every login — revocation takes effect immediately
-- CRL: Periodic check — revocation takes effect within the refresh interval (up to 24 hours)
-- Both can be enabled simultaneously for defence-in-depth
+Your CA must therefore publish OCSP and/or CRL URLs in the certificates it issues; there is no
+setting to point OpenTranscribe at a responder the certificate does not name.
 
 ### Nginx Production Configuration
 
@@ -555,7 +553,7 @@ openssl x509 -in user.crt -subject -noout
 ## Security Considerations
 
 1. **CA Security**: Protect your CA private key — compromise of the CA allows issuing fraudulent certificates
-2. **Certificate Revocation**: Enable OCSP or CRL checking in production to enforce immediate certificate revocation
+2. **Certificate Revocation**: Enable revocation checking in production to enforce immediate certificate revocation
 3. **Certificate Lifecycle**: Plan for certificate renewal before expiry; expired certificates will fail authentication
 4. **Key Storage**: Use hardware tokens (CAC, PIV, YubiKey) for high-security environments
 5. **DN Validation**: DN matching is case-sensitive and exact — copy DN strings directly from certificate details
@@ -565,26 +563,16 @@ openssl x509 -in user.crt -subject -noout
 
 ## Certificate Revocation
 
-### OCSP (Real-Time, Recommended)
+### Backend revocation checking
 
-Enable via Admin UI (Settings → Authentication → PKI/X.509 → Enable OCSP) or environment variable:
+See [Revocation Checking (OCSP, then CRL)](#revocation-checking-ocsp-then-crl) above. The backend
+reads the OCSP responder and CRL URLs from the certificate itself; `PKI_OCSP_ENABLED`,
+`PKI_OCSP_RESPONDER_URL`, `PKI_CRL_ENABLED`, `PKI_CRL_URL` and `PKI_CRL_REFRESH_HOURS` are not
+settings this version reads.
 
-```bash
-PKI_OCSP_ENABLED=true
-PKI_OCSP_RESPONDER_URL=http://ocsp.your-ca.com
-```
+### Nginx CRL (optional)
 
-### CRL (Periodic Cache)
-
-Enable via Admin UI or environment variable:
-
-```bash
-PKI_CRL_ENABLED=true
-PKI_CRL_URL=http://pki.your-ca.com/crl
-PKI_CRL_REFRESH_HOURS=24
-```
-
-Nginx CRL configuration (optional — additional layer at the TLS termination point):
+An additional CRL layer at the TLS termination point:
 ```nginx
 ssl_crl /etc/nginx/certs/ca.crl;
 ```

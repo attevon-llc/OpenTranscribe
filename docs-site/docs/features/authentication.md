@@ -122,8 +122,8 @@ Three roles, with one dividing rule:
 | Tier | Covers |
 |---|---|
 | `user` | Own content, own settings, own MFA |
-| `admin` | User accounts, tasks, search and speaker maintenance, data integrity, retention |
-| `super_admin` | Authentication config, role changes, audit log, ASR provider, engine settings, backups, media mirror, watch sources, redaction policy |
+| `admin` | User accounts, quarantine and takedown notices, task recovery, and Data & Storage (retention, media cache, data integrity, search index, speaker embeddings) |
+| `super_admin` | Authentication config, role changes, audit log, local transcription model pinning, speaker engine settings, backups (with media mirror), watch-source global settings and email configurations, redaction policy |
 
 `user.role` is the sole authorization truth; `is_superuser` is a derived mirror enforced by a
 database CHECK constraint. Creating another `super_admin` is a UI action (Settings → User Management →
@@ -156,7 +156,6 @@ Group mappings) covers LDAP and OIDC; a proxy-sourced mapping is created via the
 | **Account expiry** | Time-boxes an account; past the instant, every request is refused with no exempt route |
 | **Login-banner acknowledgment** | Server-enforced (FedRAMP AC-8), and an acknowledgment expires when the banner text changes |
 | **Directory deprovisioning** | Disables and revokes sessions for accounts the directory removed |
-
 | **Approval queue** | With `require_account_approval` on, a newly provisioned account (self-registered or JIT) lands `pending` until an administrator releases it |
 
 Each refusal carries a machine-readable `detail.code` (`account_expired`,
@@ -213,7 +212,7 @@ Two properties worth knowing:
   a row stored forever and read by nothing.
 
 Every configuration change is recorded in `auth_config_audit` **with the account that made it**,
-visible at Settings → Authentication → Audit.
+visible at Settings → Authentication → Change history.
 
 ## Transactional auth email
 

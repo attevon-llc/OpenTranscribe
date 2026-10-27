@@ -4,518 +4,212 @@
   # Utilities Documentation
 </div>
 
-This directory contains common utilities and helper functions that provide reusable functionality across the OpenTranscribe backend application.
+This directory contains small, low-dependency helpers shared by endpoints, services and Celery tasks. Domain logic belongs in `app/services`; the utilities here are building blocks. These modules load in every process flavor (API, GPU worker, CPU worker, redaction worker), so heavy dependencies (torch, pyannote.metrics, ...) are imported lazily inside the functions that need them. Single-home rules for the trickier modules (speaker labels, Content-Disposition, media types, WebSocket notifications, GPU selection, NLTK) are in `app/utils/CLAUDE.md`.
 
 ## 🛠️ Utilities Overview
 
 ### Design Principles
-- **Reusability**: Functions and classes designed for use across multiple modules
-- **Single Responsibility**: Each utility focused on one specific concern
-- **Consistency**: Standardized patterns for common operations
-- **Error Handling**: Robust error handling with consistent responses
-- **Type Safety**: Full type hints for better development experience
+- **Single home for a rule**: several modules exist to be the only implementation of something (UUID/permission lookup, canonical speaker label, MIME alias folding, Content-Disposition, cosine conversion). Do not write a second copy.
+- **Single responsibility**: each module is focused on one concern
+- **Type safety**: type hints on all new functions
+- **Best-effort side paths** (cache invalidation, WebSocket publish, metrics) log and swallow errors; they must never break the write they accompany
 
 ## Utility Modules
 
 ```
 utils/
-├── db_helpers.py           # Database query utilities and helpers
-├── error_handlers.py       # Standardized error handling
-├── error_classification.py # Fine-grained error classification
-├── task_utils.py           # Celery task management utilities
-├── task_lock.py            # Distributed task locking
-├── transcript_builders.py  # Shared transcript formatting functions (v0.4.0)
-├── embedding_helpers.py    # Voice embedding utility functions
-├── encryption.py           # Field-level encryption for API keys
-├── filename.py             # Filename processing and sanitization
-├── file_hash.py            # File content hashing
-├── file_validation.py      # Upload validation helpers
-├── segment_dedup.py        # Transcript segment deduplication
-├── segment_postprocess.py  # Segment post-processing pipeline
-├── stats_helpers.py        # Statistics computation helpers
-├── summary_settings.py     # Summary configuration helpers
-├── text_preprocessing.py   # Text normalization utilities
-├── thumbnail.py            # Thumbnail generation
-├── time_format.py          # Time formatting utilities
-├── url_validation.py       # URL validation and platform detection
-├── user_settings_helpers.py # User settings access helpers
-├── uuid_helpers.py         # Hybrid-ID lookup + the permission chokepoint
-├── uuid7.py                # RFC 9562 UUIDv7 generation (the `default=` for every model)
-├── websocket_notify.py     # WebSocket notification helpers
-├── hardware_detection.py   # GPU/hardware detection
-├── vram_profiler.py        # VRAM usage profiling
-├── nvml_monitor.py         # NVIDIA NVML monitoring
-├── pyannote_utils.py       # PyAnnote utility functions
-├── temp_file_utils.py      # Temporary file management
-├── prompt_manager.py       # LLM prompt template management
-└── transcript_comparison.py # Transcript diff/comparison
+├── Database, identity and access
+│   ├── db_helpers.py           # Query builders, get_or_create, tenant scoping (apply_tenant_scope)
+│   ├── uuid_helpers.py         # Hybrid-ID lookup + the permission chokepoint (get_file_by_uuid_with_permission)
+│   ├── uuid7.py                # RFC 9562 UUIDv7 generator (the default= for every model uuid column)
+│   ├── pagination.py           # paginate(): count + offset + limit in one call
+│   ├── tenant_sharing.py       # Tenant gates for per-user items shared "with everyone"
+│   ├── encryption.py           # AES-256-GCM encryption for stored secrets (legacy Fernet auto-detected)
+│   ├── client_ip.py            # Single source of truth for "who is this request from?"
+│   └── user_settings_helpers.py, summary_settings.py   # User/system settings access helpers
+├── Errors
+│   ├── error_handlers.py       # ErrorHandler HTTPException builders, handle_not_found
+│   └── error_classification.py # Fine-grained failure categories (retry policy; not on the wire)
+├── Tasks and workers
+│   ├── task_utils.py           # Task records, status transitions, cancellation, stuck-file recovery
+│   ├── task_lock.py            # Redis lock to stop periodic tasks overlapping (with_task_lock)
+│   ├── boot_once.py            # Run a startup step once across replicas
+│   ├── host_slots.py           # Non-blocking per-host concurrency slots (flock)
+│   ├── cpu_budget.py           # CPU quota of this process (container quota, not host cores)
+│   ├── scratch_volume.py       # Shared scratch volume for cross-worker artifact handoff
+│   ├── temp_file_utils.py      # Temporary file handling for audio/media tasks
+│   └── websocket_notify.py     # Publish WebSocket events over Redis (send_ws_event / send_ws_event_for_file)
+├── Transcripts and speakers
+│   ├── transcript_builders.py  # Shared transcript text building (masking-aware)
+│   ├── transcript_comparison.py# Transcript comparison for pipeline benchmarking
+│   ├── segment_dedup.py, segment_postprocess.py   # Segment dedup, resegmentation and merging
+│   ├── speaker_labels.py       # The canonical speaker display label
+│   ├── embedding_helpers.py, cosine_space.py      # Embedding math; cosine <-> OpenSearch score conversion
+│   ├── pyannote_utils.py, diarization_metrics.py  # PyAnnote helpers; boundary accuracy metrics
+│   ├── language.py, time_format.py, text_preprocessing.py   # Language parsing, timestamps, topic-extraction text prep
+│   └── whisper_model_choice.py, lite_mode.py      # Per-file Whisper model rules; lite-deployment refusals
+├── Files and media
+│   ├── file_validation.py, file_hash.py, filename.py, media_types.py, content_disposition.py
+│   ├── thumbnail.py, url_validation.py            # Thumbnails; SSRF-safe URL validation
+│   └── csv_safe.py                                # Spreadsheet-formula neutralization for CSV exports
+├── Hardware and models
+│   ├── hardware_detection.py   # CUDA/MPS/CPU authority; resolve_cuda_device_index
+│   ├── vram_profiler.py, nvml_monitor.py          # VRAM profiling (ENABLE_VRAM_PROFILING), NVML monitor
+│   ├── hf_hub_offline.py, nltk_offline.py         # Bounded/offline model loading; NLTK corpus availability
+│   └── benchmark_timing.py                        # Wall-clock timing (ENABLE_BENCHMARK_TIMING)
+└── Misc
+    ├── prompt_manager.py       # LLM prompt template management
+    ├── llm_log_safety.py       # Log-safe descriptions of LLM text
+    └── stats_helpers.py        # Consolidated database statistics helpers
 ```
 
-## Transcript Builders (`transcript_builders.py`) — v0.4.0
+## Transcript Builders (`transcript_builders.py`)
 
-Shared transcript formatting functions used across multiple tasks and services. Previously this logic was duplicated in individual task files; it was centralized in v0.4.0.
+Shared transcript-building functions used across tasks and services, so formatting is not re-implemented in each:
+- `mask_segment_text(segment, redaction_cfg)`: a segment's text after redaction masking
+- `get_speaker_name(segment)`: the speaker display name for a segment
+- `build_full_transcript(transcript_segments, redaction_cfg)`: the full speaker-attributed transcript string for LLM and search use
 
-Key functions:
-- Building full-text transcript strings for LLM/search use
-- Formatting segment data for export (SRT, VTT, plain text)
-- Speaker-attributed transcript assembly
-
-Import from here rather than reimplementing formatting logic in task or service code.
+Import from here rather than reimplementing formatting. Export formats (SRT, VTT, TXT, JSON, CSV, Markdown) live in `services/transcript_export_*.py` and `services/captions/`.
 
 ## Authorization (`uuid_helpers.py`, `db_helpers.py`)
 
 ### Purpose
-Resource-level authorization. There are **no authorization decorators** — the
-`auth_decorators.py` module that used to live here was deleted in issue #450, unreferenced by any
-route. Do not reintroduce that shape: it read `db` / `current_user` / `file_id` out of `kwargs`
-and so was silently bypassed by any positional call, and its `require_verified_user` gate checked
-`is_active` while its name and its 403 detail both said "verification".
-
-Authorization is a FastAPI **dependency** or an explicit call, never a wrapper:
+Resource-level authorization. There are **no authorization decorators**; the `auth_decorators.py` module that used to live here was deleted in issue #450 (unreferenced by any route, and silently bypassed by positional calls). Do not reintroduce that shape. Authorization is a FastAPI dependency or an explicit call.
 
 ```python
-# The permission chokepoint. Order: admin bypass → takedown 404 → public →
-# tenant gate → owner → shares.
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+from app.utils.uuid_helpers import require_resource_owner
+from app.utils.db_helpers import apply_tenant_scope
 
 @router.put("/files/{file_uuid}")
 def update_file(
-    file_uuid: str,
+    file_uuid: UUID,
     updates: FileUpdateSchema,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    file_obj = get_file_by_uuid_with_permission(db, file_uuid, current_user)
+    # The permission chokepoint. Order: platform bypass asked about the loaded row, takedown 404,
+    # public, tenant gate, owner, shares.
+    file_obj = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
     ...
-
-# Ownership of a non-file resource
-from app.utils.uuid_helpers import require_resource_owner
-
-# SQL-plane tenant scoping (default-deny; mirrors api/deps_context.scope_to_context)
-from app.utils.db_helpers import apply_tenant_scope
 ```
 
-Privilege gates (`require_admin`, `require_super_admin`) are FastAPI dependencies in
-`api/endpoints/auth/dependencies.py` — one of the six modules under mutation testing, because an
-inverted role comparison there is privilege escalation.
+`uuid_helpers.py` also provides `get_by_uuid`, `get_<entity>_by_uuid` for the common models, `get_collection_by_uuid_with_permission`, `require_speaker_access` and `require_profile_in_scope`. Privilege gates (`get_current_admin_user`, `get_current_active_superuser`) are FastAPI dependencies in `api/endpoints/auth/dependencies.py`.
 
 ## 🗄️ Database Helpers (`db_helpers.py`)
 
-### Purpose
-Provides common database query patterns, utilities, and optimizations.
-
 ### Key Components
-
-#### Query Builders
 ```python
-def get_user_files_query(db: Session, user_id: int) -> Query:
-    """Standard query for user's files."""
+def get_user_files_query(db: Session, user_id: int, *, organization_id=UNSCOPED) -> Query:
+    """Standard query for a user's (or organization's) files."""
 
-def apply_file_filters(query: Query, **filters) -> Query:
-    """Apply standard file filters to a query."""
+def get_user_files_query_for_context(db: Session, ctx: RequestContext) -> Query:
+    """The same, scoped by the request's tenant context."""
 
-def get_files_by_status(db: Session, user_id: int, status: str) -> List[MediaFile]:
-    """Get files by status for a user."""
+def apply_tenant_scope(...):
+    """SQL-plane default-deny tenant filter; mirrors api/deps_context.scope_to_context."""
+
+def get_or_create[T](db, model, defaults=None, **kwargs) -> tuple[T, bool]
+def safe_get_by_id[T](db, model, obj_id, user_id=None) -> T | None
+def bulk_update[T](db, model, updates, id_field="id") -> bool
+
+def get_file_with_transcript_count(...)
+def get_user_speakers(db, user_id) -> list[Speaker]
+def get_unique_speakers_for_file(db, file_id) -> list[Speaker]
+def get_files_by_status(db, user_id, status) -> list[MediaFile]
+def get_user_file_stats(db, user_id) -> dict
 ```
+Tag creation and attachment live in `services/tag_service.py` and `services/tag_bulk.py`, not here.
 
-#### CRUD Helpers
+### Usage
 ```python
-def get_or_create(db: Session, model: Type[T], defaults: Optional[dict] = None,
-                  **kwargs) -> tuple[T, bool]:
-    """Get an object or create it if it doesn't exist."""
+query = get_user_files_query(db, user.id)
+files = query.order_by(MediaFile.upload_time.desc()).all()
 
-def safe_get_by_id(db: Session, model: Type[T], obj_id: int,
-                   user_id: Optional[int] = None) -> Optional[T]:
-    """Safely get an object by ID with optional user filtering."""
-
-def bulk_update(db: Session, model: Type[T], updates: List[dict],
-                id_field: str = 'id') -> bool:
-    """Perform bulk updates efficiently."""
+tag, created = get_or_create(db, Tag, name=tag_name)  # check models: Tag is tenant-scoped, prefer tag_service
 ```
-
-#### Specialized Queries
-```python
-def get_file_with_transcript_count(db: Session, file_id: int, user_id: int) -> tuple[MediaFile, int]:
-    """Get a file with its transcript segment count."""
-
-def get_unique_speakers_for_file(db: Session, file_id: int) -> List[Speaker]:
-    """Get unique speakers that appear in a specific file."""
-
-def get_user_file_stats(db: Session, user_id: int) -> dict:
-    """Get comprehensive file statistics for a user."""
-```
-
-#### Tag Management
-```python
-def add_tags_to_file(db: Session, file_id: int, tag_names: List[str]) -> bool:
-    """Add tags to a file, creating tags if they don't exist."""
-
-def remove_tags_from_file(db: Session, file_id: int, tag_names: List[str]) -> bool:
-    """Remove tags from a file."""
-```
-
-### Usage Examples
-```python
-# Service layer using database helpers
-class FileService:
-    def get_user_files_with_filters(self, user: User, filters: dict) -> List[MediaFile]:
-        query = get_user_files_query(self.db, user.id)
-        query = apply_file_filters(query, **filters)
-        return query.order_by(MediaFile.upload_time.desc()).all()
-
-    def ensure_tag_exists(self, tag_name: str) -> Tag:
-        tag, created = get_or_create(self.db, Tag, name=tag_name)
-        if created:
-            logger.info(f"Created new tag: {tag_name}")
-        return tag
-```
-
-### Features
-- **Performance Optimization**: Efficient queries with proper joins
-- **Reusable Patterns**: Common query patterns across the application
-- **Type Safety**: Full generic type support
-- **Error Handling**: Graceful handling of database errors
-- **Batch Operations**: Efficient bulk operations
 
 ## Error Handlers (`error_handlers.py`)
 
-### Purpose
-Provides standardized error handling patterns and HTTP exception generation.
+`ErrorHandler` builds `HTTPException` instances with consistent status codes and messages:
+`database_error(operation, error)`, `validation_error(message)`, `not_found_error(resource)`, `unauthorized_error(message)`, `internal_error(message)` and `file_processing_error(operation, error)`. `handle_not_found(resource_name)` is a decorator factory that raises 404 when the wrapped function returns `None`.
 
-### Key Components
+`handle_database_errors` was removed (#914): it reclassified any `HTTPException` the wrapped function raised into an opaque 500.
 
-#### Error Handler Class
 ```python
-class ErrorHandler:
-    @staticmethod
-    def database_error(operation: str, error: Exception) -> HTTPException:
-        """Create standardized database error response."""
+from app.utils.error_handlers import ErrorHandler
 
-    @staticmethod
-    def validation_error(message: str) -> HTTPException:
-        """Create standardized validation error response."""
-
-    @staticmethod
-    def not_found_error(resource: str) -> HTTPException:
-        """Create standardized not found error response."""
-
-    @staticmethod
-    def unauthorized_error(message: str = "Access denied") -> HTTPException:
-        """Create standardized unauthorized error response."""
-
-    @staticmethod
-    def file_processing_error(operation: str, error: Exception) -> HTTPException:
-        """Create standardized file processing error response."""
+if not file_obj:
+    raise ErrorHandler.not_found_error("File")
 ```
 
-#### Error Handling Decorators
-```python
-def handle_not_found(resource_name: str = "Resource") -> Callable:
-    """Decorator factory to handle resource not found errors."""
-```
-
-`handle_database_errors` was removed (#914 STEP 6): it caught a plain
-`except Exception` around the wrapped function, which reclassified any
-`HTTPException` the function raised into an opaque 500 — the passthrough
-defect `test_http_exception_passthrough.py` exists to catch elsewhere. It had
-zero call sites under `app/`.
-
-### Usage Examples
-```python
-# Service layer error handling
-class FileService:
-    def get_file_by_id(self, file_id: int, user: User) -> MediaFile:
-        file_obj = self.db.query(MediaFile).filter(
-            MediaFile.id == file_id,
-            MediaFile.user_id == user.id
-        ).first()
-
-        if not file_obj:
-            raise ErrorHandler.not_found_error("File")
-
-        return file_obj
-
-    def process_file_upload(self, file_data: bytes) -> MediaFile:
-        try:
-            # File processing logic
-            return processed_file
-        except ValidationError as e:
-            raise ErrorHandler.validation_error(str(e))
-        except StorageError as e:
-            raise ErrorHandler.file_processing_error("upload", e)
-
-```
-
-### Features
-- **Consistent Responses**: Standardized error format across API
-- **Logging Integration**: Automatic error logging with context
-- **HTTP Status Codes**: Proper status codes for different error types
-- **Decorator Support**: Clean error handling with decorators
-- **Error Classification**: Different handlers for different error types
+Remember that service-layer code raises the exceptions in `app/core/exceptions.py` instead; `main.py` maps them to HTTP statuses.
 
 ## ⚙️ Task Utilities (`task_utils.py`)
 
-### Purpose
-Provides utilities for Celery task management and monitoring.
+Task-row and file-status management for Celery tasks:
 
-### Key Components
-
-#### Task Management
 ```python
-def create_task_record(db: Session, celery_task_id: str, user_id: int,
-                      media_file_id: int, task_type: str) -> Task:
-    """Create a new task record in the database."""
-
-def update_task_status(db: Session, task_id: str, status: str, progress: float = None,
-                      error_message: str = None, completed: bool = False) -> None:
-    """Update task status in the database."""
-
-def update_media_file_status(db: Session, file_id: int, status: FileStatus) -> None:
-    """Update media file status."""
+create_task_record(db, celery_task_id, user_id, media_file_id, task_type)   # supersedes an older active row of the step
+update_task_status(db, task_id, status, progress=None, error_message=None, completed=False)
+update_task_status_with_duration(...)       # same, also returns elapsed time
+update_media_file_status(db, file_id, status)   # FileStatus
+update_media_file_from_task_status(db, file_id)
+get_task_summary_for_media_file(db, file_id)
+cancel_active_task(db, file_id)             # phase one of a two-phase stop (writes CANCELLING)
+check_for_stuck_files(db, stuck_threshold_hours=2.0)
+recover_stuck_file(db, file_id)
+is_file_safe_to_delete(db, file_id)
+reset_file_for_retry(db, file_id, reset_retry_count=False)
 ```
 
-#### Task Monitoring
+`cancel_active_task` arms the cancellation flag and writes `FileStatus.CANCELLING`; the worker writes `CANCELLED` when it has actually stopped (details in `app/tasks/CLAUDE.md`). `task_lock.with_task_lock(key, timeout)` prevents overlapping periodic tasks.
+
+### Usage in a task
 ```python
-def get_task_progress(db: Session, task_id: str) -> Optional[Dict[str, Any]]:
-    """Get current task progress and status."""
-
-def cancel_user_tasks(db: Session, user_id: int, task_type: str = None) -> int:
-    """Cancel all pending tasks for a user."""
-
-def cleanup_completed_tasks(db: Session, older_than_days: int = 7) -> int:
-    """Clean up old completed tasks."""
-```
-
-### Usage Examples
-```python
-# Task creation in service layer
-class FileService:
-    def start_transcription(self, file_id: int, user: User) -> Dict[str, Any]:
-        # Dispatch Celery task
-        task = transcribe_audio_task.delay(file_id)
-
-        # Create database record
-        create_task_record(self.db, task.id, user.id, file_id, "transcription")
-
-        return {"task_id": task.id, "status": "started"}
-
-# Task progress tracking in background task
-@celery_app.task(bind=True)
-def long_running_task(self, data):
+@celery_app.task(bind=True, name="domain.action")
+def long_running_task(self, file_uuid: str):
     task_id = self.request.id
-
-    # Initialize task
     with session_scope() as db:
         update_task_status(db, task_id, "in_progress", progress=0.0)
-
-    # Processing steps with progress updates
-    for i, item in enumerate(data):
-        process_item(item)
-        progress = (i + 1) / len(data)
-
-        with session_scope() as db:
-            update_task_status(db, task_id, "in_progress", progress=progress)
-
-    # Complete task
+    # ... slow work with no session open ...
     with session_scope() as db:
         update_task_status(db, task_id, "completed", progress=1.0, completed=True)
 ```
 
-### Features
-- **Task Lifecycle Management**: Creation, progress tracking, completion
-- **Database Integration**: Task state persistence
-- **Progress Monitoring**: Real-time progress updates
-- **Error Tracking**: Error message storage and retrieval
-- **Cleanup Utilities**: Maintenance operations for task history
-
 ## 🔧 Common Patterns
 
-### Dependency Injection Pattern
-```python
-# Service factory for dependency injection
-def get_file_service(db: Session = Depends(get_db)) -> FileService:
-    """Factory function for FileService dependency injection."""
-    return FileService(db)
+### Session Management
+`session_scope()` (in `app/db/session_utils.py`) is the transactional scope for background work; API endpoints use `Depends(get_db)`. Never hold a session across slow non-database work: read, release, work, then write in a short second session.
 
-# Usage in endpoints
-@router.get("/files")
-def list_files(
-    file_service: FileService = Depends(get_file_service),
-    current_user: User = Depends(get_current_active_user)
-):
-    return file_service.get_user_files(current_user)
-```
-
-### Session Management Pattern
-```python
-# Context manager for database sessions
-@contextmanager
-def session_scope():
-    """Provide a transactional scope around a series of operations."""
-    session = SessionLocal()
-    try:
-        yield session
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
-
-# Usage in background tasks
-def background_operation(data):
-    with session_scope() as db:
-        # Database operations with automatic commit/rollback
-        process_data(db, data)
-```
-
-### Validation Pattern
-```python
-# Input validation with error handling
-def validate_file_upload(file: UploadFile) -> None:
-    """Validate uploaded file with consistent error responses."""
-    if not file.filename:
-        raise ErrorHandler.validation_error("Filename is required")
-
-    if file.size > MAX_FILE_SIZE:
-        raise ErrorHandler.validation_error(f"File size exceeds {MAX_FILE_SIZE} bytes")
-
-    allowed_types = ["audio/", "video/"]
-    if not any(file.content_type.startswith(t) for t in allowed_types):
-        raise ErrorHandler.validation_error("File must be audio or video format")
-```
+### Validation
+Validate input and raise `ErrorHandler.validation_error(...)` (or the typed exceptions in `core/exceptions.py` from services). Upload validation helpers are in `file_validation.py`; user-supplied URLs go through `url_validation.py` (SSRF protection).
 
 ## 🧪 Testing Utilities
 
-### Test Helper Functions
+Utility tests live in `backend/tests/unit/` and run with `./scripts/run-backend-tests.sh tests/unit` (see `backend/README.md`). For example:
+
 ```python
-# Test utilities for database operations
-def create_test_user(db: Session, email: str = "test@example.com") -> User:
-    """Create a test user for testing."""
-    return get_or_create(db, User, email=email, hashed_password="test_hash")[0]
-
-def create_test_file(db: Session, user: User, filename: str = "test.mp4") -> MediaFile:
-    """Create a test media file for testing."""
-    return get_or_create(db, MediaFile,
-                        filename=filename,
-                        user_id=user.id,
-                        storage_path=f"/test/{filename}")[0]
-
-# Mock utilities for external services
-@contextmanager
-def mock_external_services():
-    """Mock external service calls for testing."""
-    with patch('app.services.minio_service.upload_file'), \
-         patch('app.services.opensearch_service.index_transcript'), \
-         patch('app.tasks.transcription.transcribe_audio_task.delay'):
-        yield
-```
-
-### Testing Patterns
-```python
-def test_with_error_handling():
-    """Test error handling utilities."""
+def test_not_found_error():
     with pytest.raises(HTTPException) as exc_info:
         raise ErrorHandler.not_found_error("TestResource")
 
     assert exc_info.value.status_code == 404
     assert "TestResource not found" in str(exc_info.value.detail)
-
-def test_database_helpers(db_session, test_user):
-    """Test database helper functions."""
-    # Test get_or_create
-    tag, created = get_or_create(db_session, Tag, name="test-tag")
-    assert created is True
-
-    # Test safe_get_by_id
-    retrieved_tag = safe_get_by_id(db_session, Tag, tag.id)
-    assert retrieved_tag.name == "test-tag"
 ```
 
 ## 🚀 Performance Considerations
 
-### Caching Strategies
-```python
-from functools import lru_cache
-
-@lru_cache(maxsize=128)
-def get_user_permissions_cached(user_id: int) -> Dict[str, bool]:
-    """Cache user permissions to avoid repeated database queries."""
-    with session_scope() as db:
-        user = safe_get_by_id(db, User, user_id)
-        return {
-            "is_admin": user.is_superuser,
-            "is_active": user.is_active,
-            "can_upload": user.is_active and not user.is_suspended
-        }
-```
-
-### Query Optimization
-```python
-def optimized_user_files_query(db: Session, user_id: int) -> Query:
-    """Optimized query with eager loading for better performance."""
-    return db.query(MediaFile)\
-        .options(
-            joinedload(MediaFile.transcript_segments),
-            selectinload(MediaFile.file_tags).joinedload(FileTag.tag)
-        )\
-        .filter(MediaFile.user_id == user_id)
-```
+- Prefer `db.scalars(select(...))` / eager loading (`joinedload`, `selectinload`) over per-row lazy loads in loops
+- Use `paginate()` instead of hand-rolled count + offset + limit
+- Keep heavy imports lazy so CPU-only workers and fast unit tests can import these modules
 
 ## 🔧 Adding New Utilities
 
-### Utility Creation Guidelines
-1. **Single Purpose**: Each utility should have one clear responsibility
-2. **Type Safety**: Include comprehensive type hints
-3. **Error Handling**: Use consistent error handling patterns
-4. **Documentation**: Clear docstrings with examples
-5. **Testing**: Comprehensive unit tests
-6. **Reusability**: Design for use across multiple modules
-
-### Utility Template
-```python
-from typing import Optional, List, TypeVar
-from sqlalchemy.orm import Session
-
-from app.utils.error_handlers import ErrorHandler
-
-T = TypeVar('T')
-
-def new_utility_function(db: Session, param1: str, param2: Optional[int] = None) -> T:
-    """
-    Description of what this utility does.
-
-    Args:
-        db: Database session
-        param1: Description of parameter
-        param2: Optional parameter description
-
-    Returns:
-        Description of return value
-
-    Raises:
-        HTTPException: When validation fails
-
-    Example:
-        >>> result = new_utility_function(db, "test", 123)
-        >>> assert result is not None
-    """
-    try:
-        # Validation
-        if not param1:
-            raise ErrorHandler.validation_error("param1 is required")
-
-        # Main logic
-        result = perform_operation(param1, param2)
-
-        # Return result
-        return result
-
-    except Exception as e:
-        logger.error(f"Error in new_utility_function: {e}")
-        raise ErrorHandler.database_error("utility operation", e)
-```
-
----
-
-The utilities module provides a solid foundation of reusable components that promote consistency, reduce code duplication, and improve maintainability across the OpenTranscribe backend.
+### Guidelines
+1. **Check for an existing single-home module first** (see the list above and `app/utils/CLAUDE.md`)
+2. **Single purpose** and full type hints
+3. **No `app.api` imports** from here (use `TYPE_CHECKING` for types)
+4. **Lazy heavy imports** (torch, pyannote.metrics, meeteval)
+5. **Tests** in `backend/tests/unit/`

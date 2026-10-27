@@ -20,7 +20,7 @@ Before proceeding, ensure you have installed and configured:
    - Automatically configured by Docker Desktop installer
 
 4. NVIDIA GPU Drivers (Optional but Recommended)
-   - Version 450.80.02 or higher
+   - Version 527.41 or higher
    - Required for GPU-accelerated transcription
    - GPU support provides 10-50x faster processing
    - Application will work without GPU using CPU mode

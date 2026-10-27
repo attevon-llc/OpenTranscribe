@@ -127,7 +127,7 @@ Default credentials: `admin` / `admin`
 3. Enable **OIDC**
 4. Configure the following settings:
    - **Server URL**: `http://localhost:8180` (must be accessible from user's browser)
-   - **Internal URL**: `http://transcribe-app-keycloak-1:8080` (for backend-to-Keycloak communication)
+   - **Internal URL**: `http://keycloak:8080` (for backend-to-Keycloak communication)
    - **Realm**: `opentranscribe`
    - **Client ID**: `opentranscribe-app`
    - **Client Secret**: Paste the secret from Step 4
@@ -149,7 +149,7 @@ If the Admin UI is not yet accessible (e.g., first-time setup), environment vari
 # OIDC configuration (KEYCLOAK_* spellings also still work)
 OIDC_ENABLED=true
 OIDC_SERVER_URL=http://localhost:8180           # Must be accessible from browser
-OIDC_INTERNAL_URL=http://transcribe-app-keycloak-1:8080
+OIDC_INTERNAL_URL=http://keycloak:8080
 OIDC_REALM=opentranscribe
 OIDC_CLIENT_ID=opentranscribe-app
 OIDC_CLIENT_SECRET=<paste-client-secret-from-step-4>

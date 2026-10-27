@@ -8,12 +8,12 @@ Organize related media files into collections for better project management.
 
 ## Creating Collections
 
-1. Go to Collections page
-2. Click "New Collection"
-3. Name your collection
-4. Add description (optional)
-5. Optionally assign a **default AI prompt** for summarization (see [Per-Collection Default Prompts](./ai-summarization.md#per-collection-default-prompts))
-6. Add media files
+1. On the gallery, click **Collections** in the toolbar (next to **Tags** and **Add Media**) with nothing selected
+2. Click **New Collection**
+3. Enter a **Name**
+4. Add a **Description** (optional)
+5. Optionally choose a **Default Summary Prompt** for the collection (see [Per-Collection Default Prompts](./ai-summarization.md#per-collection-default-prompts))
+6. Click **Create Collection**, then add media files: click **Select Files** in the gallery, tick the files, and choose **Organize > Add to Collection**
 
 You can also assign files to collections during upload -- see [Organizing During Upload](./uploading-files.md#organizing-during-upload).
 
@@ -30,10 +30,15 @@ You can also assign files to collections during upload -- see [Organizing During
 - Add/remove files
 - Edit name, description, and default AI prompt
 - Share collections with users and groups (see below)
-- Export collection data
-- View collection analytics
+- Delete a collection (the files in it are not deleted, only removed from the collection)
 
 ## Collections in an organization
+
+:::note
+Organizations belong to the managed (cloud) edition. A self-hosted installation has no
+organizations: the organization-wide visibility choices and the **Restricted** badge below do not
+appear there, and collections are visible to their owner and to whoever they are shared with.
+:::
 
 In an organization, collections belong to the organization. Every member sees them, and
 every member can open the files in them: **seeing a collection means being able to open,
@@ -86,15 +91,15 @@ Collections can be shared with individual users or user groups:
 
 Create groups to organize team members for easier sharing:
 
-1. Go to **Settings > Groups** (admin) or the Groups page
+1. Go to **Settings > Groups** (under the **Account** heading)
 2. Click **Create Group**
 3. Name the group and add members
 4. Assign roles (member or admin)
 
 ### Sharing a Collection
 
-1. Open a collection
-2. Click **Share**
+1. Click **Collections** in the gallery toolbar
+2. Click the **Share Collection** button on the collection's row
 3. Search for users or groups to share with
 4. Set permission level:
    - **Viewer** -- Can view files and transcripts in the collection
@@ -104,12 +109,12 @@ Create groups to organize team members for easier sharing:
 
 Shared collections appear in recipients' collection lists. **Speaker profiles** associated with files in the collection are automatically shared with recipients, enabling cross-collection speaker recognition.
 
-**Shared Configs and Prompts**: When you share a collection, you can also share the custom AI prompts and configuration presets associated with it. Recipients can use these shared prompts when generating summaries for files in that collection. Prompt sharing is managed separately from collection sharing — see Settings → AI Summarization Prompts to share individual prompts with users or groups without sharing an entire collection.
+**Prompts are shared separately.** Sharing a collection does not share its default summary prompt. Prompt sharing is managed under **Settings > AI Summarization Prompts**, where a prompt can be shared with all users.
 
 ### Removing Access
 
-1. Open the collection's share settings
-2. Click remove next to the user or group
+1. Open the collection's **Share Collection** dialog
+2. Under **Current Shares**, click **Revoke access** next to the user or group and confirm
 3. Access is revoked immediately
 
 ## File Retention
@@ -117,14 +122,14 @@ Shared collections appear in recipients' collection lists. **Speaker profiles** 
 Administrators can configure automatic file cleanup to manage storage:
 
 1. Go to **Settings > Data & Storage > File Retention**
-2. Enable automatic file deletion
+2. Turn on **Enable automatic file deletion** (you must confirm before it takes effect)
 3. Configure:
-   - **Retention period** (days) -- Files completed more than this many days ago are deleted
-   - **Scheduled run time** -- Daily cleanup runs at this time
+   - **Retention period (days)** -- Files completed more than this many days ago are deleted
+   - **Scheduled run time (HH:MM)** -- Daily cleanup runs at this time
    - **Timezone** -- Timezone for the scheduled run
-   - **Include error files** -- Optionally also delete files with processing errors
-4. Use **Preview** to see which files would be affected before enabling
-5. Use **Run Now** to trigger an immediate cleanup
+   - **Also delete files with processing errors** -- Optionally include files that ended in an error
+4. Use **Preview files to be deleted** to see which files would be affected before enabling
+5. Use **Run cleanup now** to trigger an immediate cleanup
 
 :::warning
 File retention permanently deletes media files and transcripts. Speaker profiles and voice fingerprints are preserved for future use.

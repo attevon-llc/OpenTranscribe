@@ -66,7 +66,7 @@ For an unattended install, set `NGINX_SERVER_NAME` in the environment. The insta
 ./opentranscribe.sh restart    # or "start" on a first run
 ```
 
-The start output should include `Adding NGINX reverse proxy (HTTPS enabled)`. If it prints a warning
+The start output should include `HTTPS enabled (NGINX reverse proxy with SSL)` (from a source checkout, `./opentr.sh` prints `Adding NGINX reverse proxy (HTTPS enabled)`). If it prints a warning
 about missing certificates instead, the stack came up **without** HTTPS; fix the certificates and
 start again.
 
@@ -170,8 +170,8 @@ covers with `openssl x509 -in nginx/ssl/server.crt -noout -ext subjectAltName`.
 **Visiting `http://` goes to a page that will not load.** In versions before 0.6.0 the redirect always
 pointed to port 443, even when `NGINX_HTTPS_PORT` was different. Update, or open the `https://` address with your port directly.
 
-**Nothing answers on 443.** Check the container: `docker compose ps nginx` and
-`docker compose logs nginx`. The start output tells you whether the nginx overlay was loaded.
+**Nothing answers on 443.** Check the container: `./opentranscribe.sh status` and
+`./opentranscribe.sh logs nginx`. The start output tells you whether the nginx overlay was loaded.
 
 See [NGINX & HTTPS Setup](../configuration/nginx-setup.md) for Let's Encrypt certificates on a
 public domain, every NGINX variable, and customising the proxy.

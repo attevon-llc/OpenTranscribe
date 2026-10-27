@@ -3,7 +3,7 @@
 ## ⚠️ Cosine scores: OpenSearch `cosinesimil` is NOT raw cosine
 
 Every kNN field in this app maps `"space_type": "cosinesimil"` with `engine: lucene`
-(`indexing_service.py:122` for the chunks index; `opensearch_service/repair.py` +
+(`indexing_service.py:295` for the chunks index; `opensearch_service/repair.py` +
 `opensearch_service/indices.py` for the speaker indices). Lucene's `cosinesimil` returns
 **`(1 + cosine) / 2`**, range 0–1.
 
@@ -19,9 +19,9 @@ in the sibling speaker/voiceprint plane, none in this package):
   `batch_find_matching_speakers` · `msearch_speaker_similarities`
 - `../opensearch_service/profiles.py` — `msearch_profile_knn_batch` · `find_matching_profiles`
 - `../opensearch_service/clusters.py` — `find_matching_clusters`
-- `../speaker_matching_service.py` — `find_unlabeled_speaker_matches` :333 · `_process_match_hit` :1317
-- `../profile_embedding_service.py:276` · `../smart_speaker_suggestion_service.py:178` ·
-  `../similarity_service.py:197`
+- `../speaker_matching_service.py` — `find_unlabeled_speaker_matches` :343 · `_process_match_hit` :1517
+- `../profile_embedding_service.py:296` · `../smart_speaker_suggestion_service.py:177` ·
+  `../similarity_service.py:171`
 
 This package itself never reads a raw kNN score: transcript search ranks by **RRF**, whose
 output is a rank-fusion score, not a similarity. Don't treat `relevance_score` as cosine.
@@ -89,7 +89,7 @@ separate and lives in the `../opensearch_service/` package (alias `speakers` →
   `all-MiniLM-L6-v2` (384d, 80 MB). Tiers in `core/constants.py:OPENSEARCH_EMBEDDING_MODELS`
   (fast 384d / balanced 768d / best, English + multilingual). Offline pre-fetch:
   `DOWNLOAD_ALL_OPENSEARCH_MODELS=true bash scripts/download-models.sh models`.
-- Startup (`app/main.py`, ~line 420) sleeps 15 s, configures ML Commons cluster settings, scans
+- Startup (`app/main.py`, `_initialize_neural_search`) sleeps 15 s, configures ML Commons cluster settings, scans
   the read-only `/ml-models/` mount, downloads the default model if internet is reachable, then
   `ensure_model_deployed` registers via `file://` and **falls back to remote HF** if that fails.
   Active model id persists as SystemSettings `search.opensearch_model_id`.
@@ -211,8 +211,8 @@ of the app lets the caller open.
 
 ## Gotchas
 
-- **Do NOT add `aggs` to the collapsed hybrid body** (`hybrid_search_service.py:2320`, corrected
-  citation — a prior version of this line pointed at `:1464`, which is unrelated `Args:` prose):
+- **Do NOT add `aggs` to the collapsed hybrid body** (`hybrid_search_service.py:2498`, the "Do NOT add
+  `aggs` here" comment; line numbers rot, so grep that string):
   OpenSearch 3.4 throws `ArrayIndexOutOfBoundsException` in `score-ranker-processor` when
   cardinality aggs meet hybrid + collapse + RRF. `total_files` is derived from collapsed results.
 - RRF + collapse **strips inner-hit highlights** — hence `_detect_keyword_match_fallback` and
@@ -306,7 +306,7 @@ of the app lets the caller open.
     yet. That is a coordination problem, not a visibility one.
 - **Chunk docs snapshot `speaker` / `speakers` / `title`; renames must be propagated**
   (issue #405). Chat's speaker axis resolves the display name from **Postgres** and filters the
-  index with an exact `terms` match on `speaker` (`hybrid_search_service:1107`), so an
+  index with an exact `terms` match on `speaker` (`hybrid_search_service._build_filters`), so an
   un-propagated rename makes every pre-rename chunk unreachable under the only name the user can
   ask about — and the model answers from the remainder. `app/tasks/rename_propagation_task.py`
   owns both rewrites (`propagate_speaker_rename` / `propagate_title_rename`, cpu queue) and
@@ -844,8 +844,9 @@ plane's mapping additions (`summary_key_path` keyword, `summary_leaf_index` inte
   ⚠️ The measured embedding window is **128 wordpieces**, not the 256 the plan assumed
   (`services/ingest_artifacts/sizing.py`), so the header is a real cost: it displaces roughly
   the last 20 words of a 200-word chunk from that chunk's own vector.
-- **Search does not return digests; chat does not either, yet.** `_build_filters` carries
-  `chunk_plane_clause()`, so both the search UI and `retrieve_chunks` see the chunk plane
+- **Search does not return digests; chat reaches them only through its own leg.** `_build_filters`
+  carries `chunk_plane_clause()`, so both the search UI and `retrieve_chunks` see the chunk plane
   only. That is deliberate: a digest is derived text, it would render as if a speaker had said
   it, and it would receive **neither** read-time masking treatment (addendum G6). The digest
-  leg, with its own citation shape, is Stage 4's.
+  leg (`chunk_retrieval.retrieve_digests`, Stage 4) has its own citation shape and masker
+  (`chat/redactor.mask_digests`).

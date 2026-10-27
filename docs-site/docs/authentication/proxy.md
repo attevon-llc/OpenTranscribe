@@ -9,7 +9,7 @@ For deployments where an authenticating reverse proxy — oauth2-proxy, Authelia
 Access, an enterprise SSO gateway — already terminates authentication in front of
 OpenTranscribe and asserts the resulting identity in a request header.
 
-Configure it at **Settings → Authentication → Proxy** (super_admin); values are stored in
+Configure it at **Settings → Authentication → Trusted Header** (super_admin); values are stored in
 `auth_config` and take effect without a restart, with the `PROXY_*` environment variables as a
 bootstrap seed and — for `proxy_enabled` / `proxy_trusted_proxies` specifically — what the
 startup guard can see before a database session exists.
@@ -26,25 +26,27 @@ An **empty** allowlist **refuses every header-sourced assertion outright** — i
 no allowlist configured.
 
 Set it to the address the **backend** sees the reverse proxy arrive from (not the client's
-address), e.g. `127.0.0.1,10.0.0.0/8`. Single addresses and CIDR ranges are both accepted, and
-only the **immediate peer** is checked — never `X-Forwarded-For`, which the client can set
-itself.
+address), e.g. `127.0.0.1` or the proxy's own `/32`. Single addresses and CIDR ranges are both
+accepted, and only the **immediate peer** is checked — never `X-Forwarded-For`, which the client
+can set itself. Use the narrowest range that covers the proxy: this setting gates *identity
+assertion*, so a whole private range such as `10.0.0.0/8` lets any device on that network sign
+in as any address (the same hazard described for [PKI](./pki#trust-configuration--read-this-first)).
 :::
 
 ## Configuration reference
 
-| Field | Config key | Default |
-|---|---|---|
-| Enabled | `proxy_enabled` | `false` |
-| Trusted proxies | `proxy_trusted_proxies` | — (**required when enabled**) |
-| Shared secret *(sensitive)* | `proxy_shared_secret` | — |
-| Email header | `proxy_email_header` | `X-Forwarded-Email` |
-| Name header | `proxy_name_header` | `X-Forwarded-User` |
-| Groups header | `proxy_groups_header` | — (empty = proxy does not manage groups) |
-| Groups separator | `proxy_groups_separator` | `,` |
-| Role header | `proxy_role_header` | — (empty = header-driven privilege is off) |
-| Allowed domains | `proxy_allowed_domains` | — (empty admits every domain) |
-| JIT provisioning | `proxy_jit_provisioning` | `true` |
+| Field | Config key | Environment variable | Default |
+|---|---|---|---|
+| Enabled | `proxy_enabled` | `PROXY_ENABLED` | `false` |
+| Trusted proxies | `proxy_trusted_proxies` | `PROXY_TRUSTED_PROXIES` | — (**required when enabled**) |
+| Shared secret *(sensitive)* | `proxy_shared_secret` | `PROXY_SHARED_SECRET` | — |
+| Email header | `proxy_email_header` | `PROXY_EMAIL_HEADER` | `X-Forwarded-Email` |
+| Name header | `proxy_name_header` | `PROXY_NAME_HEADER` | `X-Forwarded-User` |
+| Groups header | `proxy_groups_header` | `PROXY_GROUPS_HEADER` | — (empty = proxy does not manage groups) |
+| Groups separator | `proxy_groups_separator` | `PROXY_GROUPS_SEPARATOR` | `,` |
+| Role header | `proxy_role_header` | `PROXY_ROLE_HEADER` | — (empty = header-driven privilege is off) |
+| Allowed domains | `proxy_allowed_domains` | `PROXY_ALLOWED_DOMAINS` | — (empty admits every domain) |
+| JIT provisioning | `proxy_jit_provisioning` | `PROXY_JIT_PROVISIONING` | `true` |
 
 The email header is the identity assertion; everything else is optional. `POST
 /api/auth/proxy/authenticate` mints a normal session (a `refresh_token` row) from it, so idle/

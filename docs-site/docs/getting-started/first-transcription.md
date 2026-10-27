@@ -42,7 +42,7 @@ For best transcription quality:
 
 ### Via Web Interface
 
-1. **Click "Upload Files"** button in the top navigation bar
+1. **Click "Add Media"** in the gallery, then stay on the **Upload File** tab
 2. **Drag and drop** your file onto the upload zone, or **click to browse**
 3. **Select your file** from your computer
 4. Watch the upload progress in the **floating upload manager**
@@ -53,9 +53,9 @@ For best transcription quality:
 
 OpenTranscribe can download and process YouTube videos:
 
-1. **Click "Upload from URL"** in the navbar
+1. **Click "Add Media"** in the gallery and open the **Media URL** tab
 2. **Paste the YouTube URL** (supports playlists too!)
-3. Click "**Download and Process**"
+3. Click "**Process Video**"
 4. The video will be downloaded and queued for transcription
 
 ![URL import - paste YouTube or video URL](/img/screenshots/upload/upload-url.png)
@@ -64,7 +64,7 @@ OpenTranscribe can download and process YouTube videos:
 
 Record audio directly in your browser:
 
-1. **Click the microphone icon** in the navbar
+1. **Click "Add Media"** in the gallery and open the **Record Audio** tab
 2. **Select your microphone** device
 3. **Click "Start Recording"**
 4. **Monitor audio levels** to ensure good volume
@@ -101,6 +101,8 @@ flowchart LR
 5. **Voiceprints and matching** - Computing a voiceprint for each speaker on this server and matching it against speakers in your other recordings
 6. **Indexing** - Adding the transcript to the search index
 7. **Complete** - Ready to view!
+
+To see, before you upload, where each step will run for you (this server or a named cloud provider) and whether anything blocks it, open **Settings → Transcription & Speakers → Processing pipeline**.
 
 If an AI provider is configured, summaries, topics and speaker name suggestions follow once the
 transcript is ready. To see which provider and model handled each step of a finished file, open
@@ -197,8 +199,8 @@ If you've configured an LLM provider, you can generate AI summaries:
 
 ### Configure LLM (One-Time)
 
-1. Go to **User Settings** (gear icon)
-2. Click **"LLM Configuration"** tab
+1. Open **Settings** from the user menu
+2. Under **AI & Chat**, choose **LLM Provider Configuration**
 3. Select a **provider** (OpenAI, Claude, vLLM, Ollama)
 4. Enter your **API key** or endpoint
 5. **Test the connection**

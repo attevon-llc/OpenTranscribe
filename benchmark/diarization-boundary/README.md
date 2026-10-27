@@ -2,8 +2,8 @@
 
 Test corpus + ground truth for measuring and tuning the speaker-boundary fix. **Audio and
 `*.rawinfer.json` caches are NOT committed** (see `.gitignore`) — only references, manifests,
-and `download.sh` scripts are, so the corpus is reproducible. Run from the **nvm** working
-copy; back the datasets up to `/mnt/nas/datasets/diarization-boundary/`.
+and `download.sh` scripts are, so the corpus is reproducible. Keep your own backup of the
+downloaded audio; it is not recoverable from the repository.
 
 ## Layout
 
@@ -21,25 +21,35 @@ diarization-boundary/
   cache/<file_id>__<model>.rawinfer.json          # GPU-once fixtures (gitignored)
 ```
 
-## Workflow (all steps run in the backend container)
+## Workflow
+
+The backend/worker container mounts only `backend/` as `/app` (the GPU benchmark compose file also
+mounts `docs/`), so this folder is **not** visible inside it. The scripts are `backend/scripts/*.py`;
+in the container they are `scripts.<name>` relative to `/app`. Stage inputs with
+`docker compose cp ... celery-worker:/tmp/...` (see "Cloud-provider testing" below), and note that
+`build_fixture.py` refuses to run outside a container. The `docker compose` calls below are the
+documented form for this workflow; the stack must already be up through `./opentr.sh start dev`.
 
 1. **Download** `bash <dataset>/<id>/download.sh` (yt-dlp/ffmpeg → 16 kHz mono WAV).
 2. **Ingest via the app** (upload or `POST /api/files/from-url`) with `large-v3` so it lands in
-   Postgres and is editable in the UI — AND capture the GPU fixture on the same WAV:
-   `python -m backend.scripts.build_fixture --audio audio.wav --model large-v3 --out cache/<id>__large-v3.rawinfer.json`.
+   Postgres and is editable in the UI, and capture the GPU fixture on the same WAV (in the
+   worker container, audio staged under `/tmp`):
+   `python -m scripts.build_fixture /tmp/audio.wav --model large-v3 --out /tmp/<id>__large-v3.rawinfer.json`.
 3. **Hand-label** in the segment UI (fix wrong-speaker fragments), then run the
-   ±2 s seam audit in Audacity (`backend/scripts/make_seam_labels.py emit ...`).
+   ±2 s seam audit in Audacity (`python -m scripts.make_seam_labels emit transcript.json --out seams.txt`).
 4. **Export the reference** (in-container, DB session) via
    `app.utils.transcript_comparison.export_word_reference(db, file_id, "reference.words.json", "reference.rttm")`,
    and build `reference.turns.rttm` from the corrected seam audit
-   (`make_seam_labels.py to-rttm ...`).
+   (`python -m scripts.make_seam_labels to-rttm corrected.txt --out reference.turns.rttm`).
 5. **Public datasets** ship RTTM directly (AMI, VoxConverse) or via `nlp_to_rttm.py` (Earnings-21).
-6. **Score**: `python -m backend.scripts.benchmark_boundary --corpus corpus.json --models large-v3 --smoothing sweep --out docs/diarization-boundary-results/<run>/`.
+6. **Score** (in the container, with `corpus.json` and references staged):
+   `python -m scripts.benchmark_boundary --corpus <path>/corpus.json --models large-v3 --smoothing sweep --out <outdir>`.
+   `--help` lists `--cache-dir`, `--ref-dir`, `--datasets`, `--sample` and `--bootstrap`.
 
 ## Metrics
 
 Headline **WSER** (`app.utils.diarization_metrics.wser`) + bleed-island count; cpWER (meeteval) and
-DER (pyannote.metrics, collar 0.25 and 0) are cross-checks. See plan §4 / issue #193.
+DER (pyannote.metrics, collar 0.25 and 0) are cross-checks. See issue #193.
 
 ## Cloud-provider testing (reusable Karpathy clips)
 
@@ -74,17 +84,18 @@ docker compose exec -T celery-worker python -m scripts.test_cloud_asr \
 # full local-vs-cloud comparison (WSER + realtime) on the 10 min clip
 docker compose exec -T celery-worker python -m scripts.compare_cloud_boundaries \
     --audio /tmp/karpathy_10m.wav --ref-rttm /tmp/karpathy_ref.rttm \
-    --cloud 849 --cloud 610 --cloud 850 --cloud 851 --cloud 852 --cloud 853 \
+    --cloud <config-id> --cloud <config-id> ... \
     --min-speakers 2 --max-speakers 2
 ```
 
-**If the clips are missing** (e.g. fresh checkout, or the host copy was cleared), rebuild them
-from MinIO — the labeled file is stored as `media/1/<uuid>.mp4`:
+**If the clips are missing** (e.g. fresh checkout, or the host copy was cleared), re-download the
+source with the folder's `download.sh`, or rebuild from a copy of the labeled file already stored
+in MinIO (substitute that file's object key):
 
 ```bash
 docker compose exec -T celery-worker python -c \
   "from app.services.minio_service import download_file_to_path; \
-   download_file_to_path('media/1/75f6a04f-5328-4f0c-a9d3-9cddc2d966f6.mp4','/tmp/karp_src.mp4')"
+   download_file_to_path('<object-key>.mp4','/tmp/karp_src.mp4')"
 docker compose exec -T celery-worker bash -lc \
   'ffmpeg -y -i /tmp/karp_src.mp4 -ar 16000 -ac 1 -t 600 /tmp/karpathy_10m.wav && \
    ffmpeg -y -ss 90 -t 30 -i /tmp/karpathy_10m.wav -ar 16000 -ac 1 /tmp/clip30.wav'
@@ -92,5 +103,6 @@ docker compose exec -T celery-worker bash -lc \
 ```
 
 Results table + per-provider notes: `docs/diarization-boundary-results/cloud-comparison.md`.
-The file `media/1/...mp4` uuid is the Karpathy ingest (DB `media_file` id 3141 / uuid `b1c6e10a…`);
-**do not reprocess that DB file** — it holds the hand labels.
+If you ingest the Karpathy clip into a deployment to hand-label it, **do not reprocess that file
+afterwards**: the DB row holds the hand labels. (The maintainers' labeled copy is `media_file` uuid
+`b1c6e10a…`; it exists only on their deployment.)

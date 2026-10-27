@@ -11,8 +11,9 @@ proxy)** authentication. They run *simultaneously*; each account records which o
 `user.auth_type`, so a deployment can have directory users, certificate users, proxy-asserted
 users and a handful of local accounts at the same time.
 
-Everything on this page is configured in **Settings → Authentication**, which is
-**super_admin-only**. Configuration is stored in the `auth_config` table, secrets encrypted
+Everything on this page is configured in **Settings → Authentication** (tabs: Local Auth,
+LDAP/AD, OIDC, PKI/Certificate, Trusted Header, SAML 2.0, Group mappings, SCIM provisioning,
+Directory sync, Sessions, Auth Email, Change history), which is **super_admin-only**. Configuration is stored in the `auth_config` table, secrets encrypted
 with AES-256-GCM, and takes effect without a restart.
 
 ## Where a setting comes from
@@ -50,11 +51,11 @@ password, and why can they still self-register?"*
 
 | Setting | Where | Meaning |
 |---|---|---|
-| `local_enabled` | Authentication → Local | May accounts holding a local password authenticate at all |
-| `allow_registration` | Authentication → Local | May anyone create their own account |
+| `local_enabled` | Authentication → Local Auth | May accounts holding a local password authenticate at all |
+| `allow_registration` | Authentication → Local Auth | May anyone create their own account |
 | `user.auth_type` | Settings → User Management | Which source owns *this* account |
 | `user.allow_local_fallback` | Settings → User Management (super_admin only) | May *this* external account also use a local password |
-| `pki_allow_password_fallback` | Authentication → PKI | Deployment **ceiling** over the per-user flag, for `pki` accounts |
+| `pki_allow_password_fallback` | Authentication → PKI/Certificate | Deployment **ceiling** over the per-user flag, for `pki` accounts |
 
 Rules the code enforces:
 
@@ -135,7 +136,7 @@ login.
 |---|---|---|
 | `ldap_user_groups` | LDAP | No group requirement |
 | `oidc_allowed_groups` / `oidc_blocked_groups` | OIDC | Admit everyone |
-| `require_account_approval` (Authentication → Local) | Self-registration **and** every external JIT path | Accounts are usable immediately |
+| `require_account_approval` (Authentication → Local Auth) | Self-registration **and** every external JIT path | Accounts are usable immediately |
 
 - **An empty allow-list admits everyone.** Reading it the other way would lock out every
   existing deployment on upgrade; only a non-empty list restricts.
@@ -177,7 +178,7 @@ already used, address already registered) returns exactly the same message.
 
 ### Email verification
 
-`require_email_verification` (Authentication → Local, category `local`) gates **local password
+`require_email_verification` (Authentication → Local Auth, category `local`) gates **local password
 login only**. An account whose identity lives in LDAP/OIDC/SAML/PKI/proxy has its address
 asserted by the provider, so blocking those logins here would second-guess the IdP.
 Verification tokens expire after 24 hours and are rate-limited to 3 issues per hour.
@@ -306,6 +307,7 @@ codes.
 |---|---|
 | `mfa_enabled` | `false` |
 | `mfa_required` | `false` |
+| `mfa_required_for_admins` | `false` (administrators must use MFA even when `mfa_required` is off; no effect while `mfa_enabled` is off) |
 | `mfa_issuer_name` | `OpenTranscribe` |
 | `mfa_backup_code_count` | 10 |
 | `mfa_token_expire_minutes` | 5 |
@@ -325,10 +327,15 @@ codes.
 | Setting | Default | Bounds |
 |---|---|---|
 | `password_policy_enabled` | `true` | |
+| `password_policy_profile` | `hardened` in code (a fresh install's `.env.example` sets `standard`) | `basic` \| `standard` \| `hardened` \| `custom` |
+| `password_max_length` | 0 (level default) | 0–1024 |
 | `password_min_length` | 12 | 8–128 |
 | `password_require_uppercase` / `_lowercase` / `_digit` / `_special` | `true` | |
 | `password_history_count` | 24 | 0–100 (0 disables) |
 | `password_max_age_days` | 60 | 0–3650 (0 = never expires) |
+| `password_min_age_hours` | 24 | 0–8760 (0 disables) |
+| `password_blocklist_enabled` | level default | `""` \| `true` \| `false` |
+| `password_hibp_enabled` | `false` | |
 | `account_lockout_enabled` | `true` | |
 | `account_lockout_threshold` | 5 | 1–1000 |
 | `account_lockout_duration_minutes` | 15 | 1–10080 |
@@ -337,6 +344,10 @@ codes.
 | `rate_limit_enabled` | `true` | |
 | `rate_limit_auth_per_minute` | 10 | 1–10000 |
 
+- **The level decides which password values apply.** Under `basic` and `standard` the
+  composition, expiry, history and minimum-age values above are ignored (`standard` is NIST
+  SP 800-63B-4: 15 characters, or 8 with MFA, no composition or forced rotation); they apply
+  under `hardened` and `custom`. See [Password policy levels](../configuration/password-policy.md).
 - Lockout is keyed on a **canonical identifier per account**, so an account reachable by both
   an email address and an LDAP uid gets one budget, not two.
 - Rate limiting is per-IP, resolved through the trusted-proxy chain.
@@ -361,7 +372,7 @@ to set one up.
 ## Audit
 
 Authentication and administrative events go to an **OpenSearch-backed** audit log, viewable at
-Settings → Audit Logs (super_admin). Separately, **Settings → Authentication → Audit** shows
+Settings → Audit Logs (super_admin). Separately, **Settings → Authentication → Change history** shows
 changes to the auth configuration itself, read from the `auth_config_audit` table in Postgres —
 including *who* made each change.
 
@@ -373,7 +384,7 @@ endpoint at **`/scim/v2`** — mounted at the application root, not under `/api`
 §3.1 fixes the base path and every connector appends `/Users` / `/Groups` to it itself.
 
 Authentication is a bearer token (`scim_token`, hashed at rest) issued and revoked by a
-super_admin at **Settings → Authentication → SCIM** (`/api/admin/scim-tokens`). A SCIM connector
+super_admin at **Settings → Authentication → SCIM provisioning** (`/api/admin/scim-tokens`). A SCIM connector
 cannot create or touch a `super_admin`, and cannot write a role; group membership it creates is
 tagged `source='scim'`, which is shielded from directory-sync reconciliation and vice versa.
 

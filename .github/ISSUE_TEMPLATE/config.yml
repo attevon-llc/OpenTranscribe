@@ -1,1 +1,5 @@
 blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability (private)
+    url: https://github.com/attevon-llc/OpenTranscribe/security/advisories/new
+    about: Please report security issues privately through GitHub, not in a public issue. See SECURITY.md.

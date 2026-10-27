@@ -46,7 +46,7 @@ This approach gives you control over when Docker images are downloaded and conta
 
 **Requirements:**
 - NVIDIA GPU with CUDA Compute Capability 6.0+
-- NVIDIA Driver 470+ (Driver 550+ recommended for Blackwell / RTX 50-series)
+- NVIDIA Driver 525.60.13+ (the image bundles CUDA 12.8; Blackwell / RTX 50-series needs Driver 570+)
 - NVIDIA Container Toolkit
 
 **Automatic Configuration:**

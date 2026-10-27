@@ -377,6 +377,14 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   `require_voiceprints` and answers 409 `{code: "voiceprints_disabled", locked_by}`; list routes keep their response models and
   return empty. Per-record decisions take the scope from the record's row (file or profile owner and organization), not from
   `ctx`; the cluster actions act on the caller's own active scope (`current_user`, `ctx.org_id`).
+  A response that EMBEDS a speaker is shaped too: `files/crud.redact_response_speakers` (file detail and
+  `GET /files/{uuid}/segments`) and `redact_speaker_rows` in the segment text-edit and speaker-reassign responses; the stored
+  `attribute_confidence` keys `gender`, `alignment` and `alignment_hint` are withheld together. A NEW route that returns a
+  `Speaker` (directly or on a segment) must do the same, after its last commit. `GET|PUT /user-settings/speaker-attributes`
+  resolve for `ctx.org_id` (`gender_locked_by`: platform, instance, organization or null; the user's own switch is never a lock).
+  `GET /embeddings/migration/status` carries `policy_skipped`, and `POST /embeddings/migration/start` is 409 `voiceprints_disabled`
+  only when EVERY recording is in a forbidden scope. A plan PREVIEW (no `media_file_id`) is judged in the request's active
+  organization; a real file in its own row's organization.
 - `require_capability(key)` (`core/capabilities.py`) returns **404, not 403** — a gated router
   must look like an unknown route. Platform superusers bypass it.
 - **`endpoints/tags/` is a package** (`crud` · `discovery` · `sharing` · `operations` + `_common`),

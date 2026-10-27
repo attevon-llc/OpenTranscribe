@@ -245,7 +245,7 @@ echo.
 echo Application is now accessible at:
 echo   Frontend:  http://localhost:5173
 echo   Backend API: http://localhost:5174
-echo   API Docs:    http://localhost:5174/docs
+echo   API Docs:    http://localhost:5174/api/docs
 echo.
 echo Additional services:
 echo   MinIO Console:      http://localhost:5179

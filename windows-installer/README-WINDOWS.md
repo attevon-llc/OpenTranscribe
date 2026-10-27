@@ -81,7 +81,7 @@ If any prerequisites are missing, follow the on-screen instructions to install t
 After installation, access OpenTranscribe at:
 - **Frontend:** http://localhost:5173
 - **Backend API:** http://localhost:5174
-- **API Documentation:** http://localhost:5174/docs
+- **API Documentation:** http://localhost:5174/api/docs
 - **MinIO Console:** http://localhost:5179
 - **Flower (Task Monitor):** http://localhost:5175
 

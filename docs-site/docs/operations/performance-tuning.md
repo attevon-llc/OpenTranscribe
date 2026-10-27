@@ -74,11 +74,11 @@ WHISPER_BEAM_SIZE=1
 
 | Model | Speed | VRAM | English | Multilingual | Translation |
 |-------|-------|------|---------|--------------|-------------|
-| `large-v3-turbo` (default) | 6x faster | ~6 GB | Excellent | Good | **No** |
+| `large-v3-turbo` (default) | Much faster | ~6 GB | Excellent | Good | **No** |
 | `large-v3` | Slow | ~10 GB | Excellent | Best | Yes |
 | `large-v2` | Slow | ~10 GB | Excellent | Good | Yes |
 
-Use `large-v3-turbo` unless you need translation to English or maximum non-English accuracy. The turbo model uses ~40% less VRAM and processes 6x faster.
+Use `large-v3-turbo` unless you need translation to English or maximum non-English accuracy. The turbo model uses less VRAM and is much faster (upstream reports roughly 6-8x; not measured in this repository).
 
 ```bash
 WHISPER_MODEL=large-v3-turbo

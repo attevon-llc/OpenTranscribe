@@ -31,7 +31,7 @@ OpenTranscribe uses the **large-v3-turbo** model by default (as of v0.4.0):
 - Robust to accents and speech variations
 - Handles technical terminology well
 - Works with background noise
-- **6x faster than previous large-v2 model**
+- **Much faster than large-v3** (upstream reports roughly 6-8x; not measured in this repository)
 
 ## Model Selection
 
@@ -39,8 +39,8 @@ Choose the right Whisper model for your use case:
 
 | Use Case | Model | Speed | Accuracy | Why |
 |----------|-------|-------|----------|-----|
-| **English audio** | `large-v3-turbo` | **6x faster** | Excellent | Default, fastest option |
-| **Spanish/French/German/Japanese** | `large-v3-turbo` | **6x faster** | Excellent | Good accuracy, fast |
+| **English audio** | `large-v3-turbo` | **Much faster** | Excellent | Default, fastest option |
+| **Spanish/French/German/Japanese** | `large-v3-turbo` | **Much faster** | Excellent | Good accuracy, fast |
 | **Thai/Cantonese/Vietnamese** | `large-v3` | Standard | Better | Turbo has reduced accuracy for these |
 | **Translation to English** | `large-v3` | Standard | Excellent | **Turbo cannot translate** |
 | **Maximum accuracy needed** | `large-v3` | Standard | **Best** | Slightly better than turbo |
@@ -52,7 +52,7 @@ Choose the right Whisper model for your use case:
 Set the model in Settings → Transcription → Provider & Model (super admin), or via environment variable:
 
 ```bash
-WHISPER_MODEL=large-v3-turbo  # Default (6x faster)
+WHISPER_MODEL=large-v3-turbo  # Default (much faster)
 WHISPER_MODEL=large-v3        # For translation or maximum accuracy
 WHISPER_MODEL=large-v2        # Legacy (not recommended)
 ```
@@ -156,7 +156,7 @@ While `large-v3-turbo` is recommended for most users, other models are available
 | small | 2GB | Fast | Great | CPU systems / hybrid mode |
 | medium | 5GB | Moderate | Excellent | Balanced performance |
 | large-v2 | 6GB | Slower | Excellent | Legacy (slower than turbo) |
-| **large-v3-turbo** | 6GB | **6x faster** | **Excellent** | **Production (default)** |
+| **large-v3-turbo** | 6GB | **Much faster** | **Excellent** | **Production (default)** |
 | large-v3 | 6GB | Standard | **Best** | Translation, maximum accuracy |
 | CrisperWhisper | 3GB | Standard | Excellent (verbatim) | English-only; precise, verbatim word-level timestamps |
 
@@ -166,7 +166,7 @@ smoothing them out, which is useful for captioning or other work that needs tigh
 English-only and does not support translation. Select it via Settings → Transcription →
 Provider & Model (super admin) or `WHISPER_MODEL=nyrahealth/faster_CrisperWhisper`.
 
-**Default Recommendation**: Use `large-v3-turbo` for production (6x faster with excellent accuracy)
+**Default Recommendation**: Use `large-v3-turbo` for production (much faster with excellent accuracy)
 
 **Alternative**: Use `large-v3` if you need translation to English or maximum accuracy
 
@@ -370,7 +370,7 @@ Which formats play in the browser, which are converted for playback and which ge
 - Use `float16` compute type
 - Increase batch size (if VRAM available)
 - Enable GPU acceleration
-- Use large-v3-turbo model (default, 6x faster)
+- Use large-v3-turbo model (default, much faster)
 
 **CPU Optimization**:
 - Use smaller model (small or medium)

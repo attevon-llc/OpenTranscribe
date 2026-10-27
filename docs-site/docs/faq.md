@@ -114,7 +114,7 @@ See [Offline Installation](./installation/offline-installation.md) for details.
 **Audio:** MP3, WAV, FLAC, M4A, OGG, AAC
 **Video:** MP4, MOV, AVI, MKV, WEBM, FLV
 
-Maximum file size: **4GB**
+Maximum file size: **15 GB** by default (`MAX_UPLOAD_BYTES`, configurable by the administrator)
 
 ### What languages are supported for transcription?
 

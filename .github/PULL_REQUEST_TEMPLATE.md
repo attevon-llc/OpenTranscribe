@@ -33,6 +33,12 @@ Brief description of what this PR does
 - [ ] Error handling is implemented
 - [ ] Logging is appropriate
 
+## Repository checks
+- [ ] `scripts/safe-precommit.sh run --all-files` passes (and `--hook-stage pre-push` before pushing)
+- [ ] Commit messages follow Conventional Commits (`type(scope): summary`)
+- [ ] New or changed user-facing text is in all 12 locales (`cd frontend && npm run check:i18n`; this checks key parity, not translation quality)
+- [ ] No lint or type suppressions (`noqa`, `type: ignore`, eslint-disable) were added to silence a finding
+
 ## Documentation
 - [ ] I have updated the README if needed
 - [ ] I have updated relevant documentation

@@ -212,8 +212,11 @@ preflight → bump → verify → test → build → scan → rehearse
   ledger — not a pass.
 - **Ledger** lives in `.release/<version>/steps/` (gitignored). Rehearsal history
   reads as current until you `reset`, so reset before a real run.
-- `rehearse` runs both scenarios and **requires the live stack stopped**; it
-  refuses (exit 3) and prints the command rather than stopping it for you.
+- `rehearse` runs **three** scenarios (fresh install, upgrade, lite) and **requires the live
+  stack stopped**: without approval it refuses (exit 3) and prints the command; with `--yes` or
+  `RELEASE_AUTO_STOP_STACK=true` it runs `./opentr.sh stop`, rehearses, and restarts dev from a
+  trap. It also needs the release branch pushed to origin. `smoke` needs the stack stopped too,
+  and `test` needs the dev stack UP (`docs/design/v060_release_runbook.md` has the sequence).
   `test-upgrade.sh` now runs to completion across all 18 phases, including the
   backup/rollback tail — previously masked by a `set -e` harness bug that
   silently truncated the script at the first non-fatal-by-design digest mismatch

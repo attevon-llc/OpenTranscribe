@@ -13,6 +13,14 @@ are **deliberately not committed** (93 MB total, see below).
 
 Total: ~370 KB.
 
+## Used by
+
+Verified by `rg -l "sample_short|sample_transcript" backend scripts`: among others
+`backend/tests/integration/test_lite_mode_mocked_providers.py`,
+`backend/tests/integration/test_speaker_embedding_cpu.py`, `backend/tests/api/test_dedup_sharing_tenancy.py`,
+`scripts/release-tests/test-lite-mode.sh`, `scripts/gpu-scale-smoke.sh` and `scripts/mock-asr-server.py`
+(the mock cloud ASR reshapes `sample_transcript.json`).
+
 ## Source material (NOT committed)
 
 Both media fixtures are cut from the same clip:
@@ -57,12 +65,12 @@ Nothing here was invented; every key exists in the pipeline or the ORM.
   (set by `mark_overlapping_segments`). A test can pass this list to `save_transcript_segments`
   directly, or map it onto `app/models/media.py:TranscriptSegment` columns itself.
 - **`words[]`** uses `{"word", "start", "end", "score"}` — the normalisation
-  `storage.py:76` applies (`score` falls back to faster-whisper's `probability`). Word text keeps
+  `save_transcript_segments` in `storage.py` applies (`score` falls back to faster-whisper's `probability`). Word text keeps
   the leading space faster-whisper emits, and `"".join(w["word"] for w in words).strip() == text`
   holds for every segment, matching the frozen real inference in
   `../boundary/karpathy_10m.rawinfer.json`.
 - **`speakers[]`** mirrors the `Speaker` rows `speaker_processor.create_or_get_speaker` inserts
-  (`app/models/media.py:432`): `name` is the raw diarization label, plus `display_name`,
+  (the `Speaker` model in `app/models/media.py`): `name` is the raw diarization label, plus `display_name`,
   `suggested_name`, `suggestion_source`, `verified`, `confidence`. The two speakers are
   deliberately different: `SPEAKER_00` is verified with a `display_name`, `SPEAKER_01` is
   unverified with only an AI suggestion — so speaker-status and label-resolution paths both have
@@ -93,15 +101,8 @@ be made to agree. Use `sample_transcript.json` for anything shape- or speaker-dr
 `sample_short.wav` for anything that actually runs audio through a decoder; only assert on their
 correspondence if you first regenerate the transcript from a real run.
 
-## ⚠️ `.gitignore` currently excludes this directory
+## Tracking in git
 
-`.gitignore:213` has a bare `media/` rule (intended for runtime upload dirs), which matches
-`media/` at **any** depth — including `backend/tests/fixtures/media/`. Verify before committing:
-
-```bash
-git check-ignore -v backend/tests/fixtures/media/sample_short.wav
-```
-
-If that still prints a match, the `media/` rule needs an anchor (`/media/`) or a negation
-(`!backend/tests/fixtures/media/`) before these fixtures can be tracked. `git add -f` would work
-once but leaves the trap in place for the next file added here.
+These files are tracked. The root `.gitignore` rule for runtime media is anchored (`/media/`) so it
+no longer swallows this directory; confirm with
+`git check-ignore -v backend/tests/fixtures/media/sample_short.wav` (no output means not ignored).

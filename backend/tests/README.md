@@ -1,180 +1,187 @@
 # Backend Tests
 
-This directory contains pytest tests for the OpenTranscribe backend.
+This directory contains the pytest suite for the OpenTranscribe backend (and, under `e2e/`, the
+Playwright browser tests). [CLAUDE.md](CLAUDE.md) in this directory holds the long-form rules,
+traps and rationale; this file is the how-to-run reference.
 
 ## Quick Start
 
 ```bash
-# Activate virtual environment
-source backend/venv/bin/activate
+# One-time: create the venv (see backend/CLAUDE.md for the full, current install steps)
+cd backend
+source venv/bin/activate
 
-# Run all backend tests (parallel, recommended)
-pytest backend/tests/ -n 4 --ignore=backend/tests/e2e -q
+# The dev stack provides Postgres (and MinIO/OpenSearch/Redis for the tests that use them)
+../opentr.sh start dev
 
-# Run with auto-detected parallelism
-pytest backend/tests/ -n auto --ignore=backend/tests/e2e -q
+# Run the fast suite. pyproject.toml's addopts already add -n auto, --strict-markers,
+# --timeout=300 and -m 'not integration and not gpu'; tests/e2e is excluded by norecursedirs.
+pytest
+
+# Or capture the run once and re-read it without re-running (full suite, no e2e)
+../scripts/run-backend-tests.sh
+../scripts/run-backend-tests.sh --summary     # re-report the LAST run; runs no tests
+../scripts/run-backend-tests.sh --failures
 ```
 
-## Test Categories
+Run `pytest` from `backend/` so `pyproject.toml` is the rootdir config. The `e2e/` suite has its
+own `pytest.ini` and is run through `scripts/e2e/` (see [e2e/README.md](e2e/README.md)).
 
-| Directory/File | Description | Requirements |
-|----------------|-------------|--------------|
-| `api/endpoints/` | API endpoint tests | PostgreSQL |
-| `e2e/` | Playwright E2E tests | Running server + browser |
-| `test_asr_settings.py` | ASR provider settings tests (68 tests) | PostgreSQL |
-| `test_auth_config_integration.py` | Auth config DB round-trip | PostgreSQL |
-| `test_auth_config_service.py` | Auth config service (mock-based) | `RUN_AUTH_CONFIG_TESTS=true` |
-| `test_fedramp_compliance.py` | FedRAMP compliance tests | PostgreSQL |
-| `test_fips_140_3.py` | FIPS 140-3 compliance | `RUN_FIPS_TESTS=true` |
-| `test_llm_settings.py` | LLM settings tests | `RUN_LLM_TESTS=true` |
-| `test_mfa_integration.py` | MFA integration tests | PostgreSQL |
-| `test_mfa_security.py` | MFA security tests | `RUN_MFA_TESTS=true` |
-| `test_pki_auth.py` | PKI authentication tests | `RUN_PKI_TESTS=true` |
-| `test_search_quality.py` | Search quality tests | Live server + indexed data |
-| `test_speaker_constraints.py` | Speaker database constraints | PostgreSQL |
-| `test_error_classification.py` | Error classification logic | None |
+## The test gates
 
-## Running Tests
+| Command | What it runs |
+|---------|--------------|
+| `./scripts/run-integration-tests.sh` | **The pre-merge gate** against the live stack: unit/API suite, the security suites under `FIPS_MODE=true`, `-m integration`, `-m gpu`, model-vs-schema drift, and the dependency-parity, session-lifetime, collection-determinism and mutation-ratchet phases. Flags: `--coverage`, `--e2e-smoke`, `--search-quality`, `--cleanup`, `--skip-gpu`, `--export-capability`. Exit 4 means a phase reported NOT MEASURED (not a pass). |
+| `./scripts/run-dev-tests.sh --full` | Quick branch check: backend gate, then e2e, then the frontend check, with one consolidated report. `--fast`, `--backend-only`, `--e2e-only`, `--frontend-only` select phases. |
+| `./scripts/run-diarization-gpu-tests.sh` | The container-only `-m gpu` diarization suites (the gate's `-m gpu` phase skips them in the venv). |
+| `./scripts/e2e/run-e2e.sh`, `./scripts/e2e/run-e2e-smoke.sh` | Playwright suite and a smoke subset. |
+| GitHub Actions `backend-tests` | A safety net only: fresh Postgres, CPU-only `requirements-ci.txt`, `SKIP_S3`/`SKIP_OPENSEARCH` forced on. |
 
-### Parallel Execution (Recommended)
+`scripts/test-matrix.sh` is the separate, exhaustive deployment-mode rehearsal run before a
+release, not a development loop.
 
-Tests use `pytest-xdist` for parallel execution, which significantly speeds up test runs:
+## Test Layout
 
-```bash
-# 4 parallel workers (good default)
-pytest backend/tests/ -n 4 --ignore=backend/tests/e2e
+| Directory | Contents | Requirements |
+|-----------|----------|--------------|
+| `unit/` | Unit and guard tests (the bulk of the suite), including AST/static guards over the scripts and compose files | Postgres for those that use `db_session`; otherwise none |
+| `api/` | API endpoint tests (`api/endpoints/` plus `api/test_*.py`) | Postgres |
+| top-level `test_*.py` | Older suites: ASR/LLM/auth-config settings, MFA, PKI, FIPS, FedRAMP, chat, admin, search quality, etc. | Postgres unless noted in the file |
+| `services/`, `transcription/`, `redaction/`, `onnx/` | Service, ASR/diarization, redaction and ONNX tests | Some need model weights (`@pytest.mark.models`) or `HF_TOKEN` |
+| `integration/` | Tests that need the live stack (`integration` marker), GPU (`gpu`), or a few service-free ones | See "Markers" |
+| `eval/` | The RAG evaluation harness and its logic tests | See `CLAUDE.md` ("`tests/eval/`") |
+| `e2e/` | Playwright browser tests | Running stack + browser; see its README |
+| `fixtures/` | Shared fixtures and golden data (mock LLM/ASR providers, search corpus, boundary and media fixtures); registered via `pytest_plugins` in `conftest.py` | n/a |
 
-# Auto-detect CPU cores
-pytest backend/tests/ -n auto --ignore=backend/tests/e2e
+## Markers
 
-# Sequential (slower, useful for debugging)
-pytest backend/tests/ --ignore=backend/tests/e2e
-```
+Registered in `backend/pyproject.toml` under `[tool.pytest.ini_options] markers`; the list there
+is authoritative (`--strict-markers` makes an unregistered marker a collection error, so register
+a new one before using it). The default `addopts` deselect `integration` and `gpu`.
 
-### Specific Test Files
+`slow`, `unit`, `pki`, `e2e`, `integration` (needs the running dev environment), `gpu`,
+`models` (needs ML weights), `ddl_exclusive` (schema DDL; put it on the test, never the module),
+`multi_gpu` (needs a `--gpu-scale`/`--gpu-split` worker topology), `export_capability`,
+`opt_in_gate` (behind its own `RUN_*` variable).
 
-```bash
-# Authentication tests (43 tests)
-pytest backend/tests/api/endpoints/test_auth_comprehensive.py -v
-
-# ASR settings tests (68 tests)
-pytest backend/tests/test_asr_settings.py -v
-
-# Admin endpoint tests
-pytest backend/tests/api/endpoints/test_admin.py -v
-
-# User management tests
-pytest backend/tests/api/endpoints/test_users.py -v
-
-# Tag tests
-pytest backend/tests/api/endpoints/test_tags.py -v
-```
-
-### Verbose Output
-
-```bash
-# Show test names
-pytest backend/tests/ -v --ignore=backend/tests/e2e
-
-# Show print statements
-pytest backend/tests/ -s --ignore=backend/tests/e2e
-
-# Stop on first failure
-pytest backend/tests/ -x --ignore=backend/tests/e2e
-```
+The `e2e/` markers live in `e2e/pytest.ini`, a separate rootdir config.
 
 ## Environment Variables
 
-The test suite uses these environment variables (set automatically by conftest.py):
+`conftest.py` sets these before any `app.*` import:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `TESTING` | `True` | Enables test mode |
-| `SKIP_CELERY` | `True` | Skips heavy AI module imports (torch, pyannote) |
-| `SKIP_S3` | `True` | Skips MinIO/S3 operations |
-| `SKIP_REDIS` | `True` | Skips Redis operations |
-| `SKIP_OPENSEARCH` | `True` | Skips OpenSearch operations |
-| `POSTGRES_HOST` | `localhost` | Database host for local testing |
-| `POSTGRES_PORT` | `5176` | Database port (Docker exposed port) |
+| Variable | Behaviour |
+|----------|-----------|
+| `TESTING`, `SKIP_CELERY`, `SKIP_REDIS`, `SKIP_WEBSOCKET` | Forced on; `ENVIRONMENT=testing`, `RATE_LIMIT_ENABLED=false` |
+| `SKIP_S3`, `SKIP_OPENSEARCH` | Auto-set by a TCP probe of `MINIO_HOST:MINIO_PORT` (default `localhost:5178`) and `OPENSEARCH_HOST:OPENSEARCH_PORT` (`localhost:5180`); an explicit shell value wins. Stack down means those suites **skip silently**. |
+| `POSTGRES_HOST` | Forced to `localhost` |
+| `POSTGRES_PORT` | `5176` (the dev stack) unless you export another value; for an isolated `--fresh` stack export its ports |
+| `AUDIT_LOG_TO_OPENSEARCH` | Defaults to `false` |
+| `CUDA_VISIBLE_DEVICES` | Set to `-1` unless the `-m` selection can pick a `gpu` test (issue #719); `OT_TEST_CUDA_VISIBLE_DEVICES` is the escape hatch |
 
-### Optional Test Flags
+Database credentials come from the repo's `.env` via `conftest.py`; the tests need that file (or
+the equivalent variables in the shell).
 
-Enable specific test suites with environment variables:
+### Opt-in `RUN_*` gates
+
+Opt-in gates are parsed by `tests/env_gate.py`'s `gate_enabled()` (accepts `1/true/yes/on`,
+raises on a typo). The seven security-suite gates that used to exist (`RUN_PKI_TESTS`,
+`RUN_MFA_TESTS`, `RUN_LLM_TESTS`, `RUN_FEDRAMP_TESTS`, `RUN_FIPS_TESTS`,
+`RUN_AUTH_CONFIG_TESTS`, `RUN_ADVANCED_ADMIN_TESTS`) are gone: those suites run by default, and
+files that still mention the names do so only in comments. To list the gates that are live, grep
+for the call, not the bare name:
 
 ```bash
-# Auth config service tests (mock-based)
-RUN_AUTH_CONFIG_TESTS=true pytest backend/tests/test_auth_config_service.py -v
-
-# LLM settings tests
-RUN_LLM_TESTS=true pytest backend/tests/test_llm_settings.py -v
-
-# FIPS 140-3 compliance tests
-RUN_FIPS_TESTS=true pytest backend/tests/test_fips_140_3.py -v
-
-# MFA security tests
-RUN_MFA_TESTS=true pytest backend/tests/test_mfa_security.py -v
-
-# PKI authentication tests
-RUN_PKI_TESTS=true pytest backend/tests/test_pki_auth.py -v
-
-# Search quality tests (requires live server)
-RUN_SEARCH_QUALITY_TESTS=true pytest backend/tests/test_search_quality.py -v
-
-# Advanced admin tests
-RUN_ADVANCED_ADMIN_TESTS=true pytest backend/tests/test_admin_security.py -v
+rg 'gate_enabled\(' backend/tests
 ```
 
-## Test Performance
+Currently that finds `RUN_SEARCH_QUALITY_TESTS` (`test_search_quality.py`, self-seeding),
+`RUN_SCHEMA_DRIFT_TESTS` (`unit/test_schema_drift.py`), `RUN_AUTH_E2E`, `RUN_PKI_E2E` (e2e), plus
+the opt-in `RUN_INDEX_AUDIT` and `RUN_EXPORT_CAPABILITY_TEST` and `RUN_PIPELINE_SMOKE`. The gate
+script exports the ones it owns; `backend/tests/unit/test_gate_run_env_vars_are_live.py` fails if
+a gate script sets a `RUN_*` that no test reads.
 
-### Why Tests Are Slow
+## Coverage
 
-1. **Heavy AI imports**: PyAnnote, WhisperX, and torch take ~10s to import
-2. **Database transactions**: Each test uses PostgreSQL with transaction rollback
-3. **Password hashing**: PBKDF2 with 210,000 iterations (FIPS compliant)
+Backend coverage is enforced, not report-only. Derive the current floor from the config instead
+of trusting a number written here:
 
-### Speedup Strategies
+```bash
+rg -n "fail_under" backend/pyproject.toml
+cd backend && pytest --cov=app --cov-report=term-missing        # or: ../scripts/run-integration-tests.sh --coverage
+```
 
-1. **Parallel execution**: Use `-n 4` or `-n auto` (pytest-xdist)
-2. **Skip AI imports**: `SKIP_CELERY=True` skips torch/pyannote in some paths
-3. **Run specific tests**: Target only the tests you need
+The floor is a ratchet: raise it when coverage rises, never lower it to make a run pass.
+Frontend coverage (`cd frontend && npm run test:coverage`) is report-only.
 
-### Typical Performance
+## Test-quality tooling
 
-| Test Suite | Sequential | Parallel (-n 4) |
-|------------|------------|-----------------|
-| auth_comprehensive (43 tests) | ~5 min | ~1.5 min |
-| All backend tests (~90 tests) | ~12 min | ~3-4 min |
+A test that cannot fail is worse than no test. These keep the suite honest:
+
+```bash
+python3 scripts/audit-tests.py backend/tests              # AST detectors; exits 1 on a new finding
+python3 scripts/audit-tests.py --selftest                 # run after touching a detector
+python3 scripts/audit-tests.py --help                     # lists the detector categories
+python3 scripts/analyze-test-timing.py <junit.xml>        # barriers / slow tail
+python3 scripts/audit-route-coverage.py                   # API routes no test references
+cd frontend && npm run test:audit && npm run test:audit:selftest   # the vitest sibling
+./scripts/run-mutation-tests.sh --module spans            # opt-in mutation testing, never in CI
+```
+
+The pytest auditor is a pre-commit hook and runs in the `backend-tests` CI job. Findings are
+exempted only through `backend/tests/audit-allowlist.txt`
+(`<file>::<test>::<category>  # reason`); a stale entry fails the run.
+
+## Running Specific Tests
+
+```bash
+cd backend
+pytest tests/api/endpoints/test_auth_comprehensive.py -v
+pytest tests/test_asr_settings.py -v
+pytest tests/api/endpoints/test_admin.py -v
+pytest tests/api/endpoints/test_users.py -v
+pytest tests/api/endpoints/test_tags.py -v
+
+pytest -n0 -x -s tests/unit/test_something.py      # serial, stop on first failure, show prints
+pytest -m integration                               # the live-stack tests (stack must be up)
+pytest -m gpu                                       # needs a GPU; the CUDA guard releases for this marker
+```
+
+Passing several paths from different directories in one invocation is a known sharp edge with
+pytest 9.1 (see `CLAUDE.md`, "Gotchas"); `fixtures/dir_collector_memo.py` works around it.
 
 ## Database Setup
 
-Tests require PostgreSQL running (via Docker Compose):
+Tests need PostgreSQL. Start the dev stack through the project script (not bare compose):
 
 ```bash
-# Start development environment
 ./opentr.sh start dev
-
-# Or just start PostgreSQL
-docker compose up -d postgres
 ```
 
-The test database uses the same PostgreSQL instance as development but with transaction rollback isolation - all test changes are rolled back after each test.
+The tests use the same PostgreSQL instance as development, isolated by a savepoint that is
+rolled back after each test (`db_session`). That rollback does **not** cover MinIO, OpenSearch,
+Redis or the filesystem; tests that touch those must clean up after themselves (see
+`CLAUDE.md`, "Cleaning up after tests"). A branch that adds an Alembic migration must be tested
+against a stack that has applied it. To run DB-backed tests without the dev stack, use the
+throwaway-Postgres recipe in `CLAUDE.md` ("Running DB-backed tests without the dev stack").
 
 ## Test Fixtures
 
-Key fixtures defined in `conftest.py`:
+Key fixtures in `conftest.py`:
 
 | Fixture | Scope | Description |
 |---------|-------|-------------|
-| `db_session` | function | Database session with transaction rollback |
-| `client` | function | FastAPI TestClient with test DB |
+| `db_session` | function | Database session using nested transactions (savepoints), rolled back per test |
+| `client` | function | FastAPI TestClient wired to the test session |
 | `normal_user` | function | Creates a regular user |
 | `admin_user` | function | Creates an admin user |
-| `user_token_headers` | function | Auth headers for regular user |
-| `admin_token_headers` | function | Auth headers for admin user |
+| `user_token_headers` | function | Auth headers for the regular user |
+| `admin_token_headers` | function | Auth headers for the admin user |
+
+Provider and corpus fixtures under `fixtures/` (for example `mock_llm`, `mock_asr`,
+`search_corpus`) are registered through `pytest_plugins` in the root `conftest.py`.
 
 ## Writing New Tests
-
-### Basic Test Structure
 
 ```python
 def test_example_endpoint(client, user_token_headers):
@@ -184,50 +191,51 @@ def test_example_endpoint(client, user_token_headers):
     assert "expected_field" in response.json()
 ```
 
-### Skip Tests Conditionally
+- Assert the exact status code (`!= 403` also passes on a 500) and assert a non-empty result
+  before looping over it. `scripts/audit-tests.py` rejects both shapes.
+- A test that cannot run on a given host should be deselected by marker, not left to skip.
+- Gate an opt-in suite with `gate_enabled`:
 
 ```python
 import pytest
-import os
 
-# Skip if external service not available
+from tests.env_gate import gate_enabled
+
 pytestmark = pytest.mark.skipif(
-    os.environ.get("SKIP_S3", "True").lower() == "true",
-    reason="S3/MinIO storage is disabled in test environment",
-)
-
-# Skip entire test class
-@pytest.mark.skipif(
-    os.environ.get("RUN_FEATURE_TESTS", "false").lower() != "true",
+    not gate_enabled("RUN_FEATURE_TESTS"),
     reason="Feature tests disabled (set RUN_FEATURE_TESTS=true to run)",
 )
-class TestNewFeature:
-    def test_something(self):
-        pass
 ```
+
+- Tests that share mutable global state need `pytest.mark.xdist_group("<name>")`; tests that run
+  schema DDL need `@pytest.mark.ddl_exclusive` on the test. See `CLAUDE.md`.
+- Never put an `__init__.py` in `tests/`.
 
 ## Troubleshooting
 
 ### "Connection refused" errors
 
-Ensure PostgreSQL is running:
+Ensure the stack is up:
 ```bash
 ./opentr.sh status
-# or
-docker compose ps
 ```
 
 ### Import errors
 
-Activate the virtual environment:
-```bash
-source backend/venv/bin/activate
-```
+Activate the virtual environment (`source backend/venv/bin/activate`); the install steps are in
+`backend/CLAUDE.md`.
 
-### Slow first run
+### Everything skipped under S3 / OpenSearch
 
-The first test run loads AI models (~10s). Subsequent runs in the same session are faster. Use parallel execution (`-n 4`) to mitigate.
+Those suites auto-enable only when `localhost:5178` / `localhost:5180` answer. A green run with
+the stack down proves less than it looks.
+
+### A schema error ("relation does not exist")
+
+You are probably running a feature branch against a stack at another revision. See
+`CLAUDE.md`, "A branch that adds a migration must be tested against a stack that has APPLIED it".
 
 ### Test isolation issues
 
-Each test uses database transaction rollback. If you see data leaking between tests, check that the test is using the `db_session` fixture correctly.
+If data leaks between tests, check that the test uses `db_session` correctly and, for
+committed-to-another-store data, that it cleans up in a `finally`/fixture teardown.

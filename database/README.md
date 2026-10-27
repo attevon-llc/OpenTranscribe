@@ -1,273 +1,94 @@
 <div align="center">
   <img src="../assets/logo-banner.png" alt="OpenTranscribe Logo" width="300">
 
-  # Database Schema & Initialization
+  # Database
 </div>
 
-This directory contains legacy database schema references for OpenTranscribe. The **Alembic migration chain** in `backend/alembic/versions/` is now the sole authority for the database schema.
+OpenTranscribe uses PostgreSQL. **The Alembic migration chain in `backend/alembic/versions/` is the
+sole authority for the schema.** This directory holds only a legacy reference file.
 
-## 📁 Contents
+## Contents
 
 ```
 database/
-├── init_db.sql    # Legacy reference only (schema defined by Alembic migrations)
-└── README.md      # This documentation
+├── init_db.sql    # Legacy reference snapshot. NOT used to create the schema.
+└── README.md      # This file
 ```
 
-## 🗄️ Database Schema Overview
+`init_db.sql` opens with a "REFERENCE ONLY" header: it is preserved for documentation and is far
+behind the current models (it defines a few dozen tables; the SQLAlchemy models define many more).
+It is not mounted by the Compose files and nothing applies it. Alembic revisions still mention it
+because releases up to v0.3.3 bootstrapped from it, and the migration runner can recognise such a
+database and stamp it. Do not edit it to change the schema, and do not treat its column lists as
+current.
 
-OpenTranscribe uses PostgreSQL as its primary database with a comprehensive schema supporting:
+## Where the schema actually lives
 
-### Core Tables
+| What | Where |
+|------|-------|
+| Schema authority (revisions) | `backend/alembic/versions/` (`v010_baseline.py` is the first) |
+| ORM models (the table list; table names are singular, e.g. `user`, `media_file`, `transcript_segment`, `speaker`, `tag`, `collection`, `task`) | `backend/app/models/` |
+| API schemas | `backend/app/schemas/` |
+| Startup migration runner and schema-version detection | `backend/app/db/migrations.py` |
+| Seed data and the bootstrap admin | `backend/app/initial_data.py` |
+| Written overview of the tables | `docs/database-schema.md` (check it against the models before relying on it) |
+| Model-versus-live-schema comparison | `scripts/check-schema-drift.py` |
 
-#### **Users & Authentication**
-- **`users`**: User accounts with role-based access control
-- **`user_settings`**: User-specific configuration storage (recording preferences, UI settings)
+The first `super_admin` is created by `app/initial_data.py` at startup. In a hardened environment
+it uses `INITIAL_ADMIN_EMAIL` / `INITIAL_ADMIN_PASSWORD`, or a generated password logged once;
+only a relaxed (development) environment seeds the documented dev credential. There is no separate
+creation script. Further super_admins are promoted from the admin UI.
 
-#### **Media & Content Management**
-- **`media_files`**: Core media file metadata with processing status
-- **`transcript_segments`**: Word-level transcript data with precise timing
-- **`speakers`**: Speaker identification and cross-video matching
-- **`comments`**: Time-stamped user annotations
-- **`tags`**: Content organization and categorization
-- **`collections`**: File organization into themed groups
+## How migrations run
 
-#### **AI-Powered Features**
-- **`user_llm_configurations`**: LLM provider settings with encrypted API keys
-- **`summary_prompts`**: Custom AI prompts for different content types
-- **`file_summaries`**: AI-generated summaries with BLUF format
-- **`summary_opensearch`**: Integration with OpenSearch for summary indexing
+`run_migrations()` in `backend/app/db/migrations.py` runs on backend startup (unless
+`RUN_MIGRATIONS_ON_STARTUP=false`, for deployments that run a separate migrate job) under a
+PostgreSQL advisory lock, and handles three cases:
 
-### Key Features
+1. **Empty database:** `alembic upgrade head`.
+2. **Existing database with no Alembic version table:** detect which revision its schema matches
+   (`_detect_schema_version()`), `stamp` it, then upgrade.
+3. **Already tracked:** apply pending revisions.
 
-#### **Enhanced User Settings System**
-- **Recording Preferences**: Duration limits, quality settings, auto-stop configuration
-- **LLM Integration**: Multi-provider support (OpenAI, Claude, vLLM, Ollama, etc.)
-- **Custom Prompts**: User-defined templates for different content types
+Running `alembic upgrade head` by hand is only for production-style operations; in development
+the backend does it on every start.
 
-#### **Advanced Media Processing**
-- **YouTube Integration**: URL processing with metadata extraction
-- **Progress Tracking**: Granular status updates for long-running operations
-- **Error Recovery**: Comprehensive error handling and retry mechanisms
+## Changing the schema
 
-#### **Real-Time Features**
-- **WebSocket Notifications**: Persistent notification system
-- **Upload Progress**: Concurrent file processing with queue management
-- **AI Processing Status**: Real-time updates for transcription and summarization
+The authoritative procedure is in `backend/app/db/CLAUDE.md`; `backend/alembic/CLAUDE.md` covers
+authoring the revision file. In short:
 
-## 🚀 Database Initialization
+1. Add a new idempotent revision in `backend/alembic/versions/` (`IF NOT EXISTS`, guarded `DO`
+   blocks). Take a revision number that does not collide with other open branches, and derive the
+   current head from the `down_revision` graph rather than from any list written in prose.
+2. Update the SQLAlchemy model in `backend/app/models/`.
+3. Update the Pydantic schema in `backend/app/schemas/` if it is exposed through the API.
+4. Add a detection guard for the new revision to `_detect_schema_version()` (a marker unique to
+   the revision, at the top of the newest-first ladder), or untracked databases are mis-stamped.
+5. Test both paths: a full chain from scratch (`./opentr.sh reset dev`) and a restart over an
+   existing database.
 
-### Development Setup
+Do not autogenerate migrations inside the hot-reloading dev container.
 
-The database is initialized by running the full Alembic migration chain (`alembic upgrade head`):
+## Operations
 
 ```bash
-# Reset and initialize development database
-./opentr.sh reset dev
+./opentr.sh start dev                         # migrations run automatically at backend startup
+./opentr.sh backup                            # database backup (see ./opentr.sh for destination)
+./opentr.sh restore backups/<file>.sql        # restore a backup
+./opentr.sh reset dev                         # DESTRUCTIVE: asks for confirmation, then deletes
+                                              # all data and rebuilds from the full migration chain
+./opentr.sh data-paths                        # resolved live data paths; check before any reset
+python backend/scripts/db_inspect.py          # inspect the tag tables (see backend/scripts/README.md)
 ```
 
-**⚠️ WARNING**: This command deletes ALL existing data and recreates the database from scratch.
+`./opentr.sh reset` deletes data. If a NAS or bind-mount overlay is active it can be the live
+dataset: run `./opentr.sh data-paths` first, and use `./opentr.sh start dev --fresh <name>` for any
+throwaway or experimental database instead.
 
-### Schema Management Approach
+## References
 
-- **Source of Truth**: Alembic migrations in `backend/alembic/versions/` define the complete schema
-- **Bootstrap Migration**: `v000_bootstrap.py` creates all tables from scratch on empty databases
-- **Incremental Migrations**: Subsequent migrations handle schema evolution with rollback support
-- **Reset**: `./opentr.sh reset dev` drops the database and runs the full migration chain
-
-## 📊 Schema Details
-
-### User Management
-
-```sql
--- Core user table with role-based access
-CREATE TABLE users (
-    id SERIAL PRIMARY KEY,
-    username VARCHAR(50) UNIQUE NOT NULL,
-    email VARCHAR(100) UNIQUE NOT NULL,
-    hashed_password VARCHAR(255) NOT NULL,
-    is_active BOOLEAN DEFAULT TRUE,
-    is_superuser BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Flexible user settings with key-value storage
-CREATE TABLE user_settings (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-    setting_key VARCHAR(100) NOT NULL,
-    setting_value TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### AI Integration
-
-```sql
--- LLM provider configurations with encrypted storage
-CREATE TABLE user_llm_configurations (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-    provider VARCHAR(50) NOT NULL,
-    model_name VARCHAR(100),
-    api_key_encrypted TEXT,
-    base_url VARCHAR(500),
-    -- Additional configuration fields...
-);
-
--- Custom AI prompts for different content types
-CREATE TABLE summary_prompts (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-    name VARCHAR(200) NOT NULL,
-    description TEXT,
-    prompt_text TEXT NOT NULL,
-    content_type VARCHAR(50) DEFAULT 'general',
-    is_active BOOLEAN DEFAULT TRUE,
-    -- Metadata fields...
-);
-```
-
-### Media Processing
-
-```sql
--- Enhanced media files with comprehensive metadata
-CREATE TABLE media_files (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-    filename VARCHAR(255) NOT NULL,
-    original_filename VARCHAR(255),
-    file_size BIGINT,
-    duration FLOAT,
-    status VARCHAR(50) DEFAULT 'pending',
-    -- Processing metadata...
-    youtube_url VARCHAR(500),
-    error_message TEXT,
-    retry_count INTEGER DEFAULT 0,
-    -- Timestamps...
-);
-
--- AI-generated summaries with status tracking
-CREATE TABLE file_summaries (
-    id SERIAL PRIMARY KEY,
-    file_id INTEGER REFERENCES media_files(id) ON DELETE CASCADE,
-    summary_data JSONB,
-    processing_status VARCHAR(50) DEFAULT 'pending',
-    -- Additional fields...
-);
-```
-
-## 🔧 Database Operations
-
-### Common Operations
-
-#### Reset Development Database
-```bash
-# Complete database reset (DESTRUCTIVE)
-./opentr.sh reset dev
-```
-
-#### Check Database Status
-```bash
-# Inspect database state
-python backend/scripts/db_inspect.py
-```
-
-#### The bootstrap admin
-The first `super_admin` is seeded by `app/initial_data.py` at startup; there is no
-separate creation script. Further super_admins are promoted from the admin UI
-(Settings → Users → Role), which is audited and refuses to demote the last one.
-
-### Production Operations (Future)
-
-#### Apply Migrations
-```bash
-# Apply all pending migrations
-alembic upgrade head
-```
-
-#### Backup Database
-```bash
-# Create database backup
-./opentr.sh backup
-```
-
-#### Restore Database
-```bash
-# Restore from backup
-./opentr.sh restore backups/backup_file.sql
-```
-
-## 📈 Performance Optimizations
-
-### Indexing Strategy
-- **Primary Keys**: All tables have efficient primary key indexes
-- **Foreign Keys**: Automatic indexing on all foreign key relationships
-- **Search Fields**: Optimized indexes for frequently searched columns
-- **Composite Indexes**: Multi-column indexes for complex queries
-
-### Connection Management
-- **Connection Pooling**: Efficient database connection reuse
-- **Transaction Management**: Proper isolation and rollback handling
-- **Session Optimization**: Context-aware session management
-
-## 🔒 Security Features
-
-### Data Protection
-- **API Key Encryption**: All sensitive credentials encrypted at rest
-- **User Isolation**: Row-level security for multi-tenant data
-- **Input Validation**: Comprehensive SQL injection protection
-- **Audit Logging**: Track sensitive data modifications
-
-### Access Control
-- **Role-Based Permissions**: Admin and user role separation
-- **Resource Ownership**: Users can only access their own data
-- **Session Security**: Secure JWT-based authentication
-
-## 🚨 Migration Strategy
-
-### Migration-Based Schema Management
-
-The project now uses Alembic migrations for all environments:
-
-1. **Bootstrap Migration**: `v000_bootstrap.py` creates the full schema from scratch
-2. **Incremental Migrations**: Each `v0XX_*.py` file handles one schema evolution step
-3. **Automatic Startup**: Backend runs `alembic upgrade head` on startup
-4. **Future Changes**: All schema changes go through new Alembic migration files
-
-### Migration Best Practices
-- **Review Generated Migrations**: Always verify auto-generated migration scripts
-- **Test on Staging**: Validate migrations on staging environment first
-- **Backup Before Migration**: Create full database backup before applying changes
-- **Rollback Planning**: Ensure rollback procedures are tested and documented
-
-## 🛠️ Development Guidelines
-
-### Schema Modifications
-
-When modifying the database schema:
-
-1. **Create Alembic Migration**: Add a new migration in `backend/alembic/versions/`
-2. **Update SQLAlchemy Models**: Modify corresponding models in `backend/app/models/`
-3. **Update Pydantic Schemas**: Adjust validation schemas in `backend/app/schemas/`
-4. **Update Migration Detection**: Update `backend/app/db/migrations.py` for the new version
-5. **Test**: Run `./opentr.sh reset dev` to verify the full migration chain
-6. **Test Thoroughly**: Verify all functionality works with new schema
-
-### Best Practices
-- **Keep Schemas in Sync**: Ensure SQL, SQLAlchemy, and Pydantic schemas match
-- **Document Changes**: Add comments for complex schema modifications
-- **Test Data Migration**: Ensure existing data can be migrated safely
-- **Performance Impact**: Consider query performance implications of schema changes
-
-## 📚 References
-
-- [PostgreSQL Documentation](https://www.postgresql.org/docs/)
-- [SQLAlchemy ORM Documentation](https://docs.sqlalchemy.org/)
-- [Alembic Migration Documentation](https://alembic.sqlalchemy.org/)
-- [FastAPI Database Integration](https://fastapi.tiangolo.com/tutorial/sql-databases/)
-
----
-
-The database layer provides a robust foundation for all OpenTranscribe functionality with comprehensive schema design, security features, and development workflow support.
+- [`backend/app/db/README.md`](../backend/app/db/README.md) - database layer layering and sessions
+- [`backend/alembic/README.md`](../backend/alembic/README.md) - Alembic setup
+- [PostgreSQL documentation](https://www.postgresql.org/docs/)
+- [Alembic documentation](https://alembic.sqlalchemy.org/)

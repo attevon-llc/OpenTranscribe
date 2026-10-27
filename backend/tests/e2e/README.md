@@ -9,16 +9,20 @@ End-to-end tests using pytest-playwright to verify frontend and backend work tog
    ./opentr.sh start dev
    ```
 
-2. **Python venv with dependencies:**
+2. **Python venv with dependencies:** `pytest-playwright`, `playwright` and `axe-playwright-python`
+   come from `backend/requirements-dev.txt` (see `backend/CLAUDE.md` for the venv setup). Then
+   install the browser once:
    ```bash
    source backend/venv/bin/activate
-   pip install pytest-playwright
    playwright install chromium
    ```
 
-3. **Services accessible:**
+3. **Services accessible** (defaults; `E2E_FRONTEND_URL` / `E2E_BACKEND_URL` or
+   `run-e2e.sh --fresh <name>` retarget an isolated stack):
    - Frontend: http://localhost:5173
    - Backend: http://localhost:5174
+
+4. **ffmpeg** on the host (the media fixtures are generated with it; tests skip without it).
 
 ## Running Tests
 
@@ -54,12 +58,27 @@ DISPLAY=:11 pytest backend/tests/e2e/ -v --headed
 
 ```bash
 ./scripts/e2e/run-e2e.sh                # full suite (checks the stack first)
-./scripts/e2e/run-e2e-smoke.sh          # quick read-mostly subset (~3 min)
-./scripts/e2e/run-e2e.sh -m upload      # one marker
-./scripts/e2e/run-e2e.sh --headed       # visible browser (DISPLAY=:11)
+./scripts/e2e/run-e2e-smoke.sh          # quick read-mostly subset (five test files, listed in the script)
+./scripts/e2e/run-e2e.sh -m upload      # one marker (single pytest run, no skip ceilings)
+DISPLAY=:11 ./scripts/e2e/run-e2e.sh --headed   # visible browser
+./scripts/e2e/run-e2e.sh --fresh myname # target an isolated `--fresh --port-offset` deployment
+./scripts/e2e/update-visual-baselines.sh --reason "<why>"   # the supported way to refresh visual baselines
 ```
 
+Without `-m`/`-n`, `run-e2e.sh` runs three phases: (1) everything except `visual`, `chat` and
+`support_access` in parallel (`E2E_WORKERS`, default 3, `--dist loadfile`), (2) `-m chat`
+serially, (3) `-m visual` serially. Each phase writes a junit XML (printed at the end) and has
+a skip ceiling; over the ceiling the run exits 4 (NOT MEASURED) instead of passing. Prefer the
+runner to a bare `pytest` for the full suite.
+
+Visual baselines in `__screenshots__/` must not be refreshed by running
+`UPDATE_SCREENSHOTS=1 pytest` against the shared dev stack: the image then measures that stack's
+library, not the UI. Use `update-visual-baselines.sh`.
+
 ### Markers
+
+The registered markers are the `markers =` list in [pytest.ini](pytest.ini) (it is the
+authority; `--strict-markers` is on, and a unit test keeps the list and the usage in sync):
 
 ```bash
 pytest backend/tests/e2e/ -m upload          # upload stepper flows
@@ -67,8 +86,16 @@ pytest backend/tests/e2e/ -m search          # search page
 pytest backend/tests/e2e/ -m settings        # settings modal
 pytest backend/tests/e2e/ -m transcription   # transcript view/editing
 pytest backend/tests/e2e/ -m "not slow"      # skip slow tests
-# also: gallery, auth, smoke, pki, responsive, visual, api_e2e
+# also: slow, auth, pki, keycloak, ldap, watch, e2e, gallery, responsive, visual, chat,
+#       pipeline_smoke, tags, collections, support_access, a11y
 ```
+
+Several markers need a deployment shape: `keycloak`/`ldap` need the test IdP containers
+(`./opentr.sh start dev --with-keycloak-test` / `--with-ldap-test`), `watch` needs `--with-watch`,
+`chat` needs an LLM provider (`--with-mock-llm` works) and a completed transcript,
+`support_access` needs `TENANCY_MODE=multi`, and `pipeline_smoke` is strictly opt-in
+(`RUN_PIPELINE_SMOKE=1`, needs `--with-llm-test`; `run-dev-tests.sh --with-pipeline-smoke`
+arranges it).
 
 ### Additional Options
 
@@ -83,7 +110,7 @@ pytest backend/tests/e2e/ -v --headed --slowmo 100
 ### Media Fixtures
 
 `sample_audio` / `sample_video` fixtures generate tiny clips with **ffmpeg**
-into `backend/tests/e2e/fixtures/` (gitignored, cached) — no external
+into `backend/tests/e2e/fixtures/` (created on first use, gitignored, cached) — no external
 downloads. Upload tests delete everything they create through the API, so
 the dev environment stays clean.
 
@@ -91,25 +118,29 @@ the dev environment stays clean.
 
 ```
 backend/tests/e2e/
-├── conftest.py                       # Shared fixtures
-├── pytest.ini                        # E2E-specific pytest config
+├── conftest.py                       # Shared fixtures and the stack preflight
+├── pytest.ini                        # E2E-specific pytest config (separate rootdir config)
 ├── README.md                         # This file
+├── a11y-allowlist.txt, a11y_lib.py   # axe-core allowlist (count-aware, per surface) and its helpers
+├── __screenshots__/                  # committed visual-regression baselines (light/dark)
+├── screenshot-provenance/            # provenance records for those baselines
 ├── fixtures/                         # ffmpeg-generated media (gitignored)
-├── test_auth_flow.py                 # Combined auth flow tests
-├── test_auth_buttons.py              # Auth method button visibility tests
-├── test_login.py                     # Comprehensive login tests (~50 tests)
-├── test_registration.py              # Comprehensive registration tests (~35 tests)
-├── test_mfa.py                       # MFA TOTP tests
-├── test_pki.py                       # PKI certificate auth E2E (requires TLS overlay)
-├── test_ldap_oidc.py             # LDAP + Keycloak config + login tests
-├── test_gallery_actions.py           # File gallery UI action tests
-├── test_upload.py                    # Upload stepper flows (@upload)
-├── test_search.py                    # Search page (@search)
-├── test_settings_modal.py            # Settings modal incl. profile/transcription (@settings)
-├── test_file_detail_transcript.py    # Transcript view + segment editing (@transcription)
-├── test_speaker_gender_clusters.py   # Speaker gender/cluster UI tests
-└── test_speaker_sharing.py           # Speaker sharing UI tests
+├── stack_urls.py, timeouts.py, frontend_warm.py, idp_overlay.py,
+│   ldap_fixture_users.py, owned_corpus.py, _visual_diff.py   # support modules (not tests)
+└── test_*.py                         # one file per surface (below)
 ```
+
+Test files: `test_a11y`, `test_audio_extraction`, `test_auth_buttons`, `test_auth_flow`,
+`test_chat`, `test_chat_grounding`, `test_chat_trace_panel`, `test_collection_management`,
+`test_collection_sharing`, `test_file_detail_transcript`, `test_file_status_nav`,
+`test_full_pipeline_smoke`, `test_gallery_actions`, `test_gallery_list_alignment`,
+`test_language_switch`, `test_ldap_oidc`, `test_local_models`, `test_login`,
+`test_media_download`, `test_media_download_ui`, `test_mfa`, `test_pki`, `test_preflight_guard`,
+`test_redaction_e2e`, `test_registration`, `test_responsive`, `test_search`,
+`test_settings_modal`, `test_settings_pipeline`, `test_shared_file_permissions`,
+`test_speaker_gender_clusters`, `test_speaker_sharing`, `test_support_access`,
+`test_tag_management`, `test_upload`, `test_visual_regression`, `test_watch_sources_e2e`.
+`ls backend/tests/e2e/test_*.py` is the current list.
 
 ## Available Fixtures
 
@@ -173,31 +204,12 @@ def test_example(self, page: Page, base_url: str, backend_url: str):
 
 ## Test Categories
 
-### Login Tests (`test_login.py`)
+### Login and Registration Tests (`test_login.py`, `test_registration.py`)
 
-| Class | Tests | Description |
-|-------|-------|-------------|
-| `TestLoginFormValidation` | 3 | Required field validation |
-| `TestLoginSuccess` | 4 | Successful login scenarios |
-| `TestLoginFailure` | 5 | Failed login scenarios |
-| `TestLoginSecurity` | 3 | Password hiding, rate limiting |
-| `TestLoginSession` | 2 | Session persistence |
-| `TestLoginUI` | 5 | UI elements verification |
-| `TestAlternativeAuth` | 2 | Keycloak, PKI options |
-| `TestLoginAccessibility` | 3 | Labels, keyboard navigation |
-| `TestLoginConsoleErrors` | 2 | No JS errors |
-
-### Registration Tests (`test_registration.py`)
-
-| Class | Tests | Description |
-|-------|-------|-------------|
-| `TestRegistrationFormValidation` | 5 | All fields required |
-| `TestUsernameValidation` | 3 | Username constraints |
-| `TestEmailValidation` | 3 | Email format validation |
-| `TestPasswordValidation` | 7 | Password complexity, mismatch |
-| `TestDuplicatePrevention` | 2 | Duplicate email/username |
-| `TestRegistrationSuccess` | 2 | Success flow, can login after |
-| `TestRegistrationUI` | 4 | UI elements verification |
+Form validation, success and failure paths, security (password hiding, rate limiting), session
+persistence, UI elements, alternative-auth buttons, accessibility and console errors for login;
+field validation, duplicate prevention, success flow and UI for registration. Registration tests
+delete the users they create. Classes and counts change; read the files.
 
 ### Auth Method Tests (`test_auth_buttons.py`)
 Verifies that auth method buttons (LDAP, Keycloak, PKI) appear or are hidden based on server configuration. Always runs (no extra flags needed).
@@ -213,11 +225,11 @@ RUN_PKI_E2E=true pytest backend/tests/e2e/test_pki.py -v --headed
 PKI URL: `https://localhost:5182`
 
 ### LDAP/Keycloak Tests (`test_ldap_oidc.py`)
-Config UI and login flow for LDAP and Keycloak. Requires running containers:
+Config UI and login flow for LDAP and Keycloak. Requires running containers (`--with-ldap-test`, `--with-keycloak-test`):
 ```bash
 RUN_AUTH_E2E=true pytest backend/tests/e2e/test_ldap_oidc.py -v
 ```
-See `tests/AUTH_TEST_SETUP.md` for container setup instructions.
+See `backend/tests/AUTH_TEST_SETUP.md` for container setup instructions.
 
 ## Writing New Tests
 
@@ -323,7 +335,12 @@ Increase timeout or add explicit waits:
 page.wait_for_selector("#element", timeout=30000)
 ```
 
-### Tests pass locally but fail in CI
-E2E tests require the full dev environment running. In CI, either:
-- Skip E2E tests: `pytest backend/tests/ --ignore=backend/tests/e2e/`
-- Set up services in CI pipeline
+### Tests pass locally but are not run in CI
+E2E is local-only by design (there is no GitHub Actions e2e job); it needs the full dev stack. The
+default `pytest` run in `backend/` already skips this directory (`norecursedirs`), so the unit/API
+suite never starts a browser.
+
+### Many tests time out at once, or `#email` never appears
+Suspect the stack, not the tests: a restarting backend keeps its port open while the SPA waits on
+a 60 s auth probe. The suite's preflight (see `backend/tests/CLAUDE.md`, "Before you debug a flaky
+E2E test") checks for that; also do not run `pre-commit` or edit `backend/app` while E2E runs.

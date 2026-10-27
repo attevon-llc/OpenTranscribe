@@ -4,7 +4,86 @@ Status: **PLAN ONLY.** Written 2026-10-27 against `feat/privacy-controls-1280` @
 Line numbers drift; search for the quoted symbol. Parent design: `docs/design/v060_privacy_controls_plan.md`
 (D5 "switching off hides", §3.3 purge). Owner decisions: `docs/design/v060_owner_decisions.md`.
 
-Implementation lanes (already created, both at `f63b4043`):
+## Reconciliation with merged fixes (2026-10-27, Phase 0 lane)
+
+Phase 0 was built on `feat/privacy-provenance-1280` at `68be07c4` (the privacy integration
+branch after the read-surface and purge-scope fix lanes merged, `git log f29ed461..68be07c4`).
+Those lanes changed the ground this plan was written on. What follows supersedes §3-§6 where they
+disagree; the lane briefs (`docs/design/1280_provenance_lane_{a,b}_brief.md`) are written against
+it and are what implementers execute.
+
+**Already done by the merged fixes (do not redo):**
+- `canonical_speaker_label_for_row(row, db=None)` asks the policy itself (through
+  `PrivacyView`) and withholds an unverified voiceprint suggestion while the row's file is off.
+  Every read surface that uses it (exports, captions, chunk index and reindex, rename
+  propagation, chat roster, `transcript_builders`, `formatting_service`, `files/crud`) therefore
+  already hides suggestion-made names. File detail redacts BEFORE computing status.
+- `SpeakerMatchingService._scope_gate` judges a named speaker in its FILE's scope (plan §6.3's
+  `_voiceprints_allowed(profile.user_id, ...)` must follow the same rule).
+- `PurgeScope.speaker_filters()` selects speakers through their file's tenant: the §6.2 purge
+  steps use it, never `sql_filters(Speaker)`.
+- `speaker_cleanup.profile_move_impact` reconciles the profile a speaker LEFT whatever the switch.
+- `services/privacy/label_reindex.py` + hooks in `policy_admin` (instance / user / org switch
+  changes) re-index files whose label a voiceprint suggestion decides. This IS plan §5.9 in a
+  simpler shape (synchronous, in the request, no pending record, no audit event).
+
+**Phase 0 as built (shape changes against §3):**
+- Label API: `canonical_speaker_label(..., verified=None, identity_source=None,
+  voiceprint_names=True)` (pure) and `canonical_speaker_label_for_row(row, db=None, *,
+  voiceprint_names: bool | None = None)`: `None` asks the policy (the merged behaviour, kept),
+  `True` is policy-free, `False` withholds. Hidden while off: a `display_name` with
+  `identity_source = 'voiceprint'`; a voiceprint suggestion unless a person verified it (a
+  `verified` written by a voiceprint path does not count). A columns-only row that did not select
+  `identity_source`, names somebody, and whose file is off raises `TypeError` (seen firing on
+  six existing tests before the four columns-only queries below selected the column).
+- `voiceprint_label_hidden` is replaced by `redact_view.voiceprints_off_for_row(row, db)` (the
+  file-scope half; fails closed); the predicate half now lives in the pure label.
+- `visible_profile_id` lives in `app/utils/speaker_identity_source.py` (with the constants and the
+  D2 helpers and `BACKFILL_RECORD_SETTING_KEY`), not `speaker_labels.py`.
+- `redact_view`: `hides_voiceprint_suggestion` also hides when `identity_source = 'voiceprint'`;
+  `hide_machine_identities(view, rows) -> changed rows`; `redact_speaker_rows` runs it first and
+  recomputes the four status fields of every row whose name, link or suggestion it changed;
+  `PrivacyView.label_for_row`; `machine_identity_clauses` / `visible_display_name_expr` /
+  `visible_profile_id_expr` as specified.
+- `SpeakerStatusService.compute_speaker_status(speaker, *, voiceprint_names=None)`;
+  `update_speaker_status_in_db` passes `True`, so a PERSISTED `resolved_display_name` stays
+  policy-free (D5). Before this, the merged fix persisted the policy-dependent label.
+- Migration v449: the CHECK is added validated (one transaction: `NOT VALID` + `VALIDATE` buys
+  nothing there). Q1 backfill as D3, and the stamped count is logged
+  (`v449: recognised N existing speaker identities ...`) and recorded once in `system_settings`
+  key `privacy.identity_source_backfill` (JSON `revision`, `stamped`, `recorded_at`); the
+  downgrade removes the record. Detection arm keys on `ck_speaker_identity_source`.
+- Tests: T0.1 `tests/unit/test_v449_migration_consistency.py`; T0.2 in a new
+  `tests/unit/test_speaker_identity_source.py` (helpers + label contract) rather than
+  `test_canonical_speaker_label.py`; T0.3 appended to `tests/unit/test_privacy_redact_view.py`.
+
+**Lane-owned files Phase 0 had to touch** (one line each, adding `Speaker.identity_source` to a
+columns-only query that feeds the label, which would otherwise raise): `app/tasks/reindex_task.py`,
+`app/tasks/rename_propagation_task.py`, `app/services/captions/source.py`,
+`app/services/chat/speaker_resolver.py` (Lane A); and `app/services/speaker_status_service.py`
+(owned by neither lane).
+
+**Migration parent, for the integrator.** v449 revises `v447_add_content_hold` because this branch
+does not hold wave-1's `v448_task_one_active_row_per_file_step`. When both are on one branch:
+1. `backend/alembic/versions/v449_add_speaker_identity_source.py`:
+   `down_revision = "v448_task_one_active_row_per_file_step"` (and the docstring `Revises:` line).
+2. `backend/tests/unit/test_v449_migration_consistency.py`:
+   `PARENT = "v448_task_one_active_row_per_file_step"`.
+3. `backend/app/db/migrations.py` v449 arm: add `and has_task_active_unique` (v448's marker).
+`test_v449_revision_chain` fails with this instruction while two heads exist; then run
+`python3 scripts/release-tests/lib/alembic-head.py backend` (must print one head).
+
+**Final lane split** (supersedes §4's table where they differ):
+- **Lane A, reads + resync**: §5 surfaces, now mostly "thread one decision per file" (the
+  merged `for_row` builds a fresh `PrivacyView` per call: per-segment policy queries) plus the
+  profile LINK (`visible_profile_id`) everywhere it is indexed or shown, gallery/collections/
+  filter, profile counts, rename-propagation-while-off, and turning `label_reindex.py` into the
+  durable, audited resync (§5.9 requirements on the existing module; no second module).
+- **Lane B, writes + purge + docs**: §6 (every D2 write site, rename/unassign/merge/split/
+  promote semantics, the hide-and-delete purge with measured counts, residual verification and
+  per-store audit, occurrences, name directory) and all user-facing docs.
+
+Implementation lanes (as first planned, both at `f63b4043`; superseded by the split above):
 
 | Lane | Worktree | Branch | Owns |
 |---|---|---|---|

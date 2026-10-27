@@ -227,7 +227,7 @@ client_body_timeout 600s;
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NGINX_SERVER_NAME` | _(required)_ | Hostname for the NGINX server block |
+| `NGINX_SERVER_NAME` | _(unset)_ | Hostname for the NGINX server block. Setting it is what adds `docker-compose.nginx.yml` to the stack (`./opentr.sh start prod` and `./opentranscribe.sh start` both do this, and refuse to start if the certificate files are missing) |
 | `NGINX_HTTP_PORT` | `80` | HTTP port (redirects to HTTPS) |
 | `NGINX_HTTPS_PORT` | `443` | HTTPS port |
 | `NGINX_CERT_FILE` | `./nginx/ssl/server.crt` | Path to SSL certificate |
@@ -252,9 +252,11 @@ echo "0 0 1 * * certbot renew --quiet && docker compose restart nginx" | sudo te
 | `/` | `frontend:8080` | Svelte SPA |
 | `/api/ws` | `backend:8080` | WebSocket notifications |
 | `/api/` | `backend:8080` | REST API |
-| `/flower/` | `flower:5555` | Celery monitoring dashboard |
+| `/docs/` | `docs:8080` | Embedded documentation site |
+| `/flower/` | `flower:5555` | Celery monitoring dashboard (admin and super admin only: nginx checks the session with `auth_request` before proxying) |
 | `/minio/` | `minio:9001` | MinIO console |
 | `/s3/` | `minio:9000` | S3 API (presigned URLs) |
+| `/metrics`, `/metrics/queues` | _(none)_ | Answered with 404 at the proxy; Prometheus scrapes the backend over the internal network |
 
 ---
 
@@ -289,7 +291,7 @@ PG_MAX_CONNECTIONS=300
 
 ### Connection Security
 
-- PostgreSQL listens only on the Docker bridge network (port 5432 is internal).
+- PostgreSQL's host port is published on `127.0.0.1` only (`POSTGRES_PORT`, default 5176), so it is not reachable from the network.
 - Set strong credentials in `.env`:
 
 ```bash
@@ -298,7 +300,7 @@ POSTGRES_PASSWORD=<generate-a-strong-random-password>
 POSTGRES_DB=opentranscribe
 ```
 
-- In production, **remove or firewall the host-mapped PostgreSQL port** (`POSTGRES_PORT`) if you do not need direct database access from the host. Comment it out in your `.env` or set it to an empty value.
+- The loopback mapping cannot be removed by unsetting `POSTGRES_PORT` (the compose file falls back to the default when the variable is unset or empty). Leave it, or drop it with your own compose override if you do not want even local host access.
 
 ### Backups
 
@@ -308,7 +310,7 @@ Use the built-in backup command:
 ./opentranscribe.sh backup
 ```
 
-This creates a timestamped SQL dump in the `backups/` directory. For automated backups, add a cron job:
+This creates a timestamped SQL dump and a matching `.voiceprints.ndjson` file (speaker voiceprints, which are not in PostgreSQL) in the `backups/` directory; keep the two together. See [Backup & Restore](./backup-restore.md), including the built-in scheduled backups. For OS-level automated backups, add a cron job:
 
 ```bash
 0 2 * * * cd /opt/opentranscribe && ./opentranscribe.sh backup
@@ -491,7 +493,7 @@ Note that Redis is also the Celery broker, so a Redis outage stops transcription
 
 ### Network Isolation
 
-In production, **do not expose the Redis port to the host.** Remove or comment out the `REDIS_PORT` mapping in `.env` so Redis is only accessible within the Docker network.
+Redis's host port is published on `127.0.0.1` only (`REDIS_PORT`, default 5177), so it is not reachable from the network. Do not widen that binding.
 
 When using a managed Redis (ElastiCache or equivalent), enable **encryption in transit** and point `REDIS_URL` at the `rediss://` scheme -- the Celery configuration detects it and enables TLS for both the broker and the result backend.
 
@@ -642,23 +644,14 @@ All services communicate over a single Docker bridge network (`default`). In pro
 
 ### Restricting Exposed Ports
 
-In your production `.env`, remove or unset all development port mappings:
+The published host ports fall into two groups. Unsetting the variables does **not** remove a mapping, because every mapping is written `${VAR:-default}` and an unset or empty variable falls back to the default.
 
-```bash
-# Comment out or remove these in production
-# POSTGRES_PORT=5176
-# REDIS_PORT=5177
-# MINIO_PORT=5178
-# MINIO_CONSOLE_PORT=5179
-# OPENSEARCH_PORT=5180
-# OPENSEARCH_ADMIN_PORT=5181
-# BACKEND_PORT=5174
-# FLOWER_PORT=5175
-```
+| Binding | Services (variable, default port) | Reachable from the network? |
+|---|---|---|
+| `127.0.0.1` only | PostgreSQL (`POSTGRES_PORT` 5176), Redis (`REDIS_PORT` 5177), MinIO API and console (`MINIO_PORT` 5178, `MINIO_CONSOLE_PORT` 5179), OpenSearch (`OPENSEARCH_PORT` 5180, `OPENSEARCH_ADMIN_PORT` 5181), Flower (`FLOWER_PORT` 5175) | No |
+| All interfaces | Backend API (`BACKEND_PORT` 5174), frontend (`FRONTEND_PORT` 5173), docs (`DOCS_PORT` 5183) | **Yes**, unless you firewall them |
 
-When these variables are unset, the services still listen on their internal Docker network ports but are not accessible from outside the Docker network. NGINX proxies all necessary traffic.
-
-**Note:** The `FRONTEND_PORT` mapping becomes unnecessary when NGINX handles ingress. Access the application through NGINX on ports 80/443 instead.
+With the NGINX overlay, close the second group from outside the host: set `BACKEND_BIND_HOST=127.0.0.1` in `.env` to bind the backend port to loopback, and block 5173, 5174 and 5183 in the host firewall below. The frontend and docs ports have no bind-host variable. Docker publishes ports through its own iptables rules, which bypass `ufw`'s default rules, so verify from another machine (`nc -zv <host> 5174`) rather than trusting the `ufw status` output.
 
 ### Host Firewall
 
@@ -750,6 +743,7 @@ Generate strong, unique values for each of these:
 | MinIO Root Password | `MINIO_ROOT_PASSWORD` | `openssl rand -base64 24` |
 | Redis Password | `REDIS_PASSWORD` | `openssl rand -base64 24` |
 | Flower Password | `FLOWER_PASSWORD` | `openssl rand -base64 16` |
+| Encryption master key | `ENCRYPTION_KEY` | `openssl rand -hex 32` (never change after first use; it decrypts every secret stored in the database, and a backup is unreadable without it) |
 | MinIO Encryption Key | `MINIO_KMS_SECRET_KEY` | `echo "key:$(openssl rand -base64 32)"` |
 | HuggingFace Token | `HUGGINGFACE_TOKEN` | _(from huggingface.co)_ |
 
@@ -781,8 +775,8 @@ Every service in the stack has a Docker health check. These are used for startup
 | OpenSearch | `curl -sS http://localhost:9200` | 5s | Verifies cluster status endpoint |
 | Backend | `curl -f http://localhost:8080/health` | 10s | Verifies API is serving requests |
 | Frontend (prod) | `wget --spider -q http://127.0.0.1:8080` | 10s | Verifies static assets are served |
-| Celery Workers | `celery inspect ping -d <hostname>` | 30s | Verifies worker responds to control commands |
-| Celery Beat | Checks `/app/celerybeat-schedule` mtime < 300s | 30s | Verifies scheduler is writing heartbeats |
+| Celery Workers | `python3 scripts/celery_pool_healthcheck.py <hostname>` | 30s | Verifies the worker answers control commands and its child pool is alive |
+| Celery Beat | Newest `/app/celerybeat-schedule*` file modified < 300s ago | 30s | Verifies scheduler is writing heartbeats |
 | Flower | `curl -fs http://127.0.0.1:5555/${FLOWER_URL_PREFIX:-flower}/healthcheck` | 30s | Verifies Flower's own healthcheck endpoint (bypasses basic auth) |
 
 ### Monitoring Health
@@ -851,7 +845,7 @@ docker exec opentranscribe-celery-worker nvidia-smi
 
 ### Post-Deployment
 
-1. **Create an admin account** -- The first user registered automatically becomes the admin.
+1. **Sign in as the bootstrap admin** -- On first start the backend creates a `super_admin` from `INITIAL_ADMIN_EMAIL` / `INITIAL_ADMIN_PASSWORD`. In production, leaving the password empty generates a random one that is logged once at startup (and forces a password change at first login); read it with `./opentr.sh logs backend`.
 2. **Configure authentication** -- Navigate to Settings and configure your preferred authentication method(s).
 3. **Test a transcription** -- Upload a short audio file and verify the full pipeline (upload, transcription, diarization, search indexing).
 4. **Set up monitoring** -- Configure alerting on container health checks and disk usage.

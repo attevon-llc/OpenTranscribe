@@ -386,7 +386,9 @@ S3_USE_IAM_ROLE=true   # default: AWS credential chain (env / EKS-IRSA / ECS tas
 Set `S3_USE_IAM_ROLE=false` and provide `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` only if the
 deployment cannot use the AWS credential chain. `STORAGE_BACKEND=minio` remains the default, and
 self-hosted behavior (endpoint, credentials, addressing, presigned-URL rewriting) is unchanged
-when it's in effect. See [Environment Variables](../configuration/environment-variables.md#object-storage)
+when it's in effect. Amazon Transcribe, if you use it as an ASR provider, additionally requires `AWS_TRANSCRIBE_BUCKET`
+(a private bucket you own, in `AWS_REGION`; there is no default). See
+[Environment Variables](../configuration/environment-variables.md#object-storage)
 for the full variable reference, including presigned-URL TTL clamping
 (`PRESIGNED_URL_MAX_SECONDS`) and the multipart-upload threshold.
 

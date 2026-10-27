@@ -8,7 +8,7 @@ sidebar_position: 2
 OpenTranscribe authenticates against LDAP or Active Directory alongside its other identity
 sources. A directory account is created on first successful login with `auth_type='ldap'`.
 
-Configure it at **Settings → Authentication → LDAP** (super_admin). Values are stored in the
+Configure it at **Settings → Authentication → LDAP/AD** (super_admin). Values are stored in the
 `auth_config` table with the bind password encrypted (AES-256-GCM) and take effect without a
 restart; the `LDAP_*` environment variables remain a bootstrap seed and fallback.
 
@@ -57,7 +57,7 @@ Two separate questions, two separate settings:
 
 Group DNs are compared case-insensitively, which is what LDAP itself does.
 
-`require_account_approval` (Authentication → Local) applies here too: with it on, a
+`require_account_approval` (Authentication → Local Auth) applies here too: with it on, a
 directory user provisioned for the first time lands `approval_status = pending` and needs an
 administrator to release them from the queue.
 
@@ -129,8 +129,8 @@ Four rules shape it:
 ### Settings
 
 There are **no directory-sync environment variables** — all of it is `SystemSettings`,
-configurable in the admin panel's Directory Sync screen (`Settings → Authentication →
-Directory Sync`; `GET/PUT /admin/directory-sync`, `/status`, `POST /run`). The sweep reads six
+configurable in the admin panel's Directory sync tab (`Settings → Authentication →
+Directory sync`; `GET/PUT /admin/directory-sync`, `/status`, `POST /run`). The sweep reads six
 `SystemSettings` rows; the directory connection itself reuses the LDAP auth config above.
 
 | Key | Default | Meaning |

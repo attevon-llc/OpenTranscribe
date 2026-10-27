@@ -8,7 +8,7 @@ sidebar_position: 3.5
 For identity providers that only speak SAML (ADFS, Shibboleth, Okta-classic and similar
 enterprise deployments), OpenTranscribe acts as a SAML 2.0 Service Provider.
 
-Configure it at **Settings → Authentication → SAML** (super_admin); values are stored in
+Configure it at **Settings → Authentication → SAML 2.0** (super_admin); values are stored in
 `auth_config` and take effect without a restart, with the `SAML_*` environment variables as a
 bootstrap seed and fallback.
 
@@ -35,8 +35,8 @@ not JSON for a `fetch()` caller.
 |---|---|---|
 | Enabled | `saml_enabled` | `false` |
 | SP Entity ID | `saml_sp_entity_id` | — |
-| SP ACS URL | `saml_sp_acs_url` | `http://localhost:5173/api/auth/saml/acs` |
-| SP SLS URL | `saml_sp_sls_url` | `http://localhost:5173/api/auth/saml/sls` |
+| SP ACS URL | `saml_sp_acs_url` | — (set it to `https://<your-host>/api/auth/saml/acs`) |
+| SP SLS URL | `saml_sp_sls_url` | — (set it to `https://<your-host>/api/auth/saml/sls`) |
 | SP signing certificate | `saml_sp_x509_cert` | — (required only when `saml_sign_authn_requests=true`) |
 | SP signing private key *(sensitive)* | `saml_sp_private_key` | — |
 | IdP Entity ID | `saml_idp_entity_id` | — |

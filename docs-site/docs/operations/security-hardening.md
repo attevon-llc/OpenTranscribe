@@ -465,7 +465,9 @@ erasure was requested, one row per request, with the SLA clock on it.
   meaningless once the row they point at is destroyed.
 - **Legal-hold re-erasure.** A file under a legal hold (Art. 17(3)(e)) is deferred rather than
   erased immediately; once the hold is lifted, the deferred entry is re-erased rather than
-  silently forgotten.
+  silently forgotten. A hold is either the operator's or an organization's (placed by an
+  organization administrator where the organization legal-hold capability is on); the
+  file-destroy path checks both and refuses a held file.
 - **Restore reconciliation.** Restoring a database backup taken before an erasure can resurrect
   the erased subject. A reconciliation task re-checks every completed ledger entry against the
   live schema after a restore and re-erases any subject it finds has come back.

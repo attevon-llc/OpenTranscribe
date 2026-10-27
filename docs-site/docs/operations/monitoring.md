@@ -45,7 +45,7 @@ Key metric names (stable; dashboards are built against these):
 | `search_indexing_files_awaiting_reindex` | Gauge | — (API `/metrics`; completed files that are not yet searchable; alert if it stays above zero) |
 | `user_signups_total` | Counter | `method` (`local`/`ldap`/`oidc`/`pki`/`proxy`/`saml`/`external`) |
 | `files_uploaded_total` | Counter | `source` (`upload`/`url`) |
-| `diarization_runs_total` | Counter | `backend` (`native`/`pyannote`), `reason` (`served`, `pinned`, or the cause of a fallback: `unreachable`, `timeout`, `backpressure`, `sidecar_not_ready`, `error`). Incremented in the GPU worker, so it is served on `WORKER_METRICS_PORT` when that is enabled. Alert on `backend="pyannote"` with any reason other than `pinned`. |
+| `diarization_runs_total` | Counter | `backend` (`native`/`pyannote`), `reason` (`served`, `pinned`, or the cause of a fallback: `unreachable`, `timeout`, `backpressure`, `sidecar_not_ready`, `error`). Incremented in the GPU worker, so it is served on `WORKER_METRICS_PORT` when that is enabled. Alert on `backend="pyannote"` with any reason other than `pinned`. To make an unplanned fallback fail the task instead, turn on *Require Diarization Sidecar* in Settings → Speaker Identification (or set `ENGINE_DIARIZER_REQUIRE_SIDECAR=true`; the database setting wins). |
 
 :::note[Route labels use the route **template** (e.g. `/api/files/{file_id}`), never the raw path or query string — this bounds cardinality and keeps tokens/PII out of metrics. `user_id`/`org_id` are written to the JSON **access log** only, never as Prometheus labels.]
 :::

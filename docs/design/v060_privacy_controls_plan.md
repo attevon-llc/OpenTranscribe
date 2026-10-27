@@ -415,8 +415,10 @@ WP5's schemas land. WP7 last. Only one writer commits per checkout (root CLAUDE.
 
 ## 8. Rollout and compatibility (derived deployments)
 
-- Upgrade is behaviour-neutral: empty table, both instance keys default on, no hooks, no ceiling.
-  Existing voiceprints and genders are untouched.
+- Upgrade deletes and rewrites nothing: empty table, both instance keys default on, no hooks, no
+  ceiling. Existing voiceprints and genders are untouched. It is not result-neutral for a person
+  who had already switched `speaker_attribute_gender_detection_enabled` off: that key is the user
+  layer, so their stored inferred genders are hidden everywhere, collaborators included.
 - Seam v10 is additive: `register_voiceprint_consent_hook`, `set_privacy_ceiling_resolver`, and the floor
   union. A deployment that already supplies org floors from its own tables keeps working; both floors
   apply and the strictest wins. Its resolvers run inside Celery tasks with no request, so they must

@@ -89,7 +89,8 @@ off by default.
   grant to open tenant content. Set `TENANCY_MODE=single` to keep the previous behaviour.
 - **Installs that use organizations: two one-off commands after upgrading**, in the backend
   container: `python -m app.tasks.tenant_backfill_task` (stamps older search and voiceprint
-  documents with their organization, #1115) and
+  documents with their organization, #1115; manual, also the Celery task
+  `tenant_backfill_organization_id`) and
   `python -m app.scripts.backfill_tenant_stamps --sync-voiceprints` (copies `v430`'s stamps
   onto profile voiceprints and lists ambiguous rows, #1110). Installs without organizations
   skip both.
@@ -116,14 +117,20 @@ off by default.
   proves a voice match (the speaker is linked to a profile of that name, or a stored voice match
   links it to a speaker of that name at the same similarity): the upgrade records those as voice
   matches, so they keep their name.
-- **Privacy controls are behavior-neutral until you use them (#1280).** Migration `v445` adds an
-  empty `organization_policy` table, both deployment switches default on, and no stored voiceprint
-  or gender changes. Four things do change: the gender migration and combined speaker analysis
-  now respect each owner's gender setting, the consistency repair and v4 migration skip scopes
-  with voiceprints off, and a remote LLM no longer receives the speaker-name gender comparison.
-  Review **Settings > Privacy & Redaction > Policy** after upgrading. Installs that use
-  organizations: the tenant backfill above also stamps voiceprint cluster documents that an
-  earlier release rewrote without their organization.
+- **Privacy controls: nothing is deleted or rewritten on upgrade, but results can change (#1280).**
+  Migration `v445` adds an empty `organization_policy` table, both deployment switches default on,
+  and no stored voiceprint or gender value changes. The person-level gender switch is the
+  existing **Voice Attributes** setting (`speaker_attribute_gender_detection_enabled`): anyone who
+  had already turned inferred gender off now has stored inferred genders hidden everywhere,
+  including from collaborators on their shared recordings (confirmed genders stay; turning the
+  setting back on restores them). Four more things change: the gender migration and combined
+  speaker analysis respect each owner's gender setting, the consistency repair and v4 migration
+  skip scopes with voiceprints off, and a remote LLM no longer receives the speaker-name gender
+  comparison. Review **Settings > Privacy & Redaction > Policy** after upgrading. Installs that
+  use organizations: run the tenant backfill above (it is manual) before deleting stored
+  voiceprints; it also stamps voiceprint documents that earlier releases rewrote without their
+  organization (cluster documents, and speaker documents rewritten by the consistency repair,
+  the v4 migration, a speaker merge or the index rebuild).
 - **Transcript export API:** `GET /api/files/{uuid}/export` accepts `format=md` and answers 400 for
   `docx` and `pdf`, which use the new asynchronous `POST /api/files/{uuid}/export/document`.
   Backend images are about 26 MB larger (Noto fonts). No migration.
@@ -226,9 +233,11 @@ off by default.
   by default); the copy is in all 12 languages. New routes: `GET /api/privacy/effective`,
   `GET|PUT /api/privacy/me`, `GET|PUT /api/admin/privacy-policy` and
   `GET|PATCH /api/org-admin/policy`. A consent hook (`register_voiceprint_consent_hook`) lets a
-  consent implementation veto creating or sharing a voiceprint. Both switches default on and an
-  upgrade changes no stored data: the new `organization_policy` table (migration `v445`) is empty
-  until an organization saves a choice. See [Privacy
+  consent implementation veto creating or sharing a voiceprint. Both deployment switches default
+  on and an upgrade changes no stored data: the new `organization_policy` table (migration `v445`)
+  is empty until an organization saves a choice. The person-level gender switch is the existing
+  Voice Attributes setting, so someone who had turned it off already has inferred gender hidden
+  (see the upgrade notes). See [Privacy
   controls](https://docs.opentranscribe.app/docs/features/privacy-controls).
 - **Privacy policy details across the API and admin tools (#1280).** While gender is off for a
   recording's scope, every response that embeds a speaker returns the inferred gender and its

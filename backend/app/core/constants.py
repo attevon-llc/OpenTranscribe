@@ -1854,8 +1854,10 @@ DOCUMENT_EXPORT_GUARD_TTL_S = 300
 PRIVACY_VOICEPRINT_MATCHING_KEY = "privacy.voiceprint_matching_enabled"
 #: ``SystemSettings`` key: ``"true"``/``"false"``. May gender be inferred from voice or names?
 PRIVACY_GENDER_INFERENCE_KEY = "privacy.gender_inference_enabled"
-#: Both default ON: an upgrade is behaviour-neutral and gender inference stays on by default
-#: (owner decision 2026-10-25), with a user notice that it can be switched off.
+#: Both default ON: an upgrade deletes and rewrites nothing and gender inference stays on by
+#: default (owner decision 2026-10-25), with a user notice that it can be switched off. It is
+#: not result-neutral for a person who had already switched gender detection off: that user
+#: layer is the pre-existing setting below, so their stored inferred gender is hidden.
 DEFAULT_PRIVACY_VOICEPRINT_MATCHING_ENABLED = True
 DEFAULT_PRIVACY_GENDER_INFERENCE_ENABLED = True
 #: ``UserSetting`` key for the user layer of voiceprint matching. The gender user layer is the

@@ -68,11 +68,11 @@ Runs two main phases:
    - Downloads AI models
    - Creates deployment package
 
-**The version argument names the offline package only.** `build-all.sh` does not pass it to
-`docker-build-push.sh`, so the pushed image tags come from `VERSION` in the environment or the
-repo-root `VERSION` file (see [Docker Build & Push Script](#docker-build--push-script)). Because the
-offline script prefixes its own `v` (`opentranscribe-offline-v<version>`), pass a bare number
-(`2.1.0`), not `v2.1.0`, or the package is named `...-vv2.1.0`.
+**The version argument drives both phases.** `build-all.sh` hands it to `docker-build-push.sh`
+(as `VERSION`) for the pushed image tags and to `build-offline-package.sh` for the package name
+(`opentranscribe-offline-v<version>`); `2.1.0` and `v2.1.0` are equivalent. With no argument it
+uses the repo-root `VERSION` file, else `dev-<git-sha>` (see
+[Docker Build & Push Script](#docker-build--push-script)).
 
 **Warning:** this pushes to Docker Hub (`DOCKERHUB_USERNAME`, default `davidamacey`) and, with
 `NO_CACHE` defaulting to `true` here, does clean rebuilds. Use `PLATFORMS=linux/amd64` and
@@ -85,8 +85,8 @@ offline script prefixes its own `v` (`opentranscribe-offline-v<version>`), pass 
 ./scripts/build-all.sh --interactive
 
 # Direct execution
-./scripts/build-all.sh                      # Version defaults to the git short SHA
-./scripts/build-all.sh 2.1.0                # Specific version (offline package name)
+./scripts/build-all.sh                      # Version defaults to the VERSION file (else dev-<git-sha>)
+./scripts/build-all.sh 2.1.0                # Specific version (image tags + offline package name)
 ./scripts/build-all.sh -i 2.1.0             # Interactive with version
 
 # Background execution (the offline phase still prompts for Whisper/OpenSearch model
@@ -147,7 +147,7 @@ Start build pipeline? (y/N) y
 
 - Docker images on Docker Hub (`:latest` and `:vX.Y.Z` from the `VERSION` file/env, as capability legs plus an index; see below)
 - Security reports in `./security-reports/`
-- Offline package in `./offline-package-build/linux/` (its closing summary looks one directory higher, so it can fail to list the package; look in `linux/`)
+- Offline package in `./offline-package-build/linux/`
 
 ### Documentation
 
@@ -314,9 +314,9 @@ take 10-20 minutes).
    sudo nano /opt/opentranscribe/.env
    ```
 
-2. Review the generated settings. The installer prints "HUGGINGFACE_TOKEN not required for
-   offline operation" (models are pre-installed and `HF_HUB_OFFLINE=1`), but its final banner
-   still says "REQUIRED: Set your HUGGINGFACE_TOKEN"; the two messages contradict each other.
+2. Review the generated settings. No `HUGGINGFACE_TOKEN` is needed on the target system: the
+   models are pre-installed and the installer sets `HF_HUB_OFFLINE=1` (the token is only needed on the
+   internet-connected machine that builds the package).
 
 3. Start services:
    ```bash

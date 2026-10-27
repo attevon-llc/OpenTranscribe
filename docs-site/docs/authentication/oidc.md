@@ -206,8 +206,8 @@ account here** on first login — JIT provisioning was unconditional, and `oidc_
 
 | Setting | Meaning |
 |---|---|
-| `oidc_allowed_groups` | A login must carry at least one of these values in the roles claim. **Empty admits everyone** |
-| `oidc_blocked_groups` | These values deny outright. Evaluated **first** — "blocked" means refused, not "exempt from the allow-list" |
+| `oidc_allowed_groups` (`OIDC_ALLOWED_GROUPS`) | A login must carry at least one of these values in the roles claim. **Empty admits everyone** |
+| `oidc_blocked_groups` (`OIDC_BLOCKED_GROUPS`) | These values deny outright. Evaluated **first** — "blocked" means refused, not "exempt from the allow-list" |
 | `require_account_approval` *(Authentication → Local Auth)* | New accounts land `pending` and need an administrator to approve them |
 
 Both lists are **semicolon-delimited**, because a group value brokered from a directory is a DN

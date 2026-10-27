@@ -46,7 +46,11 @@ an individual is officially representing the community in public spaces.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders responsible for enforcement.
+reported to the community leaders responsible for enforcement. Please report
+privately rather than in a public issue or discussion: open a
+[private report on GitHub](https://github.com/attevon-llc/OpenTranscribe/security/advisories/new)
+(the same private channel linked from the issue chooser) and say that it concerns
+the Code of Conduct, not a security vulnerability.
 All complaints will be reviewed and investigated promptly and fairly.
 
 ## Attribution

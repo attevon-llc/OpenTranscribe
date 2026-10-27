@@ -18,9 +18,12 @@ Surfaces:
   - ``POST /org-admin/gdpr/erase-organization``  — GDPR erasure of the caller's
     entire org (org data + member-owned org data + voiceprints).
 
-Community-edition invariance: with no orgs, ``require_org_admin`` 403s on every
-route (``ctx.is_org_admin`` is always False), so this router is inert in the
-self-host/community edition — these are cloud-only surfaces.
+Community-edition invariance: with no orgs, the router's ``organizations``
+capability is off (``app.api.router``), so every route answers **404** before
+``require_org_admin`` is reached — the surface does not exist, exactly like an
+unknown route. ``require_org_admin`` 403s only a caller who reaches the route
+with the capability on but is not an admin of an active org. These are
+cloud-only surfaces, inert in the self-host/community edition.
 """
 
 import logging

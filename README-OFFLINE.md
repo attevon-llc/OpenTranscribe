@@ -43,7 +43,7 @@ Required to create the offline package:
 - Docker Compose v2+
 - 100GB free disk space
 - Fast internet connection
-- HuggingFace account and token
+- HuggingFace account and token (build machine only; the air-gapped target needs none)
 
 ### Target System (Air-Gapped)
 System where OpenTranscribe will be installed:
@@ -54,7 +54,7 @@ System where OpenTranscribe will be installed:
 - NVIDIA GPU with CUDA support (recommended)
   - Minimum: 8GB VRAM
   - Recommended: 16GB+ VRAM
-- NVIDIA GPU drivers (470.x or later)
+- NVIDIA GPU drivers (525.60.13 or later; 570+ for Blackwell / RTX 50-series). The CUDA 12.8 runtime ships inside the images, so no host CUDA toolkit is needed
 - NVIDIA Container Toolkit
 - 80GB free disk space
 - 16GB RAM minimum (32GB recommended)
@@ -66,7 +66,7 @@ System where OpenTranscribe will be installed:
 
 ### Prerequisites
 
-1. **Set HuggingFace Token:**
+1. **Set HuggingFace Token** (used only while building, to download the gated diarization model):
    ```bash
    export HUGGINGFACE_TOKEN=your_token_here
    ```
@@ -75,7 +75,7 @@ System where OpenTranscribe will be installed:
 2. **Clone Repository:**
    ```bash
    git clone https://github.com/attevon-llc/OpenTranscribe.git
-   cd opentranscribe
+   cd OpenTranscribe
    ```
 
 ### Build Process
@@ -122,14 +122,14 @@ System where OpenTranscribe will be installed:
 
    **If compressed:**
    ```
-   offline-package-build/
+   offline-package-build/linux/
    ├── opentranscribe-offline-v{version}.tar.xz      (~15-20GB)
    └── opentranscribe-offline-v{version}.tar.xz.sha256
    ```
 
    **If uncompressed:**
    ```
-   offline-package-build/
+   offline-package-build/linux/
    ├── opentranscribe-offline-v{version}/            (~65GB directory)
    └── opentranscribe-offline-v{version}.sha256
    ```
@@ -138,13 +138,13 @@ System where OpenTranscribe will be installed:
 
    **If compressed:**
    ```bash
-   cd offline-package-build
+   cd offline-package-build/linux
    sha256sum -c opentranscribe-offline-v*.tar.xz.sha256
    ```
 
    **If uncompressed:**
    ```bash
-   cd offline-package-build
+   cd offline-package-build/linux
    # Checksums are stored in the .sha256 file for individual verification
    ```
 
@@ -152,7 +152,7 @@ System where OpenTranscribe will be installed:
 
    If you skipped compression, you can compress later:
    ```bash
-   cd offline-package-build
+   cd offline-package-build/linux
    tar -cf - opentranscribe-offline-v* | xz -9 -T0 > opentranscribe-offline-v{version}.tar.xz
    sha256sum opentranscribe-offline-v*.tar.xz > opentranscribe-offline-v*.tar.xz.sha256
    ```
@@ -192,7 +192,7 @@ Transfer the package to your air-gapped system using your preferred method:
 3. **Verify GPU Setup:**
    ```bash
    nvidia-smi
-   docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi
+   docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu22.04 nvidia-smi
    ```
 
 ### Installation Steps
@@ -242,12 +242,9 @@ Transfer the package to your air-gapped system using your preferred method:
    sudo nano /opt/opentranscribe/.env
    ```
 
-2. **Set HuggingFace Token (REQUIRED):**
-   ```bash
-   HUGGINGFACE_TOKEN=your_token_here
-   ```
-
-   **Important:** Speaker diarization requires a HuggingFace token. Get one at https://huggingface.co/settings/tokens
+2. **No HuggingFace token is needed.** The installer sets `HF_HUB_OFFLINE=1` and the models
+   (including the speaker-diarization models) are already in `/opt/opentranscribe/models/`, so
+   nothing is downloaded at runtime. The token matters only on the machine that builds the package.
 
 ### Optional Configuration
 
@@ -262,7 +259,7 @@ The `.env` file contains auto-detected settings. You may customize:
 - `WHISPER_MODEL` - Transcription model size (default: large-v3-turbo)
   - Options: tiny, base, small, medium, large-v1, large-v2, large-v3, large-v3-turbo
   - **Note:** `large-v3-turbo` is 6x faster than `large-v3` with excellent accuracy for English and most languages. Use `large-v3` for translation tasks or maximum accuracy on low-resource languages.
-- `BATCH_SIZE` - Processing batch size (default: 16)
+- `BATCH_SIZE` - Processing batch size (default: `auto`, sized from available VRAM)
 - `MIN_SPEAKERS` / `MAX_SPEAKERS` - Speaker detection range (default: 1-20, can be increased to 50+ for large events)
 
 **Hardware Settings (auto-detected):**
@@ -288,14 +285,15 @@ For AI summarization and speaker identification features:
 ### Port Configuration
 
 Default ports (configurable in `.env`):
-- Frontend: `80`
-- Backend API: `8080`
-- Flower (task monitor): `5175`
-- Database: `5432`
-- Redis: `6379`
-- MinIO: `9000`
-- MinIO Console: `9001`
-- OpenSearch: `9200`
+- Frontend: `5173` (`FRONTEND_PORT`)
+- Backend API: `5174` (`BACKEND_PORT`)
+- Flower (task monitor): `5175` (`FLOWER_PORT`)
+- Docs site: `5183` (`DOCS_PORT`)
+- Database: `5176` (`POSTGRES_PORT`, localhost only)
+- Redis: `5177` (`REDIS_PORT`, localhost only)
+- MinIO: `5178` (`MINIO_PORT`, localhost only)
+- MinIO Console: `5179` (`MINIO_CONSOLE_PORT`, localhost only)
+- OpenSearch: `5180` (`OPENSEARCH_PORT`, localhost only)
 
 ## Usage
 
@@ -306,7 +304,7 @@ cd /opt/opentranscribe
 sudo ./opentr.sh start
 ```
 
-**Access the application:** http://localhost:80
+**Access the application:** http://localhost:5173
 
 ### Management Commands
 
@@ -316,7 +314,7 @@ All commands run from `/opt/opentranscribe/`:
 ```bash
 sudo ./opentr.sh start              # Start all services
 sudo ./opentr.sh stop               # Stop all services
-sudo ./opentr.sh restart-all        # Restart all services
+sudo ./opentr.sh restart            # Restart all services
 sudo ./opentr.sh status             # Show service status
 sudo ./opentr.sh logs               # View all logs (Ctrl+C to exit)
 sudo ./opentr.sh logs backend       # View specific service logs
@@ -333,6 +331,7 @@ sudo ./opentr.sh shell backend      # Open shell in backend container
 ```bash
 sudo ./opentr.sh health              # Check health of all services
 sudo ./opentr.sh backup              # Create database backup
+sudo ./opentr.sh clean               # Remove stopped containers and unused volumes
 sudo docker system prune -a          # Clean up unused Docker resources
 ```
 
@@ -349,7 +348,7 @@ sudo docker system prune -a          # Clean up unused Docker resources
    sudo ./opentr.sh health
    ```
 
-3. Access web interface: http://localhost:80
+3. Access web interface: http://localhost:5173
 
 4. Create your first user account through the web interface
 
@@ -407,7 +406,7 @@ nvidia-smi
 
 **Verify Container Toolkit:**
 ```bash
-docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi
+docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu22.04 nvidia-smi
 ```
 
 **Check configuration:**
@@ -425,14 +424,14 @@ COMPUTE_TYPE=float16
 
 Then restart:
 ```bash
-sudo ./opentr.sh restart-all
+sudo ./opentr.sh restart
 ```
 
 ### Transcription Fails
 
-**Check HuggingFace token:**
+**Check that offline mode is on** (no HuggingFace token is involved):
 ```bash
-grep HUGGINGFACE_TOKEN /opt/opentranscribe/.env
+grep HF_HUB_OFFLINE /opt/opentranscribe/.env    # expect HF_HUB_OFFLINE=1
 ```
 
 **Check worker logs:**
@@ -475,14 +474,14 @@ psql -U postgres -d opentranscribe
 
 If default ports are in use, edit `/opt/opentranscribe/.env`:
 ```bash
-FRONTEND_PORT=8080     # Change from 80
-BACKEND_PORT=8081      # Change from 8080
+FRONTEND_PORT=8080     # Change from 5173
+BACKEND_PORT=8081      # Change from 5174
 # etc.
 ```
 
 Restart:
 ```bash
-sudo ./opentr.sh restart-all
+sudo ./opentr.sh restart
 ```
 
 ### Performance Issues
@@ -514,9 +513,8 @@ Backups stored in: `/opt/opentranscribe/backups/`
 **Restore backup:**
 ```bash
 cd /opt/opentranscribe
-sudo ./opentr.sh stop
-docker compose -f docker-compose.yml -f docker-compose.offline.yml run --rm postgres psql -U postgres -d opentranscribe < backups/backup_file.sql
 sudo ./opentr.sh start
+sudo docker compose -f docker-compose.yml -f docker-compose.offline.yml exec -T postgres psql -U postgres -d opentranscribe < backups/backup_file.sql
 ```
 
 ### Updates
@@ -644,8 +642,3 @@ For issues and questions:
 ### License
 
 OpenTranscribe is open source software. See LICENSE file for details.
-
----
-
-**Last Updated:** October 2024
-**Version:** 2.0 Offline

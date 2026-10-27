@@ -1150,7 +1150,7 @@
   "userManagement.lockFailed": "Não foi possível bloquear a conta.",
   "userManagement.unlockAccount": "Limpar bloqueio de login",
   "userManagement.unlockAccountFor": "Limpar o bloqueio por falhas de login de {{name}}",
-  "userManagement.unlockConfirmMessage": "Isto limpa o bloqueio causado por tentativas de login malsucedidas de {{name}}. Não reativa uma conta bloqueada por um administrador.",
+  "userManagement.unlockConfirmMessage": "Isto limpa o bloqueio causado por tentativas de login malsucedidas de {{name}} e reativa a conta se um administrador a tiver desativado.",
   "userManagement.unlockSuccess": "Bloqueio de login de {{name}} removido",
   "userManagement.unlockNotLocked": "{{name}} não estava bloqueado.",
   "userManagement.unlockFailed": "Não foi possível limpar o bloqueio de login.",

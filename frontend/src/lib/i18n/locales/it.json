@@ -1179,7 +1179,7 @@
   "userManagement.lockFailed": "Impossibile bloccare l'account.",
   "userManagement.unlockAccount": "Cancella blocco accesso",
   "userManagement.unlockAccountFor": "Cancella il blocco per accessi falliti per {{name}}",
-  "userManagement.unlockConfirmMessage": "Questo cancella il blocco per accessi falliti per {{name}}. Non riabilita un account che un amministratore ha bloccato.",
+  "userManagement.unlockConfirmMessage": "Questo cancella il blocco per accessi falliti per {{name}} e riabilita l'account se un amministratore lo ha disattivato.",
   "userManagement.unlockSuccess": "Blocco accesso cancellato per {{name}}",
   "userManagement.unlockNotLocked": "{{name}} non era bloccato.",
   "userManagement.unlockFailed": "Impossibile cancellare il blocco di accesso.",

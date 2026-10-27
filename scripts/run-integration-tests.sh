@@ -1,13 +1,19 @@
 #!/bin/bash
 # OpenTranscribe — canonical local test gate (issue #21)
 #
-# Runs the COMPLETE backend test suite against the live dev stack:
+# Runs the COMPLETE backend test suite against the live dev stack. Phase numbers match the
+# `# N.` headings in the body below, which are authoritative if this list ever drifts:
+#   0. signature-scoped sweep of orphaned test data from earlier killed runs (unconditional)
 #   1. unit/API tests (includes S3/OpenSearch tests via auto-detection)
 #   2. the security suites re-run under FIPS_MODE=true (phase 1 already ran them with it off)
-#   3. integration-marked tests (-m integration)
+#   3. integration-marked tests (-m integration), then 3b: venv-vs-container dependency parity
 #   4. gpu-marked tests (-m gpu) — deselected everywhere else, so this is their
 #      only run; each module keeps its own runtime skip guard for CPU-only hosts
-#   5. model-vs-schema drift (RUN_SCHEMA_DRIFT_TESTS) — needs the migrated DB
+#   5. model-vs-schema drift (RUN_SCHEMA_DRIFT_TESTS) — needs the migrated DB,
+#      then 5b: DB session lifetime audit (no transaction held across slow work)
+#   6. collection determinism (two processes must collect the same test ids)
+#   7. mutation ratchet (last mutation run vs scripts/mutation-baselines.tsv; never runs mutmut)
+#   8. optional --search-quality   9. optional --e2e-smoke   10. optional --cleanup (dry run)
 #
 # GitHub Actions only runs the subset that fits a bare runner — THIS script
 # is the pre-merge source of truth. Requires: ./opentr.sh start dev

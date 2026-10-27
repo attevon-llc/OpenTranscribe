@@ -111,6 +111,24 @@ declare -A SCAN_COMPONENT_REPO=(
     [blackwell]="${REPO_BACKEND}"
 )
 
+# One-line description per component, for the usage text only. show_usage fails loudly (rather
+# than printing a blank) if a component is added above without one.
+declare -A SCAN_COMPONENT_DESC=(
+    [backend]="CUDA backend image"
+    [lite]="CPU-only backend image (opentranscribe-backend-lite)"
+    [frontend]="frontend image"
+    [docs]="docs image"
+    [blackwell]="Blackwell/DGX Spark backend (backend/Dockerfile.blackwell)"
+)
+
+# Usage-text lines for the Options block, derived from the component table.
+component_usage_lines() {
+    local comp
+    for comp in $(scan_components); do
+        printf '    %-16s Scan only the %s\n' "$comp" "${SCAN_COMPONENT_DESC[$comp]:?no usage description for component $comp}"
+    done
+}
+
 # Sorted, one per line — the machine-readable contract other scripts consume.
 scan_components() {
     printf '%s\n' "${!SCAN_COMPONENT_DOCKERFILE[@]}" | sort
@@ -974,10 +992,8 @@ Tools used:
   - Grype: Fast vulnerability scanner
 
 Options:
-    backend          Scan only backend image
-    frontend         Scan only frontend image
-    docs             Scan only docs image
-    all              Scan all images (default)
+$(component_usage_lines)
+    all              Scan every component above (default)
     list-components  Print the scannable component names, one per line
     install          Install all required tools
     help             Show this help message
@@ -1001,15 +1017,16 @@ Environment Variables:
                             built-but-not-yet-pushed image.
 
 Examples:
-    $0                      # Scan both images (uses :latest)
+    $0                      # Scan every component (uses :latest)
     $0 backend              # Scan only backend
+    $0 lite                 # Scan only the CPU-only backend
     $0 install              # Install all required tools
 
     # Customize scanning
     OUTPUT_DIR=./reports SEVERITY_THRESHOLD=HIGH $0 all
 
-    # Scan a release-candidate tag before pushing (required by Phase 1
-    # of the .claude/commands/release.md checklist):
+    # Scan a release-candidate tag before pushing (the release pipeline's
+    # scan stage, scripts/release/50-scan.sh, does this for you):
     IMAGE_TAG=0.4.0 $0 all
     FAIL_ON_CRITICAL=false $0 backend
 

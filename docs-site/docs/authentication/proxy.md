@@ -35,18 +35,18 @@ in as any address (the same hazard described for [PKI](./pki#trust-configuration
 
 ## Configuration reference
 
-| Field | Config key | Default |
-|---|---|---|
-| Enabled | `proxy_enabled` | `false` |
-| Trusted proxies | `proxy_trusted_proxies` | — (**required when enabled**) |
-| Shared secret *(sensitive)* | `proxy_shared_secret` | — |
-| Email header | `proxy_email_header` | `X-Forwarded-Email` |
-| Name header | `proxy_name_header` | `X-Forwarded-User` |
-| Groups header | `proxy_groups_header` | — (empty = proxy does not manage groups) |
-| Groups separator | `proxy_groups_separator` | `,` |
-| Role header | `proxy_role_header` | — (empty = header-driven privilege is off) |
-| Allowed domains | `proxy_allowed_domains` | — (empty admits every domain) |
-| JIT provisioning | `proxy_jit_provisioning` | `true` |
+| Field | Config key | Environment variable | Default |
+|---|---|---|---|
+| Enabled | `proxy_enabled` | `PROXY_ENABLED` | `false` |
+| Trusted proxies | `proxy_trusted_proxies` | `PROXY_TRUSTED_PROXIES` | — (**required when enabled**) |
+| Shared secret *(sensitive)* | `proxy_shared_secret` | `PROXY_SHARED_SECRET` | — |
+| Email header | `proxy_email_header` | `PROXY_EMAIL_HEADER` | `X-Forwarded-Email` |
+| Name header | `proxy_name_header` | `PROXY_NAME_HEADER` | `X-Forwarded-User` |
+| Groups header | `proxy_groups_header` | `PROXY_GROUPS_HEADER` | — (empty = proxy does not manage groups) |
+| Groups separator | `proxy_groups_separator` | `PROXY_GROUPS_SEPARATOR` | `,` |
+| Role header | `proxy_role_header` | `PROXY_ROLE_HEADER` | — (empty = header-driven privilege is off) |
+| Allowed domains | `proxy_allowed_domains` | `PROXY_ALLOWED_DOMAINS` | — (empty admits every domain) |
+| JIT provisioning | `proxy_jit_provisioning` | `PROXY_JIT_PROVISIONING` | `true` |
 
 The email header is the identity assertion; everything else is optional. `POST
 /api/auth/proxy/authenticate` mints a normal session (a `refresh_token` row) from it, so idle/

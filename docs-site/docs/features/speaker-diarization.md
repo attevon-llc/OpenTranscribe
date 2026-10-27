@@ -405,6 +405,18 @@ diarization at all; see [Lite deployments](#lite-deployments)).
   in-process PyAnnote engine documented earlier on this page — there is no hard dependency on
   the sidecar being up, unless a super admin turns on **Require Diarization Sidecar**, which
   fails the job instead of falling back.
+- **The native engine is the recommended default; use strict mode in production.** The fallback
+  works, which is also why it can go unnoticed: a deployment can run for days on in-process
+  PyAnnote, which is slower (about half the speed) and holds GPU memory, with every setting still reading
+  "native". It is therefore never silent. Each run on the fallback logs a WARNING with the reason
+  (`unreachable`, `timeout`, `backpressure`, `sidecar_not_ready`, `error`), a worker that starts with
+  the sidecar down logs one ERROR, the Prometheus counter
+  `diarization_runs_total{backend,reason}` counts every run, the system status shows the engine
+  that is actually serving, and the file's processing details record which engine ran. For
+  production, turn on **Require Diarization Sidecar** (Settings, Speaker Identification; or
+  `ENGINE_DIARIZER_REQUIRE_SIDECAR=true` as the default): a diarization task then fails with a
+  clear error and is retried when the sidecar is unavailable, instead of running on the slower
+  engine, and the status page reads "unavailable" until the sidecar recovers.
 - **Running it**: the sidecar ships as an additive Docker Compose overlay,
   `docker-compose.diar-native.yml`. It shares the backend image rather than shipping a separate
   one — the `diar-server` binary is already inside `davidamacey/opentranscribe-backend`, so

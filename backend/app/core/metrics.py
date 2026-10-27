@@ -113,6 +113,7 @@ media_mirror_last_run_objects: Gauge
 search_indexing_failures_total: Counter
 search_indexing_retries_total: Counter
 search_indexing_files_awaiting_reindex: Gauge
+diarization_runs_total: Counter
 
 
 def _register() -> None:
@@ -144,6 +145,7 @@ def _register() -> None:
     global search_indexing_failures_total
     global search_indexing_retries_total
     global search_indexing_files_awaiting_reindex
+    global diarization_runs_total
 
     if _COLLECTORS_REGISTERED:
         return
@@ -307,6 +309,18 @@ def _register() -> None:
         "search_indexing_files_awaiting_reindex",
         "Completed files with a transcript that are not yet searchable: indexing failed, "
         "is waiting on a retry, or never ran. Alert if it stays above zero.",
+    )
+
+    # Diarization runs by the engine that served them (issue #1184). Incremented in the GPU
+    # worker by ``app.transcription.diarization_runs`` (served on the worker's
+    # WORKER_METRICS_PORT when enabled). ``reason`` is "served" for the native sidecar, "pinned"
+    # for an admin-chosen in-process PyAnnote, and the cause of an UNPLANNED fallback otherwise
+    # (unreachable, timeout, backpressure, sidecar_not_ready, error).
+    diarization_runs_total = Counter(
+        "diarization_runs_total",
+        "Diarization runs by the backend that served them and why: reason=served (native), "
+        "pinned (PyAnnote by choice) or the cause of a fallback from the native sidecar.",
+        ["backend", "reason"],
     )
 
     _COLLECTORS_REGISTERED = True

@@ -17,6 +17,11 @@
 # ENGINE_DIARIZER_BACKEND=pyannote) and stop this service. Note the worker ALSO falls back
 # to the in-process PyAnnote fork on its own whenever this sidecar is unreachable, and logs
 # when it does — that path is covered by real-TCP-unreachability tests, not mocks.
+#
+# Production: that fallback is slower and, until #1184, was easy to miss. Each run on it logs a
+# WARNING and is counted in diarization_runs_total{backend,reason}. To fail the task instead of
+# falling back, turn on "Require Diarization Sidecar" (`engine.diarizer_require_sidecar`) or set
+# ENGINE_DIARIZER_REQUIRE_SIDECAR=true in .env.
 
 services:
   diar-native:

@@ -966,6 +966,13 @@ off by default.
 
 ### Fixed
 
+- **Falling back from the native diarization sidecar to PyAnnote is no longer silent (#1184).**
+  Every fallback run logs a WARNING with the reason, a worker that starts without the sidecar
+  logs an ERROR, and a new counter `diarization_runs_total{backend,reason}` records every run.
+  **Require Diarization Sidecar** (`engine.diarizer_require_sidecar`) now also refuses the
+  fallback when the engine is first built, and drops a fallback engine that was already cached,
+  not only when a request fails mid-job. The system status reports `unavailable` while strict
+  mode is refusing work. Default behaviour is unchanged apart from the logging and metric.
 - **Amazon Transcribe no longer falls back to a guessable bucket name (#1235).** Without
   `AWS_TRANSCRIBE_BUCKET` the provider used `opentranscribe-tmp-<region>`; S3 bucket names are
   global, so audio could be uploaded to a bucket owned by someone else. The setting is now

@@ -106,6 +106,7 @@ class ModelManager:
         back to the in-process PyAnnote engine, which is also what ``"pyannote"`` pins
         directly.
         """
+        fallback_reason: str | None = None
         if config.diarizer_backend.lower() == "native":
             try:
                 from app.transcription.diarizer_native import NativeSpeakerDiarizer
@@ -115,11 +116,48 @@ class ModelManager:
                 # Duck-typed drop-in: identical diarize/embed_window/unload_model surface.
                 return cast(SpeakerDiarizer, native)
             except Exception as exc:  # noqa: BLE001 — any failure means "use the fork"
-                logger.warning("Native diarizer unavailable (%s); falling back to PyAnnote", exc)
+                fallback_reason = self._native_unavailable_reason()
+                self._refuse_if_sidecar_required(fallback_reason, exc)
+                logger.warning(
+                    "Native diarizer unavailable (%s: %s); falling back to PyAnnote",
+                    fallback_reason,
+                    exc,
+                )
 
         diarizer = SpeakerDiarizer(config)
         diarizer.load_model()
+        diarizer.last_fallback_reason = fallback_reason
         return diarizer
+
+    @staticmethod
+    def _native_unavailable_reason() -> str:
+        """Why the native engine cannot serve right now: ``unreachable`` or ``sidecar_not_ready``."""
+        from app.transcription.diarization_runs import REASON_NOT_READY
+        from app.transcription.diarization_runs import REASON_UNREACHABLE
+        from app.transcription.diarizer_native import sidecar_healthy
+
+        return REASON_NOT_READY if sidecar_healthy() else REASON_UNREACHABLE
+
+    @staticmethod
+    def _refuse_if_sidecar_required(reason: str, cause: BaseException | None = None) -> None:
+        """Strict mode (``engine.diarizer_require_sidecar``): fail instead of falling back.
+
+        Issue #1184. The task fails with a clear error, and Celery's existing
+        ``DiarSidecarUnavailableError`` handling applies, rather than the job quietly running
+        on the slower in-process engine.
+        """
+        from app.transcription.diarizer_native import DiarSidecarUnavailableError
+        from app.transcription.diarizer_native import diarizer_require_sidecar
+
+        if not diarizer_require_sidecar():
+            return
+        message = (
+            f"The diar-native sidecar cannot serve ({reason}) and "
+            "engine.diarizer_require_sidecar is on, so the in-process PyAnnote fallback is "
+            "refused. Restore the sidecar or turn the setting off."
+        )
+        logger.error(message)
+        raise DiarSidecarUnavailableError(message, reason=reason) from cause
 
     @staticmethod
     def _diarizer_current(diarizer: SpeakerDiarizer, config: TranscriptionConfig) -> bool:
@@ -144,6 +182,14 @@ class ModelManager:
         # only once the models are verified. Pre-0.3.0 sidecars have no /readyz and fall
         # back to liveness inside sidecar_ready, so an older pin behaves as it did before.
         ready = sidecar_ready()
+        if not native_cached:
+            # Built while the sidecar was down (or before strict mode was switched on). In
+            # strict mode that engine must not keep serving, so rebuild: the rebuild uses the
+            # sidecar if it is back and raises DiarSidecarUnavailableError if it is not.
+            from app.transcription.diarizer_native import diarizer_require_sidecar
+
+            if diarizer_require_sidecar():
+                return False
         if native_cached and not ready:
             # "Gone" and "up but cannot serve" are different operator problems with
             # different fixes, so they get different messages. The extra probe only runs
@@ -180,6 +226,19 @@ class ModelManager:
             from app.transcription.diarizer_native import sidecar_ready
 
             if not sidecar_ready():
+                from app.transcription.diarizer_native import diarizer_require_sidecar
+
+                # Once, at worker start, whatever the mode: this is the line an operator
+                # reads to learn a worker came up without its preferred engine (issue #1184).
+                logger.error(
+                    "diar-native sidecar is not reachable or not ready at worker start. %s",
+                    "engine.diarizer_require_sidecar is ON: diarization tasks will FAIL "
+                    "until it recovers."
+                    if diarizer_require_sidecar()
+                    else "Diarization will run on the slower in-process PyAnnote fallback "
+                    "(each such run is logged as a WARNING and counted in "
+                    "diarization_runs_total).",
+                )
                 # Preloading would load the in-process PyAnnote fallback and keep it in VRAM
                 # beside the sidecar once that comes up. The first job builds whichever
                 # engine can serve then (get_diarizer), so nothing is lost by waiting.

@@ -156,16 +156,21 @@ def _run_diarize(
     loading the in-process PyAnnote fallback on THIS thread — see its docstring for why that
     matters (issue #665). Non-native diarizers ignore the flag; there is nothing for it to gate.
     """
+    from app.transcription.diarization_runs import record_diarization_run
     from app.transcription.diarizer_native import NativeSpeakerDiarizer
 
     if isinstance(diarizer, NativeSpeakerDiarizer):
-        return diarizer.diarize(
+        result = diarizer.diarize(
             audio,
             wav_path=wav_path,
             allow_local_fallback=allow_local_fallback,
             skip_sidecar=skip_sidecar,
         )
-    return diarizer.diarize(audio)
+    else:
+        result = diarizer.diarize(audio)
+    # After the call, so the engine that ACTUALLY served is on the instance (issue #1184).
+    record_diarization_run(diarizer)
+    return result
 
 
 def _collect_diarization(

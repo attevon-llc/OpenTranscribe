@@ -312,15 +312,18 @@ def split_attribute_confidence(raw: dict[str, Any] | None) -> dict[str, Any]:
 class SpeakerIdentityActor(BaseModel):
     """The person who made or confirmed a speaker's identity."""
 
-    uuid: UUID
-    name: str | None = None  # full name, else the account's email
+    uuid: UUID | None = None  # None for an erased account
+    name: str | None = None  # full name, else the account's email; None for an erased account
+    erased: bool = False  # the account is being erased: no uuid, name or email is given
 
 
 class SpeakerIdentity(BaseModel):
     """How the speaker's CURRENT identity came to be (read-only; issue #1280).
 
     ``by`` is present only for the file's owner, an administrator of the file's organization
-    and a platform administrator; every other viewer gets ``source`` and ``at``. ``null`` for
+    and a platform administrator whose reach covers the file (any administrator in
+    single-tenant mode; in multi-tenant mode only under a support-access grant); every other
+    viewer gets ``source`` and ``at``. ``null`` for
     the whole object means unknown (written before the record existed, or never named) or
     withheld because a voiceprint made it and the file's voiceprints are off. Only the current
     state is kept; the full change history is tracked in issue #1336.

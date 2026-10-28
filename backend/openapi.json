@@ -16988,7 +16988,7 @@
         "type": "object"
       },
       "SpeakerIdentity": {
-        "description": "How the speaker's CURRENT identity came to be (read-only; issue #1280).\n\n``by`` is present only for the file's owner, an administrator of the file's organization\nand a platform administrator; every other viewer gets ``source`` and ``at``. ``null`` for\nthe whole object means unknown (written before the record existed, or never named) or\nwithheld because a voiceprint made it and the file's voiceprints are off. Only the current\nstate is kept; the full change history is tracked in issue #1336.",
+        "description": "How the speaker's CURRENT identity came to be (read-only; issue #1280).\n\n``by`` is present only for the file's owner, an administrator of the file's organization\nand a platform administrator whose reach covers the file (any administrator in\nsingle-tenant mode; in multi-tenant mode only under a support-access grant); every other\nviewer gets ``source`` and ``at``. ``null`` for\nthe whole object means unknown (written before the record existed, or never named) or\nwithheld because a voiceprint made it and the file's voiceprints are off. Only the current\nstate is kept; the full change history is tracked in issue #1336.",
         "properties": {
           "at": {
             "anyOf": [
@@ -17038,6 +17038,11 @@
       "SpeakerIdentityActor": {
         "description": "The person who made or confirmed a speaker's identity.",
         "properties": {
+          "erased": {
+            "default": false,
+            "title": "Erased",
+            "type": "boolean"
+          },
           "name": {
             "anyOf": [
               {
@@ -17050,14 +17055,18 @@
             "title": "Name"
           },
           "uuid": {
-            "format": "uuid",
-            "title": "Uuid",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uuid"
           }
         },
-        "required": [
-          "uuid"
-        ],
         "title": "SpeakerIdentityActor",
         "type": "object"
       },

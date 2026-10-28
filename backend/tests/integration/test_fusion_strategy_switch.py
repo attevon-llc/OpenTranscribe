@@ -285,6 +285,33 @@ def corpus_user_id(client) -> int:
     return int(user_ids[0])
 
 
+@pytest.fixture(scope="module")
+def chat_corpus_supports_ranking(client, corpus_user_id) -> None:
+    """Skip the chat-path ranking assertions when the caller's accessible corpus is too thin.
+
+    The same corpus-mismatch reasoning as :func:`corpus_supports_ranking`, but scoped the way
+    ``retrieve_chunks`` scopes (``accessible_user_ids``) and keyed on the lexical leg alone, so
+    a fusion bug that returns nothing from a corpus that does hold the vocabulary still fails.
+    """
+    body = {
+        "query": {
+            "bool": {
+                "must": [{"match": {"content": _LEG_B}}],
+                "filter": [{"term": {"accessible_user_ids": corpus_user_id}}],
+            }
+        }
+    }
+    matching = int(client.count(index=settings.OPENSEARCH_CHUNKS_INDEX, body=body)["count"])
+    if matching < _MIN_HITS_FOR_RANKING:
+        pytest.skip(
+            f"user {corpus_user_id} can access {matching} chunk(s) matching {_LEG_B!r} in "
+            f"{settings.OPENSEARCH_CHUNKS_INDEX}, below the {_MIN_HITS_FOR_RANKING} the "
+            "ranking assertions need. The corpus is thin, not the fusion plumbing; index a "
+            "meeting-transcript corpus (#403) to run these."
+        )
+
+
+@pytest.mark.usefixtures("chat_corpus_supports_ranking")
 class TestTheChatPathHonoursTheSelection:
     """The same claim through ``retrieve_chunks`` — the path the harness drives."""
 

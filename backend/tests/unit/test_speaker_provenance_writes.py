@@ -169,10 +169,7 @@ def test_typing_the_suggested_name_records_which_voice_suggestion_was_accepted(
 
     assert response.status_code == 200, response.text
     row = _fresh(db_session, speaker.id)
-    assert _idd(row)["accepted_suggestion"] == {
-        "source": "voice_match",
-        "confidence": 0.9,
-    }
+    assert _idd(row)["accepted_suggestion"] == {"source": "voice_match"}
     assert (row.suggested_name, row.suggestion_detail) == (None, None), "the suggestion is spent"
 
 

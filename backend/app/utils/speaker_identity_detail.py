@@ -23,6 +23,8 @@ from numbers import Real
 from typing import Any
 from typing import SupportsFloat
 
+from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
+
 # --- identity origins -------------------------------------------------------------------------
 
 #: A voiceprint compared the speaker against a stored voice and wrote the identity.
@@ -185,7 +187,8 @@ def accepted_suggestion_snapshot(
     name now on the speaker is a different one (a person who typed another name did not accept
     this suggestion; an explicit "accept" action passes ``False``). Matched
     speaker and profile ids are left out on purpose: a person's own record must stay valid
-    while voiceprints are off, and those ids describe a voice comparison.
+    while voiceprints are off, and those ids describe a voice comparison. For the same reason a
+    voiceprint suggestion keeps only its ``source``: its similarity score is not copied.
     """
     name = getattr(speaker, "suggested_name", None)
     source = getattr(speaker, "suggestion_source", None)
@@ -199,10 +202,11 @@ def accepted_suggestion_snapshot(
         and current.strip().casefold() != str(name).strip().casefold()
     ):
         return None
-    snapshot: dict[str, Any] = {
-        "source": str(source),
-        "confidence": getattr(speaker, "confidence", None),
-    }
+    snapshot: dict[str, Any] = {"source": str(source)}
+    if str(source) not in EMBEDDING_SUGGESTION_SOURCES:
+        # A voice comparison's score is voice data: a person's own record must not keep it
+        # once the voiceprint it describes is switched off or purged.
+        snapshot["confidence"] = getattr(speaker, "confidence", None)
     detail = getattr(speaker, "suggestion_detail", None)
     if isinstance(detail, dict) and detail.get("origin") == ORIGIN_LLM:
         snapshot["llm"] = _compact(

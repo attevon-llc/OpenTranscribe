@@ -969,6 +969,11 @@ off by default.
 
 ### Fixed
 
+- **Speaker embedding audio loading falls through to the WAV reader when torchaudio cannot
+  load.** When ffmpeg failed and `torchaudio.load` raised the torchcodec `RuntimeError` ("Could
+  not load libtorchcodec"), the loader re-raised instead of trying the scipy reader. Any
+  `RuntimeError`, `OSError`, `ValueError` or `ImportError` from torchaudio now logs a warning
+  naming the torchaudio loader and continues to the next one.
 - **The prompt sharing toggle is scoped to the caller's tenant.** The owner can toggle their own
   prompt. In an organization, an organization admin (or a write support grant) can change sharing
   on a member's prompt; the platform admin role alone cannot. A personal workspace is its own

@@ -76,7 +76,7 @@ const SECTION_NAMESPACES: Partial<Record<SettingsSection, string[]>> = {
   'custom-vocabulary': ['settings.customVocabulary', 'settings.vocabulary'],
   'content-redaction': ['settings.contentRedaction'],
   chat: ['chat.settings', 'chat.controls'],
-  'chat-admin': ['chat.adminSettings'],
+  'chat-admin': ['chat.adminSettings', 'chat.settings.tabs.advanced'],
   'llm-provider': ['settings.llmProvider', 'llm'],
   'organization-context': ['settings.orgContext'],
   'speaker-attributes': ['settings.speakerAttributes'],
@@ -147,6 +147,14 @@ const STOP_LEAVES = new Set(
   ].map((s) => s.toLowerCase())
 );
 
+/**
+ * Keys a section's namespace would otherwise claim but another section owns. The chat
+ * Advanced tab's own strings sit under `chat.settings`, which belongs to the General tab.
+ */
+const EXCLUDED_KEY_PREFIXES: Partial<Record<SettingsSection, string[]>> = {
+  chat: ['chat.settings.tabs.advanced'],
+};
+
 /** Secondary text suffixes: these leaves are folded into their base setting as keywords. */
 const SECONDARY_SUFFIX = /(Help|Hint|Description|Desc|Note|Tooltip|Subtitle|Caption|Placeholder)$/;
 
@@ -213,6 +221,7 @@ export function buildSettingsSearchItems(
       for (const fullKey of Object.keys(dict)) {
         if (!fullKey.startsWith(prefix)) continue;
         if (fullKey.includes('.toast.') || fullKey.includes('.errors.')) continue;
+        if (EXCLUDED_KEY_PREFIXES[section.id]?.some((p) => fullKey.startsWith(p))) continue;
 
         const leaf = lastSegment(fullKey);
         if (leaf === 'title' || leaf === 'description') {

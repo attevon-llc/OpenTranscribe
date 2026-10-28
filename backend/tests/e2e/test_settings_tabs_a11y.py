@@ -116,23 +116,12 @@ class TestChatTabs:
         expect(last).to_be_focused()
         assert _selected(page) == ["tab-chat-advanced"]
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "Known defect, found by this test: `chat-admin` is kept as a section id so search "
-            "can land on the Advanced tab, but SettingsModal never adds it to the searchable "
-            "sections (the email tab and the redaction policy tab are added; this one is not), "
-            "so every `chat.adminSettings.*` setting is unsearchable and the Advanced-tab hits "
-            "that do exist open the General tab. Strict: fixing the product turns this red "
-            "until the marker is removed."
-        ),
-    )
     def test_search_deep_link_opens_the_named_tab(self, admin_home: Page) -> None:
         page = admin_home
         open_settings(page)
         search = page.locator(".settings-search input").first
         search.fill("Retrieval cache (seconds)")
-        result = page.locator(".settings-search .result-item", has_text="Chat").first
+        result = page.locator(".settings-search .result-item").first
         expect(result).to_be_visible(timeout=10000)
         result.click()
         expect(page.locator("#tab-chat-advanced")).to_have_attribute(

@@ -237,3 +237,34 @@ def test_reading_a_file_still_in_the_pipeline_queues_no_scan(
     db_session.refresh(unscanned_file)
     assert unscanned_file.redaction_status is None
     assert unscanned_file.status == getattr(FileStatus, pipeline_status)
+
+
+def test_reading_an_errored_file_with_a_transcript_queues_the_scan_and_keeps_it_errored(
+    db_session, redacting_user, unscanned_file, broker
+):
+    """A failed reprocess leaves ERROR plus the earlier transcript; it must not be withheld
+    forever. The scan is reachable, and queuing it must not flip the file's status."""
+    from app.core.enums import FileStatus
+
+    unscanned_file.status = FileStatus.ERROR
+    db_session.flush()
+
+    assert _read_gate(db_session, redacting_user, unscanned_file) is True
+
+    assert [call["file_id"] for call in broker.published] == [unscanned_file.id]
+    db_session.refresh(unscanned_file)
+    assert unscanned_file.status == FileStatus.ERROR
+    assert unscanned_file.redaction_status == C.REDACTION_STATUS_PENDING
+
+
+def test_reading_a_cancelled_file_queues_no_scan(
+    db_session, redacting_user, unscanned_file, broker
+):
+    """CANCELLED is not terminal for the status sync, so a scan's bookkeeping could flip it."""
+    from app.core.enums import FileStatus
+
+    unscanned_file.status = FileStatus.CANCELLED
+    db_session.flush()
+
+    assert _read_gate(db_session, redacting_user, unscanned_file) is True
+    assert broker.published == []

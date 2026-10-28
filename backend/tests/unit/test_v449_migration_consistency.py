@@ -668,21 +668,22 @@ def test_the_foreign_key_is_the_last_statement_of_the_upgrade():
     import inspect
 
     tree = ast.parse(inspect.getsource(_module().upgrade))
-    calls = [
-        node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, "id", "")
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-    ]
-    executed = [
-        node.args[0].id
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "execute"
-        and node.args
-        and isinstance(node.args[0], ast.Name)
-    ]
-    assert executed[-1] == "ADD_USER_FK_SQL"
-    assert "backfill_and_record" in calls
+    steps: list[str] = []
+    for statement in ast.walk(tree):
+        if not (isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call)):
+            continue
+        call = statement.value
+        if isinstance(call.func, ast.Attribute) and call.func.attr == "execute":
+            steps.append(call.args[0].id if isinstance(call.args[0], ast.Name) else "?")
+        elif isinstance(call.func, ast.Name):
+            steps.append(call.func.id)
+    assert steps == [
+        "LOCK_TIMEOUT_SQL",
+        "ADD_COLUMN_SQL",
+        "ADD_CHECK_SQL",
+        "ADD_PROVENANCE_COLUMNS_SQL",
+        "backfill_and_record",
+        "ADD_USER_FK_SQL",
+    ], "the foreign key locks user until the transaction ends: it goes after the backfill"
     assert '"user"' not in _module().ADD_PROVENANCE_COLUMNS_SQL
     assert '"user"' not in _module().ADD_COLUMN_SQL

@@ -27,6 +27,21 @@ _USER_KEYS = {
 }
 
 
+def upsert_system_setting(db, key: str, value: str | None) -> None:
+    """Write one ``system_settings`` row, updating it when the database already holds it.
+
+    ``key`` is the primary key and a developer stack's database is long-lived, so a blind
+    INSERT of a privacy switch collides with whatever an earlier admin session left there.
+    Flushes only; the caller decides whether to commit.
+    """
+    row = db.query(SystemSettings).filter(SystemSettings.key == key).first()
+    if row is None:
+        db.add(SystemSettings(key=key, value=value))
+    else:
+        row.value = value
+    db.flush()
+
+
 def set_instance_switch(db, feature: str, value: bool) -> None:
     """Set the instance layer (``system_settings``) for ``voiceprints`` or ``gender``."""
     key = _INSTANCE_KEYS[feature]

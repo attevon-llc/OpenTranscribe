@@ -20,10 +20,10 @@ from app.core.capabilities import reset_capability_resolver
 from app.core.capabilities import set_capability_resolver
 from app.models.organization_policy import OrganizationPolicy
 from app.models.prompt import UserSetting
-from app.models.system_settings import SystemSettings
 from app.services.privacy import consent
 from app.services.privacy.policy import assert_voiceprint_write_allowed
 from app.services.privacy.policy import clear_write_backstop_cache
+from tests.fixtures.privacy_switches import upsert_system_setting
 
 EFFECTIVE = "/api/privacy/effective"
 ME = "/api/privacy/me"
@@ -54,7 +54,7 @@ def _set_user(db, user, key: str, value: str) -> None:
 
 
 def _set_instance(db, key: str, value: str) -> None:
-    db.add(SystemSettings(key=key, value=value))
+    upsert_system_setting(db, key, value)
     db.commit()
 
 

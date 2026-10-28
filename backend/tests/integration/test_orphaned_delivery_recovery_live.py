@@ -386,8 +386,10 @@ def test_a_cold_shutdown_hands_a_running_stage_back_to_the_head_of_its_queue(
     cancel REJECTS with requeue: the message leaves ``unacked`` and is back on its priority
     list marked ``redelivered``. (billiard 4.3.0 let the cancel ACK it instead, dropping the
     message; that is the bug the 4.3.1 pin closes -- see
-    ``test_the_shutdown_cancel_is_never_acked``.) A WARM shutdown, plain SIGTERM, never applies
-    the soft timeout; it waits for running tasks with no limit.
+    ``tests/unit/test_billiard_shutdown_is_not_acked.py::
+    test_the_shutdown_systemexit_is_reported_as_a_lost_worker_not_a_result``.) A WARM
+    shutdown, plain SIGTERM, never applies the soft timeout; it waits for running tasks with
+    no limit.
 
     The run must not read "queued" on the way out (lease released), the reaper must NOT treat
     it as lost -- it is first in line, and re-dispatching it would run it twice -- and a fresh

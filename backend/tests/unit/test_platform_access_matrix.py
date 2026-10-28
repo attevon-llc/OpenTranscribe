@@ -171,6 +171,40 @@ def test_grant_gated_platform_routes_take_the_request_bypass(derived):
     assert not any("is_admin" in sources[k] for k in gated), "a gated route reads the flag itself"
 
 
+def test_deployment_scope_routes_ask_for_the_right_in_their_code(derived):
+    """The category promises the handler refuses a caller without the deployment-scope right."""
+    from app.main import app
+
+    sources = matrix.handler_sources(app)
+    scoped = {r.key for r in derived if r.gate.endswith(":deployment-scope")}
+    assert scoped >= {
+        "POST /api/search/reindex",
+        "POST /api/search/reindex/stop",
+        "POST /api/search/repair-indices",
+        "POST /api/search/reembed-degraded",
+        "PUT /api/search/models/neural/active",
+        "POST /api/admin/data-integrity",
+    }, sorted(scoped)
+    assert all(matrix.uses_deployment_scope(sources[k]) for k in scoped), sorted(scoped)
+    # and the reverse: a platform route that asks for the right must say so
+    undeclared = [
+        r.key
+        for r in derived
+        if r.gate.startswith("platform-op:")
+        and not r.key.startswith("GET ")
+        and matrix.uses_deployment_scope(sources.get(r.key, ""))
+        and not r.gate.endswith(":deployment-scope")
+    ]
+    assert not undeclared, undeclared
+
+
+def test_a_docstring_is_not_a_deployment_scope_check():
+    code = 'def f(ctx):\n    ctx.bypass.require_deployment_scope("Reindexing")\n'
+    prose = 'def f(ctx):\n    """Needs ``deployment_scope_writable``."""\n    return 1  # deployment_scope_writable\n'
+    assert matrix.uses_deployment_scope(code) is True
+    assert matrix.uses_deployment_scope(prose) is False
+
+
 def test_every_content_route_has_an_explicit_guard_that_its_code_bears_out(derived):
     """``CONTENT_GUARDS`` is the claim; the handler's own code is the check on it."""
     from app.main import app

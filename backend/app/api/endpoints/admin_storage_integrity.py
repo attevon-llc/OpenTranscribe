@@ -21,6 +21,8 @@ from fastapi import Request
 from fastapi import status
 from pydantic import BaseModel
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_admin_user
 from app.api.endpoints.auth.dependencies import _get_client_info
 from app.auth.audit import AuditEventType
@@ -118,6 +120,7 @@ def start_storage_orphan_sweep(
             "file-shaped objects). Never overrides the empty-database refusal."
         ),
     ),
+    ctx: RequestContext = Depends(get_current_context),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Delete the storage objects of files that no longer exist.
@@ -128,6 +131,7 @@ def start_storage_orphan_sweep(
     period are never touched. Audit-logged as ``admin.data_integrity.storage_purge`` (at
     request, and again on completion with counters).
     """
+    ctx.bypass.require_deployment_scope("The storage orphan sweep")
     from app.tasks.storage_orphan_sweep_task import get_storage_sweep_status as read
     from app.tasks.storage_orphan_sweep_task import storage_orphan_sweep_task
 

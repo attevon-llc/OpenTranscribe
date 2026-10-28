@@ -89,7 +89,7 @@ import tests.conftest  # noqa: F401,E402 — side effects only, see above
 # say ``from conftest import ...`` rather than ``from tests.e2e.conftest import ...``.
 # It owns every artifact the suite asserts on, so that no test reads the dev library
 # (see its module docstring and ``backend/tests/CLAUDE.md``).
-pytest_plugins = ["tests.fixtures.search_corpus_stack", "owned_corpus"]
+pytest_plugins = ["tests.fixtures.search_corpus_stack", "owned_corpus", "privacy_fixtures"]
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

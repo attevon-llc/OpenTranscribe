@@ -1,21 +1,21 @@
 {
   "baseline": "__screenshots__/settings-dark.png",
-  "captured_at": "2026-10-15T03:11:20Z",
-  "git_sha": "13c708a2bb9dc152216d4dce33cda727d6ed9224",
-  "git_branch": "feat/v0.6.0-frontend-ux",
+  "captured_at": "2026-10-28T12:30:44Z",
+  "git_sha": "1563faa97",
+  "git_branch": "test/v060-e2e",
   "git_dirty": false,
   "git_dirty_paths": 0,
-  "reason": "v0.6.0 round 4 UI: tabbed File status, info icons, dropdown placement, Recovery tab",
-  "captured_by": "scripts/e2e/update-visual-baselines.sh",
+  "reason": "Baseline predated #1254 (Takedown notices) and Support access sidebar rows; re-captured on 2026-10-28 for v0.6.0. Only diff: those two rows (sidebar scroll shift) and a slightly wider masked count chip.",
+  "captured_by": "UPDATE_SCREENSHOTS=1 pytest test_visual_regression.py -k settings- (not the wrapper: it seeds a stack that transcribes on the GPU; the surface is a modal element capture)",
   "stack": {
-    "compose_project": "otfresh-visual",
-    "port_offset": 100,
+    "compose_project": "otfresh-master",
+    "port_offset": 0,
     "gpu_device": null,
-    "seeded": true,
-    "mode": "dev (local source bind-mounted)"
+    "seeded": false,
+    "mode": "dev (main checkout bind-mounted; fresh stack)"
   },
   "change_from_previous": {
-    "status": "changed (within tolerance)",
-    "differing_pixels": "0.0230%"
+    "status": "changed (intended)",
+    "differing_pixels": "1.6-1.9%"
   }
 }

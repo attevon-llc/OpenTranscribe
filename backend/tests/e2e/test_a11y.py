@@ -51,6 +51,9 @@ from a11y_lib import set_theme
 from conftest import E2E_STORAGE_STATE_PREFIX
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from privacy_ui import PRIVACY_SURFACES
+from privacy_ui import SURFACE_SCAN_SCOPE
+from privacy_ui import open_privacy_surface
 
 pytestmark = pytest.mark.a11y
 
@@ -319,6 +322,33 @@ class TestAccessibility:
         results = run_axe(page)
         _assert_surface_clean("upload", theme, results, load_allowlist(), discovered_results)
         page.keyboard.press("Escape")
+
+    @pytest.mark.parametrize("surface", sorted(PRIVACY_SURFACES))
+    def test_privacy_surfaces_a11y(
+        self,
+        authed_page: Page,
+        theme: str,
+        surface: str,
+        discovered_results: dict[tuple[str, str], dict[str, int]],
+        base_url: str,
+    ) -> None:
+        """Voice Attributes privacy card, the purge dialog and About: no new violations (#1335).
+
+        The purge dialog is reached with one read of the account's own policy answered by
+        ``page.route`` (see ``open_privacy_surface``), so the scan changes no account state.
+        """
+        page = authed_page
+        set_theme(page, theme)
+        root = open_privacy_surface(page, base_url, surface)
+        expect(root).to_be_visible(timeout=15000)
+        # Kept deliberately: the dialog's open transition must finish before axe reads
+        # computed styles (issue #431), same as the settings-modal scan.
+        page.wait_for_timeout(500)
+        # Scoped to the surface: the gallery behind a modal has its own allowlisted debt.
+        results = run_axe(page, context=SURFACE_SCAN_SCOPE[surface])
+        _assert_surface_clean(
+            surface.replace("_", "-"), theme, results, load_allowlist(), discovered_results
+        )
 
     @pytest.mark.chat
     def test_chat_page_a11y(

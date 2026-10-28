@@ -56,6 +56,11 @@ from a11y_lib import (  # noqa: E402
     set_theme,
 )
 from playwright.sync_api import sync_playwright  # noqa: E402
+from privacy_ui import (  # noqa: E402
+    PRIVACY_SURFACES,
+    SURFACE_SCAN_SCOPE,
+    open_privacy_surface,
+)
 
 #: Placeholder reason. Visibly wrong if pasted into the allowlist unedited — the point is
 #: that a reviewer (or `scripts/audit-tests.py`-style CI check on the a11y allowlist parser)
@@ -65,9 +70,9 @@ _PLACEHOLDER_REASON = f'{BACKLOG_PREFIX} — REPLACE THIS REASON'
 _SAMPLE_MEDIA = E2E_DIR.parent / 'fixtures' / 'media' / 'sample_short.wav'
 
 
-def _print_surface(surface: str, theme: str, page: object) -> None:
+def _print_surface(surface: str, theme: str, page: object, context: str | None = None) -> None:
     page.wait_for_timeout(500)  # let the entry transition settle before axe reads styles
-    results = run_axe(page)  # type: ignore[arg-type]
+    results = run_axe(page, context=context)  # type: ignore[arg-type]
     # empty allowlist: report EVERYTHING found
     outcome = evaluate_surface(surface, theme, results, {})
     if not outcome.observed:
@@ -220,6 +225,16 @@ def main() -> int:
             page.wait_for_selector('.tab-button', timeout=5000)
             _print_surface('upload', theme, page)
             page.keyboard.press('Escape')
+
+            # The privacy controls (#1335). Theme first: open_privacy_surface navigates, and the
+            # context init script set_theme registered keeps the theme across that navigation.
+            # Surface keys are the allowlist spellings ('privacy-settings', ...).
+            set_theme(page, theme)
+            for surface in sorted(PRIVACY_SURFACES):
+                open_privacy_surface(page, args.base_url, surface)
+                page.wait_for_load_state('networkidle')
+                _print_surface(surface.replace('_', '-'), theme, page, SURFACE_SCAN_SCOPE[surface])
+                page.keyboard.press('Escape')
 
             # /chat — the shell renders with no LLM provider; scan it regardless.
             page.goto(f'{args.base_url}/chat')

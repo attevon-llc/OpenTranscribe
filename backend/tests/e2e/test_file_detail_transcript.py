@@ -56,8 +56,12 @@ pytestmark = pytest.mark.transcription
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
 TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: S105
 
-# Expected transcript export formats (guards formatter/export refactor).
-EXPORT_FORMATS = ("txt", "json", "csv", "srt", "vtt")
+# Transcript export formats that are always offered (guards formatter/export refactor).
+EXPORT_FORMATS = ("txt", "json", "csv", "srt", "vtt", "md")
+# DOCX/PDF are offered only while the `exports.documents` capability is on (the route 404s
+# without it, so the menu hides them). The UI treats a capability as on unless the server
+# says `false`, and so does `_expected_export_formats`.
+DOCUMENT_EXPORT_FORMATS = ("docx", "pdf")
 
 # Console-error noise that is pre-existing app behavior, NOT a regression:
 # - the auth-bootstrap 401 emitted before the stored token rehydrates,
@@ -237,6 +241,18 @@ class TestTranscriptRenders:
         assert content.strip(), "First transcript segment should contain text"
 
 
+def _expected_export_formats(backend_url: str, token: str) -> tuple[str, ...]:
+    """The formats the Export menu should list, per the server's own capability answer."""
+    response = requests.get(
+        f"{backend_url}/api/system/capabilities",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30,
+    )
+    assert response.status_code == 200, response.text[:200]
+    documents_on = response.json().get("capabilities", {}).get("exports.documents") is not False
+    return EXPORT_FORMATS + (DOCUMENT_EXPORT_FORMATS if documents_on else ())
+
+
 class TestExportControl:
     """The Export dropdown is present and lists all transcript export formats."""
 
@@ -246,8 +262,16 @@ class TestExportControl:
         expect(btn).to_be_visible(timeout=10000)
         expect(btn).to_contain_text("Export")
 
-    def test_export_dropdown_lists_all_formats(self, detail_page: Page) -> None:
-        """Opening Export lists txt/json/csv/srt/vtt (guards formatter refactor)."""
+    def test_export_dropdown_lists_all_formats(
+        self, detail_page: Page, api_token: str, backend_url: str
+    ) -> None:
+        """Opening Export lists exactly the formats the deployment offers.
+
+        The count used to be pinned at five and went stale when Markdown, DOCX and PDF were
+        added; pinning it again would only go stale the next time, so it is derived from the
+        capability the menu itself reads, and each format is also checked by label.
+        """
+        expected = _expected_export_formats(backend_url, api_token)
         detail_page.locator(".export-transcript-button").click()
         # The menu is portaled to <body> by the anchoredPanel action, so it is no longer a
         # descendant of `.export-dropdown`; only one panel is open at a time.
@@ -256,10 +280,11 @@ class TestExportControl:
         expect(menu).to_be_visible(timeout=5000)
 
         options = menu.locator("button")
-        expect(options).to_have_count(len(EXPORT_FORMATS), timeout=5000)
+        expect(options).to_have_count(len(expected), timeout=5000)
 
         combined = (menu.text_content() or "").lower()
-        for fmt in EXPORT_FORMATS:
+        assert len(expected) >= len(EXPORT_FORMATS)  # the loop below must have work to do
+        for fmt in expected:
             assert f".{fmt}" in combined, f"Export dropdown should offer .{fmt}; got: {combined!r}"
 
 

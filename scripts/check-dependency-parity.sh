@@ -45,7 +45,10 @@ fi
 echo "Comparing backend/venv against container '${container}'..."
 # The image ships no pip, so read the installed distributions from the interpreter itself.
 docker exec "${container}" python -c 'import importlib.metadata as m; print("\n".join(d.metadata["Name"] + "==" + d.version for d in m.distributions()))' 2>/dev/null | sort > /tmp/ot-parity-image.txt
-"${VENV_PIP}" freeze --all 2>/dev/null | sort > /tmp/ot-parity-venv.txt
+# `pip list --format=freeze`, not `pip freeze --all`: freeze prints direct-URL installs
+# (the pyannote.audio fork, en_core_web_sm) as `name @ url`, which carries no `==` version
+# and was silently dropped here, reporting both as image-only when the venv had them.
+"${VENV_PIP}" list --format=freeze 2>/dev/null | sort > /tmp/ot-parity-venv.txt
 
 if [[ ! -s /tmp/ot-parity-image.txt ]]; then
     echo "FAIL: could not read installed packages from ${container}."

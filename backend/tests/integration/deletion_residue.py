@@ -166,12 +166,19 @@ def postgres_residue(
         if left:
             findings.append(f"postgres: {left} row(s) of {table} survive")
     for edge in edge_rows:
-        if edge.on_delete != "n" or edge.parent not in reached:
+        if edge.parent not in reached:
             continue
+        keyless = edge.on_delete != "n" and _primary_key(conn, edge.child) is None
+        if edge.on_delete != "n" and not keyless:
+            continue  # a keyed child is in ``reached``, so the loop above already counted it
         left = len(
             _rows_where_in(conn, edge.child, edge.child_col, list(reached[edge.parent]), None)
         )
-        if left:
+        if keyless and left:
+            # A child with no single-column key (a composite-key link table such as
+            # content_hold_file) never enters ``reached``, so its survivors are counted here.
+            findings.append(f"postgres: {left} row(s) of {edge.child} survive")
+        elif left:
             findings.append(f"postgres: {left} {edge.child}.{edge.child_col} still point at it")
     if sf.cluster_id is not None and _rows_where_in(
         conn, "speaker_cluster", "id", [sf.cluster_id], None
@@ -429,6 +436,8 @@ class _Teardown:
             "prof": sf.profile_id,
             "ws": sf.watch_source_id,
             "ue": sf.usage_event_id,
+            "notice": sf.takedown_notice_id,
+            "org": sf.organization_id,
         }
         self.sql(
             [
@@ -444,6 +453,11 @@ class _Teardown:
                 ("DELETE FROM watch_source_file WHERE watch_source_id = :ws", ids),
                 ("DELETE FROM watch_source WHERE id = :ws", ids),
                 ("DELETE FROM usage_event WHERE id = CAST(:ue AS uuid)", ids),
+                # The notice record outlives the file by design, so the delete under test
+                # never removes it; its links go with it. The organization takes the
+                # seeded hold (and its file rows) with it.
+                ("DELETE FROM takedown_notice WHERE id = :notice", ids),
+                ("DELETE FROM organization WHERE id = :org", ids),
             ]
         )
 

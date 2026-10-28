@@ -88,6 +88,8 @@ from _visual_diff import diff_fraction as _diff_fraction
 from PIL import Image
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+from privacy_ui import PRIVACY_SURFACES
+from privacy_ui import open_privacy_surface
 from timeouts import APP_SHELL_READY_MS
 from timeouts import LOGIN_FORM_READY_MS
 
@@ -481,7 +483,16 @@ def _stabilize(page: Page) -> None:
 
 
 # Surfaces parametrized over both themes. Each entry: (surface, theme).
-SURFACES = ["gallery", "file_detail", "speakers", "settings", "chat_trace"]
+SURFACES = [
+    "gallery",
+    "file_detail",
+    "speakers",
+    "settings",
+    "chat_trace",
+    "privacy_settings",
+    "purge_dialog",
+    "about",
+]
 THEMES = ["light", "dark"]
 
 
@@ -580,6 +591,12 @@ _VOLATILE_SELECTORS: dict[str, tuple[str, ...]] = {
     # surface; the two different-file problem (see issue #451 note in the
     # module docstring) is not maskable and is handled by the skip guard below.
     "file_detail": (".notifications-btn",),
+    # The three privacy surfaces are element captures of the control itself, so nothing in
+    # them depends on library content. The About header carries the build identity of the
+    # stack that served it (version, commit, server version), which differs per build.
+    "privacy_settings": (),
+    "purge_dialog": (),
+    "about": (".about-modal-wrapper .header-version",),
 }
 
 
@@ -906,6 +923,21 @@ def test_visual_regression(
             # masked surface must actually mask something, or a class rename
             # silently lets the live gauges/DB totals back into the baseline.
             _assert_masks(page, "settings")
+        elif surface in PRIVACY_SURFACES:
+            target = open_privacy_surface(page, base_url, surface)
+            if surface == "about":
+                # The masked build line is as wide as the version strings it holds, and that
+                # width moves the box the mask covers. Pin it so a longer commit hash or
+                # version cannot change the image (the same reason chat_trace pins its chips).
+                page.add_style_tag(
+                    content=(
+                        ".about-modal-wrapper .header-version{display:block!important;"
+                        "width:560px!important;height:22px!important;overflow:hidden!important;"
+                        "white-space:nowrap!important}"
+                    )
+                )
+            _stabilize(page)
+            _assert_masks(page, surface)
         elif surface == "chat_trace":
             # Resolved lazily, NOT as a test parameter: the fixture skips without
             # the mock LLM, and a declared parameter would take the other four
@@ -933,7 +965,15 @@ def test_visual_regression(
         else:  # pragma: no cover - defensive
             pytest.fail(f"Unknown surface: {surface}")
 
-        if surface == "chat_trace":
+        if surface in PRIVACY_SURFACES:
+            # The control only: an element capture, like `settings` and `chat_trace`, so the
+            # gallery behind a modal cannot put library content into the baseline.
+            png_bytes = target.screenshot(
+                animations="disabled",
+                mask=_volatile_regions(page, surface),
+                mask_color="#ff00ff",
+            )
+        elif surface == "chat_trace":
             # Capture the PANEL, not the page. The thread beside it carries the
             # model's answer and a relative timestamp, neither of which this
             # baseline is about; an element capture makes the image exactly the

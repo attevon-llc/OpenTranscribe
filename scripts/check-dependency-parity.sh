@@ -33,13 +33,37 @@ IGNORED="pip setuptools wheel"
 
 # Pick the backend of the stack this shell is working on. A bare `name=backend` filter takes
 # whichever stack docker lists first, so with a --fresh stack (or any second project) up the
-# comparison silently ran against the wrong image. COMPOSE_PROJECT_NAME is how opentr.sh
-# scopes a --fresh stack; unset, the default dev stack is the one that is meant.
+# comparison silently ran against the wrong image.
+#   * COMPOSE_PROJECT_NAME set (how opentr.sh scopes a --fresh stack): that project only.
+#   * unset: the default dev stack, i.e. the project that is NOT an `otfresh-*` fresh stack.
+#     Several candidates, or only fresh ones, is ambiguous: say so rather than guess.
 backend_filters=(--filter "label=com.docker.compose.service=backend" --filter "status=running")
 if [[ -n "${COMPOSE_PROJECT_NAME:-}" ]]; then
     backend_filters+=(--filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}")
 fi
-container="$(docker ps "${backend_filters[@]}" --format '{{.Names}}' | head -1)"
+candidates=()
+while IFS= read -r line; do
+    [[ -n "${line}" ]] && candidates+=("${line}")
+done < <(docker ps "${backend_filters[@]}" --format '{{.Names}} {{.Label "com.docker.compose.project"}}')
+
+container=""
+if [[ -n "${COMPOSE_PROJECT_NAME:-}" ]]; then
+    container="${candidates[0]:-}"; container="${container%% *}"
+else
+    dev_candidates=()
+    for line in "${candidates[@]}"; do
+        [[ "${line#* }" == otfresh-* ]] || dev_candidates+=("${line}")
+    done
+    if ((${#dev_candidates[@]} == 1)); then
+        container="${dev_candidates[0]%% *}"
+    elif ((${#dev_candidates[@]} > 1 || ${#candidates[@]} > 1)); then
+        echo "FAIL: several backend containers are running (${candidates[*]})." >&2
+        echo "      Set COMPOSE_PROJECT_NAME to the stack to compare against and re-run." >&2
+        exit 2
+    elif ((${#candidates[@]} == 1)); then
+        container="${candidates[0]:-}"; container="${container%% *}"
+    fi
+fi
 if [[ -z "${container}" ]]; then
     echo "SKIP: no running backend container to compare against."
     echo "      Start the stack with './opentr.sh start dev' and re-run."

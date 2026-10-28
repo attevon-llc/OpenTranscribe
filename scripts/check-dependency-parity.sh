@@ -31,7 +31,15 @@ VENV_PIP="${PROJECT_ROOT}/backend/venv/bin/pip"
 # differ by construction and say nothing about what the app runs.
 IGNORED="pip setuptools wheel"
 
-container="$(docker ps --filter "name=backend" --filter "status=running" --format '{{.Names}}' | head -1)"
+# Pick the backend of the stack this shell is working on. A bare `name=backend` filter takes
+# whichever stack docker lists first, so with a --fresh stack (or any second project) up the
+# comparison silently ran against the wrong image. COMPOSE_PROJECT_NAME is how opentr.sh
+# scopes a --fresh stack; unset, the default dev stack is the one that is meant.
+backend_filters=(--filter "label=com.docker.compose.service=backend" --filter "status=running")
+if [[ -n "${COMPOSE_PROJECT_NAME:-}" ]]; then
+    backend_filters+=(--filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}")
+fi
+container="$(docker ps "${backend_filters[@]}" --format '{{.Names}}' | head -1)"
 if [[ -z "${container}" ]]; then
     echo "SKIP: no running backend container to compare against."
     echo "      Start the stack with './opentr.sh start dev' and re-run."

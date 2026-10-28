@@ -13,6 +13,7 @@ The service provides intelligent error classification and user guidance includin
 Error reasons include:
 - FILE_QUALITY: Issues with file corruption, format, or encoding
 - NO_AUDIO_TRACK: The file has no audio track at all — nothing to transcribe
+- EMPTY_FILE: A zero-byte upload (a truncated or failed transfer) — nothing to transcribe
 - NO_SPEECH: Audio contains no detectable speech content
 - FORMAT_ISSUE: Codec, container, or technical format problems
 - NETWORK_ERROR: Connectivity, download, or URL access issues
@@ -77,6 +78,7 @@ class UserErrorReason(StrEnum):
 
     FILE_QUALITY = "file_quality"
     NO_AUDIO_TRACK = "no_audio_track"
+    EMPTY_FILE = "empty_file"
     NO_SPEECH = "no_speech"
     FORMAT_ISSUE = "format_issue"
     PROCESSING_ERROR = "processing_error"
@@ -97,6 +99,7 @@ INPUT_ERROR_REASONS: frozenset[UserErrorReason] = frozenset(
     {
         UserErrorReason.FILE_QUALITY,
         UserErrorReason.NO_AUDIO_TRACK,
+        UserErrorReason.EMPTY_FILE,
         UserErrorReason.NO_SPEECH,
         UserErrorReason.FORMAT_ISSUE,
     }
@@ -203,6 +206,13 @@ class ErrorCategorizationService:
         "does not contain audio",
     ]
 
+    #: audio_processor.py's ``_reject_empty_input``. Its own reason (issue #786 wants a corrupt
+    #: container, a video with no audio and an empty file told apart), checked before the
+    #: broader file-quality patterns.
+    EMPTY_FILE_PATTERNS = [
+        "is empty and contains no content",
+    ]
+
     FILE_QUALITY_PATTERNS = [
         "no audio content",
         "corrupted",
@@ -236,11 +246,6 @@ class ErrorCategorizationService:
         "format is not supported",
         "unsupported codec",
         "convert to a common format",
-        # audio_processor.py: a zero-byte upload. Kept OUT of FILE_QUALITY_PATTERNS on purpose:
-        # issue #786 requires a corrupt container, a video with no audio and an empty file to
-        # classify to three different reasons, and an empty file is permanent either way
-        # (FORMAT_ISSUE is an input-error reason).
-        "is empty and contains no content",
     ]
 
     NETWORK_PATTERNS = [
@@ -317,6 +322,11 @@ class ErrorCategorizationService:
         ):
             return ErrorCategorizationService._handle_no_audio_track_error()
 
+        if any(
+            pattern in error_lower for pattern in ErrorCategorizationService.EMPTY_FILE_PATTERNS
+        ):
+            return ErrorCategorizationService._handle_empty_file_error()
+
         # Check for file quality issues
         if any(
             pattern in error_lower for pattern in ErrorCategorizationService.FILE_QUALITY_PATTERNS
@@ -370,6 +380,19 @@ class ErrorCategorizationService:
                 "Upload a file that contains an audio track",
                 "If this is a video, check that audio was included when it was exported",
                 "Try uploading a different file to test",
+            ],
+        )
+
+    @staticmethod
+    def _handle_empty_file_error() -> tuple[UserErrorReason, str, list[str]]:
+        """Handle a zero-byte upload."""
+        return (
+            UserErrorReason.EMPTY_FILE,
+            "This file is empty, so there is nothing to transcribe.",
+            [
+                "Check that the file has content and plays on your device",
+                "Upload it again; the earlier transfer may have been cut short",
+                "If it came from a recording app, export or save the recording again",
             ],
         )
 
@@ -638,6 +661,7 @@ class ErrorCategorizationService:
 _FIXED_MESSAGE_HANDLERS: tuple[Callable[[], tuple[UserErrorReason, str, list[str]]], ...] = (
     ErrorCategorizationService._handle_file_quality_error,
     ErrorCategorizationService._handle_no_audio_track_error,
+    ErrorCategorizationService._handle_empty_file_error,
     ErrorCategorizationService._handle_no_speech_error,
     ErrorCategorizationService._handle_format_error,
     ErrorCategorizationService._handle_network_error,

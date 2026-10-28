@@ -564,6 +564,7 @@
   "fileDetail.errorRetryable": "Dies könnte vorübergehend sein — ein erneuter Versuch könnte funktionieren.",
   "errors.media.fileQuality": "Diese Datei konnte nicht gelesen werden. Sie ist möglicherweise beschädigt, unvollständig oder keine gültige Mediendatei.",
   "errors.media.noAudioTrack": "Diese Datei enthält keine Audiospur, daher gibt es nichts zu transkribieren.",
+  "errors.media.emptyFile": "Diese Datei ist leer, daher gibt es nichts zu transkribieren.",
   "errors.media.noSpeech": "In dieser Aufnahme wurde keine Sprache erkannt.",
   "errors.media.formatIssue": "Das Format oder der Codec dieser Datei wird nicht unterstützt.",
   "errors.media.processingError": "Die Verarbeitung dieser Datei ist fehlgeschlagen.",

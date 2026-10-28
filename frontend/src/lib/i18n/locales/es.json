@@ -564,6 +564,7 @@
   "fileDetail.errorRetryable": "Esto puede ser temporal — reintentarlo podría funcionar.",
   "errors.media.fileQuality": "No se pudo leer este archivo. Puede estar dañado, incompleto o no ser un archivo multimedia válido.",
   "errors.media.noAudioTrack": "Este archivo no tiene pista de audio, por lo que no hay nada que transcribir.",
+  "errors.media.emptyFile": "Este archivo está vacío, así que no hay nada que transcribir.",
   "errors.media.noSpeech": "No se detectó voz en esta grabación.",
   "errors.media.formatIssue": "El formato o códec de este archivo no es compatible.",
   "errors.media.processingError": "Se produjo un error al procesar este archivo.",

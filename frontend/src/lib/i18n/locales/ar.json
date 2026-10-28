@@ -1770,6 +1770,7 @@
   "fileDetail.errorRetryable": "قد يكون هذا مؤقتًا — قد تنجح المحاولة مرة أخرى.",
   "errors.media.fileQuality": "تعذّرت قراءة هذا الملف. قد يكون تالفًا أو غير مكتمل أو ليس ملف وسائط صالحًا.",
   "errors.media.noAudioTrack": "لا يحتوي هذا الملف على مسار صوتي، لذا لا يوجد ما يمكن تفريغه.",
+  "errors.media.emptyFile": "هذا الملف فارغ، لذا لا يوجد ما يمكن تفريغه.",
   "errors.media.noSpeech": "لم يتم اكتشاف أي كلام في هذا التسجيل.",
   "errors.media.formatIssue": "تنسيق هذا الملف أو ترميزه غير مدعوم.",
   "errors.media.processingError": "فشلت معالجة هذا الملف.",

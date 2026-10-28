@@ -1741,6 +1741,7 @@
   "fileDetail.errorRetryable": "Isso pode ser temporário — tentar novamente pode funcionar.",
   "errors.media.fileQuality": "Não foi possível ler este arquivo. Ele pode estar corrompido, incompleto ou não ser um arquivo de mídia válido.",
   "errors.media.noAudioTrack": "Este arquivo não tem faixa de áudio, portanto não há nada para transcrever.",
+  "errors.media.emptyFile": "Este arquivo está vazio, então não há nada para transcrever.",
   "errors.media.noSpeech": "Nenhuma fala foi detectada nesta gravação.",
   "errors.media.formatIssue": "O formato ou codec deste arquivo não é compatível.",
   "errors.media.processingError": "Falha ao processar este arquivo.",

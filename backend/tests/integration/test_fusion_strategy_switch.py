@@ -265,24 +265,29 @@ class TestTheSwitchChangesWhatComesBack:
 
 @pytest.fixture(scope="module")
 def corpus_user_id(client) -> int:
-    """Whoever owns the indexed corpus, read from the corpus itself.
+    """The user who can access the MOST chunks matching the test vocabulary.
 
     Discovered rather than configured: ``retrieve_chunks`` gates on
     ``accessible_user_ids``, and hard-coding an id would silently retrieve
-    nothing on any stack but the one it was written against — an empty pool that
-    passes an ``assert not raised``-shaped test.
+    nothing on any stack but the one it was written against. Picked by a terms
+    aggregation filtered by ``_LEG_B``, not by whichever document ``match_all``
+    happens to return first: that document's owner may hold none of the vocabulary,
+    and the thin-corpus skip below would then hide a wrong pick as a thin corpus.
     """
     response = client.search(
         index=settings.OPENSEARCH_CHUNKS_INDEX,
-        body={"size": 1, "_source": ["accessible_user_ids"], "query": {"match_all": {}}},
+        body={
+            "size": 0,
+            "query": {"match": {"content": _LEG_B}},
+            "aggs": {"owners": {"terms": {"field": "accessible_user_ids", "size": 1}}},
+        },
     )
-    hits = response.get("hits", {}).get("hits", [])
-    if not hits:
-        pytest.skip("chunks index is empty")
-    user_ids = hits[0]["_source"].get("accessible_user_ids") or []
-    if not user_ids:
-        pytest.skip("no document carries accessible_user_ids; cannot scope a retrieval")
-    return int(user_ids[0])
+    buckets = response.get("aggregations", {}).get("owners", {}).get("buckets", [])
+    if not buckets:
+        pytest.skip(
+            f"no user can access a chunk matching {_LEG_B!r}; the corpus has nothing to scope to"
+        )
+    return int(buckets[0]["key"])
 
 
 @pytest.fixture(scope="module")

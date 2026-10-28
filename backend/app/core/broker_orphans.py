@@ -206,6 +206,48 @@ def read_unacked(client: Any) -> list[UnackedDelivery]:
     return result
 
 
+def queued_run_id(raw: bytes | str) -> str | None:
+    """The transcription run a message waiting on a queue list belongs to, if any."""
+    try:
+        message = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(message, dict):
+        return None
+    if (message.get("headers") or {}).get("task") not in TRANSCRIPTION_STAGES:
+        return None
+    return _run_identity(message)[0]
+
+
+def read_queued_run_ids(client: Any) -> set[str]:
+    """Runs with a stage message WAITING on a queue list (not delivered to any worker).
+
+    A cold shutdown hands a running stage back to the head of its queue; until a worker
+    takes it again it is in neither ``unacked`` nor held by a lease, so it must be read from
+    the lists themselves. One pipelined round trip over every queue's priority lists.
+    """
+    from kombu.transport.redis import Channel
+
+    from app.core.constants import CeleryQueues
+
+    priority_steps = range(10)  # mirrors broker_transport_options["priority_steps"]
+    keys = [
+        queue if priority == 0 else f"{queue}{Channel.sep}{priority}"
+        for queue in CeleryQueues.ALL
+        for priority in priority_steps
+    ]
+    pipe = client.pipeline(transaction=False)
+    for key in keys:
+        pipe.lrange(key, 0, -1)
+    run_ids: set[str] = set()
+    for entries in pipe.execute():
+        for raw in entries or []:
+            run_id = queued_run_id(raw)
+            if run_id:
+                run_ids.add(run_id)
+    return run_ids
+
+
 def _lease_states(run_ids: Iterable[str]) -> dict[str, Any]:
     from app.core.task_liveness import probe_runs
 
@@ -542,7 +584,9 @@ def reclaim_orphaned_deliveries(
         # Runs whose worker AND message are gone: nothing to put back, so re-dispatch.
         from app.services.transcription_retry import recover_lost_runs
 
-        in_broker = {d.run_id for d in deliveries if d.run_id}
+        # A run whose stage message waits on a queue list (a cold shutdown puts the running
+        # stage back at the head) is not lost either: it is first in line, not gone.
+        in_broker = {d.run_id for d in deliveries if d.run_id} | read_queued_run_ids(client)
         summary["lost_runs"] = recover_lost_runs(exclude=in_broker)
         return summary
     except Exception as e:  # noqa: BLE001 - conclude nothing from an unreadable broker

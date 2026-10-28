@@ -152,6 +152,8 @@ source "$LIB_DIR/versions.sh"
 source "$LIB_DIR/model-cache.sh"
 # shellcheck source=lib/compose-chain.sh
 source "$LIB_DIR/compose-chain.sh"
+# shellcheck source=lib/feature-checks.sh
+source "$LIB_DIR/feature-checks.sh"
 
 # Resolve the version under test now that versions.sh is available.
 if [[ -z "$LOCAL_IMAGE_TAG" ]]; then
@@ -801,7 +803,24 @@ print(d.get("total_results") or len(d.get("results") or d.get("hits") or []))
     # silently assert the wrong revision.
     expected_head=$(ver_alembic_head "$REPO_ROOT/backend")
     as_assert_eq "alembic head" "$expected_head" "$alembic_head"
+}
 
+# The v0.6.0 feature checks (lib/feature-checks.sh): schema, privacy policy + purge, exports,
+# notification stages, stats, community org 404s, AWS ASR message. They run against the file(s)
+# phase 06 transcribed, so a run with none records a FAIL (never a silent pass).
+phase_07_feature_checks() {
+    API_BASE="http://localhost:${TEST_BACKEND_PORT}/api"
+    export API_BASE
+    _init_report
+    if ! ac_login "$TEST_ADMIN_EMAIL" "$TEST_ADMIN_PASSWORD"; then
+        as_record FAIL "feature checks: login as the bootstrap admin"
+        return 0
+    fi
+    fc_run_all full
+}
+
+phase_08_summary() {
+    _init_report
     # as_summary deliberately returns 1 when any assertion FAILed. This is the LAST
     # phase, and under set -euo pipefail a non-zero return from either stage of
     # `as_summary | tee -a ...` trips set -e right here — silently skipping the
@@ -837,15 +856,17 @@ phase 03 phase_03_pin_local_image
 phase 04 phase_04_start_stack
 phase 05 phase_05_wait_for_health
 phase 06 phase_06_api_smoke
+phase 07 phase_07_feature_checks
+phase 08 phase_08_summary
 
 echo
 echo "Done. Report: $TEST_ROOT/REPORT.md"
 echo "Stack left running for inspection. Tear down with: $0 --cleanup"
 echo "Then restart your live deployment with: ./opentr.sh start dev"
 
-# Propagate phase 06's assertion verdict as the script's own exit code (see
-# phase_06_api_smoke's comment). Without this, the capture above makes the script
+# Propagate phase 08's assertion verdict as the script's own exit code (see
+# phase_08_summary's comment). Without this, the capture above makes the script
 # exit 0 even when an assertion FAILed -- worse than the truncation bug it fixes
 # (silently green instead of noisily truncated). Defaults to 0 for a resumed run
-# where phase 06 was already marked done and skipped.
+# where phase 08 was already marked done and skipped.
 exit "${RELEASE_TEST_EXIT_CODE:-0}"

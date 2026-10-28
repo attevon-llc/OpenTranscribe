@@ -171,7 +171,7 @@ Provider & Model (super admin) or `WHISPER_MODEL=nyrahealth/faster_CrisperWhispe
 **Alternative**: Use `large-v3` if you need translation to English or maximum accuracy
 
 :::info[Hybrid Mode (Low-VRAM NVIDIA GPU)]
-When the GPU cannot fit the transcription model, OpenTranscribe automatically switches to **hybrid mode**: the `small` model runs on CPU (int8) while speaker detection stays on the GPU. You still get speaker-separated transcripts — just at CPU transcription speeds (~15–30× real-time).
+When the GPU cannot fit the transcription model, OpenTranscribe automatically switches to **hybrid mode**: the `small` model runs on CPU (int8) while speaker detection stays on the GPU. You still get speaker-separated transcripts — just at CPU transcription speeds (slower than GPU transcription; not benchmarked).
 
 This is a Linux/WSL2-with-NVIDIA-GPU feature. **macOS is not a hybrid-mode platform**: Docker Desktop has no Metal/GPU passthrough, so a container on Apple Silicon has no MPS device to put speaker detection on. The image that runs natively there is the lite image, which has no local Whisper and no local speaker detection: it transcribes and detects speakers with cloud providers (see [Deployment Variants](../installation/deployment-variants.md)).
 

@@ -273,7 +273,7 @@ Yes! OpenTranscribe uses Celery workers to process multiple files in parallel:
 
 ### Can I download videos from YouTube and other platforms?
 
-Yes! OpenTranscribe supports **1800+ platforms** via yt-dlp integration:
+Yes! OpenTranscribe supports the many sites that yt-dlp supports (well over a thousand extractors):
 - **Best supported**: YouTube (including playlists), Dailymotion, Twitter/X
 - **Limited support**: Vimeo, Instagram, Facebook, TikTok (may require authentication)
 - Automatically downloads and transcribes

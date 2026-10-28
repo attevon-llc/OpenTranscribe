@@ -98,7 +98,7 @@ def batch_process_speaker_matches():
                             # confident suggestion moves the canonical chunk
                             # label on its own, with no `display_name` write.
                             before = canonical_speaker_label_for_row(speaker)
-                            record_suggestion(
+                            if not record_suggestion(
                                 speaker,
                                 source="voice_match",
                                 name=match["display_name"],
@@ -111,7 +111,8 @@ def batch_process_speaker_matches():
                                     embedding_model=voiceprint_model_id(),
                                     origin_task="batch_speaker_matching",
                                 ),
-                            )
+                            ):
+                                break  # a person verified this speaker: no voice suggestion
                             tracker.record(
                                 int(speaker.media_file_id) if speaker.media_file_id else None,
                                 before,

@@ -115,7 +115,6 @@ def canonical_speaker_label(
     confidence: float | None = None,
     suggestion_source: str | None = None,
     suggestion_threshold: float = DEFAULT_SUGGESTION_CONFIDENCE_THRESHOLD,
-    verified: bool | None = None,
     identity_source: str | None = None,
     voiceprint_names: bool = True,
 ) -> str:
@@ -157,29 +156,22 @@ def canonical_speaker_label(
         suggestion_source: ``Speaker.suggestion_source``. Omitted/``None`` means the
             provenance is unknown, which fails closed: the suggestion is ignored.
         suggestion_threshold: Minimum confidence for the suggestion to be shown.
-        verified: ``Speaker.verified``. Only consulted when ``voiceprint_names`` is False: a
-            voiceprint suggestion a person verified is theirs and stays.
         identity_source: ``Speaker.identity_source`` (see ``utils/speaker_identity_source``).
             Only consulted when ``voiceprint_names`` is False.
         voiceprint_names: False when the speaker's file has voiceprints off (#1280): a
             ``display_name`` a voiceprint wrote (``identity_source = 'voiceprint'``) is
-            skipped, and a voiceprint suggestion is not promoted unless a person verified it
-            on a row whose identity is not machine-made. Everything else resolves as when
-            True; the caller decides the policy, this function only applies it.
+            skipped, and a voiceprint suggestion is not promoted, whoever verified the speaker.
+            Everything else resolves as when True; the caller decides the policy, this function only applies it.
 
     Returns:
         A non-empty label. :data:`UNKNOWN_SPEAKER_LABEL` when nothing resolves.
     """
-    from app.utils.speaker_identity_source import MACHINE_IDENTITY_SOURCES
     from app.utils.speaker_identity_source import hides_name
 
     if display_name and not hides_name(identity_source, voiceprint_names):
         return str(display_name)
-    suggestion_withheld = not voiceprint_names and (
-        verified is not True or identity_source in MACHINE_IDENTITY_SOURCES
-    )
     if (
-        not suggestion_withheld
+        voiceprint_names
         and suggested_name
         and is_embedding_suggestion_source(suggestion_source)
         and confidence is not None
@@ -213,8 +205,8 @@ def canonical_speaker_label_for_row(
     is exactly how the eight sites drifted in the first place.
 
     **Honours the privacy policy** (#1280, plan D5): while the row's file has voiceprints
-    off, a name a voiceprint produced is left out, whether it is an unverified voiceprint
-    suggestion or a ``display_name`` a voiceprint path wrote (``identity_source =
+    off, a name a voiceprint produced is left out, whether it is a voiceprint
+    suggestion (verified or not) or a ``display_name`` a voiceprint path wrote (``identity_source =
     'voiceprint'``). A label printed by an export, a caption, the search index or the chat
     roster then agrees with the speaker responses. The policy is asked only when the
     answer could change the label (the common row costs no query).
@@ -223,7 +215,7 @@ def canonical_speaker_label_for_row(
     ``True`` = policy-free (what the data says; the stored status columns use this), ``False``
     = withhold, ``None`` (default) = ask the policy through ``db``. ``db`` is a session or a
     ``PrivacyView`` for a columns-only row (which has no session of its own and must then
-    also expose ``media_file_id``, ``verified`` and ``identity_source``); an ORM row uses its
+    also expose ``media_file_id`` and ``identity_source``); an ORM row uses its
     own session.
 
     **A columns-only row must select** ``Speaker.identity_source``. When it does not, the row
@@ -258,7 +250,6 @@ def canonical_speaker_label_for_row(
             suggested_name=getattr(row, "suggested_name", None),
             confidence=getattr(row, "confidence", None),
             suggestion_source=getattr(row, "suggestion_source", None),
-            verified=getattr(row, "verified", None),
             identity_source=identity_source,
             voiceprint_names=voiceprints,
         )

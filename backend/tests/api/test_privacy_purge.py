@@ -328,7 +328,9 @@ def assert_purged(db, seeded, os_) -> None:
     assert bag["age_range"] == 0.7 and bag["metadata_hints"][0]["name"] == "Ann"
     assert guess.predicted_age_range == "adult"
     assert confirmed.verified is True and confirmed.display_name == f"Bea {seeded.tag}"
-    assert confirmed.suggestion_source == "voice_match", "a verified speaker's suggestion stays"
+    # the voice comparison on a person-verified speaker goes too; the person's own word stays
+    assert (confirmed.suggested_name, confirmed.suggestion_source) == (None, None)
+    assert (confirmed.confidence, confirmed.suggestion_detail) == (None, None)
     assert confirmed.predicted_gender == "female" and confirmed.gender_confirmed_by_user is True
     assert confirmed.profile_id == profile.id
     assert profile.name == f"Profile {seeded.tag}"
@@ -560,8 +562,11 @@ def test_a_cleared_suggestion_that_was_the_label_refreshes_the_label_and_the_ind
     assert guess.resolved_display_name != "Ann orgA", (
         "the voiceprint-suggested name still labels it"
     )
-    # only the file whose speaker lost its suggestion needs its chunk labels rebuilt
-    assert [f[1] for f in reindexed] == [str(a.files[0].uuid)], "the chunk index is not refreshed"
+    # every file with a speaker that lost a suggestion is queued, the person-verified speaker's
+    # included (its label is unchanged, the rebuild is then a no-op)
+    assert sorted(f[1] for f in reindexed) == sorted(str(f.uuid) for f in a.files), (
+        "the chunk index is not refreshed"
+    )
 
 
 def test_the_policy_is_fail_closed_when_it_cannot_be_read(gov, monkeypatch):
@@ -682,11 +687,12 @@ def test_the_personal_workspace_purge_leaves_the_same_persons_organization_data(
     assert_purged(gov.db, mine_personal, opensearch)
     assert_untouched(gov.db, mine_org, opensearch)
     assert_untouched(gov.db, others_personal, opensearch)
-    # Only the personal workspace's rows were counted: 2 speakers carry inferred gender, 1 match.
+    # Only the personal workspace's rows were counted: 2 speakers carry inferred gender, 1 match,
+    # 2 voiceprint suggestions (one on a person-verified speaker).
     postgres = result["counts"]["postgres"]
     assert postgres["gender_speakers_cleared"] == 2
     assert postgres["speaker_matches_deleted"] == 1
-    assert postgres["suggestions_cleared"] == 1
+    assert postgres["suggestions_cleared"] == 2
 
 
 # One store at a time: what each of the four stores holds for a seeded scope, as "kept?" Each
@@ -751,11 +757,12 @@ def test_an_organization_purge_counts_the_organizations_speakers_not_zero(
     result = in_process_task(broker[0])
 
     # Two seeds in the organization, each with two inferred-gender speakers, a match and a
-    # voiceprint suggestion; the personal workspace's identical rows are not in these numbers.
+    # voiceprint suggestion on two speakers (one of them person-verified); the personal
+    # workspace's identical rows are not in these numbers.
     postgres = result["counts"]["postgres"]
     assert postgres["gender_speakers_cleared"] == 4
     assert postgres["speaker_matches_deleted"] == 2
-    assert postgres["suggestions_cleared"] == 2
+    assert postgres["suggestions_cleared"] == 4
 
 
 def test_a_person_may_purge_once_their_organization_turned_it_off_without_changing_their_switch(

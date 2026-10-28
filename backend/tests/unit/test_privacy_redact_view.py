@@ -184,13 +184,8 @@ def test_a_voiceprint_written_suggestion_is_hidden_in_memory_and_kept_in_the_dat
     )
 
 
-@pytest.mark.parametrize(
-    ("source", "verified"),
-    [("voice_match", True), ("llm_analysis", False), ("metadata_hint", False)],
-)
-def test_a_verified_voice_name_and_a_non_voiceprint_suggestion_are_not_hidden(
-    db_session, normal_user, source, verified
-):
+@pytest.mark.parametrize("source", ["llm_analysis", "metadata_hint"])
+def test_a_non_voiceprint_suggestion_is_not_hidden(db_session, normal_user, source):
     off_org = _org(db_session, voiceprints=False)
     file = _file_in(db_session, normal_user, off_org)
     speaker = _speaker(
@@ -200,12 +195,38 @@ def test_a_verified_voice_name_and_a_non_voiceprint_suggestion_are_not_hidden(
         suggested_name="Alice",
         confidence=0.9,
         suggestion_source=source,
-        verified=verified,
+        verified=False,
     )
 
     redact_view.redact_speaker_rows(db_session, [speaker])
 
     assert (speaker.suggested_name, speaker.suggestion_source) == ("Alice", source)
+
+
+@pytest.mark.parametrize("identity_source", ["human", None])
+def test_a_voice_suggestion_on_a_person_verified_speaker_is_hidden_but_the_name_stays(
+    db_session, normal_user, identity_source
+):
+    off_org = _org(db_session, voiceprints=False)
+    file = _file_in(db_session, normal_user, off_org)
+    speaker = _speaker(
+        db_session,
+        normal_user,
+        file,
+        display_name="Bea",
+        suggested_name="Alice",
+        confidence=0.9,
+        suggestion_source="voice_match",
+        suggestion_detail={"origin": "voice_match", "matched_speaker_uuid": str(uuid_pkg.uuid4())},
+        verified=True,
+        identity_source=identity_source,
+    )
+
+    redact_view.redact_speaker_rows(db_session, [speaker])
+
+    assert (speaker.suggested_name, speaker.suggestion_source) == (None, None)
+    assert (speaker.confidence, speaker.suggestion_detail) == (None, None)
+    assert (speaker.display_name, speaker.verified) == ("Bea", True), "the person's word stays"
 
 
 def test_a_suggestion_stays_when_the_layer_is_on(db_session, normal_user):
@@ -591,23 +612,26 @@ def test_a_stored_status_describes_the_data_and_a_response_the_policy(db_session
     assert stored.resolved_display_name == "SPEAKER_00"
 
 
-@pytest.mark.parametrize(
-    ("verified", "source", "hidden"),
-    [
-        (True, "voiceprint", True),  # the matcher set verified: its suggestion is the evidence
-        (True, "human", False),  # a person verified it
-        (True, None, False),
-        (False, "human", True),  # nobody verified it
-        (None, None, True),
-    ],
-)
-def test_the_suggestion_predicate_reads_who_verified(verified, source, hidden):
+@pytest.mark.parametrize("verified", [True, False, None])
+@pytest.mark.parametrize("source", ["voiceprint", "voiceprint_link", "human", None])
+@pytest.mark.parametrize("suggestion_source", ["voice_match", "profile_match"])
+def test_the_suggestion_predicate_does_not_read_who_verified(verified, source, suggestion_source):
     from types import SimpleNamespace
 
     row = SimpleNamespace(
-        suggestion_source="profile_match", verified=verified, identity_source=source
+        suggestion_source=suggestion_source, verified=verified, identity_source=source
     )
-    assert redact_view.hides_voiceprint_suggestion(row) is hidden
+    assert redact_view.hides_voiceprint_suggestion(row) is True
+
+
+@pytest.mark.parametrize(
+    "suggestion_source", ["llm_analysis", "metadata_hint", "user_skipped", None]
+)
+def test_the_suggestion_predicate_leaves_a_suggestion_no_voiceprint_wrote(suggestion_source):
+    from types import SimpleNamespace
+
+    row = SimpleNamespace(suggestion_source=suggestion_source, verified=False, identity_source=None)
+    assert redact_view.hides_voiceprint_suggestion(row) is False
 
 
 # --- the file-scope question fails closed ---------------------------------------------------
@@ -637,7 +661,7 @@ def test_a_policy_read_that_raises_reads_as_off(db_session, normal_user, monkeyp
     assert redact_view.voiceprints_off_for_row(speaker, db_session) is True
 
 
-def test_a_row_that_did_not_select_verified_reads_as_unverified():
+def test_a_row_that_did_not_select_verified_hides_its_voice_suggestion():
     from types import SimpleNamespace
 
     from app.utils.speaker_labels import canonical_speaker_label_for_row

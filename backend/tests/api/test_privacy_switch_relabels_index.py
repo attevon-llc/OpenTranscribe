@@ -80,14 +80,14 @@ def test_a_users_own_switch_queues_their_voice_named_files_both_ways(
 
     policy_admin.write_user_switch(db_session, normal_user.id, False)
 
-    assert queued["reindex"] == [mine.id]
-    assert queued["facts"] == [mine.id]
-    assert verified.id not in queued["reindex"] and by_llm.id not in queued["reindex"]
+    assert queued["reindex"] == [mine.id, verified.id]
+    assert queued["facts"] == [mine.id, verified.id]
+    assert by_llm.id not in queued["reindex"]
     assert someone_elses.id not in queued["reindex"]
 
     queued["reindex"].clear()
     policy_admin.write_user_switch(db_session, normal_user.id, True)
-    assert queued["reindex"] == [mine.id]
+    assert queued["reindex"] == [mine.id, verified.id]
 
 
 def test_an_organization_switch_queues_only_that_organizations_files(

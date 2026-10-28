@@ -172,11 +172,12 @@ def test_an_llm_suggestion_is_transcript_derived_and_stays_while_voiceprints_are
     assert llm["suggestion_source"] == "llm_analysis"
 
 
-def test_a_verified_speaker_keeps_its_voice_sourced_name_while_voiceprints_are_off(
+def test_a_verified_speaker_keeps_its_name_but_not_its_voice_suggestion_while_off(
     client, user_token_headers, world, knn, db_session
 ):
-    """A person verified it: that is a user assertion, not biometric data."""
+    """The person's name is a user assertion; the suggestion is a voice comparison."""
     world["voice"].verified = True
+    world["voice"].display_name = "Voice Zed"
     db_session.commit()
     _switch_voiceprints(db_session, "false")
 
@@ -185,7 +186,13 @@ def test_a_verified_speaker_keeps_its_voice_sourced_name_while_voiceprints_are_o
     )
 
     voice = _by_uuid(resp.json())[str(world["voice"].uuid)]
-    assert voice["suggested_name"] == "Voice Alice"
+    assert voice["display_name"] == "Voice Zed"
+    assert (voice["suggested_name"], voice["suggestion_source"], voice["confidence"]) == (
+        None,
+        None,
+        None,
+    )
+    assert voice["suggestion"] is None
 
 
 def test_switching_off_hides_and_switching_on_restores_the_stored_suggestion(

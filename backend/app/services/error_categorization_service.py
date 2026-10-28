@@ -212,8 +212,7 @@ class ErrorCategorizationService:
         "file damaged",
         "unreadable",
         "malformed",
-        # audio_processor.py / transcription/audio.py: an empty upload, a clip too short
-        "is empty and contains no content",
+        # transcription/audio.py: a clip too short
         "too short to contain meaningful content",
     ]
 
@@ -237,6 +236,11 @@ class ErrorCategorizationService:
         "format is not supported",
         "unsupported codec",
         "convert to a common format",
+        # audio_processor.py: a zero-byte upload. Kept OUT of FILE_QUALITY_PATTERNS on purpose:
+        # issue #786 requires a corrupt container, a video with no audio and an empty file to
+        # classify to three different reasons, and an empty file is permanent either way
+        # (FORMAT_ISSUE is an input-error reason).
+        "is empty and contains no content",
     ]
 
     NETWORK_PATTERNS = [

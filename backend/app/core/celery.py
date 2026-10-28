@@ -1304,6 +1304,21 @@ INTENTIONALLY_UNROUTED_TASKS: dict[str, str] = {
 }
 
 
+#: The queues each INTENTIONALLY_UNROUTED stage can be dispatched to. The orphan reaper reads
+#: exactly these (plus the statically routed stages' queues) to find a run waiting on a queue
+#: list. ``tests/unit/test_broker_orphans_queued_runs.py`` fails if a stage listed above is
+#: missing here.
+UNROUTED_STAGE_QUEUES: dict[str, tuple[str, ...]] = {
+    "transcription.gpu_transcribe": (
+        CeleryQueues.GPU,
+        CeleryQueues.CLOUD_ASR,
+        CeleryQueues.GPU_TRANSCRIBE,
+    ),
+    "transcription.cpu_transcribe": (CeleryQueues.CPU_TRANSCRIBE,),
+    "transcription.diarize_gpu": (CeleryQueues.GPU_DIARIZE, CeleryQueues.GPU),
+}
+
+
 def unrouted_task_names() -> list[str]:
     """Registered non-builtin tasks with neither a route nor an allowlist entry.
 

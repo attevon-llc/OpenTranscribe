@@ -14,6 +14,7 @@ from datetime import timedelta
 
 from sqlalchemy.orm import Session
 
+from app.core.broker_orphans import dead_unqueued_run_ids
 from app.core.task_config import task_recovery_config
 from app.core.task_liveness import TRANSCRIPTION_TASK_TYPE
 from app.core.task_liveness import RunState
@@ -107,6 +108,7 @@ class TaskDetectionService:
         replay_owned = replay_tracked_ids(
             t.id for t in potential_stuck_tasks if t.task_type != TRANSCRIPTION_TASK_TYPE
         )
+        dead_runs = dead_unqueued_run_ids(runs)
         stuck_tasks = []
         for task in potential_stuck_tasks:
             run = runs.get(str(task.id))
@@ -115,7 +117,7 @@ class TaskDetectionService:
                     continue
                 if self._is_task_duration_exceeded(task, now):
                     stuck_tasks.append(task)
-            elif run.state == RunState.DEAD or (
+            elif str(task.id) in dead_runs or (
                 run.state == RunState.RUNNING
                 and run.started_at is not None
                 and self._duration_exceeded_since(task, run.started_at, now)
@@ -297,9 +299,8 @@ class TaskDetectionService:
         # A transcription quiet for an hour is usually just waiting for a GPU worker; only
         # one that is provably dead is orphaned (#1020).
         runs = probe_runs(t.id for t in candidates if t.task_type == TRANSCRIPTION_TASK_TYPE)
-        orphaned_tasks = [
-            t for t in candidates if str(t.id) not in runs or runs[str(t.id)].state == RunState.DEAD
-        ]
+        dead_runs = dead_unqueued_run_ids(runs)
+        orphaned_tasks = [t for t in candidates if str(t.id) not in runs or str(t.id) in dead_runs]
 
         logger.info(f"Identified {len(orphaned_tasks)} orphaned tasks")
         return orphaned_tasks
@@ -998,11 +999,12 @@ class TaskDetectionService:
         """
         runs = probe_runs(t.id for t in tasks if t.task_type == TRANSCRIPTION_TASK_TYPE)
         boot_time = _get_container_boot_time()
+        dead_runs = dead_unqueued_run_ids(runs)
         dead: set[str] = set()
         for task in tasks:
             run = runs.get(str(task.id))
             if run is not None:
-                if run.state == RunState.DEAD:
+                if str(task.id) in dead_runs:
                     dead.add(str(task.id))
             elif not (task.updated_at and task.updated_at > boot_time):
                 dead.add(str(task.id))

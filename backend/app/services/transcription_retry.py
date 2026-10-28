@@ -458,7 +458,8 @@ def recover_lost_run(db, task: Task) -> RunOutcome | None:
     that exact stage back; this covers the rest. Spends the infrastructure-requeue budget, not
     the error budget, and dispatches without backoff: nothing about the file was wrong.
 
-    Returns None when there is nothing to recover: the task has no file, the run is being
+    Returns None when there is nothing to recover: the task has no file, its stage message is
+    waiting on a queue (or the broker cannot be read), the run is being
     cancelled, another recovery pass already ended the run (the row is re-read under a
     lock, so the reaper and the health check can never both dispatch a replacement for the
     same run), or the run is still inside its reclaim grace window (issue #1178).
@@ -474,6 +475,14 @@ def recover_lost_run(db, task: Task) -> RunOutcome | None:
         )
         return None
     if task.media_file_id is None:
+        return None
+    from app.core.broker_orphans import queued_run_ids
+
+    queued = queued_run_ids()
+    if queued is None or str(task.id) in queued:
+        # A cold shutdown put the stage back at the head of its queue: the run is first in
+        # line, not lost, and re-dispatching it would run it twice. An unreadable broker
+        # concludes nothing.
         return None
     media_file = db.query(MediaFile).filter(MediaFile.id == task.media_file_id).first()
     if media_file is None:

@@ -23,6 +23,9 @@ FC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FC_PY="$FC_DIR/feature-checks.py"
 : "${FC_PG_CONTAINER:=opentranscribe-postgres}"
 : "${FC_PP_TIMEOUT_S:=300}"
+#: Per-request cap inside a polling loop. A poll is bounded by its OWN deadline (the *_TIMEOUT_S
+#: values), so one hung request must not stretch it: 60 iterations x a 60 s request was ~65 min.
+: "${FC_POLL_REQUEST_TIMEOUT_S:=15}"
 : "${FC_PURGE_TIMEOUT_S:=420}"
 : "${FC_EXPORT_TIMEOUT_S:=240}"
 #: The revision that introduced the v0.6.0 speaker columns. A FLOOR for the derived head, never the
@@ -51,8 +54,8 @@ FC_CHECKS_STATEFUL=(fc_check_voiceprints_toggle fc_check_audited_purge)
 # A global, not stdout, so a caller never needs a subshell. Always returns 0.
 fc_request() {
     local out="$1" method="$2" path="$3" body="${4:-}"
-    local args=(--silent --show-error --max-time 60 --connect-timeout "${API_TIMEOUT:-10}"
-                -o "$out" -w '%{http_code}' -X "$method")
+    local args=(--silent --show-error --max-time "${FC_REQUEST_TIMEOUT_S:-60}"
+                --connect-timeout "${API_TIMEOUT:-10}" -o "$out" -w '%{http_code}' -X "$method")
     if [[ -n "${API_TOKEN:-}" ]]; then
         args+=(-H "Authorization: Bearer $API_TOKEN")
     fi
@@ -126,11 +129,13 @@ fc_eval() {
     return "$rc"
 }
 
+# Exit codes of feature-checks.py: 0 pass, 1 fail, 2 not applicable (the only SKIP). Anything
+# else -- an unknown predicate (64), a crash -- is a FAIL, never a quiet skip.
 fc_record() {
     case "$2" in
         0) as_record PASS "$1" ;;
         2) as_record SKIP "$1" "$FC_DETAIL" ;;
-        *) as_record FAIL "$1" "$FC_DETAIL" ;;
+        *) as_record FAIL "$1" "${FC_DETAIL:-feature-checks.py exited $2}" ;;
     esac
 }
 
@@ -263,8 +268,10 @@ fc_set_voiceprints() {
 
 # fc_poll_speaker LABEL FILE_UUID MODE -- file detail shows (visible) / withholds (hidden) the name.
 fc_poll_speaker() {
-    local label="$1" f="$2" mode="$3" rc=1 _try
-    for _try in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    local label="$1" f="$2" mode="$3" rc=1 deadline _try FC_REQUEST_TIMEOUT_S="$FC_POLL_REQUEST_TIMEOUT_S"
+    deadline=$((SECONDS + 40))
+    # Bounded twice: by attempts (the self-test stubs `sleep` away) and by wall clock.
+    for _try in $(seq 1 15); do
         fc_call GET "/files/$f"
         if [[ "$FC_CODE" == "200" ]]; then
             rc=0
@@ -274,6 +281,7 @@ fc_poll_speaker() {
             FC_DETAIL="GET /files/<uuid> answered HTTP $FC_CODE"
             rc=1
         fi
+        ((SECONDS < deadline)) || break
         sleep 2
     done
     fc_record "$label" "$rc"
@@ -313,7 +321,7 @@ fc_check_voiceprints_toggle() {
 
 # ─── (5) the audited purge ──────────────────────────────────────────────────────────────────
 fc_check_audited_purge() {
-    local f orig task _try rc=0 body_purge='{"scope":"personal","targets":["voiceprints"],"confirm":"PURGE"}'
+    local f orig task deadline _try rc=0 FC_REQUEST_TIMEOUT_S="$FC_POLL_REQUEST_TIMEOUT_S" body_purge='{"scope":"personal","targets":["voiceprints"],"confirm":"PURGE"}'
     f="$(fc_pick_file)"
     if [[ -z "$f" ]]; then
         as_record FAIL "purge: a completed file with speakers to seed" "none found"
@@ -338,22 +346,28 @@ fc_check_audited_purge() {
     fc_call POST /admin/privacy-policy/purge "$body_purge"
     if fc_need "purge: POST /admin/privacy-policy/purge (personal scope) is accepted" 202; then
         task="$(fc_field task_id)"
+        deadline=$((SECONDS + FC_PURGE_TIMEOUT_S))
         for _try in $(seq 1 $(( FC_PURGE_TIMEOUT_S / 10 ))); do
             fc_call GET "/privacy/purge/$task"
             rc=0
             fc_eval purge-terminal || rc=$?
             [[ "$rc" == "0" ]] && break
+            ((SECONDS < deadline)) || break
             sleep 10
         done
         if fc_need "purge: GET /privacy/purge/{task} answers 200" 200; then
             fc_judge "purge: completed with per-store counts, residual_ok and an audit reference" \
                 purge-status 1
         fi
-        for _try in 1 2 3 4 5 6 7 8 9 10 11 12; do
+        # Only PASS or the documented "audit off" SKIP end the poll; a FAIL (no event yet, or the
+        # store answering with an internal error) is retried until the deadline.
+        deadline=$((SECONDS + 60))
+        for _try in $(seq 1 12); do
             fc_call GET "/admin/audit-logs?event_type=privacy.voiceprints.purge&limit=5"
             rc=0
             fc_eval audit-search || rc=$?
-            [[ "$rc" != "1" ]] && break
+            [[ "$rc" == "0" || "$rc" == "2" ]] && break
+            ((SECONDS < deadline)) || break
             sleep 5
         done
         if [[ "$FC_CODE" == "200" ]]; then
@@ -421,17 +435,19 @@ fc_check_exports() {
 
 # ─── (7) notification post-processing ───────────────────────────────────────────────────────
 fc_check_post_processing() {
-    local f _try rc=1 counts speakers predicted maxp
+    local f deadline _try rc=1 counts speakers predicted maxp FC_REQUEST_TIMEOUT_S="$FC_POLL_REQUEST_TIMEOUT_S"
     f="$(fc_pick_file)"
     if [[ -z "$f" ]]; then
         as_record FAIL "notifications: a completed file to read post-processing for" "none found"
         return 0
     fi
+    deadline=$((SECONDS + FC_PP_TIMEOUT_S))
     for _try in $(seq 1 $(( FC_PP_TIMEOUT_S / 5 ))); do
         fc_call GET "/files/$f/post-processing"
         rc=0
         fc_eval pp-settled || rc=$?
         [[ "$rc" == "0" ]] && break
+        ((SECONDS < deadline)) || break
         sleep 5
     done
     if ! fc_need "notifications: GET /files/{uuid}/post-processing answers 200" 200; then

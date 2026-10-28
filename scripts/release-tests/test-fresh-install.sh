@@ -174,6 +174,12 @@ fi
 
 # ─── Phase tracking ─────────────────────────────────────────────────────────
 PHASE_DIR="$TEST_ROOT/.phase"
+# Every assertion verdict is also written here so the summary phase counts the whole run, not
+# just the phases this process executed (lib/assertions.sh). --force starts the count over.
+mkdir -p "$PHASE_DIR"
+TEST_ASSERT_LEDGER="$PHASE_DIR/assertions.ledger"
+export TEST_ASSERT_LEDGER
+(( DO_FORCE == 0 )) || rm -f "$TEST_ASSERT_LEDGER"
 phase_done()  { mkdir -p "$PHASE_DIR"; touch "$PHASE_DIR/$1.done"; }
 phase_check() { [[ -f "$PHASE_DIR/$1.done" && $DO_FORCE -eq 0 ]]; }
 phase()       { local n="$1"; shift
@@ -484,6 +490,11 @@ _init_report() {
     export TEST_REPORT_FILE
     (( REPORT_INITIALISED == 0 )) || return 0
     REPORT_INITIALISED=1
+    # A resumed run must not erase the verdicts already recorded: the report is the only place a
+    # FAIL from an earlier process is still written down. Only --force starts a new report.
+    if [[ -s "$TEST_REPORT_FILE" ]] && (( DO_FORCE == 0 )); then
+        return 0
+    fi
     : > "$TEST_REPORT_FILE"
     {
         echo "# Release Test Report — $TEST_SCENARIO"

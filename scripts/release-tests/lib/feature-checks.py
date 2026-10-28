@@ -8,6 +8,7 @@ than being read and trusted. A check whose bad input still passes is worse than 
 
 CLI:   feature-checks.py PREDICATE [ARGS...] [< JSON on stdin]
 Exit:  0 pass | 1 fail | 2 not applicable here (the caller records SKIP with the printed reason)
+       | 64 usage error (unknown predicate) -- recorded as a FAIL, never a SKIP
 Out:   one line of detail on stdout. Never a secret: nothing here receives a token or a key.
 
 Stdlib only: the rehearsal runs on a bare host.
@@ -23,6 +24,9 @@ from pathlib import Path
 from typing import Any
 
 PASS, FAIL, SKIP = 0, 1, 2
+#: Exit code for a usage error (unknown predicate). Deliberately not SKIP's 2: the shell maps 2 to
+#: "not applicable", and a typo'd predicate name must never read as a skipped check.
+USAGE = 64
 Verdict = tuple[int, str]
 
 PURGE_AUDIT_EVENT = 'privacy.voiceprints.purge'
@@ -213,11 +217,18 @@ def audit_search(raw: str) -> Verdict:
     body = _load(raw)
     if not isinstance(body, dict):
         return FAIL, 'not a JSON object'
-    if body.get('error'):
-        return (
-            SKIP,
-            'audit log search is unavailable on this deployment (AUDIT_LOG_TO_OPENSEARCH off)',
-        )
+    error = body.get('error')
+    if error:
+        # Only the documented "audit-to-OpenSearch is off" answer is not applicable. Any other
+        # error (the store failing the query, "An internal error occurred while querying audit
+        # logs.") is a defect in what this check exists to verify, not an absent feature.
+        if 'AUDIT_LOG_TO_OPENSEARCH' in str(error):
+            return (
+                SKIP,
+                'audit log search is unavailable on this deployment (AUDIT_LOG_TO_OPENSEARCH off)',
+            )
+        return FAIL, f'the audit store answered with an error: {str(error)[:120]}'
+
     total = body.get('total')
     if not isinstance(total, int) or total < 1:
         return FAIL, f'no {PURGE_AUDIT_EVENT} event in the audit store (total={total!r})'
@@ -381,7 +392,7 @@ def main(argv: list[str]) -> int:
             f'usage: {argv[0]} PREDICATE [ARGS...]; known: {", ".join(sorted(PREDICATES))}',
             file=sys.stderr,
         )
-        return 2
+        return USAGE
     name, args = argv[1], argv[2:]
     if name in STDIN_FIRST:
         args = [sys.stdin.read(), *args]

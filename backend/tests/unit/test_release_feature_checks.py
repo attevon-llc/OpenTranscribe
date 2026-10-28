@@ -164,8 +164,16 @@ def test_lib_never_pipes_into_an_early_exiting_reader() -> None:
 
 
 def test_every_predicate_the_shell_calls_exists() -> None:
-    called = set(re.findall(r"\b(?:fc_judge\s+\"[^\"]*\"|fc_eval)\s+([a-z][a-z-]+)", LIB_TEXT))
+    # `fc_judge "label" \<newline> predicate ...` is the common multi-line shape; the label
+    # may be followed by a line continuation before the predicate name.
+    called = set(
+        re.findall(
+            r"\b(?:fc_judge\s+\"[^\"]*\"\s*(?:\\\s*\n\s*)?|fc_eval\s+)([a-z][a-z-]+)", LIB_TEXT
+        )
+    )
     assert called, "found no predicate calls to check"
+    # The multi-line calls the single-line regex used to miss must now be seen.
+    assert {"head", "display-names", "purge-status", "post-processing"} <= called
     assert called <= set(fc.PREDICATES), (
         f"shell calls unknown predicate(s): {called - set(fc.PREDICATES)}"
     )
@@ -462,8 +470,12 @@ def test_cli_maps_verdicts_to_exit_codes_and_survives_malformed_input() -> None:
     )
     assert run("stats-reranker", stdin="{}").returncode == 1
     assert run("stats-reranker", stdin="not json").returncode == 1  # not a traceback, not a skip
-    assert run("audit-search", stdin=_j({"error": "off"})).returncode == 2
-    assert run("no-such-predicate").returncode == 2
+    assert (
+        run("audit-search", stdin=_j({"error": "requires AUDIT_LOG_TO_OPENSEARCH=true"})).returncode
+        == 2
+    )
+    # A usage error must not share SKIP's exit code (2): the shell would record it as a skip.
+    assert run("no-such-predicate").returncode == 64
 
 
 # --------------------------------------------------------------------------- the shell self-test
@@ -492,3 +504,66 @@ def test_docs_describe_the_phase_honestly() -> None:
     for needle in ("feature-checks.sh", "phase 11b", "not prove"):
         assert needle in both, f"docs lack {needle!r}"
     assert "feature-checks.sh" in matrix, "the coverage table must name the lib"
+
+
+# --------------------------------------------------------------------------- recording and resume
+
+
+def _bash(script: str, *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+        cwd=cwd,
+    )
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash required")
+def test_an_unknown_predicate_is_recorded_as_a_fail_not_a_skip() -> None:
+    result = _bash(
+        f"source {RT}/lib/assertions.sh; source {LIB_SH}; "
+        'FC_BODY="{}"; fc_judge "typo" no-such-predicate; echo "fail=$as_fail skip=$as_skip"'
+    )
+
+    assert "fail=1 skip=0" in result.stdout, result.stdout + result.stderr
+
+
+def test_audit_search_skips_only_when_audit_to_opensearch_is_off() -> None:
+    off = {"error": "Audit log querying requires AUDIT_LOG_TO_OPENSEARCH=true", "total": 0}
+    broken = {"error": "An internal error occurred while querying audit logs.", "total": 0}
+
+    assert fc.audit_search(_j(off))[0] == fc.SKIP
+    assert fc.audit_search(_j(broken))[0] == fc.FAIL
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash required")
+def test_the_summary_counts_failures_recorded_by_an_earlier_process(tmp_path: Path) -> None:
+    """A resumed run's summary phase runs in a NEW process; it must still see the earlier FAIL."""
+    ledger = tmp_path / "assertions.ledger"
+    report = tmp_path / "REPORT.md"
+    prelude = (
+        f"export TEST_ASSERT_LEDGER={ledger} TEST_REPORT_FILE={report}; "
+        f"source {RT}/lib/assertions.sh; "
+    )
+
+    _bash(prelude + 'as_record FAIL "recorded before the resume" "boom"')
+    result = _bash(prelude + 'as_record PASS "after"; as_summary || echo "rc=$?"')
+
+    assert "1/2 assertions FAILED" in result.stdout, result.stdout
+    assert "rc=1" in result.stdout
+
+
+@pytest.mark.parametrize("script", [FRESH, UPGRADE, LITE], ids=lambda p: p.name)
+def test_a_resumed_scenario_never_truncates_the_report_unguarded(script: Path) -> None:
+    lines = script.read_text(encoding="utf-8").splitlines()
+    truncations = [i for i, line in enumerate(lines) if line.strip() == ': > "$TEST_REPORT_FILE"']
+    assert truncations, f"{script.name}: found no report truncation to guard"
+    for index in truncations:
+        guard = "\n".join(lines[max(0, index - 6) : index])
+        assert "DO_FORCE" in guard and "-s" in guard, (
+            f"{script.name}:{index + 1} truncates REPORT.md without checking for an existing "
+            "report, so a resumed run loses the earlier FAILs"
+        )
+    assert "TEST_ASSERT_LEDGER" in script.read_text(encoding="utf-8")

@@ -187,6 +187,12 @@ fi
 
 # ─── Phase tracking ─────────────────────────────────────────────────────────
 PHASE_DIR="$TEST_ROOT/.phase"
+# Every assertion verdict is also written here so the summary phase counts the whole run, not
+# just the phases this process executed (lib/assertions.sh). --force starts the count over.
+mkdir -p "$PHASE_DIR"
+TEST_ASSERT_LEDGER="$PHASE_DIR/assertions.ledger"
+export TEST_ASSERT_LEDGER
+(( DO_FORCE == 0 )) || rm -f "$TEST_ASSERT_LEDGER"
 phase_done()  { mkdir -p "$PHASE_DIR"; touch "$PHASE_DIR/$1.done"; }
 phase_check() { [[ -f "$PHASE_DIR/$1.done" && $DO_FORCE -eq 0 ]]; }
 phase()       { local n="$1"; shift
@@ -628,20 +634,23 @@ phase_07_pipeline_assertions() {
     API_BASE="http://localhost:${TEST_BACKEND_PORT}/api"
     export API_BASE
     TEST_REPORT_FILE="$TEST_ROOT/REPORT.md"
-    : > "$TEST_REPORT_FILE"
-    {
-        echo "# Release Test Report — $TEST_SCENARIO"
-        echo ""
-        echo "- Project: $TEST_PROJECT_NAME"
-        echo "- Test root: $TEST_ROOT"
-        echo "- Branch: $TO_BRANCH"
-        echo "- Image tag: $LOCAL_IMAGE_TAG (local build)"
-        echo "- Started: $(date -Iseconds)"
-        echo ""
-        echo "| Status | Assertion | Detail |"
-        echo "|---|---|---|"
-    } >> "$TEST_REPORT_FILE"
     export TEST_REPORT_FILE
+    # A resumed run must not erase the verdicts already recorded (see test-fresh-install.sh).
+    if [[ ! -s "$TEST_REPORT_FILE" ]] || (( DO_FORCE != 0 )); then
+        : > "$TEST_REPORT_FILE"
+        {
+            echo "# Release Test Report — $TEST_SCENARIO"
+            echo ""
+            echo "- Project: $TEST_PROJECT_NAME"
+            echo "- Test root: $TEST_ROOT"
+            echo "- Branch: $TO_BRANCH"
+            echo "- Image tag: $LOCAL_IMAGE_TAG (local build)"
+            echo "- Started: $(date -Iseconds)"
+            echo ""
+            echo "| Status | Assertion | Detail |"
+            echo "|---|---|---|"
+        } >> "$TEST_REPORT_FILE"
+    fi
 
     ac_login "$TEST_ADMIN_EMAIL" "$TEST_ADMIN_PASSWORD"
 

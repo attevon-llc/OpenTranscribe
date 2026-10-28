@@ -8,6 +8,12 @@ row the privacy policy exists to hide. The control is the same file with voicepr
 
 Hiding is a view over unchanged data, so every test also switches the layer back on and
 asserts the name returns; the layer is restored in a ``finally`` either way.
+
+Runs as the throwaway ``second_user`` and flips only THAT account's own switch. The shared
+admin's ``/api/privacy/me`` and the deployment-wide ``/api/admin/privacy-policy`` are never
+touched: on a live dev stack the latter is everyone's setting, and a run killed between the
+PUTs would leave voiceprints off for the developer. The instance and organization layers'
+wording (``deployment operator``) is covered by the API/unit privacy suites, not here.
 """
 
 from __future__ import annotations
@@ -32,18 +38,22 @@ NOTICE = '[data-testid="voiceprints-off-notice"]'
 
 
 @pytest.fixture
-def voice_named_file(backend_url: str, admin_token: str) -> Iterator[dict[str, Any]]:
-    """An owned transcript whose speakers carry voiceprint-written names."""
+def voice_named_file(
+    backend_url: str, second_user: dict[str, str], user_headers: dict[str, str]
+) -> Iterator[dict[str, Any]]:
+    """A transcript owned by ``second_user`` whose speakers carry voiceprint-written names."""
     from app.db.base import SessionLocal
     from app.models.media import Speaker
 
     suffix = uuid.uuid4().hex[:6]
+    user_token = user_headers["Authorization"].split(" ", 1)[1]
     for descriptor in _inject_transcript(
         backend_url,
-        admin_token,
+        user_token,
         meeting_id=f"{OWNED_MEDIA_PREFIX}voicematch-{suffix}",
         title="E2E owned voice-matched transcript",
         turns=6,
+        owner_email=second_user["email"],
     ):
         session = SessionLocal()
         try:
@@ -64,20 +74,13 @@ def voice_named_file(backend_url: str, admin_token: str) -> Iterator[dict[str, A
         yield {**descriptor, "matched_names": names}
 
 
-def _put(backend_url: str, token: str, path: str, body: dict[str, Any]) -> None:
-    response = requests.put(
-        f"{backend_url}{path}",
-        headers={"Authorization": f"Bearer {token}"},
-        json=body,
-        timeout=30,
-    )
+def _put(backend_url: str, headers: dict[str, str], path: str, body: dict[str, Any]) -> None:
+    response = requests.put(f"{backend_url}{path}", headers=headers, json=body, timeout=30)
     assert response.status_code == 200, f"{path}: {response.status_code} {response.text[:200]}"
 
 
-def _get(backend_url: str, token: str, path: str) -> dict[str, Any]:
-    response = requests.get(
-        f"{backend_url}{path}", headers={"Authorization": f"Bearer {token}"}, timeout=30
-    )
+def _get(backend_url: str, headers: dict[str, str], path: str) -> dict[str, Any]:
+    response = requests.get(f"{backend_url}{path}", headers=headers, timeout=30)
     assert response.status_code == 200, f"{path}: {response.status_code} {response.text[:200]}"
     return dict(response.json())
 
@@ -91,26 +94,21 @@ def _open_file(page: Page, base_url: str, file_uuid: str) -> None:
     expect(page.locator(".transcript-segment").first).to_be_visible(timeout=PAGE_READY_MS)
 
 
-@pytest.mark.parametrize("layer", ["user", "instance"])
 def test_voiceprints_off_shows_the_diarizer_label_and_the_notice(
-    layer: str,
-    authenticated_page: Page,
+    second_user_page: Page,
     base_url: str,
     backend_url: str,
-    admin_token: str,
+    user_headers: dict[str, str],
     voice_named_file: dict[str, Any],
 ) -> None:
-    page = authenticated_page
+    page = second_user_page
     matched = set(voice_named_file["matched_names"].values())
     diarizer = set(voice_named_file["matched_names"])
-    if layer == "user":
-        path, key = "/api/privacy/me", "voiceprint_matching_enabled"
-    else:
-        path, key = "/api/admin/privacy-policy", "voiceprint_matching_enabled"
-    previous = bool(_get(backend_url, admin_token, path)[key])
+    path, key = "/api/privacy/me", "voiceprint_matching_enabled"
+    previous = bool(_get(backend_url, user_headers, path)[key])
     try:
         # Control: with voiceprints on the voice-made names are what the page shows.
-        _put(backend_url, admin_token, path, {key: True})
+        _put(backend_url, user_headers, path, {key: True})
         _open_file(page, base_url, voice_named_file["uuid"])
         shown = set(_labels(page))
         assert shown and shown <= matched, shown
@@ -118,7 +116,7 @@ def test_voiceprints_off_shows_the_diarizer_label_and_the_notice(
         expect(page.locator(".speaker-editor-container")).to_be_visible()
         expect(page.locator(NOTICE)).to_have_count(0)
 
-        _put(backend_url, admin_token, path, {key: False})
+        _put(backend_url, user_headers, path, {key: False})
         _open_file(page, base_url, voice_named_file["uuid"])
         shown = set(_labels(page))
         assert shown and shown <= diarizer, shown
@@ -127,16 +125,16 @@ def test_voiceprints_off_shows_the_diarizer_label_and_the_notice(
         notice = page.locator(NOTICE)
         expect(notice).to_be_visible()
         # The notice names WHO turned it off, so the person is not left guessing.
-        expected = "deployment operator" if layer == "instance" else "You turned this off"
-        expect(notice).to_contain_text(expected)
+        expect(notice).to_contain_text("You turned this off")
 
-        _put(backend_url, admin_token, path, {key: True})
+        _put(backend_url, user_headers, path, {key: True})
         _open_file(page, base_url, voice_named_file["uuid"])
         assert set(_labels(page)) <= matched
     finally:
-        requests.put(
-            f"{backend_url}{path}",
-            headers={"Authorization": f"Bearer {admin_token}"},
-            json={key: previous},
-            timeout=30,
+        restored = requests.put(
+            f"{backend_url}{path}", headers=user_headers, json={key: previous}, timeout=30
+        )
+        assert restored.status_code == 200, (
+            f"could not restore the account's voiceprint switch: {restored.status_code} "
+            f"{restored.text[:200]}"
         )

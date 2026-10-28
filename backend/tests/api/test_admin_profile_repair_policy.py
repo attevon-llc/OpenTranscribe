@@ -44,12 +44,14 @@ def _profile(db, user, org) -> SpeakerProfile:
 
 
 def test_the_repair_recomputes_allowed_profiles_and_skips_the_ones_that_are_off(
-    client, admin_token_headers, db_session, normal_user, recompute
+    client, super_admin_token_headers, db_session, normal_user, recompute
 ):
+    # Organizations exist, so the deployment is multi-tenant: a deployment-wide repair needs
+    # the deployment-scope right (super_admin), not a plain admin.
     on = _profile(db_session, normal_user, make_org(db_session))
     off = _profile(db_session, normal_user, make_org(db_session, voiceprints=False))
 
-    resp = client.post(URL, headers=admin_token_headers)
+    resp = client.post(URL, headers=super_admin_token_headers)
 
     assert resp.status_code == 200
     assert resp.json()["skipped_by_policy"] >= 1
@@ -67,4 +69,15 @@ def test_the_repair_answers_409_when_the_instance_has_voiceprints_off(
 
     assert resp.status_code == 409
     assert resp.json()["detail"] == {"code": "voiceprints_disabled", "locked_by": "instance"}
+    assert recompute == []
+
+
+def test_a_plain_admin_cannot_run_the_deployment_wide_repair_once_organizations_exist(
+    client, admin_token_headers, db_session, normal_user, recompute
+):
+    _profile(db_session, normal_user, make_org(db_session))
+
+    resp = client.post(URL, headers=admin_token_headers)
+
+    assert resp.status_code == 403
     assert recompute == []

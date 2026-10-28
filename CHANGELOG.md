@@ -1740,6 +1740,18 @@ off by default.
 
 ### Security
 
+- **nltk 3.10.4 (GHSA-j456-xh4h-cpf2).** Pinned in every requirements file. The advisory concerns
+  `WekaClassifier`, which this app never imports; the bump clears the release scan gate. 3.10.4
+  also reads a group- or world-writable (or foreign-owned) `nltk_data` tree as an absent corpus,
+  which a bind-mounted model cache created under umask 002 is, so the API and every worker now
+  run `ensure_nltk_data_private` at start (and `download-models.py` before it downloads) to remove
+  the group/world write bits from files the process owns. A tree owned by another account is
+  reported once with the `fix-model-permissions.sh` remedy.
+- **Image OS packages are patched by the existing `APT_SECURITY_REFRESH` build argument.** A bare
+  `docker build` reuses a months-old `apt-get upgrade` layer (the 2026-10-27 trial build still
+  carried curl, libexpat, libbrotli1, libpcre2, librsvg2 and openssl findings); building with
+  `--build-arg APT_SECURITY_REFRESH=$(date -u +%F)`, which `docker-build-push.sh` and the release
+  `build` stage already do, clears them.
 - **A failed audit of a transcript edit on a legally held file is logged as an error.** The edit
   has already committed when the audit runs, so it cannot be refused; the log line now carries the
   file's uuid at ERROR level instead of a warning, and the function's documentation says it is
@@ -1762,6 +1774,16 @@ off by default.
   single-tenant one), and `GET /api/search/degraded-embeddings` reports file counts for the
   caller's own tenant unless the caller holds that right. Pinning or restarting the local Whisper
   model was already `super_admin` only; a test now pins it.
+- **Deployment-wide maintenance operations need a super admin in a multi-tenant deployment.**
+  Reindexing and stopping a reindex, repairing the search indices, switching the embedding or
+  neural model and registering, deploying or undeploying one (`/api/search/reindex`,
+  `/reindex/stop`, `/repair-indices`, `/models`, `/models/neural/*`), the orphan sweeps for the
+  search indices and for storage, the speaker and profile embedding repairs, the imohash
+  recompute, the derived-cache clear and the manual retention run (`/api/admin/...`) all act on
+  every tenant's data, so they now follow the same rule as the degraded-file re-embed: any
+  administrator in a single-tenant deployment, only a `super_admin` otherwise (403 for a plain
+  administrator, before anything runs). Single-tenant deployments and `super_admin` accounts see
+  no change. Read-only status and counts endpoints are unchanged.
 - **Editing a shared (system) tag leaves the watch sources that mean a tenant's own tag alone.**
   A stored watch-source tag name resolves to the source's own tenant's tag first and to the shared
   tag only when the tenant has none. Renaming, merging or deleting a shared tag therefore rewrites

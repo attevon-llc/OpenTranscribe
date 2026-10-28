@@ -945,12 +945,14 @@ def trigger_reindex(
         None, description="Optional list of specific file UUIDs to reindex"
     ),
     pending_only: bool = Query(False, description="Only reindex files without chunks"),
+    ctx: RequestContext = Depends(get_current_context),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
     """Re-index existing transcripts **deployment-wide**, one coordinator per owner.
 
-    Admin-only (``get_current_admin_user``), and that gate is what makes the
-    corpus-wide scope legitimate rather than a privilege escalation.
+    Admin-only, and because the scope is every tenant's corpus it also needs the
+    deployment-scope right: any admin in a single-tenant deployment, a ``super_admin``
+    in a multi-tenant one (``ctx.bypass.require_deployment_scope``).
 
     Every mode used to dispatch a single ``reindex_transcripts_task`` for
     ``current_user.id`` (issue #627). Since that coordinator filters
@@ -975,6 +977,7 @@ def trigger_reindex(
     Raises:
         HTTPException: 503 when nothing could be queued at all.
     """
+    ctx.bypass.require_deployment_scope("Reindexing")
     from app.services.search.model_switch import ReindexDispatchError
     from app.services.search.model_switch import dispatch_reindex_for_every_owner
     from app.services.search.reindex_scope import owners_of_files
@@ -1031,6 +1034,7 @@ def trigger_reindex(
 
 @router.post("/reindex/stop")
 def stop_reindex(
+    ctx: RequestContext = Depends(get_current_context),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
     """Cancel the re-index run this admin started — **every owner's coordinator**.
@@ -1058,6 +1062,7 @@ def stop_reindex(
     Returns:
         Dict with the stop status and how many coordinators were signalled.
     """
+    ctx.bypass.require_deployment_scope("Stopping a reindex")
     user_id = current_user.id
 
     try:
@@ -1215,11 +1220,7 @@ def trigger_reembed_degraded(
     knows is already held — matches ``start_embedding_consistency_repair``'s shape in
     ``admin.py``.
     """
-    if not ctx.bypass.deployment_scope_writable:
-        raise HTTPException(
-            status_code=403,
-            detail="Re-embedding degraded files covers every tenant and needs a super admin",
-        )
+    ctx.bypass.require_deployment_scope("Re-embedding degraded files")
     from app.tasks.search_reembed_task import REEMBED_LOCK_KEY
     from app.tasks.search_reembed_task import reembed_degraded_files_task
     from app.utils.task_lock import task_lock_manager
@@ -1483,6 +1484,7 @@ def _probe_index_health(indices: list[str]) -> dict[str, str]:
 @router.post("/repair-indices")
 def repair_indices(
     db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_current_context),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
     """Repair corrupted OpenSearch indices.
@@ -1501,6 +1503,7 @@ def repair_indices(
     Returns:
         Dict with per-index repair results.
     """
+    ctx.bypass.require_deployment_scope("Repairing the search indices")
     from app.services.opensearch_service import _repair_index
     from app.services.opensearch_service import opensearch_client
     from app.services.opensearch_service import rebuild_speaker_index
@@ -1674,6 +1677,7 @@ def get_embedding_models(
 @router.post("/models")
 def set_embedding_model(
     request: SetEmbeddingModelSchema,
+    ctx: RequestContext = Depends(get_current_context),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
     """Set the embedding model and reindex every user's transcripts.
@@ -1683,6 +1687,7 @@ def set_embedding_model(
     nothing else, which changed the recorded model and the index dimension while
     leaving the ingest pipeline embedding with the previous model (issue #437).
     """
+    ctx.bypass.require_deployment_scope("Switching the embedding model")
     applied = _switch_model(request.model_id, current_user.id)
     model_info = OPENSEARCH_EMBEDDING_MODELS[request.model_id]
     return {
@@ -1761,6 +1766,7 @@ def get_neural_models(
 @router.post("/models/neural/{model_name:path}/register")
 def register_neural_model(
     model_name: str,
+    ctx: RequestContext = Depends(get_current_context),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
     """
@@ -1775,6 +1781,7 @@ def register_neural_model(
     Returns:
         Dict with registration status and model_id.
     """
+    ctx.bypass.require_deployment_scope("Registering a neural model")
     if model_name not in OPENSEARCH_EMBEDDING_MODELS:
         raise HTTPException(
             status_code=400,
@@ -1820,6 +1827,7 @@ def register_neural_model(
 @router.post("/models/neural/{model_name:path}/deploy")
 def deploy_neural_model(
     model_name: str,
+    ctx: RequestContext = Depends(get_current_context),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
     """
@@ -1834,6 +1842,7 @@ def deploy_neural_model(
     Returns:
         Dict with deployment status.
     """
+    ctx.bypass.require_deployment_scope("Deploying a neural model")
     from app.services.search.ml_model_service import get_ml_model_service
 
     ml_service = get_ml_model_service()
@@ -1874,6 +1883,7 @@ def deploy_neural_model(
 @router.post("/models/neural/{model_name:path}/undeploy")
 def undeploy_neural_model(
     model_name: str,
+    ctx: RequestContext = Depends(get_current_context),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
     """
@@ -1887,6 +1897,7 @@ def undeploy_neural_model(
     Returns:
         Dict with undeploy status.
     """
+    ctx.bypass.require_deployment_scope("Undeploying a neural model")
     from app.services.search.ml_model_service import get_ml_model_service
 
     ml_service = get_ml_model_service()
@@ -1922,6 +1933,7 @@ def undeploy_neural_model(
 @router.put("/models/neural/active")
 def set_active_neural_model(
     model_name: str = Query(..., description="Model name to set as active"),
+    ctx: RequestContext = Depends(get_current_context),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
     """Set the active neural model for search and reindex every user's transcripts.
@@ -1948,6 +1960,7 @@ def set_active_neural_model(
     Returns:
         Dict with status, reindex task ids, and the post-switch provenance survey.
     """
+    ctx.bypass.require_deployment_scope("Switching the active neural model")
     applied = _switch_model(model_name, current_user.id)
     model_info = OPENSEARCH_EMBEDDING_MODELS[model_name]
     return {

@@ -237,6 +237,15 @@ When the neural model is not deployed the page shows **Keyword only** and Smart 
 Model selection is an administrator feature (Settings, Data & Storage, Search & Indexing). Users only see the results.
 :::
 
+:::note[Several organizations]
+Everything that rebuilds, repairs or reconfigures the search index for the whole deployment acts
+on every organization's data at once: **Reindex All Transcripts**, stopping a reindex, **Repair
+Indices**, switching the embedding model, and registering, deploying or undeploying a neural
+model. On a deployment that hosts several organizations these need a super admin; any other
+administrator receives a 403 and nothing runs. A single-tenant deployment lets every
+administrator run them. Viewing status, index health and the model list is unchanged.
+:::
+
 ## Backend & Infrastructure
 
 ### Architecture

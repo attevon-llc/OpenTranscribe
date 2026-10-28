@@ -114,7 +114,7 @@ yt-dlp[default]==2026.10.21
 
 # Semantic search and NLP
 sentence-transformers==5.7.0
-nltk==3.10.3  # see requirements.txt — pathsec hardening is required, not avoided
+nltk==3.10.4  # see requirements.txt — pathsec hardening is required, not avoided
 
 # Cloud ASR provider SDKs (lazily imported)
 # deepgram-sdk<7.6.0 breaks under websockets>=15 — see requirements.txt for the full

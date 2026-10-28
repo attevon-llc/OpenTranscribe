@@ -163,6 +163,20 @@ def _ctx(user):
     return SimpleNamespace(user=user, org_id=None, org_role=None)
 
 
+def _deployment_ctx(user):
+    """A real context whose bypass holds the deployment-scope right (single-tenant admin)."""
+    from app.api.deps_context import RequestContext
+    from app.services.platform_access import TenancyMode
+    from app.services.platform_bypass import PlatformBypass
+
+    return RequestContext(
+        user=user,
+        org_id=None,
+        org_role=None,
+        bypass=PlatformBypass(user=user, mode=TenancyMode.SINGLE),
+    )
+
+
 # --------------------------------------------------------------------------- #
 # 1. (removed) GET/DELETE /files/{uuid}/summary — the OpenSearch read on the
 #    request session.
@@ -248,7 +262,9 @@ def test_repair_indices_probes_opensearch_outside_the_transaction(
 
     repair_env(tracked_db, healthy=True)
 
-    result = search_ep.repair_indices(db=tracked_db, current_user=admin_user)
+    result = search_ep.repair_indices(
+        db=tracked_db, ctx=_deployment_ctx(admin_user), current_user=admin_user
+    )
 
     assert tracked_db.seen["opensearch_exists"] is False, _leak(tracked_db, "opensearch_exists")
     assert tracked_db.seen["opensearch_search"] is False, _leak(tracked_db, "opensearch_search")
@@ -272,7 +288,9 @@ def test_repair_indices_rebuilds_speakers_in_a_transaction_of_its_own(
 
     recorded = repair_env(tracked_db, healthy=False)
 
-    result = search_ep.repair_indices(db=tracked_db, current_user=admin_user)
+    result = search_ep.repair_indices(
+        db=tracked_db, ctx=_deployment_ctx(admin_user), current_user=admin_user
+    )
 
     assert recorded["rebuilt"] is True
     assert result["speakers_indexed"] == 7

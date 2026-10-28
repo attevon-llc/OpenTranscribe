@@ -297,6 +297,32 @@ def test_single_delete_leaves_no_residue(api, engine, admin_id, created):
     _assert_foreign_citation_kept(engine, chat.message_id, chat.foreign_uuid)
 
 
+def test_a_takedown_record_outlives_its_deleted_file(api, engine, admin_id, created):
+    """The notice history is kept on purpose: only its pointer at the file is cleared.
+
+    The residue scan proves ``takedown_notice_file.file_id`` no longer points at the file;
+    this pins the other half, that the record itself (and the snapshot uuid that names the
+    file after it is gone) was NOT deleted along with it.
+    """
+    sf = _seed(engine, created, admin_id)
+    _assert_backend_sees(api, sf)
+    resp = api.delete(f"/api/files/{sf.file_uuid}")
+    assert resp.status_code == 204, resp.text
+
+    with engine.connect() as conn:
+        link = conn.execute(
+            text("SELECT file_id, CAST(file_uuid AS text) FROM takedown_notice_file WHERE id = :l"),
+            {"l": sf.takedown_link_id},
+        ).one()
+        notices = conn.execute(
+            text("SELECT count(*) FROM takedown_notice WHERE id = :n"),
+            {"n": sf.takedown_notice_id},
+        ).scalar_one()
+    assert link[0] is None
+    assert link[1] == sf.file_uuid
+    assert notices == 1
+
+
 def test_delete_of_a_requeued_file_leaves_no_residue(api, engine, admin_id, created):
     """A transcribed file put back in the queue is PENDING with every derived copy intact.
 

@@ -11,12 +11,18 @@ import socket
 import ssl
 
 from app.core import worker_metrics
+from app.utils.nltk_offline import ensure_nltk_data_private
 
 # Issue #1161: before anything imports prometheus_client, so a worker with WORKER_METRICS_PORT
 # set builds every collector in multiprocess mode and its prefork children inherit that.
 worker_metrics.configure()
 
 logger = logging.getLogger(__name__)
+
+# nltk >= 3.10.4 refuses a group/world-writable data tree (a bind-mounted models/nltk_data
+# made under umask 002 is exactly that), which every consumer reads as "corpus absent".
+# Every NLTK-using task runs in a process that imported this module, so fix it once here.
+ensure_nltk_data_private()
 
 
 def _int_env(key: str, default: int) -> int:

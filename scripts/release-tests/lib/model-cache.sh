@@ -9,7 +9,7 @@
 # nltk 3.10 added ``pathsec`` hardening against CWE-59 (link following). It
 # REFUSES to open any file under ``nltk_data`` whose link count is above one,
 # on the reasoning that a hardlink can point at an inode outside the data
-# root. ``requirements.txt`` pins ``nltk==3.10.3`` deliberately — the pin
+# root. ``requirements.txt`` pins ``nltk==3.10.4`` deliberately — the pin
 # comment reads "pathsec hardening is required, not avoided" — so this is a
 # property the application depends on, not an accident to work around.
 #

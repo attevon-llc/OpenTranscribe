@@ -94,6 +94,82 @@ def test_column_is_nullable_varchar16(db_session):
     assert tuple(row) == ("character varying", 16, "YES", None)
 
 
+_PROVENANCE = {
+    "identity_source_at": "timestamp with time zone",
+    "identity_source_user_id": "integer",
+    "identity_source_detail": "jsonb",
+    "suggestion_detail": "jsonb",
+}
+
+
+def test_provenance_columns_are_nullable_without_a_default(db_session):
+    rows = (
+        db_session.connection()
+        .execute(
+            text(
+                "SELECT column_name, data_type, is_nullable, column_default "
+                "FROM information_schema.columns WHERE table_name = 'speaker' "
+                "AND column_name = ANY(:names)"
+            ),
+            {"names": list(_PROVENANCE)},
+        )
+        .all()
+    )
+    assert {r[0]: (r[1], r[2], r[3]) for r in rows} == {
+        name: (kind, "YES", None) for name, kind in _PROVENANCE.items()
+    }
+
+
+def test_the_person_is_a_user_foreign_key_that_nulls_when_the_account_goes(db_session):
+    action = (
+        db_session.connection()
+        .execute(
+            text(
+                "SELECT c.confdeltype, c.confrelid::regclass::text FROM pg_constraint c "
+                "JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey) "
+                "WHERE c.conrelid = 'speaker'::regclass AND c.contype = 'f' "
+                "AND a.attname = 'identity_source_user_id'"
+            )
+        )
+        .one()
+    )
+    assert tuple(action) == ("n", '"user"'), "ON DELETE SET NULL against user"
+
+
+def test_the_person_column_is_deliberately_not_indexed(db_session):
+    """The only query on it is the FK's own SET NULL on a user erasure; see the migration."""
+    indexed = (
+        db_session.connection()
+        .execute(
+            text(
+                "SELECT count(*) FROM pg_index i JOIN pg_attribute a "
+                "ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey) "
+                "WHERE i.indrelid = 'speaker'::regclass AND a.attname = 'identity_source_user_id'"
+            )
+        )
+        .scalar()
+    )
+    assert indexed == 0
+
+
+def test_the_model_declares_the_same_columns_and_foreign_key():
+    table = Speaker.__table__
+    assert isinstance(table, Table)
+    for name in _PROVENANCE:
+        column = table.c[name]
+        assert column.nullable and column.server_default is None
+    (fk,) = table.c.identity_source_user_id.foreign_keys
+    assert (fk.column.table.name, fk.ondelete) == ("user", "SET NULL")
+
+
+def test_every_user_foreign_key_of_speaker_is_a_declared_relationship_or_a_plain_column():
+    """A second FK to user made ``Speaker.user`` ambiguous; the mapper must still configure."""
+    from sqlalchemy.orm import configure_mappers
+
+    configure_mappers()
+    assert Speaker.user.property.local_columns == {Speaker.__table__.c.user_id}
+
+
 # --- the CHECK ---------------------------------------------------------------------------
 
 
@@ -238,6 +314,30 @@ def test_backfill_stamps_only_the_profile_auto_accept_shape(db_session, normal_u
     assert got == {label: want for label, (_, want) in cases.items()}
 
 
+def test_a_stamped_row_records_that_the_upgrade_did_it_and_nothing_else(db_session, normal_user):
+    stamped = _shape(db_session, normal_user)
+    untouched = _shape(db_session, normal_user, suggestion_source="voice_match")
+    db_session.flush()
+
+    _module().backfill_and_record(db_session.connection())
+
+    def record(speaker):
+        return (
+            db_session.connection()
+            .execute(
+                text(
+                    "SELECT identity_source_at, identity_source_user_id, identity_source_detail, "
+                    "suggestion_detail FROM speaker WHERE id = :i"
+                ),
+                {"i": speaker.id},
+            )
+            .one()
+        )
+
+    assert tuple(record(stamped)) == (None, None, {"origin": "v449_backfill"}, None)
+    assert tuple(record(untouched)) == (None, None, None, None)
+
+
 def test_a_name_a_person_typed_and_a_later_rematch_rewrote_is_not_stamped(db_session, normal_user):
     """A typed name creates its profile AFTER the speaker; a re-extracted voiceprint then wrote
     the auto-accept fields over it. Stamping it would let a purge delete the person's word."""
@@ -375,7 +475,12 @@ def test_the_upgrade_bounds_its_lock_waits_before_the_first_alter(db_session):
         and node.args
         and isinstance(node.args[0], ast.Name)
     ]
-    assert executed[:3] == ["LOCK_TIMEOUT_SQL", "ADD_COLUMN_SQL", "ADD_CHECK_SQL"]
+    assert executed[:4] == [
+        "LOCK_TIMEOUT_SQL",
+        "ADD_COLUMN_SQL",
+        "ADD_CHECK_SQL",
+        "ADD_PROVENANCE_COLUMNS_SQL",
+    ]
     conn = db_session.connection()
     conn.execute(text(module.LOCK_TIMEOUT_SQL))
     assert conn.execute(text("SHOW lock_timeout")).scalar() == "30s"
@@ -432,13 +537,14 @@ def test_detected_at_or_after_v449(db_session):
 
 
 @pytest.mark.ddl_exclusive
-def test_detection_stamps_lower_without_the_check(db_session):
+def test_detection_stamps_lower_without_the_last_created_column(db_session):
+    """The arm keys on ``suggestion_detail``, the last object the revision creates."""
     from app.db.migrations import _detect_schema_version
     from tests.unit._migration_detection import _chain_order
 
     conn = db_session.connection()
     try:
-        conn.execute(text(f"ALTER TABLE speaker DROP CONSTRAINT {_CHECK}"))
+        conn.execute(text("ALTER TABLE speaker DROP COLUMN suggestion_detail"))
         detected = _detect_schema_version(conn, inspect(conn).get_table_names())
     finally:
         db_session.rollback()
@@ -458,16 +564,18 @@ def test_upgrade_ddl_replays_cleanly(db_session):
     for _ in range(2):
         conn.execute(text(module.ADD_COLUMN_SQL))
         conn.execute(text(module.ADD_CHECK_SQL))
+        conn.execute(text(module.ADD_PROVENANCE_COLUMNS_SQL))
     assert conn.execute(text(count)).scalar() == before
 
 
-def _has_column(conn) -> bool:
+def _has_column(conn, name: str = "identity_source") -> bool:
     return bool(
         conn.execute(
             text(
                 "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
-                "WHERE table_name = 'speaker' AND column_name = 'identity_source')"
-            )
+                "WHERE table_name = 'speaker' AND column_name = :n)"
+            ),
+            {"n": name},
         ).scalar()
     )
 
@@ -491,8 +599,10 @@ def test_downgrade_is_idempotent_keeps_names_and_upgrade_restores(db_session, no
         ).one()
         assert tuple(kept) == ("Alice", speaker.profile_id, True), "names and links survive"
 
+        assert not _has_column(conn, "suggestion_detail")
         conn.execute(text(module.ADD_COLUMN_SQL))
         conn.execute(text(module.ADD_CHECK_SQL))
+        conn.execute(text(module.ADD_PROVENANCE_COLUMNS_SQL))
         restamped = module.backfill_and_record(conn)
 
         assert _has_column(conn)

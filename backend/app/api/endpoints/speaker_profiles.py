@@ -497,7 +497,7 @@ def assign_speaker_to_profile(
 
         # Assign speaker to profile
         updated_speaker = matching_service.assign_speaker_to_profile(
-            int(speaker_id), int(profile_id), confidence
+            int(speaker_id), int(profile_id), confidence, user_id=int(current_user.id)
         )
 
         # ─── POST-COMMIT REGION ───────────────────────────────────────────────

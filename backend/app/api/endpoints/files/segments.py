@@ -21,6 +21,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.media import TranscriptSegmentsPage
+from app.services.speaker_provenance_view import ProvenanceViewer
 from app.services.speaker_status_service import SpeakerStatusService
 
 from .crud import _build_grouped_segments
@@ -99,7 +100,9 @@ def get_file_segments(
 
     # Redact FIRST, then add the computed status (resolved_display_name, status_text): both
     # derive from the voiceprint suggestion the redaction withholds while voiceprints are off.
-    redact_response_speakers(db, unique_speakers, transcript_segments)
+    redact_response_speakers(
+        db, unique_speakers, transcript_segments, ProvenanceViewer.from_context(ctx)
+    )
     for speaker in unique_speakers:
         SpeakerStatusService.add_computed_status(speaker)
 

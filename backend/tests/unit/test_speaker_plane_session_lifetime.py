@@ -210,7 +210,7 @@ def update_task_env(db_session, monkeypatch):
 
     monkeypatch.setattr(spk, "_push_speaker_display_names", _display_names)
 
-    def _workflow(db, speaker_id, display_name):
+    def _workflow(db, speaker_id, display_name, user_id=None):
         # Also DB work: it commits the profile assignment before matching.
         tracker.observe("labeling_workflow")
         recorded["workflow"] = (speaker_id, display_name)

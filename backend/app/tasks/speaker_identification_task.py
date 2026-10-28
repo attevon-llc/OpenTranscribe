@@ -42,11 +42,17 @@ from app.services.post_processing_status import tracks_post_processing
 from app.services.redaction.llm_guard import RedactionNotReadyError
 from app.services.redaction.llm_guard import defer_for_redaction
 from app.services.redaction.llm_guard import resolve_llm_masking
+from app.utils.speaker_identity_detail import llm_detail
+from app.utils.speaker_identity_source import record_suggestion
 from app.utils.transcript_builders import build_full_transcript
 from app.utils.transcript_builders import build_speaker_segments
 from app.utils.user_settings_helpers import get_user_llm_output_language
 
 logger = logging.getLogger(__name__)
+
+#: The Celery task name this module registers (`identify_speakers_llm_task`), recorded as the
+#: origin task of an LLM suggestion; the same string the task monitor shows.
+SPEAKER_ID_ORIGIN_TASK = "ai.identify_speakers"
 
 
 def _get_known_speakers(
@@ -344,9 +350,18 @@ def _store_speaker_predictions(
 
             if speaker:
                 before = canonical_speaker_label_for_row(speaker)
-                speaker.suggested_name = predicted_name
-                speaker.confidence = confidence
-                speaker.suggestion_source = "llm_analysis"  # type: ignore[assignment]
+                record_suggestion(
+                    speaker,
+                    source="llm_analysis",
+                    name=predicted_name,
+                    confidence=confidence,
+                    detail=llm_detail(
+                        provider=(provenance or {}).get("provider"),
+                        model=(provenance or {}).get("model"),
+                        confidence=confidence,
+                        origin_task=SPEAKER_ID_ORIGIN_TASK,
+                    ),
+                )
                 tracker.record(file_id, before, canonical_speaker_label_for_row(speaker))
 
         if provenance:

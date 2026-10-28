@@ -3,6 +3,29 @@
  */
 
 /**
+ * How a speaker's CURRENT identity came to be (read-only; backend `SpeakerIdentity`).
+ *
+ * `by` is present only for the file's owner, an administrator of the file's organization and a
+ * platform administrator; any other viewer gets `source` and `at`. The whole object is `null`
+ * when the origin is unknown (written before it was recorded) or withheld because a voiceprint
+ * made it and the file's voiceprints are off. Only the current state is kept; the change
+ * history is a later release.
+ */
+export interface SpeakerIdentity {
+  source: 'human' | 'voiceprint' | 'voiceprint_link';
+  at?: string | null; // ISO timestamp
+  by?: { uuid: string; name?: string | null } | null;
+  detail?: Record<string, unknown> | null; // ids and identifiers only, never a name
+}
+
+/** Where the CURRENT recommendation in `suggested_name` came from (backend `SpeakerSuggestion`). */
+export interface SpeakerSuggestion {
+  source?: string | null; // "voice_match" | "profile_match" | "llm_analysis" | ...
+  confidence?: number | null;
+  detail?: Record<string, unknown> | null;
+}
+
+/**
  * Speaker entity representing a speaker instance in a media file
  */
 export interface Speaker {
@@ -37,6 +60,9 @@ export interface Speaker {
   status_text?: string;
   status_color?: string;
   resolved_display_name?: string;
+  // Read-only provenance of the identity and of the recommendation
+  identity?: SpeakerIdentity | null;
+  suggestion?: SpeakerSuggestion | null;
 }
 
 /**

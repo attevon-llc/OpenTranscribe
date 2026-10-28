@@ -51,7 +51,13 @@ from app.services.speaker_cleanup import speaker_blocked_from_profile
 from app.services.speaker_cleanup import unlink_from_profile
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.services.takedown_service import exclude_quarantined
+from app.utils.speaker_identity_detail import ORIGIN_ACCEPTED_SUGGESTION
+from app.utils.speaker_identity_detail import ORIGIN_BATCH_ASSIGN
+from app.utils.speaker_identity_detail import ORIGIN_CLUSTER_PROMOTED
+from app.utils.speaker_identity_detail import ORIGIN_PROFILE_ASSIGNED
+from app.utils.speaker_identity_detail import ORIGIN_TYPED
 from app.utils.speaker_identity_source import after_skip
+from app.utils.speaker_identity_source import mark_review_skipped
 from app.utils.speaker_identity_source import record_human_identity
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
@@ -133,7 +139,12 @@ class SpeakerClusteringService:
         # Every caller places a speaker by comparing voices (upload-time clustering, Re-cluster),
         # so the identity it takes is a voiceprint's, not a person's (issue #1280).
         touched_profiles = join_cluster_identity(
-            self.db, speaker, cluster, self._rename_tracker, source="voiceprint"
+            self.db,
+            speaker,
+            cluster,
+            self._rename_tracker,
+            source="voiceprint",
+            confidence=confidence,
         )
         if touched_profiles:
             self._assigned.profile_ids |= touched_profiles
@@ -1411,7 +1422,12 @@ class SpeakerClusteringService:
                 for speaker in moved:
                     if speaker.profile_id is None or speaker.profile_id == source_profile_id:
                         touched = join_cluster_identity(
-                            self.db, speaker, target, self._rename_tracker, source="human"
+                            self.db,
+                            speaker,
+                            target,
+                            self._rename_tracker,
+                            source="human",
+                            user_id=user_id,
                         )
                         if touched:
                             self._assigned.profile_ids |= touched
@@ -1663,7 +1679,7 @@ class SpeakerClusteringService:
                     speaker.display_name = name  # type: ignore[assignment]
                     speaker.verified = True  # type: ignore[assignment]
                     # A person named the cluster: its members are theirs (issue #1280, Q2).
-                    record_human_identity(speaker)
+                    record_human_identity(speaker, user_id=user_id, origin=ORIGIN_CLUSTER_PROMOTED)
 
             self.db.commit()
             self._rename_tracker.flush(self.db)
@@ -2118,7 +2134,11 @@ class SpeakerClusteringService:
                     self._rename_tracker.record(int(speaker.media_file_id), indexed_as, str(name))
                     speaker.display_name = str(name)  # type: ignore[assignment]
                     speaker.verified = True  # type: ignore[assignment]
-                    record_human_identity(speaker)
+                    record_human_identity(
+                        speaker,
+                        user_id=user_id,
+                        origin=ORIGIN_ACCEPTED_SUGGESTION if action == "accept" else ORIGIN_TYPED,
+                    )
                     updated += 1
 
                 elif action == "accept":
@@ -2145,7 +2165,13 @@ class SpeakerClusteringService:
                     )
                     speaker.display_name = profile.name  # type: ignore[assignment]
                     speaker.verified = True  # type: ignore[assignment]
-                    record_human_identity(speaker)
+                    record_human_identity(
+                        speaker,
+                        user_id=user_id,
+                        origin=ORIGIN_BATCH_ASSIGN
+                        if len(speaker_uuids) > 1
+                        else ORIGIN_PROFILE_ASSIGNED,
+                    )
                     updated += 1
 
                 elif action == "skip":
@@ -2155,8 +2181,7 @@ class SpeakerClusteringService:
                     # has no reader anywhere (backend or frontend), so overwriting a real
                     # "llm_analysis" here only ever erased the historical marker
                     # task_detection_service reads (issue #620 item 4).
-                    if not speaker.suggestion_source:
-                        speaker.suggestion_source = "user_skipped"  # type: ignore[assignment]
+                    mark_review_skipped(speaker)
                     # Reviewed is not confirmed: a voiceprint suggestion stays the voiceprint's.
                     after_skip(speaker)
                     updated += 1

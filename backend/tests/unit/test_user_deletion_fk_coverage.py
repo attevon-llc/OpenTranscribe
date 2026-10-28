@@ -264,6 +264,16 @@ _ACTOR: dict[str, Disposition] = {
         "v387. Twin of created_by: the last editor of a working auth method is not a "
         "reason the method has to stop working when they leave.",
     ),
+    "speaker.identity_source_user_id": Disposition(
+        SET_NULL,
+        "Speaker",
+        DB_SET_NULL,
+        DB_SET_NULL,
+        "v449 (#1280). The person who made or confirmed a speaker's identity. The speaker belongs "
+        "to the file's owner and survives; a person who has been erased is no longer named, and "
+        "the source, time and origin of the identity stay. NULL already means 'a task wrote it "
+        "or unknown', so no reader has a new case.",
+    ),
     "media_file.quarantined_by": Disposition(
         SET_NULL,
         "MediaFile",

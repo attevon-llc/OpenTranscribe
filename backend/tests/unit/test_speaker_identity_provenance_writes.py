@@ -182,7 +182,7 @@ def test_propagation_records_a_link_and_never_downgrades_a_voiceprint(
     from app.utils import speaker_identity_source as ids
 
     machine_named = Speaker(display_name="Alice", identity_source="voiceprint")
-    ids.record_machine_link(machine_named)
+    ids.record_machine_link(machine_named, detail={"origin": "profile_propagation"})
     assert machine_named.identity_source == "voiceprint", "a voiceprint is never downgraded"
 
 
@@ -617,7 +617,7 @@ def test_the_label_a_tracker_records_follows_the_source_set_before_it(db_session
 
     from app.utils.speaker_identity_source import record_machine_identity
 
-    record_machine_identity(speaker, previous_display_name=None)
+    record_machine_identity(speaker, previous_display_name=None, detail={"origin": "voice_match"})
 
     assert canonical_speaker_label_for_row(speaker) == speaker.name, (
         "off: a voiceprint-made name is not the label"

@@ -39,7 +39,6 @@ from typing import Any
 from typing import cast
 
 from sqlalchemy import and_
-from sqlalchemy import case
 from sqlalchemy import delete
 from sqlalchemy import exists
 from sqlalchemy import func
@@ -50,6 +49,8 @@ from sqlalchemy import update
 from app.utils.speaker_identity_source import MACHINE_IDENTITY_SOURCES
 from app.utils.speaker_identity_source import VOICEPRINT
 from app.utils.speaker_identity_source import VOICEPRINT_LINK
+from app.utils.speaker_identity_source import cleared_provenance_values
+from app.utils.speaker_identity_source import cleared_suggestion_values
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import CursorResult
@@ -166,14 +167,20 @@ def not_in_scope(scope: PurgeScope, speaker_id_column: Any) -> Any:
 
 def _revert_machine_identities(
     db: Session, scope: PurgeScope
-) -> tuple[list[int], list[int], int, int]:
+) -> tuple[list[int], list[int], int, int, int, int]:
     """Steps 1 and 2: revert voiceprint-made identities, unlink voiceprint-made links.
 
+    The record of how each identity came to be (time, person, detail: it names the profile or
+    speaker the voice matched) and of the voice suggestion that went with it is cleared in the
+    same statement, so no purge leaves a description of a name it removed.
+
     Returns:
-        ``(reverted_ids, unlinked_ids, suggestions_cleared_with_them, links_removed)``.
-        ``links_removed`` counts only links that still pointed at a profile: a deleted profile
-        already set the speaker's ``profile_id`` NULL (``ON DELETE SET NULL``), leaving a
-        marker with no link to remove.
+        ``(reverted_ids, unlinked_ids, suggestions_cleared_with_them, links_removed,
+        provenance_cleared, suggestion_details_cleared)``. ``links_removed`` counts only links
+        that still pointed at a profile: a deleted profile already set the speaker's
+        ``profile_id`` NULL (``ON DELETE SET NULL``), leaving a marker with no link to remove.
+        ``provenance_cleared`` counts rows that actually held an identity time, person or
+        detail; ``suggestion_details_cleared`` rows that held a suggestion detail.
     """
     from app.models.media import Speaker
     from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
@@ -188,6 +195,33 @@ def _revert_machine_identities(
                 *scope.speaker_filters(),
                 Speaker.identity_source.in_(sorted(MACHINE_IDENTITY_SOURCES)),
                 has_voice_suggestion,
+            )
+        ).scalar_one()
+    )
+    provenance_cleared = int(
+        db.execute(
+            select(func.count())
+            .select_from(Speaker)
+            .where(
+                *scope.speaker_filters(),
+                Speaker.identity_source.in_(sorted(MACHINE_IDENTITY_SOURCES)),
+                or_(
+                    Speaker.identity_source_at.isnot(None),
+                    Speaker.identity_source_user_id.isnot(None),
+                    Speaker.identity_source_detail.isnot(None),
+                ),
+            )
+        ).scalar_one()
+    )
+    suggestion_details_cleared = int(
+        db.execute(
+            select(func.count())
+            .select_from(Speaker)
+            .where(
+                *scope.speaker_filters(),
+                Speaker.identity_source.in_(sorted(MACHINE_IDENTITY_SOURCES)),
+                has_voice_suggestion,
+                Speaker.suggestion_detail.isnot(None),
             )
         ).scalar_one()
     )
@@ -211,14 +245,10 @@ def _revert_machine_identities(
                 display_name=None,
                 profile_id=None,
                 verified=False,
-                identity_source=None,
+                **cleared_provenance_values(),
                 # A voiceprint suggestion is voice data and goes with the identity it produced;
                 # an LLM suggestion is not, and stays.
-                suggested_name=case((has_voice_suggestion, None), else_=Speaker.suggested_name),
-                suggestion_source=case(
-                    (has_voice_suggestion, None), else_=Speaker.suggestion_source
-                ),
-                confidence=case((has_voice_suggestion, None), else_=Speaker.confidence),
+                **cleared_suggestion_values(has_voice_suggestion),
             )
             .returning(Speaker.id)
             .execution_options(synchronize_session=False)
@@ -231,20 +261,23 @@ def _revert_machine_identities(
             .where(*scope.speaker_filters(), Speaker.identity_source == VOICEPRINT_LINK)
             .values(
                 profile_id=None,
-                identity_source=None,
+                **cleared_provenance_values(),
                 # The match that added the link is voice data too: its suggestion and
                 # confidence go, the person's own name and verification stay.
-                suggested_name=case((has_voice_suggestion, None), else_=Speaker.suggested_name),
-                suggestion_source=case(
-                    (has_voice_suggestion, None), else_=Speaker.suggestion_source
-                ),
-                confidence=case((has_voice_suggestion, None), else_=Speaker.confidence),
+                **cleared_suggestion_values(has_voice_suggestion),
             )
             .returning(Speaker.id)
             .execution_options(synchronize_session=False)
         )
     ]
-    return reverted, unlinked, with_suggestion, links_removed
+    return (
+        reverted,
+        unlinked,
+        with_suggestion,
+        links_removed,
+        provenance_cleared,
+        suggestion_details_cleared,
+    )
 
 
 def _remove_from_promoted_clusters(
@@ -458,6 +491,8 @@ def purge_voiceprints_postgres(db: Session, scope: PurgeScope) -> PostgresPurge:
             "speaker_identities_reverted",
             "speaker_links_removed",
             "suggestions_cleared",
+            "identity_provenance_cleared",
+            "suggestion_details_cleared",
             "speaker_matches_deleted",
             "cross_scope_matches",
             "speakers_unclustered",
@@ -479,10 +514,19 @@ def purge_voiceprints_postgres(db: Session, scope: PurgeScope) -> PostgresPurge:
     targets.profile_uuids = [str(r[1]) for r in profile_rows]
     scope_profile_ids = [int(r[0]) for r in profile_rows]
 
-    reverted, unlinked, suggestions_with_them, links_removed = _revert_machine_identities(db, scope)
+    (
+        reverted,
+        unlinked,
+        suggestions_with_them,
+        links_removed,
+        provenance_cleared,
+        details_with_them,
+    ) = _revert_machine_identities(db, scope)
     counts["speaker_identities_reverted"] = len(reverted)
     counts["speaker_links_removed"] = links_removed
     counts["suggestions_cleared"] = suggestions_with_them
+    counts["identity_provenance_cleared"] = provenance_cleared
+    counts["suggestion_details_cleared"] = details_with_them
     machine_ids = reverted + unlinked
 
     removed, touched = _remove_from_promoted_clusters(db, machine_ids)
@@ -557,16 +601,24 @@ def purge_voiceprints_postgres(db: Session, scope: PurgeScope) -> PostgresPurge:
         .execution_options(synchronize_session=False),
     )
 
+    unverified_voice_suggestion = (
+        *scope.speaker_filters(),
+        Speaker.suggestion_source.in_(sorted(EMBEDDING_SUGGESTION_SOURCES)),
+        or_(Speaker.verified.is_(None), Speaker.verified.is_(False)),
+    )
+    counts["suggestion_details_cleared"] += int(
+        db.execute(
+            select(func.count())
+            .select_from(Speaker)
+            .where(*unverified_voice_suggestion, Speaker.suggestion_detail.isnot(None))
+        ).scalar_one()
+    )
     cleared_suggestions = [
         int(row[0])
         for row in db.execute(
             update(Speaker)
-            .where(
-                *scope.speaker_filters(),
-                Speaker.suggestion_source.in_(sorted(EMBEDDING_SUGGESTION_SOURCES)),
-                or_(Speaker.verified.is_(None), Speaker.verified.is_(False)),
-            )
-            .values(suggested_name=None, suggestion_source=None, confidence=None)
+            .where(*unverified_voice_suggestion)
+            .values(**cleared_suggestion_values())
             .returning(Speaker.id)
             .execution_options(synchronize_session=False)
         )

@@ -505,6 +505,32 @@ suggestion UIs with its confidence and nothing more; accepting it writes `displa
   positive evidence (the shape, the profile older than the speaker, an earlier linked speaker: a typed name that a legacy re-match
   rewrote has the shape but fails the evidence) and recorded `stamped` and `shape_left_unmarked` in `system_settings` key
   `privacy.identity_source_backfill`; a purge cannot be undone, so the backfill errs toward NULL.
+- **The record of HOW an identity and a suggestion came to be (v449, same issue).** Beside
+  `identity_source` the row keeps `identity_source_at`, `identity_source_user_id` (the person; NULL for
+  a task or a deleted account; FK `ON DELETE SET NULL`, deliberately unindexed) and
+  `identity_source_detail`, and `suggestion_detail` for the recommendation in
+  `suggested_name`/`suggestion_source`. All are written ONLY by the helpers in
+  `utils/speaker_identity_source.py`: `record_human_identity(speaker, *, user_id, origin)` (user id and
+  origin are required; `keep_recorded=True` is for the later step of the same action),
+  `record_machine_identity/record_machine_link(speaker, ..., detail=)`, `after_unlink`/`after_name_cleared`/
+  `after_skip`, and for a recommendation `record_suggestion`, `clear_suggestion`, `mark_review_skipped`
+  (SQL twins for the purge: `cleared_provenance_values`, `cleared_suggestion_values`). The detail
+  is built ONLY by `utils/speaker_identity_detail.py` (ids and identifiers, never a name or transcript
+  text; a closed `origin` vocabulary; an accepted suggestion is summarised WITHOUT matched ids so a
+  person's record stays valid while voiceprints are off). Pass the request user's id from an endpoint;
+  a Celery task passes none and names itself in `origin_task`. Call `record_human_identity` BEFORE
+  `clear_suggestion`: it snapshots the suggestion the person accepted. While a file's voiceprints are
+  off the record of a machine identity and the detail of a voice suggestion are hidden with the name and
+  link (`redact_view.hide_machine_identities`/`redact_speaker_rows`, `hides_provenance`), the purge clears
+  and counts them in the same UPDATE, and `tests/unit/test_speaker_provenance_never_indexed.py` fails if
+  an index or prompt builder names them. The API `identity`/`suggestion` objects are attached by
+  `speaker_provenance_view.attach_speaker_provenance(db, rows, viewer)` AFTER the redaction;
+  `identity.by` is shown only to the file's owner, an org admin of its organization and a platform admin.
+  The two JSONB columns are `JSONB(none_as_null=True)`: a plain JSONB stores Python `None` as the JSON
+  value `null`, which is not SQL NULL and made the purge's residual check see a cleared record. This is
+  the CURRENT state; the append-only history is issue #1336 (v0.7.0), the query review #1337.
+  The AST gate also now rejects a direct assignment to any of these columns and does not accept a
+  reader helper (`hides_link`) as "recording".
 - **Existing indexes**: `services/speaker_label_backfill.py`, an arm of the existing
   `search_index_maintenance` task, re-indexes (per-file, debounced) each completed file with a
   speaker whose old label was an LLM suggestion, refreshes the persisted

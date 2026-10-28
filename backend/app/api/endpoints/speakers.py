@@ -47,12 +47,20 @@ from app.services.speaker_cleanup import detach_from_cluster
 from app.services.speaker_cleanup import lift_profile_blacklist
 from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact
+from app.services.speaker_provenance_view import attach_speaker_provenance
+from app.services.speaker_provenance_view import provenance_for_dict
 from app.services.speaker_status_service import SpeakerStatusService
 from app.utils.db_helpers import org_stamp_is
 from app.utils.error_handlers import ErrorHandler
+from app.utils.speaker_identity_detail import ORIGIN_ACCEPTED_SUGGESTION
+from app.utils.speaker_identity_detail import ORIGIN_CONFIRMED
+from app.utils.speaker_identity_detail import ORIGIN_CREATED
+from app.utils.speaker_identity_detail import ORIGIN_PROFILE_CREATED
+from app.utils.speaker_identity_detail import ORIGIN_TYPED
 from app.utils.speaker_identity_source import VOICEPRINT
 from app.utils.speaker_identity_source import after_name_cleared
 from app.utils.speaker_identity_source import after_unlink
+from app.utils.speaker_identity_source import clear_suggestion
 from app.utils.speaker_identity_source import record_human_identity
 from app.utils.speaker_labels import PLACEHOLDER_SPEAKER_NAME_PATTERN
 from app.utils.speaker_labels import canonical_speaker_label_for_row
@@ -116,13 +124,14 @@ def create_speaker(
     # If display_name is provided, mark as verified
     if speaker.display_name and speaker.display_name.strip():
         new_speaker.verified = True  # type: ignore[assignment]
-        record_human_identity(new_speaker)
+        record_human_identity(new_speaker, user_id=current_user.id, origin=ORIGIN_CREATED)
 
     db.add(new_speaker)
     db.commit()
     db.refresh(new_speaker)
 
     # Add computed status fields
+    attach_speaker_provenance(db, [new_speaker], ctx)
     SpeakerStatusService.add_computed_status(new_speaker)
 
     return new_speaker
@@ -655,6 +664,8 @@ def _build_speaker_dict(
         "metadata_hints": attribute_fields["metadata_hints"],
         # Pre-computed display flags
         **display_flags,
+        # Read-only provenance, attached after the redaction
+        **provenance_for_dict(speaker),
     }
 
     # Add profile information if speaker is assigned to a profile
@@ -856,6 +867,7 @@ def list_speakers(
         privacy = PrivacyView(db)
         voiceprints_off = privacy.voiceprints_off_file_ids(int(s.media_file_id) for s in speakers)
         redact_speaker_rows(privacy, speakers)
+        attach_speaker_provenance(db, speakers, ctx, view=privacy)
         batch_suggestions = SmartSpeakerSuggestionService.consolidate_suggestions_batch(
             speakers=speakers,
             user_id=current_user.id,
@@ -1623,6 +1635,7 @@ def merge_speakers(
 
     # Add computed status fields
     redact_speaker_rows(db, [target_speaker])
+    attach_speaker_provenance(db, [target_speaker], ctx)
     SpeakerStatusService.add_computed_status(target_speaker)
 
     return target_speaker
@@ -1648,6 +1661,7 @@ def get_speaker(
 
     # Privacy policy (#1280): hide what the owner's current switches forbid showing.
     redact_speaker_rows(db, [speaker])
+    attach_speaker_provenance(db, [speaker], ctx)
     SpeakerStatusService.add_computed_status(speaker)
 
     return speaker
@@ -1713,7 +1727,7 @@ def _update_opensearch_speaker_name(speaker_uuid: str, display_name: str) -> Non
 
 
 def _handle_speaker_labeling_workflow(
-    db: Session, speaker_id: int, display_name: str
+    db: Session, speaker_id: int, display_name: str, user_id: int | None = None
 ) -> dict[str, int]:
     """
     Handle auto-creation of profiles and retroactive matching when speaker is labeled.
@@ -1734,7 +1748,7 @@ def _handle_speaker_labeling_workflow(
         logger.warning(f"Speaker {speaker_id} disappeared before retroactive matching")
         return {"auto_applied_count": 0, "suggested_count": 0}
 
-    auto_create_or_assign_profile(speaker, display_name, db)
+    auto_create_or_assign_profile(speaker, display_name, db, user_id=user_id)
 
     # Commit profile changes before retroactive matching
     db.commit()
@@ -1910,7 +1924,7 @@ def _handle_create_new_profile_action(
     db.flush()  # Get the ID
 
     speaker.profile_id = new_profile.id
-    record_human_identity(speaker)
+    record_human_identity(speaker, user_id=current_user.id, origin=ORIGIN_PROFILE_CREATED)
     logger.info(
         f"Created new profile {new_profile.id} '{new_name}' and assigned speaker {speaker.id}"
     )
@@ -2040,12 +2054,20 @@ def _apply_verification_on_display_name(speaker: Speaker, speaker_update: Speake
     """
     if speaker_update.display_name is not None and speaker_update.display_name.strip():
         speaker.verified = True  # type: ignore[assignment]
-        speaker.suggested_name = None  # type: ignore[assignment]
-        speaker.confidence = None  # type: ignore[assignment]
+        clear_suggestion(speaker)
 
 
-def _record_identity_source_on_edit(speaker: Speaker, speaker_update: SpeakerUpdate) -> None:
+def _record_identity_source_on_edit(
+    speaker: Speaker,
+    speaker_update: SpeakerUpdate,
+    *,
+    user_id: int,
+    profile_action: str | None,
+) -> None:
     """Record who made the speaker's identity after a ``PUT`` (issue #1280).
+
+    Runs BEFORE :func:`_apply_verification_on_display_name`: the record names the suggestion
+    the person accepted, which that function then withdraws.
 
     A typed name, a profile action (which needs a name) or an explicit ``verified: true`` is a
     person's word: ``human``. A cleared name keeps a machine link as ``voiceprint_link`` (it
@@ -2054,11 +2076,17 @@ def _record_identity_source_on_edit(speaker: Speaker, speaker_update: SpeakerUpd
     """
     if "display_name" in speaker_update.model_fields_set:
         if is_assigned_speaker_name(speaker_update.display_name):
-            record_human_identity(speaker)
+            record_human_identity(
+                speaker,
+                user_id=user_id,
+                origin=ORIGIN_PROFILE_CREATED
+                if profile_action == "create_new_profile"
+                else ORIGIN_TYPED,
+            )
         else:
             after_name_cleared(speaker)
     elif speaker_update.verified is True and (speaker.display_name or speaker.profile_id):
-        record_human_identity(speaker)
+        record_human_identity(speaker, user_id=user_id, origin=ORIGIN_CONFIRMED)
 
 
 def _propagate_speaker_rename_to_chunks(
@@ -2168,8 +2196,10 @@ def update_speaker(
     )
 
     # Handle verification when display name is set
+    _record_identity_source_on_edit(
+        speaker, speaker_update, user_id=current_user.id, profile_action=profile_action
+    )
     _apply_verification_on_display_name(speaker, speaker_update)
-    _record_identity_source_on_edit(speaker, speaker_update)
 
     # Commit to PostgreSQL immediately
     db.commit()
@@ -2237,6 +2267,7 @@ def update_speaker(
 
     # Add computed status for immediate response
     redact_speaker_rows(db, [speaker])
+    attach_speaker_provenance(db, [speaker], ctx)
     SpeakerStatusService.add_computed_status(speaker)
     _set_no_cache_headers(response)
 
@@ -2309,7 +2340,7 @@ def _accept_speaker_profile_match(
     # Assign speaker to profile - cast to int for assignment
     speaker.profile_id = profile_id  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]
-    record_human_identity(speaker)
+    record_human_identity(speaker, user_id=current_user.id, origin=ORIGIN_ACCEPTED_SUGGESTION)
     db.commit()
 
     # The new profile gains the voice; a profile the speaker leaves loses it (#1214).
@@ -2441,8 +2472,7 @@ def _reject_speaker_suggestion(speaker: Speaker, speaker_id: int, db: Session) -
     speaker.profile_id = None  # type: ignore[assignment]
     after_unlink(speaker)  # idempotent after unlink_from_profile; covers a speaker with no link
     speaker.verified = True  # type: ignore[assignment]
-    speaker.suggested_name = None  # type: ignore[assignment]
-    speaker.confidence = None  # type: ignore[assignment]
+    clear_suggestion(speaker)
     after = canonical_speaker_label_for_row(speaker)
     db.commit()
 
@@ -2502,7 +2532,7 @@ def _create_new_speaker_profile(
     # Assign speaker to new profile - use setattr for proper type handling
     speaker.profile_id = new_profile.id  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]
-    record_human_identity(speaker)
+    record_human_identity(speaker, user_id=current_user.id, origin=ORIGIN_PROFILE_CREATED)
     db.commit()
 
     # The new profile gains the voice; a profile the speaker leaves loses it (#1214).

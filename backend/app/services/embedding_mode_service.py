@@ -402,3 +402,17 @@ class EmbeddingModeService:
                 else "PyAnnote v4 (WeSpeaker ResNet34-LM)"
             ),
         }
+
+
+def voiceprint_model_id() -> str | None:
+    """The identifier of the embedding model voiceprints are computed with right now.
+
+    For the record of where an identity or suggestion came from (``speaker_identity_detail``).
+    Best effort: ``None`` when the mode cannot be determined, because a missing provenance
+    field must never fail the speaker write it describes.
+    """
+    try:
+        return EmbeddingModeService.get_embedding_model_name()
+    except Exception:
+        logger.debug("voiceprint model id unavailable", exc_info=True)
+        return None

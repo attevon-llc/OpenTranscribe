@@ -137,6 +137,9 @@ class _StubQuery:
     def all(self):
         return []
 
+    def scalar(self):
+        return None
+
 
 class _StubSession:
     """Minimal Session stand-in: the propagation path under test never reaches a row."""

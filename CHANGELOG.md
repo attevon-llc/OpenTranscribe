@@ -165,11 +165,26 @@ off by default.
   records the confidence, threshold, matched profile or speaker, embedding model and task; an AI
   suggestion records its provider and model and is still never applied by itself. The speaker API
   returns them read-only as `identity` and `suggestion`; the person (`by`) is shown only to the
-  file's owner, an organization administrator and a platform administrator. While voiceprints are
-  off they are hidden with the machine identity they describe, a purge clears and counts them
+  file's owner, an organization administrator and a platform administrator whose reach covers the
+  file (any administrator in a single-tenant deployment; in a multi-tenant one only under a
+  support-access grant, recorded like any other platform access). An account under erasure is
+  shown as `{"erased": true}` with no id, name or email. While voiceprints are off
+  they are hidden with the machine identity they describe, a purge clears and counts them
   (`identity_provenance_cleared`, `suggestion_details_cleared`), and they never reach the search
   index or a language model. Only the current state is kept; the full change history is tracked in
-  #1336 (v0.7.0) and a review of the queries these columns need in #1337.
+  #1336 (v0.7.0) and a review of the queries these columns need in #1337. The foreign key to
+  `user` is added last in `v449`, so logins and provisioning are blocked only briefly instead of
+  for the whole backfill; a development or `--fresh` database stamped at the first shape of `v449`
+  needs a downgrade to `v448` and a new upgrade (Operations > Upgrading to 0.6.0).
+- **A voice-match suggestion on a speaker a person verified is no longer shown while voiceprints
+  are off, is no longer recorded, and a purge clears it (#1280).** The matchers do not write a
+  voice suggestion, its confidence or its detail onto a speaker a person verified (unless the
+  match replaces that identity); while voiceprints are off the suggestion block of such a speaker
+  is withheld, as for any speaker, and the name the person gave stays; the voiceprint purge clears
+  the suggestion columns of such a row (never its name, verified mark, profile link or identity
+  record), counts them in `suggestions_cleared` and `suggestion_details_cleared`, and the residual
+  check measures them. A person's accepted-suggestion record keeps only that the suggestion was a
+  voice match, not its similarity score.
 - **Transcript export API:** `GET /api/files/{uuid}/export` accepts `format=md` and answers 400 for
   `docx` and `pdf`, which use the new asynchronous `POST /api/files/{uuid}/export/document`.
   Backend images are about 26 MB larger (Noto fonts). No migration.

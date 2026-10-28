@@ -67,7 +67,7 @@ profile), not for whoever is looking at it or whoever started a job.
 | **Pipeline plan** (at upload and reprocess) | The speaker-recognition step is not scheduled. The pipeline view shows an informational notice: speaker recognition across recordings is off for this recording, speakers are still told apart within it. The diarizer is told not to return voiceprint vectors, so they never leave the worker. | The diarization sidecar is not asked for gender. |
 | **Entry gates** (every stage, fresh read, no cache) | Each stage that produces or uses a voiceprint checks again when it starts, so a recording already in flight when a switch flipped is stopped too. A stopped stage reports "skipped by policy", not an error. | The same check in the gender attribute task, the sidecar gender write and the speaker-name step. |
 | **Write backstop** (every OpenSearch write) | Every write of a speaker, profile or cluster document is checked again. A refused write is logged once per scope and returns without writing. The answer is cached for 10 seconds per process, so a switch change reaches every process within 10 seconds. A failed check denies and is not cached. | Not applicable (gender is stored in the database, not in a voiceprint document). |
-| **Reads and serialization** | Voiceprint-based name suggestions are not made. A stored suggestion that a voiceprint match wrote and nobody verified is left out of responses. Cluster lists are empty for that scope. A name that only a voiceprint match supplied is also left out of every speaker label (see [Where a voice-matched name is withheld](#where-a-voice-matched-name-is-withheld)). A transcript-derived AI suggestion is still offered. | Inferred gender is returned as `null` wherever a response embeds a speaker (see [Where inferred gender is withheld](#where-inferred-gender-is-withheld)). A profile's gender is voted on by confirmed genders only. |
+| **Reads and serialization** | Voiceprint-based name suggestions are not made. A stored suggestion that a voiceprint match wrote is left out of responses, with its confidence and detail, whoever verified the speaker (the name a person gave stays). Cluster lists are empty for that scope. A name that only a voiceprint match supplied is also left out of every speaker label (see [Where a voice-matched name is withheld](#where-a-voice-matched-name-is-withheld)). A transcript-derived AI suggestion is still offered. | Inferred gender is returned as `null` wherever a response embeds a speaker (see [Where inferred gender is withheld](#where-inferred-gender-is-withheld)). A profile's gender is voted on by confirmed genders only. |
 | **Actions that would create or recompute voiceprints** | The cluster actions re-cluster, analyze outliers, promote, merge and split answer **409** `voiceprints_disabled` with `locked_by`. The admin profile-embedding repair answers the same when every profile is off, and otherwise skips the profiles that are off. | Not applicable. |
 | **Batch jobs** | The admin v4 embedding migration, the consistency repair, the speaker merge task's voiceprint averaging, cluster tasks, profile rebuilds, retroactive matching and `batch_speaker_matching` skip scopes that are off and report a `skipped_by_policy` count. | The admin gender migration and the combined speaker analysis skip files whose owner or organization forbids it, and a forced reset leaves those files' values alone. |
 | **Clusters** | A speaker is not placed in a cluster, and the cluster reads return nothing for the scope. | Gender no longer influences cluster joins or evictions unless a person confirmed it. |
@@ -114,7 +114,7 @@ the policy only when the voiceprint suggestion is what would decide the name:
 - the search index (chunks, and the digest and facts built from the same label, whenever they are
   rebuilt) and the speaker roster that chat resolves "who said ..." against.
 
-A name a person typed or verified is not a voiceprint's and stays. Switching a voiceprint layer
+A name a person typed or verified is not a voiceprint's and stays; a voice suggestion recorded on a speaker a person verified is not part of that name and is withheld too. Switching a voiceprint layer
 on or off, for a person, an organization or the deployment, queues the existing debounced
 re-index for the files whose name only a voiceprint supplied (and regenerates their facts), so the
 search index follows the switch in both directions without waiting for another edit to the file.
@@ -130,8 +130,8 @@ confirmed, so every speaker records **who wrote its name and profile link** (`id
 |---|---|---|---|
 | `voiceprint` | A voiceprint wrote the name and the profile link | The name, its "verified" mark and the link are hidden; the speaker shows its diarizer label | Reverted to unnamed, unlinked and unverified |
 | `voiceprint_link` | A voiceprint added only the link, to a name that was already there | The link, and the voice suggestion and match confidence that came with it, are hidden; the name stays | The link is removed together with that suggestion and confidence; the name and its verified mark stay |
-| `human` | A person typed, accepted, assigned or confirmed it, or promoted a cluster to a profile | Nothing is hidden | Nothing is touched |
-| none | Written before 0.6.0, or never named | Nothing is hidden (treated as a person's) | Nothing is touched |
+| `human` | A person typed, accepted, assigned or confirmed it, or promoted a cluster to a profile | The name, mark and link are never hidden; a voice suggestion left on the speaker is | The identity is not touched; a voice suggestion left on the speaker is cleared |
+| none | Written before 0.6.0, or never named | The same as `human` (treated as a person's) | The same as `human` |
 
 What a person does overrides what a machine did. Typing a name, accepting a suggestion, assigning
 or creating a profile, verifying, batch-verifying and promoting a cluster make the identity
@@ -172,16 +172,25 @@ These hold ids and identifiers only: no name and no transcript text, and they ar
 the search index or sent to a language model. The speaker API returns them read-only as
 `identity` (`source`, `at`, `by`, `detail`) and `suggestion` (`source`, `confidence`, `detail`).
 `by` names the person only to the file's owner, to an administrator of the file's organization and
-to a platform administrator; anyone else who can see the file gets `source` and `at`.
+to a platform administrator whose reach covers the file: in a single-tenant deployment any
+administrator, in a multi-tenant deployment only under a support-access grant for the file's
+tenant (the use is recorded like any other platform access). A platform administrator who reaches
+a file through an ordinary share gets `source` and `at` only, like anyone else who can see the file.
+When the person's account is being erased (the account row can outlive the request while a legal
+hold lasts), `by` is `{"erased": true}` with no id, name or email.
 
 They follow the identity they describe. While a file's voiceprints are off, the record of a
 `voiceprint` or `voiceprint_link` identity (it names the profile or speaker the voice matched) and
 the detail of a voice suggestion are hidden with the name and link: `identity` is empty and the
-suggestion is gone. A person's own record is never hidden. A purge clears them in the same statement
+suggestion is gone, also when the suggestion sits on a speaker a person verified (new voice
+suggestions are not recorded on such a speaker; older ones are hidden and purged all the same).
+A person's own identity record is never hidden. A purge clears them in the same statement
 that reverts the identity or removes the voice suggestion, counts them
 (`identity_provenance_cleared`, `suggestion_details_cleared`) and checks that none are left
-(`speaker_identity_provenance`, `voiceprint_suggestion_details`); a person's record, and the
-detail of an AI suggestion, stay. Reverting an identity to unknown (unlinking, rejecting, deleting
+(`speaker_identity_provenance`, `voiceprint_suggestion_details`); a person's identity record, and the
+detail of an AI suggestion, stay. The record of an identity a person made keeps no voice
+comparison either: when they accept a voice suggestion it notes only that the suggestion was a
+voice match, not its similarity score. Reverting an identity to unknown (unlinking, rejecting, deleting
 a profile) forgets the record with it.
 
 **This is the current state, not a history.** Only the latest source, time, person and origin are
@@ -251,7 +260,7 @@ A purge deletes what a switch only hides. It is **irreversible**.
 
 | Target | Deleted | Kept |
 |---|---|---|
-| `voiceprints` | Names and links a voiceprint made revert to unnamed and unlinked (see [Names and links a voiceprint made](#names-and-links-a-voiceprint-made)), and those speakers leave promoted clusters (a promoted cluster left empty is deleted, except that a person's own purge keeps an emptied cluster another member owns and deletes only its centroid document). Speaker, profile and cluster-centroid documents in every speaker index (the legacy backup index included), selected by the speakers, profiles and clusters of the purged scope; an organization purge also deletes the documents carrying that organization's own stamp. Speaker match rows with either side in the scope. Unpromoted clusters whose members are all in the scope. Unverified voiceprint-based name suggestions (the affected speakers' status and label are refreshed and their recordings are queued for a search reindex). Each profile's embedding count and last-update time are reset. | Profiles, names a person typed or confirmed, avatars, speaker assignments a person verified, and the records of promoted clusters (their centroid documents are deleted). Another tenant's rows and documents |
+| `voiceprints` | Names and links a voiceprint made revert to unnamed and unlinked (see [Names and links a voiceprint made](#names-and-links-a-voiceprint-made)), and those speakers leave promoted clusters (a promoted cluster left empty is deleted, except that a person's own purge keeps an emptied cluster another member owns and deletes only its centroid document). Speaker, profile and cluster-centroid documents in every speaker index (the legacy backup index included), selected by the speakers, profiles and clusters of the purged scope; an organization purge also deletes the documents carrying that organization's own stamp. Speaker match rows with either side in the scope. Unpromoted clusters whose members are all in the scope. Voiceprint-based name suggestions, with their confidence and detail, on any speaker, also one a person verified; that speaker's name, verified mark, profile link and identity record are left as they are (the affected speakers' status and label are refreshed and their recordings are queued for a search reindex). Each profile's embedding count and last-update time are reset. | Profiles, names a person typed or confirmed, avatars, speaker assignments a person verified, and the records of promoted clusters (their centroid documents are deleted). Another tenant's rows and documents |
 | `inferred_gender` | On speakers whose gender no person confirmed: the predicted gender, the three `attribute_confidence` keys `gender`, `alignment` and `alignment_hint`, and the time the attributes were predicted | Genders a person confirmed, and the gender stored on a speaker profile |
 
 **A gender purge does not clear a profile's gender.** `speaker_profile.predicted_gender` is set only

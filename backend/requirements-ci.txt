@@ -194,3 +194,41 @@ wcwidth==0.9.3
 av==18.1.0
 phonenumbers==9.0.41
 spacy==3.8.16
+
+# Second transitive drift sweep (2026-10-28): exactly what requirements.txt pins, for the
+# packages this variant resolves (see the matching block there for the reason each exists).
+billiard==4.3.1  # via celery
+blis==1.3.4  # via thinc
+brotli==1.2.1  # via yt-dlp[default]
+charset-normalizer==3.5.2  # via requests
+click-repl==0.4.1  # via celery
+confection==1.3.4  # via spacy, thinc, weasel
+cymem==2.0.16  # via preshed, spacy, thinc
+deprecated==3.0.0  # via limits, opentelemetry-api
+dnspython==2.9.0  # via email-validator
+hf-xet==1.7.0  # via huggingface-hub
+httptools==0.9.0  # via uvicorn[standard]
+jiter==0.18.0  # via openai
+mako==1.4.3  # via alembic
+markupsafe==3.0.4  # via jinja2, mako
+murmurhash==1.0.16  # via preshed, spacy, thinc
+networkx==3.7  # via torch
+opentelemetry-api==1.45.1  # via opentelemetry-sdk, google-api-core, pyannote.audio
+pyasn1==0.6.5  # via ldap3, pyasn1-modules
+pycparser==3.12  # via cffi
+pycryptodome==4.2.0  # via minio
+pycryptodomex==3.24.1  # via yt-dlp[default]
+pyjwt==2.15.1  # via msal
+pytz==2026.5  # via flower
+s3transfer==0.19.3  # via boto3
+smart-open==9.0.0  # via weasel
+srsly==2.5.5  # via spacy, thinc, weasel
+thinc==8.3.14  # via spacy
+tldextract==5.4.0  # via presidio-analyzer
+tornado==6.6  # via flower
+truststore==0.10.5  # via httpx2, httpcore2
+tzdata==2026.6  # via kombu
+tzlocal==5.4.5  # via celery
+uvloop==0.23.0  # via uvicorn[standard]
+watchfiles==1.3.0  # via uvicorn[standard]
+weasel==1.0.1  # via spacy

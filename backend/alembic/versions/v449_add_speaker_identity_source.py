@@ -21,8 +21,9 @@ What
   transaction: the column is new and NULL everywhere, so the check scan is a read of NULLs
   under the lock the ``ADD COLUMN`` already holds; a ``NOT VALID`` + ``VALIDATE`` pair buys
   nothing inside one migration transaction.
-* ``speaker.identity_source_at TIMESTAMPTZ``, ``speaker.identity_source_user_id INTEGER
-  REFERENCES "user"(id) ON DELETE SET NULL``, ``speaker.identity_source_detail JSONB`` and
+* ``speaker.identity_source_at TIMESTAMPTZ``, ``speaker.identity_source_user_id INTEGER``
+  (with the foreign key ``speaker_identity_source_user_id_fkey`` to ``"user"(id) ON DELETE SET
+  NULL``, added LAST: see "Lock footprint"), ``speaker.identity_source_detail JSONB`` and
   ``speaker.suggestion_detail JSONB``, all nullable and without a default (metadata-only):
   when the current identity source was recorded, the person who made or confirmed it (NULL = a
   task wrote it, or unknown), where the identity came from, and where the current
@@ -36,6 +37,18 @@ What
   when a user account is deleted, a rare erasure whose sequential scan an index would not repay
   with an extra write on every named speaker and a ``SHARE`` lock on ``speaker`` while it is
   built during the upgrade. The query review is issue #1337.
+* Lock footprint of the foreign key. A foreign key takes ``SHARE ROW EXCLUSIVE`` on the table it
+  references, here ``"user"``, which blocks every write to it (logins, provisioning, token
+  refresh) until the transaction ends. Declared inline on the ``ADD COLUMN`` it was therefore
+  held for the whole upgrade, backfill included (61 s measured at 285,000 stamped rows). The
+  column is added without it and the constraint is the LAST statement of the transaction, after
+  the backfill, so ``"user"`` is locked only for the constraint's own add (a scan of a column
+  that is NULL everywhere) and the commit. The constraint is also the last object this revision
+  creates, so the schema-version detection keys on it. A development database stamped at the
+  earlier shape of this revision (columns with the foreign key inline) has the constraint under
+  the same name, so nothing is re-created; one stamped before the columns existed at all must be
+  downgraded to ``v448`` and upgraded again (or recreated), because the runner sees it at head
+  and skips this revision.
 * ``SET LOCAL lock_timeout = '30s'`` first: ``ADD COLUMN`` and ``ADD CONSTRAINT`` take
   ``ACCESS EXCLUSIVE`` on ``speaker``, and an unbounded wait would queue every reader behind a
   long-running transaction. A busy table fails the upgrade loudly instead; re-run it.
@@ -144,9 +157,9 @@ ADD_CHECK_SQL = """
     END $$;
 """
 
-#: The provenance columns, created after the CHECK. ``suggestion_detail`` is the LAST object this
-#: revision creates, so the detection arm keys on it: a database that stopped part-way through
-#: lacks it and is detected as the previous revision, which re-runs this idempotent DDL.
+#: The provenance columns, created after the CHECK. ``identity_source_user_id`` is added WITHOUT
+#: its foreign key (:data:`ADD_USER_FK_SQL`), which would hold a lock on ``"user"`` through the
+#: backfill.
 ADD_PROVENANCE_COLUMNS_SQL = """
     DO $$
     BEGIN
@@ -160,8 +173,7 @@ ADD_PROVENANCE_COLUMNS_SQL = """
             SELECT 1 FROM information_schema.columns
              WHERE table_name = 'speaker' AND column_name = 'identity_source_user_id'
         ) THEN
-            ALTER TABLE speaker ADD COLUMN identity_source_user_id INTEGER
-                REFERENCES "user"(id) ON DELETE SET NULL;
+            ALTER TABLE speaker ADD COLUMN identity_source_user_id INTEGER;
         END IF;
         IF NOT EXISTS (
             SELECT 1 FROM information_schema.columns
@@ -174,6 +186,26 @@ ADD_PROVENANCE_COLUMNS_SQL = """
              WHERE table_name = 'speaker' AND column_name = 'suggestion_detail'
         ) THEN
             ALTER TABLE speaker ADD COLUMN suggestion_detail JSONB;
+        END IF;
+    END $$;
+"""
+
+#: The foreign key of the person column, created LAST (after the backfill) so the lock it takes on
+#: ``"user"`` is short. The name is the one PostgreSQL gave the inline constraint of the earlier
+#: shape of this revision, so a database that already has it is left alone. This is the last
+#: object the revision creates, so the detection arm keys on it: a database that stopped
+#: part-way through lacks it and is detected as the previous revision, which re-runs this
+#: idempotent DDL.
+USER_FK_NAME = "speaker_identity_source_user_id_fkey"
+
+ADD_USER_FK_SQL = f"""
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = '{USER_FK_NAME}'
+        ) THEN
+            ALTER TABLE speaker ADD CONSTRAINT {USER_FK_NAME}
+                FOREIGN KEY (identity_source_user_id) REFERENCES "user"(id) ON DELETE SET NULL;
         END IF;
     END $$;
 """
@@ -283,6 +315,7 @@ def upgrade():
     op.execute(ADD_CHECK_SQL)
     op.execute(ADD_PROVENANCE_COLUMNS_SQL)
     backfill_and_record(op.get_bind())
+    op.execute(ADD_USER_FK_SQL)  # last: see "Lock footprint" in the module docstring
 
 
 def downgrade():

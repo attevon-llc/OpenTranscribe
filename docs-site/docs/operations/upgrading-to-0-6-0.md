@@ -78,6 +78,24 @@ recordings, transcripts, speakers and voiceprints alone.
 `v434` and `v436` change a single user setting each, and only for users whose current choice
 could not run any more. No transcript, speaker, voiceprint or profile is touched by either.
 
+:::note[Development and `--fresh` databases stamped at an earlier `v449`]
+`v449` was edited before release: the foreign key from `speaker.identity_source_user_id` to `user`
+is now added last, after the backfill, so the lock it takes on `user` (which blocks logins and
+account provisioning) lasts for the constraint alone instead of the whole upgrade (61 seconds were
+measured at 285,000 stamped speakers). The constraint keeps its name, so a database that already
+has it is unchanged. A development or `--fresh` database that was stamped at the **first** shape of
+`v449`, before all five columns existed, is not repaired by upgrading: the runner sees it at head
+and skips the revision. Downgrade it to `v448` and upgrade again, or recreate it:
+
+```bash
+cd backend
+alembic downgrade v448_task_one_active_row_per_file_step
+alembic upgrade head
+```
+
+A production upgrade from 0.5.x runs the revision once, in its final shape.
+:::
+
 :::note[The migration chain is one-way]
 Migrations cannot be undone in place. Rolling the images back to 0.5.x does not roll the
 database back, and `./opentranscribe.sh update --rollback` refuses when the older version

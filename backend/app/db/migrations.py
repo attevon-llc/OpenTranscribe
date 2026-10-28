@@ -697,12 +697,12 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     )
 
     # v449: who wrote a speaker's name/link, and the record of how it and the recommendation came
-    # to be (issue #1280). Keyed on the LAST object the revision creates, the
-    # ``suggestion_detail`` column (after the column, its CHECK and the other provenance
-    # columns); the backfill runs in the same transaction.
+    # to be (issue #1280). Keyed on the LAST object the revision creates, the foreign key of
+    # ``identity_source_user_id`` (after the columns, their CHECK and the backfill, which run in
+    # the same transaction).
     has_identity_source = _check_exists(
-        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
-        "WHERE table_name = 'speaker' AND column_name = 'suggestion_detail')"
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'speaker_identity_source_user_id_fkey')"
     )
 
     # Return the highest version stamp that matches (newest first)

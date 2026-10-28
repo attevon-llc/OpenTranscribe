@@ -537,14 +537,14 @@ def test_detected_at_or_after_v449(db_session):
 
 
 @pytest.mark.ddl_exclusive
-def test_detection_stamps_lower_without_the_last_created_column(db_session):
-    """The arm keys on ``suggestion_detail``, the last object the revision creates."""
+def test_detection_stamps_lower_without_the_last_created_object(db_session):
+    """The arm keys on the person column's foreign key, the last object the revision creates."""
     from app.db.migrations import _detect_schema_version
     from tests.unit._migration_detection import _chain_order
 
     conn = db_session.connection()
     try:
-        conn.execute(text("ALTER TABLE speaker DROP COLUMN suggestion_detail"))
+        conn.execute(text(f"ALTER TABLE speaker DROP CONSTRAINT {_module().USER_FK_NAME}"))
         detected = _detect_schema_version(conn, inspect(conn).get_table_names())
     finally:
         db_session.rollback()
@@ -565,6 +565,7 @@ def test_upgrade_ddl_replays_cleanly(db_session):
         conn.execute(text(module.ADD_COLUMN_SQL))
         conn.execute(text(module.ADD_CHECK_SQL))
         conn.execute(text(module.ADD_PROVENANCE_COLUMNS_SQL))
+        conn.execute(text(module.ADD_USER_FK_SQL))
     assert conn.execute(text(count)).scalar() == before
 
 
@@ -604,6 +605,7 @@ def test_downgrade_is_idempotent_keeps_names_and_upgrade_restores(db_session, no
         conn.execute(text(module.ADD_CHECK_SQL))
         conn.execute(text(module.ADD_PROVENANCE_COLUMNS_SQL))
         restamped = module.backfill_and_record(conn)
+        conn.execute(text(module.ADD_USER_FK_SQL))
 
         assert _has_column(conn)
         assert _source(db_session, speaker) == "voiceprint"
@@ -611,3 +613,76 @@ def test_downgrade_is_idempotent_keeps_names_and_upgrade_restores(db_session, no
         assert record is not None and record["stamped"] == restamped >= 1
     finally:
         db_session.rollback()
+
+
+DROP_NEW_COLUMNS = """
+    ALTER TABLE speaker DROP COLUMN suggestion_detail;
+    ALTER TABLE speaker DROP COLUMN identity_source_detail;
+    ALTER TABLE speaker DROP COLUMN identity_source_user_id;
+    ALTER TABLE speaker DROP COLUMN identity_source_at;
+    ALTER TABLE speaker DROP CONSTRAINT ck_speaker_identity_source;
+    ALTER TABLE speaker DROP COLUMN identity_source;
+"""
+
+
+# --- the lock on "user" ---------------------------------------------------------------------
+
+
+def _user_locks(conn) -> set[str]:
+    """Lock modes this transaction holds on the ``user`` table."""
+    return {
+        r[0]
+        for r in conn.execute(
+            text(
+                "SELECT mode FROM pg_locks WHERE locktype = 'relation' "
+                "AND relation = '\"user\"'::regclass AND pid = pg_backend_pid() AND granted"
+            )
+        )
+    }
+
+
+@pytest.mark.ddl_exclusive
+def test_the_foreign_key_to_user_locks_it_only_after_the_backfill(db_session, normal_user):
+    """A foreign key takes SHARE ROW EXCLUSIVE on the table it references until the transaction
+    ends, which blocks logins and provisioning. It must not be held through the backfill."""
+    module = _module()
+    conn = db_session.connection()
+    try:
+        conn.execute(text(DROP_NEW_COLUMNS))
+        conn.execute(text(module.ADD_COLUMN_SQL))
+        conn.execute(text(module.ADD_CHECK_SQL))
+        conn.execute(text(module.ADD_PROVENANCE_COLUMNS_SQL))
+        assert "ShareRowExclusiveLock" not in _user_locks(conn), "the columns lock no user row"
+        module.backfill_and_record(conn)
+        assert "ShareRowExclusiveLock" not in _user_locks(conn), "the backfill runs unlocked"
+
+        conn.execute(text(module.ADD_USER_FK_SQL))
+
+        assert "ShareRowExclusiveLock" in _user_locks(conn), "control: the foreign key is the lock"
+    finally:
+        db_session.rollback()
+
+
+def test_the_foreign_key_is_the_last_statement_of_the_upgrade():
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(_module().upgrade))
+    calls = [
+        node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, "id", "")
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+    ]
+    executed = [
+        node.args[0].id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "execute"
+        and node.args
+        and isinstance(node.args[0], ast.Name)
+    ]
+    assert executed[-1] == "ADD_USER_FK_SQL"
+    assert "backfill_and_record" in calls
+    assert '"user"' not in _module().ADD_PROVENANCE_COLUMNS_SQL
+    assert '"user"' not in _module().ADD_COLUMN_SQL

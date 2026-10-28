@@ -21,7 +21,21 @@ What
   transaction: the column is new and NULL everywhere, so the check scan is a read of NULLs
   under the lock the ``ADD COLUMN`` already holds; a ``NOT VALID`` + ``VALIDATE`` pair buys
   nothing inside one migration transaction.
-* No index: the purge and the label resync filter by scope first.
+* ``speaker.identity_source_at TIMESTAMPTZ``, ``speaker.identity_source_user_id INTEGER
+  REFERENCES "user"(id) ON DELETE SET NULL``, ``speaker.identity_source_detail JSONB`` and
+  ``speaker.suggestion_detail JSONB``, all nullable and without a default (metadata-only):
+  when the current identity source was recorded, the person who made or confirmed it (NULL = a
+  task wrote it, or unknown), where the identity came from, and where the current
+  recommendation in ``suggested_name`` / ``suggestion_source`` came from (a voice match, a
+  profile match or a language model: provider, model, matched ids). They hold the CURRENT state
+  only; the append-only history is issue #1336. Ids and identifiers only, never a name and never
+  transcript text. Written by the same helpers as ``identity_source``; hidden and purged with
+  the machine identity or voice suggestion they describe.
+* No index: the purge and the label resync filter by scope first. ``identity_source_user_id`` is
+  not indexed either: the only query that filters on it is the ``ON DELETE SET NULL`` action
+  when a user account is deleted, a rare erasure whose sequential scan an index would not repay
+  with an extra write on every named speaker and a ``SHARE`` lock on ``speaker`` while it is
+  built during the upgrade. The query review is issue #1337.
 * ``SET LOCAL lock_timeout = '30s'`` first: ``ADD COLUMN`` and ``ADD CONSTRAINT`` take
   ``ACCESS EXCLUSIVE`` on ``speaker``, and an unbounded wait would queue every reader behind a
   long-running transaction. A busy table fails the upgrade loudly instead; re-run it.
@@ -67,8 +81,12 @@ The number of rows stamped, and of shape rows left unmarked, is logged and recor
 (``SELECT value FROM system_settings WHERE key = 'privacy.identity_source_backfill'``). The record is written once (``ON CONFLICT DO
 NOTHING``): a re-run stamps nothing and keeps the first count. Downgrade removes it.
 
-Downgrade drops the constraint, the column and the record. Names and links are untouched;
-only the markers are lost (a purge already run is irreversible either way).
+A stamped row also gets ``identity_source_detail = {"origin": "v449_backfill"}``; its time and
+person stay NULL (unknown). Existing suggestions keep a NULL ``suggestion_detail``.
+
+Downgrade drops the four new columns, the constraint, the ``identity_source`` column and the
+record. Names and links are untouched; only the markers are lost (a purge already run is
+irreversible either way).
 
 Community edition: same behaviour; nothing here is edition-specific.
 
@@ -112,7 +130,7 @@ ADD_COLUMN_SQL = """
     END $$;
 """
 
-#: Created after the column; the detection arm keys on it.
+#: Created after the column.
 ADD_CHECK_SQL = """
     DO $$
     BEGIN
@@ -122,6 +140,40 @@ ADD_CHECK_SQL = """
             ALTER TABLE speaker ADD CONSTRAINT ck_speaker_identity_source
                 CHECK (identity_source IS NULL
                        OR identity_source IN ('human', 'voiceprint', 'voiceprint_link'));
+        END IF;
+    END $$;
+"""
+
+#: The provenance columns, created after the CHECK. ``suggestion_detail`` is the LAST object this
+#: revision creates, so the detection arm keys on it: a database that stopped part-way through
+#: lacks it and is detected as the previous revision, which re-runs this idempotent DDL.
+ADD_PROVENANCE_COLUMNS_SQL = """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'speaker' AND column_name = 'identity_source_at'
+        ) THEN
+            ALTER TABLE speaker ADD COLUMN identity_source_at TIMESTAMPTZ;
+        END IF;
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'speaker' AND column_name = 'identity_source_user_id'
+        ) THEN
+            ALTER TABLE speaker ADD COLUMN identity_source_user_id INTEGER
+                REFERENCES "user"(id) ON DELETE SET NULL;
+        END IF;
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'speaker' AND column_name = 'identity_source_detail'
+        ) THEN
+            ALTER TABLE speaker ADD COLUMN identity_source_detail JSONB;
+        END IF;
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'speaker' AND column_name = 'suggestion_detail'
+        ) THEN
+            ALTER TABLE speaker ADD COLUMN suggestion_detail JSONB;
         END IF;
     END $$;
 """
@@ -159,7 +211,12 @@ BACKFILL_WHERE = f"{SHAPE_WHERE} AND {EVIDENCE_WHERE}"
 
 SHAPE_COUNT_SQL = f"SELECT count(*) FROM speaker s WHERE {SHAPE_WHERE}"
 
-BACKFILL_SQL = f"UPDATE speaker s SET identity_source = 'voiceprint' WHERE {BACKFILL_WHERE}"
+BACKFILL_SQL = f"""
+    UPDATE speaker s
+       SET identity_source = 'voiceprint',
+           identity_source_detail = jsonb_build_object('origin', 'v449_backfill')
+     WHERE {BACKFILL_WHERE}
+"""
 
 RECORD_SQL = """
     INSERT INTO system_settings (key, value, description)
@@ -173,6 +230,10 @@ RECORD_DESCRIPTION = (
 )
 
 DOWNGRADE_SQL = """
+    ALTER TABLE speaker DROP COLUMN IF EXISTS suggestion_detail;
+    ALTER TABLE speaker DROP COLUMN IF EXISTS identity_source_detail;
+    ALTER TABLE speaker DROP COLUMN IF EXISTS identity_source_user_id;
+    ALTER TABLE speaker DROP COLUMN IF EXISTS identity_source_at;
     ALTER TABLE speaker DROP CONSTRAINT IF EXISTS ck_speaker_identity_source;
     ALTER TABLE speaker DROP COLUMN IF EXISTS identity_source;
 """
@@ -220,6 +281,7 @@ def upgrade():
     op.execute(LOCK_TIMEOUT_SQL)
     op.execute(ADD_COLUMN_SQL)
     op.execute(ADD_CHECK_SQL)
+    op.execute(ADD_PROVENANCE_COLUMNS_SQL)
     backfill_and_record(op.get_bind())
 
 

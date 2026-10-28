@@ -696,10 +696,13 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE tablename = 'task' AND indexname = 'uq_task_active_per_file_type')"
     )
 
-    # v449: who wrote a speaker's name/link (issue #1280). Keyed on its CHECK, created after
-    # the column; the backfill runs in the same transaction.
+    # v449: who wrote a speaker's name/link, and the record of how it and the recommendation came
+    # to be (issue #1280). Keyed on the LAST object the revision creates, the
+    # ``suggestion_detail`` column (after the column, its CHECK and the other provenance
+    # columns); the backfill runs in the same transaction.
     has_identity_source = _check_exists(
-        "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_speaker_identity_source')"
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'speaker' AND column_name = 'suggestion_detail')"
     )
 
     # Return the highest version stamp that matches (newest first)

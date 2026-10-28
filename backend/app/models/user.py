@@ -277,7 +277,9 @@ class User(Base):
         "MediaFile", back_populates="user", foreign_keys="MediaFile.user_id"
     )
     comments: Mapped[list["Comment"]] = relationship("Comment", back_populates="user")
-    speakers: Mapped[list["Speaker"]] = relationship("Speaker", back_populates="user")
+    speakers: Mapped[list["Speaker"]] = relationship(
+        "Speaker", back_populates="user", foreign_keys="Speaker.user_id"
+    )
     speaker_profiles: Mapped[list["SpeakerProfile"]] = relationship(
         "SpeakerProfile", back_populates="user"
     )

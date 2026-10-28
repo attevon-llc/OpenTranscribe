@@ -621,6 +621,9 @@ class Speaker(Base):
 
     __tablename__ = "speaker"
 
+    # Allows the two plain (non-column) annotations below.
+    __allow_unmapped__ = True
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
         UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
@@ -657,9 +660,34 @@ class Speaker(Base):
     # "human", or NULL (before v449, or never named; read as human). Written only through
     # app/utils/speaker_identity_source.py; the privacy policy hides and purges by it.
     identity_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # v449 (#1280 follow-up): the rest of the record of how the CURRENT identity and
+    # recommendation came to be. Written by the same helpers as identity_source / the suggestion
+    # fields. identity_source_user_id is the person who made or confirmed the identity (NULL = a
+    # task, or unknown); it is not a relationship because a second user FK would make
+    # Speaker.user ambiguous. The full append-only history is issue #1336.
+    identity_source_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    identity_source_user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    # none_as_null: a plain JSONB stores Python None as the JSON value ``null``, which is NOT a
+    # SQL NULL, so a cleared record would still read ``IS NOT NULL`` to the purge's residual check.
+    identity_source_detail: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
+    suggestion_detail: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+    # Read-only provenance for the API schema: attached to a loaded row by
+    # services/speaker_provenance_view after the privacy redaction, never a column and never
+    # flushed. The class default makes an unattached row read as "unknown".
+    identity: dict[str, Any] | None = None
+    suggestion: dict[str, Any] | None = None
 
     # Computed status fields (calculated by SpeakerStatusService)
     computed_status: Mapped[str | None] = mapped_column(
@@ -710,7 +738,7 @@ class Speaker(Base):
     )
 
     # Relationships
-    user: Mapped["User"] = relationship("User", back_populates="speakers")
+    user: Mapped["User"] = relationship("User", back_populates="speakers", foreign_keys=[user_id])
     media_file: Mapped["MediaFile"] = relationship("MediaFile", back_populates="speakers")
     profile: Mapped["SpeakerProfile | None"] = relationship(
         "SpeakerProfile", back_populates="speaker_instances"

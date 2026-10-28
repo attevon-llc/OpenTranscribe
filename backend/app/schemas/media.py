@@ -309,6 +309,40 @@ def split_attribute_confidence(raw: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+class SpeakerIdentityActor(BaseModel):
+    """The person who made or confirmed a speaker's identity."""
+
+    uuid: UUID | None = None  # None for an erased account
+    name: str | None = None  # full name, else the account's email; None for an erased account
+    erased: bool = False  # the account is being erased: no uuid, name or email is given
+
+
+class SpeakerIdentity(BaseModel):
+    """How the speaker's CURRENT identity came to be (read-only; issue #1280).
+
+    ``by`` is present only for the file's owner, an administrator of the file's organization
+    and a platform administrator whose reach covers the file (any administrator in
+    single-tenant mode; in multi-tenant mode only under a support-access grant); every other
+    viewer gets ``source`` and ``at``. ``null`` for
+    the whole object means unknown (written before the record existed, or never named) or
+    withheld because a voiceprint made it and the file's voiceprints are off. Only the current
+    state is kept; the full change history is tracked in issue #1336.
+    """
+
+    source: str  # "human" | "voiceprint" | "voiceprint_link"
+    at: datetime | None = None
+    by: SpeakerIdentityActor | None = None
+    detail: dict[str, Any] | None = None
+
+
+class SpeakerSuggestion(BaseModel):
+    """Where the speaker's CURRENT recommendation in ``suggested_name`` came from (read-only)."""
+
+    source: str | None = None  # "voice_match" | "profile_match" | "llm_analysis" | ...
+    confidence: float | None = None
+    detail: dict[str, Any] | None = None
+
+
 class Speaker(SpeakerBase, UUIDBaseSchema):
     """Speaker with UUID as public identifier"""
 
@@ -321,6 +355,11 @@ class Speaker(SpeakerBase, UUIDBaseSchema):
     # tell a guess it must offer for verification from a voice match.
     suggestion_source: str | None = None
     created_at: datetime
+
+    # Read-only provenance, attached by ``services.speaker_provenance_view`` after the privacy
+    # redaction. None = unknown or withheld.
+    identity: SpeakerIdentity | None = None
+    suggestion: SpeakerSuggestion | None = None
 
     # Computed status fields from SpeakerStatusService
     computed_status: str | None = None  # "verified", "suggested", "unverified"

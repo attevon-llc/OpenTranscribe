@@ -28,6 +28,9 @@ from app.schemas.speaker_cluster import SpeakerClusterUpdate
 from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
 from app.services.playback_rendition import resolve_playback
+from app.services.privacy.redact_view import PrivacyView
+from app.services.privacy.redact_view import hide_machine_identities
+from app.services.privacy.redact_view import require_voiceprints
 from app.services.speaker_cleanup import SpeakerImpact
 from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact
@@ -100,8 +103,16 @@ def trigger_recluster(
     data: ReclusterRequest | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
-    """Trigger full re-clustering of all speakers."""
+    """Trigger full re-clustering of all speakers.
+
+    Answers **409** ``voiceprints_disabled`` (with the layer that turned it off in
+    ``locked_by``) when the caller's active scope has voiceprint matching switched off
+    (issue #1280). The task itself re-checks every scope it touches at run time and
+    leaves a scope that is off exactly as it is.
+    """
+    require_voiceprints(db, user_id=current_user.id, organization_id=ctx.org_id)
     try:
         from app.core import constants
         from app.tasks import speaker_clustering
@@ -282,9 +293,13 @@ def get_speaker_media_preview(
     seg_start = float(best_seg.start_time) if best_seg else 0.0
     seg_end = float(best_seg.end_time) if best_seg else 0.0
 
+    # A name a voiceprint made is not offered while this file's voiceprints are off (#1280).
+    hide_machine_identities(PrivacyView(db), [speaker])
+    speaker_name = speaker.display_name or speaker.name
+
     return {
         "speaker_uuid": str(speaker.uuid),
-        "speaker_name": speaker.display_name or speaker.name,
+        "speaker_name": speaker_name,
         "file_uuid": str(media_file.uuid),
         "file_name": media_file.filename,
         # Display title (matches search results); falls back to the raw filename.
@@ -303,7 +318,11 @@ def get_clustering_stats(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Get aggregate speaker clustering statistics for the active tenant."""
+    """Get aggregate speaker clustering statistics for the active tenant.
+
+    While voiceprint matching is off for the caller's active scope the clusters are hidden
+    (issue #1280), so no speaker counts as clustered and there are no clusters to count.
+    """
     user_id = current_user.id
     speaker_filters = [
         Speaker.user_id == user_id,
@@ -327,6 +346,10 @@ def get_clustering_stats(
         .count()
     )
 
+    if not PrivacyView(db).voiceprints_for_scope(user_id, ctx.org_id).enabled:
+        clustered = 0
+        total_clusters = 0
+
     return {
         "total_speakers": total_speakers,
         "clustered_speakers": clustered,
@@ -342,8 +365,13 @@ def analyze_outliers(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Analyze minority-gender speakers for potential outliers."""
+    """Analyze minority-gender speakers for potential outliers.
+
+    Answers **409** ``voiceprints_disabled`` while the caller's scope has voiceprint
+    matching switched off (issue #1280): it compares the members' voiceprints.
+    """
     _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
+    require_voiceprints(db, user_id=current_user.id, organization_id=ctx.org_id)
     service = SpeakerClusteringService(db)
     try:
         result = service.analyze_gender_outliers(
@@ -509,8 +537,13 @@ def promote_cluster(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Promote a cluster to a speaker profile."""
+    """Promote a cluster to a speaker profile.
+
+    Answers **409** ``voiceprints_disabled`` while the caller's scope has voiceprint
+    matching switched off (issue #1280): the profile is seeded with the cluster's voiceprint.
+    """
     _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
+    require_voiceprints(db, user_id=current_user.id, organization_id=ctx.org_id)
     service = SpeakerClusteringService(db)
     profile = service.promote_cluster_to_profile(
         cluster_uuid=cluster_uuid,
@@ -542,12 +575,16 @@ def merge_clusters(
     A source member the user unassigned from the target (or its profile, or one of its
     members) is not moved; it stays in the source, which survives with it, and its UUID
     is listed in ``blocked_speaker_uuids`` so the refusal is visible (issue #1233).
+
+    Answers **409** ``voiceprints_disabled`` while the caller's scope has voiceprint
+    matching switched off (issue #1280): the merged centroid is a recomputed voiceprint.
     """
     if source_uuid == target_uuid:
         raise HTTPException(status_code=400, detail="Cannot merge cluster with itself")
 
     _require_uuid(source_uuid, not_found_detail="Cluster not found")
     _require_uuid(target_uuid, not_found_detail="Cluster not found")
+    require_voiceprints(db, user_id=current_user.id, organization_id=ctx.org_id)
     service = SpeakerClusteringService(db)
     result = service.merge_clusters(
         source_uuid, target_uuid, current_user.id, organization_id=ctx.org_id
@@ -571,8 +608,13 @@ def split_cluster(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Split speakers from a cluster into a new cluster."""
+    """Split speakers from a cluster into a new cluster.
+
+    Answers **409** ``voiceprints_disabled`` while the caller's scope has voiceprint
+    matching switched off (issue #1280): the new cluster gets a computed centroid.
+    """
     _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
+    require_voiceprints(db, user_id=current_user.id, organization_id=ctx.org_id)
     service = SpeakerClusteringService(db)
     new_cluster = service.split_cluster(
         cluster_uuid=cluster_uuid,

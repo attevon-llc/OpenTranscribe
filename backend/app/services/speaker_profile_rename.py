@@ -33,9 +33,12 @@ from sqlalchemy.orm import Session
 
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
+from app.core.tenancy import _Unscoped
 from app.models.media import MediaFile
 from app.models.media import Speaker
-from app.services.permission_service import org_scope_pred
+from app.services.permission_service import file_ids_in_scope
+from app.services.privacy.redact_view import PrivacyView
+from app.utils.speaker_identity_source import hides_link
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
@@ -60,6 +63,10 @@ def apply_profile_name_to_speakers(
     with neither is indexed under the raw diarizer label. Keying on the profile's
     own previous name would match nothing for either (issue #605).
 
+    Only members whose link is VISIBLE under their file's voiceprint decision are rewritten
+    (a link a voiceprint made is hidden while voiceprints are off, so that speaker is not
+    treated as a member until they are on again).
+
     Writes only; the caller owns the commit **and** the dispatch, because a
     rolled-back rename must never reach the index.
 
@@ -72,8 +79,10 @@ def apply_profile_name_to_speakers(
             A profile can be shared, so its members may belong to other accounts;
             ``None`` (admin) sweeps all of them. This mirrors the authorization
             the ``update_profile`` action has applied since #284.
-        organization_id: The tenant the rename acts in. Members stamped with another
-            tenant are never rewritten, whoever asks. ``UNSCOPED`` = no tenant gate.
+        organization_id: The tenant the rename acts in, judged by each member's FILE
+            (``None`` = files with no organization, an int = that organization's files).
+            Members whose file belongs to another tenant are never rewritten, whoever
+            asks. ``UNSCOPED`` = no tenant gate.
 
     Returns:
         ``(file_uuid, old_canonical_label)`` pairs ready for
@@ -84,10 +93,24 @@ def apply_profile_name_to_speakers(
     linked_query = db.query(Speaker).filter(Speaker.profile_id == profile_id)
     if restrict_to_user_id is not None:
         linked_query = linked_query.filter(Speaker.user_id == restrict_to_user_id)
-    tenant_pred = org_scope_pred(Speaker.organization_id, organization_id)
-    if tenant_pred is not None:
-        linked_query = linked_query.filter(tenant_pred)
+    # A speaker's tenant is its FILE's: the pipeline never stamps ``Speaker.organization_id``.
+    # ``None`` = personal (files with no organization), an int = that organization's files.
+    if not isinstance(organization_id, _Unscoped):
+        linked_query = linked_query.filter(
+            Speaker.media_file_id.in_(file_ids_in_scope(organization_id))
+        )
     linked_speakers = linked_query.all()
+    # A link a voiceprint made is not a link while its file's voiceprints are off (#1280): the
+    # speaker is not a member of this profile as far as anyone can see, so the rename does not
+    # reach it. Pushing the profile's name into it would leave a name only the hidden link
+    # explains, which a purge would then keep.
+    view = PrivacyView(db)
+    view.preload_files(int(s.media_file_id) for s in linked_speakers)
+    linked_speakers = [
+        s
+        for s in linked_speakers
+        if not hides_link(s.identity_source, view.voiceprints(int(s.media_file_id)).enabled)
+    ]
 
     # One grouped lookup, not a lazy `speaker.media_file.uuid` per row: a
     # well-used profile spans dozens of files.

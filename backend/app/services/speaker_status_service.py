@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.models.media import Speaker
-from app.utils.speaker_labels import canonical_speaker_label
+from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
 
@@ -56,12 +56,18 @@ class SpeakerStatusService:
     }
 
     @staticmethod
-    def compute_speaker_status(speaker: Speaker) -> dict[str, str | None]:
+    def compute_speaker_status(
+        speaker: Speaker, *, voiceprint_names: bool | None = None
+    ) -> dict[str, str | None]:
         """
         Compute comprehensive status information for a speaker.
 
         Args:
             speaker: Speaker object
+            voiceprint_names: Passed to ``canonical_speaker_label_for_row`` for
+                ``resolved_display_name``. ``None`` (a response) asks the privacy policy;
+                ``True`` describes the stored data, which is what a PERSISTED status must
+                hold (#1280 D5: hiding is decided per read, never written down).
 
         Returns:
             Dictionary with computed status information. ``profile_name`` and
@@ -80,7 +86,9 @@ class SpeakerStatusService:
         )
 
         # Resolve display name
-        resolved_display_name = SpeakerStatusService._resolve_display_name(speaker)
+        resolved_display_name = SpeakerStatusService._resolve_display_name(
+            speaker, voiceprint_names=voiceprint_names
+        )
 
         # Linked profile info (None when the speaker has no profile)
         profile_name, profile_status = SpeakerStatusService._resolve_profile_info(speaker)
@@ -157,7 +165,7 @@ class SpeakerStatusService:
             return "Needs identification"
 
     @staticmethod
-    def _resolve_display_name(speaker: Speaker) -> str:
+    def _resolve_display_name(speaker: Speaker, *, voiceprint_names: bool | None = None) -> str:
         """
         Resolve the best display name for a speaker.
 
@@ -169,17 +177,12 @@ class SpeakerStatusService:
 
         Args:
             speaker: Speaker object
+            voiceprint_names: See :meth:`compute_speaker_status`.
 
         Returns:
             Best available display name
         """
-        return canonical_speaker_label(
-            speaker.name,
-            display_name=speaker.display_name,
-            suggested_name=speaker.suggested_name,
-            confidence=speaker.confidence,
-            suggestion_source=speaker.suggestion_source,
-        )
+        return canonical_speaker_label_for_row(speaker, voiceprint_names=voiceprint_names)
 
     @staticmethod
     def compute_status_for_speakers(db: Session, speakers: list[Speaker]) -> list[dict]:
@@ -240,8 +243,11 @@ class SpeakerStatusService:
                 logger.error(f"Speaker {speaker_id} not found")
                 return False
 
-            # Compute status
-            status_info = SpeakerStatusService.compute_speaker_status(speaker)
+            # Policy-free: a stored status describes the data. A response recomputes it on
+            # the redacted row (privacy.redact_view.redact_speaker_rows).
+            status_info = SpeakerStatusService.compute_speaker_status(
+                speaker, voiceprint_names=True
+            )
 
             # Update computed fields
             speaker.computed_status = status_info["computed_status"]  # type: ignore[assignment]

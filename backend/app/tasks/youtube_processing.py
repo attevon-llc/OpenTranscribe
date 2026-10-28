@@ -5,7 +5,7 @@ This module provides Celery tasks for handling media video downloads and process
 asynchronously to prevent UI blocking during video import operations. It includes
 progress tracking, error handling, and automatic transcription initiation.
 
-Supports YouTube, Vimeo, Twitter/X, TikTok, and 1800+ other platforms via yt-dlp.
+Supports YouTube, Vimeo, Twitter/X, TikTok, and many other platforms via yt-dlp.
 """
 
 import logging

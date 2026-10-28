@@ -771,7 +771,9 @@ class NativeSpeakerDiarizer:
 
     # -- main entry points -------------------------------------------------
 
-    def _post_own_copy(self, audio: np.ndarray, timeout: float) -> tuple[dict, str]:
+    def _post_own_copy(
+        self, audio: np.ndarray, timeout: float, request_gender: bool = True
+    ) -> tuple[dict, str]:
         """Write our own WAV copy of *audio* and POST it. Returns ``(response, path)``.
 
         Split out of ``diarize()`` to keep that method's cyclomatic complexity in check, and
@@ -799,7 +801,7 @@ class NativeSpeakerDiarizer:
             wf.setframerate(16000)
             wf.writeframes(pcm.tobytes())
         try:
-            return self._post_diarize(own_wav, timeout), own_wav
+            return self._post_diarize(own_wav, timeout, request_gender), own_wav
         except BaseException as exc:
             # BaseException, not Exception: a timeout arriving as a KeyboardInterrupt/
             # SystemExit during shutdown must not leak either, and we re-raise unchanged.
@@ -816,7 +818,9 @@ class NativeSpeakerDiarizer:
                     raise classified from exc
             raise
 
-    def _try_reused_wav(self, wav_path: str, timeout: float) -> dict | None:
+    def _try_reused_wav(
+        self, wav_path: str, timeout: float, request_gender: bool = True
+    ) -> dict | None:
         """Attempt the staged-WAV POST. Returns the response on success, or ``None`` when
         the caller should retry with its own freshly-written copy (an HTTP 4xx — 400/404/422
         — the sidecar is reachable and answered, it just could not open THIS path).
@@ -831,7 +835,7 @@ class NativeSpeakerDiarizer:
         its cyclomatic complexity in check.
         """
         try:
-            return self._post_diarize(wav_path, timeout)
+            return self._post_diarize(wav_path, timeout, request_gender)
         except urllib.error.HTTPError as exc:
             if exc.code in (400, 404, 422):
                 logger.warning(
@@ -867,22 +871,35 @@ class NativeSpeakerDiarizer:
                 raise
             raise classified from exc
 
-    def _post_diarize(self, path: str, timeout: float) -> dict:
+    def _post_diarize(self, path: str, timeout: float, request_gender: bool = True) -> dict:
         """POST one /diarize request for a WAV the sidecar is expected to be able to open.
 
         Gender rides this call: the sidecar already has the decoded audio and the speaker
         turns in hand, so classifying costs no second fetch or decode. ``timeout`` is the
         duration-scaled per-request budget from :func:`_diarize_budget_s` (issue #656 Step 4),
         not the flat ``_TIMEOUT_S`` ceiling directly.
+
+        ``request_gender`` is this job's answer from the privacy policy. It can only turn the
+        deployment's ``DIAR_NATIVE_GENDER`` switch off for the job, never on, so a file whose
+        owner or organization forbids inferring gender never has its audio classified.
         """
         return post_json(
             f"{self.base_url}/diarize",
-            {"wav_path": path, "file_id": "job", "gender": _GENDER_ENABLED},
+            {
+                "wav_path": path,
+                "file_id": "job",
+                "gender": _GENDER_ENABLED and request_gender,
+            },
             timeout=timeout,
         )
 
     def _refuse_or_fallback_impl(
-        self, exc: BaseException, audio: np.ndarray, allow_local_fallback: bool
+        self,
+        exc: BaseException,
+        audio: np.ndarray,
+        allow_local_fallback: bool,
+        *,
+        return_centroids: bool | None = None,
     ) -> tuple[DiarizeResult, dict, dict | None]:
         """Degrade a sidecar failure to the PyAnnote fallback, or refuse to.
 
@@ -912,7 +929,9 @@ class NativeSpeakerDiarizer:
         with self._fallback_lock:
             self._fallback_users += 1
         try:
-            fallback_result = self._fallback_engine().diarize(audio)
+            fallback_result = self._fallback_engine().diarize(
+                audio, return_centroids=return_centroids
+            )
         finally:
             with self._fallback_lock:
                 self._fallback_users -= 1
@@ -930,6 +949,8 @@ class NativeSpeakerDiarizer:
         *,
         allow_local_fallback: bool = True,
         skip_sidecar: bool = False,
+        return_centroids: bool | None = None,
+        request_gender: bool | None = None,
     ) -> tuple[DiarizeResult, dict, dict[str, np.ndarray] | None]:
         """Run diarization, optionally against a WAV the caller already wrote to disk.
 
@@ -967,9 +988,17 @@ class NativeSpeakerDiarizer:
                 overlapped thread, once again on the inline retry against the identical
                 permit-starved gate — measured worst case 2 x 3600s = 2h, each holding a Celery
                 slot, a GPU thread and the decoded ndarray.
+            return_centroids: This job's answer to "may speaker centroids leave the diarizer"
+                (privacy policy). ``False`` returns none, whatever the config says.
+            request_gender: This job's answer to "may the sidecar classify gender". ``False``
+                keeps the audio unclassified. Both are PER CALL, not read from ``self.config``:
+                the ModelManager shares one diarizer and the config it was built with across
+                every job on the worker, so a per-job value held there is some earlier job's.
+                Both can only restrict; ``None`` leaves the deployment's own switches alone.
         """
         if not self.is_loaded:
             raise RuntimeError("Diarizer not loaded. Call load_model() first.")
+        want_gender = request_gender is not False
         if getattr(self.config, "num_speakers", None) is not None:
             logger.warning(
                 "diarizer_backend=native: num_speakers=%s requested but the native engine "
@@ -978,7 +1007,9 @@ class NativeSpeakerDiarizer:
             )
 
         def _refuse_or_fallback(exc: BaseException) -> tuple[DiarizeResult, dict, dict | None]:
-            return self._refuse_or_fallback_impl(exc, audio, allow_local_fallback)
+            return self._refuse_or_fallback_impl(
+                exc, audio, allow_local_fallback, return_centroids=return_centroids
+            )
 
         if skip_sidecar:
             return _refuse_or_fallback(
@@ -1006,7 +1037,7 @@ class NativeSpeakerDiarizer:
             out = None
             if reused:
                 try:
-                    out = self._try_reused_wav(str(wav_path), timeout)
+                    out = self._try_reused_wav(str(wav_path), timeout, want_gender)
                 except Exception as exc:  # noqa: BLE001 — timeout/connection loss, see above
                     return _refuse_or_fallback(exc)
 
@@ -1018,7 +1049,7 @@ class NativeSpeakerDiarizer:
                 # diar-native right now" — and previously a write failure propagated out
                 # of diarize() uncaught and hard-failed the whole transcription.
                 try:
-                    out, own_wav = self._post_own_copy(audio, timeout)
+                    out, own_wav = self._post_own_copy(audio, timeout, want_gender)
                 except Exception as exc:  # noqa: BLE001 — a sidecar loss must not fail the job
                     logger.warning(
                         "diar-native /diarize failed mid-job (%s); falling back to PyAnnote",
@@ -1055,7 +1086,7 @@ class NativeSpeakerDiarizer:
                 }
 
         native_embeddings: dict[str, np.ndarray] = {}
-        if getattr(self.config, "enable_native_embeddings", True):
+        if getattr(self.config, "enable_native_embeddings", True) and return_centroids is not False:
             centroids = out.get("centroids") or []
             present = {s["speaker"] for s in exclusive}
             for idx, row in enumerate(centroids):

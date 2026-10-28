@@ -12,20 +12,39 @@ from app.core.constants import SPEAKER_CONFIDENCE_LOW
 from app.core.constants import SPEAKER_CONFIDENCE_MEDIUM
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
+from app.core.tenancy import _Unscoped
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import SpeakerCollectionMember
 from app.models.media import SpeakerMatch
 from app.models.media import SpeakerProfile
+from app.services.embedding_mode_service import voiceprint_model_id
 from app.services.opensearch_service import add_speaker_embedding
 from app.services.opensearch_service import find_matching_speaker
 from app.services.permission_service import org_scope_pred
+from app.services.privacy import policy as privacy_policy
+from app.services.privacy.redact_view import PrivacyView
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.services.takedown_service import exclude_quarantined
+from app.utils.speaker_identity_detail import ORIGIN_PROFILE_ASSIGNED
+from app.utils.speaker_identity_detail import ORIGIN_PROFILE_MATCH
+from app.utils.speaker_identity_detail import ORIGIN_PROFILE_PROPAGATION
+from app.utils.speaker_identity_detail import ORIGIN_VOICE_MATCH
+from app.utils.speaker_identity_detail import voiceprint_detail
+from app.utils.speaker_identity_source import MACHINE_IDENTITY_SOURCES
+from app.utils.speaker_identity_source import is_person_verified
+from app.utils.speaker_identity_source import record_human_identity
+from app.utils.speaker_identity_source import record_machine_identity
+from app.utils.speaker_identity_source import record_machine_link
+from app.utils.speaker_identity_source import record_suggestion
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
+
+#: ``detail.origin_task`` of everything the matcher writes: it runs inside the upload pipeline
+#: and the retroactive pass, with no person to attribute it to.
+MATCHING_ORIGIN_TASK = "speaker_matching"
 
 
 class ConfidenceLevel:
@@ -83,6 +102,63 @@ class SpeakerMatchingService:
         row = self.db.query(MediaFile.organization_id).filter(MediaFile.id == media_file_id).first()
         return int(row[0]) if row and row[0] is not None else None
 
+    def _voiceprints_allowed(self, user_id: int, organization_id: int | None) -> bool:
+        """Privacy policy (#1280): may voiceprints be matched or stored for this scope?
+
+        Asked fresh at every public entry point (never cached on the instance), so a
+        switch flipped while a task was queued or running is honoured. Fails closed.
+        """
+        return privacy_policy.voiceprint_decision(
+            self.db, user_id=user_id, organization_id=organization_id
+        ).enabled
+
+    def _scope_gate(
+        self, user_id: int, organization_id: OrgScope, *, speaker_id: int | None = None
+    ) -> tuple[bool, int | None]:
+        """Decide a public call's privacy scope; return ``(allowed, organization to query in)``.
+
+        A call that names a speaker is judged in that speaker's FILE (its owner and its
+        organization, exactly as ``PrivacyView`` reads them), never in what the caller passed:
+        ``organization_id=None`` used to mean "personal", so a caller that merely omitted the
+        argument escaped an organization's off switch. The argument is only a hint here; if it
+        names a different organization it can narrow the answer (both scopes must allow) and
+        never widen it. A call with no speaker has nothing to derive the scope from, so an
+        omitted organization (``UNSCOPED``) is refused rather than read as personal; an explicit
+        ``None`` is a statement of personal scope and is judged as such.
+        """
+        if speaker_id is not None:
+            row = (
+                self.db.query(MediaFile.id, MediaFile.user_id, MediaFile.organization_id)
+                .join(Speaker, Speaker.media_file_id == MediaFile.id)
+                .filter(Speaker.id == speaker_id)
+                .first()
+            )
+            if row is None:
+                logger.warning("Speaker %s not found; voiceprint matching refused", speaker_id)
+                return False, None
+            file_org = int(row[2]) if row[2] is not None else None
+            allowed = PrivacyView(self.db).voiceprints(int(row[0])).enabled
+            if (
+                allowed
+                and not isinstance(organization_id, _Unscoped)
+                and organization_id != file_org
+            ):
+                logger.warning(
+                    "Speaker %s: organization hint %s differs from its file's %s; the hint may "
+                    "only narrow",
+                    speaker_id,
+                    organization_id,
+                    file_org,
+                )
+                allowed = self._voiceprints_allowed(user_id, organization_id)
+            return allowed, file_org
+        if isinstance(organization_id, _Unscoped):
+            logger.error(
+                "Voiceprint matching refused: the call named neither a speaker nor a scope"
+            )
+            return False, None
+        return self._voiceprints_allowed(user_id, organization_id), organization_id
+
     def get_confidence_level(self, confidence: float) -> str:
         """
         Determine the confidence level for UI display.
@@ -105,7 +181,7 @@ class SpeakerMatchingService:
         embedding: np.ndarray,
         user_id: int,
         accessible_profile_ids: set[int] | None = None,
-        organization_id: int | None = None,
+        organization_id: OrgScope = UNSCOPED,
     ) -> dict[str, Any] | None:
         """
         Match a speaker embedding to known speakers, prioritizing profile embeddings
@@ -118,11 +194,17 @@ class SpeakerMatchingService:
                 (for shared profile scope). If None, filters by user_id.
             organization_id: Tenant scope of the file being matched (None =
                 personal). Gates both the profile kNN and the individual
-                speaker kNN so cross-org voiceprints never match.
+                speaker kNN so cross-org voiceprints never match. Required in
+                effect: this call names no speaker to derive the scope from, so
+                leaving it out is refused rather than read as personal.
 
         Returns:
             Dictionary with speaker info and confidence, or None
         """
+        allowed, organization_id = self._scope_gate(user_id, organization_id)
+        if not allowed:
+            return None
+
         # First, try to match against profile embeddings for better accuracy
         profile_match = self.match_speaker_to_profiles(
             embedding,
@@ -164,6 +246,7 @@ class SpeakerMatchingService:
 
         return {
             "speaker_id": speaker.id,
+            "speaker_uuid": str(speaker.uuid),
             "suggested_name": speaker.display_name,
             "confidence": confidence,
             "confidence_level": self.get_confidence_level(confidence),
@@ -176,7 +259,7 @@ class SpeakerMatchingService:
         embedding: np.ndarray,
         user_id: int,
         accessible_profile_ids: set[int] | None = None,
-        organization_id: int | None = None,
+        organization_id: OrgScope = UNSCOPED,
     ) -> dict[str, Any] | None:
         """
         Match a speaker embedding against consolidated profile embeddings.
@@ -189,11 +272,16 @@ class SpeakerMatchingService:
                 (for shared profile scope). If None, filters by user_id.
             organization_id: Tenant scope of the file being matched (None =
                 personal). Profile docs mirror ``SpeakerProfile.organization_id``
-                so only same-org (or, for None, personal) profiles can match.
+                so only same-org (or, for None, personal) profiles can match. Leaving it
+                out is refused: there is no speaker here to derive the scope from.
 
         Returns:
             Dictionary with profile match info and confidence, or None
         """
+        allowed, organization_id = self._scope_gate(user_id, organization_id)
+        if not allowed:
+            return None
+
         try:
             from app.services.profile_embedding_service import ProfileEmbeddingService
 
@@ -296,6 +384,8 @@ class SpeakerMatchingService:
             organization_id = self._media_file_org_id(
                 int(source_speaker.media_file_id) if source_speaker else None
             )
+            if not self._voiceprints_allowed(user_id, organization_id):
+                return matches
 
             query = {
                 "size": 10,  # Get more potential matches for unlabeled speakers
@@ -308,7 +398,9 @@ class SpeakerMatchingService:
                                 "bool": {
                                     "filter": [
                                         {"term": {"user_id": user_id}},
-                                        *_speaker_org_filter_clauses(organization_id),
+                                        *_speaker_org_filter_clauses(
+                                            organization_id, user_ids=[user_id]
+                                        ),
                                         {
                                             "bool": {
                                                 "must_not": [
@@ -391,7 +483,7 @@ class SpeakerMatchingService:
         return matches
 
     def match_speaker_to_profile(
-        self, embedding: np.ndarray, user_id: int, organization_id: int | None = None
+        self, embedding: np.ndarray, user_id: int, organization_id: OrgScope = UNSCOPED
     ) -> dict[str, Any] | None:
         """
         Match a speaker embedding to an existing profile.
@@ -400,11 +492,16 @@ class SpeakerMatchingService:
             embedding: Speaker embedding vector
             user_id: User ID
             organization_id: Tenant scope of the file being matched (None =
-                personal) — gates the speaker kNN.
+                personal) — gates the speaker kNN. Leaving it out is refused: there
+                is no speaker here to derive the scope from.
 
         Returns:
             Dictionary with profile info and confidence, or None
         """
+        allowed, organization_id = self._scope_gate(user_id, organization_id)
+        if not allowed:
+            return None
+
         # Search for matching speaker in OpenSearch
         match = find_matching_speaker(
             embedding.tolist(),
@@ -495,7 +592,12 @@ class SpeakerMatchingService:
         return profile
 
     def assign_speaker_to_profile(
-        self, speaker_id: int, profile_id: int, confidence: float | None = None
+        self,
+        speaker_id: int,
+        profile_id: int,
+        confidence: float | None = None,
+        *,
+        user_id: int | None = None,
     ) -> Speaker:
         """
         Assign a speaker instance to a profile.
@@ -504,6 +606,7 @@ class SpeakerMatchingService:
             speaker_id: Speaker instance ID
             profile_id: Speaker profile ID
             confidence: Optional confidence score
+            user_id: The person assigning it, recorded as who made the identity.
 
         Returns:
             Updated Speaker instance
@@ -527,6 +630,8 @@ class SpeakerMatchingService:
         lift_profile_blacklist(self.db, int(speaker_id), int(profile_id))
         speaker.profile_id = profile_id  # type: ignore[assignment]
         speaker.verified = True  # type: ignore[assignment]
+        # before the tracker computes the "after" label
+        record_human_identity(speaker, user_id=user_id, origin=ORIGIN_PROFILE_ASSIGNED)
         if confidence is not None:
             speaker.confidence = confidence  # type: ignore[assignment]
 
@@ -569,15 +674,20 @@ class SpeakerMatchingService:
         Returns:
             List of speaker match results
         """
+        # Tenant scope for all stores/queries follows the file's org.
+        organization_id = self._media_file_org_id(media_file_id)
+
+        # Privacy policy (#1280): no embedding is even extracted for a scope that is off.
+        if not self._voiceprints_allowed(user_id, organization_id):
+            logger.info("Speaker matching for file %s skipped by privacy policy", media_file_id)
+            return []
+
         # Extract embeddings for all speakers
         if self.embedding_service is None:
             raise ValueError("Embedding service is required for processing speaker segments")
         speaker_embeddings = self.embedding_service.extract_embeddings_for_segments(
             audio_path, segments, speaker_mapping
         )
-
-        # Tenant scope for all stores/queries follows the file's org.
-        organization_id = self._media_file_org_id(media_file_id)
 
         results = []
 
@@ -621,6 +731,13 @@ class SpeakerMatchingService:
         # Tenant scope for all stores/queries follows the file's org.
         organization_id = self._media_file_org_id(media_file_id)
 
+        # Privacy policy (#1280): the centroids are discarded, never matched or stored.
+        if not self._voiceprints_allowed(user_id, organization_id):
+            logger.info(
+                "Native speaker matching for file %s skipped by privacy policy", media_file_id
+            )
+            return []
+
         results = []
         for speaker_id, embedding in native_embeddings.items():
             result = self._process_single_speaker(
@@ -663,6 +780,11 @@ class SpeakerMatchingService:
 
         if not embeddings:
             logger.warning(f"No valid embeddings for speaker {speaker_id}")
+            return None
+
+        # A no-match result STORES the voiceprint, so the policy is asked again here rather
+        # than trusting that every caller already did.
+        if not self._voiceprints_allowed(user_id, organization_id):
             return None
 
         # Aggregate embeddings for this speaker
@@ -760,6 +882,40 @@ class SpeakerMatchingService:
             and name in blocked_profile_names(self.db, [int(speaker.id)])[int(speaker.id)]
         )
 
+    def _match_detail(self, match: dict[str, Any]) -> dict[str, Any]:
+        """The origin record of a match: what matched, how well, and with which embedding model."""
+        return voiceprint_detail(
+            ORIGIN_PROFILE_MATCH if match.get("profile_id") else ORIGIN_VOICE_MATCH,
+            confidence=match.get("confidence"),
+            threshold=ConfidenceLevel.HIGH,
+            matched_speaker_uuid=match.get("speaker_uuid"),
+            matched_profile_uuid=match.get("profile_uuid"),
+            embedding_model=voiceprint_model_id(),
+            origin_task=MATCHING_ORIGIN_TASK,
+        )
+
+    @staticmethod
+    def _record_match_suggestion(
+        speaker: Speaker, match: dict[str, Any], match_detail: dict[str, Any]
+    ) -> None:
+        """Store a found match's confidence and, if high enough, its suggestion.
+
+        A speaker a person verified gets neither the suggestion nor the score of a voice
+        comparison, unless the auto-accept that follows makes the voiceprint's the identity of
+        the row.
+        """
+        if match["auto_accept"] or not is_person_verified(speaker):
+            speaker.confidence = match["confidence"]
+        if match["confidence"] >= ConfidenceLevel.HIGH:  # Only suggest if >= 75% confidence
+            record_suggestion(
+                speaker,
+                source="profile_match" if match.get("profile_id") else "voice_match",
+                name=match["suggested_name"],
+                confidence=match["confidence"],
+                detail=match_detail,
+                identity_follows=bool(match["auto_accept"]),
+            )
+
     def _handle_speaker_match(
         self,
         speaker: Speaker,
@@ -803,24 +959,25 @@ class SpeakerMatchingService:
                 "profile_id": None,
             }
 
-        # Found a matching speaker - store the suggestion only if high confidence
-        speaker.confidence = match["confidence"]
-        if match["confidence"] >= ConfidenceLevel.HIGH:  # Only suggest if ≥75% confidence
-            speaker.suggested_name = match["suggested_name"]
-            speaker.suggestion_source = (
-                "profile_match" if match.get("profile_id") else "voice_match"  # type: ignore[assignment]
-            )
+        match_detail = self._match_detail(match)
+        self._record_match_suggestion(speaker, match, match_detail)
 
         # If high confidence, auto-apply the suggestion
         if match["auto_accept"]:
             logger.info(
                 f"Auto-accepting match for speaker {int(speaker.id)} -> {match['suggested_name']}"
             )
+            previous_display_name = speaker.display_name
             speaker.display_name = match["suggested_name"]
             speaker.verified = True  # type: ignore[assignment]
             # Assign to profile if this match came from a profile
             if match.get("profile_id"):
                 speaker.profile_id = match["profile_id"]
+            # A voiceprint wrote this identity, not a person (issue #1280): recorded before the
+            # tracker computes the "after" label, which depends on it while voiceprints are off.
+            record_machine_identity(
+                speaker, previous_display_name=previous_display_name, detail=match_detail
+            )
 
         # One record call covers both paths above: a suggestion-only bump (no
         # `display_name` write) and a full auto-accept. Captured while the old
@@ -1032,9 +1189,21 @@ class SpeakerMatchingService:
                         # threshold moves the canonical label on its own, and
                         # nothing dispatched propagation for it until #605.
                         before = canonical_speaker_label_for_row(speaker)
-                        speaker.suggested_name = match["display_name"]
-                        speaker.confidence = match["confidence"]
-                        speaker.suggestion_source = "voice_match"  # type: ignore[assignment]
+                        if not record_suggestion(
+                            speaker,
+                            source="voice_match",
+                            name=match["display_name"],
+                            confidence=match["confidence"],
+                            detail=voiceprint_detail(
+                                ORIGIN_VOICE_MATCH,
+                                confidence=match["confidence"],
+                                threshold=ConfidenceLevel.HIGH,
+                                matched_speaker_uuid=match.get("speaker_uuid"),
+                                embedding_model=voiceprint_model_id(),
+                                origin_task=MATCHING_ORIGIN_TASK,
+                            ),
+                        ):
+                            break  # a person verified this speaker: no voice suggestion
                         self._rename_tracker.record(
                             int(speaker.media_file_id),
                             before,
@@ -1094,6 +1263,17 @@ class SpeakerMatchingService:
         if tenant_pred is not None:
             query = query.filter(tenant_pred)
         speakers = query.all()
+
+        # A link a voiceprint made is hidden while its FILE's voiceprints are off (issue #1280),
+        # so the file is not an occurrence of the profile; the scope is the speaker's file's,
+        # never the caller's argument. A person's own link is never hidden.
+        view = PrivacyView(self.db)
+        speakers = [
+            s
+            for s in speakers
+            if s.identity_source not in MACHINE_IDENTITY_SOURCES
+            or view.voiceprints(int(s.media_file_id)).enabled
+        ]
 
         occurrences = []
         for speaker in speakers:
@@ -1218,13 +1398,19 @@ class SpeakerMatchingService:
             # only propagated to that org's speaker docs, a personal profile
             # only to personal (org-less) docs.
             profile_row = (
-                self.db.query(SpeakerProfile.organization_id)
+                self.db.query(SpeakerProfile.organization_id, SpeakerProfile.uuid)
                 .filter(SpeakerProfile.id == profile_id)
                 .first()
             )
             profile_org_id = (
                 int(profile_row[0]) if profile_row and profile_row[0] is not None else None
             )
+            profile_uuid = str(profile_row[1]) if profile_row else None
+            matched_speaker_uuid = (
+                self.db.query(Speaker.uuid).filter(Speaker.id == matched_speaker_id).scalar()
+            )
+            if not self._voiceprints_allowed(user_id, profile_org_id):
+                return
 
             similar_matches = SimilarityService.opensearch_similarity_search(
                 embedding=embedding,
@@ -1270,6 +1456,19 @@ class SpeakerMatchingService:
                 similarity = match_by_id[int(speaker.id)]
                 speaker.profile_id = profile_id  # type: ignore[assignment]
                 speaker.verified = True  # type: ignore[assignment]
+                # the name was already there; only the link is new
+                record_machine_link(
+                    speaker,
+                    detail=voiceprint_detail(
+                        ORIGIN_PROFILE_PROPAGATION,
+                        confidence=similarity,
+                        threshold=SPEAKER_CONFIDENCE_HIGH,
+                        matched_speaker_uuid=matched_speaker_uuid,
+                        matched_profile_uuid=profile_uuid,
+                        embedding_model=voiceprint_model_id(),
+                        origin_task=MATCHING_ORIGIN_TASK,
+                    ),
+                )
                 speaker.confidence = similarity
                 updated_speakers.append(speaker)
 
@@ -1320,6 +1519,9 @@ class SpeakerMatchingService:
                 return False
 
             # Extract reference embedding
+            if not self._voiceprints_allowed(int(profile.user_id), profile.organization_id):
+                logger.info("Profile %s reference embedding skipped by privacy policy", profile_id)
+                return False
             if self.embedding_service is None:
                 logger.error("Embedding service is not available")
                 return False
@@ -1412,7 +1614,7 @@ class SpeakerMatchingService:
 
         filters = [
             {"term": {"user_id": user_id}},
-            *_speaker_org_filter_clauses(organization_id),
+            *_speaker_org_filter_clauses(organization_id, user_ids=[user_id]),
             {
                 "bool": {
                     "must_not": [
@@ -1495,6 +1697,7 @@ class SpeakerMatchingService:
             "speaker_id": matched_speaker.id,
             "speaker_name": matched_speaker.name,
             "display_name": matched_speaker.display_name,
+            "speaker_uuid": str(matched_speaker.uuid),
             "media_file_id": matched_speaker.media_file_id,
             "confidence": score,
             "confidence_level": self.get_confidence_level(score),
@@ -1584,7 +1787,7 @@ class SpeakerMatchingService:
         embedding: np.ndarray,
         user_id: int,
         threshold: float = 0.5,
-        organization_id: int | None = None,
+        organization_id: OrgScope = UNSCOPED,
     ) -> list[dict[str, Any]]:
         """
         Find all similar speakers and store matches in the database.
@@ -1594,14 +1797,21 @@ class SpeakerMatchingService:
             embedding: Speaker embedding vector
             user_id: User ID
             threshold: Minimum similarity threshold
-            organization_id: Tenant scope of the new speaker's file (None =
-                personal). Gates both kNN queries so speaker-match records
-                never pair voiceprints across tenants.
+            organization_id: Optional hint only. The tenant is derived from the new
+                speaker's file, which gates both kNN queries so speaker-match records
+                never pair voiceprints across tenants; a hint naming a different
+                organization can narrow the answer and never widen it.
 
         Returns:
             List of found matches
         """
         matches: list[dict[str, Any]] = []
+
+        allowed, organization_id = self._scope_gate(
+            user_id, organization_id, speaker_id=new_speaker_id
+        )
+        if not allowed:
+            return matches
 
         try:
             search_results = find_matching_speaker(
@@ -1646,6 +1856,14 @@ class SpeakerMatchingService:
         matches: list[dict[str, Any]] = []
 
         try:
+            # Privacy policy (#1280): stored match pairs are voiceprint-derived, so they are
+            # hidden (not deleted) while the speaker's file scope has voiceprints off.
+            from app.services.privacy.redact_view import PrivacyView
+
+            owner = self.db.query(Speaker.media_file_id).filter(Speaker.id == speaker_id).scalar()
+            if owner is None or not PrivacyView(self.db).voiceprints(int(owner)).enabled:
+                return matches
+
             # Query matches where speaker is either speaker1 or speaker2
             speaker_matches = (
                 self.db.query(SpeakerMatch)

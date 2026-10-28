@@ -18,6 +18,12 @@ export interface SpeakerAttributeSettings {
   show_attributes_on_cards: boolean;
   /** Automatically ask the AI provider to suggest speaker names after transcription. */
   auto_llm_speaker_identification: boolean;
+  /**
+   * The layer above the user (platform, instance or organization) that forbids gender
+   * inference for the caller's active organization, or null. Read-only; when set,
+   * `gender_detection_enabled` is false whatever the user chose.
+   */
+  gender_locked_by?: string | null;
 }
 
 /**

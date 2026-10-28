@@ -233,6 +233,7 @@ def rebuild_speaker_index(db: "Any", allow_empty_rebuild: bool = False) -> dict[
                         "collection_ids",
                         "media_file_id",
                         "segment_count",
+                        "organization_id",
                         "embedding",
                     ],
                 }
@@ -279,6 +280,7 @@ def rebuild_speaker_index(db: "Any", allow_empty_rebuild: bool = False) -> dict[
                     "name": {"type": "keyword"},
                     "collection_ids": {"type": "integer"},
                     "media_file_id": {"type": "integer"},
+                    "organization_id": {"type": "integer"},
                     "segment_count": {"type": "integer"},
                     "created_at": {"type": "date"},
                     "updated_at": {"type": "date"},
@@ -332,6 +334,8 @@ def rebuild_speaker_index(db: "Any", allow_empty_rebuild: bool = False) -> dict[
                     "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
                     "embedding": source["embedding"],
                 }
+                if source.get("organization_id") is not None:
+                    doc["organization_id"] = source["organization_id"]
                 bulk_body.append(doc)
 
             # Bulk index in batches of 500

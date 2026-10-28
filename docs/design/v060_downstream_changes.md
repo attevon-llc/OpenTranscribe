@@ -29,6 +29,105 @@ above it is the authoritative description of each step; in summary:
 | 11 | Privacy policy layer (#1280, #1279): `app.services.privacy.consent.register_voiceprint_consent_hook(hook)` (a `(Session, VoiceprintConsentRequest) -> bool` hook must return the literal `True`; a raise or any other value denies; no hook means allow) and `app.services.privacy.policy.set_privacy_ceiling_resolver(resolver)` (`(Session, organization_id \| None) -> PrivacyCeiling \| None`; can only switch voiceprint matching and gender inference off, a raising or malformed answer denies both, runs in Celery tasks with no request). Alembic `v445` adds `organization_policy`; the organization redaction floor stored there is unioned with the floor resolver's result (strictest wins). Instance switches `privacy.voiceprint_matching_enabled` and `privacy.gender_inference_enabled` default on | No, additive; an upgrade changes no behaviour until a switch is turned off |
 | 12 | Organization content governance (#1275-#1277): a member of an organization collection they may see now reads the organization's files in it on every surface (file page, gallery, search, chat retrieval), through `services.collection_visibility` and `services.search.access_filter.access_filter_clause`; a hook that reads collection or file visibility must call those rather than re-derive it. Alembic `v446` adds `collection.visibility` (`organization` or `restricted`) and `v447` adds `content_hold` and `content_hold_file`. New capability keys a resolver must return (omitted keys fail closed): `audit.content_access`, `org.audit_logs`, `org.legal_hold`; the organization audit log and holds have no platform-staff bypass | **Review**: a resolver that enumerates keys must now return the three new ones, and a hook that re-derived collection visibility will disagree with the file reads |
 
+### Privacy seams (seam v11, #1280, #1279)
+
+Everything here is additive and inert until used: `organization_policy` (Alembic `v445`) is empty,
+both `privacy.*` instance switches default on, no consent hook is registered and no ceiling exists.
+User documentation: `docs-site/docs/features/privacy-controls.md`.
+
+- **Capability resolver: return `org.defaults` explicitly.** The organization privacy panel and
+  `GET|PATCH /api/org-admin/policy` and `POST /api/org-admin/policy/purge` are gated by `org.defaults`
+  (audience `org_admin`, `False` in `COMMUNITY_CAPABILITIES`, server-enforced, no platform-admin
+  bypass, refused under a support-access grant). Resolver results fail closed (v6), so a resolver
+  that omits the key hides the panel and answers 404 on the routes; that is the safe default. To
+  show the panel, grant it. The redaction floor part of the same screen and `redaction_floor` in the
+  API additionally need `redaction.policy`.
+- **Resolvers run inside Celery tasks with no request.** `set_privacy_ceiling_resolver`, the
+  consent hooks and `set_redaction_floor_resolver` are called by the pipeline plan, the stage gates,
+  the OpenSearch write backstop and the purge task, all of which have `request=None`. They must
+  answer per organization (and, for consent, per subject), read from the borrowed session only
+  (never write, commit or roll back on it), and be fast: the backstop asks on every speaker write
+  (cached 10 s per `(user, organization)` per process, only when the answer was clean) and the
+  profile-candidate query asks once per owner.
+- **Privacy ceiling resolver (platform layer).**
+  `app.services.privacy.policy.set_privacy_ceiling_resolver(resolver)` with
+  `resolver(db, organization_id | None) -> PrivacyCeiling | None`. `PrivacyCeiling(voiceprints,
+  gender)` takes `None` (no opinion), `True` (same as `None`) or `False` (off). It can only
+  restrict. A resolver that raises, or returns anything but `PrivacyCeiling`/`None`, denies both
+  features and reports `locked_by: "platform"`. `reset_privacy_ceiling_resolver()` restores the
+  community default (tests).
+- **Consent hook.** `app.services.privacy.consent.register_voiceprint_consent_hook(hook)` with
+  `hook(db, VoiceprintConsentRequest) -> bool`. `purpose="create"` is asked when a voiceprint is
+  about to be created (inside `voiceprint_decision`, reported as `locked_by: "consent"`);
+  `purpose="share"` is asked when someone other than the owner would match against the owner's
+  profiles, grouped by `(owner, organization)` so it runs once per owner. Every hook must return the
+  literal `True`; a raise or any other value denies and is logged. No hooks means allow. A hook runs
+  in a savepoint of the borrowed session.
+- **Consent hooks are asked per FILE on the read side and per SUBJECT on the write backstop.**
+  `PrivacyView` (every response, export, caption, roster and index writer) hands the hook the file's
+  id (`VoiceprintConsentRequest.media_file_id`) and remembers the answer per file while any hook is
+  registered, so a hook that refuses ONE file turns off that file only; without hooks one answer per
+  `(owner, organization)` serves every file. `assert_voiceprint_write_allowed` (the OpenSearch write
+  backstop) has no file, so it passes `media_file_id=None` and decides per `(owner, organization)`.
+  Write a hook that refuses by file to also refuse by subject when the subject must not be written at all.
+- **A ceiling resolver or consent hook that changes its answer relabels the index only through the
+  safety net.** The switch hooks (`policy_admin`) call `label_reindex.request_label_resync(db, scope,
+  actor_user_id=, switch=, from_value=, to_value=)`; core cannot observe a resolver or hook change. A
+  deployment whose resolver flips an organization (a plan change, a revoked consent) should call
+  `request_label_resync(db, ResyncScope("organization", organization_id=...), ...)` at that moment. If it
+  does not, `search_index_maintenance` runs `detect_label_drift` every tick (5,000 files per tick, resumable)
+  and re-indexes files whose indexed speaker labels disagree with the policy, so the delay is bounded by
+  the maintenance interval and the library size, not unbounded.
+- **Redaction floor union.** `resolve_redaction_floor` now returns the organization's STORED floor
+  (`organization_policy.floor_*`, written through `PATCH /api/org-admin/policy`) unioned with the
+  registered `RedactionFloorResolver`'s result, strictest wins. A deployment that already supplies
+  floors from its own tables keeps working and both apply. The stored half is read on the caller's
+  session and a database error propagates (it does not read as "no floor"); the resolver half stays
+  best-effort. Personal scope never reads an organization row.
+- **Enforcement points an extension can rely on.** Entry gates: `app.services.privacy.gates`
+  (`voiceprints_allowed(file_id)`, `gender_allowed(file_id)`, `job_privacy_overrides`). Policy
+  reads: `app.services.privacy.policy` (`voiceprint_decision`, `gender_decision`, `*_for_file`,
+  `filter_shareable_profiles`). Response shaping: `app.services.privacy.redact_view`. Write
+  backstop: `assert_voiceprint_write_allowed(user_id, organization_id)` on every OpenSearch speaker,
+  profile and cluster write. Extension code that writes a voiceprint document itself must call it.
+- **Plan previews and real files are judged in different organizations.** A preview names no
+  file (`GET /api/user-settings/pipeline`, the ASR-switch previews): it is judged in the
+  organization the request works in (`load_plan_inputs(..., request=request)`), so a settings page
+  never shows speaker recognition as enabled while that organization forbids it. A real file is
+  judged in its own row's organization (`organization_id` and `media_file_id` passed together).
+  A resolver that depends on the organization must expect both shapes.
+- **Gender is withheld wherever a response embeds a speaker.** `redact_response_speakers`
+  (`backend/app/api/endpoints/files/crud.py`) covers the file detail and
+  `GET /files/{uuid}/segments`; the segment text-edit and speaker-reassign responses call
+  `redact_speaker_rows`. The stored `attribute_confidence` keys `gender`, `alignment` and
+  `alignment_hint` go together, and the speaker-attribute purge drops the same three.
+  `speaker_profile.predicted_gender` is a person-confirmed value and a gender purge does not clear it.
+- **Admin batch jobs report what they skipped.** `GET /embeddings/migration/status` has
+  `policy_skipped` (`files_total`, `files_skipped`, `scopes_total`, `scopes_skipped`, `locked_by`
+  as a list); `POST /embeddings/migration/start` is 409 `voiceprints_disabled` (with a single
+  `locked_by`) only when every recording is in a forbidden scope. `skipped_by_policy` appears in the
+  consistency orchestrator's return value and last run, its progress payload and
+  `get_embedding_consistency_counts`; documents missing from an off scope are not counted as
+  `main_missing` or `v4_missing` and trigger no repair.
+- **Speaker-attribute settings are organization-aware.** `GET|PUT /user-settings/speaker-attributes`
+  resolve for the active organization. `gender_detection_enabled` is the effective value;
+  `gender_locked_by` is `platform`, `instance`, `organization` or `null`, and a person's own switch
+  is never reported as a lock.
+- **Organization audit.** `org.policy.change`, `privacy.voiceprints.purge` and
+  `privacy.gender.purge` are labelled in the organization audit screen (`ORG_AUDIT_EVENT_KEYS`,
+  `frontend/src/lib/i18n/keyMaps.ts`) and appear in its event filter. An extension that renders its
+  own audit view should label them too.
+- **Redaction floor screen: not in this release.** `redaction_floor` is stored and served by
+  `/api/org-admin/policy`; the organization screen for it is #1279 in v0.7.0.
+- **Cluster documents keep `organization_id` on rewrite.** `update_cluster_embedding` carries the
+  stored value over (tenant-scoping fix). A deployment with organizations that holds cluster
+  documents rewritten earlier re-stamps them with `python -m app.tasks.tenant_backfill_task`
+  (single-organization clusters only; a cluster spanning scopes stays unstamped until the next
+  re-cluster).
+- **Frontend.** The organization panel is part of core (it is not an overlay component), so a
+  deployment that replaces `$lib/cloud` still gets it. It shows only when `isCloudEdition`,
+  `org.defaults` is granted with audience `org_admin`, and the user's `org_role` is `org:admin`.
+
 Frontend extension slots added in this range: a user-menu extras slot in
 `components/navbar/UserDropdown.svelte`, and a legal-gate modal mounted from the root layout
 (`routes/+layout.svelte`). Both render nothing in the stock build.
@@ -64,6 +163,7 @@ the task-time checks run without a request, so a resolver should answer them per
 | `speaker_attributes.migration` | platform | Bulk speaker-attribute re-detection is unavailable |
 | `admin.flower` | platform | The task-dashboard link is hidden and its `auth_request` probe denies |
 | `admin.takedown` | platform | The quarantine review queue is unavailable |
+| `org.defaults` | org_admin | The organization privacy policy routes (`/api/org-admin/policy`, including purge) answer 404 and the panel is hidden. Off in community; a resolver must return it explicitly (omission denies). See "Privacy seams" in section 1 |
 
 Enforcement newly added to existing keys:
 
@@ -222,6 +322,7 @@ organizations):
 - `GET /api/admin/data-integrity/storage/counts`, `GET .../storage/status`, `POST .../storage`.
 - `POST /api/admin/media-duration-backfill`.
 - `GET /api/llm-settings/local-endpoints`.
+- Privacy controls: `GET /api/privacy/effective`, `GET|PUT /api/privacy/me`, `POST /api/privacy/me/purge`, `GET /api/privacy/purge/{task_id}`, `GET|PUT /api/admin/privacy-policy`, `POST /api/admin/privacy-policy/purge`, `GET|PATCH /api/org-admin/policy`, `POST /api/org-admin/policy/purge`. New 409 codes: `voiceprints_disabled` (cluster recluster, analyze-outliers, promote, merge, split, and the admin profile-embedding repair when every profile is off), `policy_locked`, `policy_still_enabled`; 403 `purge_scope_not_allowed`. The speaker, profile and cluster list responses keep their shapes and return less (empty suggestion and cluster lists, `null` inferred gender) while a layer is off.
 
 ### Status code changes
 
@@ -271,7 +372,10 @@ New `UserSetting` keys: `auto_llm_speaker_identification`, `auto_topic_extractio
 New `SystemSettings` keys: `auto_llm.speaker_identification`, `auto_llm.topic_extraction`
 (system-tier defaults for the switches above); `speaker_label_provenance_backfill_after_id` and
 `speaker_label_provenance_backfill_complete` (progress of the one-time label re-index run by
-`search_index_maintenance`).
+`search_index_maintenance`); `privacy.voiceprint_matching_enabled`, `privacy.gender_inference_enabled`
+(instance privacy layer, default on, edited through `PUT /api/admin/privacy-policy`). New `UserSetting`
+key `privacy_voiceprint_matching_enabled` (default on); the existing
+`speaker_attribute_gender_detection_enabled` is also the user layer of the gender policy.
 
 Changed coded default: chat context expansion (`DEFAULT_CHAT_CONTEXT_EXPANSION_ENABLED`) is now
 on. Deleted flag: `chat.rag.map_tier_hybrid`.
@@ -285,7 +389,21 @@ on. Deleted flag: `chat.rag.map_tier_hybrid`.
   transcription at that provider.
 - Unassigning a speaker records a block that every automatic assignment path honours and that
   survives re-processing the file.
-- The capability resolver must return every key it grants (section 1, v6).
+- The capability resolver must return every key it grants (section 1, v6), including `org.defaults`
+  if the organization privacy panel should show.
+- Privacy (section 1, seam v11): with a switch off at any layer, a new recording gets no
+  voiceprint document and no inferred gender, suggestion and cluster reads are empty, the admin
+  gender migration, consistency repair and v4 migration skip the scope and report
+  `skipped_by_policy`, and a remote LLM never receives the gender cross-reference. A purge needs the
+  switch off first, `"confirm": "PURGE"`, and (for scope `all`) a single-tenant deployment.
+  Register your consent hook and ceiling resolver, then test a task that runs with no request.
+- Voiceprint-made identities (`speaker.identity_source`, Alembic `v449`): with voiceprints off, a name a
+  voiceprint wrote is replaced by the diarizer label in every response, export, caption, prompt, roster
+  and the search index (chunks, digest, facts, summary leaves), and the profile link a voiceprint added is
+  not shown or indexed. A switch change queues the `privacy.label_resync` task (register
+  `app.tasks.privacy_label_resync_task` in your Celery `include=` if you override it) and writes a
+  `privacy.labels.resync` audit event with file counts. A summary generated earlier is stored as written
+  and may still name a person; its INDEXED copy does not.
 - Images no longer contain `pip`; anything that installed packages into a running container
   must move to the image build.
 - Third-party telemetry is off by default (section 4).
@@ -304,5 +422,8 @@ tag, not to a branch.
 5. Installs with organizations: run the two one-off backfills named in the upgrade page.
 6. Re-run any automation against the API contracts (section 6), including the status-code changes.
 7. Re-test everything in section 8.
-8. Run a role matrix on a multi-tenant stack: user, organization admin, admin and platform
+8. Privacy (seam v11): decide whether to register a consent hook and a privacy ceiling resolver, make
+   both answer per organization with no request, and add `org.defaults` to the capability resolver
+   if organization administrators should see the privacy panel. Nothing changes until you do.
+9. Run a role matrix on a multi-tenant stack: user, organization admin, admin and platform
    super admin, each in community, `TENANCY_MODE=multi` and lite deployments.

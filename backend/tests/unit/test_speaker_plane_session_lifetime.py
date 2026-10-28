@@ -31,7 +31,6 @@ scope                                                        slow work formerly 
 ``speaker_update.trigger_retroactive_matching``              1 voiceprint READ per
                                                              speaker the user owns,
                                                              interleaved with writes
-``smart_speaker_suggestion_service._get_profile_suggestions_optimized``
 ``smart_speaker_suggestion_service.consolidate_suggestions_batch``
                                                              kNN probes reachable with
                                                              a caller session open
@@ -211,7 +210,7 @@ def update_task_env(db_session, monkeypatch):
 
     monkeypatch.setattr(spk, "_push_speaker_display_names", _display_names)
 
-    def _workflow(db, speaker_id, display_name):
+    def _workflow(db, speaker_id, display_name, user_id=None):
         # Also DB work: it commits the profile assignment before matching.
         tracker.observe("labeling_workflow")
         recorded["workflow"] = (speaker_id, display_name)
@@ -846,11 +845,9 @@ def _no_session_annotations(func) -> bool:
 
 
 def test_suggestion_helpers_declare_no_session_parameter():
-    """A ``Session`` parameter is how the idiom spreads — these two must not have one."""
+    """A ``Session`` parameter is how the idiom spreads — the batch must not have one."""
     batch = smart.SmartSpeakerSuggestionService.consolidate_suggestions_batch
     assert _no_session_annotations(batch), inspect.signature(batch)
-    optimized = smart.SmartSpeakerSuggestionService._get_profile_suggestions_optimized
-    assert _no_session_annotations(optimized), inspect.signature(optimized)
 
 
 def test_batch_suggestions_run_with_the_database_unreachable(db_session, normal_user, monkeypatch):
@@ -909,6 +906,7 @@ def test_batch_suggestions_run_with_the_database_unreachable(db_session, normal_
         speakers=[speaker],
         user_id=normal_user.id,
         file_org_map={int(media_file.id): None},
+        voiceprints_off_file_ids=frozenset(),
     )
 
     suggestions = result[int(speaker.id)]

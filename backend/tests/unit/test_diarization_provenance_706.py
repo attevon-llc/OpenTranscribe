@@ -88,7 +88,7 @@ class _FakePyannoteFallback:
     def unload_model(self) -> None:
         self.is_loaded = False
 
-    def diarize(self, audio):
+    def diarize(self, audio, **_per_call):
         return (
             DiarizeResult(
                 start=np.array([0.0]),
@@ -115,7 +115,7 @@ class TestNativeSpeakerDiarizerIdentity:
         native.last_provider = "pyannote"
         native.last_model = "pyannote/speaker-diarization-community-1"
 
-        def _fake_post_own_copy(audio, timeout):
+        def _fake_post_own_copy(audio, timeout, request_gender=True):
             return (
                 {
                     "exclusive_segments": [{"start": 0.0, "end": 1.0, "speaker": "SPEAKER_00"}],
@@ -166,7 +166,7 @@ class TestNativeSpeakerDiarizerIdentity:
         native.last_provider = "pyannote"
         native.last_model = "pyannote/speaker-diarization-community-1"
 
-        def _fake_post_own_copy(audio, timeout):
+        def _fake_post_own_copy(audio, timeout, request_gender=True):
             return (
                 {
                     "exclusive_segments": [{"start": 0.0, "end": 1.0, "speaker": "SPEAKER_00"}],

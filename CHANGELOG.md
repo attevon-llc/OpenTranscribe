@@ -75,7 +75,7 @@ off by default.
   `AWS_TRANSCRIBE_BUCKET_OWNER` too: without it the account id is looked up from STS, and jobs fail
   with a message naming the setting. Objects left in the
   old `opentranscribe-tmp-<region>` bucket, if you own it, can be deleted.
-- **Twenty-two migrations, `v397` to `v448`, run automatically at backend start.** They add columns
+- **Twenty-three migrations, `v397` to `v449`, run automatically at backend start.** They add columns
   and tables. The data changes are small and targeted: on installs with organizations, `v420`,
   `v422` and `v430` move tags, collections and legacy speaker/vocabulary rows into the right
   tenant; `v433` resets watch sources holding exactly the old 1-20 speaker default to "use my
@@ -100,7 +100,8 @@ off by default.
   grant to open tenant content. Set `TENANCY_MODE=single` to keep the previous behaviour.
 - **Installs that use organizations: two one-off commands after upgrading**, in the backend
   container: `python -m app.tasks.tenant_backfill_task` (stamps older search and voiceprint
-  documents with their organization, #1115) and
+  documents with their organization, #1115; manual, also the Celery task
+  `tenant_backfill_organization_id`) and
   `python -m app.scripts.backfill_tenant_stamps --sync-voiceprints` (copies `v430`'s stamps
   onto profile voiceprints and lists ambiguous rows, #1110). Installs without organizations
   skip both.
@@ -127,6 +128,63 @@ off by default.
   proves a voice match (the speaker is linked to a profile of that name, or a stored voice match
   links it to a speaker of that name at the same similarity): the upgrade records those as voice
   matches, so they keep their name.
+- **Privacy controls: nothing is deleted or rewritten on upgrade, but results can change (#1280).**
+  Migration `v445` adds an empty `organization_policy` table, both deployment switches default on,
+  and no stored voiceprint or gender value changes. The person-level gender switch is the
+  existing **Voice Attributes** setting (`speaker_attribute_gender_detection_enabled`): anyone who
+  had already turned inferred gender off now has stored inferred genders hidden everywhere,
+  including from collaborators on their shared recordings (confirmed genders stay; turning the
+  setting back on restores them). Four more things change: the gender migration and combined
+  speaker analysis respect each owner's gender setting, the consistency repair and v4 migration
+  skip scopes with voiceprints off, and a remote LLM no longer receives the speaker-name gender
+  comparison. Review **Settings > Privacy & Redaction > Policy** after upgrading. Installs that
+  use organizations: run the tenant backfill above (it is manual) before deleting stored
+  voiceprints; it also stamps voiceprint documents that earlier releases rewrote without their
+  organization (cluster documents, and speaker documents rewritten by the consistency repair,
+  the v4 migration, a speaker merge or the index rebuild).
+- **Speaker names now record whether a person or a voiceprint wrote them (#1280).** Migration `v449`
+  adds `speaker.identity_source` and marks as voiceprint-made only the existing identities there is
+  positive evidence a voiceprint wrote: a verified speaker linked to a profile, whose name equals
+  both its profile-match suggestion and the profile's name, where the profile already existed when
+  the speaker was created and another speaker had been linked to it earlier (a person who types a
+  name creates the profile afterwards, so a typed name that a later re-match rewrote is not
+  marked). Everything else is treated as a person's, so it stays visible while voiceprints are off
+  and a purge leaves it alone. A person who assigned an existing profile to a later speaker can
+  still be marked, and a purge clears a marked name for good (turning the switch back on only
+  un-hides). The count marked and the count of ambiguous rows left unmarked are logged at upgrade
+  (`v449: recognised N existing speaker identities ... left M ambiguous ones unmarked`) and kept
+  in `system_settings` under `privacy.identity_source_backfill`; the query that reads it and the
+  comparison with unproven rows are in Operations > Upgrading to 0.6.0. Summaries and topics a
+  language model already wrote are not rewritten.
+- **Every speaker name, link and suggestion now records who made it, when and from what.**
+  Migration `v449` also adds `speaker.identity_source_at`, `identity_source_user_id` (the person;
+  empty for a task, and set to empty if the account is deleted), `identity_source_detail` and
+  `suggestion_detail` (JSON, ids and identifiers only). A typed name, an accepted suggestion (voice
+  or AI, with the provider and model), a profile assignment, a batch assignment and a cluster
+  promotion or merge record the person and how; a voiceprint match, propagation or cluster join
+  records the confidence, threshold, matched profile or speaker, embedding model and task; an AI
+  suggestion records its provider and model and is still never applied by itself. The speaker API
+  returns them read-only as `identity` and `suggestion`; the person (`by`) is shown only to the
+  file's owner, an organization administrator and a platform administrator whose reach covers the
+  file (any administrator in a single-tenant deployment; in a multi-tenant one only under a
+  support-access grant, recorded like any other platform access). An account under erasure is
+  shown as `{"erased": true}` with no id, name or email. While voiceprints are off
+  they are hidden with the machine identity they describe, a purge clears and counts them
+  (`identity_provenance_cleared`, `suggestion_details_cleared`), and they never reach the search
+  index or a language model. Only the current state is kept; the full change history is tracked in
+  #1336 (v0.7.0) and a review of the queries these columns need in #1337. The foreign key to
+  `user` is added last in `v449`, so logins and provisioning are blocked only briefly instead of
+  for the whole backfill; a development or `--fresh` database stamped at the first shape of `v449`
+  needs a downgrade to `v448` and a new upgrade (Operations > Upgrading to 0.6.0).
+- **A voice-match suggestion on a speaker a person verified is no longer shown while voiceprints
+  are off, is no longer recorded, and a purge clears it (#1280).** The matchers do not write a
+  voice suggestion, its confidence or its detail onto a speaker a person verified (unless the
+  match replaces that identity); while voiceprints are off the suggestion block of such a speaker
+  is withheld, as for any speaker, and the name the person gave stays; the voiceprint purge clears
+  the suggestion columns of such a row (never its name, verified mark, profile link or identity
+  record), counts them in `suggestions_cleared` and `suggestion_details_cleared`, and the residual
+  check measures them. A person's accepted-suggestion record keeps only that the suggestion was a
+  voice match, not its similarity score.
 - **Transcript export API:** `GET /api/files/{uuid}/export` accepts `format=md` and answers 400 for
   `docx` and `pdf`, which use the new asynchronous `POST /api/files/{uuid}/export/document`.
   Backend images are about 26 MB larger (Noto fonts). No migration.
@@ -211,15 +269,89 @@ off by default.
   and a compliance export (CSV or JSON, spreadsheet-formula safe, audited), a "My takedown notices"
   section so an owner whose file vanished can always see why and how to dispute it, and an optional
   email to owners (one per owner per notice, with a delivery log). Migrations `v443` and `v444`.
-- **A privacy policy layer for voiceprints and inferred gender (#1280).** One restrict-only policy
+- **Privacy controls for voiceprints and inferred gender (#1280).** One restrict-only policy
   answers two questions for a person and organization: may voiceprints exist and be matched, and
   may gender be inferred. The deployment, the organization and the user each hold a switch, an
-  extension may add a platform ceiling, and any layer that is off turns the feature off. Every
-  read that fails counts as off. A consent hook (`register_voiceprint_consent_hook`) lets a
-  consent implementation veto creating or sharing a voiceprint. Both switches default on and an
-  upgrade changes nothing: the new `organization_policy` table (migration `v445`) is empty until
-  an organization saves a choice. This release adds the layer; pipeline enforcement, the admin
-  and organization screens and purge follow in the same release.
+  extension may add a platform ceiling, and any layer that is off turns the feature off; a read
+  that fails counts as off. A switch hides data and never deletes it, and it is enforced three
+  times: the pipeline plan schedules no speaker-recognition step (the pipeline view says so),
+  every stage that makes or uses a voiceprint checks again when it runs, and every OpenSearch
+  write of a speaker, profile or cluster document is refused for a forbidden scope. Reads follow:
+  voiceprint-based suggestions, clusters and shared-profile matching disappear, inferred gender
+  serializes as null, and the cluster actions that would create voiceprints answer 409
+  `voiceprints_disabled`. Admin batch jobs skip forbidden scopes and report `skipped_by_policy`.
+  New screens: a deployment card (Settings, Privacy & Redaction, Policy), an organization
+  **Privacy policy** panel for organization administrators, and a "Recognize speakers across my
+  recordings" switch beside Voice Attributes. Wherever gender is shown or configured, the interface
+  now says it is inferred automatically from voice and can be turned off (gender inference stays on
+  by default); the copy is in all 12 languages. New routes: `GET /api/privacy/effective`,
+  `GET|PUT /api/privacy/me`, `GET|PUT /api/admin/privacy-policy` and
+  `GET|PATCH /api/org-admin/policy`. A consent hook (`register_voiceprint_consent_hook`) lets a
+  consent implementation veto creating or sharing a voiceprint. Both deployment switches default
+  on and an upgrade changes no stored data: the new `organization_policy` table (migration `v445`)
+  is empty until an organization saves a choice. The person-level gender switch is the existing
+  Voice Attributes setting, so someone who had turned it off already has inferred gender hidden
+  (see the upgrade notes). See [Privacy
+  controls](https://docs.opentranscribe.app/docs/features/privacy-controls).
+- **Privacy policy details across the API and admin tools (#1280).** While gender is off for a
+  recording's scope, every response that embeds a speaker returns the inferred gender and its
+  voice-versus-name alignment (the stored `attribute_confidence` keys `gender`, `alignment` and
+  `alignment_hint`) as null: the file detail, `GET /api/files/{uuid}/segments` and the responses of
+  a segment text edit and a segment speaker reassignment. `GET|PUT /api/user-settings/speaker-attributes`
+  answers for the active organization: `gender_detection_enabled` is the effective value and the new
+  `gender_locked_by` is `platform`, `instance`, `organization` or null (a person's own switch is
+  never reported as a lock). Plan previews, which name no recording (the pipeline view and the ASR
+  switch previews), are judged in the organization the request works in; a real recording is judged
+  in its own organization. `GET /api/embeddings/migration/status` carries `policy_skipped`
+  (`files_total`, `files_skipped`, `scopes_total`, `scopes_skipped`, `locked_by`);
+  `POST /api/embeddings/migration/start` answers 409 `voiceprints_disabled` only when every
+  recording is in a scope with voiceprints off, and otherwise names what it will skip. The
+  consistency check reports `skipped_by_policy` and no longer counts a missing voiceprint in such a
+  scope as missing. The organization audit log labels `org.policy.change`,
+  `privacy.voiceprints.purge` and `privacy.gender.purge`. A gender purge leaves a speaker profile's
+  gender alone, because only a person confirming it sets that value. The organization redaction
+  floor is stored and served by `/api/org-admin/policy`; its screen follows in v0.7.0 (#1279). A
+  community install has no organization layer, so that route answers 404 there.
+- **A voice-matched speaker name follows the voiceprint switch (#1280).** While voiceprints are off
+  for a recording's scope, a name that only a voiceprint match supplied is no longer printed as the
+  speaker's name: not in the file detail or segment pages (`resolved_display_name`, `status_text`,
+  `resolved_speaker_name`, which used to be computed before the redaction ran), not in the
+  `txt`/`json`/`csv`/`md`/`srt`/`vtt` exports, the Word and PDF documents, the captions or the
+  subtitle downloads, and not in the search index or the speaker roster chat resolves names
+  against. The speaker shows as its diarizer label until a person names it; a name a person typed or
+  verified stays. One function, `canonical_speaker_label_for_row`, decides it everywhere. Changing a
+  voiceprint switch (a person's, an organization's or the deployment's) queues the existing debounced
+  re-index for the files such a name decides, so the search index follows the switch both ways.
+- **Speaker matching can no longer be judged in the wrong organization (#1280).**
+  `SpeakerMatchingService.find_and_store_speaker_matches` takes its tenant from the speaker's own file,
+  so a caller that left the organization out (the batch script did) is still held to that
+  organization's voiceprint switch; the argument is now only a hint that can narrow the answer.
+  The embedding-only `match_speaker_to_known_speakers`, `match_speaker_to_profiles` and
+  `match_speaker_to_profile` refuse a call that names no organization instead of treating it as personal.
+- **Removed an unused speaker-suggestion path (#1280).** `speakers._process_single_speaker`, the
+  single-speaker twin of the list builder, had no caller; with it went
+  `SmartSpeakerSuggestionService.consolidate_suggestions`, `_get_profile_suggestions_optimized` and
+  `_execute_profile_knn_search`, which only it reached. The speaker list uses the batched path, which keeps
+  the voiceprint-policy and tenant gates; their tests now drive that path.
+- **Delete stored voiceprints and inferred gender (#1280).** Once a switch is off, an organization
+  administrator, a super admin or the person themselves can permanently delete what it hid:
+  `POST /api/org-admin/policy/purge`, `POST /api/admin/privacy-policy/purge` (personal workspaces,
+  or everything on a single-tenant deployment; refused with 403 in a multi-tenant one) and
+  `POST /api/privacy/me/purge`. The request must carry `"confirm": "PURGE"` and the interface makes
+  the person type it. A purge is refused (409 `policy_still_enabled`) while its switch is still
+  on, runs in the background as `privacy.purge_voiceprints`, repeats itself about a minute later
+  to catch a write that raced the switch, and is audited with counts only
+  (`privacy.voiceprints.purge`, `privacy.gender.purge`). Profiles, names, avatars and
+  assignments a person verified are kept. Backups and search snapshots keep their copies until they
+  rotate. Progress: `GET /api/privacy/purge/{task_id}`.
+- **An organization's redaction floor is stored in core (#1279).** An organization's forced
+  categories, PII entities, custom words, toxicity threshold and export and LLM-egress masking are
+  kept in `organization_policy` and combined with the floor a registered resolver returns,
+  strictest wins, so a deployment that already supplies floors from its own tables keeps working.
+  It can be read and changed with `GET|PATCH /api/org-admin/policy` (the `redaction_floor` field,
+  available while the `redaction.policy` capability is on); each change is audited as
+  `org.policy.change` with field names only. The Settings screen for the floor is not in this
+  release.
 - **Missing authentication email is now obvious (#1240).** When no email configuration is
   designated and no `SMTP_*` settings exist, password resets, invitations and verification links
   cannot be delivered. The Auth Email tab now names the cause (never designated, deleted, or
@@ -636,6 +768,58 @@ off by default.
 
 ### Changed
 
+- **Switching voiceprints off now hides names and links a voiceprint made, wherever they are shown
+  (#1280).** An auto-accepted match, a retroactive match, an upload-time cluster join and a
+  profile link added by propagation are recorded as voiceprint-made and hidden while the speaker's
+  file has voiceprints off: the speaker shows its diarizer label and no profile link, in the speaker
+  list and name directory, a profile's occurrences, and every other place a name is printed. A name
+  a person typed, accepted, assigned or confirmed (including promoting a cluster to a profile) is
+  never hidden. Merging two speakers keeps the survivor's own origin; clearing a name keeps a
+  machine link as a link and nothing else.
+- **Cross-recording speaker views, previews and prompts follow each recording's voiceprint switch
+  (#1280).** A speaker's "other recordings" list, its administrator debug twins, the speaker
+  preview, the speaker-merge notification and the topic-suggestion prompt used to read the raw
+  name and profile link, so a recording that only a voiceprint link connected, a voiceprint-made
+  name, or the match confidence showed while voiceprints were off. Each recording is now judged by
+  its own switch. Skipping a voice suggestion in the Inbox no longer makes it count as a person's
+  confirmation: it stays hidden while off and a purge clears it. A voiceprint link added to a name
+  a person typed hides, and a purge removes, the suggestion and confidence of that match with it.
+  A profile rename no longer writes the new name into a speaker whose link is hidden.
+- **A purge finishes what it started and measures what it reached (#1280).** A cluster centroid
+  document the first pass could not delete is carried to the second pass instead of being forgotten
+  with its deleted cluster row, so a purge can no longer report success with a centroid still
+  indexed. An organization purge also deletes and measures documents carrying its own stamp that
+  have no database row; the query that selects clusters outside the scope is an anti-join instead
+  of `NOT IN`, which did not finish on a million speakers; a person's purge no longer deletes a
+  promoted cluster another member owns; and `speaker_links_removed` no longer counts markers whose
+  profile was already deleted.
+- **A purge now reverts, deletes and verifies (#1280).** Stored voiceprints are selected by what
+  the database says belongs to the purged scope (the recording's tenant, the profile's, the
+  cluster's members'), not by the stamp on each search document, so a document written before the
+  tenant backfill is found by its organization's purge and is out of reach of a member's personal
+  one. A purge reverts voiceprint-made names and links to unnamed and unlinked, removes those
+  speakers from promoted clusters, deletes speaker matches with either side in the scope
+  (counted separately when the other side is another scope's), and trims a cluster that also holds
+  another tenant's speakers instead of deleting it. Every pass reports the exact count removed per
+  store (what OpenSearch reports, not the number of ids asked for), then measures what it should
+  have removed in a fresh session after an index refresh. Anything left makes the purge fail; a
+  check that could not run is "not verified", never clean. The audit events carry the actor, the
+  scope's ids, the targets, the per-store counts and the residual, and `GET /api/privacy/purge/{id}`
+  returns the same (`counts` is now grouped per store, plus `residual`, `residual_ok`,
+  `residual_unverified` and `audit`). The purge dialog shows them in all 12 languages.
+- **The admin gender migration, the embedding consistency repair and the v4 embedding migration
+  now honor the privacy policy (#1280).** The speaker-attribute (gender) migration and the
+  combined speaker analysis used to write gender for every file; they now skip files whose owner
+  has gender prediction turned off or whose deployment or organization forbids it, and a forced
+  reset leaves those files alone. The consistency repair no longer re-creates missing voiceprints
+  for a scope with voiceprints off. The v4 migration skips such files and reports `skipped_by_policy`
+  at finalize, so the index that goes live holds no voiceprints for those scopes (their old
+  documents stay in the preserved backup index). With the default switches on, none of this
+  changes anything.
+- **The speaker-name step no longer sends a gender comparison to a remote LLM (#1280).** The
+  voice-versus-first-name gender cross-reference is added to the speaker-identification prompt
+  only for a local provider (loopback, private network or a compose hostname), matching how masked
+  text is handled. Remote providers get the prompt without it, even with gender inference on.
 - **A held file can no longer be reprocessed or retried, and a refusal says who holds it
   (#1276).** The 409 `FILE_UNDER_LEGAL_HOLD` that a delete of a held file already answered now also
   carries `held_by` (`platform`, `organization` or both), and a reprocess or retry of a held file
@@ -969,6 +1153,53 @@ off by default.
 
 ### Fixed
 
+- **Turning voiceprints off now hides a voice-made name everywhere it was printed or indexed
+  (#1280).** The search index, the speaker summary text in it, the facts and digest, the
+  summarization prompt, exports and captions, the chat "who said" lookup, the gallery and
+  collection speaker filter, and the profile appearance counts now follow the file's voiceprint
+  switch. A name a voiceprint wrote is replaced by the diarizer label (for example `SPEAKER_00`),
+  and the profile link a voiceprint added is neither shown, counted nor indexed; a name a person
+  typed or confirmed is never touched. Nothing is deleted by hiding: turning the switch back on
+  restores it. The choice is made once per file, not once per segment, and an unreadable policy
+  hides. A summary generated earlier is stored as written (regenerate it to drop a name from the
+  text); its copy in the search index is masked.
+- **A voiceprint switch change rebuilds the search labels, and says what it did (#1280).** The
+  rebuild is recorded before it is queued, survives a broker or worker failure, and is finished
+  by the periodic search maintenance; each request and each finished scope writes a
+  `privacy.labels.resync` audit event with the number of files selected, queued, already pending
+  and failed. The same maintenance now compares the indexed speaker labels of voice-named files
+  with what the policy implies and re-indexes files that disagree. A speaker rename on a file
+  whose voiceprints are off rebuilds the file instead of rewriting labels the index may not hold.
+- **A failed privacy scope read no longer aborts the request's transaction, and a consent hook
+  can refuse a single file (#1280).**
+- **A personal voiceprint search no longer matches an organization recording's voiceprint (#1280).**
+  A speaker document written before the tenant backfill has no organization stamp and so read as
+  personal. Speaker searches in personal scope now also exclude the documents of the owner's
+  organization files by file id (and match nothing if those files cannot be listed).
+- **A purge could miss an organization's unstamped voiceprint and reach it from a member's
+  personal purge (#1280).** Documents are now selected by the ids of the scope's speakers, profiles
+  and clusters (see Changed).
+- **A speaker's organization comes from its file (#1280).** Speakers are created without their
+  own organization, so three places that read it got the wrong answer: renaming a speaker profile
+  inside an organization skipped every speaker in that organization (and a personal rename
+  matched speakers of every organization), and two permission checks for platform support access
+  treated an in-organization speaker as personal (and the cross-tenant access record named no
+  organization). Each now uses the organization of the speaker's file. A new test fails if code
+  is added that filters or authorizes on the speaker's own organization column.
+- **Speaker identification lists only the file's own profiles (#1280).** The known-speaker names
+  sent to the language model now come from the tenant of the file being identified (an
+  organization file: that organization's profiles; a personal file: your personal profiles)
+  instead of every profile you have in any tenant.
+- **A rewritten voiceprint cluster keeps its organization (#1280).** Updating a cluster's
+  centroid rewrote the whole search document without its `organization_id`, so the cluster no
+  longer matched its organization's tenant filter. The stored value is now carried over. Installs
+  that use organizations can re-stamp documents rewritten earlier with the tenant backfill listed
+  under Upgrade Notes.
+- **Speaker embedding audio loading falls through to the WAV reader when torchaudio cannot
+  load.** When ffmpeg failed and `torchaudio.load` raised the torchcodec `RuntimeError` ("Could
+  not load libtorchcodec"), the loader re-raised instead of trying the scipy reader. Any
+  `RuntimeError`, `OSError`, `ValueError` or `ImportError` from torchaudio now logs a warning
+  naming the torchaudio loader and continues to the next one.
 - **The prompt sharing toggle is scoped to the caller's tenant.** The owner can toggle their own
   prompt. In an organization, an organization admin (or a write support grant) can change sharing
   on a member's prompt; the platform admin role alone cannot. A personal workspace is its own

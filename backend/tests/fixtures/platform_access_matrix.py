@@ -133,6 +133,13 @@ PLATFORM_OP_RULES: tuple[tuple[str, str, str], ...] = (
         "deployment configuration and credentials; no tenant content",
     ),
     (
+        r"^\w+ /api/admin/privacy-policy",
+        "settings",
+        "the deployment's voiceprint and gender switches and their purge (issue #1280); returns "
+        "switch state or a task id, never tenant content (the purge deletes derived voiceprint "
+        "data, it reads none back)",
+    ),
+    (
         r"^GET /api/legal/acknowledgments",
         "settings",
         "the operator's legal acknowledgment record; deployment-level",
@@ -554,6 +561,7 @@ ALLOWS_KINDS: dict[str, str] = {
     "api/endpoints/files/crud.py::get_media_file_by_id": "media_file",
     "api/endpoints/files/crud.py::get_media_file_detail": "media_file",
     "api/endpoints/files/__init__.py::get_thumbnail": "thumbnail",
+    "services/speaker_provenance_view.py::_can_see_actor": "media_file",
 }
 
 #: Attribute reads that widen a request's reach, and the call names that create one.

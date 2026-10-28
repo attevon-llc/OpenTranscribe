@@ -36,7 +36,9 @@ from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.files.crud import set_file_urls
+from app.api.endpoints.files.filtering import LIST_SPEAKER_COLUMNS
 from app.api.endpoints.files.filtering import apply_all_filters
+from app.api.endpoints.files.filtering import hidden_speaker_name_clause
 from app.auth.audit import TENANT_SCOPE_ORG
 from app.auth.audit import TENANT_SCOPE_PERSONAL
 from app.auth.audit import AuditEventType
@@ -53,7 +55,6 @@ from app.models.group import UserGroupMember
 from app.models.media import Collection
 from app.models.media import CollectionMember
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.organization import OrganizationMembership
 from app.models.prompt import SummaryPrompt
 from app.models.sharing import CollectionShare
@@ -88,6 +89,7 @@ from app.services.hold_guard import HELD_BY_ORGANIZATION
 from app.services.hold_guard import HoldState
 from app.services.hold_guard import refusal_detail
 from app.services.permission_service import PermissionService
+from app.services.privacy.redact_view import PrivacyView
 from app.services.takedown_service import exclude_quarantined
 from app.tasks.search_indexing_task import update_file_access_index
 from app.utils.uuid_helpers import get_by_uuid
@@ -1321,11 +1323,7 @@ def get_collection_media(
     # Eager-loading strategy matching the main list endpoint
     list_options = [
         joinedload(MediaFile.user),
-        selectinload(MediaFile.speakers).load_only(
-            Speaker.uuid,  # type: ignore[arg-type]
-            Speaker.name,  # type: ignore[arg-type]
-            Speaker.display_name,  # type: ignore[arg-type]
-        ),
+        selectinload(MediaFile.speakers).load_only(*LIST_SPEAKER_COLUMNS),  # type: ignore[arg-type]
         defer(MediaFile.metadata_raw),  # type: ignore[arg-type]
         defer(MediaFile.waveform_data),  # type: ignore[arg-type]
     ]
@@ -1380,6 +1378,9 @@ def get_collection_media(
         "organization_id": ctx.org_id,
     }
 
+    # A speaker filter matches the names the page shows (#1280).
+    filters["speaker_name_hidden"] = hidden_speaker_name_clause(db, base_query, speaker)
+
     # Apply all filters
     filtered_query = apply_all_filters(base_query, filters)
 
@@ -1406,11 +1407,14 @@ def get_collection_media(
     offset = (page - 1) * page_size
     result = filtered_query.offset(offset).limit(page_size).all()
 
+    # One privacy view for the page (see the main list endpoint, #1280).
+    privacy = PrivacyView(db)
+
     # Format each file with URLs and formatted fields
     formatted_files = []
     for file in result:
         set_file_urls(file, ctx.bypass)
-        formatted_file = FormattingService.format_media_file(file, file.speakers)
+        formatted_file = FormattingService.format_media_file(file, file.speakers, privacy=privacy)
         formatted_files.append(formatted_file)
 
     # Calculate pagination metadata

@@ -137,6 +137,9 @@ class _StubQuery:
     def all(self):
         return []
 
+    def scalar(self):
+        return None
+
 
 class _StubSession:
     """Minimal Session stand-in: the propagation path under test never reaches a row."""
@@ -173,6 +176,13 @@ def test_profile_propagation_gates_at_the_high_confidence_constant(monkeypatch):
         SpeakerMatchingService,
         "_get_speaker_embedding_for_propagation",
         lambda self, speaker_id: ([0.1] * 8, "stub-uuid"),
+    )
+
+    # This test is about the similarity space, not the privacy gate (covered in
+    # test_speaker_suggestions_policy / test_speaker_matching_policy), and the stub session
+    # cannot answer policy queries.
+    monkeypatch.setattr(
+        SpeakerMatchingService, "_voiceprints_allowed", lambda self, user_id, organization_id: True
     )
 
     service = SpeakerMatchingService(cast("Session", _StubSession()), embedding_service=None)

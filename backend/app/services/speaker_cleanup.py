@@ -73,10 +73,18 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import Literal
 
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import SearchIndexError
+from app.utils.speaker_identity_detail import ORIGIN_CLUSTER_JOIN
+from app.utils.speaker_identity_detail import ORIGIN_CLUSTER_MERGED
+from app.utils.speaker_identity_detail import voiceprint_detail
+from app.utils.speaker_identity_source import after_unlink
+from app.utils.speaker_identity_source import clear_suggestion
+from app.utils.speaker_identity_source import record_human_identity
+from app.utils.speaker_identity_source import record_machine_identity
 
 if TYPE_CHECKING:
     from app.models.media import Speaker
@@ -233,6 +241,39 @@ def capture_speaker_impact(
         if reindex and media_file_id is not None:
             impact.reindex_file_ids.add(int(media_file_id))
     impact.cluster_uuids = clusters_holding_speakers(db, ids)
+    return impact
+
+
+def profile_move_impact(
+    db: Session,
+    speaker_id: int,
+    old_profile_id: int | None,
+    new_profile_id: int | None,
+    *,
+    voiceprints_enabled: bool,
+) -> SpeakerImpact:
+    """Impact of a speaker moving between profiles (or into / out of one), read BEFORE reconcile.
+
+    The privacy policy (#1280) restricts what is WRITTEN, never what is erased. The profile
+    the speaker left, and the clusters it belongs to, are always named: their membership
+    bookkeeping runs and an aggregate that still averages the departed voice is rebuilt or,
+    while voiceprints are off and nothing can be rebuilt, erased (``strict`` refuses the
+    recompute and the reconciler erases), exactly as for a deletion. The profile it JOINED is
+    named only while voiceprints are on: folding a voice into an aggregate is the addition
+    the switch forbids, so it is left as it was and re-enabling finds it intact.
+
+    Args:
+        db: The caller's session; only reads.
+        speaker_id: The speaker whose profile link changed.
+        old_profile_id: The profile it left, or ``None``.
+        new_profile_id: The profile it joined, or ``None``.
+        voiceprints_enabled: The policy answer for the speaker's file, read by the caller.
+    """
+    impact = capture_speaker_impact(db, [speaker_id], removed=False, reindex=False)
+    gained = new_profile_id if new_profile_id != old_profile_id else None
+    impact.profile_ids |= {p for p in (old_profile_id, new_profile_id) if p}
+    if not voiceprints_enabled and gained is not None:
+        impact.profile_ids.discard(gained)
     return impact
 
 
@@ -859,8 +900,9 @@ def unlink_from_profile(
         if name is not None and speaker.display_name == name:
             speaker.display_name = None  # type: ignore[assignment]
         if name is not None and speaker.suggested_name == name:
-            speaker.suggested_name = None  # type: ignore[assignment]
-            speaker.confidence = None  # type: ignore[assignment]
+            clear_suggestion(speaker)
+        # Settle who made what is left, before the "after" label below depends on it (#1280).
+        after_unlink(speaker)
         tracker.record(
             int(speaker.media_file_id), indexed_as, canonical_speaker_label_for_row(speaker)
         )
@@ -869,12 +911,25 @@ def unlink_from_profile(
 
 
 def join_cluster_identity(
-    db: Session, speaker: Speaker, cluster: SpeakerCluster, tracker: SpeakerRenameTracker
+    db: Session,
+    speaker: Speaker,
+    cluster: SpeakerCluster,
+    tracker: SpeakerRenameTracker,
+    *,
+    source: Literal["voiceprint", "human"],
+    user_id: int | None = None,
+    confidence: float | None = None,
 ) -> set[int]:
     """Joining a promoted cluster links its profile and takes its name.
 
     The one way every assignment path propagates a cluster's identity. Refuses (returns
     an empty set, writes nothing) when the speaker is blocked from the profile.
+
+    ``source`` says who decided the join (issue #1280): ``"voiceprint"`` when a voice
+    comparison placed the speaker in the cluster (upload-time clustering, Re-cluster),
+    ``"human"`` when a person did (merging clusters). It is required so that no caller can
+    forget to say. ``user_id`` is the person (``source="human"``); ``confidence`` the cluster
+    match similarity (``source="voiceprint"``). Both go into the recorded origin.
 
     Returns:
         The profiles whose membership changed (the new one and any it left), for the
@@ -886,14 +941,35 @@ def join_cluster_identity(
     profile_id = cluster.promoted_to_profile_id
     if profile_id is None or speaker_blocked_from_profile(db, int(speaker.id), int(profile_id)):
         return set()
-    name = db.query(SpeakerProfile.name).filter(SpeakerProfile.id == int(profile_id)).scalar()
-    if name is None:
+    profile_row = (
+        db.query(SpeakerProfile.name, SpeakerProfile.uuid)
+        .filter(SpeakerProfile.id == int(profile_id))
+        .first()
+    )
+    if profile_row is None:
         return set()
+    name, profile_uuid = profile_row
     old = int(speaker.profile_id) if speaker.profile_id is not None else None
     indexed_as = canonical_speaker_label_for_row(speaker)
+    previous_display_name = speaker.display_name
     speaker.profile_id = int(profile_id)  # type: ignore[assignment]
     speaker.display_name = name  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]
+    if source == "voiceprint":
+        from app.services.embedding_mode_service import voiceprint_model_id
+
+        record_machine_identity(
+            speaker,
+            previous_display_name=previous_display_name,
+            detail=voiceprint_detail(
+                ORIGIN_CLUSTER_JOIN,
+                confidence=confidence,
+                matched_profile_uuid=profile_uuid,
+                embedding_model=voiceprint_model_id(),
+            ),
+        )
+    else:
+        record_human_identity(speaker, user_id=user_id, origin=ORIGIN_CLUSTER_MERGED)
     tracker.record(int(speaker.media_file_id), indexed_as, canonical_speaker_label_for_row(speaker))
     return {p for p in (old, int(profile_id)) if p is not None}
 

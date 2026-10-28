@@ -250,8 +250,9 @@ The migration chain progresses through these versions:
 | `v446` | `collection.visibility`: an organization collection can be restricted to its named people (#1275) |
 | `v447` | `content_hold` and `content_hold_file`: organization legal holds on files and collections (#1276) |
 | `v448` | `uq_task_active_per_file_type`: at most one active task row per file and step; marks superseded stale rows failed first and briefly locks the `task` table (writers wait) while it builds (#1185) |
+| `v449` | `speaker.identity_source` (whether a speaker's name and profile link came from a person or a voiceprint match) and its record: `identity_source_at`, `identity_source_user_id`, `identity_source_detail`, `suggestion_detail`; marks existing identities a voiceprint demonstrably wrote (#1280) |
 
-What `v397` to `v448` mean for an existing install, including the few that change data, is
+What `v397` to `v449` mean for an existing install, including the few that change data, is
 spelled out in [Upgrading to 0.6.0](./upgrading-to-0-6-0.md).
 
 ### What to Do if Migrations Fail

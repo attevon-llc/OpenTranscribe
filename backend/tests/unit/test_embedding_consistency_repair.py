@@ -536,3 +536,15 @@ def test_check_repair_completion_falls_back_to_the_passed_user_id_when_progress_
     assert len(ws_calls) == 1
     assert ws_calls[0][0] == 1
     assert _FakeProgressTracker.instances[-1]["user_id"] == 1
+
+
+@pytest.fixture(autouse=True)
+def _writers_run_under_an_allowing_privacy_policy(monkeypatch):
+    """These tests pin the writers' aggregation, not the privacy gate.
+
+    Their prepared files carry invented ids that name no row, which the policy (rightly)
+    reads as "deny". The gate has its own tests in ``test_embedding_consistency_policy``.
+    """
+    monkeypatch.setattr(
+        "app.tasks.embedding_consistency_repair._voiceprints_allowed", lambda media_file_id: True
+    )

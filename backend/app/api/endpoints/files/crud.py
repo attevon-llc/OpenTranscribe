@@ -35,12 +35,17 @@ from app.services.formatting_service import FormattingService
 from app.services.ingest_artifacts.recorded_date_service import set_manual_date
 from app.services.opensearch_service import update_transcript_title
 from app.services.platform_bypass import PlatformBypass
+from app.services.privacy.redact_view import PrivacyView
+from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.redaction.reveal_audit import audit_unredacted_reveal
+from app.services.speaker_provenance_view import ProvenanceViewer
+from app.services.speaker_provenance_view import attach_speaker_provenance
 from app.services.speaker_status_service import SpeakerStatusService
 from app.services.tag_service import tag_ownership
 from app.utils.db_helpers import owned_in_tenant
 from app.utils.error_handlers import ErrorHandler
 from app.utils.speaker_labels import canonical_speaker_label
+from app.utils.speaker_labels import canonical_speaker_label_for_row
 from app.utils.time_format import format_timestamp_simple as format_timestamp
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
@@ -414,13 +419,7 @@ def _resolve_segment_speaker_name(speaker: Speaker | None) -> str:
     """
     if speaker is None:
         return canonical_speaker_label(None)
-    return canonical_speaker_label(
-        speaker.name,
-        display_name=speaker.display_name,
-        suggested_name=speaker.suggested_name,
-        confidence=speaker.confidence,
-        suggestion_source=speaker.suggestion_source,
-    )
+    return canonical_speaker_label_for_row(speaker)
 
 
 def _build_grouped_segments(formatted_segments: list[Any], index_offset: int = 0) -> list[Any]:
@@ -507,6 +506,38 @@ def _build_grouped_segments(formatted_segments: list[Any], index_offset: int = 0
             i += 1
 
     return groups
+
+
+def redact_response_speakers(
+    db: Session,
+    speakers: list[Speaker],
+    transcript_segments: list[TranscriptSegment] | None = None,
+    viewer: ProvenanceViewer | None = None,
+) -> None:
+    """Apply the privacy policy to every speaker row a transcript response will serialize.
+
+    A segment embeds its full speaker, so the file's own speaker list and each segment's
+    speaker are the same surface: both are redacted here, together, with the shared
+    ``redact_speaker_rows`` (inferred gender and unverified voiceprint suggestions are
+    withheld while the owner's scope has them off). Call it after the last commit of the
+    request and before the rows are validated into response schemas, because a commit
+    expires the instances and a reload would put the stored values back.
+
+    Args:
+        db: Database session.
+        speakers: The file's speaker rows.
+        transcript_segments: Segments whose ``speaker`` is serialized with them.
+        viewer: Who is looking, for the read-only ``identity`` / ``suggestion`` provenance
+            attached after the redaction (``None`` hides who made an identity).
+    """
+    unique: dict[int, Speaker] = {int(s.id): s for s in speakers}
+    for segment in transcript_segments or []:
+        if segment.speaker is not None:
+            unique.setdefault(int(segment.speaker.id), segment.speaker)
+    if unique:
+        view = PrivacyView(db)
+        redact_speaker_rows(view, unique.values())
+        attach_speaker_provenance(db, unique.values(), viewer, view=view)
 
 
 def _format_transcript_segments(
@@ -905,17 +936,14 @@ def get_media_file_detail(
         # instance, including the speakers decorated below (#1152).
         analytics = _get_or_compute_analytics(db, file_id, db_file.status)
 
-        # Get speakers and add computed status. Eager-load the linked profile so
-        # add_computed_status (which reads speaker.profile) doesn't fire one lazy
-        # SELECT per speaker.
+        # Get speakers. Eager-load the linked profile so add_computed_status (which reads
+        # speaker.profile, below) doesn't fire one lazy SELECT per speaker.
         speakers = (
             db.query(Speaker)
             .options(selectinload(Speaker.profile))
             .filter(Speaker.media_file_id == file_id)
             .all()
         )
-        for speaker in speakers:
-            SpeakerStatusService.add_computed_status(speaker)
 
         # Get transcript segments with pagination
         transcript_segments, total_segments = _get_transcript_segments(
@@ -924,13 +952,6 @@ def get_media_file_detail(
 
         # Count merged speaker segments (adjacent same-speaker groups)
         total_speaker_segments = _count_speaker_segments(db, file_id)
-
-        # Add computed status to segment speakers (skip already-processed)
-        processed_speaker_ids = {s.id for s in speakers}
-        for segment in transcript_segments:
-            if segment.speaker and int(segment.speaker.id) not in processed_speaker_ids:
-                SpeakerStatusService.add_computed_status(segment.speaker)
-                processed_speaker_ids.add(int(segment.speaker.id))
 
         # Compute caller's effective permission for frontend
         if db_file.user_id == current_user.id:
@@ -970,6 +991,28 @@ def get_media_file_detail(
             transcript_segments = []
             total_segments = 0
             total_speaker_segments = 0
+
+        # Last step before serialization: nothing below commits, so the redaction holds.
+        # Redact FIRST, then compute the status from what is left: the status text ("High
+        # confidence match") and the resolved name are derived from the suggestion that the
+        # redaction withholds, so decorating before it served both while voiceprints were off.
+        redact_response_speakers(
+            db,
+            speakers,
+            transcript_segments,
+            ProvenanceViewer(
+                user_id=int(current_user.id),
+                admin_org_id=organization_id
+                if reveal_hold_uuids and isinstance(organization_id, int)
+                else None,
+                bypass=bypass,
+            ),
+        )
+        processed_speaker_ids: set[int] = set()
+        for speaker in [*speakers, *(s.speaker for s in transcript_segments if s.speaker)]:
+            if int(speaker.id) not in processed_speaker_ids:
+                SpeakerStatusService.add_computed_status(speaker)
+                processed_speaker_ids.add(int(speaker.id))
 
         # Build the response
         response = _build_media_file_response(
@@ -1328,6 +1371,9 @@ def update_single_transcript_segment(
 
         if not AnalyticsService.refresh_analytics(db, db_file.id):
             logger.warning("Analytics refresh failed after text edit on file %s", db_file.uuid)
+
+    if segment.speaker is not None:
+        redact_speaker_rows(db, [segment.speaker])
 
     # Manually construct Pydantic response with all required fields
     return TranscriptSegmentSchema(

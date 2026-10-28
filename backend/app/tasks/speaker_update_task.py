@@ -239,7 +239,7 @@ def process_speaker_update_background(
         if display_name_changed and display_name and display_name.strip():
             logger.debug(f"Running retroactive matching for speaker {speaker_uuid}")
             with session_scope() as db:
-                result = _handle_speaker_labeling_workflow(db, speaker_id, display_name)
+                result = _handle_speaker_labeling_workflow(db, speaker_id, display_name, user_id)
             if result:
                 auto_applied_count = result.get("auto_applied_count", 0)
                 suggested_count = result.get("suggested_count", 0)

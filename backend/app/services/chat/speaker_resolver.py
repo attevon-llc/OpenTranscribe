@@ -48,6 +48,7 @@ from typing import Any
 from sqlalchemy import and_
 from sqlalchemy import case
 from sqlalchemy import func
+from sqlalchemy import not_
 from sqlalchemy import or_
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -56,10 +57,15 @@ from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import MediaFile
 from app.models.media import Speaker
+from app.services.privacy.redact_view import PrivacyView
+from app.services.privacy.redact_view import hidden_suggestion_clause
+from app.services.privacy.redact_view import machine_identity_clauses
+from app.services.privacy.redact_view import visible_display_name_expr
 from app.services.search.chunking_service import _NO_SPACE_CHAR_RE
+from app.utils.speaker_identity_source import visible_profile_id
 from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABELS
-from app.utils.speaker_labels import canonical_speaker_label
+from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
 
@@ -278,7 +284,7 @@ class Roster:
     decline_reason: SpeakerResolutionDeclineReason | None = None
 
 
-def _group_speaker_rows(rows: Any) -> dict[str, dict[str, Any]]:
+def _group_speaker_rows(rows: Any, db: Session | PrivacyView) -> dict[str, dict[str, Any]]:
     """Group raw ``Speaker`` rows into canonical-label buckets.
 
     Canonical labels come from :func:`canonical_speaker_label`, the single
@@ -288,22 +294,30 @@ def _group_speaker_rows(rows: Any) -> dict[str, dict[str, Any]]:
     excluded — "who said X" about an unlabeled diarization slot is not a
     mention anyone could type. Shared by :func:`build_candidate_roster` so
     every roster this module builds canonicalizes identically.
+
+    A voiceprint-derived name is not a roster name while its file's voiceprints are off
+    (#1280): the model would otherwise be handed, and could resolve a "who said" question to,
+    a name the speaker API no longer shows. A profile link a voiceprint made is not exposed
+    either: the roster entry's ``profile_id`` is the link the file's decision allows.
+    ``db`` is the session (or a shared ``PrivacyView``) the policy is read through.
     """
     grouped: dict[str, dict[str, Any]] = {}
+    rows = list(rows)
+    privacy = db if isinstance(db, PrivacyView) else PrivacyView(db)
+    privacy.preload_files(int(r.media_file_id) for r in rows)
     for row in rows:
-        label = canonical_speaker_label(
-            row.name,
-            display_name=row.display_name,
-            suggested_name=row.suggested_name,
-            confidence=row.confidence,
-            suggestion_source=getattr(row, "suggestion_source", None),
-        )
+        label = canonical_speaker_label_for_row(row, privacy)
         if label in UNKNOWN_SPEAKER_LABELS:
             continue
         bucket = grouped.setdefault(label, {"profile_id": None, "files": set()})
         bucket["files"].add(row.media_file_id)
-        if row.profile_id is not None and bucket["profile_id"] is None:
-            bucket["profile_id"] = row.profile_id
+        profile_id = visible_profile_id(
+            row.profile_id,
+            row.identity_source,
+            privacy.voiceprints(int(row.media_file_id)).enabled,
+        )
+        if profile_id is not None and bucket["profile_id"] is None:
+            bucket["profile_id"] = profile_id
     return grouped
 
 
@@ -449,6 +463,8 @@ def build_candidate_roster(
         Speaker.suggested_name,
         Speaker.confidence,
         Speaker.suggestion_source,
+        Speaker.verified,
+        Speaker.identity_source,
         Speaker.profile_id,
         Speaker.media_file_id,
     ).join(MediaFile, MediaFile.id == Speaker.media_file_id)
@@ -459,17 +475,30 @@ def build_candidate_roster(
     if file_uuids is not None:
         base_query = base_query.filter(MediaFile.uuid.in_(file_uuids))
 
-    # A suggested name is a candidate-bearing column only when a voiceprint match produced it:
-    # an LLM suggestion is not the speaker's name, so "who said X" must not find a speaker
-    # through it (the label it would then resolve to is the placeholder).
+    # While a file's voiceprints are off, the names a voiceprint made are not candidate
+    # columns (#1280): the Python ladder below would drop them through the label anyway, but a
+    # hidden row fetched here still counts against the row cap, and a cap that trips only for a
+    # hidden name tells the asker that the name exists.
+    view = PrivacyView(db)
+    accessible_files = select(accessible_sq)
+    name_hidden, _link_hidden = machine_identity_clauses(view, accessible_files)
+    suggestion_hidden = hidden_suggestion_clause(view, accessible_files)
+
+    # A suggested name is a candidate-bearing column only when a voiceprint match produced it
+    # (and the file's policy still lets it be shown): an LLM suggestion is not the speaker's
+    # name, so "who said X" must not find a speaker through it (the label it would then
+    # resolve to is the placeholder).
     voiceprint_suggested_name = case(
         (
-            Speaker.suggestion_source.in_(sorted(EMBEDDING_SUGGESTION_SOURCES)),
+            and_(
+                Speaker.suggestion_source.in_(sorted(EMBEDDING_SUGGESTION_SOURCES)),
+                not_(suggestion_hidden),
+            ),
             Speaker.suggested_name,
         ),
         else_=None,
     )
-    columns = (Speaker.name, Speaker.display_name, voiceprint_suggested_name)
+    columns = (Speaker.name, visible_display_name_expr(name_hidden), voiceprint_suggested_name)
     all_rows: list[Any] = []
     seen_row_keys: set[tuple[Any, ...]] = set()
     for cand in norm_candidates:
@@ -494,13 +523,15 @@ def build_candidate_roster(
                 row.display_name,
                 row.suggested_name,
                 getattr(row, "suggestion_source", None),
+                row.identity_source,
+                row.profile_id,
                 row.media_file_id,
             )
             if key not in seen_row_keys:
                 seen_row_keys.add(key)
                 all_rows.append(row)
 
-    grouped = _group_speaker_rows(all_rows)
+    grouped = _group_speaker_rows(all_rows, view)
     entries = tuple(
         sorted(
             (

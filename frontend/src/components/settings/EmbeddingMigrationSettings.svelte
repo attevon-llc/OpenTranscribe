@@ -23,6 +23,10 @@
   let v4DocumentCount = 0;
   let completedFileCount = 0;
 
+  // Recordings in a scope whose voiceprint switch is off: the run skips them (issue #1280).
+  let policySkippedFiles = 0;
+  let policySkippedScopes = 0;
+
   // Progress tracking state
   let totalFiles = 0;
   let processedFiles = 0;
@@ -128,6 +132,8 @@
       // documents - v3DocumentCount overcounts by however many speakers
       // the average file has, and the ETA is per-file work.
       completedFileCount = data.completed_file_count || 0;
+      policySkippedFiles = data.policy_skipped?.files_skipped || 0;
+      policySkippedScopes = data.policy_skipped?.scopes_skipped || 0;
       // Detect stalled migration
       stalled = data.stalled || false;
       if (data.stalled_info) {
@@ -168,6 +174,16 @@
     }
   }
 
+  /** A 409 `voiceprints_disabled` is the policy refusing every recording, not a failure. */
+  function startFailureMessage(err: unknown): string {
+    const response = (err as { response?: { status?: number; data?: { detail?: { code?: string } } } })
+      .response;
+    if (response?.status === 409 && response.data?.detail?.code === 'voiceprints_disabled') {
+      return $t('settings.embeddingMigration.voiceprintsDisabled');
+    }
+    return $t('settings.embeddingMigration.migrationStartFailed');
+  }
+
   async function startMigration() {
     migrationInProgress = true;
 
@@ -186,7 +202,7 @@
 
     } catch (err) {
       console.error('Failed to start migration:', err);
-      toastStore.error($t('settings.embeddingMigration.migrationStartFailed'));
+      toastStore.error(startFailureMessage(err));
       migrationInProgress = false;
     }
   }
@@ -206,7 +222,7 @@
       toastStore.success($t('settings.embeddingMigration.forceReextractStarted'));
     } catch (err) {
       console.error('Failed to start force re-migration:', err);
-      toastStore.error($t('settings.embeddingMigration.migrationStartFailed'));
+      toastStore.error(startFailureMessage(err));
       migrationInProgress = false;
     }
   }
@@ -367,6 +383,15 @@
           {/if}
         {/if}
       </div>
+
+      {#if policySkippedFiles > 0}
+        <p class="policy-skip-notice" data-testid="embedding-migration-policy-skip">
+          {$t('settings.embeddingMigration.policySkipNotice', {
+            files: policySkippedFiles,
+            scopes: policySkippedScopes
+          })}
+        </p>
+      {/if}
 
       <!-- Migration Status -->
       {#if migrationNeeded}
@@ -704,6 +729,16 @@
 
   .benefit-list li {
     margin-bottom: 0.25rem;
+  }
+
+  .policy-skip-notice {
+    margin: 0 0 1rem 0;
+    padding: 0.6rem 0.9rem;
+    border: 1px solid var(--warning-color, #d97706);
+    border-radius: 6px;
+    font-size: 0.8rem;
+    color: var(--text-color);
+    background: var(--surface-color);
   }
 
   .migration-note {

@@ -28,6 +28,7 @@ from sqlalchemy.orm import joinedload
 from app.models.file_facts import FileFacts
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
+from app.services.privacy.gates import voiceprints_allowed
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
 from app.utils.transcript_builders import compute_speaker_stats
 from app.utils.transcript_builders import get_speaker_name
@@ -57,10 +58,16 @@ def load_ordered_segments(db: Session, file_id: int) -> list[dict[str, Any]]:
     non-reproducible in exactly the way that invalidated the first Stage 1 baseline
     (#433).
 
+    The speaker label of each segment honours the file's voiceprint switch (#1280): decided once
+    for the file (unreadable = hidden), so facts, digest and fingerprint never carry a name a
+    voiceprint made while voiceprints are off, and flipping the switch changes the fingerprint
+    (the artifacts regenerate on the next reindex).
+
     Returns:
         Plain dicts, so the pure functions in this package never touch the ORM and are
         testable without a database.
     """
+    voiceprint_names = voiceprints_allowed(file_id, db)
     segments = (
         db.query(TranscriptSegment)
         .options(joinedload(TranscriptSegment.speaker))
@@ -81,10 +88,42 @@ def load_ordered_segments(db: Session, file_id: int) -> list[dict[str, Any]]:
             # The resolved display name, not the raw diarization label: the roster the
             # user sees is the roster the facts report, and a rename therefore changes
             # the fingerprint and triggers regeneration.
-            "speaker": get_speaker_name(segment),
+            "speaker": get_speaker_name(segment, voiceprint_names=voiceprint_names),
         }
         for segment in segments
     ]
+
+
+def hidden_speaker_names(db: Session, file_id: int) -> dict[str, str]:
+    """``{hidden name: diarizer label}`` for the speaker names this file's policy withholds.
+
+    Empty while the file's voiceprints are on. While they are off: the ``display_name`` of a
+    speaker a voiceprint named (``identity_source = 'voiceprint'``) and the stored voiceprint
+    suggestion nobody verified, each mapped to that speaker's diarizer label. Text that was
+    written earlier (an LLM summary quotes names) is matched against these before it is
+    INDEXED. A name another speaker of the file visibly carries is left alone: masking it would
+    hide a person's word. Unreadable policy = off (``voiceprints_allowed`` fails closed).
+    """
+    from app.models.media import Speaker
+    from app.services.privacy.redact_view import hides_voiceprint_suggestion
+    from app.utils.speaker_identity_source import hides_name
+    from app.utils.speaker_labels import is_assigned_speaker_name
+
+    if voiceprints_allowed(file_id, db):
+        return {}
+    rows = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
+    masks: dict[str, str] = {}
+    visible: set[str] = set()
+    for row in rows:
+        name_hidden = hides_name(row.identity_source, False)
+        if is_assigned_speaker_name(row.display_name):
+            if name_hidden:
+                masks[str(row.display_name)] = str(row.name)
+            else:
+                visible.add(str(row.display_name).casefold())
+        if hides_voiceprint_suggestion(row) and is_assigned_speaker_name(row.suggested_name):
+            masks.setdefault(str(row.suggested_name), str(row.name))
+    return {name: label for name, label in masks.items() if name.casefold() not in visible}
 
 
 def source_fingerprint(segments: list[dict[str, Any]]) -> str:
@@ -175,7 +214,11 @@ class _ResolvedSpeaker:
 
 
 def _speaker_stats_from_dicts(segments: list[dict[str, Any]]) -> dict[str, Any]:
-    stats: dict[str, Any] = compute_speaker_stats([_StatSegment(s) for s in segments])
+    # The segment dicts carry labels that were already resolved under the file's decision, so
+    # this is a policy-free pass over them (the adapter rows have no file to ask about).
+    stats: dict[str, Any] = compute_speaker_stats(
+        [_StatSegment(s) for s in segments], voiceprint_names=True
+    )
     return stats
 
 

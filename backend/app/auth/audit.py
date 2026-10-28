@@ -137,6 +137,22 @@ class AuditEventType(StrEnum):
     # text, the speaker's name or the hold's reason.
     CONTENT_TRANSCRIPT_EDIT = "content.transcript.edit"
 
+    # Privacy controls (issues #1280, #1279). ``org.policy.change``: an organization
+    # administrator changed the organization's policy; ``details.fields`` lists the NAMES of the
+    # fields changed, never values (custom words can be sensitive). The two purge events delete
+    # biometric / inferred data and are written twice, ``details.phase`` ``requested`` then
+    # ``completed``, the latter with counts only.
+    ORG_POLICY_CHANGE = "org.policy.change"
+    PRIVACY_VOICEPRINT_PURGE = "privacy.voiceprints.purge"
+    PRIVACY_GENDER_PURGE = "privacy.gender.purge"
+    # A voiceprint switch changed and the speaker labels in the search index are being rebuilt
+    # (issue #1280). Written when the resync is requested (``details.phase`` ``requested``) and
+    # when a scope finishes (``completed``, or ``incomplete`` when some files could not be
+    # queued and the scope stays pending), plus ``drift`` when the maintenance scan found
+    # indexed labels that disagree with the policy. ``details`` holds the switch, its from/to
+    # value, the scope kind and ids, and file COUNTS: never a name or a file id.
+    PRIVACY_LABEL_RESYNC = "privacy.labels.resync"
+
     # An audit-log export, by a platform admin or an organization admin (issue #1277):
     # ``details`` holds the format, the row count and whether it was truncated, never the rows.
     AUDIT_EXPORT = "audit.export"

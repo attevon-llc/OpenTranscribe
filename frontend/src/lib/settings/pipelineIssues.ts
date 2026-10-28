@@ -26,6 +26,7 @@ export const PIPELINE_ISSUE_CODES = [
   'diarizer_double_billing',
   'diarizer_same_as_transcription',
   'source_locked',
+  'voiceprints_disabled',
   'asr_provider_not_allowed',
   'diarizer_provider_not_allowed',
 ] as const;
@@ -62,6 +63,9 @@ const FIX_SECTIONS: Record<PipelineIssueCode, FixSection[]> = {
   diarizer_double_billing: ['speaker-identification'],
   diarizer_same_as_transcription: ['speaker-identification'],
   source_locked: [],
+  // Switched off by the owner, the organization or the operator: nothing in the pipeline
+  // settings turns it back on.
+  voiceprints_disabled: [],
   asr_provider_not_allowed: ['asr-provider'],
   diarizer_provider_not_allowed: ['asr-provider'],
 };

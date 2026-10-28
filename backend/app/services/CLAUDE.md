@@ -39,6 +39,34 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   `smart_speaker_suggestion_service.py`, `embedding_mode_service.py`,
   `metadata_speaker_extractor.py`. **Any code that deletes a speaker or moves one out of a
   cluster or profile goes through `speaker_cleanup.py`** — see "Removing a voice" below.
+- **Privacy policy** — `privacy/` (#1280) is the ONE answer to "may voiceprints exist / may gender be inferred" for a
+  (user, organization): `policy.py` ANDs platform (`set_privacy_ceiling_resolver`), instance (`SystemSettings` `privacy.*`),
+  organization (`organization_policy` row; none = inherit) and user (`UserSetting`), and every error path DENIES. Call
+  `voiceprint_decision` / `gender_decision` (or the `*_for_file` forms, fresh read) in a producer or consumer, `gates.py` in a
+  Celery stage (`voiceprints_allowed(file_id)`, `gender_allowed`, `job_privacy_overrides`), `redact_view.py` when SHAPING a
+  response, and `assert_voiceprint_write_allowed` only inside OpenSearch speaker writes (10 s cache). `consent.py` is the seam a
+  consent implementation registers a hook on (all hooks must return `True`; a raise denies). Switching a layer off HIDES, only
+  `purge.py` deletes, and only once the switch is off. A purge is MEASURED: `purge_voiceprints.py` (relational half + OpenSearch
+  documents by the Postgres ids of the scope; an ORGANIZATION purge also deletes and measures the documents stamped with its
+  `organization_id` (`purge_voiceprints.org_stamp_clause`: orphans and integer-keyed legacy documents have no row), a personal or
+  user purge never deletes by stamp; a pass hands the cluster centroid ids it could not confirm gone to the next pass as
+  `carried_cluster_uuids`, because their rows are already deleted; "outside the scope" is `not_in_scope`, a NOT EXISTS anti-join,
+  never `NOT IN (SELECT ...)`), `purge_residual.py` (a fresh-session,
+  post-refresh check whose values must all be 0; unmeasurable = unverified, never clean), `purge.run_purge_pass` returns a
+  `PassResult` with exact counts per store, and the task fails the purge on a final residual. It also reverts what a voiceprint
+  named (`speaker.identity_source`, below) and never touches `human`/NULL identities or another tenant's rows.
+  `policy_admin.py` is the write side the routes share. Never re-read `speaker_attribute.*` or a user toggle to decide gender:
+  `speaker_attribute_settings.resolve_speaker_attribute_flags(..., organization_id=)` already ANDs the policy ceiling; pass the
+  FILE's organization from its row. `SpeakerMatchingService` does that itself for a call that names a speaker
+  (`find_and_store_speaker_matches`: the organization argument is only a hint that can narrow, never widen), and refuses
+  an embedding-only call (`match_speaker_to_*`) that states no `organization_id`, because omitted never means personal.
+  The speaker-ID LLM never gets the gender cross-reference from a non-local provider
+  (`speaker_identification_task._with_gender_context`). A speaker's tenant is its FILE's (`media_file.organization_id`):
+  `speaker.organization_id` is never stamped by the pipeline, so purge and every reader join through the file
+  (`PurgeScope.speaker_filters`, the profile rename, `require_speaker_access`, the segment speaker assignment; `tests/unit/test_speaker_tenant_discipline.py` fails on any new read of the speaker row's own column), and every writer that rebuilds a speaker document passes the file's organization
+  (`PreparedFile.organization_id`, the merge plan's `organization_id`) or the voiceprint reads as personal. A removal
+  or erasure is never gated by the switch (`speaker_cleanup.profile_move_impact` drops only the aggregate a voice
+  would JOIN while off). User docs: `docs-site/docs/features/privacy-controls.md`.
 - **Collection visibility** — `collection_visibility.py` is the one place that answers "which
   collections may this caller see, and which files does that make readable" (#1051, #1275).
   `collection_permission_ranks` / `collection_permission` are the ONE statement behind
@@ -444,6 +472,68 @@ suggestion UIs with its confidence and nothing more; accepting it writes `displa
   through a guess.
 - **The LLM task will not overwrite a voiceprint suggestion** — that would replace the evidence
   the label rests on with a guess.
+- **A voiceprint-derived name obeys the privacy switch (#1280).** `canonical_speaker_label_for_row(row, db=None)`
+  leaves a `voice_match`/`profile_match` name out while the row's FILE has voiceprints off (the row stays unverified; a
+  verified one is a person's and stays) and asks the policy only when that suggestion is what decides the label. An ORM
+  `Speaker` finds its own session; a columns-only row must select `verified` and `media_file_id` and be given `db` (or a
+  shared `PrivacyView`). Every printer of a label goes through it (exports, captions, the chunk and reindex writers,
+  `get_speaker_name`, the chat roster, `SpeakerStatusService`), so a new one must too. In a response, redact first and
+  decorate second: `add_computed_status` derives `status_text` and `resolved_display_name` from the suggestion that
+  `redact_speaker_rows` withholds. A voiceprint switch change rebuilds the affected labels through a durable, audited resync
+  (`services/privacy/label_resync.py` + `tasks/privacy_label_resync_task.py`, registered in the Celery `include=` list): the request
+  records a pending scope (`privacy.label_resync.pending`), the task re-indexes the selected files through the existing debounced
+  dispatch and writes `privacy.labels.resync` audit events (requested, finished: counts of files selected/queued/already
+  pending/failed, never a name or a file), and drift detection in the search-maintenance task finishes a rebuild that could not run.
+  Responses hide immediately; the index follows in the background.
+- **Every writer of `Speaker.display_name` / `profile_id` records who wrote it (`speaker.identity_source`, #1280).** Values:
+  `voiceprint` (a voiceprint wrote name AND link), `voiceprint_link` (only the link, onto a name that was there), `human`, NULL
+  (unknown, read as human). Set it ONLY through `utils/speaker_identity_source.py` (`record_machine_identity`,
+  `record_machine_link`, `record_human_identity`, `after_unlink`, `after_name_cleared`), and BEFORE a rename tracker computes its
+  "after" label, because the label depends on it while voiceprints are off. Voiceprint paths (auto-accept, propagation, retroactive
+  matching, upload-time cluster joins: `join_cluster_identity(..., source="voiceprint")`) record machine; a person's action
+  (typing, accepting, assigning, creating a profile, batch-verify, promote, cluster merge) records human. Merging two speakers
+  leaves the survivor's source alone (it keeps its own name and link). `tests/unit/test_speaker_identity_source_discipline.py` is an
+  AST gate: a function that assigns either field without calling the helpers or setting `identity_source` must be in its `_ALLOWED`
+  table with a reason. Readers hide a voiceprint-made name/link while the file's voiceprints are off (`redact_view`,
+  `machine_identity_clauses` for queries that never load rows: the speaker name directory and profile occurrences use them); a purge
+  reverts `voiceprint` rows (unnamed, unlinked, unverified, voice suggestion cleared) and unlinks `voiceprint_link` rows together
+  with the voice suggestion and confidence of the match that added the link (`hides_voiceprint_suggestion` hides ANY voice-sourced suggestion while off, whoever verified the speaker; the final purge pass
+  clears the four suggestion columns of every remaining voice suggestion, a person-verified speaker's included, never its name, `verified`,
+  link or identity record; `record_suggestion` refuses to write one onto a person-verified speaker unless `identity_follows=True`, and
+  `canonical_speaker_label` takes no `verified` argument any more). An Inbox skip is a review marker, not a confirmation: `after_skip` marks a name-less, link-less row that carries a voice
+  suggestion `voiceprint`, so the suggestion stays the machine's. A profile rename (`speaker_profile_rename`) reaches only members
+  whose link is visible under their file's decision. Every cross-recording reader (`/speakers/{uuid}/cross-media` and its debug
+  twins, the speaker media preview, the merge-completion event, the topic-extraction prompt) goes through `hide_machine_identities`
+  / `get_speaker_name` for its OWN file; none matches on the raw `display_name` / `profile_id`. v449 backfilled only rows with
+  positive evidence (the shape, the profile older than the speaker, an earlier linked speaker: a typed name that a legacy re-match
+  rewrote has the shape but fails the evidence) and recorded `stamped` and `shape_left_unmarked` in `system_settings` key
+  `privacy.identity_source_backfill`; a purge cannot be undone, so the backfill errs toward NULL.
+- **The record of HOW an identity and a suggestion came to be (v449, same issue).** Beside
+  `identity_source` the row keeps `identity_source_at`, `identity_source_user_id` (the person; NULL for
+  a task or a deleted account; FK `ON DELETE SET NULL`, deliberately unindexed) and
+  `identity_source_detail`, and `suggestion_detail` for the recommendation in
+  `suggested_name`/`suggestion_source`. All are written ONLY by the helpers in
+  `utils/speaker_identity_source.py`: `record_human_identity(speaker, *, user_id, origin)` (user id and
+  origin are required; `keep_recorded=True` is for the later step of the same action),
+  `record_machine_identity/record_machine_link(speaker, ..., detail=)`, `after_unlink`/`after_name_cleared`/
+  `after_skip`, and for a recommendation `record_suggestion`, `clear_suggestion`, `mark_review_skipped`
+  (SQL twins for the purge: `cleared_provenance_values`, `cleared_suggestion_values`). The detail
+  is built ONLY by `utils/speaker_identity_detail.py` (ids and identifiers, never a name or transcript
+  text; a closed `origin` vocabulary; an accepted suggestion is summarised WITHOUT matched ids so a
+  person's record stays valid while voiceprints are off). Pass the request user's id from an endpoint;
+  a Celery task passes none and names itself in `origin_task`. Call `record_human_identity` BEFORE
+  `clear_suggestion`: it snapshots the suggestion the person accepted. While a file's voiceprints are
+  off the record of a machine identity and the detail of a voice suggestion are hidden with the name and
+  link (`redact_view.hide_machine_identities`/`redact_speaker_rows`, `hides_provenance`), the purge clears
+  and counts them in the same UPDATE, and `tests/unit/test_speaker_provenance_never_indexed.py` fails if
+  an index or prompt builder names them. The API `identity`/`suggestion` objects are attached by
+  `speaker_provenance_view.attach_speaker_provenance(db, rows, viewer)` AFTER the redaction;
+  `identity.by` is shown only to the file's owner, an org admin of its organization and a platform admin whose reach covers the file (`_can_see_actor` asks `bypass.allows`: single mode any admin, multi mode only under a grant, which records the use; a bare `user_is_admin` is NOT the test), and an account named by an erasure request is the `{"erased": true}` marker, never a name.
+  The two JSONB columns are `JSONB(none_as_null=True)`: a plain JSONB stores Python `None` as the JSON
+  value `null`, which is not SQL NULL and made the purge's residual check see a cleared record. This is
+  the CURRENT state; the append-only history is issue #1336 (v0.7.0), the query review #1337.
+  The AST gate also now rejects a direct assignment to any of these columns and does not accept a
+  reader helper (`hides_link`) as "recording".
 - **Existing indexes**: `services/speaker_label_backfill.py`, an arm of the existing
   `search_index_maintenance` task, re-indexes (per-file, debounced) each completed file with a
   speaker whose old label was an LLM suggestion, refreshes the persisted

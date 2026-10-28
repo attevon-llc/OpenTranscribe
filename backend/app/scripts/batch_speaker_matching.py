@@ -17,11 +17,16 @@ import numpy as np
 from app.db.base import get_db
 from app.models.media import Speaker
 from app.models.media import SpeakerMatch
+from app.services.embedding_mode_service import voiceprint_model_id
 from app.services.opensearch_service import get_speaker_embedding
+from app.services.privacy.redact_view import PrivacyView
 from app.services.speaker_cleanup import blocked_profile_names
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
+from app.utils.speaker_identity_detail import ORIGIN_VOICE_MATCH
+from app.utils.speaker_identity_detail import voiceprint_detail
+from app.utils.speaker_identity_source import record_suggestion
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logging.basicConfig(level=logging.INFO)
@@ -52,8 +57,18 @@ def batch_process_speaker_matches():
 
         processed = 0
         matches_found = 0
+        skipped_by_policy = 0
+
+        # Privacy policy (#1280): a speaker whose file's owner or organization has voiceprints
+        # off is not matched, and no match record or suggestion is written for it.
+        privacy = PrivacyView(db)
+        privacy.preload_files(int(s.media_file_id) for s in speakers)
 
         for speaker in speakers:
+            if not privacy.voiceprints(int(speaker.media_file_id)).enabled:
+                skipped_by_policy += 1
+                continue
+
             # Get embedding from OpenSearch
             embedding = get_speaker_embedding(speaker.id)
 
@@ -83,9 +98,21 @@ def batch_process_speaker_matches():
                             # confident suggestion moves the canonical chunk
                             # label on its own, with no `display_name` write.
                             before = canonical_speaker_label_for_row(speaker)
-                            speaker.suggested_name = match["display_name"]
-                            speaker.confidence = match["confidence"]
-                            speaker.suggestion_source = "voice_match"
+                            if not record_suggestion(
+                                speaker,
+                                source="voice_match",
+                                name=match["display_name"],
+                                confidence=match["confidence"],
+                                detail=voiceprint_detail(
+                                    ORIGIN_VOICE_MATCH,
+                                    confidence=match["confidence"],
+                                    threshold=0.75,
+                                    matched_speaker_uuid=match.get("speaker_uuid"),
+                                    embedding_model=voiceprint_model_id(),
+                                    origin_task="batch_speaker_matching",
+                                ),
+                            ):
+                                break  # a person verified this speaker: no voice suggestion
                             tracker.record(
                                 int(speaker.media_file_id) if speaker.media_file_id else None,
                                 before,
@@ -107,6 +134,7 @@ def batch_process_speaker_matches():
         logger.info("Batch processing complete!")
         logger.info(f"Processed: {processed} speakers")
         logger.info(f"Matches found: {matches_found}")
+        logger.info(f"Skipped by privacy policy: {skipped_by_policy} speakers")
 
         # Show some statistics
         match_count = db.query(SpeakerMatch).count()

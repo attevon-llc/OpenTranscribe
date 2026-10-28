@@ -116,13 +116,15 @@ def backfill_llm_suggested_labels(db: Any, stats: dict[str, Any]) -> None:
     handled_through = after_id
     queued = 0
     for file_id, file_uuid, user_id in files:
-        # The persisted column the Speaker API echoes was written from the old rule.
+        # The persisted column the Speaker API echoes was written from the old rule. It
+        # describes the data, so it is policy-free (voiceprint_names=True): hiding is decided
+        # per read, never written down (#1280 D5).
         for speaker in (
             db.query(Speaker).filter(Speaker.media_file_id == file_id, *_stale_speaker_clause())
         ).all():
-            speaker.resolved_display_name = SpeakerStatusService.compute_speaker_status(speaker)[
-                "resolved_display_name"
-            ]
+            speaker.resolved_display_name = SpeakerStatusService.compute_speaker_status(
+                speaker, voiceprint_names=True
+            )["resolved_display_name"]
         result = queue_transcript_reindex(
             file_id=int(file_id), file_uuid=str(file_uuid), user_id=int(user_id)
         )

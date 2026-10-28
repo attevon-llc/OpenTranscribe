@@ -62,7 +62,9 @@ pytestmark = pytest.mark.unit
 
 
 def _hit(doc_id: str, embedding: list[float] | None) -> dict[str, Any]:
-    return {"_id": doc_id, "_source": {"embedding": embedding}}
+    # A document carries its owner: the privacy policy decides per (user, organization)
+    # whether its vector may be rewritten, and an ownerless document is left alone.
+    return {"_id": doc_id, "_source": {"embedding": embedding, "user_id": 1}}
 
 
 class FakeIndices:

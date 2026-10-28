@@ -10,6 +10,7 @@ import os
 from app.core.config import settings
 from app.core.enums import TranscriptionStage
 from app.db.session_utils import session_scope
+from app.services.privacy.gates import job_privacy_overrides
 from app.transcription.config import LIGHTWEIGHT_MODELS
 from app.utils.task_utils import update_task_status
 
@@ -145,6 +146,9 @@ def _run_transcription_pipeline(
         repetition_penalty=user_settings["repetition_penalty"],
         enable_diarization=enable_diarization,
         vocabulary=_load_file_vocabulary(ctx),
+        # What the privacy policy forbids for this file's owner and organization (fresh read,
+        # restrictions only): no centroids leave the diarizer, no gender is requested.
+        **job_privacy_overrides(ctx.file_id),
     )
 
     # Apply per-task model override if provided.
@@ -269,6 +273,9 @@ def _run_engine_pipeline(
         repetition_penalty=user_settings["repetition_penalty"],
         enable_diarization=enable_diarization,
         vocabulary=_load_file_vocabulary(ctx),
+        # What the privacy policy forbids for this file's owner and organization (fresh read,
+        # restrictions only): no centroids leave the diarizer, no gender is requested.
+        **job_privacy_overrides(ctx.file_id),
     )
 
     # Honour admin-pinned model (same validation as _run_transcription_pipeline)
@@ -399,6 +406,9 @@ def _run_transcribe_only_stage(
         repetition_penalty=user_settings["repetition_penalty"],
         enable_diarization=enable_diarization,
         vocabulary=_load_file_vocabulary(ctx),
+        # What the privacy policy forbids for this file's owner and organization (fresh read,
+        # restrictions only): no centroids leave the diarizer, no gender is requested.
+        **job_privacy_overrides(ctx.file_id),
     )
 
     if (

@@ -696,6 +696,15 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE tablename = 'task' AND indexname = 'uq_task_active_per_file_type')"
     )
 
+    # v449: who wrote a speaker's name/link, and the record of how it and the recommendation came
+    # to be (issue #1280). Keyed on the LAST object the revision creates, the foreign key of
+    # ``identity_source_user_id`` (after the columns, their CHECK and the backfill, which run in
+    # the same transaction).
+    has_identity_source = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'speaker_identity_source_user_id_fkey')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -765,8 +774,20 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_legal_acceptance
         and has_takedown_origin
     )
-    # v448: same as v447 plus the one-active-row-per-file-step guard. The newest revision on
-    # this chain, so this is the top of the ladder.
+    # v449: same as v448 plus speaker.identity_source. The newest revision on this chain, so
+    # this is the top of the ladder.
+    if (
+        matches_v442
+        and has_takedown_notice
+        and has_takedown_notification
+        and has_organization_policy
+        and has_collection_visibility
+        and has_content_hold
+        and has_task_active_unique
+        and has_identity_source
+    ):
+        return "v449_add_speaker_identity_source"
+    # v448: same as v447 plus the one-active-row-per-file-step guard.
     if (
         matches_v442
         and has_takedown_notice

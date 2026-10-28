@@ -172,17 +172,48 @@ def _current_speaker_name(speaker_id: int) -> str | None:
                     Speaker.suggested_name,
                     Speaker.confidence,
                     Speaker.suggestion_source,
+                    Speaker.verified,
+                    Speaker.identity_source,
+                    Speaker.media_file_id,
                 )
                 .filter(Speaker.id == speaker_id)
                 .first()
             )
+            # Inside the session: the label asks the privacy policy about the row's file.
+            return canonical_speaker_label_for_row(row, db) if row else None
     except Exception as exc:  # noqa: BLE001 — fall back to the dispatched name
         logger.warning(f"Could not re-resolve speaker {speaker_id} at run time: {exc}")
         return None
 
-    if not row:
+
+def _file_if_voiceprints_off(file_uuid: str) -> tuple[int, int] | None:
+    """``(file id, owner id)`` when this file's voiceprints are off RIGHT NOW, else ``None``.
+
+    Asked at run time, with a fresh read: the switch may have flipped between dispatch and
+    execution. An unknown file or an unreadable policy: an unknown file returns ``None`` (the
+    rewrite below simply matches nothing), an unreadable policy counts as off
+    (``privacy.gates.voiceprints_allowed`` fails closed), so the file is rebuilt rather than
+    patched.
+    """
+    try:
+        from app.db.session_utils import session_scope
+        from app.models.media import MediaFile
+        from app.services.privacy.gates import voiceprints_allowed
+
+        with session_scope() as db:
+            row = (
+                db.query(MediaFile.id, MediaFile.user_id)
+                .filter(MediaFile.uuid == file_uuid)
+                .first()
+            )
+            if row is None:
+                return None
+            if voiceprints_allowed(int(row[0]), db):
+                return None
+            return int(row[0]), int(row[1])
+    except Exception as exc:  # noqa: BLE001 — fall back to the in-place rewrite
+        logger.warning(f"Could not read the voiceprint policy of file {file_uuid}: {exc}")
         return None
-    return canonical_speaker_label_for_row(row)
 
 
 def _current_file_title(file_uuid: str) -> str | None:
@@ -337,6 +368,29 @@ def propagate_speaker_rename(
     stale = [name for name in dict.fromkeys(old_names or []) if name and name != new_name]
     if not file_uuid or not new_name or not stale:
         return {"status": "skipped", "reason": "nothing_to_rename", "updated": 0}
+
+    # While the file's voiceprints are off the index may hold the label a voiceprint made
+    # and the policy now hides, so the `old_names` computed without that knowledge would
+    # match nothing and the rewrite would log success over a stale index. Rebuild the file
+    # from Postgres instead: the same debounced reindex a switch flip queues.
+    off_file = _file_if_voiceprints_off(file_uuid)
+    if off_file is not None:
+        from app.services.search.reindex_dispatch import queue_transcript_reindex
+
+        outcome = queue_transcript_reindex(
+            file_id=off_file[0], file_uuid=file_uuid, user_id=off_file[1]
+        )
+        logger.info(
+            f"Speaker rename on file {file_uuid} (voiceprints off): reindex {outcome.value}"
+        )
+        # ALREADY_PENDING is as good as queued: the pending rebuild reads Postgres when it runs.
+        queued = outcome.value != "failed"
+        return {
+            "status": "reindex_queued" if queued else "failed",
+            "file_uuid": file_uuid,
+            "dispatch": outcome.value,
+            "updated": 0,
+        }
 
     client = get_opensearch_client()
     if not client:

@@ -1957,6 +1957,7 @@ class TranscriptIndexingService:
             from app.db.session_utils import session_scope
             from app.models.media import MediaFile
             from app.services.ingest_artifacts import generate_file_artifacts
+            from app.services.ingest_artifacts.service import hidden_speaker_names
 
             with session_scope() as db:
                 media_file = db.query(MediaFile).filter(MediaFile.id == file_id).one_or_none()
@@ -1973,6 +1974,10 @@ class TranscriptIndexingService:
                 # its `source_fingerprint` short-circuit makes this call warm.
                 row = generate_file_artifacts(db, file_id)
                 facts = dict(row.facts or {}) if row is not None else {}
+                # The stored summary may quote a speaker name the file's policy hides
+                # while voiceprints are off: the INDEXED copy says the diarizer label
+                # instead (#1280). The stored text is not rewritten.
+                name_masks = hidden_speaker_names(db, file_id) if summary_data else {}
 
             documents = digest_mapping.build_summary_documents(
                 file_uuid=file_uuid,
@@ -1980,6 +1985,7 @@ class TranscriptIndexingService:
                 summary_data=summary_data,
                 facts=facts,
                 base_metadata=base_metadata,
+                name_masks=name_masks,
             )
             ids = digest_mapping.summary_document_ids(file_uuid, summary_data)
             written = 0

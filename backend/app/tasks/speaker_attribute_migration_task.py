@@ -79,28 +79,74 @@ def _get_all_files_with_speakers(db) -> list:
     )
 
 
-def _reset_all_speaker_attributes(db) -> int:
+def _reset_all_speaker_attributes(db, exclude_file_ids: frozenset[int] = frozenset()) -> int:
     """Reset attributes_predicted_at for all speakers to enable full reprocessing.
+
+    ``exclude_file_ids`` are files whose speakers must keep what they hold: gender inference is
+    forbidden for them (issue #1280), so a reset would destroy an inferred value that switching
+    a layer back on is meant to restore. Turning a layer off hides data; only the audited purge
+    deletes it.
 
     Returns the number of speakers reset.
     """
     from app.models.media import Speaker
 
-    count = (
-        db.query(Speaker)
-        .filter(Speaker.attributes_predicted_at.isnot(None))
-        .update(
-            {
-                Speaker.attributes_predicted_at: None,
-                Speaker.predicted_gender: None,
-                Speaker.predicted_age_range: None,
-                Speaker.attribute_confidence: None,
-            },
-            synchronize_session=False,
-        )
+    query = db.query(Speaker).filter(Speaker.attributes_predicted_at.isnot(None))
+    if exclude_file_ids:
+        query = query.filter(Speaker.media_file_id.notin_(exclude_file_ids))
+    count = query.update(
+        {
+            Speaker.attributes_predicted_at: None,
+            Speaker.predicted_gender: None,
+            Speaker.predicted_age_range: None,
+            Speaker.attribute_confidence: None,
+        },
+        synchronize_session=False,
     )
     db.commit()
     return int(count)
+
+
+def _partition_by_gender_policy(db, files: list) -> tuple[list, list]:
+    """Split ``files`` into (gender inference allowed, forbidden) for their owners' scopes.
+
+    The decision depends only on (owner, organization), so it is resolved once per scope. A
+    scope whose policy cannot be read lands in the forbidden half (fail closed).
+    """
+    from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags
+
+    verdict: dict[tuple[int, int | None], bool] = {}
+    allowed: list = []
+    denied: list = []
+    for media_file in files:
+        scope = (
+            int(media_file.user_id),
+            int(media_file.organization_id) if media_file.organization_id is not None else None,
+        )
+        if scope not in verdict:
+            verdict[scope] = resolve_speaker_attribute_flags(
+                db, scope[0], organization_id=scope[1]
+            ).gender_prediction_allowed
+        (allowed if verdict[scope] else denied).append(media_file)
+    return allowed, denied
+
+
+def _gender_allowed_for_uuid(file_uuid: str) -> bool:
+    """May gender be inferred for this file right now (fresh read, file's own organization)?
+
+    A file that no longer exists reads as allowed so that ``prepare_file`` reports it as the
+    failure it is; nothing can be written for a file that is gone.
+    """
+    from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags_for_file
+    from app.utils.uuid_helpers import get_file_by_uuid
+
+    with session_scope() as db:
+        media_file = get_file_by_uuid(db, file_uuid)
+        if media_file is None:
+            return True
+        return resolve_speaker_attribute_flags_for_file(
+            db, int(media_file.id)
+        ).gender_prediction_allowed
 
 
 # ---------------------------------------------------------------------------
@@ -116,10 +162,27 @@ def _gender_result_writer(
 
     Marks ALL speakers as attempted (attributes_predicted_at = now), even
     those with no valid segments, so they don't perpetually show as pending.
+
+    Writes nothing, and stamps nothing, when gender inference is not permitted for the
+    file's owner and organization (issue #1280); returns 0.
     """
     from datetime import datetime
 
     from app.models.media import Speaker
+    from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags_for_file
+
+    # The final authority, read at the write: a run planned before a layer was switched off
+    # (or an inference that outlived the switch) must leave the speakers untouched, and that
+    # includes NOT stamping attributes_predicted_at so a later opt-in still finds them pending.
+    with session_scope() as db:
+        flags = resolve_speaker_attribute_flags_for_file(db, prepared.media_file_id)
+    if not flags.gender_prediction_allowed:
+        logger.info(
+            "Gender write skipped for %s: not permitted (locked_by=%s)",
+            prepared.file_uuid,
+            flags.gender_locked_by,
+        )
+        return 0
 
     gender_results = results_by_model.get("gender", [])
 
@@ -260,18 +323,33 @@ def migrate_speaker_attributes_task(self, user_id: int, force: bool = False):
         # session_scope's exit commit is then a harmless no-op. Reads use the same scope.
         with session_scope() as db:
             if force:
-                reset_count = _reset_all_speaker_attributes(db)
+                candidates = _get_all_files_with_speakers(db)
+                files_to_process, forbidden = _partition_by_gender_policy(db, candidates)
+                reset_count = _reset_all_speaker_attributes(
+                    db, frozenset(int(f.id) for f in forbidden)
+                )
                 logger.info("Force mode: reset %d speaker attributes", reset_count)
-                files_to_process = _get_all_files_with_speakers(db)
             else:
-                files_to_process = _get_files_needing_attribute_detection(db)
+                candidates = _get_files_needing_attribute_detection(db)
+                files_to_process, forbidden = _partition_by_gender_policy(db, candidates)
+            skipped_by_policy = len(forbidden)
+            if skipped_by_policy:
+                logger.info(
+                    "Speaker attribute migration: %d files skipped, gender inference is not "
+                    "permitted for their owner or organization",
+                    skipped_by_policy,
+                )
             total_files = len(files_to_process)
 
             if total_files == 0:
                 logger.info("No files need speaker attribute detection")
                 if r:
                     r.delete(lock_key)
-                return {"status": "skipped", "message": "No files to process"}
+                return {
+                    "status": "skipped",
+                    "message": "No files to process",
+                    "skipped_by_policy": skipped_by_policy,
+                }
 
             file_uuids = [str(f.uuid) for f in files_to_process]
 
@@ -340,6 +418,7 @@ def migrate_speaker_attributes_task(self, user_id: int, force: bool = False):
             "status": "started",
             "message": f"Dispatched {len(batches)} batches ({total_files} files)",
             "total_files": total_files,
+            "skipped_by_policy": skipped_by_policy,
             "task_id": task_id,
         }
 
@@ -400,10 +479,18 @@ def detect_speaker_attributes_batch_task(
 
     # Phase 1: Prepare all files
     prepared_files: list[tuple[str, PreparedFile]] = []
+    skipped_by_policy = 0
     for file_uuid in file_uuids:
         if not attribute_migration_progress.is_running():
             break
         try:
+            if not _gender_allowed_for_uuid(file_uuid):
+                # The orchestrator filtered these, but the switch may have flipped while the
+                # batch sat in the queue (issue #1280). Count it done: it is not a failure.
+                skipped_by_policy += 1
+                attribute_migration_progress.increment_processed(success=True)
+                _emit_attr_progress(tracker, target_user, total_files)
+                continue
             prepared = prepare_file(file_uuid)
             if prepared is None:
                 attribute_migration_progress.increment_processed(success=True)
@@ -419,7 +506,11 @@ def detect_speaker_attributes_batch_task(
     if not prepared_files:
         logger.info("Batch %d: no files to process after preparation", batch_index)
         _emit_attr_progress(tracker, target_user, total_files)
-        return {"status": "empty", "batch_index": batch_index}
+        return {
+            "status": "empty",
+            "batch_index": batch_index,
+            "skipped_by_policy": skipped_by_policy,
+        }
 
     # Phase 2: Pipelined I/O + GPU inference (model cached per process)
     from app.services.speaker_attribute_service import get_cached_attribute_service
@@ -477,4 +568,5 @@ def detect_speaker_attributes_batch_task(
     return {
         "status": "success",
         "batch_index": batch_index,
+        "skipped_by_policy": skipped_by_policy,
     }

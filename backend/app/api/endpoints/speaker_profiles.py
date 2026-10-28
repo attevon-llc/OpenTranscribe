@@ -29,6 +29,8 @@ from app.services.opensearch_service import update_speaker_collections
 from app.services.permission_service import PermissionService
 from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
+from app.services.privacy.redact_view import PrivacyView
+from app.services.privacy.redact_view import derived_profile_genders
 from app.services.speaker_matching_service import ConfidenceLevel
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.services.speaker_profile_rename import apply_profile_name_to_speakers
@@ -114,6 +116,19 @@ def list_speaker_profiles(
 
         profile_ids = [p.id for p in profiles]
 
+        # A link a voiceprint made is not counted while its file's voiceprints are off
+        # (#1280): the profile would otherwise report appearances the speaker pages hide.
+        # Decided per speaker by its FILE's scope; a person's own link is always counted.
+        from sqlalchemy import select
+
+        from app.services.privacy.redact_view import PrivacyView
+        from app.services.privacy.redact_view import machine_identity_clauses
+
+        _name_hidden, link_hidden = machine_identity_clauses(
+            PrivacyView(db),
+            select(Speaker.media_file_id).where(Speaker.profile_id.in_(profile_ids)),
+        )
+
         # Batch query: media count and instance count per profile (1 query)
         count_rows = (
             db.query(
@@ -121,7 +136,7 @@ def list_speaker_profiles(
                 sa_func.count(sa_func.distinct(Speaker.media_file_id)).label("media_count"),
                 sa_func.count(Speaker.id).label("instance_count"),
             )
-            .filter(Speaker.profile_id.in_(profile_ids))
+            .filter(Speaker.profile_id.in_(profile_ids), ~link_hidden)
             .group_by(Speaker.profile_id)
             .all()
         )
@@ -129,36 +144,12 @@ def list_speaker_profiles(
             row.profile_id: (row.media_count, row.instance_count) for row in count_rows
         }
 
-        # Batch query: most common gender per profile using window function (1 query).
-        #
-        # This is the DERIVED gender — a majority vote over the profile's member
-        # speakers. It is the fallback, not the answer: a gender the user explicitly
-        # CONFIRMED on the profile wins (see the COALESCE below, issue #543).
-        gender_subq = (
-            db.query(
-                Speaker.profile_id,
-                Speaker.predicted_gender,
-                sa_func.count().label("cnt"),
-                sa_func.row_number()
-                .over(
-                    partition_by=Speaker.profile_id,
-                    order_by=sa_func.count().desc(),
-                )
-                .label("rn"),
-            )
-            .filter(
-                Speaker.profile_id.in_(profile_ids),
-                Speaker.predicted_gender.isnot(None),
-            )
-            .group_by(Speaker.profile_id, Speaker.predicted_gender)
-            .subquery()
-        )
-        gender_rows = (
-            db.query(gender_subq.c.profile_id, gender_subq.c.predicted_gender)
-            .filter(gender_subq.c.rn == 1)
-            .all()
-        )
-        gender_by_profile: dict[int, str] = {row[0]: row[1] for row in gender_rows}
+        # Most common gender per profile, as the privacy policy allows it (#1280): this is
+        # the DERIVED gender, a majority vote over the member speakers. A profile whose
+        # owner scope has gender inference off is voted on by CONFIRMED genders only. It is
+        # the fallback, not the answer: a gender the user explicitly CONFIRMED on the
+        # profile wins (see `predicted_gender` below, issue #543).
+        gender_by_profile = derived_profile_genders(db, profiles)
 
         # Batch avatar URLs
         from app.services.minio_service import get_file_url
@@ -506,7 +497,7 @@ def assign_speaker_to_profile(
 
         # Assign speaker to profile
         updated_speaker = matching_service.assign_speaker_to_profile(
-            int(speaker_id), int(profile_id), confidence
+            int(speaker_id), int(profile_id), confidence, user_id=int(current_user.id)
         )
 
         # ─── POST-COMMIT REGION ───────────────────────────────────────────────
@@ -581,6 +572,11 @@ def _get_embedding_suggestions(
 
     speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
     if not speaker:
+        return suggestions
+
+    # Privacy policy (#1280): voiceprints off for the file's owner or organization means no
+    # kNN at all (the LLM suggestions are transcript-derived and are added by the caller).
+    if not PrivacyView(db).voiceprints(int(speaker.media_file_id)).enabled:
         return suggestions
 
     speaker_embedding = get_speaker_embedding(str(speaker.uuid))
@@ -721,7 +717,9 @@ def get_speaker_profile_suggestions(
         # Compute accessible profiles for cross-user matching
         # The request's tenant scope (#1027): an org request sees its org's profiles, a
         # personal one only org-less profiles — in SQL here and in the kNN below.
-        accessible_ids = PermissionService.get_accessible_profile_ids(
+        # Matching candidates, not visibility: a shared profile whose owner switched
+        # voiceprints off (or whose share consent is denied) is not matched against.
+        accessible_ids = PermissionService.get_matchable_profile_ids(
             db, current_user.id, organization_id=ctx.org_id
         )
 

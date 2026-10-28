@@ -41,6 +41,8 @@ export async function purgeTenantDataCaches(): Promise<void> {
     import('$stores/chat').then(({ chatStore }) => chatStore.reset()),
     // The processing card's missed-frame throttle is keyed by the previous tenant's file ids.
     import('$lib/notifications/reconcile').then((m) => m.resetReconcileThrottle()),
+    // The policy of the previous tenant's files and organization (issue #1280).
+    import('$stores/privacyPolicy').then((m) => m.resetEffectivePrivacy()),
   ]);
 }
 

@@ -139,6 +139,9 @@ second client-side exporter believing this exception still applies.
 - `src/components/ui` — shared primitives (see its CLAUDE.md). `src/lib/utils` — pure helpers
   (time formatting lives ONLY in `formatting.ts`). `src/lib/api` — typed API clients.
   `src/stores` — Svelte stores. `src/routes` — pages.
+- `src/components/privacy` — the privacy-controls pieces (switch card, typed-`PURGE` dialog, speaker notice;
+  see its CLAUDE.md); the panels that use them are in `src/components/settings`. User docs:
+  `docs-site/docs/features/privacy-controls.md`.
 - `src/components/chat` — RAG chat surface (see its CLAUDE.md). Assistant output renders
   through `renderChatMarkdown`'s dedicated DOMPurify profile, which blocks relative URLs so
   model text can never mint an app-internal link. Never route it through

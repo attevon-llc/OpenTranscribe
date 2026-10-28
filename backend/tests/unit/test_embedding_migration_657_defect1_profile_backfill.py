@@ -128,7 +128,7 @@ class TestFinalizeCallsProfileBackfillBeforeGuard:
             "get_speaker_index_v4": lambda: "speakers_v4",
             "get_speaker_index": lambda: "speakers",
             "migrate_profile_documents_to_v4": _fake_backfill,
-            "_count_profile_docs": lambda client_arg, index: 0,
+            "_count_profile_docs": lambda client_arg, index, **_kw: 0,
             "send_ws_event": lambda *a, **k: None,
         }
         with (

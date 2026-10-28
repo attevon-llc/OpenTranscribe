@@ -309,20 +309,22 @@ class SpeakerEmbeddingService:
         except Exception as ffmpeg_err:
             logger.debug(f"FFmpeg failed ({ffmpeg_err}), trying torchaudio")
 
-        # 2. torchaudio (when backends are available). Absent entirely in lite since
-        # issue #660 — ImportError/ModuleNotFoundError falls through to scipy below
-        # exactly like the "no backend" torchaudio failure it already tolerated.
+        # 2. torchaudio. Absent entirely in lite since issue #660, and on torchaudio 2.11
+        # `load` goes through torchcodec, whose native library does not load in our images
+        # (RuntimeError "Could not load libtorchcodec" — no mention of a "backend"). Any
+        # loader failure of these types must fall through to scipy rather than abort, so
+        # the message is deliberately not inspected. The text can embed a path, so only
+        # the exception type is logged above DEBUG.
         try:
             import torchaudio
 
             waveform, sr = torchaudio.load(audio_path)
             return waveform, int(sr)
-        except (ImportError, ModuleNotFoundError) as ta_missing:
-            logger.debug(f"torchaudio not installed ({ta_missing}), trying scipy")
-        except Exception as ta_err:
-            if "backend" not in str(ta_err).lower() and "already_closed" not in str(ta_err).lower():
-                raise
-            logger.debug(f"torchaudio failed ({ta_err}), trying scipy")
+        except (ImportError, RuntimeError, OSError, ValueError) as ta_err:
+            logger.warning(
+                f"torchaudio loader failed ({type(ta_err).__name__}), trying scipy fallback"
+            )
+            logger.debug(f"torchaudio failure detail: {ta_err}")
 
         # 3. scipy (WAV files only)
         from scipy.io import wavfile

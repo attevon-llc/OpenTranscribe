@@ -603,3 +603,15 @@ class TestFinalizeV4MigrationProfileGuard:
 
         assert result["status"] == "success"
         mock_swap.assert_called_once()
+
+
+@pytest.fixture(autouse=True)
+def _writers_run_under_an_allowing_privacy_policy(monkeypatch):
+    """These tests pin the writer's aggregation, not the privacy gate.
+
+    Their prepared files carry invented ids that name no row, which the policy (rightly)
+    reads as "deny". The gate has its own tests in ``test_embedding_migration_policy``.
+    """
+    monkeypatch.setattr(
+        "app.tasks.embedding_migration_v4._file_skipped_by_policy", lambda media_file_id: False
+    )

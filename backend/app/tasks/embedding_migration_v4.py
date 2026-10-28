@@ -40,6 +40,8 @@ from app.models.media import MediaFile
 from app.services.embedding_mode_service import MODE_V4
 from app.services.embedding_mode_service import EmbeddingModeService
 from app.services.migration_progress_service import migration_progress
+from app.services.privacy.policy import voiceprints_allowed_for_file
+from app.services.privacy.redact_view import PrivacyView
 from app.services.speaker_analysis_models import SegmentResult
 from app.tasks.migration_pipeline import PreparedFile
 from app.utils.websocket_notify import send_ws_event
@@ -291,6 +293,86 @@ def _build_speaker_segments(db, media_file_id: int) -> dict[int, list[dict[str, 
 
 
 # ---------------------------------------------------------------------------
+# Privacy policy (#1280): a scope with voiceprints off is skipped, not migrated
+# ---------------------------------------------------------------------------
+
+#: Redis counter of files this migration run skipped because their owner or organization has
+#: voiceprints switched off. Read (and cleared) by ``finalize_v4_migration_task``, which
+#: reports it so an admin sees that the swapped-in index holds no voiceprints for them.
+_SKIPPED_BY_POLICY_KEY = "embedding_migration:skipped_by_policy"
+
+
+def _count_skipped_by_policy() -> None:
+    try:
+        from app.core.redis import get_redis
+
+        r = get_redis()
+        r.incr(_SKIPPED_BY_POLICY_KEY)
+        r.expire(_SKIPPED_BY_POLICY_KEY, 86400)
+    except Exception as e:
+        logger.warning("Could not count a policy-skipped migration file: %s", e)
+
+
+def _take_skipped_by_policy() -> int:
+    try:
+        from app.core.redis import get_redis
+
+        r = get_redis()
+        raw = r.get(_SKIPPED_BY_POLICY_KEY)
+        r.delete(_SKIPPED_BY_POLICY_KEY)
+        return int(raw or 0)
+    except Exception as e:
+        logger.warning("Could not read the policy-skipped migration count: %s", e)
+        return 0
+
+
+def _file_skipped_by_policy(media_file_id: int) -> bool:
+    """True (and counted) when ``media_file_id``'s scope has voiceprints off.
+
+    Asked fresh from a short session of its own, so a switch flipped mid-migration is honoured
+    for every file not yet written. An unreadable policy is a skip (fail closed).
+    """
+    with session_scope() as db:
+        allowed = voiceprints_allowed_for_file(db, int(media_file_id))
+    if not allowed:
+        _count_skipped_by_policy()
+    return not allowed
+
+
+def _scopes_off_by_policy() -> list[tuple[int, int | None]]:
+    """Every (owner, organization) scope that owns files or profiles and has voiceprints off."""
+    from app.models.media import SpeakerProfile
+
+    with session_scope() as db:
+        pairs: set[tuple[int, int | None]] = set()
+        for model in (MediaFile, SpeakerProfile):
+            for uid, org in db.query(model.user_id, model.organization_id).distinct().all():
+                pairs.add((int(uid), int(org) if org is not None else None))
+        view = PrivacyView(db)
+        return sorted(
+            (p for p in pairs if not view.voiceprints_for_scope(p[0], p[1]).enabled),
+            key=lambda p: (p[0], -1 if p[1] is None else p[1]),
+        )
+
+
+def _off_scope_exclusion(off_scopes: list[tuple[int, int | None]]) -> list[dict[str, Any]]:
+    """``must_not`` clauses matching every document of a scope that has voiceprints off.
+
+    One clause per organization (with that organization's off users in a ``terms``), so the
+    clause count stays small however many users switched off.
+    """
+    from app.services.opensearch_service.client import _speaker_org_filter_clauses
+
+    users_by_org: dict[int | None, list[int]] = {}
+    for uid, org in off_scopes:
+        users_by_org.setdefault(org, []).append(uid)
+    return [
+        {"bool": {"filter": [{"terms": {"user_id": users}}, *_speaker_org_filter_clauses(org)]}}
+        for org, users in users_by_org.items()
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Bulk-write helper
 # ---------------------------------------------------------------------------
 
@@ -348,6 +430,15 @@ def _embedding_result_writer(
     if not embedding_results:
         return 0
 
+    # Privacy policy (#1280): the last stop before the write, asked fresh. Counted and
+    # reported at finalize; the file still counts as processed so the migration can finish.
+    if _file_skipped_by_policy(prepared.media_file_id):
+        logger.info(
+            "v4 migration: file %s skipped by privacy policy (no voiceprint written)",
+            prepared.media_file_id,
+        )
+        return 0
+
     # Group embeddings by speaker
     speaker_embeddings: dict[int, list] = {}
     for sr in embedding_results:
@@ -400,6 +491,12 @@ def _embedding_result_writer(
                 "created_at": now,
                 "updated_at": now,
                 "embedding": aggregated.tolist(),
+                # Org files only: a personal document carries no field (the personal gate).
+                **(
+                    {"organization_id": prepared.organization_id}
+                    if prepared.organization_id is not None
+                    else {}
+                ),
             }
         )
 
@@ -655,6 +752,10 @@ def extract_v4_embeddings_batch_task(
             prepared = prepare_file(fuuid, include_profile=True)
             if prepared is None:
                 # No speakers — still counts as processed
+                migration_progress.increment_processed(success=True)
+                _emit_progress(tracker, target_user, total_files)
+            elif _file_skipped_by_policy(prepared.media_file_id):
+                # Privacy policy (#1280): no GPU time is spent on a scope that is off.
                 migration_progress.increment_processed(success=True)
                 _emit_progress(tracker, target_user, total_files)
             else:
@@ -945,8 +1046,24 @@ def migrate_profile_documents_to_v4(client, v4_index: str) -> int:
             )
             profile_names = {row.id: row.name for row in rows}
 
+    # Privacy policy (#1280): a profile voiceprint is not written for a scope that is off.
+    with session_scope() as db:
+        profile_view = PrivacyView(db)
+        profiles_allowed = {
+            profile_uuid: (
+                entry.get("user_id") is not None
+                and profile_view.voiceprints_for_scope(
+                    int(entry["user_id"]), entry.get("organization_id")
+                ).enabled
+            )
+            for profile_uuid, entry in profiles.items()
+        }
+
     written = 0
     for profile_uuid, entry in profiles.items():
+        if not profiles_allowed[profile_uuid]:
+            logger.info("Profile backfill: %s skipped by privacy policy", profile_uuid)
+            continue
         try:
             vectors = np.array(entry["vectors"], dtype=float)
             weights = np.array(entry["weights"], dtype=float)
@@ -973,7 +1090,9 @@ def migrate_profile_documents_to_v4(client, v4_index: str) -> int:
     return written
 
 
-def _count_profile_docs(client, index: str) -> int | None:
+def _count_profile_docs(
+    client, index: str, *, exclude: list[dict[str, Any]] | None = None
+) -> int | None:
     """Count `document_type: "profile"` docs in an index.
 
     Fail-closed: returns ``None`` (never ``0``) whenever the count cannot be
@@ -987,7 +1106,18 @@ def _count_profile_docs(client, index: str) -> int | None:
     try:
         if not client.indices.exists(index=index):
             return None
-        return int(client.count(index=index, body=_PROFILE_DOC_QUERY)["count"])
+        if exclude:
+            body: dict[str, Any] = {
+                "query": {
+                    "bool": {
+                        "filter": [_PROFILE_DOC_QUERY["query"]],
+                        "must_not": exclude,
+                    }
+                }
+            }
+        else:
+            body = _PROFILE_DOC_QUERY
+        return int(client.count(index=index, body=body)["count"])
     except Exception as e:
         logger.error(f"Profile-doc count failed for index '{index}': {e}")
         return None
@@ -1036,10 +1166,30 @@ def finalize_v4_migration_task(self, user_id: int = 1):
         v3_index = get_active_versioned_index()  # e.g. "speakers_v3" or "speakers"
         import contextlib
 
+        # Privacy policy (#1280): a scope with voiceprints off was skipped by the migration
+        # (D5), so the v3 documents of those scopes are not "missing" from v4. They are left
+        # out of both reference counts below; every OTHER scope is still held to the same
+        # guards, so a real loss is still caught. A policy that cannot be read aborts.
+        try:
+            off_scopes = _scopes_off_by_policy()
+        except Exception as e:
+            logger.error(f"Cannot read the privacy policy for finalize: {e}")
+            return {
+                "status": "error",
+                "message": "Cannot read the privacy policy; refusing to swap the index.",
+            }
+        off_exclusion = _off_scope_exclusion(off_scopes)
+
         v3_count = 0
         with contextlib.suppress(Exception):
             if client.indices.exists(index=v3_index):
-                v3_count = client.count(index=v3_index)["count"]
+                if off_exclusion:
+                    v3_count = client.count(
+                        index=v3_index,
+                        body={"query": {"bool": {"must_not": off_exclusion}}},
+                    )["count"]
+                else:
+                    v3_count = client.count(index=v3_index)["count"]
 
         # Count validation: v4 should have at least 50% of v3 docs
         if v3_count > 0 and v4_count < v3_count * 0.5:
@@ -1066,7 +1216,7 @@ def finalize_v4_migration_task(self, user_id: int = 1):
         # The total-doc-count ratio above cannot catch a profile-only loss:
         # v3 legitimately holds more docs than v4 for unrelated reasons, so
         # the ratio absorbs a missing set of profile docs. Check separately.
-        v3_profile_count = _count_profile_docs(client, v3_index)
+        v3_profile_count = _count_profile_docs(client, v3_index, exclude=off_exclusion)
         v4_profile_count = _count_profile_docs(client, v4_index)
 
         if v3_profile_count is None or v4_profile_count is None:
@@ -1114,6 +1264,13 @@ def finalize_v4_migration_task(self, user_id: int = 1):
             "message": "Migration complete",
             "v4_documents": v4_count,
             "v3_preserved_in": v3_index,
+            # Privacy policy (#1280): scopes with voiceprints off were skipped, so the index
+            # now live holds none for them. Their v3 documents are preserved in the backup
+            # index and are not restored into the alias.
+            "skipped_by_policy": {
+                "scopes": len(off_scopes),
+                "files": _take_skipped_by_policy(),
+            },
         }
         send_ws_event(user_id, NOTIFICATION_TYPE_MIGRATION_FINALIZED, result)
         return result

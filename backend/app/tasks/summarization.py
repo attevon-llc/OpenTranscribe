@@ -49,6 +49,7 @@ from app.services.llm_service import LLMService
 from app.services.post_processing_status import announce_started
 from app.services.post_processing_status import report as report_post_processing
 from app.services.post_processing_status import tracks_post_processing
+from app.services.privacy.gates import voiceprints_allowed
 from app.services.redaction.llm_guard import RedactionNotReadyError
 from app.services.redaction.llm_guard import defer_for_redaction
 from app.services.redaction.llm_guard import resolve_llm_masking
@@ -60,7 +61,7 @@ from app.utils.user_settings_helpers import get_user_llm_output_language
 logger = logging.getLogger(__name__)
 
 
-def fingerprint_transcript_segments(transcript_segments) -> str:
+def fingerprint_transcript_segments(transcript_segments, *, voiceprint_names: bool) -> str:
     """The #464 staleness key: identical shape to ``file_facts.source_fingerprint``.
 
     ``ingest_artifacts.service.source_fingerprint`` hashes id/timings/resolved
@@ -76,6 +77,9 @@ def fingerprint_transcript_segments(transcript_segments) -> str:
         transcript_segments: ``TranscriptSegment`` rows (or any duck-typed
             stand-in exposing ``id``/``text``/``start_time``/``end_time``/
             ``speaker``), already ordered by ``(start_time, end_time, id)``.
+        voiceprint_names: The file's voiceprint decision. It is part of the key on purpose:
+            a switch flip changes the speaker labels the summary was written under, so the
+            summary goes stale (#1280).
 
     Returns:
         The SHA-256 hex digest ``chat/mapreduce.scope_digest_hits`` compares
@@ -89,7 +93,7 @@ def fingerprint_transcript_segments(transcript_segments) -> str:
                 "text": str(segment.text or ""),
                 "start_time": float(segment.start_time or 0.0),
                 "end_time": float(segment.end_time or 0.0),
-                "speaker": get_speaker_name(segment),
+                "speaker": get_speaker_name(segment, voiceprint_names=voiceprint_names),
             }
             for segment in transcript_segments
         ]
@@ -446,7 +450,12 @@ def _load_summarization_inputs(
         # #464: the same "has anything changed?" fingerprint the digest tier
         # stores on `file_facts.source_fingerprint`, computed over the SAME
         # rows already fetched above — no extra query.
-        source_fingerprint = fingerprint_transcript_segments(transcript_segments)
+        # Decided once for the file (unreadable = hidden) and used for every label the
+        # prompt, the stats and the fingerprint carry.
+        voiceprint_names = voiceprints_allowed(file_id, db)
+        source_fingerprint = fingerprint_transcript_segments(
+            transcript_segments, voiceprint_names=voiceprint_names
+        )
 
         # Redact PII/profanity before sending to the LLM provider when the
         # owner's (or admin-forced) policy requires it (don't leak to third parties).
@@ -479,7 +488,7 @@ def _load_summarization_inputs(
         # reads ``segment.speaker``/``segment.words``, so it stays inside the
         # read scope. What leaves is a string and a dict.
         full_transcript, speaker_stats = build_transcript_and_stats(
-            transcript_segments, redaction_cfg
+            transcript_segments, redaction_cfg, voiceprint_names=voiceprint_names
         )
 
         update_task_status(db, task_id, "in_progress", progress=0.3)

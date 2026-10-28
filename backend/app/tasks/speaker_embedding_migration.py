@@ -17,7 +17,9 @@ import numpy as np
 from app.core.celery import celery_app
 from app.core.constants import CPUPriority
 from app.core.constants import get_speaker_index
+from app.db.session_utils import session_scope
 from app.services.opensearch_service import get_opensearch_client
+from app.services.privacy import policy as privacy_policy
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,33 @@ SCROLL_TIMEOUT = "5m"
 
 # Tolerance for checking if already normalized
 NORM_TOLERANCE = 0.01
+
+
+class _ScopeGate:
+    """Privacy policy (#1280): may this document's vector be rewritten?
+
+    Rewriting a stored voiceprint is a voiceprint write, so a document of a scope that has
+    voiceprints off is left exactly as it is. The scope is the document's own ``user_id`` /
+    ``organization_id``; a document without an owner cannot be attributed to any scope and
+    is left alone (fail closed). Answers are memoised per scope for one run, and each
+    scope is resolved in a short session of its own.
+    """
+
+    def __init__(self) -> None:
+        self._memo: dict[tuple[int, int | None], bool] = {}
+
+    def permits(self, source: dict[str, Any]) -> bool:
+        user_id = source.get("user_id")
+        if user_id is None:
+            return False
+        org = source.get("organization_id")
+        key = (int(user_id), int(org) if org is not None else None)
+        if key not in self._memo:
+            with session_scope() as db:
+                self._memo[key] = privacy_policy.voiceprint_decision(
+                    db, user_id=key[0], organization_id=key[1]
+                ).enabled
+        return self._memo[key]
 
 
 def _is_normalized(embedding: list[float]) -> bool:
@@ -49,7 +78,7 @@ def _normalize_embeddings_batch(embeddings: list[list[float]]) -> list[list[floa
 
 
 def _process_hits_batch(
-    hits: list[dict[str, Any]], summary: dict[str, Any]
+    hits: list[dict[str, Any]], summary: dict[str, Any], gate: _ScopeGate
 ) -> tuple[list[str], list[list[float]]]:
     """Process a batch of hits and return doc IDs and embeddings needing normalization."""
     embeddings_to_normalize: list[list[float]] = []
@@ -58,9 +87,14 @@ def _process_hits_batch(
     for hit in hits:
         summary["total_found"] += 1
         doc_id = hit["_id"]
-        embedding = hit.get("_source", {}).get("embedding")
+        source = hit.get("_source", {})
+        embedding = source.get("embedding")
 
         if embedding is None:
+            continue
+
+        if not _is_normalized(embedding) and not gate.permits(source):
+            summary["skipped_by_policy"] = summary.get("skipped_by_policy", 0) + 1
             continue
 
         if _is_normalized(embedding):
@@ -141,8 +175,10 @@ def _normalize_index(
     index_name: str,
     batch_size: int,
     summary: dict[str, Any],
+    gate: _ScopeGate | None = None,
 ) -> None:
     """Normalize all embeddings in a single OpenSearch index."""
+    gate = gate or _ScopeGate()
     try:
         if not client.indices.exists(index=index_name):
             logger.info(f"Index {index_name} does not exist, skipping")
@@ -165,7 +201,11 @@ def _normalize_index(
     try:
         response = client.search(
             index=index_name,
-            body={"size": batch_size, "query": {"match_all": {}}, "_source": ["embedding"]},
+            body={
+                "size": batch_size,
+                "query": {"match_all": {}},
+                "_source": ["embedding", "user_id", "organization_id"],
+            },
             scroll=SCROLL_TIMEOUT,
         )
 
@@ -174,7 +214,7 @@ def _normalize_index(
 
         while hits:
             summary["batches_processed"] += 1
-            doc_ids, embeddings_to_normalize = _process_hits_batch(hits, summary)
+            doc_ids, embeddings_to_normalize = _process_hits_batch(hits, summary, gate)
 
             if embeddings_to_normalize:
                 normalized = _normalize_embeddings_batch(embeddings_to_normalize)
@@ -240,6 +280,7 @@ def _run_normalize_embeddings(batch_size: int) -> dict[str, Any]:
         "normalized": 0,
         "failed": 0,
         "batches_processed": 0,
+        "skipped_by_policy": 0,
     }
 
     client = get_opensearch_client()
@@ -261,8 +302,9 @@ def _run_normalize_embeddings(batch_size: int) -> dict[str, Any]:
 
     logger.info("Starting embedding normalization across indices: %s", indices_to_scan)
 
+    gate = _ScopeGate()
     for index_name in indices_to_scan:
-        _normalize_index(client, index_name, batch_size, summary)
+        _normalize_index(client, index_name, batch_size, summary, gate)
 
     logger.info(
         "Speaker embedding normalization completed: "

@@ -12,6 +12,7 @@ from fastapi import Response
 from fastapi import status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import load_only
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
@@ -33,6 +34,12 @@ from app.services.permission_service import PermissionService
 from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
 from app.services.platform_bypass import PlatformBypass
+from app.services.privacy.redact_view import PrivacyView
+from app.services.privacy.redact_view import hide_machine_identities
+from app.services.privacy.redact_view import machine_identity_clauses
+from app.services.privacy.redact_view import redact_speaker_rows
+from app.services.privacy.redact_view import visible_display_name_expr
+from app.services.privacy.redact_view import visible_profile_id_expr
 from app.services.speaker_cleanup import SpeakerCleanupIncompleteError
 from app.services.speaker_cleanup import capture_speaker_impact
 from app.services.speaker_cleanup import carry_blacklist
@@ -40,11 +47,24 @@ from app.services.speaker_cleanup import detach_from_cluster
 from app.services.speaker_cleanup import lift_profile_blacklist
 from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact
+from app.services.speaker_provenance_view import attach_speaker_provenance
+from app.services.speaker_provenance_view import provenance_for_dict
 from app.services.speaker_status_service import SpeakerStatusService
 from app.utils.db_helpers import org_stamp_is
 from app.utils.error_handlers import ErrorHandler
+from app.utils.speaker_identity_detail import ORIGIN_ACCEPTED_SUGGESTION
+from app.utils.speaker_identity_detail import ORIGIN_CONFIRMED
+from app.utils.speaker_identity_detail import ORIGIN_CREATED
+from app.utils.speaker_identity_detail import ORIGIN_PROFILE_CREATED
+from app.utils.speaker_identity_detail import ORIGIN_TYPED
+from app.utils.speaker_identity_source import VOICEPRINT
+from app.utils.speaker_identity_source import after_name_cleared
+from app.utils.speaker_identity_source import after_unlink
+from app.utils.speaker_identity_source import clear_suggestion
+from app.utils.speaker_identity_source import record_human_identity
 from app.utils.speaker_labels import PLACEHOLDER_SPEAKER_NAME_PATTERN
 from app.utils.speaker_labels import canonical_speaker_label_for_row
+from app.utils.speaker_labels import is_assigned_speaker_name
 from app.utils.uuid_helpers import require_profile_in_scope
 from app.utils.uuid_helpers import require_speaker_access
 
@@ -93,7 +113,6 @@ def create_speaker(
 
     new_speaker = Speaker(
         name=speaker.name,
-        display_name=speaker.display_name,
         uuid=speaker_uuid,
         user_id=current_user.id,
         organization_id=media_file.organization_id,
@@ -101,15 +120,19 @@ def create_speaker(
         verified=speaker.verified if speaker.verified is not None else False,
     )
 
-    # If display_name is provided, mark as verified
+    # If display_name is provided, mark as verified. A blank one names no one, so it is not
+    # stored: a name is always stored with the record of the person who gave it.
     if speaker.display_name and speaker.display_name.strip():
+        new_speaker.display_name = speaker.display_name  # type: ignore[assignment]
         new_speaker.verified = True  # type: ignore[assignment]
+        record_human_identity(new_speaker, user_id=current_user.id, origin=ORIGIN_CREATED)
 
     db.add(new_speaker)
     db.commit()
     db.refresh(new_speaker)
 
     # Add computed status fields
+    attach_speaker_provenance(db, [new_speaker], ctx)
     SpeakerStatusService.add_computed_status(new_speaker)
 
     return new_speaker
@@ -266,26 +289,36 @@ def _get_unique_speakers_for_filter(
     from sqlalchemy import not_
     from sqlalchemy import select
 
+    # The files this caller may list speakers of: a caller who sees all in scope gets the
+    # tenant's speakers, others see accessible files only.
+    if bypass.sees_all_in_scope:
+        scope_files = file_ids_in_scope(organization_id)
+    else:
+        scope_files = select(
+            PermissionService.get_accessible_file_ids_subquery(
+                db, current_user.id, organization_id=organization_id
+            )
+        )
+
+    # A name or link a voiceprint made is not offered while that file's voiceprints are off
+    # (issue #1280): the row is listed under its diarizer label like any unnamed speaker, and
+    # reads as unlinked. A person's own name and link are never touched.
+    name_hidden, link_hidden = machine_identity_clauses(PrivacyView(db), scope_files)
+    visible_name = visible_display_name_expr(name_hidden)
+    visible_profile = visible_profile_id_expr(link_hidden)
+
     # "A human gave this speaker a real name." A raw ``SPEAKER_nn`` written into
     # display_name (what an auto-label pass emits) is not one.
     has_human_name = and_(
-        Speaker.display_name.isnot(None),
-        Speaker.display_name != "",
-        not_(Speaker.display_name.op("~")(PLACEHOLDER_SPEAKER_NAME_PATTERN)),
+        visible_name.isnot(None),
+        visible_name != "",
+        not_(visible_name.op("~")(PLACEHOLDER_SPEAKER_NAME_PATTERN)),
     )
     # The exact string this row is offered under, and sent back as ``?speaker=``.
-    label_col = func.coalesce(func.nullif(Speaker.display_name, ""), Speaker.name)
+    label_col = func.coalesce(func.nullif(visible_name, ""), Speaker.name)
 
-    # Build base filters — a caller who sees all in scope gets the tenant's speakers, others
-    # see accessible files only
     base_filter = [] if include_unnamed else [has_human_name]
-    if bypass.sees_all_in_scope:
-        base_filter.append(Speaker.media_file_id.in_(file_ids_in_scope(organization_id)))
-    else:
-        accessible_sq = PermissionService.get_accessible_file_ids_subquery(
-            db, current_user.id, organization_id=organization_id
-        )
-        base_filter.append(Speaker.media_file_id.in_(select(accessible_sq)))
+    base_filter.append(Speaker.media_file_id.in_(scope_files))
 
     quarantined_ids = select(MediaFile.id).where(MediaFile.is_quarantined.is_(True))
     base_filter.append(~Speaker.media_file_id.in_(quarantined_ids))
@@ -295,11 +328,11 @@ def _get_unique_speakers_for_filter(
         # "SPEAKER_01" into the picker matches nothing it is showing.
         base_filter.append(label_col.ilike(f"%{q.strip()}%"))
     if profile_id is not None:
-        base_filter.append(Speaker.profile_id == profile_id)
+        base_filter.append(visible_profile == profile_id)
     if is_profile is True:
-        base_filter.append(Speaker.profile_id.isnot(None))
+        base_filter.append(visible_profile.isnot(None))
     elif is_profile is False:
-        base_filter.append(Speaker.profile_id.is_(None))
+        base_filter.append(visible_profile.is_(None))
 
     bounded_limit = max(1, min(limit, SPEAKER_FILTER_MAX_LIMIT))
     media_count_col = func.count(func.distinct(Speaker.media_file_id))
@@ -312,7 +345,7 @@ def _get_unique_speakers_for_filter(
             unnamed_col.label("is_unnamed"),
             media_count_col.label("media_count"),
             func.min(Speaker.id).label("rep_id"),
-            func.min(Speaker.profile_id).label("profile_id"),
+            func.min(visible_profile).label("profile_id"),
         )
         .filter(*base_filter)
         .group_by(label_col)
@@ -632,6 +665,8 @@ def _build_speaker_dict(
         "metadata_hints": attribute_fields["metadata_hints"],
         # Pre-computed display flags
         **display_flags,
+        # Read-only provenance, attached after the redaction
+        **provenance_for_dict(speaker),
     }
 
     # Add profile information if speaker is assigned to a profile
@@ -643,69 +678,6 @@ def _build_speaker_dict(
         }
 
     return speaker_dict
-
-
-def _process_single_speaker(
-    speaker: Speaker,
-    current_user: User,
-    segment_count: int,
-    db: Session,
-    segment_timestamps: list[dict[str, Any]] | None = None,
-) -> dict[str, Any]:
-    """Process a single speaker and build its response dictionary."""
-    from app.services.smart_speaker_suggestion_service import SmartSpeakerSuggestionService
-
-    # Compute status information using SpeakerStatusService
-    status_info = SpeakerStatusService.compute_speaker_status(speaker)
-    # Use setattr to avoid mypy Column type issues
-    speaker.computed_status = status_info["computed_status"]  # type: ignore[assignment]
-    speaker.status_text = status_info["status_text"]  # type: ignore[assignment]
-    speaker.status_color = status_info["status_color"]  # type: ignore[assignment]
-    speaker.resolved_display_name = status_info["resolved_display_name"]  # type: ignore[assignment]
-    speaker.profile_name = status_info["profile_name"]  # type: ignore[assignment,attr-defined]
-    speaker.profile_status = status_info["profile_status"]  # type: ignore[assignment,attr-defined]
-
-    # Get smart, consolidated speaker suggestions
-    smart_suggestions = SmartSpeakerSuggestionService.consolidate_suggestions(
-        speaker_id=speaker.id,
-        user_id=current_user.id,
-        db=db,
-        confidence_threshold=SPEAKER_SUGGESTION_MIN_CONFIDENCE,
-        max_suggestions=SPEAKER_SUGGESTION_MAX_COUNT,
-    )
-
-    # Format suggestions for API response
-    raw_cross_video_matches = SmartSpeakerSuggestionService.format_for_api(smart_suggestions)
-
-    # Get profile suggestions (all non-LLM suggestions)
-    profile_suggestions = _get_profile_suggestions(raw_cross_video_matches)
-
-    # Cross-video matches: only populated via cross-media API for labeled speakers
-    cross_video_matches: list[dict[str, Any]] = []
-
-    # Compute suggested name
-    suggested_name = _compute_suggested_name(speaker)
-
-    # Get suggestion source
-    suggestion_source = _get_suggestion_source(speaker)
-
-    # Compute display flags
-    display_flags = _compute_display_flags(
-        speaker, suggested_name, suggestion_source, profile_suggestions
-    )
-
-    # Build the speaker dictionary
-    return _build_speaker_dict(
-        speaker,
-        current_user,
-        suggested_name,
-        suggestion_source,
-        profile_suggestions,
-        cross_video_matches,
-        display_flags,
-        segment_count,
-        segment_timestamps,
-    )
 
 
 def _process_single_speaker_with_suggestions(
@@ -889,10 +861,19 @@ def list_speakers(
         from app.services.smart_speaker_suggestion_service import _media_file_org_ids
 
         file_org_map = _media_file_org_ids(db, {int(s.media_file_id) for s in speakers})
+        # Privacy policy (#1280): a file whose owner or organization has voiceprints off gets
+        # no kNN suggestions, its stored unverified voice suggestions are not shown, and an
+        # inferred gender is withheld wherever the gender switch is off. Existing data is
+        # hidden, never deleted (re-enabling the layer brings it back).
+        privacy = PrivacyView(db)
+        voiceprints_off = privacy.voiceprints_off_file_ids(int(s.media_file_id) for s in speakers)
+        redact_speaker_rows(privacy, speakers)
+        attach_speaker_provenance(db, speakers, ctx, view=privacy)
         batch_suggestions = SmartSpeakerSuggestionService.consolidate_suggestions_batch(
             speakers=speakers,
             user_id=current_user.id,
             file_org_map=file_org_map,
+            voiceprints_off_file_ids=voiceprints_off,
             confidence_threshold=SPEAKER_SUGGESTION_MIN_CONFIDENCE,
             max_suggestions=SPEAKER_SUGGESTION_MAX_COUNT,
         )
@@ -1082,20 +1063,31 @@ def debug_cross_media_data(
             )
 
         # Get all speakers for this user (project only needed fields)
+        # Entities (not bare columns) so the privacy view can withhold what a voiceprint
+        # made: a name or link of a file whose voiceprints are off is not reported (#1280).
         speaker_rows = (
-            db.query(
-                Speaker.id,
-                Speaker.name,
-                Speaker.display_name,
-                Speaker.profile_id,
-                Speaker.media_file_id,
-                Speaker.verified,
-                Speaker.confidence,
+            db.query(Speaker)
+            .options(
+                load_only(
+                    Speaker.id,
+                    Speaker.name,
+                    Speaker.display_name,
+                    Speaker.profile_id,
+                    Speaker.media_file_id,
+                    Speaker.verified,
+                    Speaker.confidence,
+                    Speaker.identity_source,
+                )
             )
             .filter(Speaker.user_id == current_user.id)
             .order_by(Speaker.media_file_id, Speaker.id)
             .all()
         )
+        # id -> identity_source, read now: the commit below expires the loaded rows.
+        withheld = {
+            int(s.id): s.identity_source
+            for s in hide_machine_identities(PrivacyView(db), speaker_rows)
+        }
 
         for s in speaker_rows:
             debug_info["speakers"].append(
@@ -1106,7 +1098,7 @@ def debug_cross_media_data(
                     "profile_id": s.profile_id,
                     "media_file_id": s.media_file_id,
                     "verified": s.verified,
-                    "confidence": s.confidence,
+                    "confidence": None if s.id in withheld else s.confidence,
                 }
             )
 
@@ -1131,7 +1123,13 @@ def debug_cross_media_data(
 
         # Get the index-side view. No session is held across it — the helper does
         # not take one.
-        debug_info.update(_collect_index_debug_documents(current_user.id))
+        index_documents = _collect_index_debug_documents(current_user.id)
+        for document in index_documents.get("opensearch_speakers", []):
+            if document.get("speaker_id") in withheld:
+                document["profile_id"] = None
+                if withheld[document["speaker_id"]] == VOICEPRINT:
+                    document["display_name"] = None
+        debug_info.update(index_documents)
 
         # Add summary analysis
         debug_info["analysis"] = {
@@ -1176,7 +1174,12 @@ def debug_cross_media_by_name(
         if not ctx.bypass.sees_all_in_scope:
             query = query.filter(Speaker.user_id == current_user.id)
         query = query.filter(in_scope)
+        # Matching is on the name and link the caller may see (issue #1280): each row is
+        # judged by its own file's switch, and a voiceprint-made name is not a match.
+        privacy = PrivacyView(db)
         matching_speakers = query.all()
+        hide_machine_identities(privacy, matching_speakers)
+        matching_speakers = [s for s in matching_speakers if s.display_name == speaker_name]
 
         results: dict[str, Any] = {
             "speakers_found": len(matching_speakers),
@@ -1208,6 +1211,10 @@ def debug_cross_media_by_name(
                     profile_q = profile_q.filter(Speaker.user_id == current_user.id)
                 profile_q = profile_q.filter(in_scope)
                 profile_speakers = profile_q.all()
+                hide_machine_identities(privacy, profile_speakers)
+                profile_speakers = [
+                    p for p in profile_speakers if p.profile_id == speaker.profile_id
+                ]
 
                 cross_media_result["method_used"] = "profile_based"
                 cross_media_result["profile_speakers_found"] = len(profile_speakers)
@@ -1237,6 +1244,10 @@ def debug_cross_media_by_name(
                     similar_q = similar_q.filter(Speaker.user_id == current_user.id)
                 similar_q = similar_q.filter(in_scope)
                 similar_speakers = similar_q.all()
+                hide_machine_identities(privacy, similar_speakers)
+                similar_speakers = [
+                    p for p in similar_speakers if p.display_name == speaker.display_name
+                ]
 
                 cross_media_result["method_used"] = "display_name_based"
                 cross_media_result["similar_speakers_found"] = len(similar_speakers)
@@ -1316,6 +1327,10 @@ def get_speaker_cross_media_occurrences(
             db, speaker_uuid, current_user, organization_id=ctx.org_id, bypass=ctx.bypass
         )
 
+        # What this speaker's file lets the caller see of its name and link. A name or
+        # link a voiceprint made is not an identity to match on while that file's
+        # voiceprints are off (issue #1280); the matching below uses the redacted values.
+        hide_machine_identities(PrivacyView(db), [speaker])
         if speaker.profile_id:
             result = _get_profile_based_occurrences(
                 speaker, current_user, db, ctx.org_id, bypass=ctx.bypass
@@ -1620,6 +1635,8 @@ def merge_speakers(
     raise_if_incomplete(source_residual)
 
     # Add computed status fields
+    redact_speaker_rows(db, [target_speaker])
+    attach_speaker_provenance(db, [target_speaker], ctx)
     SpeakerStatusService.add_computed_status(target_speaker)
 
     return target_speaker
@@ -1643,7 +1660,9 @@ def get_speaker(
         db, speaker_uuid, current_user, organization_id=ctx.org_id, bypass=ctx.bypass
     )
 
-    # Add computed status fields
+    # Privacy policy (#1280): hide what the owner's current switches forbid showing.
+    redact_speaker_rows(db, [speaker])
+    attach_speaker_provenance(db, [speaker], ctx)
     SpeakerStatusService.add_computed_status(speaker)
 
     return speaker
@@ -1672,14 +1691,31 @@ def _handle_profile_embedding_updates(
         The cleanup's residuals; empty when every aggregate was rebuilt or erased.
     """
     from app.services.speaker_cleanup import SpeakerImpact
+    from app.services.speaker_cleanup import profile_move_impact
+
+    # Privacy policy (#1280): only the WRITE side is gated. A speaker leaving a profile or
+    # cluster is reconciled whatever the switch says (the old aggregate still averages its
+    # voice, #1214); what is declined while voiceprints are off is folding a voice IN.
+    file_id = db.query(Speaker.media_file_id).filter(Speaker.id == speaker_id).scalar()
+    voiceprints_on = file_id is not None and PrivacyView(db).voiceprints(int(file_id)).enabled
 
     if old_profile_id == new_profile_id:
         if not (display_name_changed and new_profile_id):
             return []
+        if not voiceprints_on:
+            logger.info(
+                "Profile rename refresh for speaker %s declined by privacy policy", speaker_id
+            )
+            return []
         impact = SpeakerImpact(profile_ids={new_profile_id})
     else:
-        impact = capture_speaker_impact(db, [speaker_id], removed=False, reindex=False)
-        impact.profile_ids |= {p for p in (old_profile_id, new_profile_id) if p}
+        impact = profile_move_impact(
+            db,
+            speaker_id,
+            old_profile_id,
+            new_profile_id,
+            voiceprints_enabled=voiceprints_on,
+        )
     return reconcile_speaker_impact(db, impact)
 
 
@@ -1692,7 +1728,7 @@ def _update_opensearch_speaker_name(speaker_uuid: str, display_name: str) -> Non
 
 
 def _handle_speaker_labeling_workflow(
-    db: Session, speaker_id: int, display_name: str
+    db: Session, speaker_id: int, display_name: str, user_id: int | None = None
 ) -> dict[str, int]:
     """
     Handle auto-creation of profiles and retroactive matching when speaker is labeled.
@@ -1713,7 +1749,7 @@ def _handle_speaker_labeling_workflow(
         logger.warning(f"Speaker {speaker_id} disappeared before retroactive matching")
         return {"auto_applied_count": 0, "suggested_count": 0}
 
-    auto_create_or_assign_profile(speaker, display_name, db)
+    auto_create_or_assign_profile(speaker, display_name, db, user_id=user_id)
 
     # Commit profile changes before retroactive matching
     db.commit()
@@ -1889,6 +1925,7 @@ def _handle_create_new_profile_action(
     db.flush()  # Get the ID
 
     speaker.profile_id = new_profile.id
+    record_human_identity(speaker, user_id=current_user.id, origin=ORIGIN_PROFILE_CREATED)
     logger.info(
         f"Created new profile {new_profile.id} '{new_name}' and assigned speaker {speaker.id}"
     )
@@ -2018,8 +2055,39 @@ def _apply_verification_on_display_name(speaker: Speaker, speaker_update: Speake
     """
     if speaker_update.display_name is not None and speaker_update.display_name.strip():
         speaker.verified = True  # type: ignore[assignment]
-        speaker.suggested_name = None  # type: ignore[assignment]
-        speaker.confidence = None  # type: ignore[assignment]
+        clear_suggestion(speaker)
+
+
+def _record_identity_source_on_edit(
+    speaker: Speaker,
+    speaker_update: SpeakerUpdate,
+    *,
+    user_id: int,
+    profile_action: str | None,
+) -> None:
+    """Record who made the speaker's identity after a ``PUT`` (issue #1280).
+
+    Runs BEFORE :func:`_apply_verification_on_display_name`: the record names the suggestion
+    the person accepted, which that function then withdraws.
+
+    A typed name, a profile action (which needs a name) or an explicit ``verified: true`` is a
+    person's word: ``human``. A cleared name keeps a machine link as ``voiceprint_link`` (it
+    stays hideable and purgeable) and leaves nothing to describe when no link remains.
+    Called before the chunk label is recomputed, which depends on it.
+    """
+    if "display_name" in speaker_update.model_fields_set:
+        if is_assigned_speaker_name(speaker_update.display_name):
+            record_human_identity(
+                speaker,
+                user_id=user_id,
+                origin=ORIGIN_PROFILE_CREATED
+                if profile_action == "create_new_profile"
+                else ORIGIN_TYPED,
+            )
+        else:
+            after_name_cleared(speaker)
+    elif speaker_update.verified is True and (speaker.display_name or speaker.profile_id):
+        record_human_identity(speaker, user_id=user_id, origin=ORIGIN_CONFIRMED)
 
 
 def _propagate_speaker_rename_to_chunks(
@@ -2129,6 +2197,9 @@ def update_speaker(
     )
 
     # Handle verification when display name is set
+    _record_identity_source_on_edit(
+        speaker, speaker_update, user_id=current_user.id, profile_action=profile_action
+    )
     _apply_verification_on_display_name(speaker, speaker_update)
 
     # Commit to PostgreSQL immediately
@@ -2196,6 +2267,8 @@ def update_speaker(
         logger.debug(f"Cache invalidation failed (non-critical): {e}")
 
     # Add computed status for immediate response
+    redact_speaker_rows(db, [speaker])
+    attach_speaker_provenance(db, [speaker], ctx)
     SpeakerStatusService.add_computed_status(speaker)
     _set_no_cache_headers(response)
 
@@ -2268,6 +2341,7 @@ def _accept_speaker_profile_match(
     # Assign speaker to profile - cast to int for assignment
     speaker.profile_id = profile_id  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]
+    record_human_identity(speaker, user_id=current_user.id, origin=ORIGIN_ACCEPTED_SUGGESTION)
     db.commit()
 
     # The new profile gains the voice; a profile the speaker leaves loses it (#1214).
@@ -2397,9 +2471,9 @@ def _reject_speaker_suggestion(speaker: Speaker, speaker_id: int, db: Session) -
 
     # Mark as verified but don't assign to profile - use setattr for proper type handling
     speaker.profile_id = None  # type: ignore[assignment]
+    after_unlink(speaker)  # idempotent after unlink_from_profile; covers a speaker with no link
     speaker.verified = True  # type: ignore[assignment]
-    speaker.suggested_name = None  # type: ignore[assignment]
-    speaker.confidence = None  # type: ignore[assignment]
+    clear_suggestion(speaker)
     after = canonical_speaker_label_for_row(speaker)
     db.commit()
 
@@ -2459,6 +2533,7 @@ def _create_new_speaker_profile(
     # Assign speaker to new profile - use setattr for proper type handling
     speaker.profile_id = new_profile.id  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]
+    record_human_identity(speaker, user_id=current_user.id, origin=ORIGIN_PROFILE_CREATED)
     db.commit()
 
     # The new profile gains the voice; a profile the speaker leaves loses it (#1214).
@@ -2578,6 +2653,9 @@ def _merge_speaker_embeddings(source_speaker_uuid: str, target: dict[str, Any]) 
                 media_file_id=target["media_file_id"],
                 display_name=target["display_name"],
                 segment_count=2,  # Merged from 2 speakers
+                # The write replaces the whole document: without the file's tenant an org
+                # speaker's voiceprint would come back unstamped, i.e. personal.
+                organization_id=target.get("organization_id"),
             )
             logger.info(f"Updated target speaker {target['id']} with averaged embedding")
         else:
@@ -2670,8 +2748,14 @@ def _build_occurrence_dict(
     media_file: MediaFile,
     speaker_obj: Speaker,
     same_speaker: bool,
+    *,
+    match_withheld: bool = False,
 ) -> dict[str, Any]:
-    """Build occurrence dictionary for a speaker/media file pair."""
+    """Build occurrence dictionary for a speaker/media file pair.
+
+    ``match_withheld``: a voiceprint made the speaker's identity and its file's voiceprints
+    are off, so the match confidence is not shown either.
+    """
     return {
         "media_file_id": str(media_file.uuid),
         "filename": media_file.filename,
@@ -2679,7 +2763,7 @@ def _build_occurrence_dict(
         "media_file_title": media_file.title or media_file.filename,
         "upload_time": media_file.upload_time.isoformat() if media_file.upload_time else "",
         "speaker_label": speaker_obj.name,
-        "confidence": speaker_obj.confidence,
+        "confidence": None if match_withheld else speaker_obj.confidence,
         "verified": speaker_obj.verified,
         "same_speaker": same_speaker,
     }
@@ -2708,10 +2792,16 @@ def _get_profile_based_occurrences(
     tenant_pred = org_scope_pred(MediaFile.organization_id, organization_id)
     if tenant_pred is not None:
         query = query.filter(tenant_pred)
+    # Each candidate is judged by its OWN file's switch: a link a voiceprint made in a file
+    # whose voiceprints are off is not a link (its profile_id reads None after this), so the
+    # speaker connects nothing. ``speaker`` arrives already redacted.
     profile_speakers = query.all()
+    hide_machine_identities(PrivacyView(db), profile_speakers)
 
     result: list[dict[str, Any]] = []
     for profile_speaker in profile_speakers:
+        if profile_speaker.profile_id != speaker.profile_id:
+            continue
         if profile_speaker.media_file:
             result.append(
                 _build_occurrence_dict(
@@ -2734,9 +2824,17 @@ def _get_display_name_based_occurrences(
     """Get cross-media occurrences for a speaker without a profile, by display name."""
     result: list[dict[str, Any]] = []
 
-    # Add this speaker instance first
+    # Add this speaker instance first. ``speaker`` arrives redacted; when its identity was
+    # a voiceprint's, the match confidence goes with it.
     if speaker.media_file:
-        result.append(_build_occurrence_dict(speaker.media_file, speaker, same_speaker=True))
+        result.append(
+            _build_occurrence_dict(
+                speaker.media_file,
+                speaker,
+                same_speaker=True,
+                match_withheld=bool(hide_machine_identities(PrivacyView(db), [speaker])),
+            )
+        )
 
     # Skip if speaker doesn't have a valid display name
     if not speaker.display_name or speaker.display_name.startswith("SPEAKER_"):
@@ -2759,8 +2857,11 @@ def _get_display_name_based_occurrences(
     if tenant_pred is not None:
         similar_q = similar_q.filter(tenant_pred)
     similar_speakers = similar_q.all()
+    hide_machine_identities(PrivacyView(db), similar_speakers)
 
     for similar_speaker in similar_speakers:
+        if similar_speaker.display_name != speaker.display_name:
+            continue  # a voiceprint made this name and its file's voiceprints are off
         if similar_speaker.media_file:
             result.append(
                 _build_occurrence_dict(

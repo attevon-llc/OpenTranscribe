@@ -184,6 +184,9 @@ def stage_seams(db_session, monkeypatch):
         embeddings, "_process_speaker_embeddings_native", _counted(real_post_stage_inline)
     )
     monkeypatch.setattr(embeddings, "session_scope", lambda: _bridged(db_session))
+    # The privacy gates read the file's policy in their own short session; point it at the
+    # test's rows. (Policy is on for these files: their owners switched nothing off.)
+    monkeypatch.setattr("app.services.privacy.gates.session_scope", lambda: _bridged(db_session))
     monkeypatch.setattr(embeddings, "SpeakerMatchingService", _NoProfileMatching)
     monkeypatch.setattr(
         "app.services.speaker_matching_service.SpeakerMatchingService", _NoProfileMatching

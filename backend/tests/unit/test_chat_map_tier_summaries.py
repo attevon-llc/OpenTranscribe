@@ -349,7 +349,7 @@ def test_summarization_fingerprint_matches_ingest_artifacts_for_identical_segmen
     # instead of merely hoped for.
     assert all(s.speaker is not None for s in segments)
 
-    from_task = fingerprint_transcript_segments(segments)
+    from_task = fingerprint_transcript_segments(segments, voiceprint_names=True)
     from_ingest = source_fingerprint(
         [
             {
@@ -372,11 +372,11 @@ def test_summarization_fingerprint_changes_when_a_segment_is_edited():
     stale, which would defeat the whole staleness gate silently."""
     from app.tasks.summarization import fingerprint_transcript_segments
 
-    original = fingerprint_transcript_segments(_stub_segments())
+    original = fingerprint_transcript_segments(_stub_segments(), voiceprint_names=True)
 
     edited = _stub_segments()
     edited[0].text = "Hello THERE, edited."
-    changed = fingerprint_transcript_segments(edited)
+    changed = fingerprint_transcript_segments(edited, voiceprint_names=True)
 
     assert original != changed
 
@@ -387,7 +387,7 @@ def test_summarization_fingerprint_changes_when_a_speaker_is_renamed():
     (a rename invalidates the file_facts row by the identical mechanism)."""
     from app.tasks.summarization import fingerprint_transcript_segments
 
-    original = fingerprint_transcript_segments(_stub_segments())
+    original = fingerprint_transcript_segments(_stub_segments(), voiceprint_names=True)
 
     renamed = _stub_segments()
     speaker = renamed[0].speaker
@@ -396,7 +396,7 @@ def test_summarization_fingerprint_changes_when_a_speaker_is_renamed():
     # rather than merely assumed not to be renaming a None.
     assert speaker is not None
     speaker.display_name = "Dana Whitfield"
-    changed = fingerprint_transcript_segments(renamed)
+    changed = fingerprint_transcript_segments(renamed, voiceprint_names=True)
 
     assert original != changed
 

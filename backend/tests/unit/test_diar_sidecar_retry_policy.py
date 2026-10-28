@@ -253,7 +253,7 @@ class TestSidecarFailureReachesTheLadderOnlyUnderRequireSidecar:
         assert result is fake_fallback.diarize.return_value
         # And the fallback must be handed the SAME waveform the failed sidecar call had —
         # `assert_called_once()` alone would not notice it being passed something else.
-        fake_fallback.diarize.assert_called_once_with(audio)
+        fake_fallback.diarize.assert_called_once_with(audio, return_centroids=None)
         assert diarizer.last_provider == "pyannote"
 
     def test_require_sidecar_true_is_the_only_default_synchronous_path_that_reaches_the_ladder(

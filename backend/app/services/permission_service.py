@@ -432,15 +432,41 @@ class PermissionService:
         return {row[0] for row in owned} | {row[0] for row in shared}
 
     @staticmethod
+    def get_matchable_profile_ids(
+        db: Session, user_id: int, *, organization_id: OrgScope
+    ) -> set[int]:
+        """Profiles ``user_id`` may MATCH a voiceprint against (privacy policy, #1280).
+
+        ``get_accessible_profile_ids`` answers "which profiles may this person see": names
+        and avatars are user assertions and stay visible. This answers the narrower
+        question the kNN needs, "whose voiceprints may this person's audio be compared to".
+        It drops every profile the caller does not own whose owner scope has voiceprints
+        switched off, or whose ``share`` consent hook says no (restrict-only: sharing a
+        collection never widens what the owner's own policy forbids). The caller's own
+        profiles always stay; their own policy is enforced at the entry gates.
+
+        Every voiceprint-matching call site uses this and not the access set; handing the
+        access set to the kNN is how a shared profile of an opted-out owner would match.
+        """
+        from app.services.privacy.policy import filter_shareable_profiles
+
+        accessible = PermissionService.get_accessible_profile_ids(
+            db, user_id, organization_id=organization_id
+        )
+        return set(filter_shareable_profiles(db, user_id, accessible))
+
+    @staticmethod
     def get_accessible_profile_ids_for_file(db: Session, user_id: int, file_id: int) -> set[int]:
-        """``get_accessible_profile_ids`` in the tenant scope of the file being matched.
+        """``get_matchable_profile_ids`` in the tenant scope of the file being matched.
 
         The pipeline's speaker matching runs for one file, and its tenant is that
         FILE's ``organization_id`` — read from the row, never from caller state — the
-        same rule ``SpeakerMatchingService`` applies to its own kNN clauses.
+        same rule ``SpeakerMatchingService`` applies to its own kNN clauses. It is the
+        matching variant by definition, so shared profiles the owner's privacy policy
+        withholds are already removed.
         """
         file_org = db.query(MediaFile.organization_id).filter(MediaFile.id == file_id).scalar()
-        return PermissionService.get_accessible_profile_ids(
+        return PermissionService.get_matchable_profile_ids(
             db, user_id, organization_id=int(file_org) if file_org is not None else None
         )
 

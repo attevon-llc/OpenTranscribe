@@ -142,6 +142,11 @@ def _written_source_literals() -> set[str]:
                     values.append(node.value)
             elif isinstance(node, ast.Call):
                 values.extend(kw.value for kw in node.keywords if kw.arg == "suggestion_source")
+                # ``record_suggestion(..., source=...)`` is the one writer of the column
+                # (utils/speaker_identity_source): its ``source`` IS the suggestion source.
+                callee = node.func
+                if getattr(callee, "id", getattr(callee, "attr", None)) == "record_suggestion":
+                    values.extend(kw.value for kw in node.keywords if kw.arg == "source")
             for value in values:
                 found.update(_possible_literals(value))
     return found
@@ -178,8 +183,8 @@ def test_every_writer_and_reader_plane_agrees_on_an_llm_speaker():
     from app.utils.transcript_builders import get_speaker_name
 
     speaker = _llm(0.95)
-    assert resolve_chunk_speaker_name(speaker) == _PLACEHOLDER
-    assert _resolve_reindex_speaker_name(speaker) == _PLACEHOLDER
+    assert resolve_chunk_speaker_name(speaker, voiceprint_names=True) == _PLACEHOLDER
+    assert _resolve_reindex_speaker_name(speaker, voiceprint_names=True) == _PLACEHOLDER
     assert get_speaker_name(SimpleNamespace(speaker=speaker)) == _PLACEHOLDER
     assert SpeakerStatusService._resolve_display_name(speaker) == _PLACEHOLDER
     assert _resolve_segment_speaker_name(speaker) == _PLACEHOLDER
@@ -197,8 +202,8 @@ def test_every_plane_names_a_voiceprint_matched_speaker():
     from app.utils.transcript_builders import get_speaker_name
 
     speaker = _row(suggested_name="Priya Patel", confidence=0.8, suggestion_source="voice_match")
-    assert resolve_chunk_speaker_name(speaker) == "Priya Patel"
-    assert _resolve_reindex_speaker_name(speaker) == "Priya Patel"
+    assert resolve_chunk_speaker_name(speaker, voiceprint_names=True) == "Priya Patel"
+    assert _resolve_reindex_speaker_name(speaker, voiceprint_names=True) == "Priya Patel"
     assert get_speaker_name(SimpleNamespace(speaker=speaker)) == "Priya Patel"
     assert SpeakerStatusService._resolve_display_name(speaker) == "Priya Patel"
     assert _resolve_segment_speaker_name(speaker) == "Priya Patel"
@@ -411,9 +416,12 @@ def test_the_suggestion_service_still_offers_the_llm_suggestion(db_session, norm
         confidence=0.95,
         suggestion_source="llm_analysis",
     )
-    offered = SmartSpeakerSuggestionService.consolidate_suggestions(
-        speaker_id=int(speaker.id), user_id=int(normal_user.id), db=db_session
-    )
+    offered = SmartSpeakerSuggestionService.consolidate_suggestions_batch(
+        speakers=[speaker],
+        user_id=int(normal_user.id),
+        file_org_map={int(speaker.media_file_id): None},
+        voiceprints_off_file_ids=set(),
+    )[int(speaker.id)]
     llm = [s for s in offered if s.suggestion_type == "llm_analysis"]
     assert [(s.name, round(s.confidence, 2)) for s in llm] == [("Joe Rogan", 0.95)]
 
@@ -577,6 +585,33 @@ def test_the_backfill_reindexes_exactly_the_files_whose_label_came_from_an_llm_g
     assert llm_speaker.resolved_display_name == "SPEAKER_00"
 
 
+def test_the_backfill_persists_the_policy_free_status_never_a_per_reader_answer(
+    db_session, normal_user, backfill_world, monkeypatch
+):
+    """The column holds what the data says; whether to show it is decided on every read."""
+    from app.services.speaker_status_service import SpeakerStatusService
+
+    _with_segment(
+        db_session,
+        normal_user,
+        suggested_name="Joe Rogan",
+        confidence=0.95,
+        suggestion_source="llm_analysis",
+    )
+    asked: list[object] = []
+    real = SpeakerStatusService.compute_speaker_status
+
+    def spy(speaker, *, voiceprint_names=None):
+        asked.append(voiceprint_names)
+        return real(speaker, voiceprint_names=voiceprint_names)
+
+    monkeypatch.setattr(SpeakerStatusService, "compute_speaker_status", staticmethod(spy))
+
+    backfill_world.backfill.backfill_llm_suggested_labels(db_session, {})
+
+    assert asked == [True]
+
+
 def test_the_backfill_finishes_and_then_does_nothing(db_session, normal_user, backfill_world):
     _with_segment(
         db_session,
@@ -620,3 +655,81 @@ def test_the_backfill_retries_a_file_it_could_not_queue(db_session, normal_user,
     again: dict = {}
     backfill_world.backfill.backfill_llm_suggested_labels(db_session, again)
     assert backfill_world.seams["reindexed"] == [file_a.id]
+
+
+# ---------------------------------------------------- identity_source values (issue #1280)
+
+
+def _identity_source_literals(source: str) -> set[str]:
+    """String literals assigned to, passed as, or compared with ``identity_source``."""
+    found: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        values: list[ast.expr] = []
+        if isinstance(node, ast.Assign):
+            if any(
+                isinstance(t, ast.Attribute) and t.attr == "identity_source" for t in node.targets
+            ):
+                values.append(node.value)
+        elif isinstance(node, ast.Call):
+            values.extend(kw.value for kw in node.keywords if kw.arg == "identity_source")
+            if isinstance(node.func, ast.Attribute) and node.func.attr == "in_":
+                owner = node.func.value
+                if isinstance(owner, ast.Attribute) and owner.attr == "identity_source":
+                    for arg in node.args:
+                        if isinstance(arg, ast.List | ast.Tuple | ast.Set):
+                            values.extend(arg.elts)
+        elif isinstance(node, ast.Compare):
+            sides = [node.left, *node.comparators]
+            if any(isinstance(s, ast.Attribute) and s.attr == "identity_source" for s in sides):
+                values.extend(sides)
+        for value in values:
+            found.update(_possible_literals(value))
+    return found
+
+
+def test_the_identity_source_literal_scan_fires_and_stays_quiet():
+    fires = (
+        "def f(s):\n"
+        "    s.identity_source = 'voiceprint'\n"
+        "    if s.identity_source == 'bogus':\n"
+        "        pass\n"
+        "    q.filter(Speaker.identity_source.in_(['human', 'other']))\n"
+        "    make(identity_source='third')\n"
+    )
+    quiet = "def f(s):\n    s.identity_source = HUMAN\n    s.other = 'voiceprint'\n"
+
+    assert _identity_source_literals(fires) == {"voiceprint", "bogus", "human", "other", "third"}
+    assert _identity_source_literals(quiet) == set()
+
+
+def test_every_identity_source_the_app_writes_or_reads_is_a_known_value():
+    from app.utils.speaker_identity_source import IDENTITY_SOURCES
+
+    seen: set[str] = set()
+    for path in _APP.rglob("*.py"):
+        seen |= _identity_source_literals(path.read_text(encoding="utf-8"))
+
+    assert seen <= IDENTITY_SOURCES, (
+        f"unknown identity_source values: {sorted(seen - IDENTITY_SOURCES)}"
+    )
+
+
+def test_every_identity_source_value_is_classified_for_hiding():
+    """A new value is a decision about what a switch hides, made here and not by accident."""
+    from app.utils.speaker_identity_source import IDENTITY_SOURCES
+    from app.utils.speaker_identity_source import hides_link
+    from app.utils.speaker_identity_source import hides_name
+
+    #: value -> (name hidden while off, link hidden while off)
+    classified = {
+        "voiceprint": (True, True),
+        "voiceprint_link": (False, True),
+        "human": (False, False),
+    }
+
+    assert set(classified) == set(IDENTITY_SOURCES), "classify the new identity_source value"
+    for value, (name_hidden, link_hidden) in classified.items():
+        assert hides_name(value, False) is name_hidden
+        assert hides_link(value, False) is link_hidden
+        assert not hides_name(value, True) and not hides_link(value, True)
+    assert not hides_name(None, False) and not hides_link(None, False)  # unknown = a person's

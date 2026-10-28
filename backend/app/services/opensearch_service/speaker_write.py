@@ -13,6 +13,7 @@ from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 from app.services.opensearch_service.client import _is_index_corruption_error
 from app.services.opensearch_service.indices import ensure_indices_exist
 from app.services.opensearch_service.repair import _repair_index
+from app.services.privacy.policy import assert_voiceprint_write_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,11 @@ def add_speaker_embedding_v4(
     """
     if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized, skipping speaker embedding")
+        return
+
+    # Tier 3 of the privacy policy: no voiceprint document is written for a scope that forbids
+    # voiceprints, whichever caller got here (issue #1280).
+    if not assert_voiceprint_write_allowed(user_id, organization_id):
         return
 
     v4_index = get_speaker_index_v4()
@@ -155,6 +161,14 @@ def bulk_add_speaker_embeddings_v4(embeddings_data: list[dict[str, Any]]) -> dic
         speaker_id = data.get("speaker_id")
         embedding = data.get("embedding")
 
+        # Tier 3 of the privacy policy, per entry: a batch can mix owners and tenants, and
+        # one forbidden scope must not take the others with it. A missing user_id cannot be
+        # judged, so it is not written (the document needs one anyway).
+        if data.get("user_id") is None or not assert_voiceprint_write_allowed(
+            data["user_id"], data.get("organization_id")
+        ):
+            continue
+
         if speaker_uuid is None or speaker_id is None:
             logger.error("Bulk v4 add skipping entry: missing speaker_uuid/speaker_id")
             continue
@@ -247,6 +261,10 @@ def add_speaker_embedding(
     """
     if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized, skipping speaker embedding")
+        return
+
+    # Tier 3 of the privacy policy (see add_speaker_embedding_v4).
+    if not assert_voiceprint_write_allowed(user_id, organization_id):
         return
 
     index_name = target_index or get_speaker_index()

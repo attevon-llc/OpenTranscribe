@@ -179,6 +179,9 @@ one-click UI button.
 | `POST /org-admin/gdpr/erase-organization?confirm=true` | Same gate; refuses without `confirm`. Irreversible whole-tenant erasure; members keep their accounts |
 | `GET /org-admin/audit-logs` | Same gate; scoped to org members, and a `user_id` (actor) or `target_user_id` (subject, issue #443/#828) filter outside the org is 403 either way. Also `user_uuid` / `target_user_uuid` (same guard; an unknown uuid and a non-member's answer identically), `resource_type`, `resource_uuid`. Each event gains `actor_display` / `target_display` / `resource_display`, resolved at read time **inside the org only** (`services/org_audit_view.py`), never stored. `org_admin.org_audit_query` is the one place the scope and guards are applied |
 | `GET /org-admin/audit-logs/export?format=csv\|json` | `require_org_admin` + server-enforced `org.audit_logs` (404 when off, no superuser bypass, 403 under a support grant). Same scope and filters as the read via `org_audit_query`; capped at `AUDIT_EXPORT_MAX_ROWS` (10,000, `X-Export-Truncated`); rendered by `auth/audit_export.py`, the writer `GET /admin/audit-logs/export` now shares. Rate limited, and audited as `audit.export`. `endpoints/org_admin_audit.py` |
+| `GET\|PATCH /org-admin/policy` · `POST /org-admin/policy/purge` | `require_org_admin` + server-enforced `org.defaults` (404 when off, no superuser bypass, 403 under a support grant; the key is off in community, so 404 there). Scope is ALWAYS `ctx.org_id`, there is no org parameter. Voiceprint and gender switches plus the stored redaction floor (`redaction_floor` is null, and PATCHing it 404, while `redaction.policy` is off); audited `org.policy.change` with field NAMES only. `endpoints/org_admin_policy.py`, logic in `services/privacy/policy_admin.py` |
+| `GET /privacy/effective` · `GET\|PUT /privacy/me` · `POST /privacy/me/purge` · `GET /privacy/purge/{task_id}` | Any signed-in user. `effective?file_uuid=` is access-checked and answers 404 for a file the caller cannot see (403 and 404 both read as 404). `PUT /me` is 409 `policy_locked` while a higher layer is off. A purge status is readable only by who started it. `/me*` and the status refuse a support grant. `endpoints/privacy.py` (`user_router`) |
+| `GET\|PUT /admin/privacy-policy` · `POST /admin/privacy-policy/purge` | `get_current_active_superuser`; `/admin` refuses a grant by prefix. The instance switches (`privacy.*` in `SystemSettings`, audited `admin.settings.change`). Purge `scope="all"` is 403 `purge_scope_not_allowed` unless `tenancy_mode(db)` is `SINGLE` (the #1122 test) |
 | `GET /admin/files/quarantined` · `POST /admin/files/{uuid}/{quarantine,release}` | Admin. DMCA/abuse takedown + legal hold; `release` is 409 when not quarantined. No capability gate and no support grant (the operator must always be able to act) |
 | `/admin/takedown-notices` (`POST`, `GET`, `GET /export`, `GET /{uuid}`, `PATCH /{uuid}/files/{file_uuid}`, `POST /{uuid}/notify`) | Admin. The durable notice record (issue #1254): every quarantine cites a notice or states an operator action. `export` is capped, formula-neutralised and audited; `notify` takes no recipients. Counterpart `GET /takedown-notices/mine` is the signed-in owner's own history (no basis, reference or handler). `endpoints/admin_takedown_notices.py`, `takedown_notices_user.py` |
 | `GET /org-admin/files/quarantined` · `POST /org-admin/files/{uuid}/{quarantine,release}` | `require_org_admin` + server-enforced `org.takedown` (404 when off, no superuser bypass). Own-org files only (looked up with `organization_id` IN the query, so foreign / personal / missing are one 404). **Platform wins**: an org cannot release or overwrite a takedown the operator placed (`takedown_platform_origin`). Never places a legal hold. `endpoints/org_admin_takedown.py` |
@@ -381,6 +384,35 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   (`PUT /admin/users/{uuid}/link-identity`) is the fourth admin-facing identity write in this
   neighbourhood, but it writes `oidc_subject`/`ldap_uid`/`pki_subject_dn` (and, since #912,
   `auth_type`) — never `user.email` — so it does not add a fourth authority to the list above.
+- **Privacy policy (#1280): a purge route never decides authority itself, and a list route never shows what the policy hides.**
+  All three purge routes build a `PurgeScope` from the request context (never the body) and call
+  `privacy.queue_purge`, which refuses with 409 `policy_still_enabled` unless the target is OFF at the purging layer or above,
+  fails closed, and queues `privacy.purge_voiceprints`. The body must carry the literal `confirm: "PURGE"` (422 otherwise).
+  Speaker, profile and cluster responses are shaped through `services/privacy/redact_view` (`redact_speaker_rows`,
+  `derived_profile_genders`, `PrivacyView`): inferred gender serializes as `null` and an unverified voiceprint suggestion is
+  omitted while the owner's scope has the feature off, using `set_committed_value` so the DB row is never changed. A route that
+  would CREATE or RECOMPUTE voiceprints (cluster recluster, analyze-outliers, promote, merge, split) calls
+  `require_voiceprints` and answers 409 `{code: "voiceprints_disabled", locked_by}`; list routes keep their response models and
+  return empty. Per-record decisions take the scope from the record's row (file or profile owner and organization), not from
+  `ctx`; the cluster actions act on the caller's own active scope (`current_user`, `ctx.org_id`).
+  A response that EMBEDS a speaker is shaped too: `files/crud.redact_response_speakers` (file detail and
+  `GET /files/{uuid}/segments`) and `redact_speaker_rows` in the segment text-edit and speaker-reassign responses; the stored
+  `attribute_confidence` keys `gender`, `alignment` and `alignment_hint` are withheld together. A NEW route that returns a
+  `Speaker` (directly or on a segment) must do the same, after its last commit. `GET|PUT /user-settings/speaker-attributes`
+  resolve for `ctx.org_id` (`gender_locked_by`: platform, instance, organization or null; the user's own switch is never a lock).
+  `GET /embeddings/migration/status` carries `policy_skipped`, and `POST /embeddings/migration/start` is 409 `voiceprints_disabled`
+  only when EVERY recording is in a forbidden scope. A plan PREVIEW (no `media_file_id`) is judged in the request's active
+  organization; a real file in its own row's organization.
+- **Privacy policy (#1280), lists and filters.** A page of files (`GET /files`, `GET /collections/{uuid}/media`)
+  builds ONE `PrivacyView` and hands it to `FormattingService.format_media_file(..., privacy=)`: the speaker
+  chips ask the voiceprint policy per file scope, not per speaker. A `speaker` filter matches the name the page
+  shows: `files/filtering.hidden_speaker_name_clause` (SQL twin of `hide_machine_identities`) makes a display
+  name a voiceprint made unmatchable while its file's voiceprints are off (the diarizer name always matches), and
+  the list loads the label columns up front (`LIST_SPEAKER_COLUMNS`). `GET /speaker-profiles/profiles` counts only
+  the links `machine_identity_clauses` does not hide. A response that embeds a speaker redacts before computing
+  status (`redact_speaker_rows` recomputes the status of every row it changed); `tests/api/test_segment_edit_response_privacy.py`
+  pins both segment-edit endpoints. A switch change is relabelled by `services/privacy/label_reindex.py` (see
+  `services/search/CLAUDE.md`); the three `policy_admin` writers take the acting user for its audit event.
 - `require_capability(key)` (`core/capabilities.py`) returns **404, not 403** — a gated router
   must look like an unknown route. Platform superusers bypass it.
 - **`endpoints/tags/` is a package** (`crud` · `discovery` · `sharing` · `operations` + `_common`),

@@ -137,8 +137,14 @@ erDiagram
         string name
         string display_name
         string suggested_name
+        string suggestion_source
+        jsonb suggestion_detail
         boolean verified
         float confidence
+        string identity_source
+        timestamp identity_source_at
+        int identity_source_user_id FK
+        jsonb identity_source_detail
         timestamp created_at
         string computed_status
         string status_text

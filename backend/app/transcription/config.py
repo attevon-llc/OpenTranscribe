@@ -81,6 +81,11 @@ class TranscriptionConfig:
     num_speakers: int | None = None
     hf_token: str | None = None
     enable_native_embeddings: bool = True
+    #: Ask the diarizer's sidecar to classify each speaker's gender from the audio. A per-job
+    #: value: the privacy policy (``services/privacy/policy``) turns it off for a file whose
+    #: owner, organization or deployment forbids inferring gender, and the sidecar is then
+    #: never asked. It can only restrict the deployment's own ``DIAR_NATIVE_GENDER`` switch.
+    request_gender: bool = True
     enable_diarization: bool = True  # per-run value comes from the PipelinePlan; no env var sets it
     enable_overlap_detection: bool = True
     overlap_min_duration: float = 0.25

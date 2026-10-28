@@ -43,7 +43,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 ### 👥 **Smart Speaker Management**
 - **Automatic Speaker Diarization**: Identify different speakers with the native diarization engine (the diar-native sidecar, built on the `pyannote/speaker-diarization-community-1` weights) by default, with the in-process PyAnnote v4 pipeline as automatic failover; or detect speakers with a cloud provider
 - **Speaker Overlap Detection**: Detect and handle multiple simultaneous speakers with advanced PyAnnote v4 capabilities
-- **Diarization Boundary Correction**: Word-boundary smoothing (default on, ~−32% word speaker error rate) collapses short wrong-speaker islands at turn boundaries, plus an opt-in acoustic backchannel re-check that re-embeds disputed words by voiceprint — both tuned live by a super admin under Settings → Speaker Identification → Speaker Engine (no restart)
+- **Diarization Boundary Correction**: Word-boundary smoothing (default on; on the one hand-labeled podcast clip it was measured on, word speaker error rate fell 77% with the native engine and 33% with PyAnnote, see [Boundary Correction](docs-site/docs/features/boundary-correction.md)) collapses short wrong-speaker islands at turn boundaries, plus an opt-in acoustic backchannel re-check that re-embeds disputed words by voiceprint — both tuned live by a super admin under Settings → Speaker Identification → Speaker Engine (no restart)
 - **Cross-Video Speaker Recognition**: AI-powered voice fingerprinting to identify speakers across different media files
 - **Speaker Profile System**: Create and manage global speaker profiles that persist across all transcriptions
 - **Intelligent Speaker Suggestions**: Consolidated speaker identification with confidence scoring and automatic profile matching
@@ -58,13 +58,14 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Per-File Speaker Settings**: Configure min/max speaker count per upload or reprocess operation
 - **User-Level Speaker Preferences**: Save default speaker detection settings (always prompt, use defaults, use custom values)
 - **GPU-Accelerated Clustering**: Fast speaker clustering using GPU-accelerated embeddings
-- **Gender Detection**: Automatic speaker gender detection for improved labeling suggestions (each user can switch **Predict gender from voice** off in Settings → Speaker Identification)
+- **Gender Detection**: Automatic speaker gender detection for improved labeling suggestions, on by default and labeled in the interface as inferred from voice. Each user can switch **Predict gender from voice** off in Settings → Speaker Identification, and the instance and organization policies below can switch it off for everyone they cover
 - **Profile Avatars**: Visual speaker profile avatars for easy identification across the media library
+- **Voice-Match Provenance**: A speaker's name in search, chat, summaries and exports comes only from a person (typed or verified) or from a voice match at 75% similarity or more. An AI name suggestion is shown with its confidence and source but never becomes the name until you accept it
 - **Corrections That Stick**: Unassigning a speaker from a cluster means "this voice is not that person" — with *Prevent from rejoining this cluster* ticked (the default), no automatic path puts it back, and the correction survives re-processing the file. You can name a speaker inline from the transcript's speaker menu, and removing a speaker removes every stored copy of its voice
 
 ### 🎬 **Rich Media Support**
 - **Universal Format Support**: Audio (MP3, WAV, FLAC, M4A) and Video (MP4, MOV, AVI, MKV), and more. Formats browsers cannot play (AIFF, WMA, AVI and similar) get a playable copy for the player
-- **Universal Media URL Support**: Process videos from 1800+ platforms via yt-dlp (YouTube, Dailymotion, Twitter/X, TikTok, and more)
+- **Universal Media URL Support**: Process videos from the many sites yt-dlp supports (well over a thousand extractors; YouTube, Dailymotion, Twitter/X, TikTok, and more)
 - **Smart Platform Handling**: User-friendly error messages with platform-specific guidance for authentication-required videos
 - **YouTube Playlist Processing**: Extract and queue all videos from playlists for batch transcription
 - **Large File Support**: Upload files up to 15 GB by default (`MAX_UPLOAD_BYTES`) for GoPro and high-quality video content
@@ -147,7 +148,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Collection Sharing**: Share collections with viewer or editor permissions per user or group
 - **Cross-User Prompt Sharing**: Share custom AI prompts across users and teams
 - **Recording Settings Management**: User-specific audio recording preferences with quality controls
-- **Export Options**: Download transcripts in multiple formats
+- **Export Options**: Download transcripts as TXT, JSON, CSV, SRT, VTT, Markdown (.md), Word (.docx) or PDF; redaction policy is applied on the server
 - **Real-Time Updates**: Live progress tracking with detailed WebSocket notifications
 - **Enhanced Progress Tracking**: Per-stage progress with descriptive messages, grouped as Main processing, Finishing and AI enrichment
 - **Smart Notification System**: Persistent notifications with unread count badges and progress updates; each file's card shows its stages in three tiers (Main processing, Finishing, AI enrichment), downloads get one row that moves from preparing to done, and finished jobs show how long processing took
@@ -175,9 +176,9 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Provider Connection Testing**: Validate LLM configurations before use
 - **Intelligent Content Processing**: Context-aware summarization with section-by-section analysis
 - **BLUF Format Summaries**: Bottom Line Up Front structured summaries with action items
-- **Multi-Model Support**: Works with models from 3B to 200B+ parameters
+- **Bring Your Own Model**: You choose the model for each provider; the docs show setups from a small Ollama model to a 70B model on vLLM, and long transcripts are handled section by section so a small context window is not a hard limit
 - **Local & Cloud Processing**: Support for both local (privacy-first) and cloud AI providers
-- **Cloud ASR Providers**: 9 cloud speech-to-text providers (Deepgram, AssemblyAI, OpenAI Whisper API, Google, AWS Transcribe, Azure, Speechmatics, Gladia, pyannote.ai) as alternatives to local GPU processing — 6 verified end-to-end (Deepgram, AssemblyAI, Gladia, AWS Transcribe, Speechmatics, pyannote.ai)
+- **Cloud ASR Providers**: 9 cloud speech-to-text providers (Deepgram, AssemblyAI, OpenAI Whisper API, Google, AWS Transcribe, Azure, Speechmatics, Gladia, pyannote.ai) as alternatives to local GPU processing. Six are marked `tested` against live APIs in the provider catalog (Deepgram, AssemblyAI, Gladia, AWS Transcribe, Speechmatics, pyannote.ai); OpenAI, Google and Azure are marked experimental and not fully tested with real API keys
 - **API-Lite Deployment**: `DEPLOYMENT_MODE=lite` for cloud-only deployments without requiring a local GPU; lite is cloud-only for both transcription and speaker detection
 - **Composable Processing Pipeline**: Transcription and speaker detection are chosen independently (Settings → Transcription, Settings → Speaker Identification → Speaker Detection). Mix local Whisper or a cloud ASR provider for the words with this server's engine, the same provider's own speakers, the pyannote.ai cloud service, or another saved provider's speaker detection for the speakers. **Settings → Processing pipeline** shows, before the next upload, where each step runs and which providers receive your audio, and each file records which provider and model did each step. See [Speaker Diarization](docs-site/docs/features/speaker-diarization.md)
 - **Local Model Library**: A super admin can download any listed local Whisper model and switch the active one under Settings → Transcription → Provider & Model → Local models (disk-space check, live progress, cancel; only the Whisper workers restart, after running jobs finish)
@@ -210,8 +211,9 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Detect-Once, Cache-Forever**: Detection runs once per transcript in a dedicated `celery-redaction` CPU service; spans cache on the transcript so enable/disable and category changes are instant
 - **Multiple Detectors**: Presidio + spaCy/GLiNER (PII), toxic-bert / multilingual XLM-R (toxicity), wordlist (profanity), plus an optional LLM detector
 - **Audit Log**: A super admin can review and export (CSV or JSON) security and authentication events under Settings → Administration → Audit Logs, and can switch on content-access auditing (who opened a recording, requested its media or exported a transcript; off by default)
+- **Voiceprint and Gender Privacy Controls**: One restrict-only policy decides whether voiceprints may be created and matched and whether gender may be inferred. A super admin sets the instance switch (Settings → Privacy & Redaction → Policy), each person sets their own (Settings → Speaker Identification), and any layer that is off turns the feature off; an error reading the policy counts as off. Turning a switch off hides existing data and stops new data without deleting anything. Deleting is a separate, typed-confirmation purge that is audited, reports how many items it removed in each store, and checks afterwards that nothing from the deletion remains. Speakers are still told apart within a recording when voiceprints are off. Both switches default on, so an upgrade changes nothing until someone turns one off
 - **Quarantine & Takedown Review**: Admins can quarantine a file and review it under Settings → Administration → Quarantine; each takedown is recorded with the notice it acts on, owners see why in *My takedown notices*, and a held file cannot be reprocessed or retried
-- **Organization Features (managed edition only)**: Organizations, team and member management, the organization audit log (`org.audit_logs`), organization legal holds (`org.legal_hold`) and the organization takedown queue (`org.takedown`) are available in the managed edition only; the open-source build ships the capability gates with these off. Where an install does use organizations, tags and collections belong to one organization (collections can be restricted to their creator, the organization's admins and the people they are shared with), and `TENANCY_MODE` (default `auto`) makes administrators use audited, time-boxed support-access grants instead of opening tenant content directly; see [Support access](docs-site/docs/operations/support-access.md)
+- **Organization Features (managed edition only)**: Organizations, team and member management, the organization audit log (`org.audit_logs`; filter by member, event, outcome, dates or a file/collection id, export up to 10,000 rows as CSV or JSON), organization legal holds (`org.legal_hold`; a held file cannot be deleted, purged or reprocessed), the organization takedown queue (`org.takedown`) and the organization-level voiceprint and gender privacy policy are available in the managed edition only; the open-source build ships the capability gates with these off. Collections themselves, collection sharing and the platform audit log are community features. Where an install does use organizations, tags and collections belong to one organization (collections can be restricted to their creator, the organization's admins and the people they are shared with), and `TENANCY_MODE` (default `auto`) makes administrators use audited, time-boxed support-access grants instead of opening tenant content directly; see [Support access](docs-site/docs/operations/support-access.md)
 
 ### ⚙️ **Speech Processing (Super Admin)**
 - **Runtime-Tunable Engine Settings**: Super admins adjust runtime-safe transcription/diarization engine settings — boundary-correction toggles and knobs, transcriber/diarizer backend selection — via Settings → Speaker Identification → Speaker Engine with no container restart
@@ -245,7 +247,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Auto-Refresh Systems**: Background data updates without manual page refreshing
 - **Theme Support**: Seamless dark/light mode switching
 - **Keyboard Shortcuts**: Efficient navigation and control via hotkeys
-- **System Statistics**: CPU, memory, disk, and GPU usage visible to all users
+- **System Statistics**: CPU, memory, disk, and GPU usage visible to all users, plus the thread count the chat reranker uses (`CHAT_RERANKER_TORCH_THREADS`, automatic by default)
 - **Searchable, Regrouped Settings**: Settings is a searchable set of sections (Account, Transcription & Speakers, AI & Chat, Media & Output, Administration, System) that load on demand; entries a user's role cannot open are shown disabled rather than hidden
 - **About Dialog**: Shows the app build next to the server version (and tells you to reload when a stale tab no longer matches the server), plus the AGPL-3.0 licence, a source-code link and the third-party NOTICE
 - **Server-Driven Capabilities**: `GET /api/system/capabilities` reports the edition and which feature surfaces exist; the UI renders only those, and deployment-locked controls (for example model choice or URL import) are enforced on the server
@@ -286,7 +288,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Multi-Provider LLM Integration** - Support for vLLM, OpenAI, Ollama, Anthropic Claude, OpenRouter, and Amazon Bedrock
 - **Local LLM Support** - Privacy-focused processing with vLLM and Ollama
 - **Intelligent Context Processing** - Section-by-section analysis handles unlimited transcript lengths
-- **Universal Model Compatibility** - Works with any model size from 3B to 200B+ parameters
+- **Model-Agnostic LLM Layer** - You pick the model; any model your provider serves can be used, and quality scales with the model you choose
 - **Multilingual AI Output** - Generate summaries in 12 different languages
 - **Model Auto-Discovery** - Automatic detection of available models from vLLM, Ollama, and Anthropic
 
@@ -596,7 +598,7 @@ If the database is ever lost but the MinIO media survives, [**Storage Recovery**
 2. **Upload or Record Content**
    - **File Upload**: Click **Add Media** (Upload File tab) or drag-and-drop media files (up to 15 GB by default, `MAX_UPLOAD_BYTES`)
    - **Direct Recording**: Use the **Record Audio** tab in **Add Media** for browser-based recording
-   - **URL Processing**: Paste video URLs on the **Media URL** tab (yt-dlp, 1800+ supported sites: YouTube, Dailymotion, Twitter/X, TikTok, etc.)
+   - **URL Processing**: Paste video URLs on the **Media URL** tab (yt-dlp, which supports a very large list of sites: YouTube, Dailymotion, Twitter/X, TikTok, etc.)
    - **Playlist Support**: Import entire YouTube playlists with one URL
    - Supported formats: MP3, WAV, MP4, MOV, and more
    - Files are automatically queued for concurrent processing
@@ -872,7 +874,7 @@ LLM_PROVIDER=ollama                  # Local Ollama server
 - **💰 Cost-Effective**: OpenRouter with Claude Haiku (~$0.25/1M tokens)
 - **🔒 Privacy-First**: Local vLLM or Ollama (no data leaves your server)
 - **⚡ Performance**: OpenAI GPT-4o-mini (fastest cloud option)
-- **📱 Small Models**: Even 3B Ollama models can handle hours of content via intelligent sectioning
+- **📱 Small Models**: Long transcripts are summarized section by section, so a small local model does not need a huge context window (output quality still depends on the model)
 - **🚫 No LLM**: Leave `LLM_PROVIDER` empty. Transcription, diarization, redaction and full hybrid **search (keyword + semantic)** all still work — only summaries, topic suggestions, speaker-ID hints and AI Chat need a provider
 
 See [LLM Integration](docs-site/docs/features/llm-integration.md) for detailed setup instructions.
@@ -1283,7 +1285,7 @@ For systems where the GPU cannot fit the full transcription model, OpenTranscrib
 | macOS (any Apple Silicon) | CPU (small model) | CPU (`--lite` image) | Always CPU-only — no MPS in Docker |
 | `WHISPER_HYBRID_MODE=true` | CPU (small model) | GPU | Manual override (Linux/WSL2 + NVIDIA GPU only) |
 
-The CPU model defaults to `small` (int8, ~15–30× real-time on modern hardware). Override with `WHISPER_HYBRID_CPU_MODEL=medium` for better accuracy at the cost of speed.
+The CPU model defaults to `small` (int8); CPU transcription is slower than GPU transcription. Override with `WHISPER_HYBRID_CPU_MODEL=medium` for better accuracy at the cost of speed.
 
 ```bash
 # Force hybrid mode on (useful for testing or shared-GPU deployments)

@@ -21,6 +21,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.media import TranscriptSegmentsPage
+from app.services.speaker_provenance_view import ProvenanceViewer
 from app.services.speaker_status_service import SpeakerStatusService
 
 from .crud import _build_grouped_segments
@@ -29,6 +30,7 @@ from .crud import _get_transcript_segments
 from .crud import _redaction_pending
 from .crud import _resolve_redaction_for_request
 from .crud import get_media_file_by_uuid
+from .crud import redact_response_speakers
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -89,14 +91,20 @@ def get_file_segments(
         db, file_id, segment_limit, segment_offset
     )
 
-    # Add computed status to segment speakers for resolved_display_name
     processed_ids: set[int] = set()
     unique_speakers = []
     for segment in transcript_segments:
         if segment.speaker and int(segment.speaker.id) not in processed_ids:
-            SpeakerStatusService.add_computed_status(segment.speaker)
             processed_ids.add(int(segment.speaker.id))
             unique_speakers.append(segment.speaker)
+
+    # Redact FIRST, then add the computed status (resolved_display_name, status_text): both
+    # derive from the voiceprint suggestion the redaction withholds while voiceprints are off.
+    redact_response_speakers(
+        db, unique_speakers, transcript_segments, ProvenanceViewer.from_context(ctx)
+    )
+    for speaker in unique_speakers:
+        SpeakerStatusService.add_computed_status(speaker)
 
     formatted_segments = _format_transcript_segments(
         transcript_segments, unique_speakers, redaction_cfg, reveal_categories

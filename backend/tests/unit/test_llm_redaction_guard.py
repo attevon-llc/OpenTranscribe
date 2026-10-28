@@ -39,7 +39,13 @@ def _segment(text: str = SECRET, *, speaker: str = "Dana"):
         words=None,
         start_time=10.0,
         end_time=20.0,
-        speaker=SimpleNamespace(name=speaker, display_name=speaker, verified=True, confidence=None),
+        speaker=SimpleNamespace(
+            name=speaker,
+            display_name=speaker,
+            verified=True,
+            confidence=None,
+            identity_source=None,
+        ),
     )
 
 

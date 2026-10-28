@@ -17,6 +17,7 @@ from app.services.platform_bypass import PlatformBypass
 from app.services.speaker_cleanup import SpeakerImpact
 from app.services.speaker_cleanup import capture_speaker_impact
 from app.services.speaker_cleanup import reconcile_speaker_impact
+from app.utils.speaker_identity_source import clear_suggestion
 
 logger = logging.getLogger(__name__)
 
@@ -261,8 +262,7 @@ def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) 
             )
             for speaker in existing_speakers:
                 before = canonical_speaker_label_for_row(speaker)
-                speaker.suggested_name = None
-                speaker.confidence = None
+                clear_suggestion(speaker)
                 tracker.record(int(media_file.id), before, canonical_speaker_label_for_row(speaker))
 
         if "summarization" in stages:

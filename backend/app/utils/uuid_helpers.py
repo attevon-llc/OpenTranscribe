@@ -548,19 +548,18 @@ def require_speaker_access(
 
     speaker = get_speaker_by_uuid(db, speaker_uuid)
     media_file = speaker.media_file
+    # A speaker's tenant is its file's; the speaker row's own organization_id is never stamped.
     if bypass.allows(
-        org_id=media_file.organization_id if media_file is not None else speaker.organization_id,
-        owner_id=media_file.user_id if media_file is not None else speaker.user_id,
+        org_id=media_file.organization_id,
+        owner_id=media_file.user_id,
         need="read" if min_permission == "viewer" else "write",
         resource_type="speaker",
         resource_uuid=str(speaker.uuid),
     ):
         return speaker
 
-    if (
-        media_file is None
-        or is_hidden_for(media_file, is_admin=False)
-        or not _resource_in_tenant_scope(media_file, organization_id)
+    if is_hidden_for(media_file, is_admin=False) or not _resource_in_tenant_scope(
+        media_file, organization_id
     ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found")
 

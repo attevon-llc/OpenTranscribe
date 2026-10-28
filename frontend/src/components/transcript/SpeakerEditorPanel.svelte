@@ -5,6 +5,7 @@
   import { getSpeakerColor } from '$lib/utils/speakerColors';
   import { formatClock } from '$lib/utils/formatting';
   import SpeakerMerge from '$components/SpeakerMerge.svelte';
+  import SpeakerPrivacyNotice from '$components/privacy/SpeakerPrivacyNotice.svelte';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
   import { RENAME_PROPAGATION_TIMEOUT_MS } from '$lib/api/speakerClusters';
@@ -64,6 +65,7 @@
 
   // Create a reactive key based on speakerList to force re-renders of speaker sections
   // This ensures Edit Speakers and Merge Speakers sections update when speakers change
+  $: showsGender = speakerList.some((s) => s.predicted_gender && s.predicted_gender !== 'unknown');
   $: speakerListKey = speakerList.map(s => s.uuid).join('-');
 
   // Helper function to translate speaker input placeholder
@@ -163,6 +165,8 @@
       </div>
     </div>
   </div>
+
+  <SpeakerPrivacyNotice fileUuid={file?.uuid} show={showsGender ? 'both' : 'voiceprints'} />
 
   <!-- Speaker Merge UI and Edit Speakers - keyed by speakerListKey to force re-render when speakers change -->
   {#key speakerListKey}

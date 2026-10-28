@@ -29,6 +29,8 @@ from app.core.constants import NOTIFICATION_TYPE_EMBEDDING_CONSISTENCY_COMPLETE
 from app.core.constants import NOTIFICATION_TYPE_EMBEDDING_CONSISTENCY_PROGRESS
 from app.core.constants import GPUPriority
 from app.core.redis import get_redis
+from app.db.session_utils import session_scope
+from app.services.privacy.policy import voiceprints_allowed_for_file
 from app.tasks.speaker_embedding_consistency import _LOCK_TTL
 from app.tasks.speaker_embedding_consistency import _REDIS_LAST_RUN_KEY
 from app.tasks.speaker_embedding_consistency import _REDIS_LOCK_KEY
@@ -42,6 +44,17 @@ logger = logging.getLogger(__name__)
 #: zero (or near-zero) vector written to OpenSearch produces meaningless
 #: cosine-similarity scores for every future search against that speaker.
 _ZERO_NORM_EPSILON = 1e-8
+
+
+def _voiceprints_allowed(media_file_id: int) -> bool:
+    """Privacy policy (#1280): may a voiceprint be (re)created for this file? Asked fresh.
+
+    The repair re-creates documents that are MISSING from an index, which is exactly what a
+    scope with voiceprints off must not get back: an absent document there is the policy
+    working (a purge, or a skipped migration), not damage. An unreadable policy denies.
+    """
+    with session_scope() as db:
+        return voiceprints_allowed_for_file(db, int(media_file_id))
 
 
 # ---------------------------------------------------------------------------
@@ -67,6 +80,9 @@ def _v3_result_writer(
 
     embedding_results = results_by_model.get("embedding", [])
     if not embedding_results:
+        return 0
+
+    if not _voiceprints_allowed(prepared.media_file_id):
         return 0
 
     # Group by speaker
@@ -113,6 +129,7 @@ def _v3_result_writer(
             media_file_id=prepared.media_file_id,
             segment_count=len(embs),
             target_index=get_speaker_index_v3(),
+            organization_id=prepared.organization_id,
         )
         if result is not None:
             written += 1
@@ -132,6 +149,9 @@ def _v4_result_writer(
 
     embedding_results = results_by_model.get("embedding", [])
     if not embedding_results:
+        return 0
+
+    if not _voiceprints_allowed(prepared.media_file_id):
         return 0
 
     speaker_embeddings: dict[int, list] = {}
@@ -175,6 +195,7 @@ def _v4_result_writer(
             embedding=aggregated.tolist(),
             media_file_id=prepared.media_file_id,
             segment_count=len(embs),
+            organization_id=prepared.organization_id,
         )
         if result is not None:
             written += 1
@@ -193,6 +214,7 @@ def _update_repair_progress(
     file_uuid: str | None = None,
     repaired_count: int = 0,
     user_id: int = 1,
+    skipped_by_policy: int = 0,
 ) -> dict[str, Any] | None:
     """Atomically update repair progress in Redis + emit via ProgressTracker.
 
@@ -225,6 +247,7 @@ def _update_repair_progress(
             progress = json.loads(raw_val)
             progress["processed_files"] = progress.get("processed_files", 0) + 1
             progress["repaired"] = progress.get("repaired", 0) + repaired_count
+            progress["skipped_by_policy"] = progress.get("skipped_by_policy", 0) + skipped_by_policy
 
             if not success and file_uuid:
                 failed = progress.get("failed_files", [])
@@ -269,6 +292,7 @@ def _update_repair_progress(
             "processed_files": processed,
             "total_files": total_files,
             "repaired": progress.get("repaired", 0),
+            "skipped_by_policy": progress.get("skipped_by_policy", 0),
             "failed_files": progress.get("failed_files", []),
             "running": progress["running"],
         },
@@ -399,6 +423,11 @@ def speaker_embedding_consistency_repair_batch_task(
             prepared = prepare_file(fuuid)
             if prepared is None:
                 _update_repair_progress(total_files, success=True, user_id=notify_user_id)
+            elif not _voiceprints_allowed(prepared.media_file_id):
+                # Privacy policy (#1280): no GPU time, no re-created document.
+                _update_repair_progress(
+                    total_files, success=True, user_id=notify_user_id, skipped_by_policy=1
+                )
             else:
                 files_with_speakers.append((fuuid, prepared))
         except Exception as e:
@@ -515,6 +544,7 @@ def _check_repair_completion(total_files: int, user_id: int = 1) -> None:
             "status": "repaired",
             "repaired": progress.get("repaired", 0),
             "unrepairable": progress.get("unrepairable", 0),
+            "skipped_by_policy": progress.get("skipped_by_policy", 0),
             "failed_files": progress.get("failed_files", []),
             "total_files": total_files,
             "duration_seconds": duration,
@@ -536,6 +566,7 @@ def _check_repair_completion(total_files: int, user_id: int = 1) -> None:
                 "status": "completed",
                 "repaired": progress.get("repaired", 0),
                 "unrepairable": progress.get("unrepairable", 0),
+                "skipped_by_policy": progress.get("skipped_by_policy", 0),
                 "failed_files": progress.get("failed_files", []),
                 "total_files": total_files,
                 "duration_seconds": duration,

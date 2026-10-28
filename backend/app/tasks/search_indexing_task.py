@@ -15,7 +15,7 @@ from app.utils import benchmark_timing
 logger = logging.getLogger(__name__)
 
 
-def resolve_chunk_speaker_name(speaker: Any) -> str:
+def resolve_chunk_speaker_name(speaker: Any, *, voiceprint_names: bool) -> str:
     """The chunk-index writer's speaker-label resolution.
 
     Delegates to :func:`~app.utils.speaker_labels.canonical_speaker_label` — the
@@ -38,22 +38,20 @@ def resolve_chunk_speaker_name(speaker: Any) -> str:
     Args:
         speaker: The segment's linked ``Speaker`` ORM row (or any object with
             the same four attributes), or ``None`` for an unresolved segment.
+        voiceprint_names: The FILE's voiceprint decision, resolved once by the caller
+            (``privacy.gates.voiceprints_allowed``; unreadable = False). False leaves a name
+            a voiceprint made out of the label (#1280). Required, so a caller cannot forget.
 
     Returns:
         The canonical display label. Never the bare ``"Unknown"`` this writer
         used to emit for an unattributed segment.
     """
     from app.utils.speaker_labels import canonical_speaker_label
+    from app.utils.speaker_labels import canonical_speaker_label_for_row
 
     if speaker is None:
         return canonical_speaker_label(None)
-    return canonical_speaker_label(
-        speaker.name,
-        display_name=speaker.display_name,
-        suggested_name=speaker.suggested_name,
-        confidence=speaker.confidence,
-        suggestion_source=getattr(speaker, "suggestion_source", None),
-    )
+    return canonical_speaker_label_for_row(speaker, voiceprint_names=voiceprint_names)
 
 
 def extract_file_index_metadata(db: Any, media_file: Any, file_id: int) -> dict[str, Any]:
@@ -235,12 +233,20 @@ def index_transcript_search_task(  # noqa: C901
             # attribution" spells; the full-doc index wants the raw name or
             # None to preserve speaker-transition structure in the document
             # body.
+            # Decided ONCE for the file: a decision per segment is a policy resolution per
+            # segment. Unreadable = hidden (`voiceprints_allowed` fails closed).
+            from app.services.privacy.gates import voiceprints_allowed
+            from app.utils.speaker_identity_source import visible_profile_id
+
+            voiceprint_names = voiceprints_allowed(file_id, db)
             seg_dicts_full: list[dict[str, str | None]] = []
             segment_dicts: list[dict[str, float | str | int | None]] = []
             for seg in segments:
                 speaker_obj = seg.speaker
                 raw_name = speaker_obj.name if speaker_obj else None
-                chunk_speaker = resolve_chunk_speaker_name(speaker_obj)
+                chunk_speaker = resolve_chunk_speaker_name(
+                    speaker_obj, voiceprint_names=voiceprint_names
+                )
 
                 seg_dicts_full.append({"text": seg.text, "speaker": raw_name})
                 segment_dicts.append(
@@ -256,7 +262,15 @@ def index_transcript_search_task(  # noqa: C901
                         # segment; downstream readers must use an `exists`
                         # compat arm rather than assume the field is present.
                         "speaker_id": speaker_obj.id if speaker_obj else None,
-                        "profile_id": speaker_obj.profile_id if speaker_obj else None,
+                        "profile_id": (
+                            visible_profile_id(
+                                speaker_obj.profile_id,
+                                speaker_obj.identity_source,
+                                voiceprint_names,
+                            )
+                            if speaker_obj
+                            else None
+                        ),
                     }
                 )
 

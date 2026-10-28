@@ -163,6 +163,20 @@ describe('OrgAuditLogPanel', () => {
     expect(screen.queryByRole('option', { name: 'Opened a recording' })).toBeNull();
   });
 
+  it('offers the privacy policy and purge events, whether or not content access is audited', async () => {
+    setContentAudit(false);
+    render(OrgAuditLogPanel);
+    await screen.findByText('Bob Builder');
+
+    for (const name of [
+      'Changed the privacy policy',
+      'Deleted stored voiceprints',
+      'Deleted inferred gender data',
+    ]) {
+      expect(screen.getByRole('option', { name })).toBeInTheDocument();
+    }
+  });
+
   it('exports with the active filters and confirms', async () => {
     api.exportAuditLogs.mockResolvedValue(new Blob(['x']));
     URL.createObjectURL = vi.fn(() => 'blob:x');

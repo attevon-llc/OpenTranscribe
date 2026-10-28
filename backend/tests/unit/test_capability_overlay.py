@@ -75,6 +75,7 @@ def test_no_bypass_keys_are_known_capabilities():
                 "org.takedown",
                 "org.audit_logs",
                 "org.legal_hold",
+                "org.defaults",
                 "speaker_attributes.migration",
                 "url_ingest",
                 "audio_extraction",

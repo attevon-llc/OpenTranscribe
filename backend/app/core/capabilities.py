@@ -31,7 +31,11 @@ same depth. Read this before assuming a key protects anything:
    ``exports.documents`` (``POST /files/{uuid}/export/document`` 404s; the render task never
    asks, because it has no request, so a resolver must not make it depend on one),
    ``org.legal_hold`` (``/org-admin/holds``; no platform-admin bypass),
-   ``org.audit_logs`` (``/org-admin/audit-logs/export``; no platform-admin bypass).
+   ``org.audit_logs`` (``/org-admin/audit-logs/export``; no platform-admin bypass),
+   ``org.defaults`` (``/org-admin/policy``: the organization's privacy policy and redaction floor,
+   issues #1280/#1279; no platform-admin bypass, refused under a support grant. A resolver must
+   return it explicitly to show the panel: an omitted key hides and 404s it. ``redaction.policy``
+   additionally gates the ``redaction_floor`` part of that route, which is null / 404 while it is off).
    ``audit.content_access`` is enforced by its WRITER rather than a router:
    ``services/content_audit.content_audit_enabled`` drops the view / media-access / export
    events while it is off (a request-time read, so a resolver may answer it per tenant).
@@ -68,7 +72,7 @@ same depth. Read this before assuming a key protects anything:
    Setting ``upload: False`` or ``search: False`` changes nothing at all:
    ``upload``, ``search``, ``comments``,
    ``collections.shared``, ``speakers.shared``, ``prompts.shared``,
-   ``org.defaults``, ``llm.byok``.
+   ``llm.byok``.
 
 **Viewer overlay** (issue #1274). ``GET /system/capabilities`` resolves the caller optionally
 and returns ``get_capabilities_for_viewer``: for platform staff (an active ``is_superuser``),
@@ -323,6 +327,7 @@ NO_PLATFORM_BYPASS: frozenset[str] = frozenset(
         "org.takedown",
         "org.audit_logs",
         "org.legal_hold",
+        "org.defaults",
         "speaker_attributes.migration",
         "url_ingest",
         "audio_extraction",

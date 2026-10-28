@@ -21,13 +21,11 @@ from dataclasses import dataclass
 from typing import Any
 from typing import Optional
 
-import numpy as np
 from sqlalchemy.orm import Session
 
 from app.core.constants import get_speaker_index
 from app.models.media import MediaFile
 from app.models.media import Speaker
-from app.services.opensearch_service import get_speaker_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -129,66 +127,6 @@ def _check_opensearch_profiles_exist(
         return True  # Proceed with query if check fails
 
 
-def _execute_profile_knn_search(
-    opensearch_client: Any,
-    embedding: np.ndarray,
-    user_id: int,
-    threshold: float,
-    accessible_profile_ids: set[int] | None = None,
-    organization_id: int | None = None,
-) -> list[dict[str, Any]]:
-    """
-    Execute kNN search for profile matches and return filtered results.
-
-    Returns list of profile match dictionaries with similarity scores.
-    """
-    from app.services.opensearch_service import _speaker_org_filter_clauses
-
-    if accessible_profile_ids is not None:
-        must_filters = [
-            {"term": {"document_type": "profile"}},
-            {"terms": {"profile_id": list(accessible_profile_ids)}},
-        ]
-    else:
-        must_filters = [
-            {"term": {"document_type": "profile"}},
-            {"term": {"user_id": user_id}},
-        ]
-    # Tenant gate on profile docs (org term, else exclude org-stamped).
-    must_filters.extend(_speaker_org_filter_clauses(organization_id))
-
-    query = {
-        "size": 10,
-        "query": {
-            "knn": {
-                "embedding": {
-                    "vector": embedding.tolist(),
-                    "k": 10,
-                    "filter": {"bool": {"must": must_filters}},
-                }
-            }
-        },
-    }
-
-    response = opensearch_client.search(index=get_speaker_index(), body=query)
-    matches = []
-
-    for hit in response["hits"]["hits"]:
-        score = 2.0 * hit["_score"] - 1.0  # Convert OS cosinesimil to raw cosine
-        source = hit["_source"]
-        if score >= threshold:
-            matches.append(
-                {
-                    "profile_id": source.get("profile_id"),
-                    "profile_name": source.get("profile_name"),
-                    "speaker_count": source.get("speaker_count"),
-                    "similarity": score,
-                }
-            )
-
-    return matches
-
-
 def _convert_profile_match_to_suggestion(
     match: dict[str, Any],
 ) -> Optional["ConsolidatedSuggestion"]:
@@ -236,6 +174,35 @@ class ConsolidatedSuggestion:
     auto_accept: bool = False
 
 
+def _dedupe_rank_and_limit(
+    suggestions: list["ConsolidatedSuggestion"], max_suggestions: int
+) -> list["ConsolidatedSuggestion"]:
+    """Keep the best suggestion per (type, name), profile matches first, capped per type.
+
+    Unlabeled diarizer names (``SPEAKER_XX``) are never offered as a suggestion.
+    """
+    unique: dict[str, ConsolidatedSuggestion] = {}
+    for s in suggestions:
+        key = f"{s.suggestion_type}:{s.name.lower()}"
+        if key not in unique or s.confidence > unique[key].confidence:
+            unique[key] = s
+
+    final = sorted(
+        unique.values(),
+        key=lambda s: (0 if s.suggestion_type == "profile" else 1, -s.confidence),
+    )
+    type_counts: dict[str, int] = {}
+    filtered: list[ConsolidatedSuggestion] = []
+    for s in final:
+        if s.name.startswith("SPEAKER_"):
+            continue
+        if type_counts.get(s.suggestion_type, 0) >= max_suggestions:
+            continue
+        type_counts[s.suggestion_type] = type_counts.get(s.suggestion_type, 0) + 1
+        filtered.append(s)
+    return filtered
+
+
 class SmartSpeakerSuggestionService:
     """
     Advanced speaker suggestion service with intelligent filtering and consolidation.
@@ -250,204 +217,18 @@ class SmartSpeakerSuggestionService:
     """
 
     @staticmethod
-    def consolidate_suggestions(
-        speaker_id: int,
-        user_id: int,
-        db: Session,
-        confidence_threshold: float = 0.5,
-        max_suggestions: int = 10,
-        accessible_profile_ids: set[int] | None = None,
-    ) -> list[ConsolidatedSuggestion]:
-        """
-        Generate two types of speaker suggestions: LLM and Profile.
-
-        This implements the two-type suggestion system:
-        1. LLM suggestions (from import process, stored in suggested_name)
-        2. Profile suggestions (speaker-to-profile matching)
-
-        Args:
-            speaker_id: ID of the speaker to find suggestions for
-            user_id: ID of the user
-            db: Database session
-            confidence_threshold: Minimum confidence threshold
-            max_suggestions: Maximum number of suggestions to return
-
-        Returns:
-            List of consolidated suggestions with clear type labels for frontend display.
-        """
-        suggestions: list[ConsolidatedSuggestion] = []
-
-        # Get the speaker from database to check for LLM suggestions
-        speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
-        if not speaker:
-            logger.warning(f"Speaker {speaker_id} not found")
-            return suggestions
-
-        # Step 1: LLM suggestions (from speaker identification task)
-        # Uses suggestion_source column to distinguish LLM analysis from voice matching
-        if (
-            speaker.suggested_name
-            and speaker.confidence
-            and speaker.suggestion_source == "llm_analysis"
-        ):
-            llm_suggestion = ConsolidatedSuggestion(
-                name=speaker.suggested_name,  # type: ignore[arg-type]
-                confidence=float(speaker.confidence),
-                suggestion_type="llm_analysis",
-                reason="AI identified from transcript context",
-                auto_accept=float(speaker.confidence) >= 0.75,
-            )
-            suggestions.append(llm_suggestion)
-            logger.info(
-                f"Added LLM suggestion: {speaker.suggested_name} "
-                f"(confidence: {speaker.confidence:.2f})"
-            )
-
-        # Get speaker embedding for profile matching using UUID
-        speaker_embedding = get_speaker_embedding(str(speaker.uuid))
-        if not speaker_embedding:
-            logger.warning(f"No embedding found for speaker {speaker.uuid}")
-            return suggestions
-
-        embedding_array = np.array(speaker_embedding)
-
-        # Tenant gate: suggestions for this speaker are scoped to its file's org.
-        organization_id = _media_file_org_ids(db, {int(speaker.media_file_id)}).get(
-            int(speaker.media_file_id)
-        )
-
-        # Step 2: Profile suggestions (speaker-to-profile matching).
-        # Deliberately takes no session: it is an OpenSearch round trip, and every
-        # frame that can reach it must be free of a DB transaction.
-        profile_suggestions = SmartSpeakerSuggestionService._get_profile_suggestions_optimized(
-            embedding_array,
-            user_id,
-            confidence_threshold,
-            accessible_profile_ids=accessible_profile_ids,
-            organization_id=organization_id,
-        )
-        suggestions.extend(profile_suggestions)
-
-        # Step 3: Deduplicate by name
-        unique_suggestions: dict[str, ConsolidatedSuggestion] = {}
-        for suggestion in suggestions:
-            dedup_key = f"{suggestion.suggestion_type}:{suggestion.name.lower()}"
-            if (
-                dedup_key not in unique_suggestions
-                or suggestion.confidence > unique_suggestions[dedup_key].confidence
-            ):
-                unique_suggestions[dedup_key] = suggestion
-
-        # Step 4: Sort by type priority and confidence
-        final_suggestions = list(unique_suggestions.values())
-        final_suggestions.sort(
-            key=lambda s: (
-                0 if s.suggestion_type == "profile" else 1,  # Profile > LLM
-                -s.confidence,  # Higher confidence first within each type
-            )
-        )
-
-        # Step 5: Limit per type and filter out unlabeled speakers
-        type_counts: dict[str, int] = {}
-        filtered_suggestions = []
-        for suggestion in final_suggestions:
-            if suggestion.name.startswith("SPEAKER_"):
-                continue
-            stype = suggestion.suggestion_type
-            if type_counts.get(stype, 0) >= max_suggestions:
-                continue
-            type_counts[stype] = type_counts.get(stype, 0) + 1
-            filtered_suggestions.append(suggestion)
-
-        filtered_suggestions = SmartSpeakerSuggestionService.without_refused(
-            db, {int(speaker_id): filtered_suggestions}
-        )[int(speaker_id)]
-        logger.info(
-            f"Returning {len(filtered_suggestions)} suggestions for speaker {speaker_id} "
-            f"(LLM: {len([s for s in filtered_suggestions if s.suggestion_type == 'llm_analysis'])}, "
-            f"Profile: {len([s for s in filtered_suggestions if s.suggestion_type == 'profile'])})"
-        )
-        return filtered_suggestions
-
-    @staticmethod
-    def _get_profile_suggestions_optimized(
-        embedding: np.ndarray,
-        user_id: int,
-        threshold: float,
-        accessible_profile_ids: set[int] | None = None,
-        organization_id: int | None = None,
-    ) -> list[ConsolidatedSuggestion]:
-        """Get suggestions from speaker profiles using OpenSearch native similarity.
-
-        **Takes no ``Session`` on purpose.** Every call in this body is an OpenSearch
-        round trip; accepting a caller-owned session would let one run with a Postgres
-        transaction open one frame up, which is the ``session-param-slow-work`` defect
-        (see ``backend/app/tasks/CLAUDE.md``). The tenant scope it needs
-        (``organization_id``) is resolved by the caller's short read phase and handed
-        over as plain data.
-        """
-        try:
-            from app.services.opensearch_service import opensearch_client
-
-            if not opensearch_client:
-                logger.warning("OpenSearch client not initialized for profile suggestions")
-                return []
-
-            # Check if profiles exist to avoid KNN query on empty sets
-            if not _check_opensearch_profiles_exist(
-                opensearch_client,
-                user_id,
-                accessible_profile_ids=accessible_profile_ids,
-            ):
-                return []
-
-            # Execute kNN search for profile matches
-            try:
-                opensearch_matches = _execute_profile_knn_search(
-                    opensearch_client,
-                    embedding,
-                    user_id,
-                    threshold,
-                    accessible_profile_ids=accessible_profile_ids,
-                    organization_id=organization_id,
-                )
-            except Exception as e:
-                logger.error(
-                    f"Error in OpenSearch profile similarity search <_get_profile_suggestions_optimized - hits>: {e}"
-                )
-                return []
-
-            # Convert matches to suggestions
-            suggestions = []
-            for match in opensearch_matches:
-                suggestion = _convert_profile_match_to_suggestion(match)
-                if suggestion:
-                    suggestions.append(suggestion)
-
-            return suggestions
-
-        except Exception as e:
-            # There used to be a ``_get_profile_suggestions`` fallback here that
-            # re-ran the SAME kNN through ``ProfileEmbeddingService`` — a second
-            # implementation of one query, and the only reason this function
-            # needed a ``Session`` at all (that method takes one and ignores it).
-            # When the cluster is the thing that failed, the retry failed
-            # identically and swallowed its own error, so it only ever converted
-            # this ``return []`` into a slower ``return []``.
-            logger.error(f"Error in optimized profile suggestions: {e}")
-            return []
-
-    @staticmethod
     def consolidate_suggestions_batch(
         speakers: list[Speaker],
         user_id: int,
         file_org_map: dict[int, int | None],
+        *,
+        voiceprints_off_file_ids: frozenset[int] | set[int],
         confidence_threshold: float = 0.5,
         max_suggestions: int = 10,
     ) -> dict[int, list[ConsolidatedSuggestion]]:
         """Batch-generate suggestions for multiple speakers with minimal OS round-trips.
 
-        Replaces N calls to consolidate_suggestions() with:
+        Instead of one embedding read, profile probe and kNN per speaker:
         1. One mget for all speaker embeddings
         2. One search to check if profiles exist
         3. One msearch for all kNN profile queries
@@ -465,6 +246,10 @@ class SmartSpeakerSuggestionService:
             user_id: Owner, for the profile-document filter.
             file_org_map: ``media_file_id -> organization_id`` for every file the
                 ``speakers`` span, from ``_media_file_org_ids``.
+            voiceprints_off_file_ids: Files whose owner or organization has voiceprints
+                switched off (``PrivacyView.voiceprints_off_file_ids``). Their speakers get
+                no embedding read and no kNN, only the LLM suggestion. Required, with no
+                default, so a caller cannot forget the policy and fail open.
 
         Returns dict mapping speaker.id (int) -> list[ConsolidatedSuggestion].
         """
@@ -485,8 +270,9 @@ class SmartSpeakerSuggestionService:
         for speaker in speakers:
             sid = int(speaker.id)
             suuid = str(speaker.uuid)
-            uuid_to_id[suuid] = sid
-            org_by_uuid[suuid] = file_org_map.get(int(speaker.media_file_id))
+            if int(speaker.media_file_id) not in voiceprints_off_file_ids:
+                uuid_to_id[suuid] = sid
+                org_by_uuid[suuid] = file_org_map.get(int(speaker.media_file_id))
 
             if (
                 speaker.suggested_name
@@ -504,7 +290,7 @@ class SmartSpeakerSuggestionService:
                 )
 
         # Phase 2: Batch-fetch all speaker embeddings (1 mget)
-        embeddings_map = get_speaker_embeddings_batch(list(uuid_to_id.keys()))
+        embeddings_map = get_speaker_embeddings_batch(list(uuid_to_id.keys())) if uuid_to_id else {}
 
         # Phase 3: Check if profiles exist at all (1 search, same for all speakers)
         profiles_exist = False
@@ -539,29 +325,7 @@ class SmartSpeakerSuggestionService:
                 if suggestion:
                     result[sid].append(suggestion)
 
-            # Deduplicate by (type, name)
-            unique: dict[str, ConsolidatedSuggestion] = {}
-            for s in result[sid]:
-                key = f"{s.suggestion_type}:{s.name.lower()}"
-                if key not in unique or s.confidence > unique[key].confidence:
-                    unique[key] = s
-
-            # Sort and filter
-            final = sorted(
-                unique.values(),
-                key=lambda s: (0 if s.suggestion_type == "profile" else 1, -s.confidence),
-            )
-            type_counts: dict[str, int] = {}
-            filtered: list[ConsolidatedSuggestion] = []
-            for s in final:
-                if s.name.startswith("SPEAKER_"):
-                    continue
-                if type_counts.get(s.suggestion_type, 0) >= max_suggestions:
-                    continue
-                type_counts[s.suggestion_type] = type_counts.get(s.suggestion_type, 0) + 1
-                filtered.append(s)
-
-            result[sid] = filtered
+            result[sid] = _dedupe_rank_and_limit(result[sid], max_suggestions)
 
         return result
 

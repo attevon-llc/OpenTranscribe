@@ -1,5 +1,12 @@
 import axiosInstance from '$lib/axios';
 import type { AuditLogEntry } from '$lib/api/admin';
+import type {
+  InstancePrivacyPolicy,
+  PrivacyDecision,
+  PurgeAccepted,
+  PurgeTarget,
+} from '$lib/api/privacy';
+import { PURGE_CONFIRM_WORD } from '$lib/api/privacy';
 
 /**
  * Organization-scoped takedown (issue #1253): `/org-admin/files/...`.
@@ -91,6 +98,30 @@ export interface OrgHoldCreate {
   reason: string;
   matter_ref?: string;
 }
+
+/**
+ * An organization's privacy policy (issue #1280): `GET|PATCH /org-admin/policy`. The scope is
+ * always the caller's own organization; the route is 404 unless the `org.defaults` capability
+ * is on. `redaction_floor` (issue #1279, a later release) is part of the contract but has no UI
+ * yet, so this client neither reads nor sends it.
+ */
+export interface OrgPolicy {
+  /** The organization's own switches. */
+  voiceprint_matching_enabled: boolean;
+  gender_inference_enabled: boolean;
+  /** The deployment's switches: one the operator turned off cannot be turned on here. */
+  instance: InstancePrivacyPolicy;
+  /** What applies once the layers above the organization are counted. */
+  effective: {
+    voiceprint_matching: PrivacyDecision;
+    gender_inference: PrivacyDecision;
+  };
+  updated_at: string | null;
+}
+
+export type OrgPolicyChanges = Partial<
+  Pick<OrgPolicy, 'voiceprint_matching_enabled' | 'gender_inference_enabled'>
+>;
 
 export class OrgAdminApi {
   /** This organization's taken-down files, newest first. */
@@ -185,6 +216,30 @@ export class OrgAdminApi {
   /** Release a hold. 409 when it was already released. */
   static async releaseHold(holdUuid: string, reason: string): Promise<OrgHold> {
     const response = await axiosInstance.post(`/org-admin/holds/${holdUuid}/release`, { reason });
+    return response.data;
+  }
+
+  /** The caller's organization policy. */
+  static async getPolicy(): Promise<OrgPolicy> {
+    const response = await axiosInstance.get('/org-admin/policy');
+    return response.data;
+  }
+
+  /** Partial update; audited server-side with field names only. */
+  static async updatePolicy(changes: OrgPolicyChanges): Promise<OrgPolicy> {
+    const response = await axiosInstance.patch('/org-admin/policy', changes);
+    return response.data;
+  }
+
+  /**
+   * Irreversibly delete the organization's voiceprints and/or inferred gender, every member's
+   * included. 409 `policy_still_enabled` until the target's switch is off for the organization.
+   */
+  static async purgePolicyData(targets: PurgeTarget[]): Promise<PurgeAccepted> {
+    const response = await axiosInstance.post('/org-admin/policy/purge', {
+      targets,
+      confirm: PURGE_CONFIRM_WORD,
+    });
     return response.data;
   }
 }

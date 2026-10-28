@@ -93,6 +93,10 @@ ISSUE_MESSAGES: dict[str, str] = {
         "nothing is billed twice."
     ),
     "source_locked": "Your administrator manages speaker detection for this deployment.",
+    "voiceprints_disabled": (
+        "Speaker recognition across recordings is turned off for this recording, so no voice "
+        "profiles are created or matched. Speakers are still told apart within the recording."
+    ),
     "asr_provider_not_allowed": "Your administrator has not enabled this transcription provider.",
     "diarizer_provider_not_allowed": (
         "Your administrator has not enabled this speaker detection provider."
@@ -158,6 +162,11 @@ class PlanInputs:
     #: provider the administrator has not enabled. The environment default is never blocked.
     asr_provider_allowed: bool = True
     diarizer_provider_allowed: bool = True
+    #: The privacy policy's answer (``services/privacy/policy``) for the file's owner and
+    #: organization: ``False`` plans no voiceprint step. Restrict-only and fail-closed, so
+    #: this default of ``True`` is only for callers that plan with no file in hand (a
+    #: settings preview); dispatch always passes the file's own answer.
+    voiceprints_allowed: bool = True
 
 
 @dataclass(frozen=True)
@@ -405,6 +414,10 @@ def resolve_pipeline_plan(i: PlanInputs) -> PipelinePlan:
 
     if not runs:
         id_execution: Literal["inline_native", "embedding_stage", "none"] = "none"
+    elif not i.voiceprints_allowed:
+        # Speakers are still told apart within the recording; nothing is matched or stored.
+        id_execution = "none"
+        add("voiceprints_disabled", "info", "speaker_id")
     elif execution == "inline_local":
         id_execution = "inline_native"
     else:
@@ -434,7 +447,7 @@ def resolve_pipeline_plan(i: PlanInputs) -> PipelinePlan:
             merge=timing if runs else "none",
         ),
         speaker_id=SpeakerIdStep(
-            runs=runs,
+            runs=id_execution != "none",
             where="server",
             backend=i.diarizer_backend,
             execution=id_execution,

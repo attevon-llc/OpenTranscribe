@@ -218,7 +218,14 @@ def test_a_voiceprint_link_onto_a_typed_name_hides_its_match_evidence_while_off(
 
     assert (machine.display_name, machine.verified) == ("Alice", True), "the typed name stays"
     assert (machine.profile_id, machine.suggested_name, machine.confidence) == (None, None, None)
-    assert (person.suggested_name, person.confidence) == ("Alice", 0.82), "a person's stays"
+    assert (person.suggested_name, person.confidence) == (None, None), (
+        "the voice comparison is hidden on a person's speaker too"
+    )
+    assert (person.display_name, person.verified, person.profile_id) == (
+        "Alice",
+        True,
+        person.profile_id,
+    ), "the person's name and link stay"
 
 
 def test_a_voiceprint_link_onto_a_typed_name_shows_its_evidence_while_on(db_session, normal_user):
@@ -230,7 +237,7 @@ def test_a_voiceprint_link_onto_a_typed_name_shows_its_evidence_while_on(db_sess
     assert (machine.suggested_name, machine.confidence) == ("Alice", 0.82)
 
 
-def test_a_purge_removes_the_link_and_the_match_evidence_but_keeps_the_typed_name(
+def test_a_purge_removes_the_link_and_evidence_but_keeps_the_typed_name_and_a_persons_identity(
     db_session, normal_user, opensearch
 ):
     machine = _linked(db_session, normal_user, "voiceprint_link")
@@ -245,12 +252,14 @@ def test_a_purge_removes_the_link_and_the_match_evidence_but_keeps_the_typed_nam
     assert (row.display_name, row.verified, row.profile_id) == ("Alice", True, None)
     assert (row.suggested_name, row.suggestion_source, row.confidence) == (None, None, None)
     assert row.identity_source is None
-    assert (kept.profile_id, kept.suggested_name, kept.confidence) == (
-        person.profile_id,
+    assert (kept.display_name, kept.verified, kept.profile_id, kept.identity_source) == (
         "Alice",
-        0.82,
-    )
-    assert before == 1, "control: the residual sees the link row's evidence before the purge"
+        True,
+        person.profile_id,
+        "human",
+    ), "the person's own identity is untouched"
+    assert (kept.suggested_name, kept.suggestion_source, kept.confidence) == (None, None, None)
+    assert before == 2, "control: the residual sees both rows' evidence before the purge"
     assert residual.counts["voiceprint_suggestions"] == 0
 
 

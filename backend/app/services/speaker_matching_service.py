@@ -33,6 +33,7 @@ from app.utils.speaker_identity_detail import ORIGIN_PROFILE_PROPAGATION
 from app.utils.speaker_identity_detail import ORIGIN_VOICE_MATCH
 from app.utils.speaker_identity_detail import voiceprint_detail
 from app.utils.speaker_identity_source import MACHINE_IDENTITY_SOURCES
+from app.utils.speaker_identity_source import is_person_verified
 from app.utils.speaker_identity_source import record_human_identity
 from app.utils.speaker_identity_source import record_machine_identity
 from app.utils.speaker_identity_source import record_machine_link
@@ -893,6 +894,28 @@ class SpeakerMatchingService:
             origin_task=MATCHING_ORIGIN_TASK,
         )
 
+    @staticmethod
+    def _record_match_suggestion(
+        speaker: Speaker, match: dict[str, Any], match_detail: dict[str, Any]
+    ) -> None:
+        """Store a found match's confidence and, if high enough, its suggestion.
+
+        A speaker a person verified gets neither the suggestion nor the score of a voice
+        comparison, unless the auto-accept that follows makes the voiceprint's the identity of
+        the row.
+        """
+        if match["auto_accept"] or not is_person_verified(speaker):
+            speaker.confidence = match["confidence"]
+        if match["confidence"] >= ConfidenceLevel.HIGH:  # Only suggest if >= 75% confidence
+            record_suggestion(
+                speaker,
+                source="profile_match" if match.get("profile_id") else "voice_match",
+                name=match["suggested_name"],
+                confidence=match["confidence"],
+                detail=match_detail,
+                identity_follows=bool(match["auto_accept"]),
+            )
+
     def _handle_speaker_match(
         self,
         speaker: Speaker,
@@ -936,17 +959,8 @@ class SpeakerMatchingService:
                 "profile_id": None,
             }
 
-        # Found a matching speaker - store the suggestion only if high confidence
-        speaker.confidence = match["confidence"]
         match_detail = self._match_detail(match)
-        if match["confidence"] >= ConfidenceLevel.HIGH:  # Only suggest if ≥75% confidence
-            record_suggestion(
-                speaker,
-                source="profile_match" if match.get("profile_id") else "voice_match",
-                name=match["suggested_name"],
-                confidence=match["confidence"],
-                detail=match_detail,
-            )
+        self._record_match_suggestion(speaker, match, match_detail)
 
         # If high confidence, auto-apply the suggestion
         if match["auto_accept"]:
@@ -1175,7 +1189,7 @@ class SpeakerMatchingService:
                         # threshold moves the canonical label on its own, and
                         # nothing dispatched propagation for it until #605.
                         before = canonical_speaker_label_for_row(speaker)
-                        record_suggestion(
+                        if not record_suggestion(
                             speaker,
                             source="voice_match",
                             name=match["display_name"],
@@ -1188,7 +1202,8 @@ class SpeakerMatchingService:
                                 embedding_model=voiceprint_model_id(),
                                 origin_task=MATCHING_ORIGIN_TASK,
                             ),
-                        )
+                        ):
+                            break  # a person verified this speaker: no voice suggestion
                         self._rename_tracker.record(
                             int(speaker.media_file_id),
                             before,

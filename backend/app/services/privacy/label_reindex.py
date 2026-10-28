@@ -140,7 +140,7 @@ def files_labelled_by_voiceprints(
     """``(id, uuid, owner)`` of completed files with a speaker a voiceprint names, in id order.
 
     A file is affected when a speaker's ``identity_source`` is a voiceprint one, or when a
-    voiceprint SUGGESTION that nobody verified decides the label (the pre-provenance shape).
+    voiceprint SUGGESTION decides the label (a speaker with no name of its own).
 
     Args:
         db: Session, read only.
@@ -154,7 +154,6 @@ def files_labelled_by_voiceprints(
             Speaker.identity_source.in_(sorted(MACHINE_IDENTITY_SOURCES)),
             (
                 Speaker.suggestion_source.in_(sorted(EMBEDDING_SUGGESTION_SOURCES))
-                & Speaker.verified.isnot(True)
                 & Speaker.suggested_name.isnot(None)
                 & (Speaker.suggested_name != "")
                 & (Speaker.confidence >= DEFAULT_SUGGESTION_CONFIDENCE_THRESHOLD)
@@ -469,7 +468,6 @@ def _expected_labels(db: Session, file_ids: list[int]) -> dict[int, set[str]]:
             Speaker.suggested_name,
             Speaker.confidence,
             Speaker.suggestion_source,
-            Speaker.verified,
             Speaker.identity_source,
         )
         .filter(Speaker.media_file_id.in_(file_ids), has_segments)

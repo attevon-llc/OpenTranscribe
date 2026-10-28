@@ -257,15 +257,23 @@ def test_the_rename_propagation_plane_expects_the_label_the_index_holds(
     assert rpt._current_speaker_name(int(world["matched"].id)) == "SPEAKER_00"
 
 
-def test_a_label_that_is_decided_by_a_person_is_never_withheld(db_session, normal_user, world):
-    """A verified voice match is a person's assertion, not a voiceprint's, and keeps its name."""
+def test_a_name_a_person_gave_is_never_withheld_but_a_verified_voice_match_is(
+    db_session, normal_user, world
+):
+    """The suggestion is the voice comparison, whoever verified the speaker; a typed name stays."""
+    from app.utils.speaker_labels import canonical_speaker_label_for_row
+
     world["matched"].verified = True
     db_session.commit()
     _off(db_session)
 
-    from app.utils.speaker_labels import canonical_speaker_label_for_row
+    assert canonical_speaker_label_for_row(world["matched"]) == "SPEAKER_00"
 
-    assert canonical_speaker_label_for_row(world["matched"]) == MATCHED
+    world["matched"].display_name = TYPED
+    world["matched"].identity_source = "human"
+    db_session.commit()
+
+    assert canonical_speaker_label_for_row(world["matched"]) == TYPED
 
 
 def test_speaker_list_and_detail_show_the_placeholder_while_voiceprints_are_off(

@@ -116,7 +116,7 @@ def test_visible_profile_id_matrix(profile_id, source, enabled, expected):
 
 
 def _label(**kw: Any) -> str:
-    fields: dict[str, Any] = {"display_name": "Alice", "verified": True}
+    fields: dict[str, Any] = {"display_name": "Alice"}
     fields.update(kw)
     return canonical_speaker_label("SPEAKER_00", **fields)
 
@@ -146,17 +146,11 @@ def _suggested(**kw: Any) -> str:
     return canonical_speaker_label("SPEAKER_00", **fields)
 
 
-def test_a_voice_suggestion_is_not_promoted_when_off():
-    assert _suggested(verified=False, voiceprint_names=False) == "SPEAKER_00"
-    assert _suggested(verified=False, voiceprint_names=True) == "Alice"
-
-
-def test_a_suggestion_a_person_verified_stays_unless_a_voiceprint_did_the_verifying():
-    assert _suggested(verified=True, voiceprint_names=False) == "Alice"
-    assert (
-        _suggested(verified=True, identity_source="voiceprint", voiceprint_names=False)
-        == "SPEAKER_00"
-    )
+@pytest.mark.parametrize("identity_source", [None, "human", "voiceprint", "voiceprint_link"])
+def test_a_voice_suggestion_is_not_promoted_when_off_whoever_the_speaker_is(identity_source):
+    # Not by the verification of the speaker either: the suggestion is the voice comparison.
+    assert _suggested(identity_source=identity_source, voiceprint_names=False) == "SPEAKER_00"
+    assert _suggested(identity_source=identity_source, voiceprint_names=True) == "Alice"
 
 
 def test_a_non_voiceprint_suggestion_is_never_promoted_either_way():

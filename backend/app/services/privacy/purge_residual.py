@@ -128,10 +128,6 @@ def measure_voiceprint_residual(
                 Speaker.suggestion_detail["origin"].astext.in_(
                     sorted(EMBEDDING_SUGGESTION_SOURCES)
                 ),
-                or_(
-                    Speaker.verified.isnot(True),
-                    Speaker.identity_source.in_(sorted(MACHINE_IDENTITY_SOURCES)),
-                ),
             ),
         )
         result.counts["voiceprint_suggestions"] = _count(
@@ -141,10 +137,6 @@ def measure_voiceprint_residual(
             .where(
                 *scope.speaker_filters(),
                 Speaker.suggestion_source.in_(sorted(EMBEDDING_SUGGESTION_SOURCES)),
-                or_(
-                    Speaker.verified.isnot(True),
-                    Speaker.identity_source.in_(sorted(MACHINE_IDENTITY_SOURCES)),
-                ),
             ),
         )
         result.counts["speaker_matches"] = _count(

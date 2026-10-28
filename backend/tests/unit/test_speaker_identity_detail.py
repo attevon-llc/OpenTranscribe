@@ -89,7 +89,7 @@ def test_an_llm_detail_names_the_provider_and_model_not_the_endpoint():
 # --- what a person accepted --------------------------------------------------------------------
 
 
-def test_accepting_a_voice_suggestion_is_summarised_without_matched_ids():
+def test_accepting_a_voice_suggestion_is_summarised_without_matched_ids_or_its_score():
     s = _speaker(
         display_name="Alice",
         suggested_name="alice",
@@ -100,7 +100,7 @@ def test_accepting_a_voice_suggestion_is_summarised_without_matched_ids():
         ),
     )
 
-    assert detail.accepted_suggestion_snapshot(s) == {"source": "voice_match", "confidence": 0.9}
+    assert detail.accepted_suggestion_snapshot(s) == {"source": "voice_match"}
 
 
 def test_accepting_an_llm_suggestion_keeps_which_model_guessed():
@@ -163,10 +163,7 @@ def test_accepting_a_pending_suggestion_is_in_the_persons_record():
 
     ids.record_human_identity(s, user_id=7, origin=detail.ORIGIN_ACCEPTED_SUGGESTION)
 
-    assert s.identity_source_detail["accepted_suggestion"] == {
-        "source": "voice_match",
-        "confidence": 0.9,
-    }
+    assert s.identity_source_detail["accepted_suggestion"] == {"source": "voice_match"}
 
 
 def test_a_machine_identity_has_no_person_and_carries_the_match():

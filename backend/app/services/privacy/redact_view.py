@@ -8,8 +8,8 @@ shapes the answer.
 Two rules govern what is hidden while a scope's switch is off:
 
 * **Voiceprints off**: kNN suggestion reads return nothing, and a *stored* suggestion that a
-  voiceprint wrote (``suggestion_source`` in ``voice_match`` / ``profile_match``) and nobody
-  verified is omitted. A name and profile link a voiceprint path wrote
+  voiceprint wrote (``suggestion_source`` in ``voice_match`` / ``profile_match``) is omitted
+  with its confidence and detail, whoever verified the speaker. A name and profile link a voiceprint path wrote
   (``speaker.identity_source``, see ``utils/speaker_identity_source``) are omitted too: an
   auto-accepted match looks exactly like a person's confirmation otherwise. Named profiles,
   avatars, typed names and person-made links are user assertions, not biometric data, and
@@ -209,23 +209,14 @@ def require_voiceprints(db: Session, *, user_id: int, organization_id: int | Non
 
 
 def hides_voiceprint_suggestion(speaker: Any) -> bool:
-    """A stored suggestion a voiceprint wrote that is not a person's verified word (D5).
+    """A stored suggestion a voiceprint wrote (``voice_match`` / ``profile_match``) (D5).
 
-    Hidden when nobody verified it, and also when a voiceprint path wrote the row's identity
-    (``identity_source`` ``voiceprint`` or ``voiceprint_link``): an auto-accepted match sets
-    ``verified`` too, and its suggestion and confidence are the evidence of the match, even
-    where the name it matched was a person's own.
-
-    ``getattr`` for ``verified`` / ``identity_source``: a columns-only row that did not select
-    ``verified`` cannot prove a person verified the suggestion, so it reads as unverified (the
-    hiding side).
+    Hidden whoever verified the speaker: the suggestion, its confidence and its detail are the
+    evidence of a voice comparison, not a name a person gave. What a person gave (the
+    ``display_name`` of a verified speaker) is never in this rule. A suggestion from anything
+    else (a language model, a metadata hint) is not voice data and stays.
     """
-    if not is_embedding_suggestion_source(getattr(speaker, "suggestion_source", None)):
-        return False
-    return (
-        getattr(speaker, "verified", None) is not True
-        or getattr(speaker, "identity_source", None) in MACHINE_IDENTITY_SOURCES
-    )
+    return is_embedding_suggestion_source(getattr(speaker, "suggestion_source", None))
 
 
 def voiceprints_off_for_row(row: Any, db: Session | PrivacyView | None = None) -> bool:
@@ -390,14 +381,12 @@ def hidden_suggestion_clause(
 ) -> ColumnElement[bool]:
     """SQL twin of :func:`hides_voiceprint_suggestion` for queries that never load rows.
 
-    True for a speaker whose stored voiceprint suggestion is withheld: its source is a
-    voiceprint match, nobody verified it (or a voiceprint wrote the ``verified``), and its
-    file's scope has voiceprints off. Scopes are decided exactly as in
+    True for a speaker whose stored suggestion came from a voiceprint match and whose file's
+    scope has voiceprints off, whoever verified the speaker. Scopes are decided exactly as in
     :func:`machine_identity_clauses`. ``false()`` when no scope is off.
     """
     from sqlalchemy import and_
     from sqlalchemy import false
-    from sqlalchemy import or_
 
     from app.models.media import Speaker
     from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
@@ -406,14 +395,7 @@ def hidden_suggestion_clause(
     in_off_file = _in_off_file(view, file_ids_select, embedding)
     if in_off_file is None:
         return false()
-    return and_(
-        embedding,
-        or_(
-            Speaker.verified.isnot(True),
-            Speaker.identity_source.in_(sorted(MACHINE_IDENTITY_SOURCES)),
-        ),
-        in_off_file,
-    )
+    return and_(embedding, in_off_file)
 
 
 def _in_off_file(

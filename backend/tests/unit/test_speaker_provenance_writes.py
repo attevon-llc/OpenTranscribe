@@ -169,10 +169,7 @@ def test_typing_the_suggested_name_records_which_voice_suggestion_was_accepted(
 
     assert response.status_code == 200, response.text
     row = _fresh(db_session, speaker.id)
-    assert _idd(row)["accepted_suggestion"] == {
-        "source": "voice_match",
-        "confidence": 0.9,
-    }
+    assert _idd(row)["accepted_suggestion"] == {"source": "voice_match"}
     assert (row.suggested_name, row.suggestion_detail) == (None, None), "the suggestion is spent"
 
 
@@ -1048,6 +1045,58 @@ def test_a_platform_administrator_sees_the_person(db_session, normal_user, admin
     assert _by(db_session, speaker, ProvenanceViewer(user_id=admin_user.id)) is None, (
         "control: an administrator whose bypass allows nothing sees no more than any viewer"
     )
+
+
+def test_a_bypass_that_carries_a_user_who_is_not_an_administrator_names_no_one(
+    db_session, normal_user, other_user
+):
+    """Every request has a bypass with its user on it; only an administrator's confers reach."""
+    from app.services.platform_access import TenancyMode
+    from app.services.platform_bypass import PlatformBypass
+
+    speaker = _human_row(db_session, normal_user, normal_user)
+    bypass = PlatformBypass(user=other_user, mode=TenancyMode.SINGLE)
+
+    assert other_user.is_admin is False, "control: the viewer is an ordinary user"
+    assert _by(db_session, speaker, ProvenanceViewer(user_id=other_user.id, bypass=bypass)) is None
+
+
+def test_a_platform_admin_in_a_multi_tenant_deployment_is_named_no_one_without_a_grant(
+    db_session, normal_user, admin_user
+):
+    from app.services.platform_access import TenancyMode
+    from app.services.platform_bypass import PlatformBypass
+
+    speaker = _human_row(db_session, normal_user, normal_user)
+    bypass = PlatformBypass(user=admin_user, mode=TenancyMode.MULTI)
+
+    assert _by(db_session, speaker, ProvenanceViewer(user_id=admin_user.id, bypass=bypass)) is None
+
+
+def test_the_platform_role_is_asked_about_a_file_only_when_a_person_would_be_named(
+    db_session, normal_user, other_user
+):
+    """Asking whether the role reaches a file is an audited act: not made for nothing."""
+    from app.services.platform_bypass import PlatformBypass
+
+    asked: list[str] = []
+
+    class Bypass(PlatformBypass):
+        def allows(self, **kw):
+            asked.append(kw["resource_uuid"])
+            return True
+
+    unnamed = _human_row(db_session, normal_user, other_user)
+    unnamed.identity_source_user_id = None
+    named = _human_row(db_session, normal_user, other_user)
+    viewer = ProvenanceViewer(user_id=other_user.id, bypass=Bypass())
+    rows = [_fresh(db_session, unnamed.id), _fresh(db_session, named.id)]
+
+    attach_speaker_provenance(db_session, rows[:1], viewer)
+    assert asked == [], "a task-made identity names no one: nothing to ask"
+
+    attach_speaker_provenance(db_session, rows, viewer)
+    assert asked == [str(named.media_file.uuid)], "one question, for the file that names a person"
 
 
 def test_a_deleted_account_leaves_the_record_without_a_person(db_session, normal_user, other_user):

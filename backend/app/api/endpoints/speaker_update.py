@@ -457,6 +457,8 @@ def _persist_match_results(
             name=trigger["display_name"],
             confidence=similarity,
             detail=_retroactive_detail(trigger, similarity),
+            # An auto-apply below makes the voiceprint's the identity of the row.
+            identity_follows=similarity >= AUTO_APPLY_CONFIDENCE,
         )
         store_speaker_match(trigger["id"], speaker.id, similarity, db)
 

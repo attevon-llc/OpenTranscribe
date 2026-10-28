@@ -214,6 +214,19 @@ def after_skip(speaker: Any) -> None:
     )
 
 
+def is_person_verified(speaker: Any) -> bool:
+    """Is this speaker's identity a person's word: verified, and not made by a voiceprint path?
+
+    ``verified`` alone does not say who verified it (an auto-accepted match sets it too), so a
+    machine identity (``voiceprint`` / ``voiceprint_link``) is never a person's. NULL reads as a
+    person's, like everywhere else.
+    """
+    return (
+        getattr(speaker, "verified", None) is True
+        and getattr(speaker, "identity_source", None) not in MACHINE_IDENTITY_SOURCES
+    )
+
+
 def record_suggestion(
     speaker: Any,
     *,
@@ -221,7 +234,8 @@ def record_suggestion(
     name: str | None,
     confidence: float | None,
     detail: dict[str, Any],
-) -> None:
+    identity_follows: bool = False,
+) -> bool:
     """Store a recommendation and where it came from, together.
 
     The only way a recommendation is written: ``suggested_name``, ``suggestion_source``,
@@ -229,11 +243,27 @@ def record_suggestion(
     :func:`app.utils.speaker_identity_detail.voiceprint_detail` (``voice_match`` /
     ``profile_match``) or :func:`~app.utils.speaker_identity_detail.llm_detail`
     (``llm_analysis``). A suggestion is never applied by this function.
+
+    A voiceprint suggestion (``voice_match`` / ``profile_match``) is NOT recorded over a
+    speaker a person verified: it would put a voice comparison on a person's own record, where
+    switching voiceprints off hides it only by an extra rule and a purge has to find it
+    separately. Pass ``identity_follows=True`` when the caller replaces the identity with the
+    voiceprint's in the same step (an auto-accept), so the row is the machine's by the end.
+
+    Returns:
+        ``True`` when the recommendation was written, ``False`` when it was refused.
     """
+    if (
+        is_embedding_suggestion_source(source)
+        and not identity_follows
+        and is_person_verified(speaker)
+    ):
+        return False
     speaker.suggested_name = name
     speaker.suggestion_source = source
     speaker.confidence = confidence
     speaker.suggestion_detail = detail
+    return True
 
 
 def clear_suggestion(speaker: Any) -> None:

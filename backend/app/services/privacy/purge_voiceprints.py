@@ -15,7 +15,9 @@ What is deleted, and what is only reverted
   that added it; the name and ``verified`` stay. A ``human`` or NULL
   identity is never touched. Machine-identified speakers leave promoted clusters (a cluster left
   empty is deleted).
-* Voiceprint suggestions nobody verified; ``speaker_match`` rows with EITHER side in scope (a
+* Voiceprint suggestions, with their confidence and detail, also on a speaker a person verified
+  (its name, ``verified`` flag, profile link and identity record are left as they are);
+  ``speaker_match`` rows with EITHER side in scope (a
   row joining an in-scope speaker to the same person's speaker in another scope is deleted too:
   it is voice-derived data of the purged scope, and counted separately); unpromoted clusters
   whose members are all in scope (a cluster that also holds another scope's speakers only loses
@@ -601,23 +603,25 @@ def purge_voiceprints_postgres(db: Session, scope: PurgeScope) -> PostgresPurge:
         .execution_options(synchronize_session=False),
     )
 
-    unverified_voice_suggestion = (
+    # Every voiceprint suggestion left, whoever verified the speaker: a verified speaker's NAME
+    # is the person's and is not touched (only the four suggestion columns go), but the
+    # suggestion, its confidence and its detail are a voice comparison.
+    remaining_voice_suggestion = (
         *scope.speaker_filters(),
         Speaker.suggestion_source.in_(sorted(EMBEDDING_SUGGESTION_SOURCES)),
-        or_(Speaker.verified.is_(None), Speaker.verified.is_(False)),
     )
     counts["suggestion_details_cleared"] += int(
         db.execute(
             select(func.count())
             .select_from(Speaker)
-            .where(*unverified_voice_suggestion, Speaker.suggestion_detail.isnot(None))
+            .where(*remaining_voice_suggestion, Speaker.suggestion_detail.isnot(None))
         ).scalar_one()
     )
     cleared_suggestions = [
         int(row[0])
         for row in db.execute(
             update(Speaker)
-            .where(*unverified_voice_suggestion)
+            .where(*remaining_voice_suggestion)
             .values(**cleared_suggestion_values())
             .returning(Speaker.id)
             .execution_options(synchronize_session=False)

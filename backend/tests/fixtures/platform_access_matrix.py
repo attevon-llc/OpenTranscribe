@@ -561,6 +561,7 @@ ALLOWS_KINDS: dict[str, str] = {
     "api/endpoints/files/crud.py::get_media_file_by_id": "media_file",
     "api/endpoints/files/crud.py::get_media_file_detail": "media_file",
     "api/endpoints/files/__init__.py::get_thumbnail": "thumbnail",
+    "services/speaker_provenance_view.py::_can_see_actor": "media_file",
 }
 
 #: Attribute reads that widen a request's reach, and the call names that create one.

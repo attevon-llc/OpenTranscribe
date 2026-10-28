@@ -497,8 +497,10 @@ suggestion UIs with its confidence and nothing more; accepting it writes `displa
   table with a reason. Readers hide a voiceprint-made name/link while the file's voiceprints are off (`redact_view`,
   `machine_identity_clauses` for queries that never load rows: the speaker name directory and profile occurrences use them); a purge
   reverts `voiceprint` rows (unnamed, unlinked, unverified, voice suggestion cleared) and unlinks `voiceprint_link` rows together
-  with the voice suggestion and confidence of the match that added the link (`hides_voiceprint_suggestion` treats both machine sources
-  alike). An Inbox skip is a review marker, not a confirmation: `after_skip` marks a name-less, link-less row that carries a voice
+  with the voice suggestion and confidence of the match that added the link (`hides_voiceprint_suggestion` hides ANY voice-sourced suggestion while off, whoever verified the speaker; the final purge pass
+  clears the four suggestion columns of every remaining voice suggestion, a person-verified speaker's included, never its name, `verified`,
+  link or identity record; `record_suggestion` refuses to write one onto a person-verified speaker unless `identity_follows=True`, and
+  `canonical_speaker_label` takes no `verified` argument any more). An Inbox skip is a review marker, not a confirmation: `after_skip` marks a name-less, link-less row that carries a voice
   suggestion `voiceprint`, so the suggestion stays the machine's. A profile rename (`speaker_profile_rename`) reaches only members
   whose link is visible under their file's decision. Every cross-recording reader (`/speakers/{uuid}/cross-media` and its debug
   twins, the speaker media preview, the merge-completion event, the topic-extraction prompt) goes through `hide_machine_identities`
@@ -526,7 +528,7 @@ suggestion UIs with its confidence and nothing more; accepting it writes `displa
   and counts them in the same UPDATE, and `tests/unit/test_speaker_provenance_never_indexed.py` fails if
   an index or prompt builder names them. The API `identity`/`suggestion` objects are attached by
   `speaker_provenance_view.attach_speaker_provenance(db, rows, viewer)` AFTER the redaction;
-  `identity.by` is shown only to the file's owner, an org admin of its organization and a platform admin.
+  `identity.by` is shown only to the file's owner, an org admin of its organization and a platform admin whose reach covers the file (`_can_see_actor` asks `bypass.allows`: single mode any admin, multi mode only under a grant, which records the use; a bare `user_is_admin` is NOT the test), and an account named by an erasure request is the `{"erased": true}` marker, never a name.
   The two JSONB columns are `JSONB(none_as_null=True)`: a plain JSONB stores Python `None` as the JSON
   value `null`, which is not SQL NULL and made the purge's residual check see a cleared record. This is
   the CURRENT state; the append-only history is issue #1336 (v0.7.0), the query review #1337.

@@ -113,7 +113,6 @@ def create_speaker(
 
     new_speaker = Speaker(
         name=speaker.name,
-        display_name=speaker.display_name,
         uuid=speaker_uuid,
         user_id=current_user.id,
         organization_id=media_file.organization_id,
@@ -121,8 +120,10 @@ def create_speaker(
         verified=speaker.verified if speaker.verified is not None else False,
     )
 
-    # If display_name is provided, mark as verified
+    # If display_name is provided, mark as verified. A blank one names no one, so it is not
+    # stored: a name is always stored with the record of the person who gave it.
     if speaker.display_name and speaker.display_name.strip():
+        new_speaker.display_name = speaker.display_name  # type: ignore[assignment]
         new_speaker.verified = True  # type: ignore[assignment]
         record_human_identity(new_speaker, user_id=current_user.id, origin=ORIGIN_CREATED)
 

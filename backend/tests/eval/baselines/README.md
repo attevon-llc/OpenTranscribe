@@ -116,6 +116,25 @@ therefore **not comparable** to this baseline's figure. This baseline's corpus (
 post-ELITR-Bench-injection) no longer exists on this host — **do not attempt to regenerate or
 re-run it**; the committed file here is left completely untouched.
 
+## Other directories here (not covered by the table above)
+
+These exist on disk and are not described individually by this file. What follows is only what the
+directory contents and the repo's references establish; the provenance and status columns above do
+not apply to them until someone assesses each.
+
+| directories | what they hold |
+|---|---|
+| `miracl-es-english`, `miracl-es-multilingual`, `miracl-es-bm25-default-506`, `miracl-es-bm25-nostem-506` | `metrics.json`/`metrics.md` for the MIRACL Spanish retrieval corpus (the first two are named in `docs-site/docs/developer-guide/rag-evaluation.md`; the `-506` pair carry the issue number in their name) |
+| `probe-523-*`, `probe-ctxexp-clean-00229bdf` | Chat-probe outputs (`metrics.*` plus `traceability.*`); the `523` names refer to issue #523 |
+| `probe-532-control`, `probe-532-armd`, `probe-532h-*` | Chat-probe outputs for the issue #532 hybrid-summary experiment arms (see `docs/design/532_hybrid_summary_synthesis_plan.md` and `docs/design/532_gpu_run_runbook.md`); `probe-532h-compare` and `probe-532h-compare-tool` hold arm-comparison results (`scripts/compare_probe_arms.py`) |
+| `probe-532-oracle` | Output of the offline content oracle (`scripts/overview_content_oracle.py`): `oracle.json`/`oracle.md` |
+| `probe-ami81-candidate-pool-fix-2026-09-21`, `probe-ami81-corpus-scale-2026-09-21`, `probe-ami81-shipped-defaults-2026-08-21` | AMI-81 chat-probe runs; the last is described in its own section above, the corpus-scale one in `rag-evaluation.md` |
+| `probe-chat-live-2026-08-20` | Described in its own section above |
+
+The `probe-*` directories that hold `metrics.json` come from the chat-probe instrument
+(`scripts/probe_chat_rag.py`), not from `benchmark_rag.py`, so they follow the probe schema and must not be diffed against a
+retrieval baseline. `ls backend/tests/eval/baselines` is the current inventory.
+
 ## Re-deriving one
 
 ```bash

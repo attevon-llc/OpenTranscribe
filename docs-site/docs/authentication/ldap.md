@@ -8,32 +8,32 @@ sidebar_position: 2
 OpenTranscribe authenticates against LDAP or Active Directory alongside its other identity
 sources. A directory account is created on first successful login with `auth_type='ldap'`.
 
-Configure it at **Settings → Authentication → LDAP** (super_admin). Values are stored in the
+Configure it at **Settings → Authentication → LDAP/AD** (super_admin). Values are stored in the
 `auth_config` table with the bind password encrypted (AES-256-GCM) and take effect without a
 restart; the `LDAP_*` environment variables remain a bootstrap seed and fallback.
 
 ## Configuration reference
 
-| Field | Config key | Default |
-|---|---|---|
-| Enabled | `ldap_enabled` | `false` |
-| Server | `ldap_server` | — (`ldaps://ad.example.com`) |
-| Port | `ldap_port` | `636` |
-| Use SSL (LDAPS) | `ldap_use_ssl` | `true` |
-| Use StartTLS | `ldap_use_tls` | `false` |
-| Bind DN | `ldap_bind_dn` | — |
-| Bind password *(sensitive)* | `ldap_bind_password` | — |
-| Search base | `ldap_search_base` | — |
-| Username attribute | `ldap_username_attr` | `sAMAccountName` |
-| Email attribute | `ldap_email_attr` | `mail` |
-| Name attribute | `ldap_name_attr` | `cn` |
-| User search filter | `ldap_user_search_filter` | `({username_attr}={username})` |
-| Timeout (s) | `ldap_timeout` | `10` |
-| Admin usernames | `ldap_admin_users` | — |
-| Admin groups | `ldap_admin_groups` | — |
-| Required user groups | `ldap_user_groups` | — |
-| Recursive group lookup | `ldap_recursive_groups` | `false` |
-| Group attribute | `ldap_group_attr` | `memberOf` |
+| Field | Config key | Environment variable | Default |
+|---|---|---|---|
+| Enabled | `ldap_enabled` | `LDAP_ENABLED` | `false` |
+| Server | `ldap_server` | `LDAP_SERVER` | — (`ldaps://ad.example.com`) |
+| Port | `ldap_port` | `LDAP_PORT` | `636` |
+| Use SSL (LDAPS) | `ldap_use_ssl` | `LDAP_USE_SSL` | `true` |
+| Use StartTLS | `ldap_use_tls` | `LDAP_USE_TLS` | `false` |
+| Bind DN | `ldap_bind_dn` | `LDAP_BIND_DN` | — |
+| Bind password *(sensitive)* | `ldap_bind_password` | `LDAP_BIND_PASSWORD` | — |
+| Search base | `ldap_search_base` | `LDAP_SEARCH_BASE` | — |
+| Username attribute | `ldap_username_attr` | `LDAP_USERNAME_ATTR` | `sAMAccountName` |
+| Email attribute | `ldap_email_attr` | `LDAP_EMAIL_ATTR` | `mail` |
+| Name attribute | `ldap_name_attr` | `LDAP_NAME_ATTR` | `cn` |
+| User search filter | `ldap_user_search_filter` | `LDAP_USER_SEARCH_FILTER` | `({username_attr}={username})` |
+| Timeout (s) | `ldap_timeout` | `LDAP_TIMEOUT` | `10` |
+| Admin usernames | `ldap_admin_users` | `LDAP_ADMIN_USERS` | — |
+| Admin groups | `ldap_admin_groups` | `LDAP_ADMIN_GROUPS` | — |
+| Required user groups | `ldap_user_groups` | `LDAP_USER_GROUPS` | — |
+| Recursive group lookup | `ldap_recursive_groups` | `LDAP_RECURSIVE_GROUPS` | `false` |
+| Group attribute | `ldap_group_attr` | `LDAP_GROUP_ATTR` | `memberOf` |
 
 `{username_attr}` in the filter is replaced with `ldap_username_attr`, so the filter stays
 correct across directory types:
@@ -50,14 +50,17 @@ Use **Test Connection** before saving.
 
 Two separate questions, two separate settings:
 
-- **`ldap_user_groups`** — a comma-separated list of group DNs. When set, a user must be a
+- **`ldap_user_groups`** (`LDAP_USER_GROUPS`) — a **semicolon-separated** list of group DNs (a DN
+  itself contains commas, so `,` cannot delimit entries). When set, a user must be a
   member of at least one of them to sign in at all. Empty means "admit everyone the directory
   authenticates". With `ldap_recursive_groups` on, nested-group membership counts too.
-- **`ldap_admin_users`** / **`ldap_admin_groups`** — who becomes `admin`.
+- **`ldap_admin_users`** (`LDAP_ADMIN_USERS`, comma-separated usernames) / **`ldap_admin_groups`**
+  (`LDAP_ADMIN_GROUPS`, semicolon-separated group DNs, like `ldap_user_groups`) — who becomes
+  `admin`.
 
 Group DNs are compared case-insensitively, which is what LDAP itself does.
 
-`require_account_approval` (Authentication → Local) applies here too: with it on, a
+`require_account_approval` (Authentication → Local Auth) applies here too: with it on, a
 directory user provisioned for the first time lands `approval_status = pending` and needs an
 administrator to release them from the queue.
 
@@ -129,8 +132,8 @@ Four rules shape it:
 ### Settings
 
 There are **no directory-sync environment variables** — all of it is `SystemSettings`,
-configurable in the admin panel's Directory Sync screen (`Settings → Authentication →
-Directory Sync`; `GET/PUT /admin/directory-sync`, `/status`, `POST /run`). The sweep reads six
+configurable in the admin panel's Directory sync tab (`Settings → Authentication →
+Directory sync`; `GET/PUT /admin/directory-sync`, `/status`, `POST /run`). The sweep reads six
 `SystemSettings` rows; the directory connection itself reuses the LDAP auth config above.
 
 | Key | Default | Meaning |

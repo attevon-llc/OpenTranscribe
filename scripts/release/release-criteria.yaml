@@ -43,7 +43,8 @@
 #     described a policy that no longer existed, for a check this pipeline no
 #     longer invokes directly.
 #   * `e2e-suite` claimed the FULL Playwright suite was a blocking release gate.
-#     The `test` stage runs `run-integration-tests.sh --coverage --e2e-smoke`;
+#     The `test` stage runs `run-dev-tests.sh --backend-only --e2e-smoke
+#     --export-capability` (the integration gate plus the smoke E2E subset);
 #     the full suite has never been part of it.
 #
 # So at the time `scan`/`rehearse` were added (#667), every OTHER stage's gate

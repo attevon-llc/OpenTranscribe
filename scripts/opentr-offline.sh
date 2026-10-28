@@ -91,19 +91,12 @@ check_env() {
         exit 1
     fi
 
-    # Check for offline mode (HF_HUB_OFFLINE=1 means models are pre-installed, no token needed)
+    # No HuggingFace-token check, by design: every service in docker-compose.offline.yml is
+    # pinned to HF_HUB_OFFLINE=1 and the models arrive pre-downloaded in the package, so a token
+    # could never be used here (the installer says the same). Warning about its absence told
+    # operators to fix something that does not exist.
     # shellcheck source=/dev/null  # Runtime .env file, not available during static analysis
     source "$INSTALL_DIR/.env"
-
-    # In offline mode, HuggingFace token is NOT required (models are pre-downloaded)
-    if [ "${HF_HUB_OFFLINE}" != "1" ]; then
-        # Not in offline mode - check if token is set
-        if [ -z "$HUGGINGFACE_TOKEN" ]; then
-            print_warning "HUGGINGFACE_TOKEN is not set in .env file"
-            print_warning "Speaker diarization will not work without it"
-            print_info "Get your token at: https://huggingface.co/settings/tokens"
-        fi
-    fi
 }
 
 # Compose command wrapper - COMPOSE_FILES must be set before calling

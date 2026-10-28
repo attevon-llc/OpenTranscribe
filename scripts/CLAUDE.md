@@ -2,7 +2,8 @@
 
 ## Purpose
 
-72 mixed shell/python scripts. **`scripts/README.md` (900 lines) already documents the
+~135 top-level shell/python scripts (`ls scripts/*.sh scripts/*.py | wc -l`; more under `release/`,
+`release-tests/`, `e2e/`, `lib/`, `pki/`, `tests/`). **`scripts/README.md` (~900 lines) already documents the
 build / offline-package / model-download / remote-builder family in depth — read it for those
 and don't duplicate it here.** It does not mention the other ~60 files (test gates, e2e,
 benchmarks, one-off SQL) and contains **zero destructive-operation warnings**. That is what
@@ -51,7 +52,8 @@ this file is for.
   needed by the requested phase start automatically and tear back down on exit, restoring any
   `auth_config` DB setting (`oidc_enabled`/`ldap_enabled`) they flipped — an overlay already
   running before the script started is left alone. `--all-overlays` also brings up
-  `--with-watch`/`--with-mock-asr`; `--with-gpu-scale` exercises the multi-GPU worker topology
+  `--with-watch` (the only `all`-tier overlay; `mock-asr` and `diar-native` are `auto`-tier, started
+  by the phase that needs them); `--with-gpu-scale` exercises the multi-GPU worker topology
   and auto-skips with a clear message on a single-GPU deployment (never auto-started under any
   other flag); `--no-overlays` is the escape hatch (stack already configured, skip all
   auto-detection); `--list-overlays`/`--dry-run` print the resolved plan without starting
@@ -64,13 +66,13 @@ this file is for.
   diar-native phase gates on, sourced rather than copied, so the overlay starts exactly when
   that phase would otherwise **fail** for its absence. It was previously exempt on the grounds
   that "no test selector this script drives needs it", which stopped being true when that phase
-  landed. It is also the one managed overlay `teardown_overlays` must NOT stop
-  (`OVERLAY_TEARDOWN_EXEMPT`): unlike a mock provider it is part of a native deployment's normal
+  landed. It is also exempt from `teardown_overlays` (`OVERLAY_TEARDOWN_EXEMPT`, shared only with
+  `watch`, which has no container to stop): unlike a mock provider it is part of a native deployment's normal
   operating configuration, so stopping it leaves a *running* stack silently falling back to
   in-process PyAnnote — worse than never starting it, because the fallback is by design silent
   and the tests have already reported green. `test_dev_test_diar_native_overlay.py` drives the
   real bash resolver with the predicate stubbed both ways; a table entry nothing consults looks
-  identical to one that works. `compose_project_name()` in that file resolves the live
+  identical to one that works. `compose_project_name()` (now in `scripts/lib/compose-project.sh`, sourced by that file) resolves the live
   stack's actual compose project from a running `postgres` container's label, not
   `basename $REPO_ROOT` — the latter breaks when this script runs from a git worktree
   (`.claude/worktrees/<name>`), since `$REPO_ROOT` then resolves to the worktree's own
@@ -145,10 +147,10 @@ this file is for.
   `-o addopts= -m gpu` selector are missing, because each of those makes the run exit 0 having
   measured nothing.
 - **E2E** — `e2e/run-e2e.sh`: two phases, non-visual in parallel (`E2E_WORKERS`, default 3) then
-  `-m visual` serially. `e2e/run-e2e-smoke.sh` is a 4-file subset of it.
+  `-m visual` serially. `e2e/run-e2e-smoke.sh` is a 5-file subset of it.
   **pytest exit 5 = "no tests collected" is not a failure for a marker-filtered phase.**
   `resolve_phase()` forgives 5, and *only* 5, and *only* for a caller-selected file subset:
-  none of the smoke script's four files holds a `visual` test, so phase 2 collected nothing,
+  none of the smoke script's files holds a `visual` test, so phase 2 collected nothing,
   exited 5, and `run-e2e-smoke.sh` **always exited non-zero** — unnoticed because the gate's
   `--e2e-smoke` calls pytest directly instead of going through here. Exit 1/2/3/4 still
   propagate, so a real phase-2 failure fails the run; and on the WHOLE tree 0 collected still
@@ -184,7 +186,7 @@ this file is for.
       calibrated to its own fixture. `_fixture_services` resolves each fixture's own
       `patch`/`monkeypatch` targets and inherits them transitively (fixpoint iteration, not
       recursion — conftest override chains contain cycles). 388 tests in this tree substitute a
-      service; **264 are visible only that way**. Currently **0 findings** — and that is a
+      service; **264 are visible only that way**. Currently **0 open findings** (11 allowlisted, each with a written reason) — and that is a
       measured claim, not an absent one: the real suite fires under all three claim tiers when
       mislabelled, and stays clean as written.
     - `readiness-probe-target` — **a health/readiness probe whose target is hardcoded rather
@@ -194,15 +196,15 @@ this file is for.
       exist. Fires only when **every** argument of the probe call is fixed at parse time (single
       assignments resolved, so `f"{BASE_URL}/health"` counts); one derived argument means the
       target follows the stack under test, which is why `_reachable("127.0.0.1", port)` against
-      an allocated port stays clean. 3 real findings, all `BACKLOG` — see below.
+      an allocated port stays clean. Currently 0 findings: the three it first found were fixed.
     **Five more landed since**, past the seven-then-two count above (16): `broad-raises`,
     `bare-return`, `self-comparison`, `sleep-sync`, `skipped-test` — bringing the total to the
     21 named at the top of this bullet. Per the repo's "ask the tool, don't transcribe counts"
     convention, don't trust that number either as it ages: `python3 scripts/audit-tests.py
     --help` shows the live set via its `--category` flag's `choices=CATEGORIES`
-    (`audit-tests.py:2499`). There is no `--list-detectors` flag.
-    **`--selftest` is not optional.** 29 must-fire + 24 must-stay-clean + 1 fires-exactly-once,
-    run in-memory; `backend/tests/unit/test_audit_tests_selftest.py` runs the same cases under
+    (`--list` prints every finding, not the detectors). There is no `--list-detectors` flag.
+    **`--selftest` is not optional.** 82 cases (must-fire, must-stay-clean, path-tier,
+    fires-exactly-once and allowlist; the run prints the live count), run in-memory; `backend/tests/unit/test_audit_tests_selftest.py` runs the same cases under
     pytest so a dead detector fails the ordinary suite too, and the tree scan refuses to be
     trusted (prints `SELF-TEST BROKEN`) when a fixture stops firing. Three case tiers, and the
     last two exist because the fires/clean pair could not express what they check:
@@ -226,17 +228,17 @@ this file is for.
     purpose** — an entry keyed by test alone exempted one test from all six detectors at once.
     Two allowlist rules that make it safe to run as a gate over a pre-existing backlog:
     a reason starting `BACKLOG` marks **deferred work**, counted and printed loudly on every
-    run (`165 finding(s) are DEFERRED WORK, not accepted patterns`) so a green gate is never
+    run (`N finding(s) are DEFERRED WORK, not accepted patterns`) so a green gate is never
     mistaken for a clean tree; and a **stale** entry — one whose finding no longer exists —
     **fails the run**, so the file can only shrink and an exemption cannot outlive its subject.
-    The three `readiness-probe-target` entries are all live bugs, deferred because they sit in
-    files outside the change that added the detector: `fixtures/mock_llm.py` hardcodes
-    `CONTAINER_PORT = 5199` (twice) and `test_selective_reprocess.py` hardcodes
-    `BASE_URL = "http://localhost:5174/api"`. **Both ports are ones `--fresh --port-offset N`
+    The three `readiness-probe-target` entries were live bugs, first deferred because they sat in
+    files outside the change that added the detector, and have since been FIXED (no entries remain):
+    `fixtures/mock_llm.py` hardcoded `CONTAINER_PORT = 5199` (twice) and `test_selective_reprocess.py`
+    hardcoded `BASE_URL = "http://localhost:5174/api"`. **Both ports are ones `--fresh --port-offset N`
     MOVES** (`BACKEND_PORT` in `FRESH_PORT_VARS`, `MOCK_LLM_PORT` in
     `FRESH_MOCK_LLM_PORT_VARS`), so against an isolated stack these probe whichever stack owns
     the base port — and because each failure path is a `skip`, the tests disappear rather than
-    fail. The fix is the shape the root conftest already uses for Postgres/MinIO/OpenSearch:
+    fail. The fix, now applied, is the shape the root conftest already uses for Postgres/MinIO/OpenSearch:
     `os.environ.get("<SVC>_PORT", "<default>")`.
     Wired into `.pre-commit-config.yaml` (`audit-tests-selftest` then `audit-tests`,
     `language: system` + `python3` because the auditor is stdlib-only and the CI runner
@@ -253,10 +255,11 @@ this file is for.
     constant (`_BASE = "/api/user-settings"` + `f"{_BASE}/download"`), so the full path appears
     nowhere. It resolves module-level string constants per file and matches **structurally**,
     segment by segment — a substring regex scored `/api/tasks/{task_id}` as covered by a test
-    naming `/api/tasks/system/fix-file/x`. Both regressions are `--selftest` cases (9 total).
+    naming `/api/tasks/system/fix-file/x`. Both regressions are `--selftest` cases (29 total).
     It measures REFERENCE, not execution, and says so in every run: an upper bound on
-    "untested". Currently **51 of 490**, plus 1 WebSocket route (`/api/ws`) that is reported
-    separately and is also unreferenced.
+    "untested". Measured 2026-10-27: **17 of 570** routes unreferenced
+    (`audit-route-coverage.py` prints the live figure), plus 1 WebSocket route (`/api/ws`) reported
+    separately and now referenced.
 
     ⚠️ **It reported `0` for months, and that was wrong in three ways at once** — every one of
     them scoring an untested route as covered. The HTTP method was not part of the match key
@@ -355,7 +358,7 @@ this file is for.
 
     Measured 2026-09-12: with the rows merged but the sidecars left behind, the gate still said
     `⊘ NOT MEASURED (3/6)`; copying them flipped `lockout` and `session` to `✓ holding at 72` /
-    `✓ holding at 46`. `.mutation/` is gitignored (`.gitignore:359`), which is correct — this is
+    `✓ holding at 46`. `.mutation/` is gitignored (`.mutation/` in `.gitignore`), which is correct — this is
     per-machine measurement evidence, not something to commit.
 
     Two further operational traps found running this recipe, both real and both bit a background run:
@@ -375,9 +378,9 @@ this file is for.
       coverage pre-flight fails as `could not measure coverage ... NOT a measurement` (exit 4)
       rather than saying the plugin is missing. That message reads like a finding about the
       module; it is a finding about the venv.
-    - **`./opentr.sh fresh-destroy <name>` has no `--yes` flag** and prompts `Proceed? (y/N)` —
-      a backgrounded/non-interactive call to it hangs forever waiting on stdin. Pipe an answer:
-      `yes | ./opentr.sh fresh-destroy mutate-lockout`.
+    - **`./opentr.sh fresh-destroy <name>` prompts `Proceed? (y/N)`** — a backgrounded/non-interactive
+      call without an answer cannot confirm (EOF now fails with nothing destroyed). Pass `--yes`:
+      `./opentr.sh fresh-destroy mutate-lockout --yes`.
     - **The ratchet fingerprints each module's *test file* content, not just the source.**
       `run-mutation-tests.sh`'s cache-staleness guard (item 3, above) fires on a changed
       `MODULE_TESTS` entry — so editing any test file belonging to a module mid-wave sends that
@@ -386,7 +389,7 @@ this file is for.
       again, exactly like any other lane's baseline after a test edit.
   - `frontend/scripts/audit-frontend-tests.mjs` (`npm run test:audit`) — the vitest sibling,
     10 detectors, TypeScript compiler API. Run `test:audit:selftest` after ANY detector change:
-    its 27 cases caught two detectors matching **nothing**, which reports 0 findings and reads
+    its 32 cases caught two detectors matching **nothing**, which reports 0 findings and reads
     exactly like a clean suite. Two of its detectors do NOT port to Python as-is:
     `toBeFalsy`-style weakness does not, because `assert not offenders, "<list>"` is this
     repo's standard AST-guard shape and fails on any violation — counting the negated form as
@@ -407,8 +410,8 @@ this file is for.
   models (`ok`/`error`/`malformed`/`upload-reject`) select via `?scenario=` on the request or
   the `MOCK_ASR_SCENARIO` env var at server start; fixtures and the full table are in
   `backend/tests/CLAUDE.md`.
-- **Frontend gate** — `frontend-check.sh`: `npm ci` → `svelte-kit sync` → ESLint → svelte-check → vite
-  build. Also the pre-commit hook (`files: ^frontend/src/`) and the `/fix-frontend` command.
+- **Frontend gate** — `frontend-check.sh`: `npm ci` → `svelte-kit sync` → ESLint → i18n parity → svelte-check →
+  vitest → frontend test-auditor self-test + audit → vite build. Also the pre-commit hook (`files: ^frontend/src/`) and the `/fix-frontend` command.
   **Two hooks, not one, since issue #688**: `frontend-check` runs it with `--check-only` at
   commit stage (the `vite build` — whose `prebuild` downloads fonts and shells out to
   `docker buildx` for the FFmpeg.wasm core — measured 91.8 s of a 328 s whole-tree run), and
@@ -773,7 +776,10 @@ so nothing here re-implements a competing global timeout.
 `FRESH_{LDAP,SMB,MONITORING}_SERVICES` fed into the generated overlay, volumes via the project
 name. Keycloak and Authentik declare no `container_name` in their compose files (the compose
 project namespaces them automatically), so neither needs a `_SERVICES` entry — only ports and the
-aux-file record.
+aux-file record. `--with-mock-llm` / `--with-mock-asr` / `--with-llm-test` / `--with-pki` /
+`--with-diar-native` are isolated the same way (`FRESH_{MOCK_LLM,MOCK_ASR,LLM_TEST,PKI}_PORT_VARS`,
+`FRESH_{MOCK_LLM,MOCK_ASR,DIAR_NATIVE,LLM_TEST}_SERVICES`); `--with-watch` / `--with-backup` are the
+exemptions (below).
 
 - **`LDAP_TEST_PORT` / `LDAP_TEST_UI_PORT`, never `LDAP_PORT`.** `LDAP_PORT` is the *application's*
   LDAP client port (`.env` ships `LDAP_PORT=636`); offsetting it would repoint the app's LDAP config.
@@ -925,8 +931,8 @@ aux-file record.
   image. `lite` and `blackwell` are in it as of #680. **The platform table's key set must EQUAL
   that list** — `assert_platform_table_matches_scan_components` checks it on every run, because
   a component in one table and not the other is either unscanned or built with an empty platform
-  list. Guarded by `scripts/tests/test-scan-not-a-pass.sh` (19 cases) and
-  `scripts/tests/test-publish-platforms.sh` (19 sections, each with an observed red state —
+  list. Guarded by `scripts/tests/test-scan-not-a-pass.sh` (prints its own pass count) and
+  `scripts/tests/test-publish-platforms.sh` (25 sections, each with an observed red state —
   it prints its own assertion count, don't transcribe one here),
   both offline, both wired as pre-commit hooks.
   ⚠️ `test-scan-not-a-pass.sh` uses **`bogus`** as its "unknown component" placeholder. It used
@@ -1019,8 +1025,8 @@ an empty string too, so discarding rc turns "could not check" into "CPU-only con
   `comment`/`collection`/`speaker`/`speaker_profile`/`speaker_collection`.`user_id`, all
   `ON DELETE NO ACTION`) is reported and skipped, not fatal to the batch — exit code 1 if
   anything was blocked. `ORPHAN_PATTERNS` is now split into `ORPHAN_PATTERNS_UNAMBIGUOUS`
-  (5 patterns — `-e2e-`-infix or RFC 2606 `.invalid`, no human types these) and
-  `ORPHAN_PATTERNS_REVIEW` (7 patterns — `testuser_%`, `test-%@example.com`, plausible
+  (10 patterns — `-e2e-`-infix or RFC 2606 `.invalid`, no human types these) and
+  `ORPHAN_PATTERNS_REVIEW` (8 patterns — `testuser_%`, `test-%@example.com`, plausible
   hand-created accounts); `ORPHAN_PATTERNS` stays the union so existing callers/tests are
   unchanged. `--execute-unambiguous` deletes only the unambiguous tier; `--execute` deletes
   both, same as before.

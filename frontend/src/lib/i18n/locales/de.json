@@ -2919,7 +2919,7 @@
   "userManagement.lockFailed": "Das Konto konnte nicht gesperrt werden.",
   "userManagement.unlockAccount": "Anmeldesperre aufheben",
   "userManagement.unlockAccountFor": "Anmeldesperre für {{name}} aufheben",
-  "userManagement.unlockConfirmMessage": "Damit wird die Sperre nach fehlgeschlagenen Anmeldungen für {{name}} aufgehoben. Ein von einer Administratorin oder einem Administrator gesperrtes Konto wird dadurch nicht wieder aktiviert.",
+  "userManagement.unlockConfirmMessage": "Damit wird die Sperre nach fehlgeschlagenen Anmeldungen für {{name}} aufgehoben und das Konto wieder aktiviert, falls es von einer Administratorin oder einem Administrator deaktiviert wurde.",
   "userManagement.unlockSuccess": "Anmeldesperre für {{name}} aufgehoben",
   "userManagement.unlockNotLocked": "{{name}} war nicht gesperrt.",
   "userManagement.unlockFailed": "Die Anmeldesperre konnte nicht aufgehoben werden.",

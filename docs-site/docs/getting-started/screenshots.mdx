@@ -106,7 +106,7 @@ During processing, you can monitor real-time progress with detailed status messa
   <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Word-level timestamp alignment in progress. This creates precise timestamps for every word, enabling accurate click-to-seek.</p>
 </div>
 
-OpenTranscribe uses WhisperX for word-level timestamp alignment, allowing precise navigation within your transcript.
+Word-level timestamps come from the Whisper model itself (no separate alignment step), allowing precise navigation within your transcript.
 
 ### Speaker Diarization
 
@@ -505,7 +505,7 @@ Administrators can monitor system-wide statistics including user counts, media l
   <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Settings sidebar showing ADMINISTRATION (Users, Statistics, Task Health, System Settings) and USER SETTINGS (Profile, Password, Recording, Audio Extraction, AI Prompts, LLM Configuration).</p>
 </div>
 
-Settings are organized into Administration (system-wide) and User Settings (personal preferences). Navigate easily between all configuration options.
+Settings are grouped into Account, Transcription & Speakers, AI & Chat, Media & Output, and (for administrators) Administration and System. Navigate easily between all configuration options.
 
 ### LLM Configuration
 
@@ -514,7 +514,7 @@ Settings are organized into Administration (system-wide) and User Settings (pers
   <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Create LLM Configuration modal with fields: Configuration Name (Local vLLM), Provider (vLLM), Base URL, Model Name (gpt-oss-20b), Max Tokens (131000), Temperature (0.3). Green success from Test Connection.</p>
 </div>
 
-Configure your LLM provider for AI features. OpenTranscribe supports vLLM, OpenAI, Ollama, Claude (Anthropic), and OpenRouter. Test connections before saving to ensure proper configuration.
+Configure your LLM provider for AI features. OpenTranscribe supports vLLM, OpenAI, Ollama, Claude (Anthropic), Amazon Bedrock, and OpenRouter. Test connections before saving to ensure proper configuration.
 
 ### LLM Provider Management
 
@@ -583,7 +583,7 @@ For more detailed information about using OpenTranscribe:
 - **[Uploading Files](/docs/user-guide/uploading-files)** - Step-by-step instructions for all features
 - **[Installation Guide](/docs/installation/docker-compose)** - Set up OpenTranscribe on your system
 - **[Environment Variables](/docs/configuration/environment-variables)** - Customize your installation
-- **[Architecture](/docs/developer-guide/architecture)** - Developer reference for integrations. A running instance also serves interactive OpenAPI docs at `/docs` on the backend port.
+- **[Architecture](/docs/developer-guide/architecture)** - Developer reference for integrations. A running instance also serves interactive OpenAPI docs at `/api/docs` on the backend port (production deployments need `ENABLE_API_DOCS=true`).
 
 ---
 

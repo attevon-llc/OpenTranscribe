@@ -2919,7 +2919,7 @@
   "userManagement.lockFailed": "Impossible de verrouiller le compte.",
   "userManagement.unlockAccount": "Lever le blocage de connexion",
   "userManagement.unlockAccountFor": "Lever le blocage après échecs de connexion pour {{name}}",
-  "userManagement.unlockConfirmMessage": "Ceci lève le blocage dû aux échecs de connexion de {{name}}. Cela ne réactive pas un compte verrouillé par un administrateur.",
+  "userManagement.unlockConfirmMessage": "Ceci lève le blocage dû aux échecs de connexion de {{name}} et réactive le compte si un administrateur l'a désactivé.",
   "userManagement.unlockSuccess": "Blocage de connexion levé pour {{name}}",
   "userManagement.unlockNotLocked": "{{name}} n’était pas bloqué.",
   "userManagement.unlockFailed": "Impossible de lever le blocage de connexion.",

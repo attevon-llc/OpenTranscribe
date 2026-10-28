@@ -22,8 +22,8 @@ What opens depends on what you have selected:
 | One file | The **tag editor** | Add tags, and remove them as chips |
 | Several files | **Bulk apply** | Add a tag to all of them |
 
-With files selected, Tags also appears in the **Organize** menu beside
-*Add to collection* — both attach metadata to a file.
+With files selected, **Add or Edit Tags** also appears in the **Organize** menu beside
+**Add to Collection** — both attach metadata to a file.
 
 ### Why several files is add-only
 
@@ -56,14 +56,14 @@ The manager's tools combine:
 
 ## Ownership: who can change a tag
 
-Every tag reports one of three states, which is also what the **Tag ownership** filter
-selects on:
+Every tag reports one of three states, and the **Tag ownership** filter (**All**, **Mine**,
+**Shared vocabulary**, **From shared media**) selects on them:
 
-| State | What it means | What you can do |
-|---|---|---|
-| *(unmarked)* — **Mine** | You created it | Rename, merge, delete, share |
-| **Shared** | Part of the shared vocabulary every account sees | Filter and apply; only an admin can change it |
-| **Shared with me** | Belongs to someone else | Filter and apply; only they can change it |
+| State (filter) | Badge | What it means | What you can do |
+|---|---|---|---|
+| **Mine** | *(unmarked)* | You created it | Rename, merge, delete, share |
+| **Shared vocabulary** | **Shared** | Part of the shared vocabulary every account sees | Filter and apply; only an admin can change it |
+| **From shared media** | **Shared with me** | Belongs to someone else and reached you on media they shared | Filter and apply; only they can change it |
 
 Tag names are unique **per person**, so you and a colleague can each have an
 `interview` tag without colliding. Where a tag is not yours to change, the manager

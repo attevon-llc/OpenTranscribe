@@ -1,5 +1,4 @@
 # Contributing to OpenTranscribe
-<!-- Updated for v0.4.0 -->
 
 Thank you for your interest in contributing to OpenTranscribe! This document provides guidelines and information for contributors.
 
@@ -38,8 +37,8 @@ Thank you for your interest in contributing to OpenTranscribe! This document pro
    # Required software
    - Docker and Docker Compose
    - Git
-   - Node.js (v18+) for frontend development
-   - Python (3.11+) for backend development
+   - Node.js (v20+) for frontend development (`engines` in frontend/package.json)
+   - Python (3.12+) for backend development outside Docker (the images use 3.13)
 
    # Recommended
    - NVIDIA GPU with CUDA support (for AI processing)
@@ -47,7 +46,7 @@ Thank you for your interest in contributing to OpenTranscribe! This document pro
    - Visual Studio Code with recommended extensions
 
    # GPU-free development
-   # Set DEPLOYMENT_MODE=lite in .env to use cloud ASR providers instead of a local GPU.
+   # ./opentr.sh start dev --lite   uses cloud ASR providers instead of a local GPU.
    # This is the fastest way to run a working dev environment without GPU hardware.
    ```
 
@@ -59,7 +58,7 @@ Thank you for your interest in contributing to OpenTranscribe! This document pro
    cd OpenTranscribe
 
    # Add upstream remote
-   git remote add upstream https://github.com/original/OpenTranscribe.git
+   git remote add upstream https://github.com/attevon-llc/OpenTranscribe.git
    ```
 
 3. **Environment Setup**
@@ -109,9 +108,13 @@ git checkout -b docs/improvement-description
 # Navigate to backend
 cd backend/
 
-# Install dependencies (if developing outside Docker)
-source venv/bin/activate
+# Install dependencies (if developing outside Docker). Python 3.12+; the nodeps step is
+# mandatory (it installs whisperx/faster-whisper/gliner), and requirements-dev.txt carries
+# the mypy/types pins the pre-commit hook mirrors.
+python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
+pip install --no-deps -r requirements-nodeps.txt
+pip install -r requirements-dev.txt
 
 # Run tests
 ./opentr.sh shell backend
@@ -231,7 +234,7 @@ try:
     result = risky_operation()
 except SpecificError as e:
     logger.error(f"Operation failed: {e}")
-    raise ErrorHandler.processing_error("operation", e)
+    raise ErrorHandler.file_processing_error("operation", e)
 ```
 
 #### TypeScript (Frontend)
@@ -286,6 +289,21 @@ try {
 }
 ```
 
+### Commits and pre-commit
+
+- **Conventional commits**: `<type>(<scope>): <summary>` in the imperative mood. Types: feat, fix,
+  docs, style, refactor, test, build, chore, security, perf. A `commit-msg` hook enforces it.
+- **Every commit must pass pre-commit; never use `--no-verify`.** Run both tiers through the
+  concurrency-guarded wrapper before pushing (CI runs both):
+  ```bash
+  pip install pre-commit && pre-commit install --install-hooks   # once per checkout
+  scripts/safe-precommit.sh run --all-files                       # commit-stage tier
+  scripts/safe-precommit.sh run --all-files --hook-stage pre-push # push-stage tier
+  ```
+  See the [Developer Guide](https://docs.opentranscribe.app/docs/developer-guide/contributing) for the
+  hook inventory.
+- Fix what a hook reports rather than suppressing it (`noqa`, `type: ignore`, allowlist entries).
+
 ## 📋 Pull Request Process
 
 ### Before Submitting
@@ -305,32 +323,9 @@ try {
    - Fix any warnings or errors
 
 ### Pull Request Template
-```markdown
-## Description
-Brief description of the changes
-
-## Type of Change
-- [ ] Bug fix (non-breaking change that fixes an issue)
-- [ ] New feature (non-breaking change that adds functionality)
-- [ ] Breaking change (fix or feature that causes existing functionality to not work as expected)
-- [ ] Documentation update
-
-## Testing
-- [ ] I have added tests that prove my fix is effective or that my feature works
-- [ ] New and existing unit tests pass locally with my changes
-- [ ] I have tested this manually
-
-## Screenshots (if applicable)
-Add screenshots to help explain your changes
-
-## Checklist
-- [ ] My code follows the style guidelines of this project
-- [ ] I have performed a self-review of my own code
-- [ ] I have commented my code, particularly in hard-to-understand areas
-- [ ] I have made corresponding changes to the documentation
-- [ ] My changes generate no new warnings
-- [ ] Any dependent changes have been merged and published
-```
+Opening a PR pre-fills `.github/PULL_REQUEST_TEMPLATE.md`: description, type of change, changes
+made, testing, frontend/backend checklists (light and dark mode, migrations, error handling),
+documentation and screenshots. Fill every section that applies.
 
 ### Review Process
 1. **Automated Checks**
@@ -483,7 +478,7 @@ have gone nowhere.
 
 ### Blackwell GPU Development
 - NVIDIA Blackwell GPUs (GB10x/GB20x, DGX Spark) require a separate `backend/Dockerfile.blackwell`
-- Use `./scripts/docker-build-push.sh --blackwell backend` to build the Blackwell image
+- Build it with `./scripts/docker-build-push.sh blackwell` (an explicit component, never part of `all`), or follow `docs/BLACKWELL_SETUP.md`
 - Standard `Dockerfile.prod` builds work on all Ampere and earlier NVIDIA GPUs
 
 ## 🏆 Recognition
@@ -492,12 +487,6 @@ have gone nowhere.
 - Contributors are credited through the GitHub contributors graph and the commit history
 - Significant contributions are highlighted in release notes
 - Regular contributors may be invited as maintainers
-
-### Hall of Fame
-- First contribution
-- Most helpful community member
-- Best documentation improvement
-- Most creative feature
 
 ## 📞 Getting Help
 

@@ -534,7 +534,7 @@ that would assert support on a deployment still running English-only embeddings.
 | Stage | State |
 |---|---|
 | Embeddings | **The one that matters, and it is configurable.** Default `all-MiniLM-L6-v2` is `"languages": ["en"]`. Measured by `scripts/verify-embedding-models.py`, cosine of a translation against its English original: **0.10 (es) / 0.01 (zh)** for the default vs **0.98 / 0.95** for `paraphrase-multilingual-MiniLM-L12-v2` — also 384d, so adopting it is a re-embed and **not** an index recreation. Selecting it is what makes a deployment multilingual |
-| BM25 | Still `english_stop` + `english_snowball` (`services/search/indexing_service.py:55-70`). **Partly mitigated already**: `content.exact` (standard analyzer) is queried alongside the stemmed leg, so non-English keyword matching degrades rather than vanishing. Dropping the stemmed leg query-side for non-English is #453 step 6 and is measurement-gated |
+| BM25 | Still `english_stop` + `english_snowball` (`services/search/indexing_service.py:225-240`). **Partly mitigated already**: `content.exact` (standard analyzer) is queried alongside the stemmed leg, so non-English keyword matching degrades rather than vanishing. Dropping the stemmed leg query-side for non-English is #453 step 6 and is measurement-gated |
 | Reranking | `ms-marco-MiniLM-L-6-v2` is English MS MARCO and is now **skipped when the candidate head is predominantly non-English** (`reranker._is_mostly_non_english`). Not an optimisation: `rerank` **overwrites** `hit.score`, so letting it run destroys a correct retrieval order using a model that cannot read the text. Distinct from the #363 question of whether it helps on *English* — that stays open, blocked on #463 |
 | ~~Prompting~~ | **FIXED (#453).** Both prompts are authored in English but now instruct in it: answer in the question's language, quote in the original and never translate a quotation (a translated quote is a paraphrase wearing quote marks), and never translate the rewritten query. `tests/unit/test_chat_answer_language.py` |
 
@@ -655,7 +655,7 @@ An empty resolved scope means **match nothing**, not match everything —
 files go through `get_file_by_uuid_with_permission`, collections through
 `PermissionService.get_accessible_collection_ids`, and tags through
 `get_accessible_file_ids_subquery` — the same sharing rule
-`endpoints/tags.py:_visible_to` uses. Tags were owner-only until #385, so
+`endpoints/tags/_common.py:_visible_to` uses. Tags were owner-only until #385, so
 scoping a chat by a tag spanning shared recordings silently dropped them and the
 model answered confidently from the remainder. Don't write a fourth sharing rule
 here; if an axis needs one, it is already wrong. Tag names are unique **per

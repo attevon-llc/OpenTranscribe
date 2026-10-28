@@ -1152,7 +1152,7 @@
   "userManagement.lockFailed": "アカウントをロックできませんでした。",
   "userManagement.unlockAccount": "ログインロックを解除",
   "userManagement.unlockAccountFor": "{{name}} のログイン失敗によるロックを解除",
-  "userManagement.unlockConfirmMessage": "{{name}} のログイン失敗によるロックを解除します。管理者がロックしたアカウントは再有効化されません。",
+  "userManagement.unlockConfirmMessage": "{{name}} のログイン失敗によるロックを解除し、管理者が無効にしたアカウントは再有効化します。",
   "userManagement.unlockSuccess": "{{name}} のログインロックを解除しました",
   "userManagement.unlockNotLocked": "{{name}} はロックされていませんでした。",
   "userManagement.unlockFailed": "ログインロックを解除できませんでした。",

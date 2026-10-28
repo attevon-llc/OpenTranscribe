@@ -2,7 +2,7 @@
 
 ## Purpose
 
-51 task modules. The core flow: upload to MinIO → metadata extraction → DB record →
+Task modules (`ls backend/app/tasks/*.py`, plus the `transcription/` package). The core flow: upload to MinIO → metadata extraction → DB record →
 Celery dispatch → WhisperX transcription (100+ languages, word-level timestamps, optional
 translate-to-English) → PyAnnote diarization + voice fingerprinting → optional LLM
 speaker-ID suggestions (**never auto-applied — manual verification only**) → optional LLM
@@ -488,7 +488,7 @@ A structural "does it call session_scope" test is not enough.
   and loads `docker-compose.gpu-scale.yml` (N threads on `GPU_SCALE_DEVICE_ID`, tune
   `GPU_SCALE_WORKERS` to VRAM). **`GPU_SCALE_ENABLED` does not enable scaling** — only the
   `--gpu-scale` flag does; no compose file or startup script reads the variable. It *is* read
-  in exactly one place, `tasks/utility.py` (~L199), to pick which GPU device IDs the
+  in exactly one place, `tasks/utility.py` (`_env_flag("GPU_SCALE_ENABLED")`), to pick which GPU device IDs the
   system-stats task queries — so a stale value misreports which GPU is in use without
   changing any scheduling. Also note
   `GPU_SCALE_DEFAULT_WORKER` defaults to `0` in compose (default GPU worker disabled) but

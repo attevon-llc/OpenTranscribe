@@ -18,7 +18,6 @@ Neural search uses machine learning embeddings to understand the semantic meanin
 - Search for "action items" finds TODO discussions even if the word "action" isn't used
 
 **Why It Matters:**
-- Hybrid search (full-text + neural) provides 9.5x faster vector search
 - Improves recall by finding related content traditional search misses
 - Works across synonyms, paraphrases, and different phrasings
 - Complements full-text search for comprehensive coverage
@@ -33,7 +32,7 @@ Keyword search (BM25) excels at exact matches -- names, dates, technical terms -
 
 - A document ranked #1 in keyword search and #5 in semantic search scores higher than one ranked #3 in both, because RRF rewards strong signal in either dimension.
 - Documents appearing in both result lists get a natural boost, surfacing the most confidently relevant matches.
-- Semantic-only results face additional filtering: the weakest 35% are suppressed, and remaining results must exceed a minimum score threshold. This prevents low-confidence semantic matches from diluting precise keyword results.
+- Semantic-only results face additional filtering: those in the lowest 20% of the semantic score range are suppressed (`SEARCH_SEMANTIC_SUPPRESS_RATIO`), and remaining results must exceed a minimum score threshold (`SEARCH_HYBRID_MIN_SCORE`). This prevents low-confidence semantic matches from diluting precise keyword results.
 
 In practice, hybrid search eliminates the "I know it's in there but I can't find it" problem common with keyword-only search on conversational transcripts, where speakers rarely use the exact terms a user would search for.
 
@@ -92,79 +91,36 @@ Changing models requires a full reindex of all transcripts, as the vector dimens
 
 ## Configuration Steps
 
-### Step 1: Access Admin Settings
+### Step 1: Open Search & Indexing
 
-1. Log in as admin
-2. Navigate to **Settings** → **Search Configuration**
-3. Look for "Neural Search" section
+1. Sign in as an administrator
+2. Open **Settings**, then **Data & Storage**, then the **Search & Indexing** tab
+3. The page shows **Index Health**, the active **Embedding Model**, and the re-index controls
 
-### Step 2: Enable Neural Search
+### Step 2: Neural search is on by default
 
-1. Toggle **Enable Neural Search** to ON
-2. System will verify OpenSearch connectivity and ML Commons status
+Neural search is controlled by `OPENSEARCH_NEURAL_SEARCH_ENABLED` (default `true`; `false` falls back to keyword-only search). There is no on/off toggle in the page. At startup the backend registers and deploys the default model in OpenSearch's ML Commons.
 
-:::warning[ML Commons Check]
-If ML Commons is disabled, you'll see a warning. Contact your infrastructure team to enable the ML Commons plugin on your OpenSearch cluster.
+:::warning[Neural search is degraded]
+If the model cannot be prepared, the page shows a **Neural search is degraded** banner with the last error and the time of the next automatic retry. Keyword search keeps working. A common cause is too little OpenSearch JVM heap; see Prerequisites.
 :::
 
-### Step 3: Select Embedding Model
+### Step 3: Select an Embedding Model
 
-1. Open the model dropdown. Each entry shows its dimension and download size, and the one
-   in use is marked `(Current)`; the model's description appears underneath the dropdown.
+1. Open the **Embedding Model** dropdown. Each entry shows its dimension and download size, the one in use is marked `(Current)`, and a model that is not yet on OpenSearch is marked **Not downloaded**.
 2. Pick one of the seven models listed above.
-3. Click **Apply and Reindex** -- or **Cancel** to keep the current model. Applying
-   re-embeds every document, so the button does not appear until you actually change the
-   selection.
+3. For a model that is not downloaded, click **Download & deploy** and wait for "Model downloaded and deployed. You can apply it now."
+4. Click **Apply & Re-index**, or **Cancel** to keep the current model. Applying re-embeds every document, so the button only appears once you change the selection.
 
-### Step 4: Configure ML Service
-
-1. Under **ML Service Configuration**:
-   - **Embedding Service Endpoint**: Auto-detected (usually internal)
-   - **Batch Size**: Default 32 (see Performance Tuning)
-   - **Request Timeout**: Default 300 seconds
-
-2. Click **Test Connection** to verify setup
-
-### Step 5: Register Model Endpoint
-
-1. Click **Register Model**
-2. System downloads and registers the embedding model
-3. Status indicator shows progress: "Downloading..." → "Registering..." → "Ready"
-
-:::note[Initial Setup]
-First-time model registration takes 5-15 minutes depending on model size and internet speed. Monitor logs in container or check status from admin panel.
-:::
-
-### Step 6: Verify Model is Working
-
-1. Once status shows **Ready**, click **Test Embedding**
-2. Enter sample text: `"This is a test transcript excerpt"`
-3. System generates embedding and confirms working
-4. Status badge shows **Active**
-
-:::success Ready to Index
-Once the model shows "Active" status, neural search is ready for use!
+:::note[Initial setup]
+Fetching and deploying a model can take several minutes depending on its size and the connection. Monitor the OpenSearch and backend logs (`./opentr.sh logs opensearch`) if it seems stuck.
 :::
 
 ## Performance Tuning
 
-### Batch Size Recommendations
+### Embedding batch size
 
-Batch size determines how many texts are embedded simultaneously:
-
-| System VRAM | Small Model | Medium Model | Large Model |
-|-------------|-----------|-------------|-----------|
-| 4GB | 8-16 | Not recommended | Not recommended |
-| 6GB | 16-32 | 8-16 | Not recommended |
-| 8GB | 32-64 | 16-32 | 8-16 |
-| 12GB+ | 64-128 | 32-64 | 16-32 |
-
-**How to Adjust:**
-
-1. Go to **Settings** → **Search Configuration** → **ML Service Settings**
-2. Update **Batch Size**
-3. Click **Save**
-4. Recommendation: Start conservative (16) and increase if you have headroom
+The embedding model runs on CPU inside OpenSearch, so GPU memory does not limit it. Documents sent per embedding call are set by `SEARCH_NEURAL_BATCH_SIZE` (default 5), and chunks per bulk request by `SEARCH_BULK_BATCH_SIZE` (default 100); both are environment variables listed in [Environment Variables](./environment-variables.md#search-and-indexing-tuning). Lower them if OpenSearch runs out of heap while indexing.
 
 ### Hybrid Search Pipeline
 
@@ -196,7 +152,7 @@ OpenTranscribe uses **Reciprocal Rank Fusion (RRF)** to combine results:
 2. Neural search returns semantically similar results
 3. RRF merges rankings for balanced relevance
 
-**RRF Formula**: `score = 1/(60 + rank)`
+**RRF Formula**: `score = 1/(k + rank)`, with `k` = `SEARCH_RRF_RANK_CONSTANT` (default 30)
 
 **Example:**
 - User searches: "quarterly business review"
@@ -204,48 +160,33 @@ OpenTranscribe uses **Reciprocal Rank Fusion (RRF)** to combine results:
 - Neural finds: "performance assessment meeting", "progress update discussion"
 - Merged results show all related content
 
-**Tuning RRF Weights:**
-
-In settings:
-- **BM25 Weight**: How much to value keyword matches (default: 1.0)
-- **Neural Weight**: How much to value semantic similarity (default: 1.0)
-- Adjust weights to emphasize one signal over the other
-
-### Hybrid Search Recommendations
-
-| Use Case | BM25 Weight | Neural Weight | Reasoning |
-|----------|------------|---------------|-----------|
-| Specific terms (names, dates) | 2.0 | 1.0 | Prioritize exact matches |
-| Conceptual search (ideas, topics) | 1.0 | 2.0 | Prioritize meaning |
-| Balanced (default) | 1.0 | 1.0 | Equal importance |
+**Tuning:** there are no BM25 or neural weights in the Settings UI. The fusion strategy and its parameters (`SEARCH_FUSION_STRATEGY`, `SEARCH_RRF_RANK_CONSTANT`, `SEARCH_RRF_WINDOW_SIZE`, `SEARCH_COMBINATION_WEIGHTS`, ...) are environment-only measurement knobs; RRF is the default because no alternative won in testing. See [Environment Variables](./environment-variables.md#fusion-strategy--measurement-knobs-deliberately-env-only) before changing any of them.
 
 ## Reindexing Transcripts
 
-When you enable neural search or change models, you must reindex existing transcripts:
+When you change models, you must reindex existing transcripts:
 
 ### Automatic Batch Indexing
 
-1. Go to **Settings** → **Search Configuration**
-2. Click **Reindex All Transcripts**
-3. System displays progress:
-   - Total transcripts to process
-   - Currently processing count
-   - Estimated time remaining
+1. Go to **Settings**, then **Data & Storage**, then **Search & Indexing**
+2. Click **Re-index All Transcripts** (or **Apply & Re-index** after choosing a new model)
+3. The page shows progress while re-indexing runs, and a **Stop** button
 
 ### Progress Monitoring
 
-- Monitor in **Admin Dashboard** → **Background Tasks**
+- Progress and the last re-index time are shown on the **Search & Indexing** tab
 - View logs: `./opentr.sh logs opensearch`
-- Estimated speed: 100-500 transcripts/hour (model-dependent)
+- Task state: Flower at `http://localhost:5175/flower`
+- Speed depends on the model and CPU; measured about 3.2 documents/second for the multilingual model on the OpenSearch CPU node
 
 :::note[Large Indexes]
-For thousands of transcripts, reindexing runs in background. Users can continue using search while indexing occurs (searches use both indexed and un-indexed results).
+For thousands of transcripts, reindexing runs in the background and search stays available, using keyword-only mode while re-indexing is in progress.
 :::
 
 ### Incremental Indexing
 
-New transcripts are automatically embedded when uploaded. Only use "Reindex All" when:
-- First enabling neural search
+New transcripts are automatically embedded when uploaded. Only use **Re-index All Transcripts** when:
+- Neural search was previously disabled
 - Changing embedding models
 - Recovering from indexing errors
 
@@ -262,13 +203,13 @@ action once the backend recovers.
 **Files already indexed during the outage need one manual step.** They don't get an embedding
 added later on their own. To recover them:
 
-1. Go to **Settings** → **Search Configuration**
+1. Go to **Settings** → **Data & Storage** → **Search & Indexing**
 2. If any files were left text-only, a banner reports the affected file count (separate from the
    "neural search degraded" bootstrap banner — a file can be stuck here even after the backend
    itself has fully recovered)
 3. Click **Re-embed Degraded Files**
 4. Confirm in the dialog, which shows the file and user counts affected
-5. Progress reports through the same reindex notification as **Reindex All Transcripts**
+5. Progress reports through the same reindex notification as **Re-index All Transcripts**
 
 :::note[Several organizations]
 The re-embed covers every tenant's files, so on a deployment that hosts several organizations it
@@ -285,34 +226,15 @@ completes, run **Re-embed Degraded Files** again to catch the remaining files.
 
 ### User Search Interface
 
-**Search Bar Enhancement:**
-- Automatic hybrid search (both full-text and neural)
-- No user configuration required
-- Results ranked by RRF relevance
+The search page has two modes:
 
-**Advanced Search:**
-1. Click **Advanced Search** option
-2. Options:
-   - **Search Type**: Full-text only, Neural only, or Hybrid (default)
-   - **Min Score**: Filter by relevance (0.0-1.0)
-   - **Filters**: Speaker, date, duration, tags
+- **Smart** (default): semantic plus keyword search, ranked by RRF. A **Semantic on** indicator shows when the neural model is active.
+- **Exact**: keyword-only search for exact matches.
 
-**Search Type Selection:**
-- **Full-text only**: Fast keyword matching (use for specific terms)
-- **Neural only**: Semantic matching (use for conceptual searches)
-- **Hybrid** (default): Combines both approaches
-
-### Model Selection in Settings
-
-Users can see which embedding model is active:
-
-**User Settings** → **Search Preferences**:
-- Current model name and description
-- Dimensions
-- Batch indexing progress (if active)
+When the neural model is not deployed the page shows **Keyword only** and Smart mode behaves as keyword search. Filters (speaker, date, tags, collections) apply to both modes. Results found only through meaning carry a **Semantic** badge; results matched both ways are marked as such.
 
 :::note[Admin Setting]
-Model selection is an admin-only feature. Users can only see which model is active and view search preferences.
+Model selection is an administrator feature (Settings, Data & Storage, Search & Indexing). Users only see the results.
 :::
 
 ## Backend & Infrastructure
@@ -357,36 +279,9 @@ These settings prioritize search recall over index build speed, which is appropr
 
 OpenTranscribe generates embeddings server-side within OpenSearch rather than in the backend application. Documents are sent as raw text through an OpenSearch ingest pipeline that automatically calls the deployed ML model to generate vector embeddings during indexing. This eliminates network round-trips for embedding generation, ensures consistency (one model version across all indexed documents), and keeps the embedding model out of the backend's memory footprint.
 
-### Database Schema
-
-New tables created for neural search:
-
-- `search_models` - Available models and configurations
-- `embeddings` - Cached embeddings for transcripts
-- `neural_index_status` - Indexing progress tracking
-
-Existing tables enhanced:
-- `transcript` - New `has_neural_embedding` flag
-- `search_query` - New `search_type` field (full_text, neural, hybrid)
-
 ### API Endpoints
 
-Admin endpoints (requires authentication):
-
-```
-POST /api/admin/search/enable-neural
-GET  /api/admin/search/models
-POST /api/admin/search/register-model
-POST /api/admin/search/reindex
-GET  /api/admin/search/reindex-status
-```
-
-User endpoints:
-
-```
-GET /api/search/hybrid
-POST /api/search/validate
-```
+The search administration endpoints live under `/api/search` (`GET /models/neural`, `POST /models/neural/{name}/register`, `POST /models/neural/{name}/deploy`, `PUT /models/neural/active`, `GET /models/neural/status`, `POST /reindex`, `POST /reindex/stop`, `GET /reindex/status`, `GET /index-health`, `POST /repair-indices`, `GET /degraded-embeddings`, `POST /reembed-degraded`). The search itself is `GET /api/search` with `search_mode=hybrid|keyword`. Interactive documentation is at `/api/docs` where `ENABLE_API_DOCS` allows it.
 
 ## Troubleshooting
 
@@ -402,7 +297,7 @@ POST /api/search/validate
 **Solutions**:
 1. Verify OpenSearch is running:
    ```bash
-   docker compose ps | grep opensearch
+   ./opentr.sh status | grep opensearch
    ```
 
 2. Check ML Commons enabled:
@@ -428,27 +323,22 @@ POST /api/search/validate
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| "Out of memory" | Batch size too large | Reduce batch size (settings → ML Service) |
-| "Model not found" | Model registration failed | Re-register model from settings |
-| "Timeout exceeded" | Model too slow | Increase timeout or select faster model |
-| "CUDA not available" | GPU not detected | Verify GPU setup (see GPU Setup guide) |
+| "Out of memory" / "Allocation failure" | Too little OpenSearch JVM heap for the model | Raise `OPENSEARCH_JAVA_OPTS` (Xms = Xmx) or pick a smaller model |
+| "Model not found" / "not downloaded" | Model registration failed | Use **Download & deploy** again from Settings, Data & Storage, Search & Indexing |
+| "Timeout exceeded" | Model too slow | Select a faster model or lower `SEARCH_NEURAL_BATCH_SIZE` |
 
 **Debugging Steps**:
 1. Check OpenSearch logs:
    ```bash
-   docker compose logs -f opensearch | grep -i error
+   ./opentr.sh logs opensearch | grep -i error
    ```
 
-2. Monitor GPU/memory:
+2. Monitor CPU and memory (the embedding model does not use the GPU):
    ```bash
-   nvidia-smi  # GPU memory usage
-   docker compose top opensearch  # CPU/memory
+   docker stats opentranscribe-opensearch
    ```
 
-3. Test with simple text:
-   - Go to Settings → Search & Indexing
-   - Click "Test Embedding" with 1-2 word phrase
-   - Check if it succeeds
+3. Check the model status on Settings, Data & Storage, Search & Indexing: a banner explains a degraded model and its last error.
 
 ### Issue: Search Performance Problems
 
@@ -458,10 +348,10 @@ POST /api/search/validate
 
 | Symptom | Cause | Solution |
 |---------|-------|----------|
-| Slow hybrid search | Large index + heavy load | Reduce batch size, increase timeouts |
-| Neural-only search slow | Model too large | Switch to smaller model (all-MiniLM) |
-| Timeout errors | Long request queue | Increase timeout in settings |
-| High memory usage | Index too large | Monitor VRAM, consider archiving |
+| Slow hybrid search | Large index + heavy load | Check OpenSearch CPU and heap |
+| Slow semantic search | Model too large | Switch to a smaller model (all-MiniLM) |
+| Timeout errors | Long request queue | Check OpenSearch load and the backend logs |
+| High memory usage | Index too large | Raise the OpenSearch heap, consider archiving |
 
 **Optimization Steps**:
 1. Check index size:
@@ -469,39 +359,23 @@ POST /api/search/validate
    curl -s http://localhost:5180/_cat/indices?v | grep transcript
    ```
 
-2. Monitor search performance:
-   - Track average query time in dashboard
-   - Compare full-text vs neural vs hybrid performance
-
-3. Adjust RRF weights:
-   - If neural results poor: increase BM25 weight
-   - If keyword search insufficient: increase neural weight
+2. Compare **Exact** (keyword) and **Smart** (hybrid) mode on the same query to see which leg is slow.
 
 ### Issue: Memory Issues
 
 **Symptoms**: "Out of memory", "Allocation failure", or crashes
 
 **Quick Fixes**:
-1. Reduce batch size:
-   ```
-   Settings → Search & Indexing → Batch Size = 8 (from default 32)
-   ```
-
-2. Switch to smaller model:
-   ```
-   Settings → Search & Indexing → Select Model → all-MiniLM-L6-v2
-   ```
-
-3. Increase Docker memory allocation:
-   ```yaml
-   # Edit docker-compose.yml for opensearch service
-   mem_limit: 8g  # Increase from current limit
-   ```
-
-4. Clear old embeddings cache:
+1. Reduce the embedding batch size in `.env`:
    ```bash
-   # Backend endpoint to clear embedding cache
-   POST /api/admin/search/clear-cache
+   SEARCH_NEURAL_BATCH_SIZE=2   # default 5
+   ```
+
+2. Switch to a smaller model: Settings, Data & Storage, Search & Indexing, **Embedding Model**, `all-MiniLM-L6-v2`
+
+3. Give OpenSearch more heap (Xms must equal Xmx) in `.env`:
+   ```bash
+   OPENSEARCH_JAVA_OPTS=-Xms4g -Xmx4g
    ```
 
 ### Issue: Reindexing Stuck
@@ -509,22 +383,14 @@ POST /api/search/validate
 **Symptoms**: Reindex status shows "In Progress" for hours
 
 **Solutions**:
-1. Check background task queue:
-   ```bash
-   # Monitor Celery tasks
-   open http://localhost:5175/flower
-   ```
+1. Check background task queue: open `http://localhost:5175/flower`
 
 2. Check container resources:
    ```bash
-   docker compose stats opensearch
+   docker stats opentranscribe-opensearch
    ```
 
-3. Force cancellation (if needed):
-   ```bash
-   # Backend endpoint to cancel reindex
-   POST /api/admin/search/cancel-reindex
-   ```
+3. Cancel (if needed): click **Stop** on the Search & Indexing tab (`POST /api/search/reindex/stop`)
 
 4. Restart OpenSearch (`opentr.sh` has no single-service restart for OpenSearch, so this
    restarts everything):
@@ -534,106 +400,39 @@ POST /api/search/validate
 
 ## Offline & Airgapped Setup
 
-For environments without internet access, download models on an internet-connected machine first.
+OpenSearch registers the embedding model from an artifact mounted into the container, so an air-gapped host needs the model files before it disconnects.
 
-### Step 1: Download Models on Internet Machine
+1. On an internet-connected machine, run the model downloader from a repository checkout. It writes the OpenSearch model artifacts to `models/opensearch-ml/` (mounted at `/ml-models` in the OpenSearch container) along with the other models:
 
-```bash
-# Download sentence-transformers models
-python3 << 'EOF'
-from sentence_transformers import SentenceTransformer
+   ```bash
+   export HUGGINGFACE_TOKEN=hf_your_token_here
+   DOWNLOAD_ALL_OPENSEARCH_MODELS=true ./scripts/download-models.sh ./models
+   # or pick models: OPENSEARCH_MODELS="all-MiniLM-L6-v2,all-mpnet-base-v2" ./scripts/download-models.sh ./models
+   ```
 
-# Download desired model (example: all-MiniLM)
-model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-print(f"Model cached at: {model.model_path}")
+2. Copy the whole `models/` directory to the offline machine (or use `scripts/build-offline-package.sh`, which does this for you) and set `MODEL_CACHE_DIR` to it.
 
-# Models are cached at: ~/.cache/huggingface/hub/
-EOF
-```
+3. Start OpenTranscribe. The model is registered from `/ml-models` with no network access.
 
-### Step 2: Package Models
+See [Offline Installation](../installation/offline-installation.md) for the complete air-gapped procedure.
 
-```bash
-# Create archive of downloaded models
-tar -czf embedding-models.tar.gz ~/.cache/huggingface/hub/
-
-# Transfer to offline machine via USB, network share, etc.
-```
-
-### Step 3: Configure Offline Machine
-
-```bash
-# Extract models on offline machine
-mkdir -p /path/to/opentranscribe/models/huggingface/
-tar -xzf embedding-models.tar.gz -C /path/to/opentranscribe/models/huggingface/
-
-# Update .env
-echo "HUGGINGFACE_OFFLINE_MODE=true" >> .env
-```
-
-### Step 4: Disable Model Downloads
-
-In admin settings:
-1. Settings → Search & Indexing
-2. **Offline Mode**: Toggle ON
-3. System will only use locally cached models
-4. No internet access required
-
-:::note[Model Sync]
-If adding new models to offline machine:
-1. Update models in step 1-2 on internet machine
-2. Transfer updated archive to offline machine
-3. Extract over existing models
-4. Restart OpenTranscribe
+:::note[Model sync]
+To add a model later, download it on a connected machine (step 1), copy the new files into `models/opensearch-ml/` on the offline machine, then choose it under **Embedding Model** and **Apply & Re-index**.
 :::
 
 ## Advanced Configuration
 
 ### Using Custom Models
 
-:::warning[Advanced Only]
-Custom model support requires backend code modifications. Only attempt if familiar with ONNX format and Python.
-:::
-
-**Prerequisites:**
-- Model in ONNX format (preferred) or PyTorch
-- Dimensions ≥ 256, ≤ 1536
-- Model card with input/output specifications
-
-**Steps:**
-1. Save model to: `/models/custom-models/your-model-name/`
-2. Add to backend config:
-   ```python
-   # backend/app/core/config.py
-   CUSTOM_EMBEDDING_MODELS = {
-       "custom/your-model": {
-           "path": "./models/custom-models/your-model-name/",
-           "dimensions": 768,
-           "batch_size": 32,
-       }
-   }
-   ```
-3. Restart backend
-4. Model appears in selection dropdown
+Only the seven models listed under Available Models can be selected. A model that merely exists on Hugging Face fails registration in OpenSearch, so adding one needs code changes (the model catalog in the backend) and a verification run against a throwaway OpenSearch cluster, as described in the [Admin Panel guide](../user-guide/admin-panel.md#embedding-model-selection).
 
 ### Scaling to Large Indexes
 
 For deployments with 10,000+ transcripts:
 
-**Recommended Configuration:**
-- **Model**: all-MiniLM-L6-v2 (fast)
-- **Batch Size**: 64-128 (if VRAM allows)
-- **OpenSearch Heap**: 4-8GB minimum
-- **Async Indexing**: Enable background batch processing
-
-**Settings:**
-```
-Search Configuration → Advanced Settings
-- Enable Batch Processing: ON
-- Batch Size: 64
-- Process Interval: 3600 seconds (1 hour)
-- Max Concurrent Tasks: 4
-```
+- **Model**: `all-MiniLM-L6-v2` (fast)
+- **OpenSearch heap**: raise `OPENSEARCH_JAVA_OPTS` (4 GB is the default; never more than 50% of RAM)
+- **Indexing**: see [Search and Indexing Tuning](./environment-variables.md#search-and-indexing-tuning) for `SEARCH_BULK_BATCH_SIZE`, `REINDEX_PARALLEL_WORKERS` and the retry/sweep settings
 
 ## Next Steps
 

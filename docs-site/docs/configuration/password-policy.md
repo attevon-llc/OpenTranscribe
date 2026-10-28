@@ -130,7 +130,7 @@ picked up by file modification time without a restart. An unreadable path logs a
 back to the default location. The whole list is held in memory (100k hashes is roughly 10 MB).
 
 To regenerate with different options:
-`docker compose run --rm backend python -m app.scripts.build_password_blocklist --help`.
+`./opentranscribe.sh shell backend`, then `python -m app.scripts.build_password_blocklist --help`.
 
 ### Optional online lookup (default OFF)
 

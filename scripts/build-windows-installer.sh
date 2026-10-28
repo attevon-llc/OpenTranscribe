@@ -378,8 +378,9 @@ copy_configuration() {
     # Configure for offline/air-gapped deployment
     print_info "Configuring offline mode settings..."
 
-    # Enable offline mode for HuggingFace (uncomment the line)
-    sed -i "s|^#.*HF_HUB_OFFLINE=.*|HF_HUB_OFFLINE=1|g" "${PACKAGE_DIR}/.env"
+    # Enable offline mode for HuggingFace. .env.example ships the key ACTIVE (HF_HUB_OFFLINE=0), so
+    # the pattern must match it with or without a leading `#`.
+    sed -i "s|^#\?[[:space:]]*HF_HUB_OFFLINE=.*|HF_HUB_OFFLINE=1|g" "${PACKAGE_DIR}/.env"
 
     # Note: Windows paths use forward slashes in Docker volume mounts even on Windows
     # Docker Desktop on Windows handles the path translation automatically

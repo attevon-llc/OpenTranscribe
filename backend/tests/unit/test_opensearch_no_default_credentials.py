@@ -62,16 +62,15 @@ def test_config_py_source_has_no_literal_admin_default():
     ), "config.py still hardcodes an 'admin' fallback for OPENSEARCH_PASSWORD"
 
 
-def test_create_opensearch_indexes_script_has_no_second_admin_default():
-    """backend/scripts/create_opensearch_indexes.py built its own client with a
-    SECOND hardcoded admin/admin, bypassing the repo's one shared connection-kwargs
-    builder (app/core/opensearch_auth.py). It must use that builder, not its own
-    constants."""
+def test_create_opensearch_indexes_script_has_no_client_of_its_own():
+    """backend/scripts/create_opensearch_indexes.py once built its own client with a SECOND
+    hardcoded admin/admin, bypassing the repo's one shared connection-kwargs builder
+    (app/core/opensearch_auth.py). It now delegates to the application's bootstrap, so it must
+    not construct an ``OpenSearch(...)`` client or read credentials itself at all."""
     text = CREATE_INDEXES_PY.read_text(encoding="utf-8")
-    assert "opensearch_connection_kwargs" in text, (
-        "create_opensearch_indexes.py does not use the shared "
-        "opensearch_connection_kwargs() builder -- app/core/CLAUDE.md requires every "
-        "OpenSearch(...) client go through it"
+    assert "ensure_indices_exist" in text, (
+        "create_opensearch_indexes.py no longer calls the application's index bootstrap"
     )
-    assert 'os.getenv("OPENSEARCH_USER", "admin")' not in text
-    assert 'os.getenv("OPENSEARCH_PASSWORD", "admin")' not in text
+    assert "OpenSearch(" not in text
+    assert 'os.getenv("OPENSEARCH_USER"' not in text
+    assert 'os.getenv("OPENSEARCH_PASSWORD"' not in text

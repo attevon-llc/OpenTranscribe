@@ -248,7 +248,7 @@ issue #1122). In single-tenant mode nothing changes. A grant never confers `org:
   against the valid-auth-type set — issue #866's allow-list problem gets no second instance here.
 - `approval.py` — the `approval_status` state machine and `initial_approval_status`, the one
   function every account-creation path asks "does this start pending?".
-- `roles.py` — the authorization contract (read this first, it's 35 lines).
+- `roles.py` — the authorization contract (read this first, it's about 35 lines).
 - `token_service.py` — JWT issue/verify, `rotate_refresh_token`, `revoke_all_user_tokens`,
   Redis JTI revocation list + `refresh_token.revoked_at`, **and session lifetime**
   (`_session_within_lifetime`).
@@ -280,8 +280,8 @@ issue #1122). In single-tenant mode nothing changes. A grant never confers `org:
   rows. `session.py` used to carry a Redis `SessionManager` doing the timeout half with zero
   call sites; it was **deleted**, not wired up — two owners would enforce against different
   session sets the moment Redis and Postgres diverged, and #324 already established that
-  Redis is a cache here, not the system of record. Rationale:
-  `plans/session-ownership-decision.md`.
+  Redis is a cache here, not the system of record. Rationale: commit
+  `900cad2a6` (its cited `plans/session-ownership-decision.md` was untracked in `d8e1e4c7b`).
 - TOTP per RFC 6238/4226 (Google Authenticator / Authy compatible). MFA tokens are
   single-use — the JTI is blacklisted in Redis after verification.
 - Auth events go to the **audit log, which is OpenSearch-backed** (`audit.py`), not a table.
@@ -373,7 +373,7 @@ someone else's product.
   without the check the MFA half-token (handed out BEFORE the second factor) was a full
   session, i.e. a complete MFA bypass. Never widen `get_current_user` to accept another type;
   the forced-enrolment flow uses a separate narrow dependency
-  (`mfa_tokens.get_user_for_enrollment`) scoped to `/mfa/setup` + `/mfa/verify-setup` only, and
+  (`api/endpoints/auth/mfa_enrollment.py:get_user_for_enrollment`) scoped to `/mfa/setup` + `/mfa/verify-setup` only, and
   distinguishes an `enroll`-scoped half-token from a `verify`-scoped one.
 - **"May this account use a local password?" has exactly one implementation** —
   `auth/utils.py:local_password_allowed`, keyed off `AUTH_TYPES_SUPPORT_LOCAL_FALLBACK` /
@@ -492,14 +492,13 @@ someone else's product.
   Keycloak SAML client) is deferred scope, matching the other providers' real-login E2E
   verification round (task #20/#14) rather than shipped ahead of it.
 - Setup docs: `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/OIDC_SETUP.md` (the old
-  `docs/KEYCLOAK_SETUP.md` is a redirect stub — ~17 inbound links, including
+  `docs/KEYCLOAK_SETUP.md` is a redirect stub — a few inbound links (`rg KEYCLOAK_SETUP`), including
   `scripts/test-all-auth.sh`, so don't delete it), and
   `docs-site/docs/authentication/{overview,ldap,oidc,saml,pki,proxy,groups}.md`.
   `docs-site/docs/authentication/keycloak.md` is likewise a stub pointing at `oidc.md`;
   Docusaurus has no client-redirects plugin here, so the stub *is* the redirect.
 - **Surface that exists but has no admin UI** — say so when documenting it, don't imply a
-  panel: directory sync (six `SystemSettings` rows, no endpoint and no panel — beat-driven
-  only). IdP group mappings (`/api/admin/group-mappings`) now has one —
+  panel. Directory sync (six `SystemSettings` rows; `/api/admin/directory-sync`) now has one too — `DirectorySyncSettings.svelte`, the "directorySync" tab of `AuthenticationSettings` — though the sweep itself is beat-driven. IdP group mappings (`/api/admin/group-mappings`) now has one —
   `GroupMappingSettings.svelte`, the "mappings" tab of `AuthenticationSettings` — though it
   only offers `ldap`/`oidc` as the source, so a `proxy`-sourced mapping still has to be created
   through the API. `require_email_verification` also gained a control, in

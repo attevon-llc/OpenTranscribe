@@ -31,8 +31,9 @@ Reusable `use:` actions for DOM behaviors that don't belong in a component. Impo
 
 ## How it connects
 
-- Consumed by `$components/ui/SortDropdown.svelte` (gallery + search sort), `UserDropdown`, and
-  `SegmentSpeakerDropdown`.
+- Consumed by `$components/ui/SortDropdown.svelte` (gallery + search sort), `DateRangePicker`,
+  `SearchableSelect` and `ChatControlsPanel`. `UserDropdown` and `SegmentSpeakerDropdown` do not use
+  it: each keeps its own `document` click listener.
 
 ## Gotchas
 

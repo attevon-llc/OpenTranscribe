@@ -1181,7 +1181,7 @@
   "userManagement.lockFailed": "Het account kon niet worden vergrendeld.",
   "userManagement.unlockAccount": "Inlogblokkade opheffen",
   "userManagement.unlockAccountFor": "De blokkade wegens mislukte inlogpogingen opheffen voor {{name}}",
-  "userManagement.unlockConfirmMessage": "Dit heft de blokkade wegens mislukte inlogpogingen op voor {{name}}. Het schakelt geen account opnieuw in dat door een beheerder is vergrendeld.",
+  "userManagement.unlockConfirmMessage": "Dit heft de blokkade wegens mislukte inlogpogingen op voor {{name}} en schakelt het account opnieuw in als een beheerder het heeft uitgeschakeld.",
   "userManagement.unlockSuccess": "Inlogblokkade opgeheven voor {{name}}",
   "userManagement.unlockNotLocked": "{{name}} was niet geblokkeerd.",
   "userManagement.unlockFailed": "De inlogblokkade kon niet worden opgeheven.",

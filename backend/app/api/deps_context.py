@@ -245,9 +245,11 @@ def require_org_admin(
     is enforced rather than trusted from the token or the frontend.
 
     Community-edition invariance: with no orgs, ``ctx.is_org_admin`` is always
-    False and ``ctx.org_id`` is None, so this dependency 403s — org-admin
-    surfaces simply don't exist in the self-host/community edition (they are
-    cloud-only and never wired into a route a community user can reach).
+    False and ``ctx.org_id`` is None, so this dependency WOULD 403 — but it is
+    never reached there. Every org-admin router is mounted behind a capability
+    (``organizations``, ``org.takedown``, ...) that is off in the community
+    edition, and ``require_capability`` answers 404 first. The 403 is for a
+    caller who reaches a route with its capability on but is not an org admin.
 
     Returns the context unchanged on success so the endpoint can reuse
     ``ctx.org_id`` for scoping.

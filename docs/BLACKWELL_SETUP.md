@@ -27,24 +27,20 @@ The Blackwell overlay is **automatically detected** by `opentr.sh` when a Blackw
 ./opentr.sh start dev
 ```
 
-You can verify detection by checking the startup output for:
-```
-Blackwell GPU overlay enabled (SM_12x detected)
-```
+You can verify detection by checking the startup output. `./opentr.sh start dev` prints
+`Blackwell GPU detected (SM_...)` followed by `Adding Blackwell GPU overlay (SM_12x detected)`;
+the production script `./opentranscribe.sh start` prints `Blackwell GPU overlay enabled (SM_12x detected)`.
 
 ## Manual Setup
 
 If you need to run the Blackwell overlay manually:
 
 ```bash
-# Build the Blackwell-specific backend image
-docker build -t opentranscribe-backend-blackwell:latest \
-    -f backend/Dockerfile.blackwell backend/
-
-# Start with the Blackwell overlay
+# The overlay builds backend/Dockerfile.blackwell itself and tags the result
+# davidamacey/opentranscribe-backend:${OT_BLACKWELL_IMAGE_TAG:-blackwell}
 docker compose -f docker-compose.yml \
     -f docker-compose.prod.yml \
-    -f docker-compose.blackwell.yml up -d
+    -f docker-compose.blackwell.yml up -d --build
 ```
 
 ## Architecture Details
@@ -132,7 +128,7 @@ docker compose exec celery-worker python -c "import torch; print(torch.cuda.mem_
 
 ### Transcription crashes with NVRTC errors
 
-Ensure the Blackwell overlay is being loaded (check for "Blackwell GPU overlay enabled" in startup logs). If using manual compose commands, make sure `docker-compose.blackwell.yml` is included.
+Ensure the Blackwell overlay is being loaded (check for the Blackwell overlay line described under Quick Start in the startup output). If using manual compose commands, make sure `docker-compose.blackwell.yml` is included.
 
 ## Credits
 

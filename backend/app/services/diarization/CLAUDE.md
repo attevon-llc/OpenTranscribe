@@ -117,7 +117,7 @@ more often).
 
 - The user setting is `UserSetting["transcription_diarization_source"]`, written in
   `api/endpoints/user_settings.py` (validated by the pipeline plan) and read ONLY by
-  `services/pipeline_plan_inputs.py`. Frontend: `components/settings/TranscriptionSettings.svelte`.
+  `services/pipeline_plan_inputs.py`. Frontend: `components/settings/SpeakerDetectionSettings.svelte`.
 - Two production call sites of `create_for_engine`, both inside a short read-only session (no
   HTTP inside it): `tasks/transcription/cloud_asr.py`'s parallel path (`parallel_cloud`) and
   `tasks/rediarize_task._build_detector` (the post stage, and a user's manual re-run, which

@@ -63,29 +63,23 @@ Rather than isolate by name, `lib/guardrails.sh` refuses to start unless the fie
 
 So the production MinIO at `/mnt/nas/opentranscribe-minio` and Postgres at `/mnt/nvm/opentranscribe/pg` are genuinely protected — but by refusing to start, not by running in parallel. If you want a stack that *can* run beside the live one, use `./opentr.sh start dev --fresh <name> --port-offset N` instead; that is the isolated-deployment machinery.
 
-## Pre-release checklist
+## Releasing
 
-Run through this list for every release before tagging:
+Do not follow a hand checklist: `./scripts/release.sh run X.Y.Z --yes` drives the whole
+sequence (bump, verify, test, build, scan, **rehearse**, tag, publish, smoke, promote, finish),
+and `./scripts/release.sh rehearse` is the stage that runs the three scenarios below. See
+[`docs-site/docs/developer-guide/releasing.md`](../../docs-site/docs/developer-guide/releasing.md)
+and `.claude/skills/release/SKILL.md`. Things that matter when running the scenarios themselves:
 
-1. **Bump version strings** (`VERSION`, `frontend/package.json`, `pyproject.toml`, `frontend/package-lock.json`)
-2. **Update `CHANGELOG.md`** with the new section
-3. *(nothing to do — the Alembic head is derived, see "Future releases" below)*
-4. **Run pre-commit** locally (`pre-commit run --all-files`)
-5. **Merge feature branch into `master` preserving history** (no squash, no rebase)
-6. **Build local images without publishing** (`BUILD_MODE=local` loads them into
-   the local daemon and pushes nothing):
-   ```bash
-   BUILD_MODE=local PUSH_LATEST=false ./scripts/docker-build-push.sh all
-   ```
-   Do NOT use a bare `docker build`: it omits `--build-arg APP_VERSION`, so the
-   image reports its version as `"unknown"` and the harness's
-   "running version is the version under test" assertion fails.
-7. **Fill in `.env.test-secrets`** (see below) — only required once per machine
-8. **Run Scenario A**: `./test-fresh-install.sh`
-9. **Run Scenario B**: `./test-upgrade.sh`
-10. **Review** both `REPORT.md` files. All assertions must be PASS.
-11. **Push images to Docker Hub**, tag the release, create the GitHub release
-12. **Cleanup** sandboxes: `./test-fresh-install.sh --cleanup` and `./test-upgrade.sh --cleanup`
+- **Build local images with the version build-arg**, never a bare `docker build` (it omits
+  `--build-arg APP_VERSION`, so the image reports its version as `"unknown"` and the harness's
+  "running version is the version under test" assertion fails). `release.sh build` does this;
+  by hand: `BUILD_MODE=local PUSH_LATEST=false ./scripts/docker-build-push.sh all`.
+- **Push the branch under test.** Scenarios A and C download the `release-manifest.txt` files from
+  `TO_BRANCH` (default: the current branch); `rehearse` exits 3 if it is not on `origin`.
+- **Fill in `.env.test-secrets`** (below) — only required once per machine.
+- **Review every `REPORT.md`.** All assertions must be PASS.
+- **Clean up** afterwards with each script's `--cleanup`.
 
 ## Secrets file
 
@@ -150,6 +144,11 @@ root and the cleanup label.
 | Cleanup label namespace | none | `ot-reltest-fresh` | `ot-reltest-upgrade` |
 | Label | none | `com.opentranscribe.release-test=fresh-install` | `com.opentranscribe.release-test=upgrade` |
 
+Scenario C (`test-lite-mode.sh`) differs: it hand-builds the lite chain and sets
+`COMPOSE_PROJECT_NAME` to its label namespace (`ot-reltest-lite`) rather than the one-liner's
+`opentranscribe`, but it still binds the standard ports and `lib/guardrails.sh` still refuses to
+start beside a live stack.
+
 Every port is overridable (`FRONTEND_PORT`, `BACKEND_PORT`, `POSTGRES_PORT`, …) if you need to move
 them, but the container names are not — they come from the installer being tested.
 
@@ -207,9 +206,9 @@ Then `docker stop` / `docker rm` / `docker volume rm` each one individually afte
 See the dedicated section in the planning doc and the `Edge Cases & Mitigations` section comments in `test-upgrade.sh`. The short list:
 
 - **GPU contention**: tests default to CPU. Pass `CUDA_VISIBLE_DEVICES=2` (or whichever slot is free) before invoking if you want GPU acceleration. Do not steal the GPU the live workers are using.
-- **Disk space**: each scenario needs ~20 GB free under `$TEST_ROOT` and ~10 GB on the docker root.
+- **Disk space**: `lib/guardrails.sh` requires 80 GB free on the `$TEST_ROOT` partition and 10 GB on the docker root before it starts.
 - **Docker Hub rate limits**: an unauthenticated pull is limited to 100/6h per IP. Login (`docker login`) if you're iterating. `ver_upgrade_sources`'s manifest *probes* are memoized (`OT_HUB_CACHE_DIR`, ~4 calls total for the default 2-series derivation) and shared across a multi-hop dispatch, but each hop still *pulls* its own FROM images — that cost is per hop, not memoized, so a multi-hop run against an unauthenticated IP is more likely to hit the limit than a single-hop one.
-- **Public test URLs may decay**: edit `fixtures/test-urls.txt` if archive.org links 404.
+- **Test media**: the scenarios read `TEST_MEDIA_DIR` (default `/mnt/nvm/opentranscribe-test-runs/test-media`); `./scripts/release-tests/provision-test-media.sh` derives short real-speech clips from assets already in the repo.
 - **The Alembic migration chain is one-way, and the scenario refuses to run
   when FROM is not strictly older than TO** — that constraint is real and
   still holds. It used to be phrased as "Rollback is not supported", which

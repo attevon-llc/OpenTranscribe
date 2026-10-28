@@ -6,6 +6,10 @@ sidebar_position: 6
 
 This guide covers common issues and their solutions when installing and running OpenTranscribe.
 
+:::note[Which script?]
+Commands below use `./opentr.sh` (a source checkout, development stack). An installer-based production install has `./opentranscribe.sh` instead: it supports `start`, `stop`, `restart`, `status`, `logs [service]`, `shell [service]`, `health`, `backup`, `restore`, `update` and `compose-files`. Where a command here is `restart-backend` or `restart-all`, use `./opentranscribe.sh restart`.
+:::
+
 ## Installation Issues
 
 ### Permission Errors (Model Cache)
@@ -25,16 +29,16 @@ cd opentranscribe
 ./scripts/fix-model-permissions.sh
 
 # Option 2: Manual fix using Docker
-docker run --rm -v ./models:/models busybox chown -R 1000:1000 /models
+docker run --rm -v ./models:/models busybox chown -R 1000:999 /models
 
 # Option 3: Manual fix using sudo
-sudo chown -R 1000:1000 ./models
+sudo chown -R 1000:999 ./models
 sudo chmod -R 755 ./models
 ```
 
 **Verification**:
 ```bash
-# Check directory ownership (should show UID 1000)
+# Check directory ownership (should show UID 1000, GID 999)
 ls -la models/
 
 # Test write permissions
@@ -77,11 +81,8 @@ docker compose version
 # Find process using port 5173 (example)
 sudo lsof -i :5173
 
-# Kill the process
-sudo kill -9 <PID>
-
-# Or change port in .env
-FRONTEND_PORT=5274  # Different port
+# Stop that service normally, or change the port in .env
+FRONTEND_PORT=5274  # Different port (see the *_PORT variables in .env.example)
 ```
 
 ## GPU Issues
@@ -124,9 +125,12 @@ sudo systemctl restart docker
 
 **If logs show CPU mode**:
 ```bash
-# Enable GPU in .env
-USE_GPU=true
-TORCH_DEVICE=cuda
+# Check that the GPU overlay is part of the stack
+./opentranscribe.sh compose-files    # should list docker-compose.gpu.yml
+
+# In .env, make sure the GPU is not forced off and is selected
+FORCE_CPU_MODE=false
+TORCH_DEVICE=auto        # or cuda
 GPU_DEVICE_ID=0
 
 # Restart services
@@ -175,7 +179,7 @@ nvidia-smi
 **Symptoms**:
 - GPU utilization less than 50%
 - Transcription slower than expected
-- Not achieving 70x realtime speed
+- Not achieving roughly 40x realtime (measured on an RTX A6000 with `large-v3-turbo`)
 
 **Diagnosis**:
 ```bash
@@ -200,7 +204,7 @@ BATCH_SIZE=16  # or 32
 **3. Verify CUDA version**:
 ```bash
 nvidia-smi | grep "CUDA Version"
-# Should be 11.8+
+# The backend image is built on CUDA 12.8 libraries; expect 12.x or newer
 ```
 
 ## HuggingFace / Speaker Diarization Issues
@@ -248,7 +252,7 @@ grep MODEL_CACHE_DIR .env
 
 # 2. Verify directory exists and has correct permissions
 ls -la models/
-sudo chown -R 1000:1000 models/
+sudo chown -R 1000:999 models/
 
 # 3. Restart services
 ./opentr.sh restart-all
@@ -321,7 +325,7 @@ WHISPER_MODEL=large-v2  # instead of small/medium
 
 **4. Check model downloaded correctly**:
 ```bash
-ls -lh models/huggingface/hub/models--Systran--faster-whisper-large-v2/
+ls -lh models/huggingface/hub/ | grep -i whisper
 ```
 
 ### Speaker Diarization Not Working
@@ -333,8 +337,8 @@ ls -lh models/huggingface/hub/models--Systran--faster-whisper-large-v2/
 
 **Checklist**:
 - [ ] HuggingFace token configured
-- [ ] Both model agreements accepted
-- [ ] Speaker diarization enabled in settings
+- [ ] The `pyannote/speaker-diarization-community-1` agreement accepted
+- [ ] Speaker detection in Settings > Speaker Identification is not Off
 - [ ] Audio has multiple speakers
 - [ ] MIN_SPEAKERS and MAX_SPEAKERS set correctly
 
@@ -344,7 +348,7 @@ ls -lh models/huggingface/hub/models--Systran--faster-whisper-large-v2/
 grep HUGGINGFACE_TOKEN .env
 
 # 2. Check model download
-ls -lh models/torch/pyannote/
+ls -lh models/huggingface/hub/ | grep speaker-diarization-community-1
 
 # 3. Adjust speaker range for large meetings
 MIN_SPEAKERS=1
@@ -367,7 +371,7 @@ MAX_SPEAKERS=30  # or 50+ for conferences
 
 **1. Check database status**:
 ```bash
-./opentr.sh status postgres
+./opentr.sh status
 ```
 
 **2. Check database logs**:
@@ -403,7 +407,7 @@ shows error:
 
 Connect to the postgres container, install nano
 ```bash
-docker exec -it opentranscribe-postgres /bin/bash
+docker exec -it opentranscribe-postgres /bin/sh
 apk add nano
 ```
 Edit pg_hba.conf and change last line from
@@ -451,7 +455,7 @@ Check Postgres status:
 ./opentr.sh reset dev
 
 # For production (preserves data)
-./opentr.sh shell backend
+./opentranscribe.sh shell backend
 alembic upgrade head
 ```
 
@@ -494,7 +498,7 @@ curl -I https://youtube.com
 
 **Solutions**:
 
-**1. Check file size** (max 4GB):
+**1. Check file size** (the default limit is 15 GB, `MAX_UPLOAD_BYTES`):
 ```bash
 ls -lh your-file.mp4
 ```
@@ -502,7 +506,8 @@ ls -lh your-file.mp4
 **2. Check MinIO storage**:
 ```bash
 ./opentr.sh logs minio
-./opentr.sh shell minio df -h
+./opentr.sh shell minio
+# then, inside the container: df -h
 ```
 
 **3. Check network**:
@@ -599,7 +604,8 @@ sudo sysctl -p
 
 **3. Check Redis connection**:
 ```bash
-./opentr.sh shell redis redis-cli ping
+./opentr.sh shell redis
+# then, inside the container: redis-cli -a <REDIS_PASSWORD from .env> ping
 # Should return: PONG
 ```
 
@@ -614,7 +620,7 @@ sudo sysctl -p
 
 **1. Check frontend container**:
 ```bash
-./opentr.sh status frontend
+./opentr.sh status
 ./opentr.sh logs frontend
 ```
 
@@ -694,7 +700,8 @@ docker compose version
 nvidia-smi
 
 # OpenTranscribe version
-git log -1 --format="%H %s"
+./opentranscribe.sh version     # installer-based install
+git log -1 --format="%H %s"     # source checkout
 
 # Container status
 ./opentr.sh status
@@ -703,7 +710,7 @@ git log -1 --format="%H %s"
 ./opentr.sh logs celery-worker | tail -100
 
 # Environment (redact secrets!)
-cat .env | grep -v PASSWORD | grep -v SECRET | grep -v TOKEN
+grep -v -E 'PASSWORD|SECRET|TOKEN|KEY' .env
 ```
 
 ## Next Steps

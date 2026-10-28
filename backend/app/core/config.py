@@ -1287,7 +1287,7 @@ class Settings(BaseSettings):
     )  # Distinguished Name header
     PKI_ADMIN_DNS: str = os.getenv(
         "PKI_ADMIN_DNS", ""
-    )  # Comma-separated list of admin certificate DNs
+    )  # SEMICOLON-separated admin certificate DNs (a DN contains commas)
     # OCSP/CRL revocation checking settings
     PKI_OCSP_TIMEOUT_SECONDS: int = 5
     PKI_CRL_CACHE_SECONDS: int = 3600  # Cache CRL for 1 hour

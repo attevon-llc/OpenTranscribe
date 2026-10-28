@@ -24,40 +24,49 @@ guaranteed to match filename order (see `CLAUDE.md` in this directory for the `v
 | Range | Description |
 |-------|-------------|
 | v010 | Baseline schema (all core tables) |
-| v020–v079 | System settings, auth methods (LDAP, Keycloak, PKI), FedRAMP, search |
-| v080–v140 | Auth config, error categories, speaker suggestions, performance indexes, word timestamps |
-| v150–v210 | Speaker profiles, embedding migration, sharing, groups |
-| v220–v260 | Speaker clustering, auto-labeling, cluster quality |
-| v270–v300 | ASR provider support, upload sessions, password reset, gender |
-| v310–v355 | Speaker constraints, shared configs/prompts, user media sources, diarization settings, AI summary settings, requested whisper model |
-| v360–v373 | Prompt sharing, watch sources, cloud seams, UUID guard, superuser role invariant, quarantine, audit/cluster org scoping |
+| v020-v073 | System settings, auth methods (LDAP, Keycloak/OIDC, PKI), FedRAMP controls, search settings, transcript overlap, queued/downloading statuses |
+| v080-v140 | Auth config, error categories, speaker suggestion source, performance and FK indexes, processing model tracking, word timestamps |
+| v150-v211 | File retention, local-fallback flag, speaker attributes, collection default prompt, schema reconciliation, groups and sharing |
+| v220-v260 | Speaker clusters, auto-labeling, clustering indexes, cluster quality |
+| v270-v353 | ASR provider support, upload sessions, password reset, gender, speaker constraints, shared configs/prompts, user media sources, diarization/AI-summary settings, requested Whisper model |
+| v355-v373 | Diarization settings, pipeline timing, imohash, content redaction, prompt sharing, watch sources, cloud seams, UUID guard, superuser role invariant, quarantine, audit and cluster org scoping |
+| v374-v393 | Per-user tags, chat, auth identity hardening (OIDC, SCIM, SAML, approval), IdP group mapping, tag sharing, erasure ledger, file facts, redaction coverage, overlap timing |
+| v397-v448 | Tenant-owned tags/collections/speaker names, playback renditions, support access, requested transcription options, processing provenance, speaker correction carry-over, legal acceptance, takedown origin and notices, organization policy, collection visibility, content holds, one active task row per file step |
 
 ## Startup Runner (`app/db/migrations.py`)
 
-On backend startup, `migrations.py` automatically:
-1. Detects current database schema version
-2. Stamps untracked databases with the appropriate version
-3. Runs `alembic upgrade head` to bring the DB to the current version
+On backend startup (the FastAPI lifespan in `app/main.py`), `run_migrations()` automatically:
+1. Takes a PostgreSQL advisory lock so concurrent replicas do not race
+2. Detects the current database schema version (for databases that predate Alembic tracking)
+3. Stamps untracked databases with the appropriate version
+4. Runs `alembic upgrade head` to bring the DB to the current version
 
-This means migrations apply automatically on every deploy — no manual `alembic upgrade head` needed.
+So migrations apply automatically on every deploy and no manual `alembic upgrade head` is needed. A migration failure aborts startup. Set `RUN_MIGRATIONS_ON_STARTUP=false` only where a separate migrate job owns migrations; readiness then checks the schema is at head. Celery workers never run migrations.
 
 ## Migration Workflow
 
 All schema changes must use Alembic migrations:
 
-1. Create a new migration file in `backend/alembic/versions/`
+1. Find the current head: `python3 scripts/release-tests/lib/alembic-head.py backend` (from the repo root)
+2. Create a new, hand-written migration file in `backend/alembic/versions/`, named `v<NNN>_<description>.py` with `revision` equal to the filename
    - Use idempotent SQL with `IF NOT EXISTS` for safety
-   - Set correct `down_revision` to the previous migration ID
-2. Update SQLAlchemy models in `backend/app/models/` to match
-3. Update Pydantic schemas in `backend/app/schemas/` if needed
-4. Update `backend/app/db/migrations.py` version detection logic
-5. Test with `./opentr.sh reset dev` (drops DB, runs full chain from v010)
+   - Set `down_revision` to the current head
+   - Do not use `alembic revision --autogenerate` output as-is (hash id, non-idempotent)
+3. Update SQLAlchemy models in `backend/app/models/` to match
+4. Update Pydantic schemas in `backend/app/schemas/` if needed
+5. Add a detection guard for the new revision in `_detect_schema_version()` in `backend/app/db/migrations.py`
+6. Test with `./opentr.sh reset dev` (drops DB, runs full chain from v010) and by restarting over an existing database
+
+The full procedure and the traps (number collisions between parallel branches, detection arms) are in `app/db/CLAUDE.md` and `alembic/CLAUDE.md`.
+
+### Running Alembic by hand
+`alembic.ini` uses `script_location = alembic`, relative to `backend/`. Run commands inside the backend container, where the database environment is set (`./opentr.sh shell backend`, then `alembic current`, `alembic history`, `alembic heads`).
 
 ### Example Migration Pattern
 ```python
-# backend/alembic/versions/v356_add_new_column.py
-revision = "v356_add_new_column"
-down_revision = "v355_add_diarization_settings"
+# backend/alembic/versions/v<NNN>_add_new_column.py  (NNN = next free number)
+revision = "v<NNN>_add_new_column"
+down_revision = "<current head revision id>"
 
 def upgrade():
     op.execute("""
@@ -78,7 +87,7 @@ def downgrade():
 
 ## Reset vs Restart
 
-- `./opentr.sh reset dev` — **Deletes all data**, drops DB, reruns full migration chain (v010→latest)
+- `./opentr.sh reset dev` — **Deletes all data**, drops DB, reruns full migration chain (v010 to the current head)
 - `./opentr.sh restart-backend` — Restarts backend container; migrations run automatically, no data loss
 
 ## Maintaining Consistency
@@ -87,3 +96,4 @@ def downgrade():
 - Keep SQLAlchemy models (`app/models/`) in sync with migrations
 - Document breaking schema changes
 - Speaker UUIDs provide cross-video speaker identity — do not alter UUID columns in migrations
+- `env.py` imports `app.models` so `Base.metadata` is populated; keep that import

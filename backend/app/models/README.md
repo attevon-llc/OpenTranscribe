@@ -4,480 +4,173 @@
   # Data Models Documentation
 </div>
 
-This directory contains SQLAlchemy ORM models that define the database schema and relationships for OpenTranscribe.
+This directory contains the SQLAlchemy 2.0 ORM models (typed declarative: `Mapped[...]` + `mapped_column(...)`) that describe the database tables and relationships for OpenTranscribe. The models mirror the schema; **Alembic revisions in `backend/alembic/versions/` are the schema authority**, not these files (see `app/db/README.md`).
 
 ## 🗄️ Database Schema Overview
 
-The OpenTranscribe database is designed around media files, users, and AI-powered transcription with the following core entities:
+The core entities are users, media files, transcript segments and speakers:
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│    User     │────▶│ MediaFile   │────▶│TranscriptSeg│
-└─────────────┘     └─────────────┘     └─────────────┘
-                           │                     │
-                           ▼                     ▼
-                    ┌─────────────┐     ┌─────────────┐
-                    │   Comment   │     │   Speaker   │
-                    └─────────────┘     └─────────────┘
-                           │
-                           ▼
-                    ┌─────────────┐
-                    │    Tag      │
+┌─────────────┐     ┌─────────────┐     ┌──────────────────┐
+│    User     │────▶│  MediaFile  │────▶│ TranscriptSegment│
+└─────────────┘     └─────────────┘     └──────────────────┘
+                           │                      │
+                           ▼                      ▼
+                    ┌─────────────┐        ┌─────────────┐
+                    │ Comment/Task│        │   Speaker   │──▶ SpeakerProfile
+                    │ FileTag/... │        └─────────────┘
                     └─────────────┘
 ```
 
+Tenancy: user-owned tables (files, tags, collections, speaker profiles, ...) carry a nullable `organization_id` (NULL = personal). The `Organization` / `OrganizationMembership` tables are in `organization.py`.
+
 ## Model Files
 
-### Core Models
-- `user.py` — User authentication and authorization
-- `media.py` — Media files, transcript segments, speakers, tasks, comments, tags
+Every model must be exported from `__init__.py`, the canonical import surface (a few speaker helper tables in `media.py` are imported from `app.models.media` instead).
 
-### Authentication & Security (v0.4.0)
-- `user_mfa.py` — MFA/TOTP settings per user (RFC 6238)
-- `password_history.py` — Password history tracking for reuse prevention
-- `refresh_token.py` — Refresh token management (rotation)
-- `password_reset.py` — Password reset token tracking
-- `auth_config.py` — Authentication provider configuration (LDAP/OIDC/PKI settings)
+### Core Models
+- `user.py` - `User`: identity, role, auth type and external-identity columns, password/lockout/approval state
+- `media.py` - the large core module: `MediaFile`, `TranscriptSegment`, `Speaker`, `SpeakerProfile`, `SpeakerCollection(Member)`, `SpeakerCluster(Member)`, `SpeakerMatch`, `SpeakerCannotLink`, `SpeakerProfileBlacklist`, `SpeakerCorrectionCarryover`, `Comment`, `Tag`, `FileTag`, `Task`, `Analytics`, `Collection`, `CollectionMember`
+- `upload_batch.py` - `UploadBatch`: multi-file import tracking
+- `topic.py` - `TopicSuggestion`: LLM-suggested tags and collections
+- `file_facts.py` - `FileFacts`: deterministic ingest artifacts (facts, digest, keyphrases), a 1:1 sidecar of `media_file`
+- `pipeline_timing.py` - `FilePipelineTiming`: end-to-end pipeline timing (epoch milliseconds)
+- `custom_vocabulary.py` - `CustomVocabulary`: per-user vocabulary terms for transcription
+
+### Authentication & Security
+- `auth_config.py` - `AuthConfig`, `AuthConfigAudit`: DB-backed authentication provider configuration and its change history
+- `user_mfa.py` - `UserMFA`: TOTP settings per user
+- `refresh_token.py` - `RefreshToken`: a row is a session (idle and absolute expiry columns)
+- `password_history.py`, `password_reset.py` - password reuse tracking and reset tokens
+- `invitation.py` - `UserInvitation`, `EmailVerificationToken` (token hashes only)
+- `scim_token.py` - `SCIMToken`: bearer credentials for the SCIM provisioning surface (digest only)
+- `legal_acceptance.py` - `LegalAcceptance`: which user accepted which legal document version
+
+### Organizations, Governance and Compliance
+- `organization.py` - `Organization`, `OrganizationMembership`
+- `organization_policy.py` - `OrganizationPolicy`: per-organization privacy switches and redaction floor
+- `content_hold.py` - `ContentHold`, `ContentHoldFile`: organization legal holds on files or collections
+- `takedown.py` - `TakedownNotice`, `TakedownNoticeFile`, `TakedownNotification`: durable takedown history
+- `support_access.py` - `SupportAccessGrant`, `SupportAccessUse`: platform-staff access to tenant content
+- `erasure.py` - `ErasureLedgerEntry`: GDPR Art. 17 erasure record
+- `usage_event.py` - `UsageEvent`: usage event spine
 
 ### User Settings & Configuration
-- `user_llm_settings.py` — Per-user LLM provider settings with encrypted API keys
-- `user_asr_settings.py` — Per-user ASR provider settings
-- `user_diarization_settings.py` — Per-user diarization preferences (min/max speakers)
-- `user_media_source.py` — User-specific media source configurations
-- `system_settings.py` — System-wide admin settings (key-value store)
+- `user_llm_settings.py` - `UserLLMSettings`: per-user LLM provider settings with encrypted API keys
+- `user_asr_settings.py` - `UserASRSettings`: per-user ASR provider settings
+- `user_diarization_settings.py` - `UserDiarizationSettings`: per-user diarization provider settings
+- `user_media_source.py` - `UserMediaSource`: per-user media-source configuration for authenticated downloads
+- `prompt.py` - `SummaryPrompt` and `UserSetting` (the per-user key/value settings store)
+- `system_settings.py` - `SystemSettings`: system-wide admin key/value settings (coded defaults live in `core/constants.py`)
 
-### Collaboration & Sharing (v0.4.0)
-- `group.py` — User groups
-- `sharing.py` — Collection sharing with permissions (`collection_share` table)
-- `prompt.py` — Shared prompt templates (shared_prompt, summary_prompt)
+### Collaboration & Integrations
+- `group.py` - `UserGroup`, `UserGroupMember`, `GroupMapping` (directory group to in-app group/privilege mapping)
+- `sharing.py` - `CollectionShare`, `TagShare`
+- `chat.py` - `ChatProject`, `ChatConversation`, `ChatMessage` (RAG chat)
+- `watch_source.py` - `WatchSource`, `WatchSourceFile` (auto-import from local / S3 / SMB)
+- `email_notification_config.py` - `EmailNotificationConfig`, `WatchSourceEmail`
 
-### Media & Processing
-- `upload_batch.py` — Upload session/batch tracking
-- `topic.py` — LLM-extracted topics per transcript
-- `custom_vocabulary.py` — Per-user custom vocabulary for transcription
+### Mixins
+- `mixins.py` - `UUIDMixin` and `TimestampMixin` (no model currently uses `UUIDMixin`; each declares its own `uuid` column)
 
-### Mixins & Utilities
-- `mixins.py` — Shared model mixins (timestamps, soft-delete, etc.)
+## 👤 User (`user.py`)
 
-## 👤 User Models (`user.py`)
-
-### User
-The main user entity for authentication and authorization.
-
-```python
-class User(Base):
-    __tablename__ = "user"
-
-    # Primary Key
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-
-    # Authentication
-    email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
-    hashed_password: Mapped[str] = mapped_column(String, nullable=False)
-
-    # Profile
-    full_name: Mapped[Optional[str]] = mapped_column(String)
-
-    # Status
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    is_superuser: Mapped[bool] = mapped_column(Boolean, default=False)
-    role: Mapped[str] = mapped_column(String, default="user")
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
-
-    # Relationships
-    media_files: Mapped[List["MediaFile"]] = relationship("MediaFile", back_populates="user")
-    comments: Mapped[List["Comment"]] = relationship("Comment", back_populates="user")
-    speakers: Mapped[List["Speaker"]] = relationship("Speaker", back_populates="user")
-    tasks: Mapped[List["Task"]] = relationship("Task", back_populates="user")
-```
-
-**Key Features:**
-- **JWT Authentication**: Email-based login with hashed passwords
-- **Role-based Access**: User/admin roles with is_superuser flag
-- **Soft Delete**: is_active flag for account deactivation
-- **Audit Trail**: Created/updated timestamps
-- **Relationships**: One-to-many with all user-owned resources
+Table `user`. Highlights (see the file for the full column list):
+- **Identity**: `id` (integer PK), `uuid`, `email` (unique), `hashed_password`, `full_name`
+- **Authorization**: `role` is one of `user`, `admin`, `super_admin` and is the single source of truth; `is_superuser` is a derived mirror enforced by a DB CHECK. `is_active` deactivates an account.
+- **Auth method**: `auth_type` (`local`, `ldap`, `oidc`, `pki`, `proxy`, `saml`; CHECK-constrained), `allow_local_fallback`, and per-method identity columns (`ldap_uid`, `oidc_subject`, `saml_subject`, `pki_*`)
+- **Account state**: `approval_status`, `email_verified`, `must_change_password`, `account_expires_at`, `last_login_at`, password timestamps
+- **Relationships**: files, comments, speakers and profiles, collections, prompts, per-user settings (LLM/ASR/diarization), refresh tokens, MFA, group and organization memberships; most user-owned settings rows cascade on delete
 
 ## 📁 Media Models (`media.py`)
 
 ### MediaFile
-Central entity representing uploaded audio/video files.
+Table `media_file`: one uploaded or imported recording (roughly 90 columns). Column groups:
+- **Identity and ownership**: `id`, `uuid`, `user_id`, `organization_id`, `filename`, `storage_path`, `file_size`, `content_type`, `is_public`
+- **Processing state**: `status` (`FileStatus`), `active_task_id`, `retry_count`, `last_error_message`, `error_category`, recovery fields, `cancellation_requested`
+- **Media metadata**: `duration` (+ `duration_source`), `language`, `metadata_raw` / `metadata_important` (ExifTool output), video/audio technical fields (`resolution_*`, `frame_rate`, `codec`, `audio_*`), recorded-date fields with provenance, `title` / `author` / `description` / `source_url`
+- **Derived assets**: `thumbnail_path`, `playback_path` (browser-playable rendition), `waveform_data`, `file_hash`, `imohash`
+- **AI results**: `summary_data` (structured JSON summary), `summary_status`, `summary_opensearch_id`, `translated_text`, redaction status and coverage
+- **How it was processed**: `whisper_model` / `requested_*` options, `asr_provider`, `asr_model`, `diarization_provider`, `diarization_model`, `embedding_mode`, `processing_provenance` (JSONB, deferred; written only by `services/file_provenance`)
+- **Governance**: `is_quarantined` (+ `quarantine_*`, `pre_quarantine_status`), `takedown_origin`, `legal_hold`
 
-```python
-class MediaFile(Base):
-    __tablename__ = "media_file"
-
-    # Primary Key
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-
-    # File Information
-    filename: Mapped[str] = mapped_column(String, nullable=False)
-    file_size: Mapped[int] = mapped_column(Integer)
-    content_type: Mapped[str] = mapped_column(String)
-    storage_path: Mapped[str] = mapped_column(String)
-
-    # Processing Status
-    status: Mapped[FileStatus] = mapped_column(Enum(FileStatus), default=FileStatus.PENDING)
-
-    # Media Metadata
-    duration: Mapped[Optional[float]] = mapped_column(Float)
-    language: Mapped[Optional[str]] = mapped_column(String)
-
-    # AI Processing Results
-    summary: Mapped[Optional[str]] = mapped_column(Text)
-    translated_text: Mapped[Optional[str]] = mapped_column(Text)
-
-    # Rich Metadata (JSON fields)
-    metadata: Mapped[Optional[dict]] = mapped_column(JSON)  # Full ExifTool output
-    metadata_important: Mapped[Optional[dict]] = mapped_column(JSON)  # Curated fields
-
-    # Video-specific
-    resolution_width: Mapped[Optional[int]] = mapped_column(Integer)
-    resolution_height: Mapped[Optional[int]] = mapped_column(Integer)
-    frame_rate: Mapped[Optional[float]] = mapped_column(Float)
-    codec: Mapped[Optional[str]] = mapped_column(String)
-
-    # Audio-specific
-    audio_channels: Mapped[Optional[int]] = mapped_column(Integer)
-    audio_sample_rate: Mapped[Optional[int]] = mapped_column(Integer)
-    audio_bit_depth: Mapped[Optional[int]] = mapped_column(Integer)
-
-    # Ownership & Timestamps
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("user.id"), nullable=False)
-    upload_time: Mapped[datetime] = mapped_column(DateTime, default=func.now())
-    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
-
-    # Relationships
-    user: Mapped["User"] = relationship("User", back_populates="media_files")
-    transcript_segments: Mapped[List["TranscriptSegment"]] = relationship("TranscriptSegment", back_populates="media_file")
-    comments: Mapped[List["Comment"]] = relationship("Comment", back_populates="media_file")
-    file_tags: Mapped[List["FileTag"]] = relationship("FileTag", back_populates="media_file")
-    tasks: Mapped[List["Task"]] = relationship("Task", back_populates="media_file")
-    analytics: Mapped[Optional["Analytics"]] = relationship("Analytics", back_populates="media_file", uselist=False)
-```
-
-**Key Features:**
-- **File Management**: Storage path, size, content type tracking
-- **Processing Pipeline**: Status tracking (PENDING, PROCESSING, COMPLETED, ERROR, CANCELLING, CANCELLED, ORPHANED) — `FileStatus` enum centralized in `app/core/enums.py`
-- **Rich Metadata**: JSON fields for flexible metadata storage
-- **Media Specifications**: Video/audio technical details
-- **AI Integration**: Summary and translation storage
-- **v0.4.0 Columns**: `diarization_disabled`, `ai_summary_disabled`, `requested_whisper_model`, `diarization_source`
-- **Audit Trail**: Upload time and completion tracking
+`FileStatus` (`app/core/enums.py`): `pending`, `queued`, `downloading`, `processing`, `completed`, `error`, `cancelling`, `cancelled`, `orphaned`, `quarantined`. Quarantine is tracked by the independent `is_quarantined` flag; the enum value is the surfaced display status.
 
 ### TranscriptSegment
-Individual segments of transcribed text with timing and speaker information.
+Table `transcript_segment`: `media_file_id`, `speaker_id`, `start_time`, `end_time`, `text` (always the original text), `words` (word-level timing JSON), `confidence`, overlap fields (`is_overlap`, `overlap_group_id`, `overlap_confidence`), and cached `redactions` / `toxicity` detection spans applied as a read-time transform.
 
-```python
-class TranscriptSegment(Base):
-    __tablename__ = "transcript_segment"
-
-    # Primary Key
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-
-    # Foreign Keys
-    media_file_id: Mapped[int] = mapped_column(Integer, ForeignKey("media_file.id"), nullable=False)
-    speaker_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("speaker.id"))
-
-    # Timing Information
-    start_time: Mapped[float] = mapped_column(Float, nullable=False)
-    end_time: Mapped[float] = mapped_column(Float, nullable=False)
-
-    # Content
-    text: Mapped[str] = mapped_column(Text, nullable=False)
-    confidence: Mapped[Optional[float]] = mapped_column(Float)
-
-    # Word-level Data (JSON)
-    words: Mapped[Optional[dict]] = mapped_column(JSON)  # Word-level timing from WhisperX
-
-    # Ordering
-    segment_index: Mapped[Optional[int]] = mapped_column(Integer)
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
-
-    # Relationships
-    media_file: Mapped["MediaFile"] = relationship("MediaFile", back_populates="transcript_segments")
-    speaker: Mapped[Optional["Speaker"]] = relationship("Speaker", back_populates="transcript_segments")
-```
-
-**Key Features:**
-- **Precise Timing**: Start/end times for video synchronization
-- **Speaker Attribution**: Links to speaker identification
-- **Word-level Data**: Detailed timing for each word (from WhisperX)
-- **Confidence Scores**: AI transcription confidence metrics
-- **Searchable Text**: Full-text search capability
-
-### Speaker
-Speaker identification and management from AI diarization.
-
-```python
-class Speaker(Base):
-    __tablename__ = "speaker"
-
-    # Primary Key
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-
-    # Speaker Identity
-    name: Mapped[str] = mapped_column(String, nullable=False)  # AI-generated (SPEAKER_01)
-    display_name: Mapped[Optional[str]] = mapped_column(String)  # User-assigned
-    uuid: Mapped[str] = mapped_column(String, nullable=False)  # Cross-file speaker tracking
-
-    # Voice Characteristics (for future ML features)
-    voice_embedding: Mapped[Optional[bytes]] = mapped_column(LargeBinary)
-    characteristics: Mapped[Optional[dict]] = mapped_column(JSON)
-
-    # User Management
-    verified: Mapped[bool] = mapped_column(Boolean, default=False)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("user.id"), nullable=False)
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
-
-    # Relationships
-    user: Mapped["User"] = relationship("User", back_populates="speakers")
-    transcript_segments: Mapped[List["TranscriptSegment"]] = relationship("TranscriptSegment", back_populates="speaker")
-```
-
-**Key Features:**
-- **AI Integration**: Generated from PyAnnote diarization
-- **Cross-file Tracking**: UUID for speaker consistency across files
-- **User Customization**: Display names and verification
-- **Voice Biometrics**: Storage for voice embeddings (future ML features)
-- **Segment Linking**: Connection to all speaker's spoken segments
+### Speaker and SpeakerProfile
+- `Speaker` (table `speaker`): a per-file speaker from diarization. `name` (e.g. `SPEAKER_01`), `display_name`, `suggested_name` + `suggestion_source`, `verified`, `confidence`, optional `profile_id` and `cluster_id`, and predicted gender/age attributes. Voice embeddings are stored in OpenSearch, not in this table.
+- `SpeakerProfile` (table `speaker_profile`): a named identity that persists across files (`name`, `embedding_count`, `avatar_path`, attribute predictions). Speakers link to it through `profile_id`.
+- `SpeakerCluster` / `SpeakerClusterMember`, `SpeakerMatch`, `SpeakerCollection(Member)`, `SpeakerCannotLink`, `SpeakerProfileBlacklist` and `SpeakerCorrectionCarryover` support clustering, matching, grouping and corrections.
 
 ### Task
-Background task tracking for long-running AI operations.
+Table `task`: background task tracking. Primary key `id` is a **string** (the Celery task ID); `task_type`, `status`, `progress`, `error_message`, `user_id`, `media_file_id`, timestamps. A partial unique index allows only one `pending` / `in_progress` row per `(media_file_id, task_type)`; writers resolve the conflict through `services/task_row_supersede.py` (see `models/CLAUDE.md`).
 
-```python
-class Task(Base):
-    __tablename__ = "task"
-
-    # Primary Key (matches Celery task ID)
-    id: Mapped[str] = mapped_column(String, primary_key=True)
-
-    # Task Information
-    task_type: Mapped[str] = mapped_column(String, nullable=False)  # transcription, analysis, etc.
-    status: Mapped[str] = mapped_column(String, default="pending")
-    progress: Mapped[float] = mapped_column(Float, default=0.0)
-
-    # Error Handling
-    error_message: Mapped[Optional[str]] = mapped_column(Text)
-
-    # Foreign Keys
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("user.id"), nullable=False)
-    media_file_id: Mapped[int] = mapped_column(Integer, ForeignKey("media_file.id"), nullable=False)
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
-    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
-
-    # Relationships
-    user: Mapped["User"] = relationship("User", back_populates="tasks")
-    media_file: Mapped["MediaFile"] = relationship("MediaFile", back_populates="tasks")
-```
-
-**Key Features:**
-- **Celery Integration**: ID matches Celery task ID for tracking
-- **Progress Monitoring**: Real-time progress updates
-- **Error Handling**: Comprehensive error message storage
-- **Task Types**: Support for multiple background operations
-- **Performance Metrics**: Start/completion time tracking
-
-### Comment
-User annotations and comments on media files.
-
-```python
-class Comment(Base):
-    __tablename__ = "comment"
-
-    # Primary Key
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-
-    # Content
-    text: Mapped[str] = mapped_column(Text, nullable=False)
-    timestamp: Mapped[Optional[float]] = mapped_column(Float)  # Position in media file
-
-    # Foreign Keys
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("user.id"), nullable=False)
-    media_file_id: Mapped[int] = mapped_column(Integer, ForeignKey("media_file.id"), nullable=False)
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
-
-    # Relationships
-    user: Mapped["User"] = relationship("User", back_populates="comments")
-    media_file: Mapped["MediaFile"] = relationship("MediaFile", back_populates="comments")
-```
-
-### Tag & FileTag
-Flexible tagging system for file organization.
-
-```python
-class Tag(Base):
-    __tablename__ = "tag"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    name: Mapped[str] = mapped_column(String, nullable=False)
-    color: Mapped[Optional[str]] = mapped_column(String)
-
-    # Relationships
-    file_tags: Mapped[List["FileTag"]] = relationship("FileTag", back_populates="tag")
-
-class FileTag(Base):
-    __tablename__ = "file_tag"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    media_file_id: Mapped[int] = mapped_column(Integer, ForeignKey("media_file.id"))
-    tag_id: Mapped[int] = mapped_column(Integer, ForeignKey("tag.id"))
-
-    # Relationships
-    media_file: Mapped["MediaFile"] = relationship("MediaFile", back_populates="file_tags")
-    tag: Mapped["Tag"] = relationship("Tag", back_populates="file_tags")
-```
-
-### Analytics
-Processing analytics and insights for media files.
-
-```python
-class Analytics(Base):
-    __tablename__ = "analytics"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    media_file_id: Mapped[int] = mapped_column(Integer, ForeignKey("media_file.id"))
-
-    # Transcript Analytics
-    word_count: Mapped[Optional[int]] = mapped_column(Integer)
-    speaker_count: Mapped[Optional[int]] = mapped_column(Integer)
-    segment_count: Mapped[Optional[int]] = mapped_column(Integer)
-
-    # Processing Metrics
-    processing_time: Mapped[Optional[float]] = mapped_column(Float)
-
-    # AI Insights (JSON for flexibility)
-    insights: Mapped[Optional[dict]] = mapped_column(JSON)
-
-    # Relationships
-    media_file: Mapped["MediaFile"] = relationship("MediaFile", back_populates="analytics")
-```
+### Comment, Tag, FileTag, Analytics
+- `Comment`: `media_file_id`, `user_id`, `text`, optional `timestamp` into the media
+- `Tag`: tenant-owned label (`name`, `normalized_name`, `user_id`, `organization_id`, `source`); `name` is **not** globally unique. `FileTag` links tags to files and records `source` / `ai_confidence`.
+- `Analytics`: one row per file with `overall_analytics` (JSON), `computed_at`, `version`
+- `Collection` / `CollectionMember`: tenant-owned collections (`visibility`: `organization` or `restricted`), shared through `CollectionShare`
 
 ## 🔧 Model Patterns & Best Practices
 
-### Primary Keys
-- **Auto-incrementing integers** for most entities
-- **String IDs** for Task (matches Celery task IDs)
-- **UUIDs** for cross-system tracking (Speaker.uuid)
+### Identifiers
+- **Hybrid ID system**: integer `id` for primary keys, foreign keys and joins; an indexed time-ordered UUIDv7 `uuid` (`app/utils/uuid7.py`) is the identifier exposed through the API
+- **String PK** for `Task` (the Celery task ID)
 
 ### Foreign Keys & Relationships
-- **Explicit foreign key columns** with proper constraints
-- **SQLAlchemy relationships** for ORM navigation
-- **Cascade deletes** where appropriate (user → media files)
+- Explicit foreign key columns with constraints; SQLAlchemy `relationship()` for navigation
+- When two foreign keys point at the same table, pass `foreign_keys=` on both sides or mapper configuration fails at import
+- Cross-module model imports go under `if TYPE_CHECKING:` with string relationship targets
+- Delete behavior is per table (`CASCADE`, `SET NULL`); read the model before assuming
 
 ### Timestamps
-- **created_at**: Automatic on creation
-- **updated_at**: Automatic on update
-- **Domain-specific**: upload_time, completed_at, etc.
+- `created_at` / `updated_at` where present; domain-specific times such as `upload_time`, `completed_at`
 
 ### JSON Fields
-- **Flexible metadata storage** for varying data structures
-- **AI processing results** that don't fit rigid schemas
-- **Configuration data** that may evolve
+- Flexible structures (summary, metadata, analytics) use JSON/JSONB columns
 
-### Enums
-```python
-class FileStatus(str, Enum):
-    PENDING = "pending"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    ERROR = "error"
-```
+### Secrets
+- Stored in `encrypted_*` columns through `app/utils/encryption.py`
 
 ### Database Constraints
-- **NOT NULL** for required fields
-- **UNIQUE** constraints for business rules
-- **Foreign key constraints** for referential integrity
-- **Check constraints** for data validation
+- NOT NULL, UNIQUE (often partial, per tenant), foreign keys and CHECK constraints; the DDL is owned by Alembic
 
 ## 🔍 Query Patterns
 
-### Common Queries
+Queries live in `app/utils/db_helpers.py` and `app/services/`, not in the models. Prefer the helpers over hand-written filters so tenant and permission rules are applied (for example `get_user_files_query`, `apply_tenant_scope`, `PermissionService`).
+
 ```python
-# Get user's files with transcription status
-files_with_status = session.query(MediaFile)\
-    .filter(MediaFile.user_id == user_id)\
-    .filter(MediaFile.status == FileStatus.COMPLETED)\
-    .all()
+from app.models.media import FileStatus
+from app.models.media import MediaFile
 
-# Get transcript segments with speaker info
-segments = session.query(TranscriptSegment)\
-    .join(Speaker)\
-    .filter(TranscriptSegment.media_file_id == file_id)\
-    .order_by(TranscriptSegment.start_time,
-              TranscriptSegment.end_time,
-              TranscriptSegment.id)\
-    .all()
-
-# Full-text search in transcripts
-matching_segments = session.query(TranscriptSegment)\
-    .join(MediaFile)\
-    .filter(MediaFile.user_id == user_id)\
-    .filter(TranscriptSegment.text.ilike(f"%{search_term}%"))\
-    .all()
+# A user's completed files (SQLAlchemy 2.0 select style)
+files = db.scalars(
+    select(MediaFile)
+    .where(MediaFile.user_id == user_id)
+    .where(MediaFile.status == FileStatus.COMPLETED)
+).all()
 ```
 
 ### Performance Optimization
-- **Eager loading**: Use `joinedload()` for related data
-- **Lazy loading**: Default for optional relationships
-- **Indexing**: Database indexes on frequently queried columns
-- **Pagination**: Limit results for large datasets
+- Eager loading: `joinedload()` / `selectinload()` for related data
+- Pagination for large result sets
+- Indexes on frequently queried columns (declared in the Alembic revisions)
 
 ## 🧪 Testing Models
 
-### Model Testing Patterns
-```python
-def test_user_creation():
-    user = User(
-        email="test@example.com",
-        hashed_password="hashed_password",
-        full_name="Test User"
-    )
-    assert user.email == "test@example.com"
-    assert user.is_active is True  # Default value
-
-def test_media_file_relationships():
-    user = User(email="test@example.com", hashed_password="hash")
-    media_file = MediaFile(
-        filename="test.mp4",
-        user_id=user.id,
-        storage_path="/path/to/file"
-    )
-    # Test relationships work correctly
-```
+Model and migration tests live in `backend/tests/` (see `backend/README.md` for how to run the suite against the live stack). Prefer asserting against the database over constructing objects in memory: constraints, defaults and triggers only exist there.
 
 ## Migration Considerations
 
 ### Schema Authority
-Alembic migrations (`backend/alembic/versions/`) are the sole authority for schema in all environments. There is no `init_db.sql` — the bootstrap migration (`v010_baseline.py`) creates the full schema from scratch.
+Alembic migrations (`backend/alembic/versions/`) are the sole authority for schema in all environments. The bootstrap migration (`v010_baseline.py`) creates the original schema and later revisions evolve it. (`database/init_db.sql` at the repo root is legacy reference only.)
 
 ### Schema Changes
-1. Create Alembic migration in `backend/alembic/versions/` (use idempotent SQL with `IF NOT EXISTS`)
-2. Update SQLAlchemy model definitions in `app/models/`
-3. Update Pydantic schemas in `app/schemas/`
-4. Update `app/db/migrations.py` version detection
-5. Test with `./opentr.sh reset dev`
+The checklist is in `app/db/README.md` and `app/db/CLAUDE.md`: write an idempotent Alembic revision, update the model here (and export it in `__init__.py`), update the Pydantic schema in `app/schemas/`, add a detection guard in `app/db/migrations.py`, and test with `./opentr.sh reset dev` (deletes all data) as well as a restart over an existing database.
 
 ### Data Migration
-- **Additive changes**: Generally safe
-- **Destructive changes**: Require careful planning
-- **Data transformation**: May need custom migration scripts
-- **Backups**: Always backup before major migrations
-
----
-
-This data model provides a robust foundation for OpenTranscribe's media processing and AI transcription capabilities while maintaining flexibility for future enhancements.
+- Additive changes are generally safe
+- Destructive changes need careful planning
+- Back up before major migrations

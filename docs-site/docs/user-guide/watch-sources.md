@@ -80,8 +80,8 @@ source card.
 
 A local folder can also be watched for filesystem events, so a new recording is picked up
 seconds after it lands instead of at the next scan. An administrator turns on **Allow
-file-system event watching** in Global Settings; each local source then gets a **Watch for
-file-system events** checkbox.
+file-system event watching** in Global Settings; each local source then gets a **Use instant file-system
+events (local only)** checkbox.
 
 The source card shows which method is actually in use, so this is never a silent promise:
 

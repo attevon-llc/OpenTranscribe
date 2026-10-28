@@ -8,7 +8,7 @@ sidebar_position: 3.5
 For identity providers that only speak SAML (ADFS, Shibboleth, Okta-classic and similar
 enterprise deployments), OpenTranscribe acts as a SAML 2.0 Service Provider.
 
-Configure it at **Settings → Authentication → SAML** (super_admin); values are stored in
+Configure it at **Settings → Authentication → SAML 2.0** (super_admin); values are stored in
 `auth_config` and take effect without a restart, with the `SAML_*` environment variables as a
 bootstrap seed and fallback.
 
@@ -31,27 +31,27 @@ not JSON for a `fetch()` caller.
 
 ## Configuration reference
 
-| Field | Config key | Default |
-|---|---|---|
-| Enabled | `saml_enabled` | `false` |
-| SP Entity ID | `saml_sp_entity_id` | — |
-| SP ACS URL | `saml_sp_acs_url` | `http://localhost:5173/api/auth/saml/acs` |
-| SP SLS URL | `saml_sp_sls_url` | `http://localhost:5173/api/auth/saml/sls` |
-| SP signing certificate | `saml_sp_x509_cert` | — (required only when `saml_sign_authn_requests=true`) |
-| SP signing private key *(sensitive)* | `saml_sp_private_key` | — |
-| IdP Entity ID | `saml_idp_entity_id` | — |
-| IdP SSO URL | `saml_idp_sso_url` | — |
-| IdP SLO URL | `saml_idp_slo_url` | — |
-| IdP signing certificate | `saml_idp_x509_cert` | — (required to enable SAML) |
-| Want assertions signed | `saml_want_assertions_signed` | `true` |
-| Want messages signed | `saml_want_messages_signed` | `true` |
-| Sign AuthnRequests | `saml_sign_authn_requests` | `false` |
-| Email attribute | `saml_email_attribute` | `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress` |
-| Name attribute | `saml_name_attribute` | `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name` |
-| Groups attribute | `saml_groups_attribute` | `groups` |
-| Admin group | `saml_admin_group` | — |
-| Allowed groups | `saml_allowed_groups` | — (empty admits everyone) |
-| Blocked groups | `saml_blocked_groups` | — (evaluated first) |
+| Field | Config key | Environment variable | Default |
+|---|---|---|---|
+| Enabled | `saml_enabled` | `SAML_ENABLED` | `false` |
+| SP Entity ID | `saml_sp_entity_id` | `SAML_SP_ENTITY_ID` | — |
+| SP ACS URL | `saml_sp_acs_url` | `SAML_SP_ACS_URL` | — (set it to `https://<your-host>/api/auth/saml/acs`) |
+| SP SLS URL | `saml_sp_sls_url` | `SAML_SP_SLS_URL` | — (set it to `https://<your-host>/api/auth/saml/sls`) |
+| SP signing certificate | `saml_sp_x509_cert` | `SAML_SP_X509_CERT` | — (required only when `saml_sign_authn_requests=true`) |
+| SP signing private key *(sensitive)* | `saml_sp_private_key` | `SAML_SP_PRIVATE_KEY` | — |
+| IdP Entity ID | `saml_idp_entity_id` | `SAML_IDP_ENTITY_ID` | — |
+| IdP SSO URL | `saml_idp_sso_url` | `SAML_IDP_SSO_URL` | — |
+| IdP SLO URL | `saml_idp_slo_url` | `SAML_IDP_SLO_URL` | — |
+| IdP signing certificate | `saml_idp_x509_cert` | `SAML_IDP_X509_CERT` | — (required to enable SAML) |
+| Want assertions signed | `saml_want_assertions_signed` | `SAML_WANT_ASSERTIONS_SIGNED` | `true` |
+| Want messages signed | `saml_want_messages_signed` | `SAML_WANT_MESSAGES_SIGNED` | `true` |
+| Sign AuthnRequests | `saml_sign_authn_requests` | `SAML_SIGN_AUTHN_REQUESTS` | `false` |
+| Email attribute | `saml_email_attribute` | `SAML_EMAIL_ATTRIBUTE` | `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress` |
+| Name attribute | `saml_name_attribute` | `SAML_NAME_ATTRIBUTE` | `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name` |
+| Groups attribute | `saml_groups_attribute` | `SAML_GROUPS_ATTRIBUTE` | `groups` |
+| Admin group | `saml_admin_group` | `SAML_ADMIN_GROUP` | — |
+| Allowed groups | `saml_allowed_groups` | `SAML_ALLOWED_GROUPS` | — (empty admits everyone) |
+| Blocked groups | `saml_blocked_groups` | `SAML_BLOCKED_GROUPS` | — (evaluated first) |
 
 **`saml_idp_x509_cert` is what makes assertion signature verification real.** Leaving it blank
 refuses to enable SAML rather than accepting an unverifiable assertion. `saml_sp_acs_url` and

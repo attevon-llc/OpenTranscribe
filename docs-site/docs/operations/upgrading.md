@@ -16,18 +16,16 @@ Before upgrading, complete these steps:
    ```bash
    ./opentranscribe.sh backup
    ```
-   Or dump directly, if you don't have the script on hand:
-   ```bash
-   docker compose exec -T postgres pg_dump -U postgres opentranscribe \
-     > "opentranscribe-backup-$(date +%Y%m%d-%H%M%S).sql"
-   ```
+   The command writes the dump and a `.voiceprints.ndjson` artifact beside it; keep the two together.
+   A bare `pg_dump` is **not** an equivalent: PostgreSQL holds no speaker voiceprints, so a dump on
+   its own cannot restore them (see [Backup & Restore](./backup-restore.md)).
    (In a git clone of the repo, `./opentr.sh backup` does the same thing.)
 2. **Note your current version**
    ```bash
    ./opentranscribe.sh version
    # or, without the script:
    curl -s http://localhost:5174/api/version
-   curl -s http://localhost:5174/api/health | python3 -m json.tool
+   curl -s http://localhost:5174/health | python3 -m json.tool
    ```
 3. **Read the changelog** for the target version at [CHANGELOG.md](https://github.com/attevon-llc/OpenTranscribe/blob/master/CHANGELOG.md)
 4. **Check for breaking changes** -- major version bumps or migration notes
@@ -156,8 +154,8 @@ from one taken several versions ago.
    themselves a migration.** The clearest example is the `speakers_v3` →
    `speakers_v4` voiceprint embedding migration (see
    [Embedding Migration (v3 to v4)](#embedding-migration-v3-to-v4) below) — it is
-   run **from the Admin Settings UI**, not from Alembic, so skipping past the
-   release that introduced it means you still need to open Admin Settings and run
+   run **from the settings UI** (Settings → Data & Storage → Speaker Embedding System), not from Alembic, so skipping past the
+   release that introduced it means you still need to open that panel and run
    it after you land, exactly as if you had stopped there.
 2. **`.env` variables added in a version you skipped.** Diff your `.env` against
    the **current** `.env.example` *after* upgrading, not before — a variable
@@ -251,7 +249,7 @@ The migration chain progresses through these versions:
 | `v445` | `organization_policy`: per-organization voiceprint and gender switches and redaction floor (#1280) |
 | `v446` | `collection.visibility`: an organization collection can be restricted to its named people (#1275) |
 | `v447` | `content_hold` and `content_hold_file`: organization legal holds on files and collections (#1276) |
-| `v448` | At most one active `task` row per file and step: superseded stale rows are marked failed, then a unique index is added (#1185). Locks `task` against writes while it runs |
+| `v448` | `uq_task_active_per_file_type`: at most one active task row per file and step; marks superseded stale rows failed first and briefly locks the `task` table (writers wait) while it builds (#1185) |
 | `v449` | `speaker.identity_source` (whether a speaker's name and profile link came from a person or a voiceprint match) and its record: `identity_source_at`, `identity_source_user_id`, `identity_source_detail`, `suggestion_detail`; marks existing identities a voiceprint demonstrably wrote (#1280) |
 
 What `v397` to `v449` mean for an existing install, including the few that change data, is
@@ -284,7 +282,7 @@ If a migration fails on startup:
    [Restore Procedures](./backup-restore.md#restoring-the-database) for the
    `--migrate-forward` / `--no-restart` flags.
    Note this restores **PostgreSQL only** — MinIO and OpenSearch are not rolled back in
-   lockstep, so reindex from Admin → Search afterwards if needed.
+   lockstep, so reindex from Settings → Data & Storage → Search & Indexing afterwards if needed.
 3. **Report the issue** -- migration failures are bugs. File an issue with the error output.
 
 :::note
@@ -490,7 +488,7 @@ docker compose logs backend | grep -i "error\|failed\|exception" | head -20
 ### 3. Verify API Health
 
 ```bash
-curl -s http://localhost:5174/api/health | python3 -m json.tool
+curl -s http://localhost:5174/health | python3 -m json.tool
 ```
 
 ### 4. Test Core Functionality
@@ -557,8 +555,8 @@ If search stops working after an upgrade:
 # Check OpenSearch health
 curl -s http://localhost:5180/_cluster/health | python3 -m json.tool
 
-# If indices need rebuilding, use the Admin UI "Reindex All" function
-# Or via API:
+# If indices need rebuilding, use Settings > Data & Storage > Search & Indexing >
+# "Re-index All Transcripts", or via API (admin access token):
 curl -X POST http://localhost:5174/api/search/reindex -H "Authorization: Bearer <token>"
 ```
 

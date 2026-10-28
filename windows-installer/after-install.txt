@@ -6,7 +6,7 @@ ACCESSING THE APPLICATION:
 
 The application is now running and accessible at:
 - Frontend: http://localhost:5173
-- Backend API: http://localhost:5174/docs
+- Backend API: http://localhost:5174/api/docs
 
 A shortcut has been created on your desktop for easy access.
 
@@ -48,7 +48,7 @@ DOCUMENTATION:
 
 - README-WINDOWS.md: Installation instructions and troubleshooting
 - README.md: Full application documentation
-- API Documentation: http://localhost:5174/docs
+- API Documentation: http://localhost:5174/api/docs
 - LICENSE.txt (in this install directory): the full GNU Affero General Public
   License v3.0 - the terms OpenTranscribe is distributed under
 - NOTICE.txt (in this install directory): required attribution for the third-party

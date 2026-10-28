@@ -2,7 +2,8 @@
 
 ## Purpose
 
-The ~40 settings panels rendered inside `SettingsModal.svelte`. Covers user prefs
+The settings panels rendered inside `SettingsModal.svelte` (about 100 `.svelte` files here — panels plus
+their forms, cards and modals). Covers user prefs
 (transcription, download, redaction, language…), admin config (ASR, engine, auth, retention,
 embedding migration…), and dashboards (UserProfileSettings, SystemStatisticsPanel,
 AdminTaskHealthPanel).

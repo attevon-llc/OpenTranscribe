@@ -12,8 +12,8 @@ set -euo pipefail
 #   -h, --help          Show this help message
 #
 # Examples:
-#   ./scripts/build-all.sh                           # Run with auto-detected version
-#   ./scripts/build-all.sh v2.1.0                    # Run with specific version
+#   ./scripts/build-all.sh                           # Run with the VERSION file (else dev-<git-sha>)
+#   ./scripts/build-all.sh v2.1.0                    # Run with specific version (v prefix optional)
 #   ./scripts/build-all.sh --interactive             # Interactive mode with prompts
 #   ./scripts/build-all.sh --interactive v2.1.0      # Interactive mode with version
 #
@@ -59,6 +59,8 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOG_FILE="${PROJECT_ROOT}/build-all-$(date +%Y%m%d-%H%M%S).log"
+# build-offline-package.sh writes under offline-package-build/linux (BUILD_DIR there).
+OFFLINE_BUILD_DIR="${PROJECT_ROOT}/offline-package-build/linux"
 START_TIME=$(date +%s)
 
 # Build configuration
@@ -98,6 +100,16 @@ print_error() {
 
 print_warning() {
     echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+# Version used when none is given: the repo VERSION file (what docker-build-push.sh would
+# use), else a dev-<sha> tag, the only non-semver form docker-build-push.sh accepts.
+default_version() {
+    if [ -f "${PROJECT_ROOT}/VERSION" ]; then
+        tr -d '[:space:]' < "${PROJECT_ROOT}/VERSION"
+    else
+        echo "dev-$(git -C "$PROJECT_ROOT" rev-parse --short=7 HEAD)"
+    fi
 }
 
 # Calculate elapsed time
@@ -221,7 +233,9 @@ build_docker_images() {
         print_warning "Security scanning is DISABLED (SKIP_SECURITY_SCAN=true)"
     fi
 
-    if ! "${SCRIPT_DIR}/docker-build-push.sh" all; then
+    # VERSION must be handed over explicitly: docker-build-push.sh reads it from the environment,
+    # and this script's own (unexported) shell variable never reaches it.
+    if ! VERSION="$VERSION" "${SCRIPT_DIR}/docker-build-push.sh" all; then
         print_error "Docker build and push failed"
         exit 1
     fi
@@ -279,10 +293,10 @@ build_offline_package() {
     print_success "Phase 2 completed in ${phase_hours}h ${phase_minutes}m ${phase_seconds}s"
 
     # Display package info
-    if [ -d "${PROJECT_ROOT}/offline-package-build" ]; then
+    if [ -d "$OFFLINE_BUILD_DIR" ]; then
         echo ""
         print_info "Offline Package Created:"
-        find "${PROJECT_ROOT}/offline-package-build" -maxdepth 1 -name "*.tar.xz*" -type f -exec ls -lh {} \; 2>/dev/null | awk '{printf "  %-60s %10s\n", $9, $5}' || print_warning "Package files not found"
+        find "$OFFLINE_BUILD_DIR" -maxdepth 1 -name "*.tar.xz*" -type f -exec ls -lh {} \; 2>/dev/null | awk '{printf "  %-60s %10s\n", $9, $5}' || print_warning "Package files not found"
         echo ""
     fi
 }
@@ -330,7 +344,7 @@ generate_final_summary() {
     fi
 
     # Offline package
-    if [ -d "${PROJECT_ROOT}/offline-package-build" ]; then
+    if [ -d "$OFFLINE_BUILD_DIR" ]; then
         echo -e "\n  ${YELLOW}Offline Package:${NC}"
         # Captured whole, then trimmed to the first line — NOT `find ... | head -1`. This
         # script runs under `set -euo pipefail`, and offline-package-build accumulates one
@@ -338,7 +352,7 @@ generate_final_summary() {
         # takes SIGPIPE (141), `pipefail` makes that the pipeline's status, and the ASSIGNMENT
         # aborts the script — here, in the summary, after every build has already succeeded.
         local package_file
-        package_file=$(find "${PROJECT_ROOT}/offline-package-build" -maxdepth 1 -name "*.tar.xz" -type f 2>/dev/null)
+        package_file=$(find "$OFFLINE_BUILD_DIR" -maxdepth 1 -name "*.tar.xz" -type f 2>/dev/null)
         package_file="${package_file%%$'\n'*}"
         if [ -n "$package_file" ]; then
             local package_size
@@ -356,14 +370,14 @@ generate_final_summary() {
     echo -e "${CYAN}────────────────────────────────────────────────────────────${NC}"
     echo ""
     echo "  1. Verify offline package checksum:"
-    echo "     ${YELLOW}cd offline-package-build && sha256sum -c *.tar.xz.sha256${NC}"
+    echo -e "     ${YELLOW}cd offline-package-build/linux && sha256sum -c *.tar.xz.sha256${NC}"
     echo ""
     echo "  2. Review security reports (if enabled):"
-    echo "     ${YELLOW}ls -lh security-reports/${NC}"
+    echo -e "     ${YELLOW}ls -lh security-reports/${NC}"
     echo ""
     echo "  3. Test Docker images:"
-    echo "     ${YELLOW}docker pull ${DOCKERHUB_USERNAME}/opentranscribe-backend:${VERSION}${NC}"
-    echo "     ${YELLOW}docker pull ${DOCKERHUB_USERNAME}/opentranscribe-frontend:${VERSION}${NC}"
+    echo -e "     ${YELLOW}docker pull ${DOCKERHUB_USERNAME}/opentranscribe-backend:${VERSION}${NC}"
+    echo -e "     ${YELLOW}docker pull ${DOCKERHUB_USERNAME}/opentranscribe-frontend:${VERSION}${NC}"
     echo ""
     echo "  4. Transfer offline package to target systems"
     echo ""
@@ -456,9 +470,11 @@ interactive_setup() {
     echo "Current git commit: ${git_commit}"
 
     if [ -z "$VERSION" ]; then
-        read -r -p "Enter version tag (or press Enter to use git commit SHA): " VERSION
+        local default_ver
+        default_ver=$(default_version)
+        read -r -p "Enter version tag (or press Enter to use ${default_ver}): " VERSION
         if [ -z "$VERSION" ]; then
-            VERSION="$git_commit"
+            VERSION="$default_ver"
         fi
     fi
     echo -e "${GREEN}✅ Version: ${VERSION}${NC}"
@@ -477,7 +493,7 @@ interactive_setup() {
     echo "This will create:"
     echo "  - Docker images (pushed to Docker Hub)"
     echo "  - Security reports (./security-reports/)"
-    echo "  - Offline package (./offline-package-build/)"
+    echo "  - Offline package (./offline-package-build/linux/)"
     echo ""
     echo "=================================================="
     echo ""
@@ -500,14 +516,14 @@ interactive_setup() {
 #######################
 
 main() {
-    # Set default version if not provided
-    if [ -z "$VERSION" ]; then
-        VERSION=$(git rev-parse --short HEAD)
-    fi
-
-    # Run interactive setup if requested
+    # Run interactive setup if requested (it prompts for a version when none was given)
     if [ "$INTERACTIVE_MODE" = true ]; then
         interactive_setup
+    fi
+
+    # Set default version if not provided
+    if [ -z "$VERSION" ]; then
+        VERSION=$(default_version)
     fi
 
     print_banner "OpenTranscribe Complete Build Pipeline v${VERSION}"

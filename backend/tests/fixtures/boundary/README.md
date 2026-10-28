@@ -26,7 +26,7 @@ under its own name.
 | Prefix | `config_snapshot.diarizer_backend` | Why it is here |
 |---|---|---|
 | `karpathy_10m` | `pyannote` | The documented **failover** path. Frozen May 2026, when PyAnnote was the default. |
-| `karpathy_10m_native` | `native` | **What production runs.** speakrs became the coded default in `config.py`, at which point the PyAnnote trio kept passing while testing a path nobody takes. |
+| `karpathy_10m_native` | `native` | **What production runs.** speakrs became the coded default (`TranscriptionConfig.diarizer_backend` / `ENGINE_DIARIZER_BACKEND` in `backend/app/transcription/config.py`), at which point the PyAnnote trio kept passing while testing a path nobody takes. |
 
 Each trio is:
 

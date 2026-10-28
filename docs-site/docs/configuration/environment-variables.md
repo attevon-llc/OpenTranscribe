@@ -1039,7 +1039,7 @@ OpenTranscribe supports admin-configurable automatic file retention ([#134](http
 
 ## URL Download Quality Settings
 
-URL downloads (YouTube, TikTok, and 1800+ platforms via yt-dlp) support configurable quality settings ([#122](https://github.com/attevon-llc/OpenTranscribe/issues/122)):
+URL downloads (YouTube, TikTok, and the many other sites yt-dlp supports) support configurable quality settings ([#122](https://github.com/attevon-llc/OpenTranscribe/issues/122)):
 
 ```bash
 # These are user-level settings stored in the database, configurable via Settings UI.

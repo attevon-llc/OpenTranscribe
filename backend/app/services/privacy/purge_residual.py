@@ -32,7 +32,9 @@ if TYPE_CHECKING:
 #: The measures of a voiceprint purge, in the order they are shown.
 VOICEPRINT_RESIDUAL_KEYS = (
     "speaker_identities_machine",
+    "speaker_identity_provenance",
     "voiceprint_suggestions",
+    "voiceprint_suggestion_details",
     "speaker_matches",
     "unpromoted_cluster_members",
     "profiles_with_embeddings",
@@ -96,6 +98,40 @@ def measure_voiceprint_residual(
             .where(
                 *scope.speaker_filters(),
                 Speaker.identity_source.in_(sorted(MACHINE_IDENTITY_SOURCES)),
+            ),
+        )
+        # The record of how a machine identity came to be (it names the profile or speaker the
+        # voice matched): on a machine identity, or left over on a row with no identity at all.
+        result.counts["speaker_identity_provenance"] = _count(
+            db,
+            select(func.count())
+            .select_from(Speaker)
+            .where(
+                *scope.speaker_filters(),
+                or_(
+                    Speaker.identity_source.in_(sorted(MACHINE_IDENTITY_SOURCES)),
+                    Speaker.identity_source.is_(None),
+                ),
+                or_(
+                    Speaker.identity_source_at.isnot(None),
+                    Speaker.identity_source_user_id.isnot(None),
+                    Speaker.identity_source_detail.isnot(None),
+                ),
+            ),
+        )
+        result.counts["voiceprint_suggestion_details"] = _count(
+            db,
+            select(func.count())
+            .select_from(Speaker)
+            .where(
+                *scope.speaker_filters(),
+                Speaker.suggestion_detail["origin"].astext.in_(
+                    sorted(EMBEDDING_SUGGESTION_SOURCES)
+                ),
+                or_(
+                    Speaker.verified.isnot(True),
+                    Speaker.identity_source.in_(sorted(MACHINE_IDENTITY_SOURCES)),
+                ),
             ),
         )
         result.counts["voiceprint_suggestions"] = _count(

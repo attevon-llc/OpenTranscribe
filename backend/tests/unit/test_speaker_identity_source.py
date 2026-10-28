@@ -16,9 +16,20 @@ from app.utils import speaker_identity_source as ids
 from app.utils.speaker_labels import canonical_speaker_label
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
+_DETAIL = {"origin": "voice_match"}
+
 
 def _row(**kw):
-    base = {"identity_source": None, "display_name": None}
+    base = {
+        "identity_source": None,
+        "display_name": None,
+        "identity_source_at": None,
+        "identity_source_user_id": None,
+        "identity_source_detail": None,
+        "suggested_name": None,
+        "suggestion_source": None,
+        "confidence": None,
+    }
     base.update(kw)
     return SimpleNamespace(**base)
 
@@ -28,43 +39,43 @@ def _row(**kw):
 
 def test_a_machine_written_name_is_a_voiceprint_identity():
     row = _row(display_name="Alice")
-    ids.record_machine_identity(row, previous_display_name=None)
+    ids.record_machine_identity(row, previous_display_name=None, detail=_DETAIL)
     assert row.identity_source == "voiceprint"
 
 
 @pytest.mark.parametrize("previous", ["Alice", "alice ", "ALICE"])
 def test_a_machine_write_onto_the_same_typed_name_records_only_the_link(previous):
     row = _row(display_name="Alice")
-    ids.record_machine_identity(row, previous_display_name=previous)
+    ids.record_machine_identity(row, previous_display_name=previous, detail=_DETAIL)
     assert row.identity_source == "voiceprint_link"
 
 
 @pytest.mark.parametrize("previous", ["Bob", "SPEAKER_03", ""])
 def test_a_machine_write_over_a_different_or_placeholder_name_is_a_voiceprint(previous):
     row = _row(display_name="Alice")
-    ids.record_machine_identity(row, previous_display_name=previous)
+    ids.record_machine_identity(row, previous_display_name=previous, detail=_DETAIL)
     assert row.identity_source == "voiceprint"
 
 
 def test_a_voiceprint_identity_is_never_downgraded_by_a_later_machine_write():
     row = _row(display_name="Alice", identity_source="voiceprint")
-    ids.record_machine_identity(row, previous_display_name="Alice")
+    ids.record_machine_identity(row, previous_display_name="Alice", detail=_DETAIL)
     assert row.identity_source == "voiceprint"
-    ids.record_machine_link(row)
+    ids.record_machine_link(row, detail=_DETAIL)
     assert row.identity_source == "voiceprint"
 
 
 @pytest.mark.parametrize("before", [None, "human", "voiceprint_link"])
 def test_a_machine_link_alone_is_a_link_identity(before):
     row = _row(display_name="Alice", identity_source=before)
-    ids.record_machine_link(row)
+    ids.record_machine_link(row, detail=_DETAIL)
     assert row.identity_source == "voiceprint_link"
 
 
 @pytest.mark.parametrize("before", [None, "voiceprint", "voiceprint_link", "human"])
 def test_a_person_makes_any_identity_human(before):
     row = _row(display_name="Alice", identity_source=before)
-    ids.record_human_identity(row)
+    ids.record_human_identity(row, user_id=1, origin="typed")
     assert row.identity_source == "human"
 
 

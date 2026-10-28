@@ -142,6 +142,11 @@ def _written_source_literals() -> set[str]:
                     values.append(node.value)
             elif isinstance(node, ast.Call):
                 values.extend(kw.value for kw in node.keywords if kw.arg == "suggestion_source")
+                # ``record_suggestion(..., source=...)`` is the one writer of the column
+                # (utils/speaker_identity_source): its ``source`` IS the suggestion source.
+                callee = node.func
+                if getattr(callee, "id", getattr(callee, "attr", None)) == "record_suggestion":
+                    values.extend(kw.value for kw in node.keywords if kw.arg == "source")
             for value in values:
                 found.update(_possible_literals(value))
     return found

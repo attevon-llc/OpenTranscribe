@@ -22,17 +22,29 @@ from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import SpeakerMatch
 from app.models.media import SpeakerProfile
+from app.services.embedding_mode_service import voiceprint_model_id
 from app.services.opensearch_service import get_speaker_embedding
 from app.services.permission_service import file_ids_in_scope
 from app.services.privacy import policy as privacy_policy
 from app.services.privacy.redact_view import PrivacyView
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.utils.db_helpers import org_stamp_is
+from app.utils.speaker_identity_detail import ORIGIN_PROFILE_ASSIGNED
+from app.utils.speaker_identity_detail import ORIGIN_PROFILE_CREATED
+from app.utils.speaker_identity_detail import ORIGIN_VOICE_MATCH
+from app.utils.speaker_identity_detail import voiceprint_detail
 from app.utils.speaker_identity_source import record_human_identity
 from app.utils.speaker_identity_source import record_machine_identity
+from app.utils.speaker_identity_source import record_suggestion
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
+
+#: ``detail.origin_task`` of what retroactive matching writes (it runs in a Celery task).
+RETROACTIVE_ORIGIN_TASK = "retroactive_matching"
+
+#: Confidence at which retroactive matching applies a label instead of only suggesting it.
+AUTO_APPLY_CONFIDENCE = 0.75
 
 
 def calculate_cosine_similarity(embedding1: np.ndarray, embedding2: np.ndarray) -> float:
@@ -57,7 +69,9 @@ def calculate_cosine_similarity(embedding1: np.ndarray, embedding2: np.ndarray) 
     return SimilarityService.cosine_similarity(embedding1, embedding2)
 
 
-def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Session) -> bool:
+def auto_create_or_assign_profile(
+    speaker: Speaker, display_name: str, db: Session, user_id: int | None = None
+) -> bool:
     """
     Automatically create or assign speaker to a profile when labeled.
 
@@ -71,6 +85,7 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
         speaker (Speaker): The speaker instance to assign to a profile.
         display_name (str): The display name/label for the speaker.
         db (Session): SQLAlchemy database session.
+        user_id: The person who typed the name, recorded as who made the identity.
 
     Returns:
         bool: True if profile was successfully created/assigned, False otherwise.
@@ -109,7 +124,11 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
             lift_profile_blacklist(db, int(speaker.id), int(existing_profile.id))
             # Assign speaker to existing profile
             speaker.profile_id = existing_profile.id
-            record_human_identity(speaker)  # a person typed this name (issue #1280)
+            # A person typed this name (issue #1280). The request that saved the name already
+            # recorded it, with the suggestion it accepted; this step must not overwrite that.
+            record_human_identity(
+                speaker, user_id=user_id, origin=ORIGIN_PROFILE_ASSIGNED, keep_recorded=True
+            )
             logger.info(
                 f"Assigned speaker {speaker.id} to existing profile '{existing_profile.name}' (ID: {existing_profile.id})"
             )
@@ -150,7 +169,9 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
 
             # Assign speaker to new profile
             speaker.profile_id = new_profile.id
-            record_human_identity(speaker)  # a person typed this name (issue #1280)
+            record_human_identity(
+                speaker, user_id=user_id, origin=ORIGIN_PROFILE_CREATED, keep_recorded=True
+            )
             logger.info(
                 f"Created new profile '{new_profile.name}' (ID: {new_profile.id}) and assigned speaker {speaker.id}"
             )
@@ -299,7 +320,11 @@ def _apply_high_confidence_match(
     speaker.verified = True  # type: ignore[assignment]
     # A voiceprint wrote this identity, not a person (issue #1280). Set before the tracker
     # computes the "after" label below, which depends on it while voiceprints are off.
-    record_machine_identity(speaker, previous_display_name=previous_display_name)
+    record_machine_identity(
+        speaker,
+        previous_display_name=previous_display_name,
+        detail=_retroactive_detail(trigger, speaker.confidence),
+    )
 
     if trigger["profile_id"]:
         old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
@@ -313,6 +338,19 @@ def _apply_high_confidence_match(
         f"({speaker.confidence:.1%} confidence)"
     )
     return _speaker_sync_document(db, speaker)
+
+
+def _retroactive_detail(trigger: dict[str, Any], similarity: float | None) -> dict[str, Any]:
+    """Origin of a label or suggestion retroactive matching wrote: the speaker a person labeled."""
+    return voiceprint_detail(
+        ORIGIN_VOICE_MATCH,
+        confidence=similarity,
+        threshold=AUTO_APPLY_CONFIDENCE,
+        matched_speaker_uuid=trigger.get("uuid"),
+        matched_profile_uuid=trigger.get("profile_uuid"),
+        embedding_model=trigger.get("embedding_model"),
+        origin_task=RETROACTIVE_ORIGIN_TASK,
+    )
 
 
 def _score_candidates(
@@ -413,12 +451,16 @@ def _persist_match_results(
         before = canonical_speaker_label_for_row(speaker)
 
         similarity = match["similarity"]
-        speaker.confidence = similarity  # type: ignore[assignment]
-        speaker.suggested_name = trigger["display_name"]  # type: ignore[assignment]
-        speaker.suggestion_source = "voice_match"  # type: ignore[assignment]
+        record_suggestion(
+            speaker,
+            source="voice_match",
+            name=trigger["display_name"],
+            confidence=similarity,
+            detail=_retroactive_detail(trigger, similarity),
+        )
         store_speaker_match(trigger["id"], speaker.id, similarity, db)
 
-        if similarity >= 0.75:
+        if similarity >= AUTO_APPLY_CONFIDENCE:
             documents.append(_apply_high_confidence_match(db, speaker, trigger, tracker, before))
             auto_applied_count += 1
             continue
@@ -603,6 +645,10 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> dict[
             "organization_id": db.query(MediaFile.organization_id)
             .filter(MediaFile.id == updated_speaker.media_file_id)
             .scalar(),
+            "profile_uuid": _get_profile_uuid(
+                db, int(updated_speaker.profile_id) if updated_speaker.profile_id else None
+            ),
+            "embedding_model": voiceprint_model_id(),
         }
         # Privacy policy (#1280), asked fresh at run time: this task is queued, so the switch
         # may have flipped since the label was saved. Matching reads every voiceprint the

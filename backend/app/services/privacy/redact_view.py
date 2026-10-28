@@ -62,6 +62,14 @@ _DENY = Decision(False, "instance")
 
 Scope = tuple[int, int | None]
 
+#: What describes a machine identity beyond its name and link: when it was recorded, by whom and
+#: from what. Withheld with the link while voiceprints are off.
+_IDENTITY_RECORD_COLUMNS = (
+    "identity_source_at",
+    "identity_source_user_id",
+    "identity_source_detail",
+)
+
 #: Keys of the STORED ``Speaker.attribute_confidence`` bag that are derived from the inferred
 #: gender: the model's confidence, and the voice-versus-name alignment judged from it. These
 #: are the stored names; the response fields ``gender_alignment`` / ``gender_alignment_hint``
@@ -258,8 +266,9 @@ def hide_machine_identities(view: Session | PrivacyView, speakers: Iterable[Spea
 
     For each row whose FILE has voiceprints off: a ``voiceprint`` identity loses its
     ``display_name`` and ``verified`` flag, and any machine identity (``voiceprint`` or
-    ``voiceprint_link``) loses its ``profile_id`` / ``profile``. A ``human`` or NULL identity
-    is never touched. Values are set with ``set_committed_value``: the database keeps them and
+    ``voiceprint_link``) loses its ``profile_id`` / ``profile``, and with it the record of how
+    the identity came to be (``identity_source_at`` / ``_user_id`` / ``_detail``), which names
+    what the voice matched. A ``human`` or NULL identity is never touched. Values are set with ``set_committed_value``: the database keeps them and
     re-enabling voiceprints shows them again.
 
     Reads only ``identity_source``, ``media_file_id``, ``display_name``, ``profile_id`` and
@@ -284,6 +293,10 @@ def hide_machine_identities(view: Session | PrivacyView, speakers: Iterable[Spea
             set_committed_value(speaker, "verified", False)
         set_committed_value(speaker, "profile_id", None)
         set_committed_value(speaker, "profile", None)
+        # The record of how the identity came to be names the profile or speaker the voice
+        # matched, so it goes with the link (a person's own record is never in this branch).
+        for column in _IDENTITY_RECORD_COLUMNS:
+            set_committed_value(speaker, column, None)
         changed.append(speaker)
     return changed
 
@@ -313,6 +326,7 @@ def redact_speaker_rows(db: Session | PrivacyView, speakers: Iterable[Speaker]) 
             set_committed_value(speaker, "suggested_name", None)
             set_committed_value(speaker, "suggestion_source", None)
             set_committed_value(speaker, "confidence", None)
+            set_committed_value(speaker, "suggestion_detail", None)
             relabelled[id(speaker)] = speaker
         if (
             not speaker.gender_confirmed_by_user

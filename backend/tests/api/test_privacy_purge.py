@@ -15,6 +15,7 @@ see the test's uncommitted rows), with the broker call recorded.
 
 from __future__ import annotations
 
+import uuid
 from contextlib import contextmanager
 from datetime import UTC
 from datetime import datetime
@@ -966,6 +967,7 @@ def auto_accept_through_the_matcher(gov, owner, speaker: Speaker, profile: Speak
         "suggested_name": profile.name,
         "auto_accept": True,
         "profile_id": profile.id,
+        "profile_uuid": str(profile.uuid),
     }
     with (
         patch("app.services.speaker_matching_service.add_speaker_embedding"),
@@ -1534,3 +1536,118 @@ def test_a_clean_first_pass_carries_nothing_to_the_second(
     in_process_task(broker[0])
 
     assert broker[1]["kwargs"]["carried_cluster_uuids"] == []
+
+
+# --- the record of how an identity or a suggestion came to be (#1280 follow-up) ---------------
+
+
+def _record_columns(gov, speaker_id: int) -> tuple:
+    gov.db.expire_all()
+    row = gov.db.get(Speaker, speaker_id)
+    return (
+        row.identity_source_at,
+        row.identity_source_user_id,
+        row.identity_source_detail,
+        row.suggestion_detail,
+    )
+
+
+def test_a_purge_clears_the_record_of_the_identity_it_reverts(
+    client, gov, opensearch, broker, in_process_task, reindexed, events
+):
+    profile = make_profile_row(gov, gov.alice, gov.org, "Alice")
+    machine = make_speaker_row(gov, gov.alice, gov.org, "SPEAKER_00")
+    auto_accept_through_the_matcher(gov, gov.alice, machine, profile)
+    typed = make_speaker_row(
+        gov,
+        gov.alice,
+        gov.org,
+        "SPEAKER_01",
+        display_name="Zed",
+        verified=True,
+        identity_source="human",
+        identity_source_user_id=gov.alice.id,
+        identity_source_at=datetime(2026, 1, 2, tzinfo=UTC),
+        identity_source_detail={"origin": "typed"},
+    )
+    before = _record_columns(gov, machine.id)
+    assert before[0] is not None and before[2]["matched_profile_uuid"] == str(profile.uuid), (
+        "control: the matcher recorded what it matched"
+    )
+    assert before[3]["origin"] == "profile_match", "control: and the suggestion's origin"
+    turn_off(gov.db, gov.org, gender=False)
+
+    _task_id, result = run_org_purge(client, gov, broker, in_process_task)
+
+    assert _record_columns(gov, machine.id) == (None, None, None, None)
+    assert _record_columns(gov, typed.id)[:3] == (
+        datetime(2026, 1, 2, tzinfo=UTC),
+        gov.alice.id,
+        {"origin": "typed"},
+    ), "a person's own record is never purged"
+    postgres = result["counts"]["postgres"]
+    assert postgres["identity_provenance_cleared"] == 1
+    assert postgres["suggestion_details_cleared"] == 1
+    finished = [e["details"] for e in events if e["details"].get("phase") == "pass_1_completed"]
+    assert finished and all(d["residual_ok"] is True for d in finished), finished
+    assert all(d["residual"].get("speaker_identity_provenance", 0) == 0 for d in finished)
+
+
+def test_a_purge_keeps_an_llm_suggestions_detail_beside_a_removed_link(
+    client, gov, opensearch, broker, in_process_task, reindexed
+):
+    profile = make_profile_row(gov, gov.alice, gov.org, "Zed")
+    row = make_speaker_row(
+        gov,
+        gov.alice,
+        gov.org,
+        "SPEAKER_00",
+        display_name="Zed",
+        verified=True,
+        profile_id=profile.id,
+        identity_source="voiceprint_link",
+        identity_source_at=datetime(2026, 1, 2, tzinfo=UTC),
+        identity_source_detail={"origin": "profile_propagation"},
+        suggested_name="Zed",
+        suggestion_source="llm_analysis",
+        confidence=0.8,
+        suggestion_detail={"origin": "llm", "provider": "vllm", "model": "m"},
+    )
+    turn_off(gov.db, gov.org, gender=False)
+
+    _task_id, result = run_org_purge(client, gov, broker, in_process_task)
+
+    at, user_id, detail, suggestion_detail = _record_columns(gov, row.id)
+    assert (at, user_id, detail) == (None, None, None), "the link's record goes with the link"
+    assert suggestion_detail == {"origin": "llm", "provider": "vllm", "model": "m"}
+    fresh = gov.db.get(Speaker, row.id)
+    assert (fresh.display_name, fresh.profile_id, fresh.suggestion_source) == (
+        "Zed",
+        None,
+        "llm_analysis",
+    )
+    assert result["counts"]["postgres"]["identity_provenance_cleared"] == 1
+    assert result["counts"]["postgres"]["suggestion_details_cleared"] == 0
+
+
+def test_a_purge_clears_the_detail_of_an_unverified_voice_suggestion(
+    client, gov, opensearch, broker, in_process_task, reindexed
+):
+    row = make_speaker_row(
+        gov,
+        gov.alice,
+        gov.org,
+        "SPEAKER_00",
+        suggested_name="Ann",
+        suggestion_source="voice_match",
+        confidence=0.8,
+        suggestion_detail={"origin": "voice_match", "matched_speaker_uuid": str(uuid.uuid4())},
+    )
+    turn_off(gov.db, gov.org, gender=False)
+
+    _task_id, result = run_org_purge(client, gov, broker, in_process_task)
+
+    assert _record_columns(gov, row.id) == (None, None, None, None)
+    assert gov.db.get(Speaker, row.id).suggested_name is None
+    assert result["counts"]["postgres"]["suggestion_details_cleared"] == 1
+    assert result["counts"]["postgres"]["identity_provenance_cleared"] == 0

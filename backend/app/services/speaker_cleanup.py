@@ -78,7 +78,11 @@ from typing import Literal
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import SearchIndexError
+from app.utils.speaker_identity_detail import ORIGIN_CLUSTER_JOIN
+from app.utils.speaker_identity_detail import ORIGIN_CLUSTER_MERGED
+from app.utils.speaker_identity_detail import voiceprint_detail
 from app.utils.speaker_identity_source import after_unlink
+from app.utils.speaker_identity_source import clear_suggestion
 from app.utils.speaker_identity_source import record_human_identity
 from app.utils.speaker_identity_source import record_machine_identity
 
@@ -896,8 +900,7 @@ def unlink_from_profile(
         if name is not None and speaker.display_name == name:
             speaker.display_name = None  # type: ignore[assignment]
         if name is not None and speaker.suggested_name == name:
-            speaker.suggested_name = None  # type: ignore[assignment]
-            speaker.confidence = None  # type: ignore[assignment]
+            clear_suggestion(speaker)
         # Settle who made what is left, before the "after" label below depends on it (#1280).
         after_unlink(speaker)
         tracker.record(
@@ -914,6 +917,8 @@ def join_cluster_identity(
     tracker: SpeakerRenameTracker,
     *,
     source: Literal["voiceprint", "human"],
+    user_id: int | None = None,
+    confidence: float | None = None,
 ) -> set[int]:
     """Joining a promoted cluster links its profile and takes its name.
 
@@ -923,7 +928,8 @@ def join_cluster_identity(
     ``source`` says who decided the join (issue #1280): ``"voiceprint"`` when a voice
     comparison placed the speaker in the cluster (upload-time clustering, Re-cluster),
     ``"human"`` when a person did (merging clusters). It is required so that no caller can
-    forget to say.
+    forget to say. ``user_id`` is the person (``source="human"``); ``confidence`` the cluster
+    match similarity (``source="voiceprint"``). Both go into the recorded origin.
 
     Returns:
         The profiles whose membership changed (the new one and any it left), for the
@@ -935,9 +941,14 @@ def join_cluster_identity(
     profile_id = cluster.promoted_to_profile_id
     if profile_id is None or speaker_blocked_from_profile(db, int(speaker.id), int(profile_id)):
         return set()
-    name = db.query(SpeakerProfile.name).filter(SpeakerProfile.id == int(profile_id)).scalar()
-    if name is None:
+    profile_row = (
+        db.query(SpeakerProfile.name, SpeakerProfile.uuid)
+        .filter(SpeakerProfile.id == int(profile_id))
+        .first()
+    )
+    if profile_row is None:
         return set()
+    name, profile_uuid = profile_row
     old = int(speaker.profile_id) if speaker.profile_id is not None else None
     indexed_as = canonical_speaker_label_for_row(speaker)
     previous_display_name = speaker.display_name
@@ -945,9 +956,20 @@ def join_cluster_identity(
     speaker.display_name = name  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]
     if source == "voiceprint":
-        record_machine_identity(speaker, previous_display_name=previous_display_name)
+        from app.services.embedding_mode_service import voiceprint_model_id
+
+        record_machine_identity(
+            speaker,
+            previous_display_name=previous_display_name,
+            detail=voiceprint_detail(
+                ORIGIN_CLUSTER_JOIN,
+                confidence=confidence,
+                matched_profile_uuid=profile_uuid,
+                embedding_model=voiceprint_model_id(),
+            ),
+        )
     else:
-        record_human_identity(speaker)
+        record_human_identity(speaker, user_id=user_id, origin=ORIGIN_CLUSTER_MERGED)
     tracker.record(int(speaker.media_file_id), indexed_as, canonical_speaker_label_for_row(speaker))
     return {p for p in (old, int(profile_id)) if p is not None}
 

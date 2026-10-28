@@ -35,8 +35,11 @@ from app.services.formatting_service import FormattingService
 from app.services.ingest_artifacts.recorded_date_service import set_manual_date
 from app.services.opensearch_service import update_transcript_title
 from app.services.platform_bypass import PlatformBypass
+from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.redaction.reveal_audit import audit_unredacted_reveal
+from app.services.speaker_provenance_view import ProvenanceViewer
+from app.services.speaker_provenance_view import attach_speaker_provenance
 from app.services.speaker_status_service import SpeakerStatusService
 from app.services.tag_service import tag_ownership
 from app.utils.db_helpers import owned_in_tenant
@@ -509,6 +512,7 @@ def redact_response_speakers(
     db: Session,
     speakers: list[Speaker],
     transcript_segments: list[TranscriptSegment] | None = None,
+    viewer: ProvenanceViewer | None = None,
 ) -> None:
     """Apply the privacy policy to every speaker row a transcript response will serialize.
 
@@ -523,13 +527,17 @@ def redact_response_speakers(
         db: Database session.
         speakers: The file's speaker rows.
         transcript_segments: Segments whose ``speaker`` is serialized with them.
+        viewer: Who is looking, for the read-only ``identity`` / ``suggestion`` provenance
+            attached after the redaction (``None`` hides who made an identity).
     """
     unique: dict[int, Speaker] = {int(s.id): s for s in speakers}
     for segment in transcript_segments or []:
         if segment.speaker is not None:
             unique.setdefault(int(segment.speaker.id), segment.speaker)
     if unique:
-        redact_speaker_rows(db, unique.values())
+        view = PrivacyView(db)
+        redact_speaker_rows(view, unique.values())
+        attach_speaker_provenance(db, unique.values(), viewer, view=view)
 
 
 def _format_transcript_segments(
@@ -988,7 +996,18 @@ def get_media_file_detail(
         # Redact FIRST, then compute the status from what is left: the status text ("High
         # confidence match") and the resolved name are derived from the suggestion that the
         # redaction withholds, so decorating before it served both while voiceprints were off.
-        redact_response_speakers(db, speakers, transcript_segments)
+        redact_response_speakers(
+            db,
+            speakers,
+            transcript_segments,
+            ProvenanceViewer(
+                user_id=int(current_user.id),
+                admin_org_id=organization_id
+                if reveal_hold_uuids and isinstance(organization_id, int)
+                else None,
+                bypass=bypass,
+            ),
+        )
         processed_speaker_ids: set[int] = set()
         for speaker in [*speakers, *(s.speaker for s in transcript_segments if s.speaker)]:
             if int(speaker.id) not in processed_speaker_ids:

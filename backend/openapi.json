@@ -16616,6 +16616,16 @@
             ],
             "title": "Gender Alignment Hint"
           },
+          "identity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpeakerIdentity"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "media_file_id": {
             "format": "uuid",
             "title": "Media File Id",
@@ -16731,6 +16741,16 @@
               }
             ],
             "title": "Suggested Name"
+          },
+          "suggestion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpeakerSuggestion"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "suggestion_source": {
             "anyOf": [
@@ -16967,6 +16987,80 @@
         "title": "SpeakerIdentificationResponse",
         "type": "object"
       },
+      "SpeakerIdentity": {
+        "description": "How the speaker's CURRENT identity came to be (read-only; issue #1280).\n\n``by`` is present only for the file's owner, an administrator of the file's organization\nand a platform administrator; every other viewer gets ``source`` and ``at``. ``null`` for\nthe whole object means unknown (written before the record existed, or never named) or\nwithheld because a voiceprint made it and the file's voiceprints are off. Only the current\nstate is kept; the full change history is tracked in issue #1336.",
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpeakerIdentityActor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "SpeakerIdentity",
+        "type": "object"
+      },
+      "SpeakerIdentityActor": {
+        "description": "The person who made or confirmed a speaker's identity.",
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "uuid": {
+            "format": "uuid",
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid"
+        ],
+        "title": "SpeakerIdentityActor",
+        "type": "object"
+      },
       "SpeakerMetadataHint": {
         "description": "A speaker name inferred from the file's title/description/author (never auto-applied).",
         "properties": {
@@ -17012,6 +17106,47 @@
           "name"
         ],
         "title": "SpeakerMetadataHint",
+        "type": "object"
+      },
+      "SpeakerSuggestion": {
+        "description": "Where the speaker's CURRENT recommendation in ``suggested_name`` came from (read-only).",
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "title": "SpeakerSuggestion",
         "type": "object"
       },
       "SpeakerTimeStats": {

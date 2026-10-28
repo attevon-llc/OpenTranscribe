@@ -782,7 +782,11 @@ def _redaction_pending(db: Session, cfg: Any, db_file: MediaFile) -> bool:
     # write, which belongs on a read a user is waiting on and not in a download worker.
     if not export_masking_is_pending(cfg, status):
         return False
-    if status is None:
+    # Only a COMPLETED file is "legacy". A PENDING/PROCESSING one is still owned by the
+    # pipeline: the redaction worker's task bookkeeping would take over its
+    # `active_task_id` and its status sync would then mark the file COMPLETED, so one
+    # read of a requeued file would finish it without a transcript.
+    if status is None and db_file.status == FileStatus.COMPLETED:
         _lazy_dispatch_redaction(db, db_file)
     return True  # None (just dispatched) | pending | processing
 

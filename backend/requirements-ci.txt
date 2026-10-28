@@ -21,7 +21,7 @@
 fastapi==0.136.3
 uvicorn[standard]==0.54.0
 websockets==17.3
-sqlalchemy==2.0.53
+sqlalchemy==2.0.55
 alembic==1.20.1
 pydantic==2.14.1
 pydantic-settings==2.16.1
@@ -95,13 +95,13 @@ pandas==3.1.0
 # See requirements.txt for why 2.11.0 (not a newer torch) is the pinned pair.
 torch==2.11.0
 torchaudio==2.11.0
-ctranslate2==4.8.2
+ctranslate2==4.8.3
 faster-whisper==1.2.1
 # See requirements.txt for why transformers 5.10+ and huggingface-hub 1.x (issue #1002).
-transformers==5.10.4
-huggingface-hub==1.17.0
-onnx==1.22.0
-onnxruntime==1.30.0
+transformers==5.20.2
+huggingface-hub==1.33.0
+onnx==1.23.2
+onnxruntime==1.31.0
 omegaconf==2.4.0
 
 # Supporting libraries
@@ -119,13 +119,13 @@ nltk==3.10.4  # see requirements.txt — pathsec hardening is required, not avoi
 # Cloud ASR provider SDKs (lazily imported)
 # deepgram-sdk<7.6.0 breaks under websockets>=15 — see requirements.txt for the full
 # explanation. Caught by tests/unit/test_provider_sdk_compat.py.
-deepgram-sdk==7.9.0
-assemblyai==1.5.4
-google-cloud-speech==2.40.0
-azure-cognitiveservices-speech==1.51.2
-speechmatics-batch==0.5.0
-boto3==1.43.94
-openai==3.14.0
+deepgram-sdk==7.15.0
+assemblyai==1.8.2
+google-cloud-speech==2.41.0
+azure-cognitiveservices-speech==1.53.0
+speechmatics-batch==1.1.0
+boto3==1.43.118
+openai==3.37.0
 requests==2.34.2
 # See requirements.txt for why — LLM summary JSON repair (llm_service.py)
 json-repair==0.64.2
@@ -153,7 +153,7 @@ detoxify==0.5.4
 # Watch sources
 watchdog==6.0.0
 smbprotocol==1.17.0
-msal==1.38.0
+msal==1.39.0
 
 # Test tooling (mirrors the test section of requirements-dev.txt)
 pytest==9.1.1
@@ -171,26 +171,26 @@ pytest-base-url==2.1.0  # unit/test_e2e_base_url_precedence.py proves the REAL p
 # one the prod image ships. Versions-move-forward: change them in requirements.txt FIRST and copy
 # here. tests/unit/test_requirements_pinned.py and scripts/check-requirements-resolve.py both
 # fail on drift. typer is capped below 0.26 by huggingface-hub 1.17 (see requirements.txt).
-starlette==1.9.0
+starlette==1.10.0
 anyio==4.15.1
 regex==2026.9.29
 fsspec==2026.9.0
 filelock==4.2.4
-protobuf==7.36.1
-typer==0.25.1
+protobuf==7.36.2
+typer==0.27.3
 tokenizers==0.22.2
-botocore==1.43.94
-google-api-core==2.37.0
-google-auth==2.58.0
-googleapis-common-protos==1.75.3
-grpcio==1.84.0
-grpcio-status==1.84.0
-httpcore2==2.13.0
-httpx2==2.13.0
+botocore==1.43.118
+google-api-core==2.43.0
+google-auth==2.62.0
+googleapis-common-protos==1.76.0
+grpcio==1.84.1
+grpcio-status==1.84.1
+httpcore2==2.16.0
+httpx2==2.16.0
 multidict==6.9.1
 narwhals==2.27.1  # transitive (plotly/altair family); pinned so the variant resolves the same as requirements.txt
-proto-plus==1.28.4
-wcwidth==0.9.3
-av==18.1.0
+proto-plus==1.29.0
+wcwidth==0.9.4
+av==19.0.2
 phonenumbers==9.0.41
 spacy==3.8.16

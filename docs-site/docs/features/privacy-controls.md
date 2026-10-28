@@ -153,6 +153,43 @@ and the match confidence is withheld), the speaker preview, the speaker-merge no
 topic-suggestion prompts, exports, captions, the search index and every other place a name is
 printed. Turning voiceprints back on shows them again.
 
+#### What else is recorded about an identity and a suggestion
+
+The database keeps the full provenance of what is on a speaker, not only whether a person or a
+voiceprint wrote it. Each speaker records, for its **current** identity:
+
+| Recorded | Meaning |
+|---|---|
+| `identity_source_at` | When the current source was recorded |
+| `identity_source_user_id` | The person who made or confirmed it. Empty when a task wrote it (a voiceprint match, a cluster join) or when the account has since been deleted |
+| `identity_source_detail` | Where it came from. A person: how (`typed`, `accepted_suggestion`, `profile_assigned`, `profile_created`, `batch_assign`, `cluster_promoted`, `cluster_merged`, `created`, `confirmed`) and, when they accepted a pending suggestion, which one (its source and confidence, and for an AI guess the provider and model). A voiceprint: `voice_match`, `profile_match`, `profile_propagation` or `cluster_join` with the confidence, the threshold it had to clear, the matched profile or speaker (ids), the embedding model and the task |
+
+and, for the **recommendation** in `suggested_name` / `suggestion_source`, `suggestion_detail`:
+a voice or profile match (the same match record) or an AI guess (provider, model, confidence, the
+task). An AI guess is only ever stored as a suggestion; it is never applied by itself.
+
+These hold ids and identifiers only: no name and no transcript text, and they are never written to
+the search index or sent to a language model. The speaker API returns them read-only as
+`identity` (`source`, `at`, `by`, `detail`) and `suggestion` (`source`, `confidence`, `detail`).
+`by` names the person only to the file's owner, to an administrator of the file's organization and
+to a platform administrator; anyone else who can see the file gets `source` and `at`.
+
+They follow the identity they describe. While a file's voiceprints are off, the record of a
+`voiceprint` or `voiceprint_link` identity (it names the profile or speaker the voice matched) and
+the detail of a voice suggestion are hidden with the name and link: `identity` is empty and the
+suggestion is gone. A person's own record is never hidden. A purge clears them in the same statement
+that reverts the identity or removes the voice suggestion, counts them
+(`identity_provenance_cleared`, `suggestion_details_cleared`) and checks that none are left
+(`speaker_identity_provenance`, `voiceprint_suggestion_details`); a person's record, and the
+detail of an AI suggestion, stay. Reverting an identity to unknown (unlinking, rejecting, deleting
+a profile) forgets the record with it.
+
+**This is the current state, not a history.** Only the latest source, time, person and origin are
+kept; what was there before is overwritten. A complete, append-only history of who changed which
+name and when is tracked in issue #1336 (v0.7.0), and a review of the queries these columns need
+at scale in #1337. Identities that existed before 0.6.0 have no time or person; the identities
+the upgrade recognised as voiceprint-made carry `{"origin": "v449_backfill"}`.
+
 **Not covered.** Summaries, topic suggestions and other text a language model wrote earlier can
 contain a name that a voiceprint supplied. That text is model output, not a label, so switching
 voiceprints off does not rewrite it; regenerate the summary while voiceprints are off to get one
@@ -293,7 +330,7 @@ the `details` of the completed passes:
 |---|---|
 | `task_id`, `phase`, `targets` | Which purge and pass, and what it was asked to delete |
 | `scope` | `kind` (`organization`, `user`, `instance_personal`, `instance_all`) and the `organization_id` and `user_id` it covered |
-| `counts.postgres` | `speaker_identities_reverted`, `speaker_links_removed`, `suggestions_cleared`, `speaker_matches_deleted`, `cross_scope_matches`, `speakers_unclustered`, `cluster_members_deleted`, `clusters_deleted`, `cross_scope_clusters_trimmed`, `promoted_cluster_members_removed`, `promoted_clusters_deleted`, `profiles_reset`, `statuses_refreshed`, `gender_speakers_cleared` |
+| `counts.postgres` | `speaker_identities_reverted`, `speaker_links_removed`, `suggestions_cleared`, `identity_provenance_cleared`, `suggestion_details_cleared`, `speaker_matches_deleted`, `cross_scope_matches`, `speakers_unclustered`, `cluster_members_deleted`, `clusters_deleted`, `cross_scope_clusters_trimmed`, `promoted_cluster_members_removed`, `promoted_clusters_deleted`, `profiles_reset`, `statuses_refreshed`, `gender_speakers_cleared` |
 | `counts.opensearch` | `speaker_docs_deleted`, `profile_docs_deleted`, `cluster_docs_deleted` |
 | `residual`, `residual_ok`, `residual_unverified` | What the check found (all zeros when `residual_ok` is true) and which measures could not be taken |
 | `reason` | `residual` when anything was left, `store_errors` when a store reported a failed delete |

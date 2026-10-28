@@ -156,6 +156,20 @@ off by default.
   in `system_settings` under `privacy.identity_source_backfill`; the query that reads it and the
   comparison with unproven rows are in Operations > Upgrading to 0.6.0. Summaries and topics a
   language model already wrote are not rewritten.
+- **Every speaker name, link and suggestion now records who made it, when and from what.**
+  Migration `v449` also adds `speaker.identity_source_at`, `identity_source_user_id` (the person;
+  empty for a task, and set to empty if the account is deleted), `identity_source_detail` and
+  `suggestion_detail` (JSON, ids and identifiers only). A typed name, an accepted suggestion (voice
+  or AI, with the provider and model), a profile assignment, a batch assignment and a cluster
+  promotion or merge record the person and how; a voiceprint match, propagation or cluster join
+  records the confidence, threshold, matched profile or speaker, embedding model and task; an AI
+  suggestion records its provider and model and is still never applied by itself. The speaker API
+  returns them read-only as `identity` and `suggestion`; the person (`by`) is shown only to the
+  file's owner, an organization administrator and a platform administrator. While voiceprints are
+  off they are hidden with the machine identity they describe, a purge clears and counts them
+  (`identity_provenance_cleared`, `suggestion_details_cleared`), and they never reach the search
+  index or a language model. Only the current state is kept; the full change history is tracked in
+  #1336 (v0.7.0) and a review of the queries these columns need in #1337.
 - **Transcript export API:** `GET /api/files/{uuid}/export` accepts `format=md` and answers 400 for
   `docx` and `pdf`, which use the new asynchronous `POST /api/files/{uuid}/export/document`.
   Backend images are about 26 MB larger (Noto fonts). No migration.

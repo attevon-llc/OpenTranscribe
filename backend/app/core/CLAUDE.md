@@ -214,9 +214,12 @@ should import `app.api` or `app.services` at module scope.
   `task_replay` heartbeat, capped by `BROKER_ORPHAN_MAX_REQUEUES`; a `task_replay`-recorded one
   is discarded, since that sweep re-sends it under the same id.
 - `task_liveness.run_heartbeat` hands the run back as **queued** only on a normal return, a
-  Celery `Retry` or `Reject(requeue=True)`. Any other exit leaves it DEAD — verified: celery's
-  cold-shutdown cancel ACKS a running `acks_late` task on Redis, and a "queued" marker there
-  hid the lost run for `TRANSCRIPTION_QUEUE_MAX_WAIT_SECONDS` (a week).
+  Celery `Retry` or `Reject(requeue=True)`. Any other exit leaves it DEAD — a cold-shutdown
+  `SystemExit` is deliberately NOT handed back here. On billiard 4.3.0 the cancel ACKED a running
+  `acks_late` task and a "queued" marker hid the lost run for `TRANSCRIPTION_QUEUE_MAX_WAIT_SECONDS`
+  (a week); billiard >= 4.3.1 (pinned) reports the job lost so Celery requeues it to the head of
+  its queue, and `broker_orphans.read_queued_run_ids` keeps the reaper from re-dispatching that
+  run. Pinned by `unit/test_billiard_shutdown_is_not_acked.py` and the live cold-shutdown test.
 - `db_metrics` per-request counting stores a **mutable dict** in a ContextVar: `BaseHTTPMiddleware`
   runs `call_next` in a child task, so re-`set()`ing the var would not propagate back.
 - `FileStatus` is `(str, enum.Enum)` and deliberately **not** `StrEnum` — `str(FileStatus.X) ==

@@ -516,9 +516,10 @@ def recover_lost_runs(exclude: set[str]) -> int:
     """Re-dispatch (or fail) every in-flight transcription with no lease and nothing queued.
 
     The reaper's second half (``core/broker_orphans.reclaim_orphaned_deliveries``): the run's
-    worker is gone and so is its message -- dropped by a cold shutdown's cancel, or by a
-    broker that lost its data. ``exclude`` holds the runs that still have a message in the
-    broker, which the first half handles by putting that exact stage back. Only rows quiet for
+    worker is gone and so is its message -- lost with a broker that dropped its data (a cold
+    shutdown no longer qualifies: billiard >= 4.3.1 hands the stage back to its queue).
+    ``exclude`` holds the runs that still have a message in the broker, unacked or waiting on
+    a queue list; the first half puts an unacked stage back and a queued one needs nothing. Only rows quiet for
     ``BROKER_ORPHAN_STALE_SECONDS`` and older than ``TRANSCRIPTION_RECLAIM_GRACE_SECONDS`` are
     considered, so a run between its dispatch commit and its queued marker (whose
     ``updated_at`` may still be NULL) is never mistaken for a lost one (issue #1178). Returns

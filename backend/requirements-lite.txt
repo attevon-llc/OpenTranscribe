@@ -37,7 +37,7 @@ email-validator==2.3.0
 cachetools==7.2.4
 # Sentence tokenization for hybrid search (app/services/search/hybrid_search_service.py) —
 # see requirements.txt for the pathsec-hardening pin rationale (issue #491).
-nltk==3.10.3
+nltk==3.10.4
 # Asynchronous Tasks
 celery==5.6.3
 redis==8.1.0

@@ -152,12 +152,21 @@ def compute_bertscore(golds: Sequence[str], submissions: Sequence[str]) -> list[
 
     import bert_score
 
-    _, _, f1 = bert_score.score(
-        [submissions[i] for i in scored_indices],
-        [golds[i] for i in scored_indices],
+    # `bert_score.score()` truncates with `max_length=tokenizer.model_max_length`. Some
+    # tokenizers (deberta-large-mnli's among them) report the "unset" sentinel 1e30 there, which
+    # transformers 5.x rejects with an OverflowError. Build the scorer ourselves and cap the
+    # tokenizer at what the model can actually attend over.
+    scorer = bert_score.BERTScorer(
         model_type=BERTSCORE_MODEL,
         rescale_with_baseline=True,
         lang="en",
+    )
+    max_positions = getattr(scorer._model.config, "max_position_embeddings", None)
+    if max_positions and scorer._tokenizer.model_max_length > max_positions:
+        scorer._tokenizer.model_max_length = max_positions
+    _, _, f1 = scorer.score(
+        [submissions[i] for i in scored_indices],
+        [golds[i] for i in scored_indices],
         verbose=False,
     )
     for position, index in enumerate(scored_indices):

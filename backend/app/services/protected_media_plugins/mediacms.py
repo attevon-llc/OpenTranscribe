@@ -18,9 +18,10 @@ from urllib.parse import urlparse
 from urllib.parse import urlunparse
 
 import requests
-from fastapi import HTTPException
 
 from app.core.exceptions import DomainError
+from app.core.exceptions import InvalidInputError
+from app.core.exceptions import UpstreamServiceError
 from app.services.protected_media_providers import ProtectedMediaProvider
 from app.utils.url_validation import pinned_requests_session
 from app.utils.url_validation import resolve_pinned_target
@@ -61,19 +62,15 @@ def _pin_media_url(url: str, *, purpose: str) -> PinnedTarget:
         The pinned target to dial.
 
     Raises:
-        fastapi.HTTPException: 400, with a generic detail — the rejection reason
+        InvalidInputError: 400, with a generic detail — the rejection reason
             distinguishes "private IP" from "cannot resolve" and would turn this endpoint
             into a network scanner if returned to the caller.
     """
     target, reason = resolve_pinned_target(url)
     if target is None:
         logger.warning("Blocked %s to %r: %s", purpose, url, reason)
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "The provided URL could not be used. It must be a publicly reachable "
-                "http(s) address."
-            ),
+        raise InvalidInputError(
+            "The provided URL could not be used. It must be a publicly reachable http(s) address."
         )
     return target
 
@@ -264,9 +261,8 @@ class MediacmsProvider(ProtectedMediaProvider):
         parsed = urlparse(url)
 
         if parsed.netloc not in self._get_allowed_hosts(user_id):
-            raise HTTPException(
-                status_code=400,
-                detail="URL hostname is not in the configured media sources",
+            raise InvalidInputError(
+                "URL hostname is not in the configured media sources",
             )
 
         query = parse_qs(parsed.query)
@@ -287,9 +283,8 @@ class MediacmsProvider(ProtectedMediaProvider):
                 friendly_token = path_parts[3] if len(path_parts) >= 4 else None
 
         if not friendly_token:
-            raise HTTPException(
-                status_code=400,
-                detail="Missing media token (m query param or /api/v1/media/<token>)",
+            raise InvalidInputError(
+                "Missing media token (m query param or /api/v1/media/<token>)",
             )
 
         base_url = urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
@@ -320,13 +315,10 @@ class MediacmsProvider(ProtectedMediaProvider):
                 media_pass = stored_pass
 
         if not media_user or not media_pass:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Credentials for this media source are not configured. "
-                    "Either provide credentials in the request or configure "
-                    "them in Settings > Media Sources."
-                ),
+            raise InvalidInputError(
+                "Credentials for this media source are not configured. "
+                "Either provide credentials in the request or configure "
+                "them in Settings > Media Sources."
             )
 
         friendly_token, base_url = self._get_token_and_base_url(url, user_id=user_id)
@@ -358,9 +350,8 @@ class MediacmsProvider(ProtectedMediaProvider):
             token_data = login_resp.json()
             auth_token = token_data.get("token")
             if not auth_token:
-                raise HTTPException(
-                    status_code=502,
-                    detail="MediaCMS login did not return an auth token",
+                raise UpstreamServiceError(
+                    "MediaCMS login did not return an auth token",
                 )
 
             headers = {
@@ -379,16 +370,15 @@ class MediacmsProvider(ProtectedMediaProvider):
             info_resp.raise_for_status()
             info = info_resp.json()
 
-        except (HTTPException, DomainError):
+        except DomainError:
             raise
         except requests.exceptions.RequestException as e:
-            # Re-wrap as HTTPException for consistency with FastAPI error handling.
+            # Re-wrap as a DomainError so the API layer renders it.
             # The raw requests exception carries the FULL internal URL, including
             # host:port — never returned to the caller (#859).
             logger.exception("Failed to fetch media information from MediaCMS")
-            raise HTTPException(
-                status_code=502,
-                detail="Could not fetch media information from the configured media source.",
+            raise UpstreamServiceError(
+                "Could not fetch media information from the configured media source.",
             ) from e
 
         return friendly_token, base_url, info, auth_token
@@ -494,16 +484,14 @@ class MediacmsProvider(ProtectedMediaProvider):
 
         original_media_url = info.get("original_media_url")
         if not original_media_url:
-            raise HTTPException(
-                status_code=502,
-                detail="MediaCMS media info is missing 'original_media_url'",
+            raise UpstreamServiceError(
+                "MediaCMS media info is missing 'original_media_url'",
             )
 
         # Validate original_media_url to prevent SSRF via malicious server response
         if "://" in str(original_media_url) or str(original_media_url).startswith("//"):
-            raise HTTPException(
-                status_code=502,
-                detail="MediaCMS returned an invalid media URL",
+            raise UpstreamServiceError(
+                "MediaCMS returned an invalid media URL",
             )
 
         download_url = f"{base_url}{original_media_url}"
@@ -555,7 +543,7 @@ class MediacmsProvider(ProtectedMediaProvider):
                             progress = int(20 + (downloaded / total_bytes) * 40)
                             progress_callback(min(progress, 60), "Downloading media...")
 
-        except (HTTPException, DomainError):
+        except DomainError:
             raise
         except requests.exceptions.RequestException as e:
             # Clean up partial file on failure. The raw requests exception
@@ -564,9 +552,8 @@ class MediacmsProvider(ProtectedMediaProvider):
             if file_path and os.path.exists(file_path):
                 os.remove(file_path)
             logger.exception("Failed to download media file from MediaCMS")
-            raise HTTPException(
-                status_code=502,
-                detail="Could not download the media file from the configured media source.",
+            raise UpstreamServiceError(
+                "Could not download the media file from the configured media source.",
             ) from e
 
         # Build info dict from already-fetched data (no redundant second login)

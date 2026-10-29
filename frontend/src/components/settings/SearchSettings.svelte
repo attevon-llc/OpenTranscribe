@@ -8,7 +8,7 @@
   import ConfirmationModal from '../ConfirmationModal.svelte';
   import StatusChip from './StatusChip.svelte';
   import Spinner from '../ui/Spinner.svelte';
-  import ProgressBar from '../ui/ProgressBar.svelte';
+  import ReindexLiveProgress from './ReindexLiveProgress.svelte';
 
   let showModelChangeModal = false;
 
@@ -34,6 +34,9 @@
     indexed_files: number;
     pending_files: number;
     in_progress: boolean;
+    stop_requested?: boolean;
+    // True when the backend could not read the run state; in_progress is then unknown, not false.
+    status_unavailable?: boolean;
     current_model: string;
     current_dimension: number;
     last_indexed_at: string | null;
@@ -80,6 +83,7 @@
   let indexHealth: Record<string, IndexHealthEntry> | null = null;
   let bootstrapStatus: BootstrapStatus | null = null;
   let bootstrapPollHandle: ReturnType<typeof setInterval> | null = null;
+  let statusPollHandle: ReturnType<typeof setInterval> | null = null;
 
   // Operator-triggered re-embed of neural-search degraded (text-only) files (issue #626,
   // the follow-up to #625's bootstrap self-heal). Preview + confirm, never dispatch-on-click.
@@ -90,16 +94,6 @@
 
   // Live reindex progress
   let reindexProgress: ReindexProgress | null = null;
-
-  function formatEta(seconds: number | null | undefined): string {
-    if (seconds == null || seconds <= 0) return '';
-    if (seconds < 60) return `${Math.round(seconds)}s`;
-    const m = Math.floor(seconds / 60);
-    const s = Math.round(seconds % 60);
-    if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`;
-    const h = Math.floor(m / 60);
-    return `${h}h ${m % 60}m`;
-  }
 
   // Event handlers for WebSocket events
   function handleReindexProgress(event: CustomEvent<ReindexProgress>) {
@@ -146,11 +140,15 @@
     window.addEventListener('reindex-stopped', handleReindexStopped as EventListener);
   });
 
+  let destroyed = false;
+
   onDestroy(() => {
+    destroyed = true;
     window.removeEventListener('reindex-progress', handleReindexProgress as EventListener);
     window.removeEventListener('reindex-complete', handleReindexComplete as EventListener);
     window.removeEventListener('reindex-stopped', handleReindexStopped as EventListener);
     if (bootstrapPollHandle) clearInterval(bootstrapPollHandle);
+    if (statusPollHandle) clearInterval(statusPollHandle);
   });
 
   // Neural search bootstrap self-heal (issue #625). The backend beat task retries every
@@ -240,6 +238,8 @@
     }
   }
 
+  const STATUS_RETRY_MS = 10000;
+
   async function loadStatus() {
     try {
       const res = await axiosInstance.get('/search/reindex/status');
@@ -250,6 +250,14 @@
       }
     } catch (e) {
       console.error('Failed to load index status:', e);
+    }
+    // While the run state is unknown (Redis unreachable) keep asking; stop once it is known.
+    if (destroyed) return;
+    if (indexStatus?.status_unavailable && !statusPollHandle) {
+      statusPollHandle = setInterval(loadStatus, STATUS_RETRY_MS);
+    } else if (!indexStatus?.status_unavailable && statusPollHandle) {
+      clearInterval(statusPollHandle);
+      statusPollHandle = null;
     }
   }
 
@@ -372,6 +380,8 @@
     }
   }
 
+  $: statusUnknown = indexStatus?.status_unavailable === true;
+
   $: progressPercent = indexStatus
     ? Math.round((indexStatus.indexed_files / Math.max(indexStatus.total_files, 1)) * 100)
     : 0;
@@ -423,57 +433,15 @@
     </div>
   {/if}
 
+  {#if statusUnknown}
+    <div class="banner banner-neutral" role="status">
+      <div class="banner-body">{$t('settings.search.statusUnavailable')}</div>
+    </div>
+  {/if}
+
   <!-- Live reindex progress -->
   {#if isReindexing}
-    <div class="reindex-live-progress">
-      <div class="reindex-header">
-        <span class="reindex-label">
-          <Spinner size="small" />
-          {isStopping
-            ? ($t('search.stoppingReindex'))
-            : ($t('search.reindexingInProgress'))}
-        </span>
-        {#if reindexProgress && reindexProgress.total_files > 0}
-          <span class="reindex-count">
-            {reindexProgress.indexed_files} / {reindexProgress.total_files}
-          </span>
-        {/if}
-      </div>
-      {#if reindexProgress && reindexProgress.total_files > 0}
-        <div class="progress-container">
-          <div class="progress-bar reindexing">
-            <div class="progress-fill" style="width: {Math.min(Math.round(reindexProgress.progress * 100), 100)}%"></div>
-          </div>
-          <span class="progress-text">
-            {Math.min(Math.round(reindexProgress.progress * 100), 100)}%
-          </span>
-        </div>
-        <div class="reindex-details">
-          {#if reindexProgress.message}
-            <span class="reindex-message">{reindexProgress.message}</span>
-          {/if}
-          {#if formatEta(reindexProgress.eta_seconds)}
-            <span class="reindex-eta">{formatEta(reindexProgress.eta_seconds)} {$t('upload.remaining')}</span>
-          {/if}
-        </div>
-      {:else}
-        <div class="progress-container indeterminate-row">
-          <div class="progress-bar-wrapper">
-            <ProgressBar percent={null} />
-          </div>
-          <span class="progress-text">{$t('search.reindexStarting')}</span>
-        </div>
-      {/if}
-      <div class="reindex-actions">
-        <button
-          class="btn btn-danger-outline btn-sm"
-          on:click={handleStopReindex}
-          disabled={isStopping}
-        >
-          {isStopping ? ($t('search.stoppingReindex')) : ($t('search.stopReindex'))}
-        </button>
-      </div>
-    </div>
+    <ReindexLiveProgress {reindexProgress} {isStopping} onstop={handleStopReindex} />
   {:else if indexStatus && indexStatus.total_files > 0 && progressPercent < 100}
     <div class="progress-container">
       <div class="progress-bar">
@@ -557,7 +525,7 @@
   <div class="subsection-header">
     <h4 class="subsection-title">{$t('search.embeddingModel')}</h4>
     <div class="subsection-actions">
-      {#if indexStatus && indexStatus.pending_files > 0 && !isReindexing}
+      {#if indexStatus && indexStatus.pending_files > 0 && !isReindexing && !statusUnknown}
         <button
           class="btn btn-secondary btn-sm"
           on:click={handleReindexPending}
@@ -570,7 +538,7 @@
         <button
           class="btn btn-primary btn-sm"
           on:click={handleReindexAll}
-          disabled={isReindexing}
+          disabled={isReindexing || statusUnknown}
         >
           {isReindexing ? ($t('search.reindexing')) : ($t('search.reindexAll'))}
         </button>
@@ -853,6 +821,12 @@
     color: var(--text-color);
   }
 
+  .banner-neutral {
+    border: 1px solid var(--border-color);
+    background-color: var(--surface-color);
+    color: var(--text-secondary);
+  }
+
   .banner-title {
     font-weight: 600;
     margin-bottom: 0.25rem;
@@ -888,80 +862,6 @@
     align-items: center;
     gap: 0.5rem;
     flex-shrink: 0;
-  }
-
-  /* Live reindex progress styles */
-  .reindex-live-progress {
-    margin-bottom: 0.75rem;
-    padding: 0.75rem;
-    background: var(--background-color);
-    border-radius: 6px;
-    border: 1px solid var(--border-color);
-  }
-
-  .reindex-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.5rem;
-  }
-
-  .reindex-label {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--primary-on-surface);
-  }
-
-  .reindex-count {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    font-weight: 500;
-  }
-
-  .progress-bar.reindexing {
-    background: var(--primary-light, rgba(var(--primary-color-rgb), 0.2));
-  }
-
-  .progress-bar.reindexing .progress-fill {
-    background: var(--primary-color);
-    animation: pulse 1.5s ease-in-out infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.7;
-    }
-  }
-
-  .reindex-details {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 0.25rem;
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-  }
-
-  .reindex-message {
-    flex: 1;
-  }
-
-  .reindex-eta {
-    white-space: nowrap;
-    font-weight: 500;
-    color: var(--primary-on-surface);
-  }
-
-  .reindex-actions {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 0.5rem;
   }
 
   /* Reindex completion stats */
@@ -1027,35 +927,9 @@
     color: var(--primary-on-surface);
   }
 
-  .btn-danger-outline {
-    background: transparent;
-    color: var(--danger-color, #dc2626);
-    border: 1px solid var(--danger-color, #dc2626);
-  }
-
-  .btn-danger-outline:hover:not(:disabled) {
-    background: var(--danger-bg, rgba(220, 38, 38, 0.08));
-  }
-
-  .btn-danger-outline:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
   .btn-sm {
     padding: 0.25rem 0.75rem;
     font-size: 0.75rem;
-  }
-
-  .indeterminate-row {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    margin-bottom: 0.5rem;
-  }
-
-  .indeterminate-row .progress-bar-wrapper {
-    flex: 1;
   }
 
   @media (max-width: 768px) {

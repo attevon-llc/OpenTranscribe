@@ -39,9 +39,9 @@ from app.services.file_provenance import record_diarization
 from app.services.minio_service import cleanup_temp_audio
 from app.services.minio_service import download_file
 from app.services.minio_service import download_temp_audio
-from app.services.minio_service import temp_audio_exists
 from app.services.privacy.gates import gender_allowed
 from app.services.privacy.gates import voiceprints_allowed
+from app.services.temp_audio_probe import temp_audio_available
 from app.tasks.transcription.user_settings import SpeakerRange
 from app.tasks.transcription.user_settings import resolve_speaker_range_for_user
 from app.utils import benchmark_timing
@@ -159,7 +159,7 @@ def _prepare_audio(
 
     temp_dir = tempfile.mkdtemp(prefix="rediarize_")
 
-    if file_uuid and temp_audio_exists(file_uuid):
+    if file_uuid and temp_audio_available(file_uuid, caller="rediarize"):
         try:
             audio_file_path = os.path.join(temp_dir, "audio.wav")
             download_temp_audio(file_uuid, audio_file_path)

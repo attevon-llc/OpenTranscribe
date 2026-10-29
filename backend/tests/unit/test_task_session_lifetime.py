@@ -224,7 +224,7 @@ def embedding_task_env(db_session, monkeypatch):
         tracker.observe("temp_audio_exists")
         return True
 
-    monkeypatch.setattr("app.services.minio_service.temp_audio_exists", _temp_exists)
+    monkeypatch.setattr("app.services.temp_audio_probe.temp_audio_exists", _temp_exists)
     monkeypatch.setattr(
         "app.services.minio_service.download_temp_audio",
         lambda file_uuid, path: tracker.observe("download_temp_audio"),

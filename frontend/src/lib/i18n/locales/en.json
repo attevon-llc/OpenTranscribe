@@ -5638,6 +5638,7 @@
   "settings.search.modelNotReady": "Deployment reported success but the model still cannot embed. Check the OpenSearch logs — this usually means too little JVM heap for this model.",
   "settings.search.modelPrepareFailed": "Could not download and deploy the model.",
   "settings.search.bootstrapDegradedTitle": "Neural search is degraded",
+  "settings.search.statusUnavailable": "Reindex status is unavailable right now. Retrying automatically.",
   "settings.search.bootstrapDegradedBody": "The neural search model could not be prepared after {{attempts}} attempt(s). Keyword search still works; semantic search does not. The system retries automatically in the background.",
   "settings.search.bootstrapLastError": "Last error: {{error}}",
   "settings.search.bootstrapRetryAt": "Next automatic retry: {{time}}",

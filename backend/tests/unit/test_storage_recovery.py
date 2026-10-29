@@ -309,3 +309,102 @@ def test_apply_metadata_matches_updates_title(db_session, normal_user):
 def test_resolve_user_missing_raises(db_session):
     with pytest.raises(ValueError, match="No user found"):
         recovery.resolve_user(db_session, "nobody@nowhere.invalid")
+
+
+# ---------------------------------------------------------------------------
+# load_metadata_sidecar: absent / corrupt / outage must be three different answers
+# ---------------------------------------------------------------------------
+
+
+def _sidecar_s3_error(code: str, status: int):
+    from minio.error import S3Error
+    from urllib3.response import HTTPResponse
+
+    return S3Error(
+        response=HTTPResponse(status=status),
+        code=code,
+        message=f"simulated {code}",
+        resource="/recovery/youtube_metadata.json",
+        request_id="req",
+        host_id="host",
+    )
+
+
+def _sidecar_max_retry():
+    import urllib3
+    from urllib3.exceptions import MaxRetryError
+
+    return MaxRetryError(urllib3.HTTPConnectionPool("minio", 9000), "/x", None)
+
+
+def _wrapped(exc: Exception) -> Exception:
+    """Shape ``MinIOService.get_object`` raises: a plain Exception, real cause in __cause__."""
+    try:
+        raise Exception(f"Error getting object: {exc}") from exc
+    except Exception as wrapped:
+        return wrapped
+
+
+class _SidecarSvc:
+    def __init__(self, *, body: bytes | None = None, error: Exception | None = None) -> None:
+        self.body = body
+        self.error = error
+
+    def get_object(self, _bucket, _name):
+        if self.error is not None:
+            raise self.error
+        body = self.body
+
+        class _Resp:
+            def read(self):
+                return body
+
+            def close(self):
+                pass
+
+            def release_conn(self):
+                pass
+
+        return _Resp()
+
+
+def test_sidecar_absent_reads_as_empty_direct_and_wrapped():
+    err = _sidecar_s3_error("NoSuchKey", 404)
+
+    assert recovery.load_metadata_sidecar(_SidecarSvc(error=err)) == {}
+    assert recovery.load_metadata_sidecar(_SidecarSvc(error=_wrapped(err))) == {}
+
+
+def test_sidecar_present_is_parsed():
+    svc = _SidecarSvc(body=b'{"abc": {"title": "T"}}')
+
+    assert recovery.load_metadata_sidecar(svc) == {"abc": {"title": "T"}}
+
+
+@pytest.mark.parametrize(
+    "make",
+    [
+        lambda: _sidecar_max_retry(),
+        lambda: TimeoutError("timed out"),
+        lambda: _sidecar_s3_error("InternalError", 500),
+        lambda: _sidecar_s3_error("AccessDenied", 403),
+    ],
+    ids=["max-retry", "timeout", "s3-500", "access-denied"],
+)
+def test_sidecar_outage_raises_instead_of_reading_as_empty(make):
+    exc = make()
+
+    for err in (exc, _wrapped(exc)):
+        with pytest.raises(recovery.MetadataSidecarUnavailableError):
+            recovery.load_metadata_sidecar(_SidecarSvc(error=err))
+
+
+@pytest.mark.parametrize("body", [b"{not json", b"\xff\xfe", b"[1, 2]"])
+def test_sidecar_corrupt_raises_and_warns_rather_than_reading_as_empty(body, caplog):
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger=recovery.logger.name):
+        with pytest.raises(recovery.MetadataSidecarCorruptError):
+            recovery.load_metadata_sidecar(_SidecarSvc(body=body))
+
+    assert any(r.levelno >= logging.WARNING for r in caplog.records)

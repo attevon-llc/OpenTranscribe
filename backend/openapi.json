@@ -43439,6 +43439,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "503": {
+            "description": "Reindex state cannot be determined (Redis unreachable)."
           }
         },
         "security": [

@@ -5638,6 +5638,7 @@
   "settings.search.modelNotReady": "Развёртывание сообщило об успехе, но модель по-прежнему не может создавать эмбеддинги. Проверьте журналы OpenSearch — обычно это означает нехватку heap JVM для этой модели.",
   "settings.search.modelPrepareFailed": "Не удалось загрузить и развернуть модель.",
   "settings.search.bootstrapDegradedTitle": "Семантический поиск работает со сбоями",
+  "settings.search.statusUnavailable": "Состояние переиндексации сейчас недоступно. Выполняется автоматическая повторная попытка.",
   "settings.search.bootstrapDegradedBody": "Не удалось подготовить модель семантического поиска после {{attempts}} попытки(-ок). Поиск по ключевым словам по-прежнему работает; семантический поиск — нет. Система автоматически повторяет попытку в фоновом режиме.",
   "settings.search.bootstrapLastError": "Последняя ошибка: {{error}}",
   "settings.search.bootstrapRetryAt": "Следующая автоматическая попытка: {{time}}",

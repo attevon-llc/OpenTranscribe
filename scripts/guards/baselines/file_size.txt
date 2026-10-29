@@ -14,9 +14,9 @@ backend/app/api/endpoints/files/url_processing.py	870	oversize: split by concern
 backend/app/api/endpoints/llm_settings.py	2001	oversize: split by concern planned
 backend/app/api/endpoints/media_collections.py	1848	oversize: split by concern planned
 backend/app/api/endpoints/prompts.py	921	oversize: split by concern planned
-backend/app/api/endpoints/search.py	2040	oversize: split by concern planned
+backend/app/api/endpoints/search.py	2036	oversize: split by concern planned
 backend/app/api/endpoints/speaker_profiles.py	1160	oversize: split by concern planned
-backend/app/api/endpoints/speaker_update.py	789	oversize: split by concern planned
+backend/app/api/endpoints/speaker_update.py	752	oversize: split by concern planned
 backend/app/api/endpoints/speakers.py	2849	oversize: split by concern planned
 backend/app/api/endpoints/tasks.py	1097	oversize: split by concern planned
 backend/app/api/endpoints/user_settings.py	1874	oversize: split by concern planned
@@ -53,7 +53,7 @@ backend/app/services/file_cleanup_service.py	1240	oversize: split by concern pla
 backend/app/services/gdpr_erasure_service.py	1097	oversize: split by concern planned
 backend/app/services/llm_service.py	2711	oversize: split by concern planned
 backend/app/services/media_download_service.py	1886	oversize: split by concern planned
-backend/app/services/minio_service.py	837	oversize: split by concern planned
+backend/app/services/minio_service.py	824	oversize: split by concern planned
 backend/app/services/privacy/purge_voiceprints.py	711	oversize: split by concern planned
 backend/app/services/profile_embedding_service.py	703	oversize: split by concern planned
 backend/app/services/search/CLAUDE.md	911	oversize: split by concern planned
@@ -200,7 +200,6 @@ frontend/src/components/settings/CLAUDE.md	408	oversize: split by concern planne
 frontend/src/components/settings/LLMConfigModal.svelte	1504	oversize: split by concern planned
 frontend/src/components/settings/LLMSettings.svelte	1455	oversize: split by concern planned
 frontend/src/components/settings/PromptSettings.svelte	1735	oversize: split by concern planned
-frontend/src/components/settings/SearchSettings.svelte	1102	oversize: split by concern planned
 frontend/src/components/settings/SystemStatisticsPanel.svelte	1003	oversize: split by concern planned
 frontend/src/components/transcript/SpeakerEditorPanel.svelte	1341	oversize: split by concern planned
 frontend/src/components/transcript/TranscriptSegmentList.svelte	1026	oversize: split by concern planned

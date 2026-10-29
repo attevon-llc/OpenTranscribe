@@ -145,12 +145,12 @@ def _stage_audio_for_embeddings(file_uuid: str, inputs: dict, temp_dir: str) -> 
 
     from app.services.minio_service import download_file
     from app.services.minio_service import download_temp_audio
-    from app.services.minio_service import temp_audio_exists
+    from app.services.temp_audio_probe import temp_audio_available
     from app.tasks.transcription.audio_processor import get_audio_file_extension
     from app.tasks.transcription.audio_processor import prepare_audio_for_transcription
 
     audio_file_path = os.path.join(temp_dir, "audio.wav")
-    if temp_audio_exists(file_uuid):
+    if temp_audio_available(file_uuid, caller="speaker embeddings"):
         try:
             download_temp_audio(file_uuid, audio_file_path)
             logger.info("Using preprocessed WAV for speaker embedding extraction")

@@ -25,6 +25,7 @@ from app.services.opensearch_service import get_speaker_embedding
 from app.services.permission_service import file_ids_in_scope
 from app.services.privacy.policy import Decision
 from app.services.privacy.redact_view import PrivacyView
+from app.utils.cosine_space import raw_cosine_from_opensearch_score
 
 logger = logging.getLogger(__name__)
 
@@ -294,8 +295,7 @@ def _extract_matches_from_response(response: dict, threshold: float) -> list[dic
     """
     matches = []
     for hit in response["hits"]["hits"]:
-        # Convert OpenSearch score to raw cosine similarity
-        cosine_sim = 2.0 * hit["_score"] - 1.0
+        cosine_sim = raw_cosine_from_opensearch_score(hit["_score"])
 
         if cosine_sim < threshold:
             continue

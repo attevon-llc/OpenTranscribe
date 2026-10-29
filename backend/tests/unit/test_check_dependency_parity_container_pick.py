@@ -65,10 +65,15 @@ def test_two_dev_backends_with_no_project_set_is_an_error_not_a_guess(tmp_path):
 @pytest.mark.unit
 def test_a_fresh_stack_beside_the_dev_stack_is_not_ambiguous(tmp_path):
     """The default dev stack wins over an ``otfresh-*`` fresh stack when no project is set."""
-    proc, _ = _run(tmp_path, "otfresh-a-backend otfresh-a\nopentranscribe-backend dev\n", None)
+    proc, log = _run(tmp_path, "otfresh-a-backend otfresh-a\nopentranscribe-backend dev\n", None)
 
-    assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "FAIL" not in proc.stderr
+    # The stub docker returns no package list, so the later comparison fails by design on a host
+    # with a venv; what this test pins is WHICH container was picked and that it was not an
+    # ambiguity error.
+    assert proc.returncode != 2, proc.stdout + proc.stderr
+    assert "COMPOSE_PROJECT_NAME" not in proc.stderr
+    assert "exec opentranscribe-backend" in log
+    assert "otfresh-a-backend" not in log.split("exec", 1)[-1]
 
 
 @pytest.mark.unit

@@ -112,10 +112,11 @@ describe('PrivacySwitchCard when a higher layer locked it', () => {
 });
 
 describe('PrivacySwitchCard while a save is in flight', () => {
-  it('disables the switch and ignores change events', async () => {
+  it('marks the switch aria-disabled (keeping keyboard focus) and ignores change events', async () => {
     const props = { ...base(), busy: true };
     render(PrivacySwitchCard, props);
-    expect(sw()).toBeDisabled();
+    expect(sw()).not.toBeDisabled();
+    expect(sw().getAttribute('aria-disabled')).toBe('true');
     await fireEvent.change(sw());
     expect(props.onToggle).not.toHaveBeenCalled();
   });

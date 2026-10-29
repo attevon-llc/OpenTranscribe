@@ -194,6 +194,7 @@ off by default.
 
 ### Added
 
+- `./scripts/run-backend-tests.sh --throwaway-db` runs the backend suite against a disposable, labelled Postgres container (stopped on exit) instead of the live dev database; `scripts/check-venv-drift.py` names any host-venv package that differs from the pinned requirements; `scripts/smoke-container-free.sh` checks shell syntax, the app import, the route table, the OpenAPI and pipeline-docs drift checks and the compose dry-run without starting a container. A test now keeps the ruff and import-linter pre-commit pins equal to the requirements pins.
 - **Restricted organization collections (#1275).** An organization collection is shared by every
   member, which is wrong for a legal matter or an HR review. The creator or an organization admin
   can now restrict one (**Edit collection**, or when creating it): only its creator, the
@@ -768,6 +769,7 @@ off by default.
 
 ### Changed
 
+- The ruff pre-commit hook moves to v0.16.7 and the import-linter hook is pinned to 2.15, matching `backend/requirements-dev.txt`. The test-timing baseline note in `CLAUDE.md` now says `baseline.xml` is untracked and local.
 - **Transitive dependencies are now pinned to the versions the release image was built and tested
   with.** 50 packages (the OpenTelemetry family, pyannote-core/metrics/pipeline, thinc/spacy
   support libraries, uvloop, tornado, pyjwt, ...) were unpinned, so every image build floated to

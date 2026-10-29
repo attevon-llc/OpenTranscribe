@@ -29,6 +29,15 @@
 #                                                   # optional explicit <sha> after it.
 #   ./scripts/run-backend-tests.sh --failures       # list failures, no re-run
 #   ./scripts/run-backend-tests.sh --log            # path to the full log
+#   ./scripts/run-backend-tests.sh --throwaway-db [pytest args]
+#                                                   # run against a private, disposable Postgres
+#                                                   # (container ot-testdb-<worktree-slug>, tmpfs,
+#                                                   # loopback port from 55432 up, random password,
+#                                                   # alembic upgrade head first) so no dev stack is
+#                                                   # needed. Accepted in ANY position; everything else
+#                                                   # is forwarded to pytest verbatim. Ignored by
+#                                                   # --summary / --failures / --log (they run no tests).
+#                                                   # The container is stopped by its exact name on exit.
 
 set -uo pipefail
 
@@ -58,8 +67,24 @@ mkdir -p "$OUT_DIR"
 # An interrupted run never reaches the publish step below, so its PID-scoped files were left
 # in $OUT_DIR for good (issue #1195). INT/TERM only, never EXIT: a finished run MOVES these
 # files to last.*, and an EXIT trap removing them first would delete the evidence.
-trap 'rm -f -- "$RUN_LOG" "$RUN_XML"; exit 130' INT
-trap 'rm -f -- "$RUN_LOG" "$RUN_XML"; exit 143' TERM
+THROWAWAY_NAME=""
+THROWAWAY_TMP=""
+# Idempotent: INT/TERM call it and then `exit`, which fires the EXIT trap again. It stops ONLY the
+# container this run created, by its exact name; a name substring or label filter here could
+# select someone else's container.
+cleanup_throwaway() {
+    if [[ -n "$THROWAWAY_NAME" ]]; then
+        local name="$THROWAWAY_NAME"
+        THROWAWAY_NAME=""
+        docker stop "$name" >/dev/null 2>&1 || true
+    fi
+    if [[ -n "$THROWAWAY_TMP" ]]; then
+        rm -rf -- "$THROWAWAY_TMP"
+        THROWAWAY_TMP=""
+    fi
+}
+trap 'rm -f -- "$RUN_LOG" "$RUN_XML"; cleanup_throwaway; exit 130' INT
+trap 'rm -f -- "$RUN_LOG" "$RUN_XML"; cleanup_throwaway; exit 143' TERM
 
 # ── Reporting from the saved artifacts (no pytest) ─────────────────────────
 
@@ -176,9 +201,11 @@ PY
 # The optional sha must LOOK like one (7-40 hex). Otherwise `--require-fresh tests/unit`
 # consumes the path as a commit and then runs the whole suite instead of the subset asked for.
 REQUIRE_FRESH=false
+THROWAWAY_DB=false
 _ARGV=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --throwaway-db) THROWAWAY_DB=true; shift ;;
         --require-fresh)
             REQUIRE_FRESH=true
             shift
@@ -281,6 +308,73 @@ if [[ -z "${OT_TEST_PYTHON:-}" && ! -x "$PY" ]]; then
     exit 2
 fi
 
+# The interpreter for everything that is not pytest (alembic, the drift check). PY_CMD[0] is a
+# pytest shim on the default path, which cannot run `-m alembic` or a script.
+PY_BIN="${OT_TEST_PYTHON:-$REPO_ROOT/backend/venv/bin/python}"
+
+# Name the drift, never abort on it: a host venv that no longer matches the pins makes failures
+# that are not the code's. check-venv-drift.py is optional so this script still works without it.
+if [[ -f "$REPO_ROOT/scripts/check-venv-drift.py" && -x "$PY_BIN" ]]; then
+    "$PY_BIN" "$REPO_ROOT/scripts/check-venv-drift.py" >&2 \
+        || echo -e "${YELLOW}WARN: the test interpreter drifts from the pinned requirements (above); failures may not be the code's${NC}" >&2
+fi
+
+# ── Throwaway database (--throwaway-db) ────────────────────────────────────
+
+# Probe with bash's /dev/tcp: succeeds only when something already listens there.
+port_in_use() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+
+start_throwaway_db() {
+    local slug port pw i
+    command -v docker >/dev/null || { echo -e "${RED}--throwaway-db needs docker${NC}" >&2; return 2; }
+    command -v openssl >/dev/null || { echo -e "${RED}--throwaway-db needs openssl${NC}" >&2; return 2; }
+    # Slug from the checkout directory so two worktrees never share a container.
+    slug="$(basename "$REPO_ROOT" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n-' '-' | sed 's/^-*//; s/-*$//')"
+    THROWAWAY_CANDIDATE="ot-testdb-${slug:-main}"
+    if [[ -n "$(docker ps -a --filter "name=^${THROWAWAY_CANDIDATE}\$" --format '{{.Names}}')" ]]; then
+        echo -e "${RED}container ${THROWAWAY_CANDIDATE} already exists; refusing to touch it." >&2
+        echo -e "  If it is a stale leftover of an earlier run, stop it yourself by that exact name.${NC}" >&2
+        return 2
+    fi
+    port=55432
+    while port_in_use "$port"; do
+        port=$((port + 1))
+        (( port < 55532 )) || { echo -e "${RED}no free port in 55432-55531${NC}" >&2; return 2; }
+    done
+    pw="$(openssl rand -hex 16)"
+    # The labels give the container its own compose-project namespace, so no project-scoped
+    # command against the live stack can match it, and nothing here can match the live stack.
+    docker run -d --rm --name "$THROWAWAY_CANDIDATE" \
+        --label "com.docker.compose.project=${THROWAWAY_CANDIDATE}" \
+        --label "org.opentranscribe.purpose=throwaway-test-db" \
+        --tmpfs /var/lib/postgresql/data \
+        -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD="$pw" -e POSTGRES_DB=transcribe_test \
+        -p "127.0.0.1:${port}:5432" postgres:17.5-alpine >/dev/null || return 2
+    THROWAWAY_NAME="$THROWAWAY_CANDIDATE"
+    trap cleanup_throwaway EXIT
+    # -h 127.0.0.1: the init-time server listens on the unix socket only, so a TCP probe does not
+    # report ready until the real server is up.
+    for i in $(seq 1 60); do
+        docker exec "$THROWAWAY_NAME" pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1 && break
+        sleep 1
+        if (( i == 60 )); then
+            echo -e "${RED}${THROWAWAY_NAME} did not become ready in 60s${NC}" >&2; return 2
+        fi
+    done
+    THROWAWAY_TMP="$(mktemp -d -t ot-throwaway-db.XXXXXX)"
+    mkdir -p "$THROWAWAY_TMP"/{data,models,temp}
+    export DATA_DIR="$THROWAWAY_TMP/data" MODELS_DIR="$THROWAWAY_TMP/models" TEMP_DIR="$THROWAWAY_TMP/temp"
+    # POSTGRES_HOST explicit: alembic does not import conftest and would resolve the compose name.
+    export POSTGRES_HOST=127.0.0.1 POSTGRES_PORT="$port" POSTGRES_USER=postgres \
+           POSTGRES_PASSWORD="$pw" POSTGRES_DB=transcribe_test
+    export SKIP_S3=True SKIP_OPENSEARCH=True TESTING=True
+    echo -e "${BLUE}Throwaway DB ${THROWAWAY_NAME} on 127.0.0.1:${port}; running alembic upgrade head${NC}" >&2
+    "$PY_BIN" -m alembic upgrade head >&2 || { echo -e "${RED}alembic upgrade head failed${NC}" >&2; return 2; }
+}
+
+if $THROWAWAY_DB; then
+    start_throwaway_db || exit 2
+fi
 
 # ── Run ────────────────────────────────────────────────────────────────────
 

@@ -698,33 +698,25 @@ real caller could observe the difference.
 ## Running DB-backed tests without the dev stack
 
 Most API/service tests need Postgres but nothing else. When the dev stack is down (or is
-being used by someone else), a throwaway instance on a non-conflicting port is enough — it
+being used by someone else), `--throwaway-db` gives the run its own disposable instance — it
 cannot touch the dev database, its volumes, or the NAS data:
 
 ```bash
-docker run -d --rm --name ot-testdb \
-  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=testpw -e POSTGRES_DB=transcribe_test \
-  -p 127.0.0.1:55432:5432 --tmpfs /var/lib/postgresql/data postgres:17.5-alpine
-
-mkdir -p /tmp/ot-test/{data,models,temp}
-export DATA_DIR=/tmp/ot-test/data MODELS_DIR=/tmp/ot-test/models TEMP_DIR=/tmp/ot-test/temp
-export POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=55432 POSTGRES_USER=postgres POSTGRES_PASSWORD=testpw \
-       POSTGRES_DB=transcribe_test SKIP_S3=True
-
-cd backend && python -m alembic upgrade head && python -m pytest tests/ --ignore=tests/e2e
-docker stop ot-testdb   # --rm removes it
+./scripts/run-backend-tests.sh --throwaway-db                       # whole suite
+./scripts/run-backend-tests.sh --throwaway-db tests/unit/test_x.py -q -n0 --no-cov
 ```
 
-Why each piece:
-- **Port 55432**, not 5176 — conftest only overrides `POSTGRES_PORT` when it is unset or
-  `5432`, so any other value is respected, and the dev stack's port stays free.
-- **`POSTGRES_HOST` explicitly** — conftest forces `localhost` for pytest, but `alembic`
-  does not import conftest and would otherwise resolve the compose service name.
-- **`DATA_DIR`/`MODELS_DIR`/`TEMP_DIR`** — `config.py` defaults these to `/app/...` and
-  `Settings.__init__` mkdirs them, which fails outside the container.
-- **`SKIP_S3=True`** — conftest TCP-probes `localhost:5178` and enables S3-backed tests if
-  *anything* answers. An unrelated service on that port produces `SignatureDoesNotMatch`
-  failures that look like real bugs.
+The flag may appear anywhere; everything else is forwarded to pytest. It starts
+`ot-testdb-<worktree-slug>` (tmpfs data dir, loopback port from 55432 up, random password, both
+`com.docker.compose.project` and `org.opentranscribe.purpose=throwaway-test-db` labels), runs
+`alembic upgrade head`, runs the tests, and stops the container by its exact name on exit. It
+refuses to start if that name already exists. Inspect with
+`docker ps -a --filter label=org.opentranscribe.purpose=throwaway-test-db`. Why it exports what it
+does: conftest respects an explicit `POSTGRES_PORT` (it only overrides unset/`5432`) but forces
+`POSTGRES_HOST=localhost`, so the script exports `POSTGRES_HOST=127.0.0.1` for `alembic`, which does
+not import conftest; `DATA_DIR`/`MODELS_DIR`/`TEMP_DIR` point at a `mktemp -d` because `config.py`
+defaults them to `/app/...`; `SKIP_S3=True`/`SKIP_OPENSEARCH=True` stop an unrelated service on
+`:5178`/`:5180` enabling S3/OpenSearch-backed tests that then fail as `SignatureDoesNotMatch`.
 
 ## `tests/eval/` — the RAG evaluation harness (issue #403 Stage 1)
 

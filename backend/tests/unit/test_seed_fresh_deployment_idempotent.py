@@ -91,21 +91,22 @@ def test_a_first_run_against_an_empty_library_uploads_every_seed_file(media_dir:
     != 0,
     reason="file(1) is not installed; the seeder falls back to the extension without it",
 )
-def test_the_declared_type_follows_the_bytes_not_the_extension(tmp_path: Path) -> None:
-    """The corpus holds an '.mp3' that is really an MP4: the upload endpoint rejects a mismatch."""
+def test_a_file_is_named_and_typed_by_what_its_bytes_are(tmp_path: Path) -> None:
+    """The corpus holds an '.mp3' that is really an MP4: the endpoint rejects the extension mismatch."""
     media = tmp_path / "media"
     media.mkdir()
-    # A minimal ISO base media (mp4) 'ftyp' box under an .mp3 name.
+    # A minimal M4A ('ftyp' brand 'M4A ') under an .mp3 name, like the real corpus file.
     (media / "seed_t1_1s_aaaaaaaa_Mislabelled.mp3").write_bytes(
-        b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom" + b"\x00" * 64
+        b"\x00\x00\x00\x1cftypM4A \x00\x00\x02\x00M4A isomiso2" + b"\x00" * 64
     )
     with StubBackend() as stub:
         result = run_seed(media, stub.url)
 
         assert result.returncode == 0, result.stderr
-        assert stub.uploaded_types["seed_t1_1s_aaaaaaaa_Mislabelled.mp3"].startswith(
-            ("video/mp4", "audio/mp4")
-        )
+        assert stub.uploaded_names == ["seed_t1_1s_aaaaaaaa_Mislabelled.m4a"]
+        assert stub.uploaded_types["seed_t1_1s_aaaaaaaa_Mislabelled.m4a"] == "audio/mp4"
+        manifest = run_seed(media, None, "--manifest")
+        assert "seed_t1_1s_aaaaaaaa_Mislabelled.m4a\t" in manifest.stdout
 
 
 def test_a_second_run_against_the_same_stack_uploads_nothing(media_dir: Path) -> None:

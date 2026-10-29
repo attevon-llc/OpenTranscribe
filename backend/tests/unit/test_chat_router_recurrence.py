@@ -1,4 +1,4 @@
-"""W2.5 — the router's recurrence intent, gated by ``chat.recurrence_enabled``.
+"""The router's recurrence intent, gated by ``chat.recurrence_enabled``.
 
 ``INTENT_RECURRENCE``/``TIER_RECURRENCE`` on STRONG markers only. The flag
 must gate the LEXICON, not just the downstream shape: with it off,

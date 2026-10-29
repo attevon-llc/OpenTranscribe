@@ -1,5 +1,5 @@
 """
-E2E: Settings > Processing pipeline (issue #1227, WP5 of docs/design/v060_pipeline_composition_plan.md).
+E2E: Settings > Processing pipeline (issue #1227, see docs/design/v060_pipeline_composition_plan.md).
 
 The page is read-only, so nothing here changes a setting; there is no cancel path to take.
 

@@ -197,7 +197,7 @@ def set_cached(key: str, hits: list[ChunkHit], ttl_seconds: int) -> None:
 # thing). The cosine floor is admin-tunable and defaults to 0.97.
 # ---------------------------------------------------------------------------
 
-#: ``leg_kind`` (#403 W2.6) is a cache-namespace DISCRIMINATOR, not decoration.
+#: ``leg_kind`` (#403) is a cache-namespace DISCRIMINATOR, not decoration.
 #: Without it a sub-question leg's query is often near-paraphrastic to its
 #: PARENT question — "what did the team decide about pricing" vs "pricing
 #: decision" — which at the default 0.97 threshold resolves to the parent's
@@ -324,7 +324,7 @@ def find_semantic_match(
 
 #: Atomic read-append-trim-write. `remember_semantic` used to do this as a
 #: plain GET followed by a later SETEX, which races under a parallel fan-out
-#: (#403 W2.6): two legs finishing within the same window both read the same
+#: (#403): two legs finishing within the same window both read the same
 #: starting list, each append their own entry, and whichever SETEX lands
 #: second silently discards the other leg's write. A Lua script runs the
 #: whole read-modify-write as one atomic step on the Redis server, so two

@@ -15,11 +15,11 @@ from __future__ import annotations
 
 import pytest
 
+from app.auth.direct_auth import create_access_token
 from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import role_implies_superuser
-from app.core.security import create_access_token
 from app.models.user import User
 
 
@@ -171,10 +171,7 @@ def test_super_admin_can_create_admin_with_derived_flag(client, super_admin_toke
 def test_forged_role_claim_is_ignored(client, normal_user):
     """A validly-signed token whose role claim says super_admin must NOT grant
     super_admin access — get_current_user re-loads the role from the DB."""
-    forged = create_access_token(
-        subject=str(normal_user.uuid),
-        additional_claims={"role": ROLE_SUPER_ADMIN},
-    )
+    forged = create_access_token({"sub": str(normal_user.uuid), "role": ROLE_SUPER_ADMIN})
     headers = {"Authorization": f"Bearer {forged}"}
     # /admin/users is admin-gated; a forged super_admin claim on a 'user' must 403.
     resp = client.get("/api/admin/users", headers=headers)

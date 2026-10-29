@@ -1,4 +1,4 @@
-"""The org tenant gate on the chat aggregation tier's Postgres shapes (W2.0g fix #2).
+"""The org tenant gate on the chat aggregation tier's Postgres shapes.
 
 `_files_in_period` and `_occurrence_count` each called
 ``PermissionService.get_accessible_file_ids_subquery(db, user_id)`` with no

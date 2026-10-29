@@ -58,7 +58,6 @@ def test_save_rejects_unknown_and_local_ids_and_stores_nothing(db_session):
 def test_elevated_roles_are_never_bound(role):
     closed = policy.ProviderPolicy(allowed=frozenset(), own_keys=False)
     assert policy.provider_allowed(role, "deepgram", closed) is True
-    assert policy.may_store_own_key(role, closed) is True
 
 
 def test_a_plain_user_is_bound():
@@ -66,7 +65,6 @@ def test_a_plain_user_is_bound():
     assert policy.provider_allowed("user", "gladia", closed) is True
     assert policy.provider_allowed("user", "deepgram", closed) is False
     assert policy.provider_allowed(None, "deepgram", closed) is False
-    assert policy.may_store_own_key("user", closed) is False
 
 
 def test_visible_providers_copies_instead_of_mutating_the_catalog():

@@ -224,7 +224,7 @@ def test_a_failed_write_does_not_poison_the_stage_transaction(db_session, monkey
 
 
 def test_the_post_stage_can_record_how_it_ran(db_session):
-    """The facts the plan-driven post stage (WP3) knows: execution and merge granularity."""
+    """The facts the plan-driven post stage knows: execution and merge granularity."""
     file_id = _make_file(db_session)
     assert record_stage(
         db_session,

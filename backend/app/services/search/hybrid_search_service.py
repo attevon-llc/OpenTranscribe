@@ -2146,7 +2146,7 @@ class HybridSearchService:
         candidate.
 
         Multi-word queries therefore get a SECOND, additive fuzzy clause instead
-        (issue #606 follow-up finding 2) that forces ``operator: "and"`` alongside
+        (issue #606 follow-up) that forces ``operator: "and"`` alongside
         ``fuzziness: AUTO`` — every term must fuzzily match *something* in the same
         field before the clause can fire, which closes the #606 false-positive class
         (a single lucky near-neighbour can no longer carry the whole query) while
@@ -2173,7 +2173,7 @@ class HybridSearchService:
         # "x exploration" read as single-word once its short token is
         # dropped, wrongly re-enabling the single-word fuzzy clause below and
         # reopening the exact false-positive class #606 fixed (issue #606
-        # follow-up finding 1).
+        # follow-up).
         is_phrase_query = query.startswith('"') and query.endswith('"')
         is_multi_word = len(query.split()) > 1
 
@@ -2242,8 +2242,8 @@ class HybridSearchService:
                         }
                     }
                 )
-                # Typo tolerance for multi-word queries (issue #606 follow-up
-                # finding 2): additive alongside cross-field/phrase above, never
+                # Typo tolerance for multi-word queries (issue #606 follow-up):
+                # additive alongside cross-field/phrase above, never
                 # a replacement — see the docstring for why `operator: "and"`
                 # rather than plain fuzziness is required here.
                 #

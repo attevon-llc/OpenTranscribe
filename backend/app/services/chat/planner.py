@@ -1,4 +1,4 @@
-"""LLM query planner (#403 W2.6): turn-1 trigger, plan schema, and the LLM calls.
+"""LLM query planner (#403): turn-1 trigger, plan schema, and the LLM calls.
 
 **Never a routing-only call (#403's D6 posture, extended).** A follow-up turn
 never reaches :func:`needs_plan` at all — it already pays for a rewrite call

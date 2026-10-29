@@ -138,7 +138,7 @@ async def _run_turn(monkeypatch, *, file_uuids=None, history=None) -> tuple[_Led
     )
 
     def _rewrite(_llm, _history, question, **_kwargs):
-        # `**_kwargs` absorbs `want_plan` (#403 W2.6): this harness's default
+        # `**_kwargs` absorbs `want_plan` (#403): this harness's default
         # `ChatSettings()` has `planner_enabled=False`, so `_prepare_context`
         # never asks for one, but the real call site always passes the
         # keyword — a stub with the old positional-only signature would
@@ -313,7 +313,7 @@ async def test_an_empty_scope_still_means_match_nothing(monkeypatch):
     assert all_accessible["retrieval_file_uuids"] is None
 
 
-# --------------------------------------------------------------------------- #403 W2.6: the fan-out
+# --------------------------------------------------------------------------- #403: the fan-out
 #
 # Extends this file's coverage to the planner-driven parallel leg fan-out
 # (`chat_service._run_plan_fanout`, backed by `legs.run_legs`'s shared

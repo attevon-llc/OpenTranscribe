@@ -85,7 +85,7 @@ guideline) into four seams, none of which changed behaviour:
 |---|---|
 | `overview.py` | Sizing constants, `Overview`, `sections_budget`, `_clock` |
 | `file_summaries.py` | The per-recording MAP: `FileSummary`, `scope_digest_hits`, `build_file_summaries` |
-| `speaker_map.py` | The per-speaker MAP (W2.3): `scope_speaker_digest_hits` |
+| `speaker_map.py` | The per-speaker MAP: `scope_speaker_digest_hits` |
 | `reducers.py` | The REDUCE half: `CodeComposer`, `BatchReducer`, `build_overview` |
 | `coverage.py` | Issue #63: `check_scope_coverage`/`assert_full_coverage` — does the map's output equal the resolved scope, or name every gap? Added, not part of the original split |
 

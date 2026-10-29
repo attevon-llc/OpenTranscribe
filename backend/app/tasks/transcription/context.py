@@ -17,12 +17,10 @@ from app.core.constants import DIAR_SIDECAR_MAX_RETRIES
 from app.core.constants import DIAR_SIDECAR_RETRY_BASE
 from app.core.constants import DIAR_SIDECAR_RETRY_MAX
 from app.db.session_utils import session_scope
-from app.models.media import FileStatus
 from app.services.error_categorization_service import NO_SPEECH_DETECTED_MESSAGE
 from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.pipeline_plan import PipelinePlan
 from app.transcription import cuda_health
-from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
 
 if TYPE_CHECKING:
@@ -259,30 +257,6 @@ class TranscriptionContext:
     content_type: str
     # Tenant scope (cloud-edition seam; None = personal / community)
     organization_id: int | None = None
-
-
-def _get_media_file_context(file_uuid: str, task_id: str) -> TranscriptionContext | None:
-    """Get media file and create transcription context."""
-    from app.utils.uuid_helpers import get_file_by_uuid
-
-    with session_scope() as db:
-        media_file = get_file_by_uuid(db, file_uuid)
-        if not media_file:
-            logger.error(f"Media file with UUID {file_uuid} not found")
-            return None
-
-        ctx = TranscriptionContext(
-            task_id=task_id,
-            file_id=int(media_file.id),
-            file_uuid=file_uuid,
-            user_id=int(media_file.user_id),
-            file_path=str(media_file.storage_path),
-            file_name=str(media_file.filename),
-            content_type=str(media_file.content_type),
-            organization_id=media_file.organization_id,
-        )
-        update_media_file_status(db, ctx.file_id, FileStatus.PROCESSING)
-        return ctx
 
 
 def cancelled_payload(file_uuid: str, file_id: int, task_id: str) -> dict:

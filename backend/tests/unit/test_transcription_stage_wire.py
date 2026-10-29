@@ -433,7 +433,7 @@ def test_transcribe_only_stage_forwards_the_engine_stage(monkeypatch, db_session
 
 def test_stage_values_equal_the_frontend_step_keys_in_order():
     source = _FRONTEND_JOB.read_text()
-    match = re.search(r"export const TRANSCRIPTION_STAGES = \[([^\]]*)\] as const", source)
+    match = re.search(r"(?:export )?const TRANSCRIPTION_STAGES = \[([^\]]*)\] as const", source)
     assert match, f"TRANSCRIPTION_STAGES not found in {_FRONTEND_JOB}"
     frontend_keys = re.findall(r"'([a-z_]+)'", match.group(1))
     assert frontend_keys == [s.value for s in TranscriptionStage]

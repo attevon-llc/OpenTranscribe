@@ -29,7 +29,7 @@ def _public_media_host_dns(monkeypatch):
     """Let ``*.example.com`` resolve to a public address for this module.
 
     Every outbound request the provider makes is now re-checked against
-    ``utils/url_validation`` immediately before it is issued (audit finding A1), so the
+    ``utils/url_validation`` immediately before it is issued (SSRF audit), so the
     ``m.example.com`` hosts these tests use must resolve to something public or the
     guard refuses them for a reason unrelated to what is being tested.
 
@@ -450,7 +450,7 @@ class TestLoginAndGetInfo:
             assert auth == "auth-tok-123"
 
         # Verify login was called with correct credentials, and that the redirect guard
-        # (finding A1) is present on the pinned request.
+        # (SSRF audit) is present on the pinned request.
         mock_session.post.assert_called_once()
         call_kwargs = mock_session.post.call_args
         assert call_kwargs.kwargs["data"]["username"] == "alice"
@@ -637,7 +637,7 @@ class TestDownload:
             assert "filename" in result
             assert result["info"]["title"] == "Download Test"
 
-        # The download leg carries the same redirect guard as login/info (finding A1) —
+        # The download leg carries the same redirect guard as login/info (SSRF audit) —
         # a 302 here would write the redirected body to a file the user then owns.
         download_call = mock_session.get.call_args_list[1]
         assert download_call.kwargs["allow_redirects"] is False
@@ -752,7 +752,7 @@ class TestDownload:
     def test_download_login_leg_does_not_follow_a_redirect_to_a_private_target(
         self, provider, tmp_path, _clear_mediacms_env, monkeypatch
     ):
-        """The concrete exploit from finding A1: a 302 on the media-info leg to a
+        """The concrete exploit from the SSRF audit: a 302 on the media-info leg to a
         private/link-local target must never be followed.
 
         Before ``allow_redirects=False`` was added, ``requests`` followed a redirect

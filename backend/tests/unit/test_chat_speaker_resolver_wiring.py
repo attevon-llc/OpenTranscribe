@@ -1,6 +1,6 @@
-"""W2.3: wiring the speaker resolver into ``service.py`` — it was built INERT.
+"""Wiring the speaker resolver into ``service.py`` — it was built INERT.
 
-A sibling lane (W2.2) built ``speaker_resolver.py``, ``Route.speaker_focus``,
+A sibling lane built ``speaker_resolver.py``, ``Route.speaker_focus``,
 and ``retrieve_context(..., speaker_focus_names=...)``, but ``service.py`` was
 off-limits to it, so nothing ever called any of it. These tests pin the wiring:
 
@@ -328,7 +328,7 @@ async def _stream_with_meta(monkeypatch, *, meta_extra: dict):
     monkeypatch.setattr(
         chat_service,
         "_prepare_context",
-        # Six values since #403 W2.6 added the fan-out's `<synthesis>`/
+        # Six values since #403 added the fan-out's `<synthesis>`/
         # `<recurrence>` blocks to `_prepare_context`'s return; both empty for a
         # turn the router left on the chunk plane. A stale arity here does NOT
         # surface as an error: the unpack raises inside `stream_reply`, whose

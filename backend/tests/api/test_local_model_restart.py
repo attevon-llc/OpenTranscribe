@@ -1,4 +1,4 @@
-"""``POST /asr-settings/local-model/restart`` and the loaded-model report (#1246 WP4).
+"""``POST /asr-settings/local-model/restart`` and the loaded-model report (#1246).
 
 The restart used to broadcast ``shutdown`` to EVERY worker in the deployment whenever no worker
 name contained "gpu" - which would have killed a model download in flight, yt-dlp jobs,

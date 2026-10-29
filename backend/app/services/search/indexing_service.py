@@ -459,29 +459,6 @@ def summary_plane_query(
     return {"bool": {"filter": filters}}
 
 
-def _build_hybrid_search_pipeline() -> dict[str, Any]:
-    """Build the RRF search pipeline configuration with configurable rank_constant.
-
-    Lower rank_constant values give more weight to top-ranked results.
-    ``SEARCH_RRF_RANK_CONSTANT`` defaults to 30, tuned for transcript search (shorter
-    queries, focused collections). The standard value of 60 from the original RRF
-    paper is optimized for web search.
-    """
-    return {
-        "description": "Hybrid BM25 + vector search with RRF",
-        "phase_results_processors": [
-            {
-                "score-ranker-processor": {
-                    "combination": {
-                        "technique": "rrf",
-                        "rank_constant": settings.SEARCH_RRF_RANK_CONSTANT,
-                    }
-                }
-            }
-        ],
-    }
-
-
 def ensure_chunks_index_exists() -> bool:
     """Ensure the transcript chunks index exists with proper kNN config.
 

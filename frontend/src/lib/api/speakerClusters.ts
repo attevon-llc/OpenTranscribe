@@ -20,7 +20,7 @@ import type {
  * stuck forever. Shared by `routes/speakers/+page.svelte` and
  * `components/transcript/SpeakerEditorPanel.svelte`, the two surfaces that
  * trigger a rename (cluster label edit, promote-to-profile, accept inbox
- * suggestion, transcript speaker edit) — see issue W2.3a.
+ * suggestion, transcript speaker edit).
  */
 export const RENAME_PROPAGATION_TIMEOUT_MS = 20000;
 

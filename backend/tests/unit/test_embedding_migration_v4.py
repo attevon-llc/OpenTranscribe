@@ -157,37 +157,6 @@ class TestBulkWriteV4Embeddings:
         assert result == 0
 
 
-class TestBuildSpeakerSegments:
-    """Tests for _build_speaker_segments."""
-
-    def test_builds_mapping_from_segments(self):
-        from app.tasks.embedding_migration_v4 import _build_speaker_segments
-
-        seg1 = MagicMock(speaker_id=1, start_time=0.0, end_time=5.0)
-        seg2 = MagicMock(speaker_id=1, start_time=5.0, end_time=10.0)
-        seg3 = MagicMock(speaker_id=2, start_time=2.0, end_time=8.0)
-
-        mock_db = MagicMock()
-        mock_db.query.return_value.filter.return_value.all.return_value = [seg1, seg2, seg3]
-
-        result = _build_speaker_segments(mock_db, media_file_id=42)
-
-        assert 1 in result
-        assert 2 in result
-        assert len(result[1]) == 2
-        assert len(result[2]) == 1
-        assert result[1][0] == {"start": 0.0, "end": 5.0}
-
-    def test_returns_empty_for_no_segments(self):
-        from app.tasks.embedding_migration_v4 import _build_speaker_segments
-
-        mock_db = MagicMock()
-        mock_db.query.return_value.filter.return_value.all.return_value = []
-
-        result = _build_speaker_segments(mock_db, media_file_id=999)
-        assert result == {}
-
-
 class TestPrepareFile:
     """Tests for prepare_file from migration_pipeline.
 

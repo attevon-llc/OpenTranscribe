@@ -1,6 +1,6 @@
 """Gender inference is one switch with a ceiling above the user (issue #1280, plan test 8).
 
-Every producer and consumer of inferred gender in the WP4 file set is run against a real
+Every producer and consumer of inferred gender in the plan's file set is run against a real
 session with the organization switched OFF and the user's own switch explicitly ON, which is
 the case the old resolver got wrong ("user > system > default" let the user overrule everyone
 above them). Each "off" case has an "on" control beside it, because a gate that always says no

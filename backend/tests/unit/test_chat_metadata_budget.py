@@ -1,6 +1,6 @@
 """`cap_msg_metadata` — bounding a pathological `msg_metadata` blob (issue #52+).
 
-`ChatMessage.msg_metadata` is an unbounded JSONB column. Wave 2 adds
+`ChatMessage.msg_metadata` is an unbounded JSONB column. Newer chat features add
 container-valued diagnostics (a query plan, a per-speaker resolution result,
 a list of failed retrieval legs) with no natural size limit, so a
 pathological scope or a router bug could balloon one persisted message far

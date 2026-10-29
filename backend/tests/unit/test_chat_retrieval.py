@@ -84,7 +84,7 @@ def test_diversity_never_duplicates_a_chunk():
 def test_diversity_min_file_score_excludes_weak_files():
     """Issue #975 follow-up: a file must not get a round-1 seat on a weak match.
 
-    Without a floor, every distinct file present gets ONE chunk in round 1
+    Without a floor, every distinct file present gets ONE chunk in the first pass
     regardless of relevance — reproduced live at 41-file scope, where a
     genuine single-file "needle" question ended up citing evidence from 30+
     files, each contributing exactly one barely-matching chunk.
@@ -551,7 +551,7 @@ def test_semantic_cache_degrades_when_embedding_unavailable():
 class _SpecCompliantEvalFake:
     """A Redis double that actually implements `_REMEMBER_SCRIPT`'s CONTRACT.
 
-    #403 W2.6: `remember_semantic` moved from a plain GET-then-SETEX (racy
+    #403: `remember_semantic` moved from a plain GET-then-SETEX (racy
     under a parallel fan-out) to a single atomic `EVAL`. A bare `MagicMock`
     can record that `.eval()` was called but proves nothing about what the
     real Lua script running server-side would do; this fake instead performs
@@ -613,7 +613,7 @@ def test_semantic_cache_history_is_bounded():
 
 
 def test_semantic_cache_write_is_atomic_via_a_single_eval_call():
-    """#403 W2.6: no more read-then-write — one round trip, one script.
+    """#403: no more read-then-write — one round trip, one script.
 
     The old shape (`client.get` then a later `client.setex`) races under a
     parallel fan-out: two legs finishing in the same window both read the
@@ -647,7 +647,7 @@ def test_semantic_cache_write_is_atomic_via_a_single_eval_call():
 
 
 def test_semantic_cache_leg_kind_namespaces_the_redis_key():
-    """#403 W2.6: without this, a sub-question leg reuses its PARENT's cache.
+    """#403: without this, a sub-question leg reuses its PARENT's cache.
 
     A sub-question is frequently near-paraphrastic to the question it split
     from, and at the default 0.97 threshold that would resolve to the

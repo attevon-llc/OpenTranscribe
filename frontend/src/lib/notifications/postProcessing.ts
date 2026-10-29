@@ -42,7 +42,7 @@ export interface PostProcessingFrame {
 
 const STATES = new Set<string>(['queued', 'started', 'done', 'failed', 'skipped']);
 
-export const POST_PROCESSING_TYPE = 'post_processing_status';
+const POST_PROCESSING_TYPE = 'post_processing_status';
 
 /** Folds one frame (or REST snapshot) into a file's run. Never mutates `prev`. */
 export function mergePostProcessing(

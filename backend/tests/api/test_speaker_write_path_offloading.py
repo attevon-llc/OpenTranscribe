@@ -172,39 +172,6 @@ class TestProfileRenameOffloading:
         delay_mock.assert_called_once()
         assert delay_mock.call_args.kwargs["renamed_profile_id"] is None
 
-    def test_background_task_replays_the_rename(self, db_session, normal_user, no_opensearch):
-        """The deferred helper pushes every linked speaker's new name to OpenSearch."""
-        from app.api.endpoints.speakers import _sync_profile_rename_to_opensearch
-
-        profile = SpeakerProfile(uuid=str(uuid_mod.uuid4()), user_id=normal_user.id, name="Bob")
-        db_session.add(profile)
-        db_session.flush()
-
-        media_file = _make_media_file(db_session, normal_user, "replay")
-        first = _make_speaker(
-            db_session,
-            normal_user,
-            media_file,
-            "SPEAKER_00",
-            profile_id=profile.id,
-            display_name="Bob",
-        )
-        second = _make_speaker(
-            db_session,
-            normal_user,
-            media_file,
-            "SPEAKER_01",
-            profile_id=profile.id,
-            display_name="Bob",
-        )
-
-        _sync_profile_rename_to_opensearch(db_session, profile.id)
-
-        pushed = {
-            call.args[0] for call in no_opensearch["update_speaker_display_name"].call_args_list
-        }
-        assert pushed == {str(first.uuid), str(second.uuid)}
-
 
 class TestMergeOffloading:
     def test_merge_commits_postgres_and_dispatches_the_task(

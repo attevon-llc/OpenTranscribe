@@ -1,4 +1,4 @@
-"""W2.4 fix #1: the speaker facet is scored by TITLE, not by what was said.
+"""The speaker facet is scored by TITLE, not by what was said.
 
 `_run_speaker_facet` tallies "who discussed X" by scoping the whole tally
 through `title` — app metadata the indexer writes, never something a
@@ -30,7 +30,7 @@ from app.services.chat.aggregation_service import answer_aggregation
 from app.services.chat.router import route
 from tests.unit.test_chat_aggregation import _RecordingClient
 
-# Both W2.4 flags live in one SystemSettings key namespace
+# Both flags live in one SystemSettings key namespace
 # ("chat.aggregate.*") — grouped with the sibling speaker_stats suite so
 # concurrent xdist workers never race an INSERT on the same UNIQUE `key`
 # (issue #389's documented hazard).
@@ -143,7 +143,7 @@ QUESTION = "Which speakers discussed the migration?"
 
 
 # ---------------------------------------------------------------------------
-# Flag OFF: byte-identical to the pre-W2.4 title-scoped facet
+# Flag OFF: byte-identical to the previous title-scoped facet
 # ---------------------------------------------------------------------------
 
 

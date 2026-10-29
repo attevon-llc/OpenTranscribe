@@ -354,7 +354,7 @@ class QuarantinedFile(BaseModel):
     released-but-still-held one (issue #825) -- both can appear together when
     the list endpoint is queried with ``include_legal_holds=true``.
 
-    Issue #576 FINDING 3: the previous shape carried ``user_id`` /
+    Issue #576: the previous shape carried ``user_id`` /
     ``organization_id`` / ``quarantined_by`` as raw integer DB ids. No endpoint in
     the app maps an integer user id back to a person (``UUIDBaseSchema`` strips the
     integer ``id`` from every user-shaped response), so a review queue built on

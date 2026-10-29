@@ -16,7 +16,7 @@ auto-applied" rule.
 
 **The cause is a class, not an instance.** Chunks are labelled at INDEX time, so every
 change to the labelling rule leaves already-indexed documents behind. ``canonical_speaker_label``
-(issue W2.0b) unified a rule that four planes previously disagreed on; the documents written
+unified a rule that four planes previously disagreed on; the documents written
 under the old rule were never recomputed. The same shape produced the milder ``"Unknown"``
 vs ``"Unknown Speaker"`` split. Any future change to the resolver reopens it.
 

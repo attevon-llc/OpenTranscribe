@@ -33,7 +33,7 @@ def _validated_hostname(v: str) -> str:
     address it answers with. What used to be here — a regex, a "must contain a dot"
     rule and a hardcoded first-label blocklist — never resolved anything, and passed
     ``169.254.169.254``, ``127.0.0.1``, ``10.0.0.5``, ``0.0.0.0`` and
-    ``metadata.google.internal`` alike (audit finding A1).
+    ``metadata.google.internal`` alike.
 
     Args:
         v: The raw ``hostname`` field value, as ``host`` or ``host:port``.

@@ -620,18 +620,18 @@ def diversity_sample(
     other selected files are represented.
 
     ⚠️ Issue #975 follow-up: this round-robin gives EVERY distinct file in
-    ``hits`` one chunk in round 1, regardless of how weak that file's match is.
+    ``hits`` one chunk in the first pass, regardless of how weak that file's match is.
     That is harmless at the small scope (~4 files) this was designed for — every
     file in scope is plausibly relevant. It stops being harmless once the caller
     widens the candidate pool for a large scope (:func:`scope_aware_pool_size`):
     a corpus with shared vocabulary across recordings (e.g. a meeting corpus)
     puts SOME chunk from nearly every file somewhere in a 400+-candidate pool,
-    and round 1 alone then burns the whole ``cap`` on one chunk each from dozens
+    and the first pass alone then burns the whole ``cap`` on one chunk each from dozens
     of barely-related files — measured on a genuine single-file "needle" question
     at 41-file scope: files represented went from a correct 1-2 to a diluted 30+,
     each contributing exactly one weak chunk. ``min_file_score`` is the fix:
     excluding a file before it ever enters ``file_order`` (not merely
-    de-prioritizing it) is what keeps round 1 from being spent on it.
+    de-prioritizing it) is what keeps the first pass from being spent on it.
 
     Args:
         hits: Retrieved chunks in score order.

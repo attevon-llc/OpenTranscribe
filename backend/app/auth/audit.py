@@ -494,7 +494,7 @@ class AuditLogger:
             tenant_scope: ``org`` or ``personal``: whose tenant the RESOURCE belongs to,
                 regardless of who acted. ``build_org_scope_clause`` refuses to attribute a
                 ``personal`` event to an organization through its actor's membership (issue
-                #1277, finding F5): a member's own-file view must not be readable by every
+                #1277): a member's own-file view must not be readable by every
                 admin of every organization the member belongs to.
         """
         if not settings.AUDIT_LOG_ENABLED:

@@ -212,35 +212,6 @@ def validate_gated_model_access():
         return True, None
 
 
-def validate_pyannote_download():
-    """Validate that all expected PyAnnote models were downloaded to the torch cache"""
-    torch_cache = Path.home() / '.cache' / 'torch' / 'pyannote'
-
-    # Expected PyAnnote model directories
-    expected_models = {
-        'segmentation-3.0': 'models--pyannote--segmentation-3.0',
-        'speaker-diarization-community-1': 'models--pyannote--speaker-diarization-community-1',
-        'wespeaker-voxceleb': 'models--pyannote--wespeaker-voxceleb-resnet34-LM',
-    }
-
-    validation_result = {'all_present': True, 'models': {}}
-
-    if not torch_cache.exists():
-        validation_result['all_present'] = False
-        for model_name in expected_models:
-            validation_result['models'][model_name] = False
-        return validation_result
-
-    for model_name, model_dir in expected_models.items():
-        model_path = torch_cache / model_dir
-        is_present = model_path.exists() and model_path.is_dir()
-        validation_result['models'][model_name] = is_present
-        if not is_present:
-            validation_result['all_present'] = False
-
-    return validation_result
-
-
 def download_pyannote_models():
     """Download PyAnnote models by running full WhisperX pipeline (same as backend)"""
     print_header('Downloading PyAnnote Models')

@@ -1,4 +1,4 @@
-"""W2.4 fix #2: `SHAPE_SPEAKER_STATS` — "who talked the most" from exact per-speaker
+"""`SHAPE_SPEAKER_STATS` — "who talked the most" from exact per-speaker
 talk time in ``file_facts.facts['speakers']``, gated by
 ``chat.aggregate.speaker_stats_enabled`` (default OFF).
 

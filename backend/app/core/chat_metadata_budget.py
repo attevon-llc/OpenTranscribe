@@ -2,7 +2,7 @@
 
 ``ChatMessage.msg_metadata`` (``app/models/chat.py``) is an unbounded JSONB
 column. It accumulates diagnostics for one turn — retrieval counts, the
-overview reducer's stats and (Wave 2) a query plan, a per-speaker resolution
+overview reducer's stats and a query plan, a per-speaker resolution
 result, and a list of failed retrieval "legs". None of those are bounded at
 the source, and unlike everything else on the message row there is no
 schema-level cap on a JSONB column: a plan over a pathological scope, or a

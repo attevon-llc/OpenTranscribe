@@ -1,4 +1,4 @@
-"""Structural contract (W2.0g fix #6): every ``get_accessible_file_ids_subquery``
+"""Structural contract: every ``get_accessible_file_ids_subquery``
 call site in ``backend/app/services/chat/`` must thread ``organization_id``.
 
 This is the pattern the org-gate leak (fix #2, ``aggregation_service.py``) was

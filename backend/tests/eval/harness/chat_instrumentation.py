@@ -25,7 +25,7 @@ Verified against the current codebase while this module was written (all three,
   from "this turn's overview made 0 calls" (a real, measured zero).
 * ``router_language_unmatched`` **has no emitter anywhere in the codebase.**
   ``schemas/chat.ChatWarningCode.ROUTER_LANGUAGE_UNMATCHED`` exists as a warning code
-  the SSE contract already reserves, and its own docstring says "(Wave 2; no emitter
+  the SSE contract already reserves, and its own docstring says "(no emitter
   yet)" — grepped, confirmed, nothing sets it. :func:`extract_router_language_unmatched`
   therefore always returns ``None`` today; it exists so the OTHER lane building the
   emitter has one place to land the key name, and so this harness's non-English

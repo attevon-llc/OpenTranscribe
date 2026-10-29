@@ -5,7 +5,7 @@ holds) calls :func:`record_content_event`, so the rules below exist once:
 
 * **Tenant scope comes from the RESOURCE**, never the actor. ``organization_id`` is the
   resource's org and ``tenant_scope`` is ``org`` or ``personal``; ``build_org_scope_clause``
-  uses it so a member's own-file event is never readable by their org admins (finding F5).
+  uses it so a member's own-file event is never readable by their org admins.
   ``target_user_id`` is the resource owner when that is not the actor, so "who looked at
   Alice's files" is one filter.
 * **High-volume events are opt-in.** ``content.file.view``, ``content.media.access`` and

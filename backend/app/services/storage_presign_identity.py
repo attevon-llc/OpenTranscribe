@@ -186,15 +186,6 @@ def _presign_buckets() -> list[str]:
     return [settings.MEDIA_BUCKET_NAME, settings.CACHE_BUCKET_NAME]
 
 
-def presign_identity_available() -> bool:
-    """Whether the restricted presign identity is usable in this process.
-
-    Triggers :func:`ensure_presign_identity` on first call (per process) and returns
-    its cached result thereafter. Never raises.
-    """
-    return ensure_presign_identity()
-
-
 def ensure_presign_identity() -> bool:
     """Idempotently create (or refresh the policy of) the restricted presign identity.
 

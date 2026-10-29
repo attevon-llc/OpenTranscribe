@@ -16,7 +16,7 @@
 
   /**
    * `disambiguate`: the reader picked one of the ambiguous speaker-mention
-   * candidates (`msg_metadata.speaker_resolution.ambiguous`, W2.2). The
+   * candidates (`msg_metadata.speaker_resolution.ambiguous`). The
    * parent is responsible for adding the name to `ChatScope.speakers` and
    * re-sending — this component only reports the pick, since scope mutation
    * and resend both live above the message list.

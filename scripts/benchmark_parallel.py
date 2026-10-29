@@ -281,18 +281,6 @@ def get_active_task_id(file_uuid: str) -> str:
     return ''
 
 
-def get_task_timestamps(task_id: str) -> dict:
-    """Get task created_at and completed_at from the task table."""
-    rows = db_query(f"SELECT created_at, completed_at, status FROM task WHERE id = '{task_id}'")
-    if rows:
-        return {
-            'created_at': rows[0][0].strip() if rows[0][0].strip() else None,
-            'completed_at': rows[0][1].strip() if len(rows[0]) > 1 and rows[0][1].strip() else None,
-            'status': rows[0][2].strip() if len(rows[0]) > 2 else '',
-        }
-    return {}
-
-
 # ---------------------------------------------------------------------------
 # API helpers
 # ---------------------------------------------------------------------------

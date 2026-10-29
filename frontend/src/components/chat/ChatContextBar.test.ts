@@ -1,5 +1,5 @@
 /**
- * W2.2 fixes to ChatContextBar: a speakers-only scope (no files/collections/
+ * Fixes to ChatContextBar: a speakers-only scope (no files/collections/
  * tags) previously had NO way back to "all transcripts" — `hasAnyScope`
  * (recordings OR speakers) now gates clear-all instead of the recordings axis
  * alone. Speaker chips also moved from one combined summary chip to

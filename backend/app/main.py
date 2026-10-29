@@ -1118,7 +1118,7 @@ app.add_middleware(
     expose_headers=["Retry-After", "X-RateLimit-Limit", "Content-Disposition"],
 )
 
-# Mark every API response as non-indexable (issue #668, finding 3). Response-header-only,
+# Mark every API response as non-indexable (issue #668). Response-header-only,
 # so its position relative to the other middleware below is not load-bearing.
 app.add_middleware(RobotsHeaderMiddleware)
 

@@ -39,8 +39,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
 
     Local, PKI, OIDC, SAML, proxy and MFA-enrolment logins all import this function
     (``api/endpoints/auth/{login,pki,oidc,saml,proxy,sessions,mfa_enrollment}.py``),
-    as does ``services/account_security_service.py``. ``core.security.create_access_token``
-    is a second implementation that no production caller reaches.
+    as does ``services/account_security_service.py``. It is the only access-token issuer.
 
     **The signing algorithm is ``settings.JWT_ALGORITHM`` and is deliberately not
     FIPS-branched.** The verifiers on the request path —

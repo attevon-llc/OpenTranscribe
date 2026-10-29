@@ -261,7 +261,7 @@ class TestPromptManagerInfo:
         mock_prompt.prompt_text = "Analyze the transcript..."
         mock_prompt.is_system_default = True
 
-        # The get_system_default_prompt function does multiple queries
+        # get_system_default_prompt_record does multiple queries
         # First query for universal, then general, then any
         mock_db.query.return_value.filter.return_value.first.side_effect = [
             None,  # No active_summary_prompt_id setting

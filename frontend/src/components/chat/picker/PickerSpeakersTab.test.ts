@@ -1,5 +1,5 @@
 /**
- * W2.2: PickerSpeakersTab moved from fetch-everything-then-filter-client-side
+ * PickerSpeakersTab moved from fetch-everything-then-filter-client-side
  * to server-side type-to-search (`GET /speakers?for_filter=true&q=...`). This
  * pins the request shape (debounced, `q` sent trimmed-or-omitted) and that
  * selection/toggle behaviour is unchanged by the rewrite.

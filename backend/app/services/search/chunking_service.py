@@ -801,7 +801,7 @@ def _make_chunk(
     docs are indexed WITHOUT the field, matching the personal-scope search filter
     (``must_not exists organization_id``) so behavior is unchanged there.
 
-    ``speaker_id`` / ``profile_id`` (issue W2.7) follow the same only-when-known
+    ``speaker_id`` / ``profile_id`` follow the same only-when-known
     convention, for the same reason: a document indexed before these fields
     existed, or whose turn has no resolved ``Speaker`` row, carries neither key
     at all rather than an explicit ``null`` — every reader must use an

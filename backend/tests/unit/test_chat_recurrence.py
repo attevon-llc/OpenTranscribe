@@ -1,4 +1,4 @@
-"""W2.5 — cross-meeting recurrence, the PURE half (`services/chat/recurrence.py`).
+"""Cross-meeting recurrence, the PURE half (`services/chat/recurrence.py`).
 
 No database, no OpenSearch, no LLM: every test here drives
 `recurrence.normalize_leaf`/`recurrence.detect_recurring_items` directly with

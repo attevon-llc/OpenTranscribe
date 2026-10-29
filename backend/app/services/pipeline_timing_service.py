@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from typing import Any
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -259,22 +258,3 @@ def record_pipeline_timing(
     except Exception as e:
         logger.debug(f"record_pipeline_timing({task_id}) failed: {e}")
         return False
-
-
-def derived_durations(raw: dict[str, str]) -> dict[str, int]:
-    """Extract user-perceived and fully-indexed durations from a Redis hash.
-
-    Returns a dict with whichever of ``user_perceived_duration_ms`` and
-    ``fully_indexed_duration_ms`` can be computed. Used by the admin endpoint.
-    """
-    row = build_row_payload(raw)
-    return {
-        k: v
-        for k, v in row.items()
-        if k in ("user_perceived_duration_ms", "fully_indexed_duration_ms")
-    }
-
-
-def now_ms() -> int:
-    """Current wall-clock as epoch-ms — handy for dashboard consumers."""
-    return int(time.time() * 1000)

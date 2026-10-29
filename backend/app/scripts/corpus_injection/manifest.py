@@ -108,13 +108,3 @@ def write(
                 )
 
     return manifest_path
-
-
-def read_records(out_dir: Path) -> list[InjectionRecord]:
-    """Load ``files.jsonl`` back into :class:`~.model.InjectionRecord` objects."""
-    path = Path(out_dir) / FILES_NAME
-    records = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            records.append(InjectionRecord(**json.loads(line)))
-    return records

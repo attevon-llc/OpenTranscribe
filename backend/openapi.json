@@ -14321,7 +14321,7 @@
         "type": "object"
       },
       "QuarantinedFile": {
-        "description": "A file in the admin review list.\n\n``is_quarantined`` distinguishes a currently-quarantined row from a\nreleased-but-still-held one (issue #825) -- both can appear together when\nthe list endpoint is queried with ``include_legal_holds=true``.\n\nIssue #576 FINDING 3: the previous shape carried ``user_id`` /\n``organization_id`` / ``quarantined_by`` as raw integer DB ids. No endpoint in\nthe app maps an integer user id back to a person (``UUIDBaseSchema`` strips the\ninteger ``id`` from every user-shaped response), so a review queue built on\nthose fields could show a takedown reason beside the bare number ``7``. This is\na breaking wire change to a route with zero frontend callers before this\nchange -- the cheapest possible moment to fix it.",
+        "description": "A file in the admin review list.\n\n``is_quarantined`` distinguishes a currently-quarantined row from a\nreleased-but-still-held one (issue #825) -- both can appear together when\nthe list endpoint is queried with ``include_legal_holds=true``.\n\nIssue #576: the previous shape carried ``user_id`` /\n``organization_id`` / ``quarantined_by`` as raw integer DB ids. No endpoint in\nthe app maps an integer user id back to a person (``UUIDBaseSchema`` strips the\ninteger ``id`` from every user-shaped response), so a review queue built on\nthose fields could show a takedown reason beside the bare number ``7``. This is\na breaking wire change to a route with zero frontend callers before this\nchange -- the cheapest possible moment to fix it.",
         "properties": {
           "filename": {
             "anyOf": [

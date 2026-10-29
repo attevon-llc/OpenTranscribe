@@ -27,7 +27,7 @@ export interface MajorTopic {
 }
 
 /**
- * Shape-tolerant on purpose (W2.5 Task 1). The DEFAULT summary prompt
+ * Shape-tolerant on purpose. The DEFAULT summary prompt
  * (`backend/app/core/default_prompts.py`, the `action_items` block) emits
  * `{item, owner, due_date, priority, context, mentioned_timestamp}` — a
  * DIFFERENT shape from the one this interface used to declare exclusively

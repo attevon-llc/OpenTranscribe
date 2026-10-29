@@ -270,22 +270,3 @@ def get_system_default_prompt_record(db: Session) -> SummaryPrompt | None:
     except Exception as e:
         logger.error(f"Error getting system default prompt: {e}")
         raise
-
-
-def get_system_default_prompt(db: Session) -> str:
-    """
-    Get the system default prompt text from database with intelligent fallback.
-
-    Args:
-        db: Database session
-
-    Returns:
-        System default prompt text
-
-    Raises:
-        ValueError: If no active system default prompt exists.
-    """
-    record = get_system_default_prompt_record(db)
-    if record is None:
-        raise ValueError("No active system default prompt found in database")
-    return str(record.prompt_text)

@@ -54,7 +54,7 @@ def _prepare(monkeypatch, *, masked: list[MaskedChunk], retrieved: int) -> dict:
     monkeypatch.setattr(chat_service, "_drop_quarantined_hits", lambda _db, hits: hits)
     # `_prepare_context` returns (masked_chunks, meta, counted, overview,
     # synthesis_block, recurrence_block) — Stage 4 added the counted and overview
-    # tiers, W2.6 added the two fan-out blocks. Only `meta` is under test here, so
+    # tiers, #403 added the two fan-out blocks. Only `meta` is under test here, so
     # the rest are discarded by name rather than by arity: a bare `_, meta = ...`
     # broke silently when the tuple grew, whereas naming every member makes the
     # next growth a loud `ValueError` in exactly the place that has to be updated.

@@ -1,4 +1,4 @@
-"""W2.2: ``Route.speaker_focus`` — an AXIS, not a fifth intent.
+"""``Route.speaker_focus`` — an AXIS, not a fifth intent.
 
 The router's two hard-won invariants — "the chunk tier is never removed" and
 "structure only ever REMOVES a non-chunk tier, it never changes the label" —
@@ -71,7 +71,7 @@ def test_speaker_focus_false_is_absent_from_metadata():
 
 def test_route_dataclass_default_is_false():
     """A Route built with no keyword at all (the shape most callers use, and
-    every pre-W2.2 test in this module) must stay exactly as it was."""
+    every earlier test in this module) must stay exactly as it was."""
     assert Route().speaker_focus is False
 
 

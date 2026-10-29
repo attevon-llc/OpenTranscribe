@@ -255,7 +255,6 @@ backend/app/transcription/transcriber.py	2	ratchet: may only go down
 backend/app/transcription/vram_budget.py	1	ratchet: may only go down
 backend/app/utils/benchmark_timing.py	7	ratchet: may only go down
 backend/app/utils/boot_once.py	1	ratchet: may only go down
-backend/app/utils/db_helpers.py	1	ratchet: may only go down
 backend/app/utils/encryption.py	6	ratchet: may only go down
 backend/app/utils/file_hash.py	2	ratchet: may only go down
 backend/app/utils/file_validation.py	1	ratchet: may only go down

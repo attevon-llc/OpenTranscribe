@@ -167,7 +167,7 @@
                 {file.label}
               </a>
             </td>
-            <!-- A person's name or email, never a bare integer id (issue #576 FINDING 3). -->
+            <!-- A person's name or email, never a bare integer id (issue #576). -->
             <td>{file.owner}</td>
             <td class="reason-cell">
               {#if file.reasonWithheld}

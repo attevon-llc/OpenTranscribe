@@ -1,8 +1,7 @@
 """Tests for ``app/utils/embedding_helpers.py`` (issue #474).
 
-Pure numpy math, no DB/network — L2 normalization, mean aggregation, and the
-incremental weighted-average update used across speaker embedding tasks, migration,
-and consistency repair. Assertions are on exact/near-exact numeric values (norms,
+Pure numpy math, no DB/network — L2 normalization and mean aggregation used across
+speaker embedding tasks, migration, and consistency repair. Assertions are on exact/near-exact numeric values (norms,
 specific vector components) rather than "no exception raised", since a wrong
 normalization or a swapped weighting term would silently corrupt speaker matching.
 """
@@ -14,7 +13,6 @@ import pytest
 
 from app.utils.embedding_helpers import aggregate_embeddings
 from app.utils.embedding_helpers import l2_normalize
-from app.utils.embedding_helpers import weighted_embedding_update
 
 
 class TestL2Normalize:
@@ -70,38 +68,3 @@ class TestAggregateEmbeddings:
         vecs = [np.array([1.0, 0.0]), np.array([-1.0, 0.0])]
         result = aggregate_embeddings(vecs)
         assert np.allclose(result, [0.0, 0.0])
-
-
-class TestWeightedEmbeddingUpdate:
-    def test_first_update_from_count_zero_averages_equally(self):
-        # old_count=0 means the "old" embedding contributes nothing to the sum, so the
-        # weighted average collapses to new_embedding alone (before normalization).
-        old = np.array([1.0, 0.0])
-        new = np.array([0.0, 1.0])
-        updated, new_count = weighted_embedding_update(old, new, old_count=0)
-        assert new_count == 1
-        assert np.allclose(updated, [0.0, 1.0])
-
-    def test_incremental_update_weights_by_prior_count(self):
-        # old represents the average of 4 prior samples; adding a 5th should move the
-        # result only 1/5 of the way toward `new`.
-        old = np.array([1.0, 0.0])
-        new = np.array([0.0, 1.0])
-        updated, new_count = weighted_embedding_update(old, new, old_count=4)
-        assert new_count == 5
-        raw_weighted = (old * 4 + new) / 5  # [0.8, 0.2]
-        expected = l2_normalize(raw_weighted)
-        assert np.allclose(updated, expected)
-        assert np.isclose(np.linalg.norm(updated), 1.0)
-
-    def test_count_increments_by_exactly_one(self):
-        old = np.array([1.0, 0.0])
-        new = np.array([1.0, 0.0])
-        _, new_count = weighted_embedding_update(old, new, old_count=99)
-        assert new_count == 100
-
-    def test_identical_embeddings_leave_direction_unchanged(self):
-        old = np.array([0.6, 0.8])
-        new = np.array([0.6, 0.8])
-        updated, _ = weighted_embedding_update(old, new, old_count=10)
-        assert np.allclose(updated, [0.6, 0.8])

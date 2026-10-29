@@ -1,4 +1,4 @@
-"""Permission-plane tests for the map-reduce scope map (W2.1, permission row T2).
+"""Permission-plane tests for the map-reduce scope map (permission row T2).
 
 ``scope_digest_hits`` trusts its ``file_uuids`` argument as an already-resolved,
 permission-checked scope — see its own docstring in

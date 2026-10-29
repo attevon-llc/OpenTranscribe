@@ -90,7 +90,7 @@ async def _collect(
     monkeypatch.setattr(
         chat_service,
         "_prepare_context",
-        # Six values since #403 W2.6: the counted-aggregation result and the
+        # Six values since #403: the counted-aggregation result and the
         # map-reduce overview stay None for a turn the router left on the chunk
         # plane — which is every turn these tests drive — and the fan-out's
         # `<synthesis>`/`<recurrence>` blocks stay empty for the same reason

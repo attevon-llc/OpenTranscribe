@@ -3067,8 +3067,8 @@ def list_quarantined_files(
     from app.services.takedown_notice_queries import live_notice_refs
 
     # Two DIFFERENT FKs to `user` on the same row (owner, and the admin who acted),
-    # so this needs two aliased OUTER joins, not a per-row lookup (issue #576
-    # FINDING 3). Both are OUTER: `quarantined_by` is nullable (pre-v371 rows), and
+    # so this needs two aliased OUTER joins, not a per-row lookup (issue #576).
+    # Both are OUTER: `quarantined_by` is nullable (pre-v371 rows), and
     # an INNER join there would silently drop legacy rows from the queue entirely.
     owner_alias = aliased(User)
     quarantined_by_alias = aliased(User)

@@ -26,18 +26,3 @@ def aggregate_embeddings(embeddings: list[np.ndarray]) -> np.ndarray:
         raise ValueError("Cannot aggregate empty embedding list")
     mean_vec = np.mean(np.array(embeddings), axis=0)
     return l2_normalize(mean_vec)
-
-
-def weighted_embedding_update(
-    old_embedding: np.ndarray,
-    new_embedding: np.ndarray,
-    old_count: int,
-) -> tuple[np.ndarray, int]:
-    """Compute weighted average for incremental embedding update.
-
-    Returns:
-        Tuple of (updated_embedding, new_count).
-    """
-    new_count = old_count + 1
-    weighted = (old_embedding * old_count + new_embedding) / new_count
-    return l2_normalize(weighted), new_count

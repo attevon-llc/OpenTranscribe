@@ -1,7 +1,7 @@
 """`70-tag.sh` must cut (or confirm) `release/<major>.<minor>` FROM THE TAG it
 just pushed, and must fail when a tag was cut from somewhere else (issue #784).
 
-Also covers finding N4: `git tag -a` and `git push origin "$VERSION"` at the
+Also covers the unchecked tail: `git tag -a` and `git push origin "$VERSION"` at the
 tail of `70-tag.sh` used to be UNCHECKED (the file is `set -uo pipefail`, no
 `-e`), so a failed push fell through to a recorded PASS and `exit 0`.
 

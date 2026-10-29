@@ -16,7 +16,7 @@ scope. Never N searches, never a per-file LLM call.
 | ``list_files`` | the same body; the bucket keys are the answer |
 | ``speaker_facet`` | the same body + ``terms(speakers)`` × ``terms(file_uuid)`` — attendance |
 | ``count_events`` | **Postgres** ``regexp_count`` over ``transcript_segment.text`` |
-| ``speaker_stats`` (W2.4, flag-gated) | **Postgres** ``file_facts.facts['speakers']`` — talk time, not attendance |
+| ``speaker_stats`` (flag-gated) | **Postgres** ``file_facts.facts['speakers']`` — talk time, not attendance |
 
 ## Three constraints that are not negotiable
 
@@ -66,7 +66,7 @@ SHAPE_COUNT_FILES = "count_files"
 SHAPE_LIST_FILES = "list_files"
 SHAPE_SPEAKER_FACET = "speaker_facet"
 SHAPE_COUNT_EVENTS = "count_events"
-#: W2.4. Exact per-speaker talk time from ``file_facts.facts['speakers']`` —
+#: Exact per-speaker talk time from ``file_facts.facts['speakers']`` —
 #: Postgres, like ``count_events``, and for the same reason: this is a
 #: "how much" question about something already computed at ingest, not a
 #: search. Distinct from ``SHAPE_SPEAKER_FACET``, which answers "who attended"
@@ -206,7 +206,7 @@ class AggregationResult:
     file_titles: tuple[str, ...] = ()
     speaker: str | None = None
     speaker_sessions: int | None = None
-    #: W2.4, ``SHAPE_SPEAKER_STATS`` only: the named speaker's total talk time
+    #: ``SHAPE_SPEAKER_STATS`` only: the named speaker's total talk time
     #: in seconds. A separate field from ``speaker_sessions`` — sessions and
     #: seconds are different units and conflating them is exactly the bug this
     #: shape exists to fix (attendance vs. participation).

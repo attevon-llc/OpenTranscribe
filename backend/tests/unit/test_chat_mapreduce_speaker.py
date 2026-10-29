@@ -1,4 +1,4 @@
-"""``scope_speaker_digest_hits`` (W2.3) — the per-speaker map, and the header
+"""``scope_speaker_digest_hits`` — the per-speaker map, and the header
 it feeds ``CodeComposer``/``BatchReducer``.
 
 Closes the gap ``Route.wants_speaker_digest_map`` documents: a speaker filter
@@ -327,7 +327,7 @@ def test_speaker_scoped_overview_citation_kind_is_summary_for_a_fresh_llm_summar
 
 
 def test_flag_off_never_reads_the_summary_columns_shape():
-    """Byte-identical to the pre-#W2.3 query: no summary columns requested."""
+    """Byte-identical to the previous query: no summary columns requested."""
     db = MagicMock()
     _query_returns(db, [(1, "uuid-1", "Weekly sync", MIXED_DIGEST)])
 

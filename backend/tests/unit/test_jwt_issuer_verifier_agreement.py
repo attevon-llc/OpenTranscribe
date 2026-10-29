@@ -140,15 +140,13 @@ def silent_audit(monkeypatch) -> None:
 def _issuers() -> dict[str, tuple[str, Callable[[], str]]]:
     """Every JWT issuer in the codebase, keyed by name -> (token type, mint).
 
-    Includes the two that no production caller reaches
-    (``core.security.create_access_token``, ``token_service.create_token``) on
-    purpose: an unreachable issuer is exactly where a divergent copy survives long
+    Includes the one that no production caller reaches (``token_service.create_token``)
+    on purpose: an unreachable issuer is exactly where a divergent copy survives long
     enough to be treated as the pattern to follow.
     """
     from app.api.endpoints.auth.mfa_tokens import _create_mfa_token
     from app.auth.direct_auth import create_access_token as production_access_issuer
     from app.auth.token_service import TokenService
-    from app.core.security import create_access_token as core_access_issuer
 
     service = TokenService()
 
@@ -156,10 +154,6 @@ def _issuers() -> dict[str, tuple[str, Callable[[], str]]]:
         "auth.direct_auth.create_access_token": (
             TOKEN_TYPE_ACCESS,
             lambda: production_access_issuer({"sub": SUBJECT, "role": "user"}),
-        ),
-        "core.security.create_access_token": (
-            TOKEN_TYPE_ACCESS,
-            lambda: core_access_issuer(subject=SUBJECT),
         ),
         "auth.token_service.create_token[access]": (
             TOKEN_TYPE_ACCESS,

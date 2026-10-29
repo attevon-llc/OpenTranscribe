@@ -1,4 +1,4 @@
-"""Cross-meeting recurrence detection — "what keeps coming up across our meetings" (W2.5).
+"""Cross-meeting recurrence detection — "what keeps coming up across our meetings".
 
 Pure logic only. Every function here takes plain data and returns plain data —
 no database session, no OpenSearch client, no LLM call. The I/O half (reading

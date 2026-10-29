@@ -195,13 +195,6 @@ def send_notification_with_retry(
     return False
 
 
-def send_processing_notification(user_id: int, file_id: int) -> None:
-    """Send processing started notification."""
-    send_notification_with_retry(
-        user_id, file_id, FileStatus.PROCESSING, "Transcription started", progress=10
-    )
-
-
 def send_progress_notification(
     user_id: int,
     file_id: int,

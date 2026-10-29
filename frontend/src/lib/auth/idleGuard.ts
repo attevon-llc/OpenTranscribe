@@ -66,7 +66,7 @@ export const ACTIVITY_EVENTS = [
   'wheel',
 ] as const;
 
-export const IDLE_CHANNEL_NAME = 'opentranscribe-session-idle';
+const IDLE_CHANNEL_NAME = 'opentranscribe-session-idle';
 
 /** Cross-tab activity is advisory; one message per this interval is plenty. */
 const ACTIVITY_BROADCAST_MS = 5_000;

@@ -1,4 +1,4 @@
-"""The additive (MINOR) mapping machinery — every field after this one rides it (#W2.7a).
+"""The additive (MINOR) mapping machinery — every field after this one rides it.
 
 Before this, the chunks index had exactly one version number (``_INDEX_VERSION``) and
 exactly one tool to move it: ``recreate_index_for_dimension``, which **deletes the

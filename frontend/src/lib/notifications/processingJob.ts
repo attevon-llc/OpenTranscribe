@@ -32,7 +32,7 @@ export type TierKey = 'main' | 'finishing' | 'ai';
  * under its tier. `backend/tests/unit/test_post_processing_status.py` fails if this map and
  * the enum diverge, so a new backend task cannot render nowhere.
  */
-export const POST_PROCESSING_TIERS = {
+const POST_PROCESSING_TIERS = {
   speaker_attributes: 'finishing',
   speaker_identification: 'finishing',
   speaker_clustering: 'finishing',
@@ -52,7 +52,7 @@ export type JobTaskKey = 'import' | 'transcription' | 'diarization' | PostProces
 const POST_KEYS = Object.keys(POST_PROCESSING_TIERS) as PostProcessingKey[];
 
 /** Share of the overall bar. Diarization is reported inside the transcription percent. */
-export const TASK_WEIGHTS: Record<JobTaskKey, number> = {
+const TASK_WEIGHTS: Record<JobTaskKey, number> = {
   import: 10,
   transcription: 60,
   diarization: 0,
@@ -80,22 +80,16 @@ export const PLAN_GRACE_MS = 2 * 60_000;
 /** An outstanding run with no frame for this long is flagged as possibly stale. */
 export const STALE_AFTER_MS = 10 * 60_000;
 /** When the card should ask the server for the run (a missed frame, a reload). */
-export const RECONCILE_AFTER_MS = 30_000;
+const RECONCILE_AFTER_MS = 30_000;
 /** The server keeps a run this long (`POST_PROCESSING_STATUS_TTL_S`); older is unknowable. */
-export const RUN_RETENTION_MS = 2 * 24 * 3600_000;
+const RUN_RETENTION_MS = 2 * 24 * 3600_000;
 
 /**
  * Transcription sub-stages in display order. The keys are the backend's `TranscriptionStage`
  * wire values, sent as `data.stage` on every processing frame;
  * `backend/tests/unit/test_transcription_stage_wire.py` fails if the two lists diverge.
  */
-export const TRANSCRIPTION_STAGES = [
-  'prepare',
-  'transcribe',
-  'diarize',
-  'finalize',
-  'speakers',
-] as const;
+const TRANSCRIPTION_STAGES = ['prepare', 'transcribe', 'diarize', 'finalize', 'speakers'] as const;
 export type TranscriptionStageKey = (typeof TRANSCRIPTION_STAGES)[number];
 
 const DIARIZE_INDEX = TRANSCRIPTION_STAGES.indexOf('diarize');

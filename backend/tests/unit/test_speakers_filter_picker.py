@@ -1,4 +1,4 @@
-"""W2.2: ``GET /speakers?for_filter=true`` — the type-to-search picker roster.
+"""``GET /speakers?for_filter=true`` — the type-to-search picker roster.
 
 Covers the fix to ``_get_unique_speakers_for_filter`` (quarantine exclusion,
 which it previously did not apply) and the new server-side ``q``/``limit``/

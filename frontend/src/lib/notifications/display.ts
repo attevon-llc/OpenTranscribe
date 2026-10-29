@@ -27,7 +27,7 @@ export type IconName =
   | 'eye-off'
   | 'shield';
 
-export const ICON_BY_TYPE: Partial<Record<NotificationType, IconName>> = {
+const ICON_BY_TYPE: Partial<Record<NotificationType, IconName>> = {
   // Transcription is the app's core job, so it carries the product mark.
   transcription_status: 'logo',
   summarization_status: 'file-text',

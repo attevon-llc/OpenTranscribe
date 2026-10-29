@@ -67,16 +67,16 @@ class ChatWarningCode(StrEnum):
     RETRIEVAL_FAILED = "retrieval_failed"
     UNSUPPORTED_LANGUAGE = "unsupported_language"
     #: A speaker filter matched more than one candidate and could not be
-    #: resolved to a single person without asking (Wave 2; no emitter yet).
+    #: resolved to a single person without asking (no emitter yet).
     AMBIGUOUS_SPEAKER = "ambiguous_speaker"
     #: A recurrence/trend block was requested but could not be produced for
-    #: this scope (Wave 2; no emitter yet).
+    #: this scope (no emitter yet).
     RECURRENCE_UNAVAILABLE = "recurrence_unavailable"
     #: The router's query plan could not be built or failed to execute, and
-    #: the turn fell back to an unplanned answer (Wave 2; no emitter yet).
+    #: the turn fell back to an unplanned answer (no emitter yet).
     PLAN_FAILED = "plan_failed"
     #: The question's detected language did not match what the router
-    #: expected/could route with confidence (Wave 2; no emitter yet).
+    #: expected/could route with confidence (no emitter yet).
     ROUTER_LANGUAGE_UNMATCHED = "router_language_unmatched"
 
 

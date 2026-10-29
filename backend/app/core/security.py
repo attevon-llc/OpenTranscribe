@@ -1,10 +1,6 @@
 import contextlib
 import os
 import unicodedata
-import uuid
-from datetime import UTC
-from datetime import datetime
-from datetime import timedelta
 from typing import Any
 
 from fastapi import HTTPException
@@ -244,71 +240,6 @@ def _create_password_context() -> CryptContext:
 
 # Global password context - recreated when needed
 pwd_context = _create_password_context()
-
-
-def create_access_token(
-    subject: str | Any,
-    expires_delta: timedelta | None = None,
-    additional_claims: dict | None = None,
-) -> str:
-    """
-    Create a JWT access token with optional additional claims.
-
-    **The algorithm comes from :func:`signing_algorithm` — the one owner of that
-    question.** There used to be a ``_get_jwt_algorithm()`` here that returned
-    ``JWT_ALGORITHM_V3`` (HS512) under ``FIPS_MODE`` + ``FIPS_VERSION="140-3"``. It was
-    deleted rather than wired into the real login path, because the access-token
-    *verifiers* on the request path (``api/endpoints/auth/dependencies.py`` —
-    ``get_current_user`` and ``get_optional_current_user``) decoded with
-    ``algorithms=[settings.JWT_ALGORITHM]`` and nothing else. An issuer that
-    FIPS-branched while those did not would mint tokens no authenticated request
-    could verify. Those verifiers now call :func:`accepted_algorithms`, so the pair
-    can no longer drift apart silently.
-
-    **HS256 is FIPS-approved.** HMAC-SHA-256 is an approved algorithm under FIPS 198-1
-    with SHS (FIPS 180-4); NIST SP 800-57 Pt.1 R5 puts it at 128 bits of security, above
-    the 112-bit floor SP 800-131A Rev.2 requires. Running HS256 is therefore a
-    compliant configuration, not a violation — the defect this replaced was a false
-    documentation claim and a dead branch, not weak crypto.
-
-    To actually run HS512, set ``JWT_ALGORITHM=HS512`` (and a ``JWT_SECRET_KEY`` of at
-    least 64 bytes — ``config.py`` warns otherwise). That single knob moves issuance
-    **and** verification together, because both read the same setting.
-
-    Args:
-        subject: The subject (usually user UUID) to encode in the token
-        expires_delta: Optional custom expiration time
-        additional_claims: Optional dict of additional claims to include
-
-    Returns:
-        Encoded JWT token string
-    """
-    now = datetime.now(UTC)
-    if expires_delta:
-        expire = now + expires_delta
-    else:
-        expire = now + timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
-
-    algorithm = signing_algorithm(TOKEN_TYPE_ACCESS)
-
-    to_encode = {
-        "exp": expire,
-        "sub": str(subject),
-        "iat": now,
-        "jti": str(uuid.uuid4()),  # JWT ID for token revocation support
-        # Track algorithm version. Derived from the algorithm actually used, so it
-        # stays correct when an operator sets JWT_ALGORITHM=HS512; it is "v2" on a
-        # default deployment because HS256 is the default.
-        "alg_version": "v3" if algorithm == "HS512" else "v2",
-        # Purpose binding — see auth.constants.TOKEN_TYPE_ACCESS.
-        "type": TOKEN_TYPE_ACCESS,
-    }
-
-    if additional_claims:
-        to_encode.update(additional_claims)
-
-    key = OctKey.import_key(settings.JWT_SECRET_KEY)
-    return jwt.encode({"alg": algorithm}, to_encode, key, algorithms=[algorithm])
 
 
 def normalize_password(password: str) -> str:

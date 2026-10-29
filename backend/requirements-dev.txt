@@ -9,6 +9,7 @@ black==26.10.1
 ruff==0.16.7
 mypy==2.4.0
 mypy-extensions==1.1.0
+vulture==2.16  # Dead-code ratchet (scripts/guards/check_vulture.py); the hook pins the same version
 import-linter==2.15  # Enforces the app ↛ cloud seam (forbidden contract in pyproject.toml)
 
 # Testing — pytest + the plugins pyproject's addopts require. Pinned in

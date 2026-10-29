@@ -367,8 +367,8 @@ class TestBuildSpeakerMapping:
 
         mapping = _build_speaker_mapping(b_segs, c_segs, nearest_indices)
 
-        # Round 1: (A,X)=1.0 and (B,X)=1.0 tie -> A (first) wins X.
-        # Round 2: only column Y is free; (B,Y)=0.0 and (C,Y)=0.0 tie at 0 -> break.
+        # Pass 1: (A,X)=1.0 and (B,X)=1.0 tie -> A (first) wins X.
+        # Pass 2: only column Y is free; (B,Y)=0.0 and (C,Y)=0.0 tie at 0 -> break.
         assert mapping == {"A": "X"}
 
     def test_three_speakers_each_side_full_bijection(self):

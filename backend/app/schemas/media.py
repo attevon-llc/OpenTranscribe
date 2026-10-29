@@ -425,14 +425,6 @@ class SpeakerCollectionBase(BaseModel):
     is_public: bool = False
 
 
-class SpeakerCollection(SpeakerCollectionBase, UUIDBaseSchema):
-    """Speaker collection with UUID as public identifier"""
-
-    user_id: UUID
-    created_at: datetime
-    updated_at: datetime
-
-
 class TranscriptSegmentBase(BaseModel):
     start_time: float
     end_time: float
@@ -1177,13 +1169,6 @@ class TaskBase(BaseModel):
     media_file_id: UUID | None = None
 
 
-class TaskUpdate(BaseModel):
-    status: str | None = None
-    progress: float | None = None
-    completed_at: datetime | None = None
-    error_message: str | None = None
-
-
 class Task(TaskBase):
     """Task schema - uses Celery task ID (string), not UUID"""
 
@@ -1333,13 +1318,6 @@ class CollectionMemberAdd(BaseModel):
 
 class CollectionMemberRemove(BaseModel):
     media_file_ids: list[UUID]  # Changed from int to UUID
-
-
-# Subtitle-related schemas
-class SubtitleFormat(StrEnum):
-    SRT = "srt"
-    WEBVTT = "webvtt"
-    MOV_TEXT = "mov_text"
 
 
 class VideoFormat(StrEnum):

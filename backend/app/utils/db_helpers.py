@@ -85,16 +85,6 @@ def owned_in_tenant(
     return and_(owner, org_stamp_is(model.organization_id, organization_id))
 
 
-def _invalidate_tag_cache_for_file(db: Session, file_id: int) -> None:
-    """Bust the owning user's tag/file caches after a tag mutation."""
-    try:
-        from app.services.redis_cache_service import redis_cache
-
-        redis_cache.invalidate_tags_for_file(db, file_id)
-    except Exception as e:  # pragma: no cover - cache must never break writes
-        logger.debug(f"Tag cache invalidation failed (non-critical): {e}")
-
-
 def get_user_files_query(
     db: Session, user_id: int, *, organization_id: OrgScope = UNSCOPED
 ) -> Query:

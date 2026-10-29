@@ -1,4 +1,4 @@
-"""Tests for the #461 W2.E1 additions to ``harness.report``: ``build_scored_rows``,
+"""Tests for the #461 additions to ``harness.report``: ``build_scored_rows``,
 ``render_scored_table``, and ``build_results``'s new ``wave2`` block.
 """
 

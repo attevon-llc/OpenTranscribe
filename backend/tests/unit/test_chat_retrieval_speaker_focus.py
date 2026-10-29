@@ -1,4 +1,4 @@
-"""W2.2: the speaker-focus PARALLEL retrieval leg (`retrieval.retrieve_context`'s
+"""The speaker-focus PARALLEL retrieval leg (`retrieval.retrieve_context`'s
 ``speaker_focus_names``).
 
 The core design constraint under test: this leg only ever WIDENS the candidate

@@ -107,7 +107,7 @@ def sse(event: str, payload: dict[str, Any]) -> str:
 class _TurnCancelled(Exception):  # noqa: N818 — internal control flow, not surfaced
     """Raised inside ``_prepare_context`` when a Stop lands mid-phase.
 
-    #403 W2.6 threads a cancel check into ``_prepare_context``'s phase
+    #403 threads a cancel check into ``_prepare_context``'s phase
     boundaries, between leg submissions, and before the planner and
     enrichment calls specifically — those are the calls a cancellation must
     prevent from ever billing, unlike the phases already in flight when Stop
@@ -190,7 +190,7 @@ class ChatTurn:
         self.cache_read_tokens: int | None = None
         self.cache_write_tokens: int | None = None
         self.tokens_estimated = False
-        # #403 W2.6: tokens spent on bounded, non-generation LLM calls this
+        # #403: tokens spent on bounded, non-generation LLM calls this
         # turn made (planner, enrichment, and the planner's share of a
         # follow-up's extended rewrite call) — folded into `prompt_tokens`/
         # `completion_tokens` in `_finalize_turn`, right before
@@ -239,7 +239,7 @@ def _drop_quarantined_hits(db: Session, hits: list[ChunkHit]) -> list[ChunkHit]:
 
     ⚠️ **This is NOT the only place a quarantine flag is enforced in the chat
     pipeline, and an earlier revision of this docstring claiming that was
-    itself the bug** (W2.0g's adversarial review). This function runs at
+    itself the bug** (found in an adversarial review). This function runs at
     ``_prepare_context`` phase 3.5 and only ever sees ``result.chunks`` /
     ``result.digests`` — the RANKED tiers. The counted/aggregation tier
     (``aggregation_service.answer_aggregation``) runs a whole phase EARLIER, at
@@ -281,7 +281,7 @@ def _resolve_summary_tier(
     organization_id: int | None = None,
     mask_kwargs: dict[str, Any],
 ) -> tuple[list[Any], list[MaskedChunk], str | None, int, int, dict[str, int]]:
-    """Decide which leg feeds the map-reduce overview's summaries (W2.1).
+    """Decide which leg feeds the map-reduce overview's summaries.
 
     Split out of ``_prepare_context`` so its branching doesn't count against
     that function's own complexity — it is a single decision, made once.
@@ -333,7 +333,7 @@ def _resolve_summary_tier(
     from app.services.chat.redactor import mask_digests
 
     if decision.wants_speaker_digest_map and file_uuids:
-        # W2.3: closes the gap `Route.wants_speaker_digest_map` documents. A
+        # closes the gap `Route.wants_speaker_digest_map` documents. A
         # speaker filter already removed the INDEXED digest tier above
         # (correctly — the index has no single-valued speaker field to filter
         # on), so `decision.wants_digest` is False for exactly this case; this
@@ -426,7 +426,7 @@ def _resolve_speaker_focus(
     session_scope,
     file_uuids: list[str] | None = None,
 ):
-    """Phase 1.5 of ``_prepare_context`` (W2.2, wired W2.3): a MENTIONED speaker.
+    """Phase 1.5 of ``_prepare_context``: a MENTIONED speaker.
 
     Split out so ``_prepare_context`` stays under ruff's complexity limit —
     the same reason ``_resolve_summary_tier`` documents for its own
@@ -472,7 +472,7 @@ def _apply_speaker_resolution(
     file_uuids: list[str] | None = None,
     recorder: TraceRecorder | None = None,
 ) -> list[str]:
-    """Resolve a mentioned speaker and fold it into ``meta`` (W2.2, wired W2.3).
+    """Resolve a mentioned speaker and fold it into ``meta``.
 
     A second extraction on top of :func:`_resolve_speaker_focus` — this one
     holds the branching (whether the flag is on, whether anything resolved),
@@ -626,7 +626,7 @@ def _maybe_rewrite(
     from app.services.chat.query_rewriter import rewrite_query
 
     rewrite_started = time.monotonic()
-    # #403 W2.6: a follow-up turn's plan rides this SAME call (a third
+    # #403: a follow-up turn's plan rides this SAME call (a third
     # `PLAN:` line) rather than a second, standalone round trip — see
     # `query_rewriter.rewrite_query`'s `want_plan` docstring. Only requested
     # when the flag is on, so a deployment with the planner off pays nothing
@@ -661,7 +661,7 @@ def _resolve_plan(
     assistant_message_uuid: str,
     meta: dict[str, Any],
 ) -> tuple[planner.Plan | None, int]:
-    """Phase 1.6 of `_prepare_context` (#403 W2.6): resolve this turn's plan.
+    """Phase 1.6 of `_prepare_context` (#403): resolve this turn's plan.
 
     Split out so `_prepare_context` stays under ruff's complexity limit — the
     same reason `_resolve_summary_tier`/`_apply_speaker_resolution` document
@@ -726,7 +726,7 @@ def _run_plan_fanout(
     meta: dict[str, Any],
     recorder: TraceRecorder | None = None,
 ):
-    """Build and run one turn's parallel leg fan-out (#403 W2.6).
+    """Build and run one turn's parallel leg fan-out (#403).
 
     Returns a :class:`~app.services.chat.retrieval.RetrievalResult`-shaped
     object plus the counted/recurrence outcomes, so the caller can drop them
@@ -953,7 +953,7 @@ def _run_plan_fanout(
 def _run_enrichment(
     llm, question: str, masked_chunks: list[MaskedChunk]
 ) -> tuple[str, int, int, int]:
-    """One bounded non-streaming call reconciling merged evidence (#403 W2.6, T8).
+    """One bounded non-streaming call reconciling merged evidence (#403).
 
     Reads ``masked_chunks`` — evidence that has ALREADY passed through
     ``mask_chunks``/``mask_digests`` — never a raw retrieval hit, so the same
@@ -1014,7 +1014,7 @@ def _maybe_run_enrichment(
     meta: dict[str, Any],
     recorder: TraceRecorder | None = None,
 ) -> tuple[str, int]:
-    """Phase 5 of `_prepare_context` (#403 W2.6, T8): decide and run enrichment.
+    """Phase 5 of `_prepare_context` (#403): decide and run enrichment.
 
     Split out for the same reason `_resolve_plan` was — keeps
     `_prepare_context` under ruff's complexity limit. Fires only when the
@@ -1087,7 +1087,7 @@ def _run_serial_pipeline(
     meta: dict[str, Any],
     recorder: TraceRecorder | None = None,
 ):
-    """Phases 2+3 of `_prepare_context`: the pre-#403 W2.6 counted-then-retrieve
+    """Phases 2+3 of `_prepare_context`: the pre-#403 counted-then-retrieve
     pipeline, unchanged — this is the path every turn takes with the planner
     off (or when it fired nothing), and it must stay BYTE IDENTICAL to before
     the fan-out existed. Split out purely to keep `_prepare_context` under
@@ -1219,7 +1219,7 @@ def _retrieve_or_fanout(
 ):
     """Phases 2+3 of `_prepare_context`: dispatch to the fan-out or the serial pipeline.
 
-    #403 W2.6: a validated, non-empty plan replaces the serial
+    #403: a validated, non-empty plan replaces the serial
     counted-then-retrieve pipeline with a parallel leg fan-out. Gated so the
     flag-off (or no-plan) path stays BYTE IDENTICAL to before this feature
     existed — `_run_serial_pipeline` is a pure relocation of what
@@ -1498,7 +1498,7 @@ def _prepare_context(
     timings only, never text), the counted result when the router sent the turn
     to the aggregation tier, the overview when it asked for a summary, and a
     rendered ``<synthesis>`` block and a rendered ``<recurrence>`` block
-    (#403 W2.6; both ``""`` unless their respective fan-out leg fired).
+    (#403; both ``""`` unless their respective fan-out leg fired).
     """
     from app.core.config import settings as settings_config
     from app.db.session_utils import session_scope
@@ -1520,10 +1520,10 @@ def _prepare_context(
     )
     llm_calls += rewrite_calls
 
-    # --- Phase 1.5: resolve a speaker MENTIONED in the question text (W2.2,
-    # wired W2.3). Gated on `chat.speaker_resolver_enabled`, off by default —
-    # a flag-off turn takes none of this branch and stays byte-identical to
-    # before it existed: no `meta["speaker_resolution"]` key, `speaker_focus`
+    # --- Phase 1.5: resolve a speaker MENTIONED in the question text. Gated on
+    # `chat.speaker_resolver_enabled`, off by default — a flag-off turn
+    # takes none of this branch and stays byte-identical to before it
+    # existed: no `meta["speaker_resolution"]` key, `speaker_focus`
     # stays False, `speaker_focus_names` stays empty. Its own short session
     # (see `_resolve_speaker_focus`).
     speaker_focus_names = _apply_speaker_resolution(
@@ -1549,7 +1549,7 @@ def _prepare_context(
     )
     meta["route"] = decision.as_metadata()
 
-    # --- Phase 1.6: the LLM query planner (#403 W2.6). See `_resolve_plan`'s
+    # --- Phase 1.6: the LLM query planner (#403). See `_resolve_plan`'s
     # own docstring — split out purely to keep this function's branching
     # count under ruff's complexity limit, same reasoning `_resolve_summary_
     # tier`/`_apply_speaker_resolution` already document for their own splits.
@@ -1679,7 +1679,7 @@ def _prepare_context(
             **_digest_mask_kwargs,
         )
 
-    # W2.1: which leg feeds the overview — the scope map (bounded scope, reads
+    # which leg feeds the overview — the scope map (bounded scope, reads
     # `file_facts` for every file) or the ranked digest leg above (unbounded
     # scope, or the map covered nothing). See `_resolve_summary_tier`'s own
     # docstring for the decoupling this replaces.
@@ -1713,7 +1713,7 @@ def _prepare_context(
         # scope coverage from `meta` alone.
         meta["map_files_no_content"] = files_no_content
 
-    # W2.3. Single-speaker focus only — same simplification
+    # Single-speaker focus only — same simplification
     # `aggregation_service._run_speaker_stats` already applies
     # (`route.speakers[0] if len(route.speakers) == 1 else None`): a map over
     # SEVERAL speakers still serves their combined content correctly (OR
@@ -2081,7 +2081,7 @@ async def _finalize_turn(
         except Exception:  # noqa: BLE001
             logger.exception("Token estimation failed")
 
-    # #403 W2.6: fold in the planner/enrichment/rewrite-extension tokens
+    # #403: fold in the planner/enrichment/rewrite-extension tokens
     # AFTER the fallback estimate above (which only fires when the provider
     # reported nothing) and BEFORE `total_tokens` — this is the one place
     # every path (real usage or estimated) converges before persistence and
@@ -2258,7 +2258,7 @@ class ChatService:
         # empty retrieval, so it is initialised here and not inside the branch.
         counted_block = ""
         overview_block = ""
-        # #403 W2.6: same reasoning as `counted_block`/`overview_block` above
+        # #403: same reasoning as `counted_block`/`overview_block` above
         # — initialised here so a `use_context=False` turn (which never runs
         # `_prep()`) still has a defined, empty value to pass to
         # `build_messages`.
@@ -2278,7 +2278,7 @@ class ChatService:
                 # label anyway, so splitting them further would add machinery
                 # for no visible difference.
                 will_rewrite = settings.query_rewrite_enabled and bool(history)
-                # #403 W2.6: a turn-1 (no-history) question that would trigger
+                # #403: a turn-1 (no-history) question that would trigger
                 # a STANDALONE planner call gets its own stage — the model has
                 # not started retrieving anything yet, and lumping it under
                 # "retrieving" would read as a stalled search. Cheap to
@@ -2339,14 +2339,14 @@ class ChatService:
                 counted_block = format_counted_block(counted)
                 overview_block = overview.block if overview is not None else ""
 
-                # #403 W2.6: extra tokens spent on the planner/enrichment/
+                # #403: extra tokens spent on the planner/enrichment/
                 # rewrite-extension calls this turn made, folded into the
                 # turn's own counters so `_finalize_turn` meters them through
                 # the same `record_chat_usage` call the answer stream uses.
                 turn.extra_prompt_tokens += int(meta.get("extra_llm_prompt_tokens", 0))
                 turn.extra_completion_tokens += int(meta.get("extra_llm_completion_tokens", 0))
 
-                # W2.2/W2.3: a speaker mention that matched more than one
+                # A speaker mention that matched more than one
                 # roster entry resolves to NO filter (never a guess) — surface
                 # the candidates so the user can disambiguate, exactly like
                 # `context_dropped`/language warn elsewhere in this turn.
@@ -2357,7 +2357,7 @@ class ChatService:
                         {"code": "ambiguous_speaker", "candidates": list(ambiguous_speakers)},
                     )
 
-                # #403 W2.6: a plan that failed to parse/execute falls back to
+                # #403: a plan that failed to parse/execute falls back to
                 # the rules-only route rather than failing the turn — surfaced
                 # so a user (or `ChatMessageMeta`) can tell "no plan was
                 # attempted" from "one was attempted and dropped".
@@ -2643,7 +2643,7 @@ class ChatService:
                 yield sse("reasoning", {"text": reasoning_tail})
 
         except _TurnCancelled:
-            # #403 W2.6: a Stop landed at one of `_prepare_context`'s phase
+            # #403: a Stop landed at one of `_prepare_context`'s phase
             # boundaries, between leg submissions, or before the planner/
             # enrichment call it was guarding. No `turn.error` is set —
             # `reached_end` stays False, so the `finally` below records this

@@ -1,4 +1,4 @@
-"""The per-speaker map (W2.3) — "summarize what Alice said".
+"""The per-speaker map — "summarize what Alice said".
 
 Split out of the former single-file ``mapreduce.py``. Reads
 ``file_facts.digest`` sentence-by-sentence, since the INDEXED digest has no
@@ -172,8 +172,8 @@ def scope_speaker_digest_hits(
         max_sections_per_file: Cap on how many of a file's real sections may
             contribute, so a speaker who talks throughout a long recording
             cannot balloon the block past its budget.
-        use_summaries: ``ChatSettings.map_tier_speaker_summaries`` (#W2.3,
-            mirrors #464). When True, a file whose LLM summary is FRESH
+        use_summaries: ``ChatSettings.map_tier_speaker_summaries`` (mirrors
+            #464). When True, a file whose LLM summary is FRESH
             contributes its ``speakers_analysis[]`` entry (plus owner-matched
             action items) instead of digest sentences. Stale, absent, or
             unusable summaries fall back to the digest exactly as before, per

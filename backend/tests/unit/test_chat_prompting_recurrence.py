@@ -1,4 +1,4 @@
-"""W2.5 — the `<recurrence>` evidence block (`prompting.format_recurrence_block`)
+"""The `<recurrence>` evidence block (`prompting.format_recurrence_block`)
 and the two new base rules (13: honesty about open/completed status; 14: the
 focus-speaker header)."""
 
@@ -127,7 +127,7 @@ def test_base_rules_explain_the_focus_speaker_header():
 
 
 # --------------------------------------------------------------------------- #
-# build_messages already accepts recurrence_block (Wave 2 seam) — confirm it
+# build_messages already accepts recurrence_block (an existing seam) — confirm it
 # actually reaches the prompt and survives the evidence-block trim ordering.
 # --------------------------------------------------------------------------- #
 

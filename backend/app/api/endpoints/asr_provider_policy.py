@@ -1,4 +1,4 @@
-"""Which cloud ASR providers users may choose - super_admin only (issue #1246, WP6).
+"""Which cloud ASR providers users may choose - super_admin only (issue #1246).
 
 Credentials are not stored here: an administrator creates an ordinary ASR configuration
 (``POST /asr-settings``, key write-only) and shares it, and this router lists those shared

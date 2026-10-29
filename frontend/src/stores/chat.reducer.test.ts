@@ -377,7 +377,7 @@ describe('chat reducer — usage, sources and warnings', () => {
   });
 
   it('folds a router_language_unmatched warning into msg_metadata, persisted like unsupported_language', async () => {
-    // Wave 2 code — no backend emitter yet, but the fold must exist before
+    // No backend emitter yet, but the fold must exist before
     // one can land or the first turn that emits it is silently dropped.
     await stream([
       START,
@@ -389,7 +389,7 @@ describe('chat reducer — usage, sources and warnings', () => {
   });
 
   it.each(['ambiguous_speaker', 'recurrence_unavailable', 'plan_failed'] as const)(
-    'does not throw on the Wave 2 code %s, which has no patch entry yet',
+    'does not throw on the code %s, which has no patch entry yet',
     async (code) => {
       await stream([START, { type: 'warning', code }, { type: 'done', finish_reason: 'stop' }]);
 

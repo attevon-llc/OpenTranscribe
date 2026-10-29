@@ -285,7 +285,7 @@ describe('uploadsStore', () => {
 
     it('totalProgress averages progress across active uploads only', async () => {
       const { totalProgress } = await seed(mixed);
-      // active: uploading(20) + processing(60) + preparing(0) = 80 / 3 = 26.67 -> round 27
+      // active: uploading(20) + processing(60) + preparing(0) = 80 / 3 = 26.67 -> rounds to 27
       expect(get(totalProgress)).toBe(27);
     });
 

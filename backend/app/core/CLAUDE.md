@@ -139,8 +139,8 @@ should import `app.api` or `app.services` at module scope.
   `RequestsHttpConnection`** — `AWSV4SignerAuth` is a `requests` AuthBase, so under
   opensearch-py's default urllib3 transport it is silently ignored and every request
   goes out unsigned (a blanket 403). Don't build a client inline again.
-- `security.py` — password hashing (FIPS-aware PBKDF2 iteration counts), `create_access_token`,
-  `verify_token`. `auth_settings.py` layers DB config over `.env` for auth —
+- `security.py` — password hashing (FIPS-aware PBKDF2 iteration counts), JWT algorithm
+  selection, `verify_token`. Access tokens are minted by `auth/direct_auth.create_access_token`. `auth_settings.py` layers DB config over `.env` for auth —
   `get_auth_settings(db)` returns a `DynamicAuthSettings` that resolves **DB > .env > coded
   default**. Resolve it **once per request** and pass it down: a handler that resolves it for
   enforcement but reads `settings.*` for the audit record documents a policy nobody applied.

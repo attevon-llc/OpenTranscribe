@@ -104,7 +104,7 @@ def _speaker_focus_header(
 ) -> list[str]:
     """The speaker-focus header: talk time / turns / longest monologue.
 
-    W2.3. Also the "never a silent zero" line for a speaker-scoped map: a file
+    Also the "never a silent zero" line for a speaker-scoped map: a file
     whose roster names the focus speaker but whose digest contributed no
     stats/content for them gets an explicit coverage note here, rather than
     the whole answer just being short with no explanation. ``files_in_scope``
@@ -280,7 +280,7 @@ class BatchReducer:
         **_kwargs,
     ) -> Overview:
         if not summaries:
-            # Preserves the exact pre-W2.3 shape (`reducer == self.name`) when
+            # Preserves the exact original shape (`reducer == self.name`) when
             # there is no speaker focus; only a speaker-scoped empty result
             # needs the "never a silent zero" note, which is CodeComposer's.
             if speaker_focus:
@@ -386,10 +386,10 @@ def build_overview(
         files_in_scope: How many recordings the user's scope contains. When it
             exceeds what the map covered, the block says so instead of reporting
             the covered count as the total.
-        speaker_focus: W2.3. A single active focus speaker's canonical name,
+        speaker_focus: A single active focus speaker's canonical name,
             when this overview was built from ``scope_speaker_digest_hits``.
             Renders a talk-time header and the "never a silent zero" coverage
-            notes; ``None`` reproduces the pre-W2.3 block exactly.
+            notes; ``None`` reproduces the non-speaker block exactly.
 
     Returns:
         An :class:`Overview`. Empty ``block`` when there is nothing to summarise.

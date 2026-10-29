@@ -1,4 +1,4 @@
-"""Parallel leg execution for planner-driven fan-out (#403 W2.6).
+"""Parallel leg execution for planner-driven fan-out (#403).
 
 **ONE process-wide bounded executor, never per-turn.** A pool created inside
 one turn multiplies thread count by concurrent users — the exact resource

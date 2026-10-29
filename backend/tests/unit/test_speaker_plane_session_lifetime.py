@@ -17,9 +17,6 @@ scope                                                        slow work formerly 
                                                              ONE ``session_scope``
 ``process_speaker_merge_background``                         voiceprint average, MinIO
                                                              purge, index merge, ditto
-``speakers._sync_profile_rename_to_opensearch``              1 index write per linked
-                                                             speaker on the caller's
-                                                             session
 ``speakers._clear_video_cache_for_speaker`` / ``_clear_speaker_video_cache``
                                                              storage client + object
                                                              deletes on the caller's
@@ -50,8 +47,7 @@ Two shapes of test, because the plane has two shapes of session:
   also asserts at least two scopes were opened, so a task that stopped touching
   the DB entirely cannot pass.
 * **Request/caller-owned sessions** (``trigger_retroactive_matching``,
-  ``_sync_profile_rename_to_opensearch``, ``debug_cross_media_data``) cannot open
-  or close a scope — the fix there is to finish the DB work and **commit** before
+  ``debug_cross_media_data``) cannot open or close a scope — the fix there is to finish the DB work and **commit** before
   the network hop. Those tests count ``commit()`` calls on the very session the
   function was handed and assert each slow call ran in a LATER commit generation
   than the DB work it depends on. Under the savepoint harness a commit does not
@@ -742,41 +738,6 @@ def test_retroactive_matching_snapshot_survives_the_entry_commit(
     assert result == {"auto_applied_count": 0, "suggested_count": 0}
     # The read happened after the snapshot was taken and the transaction released.
     assert tracker.at("voiceprint_read") == [1], tracker.timeline
-
-
-# --------------------------------------------------------------------------- #
-# 5. _sync_profile_rename_to_opensearch — read, commit, THEN fan out
-# --------------------------------------------------------------------------- #
-def test_profile_rename_fans_out_after_the_read_commits(db_session, normal_user, monkeypatch):
-    tracker = _CommitTracker(db_session)
-    pushed: list[tuple[str, str]] = []
-
-    profile = _make_profile(db_session, normal_user)
-    media_file = _make_file(db_session, normal_user)
-    first = _make_speaker(
-        db_session, normal_user, media_file, "SPEAKER_00", profile_id=profile.id, display_name="A"
-    )
-    second = _make_speaker(
-        db_session, normal_user, media_file, "SPEAKER_01", profile_id=profile.id, display_name="A"
-    )
-    # A linked speaker with no display name must not produce a document at all.
-    _make_speaker(db_session, normal_user, media_file, "SPEAKER_02", profile_id=profile.id)
-    db_session.flush()
-
-    monkeypatch.setattr(db_session, "commit", tracker.commit)
-
-    def _push(speaker_uuid, display_name):
-        tracker.observe("index_push")
-        pushed.append((speaker_uuid, display_name))
-
-    monkeypatch.setattr(spk, "_update_opensearch_speaker_name", _push)
-
-    spk._sync_profile_rename_to_opensearch(db_session, profile.id)
-
-    assert {uuid_ for uuid_, _ in pushed} == {str(first.uuid), str(second.uuid)}
-    push_generations = tracker.at("index_push")
-    assert push_generations, "nothing was pushed — the test would prove nothing"
-    assert all(g >= 1 for g in push_generations), _held(tracker, "index_push")
 
 
 def test_profile_rename_read_returns_plain_data(db_session, normal_user):

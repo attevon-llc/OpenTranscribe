@@ -58,12 +58,6 @@ def document_text(fmt: str, data: bytes) -> str:
     return " ".join((docx_text(data) if fmt == "docx" else pdf_text(data)).split())
 
 
-def docx_body_xml(data: bytes) -> bytes:
-    """Raw ``word/document.xml``."""
-    with zipfile.ZipFile(io.BytesIO(data)) as archive:
-        return archive.read("word/document.xml")
-
-
 class DocumentExportHarness:
     """Post an export request, run the dispatched task, and expose what it produced."""
 

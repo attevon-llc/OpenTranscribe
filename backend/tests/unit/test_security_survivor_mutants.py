@@ -78,7 +78,9 @@ Full triage of the 95:
   - **``create_access_token``'s claims (3 of 4).** ``jti`` collapsing to the
     literal string ``"None"`` on every token (a fixed JTI breaks per-token
     revocation), and ``expires_delta`` being dropped or subtracted instead of
-    added (an immortal-until-crash or already-expired token).
+    added (an immortal-until-crash or already-expired token). That function was a
+    test-only twin of the production issuer; the three tests now hold
+    ``auth.direct_auth.create_access_token`` to the same claims instead.
   - **``verify_token``'s response bodies and audit record (19 of 24).** Two
     ``raise HTTPException(...)`` sites share the identical ``detail``/``headers``
     literals; the existing suite happens to assert ``detail`` exactly at one site
@@ -193,6 +195,7 @@ from app.auth.audit import AuditOutcome
 from app.auth.constants import AUTH_TYPE_PKI
 from app.auth.constants import TOKEN_TYPE_ACCESS
 from app.auth.constants import TOKEN_TYPE_REFRESH
+from app.auth.direct_auth import create_access_token
 from app.core import security
 from app.core.config import settings
 
@@ -411,7 +414,11 @@ class TestAuthenticateUserAllowLocalFallbackReachesTheCheck:
         assert result is None
 
 
-# ── create_access_token: jti uniqueness and expires_delta ────────────────────────
+# ── the access-token issuer: jti uniqueness and expires_delta ────────────────────
+#
+# These were written against a test-only twin issuer in this module. The production
+# issuer, ``auth.direct_auth.create_access_token``, mints the same ``jti``/``exp``
+# claims the same way, so the assertions hold the issuer logins actually use.
 
 
 def _decode_unverified_claims(token: str) -> dict:
@@ -425,8 +432,8 @@ class TestCreateAccessTokenClaims:
         """``str(uuid.uuid4())`` -> ``str(None)``: a fixed JTI on every token would
         make per-token revocation (or a JTI blacklist) unable to distinguish
         sessions -- revoking one revokes all of them at once."""
-        claims_a = _decode_unverified_claims(security.create_access_token("subject-a"))
-        claims_b = _decode_unverified_claims(security.create_access_token("subject-a"))
+        claims_a = _decode_unverified_claims(create_access_token({"sub": "subject-a"}))
+        claims_b = _decode_unverified_claims(create_access_token({"sub": "subject-a"}))
 
         assert claims_a["jti"] != "None"
         assert claims_a["jti"] != claims_b["jti"]
@@ -435,7 +442,7 @@ class TestCreateAccessTokenClaims:
         """``expire = now + expires_delta`` -- not dropped to ``None`` (which would
         crash ``jwt.encode`` on a non-numeric ``exp``) and not ``now - expires_delta``
         (which would mint an already-expired token)."""
-        token = security.create_access_token("subject-b", expires_delta=timedelta(minutes=42))
+        token = create_access_token({"sub": "subject-b"}, expires_delta=timedelta(minutes=42))
 
         payload = security.verify_token(token)
 
@@ -445,7 +452,7 @@ class TestCreateAccessTokenClaims:
     def test_a_positive_delta_is_not_immediately_expired(self):
         """The direct control for the ``now - expires_delta`` mutant: a token minted
         with a POSITIVE delta must not already be in the past."""
-        token = security.create_access_token("subject-c", expires_delta=timedelta(minutes=5))
+        token = create_access_token({"sub": "subject-c"}, expires_delta=timedelta(minutes=5))
 
         payload = security.verify_token(token)  # must not raise
 

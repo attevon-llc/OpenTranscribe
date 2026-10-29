@@ -1,4 +1,4 @@
-"""W2.5 — the I/O half of cross-meeting recurrence (`aggregation_service.py`).
+"""The I/O half of cross-meeting recurrence (`aggregation_service.py`).
 
 Real Postgres (`db_session`), real permission plumbing
 (`_accessible_scoped_files`/`PermissionService`), and the redaction config

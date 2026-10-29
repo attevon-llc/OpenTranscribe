@@ -44,7 +44,7 @@ class RewriteResult:
     second line costs nothing — which is the whole reason the hint is allowed to
     piggyback on a call that was already being made.
 
-    ``plan`` (#403 W2.6) is the same "free" piggyback applied to the planner: a
+    ``plan`` (#403) is the same "free" piggyback applied to the planner: a
     follow-up turn extends this same call with a THIRD line instead of paying
     for a standalone planner round trip. ``None`` unless ``want_plan=True`` was
     passed AND the model produced a well-formed ``PLAN:`` line.
@@ -59,7 +59,7 @@ MAX_REWRITE_CHARS = 300
 _MAX_HISTORY_TURNS = 6
 _MAX_TURN_CHARS = 500
 
-#: #403 W2.6. A follow-up turn's rewrite call already pays for one LLM round
+#: #403. A follow-up turn's rewrite call already pays for one LLM round
 #: trip; asking for a third ``PLAN:`` line on it is never a SECOND call, only
 #: more tokens on the one already being made — this is the "never a
 #: routing-only call" rule extended to the planner. 100 -> 300 in the
@@ -104,7 +104,7 @@ def rewrite_query(
         llm: An ``LLMService`` (the user's configured provider).
         history: Prior turns, oldest first.
         question: The current user message.
-        want_plan: #403 W2.6. When true, extend the SAME call with a third
+        want_plan: #403. When true, extend the SAME call with a third
             ``PLAN:`` line (see ``planner.PLAN_LINE_INSTRUCTION``) instead of
             making a second, standalone planner call — a follow-up turn's
             plan is never a routing-only round trip. Raises the reply budget

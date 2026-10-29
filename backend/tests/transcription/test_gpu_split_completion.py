@@ -509,7 +509,7 @@ class _FakeDiarizeDF:
 
 
 class TestDiarizerOnlyStagePersistsResolvedProvenance:
-    """Issue #706 audit finding 1 (P0): Stage 2b of the GPU-split path (``_DiarizerOnlyStage``,
+    """Issue #706, defect 1 (P0): Stage 2b of the GPU-split path (``_DiarizerOnlyStage``,
     ``stages.py:991``) must read ``diarizer.last_provider``/``last_model`` off the diarizer
     instance it actually ran, not silently drop them.
 
@@ -565,7 +565,7 @@ class TestDiarizerOnlyStagePersistsResolvedProvenance:
 
 
 class TestAsyncDiarizationServedByReflectsTheRunningDiarizer:
-    """Issue #706 audit finding 2: ``_AsyncDiarization.served_by`` (``stages.py:273``) must
+    """Issue #706, defect 2: ``_AsyncDiarization.served_by`` (``stages.py:273``) must
     read ``self._diarizer.last_provider``/``last_model`` — the instance that actually ran on
     the overlap thread — not a hardcoded or stale pair.
 

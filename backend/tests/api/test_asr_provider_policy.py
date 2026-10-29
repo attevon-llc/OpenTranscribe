@@ -1,4 +1,4 @@
-"""Which cloud ASR providers users may choose, and who holds the credentials (issue #1246 WP6).
+"""Which cloud ASR providers users may choose, and who holds the credentials (issue #1246).
 
 ``/api/admin/asr-providers`` (super_admin) stores two deployment-wide settings: the list of
 cloud providers a plain user may send audio to (absent = all, today's behaviour) and whether

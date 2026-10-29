@@ -272,27 +272,6 @@ def _get_already_migrated_file_ids() -> set[int]:
 
 
 # ---------------------------------------------------------------------------
-# Segment builder (shared between batch task and legacy single-file task)
-# ---------------------------------------------------------------------------
-
-
-def _build_speaker_segments(db, media_file_id: int) -> dict[int, list[dict[str, float]]]:
-    """Build mapping of speaker ID to their transcript segments."""
-    from app.models.media import TranscriptSegment
-
-    segments = (
-        db.query(TranscriptSegment).filter(TranscriptSegment.media_file_id == media_file_id).all()
-    )
-
-    speaker_segments: dict[int, list[dict[str, float]]] = {}
-    for seg in segments:
-        if seg.speaker_id not in speaker_segments:
-            speaker_segments[seg.speaker_id] = []
-        speaker_segments[seg.speaker_id].append({"start": seg.start_time, "end": seg.end_time})
-    return speaker_segments
-
-
-# ---------------------------------------------------------------------------
 # Privacy policy (#1280): a scope with voiceprints off is skipped, not migrated
 # ---------------------------------------------------------------------------
 

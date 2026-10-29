@@ -134,13 +134,6 @@ def pipeline_task_id(file_id: int) -> str | None:
 
 
 @contextmanager
-def stage_for_file(file_id: int, name: str) -> Iterator[None]:
-    """`stage`, for an enrichment task that knows its file but not the pipeline task."""
-    with stage(pipeline_task_id(file_id), name):
-        yield
-
-
-@contextmanager
 def stage(task_id: str | None, name: str) -> Iterator[None]:
     """Context manager that emits ``<name>_start`` and ``<name>_end`` markers.
 

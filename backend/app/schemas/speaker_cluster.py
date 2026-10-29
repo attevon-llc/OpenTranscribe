@@ -23,28 +23,6 @@ class SpeakerClusterUpdate(BaseModel):
     description: str | None = None
 
 
-class SpeakerClusterMemberResponse(BaseModel):
-    """Response schema for a cluster member."""
-
-    uuid: UUID
-    speaker_uuid: UUID
-    speaker_name: str
-    display_name: str | None = None
-    suggested_name: str | None = None
-    media_file_uuid: UUID | None = None
-    media_file_title: str | None = None
-    confidence: float = 0.0
-    verified: bool = False
-    predicted_gender: str | None = None
-    predicted_age_range: str | None = None
-    gender_confidence: float | None = None
-    gender_confirmed_by_user: bool = False
-    has_audio_clip: bool = False
-    created_at: datetime | None = None
-
-    model_config = {"from_attributes": True}
-
-
 class GenderComposition(BaseModel):
     """Gender composition summary for a cluster."""
 
@@ -77,29 +55,6 @@ class SpeakerClusterResponse(SpeakerClusterBase):
 
 
 # --- Speaker Inbox ---
-
-
-class SpeakerInboxItem(BaseModel):
-    """Schema for an item in the unverified speakers inbox."""
-
-    speaker_uuid: UUID
-    speaker_name: str
-    display_name: str | None = None
-    suggested_name: str | None = None
-    suggestion_source: str | None = None
-    confidence: float | None = None
-    media_file_uuid: UUID | None = None
-    media_file_title: str | None = None
-    media_file_duration: float | None = None
-    cluster_uuid: UUID | None = None
-    cluster_label: str | None = None
-    cluster_member_count: int = 0
-    verified: bool = False
-    predicted_gender: str | None = None
-    predicted_age_range: str | None = None
-    created_at: datetime | None = None
-
-    model_config = {"from_attributes": True}
 
 
 # --- Batch Operations ---

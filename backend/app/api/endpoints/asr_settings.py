@@ -148,13 +148,6 @@ def _get_provider_catalog() -> dict:
         return {}
 
 
-def _get_asr_settings_model():
-    """Lazily import the UserASRSettings model."""
-    from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
-
-    return UserASRSettings
-
-
 def _create_asr_provider(
     provider: str,
     api_key: str | None,

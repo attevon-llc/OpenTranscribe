@@ -21,7 +21,7 @@ from tests.helpers import stub_public_dns
 def _public_media_host_dns(monkeypatch):
     """Let ``*.example.com`` resolve to a public address for this module.
 
-    Since audit finding A1, storing a media source resolves the hostname and refuses
+    Since the SSRF audit, storing a media source resolves the hostname and refuses
     non-public addresses — the old regex-and-blocklist validator accepted
     ``169.254.169.254``. RFC 2606 reserves ``example.com`` but its subdomains NXDOMAIN,
     so every hostname in this suite would otherwise be refused for "cannot resolve",
@@ -466,7 +466,7 @@ class TestMediaSourceCredentialSecurity:
 class TestMediaSourceHostnameValidation:
     """Hostname validation prevents SSRF at the endpoint.
 
-    Since audit finding A1 the judgement is made by ``utils/url_validation``, which
+    Since the SSRF audit the judgement is made by ``utils/url_validation``, which
     resolves the name and inspects every address. So the names below are refused for
     resolving to a private address (in a container or cluster) or for not resolving at
     all, rather than by the first-label blocklist that used to sit in the schema and

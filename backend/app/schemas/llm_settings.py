@@ -202,17 +202,6 @@ class UserLLMSettingsUpdate(BedrockCredentialFields):
         return v
 
 
-class UserLLMSettings(UserLLMSettingsBase, UUIDBaseSchema):
-    """Schema for returning user LLM settings with UUID"""
-
-    user_id: UUID
-    last_tested: datetime | None = None
-    test_status: ConnectionStatus | None = None
-    test_message: str | None = None
-    created_at: datetime
-    updated_at: datetime
-
-
 class UserLLMSettingsPublic(UUIDBaseSchema):
     """Public schema that excludes sensitive information"""
 

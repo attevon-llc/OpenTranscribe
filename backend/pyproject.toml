@@ -256,7 +256,6 @@ ignore_imports = [
   "app.utils.benchmark_timing -> app.models.media",  # upward import, function level: removal planned (layering)
   "app.utils.db_helpers -> app.api.deps_context",  # type-checking only: removal planned (layering)
   "app.utils.db_helpers -> app.models.media",  # upward import, module level: removal planned (layering)
-  "app.utils.db_helpers -> app.services.redis_cache_service",  # upward import, function level: removal planned (layering)
   "app.utils.file_hash -> app.models.media",  # upward import, function level: removal planned (layering)
   "app.utils.file_hash -> app.models.organization",  # upward import, function level: removal planned (layering)
   "app.utils.file_hash -> app.services.minio_service",  # upward import, function level: removal planned (layering)
@@ -321,7 +320,6 @@ allow_indirect_imports = true
 unmatched_ignore_imports_alerting = "error"
 ignore_imports = [
   "app.utils.db_helpers -> app.api.deps_context",  # type-checking only: removal planned (layering)
-  "app.utils.db_helpers -> app.services.redis_cache_service",  # upward import, function level: removal planned (layering)
   "app.utils.file_hash -> app.services.minio_service",  # upward import, function level: removal planned (layering)
   "app.utils.lite_mode -> app.services.pipeline_plan",  # upward import, function level: removal planned (layering)
   "app.utils.speaker_labels -> app.services.privacy.redact_view",  # upward import, function level: removal planned (layering)

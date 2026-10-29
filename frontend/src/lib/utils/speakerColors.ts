@@ -217,18 +217,6 @@ const speakerColors = [
 ];
 
 /**
- * Get speaker color for transcript segments
- * Uses speaker_label which now ALWAYS contains the original "SPEAKER_##" ID
- * @param segment - Transcript segment object
- * @returns Color object with bg, border, text colors
- */
-export function getSpeakerColorForSegment(segment: { speaker_label?: string | null }) {
-  // speaker_label now consistently contains the original ID like "SPEAKER_01"
-  const originalId = segment.speaker_label || 'Unknown';
-  return getSpeakerColor(originalId);
-}
-
-/**
  * Get speaker color based on speaker name using consistent hashing
  * Scales robustly to 30+ speakers with curated pleasant colors
  * Returns colors with CSS custom properties for theme awareness

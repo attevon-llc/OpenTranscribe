@@ -11,12 +11,12 @@ A live adversarial re-audit of that fix found two further defects in the same
 function, both reproduced live against a real OpenSearch index before being fixed
 here (see the PR/commit description for the measured hit counts):
 
-* **Finding 1 (regression #606 itself reintroduced)**: the multi-word decision was
+* **Problem 1 (regression #606 itself reintroduced)**: the multi-word decision was
   computed from a LENGTH-FILTERED word list (``len(w) >= 2``), so a genuinely
   multi-word query whose short token gets filtered out — ``"x exploration"`` — was
   scored as single-word and got the OR-fuzzy clause back, reopening the exact
   false-positive class #606 closed.
-* **Finding 2 (pre-existing, adjacent)**: removing the OR-fuzzy clause for multi-word
+* **Problem 2 (pre-existing, adjacent)**: removing the OR-fuzzy clause for multi-word
   queries silently deleted ALL typo tolerance for them (the docstring still claimed
   "Fuzzy match: Handles typos" for every query). A second, ADDITIVE clause with
   ``operator: "and"`` restores it without reopening #606: every term must fuzzily
@@ -92,7 +92,7 @@ class TestSingleWordUnaffected:
 
 
 class TestMultiWordWordCountIsRaw:
-    """Finding 1: the multi-word decision must use the RAW split, not a
+    """Problem 1: the multi-word decision must use the RAW split, not a
     length-filtered one — a query with a short token is still multi-word.
     """
 
@@ -133,7 +133,7 @@ class TestMultiWordWordCountIsRaw:
 
 
 class TestMultiWordAndFuzzyIsAdditive:
-    """Finding 2: multi-word typo tolerance is restored via a SECOND clause,
+    """Problem 2: multi-word typo tolerance is restored via a SECOND clause,
     added alongside cross-field/phrase, never replacing them.
     """
 

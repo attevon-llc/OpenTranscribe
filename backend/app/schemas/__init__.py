@@ -59,7 +59,6 @@ from .llm_settings import ReasoningCapability
 from .llm_settings import SetActiveConfigRequest
 from .llm_settings import SupportedProvidersResponse
 from .llm_settings import UserLLMConfigurationsList
-from .llm_settings import UserLLMSettings
 from .llm_settings import UserLLMSettingsCreate
 from .llm_settings import UserLLMSettingsPublic
 from .llm_settings import UserLLMSettingsUpdate
@@ -156,7 +155,6 @@ __all__ = [
     "SharedPromptLibrary",
     "LLMProvider",
     "ConnectionStatus",
-    "UserLLMSettings",
     "UserLLMSettingsCreate",
     "UserLLMSettingsUpdate",
     "UserLLMSettingsPublic",

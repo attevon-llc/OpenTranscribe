@@ -1,4 +1,4 @@
-"""W2.1: the scope map decouples from the ranked digest leg.
+"""The scope map decouples from the ranked digest leg.
 
 The bug: `_prepare_context` used to run `scope_digest_hits` (the map over
 `file_facts`, one entry per file in scope) ONLY when `result.digests` — the

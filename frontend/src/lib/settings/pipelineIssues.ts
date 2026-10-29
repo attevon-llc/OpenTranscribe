@@ -110,7 +110,7 @@ export function pipelineErrorCode(err: unknown): string | null {
  * Null when the refusal carries no code this build knows, so the caller shows its generic
  * message: raw server text is never rendered.
  */
-export function pipelineRefusalKey(err: unknown): string | null {
+function pipelineRefusalKey(err: unknown): string | null {
   const code = pipelineErrorCode(err);
   if (code === null) return null;
   if (isPipelineIssueCode(code)) return issueKey(code);

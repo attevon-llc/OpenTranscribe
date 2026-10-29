@@ -3,7 +3,7 @@
  * passes it. This finds those copies (issue #1234): a value in a non-English locale that is
  * identical to English, long enough to be prose, and not allowlisted with a written reason.
  */
-export const MIN_PROSE_LENGTH = 25;
+const MIN_PROSE_LENGTH = 25;
 
 /** Keys whose value is legitimately the same in every language, each with the reason. */
 export const SAME_IN_EVERY_LANGUAGE: Record<string, string> = {

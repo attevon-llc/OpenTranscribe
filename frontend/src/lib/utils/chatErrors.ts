@@ -20,7 +20,7 @@ const CHAT_ERROR_CODE_SET: Record<ChatErrorCode, true> = {
 
 export const CHAT_ERROR_CODES = Object.keys(CHAT_ERROR_CODE_SET) as ChatErrorCode[];
 
-export function isChatErrorCode(value: unknown): value is ChatErrorCode {
+function isChatErrorCode(value: unknown): value is ChatErrorCode {
   return (
     typeof value === 'string' && Object.prototype.hasOwnProperty.call(CHAT_ERROR_CODE_SET, value)
   );

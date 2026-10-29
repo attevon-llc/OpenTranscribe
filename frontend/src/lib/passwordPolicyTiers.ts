@@ -10,7 +10,7 @@ export const PASSWORD_TIERS = ['basic', 'standard', 'hardened', 'custom'] as con
 export type PasswordTier = (typeof PASSWORD_TIERS)[number];
 
 /** Tiers whose rules are fixed; the individual values below are then ignored. */
-export const PRESET_TIERS: readonly PasswordTier[] = ['basic', 'standard'];
+const PRESET_TIERS: readonly PasswordTier[] = ['basic', 'standard'];
 
 /** The single-factor / MFA minimums of the presets (NIST SP 800-63B-4 for `standard`). */
 const BASIC_MIN = 8;

@@ -78,7 +78,7 @@ for (const [name, definition] of Object.entries(LANGUAGES)) {
 const LANGUAGE_ALIASES: Record<string, string> = { 'c++': 'cpp', 'c#': 'csharp' };
 
 /** The fence's info-string language, normalised to something safe for a class name. */
-export function fenceLanguage(info: string | undefined): string {
+function fenceLanguage(info: string | undefined): string {
   const first = (info ?? '').trim().split(/\s+/)[0].toLowerCase();
   const aliased = LANGUAGE_ALIASES[first] ?? first;
   return aliased.replace(/[^\w-]/g, '');

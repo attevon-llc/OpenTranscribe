@@ -33,7 +33,17 @@ start_stack_or_die() {
     # REPORT_DIR is run-dev-tests.sh's per-run mktemp dir, so this lands beside the phase
     # logs. Falls back to $TMPDIR for any other caller of this library.
     local log="${REPORT_DIR:-${TMPDIR:-/tmp}}/${logname}.log"
-    if "$REPO_ROOT/opentr.sh" start dev "$@" >"$log" 2>&1; then
+    # A stack that runs under an `otfresh-<name>` project IS an isolated --fresh deployment. A bare
+    # `opentr.sh start dev --with-X` would recreate its services under the STOCK names with the NAS
+    # overlay auto-loaded, i.e. attached to the LIVE data directories (observed 2026-10-29: a
+    # release `test` run recreated a fresh stack's services on /mnt/nvm/opentranscribe/pg). Keep
+    # the overlay start inside the same fresh deployment.
+    local fresh_args=() project
+    project="$(compose_project_name 2>/dev/null || true)"
+    case "$project" in
+        otfresh-?*) fresh_args=(--fresh "${project#otfresh-}") ;;
+    esac
+    if "$REPO_ROOT/opentr.sh" start dev ${fresh_args[@]+"${fresh_args[@]}"} "$@" >"$log" 2>&1; then
         return 0
     fi
     echo -e "${RED}error:${NC} failed to bring up ${what}" >&2

@@ -61,7 +61,7 @@ branch_labels = None
 depends_on = None
 
 #: The auth types the database will accept after this revision. A superset of
-#: ``app.auth.constants.VALID_AUTH_TYPES`` by design — see the module docstring.
+#: ``app.core.auth_types.VALID_AUTH_TYPES`` by design — see the module docstring.
 VALID_AUTH_TYPES_SQL = "'local', 'ldap', 'oidc', 'pki', 'proxy'"
 
 #: Guarded renames. ``ALTER TABLE ... RENAME COLUMN`` has no ``IF EXISTS`` form, so

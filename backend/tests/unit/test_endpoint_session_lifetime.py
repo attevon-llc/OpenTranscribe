@@ -165,9 +165,9 @@ def _ctx(user):
 
 def _deployment_ctx(user):
     """A real context whose bypass holds the deployment-scope right (single-tenant admin)."""
-    from app.api.deps_context import RequestContext
     from app.services.platform_access import TenancyMode
     from app.services.platform_bypass import PlatformBypass
+    from app.services.request_context import RequestContext
 
     return RequestContext(
         user=user,

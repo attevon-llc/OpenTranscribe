@@ -11,7 +11,6 @@ from fastapi import Query
 from fastapi import status
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
@@ -31,6 +30,7 @@ from app.services.playback_rendition import resolve_playback
 from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import hide_machine_identities
 from app.services.privacy.redact_view import require_voiceprints
+from app.services.request_context import RequestContext
 from app.services.speaker_cleanup import SpeakerImpact
 from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact

@@ -20,7 +20,6 @@ from fastapi import Query
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 
@@ -62,6 +61,7 @@ from app.schemas.watch_source import WatchSourceStats
 from app.schemas.watch_source import WatchSourceUpdate
 from app.services.auth_mail_config_service import IN_USE_MESSAGE
 from app.services.auth_mail_config_service import is_designated
+from app.services.request_context import RequestContext
 from app.utils.encryption import encrypt_api_key
 
 logger = logging.getLogger(__name__)

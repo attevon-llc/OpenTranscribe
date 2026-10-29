@@ -18,10 +18,10 @@ import uuid as uuid_pkg
 
 import pytest
 
-from app.api.deps_context import RequestContext
 from app.models.media import MediaFile
 from app.schemas.chat import ChatScope
 from app.services.chat.context_resolver import resolve_scope_file_uuids
+from app.services.request_context import RequestContext
 
 pytestmark = pytest.mark.unit
 

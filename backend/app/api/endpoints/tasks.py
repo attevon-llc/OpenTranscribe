@@ -24,7 +24,6 @@ from sqlalchemy import Row
 from sqlalchemy import true
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
@@ -41,17 +40,18 @@ from app.schemas.media import Task
 from app.services import system_settings_service
 from app.services.permission_service import org_scope_pred
 from app.services.platform_bypass import PlatformBypass
+from app.services.request_context import RequestContext
 from app.services.takedown_service import exclude_quarantined
 from app.services.task_detection_service import task_detection_service
 from app.services.task_filtering_service import TaskFilteringService
 from app.services.task_recovery_service import task_recovery_service
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
+from app.services.uuid_helpers import get_user_by_uuid
 from app.utils.db_helpers import owned_in_tenant
 from app.utils.task_utils import TASK_STATUS_COMPLETED
 from app.utils.task_utils import TASK_STATUS_FAILED
 from app.utils.task_utils import TASK_STATUS_IN_PROGRESS
 from app.utils.task_utils import TASK_STATUS_PENDING
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
-from app.utils.uuid_helpers import get_user_by_uuid
 
 logger = logging.getLogger(__name__)
 

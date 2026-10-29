@@ -22,7 +22,6 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app import schemas
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.auth.audit import AuditEventType
@@ -33,10 +32,11 @@ from app.db.base import get_db
 from app.middleware.audit import get_request_context
 from app.services.platform_access import TenancyMode
 from app.services.platform_access import tenancy_mode
+from app.services.request_context import RequestContext
+from app.services.uuid_helpers import get_prompt_by_uuid
 from app.utils.pagination import paginate
 from app.utils.tenant_sharing import owner_in_tenant
 from app.utils.tenant_sharing import shared_visible_in_tenant
-from app.utils.uuid_helpers import get_prompt_by_uuid
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

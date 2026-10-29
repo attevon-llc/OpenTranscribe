@@ -9,8 +9,8 @@ from pydantic import computed_field
 from pydantic import field_validator
 from pydantic import model_validator
 
-from app.auth.constants import AUTH_TYPE_LOCAL
-from app.auth.constants import VALID_AUTH_TYPES
+from app.core.auth_types import AUTH_TYPE_LOCAL
+from app.core.auth_types import VALID_AUTH_TYPES
 from app.schemas.base import UUIDBaseSchema
 
 

@@ -24,7 +24,6 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app import schemas
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.pipeline_settings import plan_issues_out
@@ -37,6 +36,7 @@ from app.services import asr_provider_policy
 from app.services.asr_switch_plan import SwitchOutcome
 from app.services.asr_switch_plan import assess_asr_switch
 from app.services.pipeline_plan_inputs import plan_for_user
+from app.services.request_context import RequestContext
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
 from app.utils.encryption import test_encryption

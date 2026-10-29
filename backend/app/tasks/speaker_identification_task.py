@@ -473,9 +473,9 @@ def _load_identification_inputs(file_uuid: str, task_id: str) -> dict[str, Any]:
     """
     from sqlalchemy.orm import joinedload
 
+    from app.services.uuid_helpers import get_file_by_uuid
     from app.utils.task_utils import create_task_record
     from app.utils.task_utils import update_task_status
-    from app.utils.uuid_helpers import get_file_by_uuid
 
     with session_scope() as db:
         media_file = get_file_by_uuid(db, file_uuid)

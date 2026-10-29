@@ -40,7 +40,7 @@ from app.services.takedown_service import exclude_quarantined
 from app.services.takedown_service import is_hidden_for
 from app.services.takedown_service import quarantine_file
 from app.services.takedown_service import release_file
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
 
 def _mk_user(db, *, admin: bool = False) -> User:

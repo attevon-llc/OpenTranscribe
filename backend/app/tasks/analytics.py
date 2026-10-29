@@ -27,7 +27,7 @@ def analyze_transcript_task(self, file_uuid: str):
     Args:
         file_uuid: UUID of the MediaFile to analyze
     """
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     task_id = self.request.id
     file_id = None

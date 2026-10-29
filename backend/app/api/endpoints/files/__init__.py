@@ -31,7 +31,6 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
@@ -64,6 +63,7 @@ from app.services.delete_permissions import can_delete_file
 from app.services.formatting_service import FormattingService
 from app.services.playback_rendition import resolve_playback
 from app.services.privacy.redact_view import PrivacyView
+from app.services.request_context import RequestContext
 from app.utils.error_handlers import ErrorHandler
 from app.utils.media_types import normalize_media_content_type
 from app.utils.whisper_model_choice import require_servable_whisper_model
@@ -593,7 +593,7 @@ def get_media_file_info(
     Returns core identity, status, and technical metadata fields only.
     Useful for integrations that need file context without heavy payloads.
     """
-    from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+    from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
     current_user = ctx.user
     media_file = get_file_by_uuid_with_permission(
@@ -1201,7 +1201,7 @@ def get_thumbnail(
     file listing response. This endpoint is a fallback for direct access.
     """
     from app.services.takedown_service import is_hidden_for
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     db_file = get_file_by_uuid(db, file_uuid)
     validate_file_exists(db_file)

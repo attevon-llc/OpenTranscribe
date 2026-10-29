@@ -11,7 +11,6 @@ from fastapi import Response
 from fastapi import status
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
@@ -20,9 +19,7 @@ from app.auth.account_linking import emails_agree
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
-from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
-from app.auth.constants import VALID_AUTH_TYPES
 from app.auth.email_verification import email_verification_required
 from app.auth.email_verification import issue_verification_token
 from app.auth.password_history import add_password_to_history
@@ -38,6 +35,8 @@ from app.auth.roles import VALID_ROLES
 from app.auth.roles import role_implies_superuser
 from app.auth.utils import local_password_allowed
 from app.auth.utils import mask_email_for_display
+from app.core.auth_types import AUTH_TYPE_LOCAL
+from app.core.auth_types import VALID_AUTH_TYPES
 from app.core.security import get_password_hash
 from app.core.security import verify_password
 from app.db.base import get_db
@@ -58,7 +57,8 @@ from app.services.account_security_service import enforce_password_policy
 from app.services.account_security_service import notify_email_changed
 from app.services.account_security_service import reissue_current_session
 from app.services.account_security_service import revoke_all_sessions
-from app.utils.uuid_helpers import get_user_by_uuid
+from app.services.request_context import RequestContext
+from app.services.uuid_helpers import get_user_by_uuid
 
 logger = logging.getLogger(__name__)
 

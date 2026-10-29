@@ -28,7 +28,6 @@ from fastapi import Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
@@ -36,6 +35,7 @@ from app.models.user import User
 from app.services.captions import build_caption_track
 from app.services.captions import to_webvtt
 from app.services.captions.source import load_caption_segments
+from app.services.request_context import RequestContext
 
 from .crud import _redaction_pending
 from .crud import _resolve_redaction_for_request

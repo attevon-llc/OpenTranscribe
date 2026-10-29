@@ -3,12 +3,12 @@
 import logging
 from datetime import datetime
 
-from app.auth.constants import AUTH_TYPE_OIDC
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.oidc.claims import OIDCUserData
 from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import role_implies_superuser
+from app.core.auth_types import AUTH_TYPE_OIDC
 
 logger = logging.getLogger(__name__)
 
@@ -232,9 +232,9 @@ def sync_oidc_user_to_db(db, oidc_data: OIDCUserData, cfg=None):
     """
     from app.auth.account_linking import assert_email_link_permitted
     from app.auth.account_linking import assert_provider_id_link_permitted
-    from app.auth.constants import AUTH_TYPE_LOCAL
     from app.auth.oidc.admission import assert_oidc_admission_permitted
     from app.auth.oidc.config import OIDCConfig
+    from app.core.auth_types import AUTH_TYPE_LOCAL
     from app.models.group import MAPPING_SOURCE_OIDC
     from app.models.user import User
     from app.services.idp_group_mapping_service import reconcile_user

@@ -20,7 +20,6 @@ This directory contains small, low-dependency helpers shared by endpoints, servi
 utils/
 ├── Database, identity and access
 │   ├── db_helpers.py           # Query builders, get_or_create, tenant scoping (apply_tenant_scope)
-│   ├── uuid_helpers.py         # Hybrid-ID lookup + the permission chokepoint (get_file_by_uuid_with_permission)
 │   ├── uuid7.py                # RFC 9562 UUIDv7 generator (the default= for every model uuid column)
 │   ├── pagination.py           # paginate(): count + offset + limit in one call
 │   ├── tenant_sharing.py       # Tenant gates for per-user items shared "with everyone"
@@ -50,7 +49,7 @@ utils/
 │   └── whisper_model_choice.py, lite_mode.py      # Per-file Whisper model rules; lite-deployment refusals
 ├── Files and media
 │   ├── file_validation.py, file_hash.py, filename.py, media_types.py, content_disposition.py
-│   ├── thumbnail.py, url_validation.py            # Thumbnails; SSRF-safe URL validation
+│   ├── url_validation.py                          # SSRF-safe URL validation
 │   └── csv_safe.py                                # Spreadsheet-formula neutralization for CSV exports
 ├── Hardware and models
 │   ├── hardware_detection.py   # CUDA/MPS/CPU authority; resolve_cuda_device_index
@@ -72,14 +71,14 @@ Shared transcript-building functions used across tasks and services, so formatti
 
 Import from here rather than reimplementing formatting. Export formats (SRT, VTT, TXT, JSON, CSV, Markdown) live in `services/transcript_export_*.py` and `services/captions/`.
 
-## Authorization (`uuid_helpers.py`, `db_helpers.py`)
+## Authorization (`services/uuid_helpers.py`, `db_helpers.py`)
 
 ### Purpose
 Resource-level authorization. There are **no authorization decorators**; the `auth_decorators.py` module that used to live here was deleted in issue #450 (unreferenced by any route, and silently bypassed by positional calls). Do not reintroduce that shape. Authorization is a FastAPI dependency or an explicit call.
 
 ```python
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
-from app.utils.uuid_helpers import require_resource_owner
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
+from app.services.uuid_helpers import require_resource_owner
 from app.utils.db_helpers import apply_tenant_scope
 
 

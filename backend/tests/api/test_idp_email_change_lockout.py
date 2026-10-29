@@ -59,9 +59,9 @@ import pytest
 from fastapi import HTTPException
 from fastapi import status
 
-from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.oidc.claims import OIDCUserData
 from app.auth.oidc.provisioning import sync_oidc_user_to_db
+from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.core.security import get_password_hash
 from app.models.user import User
 

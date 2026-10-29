@@ -18,11 +18,11 @@ from app.api.endpoints.auth.local_auth_gate import local_auth_enabled
 from app.auth.approval import initial_approval_status
 from app.auth.audit import AuditEventType
 from app.auth.audit import audit_logger
-from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.password_history import add_password_to_history
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
 from app.core.auth_settings import get_auth_settings
+from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.core.security import get_password_hash
 from app.db.base import get_db
 from app.models.user import User

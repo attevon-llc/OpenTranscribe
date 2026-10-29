@@ -13,13 +13,13 @@ import logging
 from fastapi import HTTPException
 from fastapi import status
 
-from app.auth.constants import AUTH_TYPE_PROXY
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.proxy.assertion import REFUSAL_DETAIL
 from app.auth.proxy.assertion import ProxyAssertion
 from app.auth.proxy.config import ProxyConfig
 from app.auth.roles import ROLE_USER
 from app.auth.roles import role_implies_superuser
+from app.core.auth_types import AUTH_TYPE_PROXY
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +127,7 @@ def sync_proxy_user_to_db(db, assertion: ProxyAssertion, cfg: ProxyConfig):
             account-existence oracle.
     """
     from app.auth.account_linking import assert_email_link_permitted
-    from app.auth.constants import AUTH_TYPE_LOCAL
+    from app.core.auth_types import AUTH_TYPE_LOCAL
     from app.models.group import MAPPING_SOURCE_PROXY
     from app.models.user import User
     from app.services.idp_group_mapping_service import reconcile_user

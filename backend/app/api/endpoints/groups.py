@@ -13,7 +13,6 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
@@ -34,9 +33,10 @@ from app.schemas.group import GroupMemberUpdate
 from app.schemas.group import GroupUpdate
 from app.schemas.user import UserBrief
 from app.services.group_file_index_service import reindex_group_shared_files
+from app.services.request_context import RequestContext
+from app.services.uuid_helpers import get_by_uuid
+from app.services.uuid_helpers import require_resource_owner
 from app.utils.tenant_sharing import user_in_tenant
-from app.utils.uuid_helpers import get_by_uuid
-from app.utils.uuid_helpers import require_resource_owner
 from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)

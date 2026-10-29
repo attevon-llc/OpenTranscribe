@@ -24,10 +24,10 @@ from app.services.platform_access import reset_tenancy_mode_cache
 from app.services.platform_bypass import PlatformBypass
 from app.services.platform_bypass import audit_metadata_access
 from app.services.platform_bypass import build_bypass
-from app.utils.uuid_helpers import get_collection_by_uuid_with_permission
-from app.utils.uuid_helpers import get_collection_by_uuid_with_sharing
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
-from app.utils.uuid_helpers import require_resource_owner
+from app.services.uuid_helpers import get_collection_by_uuid_with_permission
+from app.services.uuid_helpers import get_collection_by_uuid_with_sharing
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
+from app.services.uuid_helpers import require_resource_owner
 
 _AUDIT = "app.auth.audit.audit_logger.log"
 
@@ -85,7 +85,7 @@ def test_none_allows_nothing_and_exposes_no_reach(admin_user, normal_user, db_se
 
 
 def test_a_hand_built_context_fails_closed(admin_user):
-    from app.api.deps_context import RequestContext
+    from app.services.request_context import RequestContext
 
     ctx = RequestContext(user=admin_user)
     assert ctx.bypass == PlatformBypass.none()

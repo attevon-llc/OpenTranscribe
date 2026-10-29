@@ -10,7 +10,7 @@
     if not media_file:
         return False
 
--- but ``get_file_by_uuid`` (``app/utils/uuid_helpers.py``) raises
+-- but ``get_file_by_uuid`` (``app/services/uuid_helpers.py``) raises
 ``fastapi.HTTPException(404)`` on a missing row and ``HTTPException(400)`` on a
 malformed UUID string; it never returns a falsy value. The ``if not media_file``
 branch was dead code, and a missing/malformed ``file_uuid`` raised an uncaught

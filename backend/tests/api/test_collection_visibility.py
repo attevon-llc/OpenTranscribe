@@ -180,8 +180,8 @@ def test_search_with_hidden_collection_id_returns_nothing(gov, restricted):
 
 
 def test_chat_scope_refuses_restricted_collection_for_unnamed_member(gov, restricted):
-    from app.api.deps_context import RequestContext
     from app.services.chat.context_resolver import _resolve_collections
+    from app.services.request_context import RequestContext
 
     def scope(user, role="org:member"):
         ctx = RequestContext(user=user, org_id=gov.org.id, org_role=role)
@@ -266,8 +266,8 @@ def test_org_grant_cannot_see_restricted_collection(gov, restricted, db_session)
 
     from app.services.platform_access import TenancyMode
     from app.services.platform_bypass import PlatformBypass
-    from app.utils.uuid_helpers import get_collection_by_uuid_with_permission
-    from app.utils.uuid_helpers import get_collection_by_uuid_with_sharing
+    from app.services.uuid_helpers import get_collection_by_uuid_with_permission
+    from app.services.uuid_helpers import get_collection_by_uuid_with_sharing
 
     staff = gov.user("staff")
     staff.role = "admin"

@@ -176,10 +176,10 @@ def test_create_source_stamps_request_org(client, user_token_headers, normal_use
     background import is stamped with it (never a first-membership guess)."""
     import uuid as uuid_pkg
 
-    from app.api.deps_context import RequestContext
     from app.api.deps_context import get_current_context
     from app.main import app
     from app.models.organization import Organization
+    from app.services.request_context import RequestContext
 
     org = Organization(
         external_org_id=f"org_{uuid_pkg.uuid4().hex[:8]}", name="Watch Org", is_active=True

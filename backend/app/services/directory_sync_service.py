@@ -52,7 +52,6 @@ from sqlalchemy.orm import Session
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
-from app.auth.constants import AUTH_TYPE_LDAP
 from app.auth.ldap_auth import DIRECTORY_ABSENT
 from app.auth.ldap_auth import DIRECTORY_DISABLED
 from app.auth.ldap_auth import DIRECTORY_NOT_ENTITLED
@@ -64,6 +63,7 @@ from app.auth.ldap_auth import ldap_directory_session
 from app.auth.ldap_auth import probe_ldap_user
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.core import constants as C  # noqa: N812
+from app.core.auth_types import AUTH_TYPE_LDAP
 from app.models.group import MAPPING_SOURCE_LDAP
 from app.models.user import User
 from app.services import system_settings_service as sss

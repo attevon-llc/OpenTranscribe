@@ -28,9 +28,9 @@ from fastapi import HTTPException
 from joserfc import jwt
 from joserfc.jwk import OctKey
 
-from app.auth.constants import TOKEN_TYPE_ACCESS
-from app.auth.constants import TOKEN_TYPE_REFRESH
 from app.core import security
+from app.core.auth_types import TOKEN_TYPE_ACCESS
+from app.core.auth_types import TOKEN_TYPE_REFRESH
 from app.core.config import settings
 
 

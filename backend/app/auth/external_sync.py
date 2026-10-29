@@ -164,7 +164,7 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
     # core function). Bound the label to the fixed core provider set so the
     # cardinality stays in {local,ldap,oidc,pki}; anything else maps to
     # "external".
-    from app.auth.constants import VALID_AUTH_TYPES
+    from app.core.auth_types import VALID_AUTH_TYPES
     from app.core.metrics import user_signups_total
 
     method = identity.provider if identity.provider in VALID_AUTH_TYPES else "external"

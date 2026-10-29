@@ -264,11 +264,11 @@ def test_an_unknown_auth_type_is_still_rejected(db_session):
 
 def test_local_password_rules_are_unchanged_for_the_renamed_type():
     """``pki`` and ``oidc`` may fall back to a local password; ``ldap`` never may."""
-    from app.auth.constants import AUTH_TYPE_LDAP
-    from app.auth.constants import AUTH_TYPE_OIDC
-    from app.auth.constants import AUTH_TYPE_PKI
     from app.auth.constants import AUTH_TYPES_NO_LOCAL_FALLBACK
     from app.auth.constants import AUTH_TYPES_SUPPORT_LOCAL_FALLBACK
+    from app.core.auth_types import AUTH_TYPE_LDAP
+    from app.core.auth_types import AUTH_TYPE_OIDC
+    from app.core.auth_types import AUTH_TYPE_PKI
 
     assert AUTH_TYPE_OIDC in AUTH_TYPES_SUPPORT_LOCAL_FALLBACK
     assert AUTH_TYPE_PKI in AUTH_TYPES_SUPPORT_LOCAL_FALLBACK
@@ -284,7 +284,7 @@ def test_the_mfa_bypass_still_recognises_the_renamed_type():
     branch — which is the failure mode v377 exists to prevent.
     """
     from app.api.endpoints.auth import mfa_tokens
-    from app.auth.constants import AUTH_TYPE_OIDC
+    from app.core.auth_types import AUTH_TYPE_OIDC
 
     source = mfa_tokens.__file__
     assert Path(source).read_text().count("AUTH_TYPE_OIDC") >= 2

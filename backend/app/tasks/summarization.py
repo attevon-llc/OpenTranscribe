@@ -379,9 +379,9 @@ def _load_summarization_inputs(
         RedactionNotReadyError: Detection has not cached spans yet; the caller
             defers the task.
     """
+    from app.services.uuid_helpers import get_file_by_uuid
     from app.utils.task_utils import create_task_record
     from app.utils.task_utils import update_task_status
-    from app.utils.uuid_helpers import get_file_by_uuid
 
     with session_scope() as db:
         media_file = get_file_by_uuid(db, file_uuid)
@@ -641,8 +641,8 @@ def _handle_task_error(
     e: Exception, file_uuid: str, file_id: int | None, task_id: str
 ) -> dict[str, Any]:
     """Handle task-level errors in a short session of its own."""
+    from app.services.uuid_helpers import get_file_by_uuid
     from app.utils.task_utils import update_task_status
-    from app.utils.uuid_helpers import get_file_by_uuid
 
     error_type = type(e).__name__
     error_msg = str(e)

@@ -35,7 +35,6 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import aliased
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import require_org_admin
 from app.auth.audit import AuditEventType
 from app.auth.rate_limit import limiter
@@ -51,6 +50,7 @@ from app.schemas.org_takedown import OrgQuarantinedFile
 from app.schemas.org_takedown import OrgQuarantinedFilesList
 from app.schemas.org_takedown import OrgQuarantineRequest
 from app.schemas.org_takedown import OrgReleaseRequest
+from app.services.request_context import RequestContext
 from app.services.takedown_authority import CODE_NOT_FOUND
 from app.services.takedown_authority import current_origin
 from app.services.takedown_notices import audit_unresolved_lookup

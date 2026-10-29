@@ -60,7 +60,7 @@ class TestPrepareFileDistinguishesSkipFromFailure:
 
         monkeypatch.setattr(pipeline_mod, "session_scope", lambda: _FakeSessionCtx(db))
         monkeypatch.setattr(
-            "app.utils.uuid_helpers.get_file_by_uuid", lambda db_arg, uuid: media_file
+            "app.services.uuid_helpers.get_file_by_uuid", lambda db_arg, uuid: media_file
         )
 
         with pytest.raises(pipeline_mod.PermanentFileError):
@@ -75,7 +75,7 @@ class TestPrepareFileDistinguishesSkipFromFailure:
 
         monkeypatch.setattr(pipeline_mod, "session_scope", lambda: _FakeSessionCtx(db))
         monkeypatch.setattr(
-            "app.utils.uuid_helpers.get_file_by_uuid", lambda db_arg, uuid: media_file
+            "app.services.uuid_helpers.get_file_by_uuid", lambda db_arg, uuid: media_file
         )
 
         fake_minio = MagicMock()
@@ -91,7 +91,7 @@ class TestPrepareFileDistinguishesSkipFromFailure:
 
         monkeypatch.setattr(pipeline_mod, "session_scope", lambda: _FakeSessionCtx(db))
         monkeypatch.setattr(
-            "app.utils.uuid_helpers.get_file_by_uuid", lambda db_arg, uuid: media_file
+            "app.services.uuid_helpers.get_file_by_uuid", lambda db_arg, uuid: media_file
         )
 
         assert pipeline_mod.prepare_file("file-uuid-1") is None

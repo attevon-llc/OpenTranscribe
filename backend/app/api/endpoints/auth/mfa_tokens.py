@@ -33,14 +33,14 @@ from joserfc.jwk import OctKey
 from joserfc.jwt import JWTClaimsRegistry
 from sqlalchemy.orm import Session
 
-from app.auth.constants import AUTH_TYPE_OIDC
-from app.auth.constants import AUTH_TYPE_PKI
-from app.auth.constants import TOKEN_TYPE_MFA
-from app.auth.constants import VALID_AUTH_TYPES
 from app.auth.mfa import MFAService
 from app.auth.mfa_policy import mfa_required_for_user
 from app.auth.session import get_redis_client
 from app.core.auth_settings import get_auth_settings
+from app.core.auth_types import AUTH_TYPE_OIDC
+from app.core.auth_types import AUTH_TYPE_PKI
+from app.core.auth_types import TOKEN_TYPE_MFA
+from app.core.auth_types import VALID_AUTH_TYPES
 from app.core.config import settings
 from app.models.user import User
 from app.models.user_mfa import UserMFA

@@ -11,8 +11,6 @@ from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy.orm import Session
 
-from app.auth.constants import AUTH_TYPE_LOCAL
-from app.auth.constants import AUTH_TYPE_PKI
 from app.auth.direct_auth import direct_authenticate_user
 from app.auth.email_verification import assert_email_verified_for_local_login
 from app.auth.ldap_auth import ldap_authenticate
@@ -20,6 +18,8 @@ from app.auth.ldap_auth import sync_ldap_user_to_db
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.utils import mask_identifier
 from app.core.auth_settings import get_auth_settings
+from app.core.auth_types import AUTH_TYPE_LOCAL
+from app.core.auth_types import AUTH_TYPE_PKI
 from app.core.security import authenticate_user
 from app.models.user import User
 

@@ -13,7 +13,6 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.files.upload import create_media_file_record
@@ -27,6 +26,7 @@ from app.models.upload_batch import UploadBatch
 from app.models.user import User
 from app.schemas.media import PrepareUploadRequest
 from app.services.collection_visibility import usable_collections
+from app.services.request_context import RequestContext
 from app.services.tag_service import on_tags_changed
 from app.services.tag_service import resolve_or_create_tags
 from app.utils import benchmark_timing

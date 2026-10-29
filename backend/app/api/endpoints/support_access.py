@@ -25,7 +25,6 @@ from fastapi import Response
 from fastapi import status
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_base_context
 from app.api.deps_context import require_org_admin
 from app.api.endpoints.auth import get_current_active_user
@@ -49,6 +48,7 @@ from app.schemas.support_access import UsePage
 from app.services import support_access_lifecycle as lifecycle
 from app.services.platform_access import TenancyMode
 from app.services.platform_access import tenancy_mode
+from app.services.request_context import RequestContext
 from app.services.support_access_queries import find_grant
 from app.services.support_access_queries import list_grants
 from app.services.support_access_queries import list_uses

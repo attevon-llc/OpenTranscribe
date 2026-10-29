@@ -46,8 +46,8 @@ import time
 import pytest
 from fastapi import HTTPException
 
-from app.auth.constants import TOKEN_TYPE_ACCESS
-from app.auth.constants import TOKEN_TYPE_MFA
+from app.core.auth_types import TOKEN_TYPE_ACCESS
+from app.core.auth_types import TOKEN_TYPE_MFA
 from app.core.config import settings
 from app.core.security import verify_token
 from tests.jwt_compat import jwt

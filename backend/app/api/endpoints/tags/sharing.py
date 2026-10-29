@@ -11,7 +11,6 @@ from fastapi import Request
 from fastapi import status
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
@@ -31,12 +30,13 @@ from app.models.sharing import TagShare
 from app.models.user import User
 from app.schemas.media import TagShareCreate
 from app.schemas.media import TagShareTarget
+from app.services.request_context import RequestContext
 from app.services.tag_service import on_tags_changed
 from app.services.tag_sharing import TagShareError
 from app.services.tag_sharing import list_shares
 from app.services.tag_sharing import revoke_share
 from app.services.tag_sharing import share_tag
-from app.utils.uuid_helpers import get_by_uuid
+from app.services.uuid_helpers import get_by_uuid
 
 
 def _audit_tag_share(

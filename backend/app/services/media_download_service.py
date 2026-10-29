@@ -33,7 +33,7 @@ from app.services.minio_service import upload_file
 from app.services.minio_service import upload_file_tuned
 from app.services.protected_media_providers import PROTECTED_MEDIA_PROVIDERS
 from app.services.protected_media_providers import ProtectedMediaProvider
-from app.utils.thumbnail import generate_and_upload_thumbnail
+from app.services.thumbnail import generate_and_upload_thumbnail
 from app.utils.url_validation import is_safe_url
 
 logger = logging.getLogger(__name__)

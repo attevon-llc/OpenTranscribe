@@ -82,5 +82,5 @@ backend/app/utils/hf_hub_offline.py	1	env: single reader planned
 backend/app/utils/nltk_offline.py	2	env: single reader planned
 backend/app/utils/scratch_volume.py	2	env: single reader planned
 backend/app/utils/task_utils.py	3	env: single reader planned
-backend/app/utils/thumbnail.py	1	env: single reader planned
+backend/app/services/thumbnail.py	1	env: single reader planned
 backend/app/utils/vram_profiler.py	1	env: single reader planned

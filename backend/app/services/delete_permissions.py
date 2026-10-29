@@ -115,8 +115,8 @@ def get_deletable_file(
     refused like anyone else.
     """
     from app.services.takedown_service import is_hidden_for
-    from app.utils.uuid_helpers import _resource_in_tenant_scope
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import _resource_in_tenant_scope
+    from app.services.uuid_helpers import get_file_by_uuid
 
     file = get_file_by_uuid(db, file_uuid)
 

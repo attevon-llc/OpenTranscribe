@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import uuid as uuid_pkg
 
-from app.api.deps_context import RequestContext
 from app.models.media import Collection
 from app.models.media import CollectionMember
 from app.models.media import MediaFile
@@ -34,6 +33,7 @@ from app.schemas.chat import ChatScope
 from app.services.chat.context_resolver import count_scope_files
 from app.services.chat.context_resolver import resolve_scope_file_uuids
 from app.services.permission_service import PermissionService
+from app.services.request_context import RequestContext
 
 
 def _ctx(user, org_id=None) -> RequestContext:

@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import uuid as uuid_pkg
 
-from app.api.deps_context import RequestContext
 from app.models.file_facts import FileFacts
 from app.models.media import Collection
 from app.models.media import CollectionMember
@@ -32,6 +31,7 @@ from app.services.chat.context_resolver import resolve_scope_file_uuids
 from app.services.chat.mapreduce import build_file_summaries
 from app.services.chat.mapreduce import build_overview
 from app.services.chat.mapreduce import scope_digest_hits
+from app.services.request_context import RequestContext
 
 
 def _ctx(user, org_id=None) -> RequestContext:

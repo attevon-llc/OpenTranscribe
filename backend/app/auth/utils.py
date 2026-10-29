@@ -4,9 +4,9 @@ Provides common helpers used across multiple auth modules to avoid
 code duplication.
 """
 
-from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.constants import AUTH_TYPES_NO_LOCAL_FALLBACK
 from app.auth.constants import AUTH_TYPES_SUPPORT_LOCAL_FALLBACK
+from app.core.auth_types import AUTH_TYPE_LOCAL
 
 
 def local_password_allowed(

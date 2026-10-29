@@ -48,9 +48,9 @@ import pytest
 from joserfc.errors import JoseError
 from joserfc.jwk import OctKey
 
-from app.auth.constants import TOKEN_TYPE_ACCESS
-from app.auth.constants import TOKEN_TYPE_MFA
-from app.auth.constants import TOKEN_TYPE_REFRESH
+from app.core.auth_types import TOKEN_TYPE_ACCESS
+from app.core.auth_types import TOKEN_TYPE_MFA
+from app.core.auth_types import TOKEN_TYPE_REFRESH
 from app.core.config import settings
 from app.core.security import accepted_algorithms
 from app.core.security import signing_algorithm

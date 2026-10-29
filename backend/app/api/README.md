@@ -244,7 +244,7 @@ current_user: User = Depends(get_current_active_user)
 ```python
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
 
 # User must own (or be shared) the file

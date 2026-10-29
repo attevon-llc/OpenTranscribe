@@ -120,7 +120,7 @@ def _gender_gate(user_id: int, file_uuid: str) -> SpeakerAttributeFlags | None:
     it; ``gender_locked_by`` names that layer. A policy that cannot be read denies.
     """
     from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags_for_file
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     with session_scope() as db:
         media_file = get_file_by_uuid(db, file_uuid)
@@ -171,7 +171,7 @@ def _resolve_file_id_for_tracking(file_uuid: str) -> int | None:
     routine "file not found" outcome is still handled and returned by
     ``_detect_speaker_attributes`` regardless.
     """
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     try:
         with session_scope() as db:
@@ -241,7 +241,7 @@ def _auto_speaker_identification_enabled(user_id: int) -> bool:
 
 
 def _owner_of_file(file_uuid: str) -> int | None:
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     with session_scope() as db:
         media_file = get_file_by_uuid(db, file_uuid)
@@ -536,7 +536,7 @@ def _load_detection_inputs(file_uuid: str) -> dict | None:
     """
     from app.models.media import Speaker
     from app.models.media import TranscriptSegment
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     with session_scope() as db:
         media_file = get_file_by_uuid(db, file_uuid)

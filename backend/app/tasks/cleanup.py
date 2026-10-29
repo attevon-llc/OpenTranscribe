@@ -144,7 +144,7 @@ def emergency_file_recovery(self, file_uuids: list):
     Args:
         file_uuids: List of file UUIDs to attempt recovery on
     """
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     try:
         logger.info(f"Starting emergency recovery for files: {file_uuids}")

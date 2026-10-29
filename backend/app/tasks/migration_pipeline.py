@@ -132,7 +132,7 @@ def prepare_file(
     """
     from app.models.media import Speaker
     from app.models.media import TranscriptSegment
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     with session_scope() as db:
         media_file = get_file_by_uuid(db, file_uuid)

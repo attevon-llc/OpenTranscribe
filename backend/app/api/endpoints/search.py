@@ -17,7 +17,6 @@ from fastapi import Response
 from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
@@ -40,6 +39,7 @@ from app.services.collection_visibility import collections_on_files
 from app.services.collection_visibility import resolve_collection_filter
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 from app.services.platform_access import TenancyMode
+from app.services.request_context import RequestContext
 from app.services.search.reindex_cancel import LEGACY_CANCEL_VALUE
 from app.services.search.reindex_cancel import cancel_requested
 from app.services.search.reindex_cancel import clear_fanout
@@ -599,7 +599,7 @@ def search_match_count(
     """
     from app.services.search.hybrid_search_service import HybridSearchService
     from app.services.search.hybrid_search_service import QuarantineExclusionUnavailableError
-    from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+    from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
     if file_uuid:
         # Raises 404/403 on its own — the same chokepoint every other

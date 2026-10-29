@@ -27,7 +27,7 @@ def reset_summary_for_retry(db: Session, file_uuid: str) -> bool:
     Returns:
         True if reset was successful, False otherwise
     """
-    from app.utils.uuid_helpers import get_by_uuid_optional
+    from app.services.uuid_helpers import get_by_uuid_optional
 
     # get_by_uuid_optional, NOT get_file_by_uuid: the latter raises
     # fastapi.HTTPException on a missing/malformed uuid instead of returning a
@@ -98,7 +98,7 @@ async def retry_summary_if_available(db: Session, file_uuid: str) -> bool:
     Returns:
         True if retry was queued successfully, False otherwise
     """
-    from app.utils.uuid_helpers import get_by_uuid_optional
+    from app.services.uuid_helpers import get_by_uuid_optional
 
     # `async def` and `await` here, not `asyncio.run()`: this function's one
     # caller (`retry_summary` in api/endpoints/files/summary_status.py) is

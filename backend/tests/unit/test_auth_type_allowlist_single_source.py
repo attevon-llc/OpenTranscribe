@@ -24,15 +24,15 @@ import pytest
 from sqlalchemy import CheckConstraint
 
 from app.auth import auth_type_admission
-from app.auth import constants
 from app.auth import provider_registry
 from app.auth.auth_type_admission import assert_auth_type_admitted
 from app.auth.auth_type_admission import core_admits
-from app.auth.constants import DB_ADMITTED_AUTH_TYPES
-from app.auth.constants import VALID_AUTH_TYPES
-from app.auth.constants import auth_type_check_sql
 from app.auth.external_sync import sync_external_user_to_db
 from app.auth.provider_registry import ExternalIdentity
+from app.core import auth_types
+from app.core.auth_types import DB_ADMITTED_AUTH_TYPES
+from app.core.auth_types import VALID_AUTH_TYPES
+from app.core.auth_types import auth_type_check_sql
 from app.core.exceptions import ExternalProviderNotAdmittedError
 from app.models.invitation import UserInvitation
 from app.models.user import User
@@ -78,7 +78,7 @@ def test_every_auth_type_constant_is_supported_and_admitted_by_the_database() ->
     """A new ``AUTH_TYPE_X`` added without widening the CHECK fails here, not at login."""
     declared = {
         value
-        for name, value in vars(constants).items()
+        for name, value in vars(auth_types).items()
         if name.startswith("AUTH_TYPE_") and isinstance(value, str)
     }
     assert declared, "the AUTH_TYPE_* constants must be discoverable or this proves nothing"
@@ -106,7 +106,7 @@ def test_the_latest_migration_that_sets_the_check_matches_the_single_source() ->
         "update this test to read the new revision's value set"
     )
     assert _LITERAL.findall(module.VALID_AUTH_TYPES_SQL) == list(DB_ADMITTED_AUTH_TYPES), (
-        f"{latest.name} admits a different set than app.auth.constants.DB_ADMITTED_AUTH_TYPES"
+        f"{latest.name} admits a different set than app.core.auth_types.DB_ADMITTED_AUTH_TYPES"
     )
 
 

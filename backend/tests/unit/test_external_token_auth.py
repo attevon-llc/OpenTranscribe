@@ -41,11 +41,11 @@ from starlette.requests import Request
 
 from app.api.endpoints.auth import dependencies as deps_module
 from app.auth import external_sync
-from app.auth.constants import VALID_AUTH_TYPES
 from app.auth.provider_registry import ExternalIdentity
 from app.auth.provider_registry import has_verifiers
 from app.auth.provider_registry import register_verifier
 from app.auth.provider_registry import unregister_verifier
+from app.core.auth_types import VALID_AUTH_TYPES
 from app.core.exceptions import ExternalIdentityLinkRefusedError
 from app.core.security import get_password_hash
 from app.models.user import User

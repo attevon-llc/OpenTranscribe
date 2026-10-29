@@ -369,13 +369,13 @@ def test_scope_resolution_has_no_admin_bypass_on_any_axis(db_session, admin_user
     above already covers for the unscoped case."""
     import uuid as uuid_pkg
 
-    from app.api.deps_context import RequestContext
     from app.models.media import Collection
     from app.models.media import CollectionMember
     from app.models.media import FileTag
     from app.models.media import Tag
     from app.schemas.chat import ChatScope
     from app.services.chat.context_resolver import resolve_scope_file_uuids
+    from app.services.request_context import RequestContext
 
     ctx = RequestContext(user=admin_user, org_id=None)
     blocked = _make_file(db_session, admin_user, quarantined=True, title="Blocked")
@@ -412,9 +412,9 @@ def test_count_scope_files_matches_retrieval_for_an_admin_with_a_quarantined_fil
     fix, this counted through `_visible_files_query`'s admin-bypassing branch
     while phase 3.5 dropped the same file unconditionally — the estimate said
     2 while the turn would search 1."""
-    from app.api.deps_context import RequestContext
     from app.schemas.chat import ChatScope
     from app.services.chat.context_resolver import count_scope_files
+    from app.services.request_context import RequestContext
 
     ctx = RequestContext(user=admin_user, org_id=None)
     _make_file(db_session, admin_user, quarantined=False, title="Fine")
@@ -431,9 +431,9 @@ def test_scope_resolution_admin_bypass_removal_does_not_block_real_admin_access(
     """SHARED-VISIBILITY control for Finding #3: removing the admin bypass on
     quarantine must not also block an admin's ordinary, non-quarantined,
     genuinely-owned recording."""
-    from app.api.deps_context import RequestContext
     from app.schemas.chat import ChatScope
     from app.services.chat.context_resolver import resolve_scope_file_uuids
+    from app.services.request_context import RequestContext
 
     ctx = RequestContext(user=admin_user, org_id=None)
     ok = _make_file(db_session, admin_user, quarantined=False, title="Fine")

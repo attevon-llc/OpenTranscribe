@@ -21,7 +21,6 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_admin_user
@@ -30,7 +29,6 @@ from app.auth.account_linking import emails_agree
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
-from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.lockout import current_store_kind as lockout_current_store_kind
 from app.auth.lockout import list_locked_accounts as lockout_list_locked_accounts
 from app.auth.lockout import normalize_identifier as lockout_normalize_identifier
@@ -46,6 +44,7 @@ from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import VALID_ROLES
 from app.auth.roles import role_implies_superuser
+from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.core.config import settings
 from app.core.constants import CeleryQueues
 from app.core.security import get_password_hash
@@ -111,6 +110,7 @@ from app.services.account_security_service import enforce_password_policy
 from app.services.account_security_service import notify_email_changed
 from app.services.account_security_service import revoke_all_sessions
 from app.services.platform_bypass import audit_metadata_access
+from app.services.request_context import RequestContext
 from app.utils.stats_helpers import format_bytes
 
 # No basicConfig here — this module is imported via the API router before
@@ -1008,7 +1008,7 @@ def delete_admin_user(
     """
     from app.services.file_cleanup_service import load_account_purge_plans
     from app.services.file_cleanup_service import purge_account_external_copies
-    from app.utils.uuid_helpers import get_user_by_uuid
+    from app.services.uuid_helpers import get_user_by_uuid
 
     logger.info(f"Admin deleting user with UUID: {user_uuid}")
 
@@ -3147,7 +3147,7 @@ def quarantine_media_file(
     from app.services.takedown_notice_service import find_notice
     from app.services.takedown_service import TakedownActor
     from app.services.takedown_service import quarantine_file
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     file = get_file_by_uuid(db, file_uuid)
     source_ip, user_agent = _request_meta(request)
@@ -3201,7 +3201,7 @@ def release_media_file(
     """
     from app.services.takedown_service import TakedownActor
     from app.services.takedown_service import release_file
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     file = get_file_by_uuid(db, file_uuid)
     if not file.is_quarantined and not file.legal_hold:

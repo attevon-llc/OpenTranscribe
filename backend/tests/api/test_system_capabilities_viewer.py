@@ -20,13 +20,13 @@ from typing import Any
 import pytest
 
 from app.api.endpoints.auth import dependencies as deps_module
-from app.auth.constants import TOKEN_TYPE_ACCESS
 from app.auth.provider_registry import ExternalIdentity
 from app.auth.provider_registry import register_verifier
 from app.auth.provider_registry import unregister_verifier
 from app.auth.session import InMemoryStore
 from app.auth.token_service import USER_REVOCATION_EPOCH_PREFIX
 from app.auth.token_service import TokenService
+from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.capabilities import COMMUNITY_CAPABILITIES
 from app.core.capabilities import NO_PLATFORM_BYPASS
 from app.core.capabilities import PLATFORM_OVERLAY_KEYS

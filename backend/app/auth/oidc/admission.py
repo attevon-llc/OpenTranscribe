@@ -51,7 +51,7 @@ from collections.abc import Iterable
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
-from app.auth.constants import AUTH_TYPE_OIDC
+from app.core.auth_types import AUTH_TYPE_OIDC
 
 logger = logging.getLogger(__name__)
 

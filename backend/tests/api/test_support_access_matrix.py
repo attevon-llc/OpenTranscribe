@@ -207,7 +207,7 @@ HELPER_ONLY = {
 
 
 def _collection_helper(db, w, res, bypass, org_id):
-    from app.utils.uuid_helpers import get_collection_by_uuid_with_permission
+    from app.services.uuid_helpers import get_collection_by_uuid_with_permission
 
     return get_collection_by_uuid_with_permission(
         db, res.resource_uuid, w.admin.id, organization_id=org_id, bypass=bypass
@@ -215,7 +215,7 @@ def _collection_helper(db, w, res, bypass, org_id):
 
 
 def _profile_helper(db, w, res, bypass, org_id):
-    from app.utils.uuid_helpers import require_profile_in_scope
+    from app.services.uuid_helpers import require_profile_in_scope
 
     return require_profile_in_scope(
         db, res.resource_uuid, w.admin, organization_id=org_id, owner_only=False, bypass=bypass

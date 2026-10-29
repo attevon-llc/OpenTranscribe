@@ -28,7 +28,7 @@ branch_labels = None
 depends_on = None
 
 #: The auth types the database accepts after this revision. A superset of
-#: ``app.auth.constants.VALID_AUTH_TYPES`` by the same design v380 established.
+#: ``app.core.auth_types.VALID_AUTH_TYPES`` by the same design v380 established.
 VALID_AUTH_TYPES_SQL = "'local', 'ldap', 'oidc', 'pki', 'proxy', 'saml'"
 PREVIOUS_AUTH_TYPES_SQL = "'local', 'ldap', 'oidc', 'pki', 'proxy'"
 

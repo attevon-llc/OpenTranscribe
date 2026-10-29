@@ -18,13 +18,13 @@ from fastapi import Request
 from fastapi import Response
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key
 from app.core.constants import TAKEDOWN_OWNER_READ_RATE_LIMIT
 from app.db.base import get_db
 from app.schemas.takedown_notice import OwnerTakedownList
+from app.services.request_context import RequestContext
 from app.services.takedown_notice_queries import owner_takedowns
 
 router = APIRouter()

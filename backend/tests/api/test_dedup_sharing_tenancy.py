@@ -153,10 +153,10 @@ def _stage_audio(tmp_path: Path) -> Path:
 
 @contextmanager
 def _acting_as(user: User, org_id: int | None, org_role: str | None = "org:member"):
-    from app.api.deps_context import RequestContext
     from app.api.deps_context import get_current_context
     from app.api.endpoints.auth import get_current_active_user
     from app.main import app
+    from app.services.request_context import RequestContext
 
     app.dependency_overrides[get_current_active_user] = lambda: user
     app.dependency_overrides[get_current_context] = lambda: RequestContext(

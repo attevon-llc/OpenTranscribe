@@ -6,14 +6,14 @@ from fastapi import APIRouter
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.post_processing import PostProcessingStatusResponse
 from app.services.post_processing_status import read_status
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+from app.services.request_context import RequestContext
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
 logger = logging.getLogger(__name__)
 

@@ -13,7 +13,6 @@ endpoint uses: org context -> filter by organization_id, else by user_id.
 """
 
 import logging
-from dataclasses import dataclass
 from dataclasses import replace
 from typing import Any
 
@@ -36,6 +35,7 @@ from app.services.platform_access import TenancyMode
 from app.services.platform_access import tenancy_mode
 from app.services.platform_bypass import PlatformBypass
 from app.services.platform_bypass import build_bypass
+from app.services.request_context import RequestContext
 from app.services.support_access_service import coded_error
 from app.services.support_access_service import record_use
 from app.services.support_access_service import resolve_active_grant
@@ -43,26 +43,6 @@ from app.services.support_access_service import resolve_active_grant
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class RequestContext:
-    """Authenticated user + active tenant scope for this request."""
-
-    user: User
-    org_id: int | None = None  # our organization.id (NOT the provider's string id)
-    org_role: str | None = None  # "org:admin" | "org:member" | None
-    # What the platform-admin role may reach on this request. Defaults to nothing, so a
-    # context built by hand fails closed (issue #1122).
-    bypass: PlatformBypass = PlatformBypass.none()
-
-    @property
-    def is_org_context(self) -> bool:
-        return self.org_id is not None
-
-    @property
-    def is_org_admin(self) -> bool:
-        return self.org_role == "org:admin"
 
 
 def resolve_org_context(request: Request, db: Session, user: User) -> tuple[int | None, str | None]:

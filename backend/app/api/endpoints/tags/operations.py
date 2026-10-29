@@ -11,7 +11,6 @@ from fastapi import Query
 from fastapi import status
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.tags._common import _apply
@@ -25,6 +24,7 @@ from app.schemas.media import TagMutationResult
 from app.schemas.media import TagPromoteRequest
 from app.schemas.media import TagRenameRequest
 from app.services.platform_access import TenancyMode
+from app.services.request_context import RequestContext
 from app.services.tag_operations import delete_tags
 from app.services.tag_operations import merge_tags
 from app.services.tag_operations import preview_tag_impact

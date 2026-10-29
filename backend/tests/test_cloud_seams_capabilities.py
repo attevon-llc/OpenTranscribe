@@ -15,7 +15,6 @@ from fastapi import HTTPException
 from fastapi import Request
 from sqlalchemy.exc import OperationalError
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_base_context
 from app.api.deps_context import scope_to_context
 from app.auth.external_sync import sync_external_user_to_db
@@ -29,6 +28,7 @@ from app.core.capabilities import set_capability_resolver
 from app.models.media import MediaFile
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
+from app.services.request_context import RequestContext
 from app.services.usage_service import record_event
 from app.tasks.transcription.hooks import CompletionContext
 from app.tasks.transcription.hooks import DispatchBlockedError

@@ -23,7 +23,6 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
@@ -38,9 +37,10 @@ from app.services.download_events import DOCUMENT_EXPORT_ERRORS
 from app.services.platform_bypass import PlatformBypass
 from app.services.redaction.export_policy import resolve_export_reveal
 from app.services.redaction.reveal_audit import audit_unredacted_reveal
+from app.services.request_context import RequestContext
 from app.services.subtitle_service import SubtitleService
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
 from app.utils.content_disposition import attachment_header
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 from .crud import _redaction_pending
 

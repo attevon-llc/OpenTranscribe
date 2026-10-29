@@ -1,6 +1,6 @@
 """Behavioral tests for issue #588: viewer-permission users mutating shared files.
 
-``get_file_by_uuid_with_permission`` (``app/utils/uuid_helpers.py``) previously admitted
+``get_file_by_uuid_with_permission`` (``app/services/uuid_helpers.py``) previously admitted
 *any* non-None permission returned by ``PermissionService.get_file_permission`` — including
 ``viewer`` — onto endpoints that mutate the file (reprocess, summarize, retry, topic
 extraction). A read-only collaborator on a shared file could therefore trigger destructive

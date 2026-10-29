@@ -429,9 +429,9 @@ class LinkExternalIdentityRequest(BaseModel):
     @field_validator("provider")
     @classmethod
     def _provider_is_linkable(cls, value: str) -> str:
-        from app.auth.constants import AUTH_TYPE_LDAP
-        from app.auth.constants import AUTH_TYPE_OIDC
-        from app.auth.constants import AUTH_TYPE_PKI
+        from app.core.auth_types import AUTH_TYPE_LDAP
+        from app.core.auth_types import AUTH_TYPE_OIDC
+        from app.core.auth_types import AUTH_TYPE_PKI
 
         linkable = {AUTH_TYPE_OIDC, AUTH_TYPE_LDAP, AUTH_TYPE_PKI}
         if value not in linkable:

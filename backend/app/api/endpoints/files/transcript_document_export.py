@@ -26,7 +26,6 @@ from fastapi import Depends
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
@@ -38,7 +37,8 @@ from app.models.user import User
 from app.schemas.transcript_export import DocumentExportAccepted
 from app.schemas.transcript_export import TranscriptDocumentExportRequest
 from app.services.download_events import document_export_guard_key
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+from app.services.request_context import RequestContext
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
 from .crud import _redaction_pending
 from .subtitles import new_bulk_job_id

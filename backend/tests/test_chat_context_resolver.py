@@ -17,7 +17,6 @@ import uuid as uuid_pkg
 import pytest
 from fastapi import HTTPException
 
-from app.api.deps_context import RequestContext
 from app.core import constants as C  # noqa: N812
 from app.models.media import Collection
 from app.models.media import CollectionMember
@@ -28,6 +27,7 @@ from app.models.sharing import CollectionShare
 from app.schemas.chat import ChatScope
 from app.services.chat.context_resolver import count_scope_files
 from app.services.chat.context_resolver import resolve_scope_file_uuids
+from app.services.request_context import RequestContext
 
 
 def _resolved(db, ctx, scope) -> list[str]:

@@ -225,7 +225,7 @@ class TestSegmentSpeakerAssignmentUsesFileTenant:
 
 class TestRequireSpeakerAccessUsesFileTenant:
     def _access(self, world, key: str, bypass):
-        from app.utils.uuid_helpers import require_speaker_access
+        from app.services.uuid_helpers import require_speaker_access
 
         return require_speaker_access(
             world["db"],

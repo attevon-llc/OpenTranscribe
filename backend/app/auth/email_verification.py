@@ -24,9 +24,9 @@ from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy.orm import Session
 
-from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.core.auth_settings import get_auth_settings
+from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.core.config import settings
 from app.models.invitation import EmailVerificationToken
 from app.models.user import User

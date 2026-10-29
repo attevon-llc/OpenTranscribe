@@ -124,14 +124,15 @@ def test_get_user_files_query_defaults_to_unscoped_user_filter(db_session, norma
 def test_get_user_files_query_for_context_uses_context_org_scope(
     db_session, normal_user, admin_user
 ):
-    from app.api.deps_context import RequestContext
+    from app.services.request_context import RequestContext
+    from app.services.request_context import get_user_files_query_for_context
 
     org = _make_org(db_session)
     org_file = _make_file(db_session, normal_user, organization_id=org.id)
     _make_file(db_session, normal_user, organization_id=None)
 
     ctx = RequestContext(user=normal_user, org_id=org.id)
-    results = db_helpers.get_user_files_query_for_context(db_session, ctx).all()
+    results = get_user_files_query_for_context(db_session, ctx).all()
 
     assert [f.id for f in results] == [org_file.id]
 

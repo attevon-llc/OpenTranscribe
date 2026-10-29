@@ -30,7 +30,6 @@ from dataclasses import dataclass
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
-from app.auth.constants import AUTH_TYPE_PROXY
 from app.auth.header_trust import header_assertion_permitted
 from app.auth.header_trust import immediate_peer_ip
 from app.auth.header_trust import shared_secret_matches
@@ -38,6 +37,7 @@ from app.auth.proxy.config import SHARED_SECRET_HEADER
 from app.auth.proxy.config import ProxyConfig
 from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_USER
+from app.core.auth_types import AUTH_TYPE_PROXY
 
 logger = logging.getLogger(__name__)
 

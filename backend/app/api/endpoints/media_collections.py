@@ -31,7 +31,6 @@ from sqlalchemy.orm import defer
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import selectinload
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
@@ -90,13 +89,14 @@ from app.services.hold_guard import HoldState
 from app.services.hold_guard import refusal_detail
 from app.services.permission_service import PermissionService
 from app.services.privacy.redact_view import PrivacyView
+from app.services.request_context import RequestContext
 from app.services.takedown_service import exclude_quarantined
+from app.services.uuid_helpers import get_by_uuid
+from app.services.uuid_helpers import get_collection_by_uuid_with_permission
+from app.services.uuid_helpers import get_collection_by_uuid_with_sharing
+from app.services.uuid_helpers import require_resource_owner
+from app.services.uuid_helpers import validate_uuids
 from app.tasks.search_indexing_task import update_file_access_index
-from app.utils.uuid_helpers import get_by_uuid
-from app.utils.uuid_helpers import get_collection_by_uuid_with_permission
-from app.utils.uuid_helpers import get_collection_by_uuid_with_sharing
-from app.utils.uuid_helpers import require_resource_owner
-from app.utils.uuid_helpers import validate_uuids
 from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)

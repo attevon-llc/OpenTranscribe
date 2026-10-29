@@ -114,8 +114,8 @@ def test_no_route_still_serves_the_old_path():
 
 
 def test_the_auth_type_constant_is_oidc():
-    from app.auth.constants import AUTH_TYPE_OIDC
-    from app.auth.constants import VALID_AUTH_TYPES
+    from app.core.auth_types import AUTH_TYPE_OIDC
+    from app.core.auth_types import VALID_AUTH_TYPES
 
     assert AUTH_TYPE_OIDC == "oidc"
     assert VENDOR_NOUN not in " ".join(VALID_AUTH_TYPES).lower()

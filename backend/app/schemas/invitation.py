@@ -13,10 +13,10 @@ from pydantic import EmailStr
 from pydantic import Field
 from pydantic import field_validator
 
-from app.auth.constants import AUTH_TYPE_LOCAL
-from app.auth.constants import VALID_AUTH_TYPES
 from app.auth.roles import ROLE_USER
 from app.auth.roles import VALID_ROLES
+from app.core.auth_types import AUTH_TYPE_LOCAL
+from app.core.auth_types import VALID_AUTH_TYPES
 
 
 class InvitationCreate(BaseModel):

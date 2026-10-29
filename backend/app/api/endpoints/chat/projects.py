@@ -24,7 +24,6 @@ from fastapi import Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.chat.common import resolve_llm_config_id
 from app.auth.audit import AuditEventType
@@ -39,6 +38,7 @@ from app.schemas.chat import ProjectDetail
 from app.schemas.chat import ProjectList
 from app.schemas.chat import ProjectSummary
 from app.schemas.chat import ProjectUpdate
+from app.services.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
 

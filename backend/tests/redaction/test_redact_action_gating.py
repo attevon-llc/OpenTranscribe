@@ -81,9 +81,9 @@ def _completed_file(db_session, owner):
 
 
 def _bulk_redact(db_session, user, media):
-    from app.api.deps_context import RequestContext
     from app.api.endpoints.files.management import BulkActionRequest
     from app.api.endpoints.files.management import bulk_file_action
+    from app.services.request_context import RequestContext
 
     return bulk_file_action(
         request=BulkActionRequest(file_uuids=[str(media.uuid)], action="redact"),

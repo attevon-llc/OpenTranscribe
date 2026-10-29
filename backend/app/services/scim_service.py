@@ -38,11 +38,11 @@ from sqlalchemy.orm import Session
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
-from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import role_implies_superuser
+from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.models.user import User
 from app.services.account_security_service import notify_email_changed
 from app.services.account_security_service import revoke_all_sessions

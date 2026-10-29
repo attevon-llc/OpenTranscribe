@@ -30,9 +30,6 @@ from app.api.endpoints.auth.mfa_tokens import _user_can_setup_mfa
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
-from app.auth.constants import AUTH_TYPE_LOCAL
-from app.auth.constants import AUTH_TYPE_OIDC
-from app.auth.constants import AUTH_TYPE_PKI
 from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.lockout import canonical_identifier
 from app.auth.lockout import check_and_record_attempt
@@ -47,6 +44,9 @@ from app.auth.token_service import token_service
 from app.auth.utils import local_password_allowed
 from app.core.auth_settings import DynamicAuthSettings
 from app.core.auth_settings import get_auth_settings
+from app.core.auth_types import AUTH_TYPE_LOCAL
+from app.core.auth_types import AUTH_TYPE_OIDC
+from app.core.auth_types import AUTH_TYPE_PKI
 from app.core.config import settings
 from app.core.constants import SESSION_CAP_EVICTION_BATCH_LIMIT
 from app.db.base import get_db

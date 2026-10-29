@@ -19,13 +19,13 @@ from fastapi import HTTPException
 from fastapi import Request
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.endpoints import asr_settings
 from app.schemas.asr_settings import SetActiveASRConfigRequest
 from app.services.asr.deepgram_provider import DeepgramProvider
 from app.services.asr.factory import ASRProviderFactory
 from app.services.asr.local_provider import LocalASRProvider
 from app.services.diarization.factory import get_diarizer_asr_config
+from app.services.request_context import RequestContext
 from app.utils.encryption import encrypt_api_key
 
 FACTORY_LOGGER = "app.services.asr.factory"

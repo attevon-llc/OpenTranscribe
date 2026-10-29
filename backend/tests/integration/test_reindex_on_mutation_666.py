@@ -275,9 +275,9 @@ def test_segment_text_edit_reaches_both_indices(throwaway_indices, real_db):
 
 
 def test_segment_speaker_reassignment_reaches_the_chunk_plane(throwaway_indices, real_db):
-    from app.api.deps_context import RequestContext
     from app.api.endpoints.transcript_segments import update_segment_speaker
     from app.schemas.transcript import SegmentSpeakerUpdate
+    from app.services.request_context import RequestContext
 
     db, created_media_file_ids, created_user_ids = real_db
     user = _make_user(db, created_user_ids)
@@ -334,7 +334,7 @@ def test_speaker_merge_reaches_the_chunk_plane(throwaway_indices, real_db):
         # `merge_speakers` wraps its own cache-invalidation call in a
         # try/except and only logs on failure (see the endpoint), so an
         # unreachable test Redis degrades quietly rather than needing a mock.
-        from app.api.deps_context import RequestContext
+        from app.services.request_context import RequestContext
 
         ctx = RequestContext(user=user, org_id=None, org_role=None)
         merge_speakers(

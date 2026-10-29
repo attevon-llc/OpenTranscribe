@@ -10,12 +10,12 @@ from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.user import User
 from app.services.llm_service import is_llm_available
+from app.services.request_context import RequestContext
 from app.tasks.summary_retry import retry_summary_if_available
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ async def get_summary_status(
         - summary_exists: whether a summary already exists
     """
     # Get file by UUID (tenant-gated via ctx.org_id)
-    from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+    from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
     media_file = get_file_by_uuid_with_permission(
         db, file_uuid, current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
@@ -101,7 +101,7 @@ async def retry_summary(
     Retry failed summary generation for a file
     """
     # Get file by UUID with permission check (tenant-gated via ctx.org_id)
-    from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+    from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
     media_file = get_file_by_uuid_with_permission(
         db,

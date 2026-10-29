@@ -19,9 +19,9 @@ import uuid as uuid_pkg
 
 import pytest
 
-from app.api.deps_context import RequestContext
 from app.api.endpoints.org_admin import org_audit_query
 from app.auth.audit import query_audit_logs
+from app.services.request_context import RequestContext
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 

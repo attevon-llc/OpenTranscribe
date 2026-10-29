@@ -12,7 +12,6 @@ from fastapi import status
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.deps_context import scope_to_context
@@ -31,16 +30,17 @@ from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
 from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import derived_profile_genders
+from app.services.request_context import RequestContext
 from app.services.speaker_matching_service import ConfidenceLevel
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.services.speaker_profile_rename import apply_profile_name_to_speakers
+from app.services.uuid_helpers import _resource_in_tenant_scope
+from app.services.uuid_helpers import require_profile_in_scope
+from app.services.uuid_helpers import require_resource_owner
+from app.services.uuid_helpers import require_speaker_access
 from app.tasks.speaker_update_task import process_speaker_update_background
 from app.utils.db_helpers import org_stamp_is
 from app.utils.error_handlers import ErrorHandler
-from app.utils.uuid_helpers import _resource_in_tenant_scope
-from app.utils.uuid_helpers import require_profile_in_scope
-from app.utils.uuid_helpers import require_resource_owner
-from app.utils.uuid_helpers import require_speaker_access
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ def list_speaker_profiles(
 
         if collection_uuid:
             # Filter by collection - convert UUID to ID
-            from app.utils.uuid_helpers import get_by_uuid
+            from app.services.uuid_helpers import get_by_uuid
 
             collection = get_by_uuid(db, SpeakerCollection, collection_uuid)
             if not _resource_in_tenant_scope(collection, ctx.org_id):

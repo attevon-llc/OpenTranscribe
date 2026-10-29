@@ -14,7 +14,6 @@ from pydantic import Field
 from pydantic import model_validator
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.files.crud import delete_media_file
@@ -31,6 +30,7 @@ from app.services import system_settings_service
 from app.services.delete_permissions import DELETE_FORBIDDEN_DETAIL
 from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.platform_bypass import PlatformBypass
+from app.services.request_context import RequestContext
 from app.services.tag_bulk import CHANGED_OUTCOMES
 from app.services.tag_bulk import TAG_ACTIONS
 from app.services.tag_bulk import BulkTagOutcome

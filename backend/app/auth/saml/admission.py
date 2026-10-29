@@ -15,9 +15,9 @@ import logging
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
-from app.auth.constants import AUTH_TYPE_SAML
 from app.auth.oidc.admission import check_group_admission
 from app.auth.saml.assertion import SAMLUserData
+from app.core.auth_types import AUTH_TYPE_SAML
 
 logger = logging.getLogger(__name__)
 

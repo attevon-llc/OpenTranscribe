@@ -42,12 +42,12 @@ from app.services.speaker_provenance_view import ProvenanceViewer
 from app.services.speaker_provenance_view import attach_speaker_provenance
 from app.services.speaker_status_service import SpeakerStatusService
 from app.services.tag_service import tag_ownership
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
 from app.utils.db_helpers import owned_in_tenant
 from app.utils.error_handlers import ErrorHandler
 from app.utils.speaker_labels import canonical_speaker_label
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 from app.utils.time_format import format_timestamp_simple as format_timestamp
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 logger = logging.getLogger(__name__)
 

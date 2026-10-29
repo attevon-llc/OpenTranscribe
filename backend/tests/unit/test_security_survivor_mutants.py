@@ -192,11 +192,11 @@ from joserfc.jwk import OctKey
 
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
-from app.auth.constants import AUTH_TYPE_PKI
-from app.auth.constants import TOKEN_TYPE_ACCESS
-from app.auth.constants import TOKEN_TYPE_REFRESH
 from app.auth.direct_auth import create_access_token
 from app.core import security
+from app.core.auth_types import AUTH_TYPE_PKI
+from app.core.auth_types import TOKEN_TYPE_ACCESS
+from app.core.auth_types import TOKEN_TYPE_REFRESH
 from app.core.config import settings
 
 PROBE_PASSWORD = "correct horse battery staple"  # noqa: S105 - test fixture literal, not a secret

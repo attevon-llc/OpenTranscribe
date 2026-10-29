@@ -18,12 +18,12 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app import models
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
+from app.services.request_context import RequestContext
+from app.services.uuid_helpers import require_resource_owner
 from app.utils.db_helpers import org_stamp_is
-from app.utils.uuid_helpers import require_resource_owner
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

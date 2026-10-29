@@ -27,7 +27,6 @@ from fastapi import status
 from sqlalchemy.orm import Session
 
 from app import models
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_base_context
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
@@ -92,6 +91,7 @@ from app.services import system_settings_service
 from app.services.auto_llm_settings import SPEAKER_ID_SYSTEM_KEY
 from app.services.auto_llm_settings import SPEAKER_ID_USER_KEY
 from app.services.auto_llm_settings import resolve_auto_llm_flags
+from app.services.request_context import RequestContext
 from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags
 from app.utils.lite_mode import is_lite_deployment
 from app.utils.tenant_sharing import owner_in_tenant

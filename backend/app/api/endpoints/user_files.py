@@ -21,7 +21,6 @@ from sqlalchemy.orm import Query
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import defer
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
@@ -33,11 +32,12 @@ from app.services import system_settings_service
 from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.file_provenance_view import build_processing_steps
 from app.services.formatting_service import FormattingService
+from app.services.request_context import RequestContext
 from app.services.takedown_service import exclude_quarantined
 from app.services.task_recovery_service import task_recovery_service
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
 from app.utils.db_helpers import owned_in_tenant
 from app.utils.task_utils import get_task_summary_for_media_file
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 logger = logging.getLogger(__name__)
 

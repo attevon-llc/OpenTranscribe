@@ -13,8 +13,8 @@ from joserfc.jwt import JWTClaimsRegistry
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
-from app.auth.constants import TOKEN_TYPE_ACCESS
 from app.auth.utils import local_password_allowed
+from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.config import settings
 from app.models.user import User
 

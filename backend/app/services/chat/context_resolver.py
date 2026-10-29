@@ -30,14 +30,14 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.core import constants as C  # noqa: N812
 from app.models.media import CollectionMember
 from app.models.media import FileTag
 from app.models.media import MediaFile
 from app.models.media import Tag
 from app.schemas.chat import ChatScope
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+from app.services.request_context import RequestContext
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
 logger = logging.getLogger(__name__)
 

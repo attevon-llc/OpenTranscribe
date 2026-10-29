@@ -29,7 +29,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
 from starlette.concurrency import run_in_threadpool
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.chat.common import get_owned_conversation
 from app.api.endpoints.chat.common import read_user_chat_settings
@@ -66,6 +65,7 @@ from app.services.chat.settings import apply_user_preferences
 from app.services.chat.settings import get_chat_settings
 from app.services.llm_service import LLMService
 from app.services.redaction.llm_guard import is_local_provider
+from app.services.request_context import RequestContext
 from app.utils.db_helpers import org_stamp_is
 
 logger = logging.getLogger(__name__)

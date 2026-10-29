@@ -50,7 +50,7 @@ so keep heavy imports lazy.
   `response-content-type`. Never store a browser- or `mimetypes`-supplied type raw: Firefox on
   Linux and Python 3.14 both say `audio/vnd.wave`, and browsers won't play that label. The
   frontend twin is `$lib/utils/mediaType.ts`; keep the alias tables in sync.
-- `uuid_helpers.py` — the hybrid-ID + permission chokepoint. `get_*_by_uuid`,
+- `uuid_helpers.py` (lives in `app/services/` since the L1 layering move; it queries models and services, so it cannot sit below them) — the hybrid-ID + permission chokepoint. `get_*_by_uuid`,
   `get_file_by_uuid_with_permission` (load the row → platform bypass asked about the LOADED row's
   own tenant, `bypass.allows(org_id=row.organization_id, ...)`, which in multi-tenant mode is
   False without a support-access grant → takedown 404 → public → tenant gate → owner → shares, in

@@ -15,7 +15,6 @@ from fastapi import status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
@@ -30,6 +29,7 @@ from app.models.user import User
 from app.schemas.media import Tag as TagSchema
 from app.schemas.media import TagBase
 from app.schemas.media import TagWithCount
+from app.services.request_context import RequestContext
 from app.services.tag_collisions import list_tags_filtered
 from app.services.tag_collisions import list_unused_tag_rows
 from app.services.tag_operations import cleanup_unreferenced_tags
@@ -271,7 +271,7 @@ def add_tag_to_file(
     but lets two users attach same-named personal rows of their own to one shared
     personal file (on an organization file both resolve to the org's one row).
     """
-    from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+    from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
     # Get file by UUID and verify permission (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
@@ -331,7 +331,7 @@ def remove_tag_from_file(
     Remove a tag from a media file
     """
     # Get file by UUID with permission check (tenant-gated via ctx.org_id)
-    from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+    from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
     media_file = get_file_by_uuid_with_permission(
         db,

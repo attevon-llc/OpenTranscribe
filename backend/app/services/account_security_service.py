@@ -36,12 +36,12 @@ from sqlalchemy.orm import Session
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
-from app.auth.constants import TOKEN_TYPE_ACCESS
 from app.auth.mfa_policy import user_is_mfa_protected
 from app.auth.password_policy import validate_password
 from app.auth.token_service import token_service
 from app.auth.utils import local_fallback_permitted_for
 from app.auth.utils import local_password_allowed
+from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.config import settings
 from app.models.user import User
 

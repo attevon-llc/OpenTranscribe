@@ -564,8 +564,8 @@ def on_pipeline_error(file_uuid: str, task_id: str) -> None:
       the file is marked COMPLETED with a warning rather than ERROR
     """
     from app.services.minio_service import cleanup_temp_audio
+    from app.services.uuid_helpers import get_file_by_uuid
     from app.utils import benchmark_timing
-    from app.utils.uuid_helpers import get_file_by_uuid
 
     from .notifications import send_error_notification
 
@@ -680,7 +680,7 @@ def _cancelled_run_owner(file_uuid: str, task_id: str) -> tuple[int, int] | None
     proceeds as it always has.
     """
     from app.services.transcription_retry import run_cancel_requested
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     try:
         with session_scope() as db:

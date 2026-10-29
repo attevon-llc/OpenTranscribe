@@ -28,7 +28,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import models
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_superuser
@@ -58,8 +57,9 @@ from app.services.privacy.policy import voiceprint_decision
 from app.services.privacy.purge import PurgeScope
 from app.services.privacy.purge import purge_audit_event_types
 from app.services.privacy.purge import read_record
+from app.services.request_context import RequestContext
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
 from app.tasks.privacy_purge_task import TASK_TYPE
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 logger = logging.getLogger(__name__)
 

@@ -31,7 +31,6 @@ from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import require_org_admin
 from app.api.endpoints.org_admin import org_id_of
 from app.auth.rate_limit import limiter
@@ -50,6 +49,7 @@ from app.services import content_hold_service as holds
 from app.services.collection_visibility import visible_collections_by_uuid
 from app.services.content_hold_queries import list_holds
 from app.services.org_audit_view import member_labels
+from app.services.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
 

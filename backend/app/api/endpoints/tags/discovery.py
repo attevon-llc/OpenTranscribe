@@ -11,7 +11,6 @@ from fastapi import Query
 from fastapi import status
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.tags._common import _visible_to
@@ -24,11 +23,12 @@ from app.schemas.media import TagFileList
 from app.schemas.media import TaggedFile
 from app.schemas.media import TagOnSelection
 from app.services.formatting_service import FormattingService
+from app.services.request_context import RequestContext
 from app.services.tag_collisions import files_for_tag
 from app.services.tag_collisions import find_tag_collisions
 from app.services.tag_collisions import tags_on_files
 from app.services.tag_service import tag_ownership
-from app.utils.uuid_helpers import get_by_uuid
+from app.services.uuid_helpers import get_by_uuid
 
 
 @router.get("/collisions", response_model=list[TagCollisionClusterSchema])

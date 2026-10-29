@@ -26,10 +26,10 @@ from sqlalchemy.orm import Session
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
-from app.auth.constants import TOKEN_TYPE_ACCESS
 from app.auth.provider_registry import ExternalIdentity
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.token_service import token_service
+from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.config import settings
 from app.core.security import accepted_algorithms
 from app.db.base import get_db
@@ -280,7 +280,7 @@ def _enforce_proxy_identity_consistency(user: User, request: Request | None, db:
     Raises:
         HTTPException: 401 with ``detail.code == proxy_identity_mismatch``.
     """
-    from app.auth.constants import AUTH_TYPE_PROXY
+    from app.core.auth_types import AUTH_TYPE_PROXY
 
     if request is None or str(getattr(user, "auth_type", "")) != AUTH_TYPE_PROXY:
         return

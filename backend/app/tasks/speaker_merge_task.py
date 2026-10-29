@@ -41,8 +41,8 @@ def _load_merge_plan(target_speaker_uuid: str) -> dict | None:
     Returns ``None`` when the surviving speaker no longer exists.
     """
     from app.services.privacy.redact_view import PrivacyView
+    from app.services.uuid_helpers import get_speaker_by_uuid
     from app.utils.speaker_identity_source import hides_name
-    from app.utils.uuid_helpers import get_speaker_by_uuid
 
     with session_scope() as db:
         target_speaker = get_speaker_by_uuid(db, target_speaker_uuid)

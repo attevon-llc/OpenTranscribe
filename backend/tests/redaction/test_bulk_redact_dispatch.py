@@ -176,9 +176,9 @@ def _redact_through_the_batch(db_session, user, media):
     response. Going through the endpoint rather than the handler keeps that
     distinction in the test instead of in prose.
     """
-    from app.api.deps_context import RequestContext
     from app.api.endpoints.files.management import BulkActionRequest
     from app.api.endpoints.files.management import bulk_file_action
+    from app.services.request_context import RequestContext
 
     results = bulk_file_action(
         request=BulkActionRequest(file_uuids=[str(media.uuid)], action="redact"),

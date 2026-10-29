@@ -22,7 +22,6 @@ from fastapi import Request
 from sqlalchemy.orm import Session
 
 from app import models
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_base_context
 from app.api.endpoints.auth.dependencies import _get_client_info
 from app.api.endpoints.auth.dependencies import get_current_active_superuser
@@ -37,6 +36,7 @@ from app.schemas.asr_provider_policy import ProviderPolicyResponse
 from app.schemas.asr_provider_policy import ProviderPolicyUpdate
 from app.schemas.asr_provider_policy import SharedCredential
 from app.services import asr_provider_policy as policy_service
+from app.services.request_context import RequestContext
 from app.utils.tenant_sharing import owner_in_tenant
 
 logger = logging.getLogger(__name__)

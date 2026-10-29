@@ -136,7 +136,7 @@ class TestGetFileByUuidWithPermission:
     """Test the admin bypass in get_file_by_uuid_with_permission."""
 
     def test_owner_can_access_own_file(self, db_session, sample_media_file, owner_user):
-        from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+        from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
         result = get_file_by_uuid_with_permission(
             db_session, str(sample_media_file.uuid), owner_user.id
@@ -144,7 +144,7 @@ class TestGetFileByUuidWithPermission:
         assert result.id == sample_media_file.id
 
     def test_admin_can_access_other_users_file(self, db_session, sample_media_file, admin_user):
-        from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+        from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
         result = get_file_by_uuid_with_permission(
             db_session,
@@ -157,7 +157,7 @@ class TestGetFileByUuidWithPermission:
     def test_non_admin_blocked_from_other_users_file(
         self, db_session, sample_media_file, normal_user
     ):
-        from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+        from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
         with pytest.raises(HTTPException) as exc:
             get_file_by_uuid_with_permission(
@@ -172,7 +172,7 @@ class TestGetFileByUuidWithPermission:
         self, db_session, sample_media_file, normal_user, shared_collection
     ):
         """A user who has been shared a collection can access files in it."""
-        from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+        from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
         # Share collection with normal_user as viewer
         share = CollectionShare(
@@ -201,7 +201,7 @@ class TestGetCollectionByUuidWithPermission:
     def test_admin_can_access_other_users_collection(
         self, db_session, shared_collection, admin_user
     ):
-        from app.utils.uuid_helpers import get_collection_by_uuid_with_permission
+        from app.services.uuid_helpers import get_collection_by_uuid_with_permission
 
         result = get_collection_by_uuid_with_permission(
             db_session,
@@ -214,7 +214,7 @@ class TestGetCollectionByUuidWithPermission:
     def test_non_admin_blocked_from_other_users_collection(
         self, db_session, shared_collection, normal_user
     ):
-        from app.utils.uuid_helpers import get_collection_by_uuid_with_permission
+        from app.services.uuid_helpers import get_collection_by_uuid_with_permission
 
         with pytest.raises(HTTPException) as exc:
             get_collection_by_uuid_with_permission(

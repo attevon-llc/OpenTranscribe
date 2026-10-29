@@ -21,7 +21,6 @@ from pydantic import model_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
@@ -37,6 +36,7 @@ from app.schemas.media import MediaFile as MediaFileSchema
 from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.formatting_service import FormattingService
 from app.services.media_download_service import MediaDownloadService
+from app.services.request_context import RequestContext
 from app.tasks.transcription.requested_options import apply_requested_options
 from app.tasks.youtube_processing import process_youtube_playlist_task
 from app.tasks.youtube_processing import process_youtube_url_task

@@ -235,10 +235,13 @@ def _bypass_for(w, grant_uuid: str):
 def _helper_refuses(w, kind, grant_uuid: str, res: Resource) -> bool:
     from fastapi import HTTPException
 
+    from app.core.exceptions import AccessDeniedError
+    from app.core.exceptions import ResourceNotFoundError
+
     org_id, bypass = _bypass_for(w, grant_uuid)
     try:
         HELPER_ONLY[kind](w.db, w, res, bypass, org_id)
-    except HTTPException as refusal:
+    except (HTTPException, AccessDeniedError, ResourceNotFoundError) as refusal:
         assert refusal.status_code in REFUSED_STATUSES
         return True
     return False

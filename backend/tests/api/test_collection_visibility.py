@@ -262,8 +262,8 @@ def test_auto_label_still_uses_a_collection_the_owner_can_see(gov):
 
 def test_org_grant_cannot_see_restricted_collection(gov, restricted, db_session):
     """A platform bypass is consulted AFTER the need-to-know rule, never before it."""
-    from fastapi import HTTPException
 
+    from app.core.exceptions import ResourceNotFoundError
     from app.services.platform_access import TenancyMode
     from app.services.platform_bypass import PlatformBypass
     from app.services.uuid_helpers import get_collection_by_uuid_with_permission
@@ -282,7 +282,7 @@ def test_org_grant_cannot_see_restricted_collection(gov, restricted, db_session)
     ), "control: this bypass does reach an unrestricted collection"
 
     for resolver in (get_collection_by_uuid_with_permission, get_collection_by_uuid_with_sharing):
-        with pytest.raises(HTTPException) as refused:
+        with pytest.raises(ResourceNotFoundError) as refused:
             resolver(gov.db, restricted.collection.uuid, staff.id, bypass=bypass)
         assert refused.value.status_code == 404
 

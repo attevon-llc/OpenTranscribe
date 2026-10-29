@@ -15,9 +15,9 @@ from __future__ import annotations
 import uuid as uuid_pkg
 
 import pytest
-from fastapi import HTTPException
 
 from app.core import constants as C  # noqa: N812
+from app.core.exceptions import InvalidInputError
 from app.models.media import Collection
 from app.models.media import CollectionMember
 from app.models.media import FileTag
@@ -420,7 +420,7 @@ def test_oversized_scope_is_rejected_with_400(db_session, normal_user, monkeypat
     files = [_make_file(db_session, normal_user, title=f"R{i}") for i in range(3)]
     scope = ChatScope(file_uuids=[str(f.uuid) for f in files])
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(InvalidInputError) as exc:
         resolve_scope_file_uuids(db_session, _ctx(normal_user), scope)
 
     assert exc.value.status_code == 400

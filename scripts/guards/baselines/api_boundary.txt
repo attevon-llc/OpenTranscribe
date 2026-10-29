@@ -39,7 +39,6 @@ fastapi_import::backend/app/utils/error_handlers.py	2	layering: removal planned
 fastapi_import::backend/app/utils/lite_mode.py	2	layering: removal planned
 fastapi_import::backend/app/utils/pagination.py	2	layering: removal planned
 fastapi_import::backend/app/utils/url_validation.py	1	layering: removal planned
-fastapi_import::backend/app/services/uuid_helpers.py	2	layering: removal planned
 fastapi_import::backend/app/utils/whisper_model_choice.py	2	layering: removal planned
 http_exception_raise::backend/app/auth/account_linking.py	2	layering: removal planned
 http_exception_raise::backend/app/auth/email_verification.py	1	layering: removal planned
@@ -50,7 +49,6 @@ http_exception_raise::backend/app/core/capabilities.py	1	layering: removal plann
 http_exception_raise::backend/app/core/security.py	2	layering: removal planned
 http_exception_raise::backend/app/services/account_security_service.py	3	layering: removal planned
 http_exception_raise::backend/app/services/asr_provider_policy.py	2	layering: removal planned
-http_exception_raise::backend/app/services/chat/context_resolver.py	1	layering: removal planned
 http_exception_raise::backend/app/services/delete_permissions.py	4	layering: removal planned
 http_exception_raise::backend/app/services/media_download_service.py	11	layering: removal planned
 http_exception_raise::backend/app/services/permission_service.py	4	layering: removal planned
@@ -58,7 +56,6 @@ http_exception_raise::backend/app/services/platform_bypass.py	1	layering: remova
 http_exception_raise::backend/app/services/protected_media_plugins/mediacms.py	9	layering: removal planned
 http_exception_raise::backend/app/utils/error_handlers.py	1	layering: removal planned
 http_exception_raise::backend/app/utils/url_validation.py	1	layering: removal planned
-http_exception_raise::backend/app/services/uuid_helpers.py	19	layering: removal planned
 http_exception_raise::backend/app/utils/whisper_model_choice.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/deps_context.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/admin.py	52	layering: removal planned

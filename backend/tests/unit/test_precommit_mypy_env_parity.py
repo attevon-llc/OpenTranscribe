@@ -219,10 +219,10 @@ def _first_party_names() -> frozenset[str]:
     """Top-level importable names from every directory ``backend`` code is imported from.
 
     ``backend/``, every directory under ``backend/tests`` (the root conftest and pytest's
-    rootdir handling put them on ``sys.path``) and the two ``scripts/`` directories tests
-    import helpers from.
+    rootdir handling put them on ``sys.path``) and the ``scripts/`` directories tests import
+    helpers from (``backend/scripts``, ``scripts`` and ``scripts/lib``).
     """
-    roots = [BACKEND, BACKEND / "scripts", REPO_ROOT / "scripts"] + [
+    roots = [BACKEND, BACKEND / "scripts", REPO_ROOT / "scripts", REPO_ROOT / "scripts" / "lib"] + [
         p for p in (BACKEND / "tests").rglob("*") if p.is_dir() and not set(p.parts) & _SKIPPED_DIRS
     ]
     names: set[str] = {"tests"}

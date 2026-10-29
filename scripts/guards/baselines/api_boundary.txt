@@ -26,15 +26,12 @@ fastapi_import::backend/app/services/pipeline_plan_inputs.py	1	layering: removal
 fastapi_import::backend/app/tasks/transcription/hooks.py	1	layering: removal planned
 fastapi_import::backend/app/utils/client_ip.py	1	layering: removal planned
 fastapi_import::backend/app/utils/pagination.py	2	layering: removal planned
-fastapi_import::backend/app/services/uuid_helpers.py	2	layering: removal planned
 http_exception_raise::backend/app/auth/account_linking.py	2	layering: removal planned
 http_exception_raise::backend/app/auth/email_verification.py	1	layering: removal planned
 http_exception_raise::backend/app/auth/oidc/admission.py	2	layering: removal planned
 http_exception_raise::backend/app/auth/proxy/provisioning.py	1	layering: removal planned
 http_exception_raise::backend/app/auth/saml/admission.py	1	layering: removal planned
 http_exception_raise::backend/app/core/security.py	2	layering: removal planned
-http_exception_raise::backend/app/services/chat/context_resolver.py	1	layering: removal planned
-http_exception_raise::backend/app/services/uuid_helpers.py	19	layering: removal planned
 orm_call_in_api::backend/app/api/deps_context.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/admin.py	52	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/admin_approvals.py	1	layering: removal planned

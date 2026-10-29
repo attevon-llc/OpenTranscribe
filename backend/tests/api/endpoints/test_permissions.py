@@ -18,8 +18,8 @@ from __future__ import annotations
 import uuid as uuid_pkg
 
 import pytest
-from fastapi import HTTPException
 
+from app.core.exceptions import AccessDeniedError
 from app.models.media import Collection
 from app.models.media import CollectionMember
 from app.models.media import MediaFile
@@ -159,7 +159,7 @@ class TestGetFileByUuidWithPermission:
     ):
         from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AccessDeniedError) as exc:
             get_file_by_uuid_with_permission(
                 db_session,
                 str(sample_media_file.uuid),
@@ -216,7 +216,7 @@ class TestGetCollectionByUuidWithPermission:
     ):
         from app.services.uuid_helpers import get_collection_by_uuid_with_permission
 
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AccessDeniedError) as exc:
             get_collection_by_uuid_with_permission(
                 db_session,
                 str(shared_collection.uuid),

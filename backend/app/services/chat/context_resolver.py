@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 
 from app.core import constants as C  # noqa: N812
 from app.core.exceptions import DomainError
+from app.core.exceptions import InvalidInputError
 from app.models.media import CollectionMember
 from app.models.media import FileTag
 from app.models.media import MediaFile
@@ -226,7 +227,7 @@ def resolve_scope_file_uuids(
         files (possibly empty, which correctly matches nothing).
 
     Raises:
-        HTTPException: 400 when the scope resolves to more files than
+        InvalidInputError: 400 when the scope resolves to more files than
             :data:`app.core.constants.CHAT_MAX_SCOPE_FILES`.
     """
     if scope.is_empty:
@@ -243,12 +244,9 @@ def resolve_scope_file_uuids(
     resolved |= _resolve_tags(db, ctx, scope.tag_names)
 
     if len(resolved) > C.CHAT_MAX_SCOPE_FILES:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Selection resolves to {len(resolved)} files; "
-                f"the maximum is {C.CHAT_MAX_SCOPE_FILES}. Narrow the selection."
-            ),
+        raise InvalidInputError(
+            f"Selection resolves to {len(resolved)} files; "
+            f"the maximum is {C.CHAT_MAX_SCOPE_FILES}. Narrow the selection."
         )
 
     logger.info(

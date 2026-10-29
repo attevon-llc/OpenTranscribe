@@ -17,6 +17,7 @@ import uuid as uuid_pkg
 import pytest
 from fastapi import HTTPException
 
+from app.core.exceptions import AccessDeniedError
 from app.core.tenancy import UNSCOPED
 from app.models.media import MediaFile
 from app.models.media import Speaker
@@ -242,7 +243,7 @@ class TestRequireSpeakerAccessUsesFileTenant:
 
     def test_grant_for_another_organization_does_not_open_the_speaker(self, world):
         bypass = _RecordingBypass(granted_org_id=world["org_b"].id)
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AccessDeniedError) as exc:
             self._access(world, "a", bypass)
         assert exc.value.status_code == 403
         assert bypass.seen_org_ids == [world["org_a"].id]

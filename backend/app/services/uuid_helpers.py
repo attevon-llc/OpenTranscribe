@@ -14,10 +14,11 @@ Performance Notes:
 from typing import Any
 from uuid import UUID
 
-from fastapi import HTTPException
-from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import AccessDeniedError
+from app.core.exceptions import InvalidInputError
+from app.core.exceptions import ResourceNotFoundError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
@@ -51,17 +52,14 @@ def get_by_uuid[T](
         Model instance
 
     Raises:
-        HTTPException: 404 if not found
+        DomainError: 404 if not found
     """
     # Convert string to UUID if needed
     if isinstance(uuid, str):
         try:
             uuid = UUID(uuid)
         except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid UUID format: {uuid}",
-            ) from None
+            raise InvalidInputError(f"Invalid UUID format: {uuid}") from None
 
     # Query by UUID
     instance = db.query(model).filter(model.uuid == uuid).first()  # type: ignore[attr-defined]
@@ -69,10 +67,7 @@ def get_by_uuid[T](
     if not instance:
         model_name = model.__name__
         message = error_message or f"{model_name} not found"
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=message,
-        )
+        raise ResourceNotFoundError(message)
 
     return instance  # type: ignore[no-any-return]
 
@@ -121,7 +116,7 @@ def uuid_to_id[T](db: Session, model: type[T], uuid: UUID | str) -> int:
         Integer ID
 
     Raises:
-        HTTPException: 404 if not found
+        DomainError: 404 if not found
     """
     instance = get_by_uuid(db, model, uuid)
     return int(instance.id)  # type: ignore[attr-defined]
@@ -138,7 +133,7 @@ def validate_uuids(uuids: list[str]) -> list[UUID]:
         List of UUID objects
 
     Raises:
-        HTTPException: 400 if any UUID is invalid
+        DomainError: 400 if any UUID is invalid
     """
     result = []
     for uuid_item in uuids:
@@ -149,10 +144,7 @@ def validate_uuids(uuids: list[str]) -> list[UUID]:
             else:
                 result.append(UUID(uuid_item))
         except (ValueError, AttributeError):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid UUID format: {uuid_item}",
-            ) from None
+            raise InvalidInputError(f"Invalid UUID format: {uuid_item}") from None
     return result
 
 
@@ -211,7 +203,7 @@ def require_resource_owner(
     """Raise 403 with the caller's detail when ``user`` does not own ``resource``.
 
     Behavior-preserving consolidation of the copy-pasted ``if resource.user_id !=
-    current_user.id: raise HTTPException(403, ...)`` pattern across endpoints.
+    current_user.id: raise AccessDeniedError(...)`` pattern across endpoints.
 
     Args:
         resource: ORM instance bearing the owner foreign-key attribute.
@@ -226,7 +218,7 @@ def require_resource_owner(
         resource_type: Label recorded when a bypass is audited.
 
     Raises:
-        HTTPException: 403 ``forbidden_detail`` when the user is neither the
+        DomainError: 403 ``forbidden_detail`` when the user is neither the
             owner nor (when permitted) the platform role.
     """
     if bypass is not None and bypass.allows(
@@ -238,10 +230,7 @@ def require_resource_owner(
     ):
         return
     if getattr(resource, owner_attr) != user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=forbidden_detail,
-        )
+        raise AccessDeniedError(forbidden_detail)
 
 
 def _resource_in_tenant_scope(resource: Any, organization_id: OrgScope) -> bool:
@@ -297,7 +286,7 @@ def get_file_by_uuid_with_permission(
         MediaFile instance
 
     Raises:
-        HTTPException: 404 if not found, 403 if no permission
+        DomainError: 404 if not found, 403 if no permission
     """
     from app.services.permission_service import PERMISSION_LEVELS
     from app.services.permission_service import PermissionService
@@ -321,10 +310,7 @@ def get_file_by_uuid_with_permission(
     # taken-down file is indistinguishable from a missing one — even the owner
     # and public-share viewers are blocked.
     if is_hidden_for(file, is_admin=bypass.user_is_admin):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="File not found",
-        )
+        raise ResourceNotFoundError("File not found")
 
     # Public files are accessible regardless of tenant scope (intentional).
     if allow_public and file.is_public:
@@ -333,10 +319,7 @@ def get_file_by_uuid_with_permission(
     # Tenant gate: a file outside the active scope is invisible (default-deny).
     # Returning 403 keeps parity with the existing no-permission path.
     if not _resource_in_tenant_scope(file, organization_id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to access this file",
-        )
+        raise AccessDeniedError("You do not have permission to access this file")
 
     # Direct ownership (fast path)
     if file.user_id == user_id:
@@ -346,16 +329,10 @@ def get_file_by_uuid_with_permission(
     permission = PermissionService.get_file_permission(db, file.id, user_id)
     if permission is not None:
         if PERMISSION_LEVELS[permission] < PERMISSION_LEVELS[min_permission]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Requires {min_permission} permission on this file",
-            )
+            raise AccessDeniedError(f"Requires {min_permission} permission on this file")
         return file
 
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="You do not have permission to access this file",
-    )
+    raise AccessDeniedError("You do not have permission to access this file")
 
 
 def _refuse_unseen_restricted(db: Session, collection: Collection, user_id: int) -> None:
@@ -369,7 +346,7 @@ def _refuse_unseen_restricted(db: Session, collection: Collection, user_id: int)
     from app.services.collection_visibility import collection_is_hidden_from
 
     if collection_is_hidden_from(db, collection, user_id):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found")
+        raise ResourceNotFoundError("Collection not found")
 
 
 def get_collection_by_uuid_with_permission(
@@ -399,7 +376,7 @@ def get_collection_by_uuid_with_permission(
         Collection instance
 
     Raises:
-        HTTPException: 404 if not found, 403 if no permission
+        DomainError: 404 if not found, 403 if no permission
     """
     from app.services.permission_service import PermissionService
 
@@ -417,10 +394,7 @@ def get_collection_by_uuid_with_permission(
 
     # Tenant gate: a collection outside the active scope is invisible (default-deny).
     if not _resource_in_tenant_scope(collection, organization_id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to access this collection",
-        )
+        raise AccessDeniedError("You do not have permission to access this collection")
 
     # Direct ownership of a personal collection (fast path). An organization
     # collection is reached through membership of its org (v422), which the
@@ -433,10 +407,7 @@ def get_collection_by_uuid_with_permission(
     if permission is not None:
         return collection
 
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="You do not have permission to access this collection",
-    )
+    raise AccessDeniedError("You do not have permission to access this collection")
 
 
 # Sharing-aware permission helpers (return permission level)
@@ -469,7 +440,7 @@ def get_collection_by_uuid_with_sharing(
         Tuple of (Collection, effective_permission_string)
 
     Raises:
-        HTTPException: 404 if not found, 403 if insufficient permission
+        DomainError: 404 if not found, 403 if insufficient permission
     """
     from app.services.permission_service import PERMISSION_LEVELS
     from app.services.permission_service import PermissionService
@@ -496,24 +467,15 @@ def get_collection_by_uuid_with_sharing(
 
     # Tenant gate: out-of-scope collections are not authorized (default-deny).
     if not _resource_in_tenant_scope(collection, organization_id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to access this collection",
-        )
+        raise AccessDeniedError("Not authorized to access this collection")
 
     # Check permission via PermissionService
     permission = PermissionService.get_collection_permission(db, collection.id, user_id)
     if permission is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to access this collection",
-        )
+        raise AccessDeniedError("Not authorized to access this collection")
 
     if PERMISSION_LEVELS[permission] < PERMISSION_LEVELS[min_permission]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Requires {min_permission} permission on this collection",
-        )
+        raise AccessDeniedError(f"Requires {min_permission} permission on this collection")
 
     return collection, permission
 
@@ -537,7 +499,7 @@ def require_speaker_access(
     speaker's file's tenant.
 
     Raises:
-        HTTPException: 404 when the speaker does not exist, its file is quarantined,
+        DomainError: 404 when the speaker does not exist, its file is quarantined,
             or the file belongs to another tenant (existence is not disclosed across
             tenants); 403 when the caller has no access in this tenant or holds a
             lower permission than ``min_permission``.
@@ -561,18 +523,15 @@ def require_speaker_access(
     if is_hidden_for(media_file, is_admin=False) or not _resource_in_tenant_scope(
         media_file, organization_id
     ):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found")
+        raise ResourceNotFoundError("Speaker not found")
 
     permission = PermissionService.get_file_permission(
         db, int(speaker.media_file_id), user.id, organization_id=organization_id
     )
     if permission is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=forbidden_detail)
+        raise AccessDeniedError(forbidden_detail)
     if PERMISSION_LEVELS[permission] < PERMISSION_LEVELS[min_permission]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Requires {min_permission} permission",
-        )
+        raise AccessDeniedError(f"Requires {min_permission} permission")
     return speaker
 
 
@@ -591,7 +550,7 @@ def require_profile_in_scope(
     profile shared with the caller in this tenant also passes (read/link).
 
     Raises:
-        HTTPException: 404 when missing or in another tenant; 403 when in-tenant
+        DomainError: 404 when missing or in another tenant; 403 when in-tenant
             but neither owned nor (for ``owner_only=False``) shared with the caller.
     """
     from app.services.permission_service import PermissionService
@@ -606,15 +565,11 @@ def require_profile_in_scope(
     ):
         return profile
     if not _resource_in_tenant_scope(profile, organization_id):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Speaker profile not found"
-        )
+        raise ResourceNotFoundError("Speaker profile not found")
     if profile.user_id == user.id:
         return profile
     if not owner_only and profile.id in PermissionService.get_accessible_profile_ids(
         db, user.id, organization_id=organization_id
     ):
         return profile
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this profile"
-    )
+    raise AccessDeniedError("Not authorized to access this profile")

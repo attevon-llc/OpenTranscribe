@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
 
 const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn() }));
@@ -264,6 +264,16 @@ describe('FirstRunWizard summary: authentication email (issue #1240)', () => {
 });
 
 describe('FirstRunWizard terms step', () => {
+  // The acknowledgment (in the step and in the reader) is typeset through a lazy
+  // `import('$lib/utils/chatMarkdown')`. The first import in a worker waits for its Vite
+  // transform in a queue shared with every other worker, which under CPU load took seconds
+  // and landed inside whichever test happened to wait on the typeset text, spending that
+  // test's 5 s budget on module loading rather than on the behaviour it asserts. Load it
+  // here, under the hook's own timeout, so the tests below wait only on rendering.
+  beforeAll(async () => {
+    await import('$lib/utils/chatMarkdown');
+  });
+
   const ACK_MD = [
     '# Operator acknowledgment',
     '',

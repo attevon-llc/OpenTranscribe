@@ -198,9 +198,8 @@ def _enforce_approval(user: User, request: Request | None, db: Session) -> None:
     * ``rejected`` bites unconditionally. It is a decision about one account, like
       deactivation, not a policy that can be switched off underneath it.
 
-    Unconditional in the other sense too: no route is exempt. Unlike a forced
-    password change there is nothing the user can do, so routing them anywhere
-    would only be routing them to a screen that cannot help.
+    No route is exempt: unlike a forced password change there is nothing the user
+    can do, so routing them anywhere would only reach a screen that cannot help.
 
     Args:
         user: The authenticated account.
@@ -209,9 +208,10 @@ def _enforce_approval(user: User, request: Request | None, db: Session) -> None:
 
     Raises:
         HTTPException: 403 with ``detail.code`` ``account_pending_approval`` or
-            ``account_rejected``.
+            ``account_rejected``; 503 ``auth_config_unavailable`` for a pending
+            account when the setting cannot be read.
     """
-    from app.auth.approval import approval_required
+    from app.api.endpoints.auth.approval_gate import approval_enforced
     from app.auth.approval import is_pending
     from app.auth.approval import is_rejected
 
@@ -220,7 +220,7 @@ def _enforce_approval(user: User, request: Request | None, db: Session) -> None:
             ERROR_CODE_ACCOUNT_REJECTED,
             "This account was not approved. Contact an administrator.",
         )
-    elif is_pending(user) and approval_required(db):
+    elif is_pending(user) and approval_enforced(db):
         code, message = (
             ERROR_CODE_ACCOUNT_PENDING_APPROVAL,
             "This account is awaiting administrator approval.",
@@ -228,10 +228,8 @@ def _enforce_approval(user: User, request: Request | None, db: Session) -> None:
     else:
         return
 
-    # Audited, unlike the banner gate: this fires for individually flagged
-    # accounts rather than for every session of every user, so the volume is
-    # bounded — and "a refused account kept trying" is exactly what an operator
-    # reviewing an approval queue wants to see.
+    # Audited, unlike the banner gate: it fires only for individually flagged
+    # accounts, so volume is bounded, and an operator reviewing the queue wants it.
     _audit_lifecycle_denial(
         AuditEventType.AUTH_ACCOUNT_DISABLED,
         user,

@@ -33,6 +33,7 @@ from uuid import UUID
 
 import pytest
 from fastapi import HTTPException
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.api.endpoints.auth import dependencies as deps_module
 from app.auth.constants import TOKEN_TYPE_ACCESS
@@ -41,6 +42,7 @@ from app.auth.token_service import REVOKED_TOKEN_PREFIX
 from app.auth.token_service import USER_REVOCATION_EPOCH_PREFIX
 from app.auth.token_service import TokenService
 from app.core.config import settings
+from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from tests.jwt_compat import jwt
 
@@ -282,3 +284,62 @@ class TestTheBlacklistStillApplies:
         revocation.store.set(f"{REVOKED_TOKEN_PREFIX}some-other-jti", "revoked", ex=600)
 
         assert _authenticate(_token(issued_at=int(time.time())), user) is user
+
+
+class _EpochReadFailsStore:
+    """Answers the JTI lookup but cannot read the per-user epoch key."""
+
+    def get(self, key: str) -> Any:
+        if key.startswith(USER_REVOCATION_EPOCH_PREFIX):
+            raise RedisConnectionError("cache unreachable")
+        return None
+
+    def set(self, *_a: Any, **_k: Any) -> None:
+        return None
+
+
+class _JoinableQuery(_FakeQuery):
+    def join(self, *_a: Any, **_k: Any) -> _JoinableQuery:
+        return self
+
+
+class _SessionsDB(_FakeDB):
+    """``refresh_token`` lookups answer from a queue: jti lookup, any-session, live-session."""
+
+    def __init__(self, rows: dict, refresh_answers: list[Any]):
+        super().__init__(rows)
+        self._refresh_answers = list(refresh_answers)
+
+    def query(self, model: Any) -> _FakeQuery:
+        if model is RefreshToken:
+            return _JoinableQuery(self._refresh_answers.pop(0))
+        return super().query(model)
+
+
+class TestAnEpochReadFailureFallsBackToTheDatabase:
+    """Consequence prevented: an unreadable epoch being read as "nothing was revoked",
+    which would let a token issued before logout-all keep working."""
+
+    def _authenticate_with(self, revocation, db: _SessionsDB, token: str) -> Any:
+        revocation._store = _EpochReadFailsStore()
+        return deps_module.get_current_user(request=_request(), token=token, db=cast(Any, db))
+
+    def test_a_user_whose_sessions_were_all_revoked_is_refused(self, revocation):
+        user = _user()
+        revoked_session = SimpleNamespace(revoked_at=1)
+        db = _SessionsDB({User: user}, [None, revoked_session, None])
+
+        with pytest.raises(HTTPException) as exc:
+            self._authenticate_with(revocation, db, _token(issued_at=int(time.time()) - 60))
+
+        assert exc.value.status_code == 401
+
+    def test_a_user_with_a_live_session_keeps_working(self, revocation):
+        """The no-lockout half: a cache blip must not sign out ordinary users."""
+        user = _user()
+        live_session = SimpleNamespace(revoked_at=None)
+        db = _SessionsDB({User: user}, [None, live_session, live_session])
+
+        result = self._authenticate_with(revocation, db, _token(issued_at=int(time.time()) - 60))
+
+        assert result is user

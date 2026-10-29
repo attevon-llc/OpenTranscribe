@@ -449,7 +449,7 @@ class Settings(BaseSettings):
     AUDIT_LOG_ENABLED: bool = os.getenv("AUDIT_LOG_ENABLED", "true").lower() == "true"
     AUDIT_LOG_FORMAT: str = os.getenv("AUDIT_LOG_FORMAT", "json")  # json or cef
     AUDIT_LOG_TO_OPENSEARCH: bool = os.getenv("AUDIT_LOG_TO_OPENSEARCH", "true").lower() == "true"
-    AUDIT_LOG_RETENTION_DAYS: int = 365
+    AUDIT_LOG_RETENTION_DAYS: int = 365  # informational only: nothing reads it, no auto-purge
     # Fallback to file-based logging when OpenSearch is unavailable (FedRAMP AU-9)
     AUDIT_LOG_FALLBACK_ENABLED: bool = (
         os.getenv("AUDIT_LOG_FALLBACK_ENABLED", "true").lower() == "true"

@@ -2,6 +2,7 @@
 
 import logging
 from datetime import UTC
+from datetime import datetime
 from datetime import timedelta
 from uuid import UUID
 
@@ -32,6 +33,7 @@ from app.auth.oidc import OIDCConfig
 from app.auth.oidc import call_federated_logout
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
+from app.auth.token_service import RevocationError
 from app.auth.token_service import token_service
 from app.core.config import settings
 from app.db.base import get_db
@@ -45,7 +47,11 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.post("/token/refresh", response_model=Token)
+@router.post(
+    "/token/refresh",
+    response_model=Token,
+    responses={503: {"description": "The rotation could not be recorded; retry."}},
+)
 @limiter.limit(get_auth_rate_limit())
 def refresh_access_token(
     request: Request,
@@ -131,16 +137,24 @@ def refresh_access_token(
 
     # Rotate refresh token (revoke old, create new) - OAuth 2.1 best practice
     client_ip, user_agent = _get_client_info(request)
-    new_refresh_token, _ = token_service.rotate_refresh_token(
-        db=db,
-        old_token=refresh_token_value,
-        old_token_record=refresh_token_record,
-        user_id=user.id,
-        user_uuid=user_uuid_str,
-        role=str(user.role),
-        user_agent=user_agent,
-        ip_address=client_ip,
-    )
+    try:
+        new_refresh_token, _ = token_service.rotate_refresh_token(
+            db=db,
+            old_token=refresh_token_value,
+            old_token_record=refresh_token_record,
+            user_id=user.id,
+            user_uuid=user_uuid_str,
+            role=str(user.role),
+            user_agent=user_agent,
+            ip_address=client_ip,
+        )
+    except RevocationError as exc:
+        # The client still holds its previous refresh token and can retry.
+        logger.error("Token refresh not completed: rotation could not be recorded")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "token_rotation_failed"},
+        ) from exc
 
     # Log token refresh with rotation
     audit_logger.log_token_refresh(
@@ -168,7 +182,87 @@ def refresh_access_token(
     return response
 
 
-@router.post("/logout")
+def _verified_claims(token: str | None) -> dict | None:
+    """Claims of a token whose signature and expiry verify; None when there are none.
+
+    Purpose-agnostic on purpose: logging out with a refresh token is still a logout.
+    """
+    if not token:
+        return None
+    try:
+        key = OctKey.import_key(settings.JWT_SECRET_KEY)
+        claims = jwt.decode(token, key, algorithms=[settings.JWT_ALGORITHM]).claims
+        # joserfc verifies the signature/algorithm only — exp is not checked
+        # automatically (unlike python-jose), so it's validated explicitly here.
+        JWTClaimsRegistry(exp={"essential": True}).validate(claims)
+    except JoseError as e:
+        logger.warning(f"Logout with invalid token: {e}")
+        return None
+    return dict(claims)
+
+
+def _revoke_presented_tokens(db: Session, request: Request, claims: dict | None) -> list[str]:
+    """Revoke the access token and the refresh-cookie token of the calling session.
+
+    Returns the names of the revocations that could not be recorded; a token that
+    is absent, malformed or expired has nothing to revoke and is not a failure.
+    """
+    from app.auth.cookies import get_refresh_token_from_cookie
+
+    failed: list[str] = []
+
+    jti = claims.get("jti") if claims else None
+    if claims and jti:
+        exp_timestamp = claims.get("exp")
+        expires_at = datetime.fromtimestamp(exp_timestamp, tz=UTC) if exp_timestamp else None
+        try:
+            token_service.revoke_token(db, jti, expires_at)
+            logger.info(f"Logout: revoked access token (jti={jti[:8]}...)")
+        except RevocationError:
+            failed.append("access_token")
+
+    refresh_value = get_refresh_token_from_cookie(request)
+    if refresh_value:
+        try:
+            refresh_claims = token_service.verify_token_with_fallback(refresh_value)
+            refresh_jti = refresh_claims.get("jti")
+            if refresh_claims.get("type") == "refresh" and refresh_jti:
+                refresh_exp = refresh_claims.get("exp")
+                token_service.revoke_token(
+                    db,
+                    refresh_jti,
+                    datetime.fromtimestamp(refresh_exp, tz=UTC) if refresh_exp else None,
+                )
+                logger.info(f"Logout: revoked refresh token (jti={refresh_jti[:8]}...)")
+        except JoseError as e:
+            logger.warning(f"Logout with invalid refresh token: {e}")
+        except RevocationError:
+            failed.append("refresh_token")
+
+    return failed
+
+
+async def _end_federated_session(db: Session, user: User) -> bool | None:
+    """Terminate the OIDC SSO session (issue #125); None when not applicable."""
+    if user.auth_type != AUTH_TYPE_OIDC or not user.oidc_refresh_token:
+        return None
+    try:
+        oidc_cfg = OIDCConfig.from_db(db)
+        decrypted_rt = MFAService.decrypt_totp_secret(user.oidc_refresh_token)
+        return await call_federated_logout(decrypted_rt, cfg=oidc_cfg)
+    except Exception as e:
+        logger.warning(f"OIDC federated logout failed: {e}")
+        return False
+    finally:
+        # Always clear stored token regardless of outcome
+        user.oidc_refresh_token = None
+        db.commit()
+
+
+@router.post(
+    "/logout",
+    responses={503: {"description": "Cookies were cleared but a revocation was not recorded."}},
+)
 async def logout(
     request: Request,
     token: str | None = Depends(oauth2_scheme),
@@ -177,13 +271,17 @@ async def logout(
     """
     Logout the current session by revoking the current tokens.
 
-    This endpoint revokes both the access token (via JTI blacklist) and
-    any associated refresh token, effectively logging out the current session.
-    For OIDC users, also terminates the federated identity-provider session.
+    This endpoint revokes both the access token (via JTI blacklist) and the
+    refresh token carried by the refresh cookie, effectively logging out the
+    current session. For OIDC users, also terminates the federated
+    identity-provider session.
+
+    The cookies are always cleared. The response is 200 only when every
+    revocation was recorded; otherwise it is 503 (cookies still cleared) and the
+    logout is audited as a failure.
 
     Security (FedRAMP AC-12):
-    - Adds access token JTI to Redis blacklist
-    - Revokes associated refresh token in database
+    - Revokes the access token JTI and the refresh token
     - Terminates the OIDC SSO session (if applicable)
     - Tokens cannot be reused after logout
 
@@ -203,89 +301,59 @@ async def logout(
         token = get_access_token_from_cookie(request)
 
     client_ip, user_agent = _get_client_info(request)
+    user_id: int | None = None
+    username: str | None = None
+    federated_ok: bool | None = None
+    failed: list[str] = []
 
-    # Clearing the cookies is the one thing logout MUST always do. Previously the
-    # handler caught only JWTError, so a Redis outage inside revoke_token escaped
-    # as a 500 and the browser kept valid credentials on a "failed" logout.
+    # Clearing the cookies is the one thing logout MUST always do, whatever
+    # happens to the server-side state below.
     try:
-        if token:
-            # Decode token to get JTI and user info. Purpose-agnostic on purpose:
-            # logging out with a refresh token is still a logout.
-            key = OctKey.import_key(settings.JWT_SECRET_KEY)
-            token_obj = jwt.decode(token, key, algorithms=[settings.JWT_ALGORITHM])
-            # joserfc verifies the signature/algorithm only — exp is not checked
-            # automatically (unlike python-jose), so it's validated explicitly here.
-            JWTClaimsRegistry(exp={"essential": True}).validate(token_obj.claims)
-            payload = token_obj.claims
-            jti = payload.get("jti")
-            exp_timestamp = payload.get("exp")
-            user_uuid_str = payload.get("sub")
-
-            if jti:
-                # Calculate expiration datetime from timestamp
-                from datetime import datetime
-
-                expires_at = (
-                    datetime.fromtimestamp(exp_timestamp, tz=UTC) if exp_timestamp else None
-                )
-
-                # Revoke access token
-                token_service.revoke_token(db, jti, expires_at)
-                logger.info(f"Logout: revoked access token (jti={jti[:8]}...)")
-
-            # Log logout event and handle OIDC federated logout
-            if user_uuid_str:
-                user_uuid = UUID(user_uuid_str)
-                user = db.query(User).filter(User.uuid == user_uuid).first()
-                if user:
-                    federated_ok: bool | None = None
-                    # OIDC federated logout (issue #125)
-                    if user.auth_type == AUTH_TYPE_OIDC and user.oidc_refresh_token:
-                        try:
-                            oidc_cfg = OIDCConfig.from_db(db)
-                            decrypted_rt = MFAService.decrypt_totp_secret(user.oidc_refresh_token)
-                            federated_ok = await call_federated_logout(decrypted_rt, cfg=oidc_cfg)
-                        except Exception as e:
-                            logger.warning(f"OIDC federated logout failed: {e}")
-                            federated_ok = False
-                        finally:
-                            # Always clear stored token regardless of outcome
-                            user.oidc_refresh_token = None
-                            db.commit()
-
-                    # A failed federated logout leaves the IdP session alive while
-                    # the user is told they signed out — on a shared machine that is
-                    # a real exposure, so it has to be visible in the audit trail
-                    # rather than only in a warning log.
-                    audit_logger.log(
-                        event_type=AuditEventType.AUTH_LOGOUT,
-                        outcome=AuditOutcome.SUCCESS
-                        if federated_ok is not False
-                        else AuditOutcome.FAILURE,
-                        user_id=user.id,
-                        username=str(user.email),
-                        source_ip=client_ip,
-                        user_agent=user_agent,
-                        details={
-                            "all_sessions": False,
-                            "federated_logout": federated_ok,
-                        },
-                    )
-
-    except JoseError as e:
-        logger.warning(f"Logout with invalid token: {e}")
+        claims = _verified_claims(token)
+        failed = _revoke_presented_tokens(db, request, claims)
+        subject = claims.get("sub") if claims else None
+        if subject:
+            user = db.query(User).filter(User.uuid == UUID(str(subject))).first()
+            if user:
+                user_id, username = user.id, str(user.email)
+                federated_ok = await _end_federated_session(db, user)
     except Exception as e:
-        # Infrastructure failure (Redis, database). The session is still ended
-        # client-side; log loudly so the incomplete server-side revocation is
-        # visible rather than silently swallowed.
+        # Infrastructure failure (database). Logged loudly and reported below.
         logger.error("Logout could not fully revoke server-side state: %s", e)
+        failed.append("session")
 
-    response = JSONResponse(content={"message": "Successfully logged out"})
+    if user_id is not None or failed:
+        audit_logger.log(
+            event_type=AuditEventType.AUTH_LOGOUT,
+            outcome=AuditOutcome.FAILURE
+            if (failed or federated_ok is False)
+            else AuditOutcome.SUCCESS,
+            user_id=user_id,
+            username=username,
+            source_ip=client_ip,
+            user_agent=user_agent,
+            details={
+                "all_sessions": False,
+                "federated_logout": federated_ok,
+                "revocation_failed": failed,
+            },
+        )
+
+    if failed:
+        response = JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"detail": {"code": "logout_incomplete"}},
+        )
+    else:
+        response = JSONResponse(content={"message": "Successfully logged out"})
     clear_auth_cookies(response)
     return response
 
 
-@router.post("/logout/all")
+@router.post(
+    "/logout/all",
+    responses={503: {"description": "The sessions could not be revoked; retry."}},
+)
 async def logout_all_sessions(
     request: Request,
     current_user: User = Depends(get_current_user),
@@ -320,32 +388,42 @@ async def logout_all_sessions(
     Returns:
         Success message with count of revoked sessions
     """
-    count = token_service.revoke_all_user_tokens(db, current_user.id)
-
-    # OIDC federated logout (issue #125)
-    if current_user.auth_type == AUTH_TYPE_OIDC and current_user.oidc_refresh_token:
-        try:
-            oidc_cfg = OIDCConfig.from_db(db)
-            decrypted_rt = MFAService.decrypt_totp_secret(current_user.oidc_refresh_token)
-            await call_federated_logout(decrypted_rt, cfg=oidc_cfg)
-        except Exception as e:
-            logger.warning(f"OIDC federated logout failed: {e}")
-        finally:
-            # Always clear stored token regardless of outcome
-            current_user.oidc_refresh_token = None
-            db.commit()
-
-    # Log logout from all sessions
     client_ip, user_agent = _get_client_info(request)
+    user_id = current_user.id
+    username = str(current_user.email)
+
+    try:
+        count = token_service.revoke_all_user_tokens_in_transaction(db, user_id)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.error("Logout from all sessions not completed for user %s", user_id)
+        audit_logger.log(
+            event_type=AuditEventType.AUTH_LOGOUT_ALL,
+            outcome=AuditOutcome.FAILURE,
+            user_id=user_id,
+            username=username,
+            source_ip=client_ip,
+            user_agent=user_agent,
+            details={"all_sessions": True},
+        )
+        # Cookies are kept so the caller can retry from this session.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "logout_all_failed"},
+        ) from exc
+
+    await _end_federated_session(db, current_user)
+
     audit_logger.log_logout(
-        user_id=current_user.id,
-        username=str(current_user.email),
+        user_id=user_id,
+        username=username,
         source_ip=client_ip,
         user_agent=user_agent,
         all_sessions=True,
     )
 
-    logger.info(f"User {current_user.id} logged out from all sessions ({count} tokens revoked)")
+    logger.info(f"User {user_id} logged out from all sessions ({count} tokens revoked)")
 
     from app.auth.cookies import clear_auth_cookies
 

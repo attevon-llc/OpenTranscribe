@@ -4,7 +4,7 @@ backend/app/api/endpoints/asr_settings.py	3	ratchet: may only go down
 backend/app/api/endpoints/auth/dependencies.py	2	ratchet: may only go down
 backend/app/api/endpoints/auth/oidc.py	2	ratchet: may only go down
 backend/app/api/endpoints/auth/saml.py	1	ratchet: may only go down
-backend/app/api/endpoints/auth/sessions.py	3	ratchet: may only go down
+backend/app/api/endpoints/auth/sessions.py	2	ratchet: may only go down
 backend/app/api/endpoints/combined_speaker_migration.py	3	ratchet: may only go down
 backend/app/api/endpoints/embedding_migration.py	4	ratchet: may only go down
 backend/app/api/endpoints/engine_settings.py	3	ratchet: may only go down
@@ -42,7 +42,7 @@ backend/app/auth/password_history.py	1	ratchet: may only go down
 backend/app/auth/pki_auth.py	9	ratchet: may only go down
 backend/app/auth/rate_limit.py	2	ratchet: may only go down
 backend/app/auth/session.py	1	ratchet: may only go down
-backend/app/auth/token_service.py	7	ratchet: may only go down
+backend/app/auth/token_service.py	6	ratchet: may only go down
 backend/app/core/auth_settings.py	1	ratchet: may only go down
 backend/app/core/backup_metrics.py	4	ratchet: may only go down
 backend/app/core/broker_orphans.py	6	ratchet: may only go down
@@ -142,7 +142,7 @@ backend/app/services/redaction/detectors/pii_presidio.py	3	ratchet: may only go 
 backend/app/services/redaction/detectors/toxicity.py	2	ratchet: may only go down
 backend/app/services/redaction/device.py	3	ratchet: may only go down
 backend/app/services/redaction/reveal_audit.py	1	ratchet: may only go down
-backend/app/services/redaction/service.py	8	ratchet: may only go down
+backend/app/services/redaction/service.py	7	ratchet: may only go down
 backend/app/services/redaction/spans.py	1	ratchet: may only go down
 backend/app/services/redis_cache_service.py	7	ratchet: may only go down
 backend/app/services/search/chunk_retrieval.py	2	ratchet: may only go down

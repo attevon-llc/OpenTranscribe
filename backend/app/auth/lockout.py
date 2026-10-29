@@ -236,7 +236,7 @@ def _record_degradation(control: str, fallback: str) -> None:
     """Count a security control running without its shared state store.
 
     Imported lazily and never allowed to raise: a broken metrics backend must not be
-    able to turn into a failed login. Mirrors ``token_service._record_degradation``.
+    able to turn into a failed login. Mirrors ``revocation_fallback.record_degradation``.
     """
     try:
         from app.core.metrics import security_state_degraded_total

@@ -156,8 +156,9 @@ they are deliberately **not** behind a capability, so the operator can always ac
 
 ### Takedown notice records (issue #1254)
 
-The quarantine flags on the file row are wiped by a release, and the audit trail is a log with a
-retention setting (`AUDIT_LOG_RETENTION_DAYS`). Neither answers "which notice did we receive
+The quarantine flags on the file row are wiped by a release, and the audit trail is a log that is
+kept until an operator removes it (there is no automatic purge; `AUDIT_LOG_RETENTION_DAYS` is
+informational only). Neither answers "which notice did we receive
 three years ago, about which file, and what became of it" once the file is purged. The notice
 records do. They live in Postgres and are written **in the same transaction** as the quarantine
 flags, so a quarantined file with no record cannot exist.

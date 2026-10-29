@@ -34,6 +34,8 @@ from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.auth.constants import TOKEN_TYPE_ACCESS
 from app.auth.constants import TOKEN_TYPE_REFRESH
+from app.auth.revocation_fallback import is_revoked_from_database
+from app.auth.revocation_fallback import record_degradation
 from app.auth.session import InMemoryStore
 from app.auth.session import get_redis_client
 from app.core.config import settings
@@ -188,23 +190,12 @@ def enforce_session_ceiling(
     return revoked_jtis
 
 
-def _record_degradation(control: str, fallback: str) -> None:
-    """Count a security control running without its shared state store.
+class RevocationError(Exception):
+    """A token revocation could not be recorded durably.
 
-    Imported lazily and never allowed to raise: metrics must not be able to break
-    an authentication path. Prometheus is optional in some deployments, and this
-    runs on the request path for every revocation check while Redis is down.
+    Carries no cause text: callers answer with a fixed code and the original
+    exception is chained for the server log only.
     """
-    try:
-        from app.core.metrics import security_state_degraded_total
-
-        security_state_degraded_total.labels(control=control, fallback=fallback).inc()
-    except Exception:  # pragma: no cover - metrics must never break auth
-        # Swallowed on purpose, but never silently: PR #322 removed the blanket
-        # S110 exemption precisely because silent handlers hide real faults. A
-        # broken counter must not turn into a failed login, so this degrades to a
-        # log line instead of propagating.
-        logger.debug("Could not record security degradation metric", exc_info=True)
 
 
 class TokenService:
@@ -252,7 +243,7 @@ class TokenService:
                 # every other, so "log out all devices" and password-reset
                 # revocation silently mean nothing (issue #324). This used to log
                 # at warning level and scrolled past unnoticed.
-                _record_degradation("token_revocation", "database")
+                record_degradation("token_revocation", "database")
                 logger.critical(
                     "Redis unavailable for token revocation — falling back to the "
                     "database for refresh-token revocation checks. Revocation is "
@@ -684,55 +675,74 @@ class TokenService:
 
         return True
 
-    def revoke_token(self, db: Session, jti: str, expires_at: datetime | None = None) -> bool:
+    def revoke_token(self, db: Session, jti: str, expires_at: datetime | None = None) -> None:
         """
-        Revoke a token by adding its JTI to the Redis blacklist.
+        Revoke a token, recording it in the database first and the cache second.
+
+        ``refresh_token.revoked_at`` is the durable record and Redis is a cache of
+        it (readers fall back to the row while Redis is unreachable), so the row is
+        written and committed first. A cache failure afterwards is logged and
+        metered but does not undo the revocation. A JTI with no row (an access
+        token) has nothing durable to write, so for it the cache write is the
+        record and its failure is reported.
 
         Args:
             db: Database session
             jti: The JWT ID to revoke
             expires_at: Token expiration time (for TTL calculation)
 
-        Returns:
-            True if revoked successfully, False otherwise
+        Raises:
+            RevocationError: If the revocation could not be recorded.
         """
+        if expires_at:
+            ttl_seconds = max(1, int((expires_at - datetime.now(UTC)).total_seconds()))
+        else:
+            # Default to refresh token expiry if no expiration provided
+            ttl_seconds = settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
+
         try:
-            # Calculate TTL (remaining token lifetime)
-            if expires_at:
-                now = datetime.now(UTC)
-                ttl_seconds = max(1, int((expires_at - now).total_seconds()))
-            else:
-                # Default to refresh token expiry if no expiration provided
-                ttl_seconds = settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
-
-            # Add to Redis blacklist
-            key = f"{REVOKED_TOKEN_PREFIX}{jti}"
-            self.store.set(key, "revoked", ex=ttl_seconds)
-
-            # Update database record if exists
             refresh_token = db.query(RefreshToken).filter(RefreshToken.jti == jti).first()
             if refresh_token:
                 refresh_token.revoked_at = datetime.now(UTC)  # type: ignore[assignment]
                 db.commit()
+        except Exception as exc:
+            logger.error("Could not record revocation for token (jti=%s...)", jti[:8])
+            try:
+                db.rollback()
+            except Exception:
+                logger.debug("Rollback after failed revocation also failed", exc_info=True)
+            raise RevocationError("revocation could not be recorded") from exc
 
-            logger.info(f"Revoked token (jti={jti[:8]}..., ttl={ttl_seconds}s)")
-
-            # Single choke point for every revocation path (logout, logout-all,
-            # admin termination, password reset, federated SAML/OIDC logout) —
-            # covering it here means none of those call sites has to remember to.
-            audit_logger.log(
-                event_type=AuditEventType.AUTH_TOKEN_REVOKE,
-                outcome=AuditOutcome.SUCCESS,
-                user_id=refresh_token.user_id if refresh_token else None,
-                details={"jti": jti},
+        try:
+            self.store.set(f"{REVOKED_TOKEN_PREFIX}{jti}", "revoked", ex=ttl_seconds)
+        except Exception as exc:
+            record_degradation("token_revocation", "database")
+            if refresh_token is None:
+                logger.critical(
+                    "Could not record revocation for token (jti=%s...): cache unreachable "
+                    "and no database record exists.",
+                    jti[:8],
+                )
+                raise RevocationError("revocation could not be recorded") from exc
+            logger.critical(
+                "Cache write failed for revoked token (jti=%s...); the database record "
+                "stands and readers fall back to it.",
+                jti[:8],
             )
-            return True
 
-        except Exception as e:
-            logger.error(f"Error revoking token: {e}")
-            return False
+        logger.info(f"Revoked token (jti={jti[:8]}..., ttl={ttl_seconds}s)")
 
-    def stamp_user_revocation_epoch(self, user_uuid: str | None) -> None:
+        # Single choke point for every revocation path (logout, logout-all,
+        # admin termination, password reset, federated SAML/OIDC logout) —
+        # covering it here means none of those call sites has to remember to.
+        audit_logger.log(
+            event_type=AuditEventType.AUTH_TOKEN_REVOKE,
+            outcome=AuditOutcome.SUCCESS,
+            user_id=refresh_token.user_id if refresh_token else None,
+            details={"jti": jti},
+        )
+
+    def stamp_user_revocation_epoch(self, user_uuid: str | None) -> bool:
         """Invalidate every access token already issued to *user_uuid*.
 
         Access tokens are stateless, so there is no JTI list to blacklist. This
@@ -744,9 +754,12 @@ class TokenService:
         a Redis failure here degrades to the database heuristic in
         :meth:`_is_revoked_without_redis`, which reaches the same conclusion from
         the user's revoked refresh tokens.
+
+        Returns:
+            True when the epoch was recorded.
         """
         if not user_uuid:
-            return
+            return False
         ttl = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60 + 60
         try:
             self.store.set(
@@ -755,16 +768,35 @@ class TokenService:
                 ex=ttl,
             )
         except Exception as exc:  # pragma: no cover - defensive
+            record_degradation("token_revocation", "database")
             logger.warning("Could not stamp revocation epoch for user %s: %s", user_uuid, exc)
+            return False
+        return True
 
-    def _issued_before_user_epoch(self, user_uuid: str | None, issued_at: int | None) -> bool:
-        """Whether an access token predates the user's revocation epoch."""
+    def _issued_before_user_epoch(
+        self,
+        jti: str,
+        db: Session | None,
+        user_uuid: str | None,
+        issued_at: int | None,
+    ) -> bool:
+        """Whether an access token predates the user's revocation epoch.
+
+        When the epoch cannot be read, the answer comes from the database
+        (:meth:`_is_revoked_without_redis`), which refuses only on positive
+        evidence that every session of the user was revoked.
+        """
         if not user_uuid or issued_at is None or self._degraded:
             return False
         try:
             marker = self.store.get(f"{USER_REVOCATION_EPOCH_PREFIX}{user_uuid}")
         except Exception:
-            return False
+            logger.critical(
+                "Redis lookup failed for the revocation epoch (jti=%s...); falling back "
+                "to the database.",
+                jti[:8],
+            )
+            return is_revoked_from_database(db, jti, user_uuid)
         if marker is None:
             return False
         try:
@@ -786,8 +818,9 @@ class TokenService:
         the same transaction can abort the whole unit of work instead of
         reporting success for changes that were rolled back underneath it.
 
-        Use this whenever ``db`` already holds uncommitted work. Use
-        :meth:`revoke_all_user_tokens` only for a standalone revocation.
+        The database rows are the record of the revocation; the cache writes
+        (per-token keys and the user epoch) are best-effort, and a cache failure
+        is logged and metered rather than aborting the revocation.
 
         Args:
             db: Database session (transaction owned by the caller)
@@ -820,10 +853,18 @@ class TokenService:
             # Add to Redis blacklist. Not transactional — if the commit later
             # fails, these keys stay set. Revoking a token that turns out to
             # still be valid fails closed (the user re-authenticates), which is
-            # the safe direction for the inverse mistake.
+            # the safe direction for the inverse mistake. A cache failure does not
+            # stop the row update below: readers fall back to the row.
             ttl_seconds = max(1, int((token.expires_at - now).total_seconds()))
             key = f"{REVOKED_TOKEN_PREFIX}{token.jti}"
-            self.store.set(key, "revoked", ex=ttl_seconds)
+            try:
+                self.store.set(key, "revoked", ex=ttl_seconds)
+            except Exception:
+                record_degradation("token_revocation", "database")
+                logger.critical(
+                    "Cache write failed for revoked token (jti=%s...); the database record stands.",
+                    str(token.jti)[:8],
+                )
 
             # Update database record
             token.revoked_at = now  # type: ignore[assignment]
@@ -831,7 +872,7 @@ class TokenService:
 
         # Access tokens have no rows to revoke — kill them by epoch instead.
         resolved_uuid = user_uuid or self._user_uuid_for(db, user_id)
-        self.stamp_user_revocation_epoch(resolved_uuid)
+        epoch_stamped = self.stamp_user_revocation_epoch(resolved_uuid)
 
         # MASS revocation is audited here, not left to the callers.
         #
@@ -858,6 +899,7 @@ class TokenService:
                 "sessions_revoked": count,
                 "reason": reason,
                 "user_uuid": resolved_uuid,
+                "epoch_stamped": epoch_stamped,
             },
         )
 
@@ -868,41 +910,6 @@ class TokenService:
         """Resolve a user's UUID, for callers that only have the integer id."""
         row = db.query(User.uuid).filter(User.id == user_id).first()
         return str(row[0]) if row else None
-
-    def revoke_all_user_tokens(self, db: Session, user_id: int) -> int:
-        """
-        Revoke all refresh tokens for a user, committing on success.
-
-        Best-effort: returns 0 and logs on failure rather than raising.
-
-        Used for:
-        - Logout from all devices
-        - Account security concerns
-
-        **Do not call this while ``db`` holds uncommitted work.** It commits, and
-        on failure it rolls the whole session back — which silently discards the
-        caller's unrelated changes. ``confirm_password_reset`` used to do exactly
-        that: a failure here reverted the new password hash while the caller went
-        on to report success (issue #324). Use
-        :meth:`revoke_all_user_tokens_in_transaction` for that case.
-
-        Args:
-            db: Database session
-            user_id: User ID whose tokens should be revoked
-
-        Returns:
-            Number of tokens revoked, or 0 if the revocation failed
-        """
-        try:
-            count = self.revoke_all_user_tokens_in_transaction(db, user_id)
-            db.commit()
-            logger.info(f"Revoked {count} tokens for user {user_id}")
-            return count
-
-        except Exception:
-            logger.exception(f"Error revoking user tokens for user {user_id}")
-            db.rollback()
-            return 0
 
     def is_token_revoked(
         self,
@@ -939,7 +946,7 @@ class TokenService:
         # Touch `store` first: it sets `_degraded` on the first failed connect.
         store = self.store
         if self._degraded:
-            return self._is_revoked_without_redis(jti, db, user_uuid)
+            return is_revoked_from_database(db, jti, user_uuid)
 
         try:
             result = store.get(key)
@@ -952,98 +959,14 @@ class TokenService:
                 "this persists.",
                 jti[:8],
             )
-            return self._is_revoked_without_redis(jti, db, user_uuid)
+            return is_revoked_from_database(db, jti, user_uuid)
         if result is not None:
             return True
 
         # A stateless access token has no JTI entry of its own; the per-user
         # epoch is what makes logout-all / password reset / admin termination
         # take effect on it immediately rather than at its natural expiry.
-        return self._issued_before_user_epoch(user_uuid, issued_at)
-
-    def _is_revoked_without_redis(
-        self,
-        jti: str,
-        db: Session | None,
-        user_uuid: str | None,
-    ) -> bool:
-        """Answer "is this token revoked?" from the database instead of Redis.
-
-        Cache-aside: on cache failure, consult the system of record. Returning
-        the per-process store's answer instead would report "not revoked" for
-        everything, because that store is empty in a fresh process and is never
-        shared between replicas.
-
-        Two cases, because access tokens have no ``refresh_token`` row:
-
-        1. **The JTI is a refresh token.** ``revoked_at`` is authoritative.
-        2. **The JTI is an access token.** Nothing durable records it, so fall
-           back to the user: if every one of their refresh tokens is revoked,
-           their sessions were terminated (logout-all, password reset, admin
-           action) and this access token goes with them. That covers the reason
-           revocation is actually used. Access tokens are short-lived, so an
-           unrevoked-user access token is bounded by its own expiry anyway.
-
-        Without a session, or if the query itself fails, this **denies**. A
-        wrongly-denied request costs a re-authentication; a wrongly-allowed one
-        honours a token someone explicitly revoked.
-        """
-        if db is None:
-            _record_degradation("token_revocation", "deny")
-            logger.critical(
-                "Cannot verify revocation for jti=%s... — Redis is down and no database "
-                "session was supplied. Denying (fail closed).",
-                jti[:8],
-            )
-            return True
-
-        try:
-            row = db.query(RefreshToken).filter(RefreshToken.jti == jti).first()
-            if row is not None:
-                _record_degradation("token_revocation", "database")
-                return row.revoked_at is not None
-
-            if user_uuid is None:
-                _record_degradation("token_revocation", "deny")
-                return True
-
-            # Access token: no durable row of its own, so infer from the user's
-            # sessions — but only on POSITIVE evidence of revocation.
-            #
-            # "This user has no refresh tokens" is NOT such evidence. Some auth
-            # paths never mint one, so treating absence as revocation would lock
-            # those users out every time Redis blinked. Deny only when the user
-            # demonstrably had sessions and every one of them was revoked, which
-            # is what logout-all / password reset / admin termination produce.
-            # Otherwise allow, bounded by the access token's own short expiry.
-            has_any = (
-                db.query(RefreshToken)
-                .join(User, User.id == RefreshToken.user_id)
-                .filter(User.uuid == user_uuid)
-                .first()
-            )
-            _record_degradation("token_revocation", "database")
-            if has_any is None:
-                return False
-
-            live = (
-                db.query(RefreshToken)
-                .join(User, User.id == RefreshToken.user_id)
-                .filter(
-                    User.uuid == user_uuid,
-                    RefreshToken.revoked_at.is_(None),
-                    RefreshToken.expires_at > datetime.now(UTC),
-                )
-                .first()
-            )
-            return live is None
-        except Exception:
-            _record_degradation("token_revocation", "deny")
-            logger.critical(
-                "Database revocation fallback failed for jti=%s...; denying (fail closed).",
-                jti[:8],
-            )
-            return True
+        return self._issued_before_user_epoch(jti, db, user_uuid, issued_at)
 
     def cleanup_expired_tokens(self, db: Session) -> int:
         """
@@ -1192,7 +1115,17 @@ class TokenService:
             old_token_record.expires_at.microsecond,
             old_token_record.expires_at.tzinfo,
         )
-        self.revoke_token(db, old_jti, old_expires)
+        try:
+            self.revoke_token(db, old_jti, old_expires)
+        except RevocationError:
+            # The old token is still valid, so the successor must not outlive this
+            # call: the caller answers with an error and the client retries with
+            # the token it still holds.
+            try:
+                self.revoke_token(db, str(new_token_record.jti), new_token_record.expires_at)
+            except RevocationError:
+                logger.error("Could not withdraw the successor of a rotation that failed")
+            raise
 
         logger.info(f"Rotated out old refresh token for user {user_id} (old_jti={old_jti[:8]}...)")
 

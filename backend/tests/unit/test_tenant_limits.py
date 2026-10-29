@@ -134,20 +134,16 @@ def test_redaction_floor_is_frozen_and_defaults_to_no_addition():
 
 def test_resolver_error_falls_back_to_global():
     from app.core.tenant_limits import resolve_redaction_floor
-    from app.core.tenant_limits import resolve_retention_days
     from app.core.tenant_limits import resolve_upload_limits
     from app.core.tenant_limits import set_redaction_floor_resolver
-    from app.core.tenant_limits import set_retention_resolver
     from app.core.tenant_limits import set_upload_limits_resolver
 
     def _boom(_org_id):
         raise RuntimeError("resolver exploded")
 
-    set_retention_resolver(_boom)
     set_upload_limits_resolver(_boom)
     set_redaction_floor_resolver(lambda _db, _org_id: _boom(_org_id))
     # A misbehaving resolver must never break the caller -> global fallback.
-    assert resolve_retention_days(1) is None
     assert resolve_upload_limits(1) is None
     # For redaction, "global fallback" means the deployment's own
     # redaction.force_* floor still applies — not that masking is switched off.
@@ -174,3 +170,17 @@ def test_validate_file_size_for_tenant_blocks_over_limit():
     with pytest.raises(HTTPException) as exc:
         validate_file_size_for_tenant(2000, organization_id=1)
     assert exc.value.status_code == 413
+
+
+def test_retention_resolver_error_is_reported_not_defaulted():
+    """Retention has no safe default: the caller must be told the override is unknown."""
+    from app.core.tenant_limits import RetentionResolverError
+    from app.core.tenant_limits import resolve_retention_days
+    from app.core.tenant_limits import set_retention_resolver
+
+    def _boom(_org_id):
+        raise RuntimeError("resolver exploded")
+
+    set_retention_resolver(_boom)
+    with pytest.raises(RetentionResolverError):
+        resolve_retention_days(1)

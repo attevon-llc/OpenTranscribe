@@ -460,6 +460,7 @@ def _select_expired_files(
     three-valued. ``purge_media_file`` refuses a held file as well; this
     predicate is the efficient filter, that one is the fail-closed backstop.
     """
+    from app.core.tenant_limits import RetentionResolverError
     from app.models.media import FileStatus
     from app.models.media import MediaFile
     from app.services.hold_guard import not_held_pred
@@ -493,7 +494,11 @@ def _select_expired_files(
         # override when present (cloud), else the global cutoff. Lets
         # longer-retention tenants keep files past the global window and
         # free-tier tenants expire them sooner — all from one candidate query.
-        override = resolve_retention_days(organization_id)
+        try:
+            override = resolve_retention_days(organization_id)
+        except RetentionResolverError:
+            logger.warning("cleanup: keeping file %s, retention unknown this pass", file_id)
+            continue
         file_cutoff = cutoff if override is None else datetime.now(UTC) - timedelta(days=override)
         ref = completed_at or upload_time
         if ref is not None and ref < file_cutoff:

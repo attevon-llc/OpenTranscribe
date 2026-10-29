@@ -454,3 +454,30 @@ def test_a_segment_edit_without_toxicity_weights_does_not_queue_a_rescan(
         "a detector that masks nothing must not mark the file stale"
     )
     assert queued_rescans == []
+
+
+def test_unreadable_owner_policy_returns_the_scan_to_pending(
+    db_session, pii_masking_user, working_pii, working_toxicity, monkeypatch
+):
+    """A policy that cannot be read is not the same as a policy that is unset.
+
+    The scan must not be recorded as done (with no LLM coverage) on a transient read
+    error; it goes back to pending and the error propagates so the task retries.
+    """
+    from sqlalchemy.exc import OperationalError
+
+    from app.services.redaction import config as redaction_config
+
+    def _unreadable(*_args, **_kwargs):
+        raise OperationalError("SELECT 1", {}, Exception("connection reset"))
+
+    monkeypatch.setattr(redaction_config, "resolve_effective_config", _unreadable)
+    media, _segment = _seed_unscanned_file(db_session, pii_masking_user)
+    db_session.commit()
+
+    with pytest.raises(OperationalError):
+        RedactionService.detect_and_store(db_session, media.id)
+
+    db_session.refresh(media)
+    assert media.redaction_status == C.REDACTION_STATUS_PENDING
+    assert media.redaction_coverage is None

@@ -36,7 +36,7 @@ def _record_degradation(control: str, fallback: str) -> None:
 
     Imported lazily and never allowed to raise — a broken metrics backend must not be
     able to turn into a failed request. Same contract as
-    ``lockout._record_degradation`` / ``token_service._record_degradation``.
+    ``lockout._record_degradation`` / ``revocation_fallback.record_degradation``.
 
     Args:
         control: The security control that degraded.

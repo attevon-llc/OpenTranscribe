@@ -9,6 +9,7 @@ production with publicly-known JWT/encryption keys.
 import pytest
 
 from app.core.config import settings
+from app.core.startup_validation import service_credential_settings
 from app.main import _validate_production_secrets
 from tests.helpers import does_not_raise
 
@@ -37,6 +38,10 @@ def production_settings(monkeypatch):
     monkeypatch.setattr(settings, "OIDC_ENABLED", False)
     monkeypatch.setattr(settings, "PKI_ENABLED", False)
     monkeypatch.setattr(settings, "MINIO_PUBLIC_URL", "")
+    monkeypatch.setattr(service_credential_settings, "FLOWER_PASSWORD", "a-strong-flower-password")
+    monkeypatch.setattr(settings, "STORAGE_BACKEND", "minio")
+    monkeypatch.setattr(service_credential_settings, "MINIO_KMS_AUTO_ENCRYPTION", "on")
+    monkeypatch.setattr(service_credential_settings, "ALLOW_UNENCRYPTED_OBJECT_STORE", False)
     return monkeypatch
 
 
@@ -110,6 +115,67 @@ def test_legacy_default_encryption_key_rejected(production_settings):
 def test_missing_redis_password_rejected(production_settings):
     production_settings.setattr(settings, "REDIS_PASSWORD", "")
     with pytest.raises(ValueError, match="REDIS_PASSWORD"):
+        _validate_production_secrets()
+
+
+@pytest.mark.parametrize(
+    "weak_flower_password",
+    ["", "   ", "flower", "FLOWER", "changeme", PLACEHOLDER, "my_change_me_value"],
+)
+def test_weak_flower_password_rejected_in_production(production_settings, weak_flower_password):
+    production_settings.setattr(
+        service_credential_settings, "FLOWER_PASSWORD", weak_flower_password
+    )
+    with pytest.raises(ValueError, match="FLOWER_PASSWORD"):
+        _validate_production_secrets()
+
+
+def test_weak_flower_password_allowed_in_development(production_settings):
+    production_settings.setattr(settings, "ENVIRONMENT", "development")
+    production_settings.setattr(service_credential_settings, "FLOWER_PASSWORD", "flower")
+    with does_not_raise("development may keep the default Flower password"):
+        _validate_production_secrets()
+
+
+@pytest.mark.parametrize("encryption_setting", ["off", "", "OFF", "false"])
+def test_object_store_encryption_off_rejected_in_production(
+    production_settings, encryption_setting
+):
+    production_settings.setattr(
+        service_credential_settings, "MINIO_KMS_AUTO_ENCRYPTION", encryption_setting
+    )
+    with pytest.raises(ValueError, match="MINIO_KMS_AUTO_ENCRYPTION"):
+        _validate_production_secrets()
+
+
+@pytest.mark.parametrize("encryption_setting", ["on", "ON", "true"])
+def test_object_store_encryption_on_passes_in_production(production_settings, encryption_setting):
+    production_settings.setattr(
+        service_credential_settings, "MINIO_KMS_AUTO_ENCRYPTION", encryption_setting
+    )
+    with does_not_raise("encryption enabled must pass validation"):
+        _validate_production_secrets()
+
+
+def test_object_store_encryption_off_allowed_in_development(production_settings):
+    production_settings.setattr(settings, "ENVIRONMENT", "development")
+    production_settings.setattr(service_credential_settings, "MINIO_KMS_AUTO_ENCRYPTION", "off")
+    with does_not_raise("development installs run MinIO without a key"):
+        _validate_production_secrets()
+
+
+def test_object_store_encryption_off_allowed_with_explicit_opt_out(production_settings):
+    production_settings.setattr(service_credential_settings, "MINIO_KMS_AUTO_ENCRYPTION", "off")
+    production_settings.setattr(service_credential_settings, "ALLOW_UNENCRYPTED_OBJECT_STORE", True)
+    with does_not_raise("the documented opt-out must be honoured"):
+        _validate_production_secrets()
+
+
+def test_object_store_encryption_not_checked_for_external_s3(production_settings):
+    """The bundled-MinIO setting says nothing about an external S3 backend."""
+    production_settings.setattr(settings, "STORAGE_BACKEND", "s3")
+    production_settings.setattr(service_credential_settings, "MINIO_KMS_AUTO_ENCRYPTION", "off")
+    with does_not_raise("MINIO_KMS_AUTO_ENCRYPTION is inert when STORAGE_BACKEND=s3"):
         _validate_production_secrets()
 
 

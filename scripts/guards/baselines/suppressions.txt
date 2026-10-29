@@ -100,7 +100,7 @@ noqa::backend/app/services/redaction/detectors/toxicity.py	4	suppression: reason
 noqa::backend/app/services/redaction/device.py	5	suppression: reason to be added
 noqa::backend/app/services/redaction/export_policy.py	1	suppression: reason to be added
 noqa::backend/app/services/redaction/llm_guard.py	2	suppression: reason to be added
-noqa::backend/app/services/redaction/service.py	12	suppression: reason to be added
+noqa::backend/app/services/redaction/service.py	11	suppression: reason to be added
 noqa::backend/app/services/redaction/warmup.py	1	suppression: reason to be added
 noqa::backend/app/services/redis_cache_service.py	1	suppression: reason to be added
 noqa::backend/app/services/scim_token_service.py	1	suppression: reason to be added

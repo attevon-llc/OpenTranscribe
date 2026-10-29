@@ -43,10 +43,6 @@ class LLMServiceError(OpenTranscribeError):
     """LLM provider communication failures."""
 
 
-class MigrationError(OpenTranscribeError):
-    """Data migration failures."""
-
-
 class ASRConfigurationError(OpenTranscribeError):
     """ASR provider resolution is impossible under the current deployment config.
 

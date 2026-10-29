@@ -1,7 +1,7 @@
 CLAUDE.md	728	oversize: split by concern planned
 backend/app/api/CLAUDE.md	595	oversize: split by concern planned
 backend/app/api/endpoints/admin.py	3230	oversize: split by concern planned
-backend/app/api/endpoints/asr_settings.py	1120	oversize: split by concern planned
+backend/app/api/endpoints/asr_settings.py	1113	oversize: split by concern planned
 backend/app/api/endpoints/auth/dependencies.py	932	oversize: split by concern planned
 backend/app/api/endpoints/auth/login.py	731	oversize: split by concern planned
 backend/app/api/endpoints/auth_config.py	765	oversize: split by concern planned
@@ -10,7 +10,7 @@ backend/app/api/endpoints/files/crud.py	1442	oversize: split by concern planned
 backend/app/api/endpoints/files/management.py	1384	oversize: split by concern planned
 backend/app/api/endpoints/files/reprocess.py	773	oversize: split by concern planned
 backend/app/api/endpoints/files/upload.py	814	oversize: split by concern planned
-backend/app/api/endpoints/files/url_processing.py	876	oversize: split by concern planned
+backend/app/api/endpoints/files/url_processing.py	870	oversize: split by concern planned
 backend/app/api/endpoints/llm_settings.py	2001	oversize: split by concern planned
 backend/app/api/endpoints/media_collections.py	1848	oversize: split by concern planned
 backend/app/api/endpoints/prompts.py	921	oversize: split by concern planned
@@ -37,7 +37,7 @@ backend/app/db/migrations.py	1884	oversize: split by concern planned
 backend/app/main.py	1324	oversize: split by concern planned
 backend/app/models/media.py	1402	oversize: split by concern planned
 backend/app/schemas/auth_config.py	701	oversize: split by concern planned
-backend/app/schemas/media.py	1357	oversize: split by concern planned
+backend/app/schemas/media.py	1335	oversize: split by concern planned
 backend/app/services/CLAUDE.md	1044	oversize: split by concern planned
 backend/app/services/asr/factory.py	891	oversize: split by concern planned
 backend/app/services/auth_config_service.py	959	oversize: split by concern planned
@@ -54,12 +54,12 @@ backend/app/services/gdpr_erasure_service.py	1097	oversize: split by concern pla
 backend/app/services/llm_service.py	2711	oversize: split by concern planned
 backend/app/services/media_download_service.py	1886	oversize: split by concern planned
 backend/app/services/minio_service.py	837	oversize: split by concern planned
-backend/app/services/privacy/purge_voiceprints.py	727	oversize: split by concern planned
+backend/app/services/privacy/purge_voiceprints.py	711	oversize: split by concern planned
 backend/app/services/profile_embedding_service.py	703	oversize: split by concern planned
 backend/app/services/search/CLAUDE.md	911	oversize: split by concern planned
 backend/app/services/search/chunking_service.py	841	oversize: split by concern planned
 backend/app/services/search/hybrid_search_service.py	4051	oversize: split by concern planned
-backend/app/services/search/indexing_service.py	2351	oversize: split by concern planned
+backend/app/services/search/indexing_service.py	2328	oversize: split by concern planned
 backend/app/services/search/ml_model_service.py	1164	oversize: split by concern planned
 backend/app/services/speaker_cleanup.py	1026	oversize: split by concern planned
 backend/app/services/speaker_clustering_service.py	2894	oversize: split by concern planned
@@ -224,13 +224,13 @@ scripts/audit-session-lifetime.py	1068	oversize: split by concern planned
 scripts/audit-tests.py	2731	oversize: split by concern planned
 scripts/benchmark-pyannote-direct.py	1277	oversize: split by concern planned
 scripts/benchmark_e2e.py	1051	oversize: split by concern planned
-scripts/benchmark_parallel.py	1653	oversize: split by concern planned
+scripts/benchmark_parallel.py	1641	oversize: split by concern planned
 scripts/benchmark_rag.py	1036	oversize: split by concern planned
 scripts/build_probe_question_set.py	721	oversize: split by concern planned
 scripts/cleanup-test-data.py	1158	oversize: split by concern planned
 scripts/common.sh	1873	oversize: split by concern planned
 scripts/docker-build-push.sh	1575	oversize: split by concern planned
-scripts/download-models.py	1202	oversize: split by concern planned
+scripts/download-models.py	1173	oversize: split by concern planned
 scripts/e2e/update-visual-baselines.sh	1312	oversize: split by concern planned
 scripts/fetch-rag-eval-data.sh	1282	oversize: split by concern planned
 scripts/install-offline-package.sh	705	oversize: split by concern planned

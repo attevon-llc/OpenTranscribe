@@ -266,12 +266,6 @@ def _validate_media_url(url: str) -> tuple[str, MediaDownloadService]:
     return normalized_url, media_service
 
 
-# Backward compatibility alias
-def _validate_youtube_url(url: str) -> tuple[str, MediaDownloadService]:
-    """Backward compatibility alias for _validate_media_url."""
-    return _validate_media_url(url)
-
-
 def _handle_playlist_processing(
     normalized_url: str,
     user_id: int,

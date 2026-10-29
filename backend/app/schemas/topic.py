@@ -52,10 +52,6 @@ class SuggestedCollection(BaseModel):
 # ============================================================================
 
 
-class TopicSuggestionBase(BaseModel):
-    """Base schema for AI suggestions"""
-
-
 class TopicSuggestionResponse(UUIDBaseSchema):
     """
     AI suggestions response for tags and collections

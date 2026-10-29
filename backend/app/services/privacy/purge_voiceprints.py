@@ -709,19 +709,3 @@ def purge_voiceprint_docs(
             ids["cluster"], also=org_stamp_clause(scope, "cluster"), errors=errors, label=label
         ),
     }
-
-
-def machine_identity_count(db: Session, scope: PurgeScope) -> int:
-    """Speakers in scope still carrying a voiceprint-made name or link (residual measure)."""
-    from app.models.media import Speaker
-
-    return int(
-        db.execute(
-            select(func.count())
-            .select_from(Speaker)
-            .where(
-                *scope.speaker_filters(),
-                Speaker.identity_source.in_(sorted(MACHINE_IDENTITY_SOURCES)),
-            )
-        ).scalar_one()
-    )

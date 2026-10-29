@@ -1,17 +1,3 @@
-exports::src/lib/auth/idleGuard.ts::IDLE_CHANNEL_NAME	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
-exports::src/lib/i18n/untranslatedCheck.ts::MIN_PROSE_LENGTH	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
-exports::src/lib/notifications/display.ts::ICON_BY_TYPE	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
-exports::src/lib/notifications/postProcessing.ts::POST_PROCESSING_TYPE	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
-exports::src/lib/notifications/processingJob.ts::POST_PROCESSING_TIERS	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
-exports::src/lib/notifications/processingJob.ts::RECONCILE_AFTER_MS	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
-exports::src/lib/notifications/processingJob.ts::RUN_RETENTION_MS	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
-exports::src/lib/notifications/processingJob.ts::TASK_WEIGHTS	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
-exports::src/lib/notifications/processingJob.ts::TRANSCRIPTION_STAGES	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
-exports::src/lib/passwordPolicyTiers.ts::PRESET_TIERS	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
-exports::src/lib/settings/pipelineIssues.ts::pipelineRefusalKey	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
-exports::src/lib/utils/chatErrors.ts::isChatErrorCode	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
-exports::src/lib/utils/chatMarkdownExtensions.ts::fenceLanguage	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
-exports::src/lib/utils/speakerColors.ts::getSpeakerColorForSegment	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 exports::src/test-mocks/app-environment.ts::dev	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 exports::src/test-mocks/app-environment.ts::version	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 exports::src/test-mocks/app-navigation.ts::beforeNavigateCallbacks	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
@@ -69,4 +55,3 @@ types::src/lib/types/tag.ts::TagClusterSuggestion	1	pre-existing unused exports 
 types::src/lib/types/tag.ts::TagImpactEntry	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 types::src/lib/types/tag.ts::TagMergeRequest	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 types::src/lib/types/tag.ts::TagOwnership	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
-types::src/lib/utils/chatMarkdown.ts::CitationLinkKind	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched

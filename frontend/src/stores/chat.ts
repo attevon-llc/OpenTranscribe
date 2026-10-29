@@ -208,7 +208,7 @@ function createChatStore() {
         //
         // Typed as `Partial<Record<...>>` — NOT every ChatWarningCode needs an
         // entry. `ambiguous_speaker` / `recurrence_unavailable` / `plan_failed`
-        // have no backend emitter yet (Wave 2) and no corresponding
+        // have no backend emitter yet and no corresponding
         // msg_metadata shape decided yet either; indexing with one of them
         // below falls through to `undefined` (no-op) rather than a compile
         // error, until whichever lane wires the emitter also adds the patch.

@@ -1,7 +1,7 @@
 /**
  * ChatMessageMeta renders an ALLOWLIST of msg_metadata keys — an unlisted key
  * is invisible, so a later lane's metadata would silently never render no
- * matter how carefully the backend populates it. This pins that the Wave 2
+ * matter how carefully the backend populates it. This pins that the
  * keys (`map_source`, `speaker_resolution`, `plan`, `legs_failed`,
  * `llm_calls`, `router_language_unmatched`) are on the allowlist, each with a
  * silent-when-absent control so the panel does not grow a permanent row.
@@ -29,7 +29,7 @@ async function expandPanel(getByTestId: (id: string) => HTMLElement) {
   await new Promise((r) => setTimeout(r, 0));
 }
 
-describe('ChatMessageMeta — Wave 2 metadata keys', () => {
+describe('ChatMessageMeta — metadata keys', () => {
   it('renders map_source when present', async () => {
     const { getByTestId, container } = render(ChatMessageMeta, {
       props: { message: assistantMessage({ msg_metadata: { map_source: 'llm-batch' } }) },
@@ -85,7 +85,7 @@ describe('ChatMessageMeta — Wave 2 metadata keys', () => {
     expect(container.textContent).toContain('Alex');
   });
 
-  it('W2.2: renders one disambiguation chip per ambiguous candidate', async () => {
+  it('renders one disambiguation chip per ambiguous candidate', async () => {
     const { getByTestId, getAllByTestId } = render(ChatMessageMeta, {
       props: {
         message: assistantMessage({
@@ -100,7 +100,7 @@ describe('ChatMessageMeta — Wave 2 metadata keys', () => {
     expect(chips.map((c) => c.textContent?.trim())).toEqual(['Alice', 'Alex']);
   });
 
-  it('W2.2: clicking a disambiguation chip dispatches the candidate name', async () => {
+  it('clicking a disambiguation chip dispatches the candidate name', async () => {
     let picked: string | undefined;
     const { getByTestId, getAllByTestId } = render(ChatMessageMetaDisambiguateTestHost, {
       props: {
@@ -120,7 +120,7 @@ describe('ChatMessageMeta — Wave 2 metadata keys', () => {
     expect(picked).toBe('Alice');
   });
 
-  it('W2.2: no disambiguation row when there are no ambiguous candidates', async () => {
+  it('no disambiguation row when there are no ambiguous candidates', async () => {
     const { getByTestId, queryByTestId } = render(ChatMessageMeta, {
       props: {
         message: assistantMessage({
@@ -158,7 +158,7 @@ describe('ChatMessageMeta — Wave 2 metadata keys', () => {
     expect(container.textContent).toContain('chat.meta.routerLanguageUnmatched');
   });
 
-  it('the toggle appears when ONLY a Wave 2 key is present', () => {
+  it('the toggle appears when ONLY one allowlisted key is present', () => {
     // Before this fix, `hasContent` did not check any of these keys, so a
     // message carrying nothing else silently rendered no panel at all.
     const { getByTestId } = render(ChatMessageMeta, {
@@ -167,7 +167,7 @@ describe('ChatMessageMeta — Wave 2 metadata keys', () => {
     expect(getByTestId('chat-meta-toggle')).toBeTruthy();
   });
 
-  it('stays silent (no panel) when none of the Wave 2 keys are present', () => {
+  it('stays silent (no panel) when none of the allowlisted keys are present', () => {
     // The control: without it, a component that always renders would pass
     // every test above trivially.
     const { queryByTestId } = render(ChatMessageMeta, {
@@ -176,7 +176,7 @@ describe('ChatMessageMeta — Wave 2 metadata keys', () => {
     expect(queryByTestId('chat-meta-toggle')).toBeNull();
   });
 
-  it('does not render a Wave 2 row when its key is absent, even with the panel open', async () => {
+  it('does not render an allowlisted row when its key is absent, even with the panel open', async () => {
     const { getByTestId, queryByTestId } = render(ChatMessageMeta, {
       props: { message: assistantMessage({ msg_metadata: { llm_calls: 2 } }) },
     });

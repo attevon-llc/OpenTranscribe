@@ -1,6 +1,6 @@
 name: Seam Guard
 
-# OSS-clean-from-closed-source build invariant (Wave 2.1b / 5.3).
+# OSS-clean-from-closed-source build invariant.
 #
 # The commercial cloud edition (Clerk auth + Stripe billing) lives in a SEPARATE
 # private repo and layers onto this open-source core through generic extension
@@ -14,7 +14,7 @@ name: Seam Guard
 # the build if any case-insensitive match for `clerk|stripe` appears. Keeping it
 # at zero is what lets the cloud repo's CI advertise "OSS clean from closed
 # source" honestly, and it backstops the import-linter `app -/-> cloud` contract
-# (Wave 5.1) from the opposite direction — names, not imports.
+# from the opposite direction — names, not imports.
 #
 # Fast and dependency-light: ripgrep ships on GitHub's ubuntu-latest runners; a
 # grep -rIn fallback covers any image where it does not.
@@ -24,7 +24,7 @@ on:
   pull_request:
     # release/** added for #784: a hotfix PR merges onto release/<major>.<minor>,
     # which produces the next tag, so it must never take machine-unreviewed code
-    # (issue #784, finding N2).
+    # (issue #784).
     branches: [master, main, develop, 'release/**']
   push:
     branches: [master, main, develop, 'release/**']

@@ -18,7 +18,7 @@
 
   const dispatch = createEventDispatcher();
 
-  // Rename-propagation progress (issue W2.3a). This panel is normally a thin
+  // Rename-propagation progress. This panel is normally a thin
   // presentational child — no API calls, no stores-as-state (see this folder's
   // CLAUDE.md) — but the digest-regeneration a rename triggers server-side
   // finishes on its own schedule with no request/response the coordinator can

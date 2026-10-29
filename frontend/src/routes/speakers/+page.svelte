@@ -138,7 +138,7 @@
   // Clustering progress state (via WebSocket)
   let clusteringProgress: { step: number; total_steps: number; message: string; progress: number } | null = null;
 
-  // Rename-propagation progress (via WebSocket, issue W2.3a).
+  // Rename-propagation progress (via WebSocket).
   //
   // Every rename here — a cluster label edit, promoting a cluster to a
   // profile, or accepting an inbox suggestion — assigns Speaker.display_name

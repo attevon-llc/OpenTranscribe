@@ -1,5 +1,5 @@
 /**
- * W2.5 Task 0 — SummaryDisplay's BLUF mode renders `action_items` and
+ * SummaryDisplay's BLUF mode renders `action_items` and
  * `speakers_analysis`, which it did not before this change (and
  * `action_items` had ZERO renderers anywhere in the app). Shape-tolerant:
  * the DEFAULT summary prompt emits `{item, owner, ...}` for action items and

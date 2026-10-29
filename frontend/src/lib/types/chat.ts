@@ -164,13 +164,13 @@ export interface ChatMessageMetadata {
     supported?: string[];
   };
   /**
-   * Wave 2: which `mapreduce.py` reducer produced the `<overview>` block —
+   * Which `mapreduce.py` reducer produced the `<overview>` block —
    * `'code'` (no-LLM, first class per D6) or `'llm-batch'`. Absent when no
    * overview was built for this turn.
    */
   map_source?: string;
   /**
-   * Wave 2: how a speaker-filtered turn resolved the requested names against
+   * How a speaker-filtered turn resolved the requested names against
    * the recordings in scope. Shape matches `mapreduce`/router diagnostics,
    * not a persisted structure of its own.
    */
@@ -178,32 +178,32 @@ export interface ChatMessageMetadata {
     matched?: string[];
     ambiguous?: string[];
   };
-  /** Wave 2: the query plan the router assembled for this turn, if any. */
+  /** The query plan the router assembled for this turn, if any. */
   plan?: {
     steps?: string[];
   };
   /**
-   * Wave 2: names of retrieval/aggregation "legs" that failed and were
+   * Names of retrieval/aggregation "legs" that failed and were
    * skipped rather than failing the whole turn.
    */
   legs_failed?: string[];
   /**
-   * #403 W2.6: per-leg wall time (ms) for a planner-driven parallel fan-out
+   * #403: per-leg wall time (ms) for a planner-driven parallel fan-out
    * (`legs.FanOutResult.timings_ms`), keyed by leg name (`"main"`,
    * `"subquestion-0"`, `"speaker"`, `"counted"`, `"recurrence"`, …). Absent
    * unless the fan-out ran this turn.
    */
   leg_timings_ms?: Record<string, number>;
-  /** #403 W2.6: `Object.keys(leg_timings_ms).length`, named for direct display. */
+  /** #403: `Object.keys(leg_timings_ms).length`, named for direct display. */
   leg_count?: number;
   /**
-   * Wave 2: bounded LLM calls a reducer spent on this turn (e.g.
-   * `BatchReducer`'s per-batch condense calls in `mapreduce.py`). #403 W2.6
+   * Bounded LLM calls a reducer spent on this turn (e.g.
+   * `BatchReducer`'s per-batch condense calls in `mapreduce.py`). #403
    * extends this to the planner/enrichment/rewrite-extension calls too.
    */
   llm_calls?: number;
   /**
-   * Wave 2: the question's language did not match what the router
+   * The question's language did not match what the router
    * expected/could route with confidence. Set live from the `warning` frame
    * (`ChatWarningCode.router_language_unmatched`) and persisted, like
    * {@link unsupported_language}.
@@ -372,7 +372,7 @@ export interface ChatAdminSettings {
 
 // --- SSE frame contract (must match services/chat/service.py) ----------------
 
-// #403 W2.6: 'planning' is a turn-1 (no-history) stage for a question that
+// #403: 'planning' is a turn-1 (no-history) stage for a question that
 // will trigger a standalone LLM query-planner call before retrieval starts —
 // see `services/chat/service.py`'s `stream_reply`. Only reachable when
 // `chat.planner_enabled` is on; every other deployment never emits it.
@@ -403,7 +403,7 @@ type StreamStage = 'rewriting' | 'retrieving' | 'reranking' | 'planning' | 'gene
  * complete while a recording was invisible to it.
  *
  * `ambiguous_speaker` / `recurrence_unavailable` / `plan_failed` /
- * `router_language_unmatched`: Wave 2 additions mirroring
+ * `router_language_unmatched`: additions mirroring
  * `backend/app/schemas/chat.py`'s `ChatWarningCode` — no backend emitter uses
  * them yet, but the code must exist here before one can, or the first turn
  * that emits one is silently dropped.
@@ -584,7 +584,7 @@ export type StreamStatus =
   | 'idle'
   | 'submitting'
   | 'retrieving'
-  // #403 W2.6: a turn-1 standalone planner call is in flight (`stage:
+  // #403: a turn-1 standalone planner call is in flight (`stage:
   // 'planning'`). `stores/chat.ts`'s `status` fold maps the SSE `stage` onto
   // this — see that file's `case 'status':` for the current mapping; a code
   // owner outside this lane still needs to add `event.stage === 'planning'`

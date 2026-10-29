@@ -1,5 +1,5 @@
 /**
- * Fix #4 (W2.0g, the #385 shape recurring in the chat file picker).
+ * The #385 shape recurring in the chat file picker.
  *
  * `PickerFilesTab` listed `GET /files` with no `ownership` param, which the
  * backend defaults to `'mine'` — so a recording shared with the caller but not
@@ -58,7 +58,7 @@ function filesResponse(items: unknown[]) {
   return { data: { items, has_more: false } };
 }
 
-describe('PickerFilesTab — ownership (#385 shape, W2.0g fix #4)', () => {
+describe('PickerFilesTab — ownership (#385 shape)', () => {
   beforeEach(() => {
     axiosMock.get.mockReset();
     vi.stubGlobal('IntersectionObserver', StubIntersectionObserver);

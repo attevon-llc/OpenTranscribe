@@ -45,6 +45,14 @@ def _import_linter_dependencies(config: dict[str, Any]) -> list[str]:
     raise AssertionError("import-linter hook not found in .pre-commit-config.yaml")
 
 
+def _hook_dependencies(config: dict[str, Any], hook_id: str) -> list[str]:
+    for repo in config["repos"]:
+        for hook in repo.get("hooks", []):
+            if hook.get("id") == hook_id:
+                return [str(d) for d in hook.get("additional_dependencies", [])]
+    raise AssertionError(f"{hook_id} hook not found in .pre-commit-config.yaml")
+
+
 def _load() -> tuple[dict[str, Any], str]:
     return yaml.safe_load(HOOK_CONFIG.read_text()), REQUIREMENTS_DEV.read_text()
 
@@ -59,6 +67,13 @@ def test_import_linter_hook_dependency_is_exact_dev_pin() -> None:
     assert _import_linter_dependencies(config) == [
         f"import-linter=={_dev_pin(req, 'import-linter')}"
     ]
+
+
+def test_ruff_ratchet_hook_uses_the_exact_dev_pin() -> None:
+    # The ratchet guard runs ruff itself and refuses any other version; its hook env must
+    # carry the pin the venv carries, or the guard passes locally and fails in CI.
+    config, req = _load()
+    assert _hook_dependencies(config, "guard-ruff-ratchet") == [f"ruff=={_dev_pin(req, 'ruff')}"]
 
 
 def test_checkers_detect_a_mismatch() -> None:
@@ -76,3 +91,11 @@ def test_checkers_detect_a_mismatch() -> None:
     assert _ruff_hook_rev(config) != "v0.16.7"
     assert _import_linter_dependencies(config) != ["import-linter==2.15"]
     assert _dev_pin("ruff==0.16.7  # x\n", "ruff") == "0.16.7"
+    stale = {
+        "repos": [
+            {"repo": "local", "hooks": [{"id": "h", "additional_dependencies": ["ruff==0.1"]}]}
+        ]
+    }
+    assert _hook_dependencies(stale, "h") != ["ruff==0.16.7"]
+    with pytest.raises(AssertionError):
+        _hook_dependencies(stale, "missing")

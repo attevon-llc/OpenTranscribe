@@ -1,6 +1,3 @@
-backend/app/api/endpoints/admin.py	1	env: single reader planned
-backend/app/api/endpoints/asr_local_model.py	2	env: single reader planned
-backend/app/api/endpoints/asr_settings.py	3	env: single reader planned
 backend/app/api/endpoints/auth/dependencies.py	1	env: single reader planned
 backend/app/api/endpoints/auth/login.py	1	env: single reader planned
 backend/app/api/endpoints/engine_settings.py	1	env: single reader planned
@@ -10,14 +7,13 @@ backend/app/api/endpoints/files/management.py	6	env: single reader planned
 backend/app/api/endpoints/files/reprocess.py	3	env: single reader planned
 backend/app/api/endpoints/files/streaming.py	1	env: single reader planned
 backend/app/api/endpoints/files/upload.py	2	env: single reader planned
-backend/app/api/endpoints/system.py	2	env: single reader planned
+backend/app/api/endpoints/system.py	1	env: single reader planned
 backend/app/api/endpoints/tasks.py	1	env: single reader planned
 backend/app/api/endpoints/user_settings.py	1	env: single reader planned
-backend/app/auth/direct_auth.py	5	env: single reader planned
 backend/app/core/auth_settings.py	2	env: single reader planned
 backend/app/core/celery.py	17	env: single reader planned
 backend/app/core/celery_metrics.py	1	env: single reader planned
-backend/app/core/constants.py	9	env: single reader planned
+backend/app/core/constants.py	8	env: single reader planned
 backend/app/core/legacy_auth_env.py	2	env: single reader planned
 backend/app/core/privacy_env.py	1	env: single reader planned
 backend/app/core/security.py	2	env: single reader planned
@@ -35,7 +31,6 @@ backend/app/scripts/corpus_injection/env.py	4	env: single reader planned
 backend/app/scripts/gpu_stage_vram_probe.py	3	env: single reader planned
 backend/app/scripts/probe_torch_thread_scope.py	2	env: single reader planned
 backend/app/services/asr/aws_provider.py	4	env: single reader planned
-backend/app/services/asr/factory.py	29	env: single reader planned
 backend/app/services/asr/gladia_provider.py	1	env: single reader planned
 backend/app/services/asr/google_provider.py	1	env: single reader planned
 backend/app/services/backup_recovery.py	1	env: single reader planned
@@ -45,7 +40,6 @@ backend/app/services/huggingface_token.py	5	env: single reader planned
 backend/app/services/local_models/runner.py	1	env: single reader planned
 backend/app/services/local_models/supervisor.py	1	env: single reader planned
 backend/app/services/minio_service.py	1	env: single reader planned
-backend/app/services/pipeline_plan.py	1	env: single reader planned
 backend/app/services/platform_access.py	1	env: single reader planned
 backend/app/services/playback_rendition.py	1	env: single reader planned
 backend/app/services/protected_media_plugins/mediacms.py	3	env: single reader planned
@@ -61,11 +55,11 @@ backend/app/tasks/transcription/audio_processor.py	2	env: single reader planned
 backend/app/tasks/transcription/context.py	1	env: single reader planned
 backend/app/tasks/transcription/core.py	1	env: single reader planned
 backend/app/tasks/transcription/embeddings.py	1	env: single reader planned
-backend/app/tasks/transcription/finalize.py	2	env: single reader planned
+backend/app/tasks/transcription/finalize.py	1	env: single reader planned
 backend/app/tasks/transcription/pipelines.py	2	env: single reader planned
-backend/app/tasks/utility.py	2	env: single reader planned
+backend/app/tasks/utility.py	1	env: single reader planned
 backend/app/transcription/boundary_resolver.py	2	env: single reader planned
-backend/app/transcription/config.py	22	env: single reader planned
+backend/app/transcription/config.py	17	env: single reader planned
 backend/app/transcription/diarizer.py	5	env: single reader planned
 backend/app/transcription/diarizer_native.py	9	env: single reader planned
 backend/app/transcription/engine/config.py	8	env: single reader planned
@@ -75,7 +69,7 @@ backend/app/transcription/native_provision.py	6	env: single reader planned
 backend/app/transcription/transcriber.py	1	env: single reader planned
 backend/app/transcription/vram_budget.py	2	env: single reader planned
 backend/app/utils/benchmark_timing.py	1	env: single reader planned
-backend/app/utils/hardware_detection.py	6	env: single reader planned
+backend/app/utils/hardware_detection.py	2	env: single reader planned
 backend/app/utils/hf_hub_offline.py	1	env: single reader planned
 backend/app/utils/nltk_offline.py	2	env: single reader planned
 backend/app/utils/scratch_volume.py	2	env: single reader planned

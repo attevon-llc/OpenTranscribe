@@ -15,6 +15,7 @@ import os
 import platform
 from typing import Any
 
+from app.core.config import settings
 from app.utils.cpu_budget import effective_cpu_count
 
 logger = logging.getLogger(__name__)
@@ -57,20 +58,9 @@ def resolve_cuda_device_index(cuda: Any | None = None) -> int:
         # here is the bug, not the fix.
         return 0
 
-    raw = (os.getenv("GPU_DEVICE_ID") or "").strip()
-    if not raw:
-        return 0
-
-    try:
-        index = int(raw)
-    except ValueError:
-        logger.warning(
-            "GPU_DEVICE_ID=%r is not an integer; falling back to CUDA ordinal 0 "
-            "of %d visible devices",
-            raw,
-            visible,
-        )
-        return 0
+    # An empty or unset GPU_DEVICE_ID is Settings' default 0; a non-integer one is rejected by
+    # Settings at startup, so no parse failure can reach here.
+    index = settings.GPU_DEVICE_ID
 
     if index < 0 or index >= visible:
         logger.warning(
@@ -173,7 +163,7 @@ class HardwareConfig:
             logger.info(
                 "Using CUDA ordinal %d (GPU_DEVICE_ID=%s, CUDA_DEVICE_ORDER=%s): %s pci=%s",
                 self.device_index,
-                os.getenv("GPU_DEVICE_ID", "<unset>"),
+                settings.GPU_DEVICE_ID,
                 os.getenv("CUDA_DEVICE_ORDER", "<unset — ordinals may not match nvidia-smi>"),
                 props.name,
                 getattr(props, "pci_bus_id", "unknown"),
@@ -614,8 +604,8 @@ def detect_hardware() -> HardwareConfig:
         HardwareConfig instance with detected settings
     """
     # Check for environment variable overrides
-    force_device = os.getenv("TORCH_DEVICE")
-    force_compute_type = os.getenv("COMPUTE_TYPE")
+    force_device: str | None = settings.TORCH_DEVICE
+    force_compute_type: str | None = settings.COMPUTE_TYPE
 
     # Allow 'auto' to mean None (auto-detection)
     if force_device == "auto":

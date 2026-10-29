@@ -7,7 +7,6 @@ lives in ``asr_local_model`` (a different capability gate).
 
 import contextlib
 import logging
-import os
 import re
 import time
 from datetime import UTC
@@ -29,6 +28,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.pipeline_settings import plan_issues_out
 from app.auth.rate_limit import get_api_rate_limit
 from app.auth.rate_limit import limiter
+from app.core.config import settings
 from app.db.base import get_db
 from app.schemas.asr_settings import ASRModelCapabilities
 from app.schemas.pipeline import ASRSwitchResult
@@ -461,8 +461,8 @@ def get_asr_status(
             # Switched off by its owner: jobs fall back to the deployment default.
             active_config = None
 
-    deployment_mode = os.getenv("DEPLOYMENT_MODE", "full").lower()
-    asr_provider = os.getenv("ASR_PROVIDER", "local").lower()
+    deployment_mode = settings.DEPLOYMENT_MODE.lower()
+    asr_provider = settings.ASR_PROVIDER.lower()
     using_local_default = active_config is None and asr_provider == "local"
 
     active_provider: str | None = None
@@ -493,7 +493,7 @@ def get_asr_status(
         caps = ASRProviderFactory.get_model_capabilities(asr_provider, "")
         model_capabilities = {"provider": asr_provider, "model_id": "", **caps}
     else:
-        whisper_model = os.getenv("WHISPER_MODEL", "large-v3-turbo")
+        whisper_model = settings.WHISPER_MODEL
         caps = ASRProviderFactory.get_model_capabilities("local", whisper_model)
         model_capabilities = {"provider": "local", "model_id": whisper_model, **caps}
 

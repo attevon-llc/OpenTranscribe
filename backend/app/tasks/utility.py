@@ -10,6 +10,7 @@ import json
 import logging
 
 from app.core.celery import celery_app
+from app.core.config import settings
 from app.core.constants import CPUPriority
 from app.core.env import env_bool
 from app.core.redis import get_redis
@@ -196,7 +197,7 @@ def update_gpu_stats(self):
         # All values come from .env via env_file on the cpu-worker service.
         gpu_scale_enabled = env_bool("GPU_SCALE_ENABLED", default=False)
         scale_device_id = int(os.environ.get("GPU_SCALE_DEVICE_ID", "2"))
-        default_device_id = int(os.environ.get("GPU_DEVICE_ID", "0"))
+        default_device_id = settings.GPU_DEVICE_ID
         scale_default_worker = env_bool("GPU_SCALE_DEFAULT_WORKER", default=False)
 
         if gpu_scale_enabled:

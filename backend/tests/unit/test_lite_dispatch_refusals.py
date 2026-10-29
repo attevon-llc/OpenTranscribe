@@ -59,7 +59,7 @@ def published(db_session, monkeypatch):
     monkeypatch.setattr(dispatch, "chain", _Chain)
     monkeypatch.setattr(dispatch, "mark_queued", lambda task_id: None)
     monkeypatch.setattr(dispatch, "gpu_split_enabled", lambda: False)
-    monkeypatch.delenv("ASR_PROVIDER", raising=False)
+    monkeypatch.setattr(settings, "ASR_PROVIDER", "local")
     return sent
 
 

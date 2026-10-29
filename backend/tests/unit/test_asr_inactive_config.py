@@ -20,6 +20,7 @@ from fastapi import Request
 from sqlalchemy.orm import Session
 
 from app.api.endpoints import asr_settings
+from app.core.config import settings
 from app.schemas.asr_settings import SetActiveASRConfigRequest
 from app.services.asr.deepgram_provider import DeepgramProvider
 from app.services.asr.factory import ASRProviderFactory
@@ -74,8 +75,8 @@ def _deepgram(*, is_active: bool):
 
 @pytest.fixture(autouse=True)
 def _deployment_default_is_local(monkeypatch):
-    monkeypatch.delenv("ASR_PROVIDER", raising=False)
-    monkeypatch.delenv("WHISPER_MODEL", raising=False)
+    monkeypatch.setattr(settings, "ASR_PROVIDER", "local")
+    monkeypatch.setattr(settings, "WHISPER_MODEL", "large-v3-turbo")
 
 
 def test_an_active_config_still_builds_its_provider():
@@ -96,8 +97,8 @@ def test_an_inactive_config_falls_back_to_local_and_says_why(caplog):
 
 
 def test_an_inactive_config_falls_back_to_the_env_provider(monkeypatch):
-    monkeypatch.setenv("ASR_PROVIDER", "deepgram")
-    monkeypatch.setenv("DEEPGRAM_API_KEY", "env-key")
+    monkeypatch.setattr(settings, "ASR_PROVIDER", "deepgram")
+    monkeypatch.setattr(settings, "DEEPGRAM_API_KEY", "env-key")
     cfg = _deepgram(is_active=False)
     cfg.api_key = encrypt_api_key("the-inactive-configs-own-key")
 

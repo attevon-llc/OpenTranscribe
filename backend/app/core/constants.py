@@ -109,7 +109,9 @@ def gpu_preferred_queue(deployment_mode: str | None = None) -> str:
     Returns:
         ``CeleryQueues.CPU`` in lite, otherwise ``CeleryQueues.GPU``.
     """
-    mode = deployment_mode if deployment_mode is not None else _os.getenv("DEPLOYMENT_MODE", "full")
+    from app.core.config import settings
+
+    mode = deployment_mode if deployment_mode is not None else settings.DEPLOYMENT_MODE
     return CeleryQueues.CPU if mode.strip().lower() == "lite" else CeleryQueues.GPU
 
 
@@ -351,23 +353,17 @@ def get_speaker_index() -> str:
 
 def get_speaker_index_v3() -> str:
     """Get the v3 speaker embedding index name (512-dim, pyannote/embedding)."""
-    from app.core.config import settings
-
-    return f"{settings.OPENSEARCH_SPEAKER_INDEX}_v3"
+    return f"{get_speaker_index()}_v3"
 
 
 def get_speaker_index_v4() -> str:
     """Get the v4 speaker embedding index name (256-dim, WeSpeaker)."""
-    from app.core.config import settings
-
-    return f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+    return f"{get_speaker_index()}_v4"
 
 
 def get_speaker_index_v3_backup() -> str:
     """Get the legacy v3 backup index name (from pre-alias migrations)."""
-    from app.core.config import settings
-
-    return f"{settings.OPENSEARCH_SPEAKER_INDEX}_v3_backup"
+    return f"{get_speaker_index()}_v3_backup"
 
 
 # Search & RAG constants

@@ -134,7 +134,7 @@ def pipeline_env(monkeypatch):
     from app.core.config import settings
     from app.transcription.config import TranscriptionConfig
 
-    monkeypatch.delenv("ASR_PROVIDER", raising=False)
+    monkeypatch.setattr(settings, "ASR_PROVIDER", "local")
     monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "full")
     monkeypatch.setattr(
         TranscriptionConfig, "_resolve_diarizer_backend", staticmethod(lambda: "native")

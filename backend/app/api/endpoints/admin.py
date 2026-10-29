@@ -225,11 +225,10 @@ def get_disk_usage():
 
 def _query_gpu_via_smi() -> dict | None:
     """Run nvidia-smi directly to get GPU stats. Returns None if unavailable."""
-    import os
     import subprocess
 
     try:
-        device_id = int(os.environ.get("GPU_DEVICE_ID", "0"))
+        device_id = settings.GPU_DEVICE_ID
         result = subprocess.run(  # noqa: S603  # nosec B603
             [  # noqa: S607  # nosec B607
                 "nvidia-smi",

@@ -38,6 +38,7 @@ from typing import Any
 
 import pytest
 
+from app.core.config import settings
 from app.tasks import utility
 from app.tasks.utility import _query_single_gpu
 from app.tasks.utility import _safe_float
@@ -47,7 +48,6 @@ from app.tasks.utility import _safe_float
 GPU_ENV_VARS = (
     "GPU_SCALE_ENABLED",
     "GPU_SCALE_DEVICE_ID",
-    "GPU_DEVICE_ID",
     "GPU_SCALE_DEFAULT_WORKER",
 )
 
@@ -296,6 +296,7 @@ def gpu_task_env(monkeypatch):
     """
     for var in GPU_ENV_VARS:
         monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(settings, "GPU_DEVICE_ID", 0)
 
     fake = _FakeRedis()
     monkeypatch.setattr(
@@ -323,7 +324,7 @@ def gpu_task_env(monkeypatch):
 
 def test_the_default_device_alone_is_queried_when_gpu_scaling_is_off(monkeypatch, gpu_task_env):
     _fake, queried = gpu_task_env
-    monkeypatch.setenv("GPU_DEVICE_ID", "1")
+    monkeypatch.setattr(settings, "GPU_DEVICE_ID", 1)
     monkeypatch.setenv("GPU_SCALE_DEVICE_ID", "2")
     monkeypatch.setenv("GPU_SCALE_ENABLED", "false")
 
@@ -339,7 +340,7 @@ def test_the_scaled_device_alone_is_queried_when_the_default_worker_is_disabled(
     _fake, queried = gpu_task_env
     monkeypatch.setenv("GPU_SCALE_ENABLED", "true")
     monkeypatch.setenv("GPU_SCALE_DEVICE_ID", "2")
-    monkeypatch.setenv("GPU_DEVICE_ID", "1")
+    monkeypatch.setattr(settings, "GPU_DEVICE_ID", 1)
     monkeypatch.setenv("GPU_SCALE_DEFAULT_WORKER", "0")
 
     result = utility.update_gpu_stats()
@@ -353,7 +354,7 @@ def test_both_devices_are_queried_with_the_scaled_one_first(monkeypatch, gpu_tas
     _fake, queried = gpu_task_env
     monkeypatch.setenv("GPU_SCALE_ENABLED", "true")
     monkeypatch.setenv("GPU_SCALE_DEVICE_ID", "2")
-    monkeypatch.setenv("GPU_DEVICE_ID", "1")
+    monkeypatch.setattr(settings, "GPU_DEVICE_ID", 1)
     monkeypatch.setenv("GPU_SCALE_DEFAULT_WORKER", "1")
 
     result = utility.update_gpu_stats()
@@ -366,7 +367,7 @@ def test_a_device_is_never_queried_twice_when_both_ids_are_the_same(monkeypatch,
     _fake, queried = gpu_task_env
     monkeypatch.setenv("GPU_SCALE_ENABLED", "true")
     monkeypatch.setenv("GPU_SCALE_DEVICE_ID", "1")
-    monkeypatch.setenv("GPU_DEVICE_ID", "1")
+    monkeypatch.setattr(settings, "GPU_DEVICE_ID", 1)
     monkeypatch.setenv("GPU_SCALE_DEFAULT_WORKER", "1")
 
     utility.update_gpu_stats()
@@ -379,7 +380,7 @@ def test_gpu_scale_enabled_accepts_any_casing(monkeypatch, gpu_task_env, raw: st
     _fake, queried = gpu_task_env
     monkeypatch.setenv("GPU_SCALE_ENABLED", raw)
     monkeypatch.setenv("GPU_SCALE_DEVICE_ID", "2")
-    monkeypatch.setenv("GPU_DEVICE_ID", "1")
+    monkeypatch.setattr(settings, "GPU_DEVICE_ID", 1)
 
     utility.update_gpu_stats()
 
@@ -424,7 +425,7 @@ def test_gpu_scale_default_worker_accepts_the_same_spellings_as_the_other_flags(
     _fake, queried = gpu_task_env
     monkeypatch.setenv("GPU_SCALE_ENABLED", "true")
     monkeypatch.setenv("GPU_SCALE_DEVICE_ID", "2")
-    monkeypatch.setenv("GPU_DEVICE_ID", "1")
+    monkeypatch.setattr(settings, "GPU_DEVICE_ID", 1)
     monkeypatch.setenv("GPU_SCALE_DEFAULT_WORKER", spelling)
 
     utility.update_gpu_stats()
@@ -443,7 +444,7 @@ def test_the_stats_array_is_published_to_redis_and_the_websocket_bus(monkeypatch
     kept one and dropped the other produces a header that only updates on page reload.
     """
     fake, _queried = gpu_task_env
-    monkeypatch.setenv("GPU_DEVICE_ID", "1")
+    monkeypatch.setattr(settings, "GPU_DEVICE_ID", 1)
 
     result = utility.update_gpu_stats()
 
@@ -465,7 +466,7 @@ def test_the_stats_array_is_published_to_redis_and_the_websocket_bus(monkeypatch
 def test_a_broadcast_failure_does_not_lose_the_redis_write(monkeypatch, gpu_task_env):
     """The WebSocket publish is best-effort; the durable key must still be written."""
     fake, _queried = gpu_task_env
-    monkeypatch.setenv("GPU_DEVICE_ID", "1")
+    monkeypatch.setattr(settings, "GPU_DEVICE_ID", 1)
 
     def _broken():
         raise RuntimeError("redis pubsub down")
@@ -480,7 +481,7 @@ def test_a_broadcast_failure_does_not_lose_the_redis_write(monkeypatch, gpu_task
 
 def test_no_queryable_device_reports_a_single_unavailable_entry(monkeypatch, gpu_task_env):
     fake, _queried = gpu_task_env
-    monkeypatch.setenv("GPU_DEVICE_ID", "1")
+    monkeypatch.setattr(settings, "GPU_DEVICE_ID", 1)
     monkeypatch.setattr(utility, "_query_single_gpu", lambda *_a, **_kw: None)
 
     result = utility.update_gpu_stats()
@@ -516,7 +517,7 @@ def test_the_file_not_found_handler_is_unreachable_so_the_configured_device_is_r
     characterization note.
     """
     fake, _queried = gpu_task_env
-    monkeypatch.setenv("GPU_DEVICE_ID", "1")
+    monkeypatch.setattr(settings, "GPU_DEVICE_ID", 1)
     # Undo the fixture's recorder: this test needs the REAL query path so the
     # FileNotFoundError is raised where production raises it.
     monkeypatch.setattr(utility, "_query_single_gpu", _query_single_gpu)

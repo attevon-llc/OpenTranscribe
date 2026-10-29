@@ -7,7 +7,6 @@ instead (see ``app/api/router.py``) and keep their ``/asr-settings/local-model/*
 """
 
 import logging
-import os
 from datetime import UTC
 from datetime import datetime
 from typing import Any
@@ -29,6 +28,7 @@ from app.auth.audit import audit_logger
 from app.auth.rate_limit import get_api_rate_limit
 from app.auth.rate_limit import limiter
 from app.core import local_whisper_catalog
+from app.core.config import settings
 from app.core.constants import WHISPER_WORKER_PREFIXES
 from app.core.exceptions import DomainError
 from app.db.base import get_db
@@ -51,9 +51,7 @@ def get_active_local_model(
     from app.services.asr.model_discovery import discover_local_models
 
     setting = db.query(SystemSettings).filter(SystemSettings.key == "asr.local_model").first()
-    active_model = (
-        setting.value if setting and setting.value else os.getenv("WHISPER_MODEL", "large-v3-turbo")
-    )
+    active_model = setting.value if setting and setting.value else settings.WHISPER_MODEL
 
     # Look up catalog info for the active model
     local_models = ASR_PROVIDER_CATALOG.get("local", {}).get("models", [])
@@ -210,9 +208,7 @@ def restart_gpu_worker(
 
     # Read the pending model so we can report it
     setting = db.query(SystemSettings).filter(SystemSettings.key == "asr.local_model").first()
-    pending_model = (
-        setting.value if setting and setting.value else os.getenv("WHISPER_MODEL", "large-v3-turbo")
-    )
+    pending_model = setting.value if setting and setting.value else settings.WHISPER_MODEL
 
     restart_requested_at = datetime.now(UTC).isoformat()
 

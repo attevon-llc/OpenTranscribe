@@ -14,6 +14,7 @@ import uuid as uuid_pkg
 import pytest
 from fastapi import status
 
+from app.core.config import settings
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.models.system_settings import SystemSettings
@@ -338,7 +339,7 @@ class TestEnforcementThroughThePlan:
         from app.services.pipeline_plan_inputs import plan_for_user
 
         policy.save_policy(db_session, [], False)
-        monkeypatch.setenv("ASR_PROVIDER", "deepgram")
+        monkeypatch.setattr(settings, "ASR_PROVIDER", "deepgram")
         plan = plan_for_user(db_session, normal_user.id)
         assert not [i for i in plan.blocking() if i.code == "asr_provider_not_allowed"]
 

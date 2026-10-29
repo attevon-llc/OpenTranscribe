@@ -1,6 +1,6 @@
 CLAUDE.md	728	oversize: split by concern planned
 backend/app/api/CLAUDE.md	595	oversize: split by concern planned
-backend/app/api/endpoints/admin.py	3205	oversize: split by concern planned
+backend/app/api/endpoints/admin.py	3204	oversize: split by concern planned
 backend/app/api/endpoints/asr_settings.py	1113	oversize: split by concern planned
 backend/app/api/endpoints/auth/dependencies.py	931	oversize: split by concern planned
 backend/app/api/endpoints/auth/login.py	732	oversize: split by concern planned
@@ -31,8 +31,8 @@ backend/app/auth/pki_auth.py	1815	oversize: split by concern planned
 backend/app/auth/token_service.py	1116	oversize: split by concern planned
 backend/app/core/auth_settings.py	859	oversize: split by concern planned
 backend/app/core/celery.py	1414	oversize: split by concern planned
-backend/app/core/config.py	1595	oversize: split by concern planned
-backend/app/core/constants.py	1870	oversize: split by concern planned
+backend/app/core/config.py	1594	oversize: split by concern planned
+backend/app/core/constants.py	1866	oversize: split by concern planned
 backend/app/db/migrations.py	1884	oversize: split by concern planned
 backend/app/main.py	1336	oversize: split by concern planned
 backend/app/models/media.py	1402	oversize: split by concern planned

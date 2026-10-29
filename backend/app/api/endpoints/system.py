@@ -21,6 +21,7 @@ from app.api.endpoints.admin import get_system_uptime
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_optional_current_user
 from app.core.capabilities import require_capability
+from app.core.config import settings
 from app.core.exceptions import DomainError
 from app.core.version import APP_VERSION
 from app.db.base import get_db
@@ -57,7 +58,6 @@ def get_system_capabilities(
     from app.core.capabilities import CAPABILITY_AUDIENCE
     from app.core.capabilities import edition
     from app.core.capabilities import get_capabilities_for_viewer
-    from app.core.config import settings
     from app.services.platform_access import tenancy_mode
 
     response.headers["Cache-Control"] = "private, no-store"
@@ -117,7 +117,7 @@ def _device_mode_info(gpu_stats: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "device_mode": device_mode,
         "force_cpu_mode": force_cpu,
-        "whisper_model": os.getenv("WHISPER_MODEL", "large-v3-turbo"),
+        "whisper_model": settings.WHISPER_MODEL,
     }
 
 

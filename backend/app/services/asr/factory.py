@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from app.core.config import settings
 from app.core.exceptions import ASRConfigurationError
 from app.core.local_whisper_catalog import provider_model_dicts
 
@@ -28,8 +28,6 @@ def _guard_local_allowed() -> None:
     ``LocalASRProvider()`` and the failure only surfaces much later, deep in a Celery GPU
     task, as a raw ``ModuleNotFoundError`` instead of a clear configuration error.
     """
-    from app.core.config import settings
-
     if settings.DEPLOYMENT_MODE.lower() == "lite":
         raise ASRConfigurationError(
             "Lite deployments require a cloud ASR provider to be configured — local "
@@ -53,18 +51,18 @@ _KEY_REQUIRED: dict[str, str] = {
 #: ``ASR_PROVIDER`` env fallback: provider -> a reader of its model env var with the default.
 #: The one table both ``_from_env`` (which builds the provider) and ``resolve_active_config``
 #: (which only names it) read, so the model a plan reports is the model the job would use.
-#: Each entry reads its variable by a literal name, which is what lets the env-coverage test
-#: see that ``.env.example``'s ``*_MODEL`` keys are consumed.
+#: Each entry reads its ``Settings`` field by a literal name, which is what lets the env-coverage
+#: test see that ``.env.example``'s ``*_MODEL`` keys are consumed.
 _ENV_MODEL: dict[str, Callable[[], str]] = {
-    "deepgram": lambda: os.getenv("DEEPGRAM_MODEL", "nova-3"),
-    "assemblyai": lambda: os.getenv("ASSEMBLYAI_MODEL", "universal"),
-    "openai": lambda: os.getenv("OPENAI_ASR_MODEL", "gpt-4o-transcribe"),
-    "google": lambda: os.getenv("GOOGLE_ASR_MODEL", "chirp-3"),
-    "azure": lambda: os.getenv("AZURE_ASR_MODEL", "whisper"),
-    "aws": lambda: os.getenv("AWS_ASR_MODEL", "standard"),
-    "speechmatics": lambda: os.getenv("SPEECHMATICS_MODEL", "standard"),
-    "gladia": lambda: os.getenv("GLADIA_MODEL", "standard"),
-    "pyannote": lambda: os.getenv("PYANNOTE_MODEL", "parakeet"),
+    "deepgram": lambda: settings.DEEPGRAM_MODEL,
+    "assemblyai": lambda: settings.ASSEMBLYAI_MODEL,
+    "openai": lambda: settings.OPENAI_ASR_MODEL,
+    "google": lambda: settings.GOOGLE_ASR_MODEL,
+    "azure": lambda: settings.AZURE_ASR_MODEL,
+    "aws": lambda: settings.AWS_ASR_MODEL,
+    "speechmatics": lambda: settings.SPEECHMATICS_MODEL,
+    "gladia": lambda: settings.GLADIA_MODEL,
+    "pyannote": lambda: settings.PYANNOTE_MODEL,
 }
 
 
@@ -72,12 +70,16 @@ def _env_model(provider: str) -> str:
     return _ENV_MODEL[provider]()
 
 
+def _env_key(provider: str) -> str:
+    """The stripped ``Settings`` API key for ``provider`` (``_KEY_REQUIRED`` names the field)."""
+    return str(getattr(settings, _KEY_REQUIRED[provider]) or "").strip()
+
+
 def _env_provider_usable(provider: str) -> bool:
     """Whether ``ASR_PROVIDER=<provider>`` builds that provider (``_from_env``'s fallback rule)."""
     if provider not in _ENV_MODEL:
         return False
-    env_var = _KEY_REQUIRED.get(provider)
-    return env_var is None or bool(os.getenv(env_var, "").strip())
+    return provider not in _KEY_REQUIRED or bool(_env_key(provider))
 
 
 # Two capability fields every provider entry carries (a model entry overrides where it
@@ -633,10 +635,10 @@ class ASRProviderFactory:
         """
         if cfg is not None:
             return str(cfg.provider or "local"), str(cfg.model_name or ""), cfg
-        env_provider = os.getenv("ASR_PROVIDER", "local").lower()
+        env_provider = settings.ASR_PROVIDER.lower()
         if env_provider != "local" and _env_provider_usable(env_provider):
             return env_provider, _env_model(env_provider), None
-        return "local", os.getenv("WHISPER_MODEL", "large-v3-turbo"), None
+        return "local", settings.WHISPER_MODEL, None
 
     @staticmethod
     def create_for_user(user_id: int, db) -> ASRProvider:
@@ -670,7 +672,7 @@ class ASRProviderFactory:
                     exc,
                 )
 
-        env_provider = os.getenv("ASR_PROVIDER", "local").lower()
+        env_provider = settings.ASR_PROVIDER.lower()
         if env_provider and env_provider != "local":
             logger.info(
                 "ASR provider for user %d: %s (env var ASR_PROVIDER)", user_id, env_provider
@@ -691,7 +693,7 @@ class ASRProviderFactory:
         """
         if provider in _KEY_REQUIRED:
             env_var = _KEY_REQUIRED[provider]
-            api_key = os.getenv(env_var, "").strip()
+            api_key = _env_key(provider)
             if not api_key:
                 logger.warning(
                     "ASR_PROVIDER=%s but %s is empty — falling back to local provider. "
@@ -707,51 +709,51 @@ class ASRProviderFactory:
         if provider == "deepgram":
             from .deepgram_provider import DeepgramProvider
 
-            return DeepgramProvider(os.getenv("DEEPGRAM_API_KEY", ""), _env_model(provider))
+            return DeepgramProvider(settings.DEEPGRAM_API_KEY, _env_model(provider))
         if provider == "assemblyai":
             from .assemblyai_provider import AssemblyAIProvider
 
-            return AssemblyAIProvider(os.getenv("ASSEMBLYAI_API_KEY", ""), _env_model(provider))
+            return AssemblyAIProvider(settings.ASSEMBLYAI_API_KEY, _env_model(provider))
         if provider == "openai":
             from .openai_provider import OpenAIASRProvider
 
-            return OpenAIASRProvider(os.getenv("OPENAI_API_KEY", ""), _env_model(provider))
+            return OpenAIASRProvider(settings.OPENAI_API_KEY, _env_model(provider))
         if provider == "google":
             from .google_provider import GoogleASRProvider
 
             return GoogleASRProvider(
                 model_name=_env_model(provider),
-                credentials_file=os.getenv("GOOGLE_CLOUD_CREDENTIALS"),
+                credentials_file=settings.GOOGLE_CLOUD_CREDENTIALS or None,
             )
         if provider == "azure":
             from .azure_provider import AzureASRProvider
 
             return AzureASRProvider(
-                os.getenv("AZURE_SPEECH_KEY", ""),
-                os.getenv("AZURE_SPEECH_REGION", "eastus"),
+                settings.AZURE_SPEECH_KEY,
+                settings.AZURE_SPEECH_REGION,
                 _env_model(provider),
             )
         if provider == "aws":
             from .aws_provider import AWSTranscribeProvider
 
             return AWSTranscribeProvider(
-                region=os.getenv("AWS_REGION", "us-east-1"),
+                region=settings.AWS_REGION,
                 model_name=_env_model(provider),
-                access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-                secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+                access_key_id=settings.AWS_ACCESS_KEY_ID or None,
+                secret_access_key=settings.AWS_SECRET_ACCESS_KEY or None,
             )
         if provider == "speechmatics":
             from .speechmatics_provider import SpeechmaticsProvider
 
-            return SpeechmaticsProvider(os.getenv("SPEECHMATICS_API_KEY", ""), _env_model(provider))
+            return SpeechmaticsProvider(settings.SPEECHMATICS_API_KEY, _env_model(provider))
         if provider == "gladia":
             from .gladia_provider import GladiaProvider
 
-            return GladiaProvider(os.getenv("GLADIA_API_KEY", ""), _env_model(provider))
+            return GladiaProvider(settings.GLADIA_API_KEY, _env_model(provider))
         if provider == "pyannote":
             from .pyannote_provider import PyAnnoteProvider
 
-            return PyAnnoteProvider(os.getenv("PYANNOTE_API_KEY", ""), _env_model(provider))
+            return PyAnnoteProvider(settings.PYANNOTE_API_KEY, _env_model(provider))
         logger.warning("Unknown ASR provider '%s', falling back to local", provider)
         _guard_local_allowed()
         return LocalASRProvider()
@@ -793,17 +795,15 @@ class ASRProviderFactory:
 
             return AzureASRProvider(api_key or "", region or "eastus", model or "whisper")
         if provider == "aws":
-            import os
-
             from .aws_provider import AWSTranscribeProvider
 
             # UI creds take precedence; otherwise fall back to boto3's default chain
             # (AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY env vars, or an IAM role on AWS).
             return AWSTranscribeProvider(
-                region=region or os.getenv("AWS_REGION") or "us-east-1",
+                region=region or settings.AWS_REGION,
                 model_name=model or "standard",
-                access_key_id=access_key_id or os.getenv("AWS_ACCESS_KEY_ID"),
-                secret_access_key=api_key or os.getenv("AWS_SECRET_ACCESS_KEY"),
+                access_key_id=access_key_id or settings.AWS_ACCESS_KEY_ID or None,
+                secret_access_key=api_key or settings.AWS_SECRET_ACCESS_KEY or None,
             )
         if provider == "speechmatics":
             from .speechmatics_provider import SpeechmaticsProvider

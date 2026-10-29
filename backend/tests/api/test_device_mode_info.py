@@ -10,12 +10,13 @@ from __future__ import annotations
 import pytest
 
 from app.api.endpoints.system import _device_mode_info
+from app.core.config import settings
 
 
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch):
     monkeypatch.delenv("FORCE_CPU_MODE", raising=False)
-    monkeypatch.setenv("WHISPER_MODEL", "base")
+    monkeypatch.setattr(settings, "WHISPER_MODEL", "base")
 
 
 def test_gpu_available_no_force_returns_cuda():
@@ -58,7 +59,7 @@ def test_force_cpu_value_is_case_insensitive(monkeypatch):
 
 
 def test_whisper_model_passthrough(monkeypatch):
-    monkeypatch.setenv("WHISPER_MODEL", "large-v3-turbo")
+    monkeypatch.setattr(settings, "WHISPER_MODEL", "large-v3-turbo")
     out = _device_mode_info([{"available": True}])
     assert out["whisper_model"] == "large-v3-turbo"
 

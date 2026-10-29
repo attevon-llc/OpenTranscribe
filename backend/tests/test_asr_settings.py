@@ -556,15 +556,15 @@ class TestASRFactoryResolution:
         """With no DB config and ASR_PROVIDER set, env var should be used."""
         # Ensure no DB config exists and env var is set to a key-required provider
         # with a missing key => falls back to local.
-        monkeypatch.setenv("ASR_PROVIDER", "deepgram")
-        monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
+        monkeypatch.setattr("app.core.config.settings.ASR_PROVIDER", "deepgram")
+        monkeypatch.setattr("app.core.config.settings.DEEPGRAM_API_KEY", "")
         provider = ASRProviderFactory.create_for_user(normal_user.id, db_session)
         # Deepgram without key falls back to local
         assert provider.provider_name == "local"
 
     def test_default_local_fallback(self, db_session, normal_user, monkeypatch):
         """With no DB config and ASR_PROVIDER=local (or unset), local is returned."""
-        monkeypatch.setenv("ASR_PROVIDER", "local")
+        monkeypatch.setattr("app.core.config.settings.ASR_PROVIDER", "local")
         provider = ASRProviderFactory.create_for_user(normal_user.id, db_session)
         assert provider.provider_name == "local"
 
@@ -1019,7 +1019,7 @@ class TestTranscriptionConfigResolvesModel:
 
     def test_resolve_falls_back_to_env(self, monkeypatch):
         """Without a DB setting, falls back to WHISPER_MODEL env var."""
-        monkeypatch.setenv("WHISPER_MODEL", "tiny")
+        monkeypatch.setattr("app.core.config.settings.WHISPER_MODEL", "tiny")
         from app.transcription.config import TranscriptionConfig
 
         result = TranscriptionConfig._resolve_model_name()

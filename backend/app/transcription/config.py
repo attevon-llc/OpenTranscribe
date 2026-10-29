@@ -10,6 +10,7 @@ import os
 from dataclasses import dataclass
 from typing import ClassVar
 
+from app.core.config import settings
 from app.core.env import env_int
 
 logger = logging.getLogger(__name__)
@@ -148,7 +149,7 @@ class TranscriptionConfig:
             transcription_compute = "int8"
             transcription_model = hybrid_model
             # Batch size for CPU: small at bs=4 is efficient; override-able
-            batch_size_env = os.getenv("BATCH_SIZE", "auto")
+            batch_size_env = settings.BATCH_SIZE
             batch_size = 4 if batch_size_env == "auto" else int(batch_size_env)
             # Diarization stays on GPU/MPS (the actual hw.device)
             diarization_device = hw.device
@@ -164,7 +165,7 @@ class TranscriptionConfig:
             )
             transcription_model = resolved_model
             diarization_device = hw.device
-            batch_size_env = os.getenv("BATCH_SIZE", "auto")
+            batch_size_env = settings.BATCH_SIZE
             batch_size = (
                 int(batch_size_env)
                 if batch_size_env != "auto"
@@ -183,8 +184,8 @@ class TranscriptionConfig:
             source_language=os.getenv("SOURCE_LANGUAGE", "auto"),
             translate_to_english=False,
             enable_dedup=os.getenv("ENABLE_SEGMENT_DEDUP", "true").lower() == "true",
-            min_speakers=int(os.getenv("MIN_SPEAKERS", "1")),
-            max_speakers=int(os.getenv("MAX_SPEAKERS", "20")),
+            min_speakers=settings.MIN_SPEAKERS,
+            max_speakers=settings.MAX_SPEAKERS,
             num_speakers=None,
             hf_token=get_hf_token(),
             enable_native_embeddings=os.getenv("USE_NATIVE_SPEAKER_EMBEDDINGS", "true").lower()
@@ -329,7 +330,7 @@ class TranscriptionConfig:
         if cls._pinned_model_name is not None:
             return cls._pinned_model_name
 
-        raw = os.getenv("WHISPER_MODEL", "large-v3-turbo")
+        raw = settings.WHISPER_MODEL
 
         # Startup path: read from DB (first call before pin_model is called)
         try:

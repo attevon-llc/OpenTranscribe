@@ -802,30 +802,33 @@ def read_library() -> list[dict] | None:
     return items
 
 
-def norm(name: str) -> str:
-    """The backend strips trailing underscores/spaces from a stored title; compare on that."""
-    return re.sub(r"[ _.]+(\.[^.]+)$", r"\1", name)
-
-
 def key(f: dict) -> str:
-    """The on-disk basename the seeder uploaded.
+    """Extension + byte size: exactly what the seeder uploaded.
 
-    The stored ``filename`` is sanitized by the backend and no longer equals it; ``title``
-    keeps the original stem, and the sanitizer preserves the extension.
+    The stored ``filename`` is sanitized, and ``title`` is cleaned of trailing underscores or
+    replaced by the file's embedded title tag, so neither equals the on-disk name.
     """
-    name = str(f.get("filename") or "")
-    path = PurePosixPath(name)
-    return norm(f"{f.get('title') or path.stem}{path.suffix}")
+    return f"{PurePosixPath(str(f.get('filename') or '')).suffix.lower()}\t{f.get('file_size')}"
 
 
 def status_of(f: dict) -> str:
     return str(f.get("status", "")).lower() or "unknown"
 
 
-want = collections.Counter(norm(name) for name, _ in expected)
-sizes = {norm(name): size for name, size in expected}
-# Messages name the file as it is on disk, not its normalised comparison key.
-shown = {norm(name): name for name, _ in expected}
+def expected_key(name: str, size: int) -> str:
+    return f"{PurePosixPath(name).suffix.lower()}\t{size}"
+
+
+want = collections.Counter(expected_key(name, size) for name, size in expected)
+sizes = {expected_key(name, size): size for name, size in expected}
+# Messages name the file as it is on disk, not its comparison key.
+shown = {expected_key(name, size): name for name, size in expected}
+
+
+def label(f: dict) -> str:
+    """A file named for people: the seed name when it is a seed file, else its stored name."""
+    stored = f"{f.get('title') or PurePosixPath(str(f.get('filename') or '')).stem}"
+    return shown.get(key(f)) or f"{stored}{PurePosixPath(str(f.get('filename') or '')).suffix}"
 while time.time() < deadline:
     files = read_library()
     if files is None:
@@ -846,8 +849,9 @@ while time.time() < deadline:
                 + ", ".join(f"{shown.get(n, n)} x{have[n]}" for n in duplicated)
             )
         if extras:
+            by_key = {key(f): label(f) for f in files}
             lines.append(
-                "  not part of the seed: " + ", ".join(f"{shown.get(n, n)} x{have[n]}" for n in extras)
+                "  not part of the seed: " + ", ".join(f"{by_key[n]} x{have[n]}" for n in extras)
             )
         if missing:
             lines.append("  missing: " + ", ".join(shown.get(n, n) for n in missing))
@@ -866,7 +870,7 @@ while time.time() < deadline:
         continue
 
     wrong_size = sorted(
-        f"{key(f)} (stored {f.get('file_size')} bytes, seed is {sizes[key(f)]})"
+        f"{label(f)} (stored {f.get('file_size')} bytes, seed is {sizes[key(f)]})"
         for f in files
         if f.get("file_size") != sizes[key(f)]
     )
@@ -891,7 +895,7 @@ while time.time() < deadline:
                 "without SEED_MEDIA_DIR seeds silent fixtures that the pipeline correctly "
                 f"marks as errors.\n{remedy}"
             )
-        bad = sorted(f"{key(f)} ({status_of(f)})" for f in files if status_of(f) != "completed")
+        bad = sorted(f"{label(f)} ({status_of(f)})" for f in files if status_of(f) != "completed")
         fail(
             f"{len(files) - len(done)} of {len(files)} seed file(s) did not complete ({counts}): "
             + ", ".join(bad)

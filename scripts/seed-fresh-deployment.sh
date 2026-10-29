@@ -194,7 +194,7 @@ fi
 # NOTE: the Python below sits inside bash single quotes, so it must contain none.
 list_existing() {
   OT_SEED_URL="$BACKEND_URL" OT_SEED_TOKEN="$TOKEN" python3 -I -c '
-import json, os, re, sys, urllib.request
+import json, os, sys, urllib.request
 from pathlib import PurePosixPath
 
 base, token = os.environ["OT_SEED_URL"], os.environ["OT_SEED_TOKEN"]
@@ -209,13 +209,12 @@ while page <= total_pages:
     items = body["items"]
     total_pages = int(body["total_pages"])
     for f in items:
-        name = f["filename"]
-        title = f.get("title") or PurePosixPath(name).stem
+        # Identity is extension + byte size. Neither the stored filename (sanitized) nor the title
+        # (cleaned of trailing underscores, or replaced by the file embedded title tag) is the
+        # on-disk name, but the extension and the size are exactly what was uploaded.
+        suffix = PurePosixPath(f["filename"]).suffix.lower()
         size = f.get("file_size")
-        # The backend strips trailing underscores/spaces from a stored title, so compare on the
-        # same normalisation the capture wrapper uses (see update-visual-baselines.sh).
-        stored = re.sub(r"[ _.]+(\.[^.]+)$", r"\1", f"{title}{PurePosixPath(name).suffix}")
-        print(f"{stored}\t{size}")
+        print(f"{suffix}\t{size}")
     page += 1
 '
 }
@@ -227,7 +226,6 @@ if ! EXISTING="$(list_existing)"; then
   echo "🌱 seed: uploaded 0, already present 0, failed 0 of ${#FILES[@]} file(s)."
   exit 0
 fi
-EXISTING_NAMES="$(cut -f1 <<< "$EXISTING")"
 
 uploaded=0
 present=0
@@ -236,8 +234,9 @@ for f in "${FILES[@]}"; do
   name="$(upload_name "$f")"
   # A here-string, not `printf | grep -q`: under pipefail, grep exiting early SIGPIPEs the
   # printf and the pipeline's 141 reads as "not present" -- a duplicate upload.
-  norm_name="$(sed -E 's/[ _.]+(\.[^.]+)$/\1/' <<< "$name")"
-  if grep -Fxq -- "$norm_name" <<< "$EXISTING_NAMES"; then
+  ext_lc="$(tr '[:upper:]' '[:lower:]' <<< ".${name##*.}")"
+  key="$(printf '%s\t%s' "$ext_lc" "$(stat -c %s "$f")")"
+  if grep -Fxq -- "$key" <<< "$EXISTING"; then
     present=$((present + 1))
     echo "   = ${name} (already present)"
     continue

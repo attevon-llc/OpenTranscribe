@@ -163,8 +163,8 @@ def test_seed_files_beyond_the_first_page_are_still_recognised(media_dir: Path) 
     with StubBackend() as stub:
         for index in range(120):
             stub.add_file(f"filler_{index:03d}.mp4", size=1)
-        for name in SEED_NAMES:
-            stub.add_file(name, size=100)  # lands on page 2
+        for index, name in enumerate(SEED_NAMES):
+            stub.add_file(name, size=100 + index * 10)  # lands on page 2
 
         result = run_seed(media_dir, stub.url)
 

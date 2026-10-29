@@ -364,21 +364,54 @@ def discover_youtube_ids(minio_client: Any, user_id: int) -> list[str]:
     return sorted(ids)
 
 
+class MetadataSidecarError(Exception):
+    """The YouTube-metadata sidecar could not be loaded as a trustworthy dict."""
+
+
+class MetadataSidecarUnavailableError(MetadataSidecarError):
+    """Storage did not answer (outage / timeout / 5xx / AccessDenied): retry later."""
+
+
+class MetadataSidecarCorruptError(MetadataSidecarError):
+    """The stored sidecar exists but is not a JSON object; needs a human, not a retry."""
+
+
 def load_metadata_sidecar(minio_service: Any) -> dict[str, dict[str, Any]]:
-    """Load the resumable YouTube-metadata sidecar from MinIO (``{}`` if absent)."""
+    """Load the resumable YouTube-metadata sidecar from MinIO.
+
+    Returns ``{}`` only when the object is definitively absent (first run). Raises
+    ``MetadataSidecarUnavailableError`` on an outage and ``MetadataSidecarCorruptError``
+    on an unparsable body, so callers never start "fresh" and overwrite a stored
+    sidecar with a partial set.
+    """
+    from app.services.storage_absence import is_absent_error
+
     try:
         response = minio_service.get_object(settings.MEDIA_BUCKET_NAME, YOUTUBE_METADATA_SIDECAR)
-        try:
-            raw = response.read()
-        finally:
-            with contextlib.suppress(Exception):
-                response.close()
-                response.release_conn()
-        data = json.loads(raw.decode("utf-8"))
-        return data if isinstance(data, dict) else {}
     except Exception as exc:
-        logger.debug("metadata sidecar not present / unreadable (%s); starting fresh", exc)
-        return {}
+        if is_absent_error(exc):
+            logger.debug("metadata sidecar not present (%s); starting fresh", exc)
+            return {}
+        logger.warning("metadata sidecar unreachable, refusing to start fresh: %s", exc)
+        raise MetadataSidecarUnavailableError(f"cannot read metadata sidecar: {exc}") from exc
+    try:
+        raw = response.read()
+    except Exception as exc:
+        logger.warning("metadata sidecar read failed, refusing to start fresh: %s", exc)
+        raise MetadataSidecarUnavailableError(f"cannot read metadata sidecar: {exc}") from exc
+    finally:
+        with contextlib.suppress(Exception):
+            response.close()
+            response.release_conn()
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except ValueError as exc:  # JSONDecodeError and UnicodeDecodeError are both ValueErrors
+        logger.warning("metadata sidecar is corrupt (%s); leaving the stored object untouched", exc)
+        raise MetadataSidecarCorruptError(f"metadata sidecar is not valid JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        logger.warning("metadata sidecar is %s, not an object; leaving it untouched", type(data))
+        raise MetadataSidecarCorruptError("metadata sidecar is not a JSON object")
+    return data
 
 
 def save_metadata_sidecar(minio_service: Any, data: dict[str, dict[str, Any]]) -> None:

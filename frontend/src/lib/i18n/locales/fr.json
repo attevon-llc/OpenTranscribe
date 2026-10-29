@@ -5638,6 +5638,7 @@
   "settings.search.modelNotReady": "Le déploiement a signalé un succès mais le modèle ne peut toujours pas produire d'embeddings. Consultez les journaux OpenSearch : cela signifie généralement que le tas JVM est trop petit pour ce modèle.",
   "settings.search.modelPrepareFailed": "Impossible de télécharger et de déployer le modèle.",
   "settings.search.bootstrapDegradedTitle": "La recherche sémantique est dégradée",
+  "settings.search.statusUnavailable": "L'état de la réindexation est indisponible pour le moment. Nouvelle tentative automatique.",
   "settings.search.bootstrapDegradedBody": "Le modèle de recherche sémantique n'a pas pu être préparé après {{attempts}} tentative(s). La recherche par mots-clés fonctionne toujours ; la recherche sémantique non. Le système réessaie automatiquement en arrière-plan.",
   "settings.search.bootstrapLastError": "Dernière erreur : {{error}}",
   "settings.search.bootstrapRetryAt": "Prochaine nouvelle tentative automatique : {{time}}",

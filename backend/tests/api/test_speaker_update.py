@@ -221,3 +221,113 @@ def test_retroactive_matching_no_embedding_returns_zero(db_session, normal_user)
 
     result = trigger_retroactive_matching(spk, db_session)
     assert result == {"auto_applied_count": 0, "suggested_count": 0}
+
+
+# ---------------------------------------------------------------------------
+# Failure is distinguishable from an empty answer (fail-open cleanup, FO-3)
+# ---------------------------------------------------------------------------
+
+
+def test_auto_profile_failure_is_raised_not_reported_as_false(db_session, normal_user, monkeypatch):
+    """A Postgres error must reach the caller; ``False`` was ignored by the one caller."""
+    from sqlalchemy.exc import OperationalError
+
+    mf = _make_file(db_session, normal_user)
+    spk = _make_speaker(db_session, normal_user, mf)
+
+    def _boom(*args, **kwargs):
+        raise OperationalError("SELECT", {}, Exception("connection lost"))
+
+    monkeypatch.setattr(db_session, "query", _boom)
+
+    with pytest.raises(OperationalError):
+        auto_create_or_assign_profile(spk, "Dana Lee", db_session)
+
+
+def test_suggestion_documents_failure_is_raised_not_empty_list(db_session, monkeypatch):
+    """``[]`` meant "no suggestions to sync"; a DB error must not read as that."""
+    from sqlalchemy.exc import OperationalError
+
+    from app.api.endpoints import speaker_update
+
+    def _boom(*args, **kwargs):
+        raise OperationalError("SELECT", {}, Exception("connection lost"))
+
+    monkeypatch.setattr(db_session, "query", _boom)
+    trigger = {"user_id": 1, "organization_id": None, "display_name": "Dana Lee"}
+
+    with pytest.raises(OperationalError):
+        speaker_update._load_suggestion_speaker_documents(db_session, trigger)
+
+
+def test_retroactive_matching_failure_is_raised_not_zero_counts(
+    db_session, normal_user, monkeypatch
+):
+    """A failed pass must not return the same ``{0, 0}`` as "nothing matched"."""
+    from sqlalchemy.exc import OperationalError
+
+    from app.api.endpoints import speaker_update
+
+    mf = _make_file(db_session, normal_user)
+    spk = _make_speaker(db_session, normal_user, mf)
+    spk.display_name = "Dana Lee"
+    db_session.commit()
+
+    monkeypatch.setattr(speaker_update, "get_speaker_embedding", lambda _uuid: [0.1, 0.2, 0.3])
+
+    def _boom(*args, **kwargs):
+        raise OperationalError("SELECT", {}, Exception("connection lost"))
+
+    monkeypatch.setattr(speaker_update, "_load_suggestion_speaker_documents", _boom)
+
+    with pytest.raises(OperationalError):
+        trigger_retroactive_matching(spk, db_session)
+
+
+def test_retroactive_matching_with_no_candidates_still_returns_zero(
+    db_session, normal_user, monkeypatch
+):
+    """Control: a genuine "nothing matched" keeps returning the empty answer."""
+    from app.api.endpoints import speaker_update
+
+    mf = _make_file(db_session, normal_user)
+    spk = _make_speaker(db_session, normal_user, mf)
+    spk.display_name = "Dana Lee"
+    db_session.commit()
+
+    monkeypatch.setattr(speaker_update, "get_speaker_embedding", lambda _uuid: [0.1, 0.2, 0.3])
+    monkeypatch.setattr(speaker_update, "_push_speaker_documents", lambda docs: None)
+    monkeypatch.setattr(speaker_update, "_send_bulk_update_notification", lambda *a, **k: None)
+
+    assert trigger_retroactive_matching(spk, db_session) == {
+        "auto_applied_count": 0,
+        "suggested_count": 0,
+    }
+
+
+def test_labeling_workflow_stops_when_profile_assignment_fails(
+    db_session, normal_user, monkeypatch
+):
+    """A failed profile step must not proceed to commit and retroactive matching."""
+    from sqlalchemy.exc import OperationalError
+
+    from app.api.endpoints import speaker_update
+    from app.api.endpoints import speakers
+
+    mf = _make_file(db_session, normal_user)
+    spk = _make_speaker(db_session, normal_user, mf)
+    ran = {"matching": False}
+
+    def _boom(*args, **kwargs):
+        raise OperationalError("SELECT", {}, Exception("connection lost"))
+
+    def _matching(*args, **kwargs):
+        ran["matching"] = True
+        return {"auto_applied_count": 0, "suggested_count": 0}
+
+    monkeypatch.setattr(speaker_update, "auto_create_or_assign_profile", _boom)
+    monkeypatch.setattr(speaker_update, "trigger_retroactive_matching", _matching)
+
+    with pytest.raises(OperationalError):
+        speakers._handle_speaker_labeling_workflow(db_session, spk.id, "Dana Lee")
+    assert ran["matching"] is False

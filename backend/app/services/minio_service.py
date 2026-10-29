@@ -378,19 +378,6 @@ def download_temp_audio(file_uuid: str, local_path: str) -> None:
     minio_client.fget_object(settings.MEDIA_BUCKET_NAME, object_name, local_path)
 
 
-def temp_audio_exists(file_uuid: str) -> bool:
-    """Return True when the preprocessed WAV is reachable from either source."""
-    from app.utils import scratch_volume
-
-    if scratch_volume.scratch_audio_path(file_uuid).exists():
-        return True
-    try:
-        minio_client.stat_object(settings.MEDIA_BUCKET_NAME, _temp_audio_object_name(file_uuid))
-        return True
-    except Exception:
-        return False
-
-
 def cleanup_temp_audio(file_uuid: str) -> None:
     """Remove preprocessed audio from both scratch and MinIO temp (best-effort)."""
     _logger = logging.getLogger(__name__)

@@ -5638,6 +5638,7 @@
   "settings.search.modelNotReady": "La distribuzione ha segnalato successo ma il modello non riesce ancora a generare embedding. Controlla i log di OpenSearch — questo di solito significa heap JVM insufficiente per questo modello.",
   "settings.search.modelPrepareFailed": "Impossibile scaricare e distribuire il modello.",
   "settings.search.bootstrapDegradedTitle": "La ricerca semantica è degradata",
+  "settings.search.statusUnavailable": "Lo stato della reindicizzazione non è al momento disponibile. Nuovo tentativo automatico.",
   "settings.search.bootstrapDegradedBody": "Impossibile preparare il modello di ricerca semantica dopo {{attempts}} tentativo/i. La ricerca per parole chiave funziona ancora; quella semantica no. Il sistema riprova automaticamente in background.",
   "settings.search.bootstrapLastError": "Ultimo errore: {{error}}",
   "settings.search.bootstrapRetryAt": "Prossimo nuovo tentativo automatico: {{time}}",

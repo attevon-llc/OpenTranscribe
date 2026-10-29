@@ -14,6 +14,7 @@ from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
 from fastapi import Response
+from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
@@ -44,6 +45,8 @@ from app.services.search.reindex_cancel import cancel_requested
 from app.services.search.reindex_cancel import clear_fanout
 from app.services.search.reindex_cancel import read_fanout
 from app.services.search.reindex_cancel import request_cancel
+from app.services.search.reindex_lock import ReindexLockUnavailableError
+from app.services.search.reindex_lock import running_reindex_run_id as _running_reindex_run_id
 
 logger = logging.getLogger(__name__)
 
@@ -1032,7 +1035,10 @@ def trigger_reindex(
     }
 
 
-@router.post("/reindex/stop")
+@router.post(
+    "/reindex/stop",
+    responses={503: {"description": "Reindex state cannot be determined (Redis unreachable)."}},
+)
 def stop_reindex(
     ctx: RequestContext = Depends(get_current_context),
     current_user: User = Depends(get_current_admin_user),
@@ -1102,38 +1108,20 @@ def stop_reindex(
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
         raise
+    except (ReindexLockUnavailableError, RedisError, ConnectionError) as e:
+        # "Cannot tell" is not "not running": answering 200 not_running here would
+        # tell an admin a live reindex is idle. The detail stays generic on purpose.
+        logger.error("Reindex stop refused, Redis unavailable: %s", type(e).__name__)
+        raise HTTPException(
+            status_code=503,
+            detail="Reindex state is temporarily unavailable. Please try again shortly.",
+        ) from e
     except Exception as e:
         logger.error("Failed to request reindex stop: %s", e, exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="An internal error occurred. Please try again.",
         ) from e
-
-
-def _running_reindex_run_id(user_id: int) -> str | None:
-    """The coordinator task id currently holding ``reindex_lock:{user_id}``.
-
-    The lock's *value* is the run id (``reindex_task`` sets it NX with a 1-hour
-    TTL and releases it only if it still owns it), so one sub-millisecond GET
-    answers both "is a reindex running for this owner" and "which run is it" — no
-    Celery broadcast needed.
-
-    Args:
-        user_id: The owner to check.
-
-    Returns:
-        The run id, or ``None`` when no reindex is running for that owner.
-    """
-    try:
-        from app.core.redis import get_redis
-
-        value = get_redis().get(f"reindex_lock:{user_id}")
-    except Exception as e:
-        logger.debug(f"Could not check reindex lock: {e}")
-        return None
-    if value is None:
-        return None
-    return value.decode() if isinstance(value, bytes) else str(value)
 
 
 def _check_reindex_task_active(user_id: int) -> bool:
@@ -1325,7 +1313,12 @@ def reindex_status(
             logger.exception(f"Error checking index status: {e}")
 
     # Check if a reindex task is actively running for this user, and which run.
-    running_run_id = _running_reindex_run_id(current_user.id)
+    status_unavailable = False
+    try:
+        running_run_id = _running_reindex_run_id(current_user.id)
+    except ReindexLockUnavailableError:
+        running_run_id = None
+        status_unavailable = True
     in_progress = running_run_id is not None
 
     # Check if stop has been requested — for THIS run. A flag naming a finished
@@ -1341,6 +1334,9 @@ def reindex_status(
         "pending_files": max(0, total_files - indexed_files),
         "in_progress": in_progress,
         "stop_requested": stop_requested,
+        # True when Redis could not be read: in_progress/stop_requested are then
+        # placeholders, not "idle". Clients must treat the run state as unknown.
+        "status_unavailable": status_unavailable,
         "current_model": current_model,
         "current_dimension": current_dimension,
         "last_indexed_at": last_indexed_at,

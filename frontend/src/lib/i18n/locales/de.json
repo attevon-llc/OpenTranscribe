@@ -5638,6 +5638,7 @@
   "settings.search.modelNotReady": "Die Bereitstellung meldete Erfolg, aber das Modell kann weiterhin keine Embeddings erzeugen. Prüfen Sie die OpenSearch-Logs – meist ist der JVM-Heap für dieses Modell zu klein.",
   "settings.search.modelPrepareFailed": "Das Modell konnte nicht heruntergeladen und bereitgestellt werden.",
   "settings.search.bootstrapDegradedTitle": "Semantische Suche beeinträchtigt",
+  "settings.search.statusUnavailable": "Der Reindex-Status ist derzeit nicht verfügbar. Es wird automatisch erneut versucht.",
   "settings.search.bootstrapDegradedBody": "Das Modell für die semantische Suche konnte nach {{attempts}} Versuch(en) nicht vorbereitet werden. Die Stichwortsuche funktioniert weiterhin; die semantische Suche nicht. Das System versucht es automatisch im Hintergrund erneut.",
   "settings.search.bootstrapLastError": "Letzter Fehler: {{error}}",
   "settings.search.bootstrapRetryAt": "Nächster automatischer Versuch: {{time}}",

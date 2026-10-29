@@ -5638,6 +5638,7 @@
   "settings.search.modelNotReady": "Implementatie is gemeld als geslaagd, maar het model kan nog steeds niet embedden. Controleer de OpenSearch-logs — dit betekent meestal te weinig JVM-heap voor dit model.",
   "settings.search.modelPrepareFailed": "Kan het model niet downloaden en implementeren.",
   "settings.search.bootstrapDegradedTitle": "Semantisch zoeken is verminderd",
+  "settings.search.statusUnavailable": "De herindexeringsstatus is momenteel niet beschikbaar. Er wordt automatisch opnieuw geprobeerd.",
   "settings.search.bootstrapDegradedBody": "Het semantische zoekmodel kon na {{attempts}} poging(en) niet worden voorbereid. Zoeken op trefwoord werkt nog steeds; semantisch zoeken niet. Het systeem probeert het automatisch opnieuw op de achtergrond.",
   "settings.search.bootstrapLastError": "Laatste fout: {{error}}",
   "settings.search.bootstrapRetryAt": "Volgende automatische nieuwe poging: {{time}}",

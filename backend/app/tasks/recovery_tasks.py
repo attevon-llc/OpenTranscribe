@@ -51,9 +51,27 @@ _OVERWRITE_SIGNATURE_TOLERANCE_SECONDS = 0.001
 _YT_METADATA_DELAY_SECONDS = 5.0
 
 
+_SIDECAR_RETRY_DELAY_SECONDS = 60
+
+
+def _load_sidecar_or_retry(task: Any, svc: Any) -> dict[str, dict[str, Any]]:
+    """Load the sidecar, retrying the task on a storage outage.
+
+    An outage must never read as "no sidecar": the fetch task would re-hit YouTube for
+    every id and then overwrite the stored sidecar with a partial set. A corrupt sidecar
+    is not retried (it will not heal); it propagates and fails the task.
+    """
+    try:
+        return recovery.load_metadata_sidecar(svc)
+    except recovery.MetadataSidecarUnavailableError as exc:
+        logger.warning("%s: sidecar storage unreachable, retrying: %s", task.name, exc)
+        raise task.retry(exc=exc, countdown=_SIDECAR_RETRY_DELAY_SECONDS) from exc
+
+
 @celery_app.task(
     name="recovery.youtube_metadata_fetch",
     bind=True,
+    max_retries=3,
     priority=CPUPriority.ADMIN_BATCH,
 )
 def youtube_metadata_fetch(self, user_id: int, limit: int | None = None) -> dict:
@@ -82,7 +100,7 @@ def youtube_metadata_fetch(self, user_id: int, limit: int | None = None) -> dict
     summary["ids_discovered"] = len(video_ids)
     logger.info("youtube_metadata_fetch: %d thumbnail ids for user %s", len(video_ids), user_id)
 
-    cache = recovery.load_metadata_sidecar(svc)
+    cache = _load_sidecar_or_retry(self, svc)
     new_this_run = 0
 
     for video_id in video_ids:
@@ -123,6 +141,7 @@ def youtube_metadata_fetch(self, user_id: int, limit: int | None = None) -> dict
 @celery_app.task(
     name="recovery.youtube_metadata_backfill",
     bind=True,
+    max_retries=3,
     priority=CPUPriority.ADMIN_BATCH,
 )
 def youtube_metadata_backfill(self, user_id: int) -> dict:
@@ -139,7 +158,7 @@ def youtube_metadata_backfill(self, user_id: int) -> dict:
     from app.services.minio_service import MinIOService
 
     svc = MinIOService()
-    cache = recovery.load_metadata_sidecar(svc)
+    cache = _load_sidecar_or_retry(self, svc)
     summary = {"candidate_rows": 0, "matched": 0, "updated": 0}
 
     if not cache:

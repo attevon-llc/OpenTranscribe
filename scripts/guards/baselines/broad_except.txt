@@ -22,7 +22,7 @@ backend/app/api/endpoints/files/waveform.py	1	ratchet: may only go down
 backend/app/api/endpoints/llm_settings.py	3	ratchet: may only go down
 backend/app/api/endpoints/llm_status.py	1	ratchet: may only go down
 backend/app/api/endpoints/local_models.py	4	ratchet: may only go down
-backend/app/api/endpoints/search.py	5	ratchet: may only go down
+backend/app/api/endpoints/search.py	4	ratchet: may only go down
 backend/app/api/endpoints/speaker_attribute_migration.py	3	ratchet: may only go down
 backend/app/api/endpoints/speaker_clusters.py	2	ratchet: may only go down
 backend/app/api/endpoints/speaker_profiles.py	5	ratchet: may only go down
@@ -112,7 +112,7 @@ backend/app/services/media_download_service.py	10	ratchet: may only go down
 backend/app/services/media_mirror_service.py	2	ratchet: may only go down
 backend/app/services/migration_lock_service.py	1	ratchet: may only go down
 backend/app/services/migration_progress_service.py	7	ratchet: may only go down
-backend/app/services/minio_service.py	11	ratchet: may only go down
+backend/app/services/minio_service.py	10	ratchet: may only go down
 backend/app/services/multipart_upload.py	5	ratchet: may only go down
 backend/app/services/native_embedding_client.py	1	ratchet: may only go down
 backend/app/services/notification_service.py	1	ratchet: may only go down
@@ -165,7 +165,7 @@ backend/app/services/speaker_rename_tracker.py	1	ratchet: may only go down
 backend/app/services/speaker_status_service.py	2	ratchet: may only go down
 backend/app/services/storage_backend.py	1	ratchet: may only go down
 backend/app/services/storage_presign_identity.py	2	ratchet: may only go down
-backend/app/services/storage_recovery_service.py	5	ratchet: may only go down
+backend/app/services/storage_recovery_service.py	4	ratchet: may only go down
 backend/app/services/subtitle_service.py	1	ratchet: may only go down
 backend/app/services/tag_service.py	2	ratchet: may only go down
 backend/app/services/takedown_notices.py	4	ratchet: may only go down

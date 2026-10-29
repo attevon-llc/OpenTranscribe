@@ -122,6 +122,43 @@ def _rescore_against_profile(speaker_id: int) -> dict[str, int]:
         return trigger_retroactive_matching(speaker, db)
 
 
+def _run_matching_step(
+    speaker_uuid: str,
+    speaker_id: int,
+    user_id: int,
+    display_name: str,
+    display_name_changed: bool,
+    old_profile_id: int | None,
+    new_profile_id: int | None,
+) -> tuple[int, int]:
+    """Step 4: the labeling workflow, or a re-score after a profile attach.
+
+    Returns ``(auto_applied_count, suggested_count)``. Raises on failure so the
+    caller can tell it apart from a pass that matched nothing.
+    """
+    from app.api.endpoints.speakers import _handle_speaker_labeling_workflow
+
+    result = None
+    if display_name_changed and display_name and display_name.strip():
+        logger.debug(f"Running retroactive matching for speaker {speaker_uuid}")
+        with session_scope() as db:
+            result = _handle_speaker_labeling_workflow(db, speaker_id, display_name, user_id)
+    elif _should_rescore_after_profile_change(
+        display_name_changed=display_name_changed,
+        display_name=display_name,
+        old_profile_id=old_profile_id,
+        new_profile_id=new_profile_id,
+    ):
+        logger.debug(
+            f"Re-scoring library after speaker {speaker_uuid} was attached to "
+            f"profile {new_profile_id}"
+        )
+        result = _rescore_against_profile(speaker_id)
+    if not result:
+        return 0, 0
+    return result.get("auto_applied_count", 0), result.get("suggested_count", 0)
+
+
 @celery_app.task(
     bind=True, name="process_speaker_update_background", priority=CPUPriority.USER_TRIGGERED
 )
@@ -175,7 +212,6 @@ def process_speaker_update_background(
     """
     from app.api.endpoints.speakers import _clear_video_cache_for_speaker
     from app.api.endpoints.speakers import _handle_profile_embedding_updates
-    from app.api.endpoints.speakers import _handle_speaker_labeling_workflow
     from app.api.endpoints.speakers import _load_profile_speaker_names
     from app.api.endpoints.speakers import _push_speaker_display_names
     from app.api.endpoints.speakers import _push_speaker_profile_info
@@ -236,27 +272,26 @@ def process_speaker_update_background(
         #    short session; the matching pass releases it around its OpenSearch phase.
         auto_applied_count = 0
         suggested_count = 0
-        if display_name_changed and display_name and display_name.strip():
-            logger.debug(f"Running retroactive matching for speaker {speaker_uuid}")
-            with session_scope() as db:
-                result = _handle_speaker_labeling_workflow(db, speaker_id, display_name, user_id)
-            if result:
-                auto_applied_count = result.get("auto_applied_count", 0)
-                suggested_count = result.get("suggested_count", 0)
-        elif _should_rescore_after_profile_change(
-            display_name_changed=display_name_changed,
-            display_name=display_name,
-            old_profile_id=old_profile_id,
-            new_profile_id=new_profile_id,
-        ):
-            logger.debug(
-                f"Re-scoring library after speaker {speaker_uuid} was attached to "
-                f"profile {new_profile_id}"
+        matching_failed = False
+        try:
+            auto_applied_count, suggested_count = _run_matching_step(
+                speaker_uuid,
+                speaker_id,
+                user_id,
+                display_name,
+                display_name_changed,
+                old_profile_id,
+                new_profile_id,
             )
-            result = _rescore_against_profile(speaker_id)
-            if result:
-                auto_applied_count = result.get("auto_applied_count", 0)
-                suggested_count = result.get("suggested_count", 0)
+        except Exception as exc:
+            # The label itself is saved; only profile assignment / matching failed.
+            # Zero counts would read as "nothing matched", so say it failed, and still
+            # run the cache clear and completion event below.
+            matching_failed = True
+            logger.error(
+                f"Retroactive matching failed for speaker {speaker_uuid}: {type(exc).__name__}",
+                exc_info=True,
+            )
 
         # 5. Clear video cache — opens its own short session for the one SELECT it
         #    needs; the storage client is constructed before it.
@@ -275,6 +310,7 @@ def process_speaker_update_background(
             "suggested_count": suggested_count,
             "processing_status": "complete",
             "media_file_id": identifiers["media_file_uuid"],
+            "matching_failed": matching_failed,
         }
 
         if identifiers["media_file_uuid"] is not None:
@@ -293,9 +329,13 @@ def process_speaker_update_background(
             f"Auto-applied: {auto_applied_count}, Suggested: {suggested_count}"
         )
 
-        cleanup_stages = sorted({str(r.get("stage")) for r in profile_residual or []})
+        stages = {str(r.get("stage")) for r in profile_residual or []}
+        if matching_failed:
+            stages.add("retroactive_matching")
+        cleanup_stages = sorted(stages)
         return {
             "status": "partial" if cleanup_stages else "success",
+            "matching_failed": matching_failed,
             "speaker_uuid": speaker_uuid,
             "auto_applied_count": auto_applied_count,
             "suggested_count": suggested_count,

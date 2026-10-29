@@ -5638,6 +5638,7 @@
   "settings.search.modelNotReady": "La implementación informó éxito, pero el modelo todavía no puede generar embeddings. Revisa los registros de OpenSearch: normalmente significa que hay muy poca memoria heap de la JVM para este modelo.",
   "settings.search.modelPrepareFailed": "No se pudo descargar e implementar el modelo.",
   "settings.search.bootstrapDegradedTitle": "La búsqueda semántica está degradada",
+  "settings.search.statusUnavailable": "El estado de la reindexación no está disponible en este momento. Reintentando automáticamente.",
   "settings.search.bootstrapDegradedBody": "No se pudo preparar el modelo de búsqueda semántica tras {{attempts}} intento(s). La búsqueda por palabras clave sigue funcionando; la búsqueda semántica no. El sistema reintenta automáticamente en segundo plano.",
   "settings.search.bootstrapLastError": "Último error: {{error}}",
   "settings.search.bootstrapRetryAt": "Próximo reintento automático: {{time}}",

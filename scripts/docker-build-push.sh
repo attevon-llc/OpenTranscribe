@@ -645,6 +645,7 @@ build_backend_identity_args() {
 # name the same commit.
 build_frontend_identity_args() {
     printf '%s\n' "--build-arg" "GIT_SHA=${COMMIT_SHA}"
+    printf '%s\n' "--build-arg" "APK_SECURITY_REFRESH=${OT_APK_SECURITY_REFRESH:-$(date -u +%Y-%m-%d)}"
 }
 
 # Announce what a build is about to do, and short-circuit under DRY_RUN.
@@ -851,6 +852,7 @@ build_docs() {
         --file Dockerfile \
         --build-arg DOCS_BASE_URL=/docs/ \
         --build-arg OT_VERSION="${VERSION_FULL}" \
+        --build-arg APK_SECURITY_REFRESH="${OT_APK_SECURITY_REFRESH:-$(date -u +%Y-%m-%d)}" \
         "${identity_args[@]}" \
         "${tag_args[@]}" \
         "${cache_args[@]}" \

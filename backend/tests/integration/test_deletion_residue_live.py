@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import io
 import os
+import time
 import uuid as uuid_pkg
 from collections.abc import Iterator
 from typing import Any
@@ -281,6 +282,24 @@ def _assert_backend_sees(api: Api, sf: SeededFile) -> None:
     )
 
 
+def _delete_when_idle(api: Api, path: str, *, timeout: float = 30.0):
+    """DELETE, retrying while the backend's own lazy post-processing holds the file.
+
+    The first read of a completed file queues a redaction scan (``_lazy_dispatch_redaction``);
+    until that task ends the delete API answers 409 ``FILE_NOT_SAFE_TO_DELETE`` ("being
+    processed"). That is correct app behaviour, not residue, so only that exact refusal is
+    retried, and only until the deadline; any other answer is returned as it came.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        resp = api.delete(path)
+        if resp.status_code != 409 or "FILE_NOT_SAFE_TO_DELETE" not in resp.text:
+            return resp
+        if time.monotonic() >= deadline:
+            return resp
+        time.sleep(0.5)
+
+
 # --------------------------------------------------------------------------- per-file routes
 
 
@@ -290,7 +309,7 @@ def test_single_delete_leaves_no_residue(api, engine, admin_id, created):
     _assert_backend_sees(api, sf)
     reached, edge_rows = _assert_seed_reaches_every_store(engine, sf, include_owner=False)
 
-    resp = api.delete(f"/api/files/{sf.file_uuid}")
+    resp = _delete_when_idle(api, f"/api/files/{sf.file_uuid}")
     assert resp.status_code == 204, resp.text
 
     _assert_no_residue(engine, sf, reached, edge_rows)
@@ -306,7 +325,7 @@ def test_a_takedown_record_outlives_its_deleted_file(api, engine, admin_id, crea
     """
     sf = _seed(engine, created, admin_id)
     _assert_backend_sees(api, sf)
-    resp = api.delete(f"/api/files/{sf.file_uuid}")
+    resp = _delete_when_idle(api, f"/api/files/{sf.file_uuid}")
     assert resp.status_code == 204, resp.text
 
     with engine.connect() as conn:
@@ -342,7 +361,7 @@ def test_delete_of_a_requeued_file_leaves_no_residue(api, engine, admin_id, crea
             == "pending"
         ), "the seed must leave this file PENDING, or this test exercises the wrong branch"
 
-    resp = api.delete(f"/api/files/{sf.file_uuid}")
+    resp = _delete_when_idle(api, f"/api/files/{sf.file_uuid}")
     assert resp.status_code == 204, resp.text
 
     _assert_no_residue(engine, sf, reached, edge_rows)
@@ -454,7 +473,7 @@ def test_surviving_cluster_centroid_forgets_a_deleted_file(api, engine, admin_id
         assert resp.status_code == 200, resp.text
         assert [r["success"] for r in resp.json()] == [True], resp.json()
     else:
-        resp = api.delete(f"/api/files/{a.file_uuid}")
+        resp = _delete_when_idle(api, f"/api/files/{a.file_uuid}")
         assert resp.status_code == 204, resp.text
 
     _assert_centroid_rebuilt(engine, cluster, remaining, a)

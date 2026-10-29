@@ -11,7 +11,7 @@ row) and point ``settings.WATCH_FOLDER_PATH`` at a pytest ``tmp_path`` via
 runs for real rather than being stubbed out.
 
 ``watch_settings_service.file_stability_seconds()`` opens its own short DB
-session (see ``watch_settings_service._session``) -- a genuinely
+session (see ``scheduled_job_settings.session_scope``) -- a genuinely
 out-of-process seam for a filesystem-listing unit test, so it is patched to a
 fixed value rather than exercised against a live Postgres row.
 """

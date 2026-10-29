@@ -48,6 +48,7 @@ from typing import cast
 from app.core.enums import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Speaker
+from app.services import migration_admin_notify
 from app.services.speaker_analysis_models import MultiModelRunner
 from app.services.speaker_analysis_models import SegmentResult
 from app.tasks import migration_pipeline
@@ -373,7 +374,7 @@ def test_lock_has_a_one_hour_ttl_and_is_released_when_an_exception_hits_mid_run(
     def _boom(*_a, **_kw):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(sat, "send_ws_event", _boom)
+    monkeypatch.setattr(migration_admin_notify, "send_ws_event", _boom)
 
     sat.migrate_speaker_attributes_task.push_request(id="task-lock-test")
     try:

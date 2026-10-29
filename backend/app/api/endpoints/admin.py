@@ -39,6 +39,7 @@ from app.auth.password_history import check_password_against_history
 from app.auth.password_policy import password_expiry_cutoff
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
+from app.auth.refusal_audit import audit_user_update_refusal
 from app.auth.roles import ELEVATED_ROLES
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import ROLE_USER
@@ -2004,33 +2005,6 @@ def admin_change_user_role(
     return {"success": True, "old_role": old_role, "new_role": new_role}
 
 
-def _audit_admin_identity_refusal(
-    action: str, user: User, current_user: User, client_ip: str, user_agent: str
-) -> None:
-    """Record a refusal from the link-identity / external-email endpoints below.
-
-    Mirrors ``users.py::_audit_privilege_boundary_denial`` exactly, including its
-    reuse of ``ADMIN_USER_UPDATE`` with ``outcome=FAILURE`` rather than a new
-    ``AuditEventType`` — both endpoints' successful writes already emit that type,
-    so a refusal is the same event with a different outcome and an ``action``
-    naming which precondition stopped it. There is no third convention to invent
-    here; the sibling in ``users.py`` already answered this. Actor vs. subject
-    follows issue #443: ``user_id``/``username`` are the caller, ``target_user_id``/
-    ``target_username`` are the account the write was attempted against.
-    """
-    audit_logger.log(
-        event_type=AuditEventType.ADMIN_USER_UPDATE,
-        outcome=AuditOutcome.FAILURE,
-        user_id=current_user.id,
-        username=str(current_user.email),
-        target_user_id=int(user.id),
-        target_username=str(user.email),
-        source_ip=client_ip,
-        user_agent=user_agent,
-        details={"action": action},
-    )
-
-
 #: Column each linkable provider's identifier lives on. Mirrors
 #: `auth/account_linking.py`'s lookup order (provider id first, email second) —
 #: setting this column is what makes a *subsequent* login match here instead of
@@ -2103,7 +2077,7 @@ def admin_link_external_identity(
         raise HTTPException(status_code=404, detail="User not found")
 
     if str(user.role) == ROLE_SUPER_ADMIN:
-        _audit_admin_identity_refusal(
+        audit_user_update_refusal(
             "link_identity_super_admin_target", user, current_user, client_ip, user_agent
         )
         raise HTTPException(
@@ -2238,7 +2212,7 @@ def admin_update_external_email(
         raise HTTPException(status_code=404, detail="User not found")
 
     if str(user.role) == ROLE_SUPER_ADMIN:
-        _audit_admin_identity_refusal(
+        audit_user_update_refusal(
             "external_email_super_admin_target", user, current_user, client_ip, user_agent
         )
         raise HTTPException(
@@ -2247,7 +2221,7 @@ def admin_update_external_email(
         )
 
     if not any(getattr(user, column, None) for column in _EXTERNAL_IDENTITY_COLUMNS):
-        _audit_admin_identity_refusal(
+        audit_user_update_refusal(
             "external_email_no_external_identity", user, current_user, client_ip, user_agent
         )
         raise HTTPException(
@@ -2260,7 +2234,7 @@ def admin_update_external_email(
         )
 
     if str(user.auth_type) == AUTH_TYPE_LOCAL:
-        _audit_admin_identity_refusal(
+        audit_user_update_refusal(
             "external_email_local_account", user, current_user, client_ip, user_agent
         )
         raise HTTPException(

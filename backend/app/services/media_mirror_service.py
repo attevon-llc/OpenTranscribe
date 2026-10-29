@@ -22,9 +22,12 @@ from sqlalchemy.orm import Session
 from app.core import constants as C  # noqa: N812
 from app.services import backup_service
 from app.services import system_settings_service as sss
-from app.services.backup_service import _session
-from app.utils.encryption import decrypt_api_key
-from app.utils.encryption import encrypt_api_key
+from app.services.scheduled_job_settings import bool_value
+from app.services.scheduled_job_settings import int_value
+from app.services.scheduled_job_settings import json_value
+from app.services.scheduled_job_settings import read_encrypted_secret
+from app.services.scheduled_job_settings import session_scope
+from app.services.scheduled_job_settings import store_encrypted_secret
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +64,7 @@ MIRROR_LOCK_TIMEOUT = 12 * 3600  # expiry safety net if a worker dies mid-run
 # =============================================================================
 def get_settings(db: Session | None = None) -> dict[str, Any]:
     """Return all media-mirror settings as a plain dict (coded defaults for unset keys)."""
-    with _session(db) as s:
+    with session_scope(db) as s:
         vals = sss.get_settings_map(
             s,
             [
@@ -81,33 +84,14 @@ def get_settings(db: Session | None = None) -> dict[str, Any]:
             ],
         )
 
-        def _b(key: str, default: bool) -> bool:
-            v = vals.get(key)
-            return v.lower() in ("true", "1", "yes", "on") if v is not None else default
-
-        def _i(key: str, default: int) -> int:
-            v = vals.get(key)
-            if v is None:
-                return default
-            try:
-                return int(v)
-            except (ValueError, TypeError):
-                return default
-
-        last_result_raw = vals.get(KEY_LAST_RESULT)
-        last_result: dict[str, Any] | None = None
-        if last_result_raw:
-            try:
-                last_result = json.loads(last_result_raw)
-            except (ValueError, TypeError):
-                last_result = None
+        last_result = json_value(vals, KEY_LAST_RESULT)
         return {
-            "enabled": _b(KEY_ENABLED, C.DEFAULT_BACKUP_MIRROR_ENABLED),
+            "enabled": bool_value(vals, KEY_ENABLED, C.DEFAULT_BACKUP_MIRROR_ENABLED),
             "schedule": vals.get(KEY_SCHEDULE) or C.DEFAULT_BACKUP_MIRROR_SCHEDULE,
             "destination_type": vals.get(KEY_DESTINATION_TYPE)
             or C.DEFAULT_BACKUP_MIRROR_DESTINATION_TYPE,
             "destination": vals.get(KEY_DESTINATION) or C.DEFAULT_BACKUP_MIRROR_DESTINATION,
-            "throttle_ms": _i(KEY_THROTTLE_MS, C.DEFAULT_BACKUP_MIRROR_THROTTLE_MS),
+            "throttle_ms": int_value(vals, KEY_THROTTLE_MS, C.DEFAULT_BACKUP_MIRROR_THROTTLE_MS),
             "s3_endpoint_url": vals.get(KEY_S3_ENDPOINT_URL)
             or C.DEFAULT_BACKUP_MIRROR_S3_ENDPOINT_URL,
             "s3_region": vals.get(KEY_S3_REGION) or C.DEFAULT_BACKUP_MIRROR_S3_REGION,
@@ -181,22 +165,14 @@ def update_settings(
 
 def _store_s3_secret(db: Session, s3_secret_key: str) -> None:
     """Encrypt + persist the mirror S3 secret (empty string clears it)."""
-    if not s3_secret_key:
-        sss.set_setting(db, KEY_S3_SECRET_KEY, "", "Mirror S3 secret access key (encrypted)")
-        return
-    encrypted = encrypt_api_key(s3_secret_key)
-    if not encrypted:
-        raise ValueError("Failed to encrypt S3 secret key")
-    sss.set_setting(db, KEY_S3_SECRET_KEY, encrypted, "Mirror S3 secret access key (encrypted)")
+    store_encrypted_secret(
+        db, KEY_S3_SECRET_KEY, s3_secret_key, "Mirror S3 secret access key (encrypted)"
+    )
 
 
 def get_s3_secret_key(db: Session | None) -> str | None:
     """Decrypt and return the stored mirror S3 secret (runtime-only — never via API)."""
-    with _session(db) as s:
-        raw = sss.get_setting(s, KEY_S3_SECRET_KEY)
-    if not raw:
-        return None
-    return decrypt_api_key(raw)
+    return read_encrypted_secret(db, KEY_S3_SECRET_KEY)
 
 
 def update_settings_last_run(db: Session, run_at_iso: str) -> None:
@@ -277,7 +253,7 @@ def record_result(db: Session | None, run_at_iso: str, result: dict[str, Any]) -
     ``backup_alerts.notify_mirror_result`` (failure → admin WS; success silent).
     """
     ok = bool(result.get("ok"))
-    with _session(db) as s:
+    with session_scope(db) as s:
         sss.set_setting(
             s, KEY_LAST_RUN_AT, run_at_iso, "Timestamp of the last media mirror run (UTC)"
         )

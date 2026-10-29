@@ -41,7 +41,7 @@ from app.services.request_context import RequestContext
 from app.tasks.transcription.requested_options import apply_requested_options
 from app.tasks.youtube_processing import process_youtube_playlist_task
 from app.tasks.youtube_processing import process_youtube_url_task
-from app.utils.file_hash import org_stamp_is
+from app.utils.db_helpers import org_stamp_is
 from app.utils.whisper_model_choice import require_servable_whisper_model
 
 logger = logging.getLogger(__name__)

@@ -256,7 +256,7 @@ def test_secret_never_printed_or_logged(db_session, tmp_path: Path, capsys, capl
     cfg = bs.get_settings(db_session)
     # The real decrypted secret, exactly as main() resolves it — a fetch() called with
     # None here would make this test pass trivially (nothing to leak).
-    secret = bs._get_s3_secret_key(db_session)
+    secret = bs.get_s3_secret_key(db_session)
     assert secret == "SENTINEL-S3-SECRET-VALUE", "test setup didn't actually store the secret"
 
     fake = FakeS3Client(contents={"ot/opentranscribe-x.dump": b"PGDMP" + b"\x00" * 10})

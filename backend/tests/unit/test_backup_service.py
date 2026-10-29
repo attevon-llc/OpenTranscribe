@@ -384,7 +384,7 @@ def test_s3_secret_is_encrypted_and_never_echoed(db_session):
     assert raw is not None
     assert raw != "super-secret-value"
     # But the service can decrypt it back for runtime use.
-    assert bs._get_s3_secret_key(db_session) == "super-secret-value"
+    assert bs.get_s3_secret_key(db_session) == "super-secret-value"
 
 
 def test_s3_secret_blank_leaves_unset_then_can_clear(db_session):

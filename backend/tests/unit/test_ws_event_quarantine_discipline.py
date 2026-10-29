@@ -129,7 +129,7 @@ _DIRECT_SEND_ALLOWLIST: dict[str, tuple[int, str]] = {
         "a cache INVALIDATION is the inverse of disclosure — guarding it would "
         "be wrong, not merely unnecessary",
     ),
-    "tasks/combined_speaker_analysis_task.py::_notify_migration_admin": (
+    "services/migration_admin_notify.py::notify_migration_admin": (
         1,
         "issue #908 finding B fix: routes to the correctly-resolved admin "
         "recipient (never falls back to account id 1); the payload is a "
@@ -140,14 +140,6 @@ _DIRECT_SEND_ALLOWLIST: dict[str, tuple[int, str]] = {
     "tasks/embedding_consistency_repair.py::_check_repair_completion": (
         1,
         "admin consistency-repair corpus-wide status, no single MediaFile identity",
-    ),
-    "tasks/embedding_migration_v4.py::_notify_migration_admin": (
-        1,
-        "issue #908 finding B fix: routes to the correctly-resolved admin "
-        "recipient (never falls back to account id 1); the payload is a "
-        "corpus-wide migration status with a failed-file UUID list sent back "
-        "to the admin who requested the run, same shape as the "
-        "already-exempt opensearch_integrity_task.py::_notify",
     ),
     "tasks/embedding_migration_v4.py::finalize_v4_migration_task": (
         2,
@@ -165,14 +157,6 @@ _DIRECT_SEND_ALLOWLIST: dict[str, tuple[int, str]] = {
     "tasks/reindex_task.py::_handle_reindex_completion": (
         2,
         "corpus-wide reindex completion counters, no single MediaFile identity",
-    ),
-    "tasks/speaker_attribute_migration_task.py::_notify_migration_admin": (
-        1,
-        "issue #908 finding B fix: routes to the correctly-resolved admin "
-        "recipient (never falls back to account id 1); the payload is a "
-        "corpus-wide migration status with a failed-file UUID list sent back "
-        "to the admin who requested the run, same shape as the "
-        "already-exempt opensearch_integrity_task.py::_notify",
     ),
     "tasks/speaker_clustering.py::_send_clustering_progress": (
         1,

@@ -38,6 +38,7 @@ from typing import Any
 from app.core.enums import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Speaker
+from app.services import migration_admin_notify
 from app.services.speaker_analysis_models import SegmentResult
 from app.tasks import combined_speaker_analysis_task as cst
 from app.tasks import embedding_migration_v4 as emv4
@@ -362,7 +363,9 @@ def test_orchestrator_dispatches_correctly_sized_batches_with_the_right_kwargs(
 
     ws_events: list[tuple[int, str, dict]] = []
     monkeypatch.setattr(
-        cst, "send_ws_event", lambda uid, ntype, data: ws_events.append((uid, ntype, data))
+        migration_admin_notify,
+        "send_ws_event",
+        lambda uid, ntype, data: ws_events.append((uid, ntype, data)),
     )
 
     cst.migrate_speakers_combined_task.push_request(id="task-dispatch")
@@ -530,7 +533,9 @@ def test_batch_task_marks_complete_and_sends_the_completion_event_once_all_files
 
     ws_events: list[tuple[int, str, dict]] = []
     monkeypatch.setattr(
-        cst, "send_ws_event", lambda uid, ntype, data: ws_events.append((uid, ntype, data))
+        migration_admin_notify,
+        "send_ws_event",
+        lambda uid, ntype, data: ws_events.append((uid, ntype, data)),
     )
 
     result = cst.analyze_speakers_combined_batch_task.run(

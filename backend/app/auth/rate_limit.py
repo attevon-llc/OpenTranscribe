@@ -26,28 +26,10 @@ from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from starlette.responses import JSONResponse
 
+from app.auth.degradation import record_degradation
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
-
-
-def _record_degradation(control: str, fallback: str) -> None:
-    """Count a security control running without its shared state store.
-
-    Imported lazily and never allowed to raise — a broken metrics backend must not be
-    able to turn into a failed request. Same contract as
-    ``lockout._record_degradation`` / ``revocation_fallback.record_degradation``.
-
-    Args:
-        control: The security control that degraded.
-        fallback: What it used instead (``local`` = per-process approximation).
-    """
-    try:
-        from app.core.metrics import security_state_degraded_total
-
-        security_state_degraded_total.labels(control=control, fallback=fallback).inc()
-    except Exception:  # pragma: no cover - metrics must never break a request
-        logger.debug("Could not record security degradation metric", exc_info=True)
 
 
 def _redis_reachable() -> bool:
@@ -99,7 +81,7 @@ def _get_key_func() -> Callable[[Request], str]:
         # rate-limited request) is what makes the degraded window visible in Prometheus
         # instead of only in a log line nobody alerts on.
         if getattr(limiter, "_storage_dead", False):
-            _record_degradation("rate_limit", "local")
+            record_degradation("rate_limit", "local")
 
         return resolve_client_ip(request)
 
@@ -183,7 +165,7 @@ def _create_limiter() -> Limiter:
             "counting. Rate limits will NOT be shared across replicas.",
             e,
         )
-        _record_degradation("rate_limit", "local")
+        record_degradation("rate_limit", "local")
         limiter = Limiter(**kwargs)  # type: ignore[arg-type]
 
     if not settings.RATE_LIMIT_ENABLED:

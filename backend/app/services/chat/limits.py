@@ -17,6 +17,8 @@ import logging
 import time
 import uuid
 
+from app.core import redis as redis_core
+
 logger = logging.getLogger(__name__)
 
 _HOURLY_KEY = "rl:chat:msg:{user_id}:{hour}"
@@ -39,12 +41,6 @@ _ACTIVE_TTL_SECONDS = 300
 _CANCEL_TTL_SECONDS = 600
 
 
-def _redis():
-    from app.core.redis import get_redis
-
-    return get_redis()
-
-
 def check_hourly_limit(user_id: int, limit: int) -> tuple[bool, int]:
     """Consume one unit of the user's hourly message budget.
 
@@ -62,7 +58,7 @@ def check_hourly_limit(user_id: int, limit: int) -> tuple[bool, int]:
     retry_after = 3600 - (now % 3600)
 
     try:
-        client = _redis()
+        client = redis_core.get_redis()
         count = client.incr(key)
         if count == 1:
             client.expire(key, 3600)
@@ -107,7 +103,7 @@ def acquire_stream_slot(
     slot = slot_id or uuid.uuid4().hex
     now = time.time()
     try:
-        client = _redis()
+        client = redis_core.get_redis()
         # An upgraded deployment still holds the previous implementation's
         # INTEGER counter at this key. Every sorted-set command against it
         # raises WRONGTYPE, which the fail-open handler below would swallow —
@@ -141,7 +137,7 @@ def release_stream_slot(user_id: int, slot_id: str | None = None) -> None:
     """
     key = _ACTIVE_KEY.format(user_id=user_id)
     try:
-        client = _redis()
+        client = redis_core.get_redis()
         if slot_id:
             client.zrem(key, slot_id)
         else:
@@ -159,7 +155,9 @@ def request_cancel(message_uuid: str) -> None:
     Stop over a fresh connection while the original request is still open.
     """
     try:
-        _redis().setex(_CANCEL_KEY.format(message_uuid=message_uuid), _CANCEL_TTL_SECONDS, "1")
+        redis_core.get_redis().setex(
+            _CANCEL_KEY.format(message_uuid=message_uuid), _CANCEL_TTL_SECONDS, "1"
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"Could not set chat cancel flag: {exc}")
 
@@ -167,7 +165,7 @@ def request_cancel(message_uuid: str) -> None:
 def is_cancelled(message_uuid: str) -> bool:
     """Whether a Stop was requested for this generation."""
     try:
-        return bool(_redis().get(_CANCEL_KEY.format(message_uuid=message_uuid)))
+        return bool(redis_core.get_redis().get(_CANCEL_KEY.format(message_uuid=message_uuid)))
     except Exception:  # noqa: BLE001
         return False
 
@@ -175,6 +173,6 @@ def is_cancelled(message_uuid: str) -> bool:
 def clear_cancel(message_uuid: str) -> None:
     """Drop a cancel flag once the generation has finished."""
     try:
-        _redis().delete(_CANCEL_KEY.format(message_uuid=message_uuid))
+        redis_core.get_redis().delete(_CANCEL_KEY.format(message_uuid=message_uuid))
     except Exception as exc:  # noqa: BLE001
         logger.debug(f"Could not clear chat cancel flag: {exc}")

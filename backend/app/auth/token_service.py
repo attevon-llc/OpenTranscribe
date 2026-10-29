@@ -33,8 +33,8 @@ from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.auth.bulk_revocation import PendingBulkRevocation
+from app.auth.degradation import record_degradation
 from app.auth.revocation_fallback import is_revoked_from_database
-from app.auth.revocation_fallback import record_degradation
 from app.auth.session import InMemoryStore
 from app.auth.session import get_redis_client
 from app.core.auth_types import TOKEN_TYPE_ACCESS
@@ -45,6 +45,7 @@ from app.core.security import accepted_algorithms
 from app.core.security import signing_algorithm
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
+from app.utils.time_format import as_utc
 
 logger = logging.getLogger(__name__)
 
@@ -59,19 +60,6 @@ REVOKED_TOKEN_PREFIX = "revoked:jti:"  # noqa: S105 # nosec B105
 #: per user and rejecting any access token issued before it closes the gap for
 #: every revocation path at once.
 USER_REVOCATION_EPOCH_PREFIX = "revoked:user:"  # noqa: S105 # nosec B105
-
-
-def _as_utc(value: datetime | None) -> datetime | None:
-    """Coerce a timestamp read back from the database to an aware UTC datetime.
-
-    The session columns are ``TIMESTAMP WITH TIME ZONE``, but a row constructed in
-    memory (or read through a driver configured otherwise) can still carry a naive
-    value, and comparing naive to aware raises ``TypeError`` — inside an auth path
-    that would surface as a 500 rather than a denial.
-    """
-    if value is None:
-        return None
-    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 def _session_lifetime_minutes(db: Session) -> tuple[int, int, int]:
@@ -646,7 +634,7 @@ class TokenService:
         """
         now = datetime.now(UTC)
 
-        absolute_expires_at = _as_utc(refresh_token.absolute_expires_at)
+        absolute_expires_at = as_utc(refresh_token.absolute_expires_at)
         if absolute_expires_at is not None and now > absolute_expires_at:
             logger.info(
                 "Session refused: absolute timeout reached at %s (jti=%s...)",
@@ -656,7 +644,7 @@ class TokenService:
             return False
 
         idle_minutes, _absolute_minutes, _max_concurrent_sessions = _session_lifetime_minutes(db)
-        last_activity_at = _as_utc(refresh_token.last_activity_at)
+        last_activity_at = as_utc(refresh_token.last_activity_at)
         # 0 disables the idle cap. The admin UI's schema bounds it at 1, but
         # SESSION_IDLE_TIMEOUT_MINUTES is a plain .env integer with no bound, and
         # `now - last_activity > 0` would refuse every session on sight.
@@ -1084,7 +1072,7 @@ class TokenService:
             role=role,
             user_agent=user_agent,
             ip_address=ip_address,
-            absolute_expires_at=_as_utc(old_token_record.absolute_expires_at),
+            absolute_expires_at=as_utc(old_token_record.absolute_expires_at),
             enforce_concurrent_limit=False,
         )
 

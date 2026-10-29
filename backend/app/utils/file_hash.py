@@ -33,15 +33,9 @@ from typing import Any
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
+from app.utils.db_helpers import org_stamp_is
 
 logger = logging.getLogger(__name__)
-
-
-def org_stamp_is(org_col: Any, organization_id: int | None) -> Any:
-    """NULL-safe ``org_col == organization_id`` (``IS NULL`` for personal scope)."""
-    if organization_id is None:
-        return org_col.is_(None)
-    return org_col == organization_id
 
 
 def import_tenant_predicate(

@@ -122,7 +122,7 @@ def test_the_requeue_cap_counts_per_task(context, monkeypatch):
         def expire(self, key, ttl):
             return True
 
-    monkeypatch.setattr(context, "_redis_client", lambda: _Redis())
+    monkeypatch.setattr("app.core.redis.get_redis", lambda: _Redis())
     assert context._poisoned_requeue_allowed("t1")
     assert context._poisoned_requeue_allowed("t1")
     assert not context._poisoned_requeue_allowed("t1")

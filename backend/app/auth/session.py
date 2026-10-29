@@ -29,6 +29,7 @@ from datetime import UTC
 from datetime import datetime
 from typing import Any
 
+from app.auth.degradation import record_degradation
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -165,25 +166,6 @@ _store_lock = threading.Lock()
 _last_redis_probe: float = 0.0
 
 
-def _record_degradation(control: str, fallback: str) -> None:
-    """Count a security control running without its shared state store.
-
-    Imported lazily and never allowed to raise: a broken metrics backend must not be
-    able to break the login flow. Same contract as
-    ``lockout._record_degradation`` / ``revocation_fallback.record_degradation``.
-
-    Args:
-        control: The security control that degraded.
-        fallback: What it used instead (``local`` = per-process approximation).
-    """
-    try:
-        from app.core.metrics import security_state_degraded_total
-
-        security_state_degraded_total.labels(control=control, fallback=fallback).inc()
-    except Exception:  # pragma: no cover - metrics must never break auth
-        logger.debug("Could not record security degradation metric", exc_info=True)
-
-
 def _get_store(*, clock: Callable[[], float] | None = None):
     """Get the storage backend (Redis, or the in-memory fallback while it is down).
 
@@ -240,7 +222,7 @@ def _get_store(*, clock: Callable[[], float] | None = None):
         if _in_memory_store is None:
             _in_memory_store = InMemoryStore()
 
-    _record_degradation("oidc_state", "local")
+    record_degradation("oidc_state", "local")
     return _in_memory_store
 
 

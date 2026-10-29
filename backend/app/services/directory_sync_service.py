@@ -69,6 +69,10 @@ from app.models.user import User
 from app.services import system_settings_service as sss
 from app.services.account_security_service import revoke_all_sessions
 from app.services.idp_group_mapping_service import reconcile_user
+from app.services.scheduled_job_settings import bool_value
+from app.services.scheduled_job_settings import int_value
+from app.services.scheduled_job_settings import json_value
+from app.services.scheduled_job_settings import session_scope
 
 logger = logging.getLogger(__name__)
 
@@ -96,27 +100,12 @@ class SweepConfig:
     max_disables: int
 
 
-@contextlib.contextmanager
-def _session(db: Session | None) -> Iterator[Session]:
-    """Yield the passed session, or a short-lived one closed after use."""
-    if db is not None:
-        yield db
-        return
-    from app.db.base import SessionLocal
-
-    own = SessionLocal()
-    try:
-        yield own
-    finally:
-        own.close()
-
-
 # =============================================================================
 # Settings round-trip
 # =============================================================================
 def get_settings(db: Session | None = None) -> dict[str, Any]:
     """Return all directory-sync settings as a plain dict (coded defaults if unset)."""
-    with _session(db) as s:
+    with session_scope(db) as s:
         vals = sss.get_settings_map(
             s,
             [
@@ -129,32 +118,14 @@ def get_settings(db: Session | None = None) -> dict[str, Any]:
             ],
         )
 
-        def _b(key: str, default: bool) -> bool:
-            v = vals.get(key)
-            return v.lower() in ("true", "1", "yes", "on") if v is not None else default
-
-        def _i(key: str, default: int) -> int:
-            v = vals.get(key)
-            if v is None:
-                return default
-            try:
-                return int(v)
-            except (ValueError, TypeError):
-                return default
-
-        last_result: dict[str, Any] | None = None
-        if vals.get(KEY_LAST_RESULT):
-            try:
-                last_result = json.loads(str(vals[KEY_LAST_RESULT]))
-            except (ValueError, TypeError):
-                last_result = None
+        last_result = json_value(vals, KEY_LAST_RESULT)
 
         return {
-            "enabled": _b(KEY_ENABLED, C.DEFAULT_DIRECTORY_SYNC_ENABLED),
+            "enabled": bool_value(vals, KEY_ENABLED, C.DEFAULT_DIRECTORY_SYNC_ENABLED),
             "schedule": vals.get(KEY_SCHEDULE) or C.DEFAULT_DIRECTORY_SYNC_SCHEDULE,
-            "dry_run": _b(KEY_DRY_RUN, C.DEFAULT_DIRECTORY_SYNC_DRY_RUN),
-            "max_disables_per_run": _i(
-                KEY_MAX_DISABLES, C.DEFAULT_DIRECTORY_SYNC_MAX_DISABLES_PER_RUN
+            "dry_run": bool_value(vals, KEY_DRY_RUN, C.DEFAULT_DIRECTORY_SYNC_DRY_RUN),
+            "max_disables_per_run": int_value(
+                vals, KEY_MAX_DISABLES, C.DEFAULT_DIRECTORY_SYNC_MAX_DISABLES_PER_RUN
             ),
             "last_run_at": vals.get(KEY_LAST_RUN_AT),
             "last_result": last_result,
@@ -441,7 +412,7 @@ def run_scheduled_sweep(
             the configured value — an override can only ever be passed explicitly,
             so the safe default is never bypassed by accident.
     """
-    with _session(db) as s:
+    with session_scope(db) as s:
         settings = get_settings(s)
         if not settings["enabled"]:
             return {"status": "disabled"}

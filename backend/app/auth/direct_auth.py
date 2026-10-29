@@ -14,6 +14,7 @@ from joserfc import jwt
 from joserfc.jwk import OctKey
 
 from app.auth.utils import local_password_allowed
+from app.auth.utils import mask_identifier
 from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.config import settings
 from app.core.security import verify_and_update_password
@@ -89,17 +90,6 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
 
 
 logger = logging.getLogger(__name__)
-
-
-def _mask_identifier(identifier: str) -> str:
-    """Mask an identifier for secure logging.
-
-    Delegates to shared utility. Kept as module-private alias for
-    backward compatibility with existing callers.
-    """
-    from app.auth.utils import mask_identifier
-
-    return mask_identifier(identifier)
 
 
 def _fetch_user_by_email(conn, cursor, email: str) -> tuple | None:
@@ -208,7 +198,7 @@ def direct_authenticate_user(email: str, password: str) -> dict | None:
         return None
 
     email = email.lower().strip()
-    masked_email = _mask_identifier(email)
+    masked_email = mask_identifier(email)
 
     conn = None
     try:

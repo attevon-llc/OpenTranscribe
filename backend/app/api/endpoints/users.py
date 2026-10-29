@@ -29,6 +29,7 @@ from app.auth.password_policy import password_policy
 from app.auth.rate_limit import get_directory_rate_limit
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key
+from app.auth.refusal_audit import audit_user_update_refusal
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import VALID_ROLES
@@ -528,7 +529,7 @@ def _enforce_update_user_privilege_boundaries(
         HTTPException: 403, for either boundary.
     """
     if user.role == ROLE_SUPER_ADMIN and current_user.role != ROLE_SUPER_ADMIN:
-        _audit_privilege_boundary_denial(
+        audit_user_update_refusal(
             "super_admin_target_denied", user, current_user, client_ip, user_agent
         )
         raise HTTPException(
@@ -547,9 +548,7 @@ def _enforce_update_user_privilege_boundaries(
         update_data.pop("email")
         return
 
-    _audit_privilege_boundary_denial(
-        "email_change_denied", user, current_user, client_ip, user_agent
-    )
+    audit_user_update_refusal("email_change_denied", user, current_user, client_ip, user_agent)
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail=(
@@ -733,31 +732,6 @@ def _audit_expiration_if_changed(
     new_expires_at = str(user.account_expires_at) if user.account_expires_at else None
     if new_expires_at != old_expires_at:
         audit_expiration_change(user, actor, old_expires_at, new_expires_at, client_ip, user_agent)
-
-
-def _audit_privilege_boundary_denial(
-    action: str, user: User, current_user: User, client_ip: str, user_agent: str
-) -> None:
-    """Record a refusal at one of ``update_user``'s two privilege boundaries.
-
-    Reuses ``ADMIN_USER_UPDATE`` with ``outcome=FAILURE`` rather than a new
-    ``AuditEventType`` — this endpoint's successful writes already emit that
-    type, so a refusal is the same event with a different outcome and an
-    ``action`` naming which boundary stopped it. Actor vs. subject follows
-    issue #443: ``user_id``/``username`` are the caller, ``target_user_id``/
-    ``target_username`` are the account the write was attempted against.
-    """
-    audit_logger.log(
-        event_type=AuditEventType.ADMIN_USER_UPDATE,
-        outcome=AuditOutcome.FAILURE,
-        user_id=current_user.id,
-        username=str(current_user.email),
-        target_user_id=int(user.id),
-        target_username=str(user.email),
-        source_ip=client_ip,
-        user_agent=user_agent,
-        details={"action": action},
-    )
 
 
 def _count_other_active_super_admins(db: Session, user: User) -> int:

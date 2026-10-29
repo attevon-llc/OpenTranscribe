@@ -19,6 +19,7 @@ from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
 from typing import Any
+from typing import Self
 
 import pytest
 
@@ -560,3 +561,70 @@ class TestResetLockoutStateRedisCas:
     def test_an_unknown_identifier_never_reaches_the_script(self, redis_store):
         assert lockout.reset_lockout_state("ghost@x") == UNKNOWN
         assert redis_store.script_calls == []
+
+
+# ── the lock-expiry instant, pinned with a frozen clock ───────────────────────
+
+_INSTANT = datetime(2031, 5, 17, 12, 0, 0, tzinfo=UTC)
+
+
+class _FrozenDatetime(datetime):
+    """``datetime`` whose ``now`` is a fixed instant, so ``now == locked_until`` is exact."""
+
+    @classmethod
+    def now(cls, tz: Any = None) -> Self:
+        return cls.combine(_INSTANT.date(), _INSTANT.timetz())
+
+
+@pytest.fixture
+def frozen_clock(monkeypatch) -> None:
+    monkeypatch.setattr(lockout, "datetime", _FrozenDatetime)
+
+
+def _expiring_exactly_now(identifier: str) -> LockoutRecord:
+    return LockoutRecord(
+        identifier=identifier,
+        failed_attempts=5,
+        lockout_count=2,
+        locked_until=_INSTANT.isoformat(),
+    )
+
+
+class TestALockExpiringExactlyNowIsNotLocked:
+    """``now < locked_until``: at the very instant of expiry the lock is over, so the
+    panel must not list the account as locked and a reset must not claim it unlocked one."""
+
+    def test_the_listing_does_not_report_it_locked(self, memory, frozen_clock):
+        memory.set(_key("u@x"), _dump(_expiring_exactly_now("u@x")))
+
+        default, _, _ = lockout.list_locked_accounts()
+        everything, _, _ = lockout.list_locked_accounts(include_unlocked=True)
+
+        assert default == []
+        assert [a["is_locked"] for a in everything] == [False]
+
+    def test_a_reset_does_not_report_it_was_locked(self, any_store, frozen_clock):
+        any_store.set(_key("u@x"), _dump(_expiring_exactly_now("u@x")))
+
+        outcome = lockout.reset_lockout_state("u@x", clear_lock=True)
+
+        assert outcome["found"] is True
+        assert outcome["was_locked"] is False
+        assert outcome["unlocked"] is False
+
+
+class TestIterLockoutRecordsEmptyScanKey:
+    def test_an_empty_key_from_the_scan_is_passed_to_mget_as_empty(self, redis_store, monkeypatch):
+        _seed(redis_store, "a@x")
+        real_scan = redis_store.scan
+
+        def scan_with_blank(cursor: int = 0, match: str = "*", count: int = 10):
+            nxt, batch = real_scan(cursor=cursor, match=match, count=count)
+            return nxt, ["", *batch]
+
+        monkeypatch.setattr(redis_store, "scan", scan_with_blank)
+
+        records, _ = lockout.iter_lockout_records(None, 5)
+
+        assert redis_store.mget_calls == [["", _key("a@x")]]
+        assert [r.identifier for r in records] == ["a@x"]

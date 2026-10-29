@@ -20,12 +20,12 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
+from app.core.env import parse_bool
+
 SPEAKER_ID_USER_KEY = "auto_llm_speaker_identification"
 TOPIC_USER_KEY = "auto_topic_extraction"
 SPEAKER_ID_SYSTEM_KEY = "auto_llm.speaker_identification"
 TOPIC_SYSTEM_KEY = "auto_llm.topic_extraction"
-
-_TRUTHY = ("true", "1", "yes", "on")
 
 
 @dataclass(frozen=True)
@@ -34,10 +34,6 @@ class AutoLlmFlags:
 
     speaker_identification: bool
     topic_extraction: bool
-
-
-def _parse(raw: str | None, default: bool) -> bool:
-    return raw.strip().lower() in _TRUTHY if raw is not None else default
 
 
 def resolve_auto_llm_flags(db: Session, user_id: int) -> AutoLlmFlags:
@@ -51,8 +47,8 @@ def resolve_auto_llm_flags_for_users(db: Session, user_ids: list[int]) -> dict[i
     from app.services.system_settings_service import get_settings_map
 
     system = get_settings_map(db, [SPEAKER_ID_SYSTEM_KEY, TOPIC_SYSTEM_KEY])
-    system_speaker = _parse(system.get(SPEAKER_ID_SYSTEM_KEY), True)
-    system_topic = _parse(system.get(TOPIC_SYSTEM_KEY), True)
+    system_speaker = parse_bool(system.get(SPEAKER_ID_SYSTEM_KEY), True)
+    system_topic = parse_bool(system.get(TOPIC_SYSTEM_KEY), True)
 
     rows = (
         db.query(UserSetting.user_id, UserSetting.setting_key, UserSetting.setting_value)
@@ -68,10 +64,10 @@ def resolve_auto_llm_flags_for_users(db: Session, user_ids: list[int]) -> dict[i
 
     return {
         uid: AutoLlmFlags(
-            speaker_identification=_parse(
+            speaker_identification=parse_bool(
                 chosen.get(uid, {}).get(SPEAKER_ID_USER_KEY), system_speaker
             ),
-            topic_extraction=_parse(chosen.get(uid, {}).get(TOPIC_USER_KEY), system_topic),
+            topic_extraction=parse_bool(chosen.get(uid, {}).get(TOPIC_USER_KEY), system_topic),
         )
         for uid in user_ids
     }

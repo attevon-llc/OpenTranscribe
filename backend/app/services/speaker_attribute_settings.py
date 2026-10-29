@@ -28,13 +28,12 @@ from dataclasses import replace
 
 from sqlalchemy.orm import Session
 
+from app.core.env import parse_bool
 from app.services.privacy.policy import Decision
 from app.services.privacy.policy import gender_decision
 from app.services.privacy.policy import gender_decision_for_file
 
 logger = logging.getLogger(__name__)
-
-_TRUTHY = ("true", "1", "yes", "on")
 
 
 @dataclass(frozen=True)
@@ -106,7 +105,7 @@ def resolve_speaker_attribute_flags(
             resolved[name] = str(user[user_key]).lower() == "true"
             continue
         raw = system.get(f"speaker_attribute.{name}")
-        resolved[name] = raw.lower() in _TRUTHY if raw is not None else default
+        resolved[name] = parse_bool(raw, default)
 
     decision = gender_decision(db, user_id=user_id, organization_id=organization_id)
     resolved["gender_detection_enabled"] = resolved["gender_detection_enabled"] and decision.enabled

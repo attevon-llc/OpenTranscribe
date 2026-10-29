@@ -42,6 +42,7 @@ from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key
 from app.auth.utils import mask_email_for_display
 from app.core.capabilities import require_capability
+from app.core.env import is_truthy
 from app.core.exceptions import DomainError
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
@@ -198,7 +199,7 @@ async def upload_media_file(
     skip_summary = False
     if request:
         skip_summary_header = request.headers.get("X-Skip-Summary", "")
-        skip_summary = skip_summary_header.lower() in ("true", "1", "yes")
+        skip_summary = is_truthy(skip_summary_header)
 
     # Process the file upload (whisper_model is read from the DB record set during prepare)
     db_file = await process_file_upload(

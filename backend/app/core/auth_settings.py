@@ -34,6 +34,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.env import is_truthy
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +117,7 @@ class DynamicAuthSettings:
         if isinstance(value, bool):
             return value
         if isinstance(value, str):
-            return value.lower() in ("true", "1", "yes", "on")
+            return is_truthy(value)
         return bool(value)
 
     def get_int(self, key: str, default: int = 0) -> int:

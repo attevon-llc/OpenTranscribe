@@ -24,6 +24,7 @@ from dataclasses import field
 from sqlalchemy.orm import Session
 
 from app.core import constants as C  # noqa: N812
+from app.core.env import parse_bool
 from app.core.tenant_limits import RedactionFloor as TenantRedactionFloor
 from app.core.tenant_limits import resolve_redaction_floor
 
@@ -132,12 +133,6 @@ def _parse_list(raw: str | None, default: list[str]) -> list[str]:
     return [p.strip() for p in raw.split(",") if p.strip()]
 
 
-def _parse_bool(raw: str | None, default: bool) -> bool:
-    if raw is None:
-        return default
-    return str(raw).lower() in ("true", "1", "yes", "on")
-
-
 def _parse_float(raw: str | None, default: float) -> float:
     try:
         return float(raw) if raw is not None else default
@@ -185,11 +180,11 @@ def _load_admin_policy(db: Session) -> dict:
         return policy.get(key)
 
     forced_categories: set[str] = set()
-    if _parse_bool(g("redaction.force_pii"), False):
+    if parse_bool(g("redaction.force_pii"), False):
         forced_categories.add("pii")
-    if _parse_bool(g("redaction.force_toxicity"), False):
+    if parse_bool(g("redaction.force_toxicity"), False):
         forced_categories.add("toxicity")
-    if _parse_bool(g("redaction.force_profanity"), False):
+    if parse_bool(g("redaction.force_profanity"), False):
         forced_categories.add("profanity")
 
     return {
@@ -199,8 +194,8 @@ def _load_admin_policy(db: Session) -> dict:
         "force_toxicity_threshold": _parse_float(
             g("redaction.force_toxicity_threshold"), C.DEFAULT_REDACTION_TOXICITY_THRESHOLD
         ),
-        "force_export_redacted": _parse_bool(g("redaction.force_export_redacted"), False),
-        "force_redact_before_llm": _parse_bool(g("redaction.force_redact_before_llm"), False),
+        "force_export_redacted": parse_bool(g("redaction.force_export_redacted"), False),
+        "force_redact_before_llm": parse_bool(g("redaction.force_redact_before_llm"), False),
     }
 
 
@@ -268,7 +263,7 @@ def resolve_effective_config(
         _load_admin_policy(db), resolve_redaction_floor(db, organization_id)
     )
 
-    user_enabled = _parse_bool(prefs.get("redaction_enabled"), C.DEFAULT_REDACTION_ENABLED)
+    user_enabled = parse_bool(prefs.get("redaction_enabled"), C.DEFAULT_REDACTION_ENABLED)
     user_detectors = set(
         _parse_list(prefs.get("redaction_detectors"), C.DEFAULT_REDACTION_DETECTORS)
     )
@@ -314,12 +309,12 @@ def resolve_effective_config(
         + admin["forced_custom_words"],
         allowlist=_parse_list(prefs.get("redaction_allowlist"), []),
         toxicity_threshold=toxicity_threshold,
-        redact_before_llm=_parse_bool(
+        redact_before_llm=parse_bool(
             prefs.get("redaction_redact_before_llm"), C.DEFAULT_REDACTION_REDACT_BEFORE_LLM
         )
         or admin["force_redact_before_llm"],
         redact_before_llm_locked=admin["force_redact_before_llm"],
-        export_redacted=_parse_bool(
+        export_redacted=parse_bool(
             prefs.get("redaction_default_export_redacted"),
             C.DEFAULT_REDACTION_DEFAULT_EXPORT_REDACTED,
         )
@@ -562,7 +557,7 @@ def redaction_is_in_use(db: Session) -> bool:
         .distinct()
         .all()
     )
-    return any(_parse_bool(row[0], False) for row in values)
+    return any(parse_bool(row[0], False) for row in values)
 
 
 def blocking_detector_failures(

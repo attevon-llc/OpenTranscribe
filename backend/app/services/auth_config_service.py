@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 #: Spellings accepted for a stored boolean. Anything else is a parse FAILURE, not
 #: a false: ``oidc_verify_issuer`` and friends are security controls, and
-#: ``value.lower() in ("true", "1", "yes", "on")`` quietly turned a typo into
+#: a bare truthy-tuple membership test quietly turned a typo into
 #: "validation off".
 BOOL_TRUE_VALUES = frozenset({"true", "1", "yes", "on", "t", "y"})
 BOOL_FALSE_VALUES = frozenset({"false", "0", "no", "off", "f", "n"})
@@ -417,7 +417,7 @@ class AuthConfigService:
         """Convert a stored string value to its declared type.
 
         A value that does not parse falls back to *key*'s schema default, never to
-        the zero value. ``value.lower() in ("true", "1", "yes", "on")`` read every
+        the zero value. A bare truthy-tuple membership test read every
         malformed string as ``False``, so one bad character in
         ``oidc_verify_issuer``, ``oidc_verify_audience`` or
         ``ldap_use_ssl`` silently turned that security control OFF. Failing open

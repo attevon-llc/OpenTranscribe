@@ -28,6 +28,7 @@ from app import models
 from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_active_user
 from app.core import constants as C  # noqa: N812
+from app.core.env import is_truthy
 from app.db.base import get_db
 from app.schemas.redaction_settings import RedactionPolicy
 from app.schemas.redaction_settings import RedactionPolicyUpdate
@@ -79,7 +80,7 @@ def _parse_value(field: str, raw: str | None, default: Any) -> Any:
         except (ValueError, TypeError):
             return [p.strip() for p in raw.split(",") if p.strip()]
     if field in _BOOL_FIELDS:
-        return raw.lower() in ("true", "1", "yes", "on")
+        return is_truthy(raw)
     if field in _FLOAT_FIELDS:
         try:
             return float(raw)
@@ -223,7 +224,7 @@ def _read_policy(db: Session) -> RedactionPolicy:
         if field in _POLICY_LIST:
             return _parse_value("detectors", raw, [])  # reuse list parser
         if field in _POLICY_BOOL:
-            return raw is not None and raw.lower() in ("true", "1", "yes", "on")
+            return raw is not None and is_truthy(raw)
         if field in _POLICY_FLOAT:
             try:
                 return float(raw) if raw is not None else C.DEFAULT_REDACTION_TOXICITY_THRESHOLD

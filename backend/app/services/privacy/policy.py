@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING
 from typing import Literal
 
 from app.core import constants
+from app.core.env import is_truthy
 from app.services.privacy.consent import VoiceprintConsentRequest
 from app.services.privacy.consent import has_voiceprint_consent_hooks
 from app.services.privacy.consent import voiceprint_consent_granted
@@ -49,8 +50,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 Layer = Literal["platform", "instance", "organization", "user", "consent"]
-
-_TRUTHY = ("true", "1", "yes", "on")
 
 
 @dataclass(frozen=True)
@@ -139,7 +138,7 @@ _DENY_INSTANCE = Decision(False, "instance")
 
 
 def _parse(raw: object) -> bool:
-    return str(raw).strip().lower() in _TRUTHY
+    return is_truthy(str(raw))
 
 
 def _platform_layer(db: Session, organization_id: int | None) -> tuple[Decision, Decision, bool]:

@@ -27,6 +27,7 @@ from datetime import timedelta
 from app.auth import password_blocklist
 from app.core.auth_settings import get_process_auth_settings
 from app.core.config import settings
+from app.core.env import is_truthy
 
 logger = logging.getLogger(__name__)
 
@@ -250,7 +251,7 @@ class PasswordPolicy:
         """
         override = str(get_process_auth_settings().get("password_blocklist_enabled", "")).strip()
         if override:
-            return override.lower() in ("true", "1", "yes", "on")
+            return is_truthy(override)
         return self.is_preset
 
     @property

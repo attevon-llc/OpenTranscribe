@@ -16,11 +16,10 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core.env import parse_bool
 from app.services import system_settings_service as sss
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
-
-_TRUTHY = ("true", "1", "yes", "on")
 
 
 @contextlib.contextmanager
@@ -40,8 +39,7 @@ def session_scope(db: Session | None) -> Iterator[Session]:
 
 def bool_value(vals: Mapping[str, str | None], key: str, default: bool) -> bool:
     """``key`` read as a bool; ``default`` when the key is absent or ``None``."""
-    v = vals.get(key)
-    return v.lower() in _TRUTHY if v is not None else default
+    return parse_bool(vals.get(key), default)
 
 
 def int_value(vals: Mapping[str, str | None], key: str, default: int) -> int:

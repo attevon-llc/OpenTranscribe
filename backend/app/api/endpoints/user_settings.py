@@ -68,6 +68,7 @@ from app.core.constants import VALID_SPEAKER_PROMPT_BEHAVIORS
 from app.core.constants import VALID_VIDEO_QUALITIES
 from app.core.constants import VIDEO_QUALITY_OPTIONS
 from app.core.constants import WHISPER_LANGUAGES
+from app.core.env import is_truthy
 from app.db.base import get_db
 from app.schemas.download_settings import DownloadSettings
 from app.schemas.download_settings import DownloadSettingsUpdate
@@ -1418,7 +1419,7 @@ def get_speaker_attribute_system_defaults(
 
     def _b(key: str, default: bool) -> bool:
         v = vals.get(key)
-        return v.lower() in ("true", "1", "yes", "on") if v is not None else default
+        return is_truthy(v) if v is not None else default
 
     return SpeakerAttributeSystemDefaults(
         detection_enabled=_b("speaker_attribute.detection_enabled", env_enabled),

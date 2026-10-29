@@ -19,6 +19,7 @@ from app import models
 # Deployment configuration is the super_admin tier: this router
 # changes the transcription engine and GPU topology.
 from app.api.endpoints.auth import get_current_active_superuser
+from app.core.env import is_truthy
 from app.db.base import get_db
 from app.models.system_settings import SystemSettings
 from app.services.system_settings_service import get_setting
@@ -92,7 +93,7 @@ _DESCRIPTIONS = {
 def _coerce(field: str, raw: str) -> Any:
     """Coerce a stored string value to the field's typed value (bool / float / str)."""
     if field in _BOOL_KEYS:
-        return raw.lower() in ("true", "1", "yes", "on")
+        return is_truthy(raw)
     if field in _FLOAT_KEYS:
         try:
             return float(raw)

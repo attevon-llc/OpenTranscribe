@@ -22,6 +22,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.auth.audit import AuditOutcome
 from app.core import constants
+from app.core.env import parse_bool
 from app.models.organization_policy import OrganizationPolicy
 from app.models.prompt import UserSetting
 from app.models.system_settings import SystemSettings
@@ -47,8 +48,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_TRUTHY = ("true", "1", "yes", "on")
-
 _INSTANCE_DESCRIPTIONS = {
     constants.PRIVACY_VOICEPRINT_MATCHING_KEY: "Allow speaker voiceprints to be created and matched",
     constants.PRIVACY_GENDER_INFERENCE_KEY: "Allow speaker gender to be inferred from voice or names",
@@ -65,16 +64,9 @@ _FLOOR_COLUMNS = {
 }
 
 
-def _flag(raw: str | None, default: bool) -> bool:
-    """Same reading as the policy module: absent = default, NULL or unparseable = off."""
-    if raw is None:
-        return default
-    return raw.strip().lower() in _TRUTHY
-
-
 def _instance_value(db: Session, key: str, default: bool) -> bool:
     row = db.execute(select(SystemSettings.value).where(SystemSettings.key == key)).first()
-    return default if row is None else _flag(row[0], default)
+    return default if row is None else parse_bool(row[0], default)
 
 
 def _decision(value: Any) -> PrivacyDecision:
@@ -152,7 +144,7 @@ def read_user_switch(db: Session, user_id: int) -> bool:
             UserSetting.setting_key == constants.PRIVACY_USER_VOICEPRINT_MATCHING_KEY,
         )
     ).first()
-    return True if row is None else _flag(row[0], True)
+    return True if row is None else parse_bool(row[0], True)
 
 
 def write_user_switch(db: Session, user_id: int, enabled: bool) -> None:

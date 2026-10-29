@@ -14,6 +14,8 @@ from sqlalchemy.orm import Session
 
 from app.core.constants import DEFAULT_GARBAGE_CLEANUP_ENABLED
 from app.core.constants import DEFAULT_GARBAGE_CLEANUP_THRESHOLD
+from app.core.env import is_truthy
+from app.core.env import parse_bool
 from app.models.system_settings import SystemSettings
 
 logger = logging.getLogger(__name__)
@@ -95,7 +97,7 @@ def get_setting_bool(db: Session, key: str, default: bool = False) -> bool:
     value = get_setting(db, key)
     if value is None:
         return default
-    return value.lower() in ("true", "1", "yes", "on")
+    return is_truthy(value)
 
 
 def get_settings_map(db: Session, keys: list[str]) -> dict[str, str | None]:
@@ -112,11 +114,6 @@ def get_settings_map(db: Session, keys: list[str]) -> dict[str, str | None]:
 
 # Backwards-compatible private alias (internal callers predate the public name).
 _get_settings_map = get_settings_map
-
-
-def _bool_val(v: str | None, default: bool) -> bool:
-    """Parse a settings string as bool."""
-    return v.lower() in ("true", "1", "yes", "on") if v is not None else default
 
 
 def _int_val(v: str | None, default: int) -> int:
@@ -428,9 +425,9 @@ def get_retention_config(db: Session) -> dict:
         ],
     )
     return {
-        "retention_enabled": _bool_val(row.get("files.retention_enabled"), False),
+        "retention_enabled": parse_bool(row.get("files.retention_enabled"), False),
         "retention_days": _int_val(row.get("files.retention_days"), 90),
-        "delete_error_files": _bool_val(row.get("files.delete_error_files"), False),
+        "delete_error_files": parse_bool(row.get("files.delete_error_files"), False),
         "run_time": row.get("files.retention_run_time") or "02:00",
         "timezone": row.get("files.retention_timezone") or "UTC",
         "last_run": row.get("files.retention_last_run"),

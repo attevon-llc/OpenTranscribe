@@ -45,6 +45,8 @@ from __future__ import annotations
 
 import logging
 
+from app.core.env import is_truthy
+
 logger = logging.getLogger(__name__)
 
 #: Account is usable. The column default, so anything that does not opt in is
@@ -96,7 +98,7 @@ def approval_required(db) -> bool | None:
         return None
     savepoint.commit()
     if isinstance(value, str):
-        return value.strip().lower() in ("true", "1", "yes", "on")
+        return is_truthy(value)
     return bool(value)
 
 

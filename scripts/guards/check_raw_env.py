@@ -37,6 +37,7 @@ _DEFAULT_BASELINE = _HERE / 'baselines' / 'raw_env.txt'
 # Repo-relative paths allowed to read the environment directly, each with the reason.
 EXEMPT: dict[str, str] = {
     'backend/app/core/config.py': 'the sanctioned settings module; the one place env is read',
+    'backend/app/core/env.py': 'the sanctioned reader for tuning knobs (D4 policy); every other module calls it',
 }
 
 # Attributes of the ``os`` module that read or mutate the process environment.

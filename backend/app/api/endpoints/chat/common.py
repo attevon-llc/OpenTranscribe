@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.core import constants as C  # noqa: N812
+from app.core.env import is_truthy
 from app.models.chat import ChatConversation
 from app.models.chat import ChatProject
 from app.schemas.chat import ChatScope
@@ -133,9 +134,7 @@ def read_user_chat_settings(db: Session, user_id: int) -> dict:
             USER_SETTING_KEYS["system_prompt"], C.DEFAULT_CHAT_SYSTEM_PROMPT
         ),
         "use_context_default": (
-            C.DEFAULT_CHAT_USE_CONTEXT
-            if use_context_raw is None
-            else use_context_raw.lower() in ("true", "1", "yes", "on")
+            C.DEFAULT_CHAT_USE_CONTEXT if use_context_raw is None else is_truthy(use_context_raw)
         ),
         "default_search_mode": stored.get(
             USER_SETTING_KEYS["default_search_mode"], C.DEFAULT_CHAT_SEARCH_MODE
@@ -147,7 +146,7 @@ def read_user_chat_settings(db: Session, user_id: int) -> dict:
             else None
         ),
         "rerank_enabled": (
-            stored[USER_SETTING_KEYS["rerank_enabled"]].lower() in ("true", "1", "yes", "on")
+            is_truthy(stored[USER_SETTING_KEYS["rerank_enabled"]])
             if stored.get(USER_SETTING_KEYS["rerank_enabled"]) is not None
             else None
         ),

@@ -1,26 +1,5 @@
 import { writable } from 'svelte/store';
-
-export interface TranscriptSegment {
-  uuid: string; // UUID identifier
-  start_time: number;
-  end_time: number;
-  text: string;
-  confidence?: number; // ASR confidence score (0.0 - 1.0)
-  speaker_id?: string; // UUID
-  speaker_label?: string;
-  resolved_speaker_name?: string;
-  speaker?: {
-    uuid: string; // UUID
-    name: string;
-    display_name?: string;
-  };
-  formatted_timestamp?: string;
-  display_timestamp?: string;
-  // Overlap fields for simultaneous speech display
-  is_overlap?: boolean;
-  overlap_group_id?: string;
-  overlap_confidence?: number;
-}
+import type { TranscriptSegment } from '$lib/types/media';
 
 export interface SpeakerInfo {
   uuid: string; // UUID (public identifier)

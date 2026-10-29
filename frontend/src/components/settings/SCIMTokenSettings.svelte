@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/utils/formatting';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount } from 'svelte';
   import { t } from '$stores/locale';
@@ -90,10 +91,6 @@
     }
   }
 
-  function formatDate(value: string | null): string {
-    if (!value) return '—';
-    return new Date(value).toLocaleString();
-  }
 </script>
 
 <div class="settings-panel">
@@ -150,9 +147,9 @@
           {#each tokens as token (token.uuid)}
             <tr>
               <td>{token.name}</td>
-              <td>{formatDate(token.created_at)}</td>
-              <td>{token.expires_at ? formatDate(token.expires_at) : $t('settings.scimTokens.neverExpires')}</td>
-              <td>{token.last_used_at ? formatDate(token.last_used_at) : $t('settings.scimTokens.neverUsed')}</td>
+              <td>{formatDateTime(token.created_at, '—')}</td>
+              <td>{token.expires_at ? formatDateTime(token.expires_at, '—') : $t('settings.scimTokens.neverExpires')}</td>
+              <td>{token.last_used_at ? formatDateTime(token.last_used_at, '—') : $t('settings.scimTokens.neverUsed')}</td>
               <td>
                 {#if token.revoked_at}
                   <Badge variant="error">{$t('settings.scimTokens.revoked')}</Badge>

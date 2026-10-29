@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDuration } from '$lib/utils/formatting';
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
   import { user, logout } from "../stores/auth";
@@ -214,15 +215,6 @@
   /**
    * Format recording duration for display with consistent width
    */
-  function formatDuration(seconds: number) {
-    const hours = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-
-    // Always show HH:MM:SS format for consistent width
-    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  }
-
   // Make recording status reactive
   $: recordingStatusClass = (() => {
     if (isRecording && !isPaused) {

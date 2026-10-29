@@ -33,7 +33,7 @@ vi.mock('$stores/locale', () => ({
 }));
 
 const axiosGet = vi.fn();
-vi.mock('axios', () => ({ default: { get: (...args: unknown[]) => axiosGet(...args) } }));
+vi.mock('$lib/axios', () => ({ default: { get: (...args: unknown[]) => axiosGet(...args) } }));
 
 import AboutModal from './AboutModal.svelte';
 
@@ -43,7 +43,7 @@ function serverReports(version: string, gitSha: string) {
 
 async function openModal() {
   render(AboutModal, { props: { showModal: true } } as never);
-  await waitFor(() => expect(axiosGet).toHaveBeenCalledWith('/api/version'));
+  await waitFor(() => expect(axiosGet).toHaveBeenCalledWith('/version'));
   // The server version appears in the header once the probe has resolved.
   await waitFor(() => expect(document.querySelectorAll('.header-version-number').length).toBe(2));
 }

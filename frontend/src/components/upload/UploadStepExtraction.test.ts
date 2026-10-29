@@ -20,11 +20,8 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/svelte';
-import {
-  estimateAudioSize,
-  estimateDurationFromFileSize,
-  formatFileSize,
-} from '$lib/utils/metadataMapper';
+import { estimateAudioSize, estimateDurationFromFileSize } from '$lib/utils/metadataMapper';
+import { formatFileSize } from '$lib/utils/formatting';
 import { DEFAULT_EXTRACTION_CONFIG } from '$lib/types/audioExtraction';
 
 vi.mock('$stores/locale', async () => {

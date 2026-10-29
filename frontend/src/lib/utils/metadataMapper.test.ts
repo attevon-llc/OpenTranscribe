@@ -6,12 +6,7 @@
  * server-side in #470, per issue #475's own framing.
  */
 import { describe, it, expect } from 'vitest';
-import {
-  mapFFmpegMetadata,
-  estimateAudioSize,
-  calculateCompressionRatio,
-  formatFileSize,
-} from './metadataMapper';
+import { mapFFmpegMetadata, estimateAudioSize, calculateCompressionRatio } from './metadataMapper';
 import { DEFAULT_EXTRACTION_CONFIG } from '../types/audioExtraction';
 
 function videoFile(
@@ -206,39 +201,5 @@ describe('calculateCompressionRatio', () => {
 
   it('clamps to 100 at most', () => {
     expect(calculateCompressionRatio(1000, 0)).toBe(100);
-  });
-});
-
-describe('formatFileSize', () => {
-  it('formats zero bytes as a whole "0 B"', () => {
-    expect(formatFileSize(0)).toBe('0 B');
-  });
-
-  it('formats bytes without a decimal point', () => {
-    expect(formatFileSize(512)).toBe('512 B');
-  });
-
-  it('formats larger sizes with one decimal place and the right unit', () => {
-    expect(formatFileSize(45 * 1024 * 1024 + 300 * 1024)).toBe('45.3 MB');
-    expect(formatFileSize(1024)).toBe('1.0 KB');
-    expect(formatFileSize(1024 * 1024 * 1024)).toBe('1.0 GB');
-  });
-
-  it.each([
-    // BC-16: the unit index derived from log(bytes) must be clamped to the
-    // `units` array bounds, or `units[i]` is `undefined` at either extreme.
-    {
-      bytes: Math.pow(1024, 5),
-      expected: '1024.0 TB',
-      label: 'at/above the largest unit (1024^5)',
-    },
-    {
-      bytes: Math.pow(1024, 6),
-      expected: '1048576.0 TB',
-      label: 'far above the largest unit (1024^6)',
-    },
-    { bytes: 0.5, expected: '1 B', label: 'below one byte (0 < bytes < 1)' },
-  ])('clamps the unit index for $label', ({ bytes, expected }) => {
-    expect(formatFileSize(bytes)).toBe(expected);
   });
 });

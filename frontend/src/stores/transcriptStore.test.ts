@@ -8,7 +8,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import { get } from 'svelte/store';
-import { transcriptStore, type TranscriptSegment, type SpeakerInfo } from './transcriptStore';
+import { transcriptStore, type SpeakerInfo } from './transcriptStore';
+import type { TranscriptSegment } from '$lib/types/media';
 
 function segment(overrides: Partial<TranscriptSegment> = {}): TranscriptSegment {
   return {

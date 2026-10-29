@@ -262,21 +262,3 @@ export function calculateCompressionRatio(originalSize: number, compressedSize: 
   const ratio = ((originalSize - compressedSize) / originalSize) * 100;
   return Math.round(Math.max(0, Math.min(100, ratio)));
 }
-
-/**
- * Format file size for display
- *
- * @param bytes - File size in bytes
- * @returns Formatted string (e.g., "45.3 MB")
- */
-export function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 B';
-
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const k = 1024;
-  const rawIndex = Math.floor(Math.log(bytes) / Math.log(k));
-  const i = Math.min(Math.max(rawIndex, 0), units.length - 1);
-  const size = bytes / Math.pow(k, i);
-
-  return `${size.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-}

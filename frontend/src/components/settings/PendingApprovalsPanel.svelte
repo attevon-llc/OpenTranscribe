@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/utils/formatting';
   import { createEventDispatcher, onMount } from 'svelte';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
@@ -66,10 +67,6 @@
     }
   }
 
-  function formatDate(value: string): string {
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
-  }
 </script>
 
 {#if !loaded && loading}
@@ -109,7 +106,7 @@
                 {/if}
               </td>
               <td><Badge variant="default">{account.auth_type}</Badge></td>
-              <td class="requested">{formatDate(account.created_at)}</td>
+              <td class="requested">{formatDateTime(account.created_at)}</td>
               <td class="actions-col">
                 <button
                   type="button"

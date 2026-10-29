@@ -17,6 +17,47 @@ export function formatDate(dateStr: string): string {
 }
 
 /**
+ * Locale-aware date and time ("10/29/2026, 1:04:00 PM" in en-US) for an ISO string, a Date or
+ * epoch milliseconds. Empty input returns `fallback` (default `''`), so a caller supplies its
+ * own translated "never" / "n/a" text instead of re-implementing the formatter around it.
+ * An unparseable value is returned as typed rather than rendered as "Invalid Date".
+ */
+export function formatDateTime(
+  value: string | number | Date | null | undefined,
+  fallback = ''
+): string {
+  if (value === null || value === undefined || value === '') return fallback;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+}
+
+/**
+ * Binary file size with one decimal: 0 -> "0 B", 1536 -> "1.5 KB", 1048576 -> "1.0 MB".
+ * Non-finite or negative input -> "0 B".
+ */
+export function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const k = 1024;
+  const i = Math.min(Math.max(Math.floor(Math.log(bytes) / Math.log(k)), 0), units.length - 1);
+  return `${(bytes / Math.pow(k, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+/**
+ * Coarse "5 minutes ago" label through the caller's translator (`notifications.*` keys).
+ * `now` is passed in so a ticking store re-renders the label.
+ */
+export function formatRelativeTime(date: Date, now: number, t: Translate): string {
+  const diff = Math.floor((now - new Date(date).getTime()) / 1000);
+  if (diff < 60) return t('notifications.justNow');
+  if (diff < 3600) return t('notifications.minutesAgo', { count: Math.floor(diff / 60) });
+  if (diff < 86400) return t('notifications.hoursAgo', { count: Math.floor(diff / 3600) });
+  return t('notifications.daysAgo', { count: Math.floor(diff / 86400) });
+}
+
+/**
  * Returns 1-2 character initials from a name or email.
  */
 export function getInitials(name: string | null, email: string): string {

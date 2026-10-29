@@ -25,7 +25,7 @@
   import { createEventDispatcher, tick } from 'svelte';
   import type { Speaker } from '$lib/types/speaker';
   import type { GroupedTranscriptSegment } from '$lib/types/media';
-  import { type TranscriptSegment } from '$lib/utils/scrollbarCalculations';
+  import type { TranscriptSegment } from '$lib/types/media';
   import type { SearchOccurrence } from '$stores/search';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import Spinner from '$components/ui/Spinner.svelte';

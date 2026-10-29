@@ -2,19 +2,11 @@
   import type { UploadItem } from '../lib/services/uploadService';
   import { uploadsStore } from '../stores/uploads';
   import { t } from '$stores/locale';
+  import { formatFileSize } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import type { MenuIconName } from '$lib/ui/menuIcons';
 
   export let upload: UploadItem;
-
-  // Format file size
-  function formatFileSize(bytes?: number): string {
-    if (!bytes) return '';
-
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`;
-  }
 
   // Get status color
   function getStatusColor(status: string): string {
@@ -101,7 +93,7 @@
         <div class="upload-meta">
           <span class="upload-type">{upload.type}</span>
           {#if upload.size}
-            <span class="upload-size" dir="ltr">{formatFileSize(upload.size)}</span>
+            <span class="upload-size" dir="ltr">{upload.size ? formatFileSize(upload.size) : ''}</span>
           {/if}
           {#if upload.estimatedTime}
             <!-- `estimatedTime` is a DURATION only. It used to double as the

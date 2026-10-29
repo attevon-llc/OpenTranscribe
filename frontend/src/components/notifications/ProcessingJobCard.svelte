@@ -18,7 +18,8 @@
     JobTier,
     ProcessingJobModel,
   } from '$lib/notifications/processingJob';
-  import { fileLinkFor, formatRelativeTime, type Tone } from '$lib/notifications/display';
+  import { fileLinkFor, type Tone } from '$lib/notifications/display';
+  import { formatRelativeTime } from '$lib/utils/formatting';
   import NotificationShell from './NotificationShell.svelte';
   import NotificationProgress from './NotificationProgress.svelte';
   import TaskStateGlyph from './TaskStateGlyph.svelte';

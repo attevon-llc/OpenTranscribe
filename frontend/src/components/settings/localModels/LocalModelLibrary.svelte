@@ -26,7 +26,7 @@
     apiErrorCode,
     apiErrorNumbers,
     errorKeyFor,
-    formatBytes,
+    formatModelBytes,
     isDownloadActive,
   } from '$lib/settings/localModelView';
   import { activateLocalModel } from '$lib/settings/localModelActivation';
@@ -75,8 +75,8 @@
     const numbers = apiErrorNumbers(err);
     if (!numbers) return $t(errorKeyFor(code));
     return $t(errorKeyFor(code), {
-      required: formatBytes(numbers.required, $locale),
-      free: formatBytes(numbers.free, $locale),
+      required: formatModelBytes(numbers.required, $locale),
+      free: formatModelBytes(numbers.free, $locale),
     });
   }
 
@@ -202,7 +202,7 @@
       </button>
     {:else if catalog}
       <p class="hint free-space">
-        {$t('settings.localModels.freeSpace', { free: formatBytes(catalog.free_bytes, $locale) })}
+        {$t('settings.localModels.freeSpace', { free: formatModelBytes(catalog.free_bytes, $locale) })}
       </p>
       {#if !catalog.cache_writable}
         <p class="error-text" role="alert">{$t('settings.localModels.error.cache_not_writable')}</p>

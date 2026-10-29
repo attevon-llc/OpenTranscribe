@@ -5,7 +5,8 @@
   import { createEventDispatcher } from 'svelte';
   import TranscriptSearch from './TranscriptSearch.svelte';
   import TranscriptSegmentList from './transcript/TranscriptSegmentList.svelte';
-  import { type TranscriptSegment, findNearestSegment } from '$lib/utils/scrollbarCalculations';
+  import type { TranscriptSegment } from '$lib/types/media';
+  import { findNearestSegment } from '$lib/utils/scrollbarCalculations';
   import { toastStore } from '$stores/toast';
   import { type SearchMatch } from '$lib/utils/searchHighlight';
   import { updateSegmentSpeaker } from '$lib/api/transcripts';

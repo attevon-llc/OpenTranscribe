@@ -10,6 +10,9 @@ import {
   retryWaitLabel,
   formatCompactDuration,
   formatTimeOfDay,
+  formatDateTime,
+  formatFileSize,
+  formatRelativeTime,
 } from './formatting';
 
 /**
@@ -218,5 +221,63 @@ describe('formatTimeOfDay (issue #1122 banner expiry)', () => {
 
   it('echoes an unparseable value back rather than throwing or rendering "Invalid Date"', () => {
     expect(formatTimeOfDay('not-a-date', 'en-GB')).toBe('not-a-date');
+  });
+});
+
+describe('formatDateTime', () => {
+  const iso = '2026-10-29T13:04:05Z';
+
+  it('formats an ISO string, a Date and epoch milliseconds identically', () => {
+    const expected = new Date(iso).toLocaleString();
+    expect(formatDateTime(iso)).toBe(expected);
+    expect(formatDateTime(new Date(iso))).toBe(expected);
+    expect(formatDateTime(Date.parse(iso))).toBe(expected);
+  });
+
+  it('returns the caller fallback for empty input', () => {
+    expect(formatDateTime(null)).toBe('');
+    expect(formatDateTime(undefined, 'Never')).toBe('Never');
+    expect(formatDateTime('', 'n/a')).toBe('n/a');
+  });
+
+  it('returns an unparseable value as typed instead of "Invalid Date"', () => {
+    expect(formatDateTime('not a date')).toBe('not a date');
+  });
+});
+
+describe('formatFileSize', () => {
+  it.each([
+    [0, '0 B'],
+    [512, '512 B'],
+    [1023, '1023 B'],
+    [1024, '1.0 KB'],
+    [1536, '1.5 KB'],
+    [1048576, '1.0 MB'],
+    [45 * 1024 * 1024 + 300 * 1024, '45.3 MB'],
+    [1024 ** 3, '1.0 GB'],
+    [1024 ** 5, '1024.0 TB'],
+    [0.5, '1 B'],
+    [-5, '0 B'],
+    [Number.NaN, '0 B'],
+  ])('formats %s as %s', (bytes, expected) => {
+    expect(formatFileSize(bytes)).toBe(expected);
+  });
+});
+
+describe('formatRelativeTime', () => {
+  const t = (key: string, o?: Record<string, unknown>) => `${key}:${o?.count ?? ''}`;
+  const now = Date.parse('2026-10-29T12:00:00Z');
+  const ago = (s: number) => new Date(now - s * 1000);
+
+  it.each([
+    [0, 'notifications.justNow:'],
+    [59, 'notifications.justNow:'],
+    [60, 'notifications.minutesAgo:1'],
+    [3599, 'notifications.minutesAgo:59'],
+    [3600, 'notifications.hoursAgo:1'],
+    [86399, 'notifications.hoursAgo:23'],
+    [86400, 'notifications.daysAgo:1'],
+  ])('%s seconds ago -> %s', (seconds, expected) => {
+    expect(formatRelativeTime(ago(seconds), now, t)).toBe(expected);
   });
 });

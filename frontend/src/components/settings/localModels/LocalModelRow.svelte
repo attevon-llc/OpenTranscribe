@@ -8,7 +8,7 @@
   import ProgressBar from '$components/ui/ProgressBar.svelte';
   import { t } from '$stores/locale';
   import {
-    formatBytes,
+    formatModelBytes,
     LANGUAGE_KEYS,
     rowView,
     STATUS_KEYS,
@@ -61,7 +61,7 @@
       <span class="sr-only" role="status" aria-live="polite">{announced}</span>
     </div>
     <div class="facts">
-      <span>{$t('settings.localModels.size', { size: formatBytes(entry.approx_bytes, locale) })}</span>
+      <span>{$t('settings.localModels.size', { size: formatModelBytes(entry.approx_bytes, locale) })}</span>
       <span>{$t('settings.localModels.vram', { gb: entry.vram_hint_gb })}</span>
       <span>{$t(LANGUAGE_KEYS[entry.language_support])}</span>
       <span>
@@ -115,8 +115,8 @@
       {#if download && download.bytes_total}
         <span class="bytes">
           {$t('settings.localModels.ofBytes', {
-            done: formatBytes(download.bytes_done, locale),
-            total: formatBytes(download.bytes_total, locale),
+            done: formatModelBytes(download.bytes_done, locale),
+            total: formatModelBytes(download.bytes_total, locale),
           })}
         </span>
       {/if}

@@ -2,11 +2,11 @@
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import {
-    formatFileSize,
     calculateCompressionRatio,
     estimateAudioSize,
     estimateDurationFromFileSize,
   } from '$lib/utils/metadataMapper';
+  import { formatFileSize } from '$lib/utils/formatting';
   import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import { DEFAULT_EXTRACTION_CONFIG } from '$lib/types/audioExtraction';
 

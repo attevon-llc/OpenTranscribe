@@ -1,5 +1,6 @@
 <script>
   import MenuIcon from '$components/ui/MenuIcon.svelte';
+  import { formatClock } from '$lib/utils/formatting';
   import { supportSessionGate } from '$stores/supportSession';
   import { onMount, createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
@@ -399,18 +400,6 @@
     }
   }
 
-  // Format timestamp as MM:SS
-  /**
-   * Format timestamp as MM:SS
-   * @param {number} seconds - The timestamp in seconds
-   * @returns {string} Formatted timestamp
-   */
-  function formatTimestamp(seconds) {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-  }
-
   // Use the current playback time
   /** @param {Event} event */
   function useCurrentTime(event) {
@@ -481,7 +470,7 @@
               </button>
             {:else}
               <div class="current-timestamp">
-                <span class="timestamp-value">{$t('comments.markedTime', { time: formatTimestamp(timestampInput) })}</span>
+                <span class="timestamp-value">{$t('comments.markedTime', { time: formatClock(timestampInput) })}</span>
                 <button
                   type="button"
                   class="clear-button"
@@ -500,7 +489,7 @@
           disabled={!newComment.trim() || timestampInput === null}
           title={!newComment.trim() || timestampInput === null
             ? $t('comments.mustAddTextAndTime')
-            : $t('comments.addCommentAtTime', { time: formatTimestamp(timestampInput) })}
+            : $t('comments.addCommentAtTime', { time: formatClock(timestampInput) })}
         >
           {$t('comments.addComment')}
         </button>
@@ -531,10 +520,10 @@
                   class="timestamp-link"
                   on:click={() => dispatch('seekTo', { time: comment.timestamp })}
                   on:keydown={(e) => e.key === 'Enter' && dispatch('seekTo', { time: comment.timestamp })}
-                  aria-label={$t('comments.jumpToTimestamp', { time: formatTimestamp(comment.timestamp) })}
-                  title={$t('comments.jumpToTime', { time: formatTimestamp(comment.timestamp) })}
+                  aria-label={$t('comments.jumpToTimestamp', { time: formatClock(comment.timestamp) })}
+                  title={$t('comments.jumpToTime', { time: formatClock(comment.timestamp) })}
                 >
-                  {formatTimestamp(comment.timestamp)}
+                  {formatClock(comment.timestamp)}
                 </button>
               {/if}
               <span>{new Date(comment.created_at).toLocaleDateString()}</span>

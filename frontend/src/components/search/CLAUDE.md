@@ -91,7 +91,7 @@ coordinator).
   owner-only) and rebuilds the loaded range **in place** — don't flip the loading state there
   or the view flickers.
 - The card and info card format through `$lib/utils/formatting` (`formatClock`, `formatDate`,
-  `formatLanguageNames`) and `$lib/utils/metadataMapper`'s `formatFileSize`; the old local
+  `formatLanguageNames`) and `formatFileSize` (same module); the old local
   copies are gone, don't reintroduce them.
 - The info `<aside>` and every notice stay OUTSIDE `.results-list` (see the E2E note above).
 - The page marks a clicked occurrence active before its stream URL resolves, and drops a URL

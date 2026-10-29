@@ -8,6 +8,7 @@
    * and this panel silently rendered the no-certificate state for every user,
    * including those with a valid certificate.
    */
+  import { formatDateTime } from '$lib/utils/formatting';
   import { onMount } from 'svelte';
   import { t } from '$stores/locale';
   import { getCertificateInfo, type CertificateInfo } from '$lib/api/certificate';
@@ -29,11 +30,6 @@
 
   // The backend returns JSON null for an absent field, so this takes null as
   // well as undefined — the widened shape is the accurate one.
-  function formatDate(dateString?: string | null): string {
-    if (!dateString) return $t('common.notAvailable');
-    return new Date(dateString).toLocaleString();
-  }
-
   // Check if certificate expires soon (30 days)
   $: expiresInDays = certificate?.valid_until
     ? Math.floor((new Date(certificate.valid_until).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
@@ -81,12 +77,12 @@
 
       <div class="cert-item">
         <span class="cert-label">{$t('settings.certificate.validFrom')}</span>
-        <span>{formatDate(certificate.valid_from)}</span>
+        <span>{formatDateTime(certificate.valid_from, $t('common.notAvailable'))}</span>
       </div>
 
       <div class="cert-item">
         <span class="cert-label">{$t('settings.certificate.validUntil')}</span>
-        <span class:expired={isExpired}>{formatDate(certificate.valid_until)}</span>
+        <span class:expired={isExpired}>{formatDateTime(certificate.valid_until, $t('common.notAvailable'))}</span>
       </div>
 
       <div class="cert-item full-width">

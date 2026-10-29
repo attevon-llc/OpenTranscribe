@@ -29,7 +29,7 @@ vi.mock('$stores/locale', () => ({
     },
   },
 }));
-vi.mock('axios', () => ({
+vi.mock('$lib/axios', () => ({
   default: { get: () => Promise.resolve({ data: { version: 'v0.5.0', git_sha: 'abc1234' } }) },
 }));
 

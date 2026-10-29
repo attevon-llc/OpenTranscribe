@@ -2,6 +2,7 @@
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
+  import { formatRelativeTime } from '$lib/utils/formatting';
   import SpeakerClusterCard from '$components/speakers/SpeakerClusterCard.svelte';
   import ClusterMemberList from '$components/speakers/ClusterMemberList.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
@@ -39,17 +40,6 @@
   export let reviewCount = 0;
 
   const dispatch = createEventDispatcher();
-
-  function formatRelativeTime(isoDate: string): string {
-    const diff = Date.now() - new Date(isoDate).getTime();
-    const mins = Math.floor(diff / 60000);
-    if (mins < 1) return $t('speakers.clusters.justNow');
-    if (mins < 60) return `${mins}m ago`;
-    const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    return `${days}d ago`;
-  }
 </script>
 
 <div class="tab-content">
@@ -82,7 +72,7 @@
     </button>
     {#if lastClusteredAt}
       <span class="last-clustered-chip" title={new Date(lastClusteredAt).toLocaleString()}>
-        {$t('speakers.clusters.lastRun')}: {formatRelativeTime(lastClusteredAt)}
+        {$t('speakers.clusters.lastRun')}: {formatRelativeTime(new Date(lastClusteredAt), Date.now(), $t)}
       </span>
     {/if}
   </div>

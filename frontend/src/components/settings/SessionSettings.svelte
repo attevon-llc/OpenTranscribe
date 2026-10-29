@@ -56,7 +56,7 @@
     { value: 'reject', labelKey: 'settings.session.policyRejectLabel', descKey: 'settings.session.policyRejectDesc' }
   ];
 
-  function formatDuration(minutes: number): string {
+  function describeMinutes(minutes: number): string {
     if (minutes < 60) return `${minutes} ${$t('settings.session.minutes')}`;
     const hours = Math.floor(minutes / 60);
     const remainingMinutes = minutes % 60;
@@ -102,7 +102,7 @@
           min="1"
           max="60"
         />
-        <span class="preview">({formatDuration(formData.jwt_access_token_expire_minutes)})</span>
+        <span class="preview">({describeMinutes(formData.jwt_access_token_expire_minutes)})</span>
       </div>
       <span class="help-text">{$t('settings.session.accessTokenHelp')}</span>
     </div>
@@ -151,7 +151,7 @@
           min="5"
           max="480"
         />
-        <span class="preview">({formatDuration(formData.session_idle_timeout_minutes)})</span>
+        <span class="preview">({describeMinutes(formData.session_idle_timeout_minutes)})</span>
       </div>
       <span class="help-text">{$t('settings.session.idleTimeoutHelp')}</span>
     </div>
@@ -167,7 +167,7 @@
           min="60"
           max="1440"
         />
-        <span class="preview">({formatDuration(formData.session_absolute_timeout_minutes)})</span>
+        <span class="preview">({describeMinutes(formData.session_absolute_timeout_minutes)})</span>
       </div>
       <span class="help-text">{$t('settings.session.absoluteTimeoutHelp')}</span>
     </div>

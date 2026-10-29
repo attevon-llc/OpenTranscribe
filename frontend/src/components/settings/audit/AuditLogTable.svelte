@@ -29,7 +29,7 @@
     if (el.scrollTop + el.clientHeight >= el.scrollHeight - 100) dispatch('loadmore');
   }
 
-  function formatDateTime(dateString: string): string {
+  function auditTimestamp(dateString: string): string {
     // One formatter call with Latin digits, shown in an LTR isolate: concatenating a date and
     // a time formatted separately put strong right-to-left characters of the Arabic locale
     // between the two, and the browser reordered the pieces (the date read "2513:04:32 10/").
@@ -90,7 +90,7 @@
       <tbody>
         {#each logs as event}
           <tr class:failure={event.outcome?.toLowerCase() === 'failure'}>
-            <td dir="ltr">{formatDateTime(event.timestamp)}</td>
+            <td dir="ltr">{auditTimestamp(event.timestamp)}</td>
             <td>
               {#if orgView}
                 <span class="event-label" title={event.event_type}>

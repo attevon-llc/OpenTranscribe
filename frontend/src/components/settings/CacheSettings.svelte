@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatFileSize } from '$lib/utils/formatting';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import Spinner from '../ui/Spinner.svelte';
@@ -91,12 +92,6 @@
     }
   }
 
-  function formatBytes(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-  }
 </script>
 
 <div class="cache-settings">
@@ -113,7 +108,7 @@
       <div class="status-item">
         <span class="status-label">{$t('settings.cache.currentUsage')}:</span>
         <span class="status-value">
-          {$t('settings.cache.usageValue', { count: objectCount, size: formatBytes(totalBytes) })}
+          {$t('settings.cache.usageValue', { count: objectCount, size: formatFileSize(totalBytes) })}
         </span>
       </div>
     </div>

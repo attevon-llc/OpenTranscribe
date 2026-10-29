@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/utils/formatting';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, onDestroy } from 'svelte';
   import axiosInstance from '$lib/axios';
@@ -368,15 +369,6 @@
     } catch (e) {
       console.error('Failed to load index health:', e);
       indexHealth = {};
-    }
-  }
-
-  function formatDate(dateStr: string | null): string {
-    if (!dateStr) return 'Never';
-    try {
-      return new Date(dateStr).toLocaleString();
-    } catch {
-      return dateStr;
     }
   }
 

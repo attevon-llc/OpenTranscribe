@@ -4,8 +4,6 @@
  */
 import type { Notification, NotificationType } from '$stores/websocket';
 
-type Translate = (key: string, options?: Record<string, unknown>) => string;
-
 /**
  * One icon registry (issue #753): every glyph has exactly one name here, and
  * `components/notifications/NotificationIcon.svelte` has a render branch per name. A name
@@ -88,15 +86,6 @@ export function notificationTone(n: Pick<Notification, 'status' | 'data'>): Tone
     default:
       return 'default';
   }
-}
-
-/** "Just now" / "5m ago" / "3h ago" / "2d ago". */
-export function formatRelativeTime(date: Date, now: number, t: Translate): string {
-  const diff = Math.floor((now - new Date(date).getTime()) / 1000);
-  if (diff < 60) return t('notifications.justNow');
-  if (diff < 3600) return t('notifications.minutesAgo', { count: Math.floor(diff / 60) });
-  if (diff < 86400) return t('notifications.hoursAgo', { count: Math.floor(diff / 3600) });
-  return t('notifications.daysAgo', { count: Math.floor(diff / 86400) });
 }
 
 /** Keeps the start and the extension of a long filename so it fits one line. */

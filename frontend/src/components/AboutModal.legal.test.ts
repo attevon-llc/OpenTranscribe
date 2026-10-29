@@ -20,7 +20,7 @@ vi.mock('$stores/locale', () => ({
 }));
 
 const axiosGet = vi.fn();
-vi.mock('axios', () => ({ default: { get: (...args: unknown[]) => axiosGet(...args) } }));
+vi.mock('$lib/axios', () => ({ default: { get: (...args: unknown[]) => axiosGet(...args) } }));
 
 import AboutModal from './AboutModal.svelte';
 
@@ -46,7 +46,7 @@ describe('AboutModal legal section (issue #862)', () => {
 
     // /health has no `git_sha`, so the source offer could not resolve to the running
     // commit at all — the endpoint change IS the fix, not an incidental cleanup.
-    await waitFor(() => expect(axiosGet).toHaveBeenCalledWith('/api/version'));
+    await waitFor(() => expect(axiosGet).toHaveBeenCalledWith('/version'));
   });
 
   it('names the licence and links to the shipped LICENSE file', () => {

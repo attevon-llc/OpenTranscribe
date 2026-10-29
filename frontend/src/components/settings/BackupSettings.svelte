@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime, formatFileSize } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { onMount, onDestroy } from 'svelte';
   import Spinner from '../ui/Spinner.svelte';
@@ -265,18 +266,6 @@
 
   // ---- Formatting ----------------------------------------------------------
 
-  function formatBytes(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-  }
-
-  function formatDate(iso: string | null | undefined): string {
-    if (!iso) return $t('settings.backup.lastRunNever');
-    return new Date(iso).toLocaleString();
-  }
-
   // ---- Reactive change detection -------------------------------------------
 
   $: {
@@ -521,10 +510,10 @@
     <div class="status-block">
       <div class="status-item">
         <span class="status-label">{$t('settings.backup.lastRunSection')}:</span>
-        <span class="status-value">{formatDate(lastRunAt)}</span>
+        <span class="status-value">{formatDateTime(lastRunAt, $t('settings.backup.lastRunNever'))}</span>
         {#if lastResult}
           {#if lastResult.ok}
-            <span class="status-badge ok">{$t('settings.backup.lastRunOk', { size: formatBytes(lastResult.size_bytes ?? 0), seconds: lastResult.duration_s ?? 0 })}</span>
+            <span class="status-badge ok">{$t('settings.backup.lastRunOk', { size: formatFileSize(lastResult.size_bytes ?? 0), seconds: lastResult.duration_s ?? 0 })}</span>
           {:else}
             <span class="status-badge bad" title={lastResult.error ?? ''}>{$t('settings.backup.lastRunFailed')}</span>
           {/if}
@@ -617,8 +606,8 @@
             {#each backups as file}
               <tr>
                 <td class="col-title">{file.filename}</td>
-                <td>{formatDate(file.created_at)}</td>
-                <td>{formatBytes(file.size_bytes)}</td>
+                <td>{formatDateTime(file.created_at, $t('settings.backup.lastRunNever'))}</td>
+                <td>{formatFileSize(file.size_bytes)}</td>
                 <td>{file.encrypted ? $t('settings.backup.yes') : $t('settings.backup.no')}</td>
               </tr>
             {/each}

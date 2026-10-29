@@ -251,6 +251,35 @@ export interface GroupedTranscriptSegment {
 }
 
 /**
+ * One transcript segment as the segment list, the playhead lookup and the in-transcript search all
+ * see it. This is the single declaration: `transcriptStore` and `scrollbarCalculations` each used to
+ * carry their own, one strict and one loose, and the two drifted. The fields are the union; the
+ * optional ones are optional because older payloads and search hits omit them.
+ */
+export interface TranscriptSegment {
+  uuid: string;
+  id?: string | number;
+  start_time: number;
+  end_time: number;
+  text: string;
+  confidence?: number; // ASR confidence score (0.0 - 1.0)
+  speaker_id?: string; // UUID
+  speaker_label?: string;
+  resolved_speaker_name?: string;
+  speaker?: {
+    uuid: string;
+    name: string;
+    display_name?: string;
+  };
+  formatted_timestamp?: string;
+  display_timestamp?: string;
+  // Overlap fields for simultaneous speech display
+  is_overlap?: boolean;
+  overlap_group_id?: string;
+  overlap_confidence?: number;
+}
+
+/**
  * Client-side camelCase view of {@link GroupedTranscriptSegment}.
  *
  * `TranscriptDisplay` maps the backend payload into this shape (and falls back to

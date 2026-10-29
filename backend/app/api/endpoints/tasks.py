@@ -53,6 +53,7 @@ from app.utils.task_utils import TASK_STATUS_COMPLETED
 from app.utils.task_utils import TASK_STATUS_FAILED
 from app.utils.task_utils import TASK_STATUS_IN_PROGRESS
 from app.utils.task_utils import TASK_STATUS_PENDING
+from app.utils.uuid_parse import parse_uuid_or_none
 
 logger = logging.getLogger(__name__)
 
@@ -304,15 +305,7 @@ def get_active_progress(
 
 def _valid_uuids(values: set[str]) -> list[str]:
     """Keep only well-formed UUID strings (``failed_items`` is free-form)."""
-    import uuid as uuid_lib
-
-    valid = []
-    for value in values:
-        try:
-            valid.append(str(uuid_lib.UUID(str(value))))
-        except ValueError:
-            continue
-    return valid
+    return [str(parsed) for value in values if (parsed := parse_uuid_or_none(value)) is not None]
 
 
 # =============================================================================

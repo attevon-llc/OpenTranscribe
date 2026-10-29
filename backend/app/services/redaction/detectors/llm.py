@@ -139,6 +139,7 @@ def _detect_one(
     return spans
 
 
+# JSON-from-LLM variants differ: this one returns a list of dicts, slicing between '[' and ']'.
 def _parse_json_array(content: str) -> list[dict]:
     """Tolerant JSON-array parse from an LLM response (handles code fences / prose)."""
     if not content:

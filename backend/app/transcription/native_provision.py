@@ -308,7 +308,7 @@ def ensure_native_models(  # noqa: PLR0911 - one branch per distinct operator ou
         return ProvisionResult("failed", None, reason, target, duration_s=elapsed)
 
     elapsed = time.perf_counter() - started
-    payload = _parse_json(completed.stdout)
+    payload = _parse_last_json_object_line(completed.stdout)
 
     if completed.returncode != EXIT_OK:
         reason = _describe(completed.returncode, payload, completed.stderr)
@@ -345,7 +345,8 @@ def _timeout_s() -> int:
     return parsed if parsed > 0 else DEFAULT_DIAR_NATIVE_PROVISION_TIMEOUT_S
 
 
-def _parse_json(stdout: str) -> dict | None:
+# JSON-from-LLM variants differ: this scans subprocess stdout lines last-to-first for a JSON object.
+def _parse_last_json_object_line(stdout: str) -> dict | None:
     """Decode the binary's JSON result, tolerating a non-JSON line around it."""
     for line in reversed(stdout.strip().splitlines()):
         try:

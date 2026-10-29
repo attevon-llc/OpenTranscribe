@@ -1421,7 +1421,7 @@ def get_retention_status(
     return RetentionConfig(**config)
 
 
-# ============== Protected Media Sources ==============
+# ====== Protected Media Sources (one system-wide JSON list; user_settings has per-user rows) ======
 
 
 @router.get("/settings/media-sources", response_model=MediaSourcesList)
@@ -1430,7 +1430,7 @@ def get_media_sources(
     current_user: User = Depends(get_current_admin_user),
 ) -> MediaSourcesList:
     """Get all configured protected media sources (admin only)."""
-    sources = system_settings_service.get_media_sources(db)
+    sources = system_settings_service.get_system_media_sources(db)
     return MediaSourcesList(sources=[MediaSource(**s) for s in sources])
 
 
@@ -1443,7 +1443,7 @@ def add_media_source(
     """Add a new protected media source (admin only)."""
     import uuid
 
-    sources = system_settings_service.get_media_sources(db)
+    sources = system_settings_service.get_system_media_sources(db)
 
     # Check for duplicate hostname
     for existing in sources:
@@ -1463,7 +1463,7 @@ def add_media_source(
         "label": source.label,
     }
     sources.append(new_source)
-    system_settings_service.set_media_sources(db, sources)
+    system_settings_service.set_system_media_sources(db, sources)
 
     # Reload providers so the new host is recognized immediately
     _reload_protected_media_providers()
@@ -1493,7 +1493,7 @@ def update_media_source(
     current_user: User = Depends(get_current_admin_user),
 ) -> MediaSource:
     """Update an existing protected media source (admin only)."""
-    sources = system_settings_service.get_media_sources(db)
+    sources = system_settings_service.get_system_media_sources(db)
 
     for i, s in enumerate(sources):
         if s.get("id") == source_id:
@@ -1509,7 +1509,7 @@ def update_media_source(
             # Apply updates
             update_data = update.model_dump(exclude_unset=True)
             sources[i] = {**s, **update_data}
-            system_settings_service.set_media_sources(db, sources)
+            system_settings_service.set_system_media_sources(db, sources)
 
             _reload_protected_media_providers()
 
@@ -1530,14 +1530,14 @@ def delete_media_source(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Delete a protected media source (admin only)."""
-    sources = system_settings_service.get_media_sources(db)
+    sources = system_settings_service.get_system_media_sources(db)
     original_len = len(sources)
     sources = [s for s in sources if s.get("id") != source_id]
 
     if len(sources) == original_len:
         raise HTTPException(status_code=404, detail="Media source not found")
 
-    system_settings_service.set_media_sources(db, sources)
+    system_settings_service.set_system_media_sources(db, sources)
 
     _reload_protected_media_providers()
 

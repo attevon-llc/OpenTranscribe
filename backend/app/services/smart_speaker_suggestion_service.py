@@ -23,6 +23,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from app.core.constants import SPEAKER_CONFIDENCE_MEDIUM
 from app.core.constants import get_speaker_index
 from app.models.media import MediaFile
 from app.models.media import Speaker
@@ -223,7 +224,7 @@ class SmartSpeakerSuggestionService:
         file_org_map: dict[int, int | None],
         *,
         voiceprints_off_file_ids: frozenset[int] | set[int],
-        confidence_threshold: float = 0.5,
+        confidence_threshold: float = SPEAKER_CONFIDENCE_MEDIUM,
         max_suggestions: int = 10,
     ) -> dict[int, list[ConsolidatedSuggestion]]:
         """Batch-generate suggestions for multiple speakers with minimal OS round-trips.

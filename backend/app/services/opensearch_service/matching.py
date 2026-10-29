@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+from app.core.constants import SPEAKER_CONFIDENCE_MEDIUM
 from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.aliases import get_active_speaker_index
 from app.services.opensearch_service.client import _is_index_corruption_error
@@ -45,7 +46,7 @@ def _extract_speaker_match(hit: dict, threshold: float) -> dict[str, Any] | None
 def find_matching_speaker(
     embedding: list[float],
     user_id: int,
-    threshold: float = 0.5,
+    threshold: float = SPEAKER_CONFIDENCE_MEDIUM,
     collection_ids: list[int] | None = None,
     exclude_speaker_ids: list[int] | None = None,
     accessible_user_ids: list[int] | None = None,
@@ -156,7 +157,7 @@ def find_matching_speaker(
 def batch_find_matching_speakers(
     embeddings: list[dict[str, Any]],
     user_id: int,
-    threshold: float = 0.5,
+    threshold: float = SPEAKER_CONFIDENCE_MEDIUM,
     max_candidates: int = 5,
     organization_id: int | None = None,
 ) -> list[dict[str, Any]]:

@@ -532,7 +532,7 @@ def _create_media_file_record(
     return media_file
 
 
-def _dispatch_video_task(
+def _dispatch_url_video_task(
     db: Session,
     media_file: MediaFile,
     normalized_url: str,
@@ -600,7 +600,7 @@ def _dispatch_video_task(
         ) from e
 
 
-def _send_file_created_notification(media_file: MediaFile, user_id: int) -> None:
+def _notify_url_file_created(media_file: MediaFile, user_id: int) -> None:
     """Send WebSocket notification for newly created file.
 
     Routed through Redis pub/sub rather than the in-process ConnectionManager
@@ -806,7 +806,7 @@ def process_media_url(
             db.commit()
 
         # Dispatch background task (pass credentials only for this processing request)
-        _dispatch_video_task(
+        _dispatch_url_video_task(
             db,
             media_file,
             normalized_url,
@@ -821,7 +821,7 @@ def process_media_url(
         )
 
         # Send WebSocket notification
-        _send_file_created_notification(media_file, current_user.id)
+        _notify_url_file_created(media_file, current_user.id)
 
         logger.info(f"Created placeholder MediaFile {media_file.id} for media URL processing")
         # ORM MediaFile serialized to the schema via response_model (from_attributes)

@@ -31,6 +31,7 @@ from app.models.prompt import SummaryPrompt
 from app.models.user import User
 from app.models.user_llm_settings import UserLLMSettings
 from app.services.platform_bypass import PlatformBypass
+from app.utils.uuid_parse import parse_uuid_or_none
 
 
 def get_by_uuid[T](
@@ -137,14 +138,10 @@ def validate_uuids(uuids: list[str]) -> list[UUID]:
     """
     result = []
     for uuid_item in uuids:
-        try:
-            # Handle both UUID objects and strings
-            if isinstance(uuid_item, UUID):
-                result.append(uuid_item)
-            else:
-                result.append(UUID(uuid_item))
-        except (ValueError, AttributeError):
-            raise InvalidInputError(f"Invalid UUID format: {uuid_item}") from None
+        parsed = parse_uuid_or_none(uuid_item)
+        if parsed is None:
+            raise InvalidInputError(f"Invalid UUID format: {uuid_item}")
+        result.append(parsed)
     return result
 
 

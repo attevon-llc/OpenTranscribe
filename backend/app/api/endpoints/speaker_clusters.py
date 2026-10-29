@@ -2,7 +2,6 @@
 
 import logging
 from typing import Any
-from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -36,6 +35,7 @@ from app.services.speaker_cleanup import SpeakerImpact
 from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact
 from app.services.speaker_clustering_service import SpeakerClusteringService
+from app.utils.uuid_parse import parse_uuid_or_none
 
 logger = logging.getLogger(__name__)
 
@@ -53,12 +53,8 @@ def _require_uuid(value: str, *, not_found_detail: str) -> None:
     split, media-preview). Validating up front turns that into the same 404 these
     routes already return for an unknown UUID — no behavior change for valid input.
     """
-    try:
-        UUID(value)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=not_found_detail
-        ) from None
+    if parse_uuid_or_none(value) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=not_found_detail)
 
 
 # ---------------------------------------------------------------------------

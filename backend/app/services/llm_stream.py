@@ -101,7 +101,8 @@ class LLMStreamEvent:
     transient: bool = False
 
 
-def _loads(raw: str) -> dict | None:
+# JSON-from-LLM variants differ: this one parses ONE whole payload to a dict, no fence/prose handling.
+def _loads_stream_payload(raw: str) -> dict | None:
     """Parse one JSON payload, tolerating provider noise (never raises)."""
     try:
         parsed = json.loads(raw)
@@ -227,7 +228,7 @@ def parse_openai_sse(lines: Iterable[str]) -> Iterator[LLMStreamEvent]:
         if payload == "[DONE]":
             break
 
-        chunk = _loads(payload)
+        chunk = _loads_stream_payload(payload)
         if chunk is None:
             continue
 
@@ -295,7 +296,7 @@ def parse_anthropic_sse(lines: Iterable[str]) -> Iterator[LLMStreamEvent]:
         if not payload:
             continue
 
-        chunk = _loads(payload)
+        chunk = _loads_stream_payload(payload)
         if chunk is None:
             continue
 
@@ -367,7 +368,7 @@ def parse_ollama_ndjson(lines: Iterable[str]) -> Iterator[LLMStreamEvent]:
     for line in lines:
         if not line or not line.strip():
             continue
-        chunk = _loads(line.strip())
+        chunk = _loads_stream_payload(line.strip())
         if chunk is None:
             continue
 

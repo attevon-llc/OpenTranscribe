@@ -6,9 +6,6 @@ from audio and video files for use in the frontend player interface.
 """
 
 import logging
-import os
-import tempfile
-from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -28,6 +25,8 @@ from app.services.minio_service import download_file
 from app.services.request_context import RequestContext
 from app.tasks.transcription.waveform_generator import WaveformGenerator
 from app.tasks.waveform_generation import trigger_waveform_generation
+from app.utils.temp_file_utils import cleanup_temp_file
+from app.utils.temp_file_utils import download_to_temp_file
 
 from .crud import get_media_file_by_uuid
 
@@ -99,35 +98,10 @@ def _get_cached_waveform(db_file: MediaFile, cache_key: str) -> dict | None:
     return result  # type: ignore[no-any-return]
 
 
-def _download_to_temp_file(storage_path: str, temp_file: Any) -> None:
-    """
-    Download file content from storage to a temporary file.
-
-    Args:
-        storage_path: The path in MinIO storage
-        temp_file: The temporary file to write to
-    """
+def _download_media_to_temp_file(storage_path: str) -> str:
+    """Download a stored object to a temp file and return its path (caller cleans up)."""
     file_content_io, _, _ = download_file(storage_path)
-
-    while True:
-        chunk = file_content_io.read(8192)
-        if not chunk:
-            break
-        temp_file.write(chunk)
-
-
-def _cleanup_temp_file(temp_file_path: str) -> None:
-    """
-    Clean up a temporary file, logging any errors.
-
-    Args:
-        temp_file_path: Path to the temporary file to remove
-    """
-    try:
-        if os.path.exists(temp_file_path):
-            os.unlink(temp_file_path)
-    except Exception as cleanup_error:
-        logger.warning(f"Failed to cleanup temp file {temp_file_path}: {cleanup_error}")
+    return download_to_temp_file(file_content_io, suffix=".tmp")
 
 
 def _convert_waveform_to_peaks(waveform_data: list[int], height: int) -> list[int]:
@@ -169,9 +143,7 @@ def _generate_and_cache_waveform(
     """
     temp_file_path = None
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as temp_file:
-            _download_to_temp_file(str(db_file.storage_path), temp_file)
-            temp_file_path = temp_file.name
+        temp_file_path = _download_media_to_temp_file(str(db_file.storage_path))
 
         # Extract waveform data using the WaveformGenerator
         waveform_generator = WaveformGenerator()
@@ -203,8 +175,7 @@ def _generate_and_cache_waveform(
         logger.exception(f"Error generating waveform for file {file_id}")
         raise ErrorHandler.internal_error("Could not generate the waveform.") from e
     finally:
-        if temp_file_path:
-            _cleanup_temp_file(temp_file_path)
+        cleanup_temp_file(temp_file_path)
 
 
 def _extract_waveform_from_file(storage_path: str, target_samples: int) -> dict:
@@ -223,9 +194,7 @@ def _extract_waveform_from_file(storage_path: str, target_samples: int) -> dict:
     """
     temp_file_path = None
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as temp_file:
-            _download_to_temp_file(storage_path, temp_file)
-            temp_file_path = temp_file.name
+        temp_file_path = _download_media_to_temp_file(storage_path)
 
         waveform_generator = WaveformGenerator()
         waveform_data = waveform_generator._extract_single_waveform(temp_file_path, target_samples)
@@ -235,8 +204,7 @@ def _extract_waveform_from_file(storage_path: str, target_samples: int) -> dict:
 
         return waveform_data
     finally:
-        if temp_file_path:
-            _cleanup_temp_file(temp_file_path)
+        cleanup_temp_file(temp_file_path)
 
 
 @router.get("/{file_uuid}/waveform")

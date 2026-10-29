@@ -1734,7 +1734,7 @@ def create_media_source(
     from app.utils.encryption import encrypt_api_key
     from app.utils.encryption import test_encryption
 
-    # Enforce per-user source limit
+    # Per-user rows (unlike admin's system-wide JSON list); enforce the per-user limit
     existing_count = (
         db.query(models.UserMediaSource)
         .filter(models.UserMediaSource.user_id == current_user.id)

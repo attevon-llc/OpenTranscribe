@@ -565,8 +565,8 @@ def _create_playlist_error_result(message: str) -> YouTubePlaylistProcessingResu
     }
 
 
-def _send_file_created_notification(user_id: int, media_file: MediaFile) -> None:
-    """Send file_created notification for a media file.
+def _notify_playlist_file_created(user_id: int, media_file: MediaFile) -> None:
+    """Send file_created notification (differs from url_processing's: arg order, payload keys).
 
     Args:
         user_id: User ID to send notification to.
@@ -601,7 +601,7 @@ def _send_file_created_notification(user_id: int, media_file: MediaFile) -> None
         logger.error(f"Failed to send file_created notification for video {media_file.id}: {e}")
 
 
-def _dispatch_video_task(
+def _dispatch_playlist_video_task(
     media_file: MediaFile,
     user_id: int,
     db,
@@ -612,7 +612,7 @@ def _dispatch_video_task(
     audio_only: bool | None = None,
     audio_quality: str | None = None,
 ) -> bool:
-    """Dispatch processing task for a single video.
+    """Dispatch one playlist video (countdown, returns bool; url_processing's raises instead).
 
     Args:
         media_file: MediaFile instance to process.
@@ -855,7 +855,7 @@ def _handle_playlist_result(
 
     # Send file_created notifications for each video
     for media_file in created_media_files:
-        _send_file_created_notification(user_id, media_file)
+        _notify_playlist_file_created(user_id, media_file)
 
     # Calculate staggered delays for playlist videos
     from app.services.youtube_rate_limiter import calculate_playlist_delays
@@ -867,7 +867,7 @@ def _handle_playlist_result(
     for idx, media_file in enumerate(created_media_files):
         countdown = delays[idx]
 
-        if _dispatch_video_task(
+        if _dispatch_playlist_video_task(
             media_file,
             user_id,
             db,

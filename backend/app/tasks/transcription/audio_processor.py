@@ -60,6 +60,7 @@ def get_audio_file_extension(content_type: str, filename: str) -> str:
     file_ext = os.path.splitext(filename)[1]
 
     if not file_ext and content_type:
+        # MIME -> extension (the reverse direction of the ext -> MIME tables elsewhere).
         mime_to_ext = {
             "audio/mpeg": ".mp3",
             "audio/mp3": ".mp3",

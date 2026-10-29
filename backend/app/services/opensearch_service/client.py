@@ -211,6 +211,8 @@ def get_opensearch_client() -> "OpenSearch | None":
         return None
 
 
+# Differs from indexing_service._retry_failed_docs: re-sends the SAME call after a read timeout only;
+# it never inspects per-item bulk errors.
 def call_idempotent_write(write: Callable[..., Any], /, **kwargs: Any) -> Any:
     """Call an indexing write with the indexing timeout, retrying read timeouts (#1182).
 

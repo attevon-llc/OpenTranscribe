@@ -20,10 +20,10 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import HTTPException
-from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import AccessDeniedError
+from app.core.exceptions import ResourceNotFoundError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import MediaFile
@@ -130,13 +130,10 @@ def get_deletable_file(
         return file
 
     if is_hidden_for(file, is_admin=False):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+        raise ResourceNotFoundError("File not found")
 
     if not _resource_in_tenant_scope(file, organization_id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to access this file",
-        )
+        raise AccessDeniedError("You do not have permission to access this file")
 
     if can_delete_file(
         user,
@@ -152,13 +149,10 @@ def get_deletable_file(
     if PermissionService.get_file_permission(db, file.id, user.id) is None:
         # Not even visible to the caller: same answer as any other lookup.
         _audit_denied(user, file, "no_access")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to access this file",
-        )
+        raise AccessDeniedError("You do not have permission to access this file")
 
     _audit_denied(user, file, "not_owner_or_org_admin")
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=DELETE_FORBIDDEN_DETAIL)
+    raise AccessDeniedError(DELETE_FORBIDDEN_DETAIL)
 
 
 __all__ = [

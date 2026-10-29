@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy import union_all
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import AccessDeniedError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
@@ -203,24 +204,16 @@ class PermissionService:
         same default-deny tenant gate as ``get_collection_permission`` (UNSCOPED = none).
 
         Raises:
-            HTTPException: 403 if user lacks the required permission.
+            AccessDeniedError: 403 if user lacks the required permission.
         """
-        from fastapi import HTTPException
-
         permission = PermissionService.get_collection_permission(
             db, collection_id, user_id, organization_id=organization_id
         )
         if permission is None:
-            raise HTTPException(
-                status_code=403,
-                detail="Not authorized to access this collection",
-            )
+            raise AccessDeniedError("Not authorized to access this collection")
 
         if PERMISSION_LEVELS[permission] < PERMISSION_LEVELS[min_permission]:
-            raise HTTPException(
-                status_code=403,
-                detail=f"Requires {min_permission} permission on this collection",
-            )
+            raise AccessDeniedError(f"Requires {min_permission} permission on this collection")
         return permission
 
     @staticmethod
@@ -238,24 +231,16 @@ class PermissionService:
         same default-deny tenant gate as ``get_file_permission`` (UNSCOPED = none).
 
         Raises:
-            HTTPException: 403 if user lacks the required permission.
+            AccessDeniedError: 403 if user lacks the required permission.
         """
-        from fastapi import HTTPException
-
         permission = PermissionService.get_file_permission(
             db, file_id, user_id, organization_id=organization_id
         )
         if permission is None:
-            raise HTTPException(
-                status_code=403,
-                detail="Not authorized to access this file",
-            )
+            raise AccessDeniedError("Not authorized to access this file")
 
         if PERMISSION_LEVELS[permission] < PERMISSION_LEVELS[min_permission]:
-            raise HTTPException(
-                status_code=403,
-                detail=f"Requires {min_permission} permission on this file",
-            )
+            raise AccessDeniedError(f"Requires {min_permission} permission on this file")
         return permission
 
     @staticmethod

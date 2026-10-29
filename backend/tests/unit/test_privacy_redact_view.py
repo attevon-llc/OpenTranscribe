@@ -12,9 +12,9 @@ import uuid as uuid_pkg
 from typing import Any
 
 import pytest
-from fastapi import HTTPException
 
 from app.core import constants
+from app.core.exceptions import DomainError
 from app.models.media import Speaker
 from app.models.media import SpeakerProfile
 from app.models.organization import Organization
@@ -124,7 +124,7 @@ def test_a_consent_hook_that_says_no_turns_a_file_off_and_one_that_says_yes_does
 def test_require_voiceprints_raises_the_409_with_the_locking_layer(db_session, normal_user):
     org = _org(db_session, voiceprints=False)
 
-    with pytest.raises(HTTPException) as caught:
+    with pytest.raises(DomainError) as caught:
         redact_view.require_voiceprints(db_session, user_id=normal_user.id, organization_id=org.id)
 
     assert caught.value.status_code == 409

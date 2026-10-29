@@ -23,12 +23,12 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from typing import Literal
 
-from fastapi import HTTPException
 from sqlalchemy import exists
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.exceptions import AccessDeniedError
 from app.services.platform_access import TenancyMode
 from app.services.platform_access import tenancy_mode
 
@@ -148,13 +148,10 @@ class PlatformBypass:
                 ("Reindexing"), so the refusal names the action it refused.
 
         Raises:
-            HTTPException: 403 when the caller lacks the deployment-scope right.
+            AccessDeniedError: 403 when the caller lacks the deployment-scope right.
         """
         if not self.deployment_scope_writable:
-            raise HTTPException(
-                status_code=403,
-                detail=f"{operation} covers every tenant and needs a super admin",
-            )
+            raise AccessDeniedError(f"{operation} covers every tenant and needs a super admin")
 
     @property
     def admin_reveal_allowed(self) -> bool:

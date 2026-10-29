@@ -99,7 +99,7 @@ backend/tests/api/test_cross_tenant_sharing.py	709	oversize: split by concern pl
 backend/tests/api/test_file_mutation_permissions.py	753	oversize: split by concern planned
 backend/tests/api/test_files_management.py	749	oversize: split by concern planned
 backend/tests/api/test_org_takedown_endpoints.py	800	oversize: split by concern planned
-backend/tests/api/test_owner_listing_tenancy.py	765	oversize: split by concern planned
+backend/tests/api/test_owner_listing_tenancy.py	762	oversize: split by concern planned
 backend/tests/api/test_privacy_purge.py	1660	oversize: split by concern planned
 backend/tests/api/test_rename_propagation_dispatch.py	971	oversize: split by concern planned
 backend/tests/api/test_scim.py	758	oversize: split by concern planned

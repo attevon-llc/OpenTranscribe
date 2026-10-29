@@ -32,10 +32,9 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING
 from typing import Any
 
-from fastapi import HTTPException
-from fastapi import status
 from sqlalchemy.orm.attributes import set_committed_value
 
+from app.core.exceptions import ConflictError
 from app.services.privacy import policy
 from app.services.privacy.consent import has_voiceprint_consent_hooks
 from app.services.privacy.policy import Decision
@@ -193,12 +192,9 @@ class PrivacyView:
         return str(gender) if self.gender(int(speaker.media_file_id)).enabled else None
 
 
-def voiceprints_disabled_error(decision: Decision) -> HTTPException:
+def voiceprints_disabled_error(decision: Decision) -> ConflictError:
     """The 409 for a request that would create or recompute a voiceprint (plan D8)."""
-    return HTTPException(
-        status_code=status.HTTP_409_CONFLICT,
-        detail={"code": VOICEPRINTS_DISABLED_CODE, "locked_by": decision.locked_by},
-    )
+    return ConflictError({"code": VOICEPRINTS_DISABLED_CODE, "locked_by": decision.locked_by})
 
 
 def require_voiceprints(db: Session, *, user_id: int, organization_id: int | None) -> None:

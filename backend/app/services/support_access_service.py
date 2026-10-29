@@ -13,12 +13,13 @@ import uuid as uuid_pkg
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
+from http import HTTPStatus
 
-from fastapi import HTTPException
-from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.core.constants import SUPPORT_ACCESS_PENDING_EXPIRY_HOURS
+from app.core.exceptions import DomainError
+from app.core.exceptions import domain_error_for_status
 from app.models.organization import Organization
 from app.models.support_access import SupportAccessGrant
 from app.models.support_access import SupportAccessUse
@@ -30,9 +31,9 @@ logger = logging.getLogger(__name__)
 AUDIT_UNAVAILABLE = "support_access_audit_unavailable"
 
 
-def coded_error(http_status: int, code: str, message: str) -> HTTPException:
-    """An ``HTTPException`` in the repo's coded-error shape (``detail.code``)."""
-    return HTTPException(status_code=http_status, detail={"code": code, "message": message})
+def coded_error(http_status: int, code: str, message: str) -> DomainError:
+    """The ``DomainError`` for ``http_status`` in the repo's coded-error shape (``detail.code``)."""
+    return domain_error_for_status(http_status)({"code": code, "message": message})
 
 
 def _aware(value: datetime | None) -> datetime | None:
@@ -90,7 +91,7 @@ def resolve_active_grant(db: Session, grant_uuid: str, user: User) -> SupportGra
     deactivation take effect on the next request.
 
     Raises:
-        HTTPException: 403 with ``detail.code`` of ``support_grant_invalid`` (unknown uuid,
+        AccessDeniedError: 403 with ``detail.code`` of ``support_grant_invalid`` (unknown uuid,
             wrong grantee, grantee no longer an active admin, dead target),
             ``support_grant_not_active`` (pending, denied, lapsed), ``support_grant_expired``
             or ``support_grant_revoked``.
@@ -163,7 +164,7 @@ def record_use(
     except Exception:
         logger.exception("Support-access use row could not be written; refusing the request")
         raise coded_error(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
+            HTTPStatus.SERVICE_UNAVAILABLE,
             AUDIT_UNAVAILABLE,
             "Support access could not be recorded; the request was not served.",
         ) from None

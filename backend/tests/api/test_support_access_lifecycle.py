@@ -13,10 +13,10 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
-from fastapi import HTTPException
 from sqlalchemy import update
 
 from app.core.config import settings
+from app.core.exceptions import DomainError
 from app.models.support_access import SupportAccessGrant
 from app.services import support_access_lifecycle as lifecycle
 from app.services.platform_access import reset_tenancy_mode_cache
@@ -257,7 +257,7 @@ def test_a_decision_that_lost_the_race_is_refused_and_changes_nothing(support_wo
         .values(decision="denied", decided_at=datetime.now(UTC)),
         execution_options={"synchronize_session": False},
     )
-    with pytest.raises(HTTPException) as caught:
+    with pytest.raises(DomainError) as caught:
         lifecycle.approve(w.db, w.org_admin, stale, duration_minutes=None, org_route=True)
     assert caught.value.status_code == 409
     detail: Any = caught.value.detail

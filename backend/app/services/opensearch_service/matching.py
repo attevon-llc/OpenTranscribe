@@ -10,6 +10,7 @@ from app.services.opensearch_service.client import _speaker_org_filter_clauses
 from app.services.opensearch_service.client import query_embedding_dimension_mismatch
 from app.services.opensearch_service.indices import ensure_indices_exist
 from app.services.opensearch_service.repair import _repair_index
+from app.utils.cosine_space import raw_cosine_from_opensearch_score
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ def _extract_speaker_match(hit: dict, threshold: float) -> dict[str, Any] | None
     Converts the OpenSearch cosinesimil score ``(1 + cosine) / 2`` back to
     raw cosine similarity so thresholds represent real cosine values.
     """
-    cosine_sim = 2.0 * hit["_score"] - 1.0
+    cosine_sim = raw_cosine_from_opensearch_score(hit["_score"])
     if cosine_sim < threshold:
         return None
 
@@ -228,7 +229,7 @@ def batch_find_matching_speakers(
             matches = []
             if "hits" in search_response and search_response["hits"]["hits"]:
                 for hit in search_response["hits"]["hits"]:
-                    score = 2.0 * hit["_score"] - 1.0  # raw cosine
+                    score = raw_cosine_from_opensearch_score(hit["_score"])
                     if score >= threshold:
                         source = hit["_source"]
                         matches.append(
@@ -333,7 +334,7 @@ def msearch_speaker_similarities(
                     hits.append(
                         {
                             "speaker_uuid": source.get("speaker_uuid"),
-                            "similarity": 2.0 * float(hit["_score"]) - 1.0,  # raw cosine
+                            "similarity": raw_cosine_from_opensearch_score(hit["_score"]),
                             "speaker_id": source.get("speaker_id"),
                         }
                     )

@@ -12,16 +12,15 @@ raw_cosine = 2.0 * hit["_score"] - 1.0
 ```
 
 **Skipping this silently produces plausible-but-wrong similarity numbers** — thresholds drift
-instead of failing loudly. Any new kNN read must convert. The 11 existing conversion sites (all
+instead of failing loudly. Any new kNN read must convert. The 10 existing conversion sites (all
 in the sibling speaker/voiceprint plane, none in this package):
 
 - `../opensearch_service/matching.py` — `_extract_speaker_match` ·
   `batch_find_matching_speakers` · `msearch_speaker_similarities`
 - `../opensearch_service/profiles.py` — `msearch_profile_knn_batch` · `find_matching_profiles`
 - `../opensearch_service/clusters.py` — `find_matching_clusters`
-- `../speaker_matching_service.py` — `find_unlabeled_speaker_matches` :343 · `_process_match_hit` :1517
-- `../profile_embedding_service.py:296` · `../smart_speaker_suggestion_service.py:177` ·
-  `../similarity_service.py:171`
+- `../speaker_matching_service.py` — `find_unlabeled_speaker_matches` · `_process_match_hit`
+- `../profile_embedding_service.py` · `../similarity_service.py`
 
 This package itself never reads a raw kNN score: transcript search ranks by **RRF**, whose
 output is a rank-fusion score, not a similarity. Don't treat `relevance_score` as cosine.
@@ -451,7 +450,7 @@ original (control = an unrelated English sentence):
 two *unrelated* sentences — they are dot-product models, whose magnitude carries the signal
 cosine discards. Ranking them here is silent and wrong, the same family as the repo-wide
 `cosinesimil` conversion trap. Supporting them means a per-model `space_type`, an index
-recreation, and updating all 11 kNN score-conversion sites — not a flag.
+recreation, and updating all 10 kNN score-conversion sites — not a flag.
 
 ⚠️ **"Deployed" is not "working."** `all-mpnet-base-v2` on a 1 GB heap reports
 `DEPLOY: COMPLETED` and then fails to embed. Verify with a prediction, never a state field.

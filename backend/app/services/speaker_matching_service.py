@@ -27,6 +27,7 @@ from app.services.privacy.redact_view import PrivacyView
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.services.takedown_service import exclude_quarantined
+from app.utils.cosine_space import raw_cosine_from_opensearch_score
 from app.utils.speaker_identity_detail import ORIGIN_PROFILE_ASSIGNED
 from app.utils.speaker_identity_detail import ORIGIN_PROFILE_MATCH
 from app.utils.speaker_identity_detail import ORIGIN_PROFILE_PROPAGATION
@@ -432,10 +433,8 @@ class SpeakerMatchingService:
             candidate_ids: set[int] = set()
             candidate_scores: dict[int, float] = {}
             for hit in response["hits"]["hits"]:
-                confidence = 2.0 * hit["_score"] - 1.0  # Convert OS cosinesimil to raw cosine
-                if (
-                    confidence >= ConfidenceLevel.HIGH
-                ):  # ConfidenceLevel.HIGH threshold for high-confidence matches only
+                confidence = raw_cosine_from_opensearch_score(hit["_score"])
+                if confidence >= ConfidenceLevel.HIGH:  # high-confidence matches only
                     # Safely access speaker_id - skip if not present (e.g., profile documents)
                     source = hit.get("_source", {})
                     match_speaker_id = source.get("speaker_id")
@@ -1717,7 +1716,7 @@ class SpeakerMatchingService:
         Returns:
             Match result dictionary or None if processing failed
         """
-        score = 2.0 * hit["_score"] - 1.0  # Convert OS cosinesimil to raw cosine
+        score = raw_cosine_from_opensearch_score(hit["_score"])
         if score < threshold:
             return None
 

@@ -15,6 +15,7 @@ from app.services.opensearch_service.client import _safe_index_exists
 from app.services.opensearch_service.client import _speaker_org_filter_clauses
 from app.services.opensearch_service.indices import ensure_indices_exist
 from app.services.privacy.policy import assert_voiceprint_write_allowed
+from app.utils.cosine_space import raw_cosine_from_opensearch_score
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +161,7 @@ def msearch_profile_knn_batch(
             matches: list[dict[str, Any]] = []
             resp = response["responses"][i]
             for hit in resp.get("hits", {}).get("hits", []):
-                score = 2.0 * hit["_score"] - 1.0  # Convert OS cosinesimil to raw cosine
+                score = raw_cosine_from_opensearch_score(hit["_score"])
                 if score >= threshold:
                     source = hit["_source"]
                     matches.append(
@@ -383,7 +384,7 @@ def find_matching_profiles(
 
         matches = []
         for hit in response["hits"]["hits"]:
-            score = 2.0 * hit["_score"] - 1.0  # raw cosine
+            score = raw_cosine_from_opensearch_score(hit["_score"])
             if score >= threshold:
                 source = hit["_source"]
                 matches.append(

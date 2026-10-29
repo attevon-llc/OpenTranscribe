@@ -140,7 +140,7 @@ def _states(sent: list[tuple[int, str, dict]], task: PostProcessingTask) -> list
 
 def test_every_task_key_has_a_tier_on_the_card():
     source = _FRONTEND_JOB.read_text()
-    match = re.search(r"export const POST_PROCESSING_TIERS[^=]*=\s*\{([^}]*)\}", source)
+    match = re.search(r"(?:export )?const POST_PROCESSING_TIERS[^=]*=\s*\{([^}]*)\}", source)
     assert match, f"POST_PROCESSING_TIERS not found in {_FRONTEND_JOB}"
     tiers = dict(re.findall(r"(\w+): '(finishing|ai)'", match.group(1)))
     assert set(tiers) == {t.value for t in PostProcessingTask}

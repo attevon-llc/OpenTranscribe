@@ -14,12 +14,12 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_superuser
+from app.api.error_handlers import ErrorHandler
 from app.core.exceptions import DomainError
 from app.core.redis import get_redis
 from app.db.base import get_db
 from app.models.user import User
 from app.tasks.combined_speaker_analysis_task import combined_migration_progress
-from app.utils.error_handlers import ErrorHandler
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

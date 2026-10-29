@@ -171,11 +171,11 @@ backend/app/utils/diarization_metrics.py::function::speaker_count_match	1	residu
 backend/app/utils/diarization_metrics.py::function::wser	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/utils/encryption.py::function::decrypt_value	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/utils/encryption.py::function::generate_encryption_key	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/utils/error_handlers.py::function::handle_not_found	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/utils/error_handlers.py::method::database_error	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/utils/error_handlers.py::method::file_processing_error	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/utils/error_handlers.py::method::not_found_error	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/utils/error_handlers.py::method::unauthorized_error	1	residual after the dead-code pass; delete or whitelist when touched
+backend/app/api/error_handlers.py::function::handle_not_found	1	residual after the dead-code pass; delete or whitelist when touched
+backend/app/api/error_handlers.py::method::database_error	1	residual after the dead-code pass; delete or whitelist when touched
+backend/app/api/error_handlers.py::method::file_processing_error	1	residual after the dead-code pass; delete or whitelist when touched
+backend/app/api/error_handlers.py::method::not_found_error	1	residual after the dead-code pass; delete or whitelist when touched
+backend/app/api/error_handlers.py::method::unauthorized_error	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/utils/hardware_detection.py::method::get_peak_vram_mb	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/utils/hardware_detection.py::method::reset_peak_stats	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/utils/task_lock.py::method::force_unlock	1	residual after the dead-code pass; delete or whitelist when touched

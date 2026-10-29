@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import selectinload
 
+from app.api.error_handlers import ErrorHandler
 from app.core import constants as C  # noqa: N812
 from app.core.exceptions import DomainError
 from app.core.tenancy import UNSCOPED
@@ -45,7 +46,6 @@ from app.services.speaker_status_service import SpeakerStatusService
 from app.services.tag_service import tag_ownership
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
 from app.utils.db_helpers import owned_in_tenant
-from app.utils.error_handlers import ErrorHandler
 from app.utils.speaker_labels import canonical_speaker_label
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 from app.utils.time_format import format_timestamp_simple as format_timestamp

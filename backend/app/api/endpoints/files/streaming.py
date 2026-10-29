@@ -7,11 +7,11 @@ from fastapi import HTTPException
 from fastapi import status
 from fastapi.responses import StreamingResponse
 
+from app.api.error_handlers import ErrorHandler
 from app.core.exceptions import DomainError
 from app.models.media import MediaFile
 from app.services.minio_service import download_file
 from app.utils.content_disposition import attachment_header
-from app.utils.error_handlers import ErrorHandler
 
 logger = logging.getLogger(__name__)
 

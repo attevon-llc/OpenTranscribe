@@ -35,6 +35,7 @@ from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_optional_current_user
+from app.api.error_handlers import ErrorHandler
 from app.auth.audit import AuditEventType
 from app.auth.rate_limit import get_directory_rate_limit
 from app.auth.rate_limit import limiter
@@ -65,7 +66,6 @@ from app.services.formatting_service import FormattingService
 from app.services.playback_rendition import resolve_playback
 from app.services.privacy.redact_view import PrivacyView
 from app.services.request_context import RequestContext
-from app.utils.error_handlers import ErrorHandler
 from app.utils.media_types import normalize_media_content_type
 from app.utils.whisper_model_choice import require_servable_whisper_model
 

@@ -47,6 +47,7 @@ stream, so there is no early exit to race.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -221,7 +222,7 @@ def test_the_inversion_is_real_not_folklore() -> None:
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash to run the control")
-def test_a_small_producer_inverts_when_its_writes_are_spaced_out() -> None:
+def test_a_small_producer_inverts_when_its_writes_are_spaced_out(tmp_path: Path) -> None:
     """The measurement that REFUTES "small output is safe", pinned as an executable control.
 
     This file's ``SAFE_PRODUCERS`` used to exempt eight sites on the grounds that their
@@ -234,41 +235,65 @@ def test_a_small_producer_inverts_when_its_writes_are_spaced_out() -> None:
 
     Both halves are asserted, because either alone is satisfiable by a broken control:
 
-    * a **40-byte** producer with a 2 ms gap between its two writes inverts EVERY time;
-    * the identical 40 bytes written back-to-back never inverts.
+    * a **40-byte** producer that makes a second write AFTER the reader has gone inverts
+      EVERY time;
+    * the identical 40 bytes with no write after the reader has gone never inverts.
 
     Same size, opposite outcomes. Anyone tempted to re-admit a size-based exemption has to
     delete this test first.
+
+    The "after the reader has gone" ordering is enforced by a handshake, not a sleep. An
+    earlier version spaced the writes 2 ms apart and assumed ``grep`` would have matched and
+    exited inside that window; on a loaded host ``grep`` had not even started by then, both
+    writes landed in the pipe buffer, and nothing inverted. Here the consumer closes its stdin
+    (so the pipe has no reader left), THEN creates a flag file, and the producer blocks on the
+    flag before its second write — so the write always hits a reader-less pipe.
     """
     script = textwrap.dedent(
         """
         set -uo pipefail
-        # 40 bytes total -- ~1600x under the 64 KB pipe buffer -- but with real time between
-        # the matching write and the last one, as any binary querying a daemon has.
+        # Consumer: grep -q, then release the pipe's read end (the brace group itself holds a
+        # copy of fd 0 until it closes it), then signal the producer.
+        consume() { grep -q nvidia; rc=$?; exec <&-; : > "$1"; return $rc; }
+        wait_for() {
+          for _ in $(seq 1 3000); do [ -e "$1" ] && return 0; sleep 0.01; done
+          echo "HANDSHAKE_TIMEOUT"
+        }
+
         slow=0
         for _ in $(seq 1 25); do
-          if { printf 'Runtimes: nvidia runc\\n'; sleep 0.002; printf 'Kernel: 6.8\\n'; } \\
-             | grep -q nvidia; then :; else slow=$((slow+1)); fi
+          flag="$FLAGDIR/slow.$RANDOM$RANDOM"
+          if { printf 'Runtimes: nvidia runc\\n'; wait_for "$flag"; printf 'Kernel: 6.8\\n'; } \\
+             | consume "$flag"; then :; else slow=$((slow+1)); fi
         done
         echo "SLOW_INVERSIONS=$slow"
 
-        # The control: same bytes, no gap.
+        # The control: same bytes, but both are written before the reader can leave, and the
+        # producer makes no write after it has.
         fast=0
         for _ in $(seq 1 25); do
-          if { printf 'Runtimes: nvidia runc\\n'; printf 'Kernel: 6.8\\n'; } \\
-             | grep -q nvidia; then :; else fast=$((fast+1)); fi
+          flag="$FLAGDIR/fast.$RANDOM$RANDOM"
+          if { printf 'Runtimes: nvidia runc\\nKernel: 6.8\\n'; wait_for "$flag"; } \\
+             | consume "$flag"; then :; else fast=$((fast+1)); fi
         done
         echo "FAST_INVERSIONS=$fast"
         """
     )
-    out = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=120).stdout
+    out = subprocess.run(
+        ["bash", "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env={**os.environ, "FLAGDIR": str(tmp_path)},
+    ).stdout
 
+    assert "HANDSHAKE_TIMEOUT" not in out, f"the reader never signalled. Output:\n{out}"
     assert "FAST_INVERSIONS=0" in out, (
-        "the no-gap control itself inverted, so this platform cannot distinguish the two "
-        f"cases and the comparison below proves nothing. Output:\n{out}"
+        "the no-late-write control itself inverted, so this platform cannot distinguish the "
+        f"two cases and the comparison below proves nothing. Output:\n{out}"
     )
     assert "SLOW_INVERSIONS=25" in out, (
-        "a 40-BYTE producer with a 2 ms gap between its writes did NOT invert here. That is "
+        "a 40-BYTE producer that writes after the reader left did NOT invert here. That is "
         "the whole basis for refusing 'measured N bytes' as a SAFE_PRODUCERS reason, so "
         "re-measure on this platform before re-admitting one — do not simply relax this "
         f"assertion. Output:\n{out}"

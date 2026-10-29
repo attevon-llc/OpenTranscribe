@@ -3,6 +3,7 @@
 import datetime
 import logging
 
+from app.core.constants import SPEAKER_CONFIDENCE_HIGH
 from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.aliases import get_active_speaker_index
 from app.services.opensearch_service.client import _speaker_org_filter_clauses
@@ -128,7 +129,7 @@ def find_matching_clusters(
     embedding: list[float],
     user_id: int,
     k: int = 5,
-    threshold: float = 0.75,
+    threshold: float = SPEAKER_CONFIDENCE_HIGH,
     organization_id: int | None = None,
 ) -> list[dict]:
     """Find matching cluster centroids for a speaker embedding using kNN.

@@ -1015,7 +1015,7 @@ class SpeakerMatchingService:
                 int(speaker.id),
                 aggregated_embedding,
                 user_id,
-                threshold=0.5,
+                threshold=SPEAKER_CONFIDENCE_MEDIUM,
                 organization_id=organization_id,
             )
 
@@ -1166,7 +1166,7 @@ class SpeakerMatchingService:
                 int(speaker.id),
                 aggregated_embedding,
                 user_id,
-                threshold=0.5,
+                threshold=SPEAKER_CONFIDENCE_MEDIUM,
                 organization_id=organization_id,
             )
 
@@ -1786,7 +1786,7 @@ class SpeakerMatchingService:
         new_speaker_id: int,
         embedding: np.ndarray,
         user_id: int,
-        threshold: float = 0.5,
+        threshold: float = SPEAKER_CONFIDENCE_MEDIUM,
         organization_id: OrgScope = UNSCOPED,
     ) -> list[dict[str, Any]]:
         """

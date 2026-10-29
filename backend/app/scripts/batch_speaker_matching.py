@@ -14,6 +14,7 @@ import logging
 
 import numpy as np
 
+from app.core.constants import SPEAKER_CONFIDENCE_MEDIUM
 from app.db.base import get_db
 from app.models.media import Speaker
 from app.models.media import SpeakerMatch
@@ -75,7 +76,10 @@ def batch_process_speaker_matches():
             if embedding:
                 # Find and store matches
                 found_matches = matching_service.find_and_store_speaker_matches(
-                    speaker.id, np.array(embedding), speaker.user_id, threshold=0.5
+                    speaker.id,
+                    np.array(embedding),
+                    speaker.user_id,
+                    threshold=SPEAKER_CONFIDENCE_MEDIUM,
                 )
 
                 if found_matches:

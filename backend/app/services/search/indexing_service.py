@@ -2245,7 +2245,7 @@ class TranscriptIndexingService:
         use_neural: bool,
         max_retries: int = _BULK_RETRY_ATTEMPTS,
     ) -> int:
-        """Retry failed documents with exponential backoff.
+        """Retry per-item bulk failures with backoff (call_idempotent_write re-sends a timed-out call).
 
         Args:
             failed_docs: List of chunk documents to retry.

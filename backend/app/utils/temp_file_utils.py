@@ -2,6 +2,7 @@
 
 import logging
 import os
+import shutil
 import tempfile
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -27,7 +28,8 @@ def download_to_temp_file(file_data: BinaryIO, suffix: str = "") -> str:
     try:
         os.close(temp_fd)
         with open(temp_file_path, "wb") as f:
-            f.write(file_data.read())
+            # Chunked copy: media objects can be gigabytes, so never read() them whole.
+            shutil.copyfileobj(file_data, f, length=1024 * 1024)
         return temp_file_path
     except Exception:
         cleanup_temp_file(temp_file_path)

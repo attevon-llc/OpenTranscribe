@@ -39,7 +39,7 @@ def get_setting(db: Session, key: str, default: Any = None) -> str | None:
     Reads are served from the in-process TTL cache
     (``app.core.settings_cache``), which falls through to the database on a miss
     and bypasses entirely under tests / when ``SETTINGS_CACHE_TTL == 0``. The
-    ``get_setting_int`` / ``get_setting_bool`` / ``get_media_sources`` wrappers
+    ``get_setting_int`` / ``get_setting_bool`` / ``get_system_media_sources`` wrappers
     funnel through here, so they are cached for free. Writes via ``set_setting``
     / ``_set_settings_batch`` (and ``search/settings_service``) bust the key.
 
@@ -504,7 +504,7 @@ def update_retention_config(
 # ---------------------------------------------------------------------------
 
 
-def get_media_sources(db: Session) -> list[dict]:
+def get_system_media_sources(db: Session) -> list[dict]:
     """Get all configured protected media sources.
 
     Each source is stored as a JSON object with:
@@ -526,7 +526,7 @@ def get_media_sources(db: Session) -> list[dict]:
         return []
 
 
-def set_media_sources(db: Session, sources: list[dict]) -> list[dict]:
+def set_system_media_sources(db: Session, sources: list[dict]) -> list[dict]:
     """Replace the full list of protected media sources."""
     set_setting(
         db,

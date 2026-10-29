@@ -12,6 +12,8 @@ import io
 import logging
 import os
 import tempfile
+from typing import BinaryIO
+from typing import cast
 
 import pytest
 
@@ -51,6 +53,37 @@ def test_download_to_temp_file_writes_content_and_returns_path(tmp_path):
     os.unlink(path)
 
 
+class _ChunkedOnlyStream(io.RawIOBase):
+    """A stream that refuses an unbounded read(), like a large MinIO object response."""
+
+    def __init__(self, total: int) -> None:
+        self._remaining = total
+        self.max_request = 0
+
+    def readable(self) -> bool:
+        return True
+
+    def read(self, size: int = -1) -> bytes:
+        if size is None or size < 0:
+            raise AssertionError("read() without a size loads the whole object into memory")
+        self.max_request = max(self.max_request, size)
+        chunk = min(size, self._remaining)
+        self._remaining -= chunk
+        return b"x" * chunk
+
+
+def test_download_to_temp_file_streams_in_bounded_chunks():
+    stream = _ChunkedOnlyStream(5 * 1024 * 1024)
+
+    path = download_to_temp_file(cast(BinaryIO, stream), suffix=".bin")
+
+    try:
+        assert os.path.getsize(path) == 5 * 1024 * 1024
+        assert 0 < stream.max_request <= 4 * 1024 * 1024
+    finally:
+        cleanup_temp_file(path)
+
+
 def test_download_to_temp_file_respects_suffix():
     data = io.BytesIO(b"audio-bytes")
 
@@ -72,7 +105,7 @@ def test_download_to_temp_file_writes_empty_content():
 
 def test_download_to_temp_file_cleans_up_and_reraises_on_read_error():
     class ExplodingReader:
-        def read(self):
+        def read(self, size=-1):
             raise OSError("simulated read failure")
 
     created_paths = []

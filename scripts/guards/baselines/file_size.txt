@@ -10,7 +10,7 @@ backend/app/api/endpoints/files/crud.py	1443	oversize: split by concern planned
 backend/app/api/endpoints/files/management.py	1385	oversize: split by concern planned
 backend/app/api/endpoints/files/reprocess.py	774	oversize: split by concern planned
 backend/app/api/endpoints/files/upload.py	815	oversize: split by concern planned
-backend/app/api/endpoints/files/url_processing.py	871	oversize: split by concern planned
+backend/app/api/endpoints/files/url_processing.py	864	oversize: split by concern planned
 backend/app/api/endpoints/llm_settings.py	2001	oversize: split by concern planned
 backend/app/api/endpoints/media_collections.py	1848	oversize: split by concern planned
 backend/app/api/endpoints/prompts.py	921	oversize: split by concern planned
@@ -18,7 +18,7 @@ backend/app/api/endpoints/search.py	2037	oversize: split by concern planned
 backend/app/api/endpoints/speaker_profiles.py	1161	oversize: split by concern planned
 backend/app/api/endpoints/speaker_update.py	752	oversize: split by concern planned
 backend/app/api/endpoints/speakers.py	2850	oversize: split by concern planned
-backend/app/api/endpoints/tasks.py	1098	oversize: split by concern planned
+backend/app/api/endpoints/tasks.py	1091	oversize: split by concern planned
 backend/app/api/endpoints/user_settings.py	1874	oversize: split by concern planned
 backend/app/api/endpoints/users.py	879	oversize: split by concern planned
 backend/app/api/endpoints/watch_sources.py	1291	oversize: split by concern planned
@@ -55,7 +55,7 @@ backend/app/services/llm_service.py	2711	oversize: split by concern planned
 backend/app/services/media_download_service.py	1858	oversize: split by concern planned
 backend/app/services/minio_service.py	824	oversize: split by concern planned
 backend/app/services/privacy/purge_voiceprints.py	711	oversize: split by concern planned
-backend/app/services/profile_embedding_service.py	703	oversize: split by concern planned
+backend/app/services/profile_embedding_service.py	702	oversize: split by concern planned
 backend/app/services/search/CLAUDE.md	911	oversize: split by concern planned
 backend/app/services/search/chunking_service.py	841	oversize: split by concern planned
 backend/app/services/search/hybrid_search_service.py	4051	oversize: split by concern planned

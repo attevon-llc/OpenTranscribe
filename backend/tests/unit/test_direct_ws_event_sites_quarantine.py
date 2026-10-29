@@ -229,7 +229,7 @@ class TestFileCreatedSites:
             _capturing_send_ws_event(sent),
         )
 
-        yt._send_file_created_notification(owner.id, file)
+        yt._notify_playlist_file_created(owner.id, file)
 
         assert sent == []
 
@@ -246,7 +246,7 @@ class TestFileCreatedSites:
             _capturing_send_ws_event(sent),
         )
 
-        yt._send_file_created_notification(owner.id, file)
+        yt._notify_playlist_file_created(owner.id, file)
 
         assert len(sent) == 1
         assert sent[0][1] == "file_created"
@@ -266,7 +266,7 @@ class TestFileCreatedSites:
             _capturing_send_ws_event(sent),
         )
 
-        url_processing._send_file_created_notification(file, owner.id)
+        url_processing._notify_url_file_created(file, owner.id)
 
         assert sent == []
 
@@ -285,7 +285,7 @@ class TestFileCreatedSites:
             _capturing_send_ws_event(sent),
         )
 
-        url_processing._send_file_created_notification(file, owner.id)
+        url_processing._notify_url_file_created(file, owner.id)
 
         assert len(sent) == 1
         assert sent[0][1] == "file_created"

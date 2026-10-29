@@ -89,11 +89,11 @@ class MediacmsProvider(ProtectedMediaProvider):
         """Load MediaCMS sources from legacy system settings."""
         try:
             from app.db.base import SessionLocal
-            from app.services.system_settings_service import get_media_sources
+            from app.services.system_settings_service import get_system_media_sources
 
             db = SessionLocal()
             try:
-                sources = get_media_sources(db)
+                sources = get_system_media_sources(db)
                 return [s for s in sources if s.get("provider_type") == "mediacms"]
             finally:
                 db.close()

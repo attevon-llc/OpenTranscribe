@@ -1850,7 +1850,7 @@ class LLMService:
         )
 
     def _strip_markdown_fences(self, content: str) -> str:
-        """Remove markdown code fences from content."""
+        """Remove a leading markdown code fence (differs from the other JSON-from-LLM parsers)."""
         if content.startswith("```json") and "```" in content[7:]:
             fence_end = content.find("```", 7)
             return content[7:fence_end].strip()

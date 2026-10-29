@@ -78,8 +78,9 @@ MEDIA_EXTENSIONS: frozenset[str] = frozenset(
     }
 )
 
-# Extension → MIME fallback when mimetypes can't resolve it.
-_CONTENT_TYPE_BY_EXT: dict[str, str] = {
+# Differs from watch_sources/processing.py: this table WINS over mimetypes (ext is authoritative
+# for our own objects) and a miss ends in application/octet-stream, not None.
+_RECOVERY_CONTENT_TYPE_OVERRIDE_BY_EXT: dict[str, str] = {
     ".mp4": "video/mp4",
     ".mkv": "video/x-matroska",
     ".webm": "video/webm",
@@ -141,8 +142,8 @@ def content_type_for(object_name: str) -> str:
     extension is authoritative here.
     """
     ext = _object_extension(object_name)
-    if ext in _CONTENT_TYPE_BY_EXT:
-        return _CONTENT_TYPE_BY_EXT[ext]
+    if ext in _RECOVERY_CONTENT_TYPE_OVERRIDE_BY_EXT:
+        return _RECOVERY_CONTENT_TYPE_OVERRIDE_BY_EXT[ext]
     guessed, _ = mimetypes.guess_type(object_name)
     return normalize_media_content_type(guessed) or "application/octet-stream"
 

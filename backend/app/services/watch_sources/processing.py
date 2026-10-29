@@ -53,8 +53,9 @@ _TERMINAL_STATUSES = {
     "stitched_part",
 }
 
-# Fallback MIME types for media extensions that mimetypes may not know.
-_MEDIA_MIME_FALLBACK = {
+# Differs from storage_recovery_service.py: consulted only AFTER mimetypes misses, covers a
+# different extension set (.m4v/.ts/.oga), and a miss yields None (not media) to the caller.
+_MIMETYPES_MISS_FALLBACK_BY_EXT = {
     ".m4a": "audio/mp4",
     ".flac": "audio/flac",
     ".opus": "audio/opus",
@@ -74,7 +75,7 @@ def guess_media_mime(filename: str) -> str | None:
     if guessed and guessed.startswith(("audio/", "video/")):
         # Python 3.14 names *.wav audio/vnd.wave, which browsers won't play (#1044).
         return normalize_media_content_type(guessed)
-    return _MEDIA_MIME_FALLBACK.get(Path(filename).suffix.lower())
+    return _MIMETYPES_MISS_FALLBACK_BY_EXT.get(Path(filename).suffix.lower())
 
 
 def _get_or_create_tracking_row(

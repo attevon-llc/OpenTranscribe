@@ -1197,7 +1197,7 @@ class MediaDownloadService:
             from pathlib import Path
 
             actual_ext = Path(downloaded_file).suffix.lstrip(".")
-            content_type_map = {
+            content_type_by_ext = {  # no-dot ext; unknown -> application/<ext>, unlike other tables
                 "mp4": "video/mp4",
                 "webm": "video/webm",
                 "mkv": "video/x-matroska",
@@ -1207,7 +1207,7 @@ class MediaDownloadService:
                 "wav": "audio/wav",
                 "flac": "audio/flac",
             }
-            actual_content_type = content_type_map.get(actual_ext, f"application/{actual_ext}")
+            actual_content_type = content_type_by_ext.get(actual_ext, f"application/{actual_ext}")
 
             return {
                 "file_path": downloaded_file,

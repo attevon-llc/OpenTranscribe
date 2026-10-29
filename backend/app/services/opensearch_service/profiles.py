@@ -6,6 +6,7 @@ from typing import Any
 
 from opensearchpy.exceptions import NotFoundError
 
+from app.core.constants import SPEAKER_CONFIDENCE_MEDIUM
 from app.core.constants import get_speaker_index
 from app.core.constants import get_speaker_index_v4
 from app.services.opensearch_service import client as _client
@@ -86,10 +87,14 @@ def store_profile_embedding_v4(
         return False
 
 
+# Minimum cosine similarity for an embedding to match a speaker profile.
+SPEAKER_PROFILE_MATCH_THRESHOLD = 0.7
+
+
 def msearch_profile_knn_batch(
     speaker_embeddings: dict[str, list[float]],
     user_id: int,
-    threshold: float = 0.5,
+    threshold: float = SPEAKER_CONFIDENCE_MEDIUM,
     k: int = 10,
     accessible_profile_ids: set[int] | None = None,
     organization_id: int | None = None,
@@ -331,7 +336,7 @@ def remove_profile_embedding(profile_uuid: str) -> bool:
 def find_matching_profiles(
     embedding: list[float],
     user_id: int,
-    threshold: float = 0.7,
+    threshold: float = SPEAKER_PROFILE_MATCH_THRESHOLD,
     size: int = 5,
     organization_id: int | None = None,
 ) -> list[dict[str, Any]]:

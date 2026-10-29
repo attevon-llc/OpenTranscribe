@@ -19,9 +19,11 @@ from typing import Any
 import numpy as np
 from sqlalchemy.orm import Session
 
+from app.core.constants import get_speaker_index
 from app.models.media import Speaker
 from app.models.media import SpeakerProfile
 from app.services.opensearch_service import get_speaker_embedding
+from app.services.opensearch_service.profiles import SPEAKER_PROFILE_MATCH_THRESHOLD
 from app.services.permission_service import file_ids_in_scope
 from app.services.privacy.policy import Decision
 from app.services.privacy.redact_view import PrivacyView
@@ -159,7 +161,6 @@ def _check_opensearch_profile_prerequisites(
     Returns:
         Tuple of (opensearch_client, None, should_continue)
     """
-    from app.core.constants import get_speaker_index
     from app.services.opensearch_service import opensearch_client
 
     if not opensearch_client:
@@ -646,7 +647,7 @@ class ProfileEmbeddingService:
     def calculate_profile_similarity(
         embedding: list[float],
         user_id: int,
-        threshold: float = 0.7,
+        threshold: float = SPEAKER_PROFILE_MATCH_THRESHOLD,
         accessible_profile_ids: set[int] | None = None,
         organization_id: int | None = None,
     ) -> list[dict]:
@@ -668,8 +669,6 @@ class ProfileEmbeddingService:
             List of matching profiles with similarity scores
         """
         try:
-            from app.core.constants import get_speaker_index
-
             opensearch_client, _, should_continue = _check_opensearch_profile_prerequisites(user_id)
             if not should_continue:
                 return []

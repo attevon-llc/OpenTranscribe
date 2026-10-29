@@ -61,6 +61,7 @@ from sqlalchemy.orm import Session
 # `_classify`, `resolve_text_field_preset_for_locale` and `tests/test_chat_language_scope.py`
 # reach it through this module; what must not exist twice is the implementation.
 from app.utils.language import normalize_language
+from app.utils.uuid_parse import parse_uuid_or_none
 
 logger = logging.getLogger(__name__)
 
@@ -200,10 +201,11 @@ def _parse_uuids(values: Iterable[str]) -> list[uuid_pkg.UUID]:
     """Parse uuid strings, skipping anything unparseable rather than raising."""
     parsed: list[uuid_pkg.UUID] = []
     for value in values:
-        try:
-            parsed.append(uuid_pkg.UUID(str(value)))
-        except (ValueError, AttributeError, TypeError):
+        uuid_value = parse_uuid_or_none(value)
+        if uuid_value is None:
             logger.debug("Chat language scope: skipping malformed uuid %r", value)
+        else:
+            parsed.append(uuid_value)
     return parsed
 
 

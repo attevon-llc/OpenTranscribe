@@ -24,7 +24,7 @@ because each one is easy to get backwards from the docstrings/comments alone:
    test: it proves the download service is called 4 times (1 initial + 3 retries) and
    the task only reports a permanent failure once the retry cap is genuinely exhausted.
 
-3. **``_dispatch_video_task`` never validates ``media_file.source_url``.** It does
+3. **``_dispatch_playlist_video_task`` never validates ``media_file.source_url``.** It does
    ``video_url = str(media_file.source_url)`` unconditionally (L609), so a placeholder
    row with ``source_url=None`` dispatches the literal string ``"None"`` as the URL to
    download, and an empty string dispatches ``""``. Both are treated as successful
@@ -50,7 +50,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.prompt import UserSetting
 from app.tasks import youtube_processing
-from app.tasks.youtube_processing import _dispatch_video_task
+from app.tasks.youtube_processing import _dispatch_playlist_video_task
 from app.tasks.youtube_processing import _handle_playlist_result
 from app.tasks.youtube_processing import _resolve_download_quality
 from app.tasks.youtube_processing import process_youtube_url_task
@@ -399,7 +399,7 @@ def test_the_dispatch_failure_is_logged_with_a_traceback(
 
 
 # --------------------------------------------------------------------------------------
-# 3. _dispatch_video_task / _handle_playlist_result — the unvalidated source_url
+# 3. _dispatch_playlist_video_task / _handle_playlist_result — the unvalidated source_url
 # --------------------------------------------------------------------------------------
 
 
@@ -426,7 +426,7 @@ def test_a_none_source_url_is_stringified_and_dispatched_as_the_literal_word_non
     """
     media_file = _make_media_file(db_session, normal_user, source_url=None)
 
-    dispatched = _dispatch_video_task(media_file, normal_user.id, db_session, countdown=5)
+    dispatched = _dispatch_playlist_video_task(media_file, normal_user.id, db_session, countdown=5)
 
     assert dispatched is True
     assert dispatch_recorder[0]["args"][0] == "None"
@@ -439,7 +439,7 @@ def test_an_empty_string_source_url_is_dispatched_unchanged(
 ):
     media_file = _make_media_file(db_session, normal_user, source_url="")
 
-    dispatched = _dispatch_video_task(media_file, normal_user.id, db_session, countdown=0)
+    dispatched = _dispatch_playlist_video_task(media_file, normal_user.id, db_session, countdown=0)
 
     assert dispatched is True
     assert dispatch_recorder[0]["args"][0] == ""
@@ -448,11 +448,11 @@ def test_an_empty_string_source_url_is_dispatched_unchanged(
 def test_handle_playlist_result_dispatches_every_video_with_no_source_url_filter(
     monkeypatch, db_session, normal_user, dispatch_recorder
 ):
-    """The fan-out loop (L827-L845) applies no filter before calling ``_dispatch_video_task``.
+    """The fan-out loop (L827-L845) applies no filter before calling ``_dispatch_playlist_video_task``.
 
     A placeholder row with no URL is dispatched exactly like a normal one and counted
     in ``dispatched_count`` / the "queued for download" message — confirming the gap
-    identified directly on ``_dispatch_video_task`` also reaches the playlist path
+    identified directly on ``_dispatch_playlist_video_task`` also reaches the playlist path
     that is its only production caller.
     """
     monkeypatch.setattr(youtube_processing, "send_ws_event_for_file", lambda *_a, **_kw: None)

@@ -34,6 +34,7 @@ from decimal import Decimal
 import numpy as np
 import pytest
 
+from app.core.exceptions import DomainError
 from app.models.chat import ChatConversation
 from app.models.chat import ChatMessage
 from app.models.custom_vocabulary import CustomVocabulary
@@ -718,8 +719,6 @@ def test_bulk_export_prepare_issues_a_job_bound_to_the_caller(client, world, mon
 
 @pytest.mark.parametrize(("relation", "stamped", "visible"), RELATIONS)
 def test_check_file_access_honours_an_explicit_tenant(world, relation, stamped, visible):
-    from fastapi import HTTPException
-
     from app.services.permission_service import PermissionService
 
     w = world
@@ -736,7 +735,7 @@ def test_check_file_access_honours_an_explicit_tenant(world, relation, stamped, 
             == "owner"
         )
     else:
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(DomainError) as exc:
             PermissionService.check_file_access(
                 w.db, media_file.id, w.alice.id, organization_id=org_id
             )
@@ -744,8 +743,6 @@ def test_check_file_access_honours_an_explicit_tenant(world, relation, stamped, 
 
 
 def test_check_collection_access_honours_an_explicit_tenant(world):
-    from fastapi import HTTPException
-
     from app.models.media import Collection
     from app.services.permission_service import PermissionService
 
@@ -759,7 +756,7 @@ def test_check_collection_access_honours_an_explicit_tenant(world):
         PermissionService.check_collection_access(w.db, coll.id, w.alice.id, organization_id=None)
         == "owner"
     )
-    with pytest.raises(HTTPException):
+    with pytest.raises(DomainError):
         PermissionService.check_collection_access(
             w.db, coll.id, w.alice.id, organization_id=w.org_a.id
         )

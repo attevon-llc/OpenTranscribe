@@ -40,11 +40,10 @@ import uuid as uuid_pkg
 from dataclasses import dataclass
 from enum import StrEnum
 
-from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.constants import TAG_SOURCE_MANUAL
-from app.core.exceptions import DomainError
+from app.core.exceptions import AccessDeniedError
 from app.models.media import FileTag
 from app.models.media import MediaFile
 from app.models.media import Tag
@@ -172,7 +171,7 @@ def _require_editor(
         PermissionService.check_file_access(
             db, file_id, user_id, min_permission=REQUIRED_PERMISSION
         )
-    except (HTTPException, DomainError) as exc:
+    except AccessDeniedError as exc:
         return BulkTagResult(BulkTagOutcome.FAILED, str(exc.detail), PERMISSION_ERROR)
     return None
 

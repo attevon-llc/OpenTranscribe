@@ -21,6 +21,7 @@ from app import models
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
+from app.models.custom_vocabulary import SUPPORTED_DOMAINS
 from app.services.request_context import RequestContext
 from app.services.uuid_helpers import require_resource_owner
 from app.utils.db_helpers import org_stamp_is
@@ -29,17 +30,8 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Domain constants
+# Limits
 # ---------------------------------------------------------------------------
-
-SUPPORTED_DOMAINS = [
-    "medical",
-    "legal",
-    "corporate",
-    "government",
-    "technical",
-    "general",
-]
 
 # Hard limits enforced at the API layer (database column sizes match these).
 _MAX_TERM_LEN = 200
@@ -129,7 +121,7 @@ def list_domains(
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """Return the list of supported vocabulary domains."""
-    return {"domains": SUPPORTED_DOMAINS}
+    return {"domains": list(SUPPORTED_DOMAINS)}
 
 
 @router.get("")

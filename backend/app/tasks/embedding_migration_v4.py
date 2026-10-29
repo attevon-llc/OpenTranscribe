@@ -34,6 +34,7 @@ from app.core.constants import get_speaker_index
 from app.core.constants import get_speaker_index_v3
 from app.core.constants import get_speaker_index_v3_backup
 from app.core.constants import get_speaker_index_v4
+from app.core.pipeline_constants import FILES_PER_BATCH_TASK
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -47,9 +48,6 @@ from app.tasks.migration_pipeline import PreparedFile
 from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
-
-# Batch size for grouping files into a single GPU task
-_BATCH_SIZE = 25
 
 
 # ---------------------------------------------------------------------------
@@ -622,7 +620,8 @@ def migrate_speaker_embeddings_v4_task(
         # Build batches of file UUIDs
         file_uuids = [str(f.uuid) for f in files_to_migrate]
 
-    batches = [file_uuids[i : i + _BATCH_SIZE] for i in range(0, len(file_uuids), _BATCH_SIZE)]
+    step = FILES_PER_BATCH_TASK
+    batches = [file_uuids[i : i + step] for i in range(0, len(file_uuids), step)]
 
     batch_task_ids = []
     for batch_idx, batch in enumerate(batches):

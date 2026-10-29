@@ -28,13 +28,13 @@ from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 from app.services.ingest_artifacts.index_mapping import summary_plane_clause
 from app.services.opensearch_service import get_opensearch_client
 from app.services.opensearch_service import opensearch_client
+from app.services.redaction.config import MASKABLE_CATEGORIES
 from app.services.search.access_filter import access_filter_clause
 from app.services.search.fusion import FusionConfig
 from app.services.search.fusion import resolve_fusion
 from app.services.search.fusion import search_pipeline_id
 from app.services.search.indexing_service import ensure_chunks_index_exists
 from app.services.search.indexing_service import ensure_search_pipeline_exists
-from app.services.search.snippet_redaction import MASKABLE_CATEGORIES
 from app.services.search.snippet_redaction import mask_snippets
 
 if TYPE_CHECKING:  # pragma: no cover - import cost paid only by type checkers

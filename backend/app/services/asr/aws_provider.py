@@ -27,6 +27,9 @@ import time
 import uuid
 from collections.abc import Callable
 
+from app.core.pipeline_constants import ASR_SEGMENT_MAX_DURATION_SECONDS
+from app.core.pipeline_constants import ASR_SEGMENT_MIN_GAP_SECONDS
+
 from .base import ASRProvider
 from .types import ASRConfig
 from .types import ASRResult
@@ -34,10 +37,6 @@ from .types import ASRSegment
 from .types import ASRWord
 
 logger = logging.getLogger(__name__)
-
-# Segment-grouping thresholds (no-diarization path).
-_MAX_DUR = 30.0  # seconds — max segment duration before a forced split
-_MIN_GAP = 0.5  # seconds — silence gap that triggers a new segment
 
 # botocore ClientError codes that represent a transient throttle rather than a permanent
 # failure. LimitExceededException is Transcribe's concurrent-job cap — genuinely transient,
@@ -523,7 +522,10 @@ class AWSTranscribeProvider(ASRProvider):
                 for w in all_words[1:]:
                     gap = w.start - cur_chunk[-1].end
                     duration = cur_chunk[-1].end - cur_chunk[0].start
-                    if gap >= _MIN_GAP or duration >= _MAX_DUR:
+                    if (
+                        gap >= ASR_SEGMENT_MIN_GAP_SECONDS
+                        or duration >= ASR_SEGMENT_MAX_DURATION_SECONDS
+                    ):
                         avg_conf = sum(x.confidence for x in cur_chunk) / len(cur_chunk)
                         segments.append(
                             ASRSegment(

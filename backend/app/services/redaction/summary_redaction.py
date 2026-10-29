@@ -49,16 +49,10 @@ import dataclasses
 import logging
 from typing import Any
 
+from app.services.redaction.config import MASKABLE_CATEGORIES
 from app.services.redaction.config import EffectiveRedactionConfig
 
 logger = logging.getLogger(__name__)
-
-#: The categories a summary can actually be masked for. ``toxicity`` is absent for
-#: the same reason as in ``search/snippet_redaction``: its detector emits a
-#: per-segment SCORE and never a span, and the ``toxicity`` category's maskable
-#: spans come from the ``llm`` detector — a provider round-trip with no business
-#: on a read request.
-MASKABLE_CATEGORIES = frozenset({"pii", "profanity", "custom"})
 
 #: Top-level keys whose values are machine-generated processing metadata rather
 #: than model-authored prose about the recording: provider, model name, token

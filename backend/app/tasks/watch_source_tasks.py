@@ -37,19 +37,11 @@ from app.services.watch_sources import import_single_file
 from app.services.watch_sources import ingest_prepared_file
 from app.services.watch_sources.base import RemoteFileInfo
 from app.services.watch_sources.base import parse_extensions
+from app.services.watch_sources.processing import TERMINAL_STATUSES
 from app.services.watch_sources.processing import disable_if_owner_left_org
 from app.utils.task_lock import task_lock_manager
 
 logger = logging.getLogger(__name__)
-
-# Tracking statuses that mean "already handled — don't re-list/import".
-_TERMINAL = {
-    "imported",
-    "skipped_duplicate",
-    "skipped_old",
-    "skipped_invalid",
-    "stitched_part",
-}
 
 
 def _file_to_dict(fi: RemoteFileInfo) -> dict:
@@ -255,7 +247,7 @@ def _load_terminal_paths(source_id: int) -> set[str]:
             for row in db.query(WatchSourceFile.remote_path)
             .filter(
                 WatchSourceFile.watch_source_id == source_id,
-                WatchSourceFile.status.in_(_TERMINAL),
+                WatchSourceFile.status.in_(TERMINAL_STATUSES),
             )
             .all()
         }
@@ -385,7 +377,7 @@ def _handle_group(source_id: int, group, wait_scans: int) -> bool:
                     retry_count=0,
                 )
                 db.add(row)
-            elif row.status in _TERMINAL:
+            elif row.status in TERMINAL_STATUSES:
                 continue
             else:
                 # ``retry_count`` means two different things by status: failed import

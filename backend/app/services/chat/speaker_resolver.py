@@ -53,6 +53,7 @@ from sqlalchemy import or_
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.constants import FUZZY_MATCH_THRESHOLD
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import MediaFile
@@ -122,13 +123,11 @@ class SpeakerResolutionDeclineReason(StrEnum):
 #: already cap.
 MAX_RESOLUTION_ITEMS = 10
 
-#: `difflib.SequenceMatcher.ratio()` floor for the fuzzy rung of the ladder.
-#: 0.85 tolerates a short typo ("Alise" -> "Alice") without conflating
-#: genuinely different short names ("Ann" vs "Anna" scores 0.857 — right on
-#: the edge on purpose; two people who choose names that close is rare enough
-#: that a possible false positive here is a better trade than losing every
-#: legitimate typo below it).
-FUZZY_MATCH_THRESHOLD = 0.85
+# ``FUZZY_MATCH_THRESHOLD`` (``app.core.constants``) is the `difflib.SequenceMatcher.ratio()`
+# floor for the fuzzy rung of the ladder. 0.85 tolerates a short typo ("Alise" -> "Alice")
+# without conflating genuinely different short names ("Ann" vs "Anna" scores 0.857 — right on
+# the edge on purpose; two people who choose names that close is rare enough that a possible
+# false positive here is a better trade than losing every legitimate typo below it).
 
 #: A typo is a small EDIT — a substitution, or an insertion/deletion of a
 #: diacritic or doubled letter — not a truncation or extension by several

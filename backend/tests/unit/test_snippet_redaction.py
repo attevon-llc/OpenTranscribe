@@ -28,8 +28,8 @@ import dataclasses
 import pytest
 
 from app.services.redaction import service as redaction_service
+from app.services.redaction.config import MASKABLE_CATEGORIES
 from app.services.redaction.config import EffectiveRedactionConfig
-from app.services.search.snippet_redaction import MASKABLE_CATEGORIES
 from app.services.search.snippet_redaction import SnippetMaskingUnavailableError
 from app.services.search.snippet_redaction import mask_snippets
 

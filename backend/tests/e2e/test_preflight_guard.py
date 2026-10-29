@@ -13,6 +13,7 @@ the network, so it runs in milliseconds and cannot be skipped into uselessness.
 """
 
 import pytest
+from conftest import registration_precondition_problem
 from conftest import split_store_modules
 
 pytestmark = pytest.mark.e2e
@@ -108,3 +109,44 @@ class TestMustStayClean:
 
     def test_empty_input_is_clean(self):
         assert split_store_modules({}) == {}
+
+
+class TestRegistrationPrecondition:
+    """The auth-config guard: must fire on a closed stack, stay silent on an open one."""
+
+    def test_registration_off_is_reported_with_setting_and_fix(self):
+        problem = registration_precondition_problem({"allow_registration": False})
+
+        assert problem is not None
+        assert "allow_registration" in problem
+        assert "/api/admin/auth-config/local" in problem
+        assert "Admin > Settings > Authentication" in problem
+
+    def test_local_login_off_is_reported(self):
+        problem = registration_precondition_problem(
+            {"allow_registration": True, "local_enabled": False}
+        )
+
+        assert problem is not None
+        assert "local_enabled" in problem
+        assert "allow_registration" not in problem.split("are OFF")[0]
+
+    def test_both_off_names_both(self):
+        problem = registration_precondition_problem(
+            {"allow_registration": False, "local_enabled": False}
+        )
+
+        assert problem is not None
+        assert "allow_registration, local_enabled" in problem
+
+    def test_open_stack_is_clean(self):
+        assert (
+            registration_precondition_problem({"allow_registration": True, "local_enabled": True})
+            is None
+        )
+
+    def test_absent_keys_mean_the_coded_default_which_is_open(self):
+        # The live stack serves local_enabled by omission; reading that as "off" would
+        # fail every healthy default install.
+        assert registration_precondition_problem({}) is None
+        assert registration_precondition_problem({"allow_registration": True}) is None

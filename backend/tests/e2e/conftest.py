@@ -416,6 +416,56 @@ def _warm_frontend_module_graph(base_url: str) -> None:
     )
 
 
+def registration_precondition_problem(local_config: dict) -> str | None:
+    """Why the stack's local-auth config cannot support the registration e2e files, or None.
+
+    The registration, MFA and login-UI tests drive the real register form, which the SPA
+    hides (and ``POST /api/auth/register`` refuses) while ``allow_registration`` is off.
+    Without this check that surfaces as ~27 unrelated timeouts. A key absent from the
+    served config is read through its coded default, which is True for both settings.
+    """
+    off = [
+        key
+        for key in ("allow_registration", "local_enabled")
+        if local_config.get(key, True) is not True
+    ]
+    if not off:
+        return None
+    return (
+        f"auth setting(s) {', '.join(off)} are OFF on this stack, but the e2e registration/MFA "
+        "tests need self-registration and local login enabled.\n"
+        "Fix the stack (the suite deliberately never toggles auth config): Admin > Settings > "
+        "Authentication > Local, enable 'Allow registration' (and local login), or as super "
+        "admin:  PUT /api/admin/auth-config/local  "
+        '{"allow_registration": true, "local_enabled": true}'
+    )
+
+
+def _fetch_local_auth_config(backend_url: str) -> dict | None:
+    """The served ``local`` auth config via the admin API, or None if it cannot be read.
+
+    None is deliberately not a failure: a stack whose admin credentials differ is a
+    different problem, reported by the tests that need the admin, not mislabelled here.
+    """
+    try:
+        login = requests.post(
+            f"{backend_url}/api/auth/token",
+            data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
+            timeout=30,
+        )
+        if login.status_code != 200:
+            return None
+        token = login.json()["access_token"]
+        resp = requests.get(
+            f"{backend_url}/api/admin/auth-config/local",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        return dict(resp.json()) if resp.status_code == 200 else None
+    except (requests.RequestException, ValueError, KeyError):
+        return None
+
+
 @pytest.fixture(scope="session", autouse=True)
 def e2e_stack_preflight(base_url: str, backend_url: str) -> None:
     """Refuse to run the suite against a stack that cannot support it.
@@ -462,6 +512,12 @@ def e2e_stack_preflight(base_url: str, backend_url: str) -> None:
             "Remedy:  ./opentr.sh restart-frontend",
             returncode=3,
         )
+
+    local_config = _fetch_local_auth_config(backend_url)
+    if local_config is not None:
+        auth_problem = registration_precondition_problem(local_config)
+        if auth_problem:
+            pytest.exit(f"E2E preflight: {auth_problem}", returncode=3)
 
 
 @pytest.fixture

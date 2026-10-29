@@ -64,6 +64,17 @@ off by default.
 
 - **Back up first** (`./opentranscribe.sh backup`, or `./opentr.sh backup` in a clone). The
   migration chain is one-way: rolling back means restoring that backup.
+- **Production now requires a non-default Flower password and bundled-MinIO encryption.** The
+  backend will not start on a production install whose `.env` leaves `FLOWER_PASSWORD` unset or at
+  a default (`flower`, `changeme`, a `CHANGE_ME` placeholder), or leaves `MINIO_KMS_AUTO_ENCRYPTION`
+  off. Installs made by the current installer already have both. An older or hand-made `.env`
+  needs them added before `./opentranscribe.sh update` (which now stops with the exact lines to add
+  rather than leaving you with a crash-looping backend):
+  `FLOWER_PASSWORD=<openssl rand -hex 16>`,
+  `MINIO_KMS_SECRET_KEY=opentranscribe-key:<openssl rand -base64 32>` and
+  `MINIO_KMS_AUTO_ENCRYPTION=on`. **Back up the MinIO key**: objects written afterwards are
+  encrypted with it and are unreadable if it is lost. To store objects unencrypted on purpose, set
+  `ALLOW_UNENCRYPTED_OBJECT_STORE=true` instead.
 - **Amazon Transcribe now requires `AWS_TRANSCRIBE_BUCKET` (behaviour change, #1235).** If you use
   the AWS provider and never set it, the old fallback bucket `opentranscribe-tmp-<region>` was
   being used; it is gone. Create a private S3 bucket in your own AWS account (same region as

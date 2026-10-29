@@ -364,6 +364,7 @@ def _complete_saml_sls(
     from app.auth.cookies import get_refresh_token_from_cookie
 
     revocation_failed = False
+    processing_failed = False
 
     def _revoke_current_session() -> None:
         # The IdP exchange must still complete when a revocation cannot be
@@ -399,20 +400,23 @@ def _complete_saml_sls(
     except Exception as e:  # noqa: BLE001 - python3-saml raises broad OneLogin_Saml2_ValidationError
         logger.warning("SAML SLO processing failed: %s", e)
         redirect_url = None
+        processing_failed = True
 
     errors = auth.get_errors()
     if errors:
         logger.warning("SAML SLO errors: %s", errors)
 
+    slo_failed = bool(errors) or revocation_failed or processing_failed
     audit_logger.log(
         event_type=AuditEventType.AUTH_LOGOUT,
-        outcome=AuditOutcome.FAILURE if (errors or revocation_failed) else AuditOutcome.SUCCESS,
+        outcome=AuditOutcome.FAILURE if slo_failed else AuditOutcome.SUCCESS,
         source_ip=client_ip,
         user_agent=user_agent,
         details={
             "all_sessions": False,
             "auth_method": AUTH_METHOD,
             "revocation_failed": revocation_failed,
+            "processing_failed": processing_failed,
         },
     )
 

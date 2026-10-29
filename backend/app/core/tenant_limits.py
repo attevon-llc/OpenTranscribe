@@ -282,7 +282,9 @@ def resolve_retention_days(organization_id: int | None) -> int | None:
     try:
         return _retention_resolver(organization_id)
     except Exception as exc:
-        logger.exception("retention resolver failed; retention unknown for this pass")
+        # No traceback here: the sweep calls this once per candidate file and logs
+        # the cause (``__cause__``) once per pass.
+        logger.warning("retention resolver failed; retention unknown for this pass")
         raise RetentionResolverError(str(exc)) from exc
 
 

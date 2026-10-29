@@ -7,38 +7,35 @@ RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Container user ownership. appuser in the backend image is `useradd -u 1000` (UID pinned)
-# but `groupadd -r appuser` (system group, no GID pin) — it lands at gid 999, so a chown to
-# 1000:1000 sets a group that does not exist in the image (issue #580). Kept in sync with
-# CONTAINER_UID_GID in scripts/common.sh; this script ships standalone to end users, so it
-# defines its own.
+# Container user ownership. appuser is `useradd -u 1000` but `groupadd -r appuser` (system
+# group, no GID pin) — gid 999, so chown 1000:1000 sets a group absent from the image (#580).
+# Kept in sync with CONTAINER_UID_GID in scripts/common.sh; this script ships standalone.
 CONTAINER_UID_GID="${CONTAINER_UID_GID:-1000:999}"
 
 # scripts/common.sh ships with every install (release-manifest.txt:52) and holds the ONE
 # implementation of the database backup/restore path (#599/#600/#610). Sourced here rather
 # than reimplemented so a production install cannot drift from the dev one — issue #613.
 #
-# Conditional on purpose: an install that predates the manifest entry may not have it yet,
-# and every OTHER command must keep working without it. The backup/restore arms check for
-# the functions explicitly (require_db_helpers) and fail with a remedy.
+# Conditional on purpose: an install predating the manifest entry may lack it; every OTHER
+# command must keep working. The backup/restore arms check (require_db_helpers) and fail.
 #
 # Position matters. common.sh also defines fix_model_cache_permissions(); sourcing BEFORE
 # this script's own definition means the local one still wins (bash: last definition wins),
 # preserving today's behaviour exactly. Pinned by a test — do not move this below the
 # fix_model_cache_permissions definition.
 #
-# ⚠️ Because the local one always wins, it must be kept behaviourally IDENTICAL to
-# common.sh's (subdirectory list, and looping the ownership check over every
-# subdirectory rather than just the parent) — this script has no way to fall back to
-# common.sh's version for this function even when common.sh is present and newer. A
-# real install ran for a release with these two silently diverged (missing diar-native
-# in the mkdir list, parent-only ownership check); both are pinned by
-# backend/tests/unit/test_fix_model_cache_permissions_parity.py so they cannot drift
-# apart again without a failing test.
+# ⚠️ Because the local one always wins, it must stay behaviourally IDENTICAL to common.sh's
+# (subdirectory list, and the ownership check looped over every subdirectory, not just the
+# parent) — it cannot fall back to a newer common.sh. A real install ran with these
+# diverged (missing diar-native, parent-only check); both are pinned by
+# backend/tests/unit/test_fix_model_cache_permissions_parity.py.
 if [ -f ./scripts/common.sh ]; then
     # shellcheck source=scripts/common.sh
     . ./scripts/common.sh
 fi
+# Production credential preflight (FLOWER_PASSWORD, MinIO encryption); optional like common.sh.
+# shellcheck source=scripts/lib/service-credentials.sh
+[ -f ./scripts/lib/service-credentials.sh ] && . ./scripts/lib/service-credentials.sh
 
 # Grace period (seconds) for CUDA-holding services on stop/down/restart (issue #782).
 # `:=` is safe to run whether or not common.sh (above) already assigned it -- unlike a
@@ -1196,6 +1193,8 @@ preflight_upgrade_env() {
         ""|*change_me*|*CHANGE_ME*) problems+=("ENCRYPTION_KEY is unset or still a placeholder") ;;
     esac
 
+    declare -F ot_require_service_credentials >/dev/null && { ot_require_service_credentials .env || return 1; }
+
     # issue #670: engine.diarizer_backend's coded (and DB-configured) default is `native`,
     # and backend/app/transcription/native_provision.py deliberately never aborts startup
     # over a failed export — a degraded diarizer is a supported configuration, not a crash
@@ -1774,6 +1773,7 @@ download_models_diar_native() {
 case "${1:-help}" in
     start)
         check_environment
+        declare -F ot_require_service_credentials >/dev/null && { ot_require_service_credentials .env || exit 1; }
         # `|| true`: same set -e / exit-7-remedy hazard as download_models_diar_native's
         # call above — a failed fix here must not abort this command before the actual
         # `docker compose` step runs and reports its own, more specific error.
@@ -2157,7 +2157,7 @@ case "${1:-help}" in
                 echo ""
                 echo -e "${YELLOW}📋 New settings in this release (your .env was NOT modified):${NC}"
                 echo "$new_keys"
-                echo -e "${YELLOW}   Defaults apply unless you add them to .env — see .env.example.${NC}"
+                echo -e "${YELLOW}   Defaults apply unless you add them to .env (FLOWER_PASSWORD and MinIO encryption are required in production) — see .env.example.${NC}"
             fi
         fi
 

@@ -457,7 +457,7 @@ def test_a_segment_edit_without_toxicity_weights_does_not_queue_a_rescan(
 
 
 def test_unreadable_owner_policy_returns_the_scan_to_pending(
-    db_session, pii_masking_user, working_pii, working_toxicity, monkeypatch
+    db_session, production_txn_view, pii_masking_user, working_pii, working_toxicity, monkeypatch
 ):
     """A policy that cannot be read is not the same as a policy that is unset.
 
@@ -476,8 +476,40 @@ def test_unreadable_owner_policy_returns_the_scan_to_pending(
     db_session.commit()
 
     with pytest.raises(OperationalError):
-        RedactionService.detect_and_store(db_session, media.id)
+        RedactionService.detect_and_store(production_txn_view, media.id)
 
     db_session.refresh(media)
     assert media.redaction_status == C.REDACTION_STATUS_PENDING
     assert media.redaction_coverage is None
+
+
+def test_a_failed_sql_statement_in_the_policy_read_still_returns_the_scan_to_pending(
+    db_session, production_txn_view, pii_masking_user, working_pii, working_toxicity, monkeypatch
+):
+    """A real SQL error aborts the transaction; the reset to pending must survive that.
+
+    SQLAlchemy still reports the session as active after a failed statement, so
+    the reset used to be committed into an aborted transaction and the file stayed
+    in PROCESSING. The original error must be the one that propagates.
+    """
+    from sqlalchemy import text
+    from sqlalchemy.exc import DataError
+    from sqlalchemy.exc import DBAPIError
+
+    from app.services.redaction import config as redaction_config
+
+    def _failing_statement(db, *_args, **_kwargs):
+        db.execute(text("SELECT 1/0"))
+
+    monkeypatch.setattr(redaction_config, "resolve_effective_config", _failing_statement)
+    media, _segment = _seed_unscanned_file(db_session, pii_masking_user)
+    db_session.commit()
+
+    with pytest.raises(DBAPIError) as raised:
+        RedactionService.detect_and_store(production_txn_view, media.id)
+
+    assert isinstance(raised.value, DataError), "the original error, not a follow-on one"
+    production_txn_view.expire_all()
+    db_session.expire_all()
+    db_session.refresh(media)
+    assert media.redaction_status == C.REDACTION_STATUS_PENDING

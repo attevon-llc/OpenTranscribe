@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core import constants as C  # noqa: N812
@@ -580,16 +581,26 @@ class RedactionService:
         The scan goes back to pending (not failed: failed is a permanent refusal
         downstream) and the error propagates so the task retries.
         """
+        file_id = media.id  # read now: a rollback expires the object
         try:
             return RedactionService._owner_wants_llm(
                 db, int(media.user_id), organization_id=getattr(media, "organization_id", None)
             )
         except Exception:
-            if not db.is_active:
+            # Unconditional: after a failed SQL statement ``is_active`` still reads
+            # True while PostgreSQL has aborted the transaction. The only earlier
+            # write (PROCESSING) was committed before this point.
+            try:
                 db.rollback()
-            media.redaction_status = C.REDACTION_STATUS_PENDING  # type: ignore[assignment]
-            db.commit()
-            logger.warning("Redaction policy unreadable for file %s; scan left pending", media.id)
+                media.redaction_status = C.REDACTION_STATUS_PENDING  # type: ignore[assignment]
+                db.commit()
+                logger.warning(
+                    "Redaction policy unreadable for file %s; scan left pending", file_id
+                )
+            except SQLAlchemyError:
+                logger.error(
+                    "Could not return file %s to pending after an unreadable policy", file_id
+                )
             raise
 
     @staticmethod

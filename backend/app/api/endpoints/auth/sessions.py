@@ -393,10 +393,13 @@ async def logout_all_sessions(
     username = str(current_user.email)
 
     try:
-        count = token_service.revoke_all_user_tokens_in_transaction(db, user_id)
+        pending = token_service.revoke_all_user_tokens_pending_audit(db, user_id)
         db.commit()
     except Exception as exc:
-        db.rollback()
+        try:
+            db.rollback()
+        except Exception:
+            logger.debug("Rollback after failed logout-all also failed", exc_info=True)
         logger.error("Logout from all sessions not completed for user %s", user_id)
         audit_logger.log(
             event_type=AuditEventType.AUTH_LOGOUT_ALL,
@@ -413,6 +416,8 @@ async def logout_all_sessions(
             detail={"code": "logout_all_failed"},
         ) from exc
 
+    count = pending.count
+    pending.record_audit()
     await _end_federated_session(db, current_user)
 
     audit_logger.log_logout(

@@ -82,11 +82,19 @@ def approval_required(db) -> bool | None:
 
     from app.services.auth_config_service import AuthConfigService
 
+    # Read inside a savepoint so a SQL error here cannot abort the caller's
+    # transaction (PostgreSQL refuses every later statement in an aborted one).
+    savepoint = db.begin_nested()
     try:
         value = AuthConfigService.get_effective_config(db, "require_account_approval")
     except Exception:
         logger.warning("Could not read require_account_approval", exc_info=True)
+        try:
+            savepoint.rollback()
+        except Exception:
+            logger.debug("Savepoint rollback after a failed read also failed", exc_info=True)
         return None
+    savepoint.commit()
     if isinstance(value, str):
         return value.strip().lower() in ("true", "1", "yes", "on")
     return bool(value)

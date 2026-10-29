@@ -21,6 +21,15 @@ et_rand_hex() {
     fi
 }
 
+# Production startup checks (startup_validation.py) refuse an unset/default FLOWER_PASSWORD and
+# bundled MinIO without KMS auto-encryption, so every rehearsal .env that runs hardened must
+# carry both, like a real install. Emits .env lines; the KMS key is generated per run.
+et_service_credentials() {
+    echo "FLOWER_PASSWORD=$(et_rand_hex 16)"
+    echo "MINIO_KMS_SECRET_KEY=opentranscribe-key:$(python3 -c 'import base64,os;print(base64.b64encode(os.urandom(32)).decode())')"
+    echo "MINIO_KMS_AUTO_ENCRYPTION=on"
+}
+
 et_write_env() {
     local out="$1"
     local postgres_pw minio_pw jwt_secret enc_key redis_pw
@@ -77,6 +86,7 @@ MINIO_ROOT_USER=minioadmin
 MINIO_ROOT_PASSWORD=${minio_pw}
 MINIO_BUCKET=opentranscribe
 REDIS_PASSWORD=${redis_pw}
+$(et_service_credentials)
 JWT_SECRET_KEY=${jwt_secret}
 ENCRYPTION_KEY=${enc_key}
 

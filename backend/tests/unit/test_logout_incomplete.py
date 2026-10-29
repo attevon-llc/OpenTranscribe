@@ -125,7 +125,7 @@ class TestLogoutAllWhenSessionsCannotBeRevoked:
         def _fails(*_a, **_k):
             raise OperationalError("UPDATE", {}, Exception("database unavailable"))
 
-        monkeypatch.setattr(token_service, "revoke_all_user_tokens_in_transaction", _fails)
+        monkeypatch.setattr(token_service, "revoke_all_user_tokens_pending_audit", _fails)
         audit_records.clear()
 
         resp = client.post(
@@ -153,3 +153,27 @@ class TestLogoutAllWhenSessionsCannotBeRevoked:
         assert rows
         assert all(r.revoked_at is not None for r in rows)
         assert token_service.is_token_revoked(str(rows[0].jti), db=db_session) is True
+
+    def test_no_bulk_success_record_is_written_when_the_commit_fails(
+        self, client, normal_user, db_session, monkeypatch, audit_records
+    ):
+        tokens = _login(client, normal_user)
+
+        def _commit_fails():
+            raise OperationalError("COMMIT", {}, Exception("database unavailable"))
+
+        monkeypatch.setattr(db_session, "commit", _commit_fails)
+        audit_records.clear()
+
+        resp = client.post(
+            "/api/auth/logout/all", headers={"Authorization": f"Bearer {tokens['access_token']}"}
+        )
+
+        assert resp.status_code == 503
+        bulk_success = [
+            r
+            for r in audit_records
+            if r.get("event_type") == AuditEventType.AUTH_TOKEN_REVOKE
+            and r.get("outcome") == AuditOutcome.SUCCESS
+        ]
+        assert bulk_success == []

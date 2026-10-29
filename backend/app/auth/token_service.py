@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.bulk_revocation import PendingBulkRevocation
 from app.auth.constants import TOKEN_TYPE_ACCESS
 from app.auth.constants import TOKEN_TYPE_REFRESH
 from app.auth.revocation_fallback import is_revoked_from_database
@@ -702,7 +703,9 @@ class TokenService:
 
         try:
             refresh_token = db.query(RefreshToken).filter(RefreshToken.jti == jti).first()
+            owner_id = None
             if refresh_token:
+                owner_id = refresh_token.user_id
                 refresh_token.revoked_at = datetime.now(UTC)  # type: ignore[assignment]
                 db.commit()
         except Exception as exc:
@@ -738,7 +741,7 @@ class TokenService:
         audit_logger.log(
             event_type=AuditEventType.AUTH_TOKEN_REVOKE,
             outcome=AuditOutcome.SUCCESS,
-            user_id=refresh_token.user_id if refresh_token else None,
+            user_id=owner_id,
             details={"jti": jti},
         )
 
@@ -751,8 +754,8 @@ class TokenService:
 
         The key only needs to outlive the longest access token, so it expires
         with a small margin over ``JWT_ACCESS_TOKEN_EXPIRE_MINUTES``. Best-effort:
-        a Redis failure here degrades to the database heuristic in
-        :meth:`_is_revoked_without_redis`, which reaches the same conclusion from
+        a Redis failure here degrades to the database check
+        (``is_revoked_from_database``), which reaches the same conclusion from
         the user's revoked refresh tokens.
 
         Returns:
@@ -767,7 +770,7 @@ class TokenService:
                 str(int(datetime.now(UTC).timestamp())),
                 ex=ttl,
             )
-        except Exception as exc:  # pragma: no cover - defensive
+        except Exception as exc:
             record_degradation("token_revocation", "database")
             logger.warning("Could not stamp revocation epoch for user %s: %s", user_uuid, exc)
             return False
@@ -783,7 +786,7 @@ class TokenService:
         """Whether an access token predates the user's revocation epoch.
 
         When the epoch cannot be read, the answer comes from the database
-        (:meth:`_is_revoked_without_redis`), which refuses only on positive
+        (``is_revoked_from_database``), which refuses only on positive
         evidence that every session of the user was revoked.
         """
         if not user_uuid or issued_at is None or self._degraded:
@@ -837,6 +840,19 @@ class TokenService:
         Returns:
             Number of tokens revoked
         """
+        pending = self.revoke_all_user_tokens_pending_audit(db, user_id, user_uuid)
+        pending.record_audit(reason)
+        return pending.count
+
+    def revoke_all_user_tokens_pending_audit(
+        self, db: Session, user_id: int, user_uuid: str | None = None
+    ) -> PendingBulkRevocation:
+        """Like :meth:`revoke_all_user_tokens_in_transaction`, but the audit is the caller's.
+
+        For a caller that wants the ``AUTH_TOKEN_REVOKE`` SUCCESS record written
+        only once its own commit has succeeded: call
+        :meth:`PendingBulkRevocation.record_audit` after the commit.
+        """
         tokens = (
             db.query(RefreshToken)
             .filter(
@@ -874,36 +890,9 @@ class TokenService:
         resolved_uuid = user_uuid or self._user_uuid_for(db, user_id)
         epoch_stamped = self.stamp_user_revocation_epoch(resolved_uuid)
 
-        # MASS revocation is audited here, not left to the callers.
-        #
-        # :meth:`revoke_token` calls itself "the single choke point for every
-        # revocation path" and audits accordingly — but it is the SINGLE-token
-        # path, and this method is not routed through it. So the bulk path, which
-        # is the one admin password reset, role change, lock, MFA reset, SCIM
-        # deactivation and directory sync all use, produced no audit record at
-        # all (FedRAMP AU-2/AU-12).
-        #
-        # ``user_id``/``username`` name the TARGET, matching :meth:`revoke_token`
-        # above (which stamps the token owner) — this layer has no request and
-        # therefore no actor. Callers that DO know the actor emit their own
-        # actor-keyed record alongside; the two are correlated by ``request_id``.
-        # It fires even when ``count`` is 0: the epoch stamp above still happened
-        # and still invalidated every outstanding access token, so "0 sessions"
-        # is a real revocation, not a no-op.
-        audit_logger.log(
-            event_type=AuditEventType.AUTH_TOKEN_REVOKE,
-            outcome=AuditOutcome.SUCCESS,
-            user_id=user_id,
-            details={
-                "scope": "all_user_tokens",
-                "sessions_revoked": count,
-                "reason": reason,
-                "user_uuid": resolved_uuid,
-                "epoch_stamped": epoch_stamped,
-            },
+        return PendingBulkRevocation(
+            user_id=user_id, count=count, user_uuid=resolved_uuid, epoch_stamped=epoch_stamped
         )
-
-        return count
 
     @staticmethod
     def _user_uuid_for(db: Session, user_id: int) -> str | None:
@@ -1099,11 +1088,14 @@ class TokenService:
             enforce_concurrent_limit=False,
         )
 
-        logger.info(
-            f"Issued new refresh token for user {user_id} (new_jti={new_token_record.jti[:8]}...)"
-        )
+        # Read now: a failed revocation below rolls the session back and expires
+        # this object, and a lazy reload could itself fail.
+        new_jti = str(new_token_record.jti)
+        new_expires = new_token_record.expires_at
+        logger.info(f"Issued new refresh token for user {user_id} (new_jti={new_jti[:8]}...)")
 
-        # Revoke the old token AFTER new token is created (safe if this fails - user has new token)
+        # Revoke the old token AFTER the new one exists; if that fails the successor
+        # is withdrawn again below and the caller answers with an error.
         old_jti = str(old_token_record.jti)
         old_expires = datetime(
             old_token_record.expires_at.year,
@@ -1122,7 +1114,7 @@ class TokenService:
             # call: the caller answers with an error and the client retries with
             # the token it still holds.
             try:
-                self.revoke_token(db, str(new_token_record.jti), new_token_record.expires_at)
+                self.revoke_token(db, new_jti, new_expires)
             except RevocationError:
                 logger.error("Could not withdraw the successor of a rotation that failed")
             raise

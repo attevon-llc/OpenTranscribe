@@ -296,6 +296,49 @@ def _unreadable_approval_setting(monkeypatch) -> None:
     monkeypatch.setattr(AuthConfigService, "get_effective_config", staticmethod(_read))
 
 
+def _failing_sql_approval_setting(monkeypatch) -> None:
+    """Make the approval read run a statement PostgreSQL rejects (aborts the transaction)."""
+    from sqlalchemy import text
+
+    real = AuthConfigService.get_effective_config
+
+    def _read(db, key):
+        if key == "require_account_approval":
+            db.execute(text("SELECT 1/0"))
+        return real(db, key)
+
+    monkeypatch.setattr(AuthConfigService, "get_effective_config", staticmethod(_read))
+
+
+class TestAFailedSqlReadDoesNotPoisonTheCallersTransaction:
+    """A real SQL error (not a Python-raised one) aborts the transaction in PostgreSQL."""
+
+    @pytest.mark.usefixtures("open_registration")
+    def test_self_registration_still_creates_a_pending_account(
+        self, client, db_session, monkeypatch
+    ):
+        _failing_sql_approval_setting(monkeypatch)
+        email = f"failsql-{uuid_pkg.uuid4().hex[:8]}@example.com"
+
+        response = client.post(
+            "/api/auth/register",
+            json={"email": email, "password": "Str0ng!Passphrase99", "full_name": "Held"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["approval_status"] == APPROVAL_PENDING
+        db_session.rollback()
+
+    def test_the_session_is_usable_after_the_failed_read(self, db_session, monkeypatch):
+        from sqlalchemy import text
+
+        from app.auth.approval import approval_required
+
+        _failing_sql_approval_setting(monkeypatch)
+        assert approval_required(db_session) is None
+        assert db_session.execute(text("SELECT 1")).scalar() == 1
+
+
 class TestAnUnreadableSettingHoldsNewAccounts:
     """When the setting cannot be READ, a new account waits rather than being approved."""
 

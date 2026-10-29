@@ -15,6 +15,7 @@ cursor loop and the CAS retry budget run for real.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
@@ -540,13 +541,23 @@ class TestResetLockoutStateRedisCas:
         assert _stored(redis_store, "u@x").lockout_count == 0
 
     def test_exhausting_the_retry_budget_reports_unwritten_rather_than_a_partial_write(
-        self, redis_store
+        self, redis_store, caplog
     ):
         record = _locked("u@x")
         redis_store.data[_key("u@x")] = _dump(record)
         redis_store.always_lose = True
 
-        outcome = lockout.reset_lockout_state("u@x")
+        with caplog.at_level(logging.WARNING, logger=lockout.logger.name):
+            outcome = lockout.reset_lockout_state("u@x")
+
+        # The warning is the only operator-visible signal that an unlock silently did not land,
+        # so its content (masked identity, the budget, the cause) is a contract, not noise.
+        warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+        assert warnings == [
+            f"Lockout reset for {lockout._mask_identifier('u@x')} lost "
+            f"{lockout.CAS_MAX_RETRIES} compare-and-set races in a row"
+        ]
+        assert "u@x" not in warnings[0]
 
         assert outcome == {
             "found": True,

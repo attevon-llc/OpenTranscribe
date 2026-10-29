@@ -15,6 +15,7 @@
   import { user } from '../stores/auth';
   import { toastStore } from '../stores/toast';
   import ConfirmationModal from './ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import BaseModal from './ui/BaseModal.svelte';
   import LinkIdentityModal from './LinkIdentityModal.svelte';
   import { t } from '$stores/locale';
@@ -99,15 +100,13 @@
   let pendingInviteUuid = null;
 
   // Confirmation modal state
-  let showConfirmModal = false;
-  let confirmModalTitle = '';
-  let confirmModalMessage = '';
-  /** @type {string} */
-  let confirmModalConfirmText = '';
-  /** @type {(() => void) | null} */
-  let confirmCallback = null;
-  /** @type {(() => void) | null} */
-  let confirmCancelCallback = null;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+  } = confirmDialog;
 
   // Server-owned password policy (GET /auth/password-policy). Hardcoding a
   // client-side minimum drifts from the backend's — it said 8 while the policy
@@ -212,7 +211,7 @@
     // A super_admin can change auth configuration and other users' roles —
     // confirm before minting one.
     if (newRole === 'super_admin') {
-      showConfirmation(
+      confirmDialog.request(
         $t('userManagement.confirmSuperAdminTitle'),
         $t('userManagement.confirmSuperAdminCreate', { name: newUsername || newEmail }),
         () => executeCreateUser(),
@@ -297,7 +296,7 @@
     }
 
     if (inviteRole === 'super_admin') {
-      showConfirmation(
+      confirmDialog.request(
         $t('userManagement.confirmSuperAdminTitle'),
         $t('userManagement.confirmSuperAdminInvite', { name: inviteFullName || inviteEmail }),
         () => executeSendInvitation(),
@@ -351,7 +350,7 @@
    * @param {import('$lib/api/invitations').Invitation} invitation
    */
   function revokeInvite(invitation) {
-    showConfirmation(
+    confirmDialog.request(
       $t('userManagement.revokeInvitation'),
       $t('userManagement.revokeInvitationConfirm', { email: invitation.email }),
       () => executeRevokeInvite(invitation),
@@ -391,53 +390,12 @@
     }
   }
 
-  /**
-   * Show confirmation modal
-   * @param {string} title - The modal title
-   * @param {string} message - The confirmation message
-   * @param {() => void} callback - The callback to execute on confirmation
-   * @param {string} [confirmText] - Label for the confirm button
-   * @param {(() => void) | null} [onCancel] - Callback to run if the user backs out
-   */
-  function showConfirmation(title, message, callback, confirmText = '', onCancel = null) {
-    confirmModalTitle = title;
-    confirmModalMessage = message;
-    confirmModalConfirmText = confirmText;
-    confirmCallback = callback;
-    confirmCancelCallback = onCancel;
-    showConfirmModal = true;
-  }
-
-  /**
-   * Handle confirmation modal confirm
-   */
-  function handleConfirmModalConfirm() {
-    if (confirmCallback) {
-      confirmCallback();
-      confirmCallback = null;
-    }
-    confirmCancelCallback = null;
-    showConfirmModal = false;
-  }
-
-  /**
-   * Handle confirmation modal cancel
-   */
-  function handleConfirmModalCancel() {
-    if (confirmCancelCallback) {
-      confirmCancelCallback();
-      confirmCancelCallback = null;
-    }
-    confirmCallback = null;
-    showConfirmModal = false;
-  }
-
-  /**
+/**
    * Delete a user
    * @param {string} userId
    */
   async function deleteUser(userId) {
-    showConfirmation(
+    confirmDialog.request(
       $t('userManagement.deleteUser'),
       $t('userManagement.deleteUserConfirm'),
       () => executeDeleteUser(userId)
@@ -507,7 +465,7 @@
     // Promoting to super_admin hands over auth-configuration and role-change
     // power — make it deliberate, and put the select back if they back out.
     if (newRole === 'super_admin') {
-      showConfirmation(
+      confirmDialog.request(
         $t('userManagement.confirmSuperAdminTitle'),
         $t('userManagement.confirmSuperAdminPromote', {
           name: target?.full_name || target?.email || ''
@@ -726,7 +684,7 @@
    * @param {User} targetUser
    */
   function lockAccount(targetUser) {
-    showConfirmation(
+    confirmDialog.request(
       $t('userManagement.lockAccount'),
       $t('userManagement.lockConfirmMessage', { name: targetUser.full_name || targetUser.email }),
       () => runAccountAction(
@@ -752,7 +710,7 @@
    * @param {User} targetUser
    */
   function unlockAccount(targetUser) {
-    showConfirmation(
+    confirmDialog.request(
       $t('userManagement.unlockAccount'),
       $t('userManagement.unlockConfirmMessage', { name: targetUser.full_name || targetUser.email }),
       () => runAccountAction(
@@ -773,7 +731,7 @@
    * @param {User} targetUser
    */
   function forceLogout(targetUser) {
-    showConfirmation(
+    confirmDialog.request(
       $t('userManagement.forceLogout'),
       $t('userManagement.forceLogoutConfirmMessage', { name: targetUser.full_name || targetUser.email }),
       () => runAccountAction(
@@ -794,7 +752,7 @@
    * @param {User} targetUser
    */
   function resetUserMFA(targetUser) {
-    showConfirmation(
+    confirmDialog.request(
       $t('userManagement.resetMfa'),
       $t('userManagement.resetMfaConfirmMessage', { name: targetUser.full_name || targetUser.email }),
       () => runAccountAction(
@@ -1363,16 +1321,16 @@
 
 <!-- Confirmation Modal -->
 <ConfirmationModal
-  bind:isOpen={showConfirmModal}
-  title={confirmModalTitle}
-  message={confirmModalMessage}
-  confirmText={confirmModalConfirmText || $t('common.delete')}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel || $t('common.delete')}
   cancelText={$t('common.cancel')}
   confirmButtonClass="modal-delete-button"
   cancelButtonClass="modal-cancel-button"
-  on:confirm={handleConfirmModalConfirm}
-  on:cancel={handleConfirmModalCancel}
-  on:close={handleConfirmModalCancel}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <!-- Link External Identity Modal (P1.3) -->

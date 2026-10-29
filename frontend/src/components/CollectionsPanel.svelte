@@ -7,6 +7,7 @@
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import ConfirmationModal from './ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import MetadataChips from './ui/MetadataChips.svelte';
   import ShareCollectionModal from './sharing/ShareCollectionModal.svelte';
   import { SharingApi } from '$lib/api/sharing';
@@ -34,18 +35,22 @@
   let shareModalCanManage = false;
   let shareModalRestricted = false;
   let loading = false;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmLabel,
+  } = confirmDialog;
   let showCreateModal = false;
   let showEditModal = false;
-  let showDeleteConfirm = false;
   let collectionToEdit: Collection | null = null;
-  let collectionToDelete: Collection | null = null;
   let newCollectionName = '';
   let newCollectionDescription = '';
   let editCollectionName = '';
   let editCollectionDescription = '';
   let creating = false;
   let updating = false;
-  let deleting = false;
   let selectedCollectionId: string | null = null;  // UUID
   let addingToCollection = false;
 
@@ -325,17 +330,16 @@
 
   // Open delete confirmation
   function openDeleteConfirm(collection: Collection) {
-    collectionToDelete = collection;
-    showDeleteConfirm = true;
+    confirmDialog.request(
+      $t('collectionsPanel.deleteCollectionTitle'),
+      $t('collectionsPanel.deleteConfirmMessage', { name: collection.name }),
+      () => deleteCollection(collection),
+      $t('collectionsPanel.deleteCollectionButton')
+    );
   }
 
   // Delete collection
-  async function deleteCollection() {
-    if (!collectionToDelete) return;
-    const deletingCollection = collectionToDelete;
-
-    deleting = true;
-
+  async function deleteCollection(deletingCollection: Collection) {
     try {
       await axiosInstance.delete(`/collections/${deletingCollection.uuid}`);
       collections = collections.filter(col => col.uuid !== deletingCollection.uuid);
@@ -344,26 +348,11 @@
         selectedCollectionId = null;
       }
 
-      toastStore.success($t('collectionsPanel.deletedSuccess', { name: collectionToDelete.name }));
-      showDeleteConfirm = false;
-      collectionToDelete = null;
+      toastStore.success($t('collectionsPanel.deletedSuccess', { name: deletingCollection.name }));
     } catch (err: unknown) {
       console.error('Error deleting collection:', err);
       toastStore.error(getErrorMessage(err, $t('collectionsPanel.failedToDelete')));
-    } finally {
-      deleting = false;
     }
-  }
-
-  // Handle confirmation modal confirm
-  function handleConfirmModalConfirm() {
-    deleteCollection();
-  }
-
-  // Handle confirmation modal cancel
-  function handleConfirmModalCancel() {
-    showDeleteConfirm = false;
-    collectionToDelete = null;
   }
 
   // Add selected media to collection
@@ -616,16 +605,16 @@
 
 <!-- Delete Confirmation Modal -->
 <ConfirmationModal
-  bind:isOpen={showDeleteConfirm}
-  title={$t('collectionsPanel.deleteCollectionTitle')}
-  message={collectionToDelete ? $t('collectionsPanel.deleteConfirmMessage', { name: collectionToDelete.name }) : ''}
-  confirmText={deleting ? $t('collectionsPanel.deleting') : $t('collectionsPanel.deleteCollectionButton')}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  confirmText={$confirmLabel}
   cancelText={$t('collectionsPanel.cancel')}
   confirmButtonClass="modal-delete-button"
   cancelButtonClass="modal-cancel-button"
-  on:confirm={handleConfirmModalConfirm}
-  on:cancel={handleConfirmModalCancel}
-  on:close={handleConfirmModalCancel}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 </div>
 

@@ -34,6 +34,7 @@
   import { SUPPORT_ACCESS_EVENT } from '$lib/supportAccess/events';
   import { UserApprovalsApi } from '$lib/api/userApprovals';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import ProcessingDetailsModal from '$components/settings/ProcessingDetailsModal.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
 
@@ -265,10 +266,12 @@
   let searchHealthStatus: Record<string, { status: string; doc_count: number }> | null = null;
 
   // Admin Task Health confirmation flow (panel dispatches, modal owns ConfirmationModal)
-  let showConfirmModal = false;
-  let confirmModalTitle = '';
-  let confirmModalMessage = '';
-  let confirmCallback: (() => void) | null = null;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+  } = confirmDialog;
 
   // Edition capability gating (server-driven entitlements): a section item
   // tagged with `cap` renders only when the backend lists that capability as
@@ -985,29 +988,9 @@
     showProcessingDetails = true;
   }
 
-  function showConfirmation(title: string, message: string, callback: () => void) {
-    confirmModalTitle = title;
-    confirmModalMessage = message;
-    confirmCallback = callback;
-    showConfirmModal = true;
-  }
-
   function handleTaskHealthConfirm(event: CustomEvent<ConfirmRequest>) {
     const { title, message, callback } = event.detail;
-    showConfirmation(title, message, callback);
-  }
-
-  function handleConfirmModalConfirm() {
-    showConfirmModal = false;
-    if (confirmCallback) {
-      confirmCallback();
-      confirmCallback = null;
-    }
-  }
-
-  function handleConfirmModalCancel() {
-    showConfirmModal = false;
-    confirmCallback = null;
+    confirmDialog.request(title, message, callback);
   }
 
   // AI settings change handlers
@@ -1642,16 +1625,16 @@
 
 <!-- Admin Confirmation Modal -->
 <ConfirmationModal
-  bind:isOpen={showConfirmModal}
-  title={confirmModalTitle}
-  message={confirmModalMessage}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
   confirmText={$t('settings.confirm')}
   cancelText={$t('settings.cancel')}
   confirmButtonClass="btn-primary"
   cancelButtonClass="btn-secondary"
-  on:confirm={handleConfirmModalConfirm}
-  on:cancel={handleConfirmModalCancel}
-  on:close={handleConfirmModalCancel}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <!-- Processing Details Modal -->

@@ -26,6 +26,7 @@
   import { triggerAnchorDownload } from '$lib/export/anchorDownload';
   import { openExportJobStream, type ExportJobStream } from '$lib/export/exportJobStream';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import SelectiveReprocessModal from '$components/SelectiveReprocessModal.svelte';
   import GalleryFilterPanel from '$components/gallery/GalleryFilterPanel.svelte';
   import GalleryHeader from '$components/gallery/GalleryHeader.svelte';
@@ -40,10 +41,12 @@
   let showUploadModal = false;
 
   // Confirmation modal state
-  let showConfirmModal = false;
-  let confirmModalTitle = '';
-  let confirmModalMessage = '';
-  let confirmCallback: (() => void) | null = null;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+  } = confirmDialog;
 
   // Bulk tag modal state
   let showBulkTagModal = false;
@@ -167,38 +170,6 @@
   // Observe the sentinel element when it becomes available (after files load)
   $: if (infiniteScrollSentinel && intersectionObserver) {
     intersectionObserver.observe(infiniteScrollSentinel);
-  }
-
-  /**
-   * Show confirmation modal
-   * @param {string} title - The modal title
-   * @param {string} message - The confirmation message
-   * @param {() => void} callback - The callback to execute on confirmation
-   */
-  function showConfirmation(title: string, message: string, callback: () => void) {
-    confirmModalTitle = title;
-    confirmModalMessage = message;
-    confirmCallback = callback;
-    showConfirmModal = true;
-  }
-
-  /**
-   * Handle confirmation modal confirm
-   */
-  function handleConfirmModalConfirm() {
-    if (confirmCallback) {
-      confirmCallback();
-      confirmCallback = null;
-    }
-    showConfirmModal = false;
-  }
-
-  /**
-   * Handle confirmation modal cancel
-   */
-  function handleConfirmModalCancel() {
-    confirmCallback = null;
-    showConfirmModal = false;
   }
 
   /**
@@ -675,7 +646,7 @@
   async function deleteSelectedFiles() {
     if (selectedFiles.size === 0) return;
 
-    showConfirmation(
+    confirmDialog.request(
       $t('gallery.deleteConfirmTitle'),
       $t('gallery.deleteConfirmMessage', { count: selectedFiles.size }),
       () => executeDeleteSelectedFiles()
@@ -705,7 +676,7 @@
 
       if (conflicts.length > 0) {
         const conflictFileIds = conflicts.map((c: any) => c.file_uuid);  // Use file_uuid from response
-        showConfirmation(
+        confirmDialog.request(
           $t('gallery.forceDeleteTitle'),
           $t('gallery.forceDeleteMessage', { count: conflicts.length }),
           () => handleForceDelete(conflictFileIds)
@@ -1625,16 +1596,16 @@
 
 <!-- Confirmation Modal -->
 <ConfirmationModal
-  bind:isOpen={showConfirmModal}
-  title={confirmModalTitle}
-  message={confirmModalMessage}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
   confirmText={$t('gallery.confirmButton')}
   cancelText={$t('gallery.cancelButton')}
   confirmButtonClass="modal-delete-button"
   cancelButtonClass="modal-cancel-button"
-  on:confirm={handleConfirmModalConfirm}
-  on:cancel={handleConfirmModalCancel}
-  on:close={handleConfirmModalCancel}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <!-- Bulk Tag Modal -->

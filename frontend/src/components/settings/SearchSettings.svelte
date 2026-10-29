@@ -5,6 +5,7 @@
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import { createPoller } from '$lib/utils/poller';
   import { toastStore } from '$stores/toast';
   import ConfirmationModal from '../ConfirmationModal.svelte';
   import StatusChip from './StatusChip.svelte';
@@ -83,8 +84,8 @@
   let isStopping = false;
   let indexHealth: Record<string, IndexHealthEntry> | null = null;
   let bootstrapStatus: BootstrapStatus | null = null;
-  let bootstrapPollHandle: ReturnType<typeof setInterval> | null = null;
-  let statusPollHandle: ReturnType<typeof setInterval> | null = null;
+  const bootstrapPoller = createPoller(() => loadBootstrapStatus(), { intervalMs: 30000 });
+  const statusPoller = createPoller(() => loadStatus(), { intervalMs: 10000 });
 
   // Operator-triggered re-embed of neural-search degraded (text-only) files (issue #626,
   // the follow-up to #625's bootstrap self-heal). Preview + confirm, never dispatch-on-click.
@@ -148,8 +149,8 @@
     window.removeEventListener('reindex-progress', handleReindexProgress as EventListener);
     window.removeEventListener('reindex-complete', handleReindexComplete as EventListener);
     window.removeEventListener('reindex-stopped', handleReindexStopped as EventListener);
-    if (bootstrapPollHandle) clearInterval(bootstrapPollHandle);
-    if (statusPollHandle) clearInterval(statusPollHandle);
+    bootstrapPoller.stop();
+    statusPoller.stop();
   });
 
   // Neural search bootstrap self-heal (issue #625). The backend beat task retries every
@@ -163,11 +164,11 @@
       console.error('Failed to load neural bootstrap status:', e);
       bootstrapStatus = null;
     }
-    if (bootstrapStatus?.state === 'degraded' && !bootstrapPollHandle) {
-      bootstrapPollHandle = setInterval(loadBootstrapStatus, 30000);
-    } else if (bootstrapStatus?.state !== 'degraded' && bootstrapPollHandle) {
-      clearInterval(bootstrapPollHandle);
-      bootstrapPollHandle = null;
+    if (destroyed) return;
+    if (bootstrapStatus?.state === 'degraded') {
+      bootstrapPoller.start();
+    } else {
+      bootstrapPoller.stop();
     }
   }
 
@@ -239,8 +240,6 @@
     }
   }
 
-  const STATUS_RETRY_MS = 10000;
-
   async function loadStatus() {
     try {
       const res = await axiosInstance.get('/search/reindex/status');
@@ -254,11 +253,10 @@
     }
     // While the run state is unknown (Redis unreachable) keep asking; stop once it is known.
     if (destroyed) return;
-    if (indexStatus?.status_unavailable && !statusPollHandle) {
-      statusPollHandle = setInterval(loadStatus, STATUS_RETRY_MS);
-    } else if (!indexStatus?.status_unavailable && statusPollHandle) {
-      clearInterval(statusPollHandle);
-      statusPollHandle = null;
+    if (indexStatus?.status_unavailable) {
+      statusPoller.start();
+    } else {
+      statusPoller.stop();
     }
   }
 

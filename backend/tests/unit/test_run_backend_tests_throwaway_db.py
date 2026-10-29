@@ -82,3 +82,15 @@ def test_flag_is_consumed_by_the_prepass_not_forwarded_to_pytest(source: str) ->
     assert re.search(r"--throwaway-db\)\s*THROWAWAY_DB=true;\s*shift", prepass)
     # The re-report modes run before any container is started.
     assert source.index("--summary)  report_summary") < source.index("start_throwaway_db ||")
+
+
+def test_container_name_suffix_is_random_not_derived_from_the_checkout(source: str) -> None:
+    code = _code_lines(source)
+    start = code.index("start_throwaway_db() {")
+    body = code[start : code.index("\nif $THROWAWAY_DB", start)]
+    assert re.search(r'slug="\$\(openssl rand -hex \d+\)"', body)
+    slug_line = re.search(r"slug=.*", body)
+    assert slug_line is not None, "the slug assignment must exist"
+    for derived in ("basename", "REPO_ROOT", "PWD"):
+        assert derived not in slug_line.group(0)
+    assert "platform_args[@]" in body, "the postgres image platform must be pinned"

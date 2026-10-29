@@ -31,7 +31,7 @@
 #   ./scripts/run-backend-tests.sh --log            # path to the full log
 #   ./scripts/run-backend-tests.sh --throwaway-db [pytest args]
 #                                                   # run against a private, disposable Postgres
-#                                                   # (container ot-testdb-<worktree-slug>, tmpfs,
+#                                                   # (container ot-testdb-<random-hex>, tmpfs,
 #                                                   # loopback port from 55432 up, random password,
 #                                                   # alembic upgrade head first) so no dev stack is
 #                                                   # needed. Accepted in ANY position; everything else
@@ -325,12 +325,13 @@ fi
 port_in_use() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
 
 start_throwaway_db() {
-    local slug port pw i
+    local slug port pw i platform platform_args=()
     command -v docker >/dev/null || { echo -e "${RED}--throwaway-db needs docker${NC}" >&2; return 2; }
     command -v openssl >/dev/null || { echo -e "${RED}--throwaway-db needs openssl${NC}" >&2; return 2; }
-    # Slug from the checkout directory so two worktrees never share a container.
-    slug="$(basename "$REPO_ROOT" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n-' '-' | sed 's/^-*//; s/-*$//')"
-    THROWAWAY_CANDIDATE="ot-testdb-${slug:-main}"
+    # Random per-run suffix: a name derived from the checkout directory is wrong from a git
+    # worktree, and a fixed one would make concurrent runs collide.
+    slug="$(openssl rand -hex 4)"
+    THROWAWAY_CANDIDATE="ot-testdb-${slug}"
     if [[ -n "$(docker ps -a --filter "name=^${THROWAWAY_CANDIDATE}\$" --format '{{.Names}}')" ]]; then
         echo -e "${RED}container ${THROWAWAY_CANDIDATE} already exists; refusing to touch it." >&2
         echo -e "  If it is a stale leftover of an earlier run, stop it yourself by that exact name.${NC}" >&2
@@ -342,9 +343,15 @@ start_throwaway_db() {
         (( port < 55532 )) || { echo -e "${RED}no free port in 55432-55531${NC}" >&2; return 2; }
     done
     pw="$(openssl rand -hex 16)"
+    # Pin the image platform to the daemon's own (same idiom as gr_run_in_probe_image): a foreign
+    # -arch image left in the local store by a multi-arch build would otherwise be picked.
+    if platform="$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}' 2>/dev/null)" \
+        && [[ -n "$platform" && "$platform" != "/" ]]; then
+        platform_args=(--platform "$platform")
+    fi
     # The labels give the container its own compose-project namespace, so no project-scoped
     # command against the live stack can match it, and nothing here can match the live stack.
-    docker run -d --rm --name "$THROWAWAY_CANDIDATE" \
+    docker run -d --rm --name "$THROWAWAY_CANDIDATE" "${platform_args[@]}" \
         --label "com.docker.compose.project=${THROWAWAY_CANDIDATE}" \
         --label "org.opentranscribe.purpose=throwaway-test-db" \
         --tmpfs /var/lib/postgresql/data \

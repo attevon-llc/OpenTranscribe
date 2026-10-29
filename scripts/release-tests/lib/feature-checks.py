@@ -338,16 +338,6 @@ def policy_still_enabled(raw: str) -> Verdict:
     return PASS, 'purge refused while the switch is on'
 
 
-def stats_reranker(raw: str) -> Verdict:
-    """``GET /system/stats`` carries the passage-reranker thread row (issue #1270)."""
-    body = _load(raw)
-    system = body.get('system') if isinstance(body, dict) else None
-    row = system.get('chat_reranker_threads') if isinstance(system, dict) else None
-    if not isinstance(row, dict) or not all(k in row for k in ('threads', 'source', 'setting')):
-        return FAIL, 'system.chat_reranker_threads is absent or incomplete'
-    return PASS, f'reranker row present (source={row["source"]})'
-
-
 def aws_bucket(raw: str) -> Verdict:
     """The AWS ASR connection test names the missing bucket variable instead of reaching the network."""
     body = _load(raw)
@@ -358,6 +348,299 @@ def aws_bucket(raw: str) -> Verdict:
     if 'AWS_TRANSCRIBE_BUCKET' not in str(body.get('message', '')):
         return FAIL, 'the failure message does not name AWS_TRANSCRIBE_BUCKET'
     return PASS, 'AWS_TRANSCRIBE_BUCKET is named in the failure'
+
+
+#: The measures a voiceprint purge must report, all 0: the Postgres ones plus one per OpenSearch
+#: document kind. A purge whose status carries fewer measures verified less than it claims.
+PURGE_RESIDUAL_KEYS = (
+    'speaker_identities_machine',
+    'speaker_identity_provenance',
+    'voiceprint_suggestions',
+    'voiceprint_suggestion_details',
+    'speaker_matches',
+    'unpromoted_cluster_members',
+    'profiles_with_embeddings',
+    'speaker_docs',
+    'profile_docs',
+    'cluster_docs',
+)
+#: Log lines that mean the broken torchcodec audio backend was reached (root CLAUDE.md audio.py).
+TORCHCODEC_LOG_MARKERS = ('libtorchcodec', 'torchcodec is not installed correctly')
+V448_TASK_EXPECTED = {
+    # id: (status, error_message startswith)
+    'rehearsal-v448-A': ('failed', 'superseded by rehearsal-v448-B'),
+    'rehearsal-v448-B': ('in_progress', ''),
+    'rehearsal-v448-C': ('failed', 'superseded by rehearsal-v448-D'),
+    'rehearsal-v448-D': ('completed', ''),
+}
+COUNT_TABLES = ('media_file', 'transcript_segment', 'speaker', 'task')
+
+
+def reranker_cap(raw: str, env_setting: str = '') -> Verdict:
+    """The reranker row reports a cap that matches the deployment setting the process runs with.
+
+    ``env_setting`` is ``CHAT_RERANKER_TORCH_THREADS`` read from the backend container (empty =
+    unset = ``auto``). Presence of the row is not enough: it must be the SETTING that reached the
+    process, and the number must be a positive integer unless the operator's torch env governs.
+    """
+    body = _load(raw)
+    system = body.get('system') if isinstance(body, dict) else None
+    row = system.get('chat_reranker_threads') if isinstance(system, dict) else None
+    if not isinstance(row, dict) or not all(k in row for k in ('threads', 'source', 'setting')):
+        return FAIL, 'system.chat_reranker_threads is absent or incomplete'
+    want = (env_setting or 'auto').strip().lower()
+    if str(row['setting']).strip().lower() != want:
+        return (
+            FAIL,
+            f'process reports setting {row["setting"]!r} but the container env says {want!r}',
+        )
+    threads, source = row['threads'], row['source']
+    if source == 'torch_env':
+        if threads is not None:
+            return FAIL, 'source torch_env must report threads=null (no cap applied here)'
+        return PASS, 'OMP/TORCH_NUM_THREADS governs; no cap applied by the reranker'
+    if not isinstance(threads, int) or isinstance(threads, bool) or threads < 1:
+        return FAIL, f'threads={threads!r} is not a positive integer (source={source!r})'
+    if want.isdigit():
+        if source != 'configured' or threads != int(want):
+            return FAIL, f'setting {want} resolved to threads={threads} source={source}'
+    elif want == 'auto' and (source != 'auto' or threads > 8):
+        return FAIL, f'auto resolved to threads={threads} source={source} (ceiling is 8)'
+    return PASS, f'cap applied: threads={threads} source={source}'
+
+
+def os_labels(raw: str, name: str, mode: str) -> Verdict:
+    """The chunk index holds (``present``) or no longer holds (``absent``) a speaker label."""
+    body = _load(raw)
+    if not isinstance(body, dict) or body.get('error'):
+        return FAIL, f'probe failed: {body.get("error") if isinstance(body, dict) else raw[:80]}'
+    labels = body.get('labels')
+    if not isinstance(labels, list) or not body.get('indexed'):
+        return FAIL, 'the file has no chunk documents in the index'
+    held = name in labels
+    if mode == 'present':
+        return (
+            (PASS, 'index holds the voice-made label')
+            if held
+            else (FAIL, f'index labels {labels} lack {name!r}')
+        )
+    if mode == 'absent':
+        return (
+            (FAIL, f'index still holds {name!r}')
+            if held
+            else (PASS, f'index no longer holds the voice-made label ({labels})')
+        )
+    return FAIL, f'unknown mode {mode!r}'
+
+
+def drift_scan(raw: str, name: str, mode: str) -> Verdict:
+    """The app's own drift scan, read-only. ``drift``: the file's labels disagree; ``clean``: agree."""
+    body = _load(raw)
+    if not isinstance(body, dict) or body.get('error'):
+        return FAIL, f'probe failed: {body.get("error") if isinstance(body, dict) else raw[:80]}'
+    for key in ('scanned', 'drifted', 'expected', 'indexed'):
+        if key not in body:
+            return FAIL, f'drift probe lacks {key!r}'
+    agree = body['expected'] == body['indexed']
+    if mode == 'drift':
+        if agree or body['drifted'] < 1:
+            return (
+                FAIL,
+                f'expected a stale index but expected={body["expected"]} indexed={body["indexed"]} drifted={body["drifted"]}',
+            )
+        return PASS, f'drift detected: expected={body["expected"]} indexed={body["indexed"]}'
+    if mode == 'clean':
+        if not agree:
+            return FAIL, f'labels disagree: expected={body["expected"]} indexed={body["indexed"]}'
+        if name in body['expected'] and name not in body['indexed']:
+            return FAIL, 'voice-made label expected but not indexed'
+        return PASS, f'no drift for the file ({body["scanned"]} scanned)'
+    return FAIL, f'unknown mode {mode!r}'
+
+
+def os_seed(raw: str) -> Verdict:
+    """Unstamped speaker documents and a decoy were really written to a concrete index."""
+    body = _load(raw)
+    if not isinstance(body, dict) or body.get('error'):
+        return FAIL, f'probe failed: {body.get("error") if isinstance(body, dict) else raw[:80]}'
+    if not body.get('seeded') or not body.get('decoy'):
+        return FAIL, 'no speaker index accepted the seed documents (nothing to purge-test)'
+    return PASS, f'seeded {len(body["seeded"])} index document(s) plus a decoy'
+
+
+def os_docs(raw: str, speaker: str, decoy: str, mode: str) -> Verdict:
+    """``before``: the seeded doc and the decoy exist. ``after``: the doc is gone, the decoy stays."""
+    body = _load(raw)
+    counts = body.get('counts') if isinstance(body, dict) else None
+    if not isinstance(counts, dict) or body.get('error'):
+        return FAIL, 'count probe failed'
+    mine, other = counts.get(speaker), counts.get(decoy)
+    if mine is None or other is None:
+        return FAIL, 'a document count could not be measured (null)'
+    if mode == 'before':
+        if mine < 1 or other < 1:
+            return FAIL, f'seed control failed: speaker={mine} decoy={other}'
+        return PASS, f'seed control: speaker doc x{mine}, decoy x{other}'
+    if mine != 0:
+        return FAIL, f'{mine} document(s) of the purged speaker survive in OpenSearch'
+    if other != 1:
+        return FAIL, f'the decoy (outside the purged scope) count is {other}, expected 1'
+    return PASS, 'purged speaker documents gone from every index; out-of-scope decoy kept'
+
+
+def purge_residual_complete(raw: str) -> Verdict:
+    """The status carries every residual measure, each 0, including all three OpenSearch kinds."""
+    body = _load(raw)
+    residual = body.get('residual') if isinstance(body, dict) else None
+    if not isinstance(residual, dict):
+        return FAIL, 'status has no residual object'
+    missing = [k for k in PURGE_RESIDUAL_KEYS if k not in residual]
+    if missing:
+        return FAIL, f'residual lacks measure(s): {missing}'
+    left = {k: residual[k] for k in PURGE_RESIDUAL_KEYS if residual[k] != 0}
+    if left:
+        return FAIL, f'residual not zero: {left}'
+    return PASS, f'all {len(PURGE_RESIDUAL_KEYS)} residual measures are 0'
+
+
+def _kv(text: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for line in text.splitlines():
+        key, sep, value = line.partition('=')
+        if sep:
+            out[key.strip()] = value.strip()
+    return out
+
+
+def upgrade_counts(pre: str, post: str) -> Verdict:
+    """The upgrade ran over a POPULATED database and lost no row (counts before and after)."""
+    before, after = _kv(pre), _kv(post)
+    if not before or not after:
+        return FAIL, 'a row-count snapshot is missing'
+    report = []
+    for table in COUNT_TABLES:
+        try:
+            b, a = int(before[table]), int(after[table])
+        except (KeyError, ValueError):
+            return (
+                FAIL,
+                f'{table}: count unreadable (pre={before.get(table)!r}, post={after.get(table)!r})',
+            )
+        if b < 1:
+            return FAIL, f'{table} was empty before the upgrade: the migration ran over nothing'
+        if a < b:
+            return FAIL, f'{table} lost rows across the upgrade: {b} -> {a}'
+        report.append(f'{table} {b}->{a}')
+    return PASS, ', '.join(report)
+
+
+def backfill_consistent(raw: str, actual: str) -> Verdict:
+    """The v449 record's ``stamped`` equals the speakers that actually carry an identity_source."""
+    record = _load(raw)
+    if not isinstance(record, dict) or not isinstance(record.get('stamped'), int):
+        return FAIL, 'no readable privacy.identity_source_backfill record'
+    try:
+        found = int(_kv(actual)['identity_source_not_null'])
+    except (KeyError, ValueError):
+        return FAIL, 'post-upgrade identity_source count unreadable'
+    if found != record['stamped']:
+        return FAIL, f'record says stamped={record["stamped"]} but {found} speaker row(s) carry one'
+    return PASS, f'record and table agree: {found} stamped'
+
+
+def v448_tasks(raw: str) -> Verdict:
+    """The duplicate/superseded task rows seeded BEFORE the upgrade were resolved by v448."""
+    if raw.lstrip().startswith('('):
+        return FAIL, f'the pre-upgrade seed did not land: {raw.strip()[:120]}'
+    rows: dict[str, tuple[str, str]] = {}
+    for line in raw.splitlines():
+        parts = line.split('|', 2)
+        if len(parts) == 3:
+            rows[parts[0]] = (parts[1], parts[2])
+    for task_id, (status, prefix) in V448_TASK_EXPECTED.items():
+        got = rows.get(task_id)
+        if got is None:
+            return FAIL, f'{task_id} is gone (v448 must never delete rows)'
+        if got[0] != status or not got[1].startswith(prefix):
+            return (
+                FAIL,
+                f'{task_id}: status={got[0]!r} error={got[1]!r}, expected {status!r} {prefix!r}',
+            )
+    return PASS, 'older duplicate and superseded rows failed with the superseding id; newest kept'
+
+
+def v448_guard(raw: str, index_def: str, duplicates: str) -> Verdict:
+    """The partial UNIQUE index exists, no active duplicate remains, and a duplicate is refused."""
+    lowered = index_def.lower()
+    if 'unique' not in lowered or 'media_file_id' not in lowered or 'pending' not in lowered:
+        return (
+            FAIL,
+            f'uq_task_active_per_file_type is missing or not the partial unique index: {index_def[:100]!r}',
+        )
+    if duplicates.strip() != '0':
+        return (
+            FAIL,
+            f'{duplicates.strip()!r} (file, step) pair(s) still hold more than one active row',
+        )
+    if 'uq_task_active_per_file_type' not in raw and 'duplicate key' not in raw:
+        return FAIL, f'a second active row was NOT refused: {raw.strip()[:120]!r}'
+    return (
+        PASS,
+        'index present, no active duplicates, a duplicate insert is refused by the database',
+    )
+
+
+def gpu_probe(raw: str) -> Verdict:
+    """The worker sees CUDA, torchcodec/torchaudio import, and the app's loader avoids torchcodec."""
+    body = _load(raw)
+    if not isinstance(body, dict) or body.get('error'):
+        return FAIL, f'probe failed: {body.get("error") if isinstance(body, dict) else raw[:80]}'
+    if body.get('cuda_available') is not True or not body.get('device_name'):
+        return (
+            FAIL,
+            f'the worker sees no CUDA device ({body.get("torch_error") or "cuda_available false"})',
+        )
+    for key in ('torchcodec_import', 'torchaudio_import'):
+        if body.get(key) != 'ok':
+            return FAIL, f'{key}: {body.get(key)!r}'
+    if body.get('audio_samples') != 16000:
+        return (
+            FAIL,
+            f'the app audio loader returned {body.get("audio_samples")!r} samples ({body.get("audio_error")})',
+        )
+    if body.get('app_loader_pulled_torchcodec') is not False:
+        return FAIL, 'the app audio loader imported torchcodec'
+    return (
+        PASS,
+        f'CUDA on {body["device_name"]}; torchcodec/torchaudio import; loader avoids torchcodec',
+    )
+
+
+def pipeline_evidence(raw: str) -> Verdict:
+    """``status|segments|speakers|provider`` of the newest transcribed file: a real GPU pipeline run."""
+    parts = raw.strip().split('|')
+    if len(parts) != 4:
+        return FAIL, f'no completed transcription found ({raw.strip()[:80]!r})'
+    status, segments, speakers, provider = parts
+    if status.lower() != 'completed':
+        return FAIL, f'file status is {status!r}'
+    if not segments.isdigit() or int(segments) < 1:
+        return FAIL, f'{segments!r} transcript segments'
+    if not speakers.isdigit() or int(speakers) < 1:
+        return FAIL, f'{speakers!r} diarized speakers'
+    if not provider:
+        return FAIL, 'diarization_provider is empty: diarization never resolved an engine'
+    return PASS, f'{segments} segments, {speakers} speakers, diarized by {provider}'
+
+
+def worker_log_clean(text: str) -> Verdict:
+    """The worker log never reports the broken torchcodec backend."""
+    hits = [ln for ln in text.splitlines() if any(m in ln.lower() for m in TORCHCODEC_LOG_MARKERS)]
+    if hits:
+        return FAIL, f'{len(hits)} torchcodec error line(s), first: {hits[0][:160]}'
+    if not text.strip():
+        return FAIL, 'the worker log is empty, so nothing was checked'
+    return PASS, 'no torchcodec failure in the worker log'
 
 
 PREDICATES: dict[str, Callable[..., Verdict]] = {
@@ -376,13 +659,27 @@ PREDICATES: dict[str, Callable[..., Verdict]] = {
     'post-processing': post_processing,
     'pp-settled': pp_settled,
     'policy-still-enabled': policy_still_enabled,
-    'stats-reranker': stats_reranker,
     'aws-bucket': aws_bucket,
+    'reranker-cap': reranker_cap,
+    'os-labels': os_labels,
+    'drift-scan': drift_scan,
+    'os-seed': os_seed,
+    'os-docs': os_docs,
+    'purge-residual-complete': purge_residual_complete,
+    'upgrade-counts': upgrade_counts,
+    'backfill-consistent': backfill_consistent,
+    'v448-tasks': v448_tasks,
+    'v448-guard': v448_guard,
+    'gpu-probe': gpu_probe,
+    'pipeline-evidence': pipeline_evidence,
+    'worker-log-clean': worker_log_clean,
 }
 #: Predicates whose first argument is the stdin document rather than a positional argument.
 STDIN_FIRST = {
     "columns", "backfill-record", "privacy-policy", "effective", "speaker-name", "purge-status",
-    "purge-terminal", "audit-search", "sse-ready", "post-processing", "pp-settled", "policy-still-enabled", "stats-reranker", "aws-bucket",
+    "purge-terminal", "audit-search", "sse-ready", "post-processing", "pp-settled", "policy-still-enabled", "aws-bucket",
+    "reranker-cap", "os-labels", "drift-scan", "os-seed", "os-docs", "purge-residual-complete", "backfill-consistent",
+    "v448-tasks", "v448-guard", "gpu-probe", "pipeline-evidence", "worker-log-clean",
 }  # fmt: skip
 
 
@@ -396,8 +693,13 @@ def main(argv: list[str]) -> int:
     name, args = argv[1], argv[2:]
     if name in STDIN_FIRST:
         args = [sys.stdin.read(), *args]
-    elif name == 'display-names':
+    elif name in ('display-names', 'upgrade-counts'):
         args = [Path(a).read_text(encoding='utf-8') if Path(a).exists() else '' for a in args]
+    if name == 'backfill-consistent' and len(args) > 1:
+        args = [
+            args[0],
+            Path(args[1]).read_text(encoding='utf-8') if Path(args[1]).exists() else '',
+        ]
     try:
         code, detail = PREDICATES[name](*args)
     except (TypeError, ValueError, IndexError, OSError) as exc:

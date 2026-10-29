@@ -95,17 +95,29 @@ part of the existing rehearse outcome. Resumable like every phase (`.phase/<n>.d
 | `fc_check_schema_and_head` | DB at the alembic head derived from the graph (floor v449) and the five v449 `speaker` columns | yes | yes | yes |
 | `fc_check_upgrade_backfill` | `system_settings` `privacy.identity_source_backfill` recorded; pre-upgrade speakers kept `display_name` | no | yes | no |
 | `fc_check_privacy_api` | `GET/PUT /admin/privacy-policy` round trip (and 422s), `GET /privacy/effective` shape | yes | yes | yes |
-| `fc_check_system_stats` | `/system/stats` carries the reranker row | yes | yes | yes |
+| `fc_check_system_stats` | `/system/stats` carries the reranker row AND its `setting` equals `CHAT_RERANKER_TORCH_THREADS` read from the backend container's env, with a positive integer cap (or `null` only under `torch_env`) | yes | yes | yes |
 | `fc_check_org_endpoints_404` | organization routes answer 404 on a community install | yes | yes | yes |
 | `fc_check_aws_bucket_message` | AWS ASR test with no bucket fails naming `AWS_TRANSCRIBE_BUCKET` | yes | yes | yes |
 | `fc_check_post_processing` | every notification stage is terminal and not failed; Gender row `skipped` when attributes pre-exist | yes | yes | yes |
 | `fc_check_exports` | txt/json/csv/srt/vtt/md and docx/pdf (via the job stream) are real files (magic bytes, headings) | yes | yes | yes |
 | `fc_check_voiceprints_toggle` | voiceprints off hides a voice-made name, on restores it (seeded by SQL, row restored after) | yes | yes | no |
-| `fc_check_audited_purge` | purge refused while on (409), then accepted; per-store counts, `residual_ok`, audit reference and audit-store event; name reverted | yes | yes | no |
+| `fc_check_label_index_resync` | on the REAL chunk index (`lib/os-probe.py` inside the backend container): a SQL-only name change is seen by the app's own drift scan; hiding then showing voiceprints makes the label leave then re-enter the index through the actual resync worker, and the drift scan is clean after each | yes | yes | no |
+| `fc_check_audited_purge` | purge refused while on (409), then accepted; per-store counts, `residual_ok`, audit reference and audit-store event; name reverted. Also on real OpenSearch: an UNSTAMPED speaker document is gone from every index afterwards, a decoy outside the scope stays, and the status residual names all ten measures (incl. speaker/profile/cluster docs), each 0 | yes | yes | no |
+| `fc_check_upgrade_populated` | the upgrade ran over a populated database: row counts of media_file, transcript_segment, speaker and task before and after (none empty before, none lost); the v449 record's `stamped` equals the speakers carrying an `identity_source`; v448 resolved duplicate and superseded active `task` rows seeded BEFORE the upgrade (older failed `superseded by <id>`, newest kept, nothing deleted), the unique index exists, no active duplicate remains and a second one is refused | no | yes | no |
+| `fc_check_gpu_pipeline` | the worker container sees CUDA and allocates on it, `torchcodec` and `torchaudio` import, the app's audio loader never imports torchcodec, the newest completed file has segments, speakers and a diarization engine, and the worker log holds no torchcodec failure. Fails (never skips) when `TEST_USE_GPU=true` and the card is not visible; records an explicit SKIP only for the documented `--cpu` opt-out | yes | yes | no |
+
+`lib/os-probe.py` is piped into `docker exec -i <container> python -` by `fc_probe`: it reads the stores the API does not expose (chunk and speaker indices, the worker's CUDA and audio stack) and prints one JSON object; every verdict is still a predicate in `feature-checks.py`. `FC_SELFTEST_VERBOSE=1 selftest-feature-checks.sh` prints the FAIL lines of any control that misbehaved.
 
 What it does **not** prove: no real voiceprint match is driven (the name is seeded), the audit-store
 readback and the "attributes pre-exist" branch SKIP where the deployment cannot exercise them, and the
-lite scenario skips the two mutating checks. Decisions live in `lib/feature-checks.py` (a good and a bad
+lite scenario skips the mutating checks, the GPU check and the populated-upgrade check. Also not proven:
+the chunk-index relabel is driven through the instance voiceprint switch only (the user and
+organization switches share the code but are not flipped here); the purge check removes documents it
+seeds itself, never a real embedding it did not write; the reranker cap is compared with the live
+setting, not timed (latency is `app/scripts/benchmark_reranker_threads.py`); the GPU check does not
+compare transcript text with a reference (quality is `benchmark_rag`/the DER gates); the v448 index
+build is exercised on a corpus of a few rows, so its lock time on a large `task` table is unmeasured.
+Decisions live in `lib/feature-checks.py` (a good and a bad
 case each: `backend/tests/unit/test_release_feature_checks.py`); `selftest-feature-checks.sh` runs every
 check against an in-memory backend model, clean and then with one defect injected at a time.
 

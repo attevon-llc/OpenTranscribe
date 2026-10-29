@@ -41,24 +41,30 @@ concurrency:
   # rather than relying on that.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Granted per job; nothing here writes to the repo, PRs or issues.
+permissions: {}
+
 jobs:
   pre-commit:
     name: Run Pre-commit Hooks
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: '3.13'
           cache: 'pip'
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version-file: frontend/.nvmrc
           cache: 'npm'
@@ -75,7 +81,7 @@ jobs:
           pip install pre-commit
 
       - name: Cache pre-commit environments
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: ~/.cache/pre-commit
           key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
@@ -133,19 +139,26 @@ jobs:
   changes:
     name: Detect changed areas
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # dorny/paths-filter lists the changed files through the pulls API on pull_request.
+      pull-requests: read
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: dorny/paths-filter@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d  # v4.0.3
         id: filter
         with:
           filters: |
             backend:
               - 'backend/**'
               - 'requirements*.txt'
-              - '.github/workflows/pre-commit.yml'
+              - '.github/workflows/**'
+              - '.github/zizmor.yml'
               - 'alembic.ini'
               # ⚠️ The four entries below are NOT incidental (issue #793).
               #
@@ -186,16 +199,20 @@ jobs:
   requirements-resolve:
     name: Requirements resolve
     needs: changes
+    permissions:
+      contents: read
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       # 3.13 to match the images; a different minor can resolve differently.
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: '3.13'
 
@@ -212,6 +229,8 @@ jobs:
     # which remains the pre-merge source of truth.
     name: Backend Tests (pytest)
     needs: changes
+    permissions:
+      contents: read
     # ~17 min, dominated by installing CPU torch wheels and the FIPS security suites.
     # A docs- or frontend-only PR cannot change its outcome, so don't pay for it.
     if: needs.changes.outputs.backend == 'true'
@@ -222,7 +241,7 @@ jobs:
     timeout-minutes: 45
     services:
       postgres:
-        image: postgres:16
+        image: postgres:17.5-alpine # same tag as docker-compose.yml; test_workflows_pinned.py enforces it
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -248,10 +267,12 @@ jobs:
       TEMP_DIR: /tmp/ci-temp
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: '3.13'
           cache: 'pip'
@@ -376,14 +397,18 @@ jobs:
   frontend-tests:
     name: Frontend Unit Tests (Vitest)
     needs: changes
+    permissions:
+      contents: read
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version-file: frontend/.nvmrc
           cache: 'npm'
@@ -401,9 +426,15 @@ jobs:
         working-directory: frontend
         run: npm run check:i18n
 
-      - name: Run Vitest
+      # Runs the suite WITH coverage so the ratchet floors in frontend/vitest.config.ts
+      # are evaluated here; plain `npm run test` never checks them.
+      - name: Run Vitest with coverage
         working-directory: frontend
-        run: npm run test
+        # `npm run test` gets `svelte-kit sync` from its pretest hook; test:coverage has no
+        # such hook, and without the generated .svelte-kit/tsconfig.json vitest cannot start.
+        run: |
+          npx svelte-kit sync
+          npm run test:coverage
 
       # Self-test FIRST: the auditor's detectors are themselves code that can silently stop
       # matching, and a broken detector is indistinguishable from a clean suite.

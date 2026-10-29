@@ -26,8 +26,27 @@ name: Security Scanning
 # The SARIF steps stay report-only on purpose: they exist to populate the
 # Security tab, and a failing scan step must not cost us the upload.
 
+# SCHEDULED RUNS (weekly) vs MANUAL RUNS
+#
+# On `schedule`, `inputs.component` is empty and `github.event_name` is 'schedule'. The two
+# image jobs are guarded by `github.event_name == 'workflow_dispatch' && ...`, so they skip on a
+# scheduled run: GitHub-hosted runners cannot build the 13.8 GB backend image. What runs weekly is
+# the cheap, repo-level set: Dockerfile lint, `dependency-scan` (trivy fs + config) and
+# `dependency-audit` (pip-audit, npm audit). Image scanning stays manual and is gated at release by
+# scripts/release/50-scan.sh. backend/tests/unit/test_security_scan_schedule.py evaluates these
+# conditions per event, because `gh workflow run` cannot fake a schedule event.
+#
+# REPORT-ONLY AT ADOPTION. On a scheduled run the Trivy gate steps run with continue-on-error, so a
+# finding is reported (artifact + step summary) without turning the schedule red. A manual dispatch
+# keeps the hard gates. RATCHET: once the known fixable CRITICAL findings are fixed or ignored with
+# a written reason and an expiry date, delete the `continue-on-error` lines on the gate steps so the
+# schedule blocks too. Every scan job uploads its report as an artifact kept for 30 days.
+
 on:
-  workflow_dispatch:  # Manual triggering ONLY - automatic runs disabled
+  schedule:
+    # Mondays 05:23 UTC.
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
     inputs:
       component:
         description: 'Component to scan (backend, frontend, or all)'
@@ -38,46 +57,42 @@ on:
           - all
           - backend
           - frontend
-  # Automatic runs disabled - security scanning now handled by local build-all script
-  # GitHub runners have insufficient memory/disk space for Docker image builds (13.8GB backend)
-  # Re-enable when GitHub plan supports larger runner instances
-  # push:
-  #   branches: [master, main, develop]
-  #   paths:
-  #     - 'backend/**'
-  #     - 'frontend/**'
-  #     - '**/Dockerfile*'
-  #     - '.github/workflows/security-scan.yml'
-  # pull_request:
-  #   branches: [master, main, develop]
-  #   paths:
-  #     - 'backend/**'
-  #     - 'frontend/**'
-  #     - '**/Dockerfile*'
-  #     - '.github/workflows/security-scan.yml'
-  # schedule:
-  #   # Run weekly security scans on Sundays at 00:00 UTC
-  #   - cron: '0 0 * * 0'
+  # push / pull_request stay off: the image build does not fit a GitHub-hosted runner
+  # (13.8 GB backend). PR-time dependency checks live in other workflows.
+
+# Granted per job.
+permissions: {}
+
+# `shell: bash` makes GitHub run `bash -eo pipefail`; the default `bash -e` lets
+# `cmd | tee file` exit 0 when `cmd` failed.
+defaults:
+  run:
+    shell: bash
 
 jobs:
   dockerfile-lint:
     name: Lint Dockerfiles
     runs-on: ubuntu-latest
+    timeout-minutes: 10  # two hadolint runs
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Run Hadolint on backend Dockerfile
-        if: inputs.component == 'all' || inputs.component == 'backend'
-        uses: hadolint/hadolint-action@v3.5.0
+        if: github.event_name == 'schedule' || inputs.component == 'all' || inputs.component == 'backend'
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387  # v3.5.0
         with:
           dockerfile: backend/Dockerfile.prod
           config: .hadolint.yaml
           failure-threshold: warning
 
       - name: Run Hadolint on frontend Dockerfile
-        if: inputs.component == 'all' || inputs.component == 'frontend'
-        uses: hadolint/hadolint-action@v3.5.0
+        if: github.event_name == 'schedule' || inputs.component == 'all' || inputs.component == 'frontend'
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387  # v3.5.0
         with:
           dockerfile: frontend/Dockerfile.prod
           config: .hadolint.yaml
@@ -85,20 +100,23 @@ jobs:
 
   build-and-scan-backend:
     name: Build & Scan Backend
-    if: inputs.component == 'all' || inputs.component == 'backend'
+    timeout-minutes: 120  # 13.8 GB image build + Trivy, Dockle, Syft, Grype
+    if: github.event_name == 'workflow_dispatch' && (inputs.component == 'all' || inputs.component == 'backend')
     runs-on: ubuntu-latest
     permissions:
       contents: read
       security-events: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
 
       - name: Build backend image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
           context: ./backend
           file: ./backend/Dockerfile.prod
@@ -110,7 +128,7 @@ jobs:
       # Report-only by design: this step's job is to produce the SARIF the next
       # step uploads. Gating here would trade the Security tab for a red X.
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@v0.36.0  # pinned (#792): @master floats inside the job that gates releases
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           image-ref: opentranscribe-backend:${{ github.sha }}
           format: 'sarif'
@@ -118,7 +136,7 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM'
 
       - name: Upload Trivy results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370  # v4.39.1
         if: always()
         with:
           sarif_file: 'trivy-backend-results.sarif'
@@ -127,14 +145,14 @@ jobs:
       # THE GATE. Prints everything CRITICAL..MEDIUM for the human reading the
       # log, and fails only on CRITICAL with a published fix.
       - name: Run Trivy vulnerability scanner (table output)
-        uses: aquasecurity/trivy-action@v0.36.0  # pinned (#792): @master floats inside the job that gates releases
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           image-ref: opentranscribe-backend:${{ github.sha }}
           format: 'table'
           severity: 'CRITICAL,HIGH,MEDIUM'
 
       - name: Fail on fixable CRITICAL CVEs (Trivy)
-        uses: aquasecurity/trivy-action@v0.36.0  # pinned (#792): @master floats inside the job that gates releases
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           image-ref: opentranscribe-backend:${{ github.sha }}
           format: 'table'
@@ -146,21 +164,21 @@ jobs:
       # which is a compose concern here. FATAL is "runs as root" / "credentials
       # baked into the image".
       - name: Run Dockle
-        uses: erzz/dockle-action@v1
+        uses: erzz/dockle-action@e8a7c41f36f1236ca3282b298d425ffbfdb2e922  # v1.4.1
         with:
           image: opentranscribe-backend:${{ github.sha }}
           exit-code: '1'
           failure-threshold: fatal
 
       - name: Generate SBOM with Syft
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
         with:
           image: opentranscribe-backend:${{ github.sha }}
           artifact-name: backend-sbom.spdx.json
           output-file: backend-sbom.spdx.json
 
       - name: Scan SBOM with Grype
-        uses: anchore/scan-action@v7
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2  # v7.4.0
         with:
           sbom: backend-sbom.spdx.json
           fail-build: true
@@ -168,29 +186,33 @@ jobs:
           only-fixed: true
 
       - name: Upload SBOM artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: always()
         with:
           name: backend-sbom
           path: backend-sbom.spdx.json
           retention-days: 90
+          if-no-files-found: error
 
   build-and-scan-frontend:
     name: Build & Scan Frontend
-    if: inputs.component == 'all' || inputs.component == 'frontend'
+    timeout-minutes: 60  # image build + the same scanners
+    if: github.event_name == 'workflow_dispatch' && (inputs.component == 'all' || inputs.component == 'frontend')
     runs-on: ubuntu-latest
     permissions:
       contents: read
       security-events: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
 
       - name: Build frontend image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
           context: ./frontend
           file: ./frontend/Dockerfile.prod
@@ -200,7 +222,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@v0.36.0  # pinned (#792): @master floats inside the job that gates releases
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           image-ref: opentranscribe-frontend:${{ github.sha }}
           format: 'sarif'
@@ -208,21 +230,21 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM'
 
       - name: Upload Trivy results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370  # v4.39.1
         if: always()
         with:
           sarif_file: 'trivy-frontend-results.sarif'
           category: 'trivy-frontend'
 
       - name: Run Trivy vulnerability scanner (table output)
-        uses: aquasecurity/trivy-action@v0.36.0  # pinned (#792): @master floats inside the job that gates releases
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           image-ref: opentranscribe-frontend:${{ github.sha }}
           format: 'table'
           severity: 'CRITICAL,HIGH,MEDIUM'
 
       - name: Fail on fixable CRITICAL CVEs (Trivy)
-        uses: aquasecurity/trivy-action@v0.36.0  # pinned (#792): @master floats inside the job that gates releases
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           image-ref: opentranscribe-frontend:${{ github.sha }}
           format: 'table'
@@ -231,21 +253,21 @@ jobs:
           exit-code: '1'
 
       - name: Run Dockle
-        uses: erzz/dockle-action@v1
+        uses: erzz/dockle-action@e8a7c41f36f1236ca3282b298d425ffbfdb2e922  # v1.4.1
         with:
           image: opentranscribe-frontend:${{ github.sha }}
           exit-code: '1'
           failure-threshold: fatal
 
       - name: Generate SBOM with Syft
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
         with:
           image: opentranscribe-frontend:${{ github.sha }}
           artifact-name: frontend-sbom.spdx.json
           output-file: frontend-sbom.spdx.json
 
       - name: Scan SBOM with Grype
-        uses: anchore/scan-action@v7
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2  # v7.4.0
         with:
           sbom: frontend-sbom.spdx.json
           fail-build: true
@@ -253,24 +275,79 @@ jobs:
           only-fixed: true
 
       - name: Upload SBOM artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: always()
         with:
           name: frontend-sbom
           path: frontend-sbom.spdx.json
           retention-days: 90
+          if-no-files-found: error
 
   dependency-scan:
     # Repo-wide (lock files and compose/Dockerfile config), so it runs for every
-    # `component` choice.
+    # `component` choice and on the weekly schedule.
     name: Scan Dependencies
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Report files for the artifact. exit-code stays '0' here; the gate steps below decide.
+      - name: Trivy repository report (JSON)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'json'
+          output: 'trivy-fs.json'
+          severity: 'CRITICAL,HIGH'
+          skip-dirs: 'node_modules,venv,.venv'
+
+      - name: Trivy config report (JSON)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          format: 'json'
+          output: 'trivy-config.json'
+          severity: 'CRITICAL,HIGH'
+          skip-dirs: 'node_modules,venv,.venv'
+
+      - name: Summarize Trivy reports
+        run: |
+          {
+            echo "## Trivy repository scan"
+            echo
+            echo "| Scan | CRITICAL | HIGH |"
+            echo "|---|---|---|"
+            for pair in "dependencies:trivy-fs.json:.Results[]?.Vulnerabilities[]?" \
+                        "secrets:trivy-fs.json:.Results[]?.Secrets[]?" \
+                        "misconfiguration:trivy-config.json:.Results[]?.Misconfigurations[]?"; do
+              name="${pair%%:*}"; rest="${pair#*:}"; file="${rest%%:*}"; path="${rest#*:}"
+              crit=$(jq "[$path | select(.Severity==\"CRITICAL\")] | length" "$file")
+              high=$(jq "[$path | select(.Severity==\"HIGH\")] | length" "$file")
+              echo "| $name | $crit | $high |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Trivy reports
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: always()
+        with:
+          name: dependency-scan
+          path: |
+            trivy-fs.json
+            trivy-config.json
+          retention-days: 30
+          if-no-files-found: error
 
       - name: Run Trivy vulnerability scanner on repository
-        uses: aquasecurity/trivy-action@v0.36.0  # pinned (#792): @master floats inside the job that gates releases
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           scan-type: 'fs'
           scan-ref: '.'
@@ -278,8 +355,10 @@ jobs:
           severity: 'CRITICAL,HIGH'
           skip-dirs: 'node_modules,venv,.venv'
 
+      # Gate on a manual dispatch, report-only on the schedule (see the header: ratchet).
       - name: Fail on fixable CRITICAL dependency CVEs
-        uses: aquasecurity/trivy-action@v0.36.0  # pinned (#792): @master floats inside the job that gates releases
+        continue-on-error: ${{ github.event_name == 'schedule' }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           scan-type: 'fs'
           scan-ref: '.'
@@ -290,7 +369,7 @@ jobs:
           skip-dirs: 'node_modules,venv,.venv'
 
       - name: Run Trivy config scanner
-        uses: aquasecurity/trivy-action@v0.36.0  # pinned (#792): @master floats inside the job that gates releases
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           scan-type: 'config'
           scan-ref: '.'
@@ -301,7 +380,8 @@ jobs:
       # `ignore-unfixed` is meaningless for misconfiguration: every finding is
       # fixable by editing the file it points at.
       - name: Fail on CRITICAL misconfiguration
-        uses: aquasecurity/trivy-action@v0.36.0  # pinned (#792): @master floats inside the job that gates releases
+        continue-on-error: ${{ github.event_name == 'schedule' }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           scan-type: 'config'
           scan-ref: '.'
@@ -314,15 +394,25 @@ jobs:
     # REPORT-ONLY, deliberately and visibly: both tools below swallow their exit
     # code and emit ::warning::. They are advisory feeds with a different noise
     # profile from Trivy/Grype, and the summary labels this job as report-only so
-    # a green result is not read as "no advisories".
+    # a green result is not read as "no advisories". RATCHET: drop the `|| echo`
+    # fallbacks once the known advisories are fixed or ignored with a reason.
+    # A crashed tool is NOT a finding: after each tool the step checks the report
+    # has the expected key with `jq -e` and fails the job (on a schedule too) if
+    # not. `if-no-files-found: error` alone cannot do this: it only fires when NO
+    # file matches, and the npm redirect always creates its file.
     name: Dependency Audit (npm + pip)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version-file: frontend/.nvmrc
           cache: 'npm'
@@ -332,23 +422,57 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
-          npm audit --audit-level=moderate || echo "::warning::npm audit found moderate+ advisories (non-blocking; review the report)"
+          npm audit --json > "$GITHUB_WORKSPACE/npm-audit.json" || echo "::warning::npm audit found advisories (non-blocking; see the dependency-audit artifact)"
+          jq -e '.metadata.vulnerabilities' "$GITHUB_WORKSPACE/npm-audit.json" > /dev/null \
+            || { echo "::error::npm audit produced no usable report (the tool crashed; this is not a finding)"; exit 1; }
+          {
+            echo "## npm audit (frontend)"
+            echo
+            jq -r '.metadata.vulnerabilities | to_entries[] | "- \(.key): \(.value)"' "$GITHUB_WORKSPACE/npm-audit.json"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: '3.13'
 
+      # Exact versions: an unpinned install is flagged by Scorecard and is a moving supply-chain input.
+      - name: Install pip-audit
+        run: python -m pip install "pip==26.2.2" "pip-audit==2.10.1"
+
+      # One resolution of requirements.txt: the markdown table is rendered from the JSON report.
       - name: pip-audit (backend)
         run: |
-          python -m pip install --upgrade pip pip-audit
-          pip-audit -r backend/requirements.txt || echo "::warning::pip-audit found advisories (non-blocking; review the report)"
+          pip-audit -r backend/requirements.txt -f json -o pip-audit.json || echo "::warning::pip-audit found advisories or failed (non-blocking for findings; see the dependency-audit artifact)"
+          jq -e '.dependencies' pip-audit.json > /dev/null \
+            || { echo "::error::pip-audit produced no usable report (the tool crashed; this is not a finding)"; exit 1; }
+          {
+            echo "## pip-audit (backend/requirements.txt)"
+            echo
+            echo "| Package | Version | Advisory | Fixed in |"
+            echo "|---|---|---|---|"
+            jq -r '.dependencies[] | select((.vulns | length) > 0) | .name as $n | .version as $v | .vulns[] | "| \($n) | \($v) | \(.id) | \(.fix_versions | join(", ")) |"' pip-audit.json
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload audit reports
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: always()
+        with:
+          name: dependency-audit
+          path: |
+            npm-audit.json
+            pip-audit.json
+          retention-days: 30
+          if-no-files-found: error
 
   summary:
     name: Security Scan Summary
     runs-on: ubuntu-latest
+    timeout-minutes: 5  # renders needs.*.result only
     needs: [dockerfile-lint, build-and-scan-backend, build-and-scan-frontend, dependency-scan, dependency-audit]
     if: always()
+    # Only renders needs.*.result into the step summary; no checkout, no API calls.
+    permissions: {}
     steps:
       # This step used to echo a fixed list of ✅ lines. It read the result of
       # nothing, so it reported success for jobs that had failed and for jobs
@@ -358,6 +482,7 @@ jobs:
       - name: Report actual job results
         env:
           COMPONENT: ${{ inputs.component }}
+          EVENT_NAME: ${{ github.event_name }}
           R_LINT: ${{ needs.dockerfile-lint.result }}
           R_BACKEND: ${{ needs.build-and-scan-backend.result }}
           R_FRONTEND: ${{ needs.build-and-scan-frontend.result }}
@@ -379,7 +504,7 @@ jobs:
           {
             echo "## Security Scan Summary"
             echo
-            echo "Component requested: \`${COMPONENT}\`"
+            echo "Event: \`${EVENT_NAME}\`, component requested: \`${COMPONENT:-n/a (scheduled)}\`"
             echo
             echo "| Job | Result |"
             echo "|---|---|"
@@ -393,12 +518,14 @@ jobs:
             echo
             echo "- Gating: Trivy **CRITICAL and fixable**, Dockle **FATAL**, Grype **critical, fixed-only**."
             echo "- Not gating: HIGH/MEDIUM findings, unfixable CRITICALs, and the whole dependency-audit job."
+            echo "- Scheduled runs are report-only: the Trivy gates run with continue-on-error there."
             echo "- \`⊘ did not run\` means the component filter excluded it — it was **not** scanned."
             echo
             echo "### Reports"
             echo
             echo "- SBOM artifacts uploaded for each scanned component"
-            echo "- Trivy results uploaded to the GitHub Security tab"
+            echo "- dependency-scan and dependency-audit artifacts (JSON) on every run"
+            echo "- Image Trivy results uploaded to the GitHub Security tab (manual runs)"
           } >> "$GITHUB_STEP_SUMMARY"
 
           failed=""

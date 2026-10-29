@@ -25,6 +25,8 @@ updates:
     directory: "/frontend"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       frontend:
@@ -64,6 +66,8 @@ updates:
     directory: "/backend"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       backend:
@@ -172,6 +176,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     groups:
       github-actions:
         applies-to: version-updates
@@ -187,6 +193,8 @@ updates:
     directory: "/backend"
     schedule:
       interval: "monthly"
+    cooldown:
+      default-days: 7
     groups:
       backend-docker:
         applies-to: version-updates
@@ -222,6 +230,8 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    cooldown:
+      default-days: 7
     groups:
       root-docker:
         applies-to: version-updates
@@ -236,6 +246,8 @@ updates:
     directory: "/frontend"
     schedule:
       interval: "monthly"
+    cooldown:
+      default-days: 7
     groups:
       frontend-docker:
         applies-to: version-updates
@@ -256,6 +268,8 @@ updates:
     directory: "/docs-site"
     schedule:
       interval: "monthly"
+    cooldown:
+      default-days: 7
     groups:
       docs-docker:
         applies-to: version-updates
@@ -276,6 +290,8 @@ updates:
     directory: "/docs-site"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       docs:

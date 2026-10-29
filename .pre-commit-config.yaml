@@ -317,6 +317,27 @@ repos:
         language: system
         pass_filenames: false
         files: ^((backend|scripts)/.*\.py|frontend/src/.*\.(ts|js|svelte)|scripts/guards/.*)$
+      - id: guard-migration-safety
+        name: alembic migrations avoid table-locking operations (baselined)
+        entry: python3 scripts/guards/check_migration_safety.py
+        language: system
+        pass_filenames: false
+        files: ^(backend/alembic/versions/.*\.py|scripts/guards/.*)$
+      # Offline leg only (npm lockfile); the Python leg needs a resolver run and lives in CI.
+      - id: license-gate-npm
+        name: npm dependency licences stay within the permissive-only policy
+        entry: bash -c '{ [ -d frontend/node_modules ] || (cd frontend && npm ci); } && python3 scripts/check-licenses.py --npm-only'
+        language: system
+        pass_filenames: false
+        files: ^(frontend/package(-lock)?\.json|scripts/(check-licenses\.py|licenses-allowlist\.txt|lib/license_.*\.py))$
+      # --offline: the online audits need a token and make the hook depend on the network.
+      - id: zizmor
+        name: GitHub Actions workflows pass the zizmor security audit
+        entry: zizmor --offline --min-severity low .github
+        language: python
+        additional_dependencies: ['zizmor==1.31.1']
+        pass_filenames: false
+        files: ^\.github/(workflows/.*\.ya?ml|zizmor\.yml)$
       # Runs ruff itself, so it needs ruff importable by the interpreter that runs it, and the
       # guard refuses any version but the one pinned in backend/requirements-dev.txt.
       # language: python gives it its own env with exactly that pin (the pre-commit CI job

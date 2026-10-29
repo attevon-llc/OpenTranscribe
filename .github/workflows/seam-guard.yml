@@ -35,16 +35,19 @@ on:
   # until then, and enabling the queue first is how a repo bricks its own merges.
   merge_group:
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   no-vendor-nouns:
     name: No Clerk/Stripe in OSS backend or frontend
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Assert backend/app is free of cloud-vendor nouns
         run: |

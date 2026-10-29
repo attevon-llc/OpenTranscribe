@@ -1,0 +1,33 @@
+# zizmor configuration. Every entry is an exception and needs a written reason.
+# Entries are scoped to individual lines so a NEW finding in a fenced file is not hidden.
+# They go stale if the file is edited above them: re-run zizmor and move or delete them.
+rules:
+  unpinned-uses:
+    ignore:
+      # Fenced: release-validate.yml is edited only by the release workstream, so its
+      # action pins land after the release. Remove these when the pins are applied
+      # (the FENCED table in backend/tests/unit/test_workflows_pinned.py shrinks with it).
+      - release-validate.yml:83
+      - release-validate.yml:89
+      - release-validate.yml:162
+      - release-validate.yml:204
+      - release-validate.yml:205
+      - release-validate.yml:261
+      - release-validate.yml:262
+  artipacked:
+    ignore:
+      # Fenced: same reason; persist-credentials: false lands with the pins.
+      - release-validate.yml:82
+      - release-validate.yml:161
+      - release-validate.yml:204
+      - release-validate.yml:261
+  cache-poisoning:
+    ignore:
+      # Fenced: the setup-node cache finding is for the release workstream to resolve
+      # (cache off, or accepted with a reason) when it edits that file.
+      - release-validate.yml:262
+  excessive-permissions:
+    ignore:
+      # Fenced: docker-publish.yml is a retired stub owned by the release workstream;
+      # its top-level permissions: {} lands after the release.
+      - docker-publish.yml:61

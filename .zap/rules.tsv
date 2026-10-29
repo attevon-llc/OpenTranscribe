@@ -1,0 +1,28 @@
+# ZAP baseline rule actions for scripts/zap-baseline.sh.
+# Columns are tab separated: rule id, IGNORE|WARN|FAIL, (reason).
+# Rules not listed use ZAP's default (WARN).
+#
+# KNOWN FINDING (do not "fix" by editing this file): the shipped production stack sends
+# Strict-Transport-Security and X-Frame-Options TWICE, once from the outer nginx
+# (nginx/site.conf.template server block) and once from the frontend nginx behind it
+# (frontend/nginx.conf), because no proxy_hide_header is set. ZAP reports that as
+# 10035 (alert 10035-3, multiple HSTS entries) and 10020 (alert 10020-2, multiple
+# X-Frame-Options entries). Both rules are WARN until a separate change removes the
+# duplicate; then set them back to FAIL. This file keys on plugin ids; whether ZAP's
+# config accepts the "-3" / "-2" alert-ref suffixes is UNVERIFIED, so they are not used.
+#
+# The baseline is unauthenticated, so the cookie rules (10010, 10011, 10054) only fire if
+# the crawl is handed a Set-Cookie; they do not prove the login cookies are safe.
+10020	WARN	(duplicate X-Frame-Options headers from two nginx layers until fixed; back to FAIL once the outer location hides the inner header)
+10021	FAIL	(X-Content-Type-Options: nginx sets nosniff on every response)
+10035	WARN	(duplicate Strict-Transport-Security headers from two nginx layers until fixed; back to FAIL once the outer location hides the inner header)
+10036	FAIL	(Server version leak: nginx runs with server_tokens off)
+10037	FAIL	(X-Powered-By leak: no component should emit it)
+10038	FAIL	(Content-Security-Policy header must be present)
+10010	WARN	(cookie without HttpOnly: csrf_token is script-readable by design and ZAP cannot know that, so a crawl that sees it raises this; an unauthenticated crawl sets no cookies at all)
+10011	FAIL	(cookie without Secure on https; only fires once a crawl sees a cookie)
+10054	FAIL	(cookie without SameSite; only fires once a crawl sees a cookie)
+10055	WARN	(the nginx CSP header still carries 'unsafe-inline' for script and style (the built meta CSP uses hashes); tracked, not yet removable)
+10027	WARN	(suspicious comments in bundled JS are third-party library text; review new hits)
+10109	IGNORE	(Modern Web Application: informational note that the target is a SPA)
+10096	IGNORE	(timestamp disclosure: epoch-like numbers in static bundles and API error bodies are not sensitive)

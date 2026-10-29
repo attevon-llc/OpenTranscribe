@@ -95,11 +95,15 @@ export default defineConfig({
       // llmService.ts, and every previously-untested store/API client, plus
       // fixing 17 real bugs found while reading that code (BC-1 through BC-32,
       // see the #475 closing report). Floors sit ~1.5 points under measured.
+      //
+      // RATCHETED 2026-10-29: measured lines 65.70 / statements 64.25 / functions
+      // 64.22 / branches 58.87 (4495 tests). The floors above were 40 points stale, so
+      // CI could have lost most of its coverage and stayed green. Now measured - 1.5.
       thresholds: {
-        lines: 24.3,
-        statements: 22.2,
-        functions: 22.1,
-        branches: 22.5,
+        lines: 64.2,
+        statements: 62.7,
+        functions: 62.7,
+        branches: 57.3,
       },
     },
   },

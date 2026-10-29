@@ -991,6 +991,20 @@ detail, rationale and destructive-operation notes are in [scripts/CLAUDE.md](CLA
 | `inject-eval-corpus.sh`, `fetch-rag-eval-data.sh`, `reindex_eval_corpus.py`, `verify-eval-corpus-settled.py`, `rag-eval-manifests/` | RAG evaluation corpus fetch, injection (no ASR), reindex and settle-wait, with corpus manifests. |
 | `lib/env_reader.py` | python-dotenv `.env` reader shared by the shell scripts. Dev/CI only; not shipped in the install manifest. |
 
+### Public-deployment checks
+
+Aim these only at a `--fresh` stack (`--port-offset` of 100 or more) or at a public URL with the owner's go-ahead,
+never at the live dev or production stack on this machine: targets that resolve to loopback, `0.0.0.0`,
+link-local or this host's own addresses on the stack's ports (5173-5190, 80, 443) are refused unless
+`--allow-live-dev` is passed.
+
+| Script | Purpose |
+|--------|---------|
+| `check-public-headers.py <url>` | Stdlib check of status codes, HSTS, CSP, frame/referrer/permissions headers, cookie flags, TLS floor (a TLS 1.1 handshake must fail) and certificate expiry. Exit 0 pass, 1 findings, 2 unreachable or unusable. Cookie flags are only verified when a response sets a cookie; it says so (`UNVERIFIED`). |
+| `public-smoke.sh <url>` | Runs the header check, then the anonymous session/401 probes, a login rate-limit probe with a NONEXISTENT account (leaves failed-login audit events and exhausts the limiter for this client address), and the API-docs exposure check. |
+| `zap-baseline.sh <url> <out-dir>` | OWASP ZAP baseline (passive) in the official Docker image on the host network, with `.zap/rules.tsv`. Reports go to a fresh `<out-dir>/zap.XXXXXX`. Needs the owner's yes for any run. |
+| `lib/target_guard.py`, `lib/refuse_live_stack.sh` | The shared live-stack refusal used by the two shell scripts above. |
+
 ### Benchmarks, probes and experiments
 
 Mostly accreted one-off experiments; `run_benchmark.py` (via `./opentr.sh bench`) is the maintained

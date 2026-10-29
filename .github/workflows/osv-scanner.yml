@@ -1,0 +1,40 @@
+name: OSV-Scanner
+
+# Lockfile-level vulnerability scan across ecosystems, using Google's reusable workflow
+# (verified against osv-scanner-reusable.yml at v2.7.0: inputs scan-args, upload-sarif,
+# fail-on-vuln, results-file-name; the workflow itself needs actions: read, contents: read,
+# security-events: write). Results land in code scanning as SARIF alerts.
+#
+# REPORT-ONLY at adoption: `fail-on-vuln: false` (the reusable default is true). RATCHET: after
+# triage, delete that line so fixable HIGH+ findings block; accepted findings go in an
+# osv-scanner.toml ignore list, each with a written reason and an expiry date.
+# No issue is opened automatically; Dependabot security updates already open PRs.
+
+on:
+  schedule:
+    # Mondays 05:47 UTC.
+    - cron: '47 5 * * 1'
+  push:
+    branches: [master]
+
+permissions: {}
+
+jobs:
+  osv-scan:
+    # No timeout-minutes here: a job that calls a reusable workflow cannot set one, and the
+    # reusable workflow's own job sets none.
+    name: OSV-Scanner
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36  # v2.7.0
+    with:
+      fail-on-vuln: false
+      # Do not pass --format/--output: the reusable workflow sets them.
+      scan-args: |-
+        --lockfile=requirements.txt:./backend/requirements.txt
+        --lockfile=requirements.txt:./backend/requirements-lite.txt
+        --lockfile=requirements.txt:./backend/requirements-ci.txt
+        --recursive
+        ./

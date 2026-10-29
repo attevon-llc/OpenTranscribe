@@ -129,3 +129,31 @@ def test_the_pep440_check_accepts_known_good_strings(
     assert not spec.contains(should_not_contain), (
         f"{good_version_str!r} should NOT match {should_not_contain!r}"
     )
+
+
+def _entries_without_cooldown(config: dict[str, Any]) -> list[str]:
+    missing = []
+    for update in config["updates"]:
+        days = (update.get("cooldown") or {}).get("default-days")
+        if not isinstance(days, int) or days < 3:
+            missing.append(f"{update['package-ecosystem']} {update.get('directory', '?')}")
+    return missing
+
+
+def test_every_update_entry_waits_before_proposing_a_fresh_release() -> None:
+    """A release published minutes ago is the supply-chain attack window; wait before bumping.
+
+    Security updates ignore the cooldown, so this delays only routine version bumps.
+    """
+    assert _entries_without_cooldown(_load()) == []
+
+
+def test_the_cooldown_check_flags_a_missing_or_zero_cooldown() -> None:
+    config = {
+        "updates": [
+            {"package-ecosystem": "npm", "directory": "/a"},
+            {"package-ecosystem": "pip", "directory": "/b", "cooldown": {"default-days": 0}},
+            {"package-ecosystem": "docker", "directory": "/c", "cooldown": {"default-days": 7}},
+        ]
+    }
+    assert _entries_without_cooldown(config) == ["npm /a", "pip /b"]

@@ -1,0 +1,15 @@
+# CodeQL configuration for .github/workflows/codeql.yml.
+# paths-ignore applies to the interpreted-language analyses (python, javascript-typescript).
+name: OpenTranscribe CodeQL config
+
+paths-ignore:
+  # Generated mutation-testing copies of source modules; findings would duplicate the real code.
+  - backend/mutants
+  # Generated architecture diagram assets, not application code.
+  - docs-site/static/architecture
+  # Third-party packages; their alerts are dependency-scanning's job, not SAST.
+  - '**/node_modules'
+  # Test code: deliberately contains insecure fixtures (hardcoded credentials, shell calls) that would drown real alerts.
+  - backend/tests
+  # Frontend unit tests: same reason as backend/tests.
+  - 'frontend/src/**/*.test.ts'

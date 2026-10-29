@@ -293,6 +293,8 @@ SEARCH_QUALITY_SKIP_CEILING="${SEARCH_QUALITY_SKIP_CEILING:-0}"
 #: see is the same failure as a silent skip.
 # shellcheck source=lib/compose-project.sh
 source "$SCRIPT_DIR/lib/compose-project.sh"
+# Refuse an `otfresh-*` project that is not really isolated (live data attached) before any phase.
+assert_fresh_stack_isolated
 multi_gpu_topology_present() {
     [[ -n "$(overlay_container_name celery-worker-gpu-scaled)" ]] && return 0
     [[ -n "$(overlay_container_name celery-worker-gpu-diarize)" ]] && return 0

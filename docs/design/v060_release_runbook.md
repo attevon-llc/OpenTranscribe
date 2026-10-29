@@ -88,7 +88,7 @@ out, in order: #1180 profiling (findings only), native-speaker review of transla
   five CVEs are gone. If blocked, `./scripts/release.sh scan 0.6.0 --force-scan "<CVE ids and why>"`
   is pre-approved by the owner.
 - Built-image dependency checks (build the real prod CUDA image first; none of this was possible in
-  CPU venvs): `import torchcodec` and `torchaudio` load without a missing-library error (the repo pins
+  CPU venvs): `torchaudio` loads without a missing-library error and the app's audio loader never imports torchcodec (a torchcodec that fails to import, e.g. a missing `libnppicc`, is reported by the rehearsal GPU check but is not a failure) (the repo pins
   torchcodec 0.11.1 from the cu128 index; the images that ran on staging had PyPI 0.17.0, a CUDA-13
   build the app never imports; keep whichever loads cleanly), one real GPU transcription with
   diarization, the NLP/embedding path, the reranker, the toxicity model and GLiNER really loading

@@ -140,16 +140,6 @@ def test_enter_does_not_toggle_the_switch(
     expect(switch).not_to_be_checked(timeout=10_000)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "REAL DEFECT found by this browser pass: PrivacySwitchCard sets disabled={locked || busy}, "
-        "so the focused input is disabled while the save is in flight and the browser drops "
-        "keyboard focus to <body>; a keyboard user has to Tab from the top of Settings again "
-        "after every toggle. Fix: aria-disabled (and ignore the change) while busy instead of "
-        "the disabled attribute. Remove this xfail with the fix."
-    ),
-)
 def test_keyboard_focus_survives_a_toggle(themed_page: Page, voiceprints_restored: None) -> None:
     page = themed_page
     open_voice_privacy(page)

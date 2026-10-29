@@ -497,7 +497,9 @@ CASES: list[tuple[str, tuple[str, ...], int]] = [
     ("gpu-probe", (_j(_GPU_OK),), 0),
     ("gpu-probe", (_j({**_GPU_OK, "cuda_available": False}),), 1),
     ("gpu-probe", (_j({**_GPU_OK, "app_loader_pulled_torchcodec": True}),), 1),
-    ("gpu-probe", (_j({**_GPU_OK, "torchcodec_import": "OSError: libnvrtc"}),), 1),
+    # torchcodec is optional (the app never imports it); torchaudio is not.
+    ("gpu-probe", (_j({**_GPU_OK, "torchcodec_import": "OSError: libnppicc.so.12"}),), 0),
+    ("gpu-probe", (_j({**_GPU_OK, "torchaudio_import": "ImportError: x"}),), 1),
     ("gpu-probe", (_j({"error": "x"}),), 1),
     ("pipeline-evidence", ("completed|12|2|native",), 0),
     ("pipeline-evidence", ("completed|0|2|native",), 1),

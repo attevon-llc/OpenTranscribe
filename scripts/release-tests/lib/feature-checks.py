@@ -600,9 +600,11 @@ def gpu_probe(raw: str) -> Verdict:
             FAIL,
             f'the worker sees no CUDA device ({body.get("torch_error") or "cuda_available false"})',
         )
-    for key in ('torchcodec_import', 'torchaudio_import'):
-        if body.get(key) != 'ok':
-            return FAIL, f'{key}: {body.get(key)!r}'
+    # torchcodec is NOT required: the app never imports it (root CLAUDE.md audio.py), and the image
+    # may ship a build whose libnppicc is absent (observed 2026-10-28). What matters is that the
+    # loader below works and never reaches it; its import status is reported, not judged.
+    if body.get('torchaudio_import') != 'ok':
+        return FAIL, f'torchaudio_import: {body.get("torchaudio_import")!r}'
     if body.get('audio_samples') != 16000:
         return (
             FAIL,
@@ -612,7 +614,8 @@ def gpu_probe(raw: str) -> Verdict:
         return FAIL, 'the app audio loader imported torchcodec'
     return (
         PASS,
-        f'CUDA on {body["device_name"]}; torchcodec/torchaudio import; loader avoids torchcodec',
+        f'CUDA on {body["device_name"]}; torchaudio imports; loader avoids torchcodec '
+        f'(torchcodec import: {body.get("torchcodec_import")!r}, not required)',
     )
 
 

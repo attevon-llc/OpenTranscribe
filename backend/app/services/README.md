@@ -114,8 +114,8 @@ Module-level functions (not a class) for upload, download, delete, presigned URL
 from app.services import minio_service
 
 minio_service.upload_file(file_content, file_size, object_name, content_type)
-url = minio_service.get_file_url(object_name)            # presigned, inline (playback/thumbnails)
-url = minio_service.get_presigned_download_url(          # presigned, forces download
+url = minio_service.get_file_url(object_name)  # presigned, inline (playback/thumbnails)
+url = minio_service.get_presigned_download_url(  # presigned, forces download
     object_name, download_filename=..., content_type=...
 )
 minio_service.delete_file(object_name)

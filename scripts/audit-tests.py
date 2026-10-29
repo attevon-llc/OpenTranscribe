@@ -2512,13 +2512,17 @@ ALLOWLIST_SELFTEST_CASES: tuple[tuple[str, Callable[[], bool]], ...] = (
     ),
     (
         'a genuine written reason is ACCEPTED',
-        lambda: parse_allowlist_text('a.py::test_a::weak-only  # a real, written reason')
-        == {'a.py::test_a::weak-only': ['a real, written reason']},
+        lambda: (
+            parse_allowlist_text('a.py::test_a::weak-only  # a real, written reason')
+            == {'a.py::test_a::weak-only': ['a real, written reason']}
+        ),
     ),
     (
         'a BACKLOG reason is ACCEPTED (deferred is still a real reason)',
-        lambda: parse_allowlist_text('a.py::test_a::weak-only  # BACKLOG(#431): tbd for now')
-        == {'a.py::test_a::weak-only': ['BACKLOG(#431): tbd for now']},
+        lambda: (
+            parse_allowlist_text('a.py::test_a::weak-only  # BACKLOG(#431): tbd for now')
+            == {'a.py::test_a::weak-only': ['BACKLOG(#431): tbd for now']}
+        ),
     ),
 )
 

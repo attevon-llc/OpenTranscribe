@@ -40,7 +40,7 @@ repos:
   # `files:` pattern gets both. Do NOT "unify" them by deleting a config — that reformats a
   # thousand files to settle a question nobody asked.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.0
+    rev: v0.16.7
     hooks:
       - id: ruff
         args: [--fix, --show-fixes]
@@ -275,7 +275,7 @@ repos:
         # so the app's runtime deps are NOT required.
         entry: bash -c 'cd backend && lint-imports --config pyproject.toml'
         language: python
-        additional_dependencies: ['import-linter>=2.0']
+        additional_dependencies: ['import-linter==2.15']
         pass_filenames: false
         files: ^backend/app/.*\.py$
 

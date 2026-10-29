@@ -119,8 +119,9 @@ def test_attribute_queue_derivation_finds_cpu_and_gpu() -> None:
 @pytest.mark.parametrize(
     "chain",
     CHAINS,
-    ids=lambda c: "+".join(x.removeprefix("docker-compose.").removesuffix(".yml") for x in c)
-    or "base",
+    ids=lambda c: (
+        "+".join(x.removeprefix("docker-compose.").removesuffix(".yml") for x in c) or "base"
+    ),
 )
 def test_every_attribute_worker_mounts_the_model_cache(chain: tuple[str, ...]) -> None:
     queues = _attribute_queues()

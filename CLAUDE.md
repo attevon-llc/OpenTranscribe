@@ -458,9 +458,9 @@ count of the unit/API phase itself was not re-run.)
 **These numbers rot — re-derive rather than trust them.** Prior values in this file have been
 wrong by over a thousand tests when checked. `./scripts/run-backend-tests.sh --summary` and
 `cd frontend && npm run test` answer in seconds. The root `baseline.xml` referenced by
-`analyze-test-timing.py --baseline` **no longer exists in this checkout** (the stale
-5,473-test/Aug-11 artifact this section used to warn about is simply gone) — regenerate it
-before trusting any `--baseline` comparison; don't assume one is sitting there.
+`analyze-test-timing.py --baseline` is gitignored and untracked: a fresh worktree has none, and
+the main checkout may hold a stale local copy (an Aug-11, 5,473-test artifact was still there on
+2026-10-28). Regenerate it from a current junit run before trusting any `--baseline` comparison.
 
 **The DDL/`ddl_exclusive` barrier claim in earlier versions of this file was measured and
 refuted (2026-09-05).** Actual cost: DDL modules were **262 s of 2,031 s (12.9%)** and

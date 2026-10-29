@@ -88,7 +88,7 @@ TEST_INDEX_SPECS: list[ArtifactSpec] = [
         rf'test_(search_filters_quarantine|kw_latency|chat_cache_revoke|digest_plane'
         rf'|label_drift|summary_plane|summary_plane_semantic|completeness|chunk_prune'
         rf'|rename_chunks|rename_sites|speaker_id_fields|reindex666_chunks'
-        rf'|reindex666_transcripts|org_collection_retrieval|audit_org_scope)_{_H12}',
+        rf'|reindex666_transcripts|org_collection_retrieval|audit_org_scope|priv_chunks)_{_H12}',
         TIER_A,
         'integration/test_*_opensearch.py and siblings (one throwaway chunks index each)',
     ),
@@ -99,6 +99,12 @@ TEST_INDEX_SPECS: list[ArtifactSpec] = [
         rf'_{_H10}_(v3|v4|v3_backup)',
         TIER_A,
         'speaker index suites (OPENSEARCH_SPEAKER_INDEX repointed; _v3/_v4/_v3_backup)',
+    ),
+    _spec(
+        'privacy-speakers',
+        rf'test_priv_spk_{_H12}(_v3|_v4|_v3_backup)?',
+        TIER_A,
+        'integration/test_privacy_real_opensearch.py (bare base is the alias over _v4)',
     ),
     _spec(
         'knn-probe',

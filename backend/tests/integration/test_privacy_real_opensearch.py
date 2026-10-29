@@ -69,9 +69,9 @@ def chunk_index(client, monkeypatch) -> Iterator[str]:
     from app.services.search import indexing_service as svc
 
     name = f"test_priv_chunks_{uuid.uuid4().hex[:12]}"
-    client.indices.create(index=name, body=svc._get_index_body_with_dimension(384))
-    monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
     try:
+        client.indices.create(index=name, body=svc._get_index_body_with_dimension(384))
+        monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
         yield name
     finally:
         client.indices.delete(index=name, ignore=[404])
@@ -100,10 +100,10 @@ def speaker_indices(client, monkeypatch) -> Iterator[dict[str, str]]:
     base = f"test_priv_spk_{uuid.uuid4().hex[:12]}"
     monkeypatch.setattr(settings, "OPENSEARCH_SPEAKER_INDEX", base)
     names = {"alias": base, "v3": f"{base}_v3", "v4": f"{base}_v4", "backup": f"{base}_v3_backup"}
-    for key in ("v3", "v4", "backup"):
-        client.indices.create(index=names[key], body=_SPEAKER_MAPPING)
-    client.indices.put_alias(index=names["v4"], name=names["alias"])
     try:
+        for key in ("v3", "v4", "backup"):
+            client.indices.create(index=names[key], body=_SPEAKER_MAPPING)
+        client.indices.put_alias(index=names["v4"], name=names["alias"])
         yield names
     finally:
         for key in ("v3", "v4", "backup"):

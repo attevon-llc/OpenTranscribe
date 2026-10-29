@@ -9,6 +9,7 @@ import os
 import time
 
 from app.core import stage_timing
+from app.core.config import settings
 from app.core.enums import TranscriptionStage
 from app.db.session_utils import session_scope
 from app.services.privacy.gates import voiceprints_allowed
@@ -219,7 +220,7 @@ def _process_and_save_critical(
         "Saving transcript to database",
         stage=TranscriptionStage.FINALIZE,
     )
-    whisper_model = os.getenv("WHISPER_MODEL", "large-v3-turbo")
+    whisper_model = settings.WHISPER_MODEL
     diarization_disabled = result.get("diarization_disabled", False)
     # The engine that ACTUALLY served diarization (issue #706), resolved after any in-process
     # fallback — engine/stages.py sets these on JobResult/RawInferenceResult from the diarizer

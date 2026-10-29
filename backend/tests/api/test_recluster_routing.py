@@ -20,6 +20,7 @@ import pytest
 from fastapi import status
 
 from app.core import constants
+from app.core.config import settings
 from app.models.media import MediaFile
 from app.models.media import Speaker
 
@@ -65,7 +66,7 @@ def _published_queue(task: MagicMock) -> str | None:
 def test_small_speaker_set_is_published_to_cpu(
     client, user_token_headers, db_session, normal_user, mock_recluster_task, monkeypatch
 ):
-    monkeypatch.delenv("DEPLOYMENT_MODE", raising=False)
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "full")
     _add_unlabeled_speakers(db_session, normal_user, 3)
 
     resp = client.post(URL, headers=user_token_headers, json={})
@@ -77,7 +78,7 @@ def test_small_speaker_set_is_published_to_cpu(
 def test_speaker_set_at_threshold_is_published_to_gpu(
     client, user_token_headers, db_session, normal_user, mock_recluster_task, monkeypatch
 ):
-    monkeypatch.delenv("DEPLOYMENT_MODE", raising=False)
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "full")
     monkeypatch.setattr(constants, "SPEAKER_CLUSTERING_GPU_MIN_SPEAKERS", 4, raising=False)
     _add_unlabeled_speakers(db_session, normal_user, 4)
 
@@ -96,7 +97,7 @@ def test_threshold_is_per_tenant_partition_not_user_total(
     work that runs on CPU."""
     from app.models.organization import Organization
 
-    monkeypatch.delenv("DEPLOYMENT_MODE", raising=False)
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "full")
     monkeypatch.setattr(constants, "SPEAKER_CLUSTERING_GPU_MIN_SPEAKERS", 4, raising=False)
     org = Organization(name=f"recluster-routing-{uuid.uuid4().hex[:8]}")
     db_session.add(org)
@@ -115,7 +116,7 @@ def test_lite_mode_large_set_still_published_to_cpu(
     client, user_token_headers, db_session, normal_user, mock_recluster_task, monkeypatch
 ):
     """Lite has no GPU consumer at all (issue #865): size never routes to ``gpu``."""
-    monkeypatch.setenv("DEPLOYMENT_MODE", "lite")
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "lite")
     monkeypatch.setattr(constants, "SPEAKER_CLUSTERING_GPU_MIN_SPEAKERS", 4, raising=False)
     _add_unlabeled_speakers(db_session, normal_user, 4)
 

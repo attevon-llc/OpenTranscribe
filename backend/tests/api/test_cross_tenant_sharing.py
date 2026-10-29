@@ -555,7 +555,7 @@ def test_asr_provider_for_transcription_scoped(world, monkeypatch, viewer, owner
     from app.services.asr import factory
 
     from_config, local_default = object(), object()
-    monkeypatch.setenv("ASR_PROVIDER", "local")
+    monkeypatch.setattr("app.core.config.settings.ASR_PROVIDER", "local")
     monkeypatch.setattr(factory, "_guard_local_allowed", lambda: None)
     monkeypatch.setattr(factory, "LocalASRProvider", lambda: local_default)
     monkeypatch.setattr(

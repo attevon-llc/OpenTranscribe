@@ -4,7 +4,6 @@ This bypasses the SQLAlchemy ORM relationships to ensure login works.
 """
 
 import logging
-import os
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
@@ -19,18 +18,15 @@ from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.config import settings
 from app.core.security import verify_and_update_password
 
-# Database connection parameters
-DB_USER = os.getenv("POSTGRES_USER", "postgres")
-DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
-DB_HOST = os.getenv("POSTGRES_HOST", "postgres")
-DB_PORT = os.getenv("POSTGRES_PORT", "5432")
-DB_NAME = os.getenv("POSTGRES_DB", "transcribe_app")
-
 
 def get_db_connection():
     """Get a direct database connection."""
     conn = psycopg2.connect(
-        host=DB_HOST, port=DB_PORT, database=DB_NAME, user=DB_USER, password=DB_PASSWORD
+        host=settings.POSTGRES_HOST,
+        port=settings.POSTGRES_PORT,
+        database=settings.POSTGRES_DB,
+        user=settings.POSTGRES_USER,
+        password=settings.POSTGRES_PASSWORD,
     )
     return conn
 

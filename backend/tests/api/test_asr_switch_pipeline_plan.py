@@ -19,6 +19,7 @@ from __future__ import annotations
 import pytest
 from fastapi import status
 
+from app.core.config import settings
 from app.models import UserSetting
 from app.services.pipeline_plan import ISSUE_MESSAGES
 
@@ -146,9 +147,9 @@ def test_a_locked_source_is_never_refused(
 def test_clearing_onto_an_untimed_env_default_is_refused(
     client, user_token_headers, normal_user, db_session, add_asr_config, monkeypatch
 ):
-    monkeypatch.setenv("ASR_PROVIDER", "openai")
-    monkeypatch.setenv("OPENAI_API_KEY", "fixture-not-a-key")
-    monkeypatch.setenv("OPENAI_ASR_MODEL", "gpt-4o-transcribe")
+    monkeypatch.setattr(settings, "ASR_PROVIDER", "openai")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "fixture-not-a-key")
+    monkeypatch.setattr(settings, "OPENAI_ASR_MODEL", "gpt-4o-transcribe")
     current = add_asr_config("deepgram", "nova-3", active=True)
 
     response = client.post(f"{_BASE}/clear-active", headers=user_token_headers)

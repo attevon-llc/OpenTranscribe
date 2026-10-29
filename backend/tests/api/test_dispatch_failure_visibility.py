@@ -138,7 +138,7 @@ def lite_mode_no_asr_provider(monkeypatch):
     """A deployment structurally refusing local ASR (#865) — an ASRConfigurationError,
     not a broker failure, so no ``chain`` stub is needed: dispatch never reaches it."""
     monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "lite")
-    monkeypatch.delenv("ASR_PROVIDER", raising=False)
+    monkeypatch.setattr(settings, "ASR_PROVIDER", "local")
 
 
 # ---------------------------------------------------------------------------

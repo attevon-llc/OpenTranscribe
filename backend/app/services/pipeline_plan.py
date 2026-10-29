@@ -268,9 +268,9 @@ def post_stage_queue(engine: str, deployment_mode: str | None = None) -> str:
 
 
 def _is_lite(deployment_mode: str | None) -> bool:
-    import os
+    from app.core.config import settings
 
-    mode = deployment_mode if deployment_mode is not None else os.getenv("DEPLOYMENT_MODE", "")
+    mode = deployment_mode if deployment_mode is not None else settings.DEPLOYMENT_MODE
     return mode.strip().lower() == "lite"
 
 

@@ -22,6 +22,8 @@ from pathlib import Path
 
 import pytest
 
+from app.core.config import settings
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -49,7 +51,7 @@ class _FakeCuda:
 
 @pytest.fixture
 def clean_gpu_env(monkeypatch):
-    monkeypatch.delenv("GPU_DEVICE_ID", raising=False)
+    monkeypatch.setattr(settings, "GPU_DEVICE_ID", 0)
     return monkeypatch
 
 
@@ -65,13 +67,13 @@ def test_single_visible_device_resolves_to_ordinal_zero_whatever_gpu_device_id_s
     breaking it disables CUDA on every GPU worker in the product. `device_ids: ['1']`
     hands the container one device; selecting ordinal 1 inside it selects nothing.
     """
-    clean_gpu_env.setenv("GPU_DEVICE_ID", "2")
+    clean_gpu_env.setattr(settings, "GPU_DEVICE_ID", 2)
     assert resolve_cuda_device_index(cuda=_FakeCuda(1)) == 0
 
 
 def test_multiple_visible_devices_honour_gpu_device_id(clean_gpu_env):
     """`count: all` (celery-cpu-worker) — ordinal 0 is an arbitrary card, so ask env."""
-    clean_gpu_env.setenv("GPU_DEVICE_ID", "1")
+    clean_gpu_env.setattr(settings, "GPU_DEVICE_ID", 1)
     assert resolve_cuda_device_index(cuda=_FakeCuda(3)) == 1
 
 
@@ -79,20 +81,20 @@ def test_multiple_visible_devices_without_gpu_device_id_fall_back_to_zero(clean_
     assert resolve_cuda_device_index(cuda=_FakeCuda(3)) == 0
 
 
-@pytest.mark.parametrize("bad", ["", "   ", "not-an-int", "1.5", "-1"])
-def test_unparseable_or_negative_gpu_device_id_falls_back_to_zero(clean_gpu_env, bad):
-    clean_gpu_env.setenv("GPU_DEVICE_ID", bad)
+# A non-integer GPU_DEVICE_ID never reaches the resolver: Settings rejects it at startup.
+def test_negative_gpu_device_id_falls_back_to_zero(clean_gpu_env):
+    clean_gpu_env.setattr(settings, "GPU_DEVICE_ID", -1)
     assert resolve_cuda_device_index(cuda=_FakeCuda(3)) == 0
 
 
 def test_out_of_range_gpu_device_id_falls_back_to_zero(clean_gpu_env):
     """An index past what this container can see must not raise from a device query."""
-    clean_gpu_env.setenv("GPU_DEVICE_ID", "7")
+    clean_gpu_env.setattr(settings, "GPU_DEVICE_ID", 7)
     assert resolve_cuda_device_index(cuda=_FakeCuda(3)) == 0
 
 
 def test_no_visible_devices_resolves_to_zero(clean_gpu_env):
-    clean_gpu_env.setenv("GPU_DEVICE_ID", "2")
+    clean_gpu_env.setattr(settings, "GPU_DEVICE_ID", 2)
     assert resolve_cuda_device_index(cuda=_FakeCuda(0)) == 0
 
 
@@ -102,7 +104,7 @@ def test_gpu_scale_device_id_is_honoured_when_it_is_the_active_card(clean_gpu_en
     The scaled worker still gets a single-device reservation, so it stays ordinal 0;
     this pins that the resolver does not try to second-guess that with the host index.
     """
-    clean_gpu_env.setenv("GPU_DEVICE_ID", "0")
+    clean_gpu_env.setattr(settings, "GPU_DEVICE_ID", 0)
     clean_gpu_env.setenv("GPU_SCALE_DEVICE_ID", "2")
     assert resolve_cuda_device_index(cuda=_FakeCuda(1)) == 0
 

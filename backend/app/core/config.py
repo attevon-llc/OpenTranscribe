@@ -1402,9 +1402,6 @@ class Settings(BaseSettings):
     GOOGLE_ASR_MODEL: str = os.getenv("GOOGLE_ASR_MODEL", "chirp-3")
     AZURE_SPEECH_KEY: str = os.getenv("AZURE_SPEECH_KEY", "")
     AZURE_SPEECH_REGION: str = os.getenv("AZURE_SPEECH_REGION", "eastus")
-    # `services/asr/factory.py` reads this env var directly via `os.getenv`, bypassing
-    # this Settings field entirely — declared here only so it is discoverable, not
-    # because anything reads `settings.AZURE_ASR_MODEL` (C3).
     AZURE_ASR_MODEL: str = os.getenv("AZURE_ASR_MODEL", "whisper")
     # AWS Transcribe — credentials (can also use IAM role / instance profile)
     AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
@@ -1416,6 +1413,8 @@ class Settings(BaseSettings):
     SPEECHMATICS_MODEL: str = os.getenv("SPEECHMATICS_MODEL", "standard")
     GLADIA_API_KEY: str = os.getenv("GLADIA_API_KEY", "")
     GLADIA_MODEL: str = os.getenv("GLADIA_MODEL", "standard")
+    PYANNOTE_API_KEY: str = os.getenv("PYANNOTE_API_KEY", "")
+    PYANNOTE_MODEL: str = os.getenv("PYANNOTE_MODEL", "parakeet")
     DEPLOYMENT_MODE: str = os.getenv("DEPLOYMENT_MODE", "full")  # full or lite
 
     # ===== OpenSearch Toggle =====

@@ -15,6 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.core.config import settings
 from app.services.asr.aws_provider import AWSTranscribeProvider
 from app.services.asr.factory import ASRProviderFactory
 from app.utils.encryption import encrypt_api_key
@@ -89,8 +90,8 @@ def test_create_for_user_matches_test_connection_credentials():
 
 def test_create_for_user_does_not_fall_back_to_ambient_aws_credentials(monkeypatch):
     """Ambient env credentials must not win over the stored config."""
-    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIAAMBIENTWRONGID")
-    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "ambient-wrong-secret")
+    monkeypatch.setattr(settings, "AWS_ACCESS_KEY_ID", "AKIAAMBIENTWRONGID")
+    monkeypatch.setattr(settings, "AWS_SECRET_ACCESS_KEY", "ambient-wrong-secret")
 
     db = _FakeDB(setting=SimpleNamespace(setting_value="7"), cfg=_aws_cfg())
     provider = ASRProviderFactory.create_for_user(user_id=1, db=db)
@@ -102,8 +103,8 @@ def test_create_for_user_does_not_fall_back_to_ambient_aws_credentials(monkeypat
 
 def test_aws_config_without_stored_key_still_allows_iam_role(monkeypatch):
     """No stored credentials → boto3's default chain, which is a supported setup."""
-    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIAFROMROLE")
-    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "role-secret")
+    monkeypatch.setattr(settings, "AWS_ACCESS_KEY_ID", "AKIAFROMROLE")
+    monkeypatch.setattr(settings, "AWS_SECRET_ACCESS_KEY", "role-secret")
 
     cfg = _aws_cfg(api_key=None, access_key_id=None)
     provider = ASRProviderFactory.create_from_db_config(cfg)

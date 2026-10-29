@@ -116,7 +116,7 @@ def test_create_for_user_logs_a_warning_when_config_id_matches_nothing(
     makes the DB query return ``None``. That must now log exactly one warning — mentioning
     the offending config id — before falling back to env/local, matching the observability
     of the sibling exception path above."""
-    monkeypatch.delenv("ASR_PROVIDER", raising=False)
+    monkeypatch.setattr(settings, "ASR_PROVIDER", "local")
 
     nonexistent_id = 999_999_999
     setting = models.UserSetting(
@@ -271,7 +271,7 @@ def test_create_for_user_raises_clear_error_under_lite_deployment_with_no_cloud_
     ASRConfigurationError — not silently succeed, and not surface as a raw
     ModuleNotFoundError from deep inside the transcription pipeline."""
     monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "lite")
-    monkeypatch.delenv("ASR_PROVIDER", raising=False)
+    monkeypatch.setattr(settings, "ASR_PROVIDER", "local")
     db = _FakeDB(setting=None, asr_query=_FakeQuery(None))
 
     with pytest.raises(ASRConfigurationError, match="[Ll]ite"):
@@ -302,7 +302,7 @@ def test_create_for_user_still_resolves_local_by_default_full_deployment(monkeyp
     no DB config and no ASR_PROVIDER must still resolve LocalASRProvider exactly as
     before the lite guard was added."""
     monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "full")
-    monkeypatch.delenv("ASR_PROVIDER", raising=False)
+    monkeypatch.setattr(settings, "ASR_PROVIDER", "local")
     db = _FakeDB(setting=None, asr_query=_FakeQuery(None))
 
     provider = ASRProviderFactory.create_for_user(user_id=1, db=db)

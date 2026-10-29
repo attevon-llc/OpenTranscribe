@@ -187,7 +187,7 @@ class Settings(BaseSettings):
     # Dev relaxation is now explicit: docker-compose.override.yml sets
     # ENVIRONMENT=development, and that file is never loaded in prod.
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "production")
-    DEBUG: bool = is_relaxed_environment(ENVIRONMENT)
+    DEBUG: bool | None = None  # unset: on in a relaxed environment (see validate_auth_settings)
 
     # Whether the API runs Alembic on startup (issue #284 A1.4). True suits self-host,
     # where one container owns the database. Set false on an orchestrated deploy where a
@@ -454,9 +454,7 @@ class Settings(BaseSettings):
     AUDIT_LOG_FALLBACK_ENABLED: bool = (
         os.getenv("AUDIT_LOG_FALLBACK_ENABLED", "true").lower() == "true"
     )
-    AUDIT_LOG_FALLBACK_PATH: str = os.getenv(
-        "AUDIT_LOG_FALLBACK_PATH", "/var/log/opentranscribe/audit-fallback.jsonl"
-    )
+    AUDIT_LOG_FALLBACK_PATH: str = "/var/log/opentranscribe/audit-fallback.jsonl"
 
     # ===== Login Banner (FedRAMP AC-8) =====
     LOGIN_BANNER_ENABLED: bool = os.getenv("LOGIN_BANNER_ENABLED", "false").lower() == "true"
@@ -501,7 +499,7 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "postgres")
     POSTGRES_HOST: str = os.getenv("POSTGRES_HOST", "localhost")
     POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
-    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "transcribe_app")
+    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "opentranscribe")
     POSTGRES_SSLMODE: str = os.getenv("POSTGRES_SSLMODE", "prefer")
     # Plain "" default (not a class-body `os.getenv("DATABASE_URL", <computed>)`
     # expression) resolved in `validate_auth_settings` below. `os.getenv` only
@@ -848,10 +846,7 @@ class Settings(BaseSettings):
         os.getenv("OPENSEARCH_NEURAL_SEARCH_ENABLED", "true").lower() == "true"
     )
     # Default model to register/deploy (from OPENSEARCH_EMBEDDING_MODELS in constants.py)
-    OPENSEARCH_NEURAL_MODEL: str = os.getenv(
-        "OPENSEARCH_NEURAL_MODEL",
-        "huggingface/sentence-transformers/all-MiniLM-L6-v2",
-    )
+    OPENSEARCH_NEURAL_MODEL: str = "huggingface/sentence-transformers/all-MiniLM-L6-v2"
     # Neural ingest pipeline name
     OPENSEARCH_NEURAL_PIPELINE: str = os.getenv(
         "OPENSEARCH_NEURAL_PIPELINE", "transcript-neural-ingest"
@@ -981,6 +976,8 @@ class Settings(BaseSettings):
         # is what makes this resolve correctly regardless of whether the value came from
         # process env, a `.env` file, or Docker Compose's `env_file:` — all three are
         # already merged onto `self` by pydantic-settings before this validator runs.
+        if self.DEBUG is None:
+            self.DEBUG = is_relaxed_environment(self.ENVIRONMENT)
         if self.MFA_REQUIRE_REDIS is None:
             self.MFA_REQUIRE_REDIS = not is_relaxed_environment(self.ENVIRONMENT)
         if self.PKI_REVOCATION_SOFT_FAIL is None:
@@ -1057,6 +1054,12 @@ class Settings(BaseSettings):
     USE_GPU: str = os.getenv("USE_GPU", "auto")  # auto, true, false
     GPU_DEVICE_ID: int = 0  # Host GPU index (Docker maps to device 0)
     BATCH_SIZE: str = os.getenv("BATCH_SIZE", "auto")  # auto or integer
+
+    # Redaction models: GLiNER name NER is slower/more accurate than spaCy; DEVICE is
+    # auto|cpu|cuda[:N]; auto uses a GPU only with this much free VRAM (GB).
+    REDACTION_PII_USE_GLINER: bool = False
+    REDACTION_DEVICE: str = "auto"
+    REDACTION_MIN_FREE_VRAM_GB: float = 1.5
 
     # AI Models settings
     # large-v3-turbo: 6x faster, ~6GB VRAM, excellent English, good multilingual
@@ -1214,10 +1217,7 @@ class Settings(BaseSettings):
     # IdPs — ADFS, Okta, and Azure AD SAML each ship different defaults — so these
     # are configurable rather than hardcoded to one vendor's claim URIs, same
     # reasoning as OIDC_ROLES_CLAIM.
-    SAML_EMAIL_ATTRIBUTE: str = os.getenv(
-        "SAML_EMAIL_ATTRIBUTE",
-        "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress",
-    )
+    SAML_EMAIL_ATTRIBUTE: str = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"
     SAML_NAME_ATTRIBUTE: str = os.getenv(
         "SAML_NAME_ATTRIBUTE", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
     )

@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core import constants as C  # noqa: N812
+from app.core.config import settings
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.services.redaction.config import EffectiveRedactionConfig
@@ -229,10 +230,10 @@ class RedactionService:
             from app.services.system_settings_service import get_setting_bool
 
             det_cfg["pii_use_gliner"] = get_setting_bool(
-                db, "redaction.pii_use_gliner", C.REDACTION_PII_USE_GLINER
+                db, "redaction.pii_use_gliner", settings.REDACTION_PII_USE_GLINER
             )
         except Exception:  # noqa: BLE001
-            det_cfg["pii_use_gliner"] = C.REDACTION_PII_USE_GLINER
+            det_cfg["pii_use_gliner"] = settings.REDACTION_PII_USE_GLINER
         # Language gating: skip detectors that don't support this transcript's language.
         supported, skipped = detector_language_support(media.language)
         run_profanity, run_pii, run_toxicity = RedactionService._decline_for_unresolvable_language(

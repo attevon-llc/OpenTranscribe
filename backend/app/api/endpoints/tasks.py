@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
+from app.core.env import env_bool
 from app.core.exceptions import ASRConfigurationError
 from app.core.exceptions import DomainError
 from app.core.tenancy import UNSCOPED
@@ -942,9 +943,8 @@ def retry_file_processing(
         db.commit()
 
         # Start a new transcription synchronously — see the docstring for why.
-        import os
 
-        if os.environ.get("SKIP_CELERY", "False").lower() != "true":
+        if not env_bool("SKIP_CELERY"):
             from app.tasks.transcription import dispatch_transcription_pipeline
 
             new_task_id = dispatch_transcription_pipeline(

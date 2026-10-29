@@ -96,22 +96,23 @@ def test_the_default_name_backend_is_the_configured_one(detector):
     Without this, ``test_email_and_name`` is satisfied by either backend and cannot tell a
     configured spaCy run from a GLiNER run that silently fell back.
     """
-    from app.core import constants as C  # noqa: N812
+    from app.core.config import settings
 
-    analyzer = detector._get_analyzer(C.REDACTION_PII_USE_GLINER)
-    assert _gliner_registered(analyzer) is bool(C.REDACTION_PII_USE_GLINER)
+    analyzer = detector._get_analyzer(settings.REDACTION_PII_USE_GLINER)
+    assert _gliner_registered(analyzer) is bool(settings.REDACTION_PII_USE_GLINER)
 
 
 @pytest.fixture
 def gliner_analyzer(detector):
     """An analyzer built with GLiNER requested; the default one is restored afterwards."""
     from app.core import constants as C  # noqa: N812
+    from app.core.config import settings
 
     if not hf_weights_cached(C.REDACTION_PII_GLINER_MODEL):
         pytest.skip(f"GLiNER weights {C.REDACTION_PII_GLINER_MODEL} not cached on this machine")
     analyzer = detector._get_analyzer(True)
     yield analyzer
-    detector._get_analyzer(C.REDACTION_PII_USE_GLINER)
+    detector._get_analyzer(settings.REDACTION_PII_USE_GLINER)
 
 
 def test_gliner_is_used_when_requested_and_its_weights_are_cached(gliner_analyzer):

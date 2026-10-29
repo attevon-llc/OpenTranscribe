@@ -17,6 +17,7 @@ from app.core.constants import THUMBNAIL_FORMAT
 from app.core.constants import THUMBNAIL_MAX_DIMENSION
 from app.core.constants import THUMBNAIL_QUALITY_JPEG
 from app.core.constants import THUMBNAIL_QUALITY_WEBP
+from app.core.env import env_bool
 from app.services.minio_service import upload_file
 
 logger = logging.getLogger(__name__)
@@ -221,7 +222,7 @@ def generate_and_upload_thumbnail(
         storage_path = f"user_{user_id}/file_{media_file_id}/thumbnail_{filename}.{ext}"
 
         # Upload thumbnail to storage
-        if os.environ.get("SKIP_S3", "False").lower() != "true":
+        if not env_bool("SKIP_S3"):
             upload_file(
                 file_content=io.BytesIO(thumbnail_bytes),
                 file_size=len(thumbnail_bytes),

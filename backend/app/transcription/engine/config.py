@@ -8,6 +8,7 @@ from dataclasses import field
 from typing import TYPE_CHECKING
 
 from app.core.constants import ENGINE_SHARED_VOLUME_DEFAULT
+from app.core.constants import gpu_split_enabled
 from app.core.constants import resolve_engine_shared_volume_path
 from app.core.env import env_bool
 from app.core.env import is_truthy
@@ -155,7 +156,7 @@ class EngineConfig:
             # actually select.
             diarizer_backend=tc.diarizer_backend,
             precompute_vad=os.getenv("ENGINE_PRECOMPUTE_VAD", "false").lower() == "true",
-            gpu_split=os.getenv("ENGINE_GPU_SPLIT", "false").lower() == "true",
+            gpu_split=gpu_split_enabled(),
             boundary_acoustic_recheck_enabled=os.getenv(
                 "ENGINE_BOUNDARY_ACOUSTIC_RECHECK_ENABLED", "false"
             ).lower()

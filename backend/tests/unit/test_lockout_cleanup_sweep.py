@@ -162,6 +162,27 @@ class TestOnlyDeadRecordsAreSwept:
 
         assert cleanup_expired_lockouts() == 0
 
+    def test_idleness_is_measured_from_the_last_attempt_not_the_first(self, store):
+        """``last_failed_attempt`` decides, ``first_failed_attempt`` is only the fallback.
+
+        A record whose first failure is old but whose latest failure is inside the idle
+        window is still being attacked; judging it by its first failure sweeps it and
+        resets the progressive lockout counter mid-attack.
+        """
+        now = datetime.now(UTC)
+        record = LockoutRecord(
+            identifier="midattack@example.com",
+            failed_attempts=5,
+            lockout_count=3,
+            locked_until=(now - timedelta(minutes=1)).isoformat(),
+            first_failed_attempt=(now - timedelta(hours=30)).isoformat(),
+            last_failed_attempt=(now - timedelta(hours=1)).isoformat(),
+        )
+        _write(store, record)
+
+        assert cleanup_expired_lockouts() == 0
+        assert _read(store, "midattack@example.com").lockout_count == 3
+
     def test_the_progressive_lockout_counter_survives(self, store):
         """``lockout_count`` is the whole progressive control; the sweep must not zero it."""
         _write(store, _recently_attacked())

@@ -21,6 +21,9 @@ class FakeRedis:
         self.ttls: dict[str, int] = {}
         self.hashes: dict[str, dict[str, str]] = {}
         self.zsets: dict[str, dict[str, float]] = {}
+        # Runs whose stage message "waits on a broker queue list" (a cold shutdown put it
+        # back). Read through ``broker_orphans.queued_run_ids``, which this file patches.
+        self.queued_stage_runs: set[str] = set()
 
     def setex(self, key: str, ttl: int, value: str) -> bool:
         self.store[key] = str(value)
@@ -151,4 +154,5 @@ def install_fake_redis(monkeypatch) -> FakeRedis:
     """Route every ``get_redis()`` call through a fresh :class:`FakeRedis`."""
     fake = FakeRedis()
     monkeypatch.setattr("app.core.redis.get_redis", lambda: fake)
+    monkeypatch.setattr("app.core.broker_orphans.queued_run_ids", lambda: fake.queued_stage_runs)
     return fake

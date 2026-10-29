@@ -31,7 +31,39 @@ VENV_PIP="${PROJECT_ROOT}/backend/venv/bin/pip"
 # differ by construction and say nothing about what the app runs.
 IGNORED="pip setuptools wheel"
 
-container="$(docker ps --filter "name=backend" --filter "status=running" --format '{{.Names}}' | head -1)"
+# Pick the backend of the stack this shell is working on. A bare `name=backend` filter takes
+# whichever stack docker lists first, so with a --fresh stack (or any second project) up the
+# comparison silently ran against the wrong image.
+#   * COMPOSE_PROJECT_NAME set (how opentr.sh scopes a --fresh stack): that project only.
+#   * unset: the default dev stack, i.e. the project that is NOT an `otfresh-*` fresh stack.
+#     Several candidates, or only fresh ones, is ambiguous: say so rather than guess.
+backend_filters=(--filter "label=com.docker.compose.service=backend" --filter "status=running")
+if [[ -n "${COMPOSE_PROJECT_NAME:-}" ]]; then
+    backend_filters+=(--filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}")
+fi
+candidates=()
+while IFS= read -r line; do
+    [[ -n "${line}" ]] && candidates+=("${line}")
+done < <(docker ps "${backend_filters[@]}" --format '{{.Names}} {{.Label "com.docker.compose.project"}}')
+
+container=""
+if [[ -n "${COMPOSE_PROJECT_NAME:-}" ]]; then
+    container="${candidates[0]:-}"; container="${container%% *}"
+else
+    dev_candidates=()
+    for line in "${candidates[@]}"; do
+        [[ "${line#* }" == otfresh-* ]] || dev_candidates+=("${line}")
+    done
+    if ((${#dev_candidates[@]} == 1)); then
+        container="${dev_candidates[0]%% *}"
+    elif ((${#dev_candidates[@]} > 1 || ${#candidates[@]} > 1)); then
+        echo "FAIL: several backend containers are running (${candidates[*]})." >&2
+        echo "      Set COMPOSE_PROJECT_NAME to the stack to compare against and re-run." >&2
+        exit 2
+    elif ((${#candidates[@]} == 1)); then
+        container="${candidates[0]:-}"; container="${container%% *}"
+    fi
+fi
 if [[ -z "${container}" ]]; then
     echo "SKIP: no running backend container to compare against."
     echo "      Start the stack with './opentr.sh start dev' and re-run."
@@ -45,7 +77,10 @@ fi
 echo "Comparing backend/venv against container '${container}'..."
 # The image ships no pip, so read the installed distributions from the interpreter itself.
 docker exec "${container}" python -c 'import importlib.metadata as m; print("\n".join(d.metadata["Name"] + "==" + d.version for d in m.distributions()))' 2>/dev/null | sort > /tmp/ot-parity-image.txt
-"${VENV_PIP}" freeze --all 2>/dev/null | sort > /tmp/ot-parity-venv.txt
+# `pip list --format=freeze`, not `pip freeze --all`: freeze prints direct-URL installs
+# (the pyannote.audio fork, en_core_web_sm) as `name @ url`, which carries no `==` version
+# and was silently dropped here, reporting both as image-only when the venv had them.
+"${VENV_PIP}" list --format=freeze 2>/dev/null | sort > /tmp/ot-parity-venv.txt
 
 if [[ ! -s /tmp/ot-parity-image.txt ]]; then
     echo "FAIL: could not read installed packages from ${container}."

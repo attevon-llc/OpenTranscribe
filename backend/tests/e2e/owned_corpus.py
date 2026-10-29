@@ -314,7 +314,13 @@ def _admin_user_id(email: str) -> int:
 
 
 def _inject_transcript(
-    backend_url: str, admin_token: str, *, meeting_id: str, title: str, turns: int
+    backend_url: str,
+    admin_token: str,
+    *,
+    meeting_id: str,
+    title: str,
+    turns: int,
+    owner_email: str | None = None,
 ) -> Iterator[dict[str, Any]]:
     """Inject one owned transcript, yield a descriptor, delete it however we exit.
 
@@ -323,6 +329,12 @@ def _inject_transcript(
     transcription pipeline itself writes. ASR is the only stage skipped, and that is
     the point: these fixtures back the file-detail surface, which reads Postgres and
     never touches the audio.
+
+    ``owner_email`` / ``admin_token``: by default the shared E2E admin owns the transcript and
+    ``admin_token`` is that admin's bearer. To inject for another account (so a test can change
+    that account's privacy settings instead of the shared admin's), pass that account's email as
+    ``owner_email`` AND its bearer token as ``admin_token`` -- the readback and the teardown
+    delete both go through the owner's own API access, which is the only access that has any.
 
     ``dispatch_indexing`` is deliberately **not** called. Nothing that consumes these
     searches; indexing 560 segments of filler would push it into the developer's
@@ -339,7 +351,7 @@ def _inject_transcript(
     from app.scripts.corpus_injection.model import InjectionRecord
     from app.scripts.corpus_injection.model import MeetingDoc
 
-    user_id = _admin_user_id(TEST_ADMIN_EMAIL)
+    user_id = _admin_user_id(owner_email or TEST_ADMIN_EMAIL)
     # uuid4 in the seed: `file_uuid` is a pure function of (corpus, meeting_id, seed),
     # so a fixed seed would make two concurrent runs collide on one row — and the
     # loser's teardown would delete the winner's file mid-test.

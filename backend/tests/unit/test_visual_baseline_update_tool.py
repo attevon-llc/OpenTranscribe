@@ -35,6 +35,7 @@ reports a crash instead of a refusal.
 
 from __future__ import annotations
 
+import ast
 import os
 import shutil
 import subprocess
@@ -215,10 +216,17 @@ def test_the_surface_list_is_read_from_the_suites_own_constant() -> None:
         for line in proc.stdout.splitlines()
         if line.startswith("S=")
     )
-    source = TEST_MODULE.read_text(encoding="utf-8")
-    surfaces_line = next(line for line in source.splitlines() if line.startswith("SURFACES = ["))
-    expected = [chunk.strip(' []"') for chunk in surfaces_line.split("=", 1)[1].split(",")]
-    assert derived == [e for e in expected if e]
+    # The oracle evaluates the constant itself (AST), independent of how the formatter lays the
+    # list out -- a one-line oracle read an exploded multi-line list as empty.
+    tree = ast.parse(TEST_MODULE.read_text(encoding="utf-8"))
+    expected = next(
+        ast.literal_eval(node.value)
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(t, ast.Name) and t.id == "SURFACES" for t in node.targets)
+    )
+    assert expected, "the oracle found no SURFACES entries, so it proves nothing"
+    assert derived == expected
 
 
 # ---------------------------------------------------------------------------

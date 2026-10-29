@@ -23,6 +23,7 @@ SENTINEL = "SENTINEL-/srv/internal/secret-path"
 RAW_MESSAGES_BY_REASON = {
     UserErrorReason.FILE_QUALITY: f"This file is corrupted: {SENTINEL}",
     UserErrorReason.NO_AUDIO_TRACK: f"does not contain any audio tracks: {SENTINEL}",
+    UserErrorReason.EMPTY_FILE: f"This file is empty and contains no content to process: {SENTINEL}",
     UserErrorReason.NO_SPEECH: f"no speech detected in recording: {SENTINEL}",
     UserErrorReason.FORMAT_ISSUE: f"unsupported codec found: {SENTINEL}",
     UserErrorReason.NETWORK_ERROR: f"connection timeout while downloading: {SENTINEL}",
@@ -104,3 +105,20 @@ def test_every_reason_has_a_non_empty_message_and_suggestions():
     assert unclassified_info["category"] == UserErrorReason.UNCLASSIFIED.value
     assert unclassified_info["user_message"]
     assert unclassified_info["suggestions"]
+
+
+@pytest.mark.unit
+def test_an_empty_upload_is_its_own_reason_and_is_not_retryable():
+    """Issue #786: empty, corrupt and no-audio are three different failures, and an empty
+    file must not be told "format or codec not supported"."""
+    empty = ErrorCategorizationService.get_error_info(
+        "This file is empty and contains no content to process."
+    )
+    corrupt = ErrorCategorizationService.get_error_info(
+        "This file appears to be corrupted or is not a valid audio/video file."
+    )
+
+    assert empty["category"] == UserErrorReason.EMPTY_FILE.value
+    assert corrupt["category"] == UserErrorReason.FILE_QUALITY.value
+    assert "format" not in empty["user_message"].lower()
+    assert empty["is_retryable"] is False

@@ -13,6 +13,7 @@ import type { MediaErrorReason } from '$lib/types/media';
 const MEDIA_ERROR_REASON_I18N_KEY: Record<MediaErrorReason, string> = {
   file_quality: 'errors.media.fileQuality',
   no_audio_track: 'errors.media.noAudioTrack',
+  empty_file: 'errors.media.emptyFile',
   no_speech: 'errors.media.noSpeech',
   format_issue: 'errors.media.formatIssue',
   processing_error: 'errors.media.processingError',

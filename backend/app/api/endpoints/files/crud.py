@@ -754,6 +754,9 @@ def claim_and_dispatch_redaction_scan(
     return RedactionScanDispatch(queued=True, task_id=str(task_id) if task_id else None)
 
 
+_LAZY_SCAN_FILE_STATUSES = (FileStatus.COMPLETED, FileStatus.ERROR)
+
+
 def _lazy_dispatch_redaction(db: Session, db_file: MediaFile) -> None:
     """Kick off redaction detection for a completed file that never had it (legacy).
 
@@ -782,7 +785,14 @@ def _redaction_pending(db: Session, cfg: Any, db_file: MediaFile) -> bool:
     # write, which belongs on a read a user is waiting on and not in a download worker.
     if not export_masking_is_pending(cfg, status):
         return False
-    if status is None:
+    # Only a file the pipeline has finished with is "legacy": COMPLETED, or ERROR (a failed
+    # reprocess leaves its earlier transcript, which would otherwise be withheld forever
+    # with no scan ever queued). Both are terminal for `update_media_file_from_task_status`,
+    # so the scan's task bookkeeping cannot change their status. A PENDING/PROCESSING file
+    # is still owned by the pipeline: that bookkeeping would take over its `active_task_id`
+    # and mark it COMPLETED, so one read of a requeued file would finish it without a
+    # transcript. It stays withheld (fail-closed) and is scanned once it completes.
+    if status is None and db_file.status in _LAZY_SCAN_FILE_STATUSES:
         _lazy_dispatch_redaction(db, db_file)
     return True  # None (just dispatched) | pending | processing
 

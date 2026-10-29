@@ -1770,6 +1770,7 @@
   "fileDetail.errorRetryable": "This may be temporary — retrying could work.",
   "errors.media.fileQuality": "This file could not be read. It may be corrupted, incomplete, or not a valid media file.",
   "errors.media.noAudioTrack": "This file has no audio track, so there is nothing to transcribe.",
+  "errors.media.emptyFile": "This file is empty, so there is nothing to transcribe.",
   "errors.media.noSpeech": "No speech was detected in this recording.",
   "errors.media.formatIssue": "This file's format or codec is not supported.",
   "errors.media.processingError": "Processing failed for this file.",

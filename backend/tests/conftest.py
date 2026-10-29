@@ -344,6 +344,8 @@ pytest_plugins = [
     "fixtures.dir_collector_memo",
     "fixtures.search_corpus_stack",
     "fixtures.auth_state_isolation",
+    # `open_registration`: opt-in fixture that opens self-registration in the test savepoint.
+    "fixtures.open_registration",
     # `summary_plane` + `sync_summary_plane`: seed the OpenSearch summary plane (#963) from
     # Postgres for API-level summary-search tests. Opt-in per module; nothing autouse.
     "fixtures.summary_plane",

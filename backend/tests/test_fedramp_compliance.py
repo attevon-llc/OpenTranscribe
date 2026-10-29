@@ -420,6 +420,7 @@ class TestIntegrationEndpoints:
             response.text
         )  # schema validation rejects it, not the handler
 
+    @pytest.mark.usefixtures("open_registration")
     def test_strong_password_accepted(self, client):
         """Registration with strong password should succeed."""
         import uuid

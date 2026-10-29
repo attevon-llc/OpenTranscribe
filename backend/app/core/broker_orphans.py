@@ -78,6 +78,7 @@ import json
 import logging
 import time
 from collections.abc import Iterable
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -204,6 +205,103 @@ def read_unacked(client: Any) -> list[UnackedDelivery]:
         tag = _decode(raw_tag) or ""
         result.append(parse_unacked(tag, raw, delivered.get(tag)))
     return result
+
+
+def queued_run_id(raw: bytes | str) -> str | None:
+    """The transcription run a message waiting on a queue list belongs to, if any."""
+    try:
+        message = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(message, dict):
+        return None
+    if (message.get("headers") or {}).get("task") not in TRANSCRIPTION_STAGES:
+        return None
+    return _run_identity(message)[0]
+
+
+def transcription_stage_queues() -> list[str]:
+    """The queues a transcription stage message can wait on, derived from the routing config.
+
+    Static routes come from ``task_routes``; the stages that are routed at call time
+    (``INTENTIONALLY_UNROUTED_TASKS``) declare their candidate queues in
+    ``UNROUTED_STAGE_QUEUES`` next to that allowlist, and a test pins that every unrouted
+    stage appears there.
+    """
+    from app.core.celery import UNROUTED_STAGE_QUEUES
+    from app.core.celery import celery_app
+
+    routes = celery_app.conf.task_routes or {}
+    queues: set[str] = set()
+    for name in TRANSCRIPTION_STAGES:
+        route = routes.get(name)
+        if isinstance(route, dict) and route.get("queue"):
+            queues.add(route["queue"])
+        queues.update(UNROUTED_STAGE_QUEUES.get(name, ()))
+    return sorted(queues)
+
+
+def read_queued_run_ids(client: Any, queues: Iterable[str] | None = None) -> set[str]:
+    """Runs with a stage message WAITING on a queue list (not delivered to any worker).
+
+    A cold shutdown hands a running stage back to the head of its queue; until a worker
+    takes it again it is in neither ``unacked`` nor held by a lease, so it must be read from
+    the lists themselves. Only the queues a transcription stage can sit on are read, in one
+    pipelined round trip over their priority lists.
+    """
+    from kombu.transport.redis import Channel
+
+    priority_steps = range(10)  # mirrors broker_transport_options["priority_steps"]
+    keys = [
+        queue if priority == 0 else f"{queue}{Channel.sep}{priority}"
+        for queue in (transcription_stage_queues() if queues is None else queues)
+        for priority in priority_steps
+    ]
+    pipe = client.pipeline(transaction=False)
+    for key in keys:
+        pipe.lrange(key, 0, -1)
+    run_ids: set[str] = set()
+    for entries in pipe.execute():
+        for raw in entries or []:
+            run_id = queued_run_id(raw)
+            if run_id:
+                run_ids.add(run_id)
+    return run_ids
+
+
+def queued_run_ids() -> set[str] | None:
+    """:func:`read_queued_run_ids` over the app's own broker connection; None when unreadable."""
+    try:
+        conn = _broker_connection()
+    except Exception as e:  # noqa: BLE001 - conclude nothing from an unreadable broker
+        logger.warning("Could not read the queued stages: %s", e)
+        return None
+    try:
+        return read_queued_run_ids(conn.default_channel.client)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Could not read the queued stages: %s", e)
+        return None
+    finally:
+        conn.release()
+
+
+def dead_unqueued_run_ids(runs: Mapping[str, Any]) -> set[str]:
+    """Ids of the DEAD runs whose stage message is NOT waiting on a queue.
+
+    A cold shutdown puts the running stage back at the head of its queue and releases the
+    lease, so the run reads DEAD while it is merely first in line. Every health-check path
+    that would fail or re-dispatch a dead run goes through this so none of them duplicates
+    it. An unreadable broker concludes nothing (no run is reported dead).
+    """
+    from app.core.task_liveness import RunState
+
+    dead = {str(task_id) for task_id, run in runs.items() if run.state == RunState.DEAD}
+    if not dead:
+        return set()
+    queued = queued_run_ids()
+    if queued is None:
+        return set()
+    return dead - queued
 
 
 def _lease_states(run_ids: Iterable[str]) -> dict[str, Any]:
@@ -513,6 +611,10 @@ def reclaim_orphaned_deliveries(
     conn = _broker_connection() if owns_connection else connection
     try:
         client = conn.default_channel.client
+        # Lists BEFORE unacked, and both again before the lost-run pass: a message moves
+        # list -> unacked when a worker takes it and unacked -> list when a cold shutdown
+        # restores it, and either move between two single reads would hide it from both.
+        queued_early = read_queued_run_ids(client)
         deliveries = read_unacked(client)
         summary["unacked"] = len(deliveries)
         _held, orphaned = classify(deliveries, now=now)
@@ -542,7 +644,14 @@ def reclaim_orphaned_deliveries(
         # Runs whose worker AND message are gone: nothing to put back, so re-dispatch.
         from app.services.transcription_retry import recover_lost_runs
 
-        in_broker = {d.run_id for d in deliveries if d.run_id}
+        # A run whose stage message waits on a queue list (a cold shutdown puts the running
+        # stage back at the head) is not lost either: it is first in line, not gone.
+        in_broker = (
+            {d.run_id for d in deliveries if d.run_id}
+            | {d.run_id for d in read_unacked(client) if d.run_id}
+            | queued_early
+            | read_queued_run_ids(client)
+        )
         summary["lost_runs"] = recover_lost_runs(exclude=in_broker)
         return summary
     except Exception as e:  # noqa: BLE001 - conclude nothing from an unreadable broker

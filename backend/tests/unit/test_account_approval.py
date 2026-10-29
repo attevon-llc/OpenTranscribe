@@ -99,6 +99,7 @@ class TestTheStateMachine:
 
 
 class TestNewAccountsAreHeld:
+    @pytest.mark.usefixtures("open_registration")
     def test_self_registration_lands_pending(self, client, db_session, super_admin_user):
         _require_approval(db_session, super_admin_user, True)
         email = f"pending-{uuid_pkg.uuid4().hex[:8]}@example.com"
@@ -114,6 +115,7 @@ class TestNewAccountsAreHeld:
         assert row is not None and row.approval_status == APPROVAL_PENDING
         db_session.rollback()
 
+    @pytest.mark.usefixtures("open_registration")
     def test_self_registration_is_unaffected_while_the_setting_is_off(self, client, db_session):
         email = f"open-{uuid_pkg.uuid4().hex[:8]}@example.com"
         response = client.post(

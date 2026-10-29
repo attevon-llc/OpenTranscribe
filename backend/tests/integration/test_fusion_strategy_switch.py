@@ -265,26 +265,58 @@ class TestTheSwitchChangesWhatComesBack:
 
 @pytest.fixture(scope="module")
 def corpus_user_id(client) -> int:
-    """Whoever owns the indexed corpus, read from the corpus itself.
+    """The user who can access the MOST chunks matching the test vocabulary.
 
     Discovered rather than configured: ``retrieve_chunks`` gates on
     ``accessible_user_ids``, and hard-coding an id would silently retrieve
-    nothing on any stack but the one it was written against — an empty pool that
-    passes an ``assert not raised``-shaped test.
+    nothing on any stack but the one it was written against. Picked by a terms
+    aggregation filtered by ``_LEG_B``, not by whichever document ``match_all``
+    happens to return first: that document's owner may hold none of the vocabulary,
+    and the thin-corpus skip below would then hide a wrong pick as a thin corpus.
     """
     response = client.search(
         index=settings.OPENSEARCH_CHUNKS_INDEX,
-        body={"size": 1, "_source": ["accessible_user_ids"], "query": {"match_all": {}}},
+        body={
+            "size": 0,
+            "query": {"match": {"content": _LEG_B}},
+            "aggs": {"owners": {"terms": {"field": "accessible_user_ids", "size": 1}}},
+        },
     )
-    hits = response.get("hits", {}).get("hits", [])
-    if not hits:
-        pytest.skip("chunks index is empty")
-    user_ids = hits[0]["_source"].get("accessible_user_ids") or []
-    if not user_ids:
-        pytest.skip("no document carries accessible_user_ids; cannot scope a retrieval")
-    return int(user_ids[0])
+    buckets = response.get("aggregations", {}).get("owners", {}).get("buckets", [])
+    if not buckets:
+        pytest.skip(
+            f"no user can access a chunk matching {_LEG_B!r}; the corpus has nothing to scope to"
+        )
+    return int(buckets[0]["key"])
 
 
+@pytest.fixture(scope="module")
+def chat_corpus_supports_ranking(client, corpus_user_id) -> None:
+    """Skip the chat-path ranking assertions when the caller's accessible corpus is too thin.
+
+    The same corpus-mismatch reasoning as :func:`corpus_supports_ranking`, but scoped the way
+    ``retrieve_chunks`` scopes (``accessible_user_ids``) and keyed on the lexical leg alone, so
+    a fusion bug that returns nothing from a corpus that does hold the vocabulary still fails.
+    """
+    body = {
+        "query": {
+            "bool": {
+                "must": [{"match": {"content": _LEG_B}}],
+                "filter": [{"term": {"accessible_user_ids": corpus_user_id}}],
+            }
+        }
+    }
+    matching = int(client.count(index=settings.OPENSEARCH_CHUNKS_INDEX, body=body)["count"])
+    if matching < _MIN_HITS_FOR_RANKING:
+        pytest.skip(
+            f"user {corpus_user_id} can access {matching} chunk(s) matching {_LEG_B!r} in "
+            f"{settings.OPENSEARCH_CHUNKS_INDEX}, below the {_MIN_HITS_FOR_RANKING} the "
+            "ranking assertions need. The corpus is thin, not the fusion plumbing; index a "
+            "meeting-transcript corpus (#403) to run these."
+        )
+
+
+@pytest.mark.usefixtures("chat_corpus_supports_ranking")
 class TestTheChatPathHonoursTheSelection:
     """The same claim through ``retrieve_chunks`` — the path the harness drives."""
 

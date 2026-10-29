@@ -28,6 +28,7 @@ from app.services.privacy.consent import VoiceprintConsentRequest
 from app.services.privacy.consent import clear_voiceprint_consent_hooks
 from app.services.privacy.consent import register_voiceprint_consent_hook
 from app.services.privacy.policy import PrivacyCeiling
+from tests.fixtures.privacy_switches import upsert_system_setting
 
 INSTANCE_KEYS = {
     "voiceprints": constants.PRIVACY_VOICEPRINT_MATCHING_KEY,
@@ -62,8 +63,7 @@ def _org(db) -> Organization:
 
 
 def _set_instance(db, feature: str, value: str) -> None:
-    db.add(SystemSettings(key=INSTANCE_KEYS[feature], value=value))
-    db.flush()
+    upsert_system_setting(db, INSTANCE_KEYS[feature], value)
 
 
 def _set_org(db, org_id: int, **flags: bool) -> None:
@@ -207,8 +207,7 @@ def test_an_unparseable_instance_value_reads_as_off(db_session, normal_user, fea
 
 
 def test_a_null_instance_value_reads_as_off(db_session, normal_user):
-    db_session.add(SystemSettings(key=INSTANCE_KEYS["voiceprints"], value=None))
-    db_session.flush()
+    upsert_system_setting(db_session, INSTANCE_KEYS["voiceprints"], None)
 
     assert _decision(db_session, "voiceprints", normal_user.id, None).enabled is False
 

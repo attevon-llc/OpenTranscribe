@@ -10,6 +10,9 @@ import os
 import time
 from collections.abc import Callable
 
+from app.core.pipeline_constants import ASR_SEGMENT_MAX_DURATION_SECONDS
+from app.core.pipeline_constants import ASR_SEGMENT_MIN_GAP_SECONDS
+
 from .base import ASRProvider
 from .errors import ASRRateLimitedError
 from .errors import http_status_of
@@ -21,10 +24,6 @@ from .types import ASRSegment
 from .types import ASRWord
 
 logger = logging.getLogger(__name__)
-
-# Segment-grouping thresholds (no-diarization path).
-_MAX_DUR = 30.0  # seconds — max segment duration before a forced split
-_MIN_GAP = 0.5  # seconds — silence gap that triggers a new segment
 
 
 class AssemblyAIProvider(ASRProvider):
@@ -213,7 +212,7 @@ class AssemblyAIProvider(ASRProvider):
                 )
         elif transcript.words:
             # Group into segments when diarization is disabled.
-            # Split on silence gaps >= _MIN_GAP s OR when segment duration would exceed _MAX_DUR s.
+            # Split on silence gaps >= ASR_SEGMENT_MIN_GAP_SECONDS s OR when segment duration would exceed ASR_SEGMENT_MAX_DURATION_SECONDS s.
             # New chunk_start is taken from the *next* word's start time so silence gaps
             # are not swallowed into the reported segment duration.
             chunk_words: list = []
@@ -226,7 +225,11 @@ class AssemblyAIProvider(ASRProvider):
                 next_start_s = (words_iter[idx + 1].start / 1000.0) if not is_last else end_s
                 gap = next_start_s - end_s
                 duration = end_s - chunk_start
-                if is_last or gap >= _MIN_GAP or duration >= _MAX_DUR:
+                if (
+                    is_last
+                    or gap >= ASR_SEGMENT_MIN_GAP_SECONDS
+                    or duration >= ASR_SEGMENT_MAX_DURATION_SECONDS
+                ):
                     text = " ".join(x.text for x in chunk_words)
                     asr_words = [
                         ASRWord(

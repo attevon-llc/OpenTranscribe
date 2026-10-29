@@ -14,11 +14,11 @@ from typing import Any
 
 import numpy as np
 
+from app.core.pipeline_constants import SAMPLE_RATE
+
 logger = logging.getLogger(__name__)
 
 MODEL_NAME = "prithivMLmods/Common-Voice-Gender-Detection"
-
-SAMPLE_RATE = 16000
 
 # Longest clip the model ever sees (issue #1066). wav2vec2's activation memory grows with
 # input length, and the callers hand it whole merged speaking turns, which run to minutes

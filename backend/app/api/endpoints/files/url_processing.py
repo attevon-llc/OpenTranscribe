@@ -180,15 +180,6 @@ class PlaylistProcessingResponse(BaseModel):
 URLProcessingResponse = MediaFileSchema | PlaylistProcessingResponse
 
 
-# Generic URL pattern for any HTTP/HTTPS URL
-GENERIC_URL_PATTERN = re.compile(r"^https?://.+$")
-
-# YouTube URL validation and normalization (kept for playlist/YouTube-specific handling)
-YOUTUBE_URL_PATTERN = re.compile(
-    r"^https?://(www\.)?(youtube\.com/(watch\?v=|embed/|v/)|youtu\.be/)[\w\-_]+.*$"
-)
-
-
 def normalize_media_url(url: str) -> str:
     """Normalize media URL for duplicate detection.
 

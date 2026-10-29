@@ -35,6 +35,12 @@ from app.utils.language import normalize_language
 
 logger = logging.getLogger(__name__)
 
+#: The categories whose spans can actually be masked on a read path (search snippets,
+#: summaries). ``toxicity`` is absent on purpose: its detector emits a per-segment SCORE and
+#: never a span, and the ``toxicity`` category's maskable spans come from the ``llm`` detector,
+#: a provider round-trip with no business on a read request.
+MASKABLE_CATEGORIES = frozenset({"pii", "profanity", "custom"})
+
 # Detector → the categories whose MASKING depends on it. The ONE copy of this
 # mapping: every fail-closed masker needs it to decide whether a detector failure
 # is one the user's policy cares about, and a second copy drifts silently

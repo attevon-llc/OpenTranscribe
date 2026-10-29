@@ -39,7 +39,7 @@ def _speaker_summary_entry(
     already knows exactly which canonical name it wants (this map's own
     ``speaker_names``), so a single best-fuzzy-match is the correct shape.
     """
-    from app.services.chat.speaker_resolver import FUZZY_MATCH_THRESHOLD
+    from app.core.constants import FUZZY_MATCH_THRESHOLD
 
     entries = summary_data.get("speakers_analysis") or []
     wanted = speaker_name.strip().casefold()
@@ -63,7 +63,7 @@ def _speaker_summary_entry(
 
 def _owner_matched_action_items(summary_data: dict[str, Any], speaker_name: str) -> list[str]:
     """Action items whose ``assigned_to`` names ``speaker_name`` (same ladder)."""
-    from app.services.chat.speaker_resolver import FUZZY_MATCH_THRESHOLD
+    from app.core.constants import FUZZY_MATCH_THRESHOLD
 
     items = summary_data.get("action_items") or []
     wanted = speaker_name.strip().casefold()

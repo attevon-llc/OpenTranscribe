@@ -44,14 +44,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Terminal tracking statuses — a file in one of these is not re-imported.
-_TERMINAL_STATUSES = {
-    "imported",
-    "skipped_duplicate",
-    "skipped_old",
-    "skipped_invalid",
-    "stitched_part",
-}
+# Terminal tracking statuses — a file in one of these is not re-imported or re-listed.
+TERMINAL_STATUSES = frozenset(
+    {
+        "imported",
+        "skipped_duplicate",
+        "skipped_old",
+        "skipped_invalid",
+        "stitched_part",
+    }
+)
 
 # Fallback MIME types for media extensions that mimetypes may not know.
 _MEDIA_MIME_FALLBACK = {
@@ -95,7 +97,7 @@ def _get_or_create_tracking_row(
         .first()
     )
     if existing:
-        if existing.status in _TERMINAL_STATUSES:
+        if existing.status in TERMINAL_STATUSES:
             return None
         return existing
 

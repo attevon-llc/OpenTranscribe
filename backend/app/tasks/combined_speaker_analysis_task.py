@@ -17,6 +17,7 @@ from app.core.constants import NOTIFICATION_TYPE_COMBINED_MIGRATION_PROGRESS
 from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
 from app.core.constants import CPUPriority
 from app.core.constants import GPUPriority
+from app.core.pipeline_constants import FILES_PER_BATCH_TASK
 from app.core.redis import get_redis
 from app.db.session_utils import session_scope
 from app.services.migration_progress_service import MigrationProgressService
@@ -28,7 +29,6 @@ from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
 
-_BATCH_SIZE = 25
 
 # Progress tracker for combined migration
 combined_migration_progress = MigrationProgressService(key_prefix="combined_speaker_migration")
@@ -270,7 +270,10 @@ def migrate_speakers_combined_task(self, user_id: int):
             },
         )
 
-        batches = [file_uuids[i : i + _BATCH_SIZE] for i in range(0, len(file_uuids), _BATCH_SIZE)]
+        batches = [
+            file_uuids[i : i + FILES_PER_BATCH_TASK]
+            for i in range(0, len(file_uuids), FILES_PER_BATCH_TASK)
+        ]
 
         batch_task_ids: list[str] = []
         batch_task_ids_key = f"{combined_migration_progress.key_prefix}:batch_task_ids"

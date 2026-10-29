@@ -25,8 +25,8 @@ trailing punctuation) and the timestamps (monotonic, non-overlapping) are repair
 
 from __future__ import annotations
 
-# Maximum plausible duration for a single word (seconds). Mirrors transcriber.py.
-_MAX_WORD_DURATION = 5.0
+from app.core.pipeline_constants import MAX_WORD_DURATION
+
 # Punctuation CrisperWhisper glues onto the FRONT of the next word; it logically
 # belongs to the END of the previous word (standard whisper attaches it there).
 _TRAILING_PUNCT = ".,!?;:"
@@ -94,7 +94,7 @@ def normalize_crisperwhisper(segments: list[dict]) -> list[dict]:
        front is moved onto the *previous* word; bracket fillers (``"[UM]"``) are kept
        but lower-cased. Every cleaned word is then given the standard single leading
        space so ``"".join(w["word"] ...)`` reconstructs correctly spaced text.
-    2. **Timestamp repair** — durations longer than ``_MAX_WORD_DURATION`` are capped,
+    2. **Timestamp repair** — durations longer than ``MAX_WORD_DURATION`` are capped,
        monotonicity is enforced (each word starts at/after the previous word's end),
        and any ``start > end`` is corrected, all clamped to the segment bounds.
     3. **Text rebuild** — the segment ``text`` is rebuilt from the cleaned words so it
@@ -167,7 +167,7 @@ def _repair_timestamps(words: list[dict], seg_start: float, seg_end: float) -> N
 
     Mirrors ``transcriber._validate_word_timestamps`` but additionally repairs the
     ``start > end`` inversions CrisperWhisper's cross-attention DTW occasionally emits.
-    Each word is clamped to ``[seg_start, seg_end]``, capped at ``_MAX_WORD_DURATION``,
+    Each word is clamped to ``[seg_start, seg_end]``, capped at ``MAX_WORD_DURATION``,
     and forced to begin at or after the previous word ends.
 
     Args:
@@ -192,8 +192,8 @@ def _repair_timestamps(words: list[dict], seg_start: float, seg_end: float) -> N
                 end = start
 
         # Cap implausibly long durations.
-        if end - start > _MAX_WORD_DURATION:
-            end = min(start + _MAX_WORD_DURATION, seg_end)
+        if end - start > MAX_WORD_DURATION:
+            end = min(start + MAX_WORD_DURATION, seg_end)
 
         # Guarantee a non-zero (or at least non-negative) span within bounds.
         if end <= start:

@@ -30,8 +30,8 @@ each of them is why this module exists rather than a few more lines in
    is real and is stated in this package's ``CLAUDE.md``.
 
 **Toxicity cannot be masked here and is deliberately absent from
-:data:`MASKABLE_CATEGORIES`.** The toxicity detector emits a per-segment SCORE,
-never a span (``redaction/config._DETECTOR_CATEGORIES`` maps it to the empty
+:data:`MASKABLE_CATEGORIES` (``redaction/config``).** The toxicity detector emits a per-segment
+SCORE, never a span (``redaction/config._DETECTOR_CATEGORIES`` maps it to the empty
 set); its consumer is ``formatting_service``, which turns it into a UI flag. The
 ``toxicity`` *category*'s maskable spans come from the ``llm`` detector, which is
 a provider round-trip and has no business on a search request. A user whose only
@@ -46,13 +46,10 @@ import html
 import logging
 import re
 
+from app.services.redaction.config import MASKABLE_CATEGORIES
 from app.services.redaction.config import EffectiveRedactionConfig
 
 logger = logging.getLogger(__name__)
-
-#: The categories a search snippet can actually be masked for. ``toxicity`` is
-#: absent on purpose — see the module docstring.
-MASKABLE_CATEGORIES = frozenset({"pii", "profanity", "custom"})
 
 # Capturing group: `re.split` then yields text runs at even indices and the tags
 # themselves at odd ones, so the split is lossless and the snippet reassembles

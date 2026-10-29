@@ -25,9 +25,9 @@ import logging
 
 import numpy as np
 
-logger = logging.getLogger(__name__)
+from app.core.pipeline_constants import SAMPLE_RATE
 
-SAMPLE_RATE = 16000
+logger = logging.getLogger(__name__)
 
 
 def load_audio(file_path: str) -> np.ndarray:

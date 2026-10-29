@@ -18,6 +18,7 @@ from app.core.constants import NOTIFICATION_TYPE_ATTRIBUTE_MIGRATION_PROGRESS
 from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
 from app.core.constants import CPUPriority
 from app.core.constants import GPUPriority
+from app.core.pipeline_constants import FILES_PER_BATCH_TASK
 from app.db.session_utils import session_scope
 from app.services.migration_progress_service import MigrationProgressService
 from app.services.progress_tracker import ProgressTracker
@@ -28,8 +29,6 @@ from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
 
-# Batch size — files per Celery task
-_BATCH_SIZE = 25
 
 # Separate progress tracker for speaker attribute migration
 attribute_migration_progress = MigrationProgressService(key_prefix="speaker_attr_migration")
@@ -367,7 +366,10 @@ def migrate_speaker_attributes_task(self, user_id: int, force: bool = False):
             },
         )
 
-        batches = [file_uuids[i : i + _BATCH_SIZE] for i in range(0, len(file_uuids), _BATCH_SIZE)]
+        batches = [
+            file_uuids[i : i + FILES_PER_BATCH_TASK]
+            for i in range(0, len(file_uuids), FILES_PER_BATCH_TASK)
+        ]
 
         batch_task_ids = []
         for batch_idx, batch in enumerate(batches):

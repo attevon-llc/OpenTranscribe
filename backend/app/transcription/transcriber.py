@@ -14,14 +14,13 @@ from typing import Any
 import numpy as np
 
 from app.core import stage_timing
+from app.core.pipeline_constants import MAX_WORD_DURATION
 from app.transcription import cuda_health
 from app.transcription import vram_budget
 from app.transcription.config import TranscriptionConfig
 
 logger = logging.getLogger(__name__)
 
-# Maximum plausible duration for a single word (seconds)
-_MAX_WORD_DURATION = 5.0
 # Words below this probability have unreliable cross-attention DTW timestamps
 _LOW_CONFIDENCE_THRESHOLD = 0.3
 
@@ -32,13 +31,13 @@ def _validate_word_timestamps(words: list[dict], seg_start: float, seg_end: floa
     Cross-attention DTW can produce overlapping or implausibly long word
     timestamps. This pass ensures:
     1. Each word starts at or after the previous word ends (monotonicity)
-    2. No single word spans more than _MAX_WORD_DURATION seconds
+    2. No single word spans more than MAX_WORD_DURATION seconds
     3. All words remain within [seg_start, seg_end]
     """
     for i, word in enumerate(words):
         # Cap implausible durations first
-        if word["end"] - word["start"] > _MAX_WORD_DURATION:
-            word["end"] = min(word["start"] + _MAX_WORD_DURATION, seg_end)
+        if word["end"] - word["start"] > MAX_WORD_DURATION:
+            word["end"] = min(word["start"] + MAX_WORD_DURATION, seg_end)
 
         # Enforce monotonicity: word N starts at or after word N-1 ends
         if i > 0 and word["start"] < words[i - 1]["end"]:

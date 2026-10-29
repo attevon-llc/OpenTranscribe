@@ -29,6 +29,7 @@ from app.core.constants import GPUPriority
 from app.core.constants import get_speaker_index
 from app.core.constants import get_speaker_index_v3
 from app.core.constants import get_speaker_index_v4
+from app.core.pipeline_constants import FILES_PER_BATCH_TASK
 from app.core.redis import get_redis
 from app.db.session_utils import session_scope
 from app.tasks.opensearch_integrity_task import _exceeds_delete_ratio
@@ -42,7 +43,6 @@ _REDIS_LAST_RUN_KEY = "embedding_consistency_last_run"
 _REDIS_PROGRESS_KEY = "embedding_consistency_progress"
 _REDIS_BATCH_IDS_KEY = "embedding_consistency:batch_task_ids"
 _LOCK_TTL = 7200  # 2 hours — must outlast the longest possible repair run
-_BATCH_SIZE = 25
 
 
 # ---------------------------------------------------------------------------
@@ -582,7 +582,10 @@ def speaker_embedding_consistency_check_task(
             speaker_embedding_consistency_repair_batch_task,
         )
 
-        batches = [file_uuids[i : i + _BATCH_SIZE] for i in range(0, len(file_uuids), _BATCH_SIZE)]
+        batches = [
+            file_uuids[i : i + FILES_PER_BATCH_TASK]
+            for i in range(0, len(file_uuids), FILES_PER_BATCH_TASK)
+        ]
 
         batch_task_ids = []
         for batch_idx, batch in enumerate(batches):

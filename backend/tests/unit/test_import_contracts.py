@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import os
 import re
+import secrets
 import shutil
+import string
 import subprocess
 import sys
 import tempfile
@@ -66,7 +68,11 @@ def _status(output: str) -> dict[str, str]:
 
 @contextmanager
 def _backend_copy() -> Iterator[Path]:
-    root = Path(tempfile.mkdtemp(prefix="ot-redcheck."))
+    # Mint the exact shape the artifact sweep registry knows (`ot-redcheck.` + 6 alnum chars),
+    # which `tempfile.mkdtemp` cannot: it appends 8 chars from a different alphabet.
+    suffix = "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(6))
+    root = Path(tempfile.gettempdir()) / f"ot-redcheck.{suffix}"
+    root.mkdir(exist_ok=False)
     try:
         shutil.copytree(BACKEND / "app", root / "app", ignore=shutil.ignore_patterns("__pycache__"))
         shutil.copy(BACKEND / "pyproject.toml", root / "pyproject.toml")

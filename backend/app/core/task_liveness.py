@@ -151,8 +151,11 @@ def _hands_back_to_broker(exc: BaseException | None) -> bool:
     A normal return publishes the chain's successor link; a Celery retry or a
     ``Reject(requeue=True)`` puts this stage's own message back. Anything else -- a failure the
     retry policy has already answered (its Task row is terminal), or an exception from being
-    torn down (a cold shutdown's cancel, which on the Redis transport ACKS the message) --
-    leaves nothing waiting, and claiming otherwise would hide a lost run as "queued" until
+    torn down (the ``SystemExit`` of a cold shutdown) -- is NOT claimed as queued here:
+    the pool reports that job lost and Celery's own reject-with-requeue puts the message back
+    (billiard >= 4.3.1; 4.3.0 let the cancel ACK it, which dropped the message). The reaper
+    sees that message on its queue list (``broker_orphans.read_queued_run_ids``), so a wrong
+    "queued" claim here would only hide a genuinely lost run until
     ``TRANSCRIPTION_QUEUE_MAX_WAIT_SECONDS``.
     """
     if exc is None:

@@ -28,6 +28,8 @@
 #   09  snapshot post-upgrade state
 #   10  diff snapshots, run feature liveness checks, write REPORT.md
 #   11  new upload + transcription on the upgraded stack (does it still work?)
+#   11b v0.6.0 feature checks on the upgraded stack (lib/feature-checks.sh); skipped by
+#       --only-rollback, and always BEFORE the rollback tail because it includes a purge
 #   12  assert the rollback precondition (# OT_PREVIOUS_IMAGE_TAG) was recorded
 #   13  stage the rollback tree (unpinned images); verify the TO-side backup too
 #   14  damage the database through the real API (delete a file, rename a speaker)
@@ -279,6 +281,8 @@ source "$LIB_DIR/model-cache.sh"
 source "$LIB_DIR/db-snapshot.sh"
 # shellcheck source=lib/compose-chain.sh
 source "$LIB_DIR/compose-chain.sh"
+# shellcheck source=lib/feature-checks.sh
+source "$LIB_DIR/feature-checks.sh"
 
 if (( DO_CLEANUP == 1 )); then
     gr_log "cleanup requested"
@@ -548,6 +552,12 @@ gr_ok "upgrade path: $FROM_VERSION  ->  $TO_VERSION"
 export OT_TEST_IMAGE_TAG="$FROM_VERSION"
 
 PHASE_DIR="$TEST_ROOT/.phase"
+# Every assertion verdict is also written here so the summary phase counts the whole run, not
+# just the phases this process executed (lib/assertions.sh). --force starts the count over.
+mkdir -p "$PHASE_DIR"
+TEST_ASSERT_LEDGER="$PHASE_DIR/assertions.ledger"
+export TEST_ASSERT_LEDGER
+(( DO_FORCE == 0 )) || rm -f "$TEST_ASSERT_LEDGER"
 phase_done()  { mkdir -p "$PHASE_DIR"; touch "$PHASE_DIR/$1.done"; }
 phase_check() { [[ -f "$PHASE_DIR/$1.done" && $DO_FORCE -eq 0 ]]; }
 phase()       { local n="$1"; shift
@@ -1026,6 +1036,9 @@ for path, methods in sorted(spec.get("paths", {}).items()):
     docker exec "$pg" psql -U postgres -d opentranscribe -tAc \
         "SELECT id, name FROM speaker ORDER BY id" > "$out/speakers.txt" 2>/dev/null \
         || echo "(speaker table query failed — schema may differ)" > "$out/speakers.txt"
+    # display_name per speaker (id|name), for phase 11b's "names survive the upgrade" check.
+    # Recorded as a parenthesised marker when the FROM schema cannot answer.
+    fc_snapshot_speaker_names "$out/speaker_display_names.txt"
 
     # MinIO ETag list (proves no object body mutation)
     local minio="opentranscribe-minio"
@@ -1432,6 +1445,11 @@ _init_report() {
     export TEST_REPORT_FILE
     (( REPORT_INITIALISED == 0 )) || return 0
     REPORT_INITIALISED=1
+    # A resumed run must not erase the verdicts already recorded: the report is the only place a
+    # FAIL from an earlier process is still written down. Only --force starts a new report.
+    if [[ -s "$TEST_REPORT_FILE" ]] && (( DO_FORCE == 0 )); then
+        return 0
+    fi
     : > "$TEST_REPORT_FILE"
     {
         echo "# Release Test Report — Scenario B (upgrade $FROM_VERSION → $LOCAL_IMAGE_TAG)"
@@ -1936,6 +1954,33 @@ print(d.get("total_results") or len(d.get("results") or d.get("hits") or []))
         waited=$((waited + 10))
     done
     as_assert_ge "NEW content indexed and searchable post-upgrade" "$new_hits" 1
+}
+
+phase_11b_feature_checks() {
+    # --only-rollback resumes at phase 12 on a TEST_ROOT that finished phase 11; this phase may not
+    # have run there, and by then the stack may already have been rolled back and forward. The
+    # checks (one of them an irreversible purge) belong to the forward path only.
+    if (( ONLY_ROLLBACK == 1 )); then
+        TEST_REPORT_FILE="${TEST_REPORT_FILE:-$TEST_ROOT/REPORT.md}"
+        export TEST_REPORT_FILE
+        as_record SKIP "v0.6.0 feature checks (phase 11b)" "--only-rollback resumes after the forward path"
+        return 0
+    fi
+    API_BASE="${API_BASE:-http://localhost:${TEST_BACKEND_PORT}/api}"
+    export API_BASE
+    TEST_REPORT_FILE="${TEST_REPORT_FILE:-$TEST_ROOT/REPORT.md}"
+    export TEST_REPORT_FILE
+
+    ac_login "$TEST_ADMIN_EMAIL" "$TEST_ADMIN_PASSWORD" || {
+        as_record FAIL "login to upgraded stack for the v0.6.0 feature checks"
+        return 0
+    }
+    # Forward path only, on the upgraded stack and BEFORE the rollback tail (phase 12 onward):
+    # the purge in here is irreversible by design, and the rollback restores the pre-upgrade
+    # backup over whatever it leaves behind.
+    fc_run_all upgrade \
+        "$TEST_ROOT/snapshots/before/speaker_display_names.txt" \
+        "$TEST_ROOT/snapshots/after/speaker_display_names.txt"
 }
 
 phase_12_assert_rollback_precondition() {
@@ -2878,6 +2923,7 @@ phase 08 phase_08_start_new
 phase 09 phase_09_snapshot_post
 phase 10 phase_10_assert_and_report
 phase 11 phase_11_new_data_post_upgrade
+phase 11b phase_11b_feature_checks
 phase 12 phase_12_assert_rollback_precondition
 if [[ "$ROLLBACK_REHEARSAL" == "1" ]]; then
     phase 13 phase_13_stage_rollback_tree

@@ -96,12 +96,19 @@ def test_wrong_sha_or_version_is_409_and_stores_nothing(
 
 
 def test_non_super_admin_cannot_acknowledge_operator_key(
-    client, db_session, admin_token_headers, user_token_headers
+    client, db_session, admin_user, normal_user, admin_token_headers, user_token_headers
 ):
     for headers in (admin_token_headers, user_token_headers):
         r = client.post("/api/legal/acknowledgments", json=_body(), headers=headers)
         assert r.status_code == 403
-    assert db_session.query(LegalAcceptance).count() == 0
+    # Scoped to these two users: the table is global and a long-lived dev database may
+    # hold acknowledgments recorded by real operators.
+    assert (
+        db_session.query(LegalAcceptance)
+        .filter(LegalAcceptance.user_id.in_([admin_user.id, normal_user.id]))
+        .count()
+        == 0
+    )
 
 
 def test_unknown_key_is_404(client, super_admin_token_headers):

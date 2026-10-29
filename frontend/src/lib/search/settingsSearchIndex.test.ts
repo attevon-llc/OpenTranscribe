@@ -134,3 +134,34 @@ describe('createSettingsFuzzyIndex', () => {
     expect(results.map((r) => r.item.sectionId)).toContain('content-redaction');
   });
 });
+
+describe('chat Advanced tab', () => {
+  const chatDict: Record<string, string> = {
+    'chat.settings.tabs.general': 'Chat',
+    'chat.settings.tabs.advanced': 'Advanced features',
+    'chat.settings.tabs.advancedIntro': 'Platform-wide retrieval tuning.',
+    'chat.settings.defaultMode': 'Default retrieval mode',
+    'chat.adminSettings.cacheTtlSeconds': 'Retrieval cache (seconds)',
+  };
+  const chatVisible: VisibleSection[] = [
+    { id: 'chat', label: 'Chat' },
+    { id: 'chat-admin', label: 'Advanced features' },
+  ];
+
+  it('routes admin tuning and the Advanced tab strings to chat-admin, the rest to chat', () => {
+    const items = buildSettingsSearchItems(chatDict, chatVisible);
+    const section = (label: string) => items.find((i) => i.label === label)?.sectionId;
+    expect(section('Retrieval cache (seconds)')).toBe('chat-admin');
+    expect(section('Default retrieval mode')).toBe('chat');
+    // The tab's own name is the section row of chat-admin and is not also claimed by chat.
+    const advanced = items.filter((i) => i.label === 'Advanced features');
+    expect(advanced.map((i) => i.sectionId)).toEqual(['chat-admin']);
+  });
+
+  it('indexes nothing for chat-admin when it is not a visible section (non-admin)', () => {
+    const items = buildSettingsSearchItems(chatDict, [{ id: 'chat', label: 'Chat' }]);
+    expect(items.some((i) => i.sectionId === 'chat-admin')).toBe(false);
+    expect(items.some((i) => i.label === 'Retrieval cache (seconds)')).toBe(false);
+    expect(items.some((i) => i.label === 'Advanced features')).toBe(false);
+  });
+});

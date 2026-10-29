@@ -1770,6 +1770,7 @@
   "fileDetail.errorRetryable": "Potrebbe essere temporaneo — riprovare potrebbe funzionare.",
   "errors.media.fileQuality": "Impossibile leggere questo file. Potrebbe essere danneggiato, incompleto o non essere un file multimediale valido.",
   "errors.media.noAudioTrack": "Questo file non ha una traccia audio, quindi non c'è nulla da trascrivere.",
+  "errors.media.emptyFile": "Questo file è vuoto, quindi non c'è nulla da trascrivere.",
   "errors.media.noSpeech": "Non è stato rilevato alcun parlato in questa registrazione.",
   "errors.media.formatIssue": "Il formato o il codec di questo file non è supportato.",
   "errors.media.processingError": "L'elaborazione di questo file non è riuscita.",

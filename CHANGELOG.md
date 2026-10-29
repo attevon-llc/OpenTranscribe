@@ -768,6 +768,13 @@ off by default.
 
 ### Changed
 
+- **Transitive dependencies are now pinned to the versions the release image was built and tested
+  with.** 50 packages (the OpenTelemetry family, pyannote-core/metrics/pipeline, thinc/spacy
+  support libraries, uvloop, tornado, pyjwt, ...) were unpinned, so every image build floated to
+  the newest release and the dev venv, CI and the image disagreed. `check-dependency-parity.sh`
+  now also reads direct-URL installs (the pyannote fork, `en_core_web_sm`) by version instead of
+  reporting them as missing from the venv.
+
 - **Switching voiceprints off now hides names and links a voiceprint made, wherever they are shown
   (#1280).** An auto-accepted match, a retroactive match, an upload-time cluster join and a
   profile link added by propagation are recorded as voiceprint-made and hidden while the speaker's

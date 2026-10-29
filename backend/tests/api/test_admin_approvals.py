@@ -137,6 +137,7 @@ class TestDecisions:
 
 
 class TestApprovalUnblocksTheAccount:
+    @pytest.mark.usefixtures("open_registration")
     def test_the_pending_account_can_use_the_app_once_approved(
         self, client, db_session, admin_token_headers, super_admin_user
     ):

@@ -1741,6 +1741,7 @@
   "fileDetail.errorRetryable": "一時的な問題の可能性があります。再試行すると解決する場合があります。",
   "errors.media.fileQuality": "このファイルを読み込めませんでした。破損している、不完全である、または有効なメディアファイルではない可能性があります。",
   "errors.media.noAudioTrack": "このファイルには音声トラックが含まれていないため、文字起こしする内容がありません。",
+  "errors.media.emptyFile": "このファイルは空のため、文字起こしする内容がありません。",
   "errors.media.noSpeech": "この録音では音声が検出されませんでした。",
   "errors.media.formatIssue": "このファイルの形式またはコーデックはサポートされていません。",
   "errors.media.processingError": "このファイルの処理に失敗しました。",

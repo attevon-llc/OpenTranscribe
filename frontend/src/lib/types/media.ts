@@ -64,6 +64,7 @@ export type MediaFileStatus =
 export type MediaErrorReason =
   | 'file_quality'
   | 'no_audio_track'
+  | 'empty_file'
   | 'no_speech'
   | 'format_issue'
   | 'processing_error'

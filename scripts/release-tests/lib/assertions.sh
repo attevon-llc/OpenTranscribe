@@ -20,6 +20,13 @@ as_pass=0
 as_fail=0
 as_skip=0
 
+# A scenario runs as several resumable phases, each possibly in a different process, so the
+# in-memory counters above only ever see the phases that ran in THIS process: a resumed run
+# used to print "0 failed" for a FAIL recorded before the resume. When a scenario sets
+# TEST_ASSERT_LEDGER, every verdict is also appended there (one line each) and as_summary counts
+# from the ledger instead of from memory.
+: "${TEST_ASSERT_LEDGER:=}"
+
 as_record() {
     local status="$1"
     local label="$2"
@@ -43,6 +50,10 @@ as_record() {
             ;;
     esac
     printf '| %s | %s | %s |\n' "$status" "$label" "$detail" >> "$TEST_REPORT_FILE"
+    if [[ -n "$TEST_ASSERT_LEDGER" ]]; then
+        case "$status" in PASS | SKIP) ;; *) status=FAIL ;; esac
+        printf '%s\n' "$status" >> "$TEST_ASSERT_LEDGER"
+    fi
 }
 
 as_assert() {
@@ -142,7 +153,19 @@ as_assert_diff_files() {
     fi
 }
 
+# as_ledger_count STATUS -- how many verdicts of that kind the ledger holds (0 when none).
+as_ledger_count() {
+    local n
+    n="$(grep -c -x "$1" "$TEST_ASSERT_LEDGER" 2>/dev/null)" || n=0
+    echo "$n"
+}
+
 as_summary() {
+    if [[ -n "$TEST_ASSERT_LEDGER" && -s "$TEST_ASSERT_LEDGER" ]]; then
+        as_pass="$(as_ledger_count PASS)"
+        as_fail="$(as_ledger_count FAIL)"
+        as_skip="$(as_ledger_count SKIP)"
+    fi
     local total=$((as_pass + as_fail + as_skip))
     echo
     if (( as_fail == 0 )); then

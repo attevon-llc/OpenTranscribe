@@ -16,6 +16,7 @@ import type { MediaErrorReason } from '$lib/types/media';
 const ALL_MEDIA_ERROR_REASONS: MediaErrorReason[] = [
   'file_quality',
   'no_audio_track',
+  'empty_file',
   'no_speech',
   'format_issue',
   'processing_error',

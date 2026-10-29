@@ -189,7 +189,10 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   #296 — it now documents the gate.)
 - **Enabling redaction withholds the transcript** until detection finishes:
   `crud.py::_redaction_pending` returns `redaction_pending: True` for `None|pending|processing`
-  (`done`/`failed` never block). Usual cause of "my transcript is empty".
+  (`done`/`failed` never block). Usual cause of "my transcript is empty". The lazy scan is
+  dispatched only for a file the pipeline has finished with (`COMPLETED`, or `ERROR` with an
+  earlier transcript); a `PENDING`/`PROCESSING` file stays withheld without a scan, because the
+  scan task's bookkeeping would take over its `active_task_id` and mark it completed.
 - **`_gpu_inference_lock` is non-reentrant.** `detect_and_store` already holds `inference_guard()`,
   so `toxicity.score_texts` must NOT re-acquire it (`score_text` does — single-segment path only).
 - **"CPU service" is a misnomer**: `REDACTION_DEVICE=auto` puts models on GPU whenever free VRAM

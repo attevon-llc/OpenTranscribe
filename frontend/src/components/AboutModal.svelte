@@ -84,7 +84,8 @@
 </script>
 
 <div class="about-modal-wrapper">
-<BaseModal isOpen={showModal} onClose={closeModal} size="xl" zIndex={1300}>
+<!-- `title` is the dialog's accessible name when the header slot replaces the visible one. -->
+<BaseModal isOpen={showModal} onClose={closeModal} size="xl" zIndex={1300} title={$t('about.title')}>
   <svelte:fragment slot="header">
     <div class="header-title-group">
       <h2 class="modal-title">{$t('about.title')}</h2>

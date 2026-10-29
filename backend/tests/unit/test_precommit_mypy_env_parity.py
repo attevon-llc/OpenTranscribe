@@ -81,6 +81,26 @@ _PARTIAL_INSTALL = bool(os.environ.get("CI"))
 _SKIPPED_DIRS = {"venv", ".venv", "node_modules", "__pycache__", ".mypy_cache", ".pytest_cache"}
 
 
+def _is_skipped_dir(directory: Path) -> bool:
+    """A directory that holds no first-party code: a named cache or ANY virtualenv.
+
+    A virtualenv is recognised by its ``pyvenv.cfg``, not by its name, so ``venv-eval`` (or
+    whatever a developer calls the next one) is skipped as well. Its site-packages would
+    otherwise be read as first-party imports and fail the "typed import" check on code this
+    repository does not own.
+    """
+    return directory.name in _SKIPPED_DIRS or (directory / "pyvenv.cfg").exists()
+
+
+def _backend_python_files() -> list[Path]:
+    """Every ``*.py`` under ``backend/`` outside skipped directories, without descending into them."""
+    found: list[Path] = []
+    for root, dirs, files in os.walk(BACKEND):
+        dirs[:] = [d for d in dirs if not _is_skipped_dir(Path(root) / d)]
+        found.extend(Path(root) / f for f in files if f.endswith(".py"))
+    return found
+
+
 def _normalize(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
@@ -208,7 +228,7 @@ def _first_party_names() -> frozenset[str]:
     names: set[str] = {"tests"}
     for root in [BACKEND / "tests", *roots]:
         for entry in root.iterdir():
-            if entry.name in _SKIPPED_DIRS:
+            if entry.name in _SKIPPED_DIRS or (entry.is_dir() and _is_skipped_dir(entry)):
                 continue
             if entry.is_dir() and not entry.name.startswith("."):
                 names.add(entry.name)
@@ -227,9 +247,7 @@ def _module_key(dotted: str) -> str:
 @functools.cache
 def _imported_modules() -> frozenset[str]:
     modules: set[str] = set()
-    for path in BACKEND.rglob("*.py"):
-        if set(path.relative_to(BACKEND).parts) & _SKIPPED_DIRS:
-            continue
+    for path in _backend_python_files():
         try:
             tree = ast.parse(path.read_text())
         except SyntaxError:

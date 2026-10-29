@@ -213,3 +213,43 @@ proto-plus==1.28.4
 wcwidth==0.9.3
 # Tracks torch (see requirements.txt); +cpu for the same reason torch is pinned +cpu above.
 torchcodec==0.11.1+cpu
+
+# Second transitive drift sweep (2026-10-28): exactly what requirements.txt pins, for the
+# packages this variant resolves (see the matching block there for the reason each exists).
+billiard==4.3.1  # via celery
+charset-normalizer==3.5.2  # via requests
+click-repl==0.4.1  # via celery
+deprecated==3.0.0  # via limits, opentelemetry-api
+dnspython==2.9.0  # via email-validator
+hf-xet==1.7.0  # via huggingface-hub
+httptools==0.9.0  # via uvicorn[standard]
+jiter==0.18.0  # via openai
+mako==1.4.3  # via alembic
+markupsafe==3.0.4  # via jinja2, mako
+networkx==3.7  # via torch
+onnx-ir==1.1.0  # via onnxscript
+opentelemetry-api==1.45.1  # via opentelemetry-sdk, google-api-core, pyannote.audio
+opentelemetry-sdk==1.45.1  # via opentelemetry-exporter-otlp-proto-*, pyannote.audio
+opentelemetry-proto==1.45.1  # via opentelemetry-exporter-otlp-proto-*
+opentelemetry-semantic-conventions==0.66b1  # via opentelemetry-sdk
+opentelemetry-exporter-otlp==1.45.1  # via pyannote.audio
+opentelemetry-exporter-otlp-common==0.66b1  # via opentelemetry-exporter-otlp-proto-* (new in 1.45; image-only until the venv was re-resolved)
+opentelemetry-exporter-http-transport==0.66b1  # via opentelemetry-exporter-otlp-proto-http (same)
+opentelemetry-exporter-otlp-proto-common==1.45.1  # via opentelemetry-exporter-otlp-proto-grpc, -http
+opentelemetry-exporter-otlp-proto-grpc==1.45.1  # via opentelemetry-exporter-otlp
+opentelemetry-exporter-otlp-proto-http==1.45.1  # via opentelemetry-exporter-otlp
+pyannote-core==6.1.0  # via pyannote.audio, pyannote.metrics, pyannote.pipeline
+pyannote-metrics==4.2.0  # via pyannote.audio
+pyannote-pipeline==4.1.0  # via pyannote.audio
+pyasn1==0.6.5  # via ldap3, pyasn1-modules
+pycparser==3.12  # via cffi
+pycryptodome==4.2.0  # via minio
+pyparsing==3.3.3  # via matplotlib
+pytz==2026.5  # via flower
+s3transfer==0.19.3  # via boto3
+tornado==6.6  # via flower
+truststore==0.10.5  # via httpx2, httpcore2
+tzdata==2026.6  # via kombu
+tzlocal==5.4.5  # via celery
+uvloop==0.23.0  # via uvicorn[standard]
+watchfiles==1.3.0  # via uvicorn[standard]

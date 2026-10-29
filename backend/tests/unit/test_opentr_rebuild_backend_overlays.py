@@ -53,6 +53,16 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 OPENTR = REPO_ROOT / "opentr.sh"
+
+
+@pytest.fixture(autouse=True)
+def _no_inherited_compose_project(monkeypatch):
+    """These tests assert how opentr.sh DERIVES the compose project; a COMPOSE_PROJECT_NAME
+    exported in the developer's shell (a --fresh stack session) would override the very
+    derivation under test and fail them for a reason unrelated to the code."""
+    monkeypatch.delenv("COMPOSE_PROJECT_NAME", raising=False)
+
+
 COMMON = REPO_ROOT / "scripts" / "common.sh"
 
 pytestmark = pytest.mark.skipif(

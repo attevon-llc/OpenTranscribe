@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from unittest import mock
 
 import pytest
 from fixtures.synthetic_corpus import write_fixture_corpus
@@ -26,7 +27,7 @@ from sqlalchemy import select
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import TranscriptSegment
-from app.scripts.corpus_injection.__main__ import main as injector_cli
+from app.scripts.corpus_injection.__main__ import main as _injector_main
 from app.scripts.corpus_injection.adapters.synthetic import SyntheticAdapter
 from app.scripts.corpus_injection.injector import inject_meeting
 from app.scripts.corpus_injection.purge import find_injected_files
@@ -160,6 +161,18 @@ def test_purge_removes_the_namespace_and_nothing_else(session, owner, docs, inje
     # The other seed and the uuid-mismatched lookalike are untouched.
     assert len(find_injected_files(session, owner.id, CORPUS, SEED_B)) == 1
     assert session.scalar(select(MediaFile.id).where(MediaFile.uuid == injected)) is not None
+
+
+def injector_cli(argv: list[str]) -> int:
+    """Run the corpus-injection CLI against the test stack without leaking its environment.
+
+    ``--allow-live-stack``: this suite's database IS the stack the CLI's port guard would
+    otherwise refuse (exit 2, indistinguishable from the missing ``--yes`` refusal asserted
+    below). ``bootstrap()`` also writes service hosts into ``os.environ`` (``REDIS_HOST=redis``
+    and friends), which would otherwise outlive this test and break every later one.
+    """
+    with mock.patch.dict(os.environ):
+        return _injector_main([*argv, "--allow-live-stack"])
 
 
 def test_cli_refuses_without_yes_then_purges_with_it(session, owner, docs, injected):

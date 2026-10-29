@@ -81,6 +81,34 @@ and `.claude/skills/release/SKILL.md`. Things that matter when running the scena
 - **Review every `REPORT.md`.** All assertions must be PASS.
 - **Clean up** afterwards with each script's `--cleanup`.
 
+## v0.6.0 feature checks (`lib/feature-checks.sh`)
+
+Each scenario ends with a phase that calls `fc_run_all <mode>`: fresh install **phase 07** (`full`),
+upgrade **phase 11b** (`upgrade`, forward path only; it skips itself under `--only-rollback` and always
+runs before the rollback tail, which restores the pre-upgrade backup over its irreversible purge), lite
+**phase 07b** (`lite`, read-only subset). The summary is its own last phase (fresh 08, lite 07c, upgrade
+18), so the checks are counted in the scenario's exit code and need no new release criterion: they are
+part of the existing rehearse outcome. Resumable like every phase (`.phase/<n>.done`).
+
+| Check function | Proves | fresh | upgrade | lite |
+|---|---|---|---|---|
+| `fc_check_schema_and_head` | DB at the alembic head derived from the graph (floor v449) and the five v449 `speaker` columns | yes | yes | yes |
+| `fc_check_upgrade_backfill` | `system_settings` `privacy.identity_source_backfill` recorded; pre-upgrade speakers kept `display_name` | no | yes | no |
+| `fc_check_privacy_api` | `GET/PUT /admin/privacy-policy` round trip (and 422s), `GET /privacy/effective` shape | yes | yes | yes |
+| `fc_check_system_stats` | `/system/stats` carries the reranker row | yes | yes | yes |
+| `fc_check_org_endpoints_404` | organization routes answer 404 on a community install | yes | yes | yes |
+| `fc_check_aws_bucket_message` | AWS ASR test with no bucket fails naming `AWS_TRANSCRIBE_BUCKET` | yes | yes | yes |
+| `fc_check_post_processing` | every notification stage is terminal and not failed; Gender row `skipped` when attributes pre-exist | yes | yes | yes |
+| `fc_check_exports` | txt/json/csv/srt/vtt/md and docx/pdf (via the job stream) are real files (magic bytes, headings) | yes | yes | yes |
+| `fc_check_voiceprints_toggle` | voiceprints off hides a voice-made name, on restores it (seeded by SQL, row restored after) | yes | yes | no |
+| `fc_check_audited_purge` | purge refused while on (409), then accepted; per-store counts, `residual_ok`, audit reference and audit-store event; name reverted | yes | yes | no |
+
+What it does **not** prove: no real voiceprint match is driven (the name is seeded), the audit-store
+readback and the "attributes pre-exist" branch SKIP where the deployment cannot exercise them, and the
+lite scenario skips the two mutating checks. Decisions live in `lib/feature-checks.py` (a good and a bad
+case each: `backend/tests/unit/test_release_feature_checks.py`); `selftest-feature-checks.sh` runs every
+check against an in-memory backend model, clean and then with one defect injected at a time.
+
 ## Secrets file
 
 Both scripts read `scripts/release-tests/.env.test-secrets` (gitignored). On first run, `test-fresh-install.sh` writes a template — fill it in:

@@ -119,6 +119,7 @@ class TestLoginNegative:
 # --------------------------------------------------------------------------- #
 # Registration — happy + duplicate + weak password
 # --------------------------------------------------------------------------- #
+@pytest.mark.usefixtures("open_registration")
 class TestRegister:
     _STRONG_PW = "Str0ng-Passw0rd!9xQ"
 

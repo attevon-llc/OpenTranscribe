@@ -29,6 +29,7 @@ Run:
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import signal
 import subprocess  # nosec B404 - starts a celery worker under test, fixed argv
@@ -375,19 +376,24 @@ def test_a_worker_restarted_in_place_does_not_shield_its_predecessors_stage(
     assert [d.decode() for d in done] == [run.id]
 
 
-def test_a_cold_shutdown_drops_a_running_stage_and_the_reaper_still_requeues_the_file(
+def test_a_cold_shutdown_hands_a_running_stage_back_to_the_head_of_its_queue(
     broker, worker_app, workers, db_session, normal_user, monkeypatch
 ):
-    """What Celery's soft/cold shutdown really does here -- and why the reaper must not trust it.
+    """What Celery's soft/cold shutdown really does here (celery 5.6 + billiard 4.3.1+).
 
-    Verified on celery 5.6 with real Redis: a COLD shutdown (SIGQUIT; SIGTERM too under
-    ``REMAP_SIGTERM=SIGQUIT``) waits ``worker_soft_shutdown_timeout``, then cancels the running
-    ``acks_late`` task -- and that cancel ACKS its message. It is neither in ``unacked`` nor
-    back on the queue: dropped. (A WARM shutdown, plain SIGTERM, never applies the soft timeout;
-    it waits for running tasks with no limit.)
+    A COLD shutdown (SIGQUIT; SIGTERM too under ``REMAP_SIGTERM=SIGQUIT``) waits
+    ``worker_soft_shutdown_timeout``, then cancels the running ``acks_late`` task, and the
+    cancel REJECTS with requeue: the message leaves ``unacked`` and is back on its priority
+    list marked ``redelivered``. (billiard 4.3.0 let the cancel ACK it instead, dropping the
+    message; that is the bug the 4.3.1 pin closes -- see
+    ``tests/unit/test_billiard_shutdown_is_not_acked.py::
+    test_the_shutdown_systemexit_is_reported_as_a_lost_worker_not_a_result``.) A WARM
+    shutdown, plain SIGTERM, never applies the soft timeout; it waits for running tasks with
+    no limit.
 
-    So the stage must NOT leave its run looking "queued" on the way out (it would read as
-    waiting for a week), and the reaper's lost-run half must re-dispatch the file.
+    The run must not read "queued" on the way out (lease released), the reaper must NOT treat
+    it as lost -- it is first in line, and re-dispatching it would run it twice -- and a fresh
+    worker must run the restored stage exactly once.
     """
     from app.core.broker_orphans import reclaim_orphaned_deliveries
     from app.core.task_config import task_recovery_config
@@ -424,11 +430,13 @@ def test_a_cold_shutdown_drops_a_running_stage_and_the_reaper_still_requeues_the
     os.kill(worker.pid, signal.SIGQUIT)
     worker.wait(timeout=60)
 
-    # The verified Celery behaviour: the message is gone from the broker entirely.
+    # The message is back at the head of its queue, flagged redelivered, and not unacked.
     assert broker.hlen(Channel.unacked_key) == 0
-    assert broker.llen(_priority_key(_PRIORITY)) == 0
+    waiting = broker.lrange(_priority_key(_PRIORITY), 0, -1)
+    assert len(waiting) == 1 and run.id.encode() in waiting[0], waiting
+    assert json.loads(waiting[0])["properties"]["delivery_info"]["redelivered"] is True, waiting
     assert broker.lrange(worker_app.DONE_KEY, 0, -1) == []
-    # ...and the run does not pretend to be queued.
+    # ...and the run does not pretend to hold a lease.
     assert probe_runs([run.id])[run.id].state == RunState.DEAD
 
     with Connection(
@@ -436,14 +444,25 @@ def test_a_cold_shutdown_drops_a_running_stage_and_the_reaper_still_requeues_the
     ) as conn:
         summary = reclaim_orphaned_deliveries(connection=conn, held_ids=set())
 
-    assert summary["lost_runs"] == 1, summary
-    assert redispatched == [media_file.id]
+    # First in line is not lost: no second copy is dispatched and the attempt is not failed.
+    assert summary["lost_runs"] == 0, summary
+    assert redispatched == []
     db_session.expire_all()
-    assert db_session.query(Task).filter(Task.id == run.id).one().status == "failed"
+    assert db_session.query(Task).filter(Task.id == run.id).one().status == "in_progress"
     assert (
         db_session.query(MediaFile).filter(MediaFile.id == media_file.id).one().status
-        == FileStatus.PENDING
+        == FileStatus.PROCESSING
     )
+
+    # A fresh worker runs the restored stage, once.
+    broker.delete(worker_app.BLOCK_KEY.format(task_id=run.id))
+    workers()
+    done = _wait_for(
+        lambda: broker.lrange(worker_app.DONE_KEY, 0, -1),
+        60,
+        "the fresh worker to run the restored stage",
+    )
+    assert [d.decode() for d in done] == [run.id]
 
 
 def _fetch_one(conn: Connection):

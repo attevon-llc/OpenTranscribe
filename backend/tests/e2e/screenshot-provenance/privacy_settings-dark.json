@@ -1,0 +1,21 @@
+{
+  "baseline": "__screenshots__/privacy_settings-dark.png",
+  "captured_at": "2026-10-28T11:45:42Z",
+  "git_sha": "c02553eedcc9f92834d99272ee0a3301816c02ff",
+  "git_branch": "test/v060-e2e",
+  "git_dirty": true,
+  "git_dirty_paths": 0,
+  "reason": "new surface (#1335): privacy controls journey baselines",
+  "captured_by": "UPDATE_SCREENSHOTS=1 pytest test_visual_regression.py -k <surface> (not the wrapper: it seeds a benchmark stack that transcribes on the GPU; these three are element captures of the control itself and read no library data)",
+  "stack": {
+    "compose_project": "otfresh-master",
+    "port_offset": 0,
+    "gpu_device": null,
+    "seeded": false,
+    "mode": "dev (main checkout bind-mounted; fresh stack, plain-user data only)"
+  },
+  "change_from_previous": {
+    "status": "new baseline",
+    "differing_pixels": null
+  }
+}

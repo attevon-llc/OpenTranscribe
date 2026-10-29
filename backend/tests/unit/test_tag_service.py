@@ -616,28 +616,53 @@ def test_multi_file_mutation_enqueues_each_file_once(db_session, normal_user, re
     assert recorded_reindex.calls == [[first.id, second.id]]
 
 
-@pytest.mark.xdist_group("tag_cache_global")
-def test_global_invalidation_clears_a_bystanders_cached_tag_list(
-    db_session, normal_user, other_user, recorded_reindex
-):
-    """Tags are global rows behind a per-user cache key.
-
-    Busting only the actor's key leaves every other user reading the old list
-    for the rest of its TTL. Needs the dev stack's Redis.
-    """
+def _seed_tag_caches(normal_user, other_user):
+    """Cache a tag list under the actor's key and an unrelated user's; return the keys."""
     from app.services.redis_cache_service import redis_cache
 
     if redis_cache.redis is None:
         pytest.skip("Redis unreachable — this scenario asserts real cache eviction")
-
     actor_key = f"cache:tags:{normal_user.id}"
     bystander_key = f"cache:tags:{other_user.id}"
     redis_cache.set(actor_key, [{"name": "stale"}], ttl=60)
     redis_cache.set(bystander_key, [{"name": "stale"}], ttl=60)
     assert redis_cache.get(bystander_key) is not None
+    return redis_cache, actor_key, bystander_key
+
+
+@pytest.mark.xdist_group("tag_cache_global")
+def test_a_users_own_tag_change_leaves_a_bystanders_cached_list_alone(
+    db_session, normal_user, other_user, recorded_reindex
+):
+    """Tags are owned rows (v374): one user's tag list is not another's.
+
+    Since ownership scoping, a plain tag mutation busts the keys of the actor and of the
+    owners of the files it touched, and no one else's. Dropping every user's list on each
+    tag write (what this test used to require) is the blunt instrument ``system_scope``
+    exists to avoid. Needs the dev stack's Redis.
+    """
+    redis_cache, actor_key, bystander_key = _seed_tag_caches(normal_user, other_user)
 
     media_file = _make_file(db_session, normal_user)
     on_tags_changed(db_session, [media_file.id], user_id=normal_user.id)
+
+    assert redis_cache.get(actor_key) is None
+    assert redis_cache.get(bystander_key) is not None, "an unrelated user's cache was evicted"
+
+
+@pytest.mark.xdist_group("tag_cache_global")
+def test_a_system_tag_change_clears_a_bystanders_cached_list(
+    db_session, normal_user, other_user, recorded_reindex
+):
+    """A system tag (``user_id IS NULL``) is in EVERY account's list.
+
+    Busting only the actor's key would leave every other user reading the old list for the
+    rest of its TTL, so ``system_scope=True`` must evict them all. Needs the dev stack's Redis.
+    """
+    redis_cache, actor_key, bystander_key = _seed_tag_caches(normal_user, other_user)
+
+    media_file = _make_file(db_session, normal_user)
+    on_tags_changed(db_session, [media_file.id], user_id=normal_user.id, system_scope=True)
 
     assert redis_cache.get(actor_key) is None
     assert redis_cache.get(bystander_key) is None, "another user's tag list stayed stale"

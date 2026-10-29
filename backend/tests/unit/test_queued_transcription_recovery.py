@@ -488,3 +488,84 @@ def test_a_heartbeat_ttl_shorter_than_its_interval_is_widened(monkeypatch):
     config = TaskRecoveryConfig()
 
     assert config.TRANSCRIPTION_HEARTBEAT_TTL == 180
+
+
+# =============================================================================
+# (e) a DEAD run whose stage message is back on a queue is first in line, not lost
+# =============================================================================
+#
+# A cold shutdown restores the running stage to the head of its queue and releases the
+# lease, so the run reads DEAD. Every health-check path that fails or re-dispatches a dead
+# run has to defer to the queue, or the file runs twice.
+def _queued_after_cold_shutdown(db, user, fake_redis) -> Task:
+    run = _transcription(
+        db,
+        user,
+        _file(db, user),
+        age=timedelta(hours=2),
+        quiet_for=timedelta(hours=1),
+    )
+    fake_redis.queued_stage_runs.add(run.id)  # no lease, no marker: only the queue holds it
+    return run
+
+
+def test_a_dead_run_waiting_on_a_queue_is_not_stuck(detection, db_session, normal_user, fake_redis):
+    run = _queued_after_cold_shutdown(db_session, normal_user, fake_redis)
+
+    assert run.id not in {t.id for t in detection.identify_stuck_tasks(db_session)}
+
+
+def test_a_dead_run_waiting_on_a_queue_is_not_orphaned(
+    detection, db_session, normal_user, fake_redis
+):
+    run = _queued_after_cold_shutdown(db_session, normal_user, fake_redis)
+
+    assert run.id not in {t.id for t in detection.identify_orphaned_tasks(db_session)}
+
+
+def test_a_dead_run_waiting_on_a_queue_is_not_in_the_dead_set(
+    detection, db_session, normal_user, fake_redis
+):
+    run = _queued_after_cold_shutdown(db_session, normal_user, fake_redis)
+
+    assert run.id not in detection._dead_task_ids([run])
+
+
+def test_a_dead_run_with_nothing_queued_is_in_the_dead_set(
+    detection, db_session, normal_user, fake_redis
+):
+    """CONTROL: the same run with an empty queue is dead, so the three tests above bite."""
+    run = _transcription(
+        db_session,
+        normal_user,
+        _file(db_session, normal_user),
+        age=timedelta(hours=2),
+        quiet_for=timedelta(hours=1),
+    )
+
+    assert run.id in detection._dead_task_ids([run])
+
+
+class _ReachedRedispatchError(Exception):
+    pass
+
+
+def test_recover_lost_run_leaves_a_run_waiting_on_a_queue_alone(
+    db_session, normal_user, fake_redis, monkeypatch
+):
+    from app.services import transcription_retry
+
+    run = _queued_after_cold_shutdown(db_session, normal_user, fake_redis)
+
+    def _reached(_key):
+        raise _ReachedRedispatchError
+
+    monkeypatch.setattr(transcription_retry, "allow_infra_requeue", _reached)
+    monkeypatch.setattr("app.core.broker_orphans.discard_run_deliveries", lambda _id: 0)
+
+    assert transcription_retry.recover_lost_run(db_session, run) is None
+
+    # CONTROL: with nothing queued the same call gets as far as spending the requeue budget.
+    fake_redis.queued_stage_runs.clear()
+    with pytest.raises(_ReachedRedispatchError):
+        transcription_retry.recover_lost_run(db_session, run)

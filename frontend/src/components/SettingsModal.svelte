@@ -517,6 +517,12 @@
     ...(isSuperAdmin && sidebarSections.some((section) => section.items.some((item) => item.id === 'watch-sources' && !item.locked))
       ? [{ id: 'watch-sources-email', label: $t('settings.emailNotifications.heading') } as VisibleSection]
       : []),
+    // The chat Advanced tab (platform-wide retrieval tuning) is admin only and lives on the
+    // chat row; without this entry its settings were unsearchable and the "Advanced features"
+    // hit opened the General tab.
+    ...(isAdmin && sidebarSections.some((section) => section.items.some((item) => item.id === 'chat' && !item.locked))
+      ? [{ id: 'chat-admin', label: $t('chat.settings.tabs.advanced') } as VisibleSection]
+      : []),
   ];
 
   function aliasSearchEntries(

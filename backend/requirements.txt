@@ -438,3 +438,60 @@ wrapt==2.5.1               # via Deprecated, smart-open — drifted 2.3.0 (venv)
 # than left to arrive with joblib, so a later joblib bump cannot silently move it.
 joblib==1.6.0              # via nltk, scikit-learn — drifted 1.5.3 (venv) vs 1.6.0 (image), 2026-08-31
 cloudpickle==3.1.2         # via joblib — image-only (venv's joblib 1.5.3 did not require it), 2026-08-31
+
+# Transitive pins - the second drift sweep, 2026-10-28
+# -----------------------------------------------------------------------------
+# `scripts/check-dependency-parity.sh` found 48 packages the running image held at newer
+# versions than backend/venv, because nothing pinned them and every image build floated to
+# the latest release. Pinned FORWARD to the version the image was built and tested with.
+# Same trade as the block above: a security update to one of these is now an edit here.
+billiard==4.3.1            # via celery
+blis==1.3.4                # via thinc
+brotli==1.2.1              # via yt-dlp[default]
+charset-normalizer==3.5.2  # via requests
+click-repl==0.4.1          # via celery
+confection==1.3.4          # via spacy, thinc, weasel
+cuda-bindings==12.9.10     # via torch
+cymem==2.0.16              # via preshed, spacy, thinc
+deprecated==3.0.0          # via limits, opentelemetry-api
+dnspython==2.9.0           # via email-validator
+hf-xet==1.7.0              # via huggingface-hub
+httptools==0.9.0           # via uvicorn[standard]
+jiter==0.18.0              # via openai
+mako==1.4.3                # via alembic
+markupsafe==3.0.4          # via jinja2, mako
+murmurhash==1.0.16         # via preshed, spacy, thinc
+networkx==3.7              # via torch
+onnx-ir==1.1.0             # via onnxscript
+opentelemetry-api==1.45.1  # via opentelemetry-sdk, google-api-core, pyannote.audio
+opentelemetry-sdk==1.45.1  # via opentelemetry-exporter-otlp-proto-*, pyannote.audio
+opentelemetry-proto==1.45.1  # via opentelemetry-exporter-otlp-proto-*
+opentelemetry-semantic-conventions==0.66b1  # via opentelemetry-sdk
+opentelemetry-exporter-otlp==1.45.1  # via pyannote.audio
+opentelemetry-exporter-otlp-common==0.66b1  # via opentelemetry-exporter-otlp-proto-* (new in 1.45; image-only until the venv was re-resolved)
+opentelemetry-exporter-http-transport==0.66b1  # via opentelemetry-exporter-otlp-proto-http (same)
+opentelemetry-exporter-otlp-proto-common==1.45.1  # via opentelemetry-exporter-otlp-proto-grpc, -http
+opentelemetry-exporter-otlp-proto-grpc==1.45.1  # via opentelemetry-exporter-otlp
+opentelemetry-exporter-otlp-proto-http==1.45.1  # via opentelemetry-exporter-otlp
+pyannote-core==6.1.0       # via pyannote.audio, pyannote.metrics, pyannote.pipeline
+pyannote-metrics==4.2.0    # via pyannote.audio
+pyannote-pipeline==4.1.0   # via pyannote.audio
+pyasn1==0.6.5              # via ldap3, pyasn1-modules
+pycparser==3.12            # via cffi
+pycryptodome==4.2.0        # via minio
+pycryptodomex==3.24.1      # via yt-dlp[default]
+pyjwt==2.15.1              # via msal
+pyparsing==3.3.3           # via matplotlib
+pytz==2026.5               # via flower
+s3transfer==0.19.3         # via boto3
+smart-open==9.0.0          # via weasel
+srsly==2.5.5               # via spacy, thinc, weasel
+thinc==8.3.14              # via spacy
+tldextract==5.4.0          # via presidio-analyzer
+tornado==6.6               # via flower
+truststore==0.10.5         # via httpx2, httpcore2
+tzdata==2026.6             # via kombu
+tzlocal==5.4.5             # via celery
+uvloop==0.23.0             # via uvicorn[standard]
+watchfiles==1.3.0          # via uvicorn[standard]
+weasel==1.0.1              # via spacy

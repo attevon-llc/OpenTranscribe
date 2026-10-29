@@ -172,7 +172,7 @@ class TaskRecoveryService:
         if state == RunState.RUNNING:
             outcome = recover_overrun_run(db, task)  # alive, but past its duration budget
         elif state == RunState.DEAD:
-            outcome = recover_lost_run(db, task)
+            outcome = recover_lost_run(db, task)  # declines a run first in line on its queue
         else:
             return False
         return outcome is not None

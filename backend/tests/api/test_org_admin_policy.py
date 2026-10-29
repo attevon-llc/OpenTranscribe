@@ -30,6 +30,7 @@ from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.models.organization_policy import OrganizationPolicy
 from app.models.prompt import UserSetting
+from tests.fixtures.privacy_switches import upsert_system_setting
 
 POLICY = "/api/org-admin/policy"
 SECRET_WORD = "Project-Nightingale"
@@ -263,9 +264,7 @@ def test_a_patch_persists_and_is_partial(client, gov, db_session):
 
 
 def test_a_switch_the_operator_turned_off_cannot_be_turned_on_here(client, gov, db_session):
-    from app.models.system_settings import SystemSettings
-
-    db_session.add(SystemSettings(key=constants.PRIVACY_VOICEPRINT_MATCHING_KEY, value="false"))
+    upsert_system_setting(db_session, constants.PRIVACY_VOICEPRINT_MATCHING_KEY, "false")
     db_session.commit()
     with gov.acting_as(gov.admin):
         patched = client.patch(POLICY, json={"voiceprint_matching_enabled": True})

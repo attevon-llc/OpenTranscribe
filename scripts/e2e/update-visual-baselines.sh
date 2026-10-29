@@ -204,7 +204,9 @@ die()  { log "${RED}❌ $1${NC}"; exit "${2:-$EXIT_FAIL}"; }
 ALL_SURFACES=()
 derive_surfaces() {
     local line
-    line="$(awk '/^SURFACES = \[/ { print; exit }' "$TEST_MODULE")"
+    # The list may be one line or one name per line (ruff format explodes a long one), so take
+    # everything from `SURFACES = [` up to and including the first line holding the `]`.
+    line="$(awk '/^SURFACES = \[/ { found = 1 } found { printf "%s ", $0 } found && /\]/ { exit }' "$TEST_MODULE")"
     [[ -n "$line" ]] || die "no 'SURFACES = [' list in $TEST_MODULE — was it renamed? \
 Refusing to guess the surface names." "$EXIT_PRECONDITION"
     line="${line#*[}"

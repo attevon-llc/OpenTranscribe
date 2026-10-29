@@ -57,7 +57,11 @@ _COMPOSE_FILE = _REPO_ROOT / "docker-compose.yml"
 _DB_USER = "postgres"
 
 _SEED_STATEMENTS = (
-    'CREATE TABLE "user" (id serial PRIMARY KEY, email text UNIQUE NOT NULL)',
+    (
+        'CREATE TABLE "user" (id serial PRIMARY KEY, email text UNIQUE NOT NULL, '
+        "uuid uuid NOT NULL DEFAULT gen_random_uuid(), "
+        "created_at timestamptz NOT NULL DEFAULT now())"
+    ),
     (
         "CREATE TABLE media_file (id serial PRIMARY KEY, uuid uuid NOT NULL, "
         'user_id int NOT NULL REFERENCES "user"(id), filename text, '

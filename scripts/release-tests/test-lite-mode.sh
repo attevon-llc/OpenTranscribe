@@ -166,6 +166,8 @@ source "$LIB_DIR/assertions.sh"
 source "$LIB_DIR/versions.sh"
 # shellcheck source=lib/model-cache.sh
 source "$LIB_DIR/model-cache.sh"
+# shellcheck source=lib/feature-checks.sh
+source "$LIB_DIR/feature-checks.sh"
 # shellcheck source=../lib/compose-project.sh
 source "$REPO_ROOT/scripts/lib/compose-project.sh"
 
@@ -185,6 +187,12 @@ fi
 
 # ─── Phase tracking ─────────────────────────────────────────────────────────
 PHASE_DIR="$TEST_ROOT/.phase"
+# Every assertion verdict is also written here so the summary phase counts the whole run, not
+# just the phases this process executed (lib/assertions.sh). --force starts the count over.
+mkdir -p "$PHASE_DIR"
+TEST_ASSERT_LEDGER="$PHASE_DIR/assertions.ledger"
+export TEST_ASSERT_LEDGER
+(( DO_FORCE == 0 )) || rm -f "$TEST_ASSERT_LEDGER"
 phase_done()  { mkdir -p "$PHASE_DIR"; touch "$PHASE_DIR/$1.done"; }
 phase_check() { [[ -f "$PHASE_DIR/$1.done" && $DO_FORCE -eq 0 ]]; }
 phase()       { local n="$1"; shift
@@ -626,20 +634,23 @@ phase_07_pipeline_assertions() {
     API_BASE="http://localhost:${TEST_BACKEND_PORT}/api"
     export API_BASE
     TEST_REPORT_FILE="$TEST_ROOT/REPORT.md"
-    : > "$TEST_REPORT_FILE"
-    {
-        echo "# Release Test Report — $TEST_SCENARIO"
-        echo ""
-        echo "- Project: $TEST_PROJECT_NAME"
-        echo "- Test root: $TEST_ROOT"
-        echo "- Branch: $TO_BRANCH"
-        echo "- Image tag: $LOCAL_IMAGE_TAG (local build)"
-        echo "- Started: $(date -Iseconds)"
-        echo ""
-        echo "| Status | Assertion | Detail |"
-        echo "|---|---|---|"
-    } >> "$TEST_REPORT_FILE"
     export TEST_REPORT_FILE
+    # A resumed run must not erase the verdicts already recorded (see test-fresh-install.sh).
+    if [[ ! -s "$TEST_REPORT_FILE" ]] || (( DO_FORCE != 0 )); then
+        : > "$TEST_REPORT_FILE"
+        {
+            echo "# Release Test Report — $TEST_SCENARIO"
+            echo ""
+            echo "- Project: $TEST_PROJECT_NAME"
+            echo "- Test root: $TEST_ROOT"
+            echo "- Branch: $TO_BRANCH"
+            echo "- Image tag: $LOCAL_IMAGE_TAG (local build)"
+            echo "- Started: $(date -Iseconds)"
+            echo ""
+            echo "| Status | Assertion | Detail |"
+            echo "|---|---|---|"
+        } >> "$TEST_REPORT_FILE"
+    fi
 
     ac_login "$TEST_ADMIN_EMAIL" "$TEST_ADMIN_PASSWORD"
 
@@ -894,7 +905,26 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
     # This recreate had NO wait at all, not even a sleep. Everything after it runs against a
     # mock-asr that may still be starting.
     _lm_wait_for_mock_asr_healthy
+}
 
+# The READ-ONLY subset of the v0.6.0 feature checks (lib/feature-checks.sh, mode `lite`): schema,
+# privacy policy API, exports, notification stages, stats, community org 404s, AWS ASR message.
+# The voice-name toggle and the audited purge are not run here: they mutate speaker rows and
+# delete voiceprint data, and this scenario's two speakers come from a mock ASR, not a diarizer.
+phase_07b_feature_checks() {
+    API_BASE="http://localhost:${TEST_BACKEND_PORT}/api"
+    export API_BASE
+    TEST_REPORT_FILE="${TEST_REPORT_FILE:-$TEST_ROOT/REPORT.md}"
+    export TEST_REPORT_FILE
+    if ! ac_login "$TEST_ADMIN_EMAIL" "$TEST_ADMIN_PASSWORD"; then
+        as_record FAIL "feature checks: login as the bootstrap admin"
+        return 0
+    fi
+    fc_run_all lite
+}
+
+phase_07c_summary() {
+    TEST_REPORT_FILE="${TEST_REPORT_FILE:-$TEST_ROOT/REPORT.md}"
     # as_summary deliberately returns 1 when any assertion FAILed. Under
     # set -euo pipefail, a non-zero return from either stage of
     # `as_summary | tee -a ...` trips set -e right here -- phase_08_finish (the
@@ -937,6 +967,8 @@ phase 05 phase_05_wait_for_health
 phase 06 phase_06_topology_check
 phase 06b phase_06b_sidecar_check
 phase 07 phase_07_pipeline_assertions
+phase 07b phase_07b_feature_checks
+phase 07c phase_07c_summary
 phase 08 phase_08_finish
 
 echo
@@ -944,9 +976,9 @@ echo "Done. Report: $TEST_ROOT/REPORT.md"
 echo "Stack left running for inspection. Tear down with: $0 --cleanup"
 echo "Then restart your live deployment with: ./opentr.sh start dev"
 
-# Propagate phase 07's assertion verdict as the script's own exit code (see
-# phase_07_pipeline_assertions's comment). Without this, the capture above makes
+# Propagate phase 07c's assertion verdict as the script's own exit code (see
+# phase_07c_summary's comment). Without this, the capture above makes
 # the script exit 0 even when an assertion FAILed -- worse than the truncation bug
 # it fixes (silently green instead of noisily truncated). Defaults to 0 for a
-# resumed run where phase 07 was already marked done and skipped.
+# resumed run where phase 07c was already marked done and skipped.
 exit "${RELEASE_TEST_EXIT_CODE:-0}"

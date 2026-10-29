@@ -650,6 +650,20 @@ _E2E_LITERAL_NOT_PERSISTED: dict[str, str] = {
     "backend/tests/e2e/test_visual_regression.py::gh514-visual-": (
         "an LLM config name; swept by base_url (mock-llm) in cleanup-test-users.py"
     ),
+    "backend/tests/e2e/test_privacy_voiceprint_hiding.py::Voicematch ": (
+        "the display_name written onto speaker rows of an injected e2e-owned- transcript; the "
+        "rows are removed with that file by purge_injected, and the file name is swept"
+    ),
+    "backend/tests/e2e/test_upload_tray_and_notifications.py::e2e-card-processing-": (
+        "a filename inside seeded notification records in a throwaway browser context's "
+        "localStorage; no file or row exists server-side"
+    ),
+    "backend/tests/e2e/test_upload_tray_and_notifications.py::e2e-card-finishing-": (
+        "same as e2e-card-processing-: browser-local only"
+    ),
+    "backend/tests/e2e/test_upload_tray_and_notifications.py::e2e-card-failed-": (
+        "same as e2e-card-processing-: browser-local only"
+    ),
     "backend/tests/e2e/test_chat.py::{label}": (
         "_unique() names LLM provider configs (swept by base_url in cleanup-test-users.py); "
         "conversation titles use unique_conversation_title() and its e2e-chat- prefix"

@@ -304,6 +304,7 @@ def test_gpu_oom_detection_reads_the_stored_code(db_session, normal_user):
 _RAW_BY_REASON = {
     UserErrorReason.FILE_QUALITY: "moov atom not found: file is corrupted",
     UserErrorReason.NO_AUDIO_TRACK: "Output file does not contain any audio stream",
+    UserErrorReason.EMPTY_FILE: "This file is empty and contains no content to process.",
     UserErrorReason.NO_SPEECH: "no speech detected in segment",
     UserErrorReason.FORMAT_ISSUE: "unsupported codec: pcm_f64be",
     UserErrorReason.NETWORK_ERROR: "Read timeout on storage",

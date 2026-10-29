@@ -21,27 +21,37 @@ Source of truth: `.claude/skills/release/SKILL.md`, `docs-site/docs/developer-gu
 - **Never** hand-run `git tag`, `docker push`, `gh release create`, or edit `VERSION`, `pyproject.toml`,
   `package.json`, `package-lock.json` (use `release.sh bump`). No `--no-verify`, no force-push, no
   squash-merge; every merge into master is a merge commit via PR.
-- Master is protected (4 required checks + a review; no force-push or deletion). The main checkout stays
-  on `master` and backs the live dev stack: **do not run the release from it.**
+- Master is protected (4 required checks + a review; no force-push or deletion), so the bump commit
+  cannot land on it directly. That is the ONLY reason a branch exists.
 - Freeze: once both integration PRs and Gate 0c are done, nothing else merges to master until the tag.
-- **Release candidate branch.** Cut `release/prep-0.6.0` from the verified master head in its own
-  worktree (`git worktree add .claude/worktrees/release-0.6.0 -b release/prep-0.6.0 origin/master`;
-  from the MAIN checkout, never from inside another worktree). A worktree lacks gitignored files that
-  `preflight` needs: copy (do not read) `nginx/ssl/server.crt` + `server.key` and
-  `scripts/release-tests/.env.test-secrets` from the main checkout.
-- Run every stage from that worktree: `bump` makes the `chore(release): bump version to 0.6.0` commit
-  there; the CHANGELOG prose, blog, screenshots/GIF/baseline commits and docs fixes are further
-  commits on that branch (conventional commits); the worktree must be CLEAN before `tag`.
+- **Run the release from the MAIN checkout. There is no release worktree and no file copying.** The
+  gitignored files `preflight` needs (`nginx/ssl/server.crt` + `server.key`,
+  `scripts/release-tests/.env.test-secrets`) are already there. Steps, in order:
+  1. Main checkout on `master`, fast-forwarded to the verified head (`git pull --ff-only`), clean
+     `git status`, no other writer in the checkout and no other agent running pre-commit.
+  2. Stop the stack (`./opentr.sh stop`). It is brought back up only for the `test` stage (step 5)
+     and `rehearse --yes` restarts dev itself.
+  3. Cut the short-lived branch: `git switch -c release/prep-0.6.0`.
+  4. `./scripts/release.sh reset 0.6.0`, then `preflight`, `bump` (makes the
+     `chore(release): bump version to 0.6.0` commit on the branch).
+  5. CHANGELOG prose, blog, screenshots/GIF/baseline commits and docs fixes are further conventional
+     commits on this branch (after `bump`, before `verify`). Then `verify`, `test` (dev stack UP),
+     `build`, `scan`. The checkout must be CLEAN before `tag`.
+  6. **Push the branch BEFORE `rehearse`**: `git push -u origin release/prep-0.6.0` (scenarios A and C
+     download manifests from it; `rehearse` exits 3 otherwise). Then `rehearse --yes`.
+  7. Each of `tag`, `publish`, `smoke` (stack stopped again), `promote`, `finish` is a separate go
+     from the owner. Never chain them with `run --yes`.
 - The image that is built, scanned and rehearsed must be the exact commit that is tagged (the About
   dialog shows the build SHA). So **tag the prep branch head**, never a later merge commit.
 - `tag` pushes an ANNOTATED tag `v0.6.0` and cuts `release/0.6` from the tag (first minor ships
   there; it fails if the tag is not an ancestor of that branch). Check `git ls-remote origin
   release/0.6` afterwards.
 - **Bring it back to master:** after `tag`, open a PR `release/prep-0.6.0` -> `master` (merge commit,
-  Backend Tests PASSED), so master contains the bump, CHANGELOG and docs. Verify
-  `git merge-base --is-ancestor v0.6.0 origin/master`. (0.5.1's bump rode a PR the same way.)
-- Delete merged lane/prep branches and worktrees afterwards (`git worktree remove`, then
-  `git branch -d`; never `-D` a branch whose work is unmerged).
+  never squash; Backend Tests PASSED), so master contains the bump, CHANGELOG and docs. Then verify
+  `git merge-base --is-ancestor v0.6.0 origin/master` and switch the main checkout back to `master`
+  (`git pull --ff-only`) and restart the dev stack. (0.5.1's bump rode a PR the same way.)
+- Delete the merged prep branch and any merged lane branches/worktrees afterwards (`git worktree
+  remove`, then `git branch -d`; never `-D` a branch whose work is unmerged).
 
 ## Docs audit (before the prose freeze)
 README.md (1,369 lines), 80 docs-site pages, user-facing `docs/*.md`, `docs/RELEASE_PROCESS.md`,
@@ -59,7 +69,7 @@ Then `cd docs-site && npm run build` must pass with no broken links.
 | Oct 28 | Finish lanes; audits; open and merge both PRs; Gate 0c |
 | Oct 29 | Wave 3 on a fresh master stack (no writers): integration gate, e2e, #1306, #1308 (closes #1313), #1309, #1282 browser pass (light, dark, ar), transformers/GPU transcription check, v448 migration over populated data. Refresh screenshots and baselines. Fix findings |
 | Oct 30 | Fixes from Wave 3; docs, README, blog, upgrade guide final; #1310 roadmap regen; `release.sh preflight`, `bump`, write CHANGELOG + blog, `verify`, `test` (dev stack must be UP), `build`, `scan` |
-| Oct 31 | push `release/prep-0.6.0` to origin, `rehearse --yes` (auto-stops and restarts dev; HuggingFace token is already in `scripts/release-tests/.env.test-secrets`), then with the owner's go: `tag`, `publish`, stop the stack again, `smoke`, `promote`, `finish`. Cloud handoff after |
+| Oct 31 | from the main checkout: push `release/prep-0.6.0` to origin, `rehearse --yes` (auto-stops and restarts dev; HuggingFace token is already in `scripts/release-tests/.env.test-secrets`), then with the owner's go: `tag`, `publish`, stop the stack again, `smoke`, `promote`, `finish`. Cloud handoff after |
 
 If Wave 3 shows a release blocker, slipping the date is cheaper than shipping it. Cut list if time runs
 out, in order: #1180 profiling (findings only), native-speaker review of translations, optional polish.
@@ -107,8 +117,8 @@ out, in order: #1180 profiling (findings only), native-speaker review of transla
 - [ ] **Blog post**: `docs-site/blog/2026-10-14-v0.6.0-release.md` is `draft: true`. Rename it to the
       real release date, remove the flag, update the content to match what actually shipped (privacy
       controls, audit and holds, exports, the notification stages, the transformers upgrade if kept).
-- [ ] **Upgrade guide** `docs-site/docs/operations/upgrading-to-0-6-0.md`: add migration `v448`
-      (task one-active-row guard, lock, maintenance window) and the privacy section. Note
+- [ ] **Upgrade guide** `docs-site/docs/operations/upgrading-to-0-6-0.md`: migrations `v440`-`v449` (DONE; `v448` is
+      the task one-active-row guard with a lock and a maintenance window) and the privacy section. Note
       `AWS_TRANSCRIBE_BUCKET` is now required for the AWS Transcribe provider (and
       `AWS_TRANSCRIBE_BUCKET_OWNER` when STS is unreachable).
 - [ ] **CHANGELOG**: `[Unreleased]` becomes `[0.6.0] - <date>` via the `bump` stage (never by hand).
@@ -124,7 +134,7 @@ out, in order: #1180 profiling (findings only), native-speaker review of transla
       https://docs.opentranscribe.app shows the new pages (privacy controls, upgrade guide, blog).
 - [ ] **Cloud handoff**: send the final master SHA to the cloud session; the owner types "go" there.
       The downstream list must include `AWS_TRANSCRIBE_BUCKET`, the new seam notes, and migrations
-      v440-v448. Note the multi-tenant demo is affected by the tenant-scope fixes until it redeploys.
+      v440-v449. Note the multi-tenant demo is affected by the tenant-scope fixes until it redeploys.
 
 - [ ] **Security reports**: `security-reports/SECURITY-ADVISORY.md` is stamped "Applies to v0.5.1" and
       names nginx 1.29.8 (the frontend image is now nginx 1.31.2): refresh it for 0.6.0 from the

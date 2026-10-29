@@ -35,7 +35,7 @@ above it turned off. Any layer that is off turns the feature off.
 | Layer | Who sets it | Where | Default |
 |---|---|---|---|
 | **Platform** | The operator of a managed edition, through an extension | Not a screen. A derived deployment registers a resolver at an extension seam | No opinion |
-| **Instance** | A super admin | Settings, Privacy & Redaction, **Policy** tab, card "Speaker recognition and inferred attributes" | Both on |
+| **Instance** | A super admin | Settings, Privacy & Redaction, **Redaction Policy** tab, card "Speaker recognition and inferred attributes" | Both on |
 | **Organization** | An organization administrator | Settings, organization group, **Privacy policy** (managed editions only; a community install has no organizations) | Both on; an organization with no saved choice inherits |
 | **User** | Each person | Voiceprint switch: Settings, Speaker Identification, "Recognize speakers across my recordings". Gender switch: the same page, Voice Attributes, "Predict gender from voice" | Both on |
 

@@ -137,7 +137,7 @@ off by default.
   setting back on restores them). Four more things change: the gender migration and combined
   speaker analysis respect each owner's gender setting, the consistency repair and v4 migration
   skip scopes with voiceprints off, and a remote LLM no longer receives the speaker-name gender
-  comparison. Review **Settings > Privacy & Redaction > Policy** after upgrading. Installs that
+  comparison. Review **Settings > Privacy & Redaction > Redaction Policy** after upgrading. Installs that
   use organizations: run the tenant backfill above (it is manual) before deleting stored
   voiceprints; it also stamps voiceprint documents that earlier releases rewrote without their
   organization (cluster documents, and speaker documents rewritten by the consistency repair,
@@ -1511,7 +1511,7 @@ off by default.
   timeout, kept counting it in `celery_queue_reserved` (holding autoscaled GPU capacity up with
   nothing to run), and recovery then marked the file ERROR instead of retrying it — in a load
   test with workers restarted under load, 84 of 418 files ended that way. An orphan reaper now
-  puts the exact interrupted stage back at the head of its queue within about 2.5 minutes, and
+  puts the exact interrupted stage back at the head of its queue within about three minutes (a delivery is treated as orphaned after 120 seconds, swept every 60), and
   re-dispatches the file when the message itself is gone. Every pipeline stage holds a lease
   while it runs; a second delivery of a running or finished stage stands down.
 

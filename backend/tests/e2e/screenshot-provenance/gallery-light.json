@@ -1,11 +1,11 @@
 {
   "baseline": "__screenshots__/gallery-light.png",
-  "captured_at": "2026-10-15T03:11:20Z",
-  "git_sha": "13c708a2bb9dc152216d4dce33cda727d6ed9224",
-  "git_branch": "feat/v0.6.0-frontend-ux",
+  "captured_at": "2026-10-29T11:30:11Z",
+  "git_sha": "b5f56c0344ab2f828ea676d62d73a86db5bd1e4c",
+  "git_branch": "release/prep-0.6.0",
   "git_dirty": false,
   "git_dirty_paths": 0,
-  "reason": "v0.6.0 round 4 UI: tabbed File status, info icons, dropdown placement, Recovery tab",
+  "reason": "v0.6.0 release re-capture after the privacy switch focus fix and the empty-file error copy; expected: no visible change",
   "captured_by": "scripts/e2e/update-visual-baselines.sh",
   "stack": {
     "compose_project": "otfresh-visual",
@@ -14,8 +14,9 @@
     "seeded": true,
     "mode": "dev (local source bind-mounted)"
   },
+  "corpus": {"seed_source": "test_audio", "files": [{"filename": "seed_t1_899s_40d403ee_DOGE_s_Findings__Elon_Musk_Protests__and_Medicare_Fraud.m4a", "size": 14721443}, {"filename": "seed_t1_531s_a536922c_Will_the_Gaza_Ceasefire_Hold_.mp4", "size": 18228379}, {"filename": "seed_t1_520s_fa049b47_The_AI_Arms_Race_with_China.mp4", "size": 24469909}], "library_total": 3},
   "change_from_previous": {
-    "status": "CHANGED",
-    "differing_pixels": "6.4636%"
+    "status": "NEW",
+    "differing_pixels": ""
   }
 }

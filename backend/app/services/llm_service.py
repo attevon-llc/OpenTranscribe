@@ -18,7 +18,6 @@ from dataclasses import field
 from enum import StrEnum
 from typing import TYPE_CHECKING
 from typing import Any
-from typing import Optional
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -33,6 +32,7 @@ from app.services.llm_stream import TRANSIENT_HTTP_STATUSES
 from app.services.llm_stream import LLMStreamEvent
 from app.services.llm_stream import apply_stream_payload
 from app.services.llm_stream import get_stream_parser
+from app.services.search.chunking_service import split_into_sentences
 from app.utils.llm_log_safety import describe_llm_text
 from app.utils.llm_log_safety import log_llm_text_excerpt
 from app.utils.speaker_labels import looks_like_a_person_name
@@ -1010,7 +1010,7 @@ class LLMService:
 
     def _split_oversized_chunk_by_sentences(self, chunk: str, available_tokens: int) -> list[str]:
         """Split an oversized chunk into smaller chunks by sentence boundaries."""
-        sentences = re.split(r"(?<=[.!?])\s+", chunk)
+        sentences = split_into_sentences(chunk, language=None)  # transcript language unknown here
         sub_chunks = []
         sub_chunk = ""
 
@@ -2234,7 +2234,7 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
             return False
 
     @staticmethod
-    def create_from_settings(user_id: int | None = None) -> Optional["LLMService"]:
+    def create_from_settings(user_id: int | None = None) -> "LLMService | None":
         """
         Create LLMService from user-specific settings only
 
@@ -2258,7 +2258,7 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
         return None
 
     @staticmethod
-    def create_from_config_id(user_id: int, config_id: int) -> Optional["LLMService"]:
+    def create_from_config_id(user_id: int, config_id: int) -> "LLMService | None":
         """Create LLMService from ONE specific LLM configuration the user may use.
 
         Used by RAG chat, where a conversation can pin a model different from the
@@ -2454,7 +2454,7 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
         return provider.value, model, base_url
 
     @staticmethod
-    def create_from_user_settings(user_id: int) -> Optional["LLMService"]:
+    def create_from_user_settings(user_id: int) -> "LLMService | None":
         """Create LLMService from user-specific database settings"""
         from app.db.base import SessionLocal
 
@@ -2641,7 +2641,7 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
         return provider, model, api_key, base_url
 
     @staticmethod
-    def create_from_system_settings() -> Optional["LLMService"]:
+    def create_from_system_settings() -> "LLMService | None":
         """Create LLMService from system settings"""
         resolved = LLMService._resolve_system_provider()
         if resolved is None:

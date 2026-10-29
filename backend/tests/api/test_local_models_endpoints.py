@@ -288,6 +288,31 @@ class TestStartDownload:
 
         assert r.status_code == 202
 
+    def test_one_byte_short_of_the_one_gib_headroom_is_refused(
+        self, client, super_admin_token_headers, store, dispatched, monkeypatch
+    ):
+        entry = _entry("tiny")
+        monkeypatch.setattr(cache, "free_bytes", lambda: entry.approx_bytes + GIB - 1)
+
+        r = _post(client, super_admin_token_headers)
+
+        assert r.status_code == 409
+        assert r.json()["detail"]["required_bytes"] == entry.approx_bytes + GIB
+        assert dispatched == []
+
+    def test_the_headroom_is_the_one_the_download_task_keeps(
+        self, client, super_admin_token_headers, store, dispatched, monkeypatch
+    ):
+        # The supervisor reads the same `cache.DISK_HEADROOM_BYTES`, so the pre-check can never
+        # refuse a download the task would accept, or the reverse.
+        entry = _entry("tiny")
+        monkeypatch.setattr(cache, "DISK_HEADROOM_BYTES", 0)
+        monkeypatch.setattr(cache, "free_bytes", lambda: entry.approx_bytes)
+
+        r = _post(client, super_admin_token_headers)
+
+        assert r.status_code == 202
+
     def test_an_unwritable_cache_is_refused(
         self, client, super_admin_token_headers, store, dispatched, monkeypatch
     ):

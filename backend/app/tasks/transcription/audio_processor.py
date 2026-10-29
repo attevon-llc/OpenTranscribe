@@ -57,6 +57,7 @@ def get_audio_file_extension(content_type: str, filename: str) -> str:
     Returns:
         File extension string
     """
+    # Sibling of media_types.file_extension; splitext keeps case and sends ".mp3" to the MIME map.
     file_ext = os.path.splitext(filename)[1]
 
     if not file_ext and content_type:

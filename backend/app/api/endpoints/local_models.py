@@ -50,9 +50,6 @@ from app.utils.lite_mode import refuse_on_lite
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-#: Free space kept beyond the bytes a download still needs (the task re-checks exactly).
-DISK_HEADROOM_BYTES = 1024**3
-
 
 def _error(status_code: int, code: str, **extra: Any) -> HTTPException:
     """An error body with a stable code and a fixed sentence (never exception text)."""
@@ -164,7 +161,8 @@ def start_local_model_download(
         raise _error(409, "local_model_already_downloaded")
     if not cache.cache_writable():
         raise _error(409, "cache_not_writable")
-    required = entry.approx_bytes - cache.present_bytes(entry.repo_id) + DISK_HEADROOM_BYTES
+    # The task re-checks exactly, against the same `cache.DISK_HEADROOM_BYTES`.
+    required = entry.approx_bytes - cache.present_bytes(entry.repo_id) + cache.DISK_HEADROOM_BYTES
     free = cache.free_bytes()
     if free < required:
         raise _error(409, "insufficient_disk_space", required_bytes=required, free_bytes=free)

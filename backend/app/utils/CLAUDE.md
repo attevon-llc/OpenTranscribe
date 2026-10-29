@@ -49,7 +49,15 @@ so keep heavy imports lazy.
   issue #1044). Every ingest path stores its result and `/stream-url` signs it as
   `response-content-type`. Never store a browser- or `mimetypes`-supplied type raw: Firefox on
   Linux and Python 3.14 both say `audio/vnd.wave`, and browsers won't play that label. The
-  frontend twin is `$lib/utils/mediaType.ts`; keep the alias tables in sync.
+  frontend twin is `$lib/utils/mediaType.ts`; keep the alias tables in sync. Its
+  `file_extension()` is the one filename/object-key extension helper (lowercase, with dot, last
+  `/` or `\` component). `audio_processor.get_audio_file_extension` keeps `os.path.splitext` on
+  purpose (case kept, `.mp3` falls through to the MIME map).
+- `speaker_stats.py` — **the one talk-time tally** (D11): `tally_by_speaker(segments, label)`
+  sums per `speaker_id` and applies the label once per speaker at the edge.
+  `services/analytics_service.py` labels with the raw `SPEAKER_##`;
+  `transcript_builders.compute_speaker_stats` (LLM prompts, `file_facts`) with the display
+  label, so speakers renamed to one name are summed there. A missing time is zero seconds.
 - `uuid_helpers.py` (lives in `app/services/` since the L1 layering move; it queries models and services, so it cannot sit below them) — the hybrid-ID + permission chokepoint. `get_*_by_uuid`,
   `get_file_by_uuid_with_permission` (load the row → platform bypass asked about the LOADED row's
   own tenant, `bypass.allows(org_id=row.organization_id, ...)`, which in multi-tenant mode is

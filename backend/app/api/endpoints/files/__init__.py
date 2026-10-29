@@ -68,6 +68,7 @@ from app.services.formatting_service import FormattingService
 from app.services.playback_rendition import resolve_playback
 from app.services.privacy.redact_view import PrivacyView
 from app.services.request_context import RequestContext
+from app.utils.media_types import file_extension
 from app.utils.media_types import normalize_media_content_type
 from app.utils.whisper_model_choice import require_servable_whisper_model
 
@@ -779,11 +780,6 @@ def get_media_file_stream_url(
         ) from e
 
 
-def _audio_source_extension(filename: str) -> str:
-    """Return the lowercase extension of a filename without the dot."""
-    return filename.rsplit(".", 1)[1].lower() if "." in filename else ""
-
-
 _DOWNLOAD_MODES = {
     "video_subtitles",
     "video_original",
@@ -797,11 +793,11 @@ def _audio_passthrough(db_file: MediaFile, mode: str) -> bool:
     """True when an audio mode can serve the original bytes without ffmpeg."""
     if not (db_file.content_type and db_file.content_type.startswith("audio/")):
         return False
-    src_ext = _audio_source_extension(str(db_file.filename))
+    src_ext = file_extension(str(db_file.filename))
     return (
         mode == "audio_original"
-        or (mode == "audio_mp3" and src_ext == "mp3")
-        or (mode == "audio_wav" and src_ext == "wav")
+        or (mode == "audio_mp3" and src_ext == ".mp3")
+        or (mode == "audio_wav" and src_ext == ".wav")
     )
 
 

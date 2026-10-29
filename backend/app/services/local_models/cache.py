@@ -18,6 +18,9 @@ from huggingface_hub import constants as hf_constants
 logger = logging.getLogger(__name__)
 
 INCOMPLETE_SUFFIX = ".incomplete"
+#: Free space kept beyond the bytes a download still needs. ONE value for the API pre-check
+#: and the download task: the task used 512 MiB, so it accepted downloads the API refused.
+DISK_HEADROOM_BYTES = 1024**3
 # The files faster-whisper cannot load a model without.
 REQUIRED_SNAPSHOT_FILES: tuple[str, ...] = ("config.json", "model.bin")
 

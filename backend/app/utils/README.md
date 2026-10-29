@@ -42,6 +42,7 @@ utils/
 │   ├── transcript_comparison.py# Transcript comparison for pipeline benchmarking
 │   ├── segment_dedup.py, segment_postprocess.py   # Segment dedup, resegmentation and merging
 │   ├── speaker_labels.py       # The canonical speaker display label
+│   ├── speaker_stats.py        # The one per-speaker talk-time / word-count tally
 │   ├── embedding_helpers.py, cosine_space.py      # Embedding math; cosine <-> OpenSearch score conversion
 │   ├── pyannote_utils.py, diarization_metrics.py  # PyAnnote helpers; boundary accuracy metrics
 │   ├── language.py, time_format.py, text_preprocessing.py   # Language parsing, timestamps, topic-extraction text prep

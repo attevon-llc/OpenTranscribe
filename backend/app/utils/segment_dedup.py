@@ -389,6 +389,7 @@ def _map_words_to_sentence(
     return matched, idx
 
 
+# Sibling of chunking_service.split_into_sentences; separate because it also re-times segments.
 def split_sentences_nltk(segments: list[dict]) -> list[dict]:
     """Split multi-sentence segments into individual sentences using NLTK punkt.
 

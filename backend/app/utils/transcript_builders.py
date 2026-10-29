@@ -11,6 +11,7 @@ from typing import Any
 from app.core import constants as C  # noqa: N812
 from app.utils.speaker_labels import canonical_speaker_label
 from app.utils.speaker_labels import canonical_speaker_label_for_row
+from app.utils.speaker_stats import tally_by_speaker
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +136,8 @@ def compute_speaker_stats(
     (``file_facts``) on the transcription-completion path instead.
 
     Reads the original text for word counts, never the masked text, so redaction settings
-    cannot change a statistic.
+    cannot change a statistic. The arithmetic is :func:`app.utils.speaker_stats.tally_by_speaker`,
+    shared with the analytics panel; speakers whose display labels collide are summed.
 
     Args:
         transcript_segments: ``TranscriptSegment`` rows, in any order — these are order-
@@ -146,19 +148,18 @@ def compute_speaker_stats(
     Returns:
         ``{speaker_name: {"total_time", "segment_count", "word_count", "percentage"}}``.
     """
-    speaker_stats: dict[str, Any] = {}
-
-    for segment in transcript_segments:
-        speaker_name = get_speaker_name(segment, voiceprint_names=voiceprint_names)
-        if speaker_name not in speaker_stats:
-            speaker_stats[speaker_name] = {
-                "total_time": 0,
-                "segment_count": 0,
-                "word_count": 0,
-            }
-        speaker_stats[speaker_name]["total_time"] += segment.end_time - segment.start_time
-        speaker_stats[speaker_name]["segment_count"] += 1
-        speaker_stats[speaker_name]["word_count"] += len(str(segment.text or "").split())
+    tallies = tally_by_speaker(
+        transcript_segments,
+        lambda segment: get_speaker_name(segment, voiceprint_names=voiceprint_names),
+    )
+    speaker_stats: dict[str, Any] = {
+        name: {
+            "total_time": tally.total_time,
+            "segment_count": tally.segment_count,
+            "word_count": tally.word_count,
+        }
+        for name, tally in tallies.items()
+    }
 
     total_time = sum(stats["total_time"] for stats in speaker_stats.values())
     for stats in speaker_stats.values():

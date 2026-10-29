@@ -41,8 +41,6 @@ logger = logging.getLogger(__name__)
 BACKEND_DIR = Path(__file__).resolve().parents[3]
 #: The soft time limit of a download; the Celery limits on the task sit just above it.
 DOWNLOAD_DEADLINE_SECONDS = 4 * 3600
-#: Free space kept beyond the bytes still to fetch.
-DISK_HEADROOM_BYTES = 512 * 1024 * 1024
 TERMINATE_GRACE_SECONDS = 15.0
 
 Notify = Callable[[dict[str, Any]], None]
@@ -222,7 +220,7 @@ def _run(entry, task_id, user_id, store, token, progress, endpoint, poll_seconds
     if plan is None:
         return "failed"
     done = downloader.bytes_on_disk(plan.repo_id, plan.expected)
-    if cache.free_bytes() < plan.bytes_total - done + DISK_HEADROOM_BYTES:
+    if cache.free_bytes() < plan.bytes_total - done + cache.DISK_HEADROOM_BYTES:
         return _fail(progress, "insufficient_disk_space", done, plan.bytes_total)
     return _supervise(
         entry, plan, task_id, store, token, progress, endpoint, poll_seconds, deadline

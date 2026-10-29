@@ -250,6 +250,41 @@ def test_too_little_disk_fails_before_any_child_starts(hub, store, children, mon
     assert store.current_lock() is None
 
 
+@pytest.fixture
+def planned(monkeypatch):
+    """The plans the supervisor resolved, so a test can size free space against one."""
+    plans: list[downloader.DownloadPlan] = []
+    real = downloader.resolve_plan
+
+    def recording(*args, **kwargs):
+        plans.append(real(*args, **kwargs))
+        return plans[-1]
+
+    monkeypatch.setattr(downloader, "resolve_plan", recording)
+    return plans
+
+
+def test_the_supervisor_keeps_the_api_headroom_of_one_gib(
+    hub, store, children, planned, monkeypatch
+):
+    # 768 MiB spare passed the supervisor's old 512 MiB headroom; the API asks for 1 GiB, so a
+    # download it would refuse up front must not be accepted here either.
+    monkeypatch.setattr(cache, "free_bytes", lambda: planned[0].bytes_total + 768 * 1024**2)
+    run = Run(store, hub)
+
+    assert run.go() == "failed"
+    assert run.events[-1]["error_code"] == "insufficient_disk_space"
+    assert children == []
+
+
+def test_the_supervisor_reads_the_shared_headroom(hub, store, children, planned, monkeypatch):
+    monkeypatch.setattr(cache, "DISK_HEADROOM_BYTES", 0)
+    monkeypatch.setattr(cache, "free_bytes", lambda: planned[0].bytes_total)
+
+    assert Run(store, hub).go() == "completed"
+    assert len(children) == 1
+
+
 def test_an_unwritable_cache_fails_before_any_request(hub, store, children, monkeypatch):
     monkeypatch.setattr(cache, "cache_writable", lambda: False)
     run = Run(store, hub)

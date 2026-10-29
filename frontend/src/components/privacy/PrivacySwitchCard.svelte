@@ -58,7 +58,8 @@
           type="checkbox"
           role="switch"
           {checked}
-          disabled={locked || busy}
+          disabled={locked}
+          aria-disabled={busy ? 'true' : undefined}
           aria-labelledby={`${id}-title`}
           aria-describedby={`${id}-desc${notice ? ` ${id}-notice` : ''}${locked && lockedReason ? ` ${id}-locked` : ''}`}
           data-testid={`${id}-switch`}
@@ -188,11 +189,13 @@
     outline-offset: 2px;
   }
 
-  .toggle input:disabled {
+  .toggle input:disabled,
+  .toggle input[aria-disabled='true'] {
     cursor: not-allowed;
   }
 
-  .toggle input:disabled + .slider {
+  .toggle input:disabled + .slider,
+  .toggle input[aria-disabled='true'] + .slider {
     opacity: 0.5;
   }
 

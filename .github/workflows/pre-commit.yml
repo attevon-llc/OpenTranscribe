@@ -418,13 +418,8 @@ jobs:
         working-directory: frontend
         run: npm run test:audit
 
-      # Report-only dev-tooling: surface dead code and import cycles in the job log
-      # without failing CI yet (|| true). Tighten to hard-fail once the existing
-      # backlog of knip false-positives / the intentional axios↔auth cycle is triaged.
-      - name: Dead-code report (knip, non-blocking)
-        working-directory: frontend
-        run: npm run deadcode || true
-
-      - name: Import-cycle report (madge, non-blocking)
-        working-directory: frontend
-        run: npm run cycles || true
+      # Dead code (knip) and import cycles (madge) are ratcheted: the baselines in
+      # scripts/guards/baselines/{knip,madge_cycles}.txt can only shrink, so new unused exports
+      # or a new cycle fail the job. The intentional axios<->auth cycle is baselined with its reason.
+      - name: Dead-code and import-cycle ratchet (knip, madge)
+        run: python3 scripts/guards/check_knip.py

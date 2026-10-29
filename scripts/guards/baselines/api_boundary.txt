@@ -35,7 +35,6 @@ fastapi_import::backend/app/services/support_access_service.py	2	layering: remov
 fastapi_import::backend/app/services/tag_bulk.py	1	layering: removal planned
 fastapi_import::backend/app/tasks/transcription/hooks.py	1	layering: removal planned
 fastapi_import::backend/app/utils/client_ip.py	1	layering: removal planned
-fastapi_import::backend/app/utils/error_handlers.py	2	layering: removal planned
 fastapi_import::backend/app/utils/lite_mode.py	2	layering: removal planned
 fastapi_import::backend/app/utils/pagination.py	2	layering: removal planned
 fastapi_import::backend/app/utils/url_validation.py	1	layering: removal planned
@@ -56,7 +55,6 @@ http_exception_raise::backend/app/services/media_download_service.py	11	layering
 http_exception_raise::backend/app/services/permission_service.py	4	layering: removal planned
 http_exception_raise::backend/app/services/platform_bypass.py	1	layering: removal planned
 http_exception_raise::backend/app/services/protected_media_plugins/mediacms.py	9	layering: removal planned
-http_exception_raise::backend/app/utils/error_handlers.py	1	layering: removal planned
 http_exception_raise::backend/app/utils/url_validation.py	1	layering: removal planned
 http_exception_raise::backend/app/services/uuid_helpers.py	19	layering: removal planned
 http_exception_raise::backend/app/utils/whisper_model_choice.py	1	layering: removal planned

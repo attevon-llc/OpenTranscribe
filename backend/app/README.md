@@ -208,7 +208,7 @@ Postprocess does not hold the GPU for enrichment: speaker embedding, indexing, s
 ### Usage Examples
 ```python
 # Error handling
-from app.utils.error_handlers import ErrorHandler
+from app.api.error_handlers import ErrorHandler
 
 raise ErrorHandler.not_found_error("Resource")
 

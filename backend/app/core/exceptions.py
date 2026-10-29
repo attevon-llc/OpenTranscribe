@@ -6,7 +6,7 @@ be caught by the global exception handler in ``main.py``.
 Scope note (intentional — do not "finish" this in a dedup pass):
 this hierarchy is reserved for **service-layer** error signalling. Endpoint
 handlers deliberately keep raising ``fastapi.HTTPException`` directly (and the
-shared ``utils.error_handlers.ErrorHandler`` builders for opaque 5xx) because
+shared ``api.error_handlers.ErrorHandler`` builders for opaque 5xx) because
 migrating the ~40 endpoint raise-sites onto these classes would change the
 client-facing status/detail rendered by the ``main.py`` handler — a behavior
 change, not a refactor. The global ``OpenTranscribeError`` handler in

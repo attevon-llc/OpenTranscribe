@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
+from app.api.error_handlers import ErrorHandler
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import MediaFile
@@ -27,7 +28,6 @@ from app.services.minio_service import download_file
 from app.services.request_context import RequestContext
 from app.tasks.transcription.waveform_generator import WaveformGenerator
 from app.tasks.waveform_generation import trigger_waveform_generation
-from app.utils.error_handlers import ErrorHandler
 
 from .crud import get_media_file_by_uuid
 

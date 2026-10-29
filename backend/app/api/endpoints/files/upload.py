@@ -13,6 +13,7 @@ from fastapi import status
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from app.api.error_handlers import ErrorHandler
 from app.core.constants import UPLOAD_CHUNK_SIZE
 from app.core.exceptions import DomainError
 from app.models.media import FileStatus
@@ -20,7 +21,6 @@ from app.models.media import MediaFile
 from app.models.user import User
 from app.services.minio_service import upload_file_tuned
 from app.utils import benchmark_timing
-from app.utils.error_handlers import ErrorHandler
 from app.utils.file_validation import HEADER_READ_SIZE
 from app.utils.file_validation import validate_uploaded_file
 from app.utils.filename import get_safe_storage_filename

@@ -332,9 +332,9 @@ ws.onmessage = (event) => {
 - **500**: Internal Server Error
 
 ### Custom Error Handlers
-Endpoints raise `fastapi.HTTPException` (directly or via the helpers below); `app/core/exceptions.py` is for the service layer, and `main.py` maps those exceptions to HTTP statuses.
+Endpoints raise `fastapi.HTTPException` (directly or via the helpers below, which live in `app/api/error_handlers.py`); `app/core/exceptions.py` is for the service layer, and `main.py` maps those exceptions to HTTP statuses.
 ```python
-from app.utils.error_handlers import ErrorHandler
+from app.api.error_handlers import ErrorHandler
 
 raise ErrorHandler.not_found_error("File")
 raise ErrorHandler.validation_error("Invalid email format")

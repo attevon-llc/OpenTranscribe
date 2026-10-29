@@ -17,6 +17,7 @@ from sqlalchemy.orm import load_only
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
+from app.api.error_handlers import ErrorHandler
 from app.core.exceptions import DomainError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
@@ -54,7 +55,6 @@ from app.services.speaker_status_service import SpeakerStatusService
 from app.services.uuid_helpers import require_profile_in_scope
 from app.services.uuid_helpers import require_speaker_access
 from app.utils.db_helpers import org_stamp_is
-from app.utils.error_handlers import ErrorHandler
 from app.utils.speaker_identity_detail import ORIGIN_ACCEPTED_SUGGESTION
 from app.utils.speaker_identity_detail import ORIGIN_CONFIRMED
 from app.utils.speaker_identity_detail import ORIGIN_CREATED

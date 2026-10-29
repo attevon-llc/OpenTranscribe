@@ -16,6 +16,7 @@ from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.deps_context import scope_to_context
 from app.api.endpoints.auth import get_current_active_user
+from app.api.error_handlers import ErrorHandler
 from app.core.constants import MAX_AVATAR_SIZE
 from app.core.exceptions import DomainError
 from app.db.base import get_db
@@ -41,7 +42,6 @@ from app.services.uuid_helpers import require_resource_owner
 from app.services.uuid_helpers import require_speaker_access
 from app.tasks.speaker_update_task import process_speaker_update_background
 from app.utils.db_helpers import org_stamp_is
-from app.utils.error_handlers import ErrorHandler
 
 logger = logging.getLogger(__name__)
 

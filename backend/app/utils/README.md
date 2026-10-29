@@ -27,7 +27,6 @@ utils/
 │   ├── client_ip.py            # Single source of truth for "who is this request from?"
 │   └── user_settings_helpers.py, summary_settings.py   # User/system settings access helpers
 ├── Errors
-│   ├── error_handlers.py       # ErrorHandler HTTPException builders, handle_not_found
 │   └── error_classification.py # Fine-grained failure categories (retry policy; not on the wire)
 ├── Tasks and workers
 │   ├── task_utils.py           # Task records, status transitions, cancellation, stuck-file recovery
@@ -131,22 +130,6 @@ tag, created = get_or_create(
     db, Tag, name=tag_name
 )  # check models: Tag is tenant-scoped, prefer tag_service
 ```
-
-## Error Handlers (`error_handlers.py`)
-
-`ErrorHandler` builds `HTTPException` instances with consistent status codes and messages:
-`database_error(operation, error)`, `validation_error(message)`, `not_found_error(resource)`, `unauthorized_error(message)`, `internal_error(message)` and `file_processing_error(operation, error)`. `handle_not_found(resource_name)` is a decorator factory that raises 404 when the wrapped function returns `None`.
-
-`handle_database_errors` was removed (#914): it reclassified any `HTTPException` the wrapped function raised into an opaque 500.
-
-```python
-from app.utils.error_handlers import ErrorHandler
-
-if not file_obj:
-    raise ErrorHandler.not_found_error("File")
-```
-
-Remember that service-layer code raises the exceptions in `app/core/exceptions.py` instead; `main.py` maps them to HTTP statuses.
 
 ## ⚙️ Task Utilities (`task_utils.py`)
 

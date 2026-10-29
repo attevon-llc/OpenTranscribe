@@ -21,6 +21,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.tags._common import _resolve_tag
 from app.api.endpoints.tags._common import logger
 from app.api.endpoints.tags._common import router
+from app.api.error_handlers import ErrorHandler
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.core.exceptions import DomainError
 from app.db.base import get_db
@@ -35,7 +36,6 @@ from app.services.tag_collisions import list_tags_filtered
 from app.services.tag_collisions import list_unused_tag_rows
 from app.services.tag_operations import cleanup_unreferenced_tags
 from app.services.tag_service import on_tags_changed
-from app.utils.error_handlers import ErrorHandler
 
 
 @router.post("", response_model=TagSchema, dependencies=[Depends(refuse_under_support_grant)])

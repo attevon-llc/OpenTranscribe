@@ -1,4 +1,4 @@
-"""Real behavioral tests for ``app/utils/error_handlers.py`` (issue #474).
+"""Real behavioral tests for ``app/api/error_handlers.py`` (issue #474).
 
 A decorator (``handle_not_found``) and a static-method builder class (``ErrorHandler``).
 No DB, no network.
@@ -19,8 +19,8 @@ import logging
 import pytest
 from fastapi import HTTPException
 
-from app.utils.error_handlers import ErrorHandler
-from app.utils.error_handlers import handle_not_found
+from app.api.error_handlers import ErrorHandler
+from app.api.error_handlers import handle_not_found
 
 
 class TestHandleNotFound:
@@ -99,7 +99,7 @@ class TestErrorHandlerDatabaseError:
         assert exc.detail == "Database error during saving user"
 
     def test_logs_the_original_error_text(self, caplog):
-        with caplog.at_level(logging.ERROR, logger="app.utils.error_handlers"):
+        with caplog.at_level(logging.ERROR, logger="app.api.error_handlers"):
             ErrorHandler.database_error("deleting file", RuntimeError("disk full"))
         assert any("disk full" in record.message for record in caplog.records)
 
@@ -158,6 +158,6 @@ class TestErrorHandlerFileProcessingError:
         assert exc.detail == "File processing failed during transcoding"
 
     def test_logs_the_original_error_text(self, caplog):
-        with caplog.at_level(logging.ERROR, logger="app.utils.error_handlers"):
+        with caplog.at_level(logging.ERROR, logger="app.api.error_handlers"):
             ErrorHandler.file_processing_error("extracting audio", OSError("no space left"))
         assert any("no space left" in record.message for record in caplog.records)

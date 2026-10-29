@@ -68,6 +68,7 @@ The full procedure and the traps (number collisions between parallel branches, d
 revision = "v<NNN>_add_new_column"
 down_revision = "<current head revision id>"
 
+
 def upgrade():
     op.execute("""
         DO $$
@@ -80,6 +81,7 @@ def upgrade():
             END IF;
         END $$;
     """)
+
 
 def downgrade():
     op.execute('ALTER TABLE "media_file" DROP COLUMN IF EXISTS new_column')

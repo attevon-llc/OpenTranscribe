@@ -82,6 +82,7 @@ from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 from app.utils.uuid_helpers import require_resource_owner
 from app.utils.db_helpers import apply_tenant_scope
 
+
 @router.put("/files/{file_uuid}")
 def update_file(
     file_uuid: UUID,
@@ -127,7 +128,9 @@ Tag creation and attachment live in `services/tag_service.py` and `services/tag_
 query = get_user_files_query(db, user.id)
 files = query.order_by(MediaFile.upload_time.desc()).all()
 
-tag, created = get_or_create(db, Tag, name=tag_name)  # check models: Tag is tenant-scoped, prefer tag_service
+tag, created = get_or_create(
+    db, Tag, name=tag_name
+)  # check models: Tag is tenant-scoped, prefer tag_service
 ```
 
 ## Error Handlers (`error_handlers.py`)
@@ -151,13 +154,15 @@ Remember that service-layer code raises the exceptions in `app/core/exceptions.p
 Task-row and file-status management for Celery tasks:
 
 ```python
-create_task_record(db, celery_task_id, user_id, media_file_id, task_type)   # supersedes an older active row of the step
+create_task_record(
+    db, celery_task_id, user_id, media_file_id, task_type
+)  # supersedes an older active row of the step
 update_task_status(db, task_id, status, progress=None, error_message=None, completed=False)
-update_task_status_with_duration(...)       # same, also returns elapsed time
-update_media_file_status(db, file_id, status)   # FileStatus
+update_task_status_with_duration(...)  # same, also returns elapsed time
+update_media_file_status(db, file_id, status)  # FileStatus
 update_media_file_from_task_status(db, file_id)
 get_task_summary_for_media_file(db, file_id)
-cancel_active_task(db, file_id)             # phase one of a two-phase stop (writes CANCELLING)
+cancel_active_task(db, file_id)  # phase one of a two-phase stop (writes CANCELLING)
 check_for_stuck_files(db, stuck_threshold_hours=2.0)
 recover_stuck_file(db, file_id)
 is_file_safe_to_delete(db, file_id)

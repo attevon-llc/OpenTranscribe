@@ -246,6 +246,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
+
 # User must own (or be shared) the file
 @router.get("/files/{file_uuid}/thing")
 def get_thing(
@@ -256,10 +257,10 @@ def get_thing(
     file_obj = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
     ...
 
+
 # Admin only
 @router.get("/admin/things")
-def list_things(current_user: User = Depends(get_current_admin_user)):
-    ...
+def list_things(current_user: User = Depends(get_current_admin_user)): ...
 ```
 
 Use `get_current_active_user`, not `get_current_user`, on ordinary routes: only the former applies the account-lifecycle gate (deactivated, unapproved, expired, forced password change).
@@ -374,7 +375,7 @@ def list_files(
     file_type: list[str] | None = Query(None),
     status: list[str] | None = Query(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """List files with advanced filtering options."""
     pass
@@ -406,10 +407,7 @@ def test_create_resource(client, auth_headers):
 ### Async Endpoints
 ```python
 @router.get("/async-endpoint")
-async def async_operation(
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
-):
+async def async_operation(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Async endpoint for I/O bound operations."""
     # Use async for I/O operations
     await some_async_operation()
@@ -435,7 +433,9 @@ async def async_operation(
    class NewResource(Base):
        __tablename__ = "new_resource"
        id: Mapped[int] = mapped_column(Integer, primary_key=True)
-       uuid: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), default=uuid7, unique=True, index=True)  # the API identifier
+       uuid: Mapped[uuid_pkg.UUID] = mapped_column(
+           UUID(as_uuid=True), default=uuid7, unique=True, index=True
+       )  # the API identifier
        name: Mapped[str] = mapped_column(String, nullable=False)
    ```
 
@@ -444,8 +444,10 @@ async def async_operation(
    class NewResourceBase(BaseModel):
        name: str
 
+
    class NewResourceCreate(NewResourceBase):
        pass
+
 
    class NewResourceResponse(NewResourceBase):
        id: int
@@ -469,7 +471,10 @@ async def async_operation(
 5. **Add to Router** (`app/api/router.py`)
    ```python
    from .endpoints import new_resource
-   include_router_with_consistency(new_resource.router, prefix="/new-resources", tags=["new-resources"])
+
+   include_router_with_consistency(
+       new_resource.router, prefix="/new-resources", tags=["new-resources"]
+   )
    ```
 
 6. **Add Tests** (`tests/api/endpoints/`)

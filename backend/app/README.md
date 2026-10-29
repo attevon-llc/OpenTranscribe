@@ -99,9 +99,7 @@ app/
 # Standard endpoint pattern
 @router.get("/resource/{id}", response_model=ResourceSchema)
 def get_resource(
-    id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
 ):
     """Get a specific resource by ID."""
     return resource_service.get_by_id(db, id, current_user)
@@ -159,6 +157,7 @@ class MediaFile(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     filename: Mapped[str] = mapped_column(String, nullable=False)
 
+
 # Pydantic Schema (API)
 from pydantic import BaseModel
 from pydantic import ConfigDict
@@ -210,14 +209,17 @@ Postprocess does not hold the GPU for enrichment: speaker embedding, indexing, s
 ```python
 # Error handling
 from app.utils.error_handlers import ErrorHandler
+
 raise ErrorHandler.not_found_error("Resource")
 
 # Authorization — a FastAPI dependency, never a decorator
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+
 file_obj = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
 
 # Database helpers
 from app.utils.db_helpers import get_user_files_query
+
 query = get_user_files_query(db, user_id)
 ```
 

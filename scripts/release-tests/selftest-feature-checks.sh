@@ -37,11 +37,16 @@ source "$SCRIPT_DIR/lib/feature-checks.sh"
 FILE=11111111-1111-4111-8111-111111111111
 SPK=22222222-2222-4222-8222-222222222222
 # Consumed by the sourced lib (and by the transport mocks below), hence exported.
-export API_BASE="http://selftest.invalid/api" FC_PP_TIMEOUT_S=5 FC_PURGE_TIMEOUT_S=10 FC_CODE=000
+export API_BASE="http://selftest.invalid/api" FC_PP_TIMEOUT_S=5 FC_PURGE_TIMEOUT_S=10 FC_RESYNC_TIMEOUT_S=5 FC_CODE=000
 
 # ─── the model: a correct backend, one defect switch (BREAK) at a time ──────────────────────
 BREAK=""
 W_VP=true; W_GENDER=true; W_SEEDED=0; W_PURGED=0; W_DOCFMT=docx
+W_IDX=0; W_RENAMED=0
+DECOY=rehearsal-decoy-1
+# Documents live in files: the probe runs in a command substitution, whose variable writes vanish.
+spkdoc() { cat "$TMP/spkdoc" 2>/dev/null || echo 0; }
+decoydoc() { cat "$TMP/decoydoc" 2>/dev/null || echo 0; }
 
 sleep() { :; }
 ver_alembic_head() { echo "v449_add_speaker_identity_source"; }
@@ -62,9 +67,16 @@ fc_request() {
                         *gender_inference_enabled*true*) W_GENDER=true ;;
                         *gender_inference_enabled*false*) W_GENDER=false ;;
                     esac
+                    local was_vp="$W_VP"
                     case "$body" in
                         *voiceprint_matching_enabled*true*) W_VP=true ;;
                         *voiceprint_matching_enabled*false*) W_VP=false ;;
+                    esac
+                    # A switch change relabels the real chunk index (the resync), unless it is stuck.
+                    case "$body" in *voiceprint_matching_enabled*)
+                        if [[ "$BREAK" != "resync-stuck" && "$was_vp" != "$W_VP" ]]; then
+                            if [[ "$W_SEEDED" == "1" && "$W_VP" == "true" ]]; then W_IDX=1; else W_IDX=0; fi
+                        fi ;;
                     esac
                 fi
             fi
@@ -87,9 +99,12 @@ fc_request() {
                 [[ "$BREAK" == "no-revert" ]] || W_PURGED=1
             fi ;;
         "GET /privacy/purge/t1")
-            local ok=true
+            local ok=true res='"speaker_identities_machine": 0, "speaker_identity_provenance": 0, "voiceprint_suggestions": 0, "voiceprint_suggestion_details": 0, "speaker_matches": 0, "unpromoted_cluster_members": 0, "profiles_with_embeddings": 0, "speaker_docs": 0, "profile_docs": 0, "cluster_docs": 0'
             [[ "$BREAK" == "purge-residual" ]] && ok=false
-            resp="{\"task_id\": \"t1\", \"status\": \"completed\", \"counts\": {\"postgres\": {\"speaker_identities_reverted\": 1}, \"opensearch\": {}}, \"residual\": {}, \"residual_ok\": $ok, \"residual_unverified\": [], \"audit\": [{\"event_type\": \"privacy.voiceprints.purge\", \"task_id\": \"t1\"}]}" ;;
+            [[ "$BREAK" == "residual-short" ]] && res='"speaker_identities_machine": 0'
+            [[ "$BREAK" == "os-docs-survive" ]] || echo 0 > "$TMP/spkdoc"
+            [[ "$BREAK" == "decoy-wiped" ]] && echo 0 > "$TMP/decoydoc"
+            resp="{\"task_id\": \"t1\", \"status\": \"completed\", \"counts\": {\"postgres\": {\"speaker_identities_reverted\": 1}, \"opensearch\": {}}, \"residual\": {$res}, \"residual_ok\": $ok, \"residual_unverified\": [], \"audit\": [{\"event_type\": \"privacy.voiceprints.purge\", \"task_id\": \"t1\"}]}" ;;
         "GET /admin/audit-logs"*)
             local total=1
             [[ "$BREAK" == "audit-none" ]] && total=0
@@ -116,6 +131,8 @@ fc_request() {
         "GET /system/stats")
             if [[ "$BREAK" == "stats" ]]; then
                 resp='{"system": {"version": "x"}}'
+            elif [[ "$BREAK" == "cap-bad" ]]; then
+                resp='{"system": {"chat_reranker_threads": {"threads": 0, "source": "auto", "setting": "auto"}}}'
             else
                 resp='{"system": {"chat_reranker_threads": {"threads": 4, "source": "auto", "setting": "auto"}}}'
             fi ;;
@@ -151,6 +168,54 @@ fc_fetch_url() {
     FC_CODE=200
 }
 
+fc_container_env() {
+    if [[ "$BREAK" == "cap-env-mismatch" ]]; then echo 6; else echo auto; fi
+}
+
+fc_container_logs() {
+    if [[ "$BREAK" == "gpu-log" ]]; then
+        printf 'worker ready\nRuntimeError: Could not load libtorchcodec\n'
+    else
+        printf 'worker ready\ntask done\n'
+    fi
+}
+
+fc_probe() {
+    local cmd="$2"
+    case "$cmd" in
+        labels)
+            if [[ "$W_IDX" == "1" ]]; then echo "{\"labels\": [\"$FC_VOICE_NAME\"], \"indexed\": true}"
+            else echo '{"labels": ["SPEAKER_00"], "indexed": true}'; fi ;;
+        drift)
+            local expected='["SPEAKER_00"]' indexed='["SPEAKER_00"]' drifted=0
+            [[ "$W_SEEDED" == "1" && "$W_VP" == "true" ]] && expected="[\"$FC_VOICE_NAME\"]"
+            [[ "$W_RENAMED" == "1" && "$W_VP" == "true" ]] && expected="[\"$FC_DRIFT_NAME\"]"
+            [[ "$W_IDX" == "1" ]] && indexed="[\"$FC_VOICE_NAME\"]"
+            [[ "$expected" != "$indexed" ]] && drifted=1
+            if [[ "$BREAK" == "drift-blind" ]]; then indexed="$expected"; drifted=0; fi
+            echo "{\"scanned\": 1, \"drifted\": $drifted, \"expected\": $expected, \"indexed\": $indexed}" ;;
+        seed-docs)
+            echo 1 > "$TMP/spkdoc"; echo 1 > "$TMP/decoydoc"
+            if [[ "$BREAK" == "seed-fail" ]]; then echo '{"seeded": [], "decoy": ""}'
+            else echo "{\"seeded\": [\"v4:created\"], \"decoy\": \"$DECOY\"}"; fi ;;
+        count-docs)
+            echo "{\"counts\": {\"$3\": $(spkdoc), \"$4\": $(decoydoc)}}" ;;
+        delete-doc) echo '{"deleted": 1}'; echo 0 > "$TMP/decoydoc" ;;
+        gpu)
+            local cuda=true codec=ok pulled=false
+            [[ "$BREAK" == "gpu-no-cuda" ]] && cuda=false
+            [[ "$BREAK" == "gpu-torchcodec" ]] && pulled=true
+            echo "{\"cuda_available\": $cuda, \"device_count\": 1, \"device_name\": \"RTX 3080 Ti\", \"torchcodec_import\": \"$codec\", \"torchaudio_import\": \"ok\", \"audio_samples\": 16000, \"app_loader_pulled_torchcodec\": $pulled}" ;;
+    esac
+}
+
+fc_sql_err() {
+    if [[ "$BREAK" == "v448-dup-allowed" ]]; then echo "BEGIN
+INSERT 0 1
+ROLLBACK"
+    else echo 'ERROR:  duplicate key value violates unique constraint "uq_task_active_per_file_type"'; fi
+}
+
 fc_sql_strict() {
     case "$1" in
         *"FROM alembic_version"*) if [[ "$BREAK" == "head" ]]; then echo v300_old; else echo v449_add_speaker_identity_source; fi ;;
@@ -162,25 +227,33 @@ fc_sql_strict() {
         *"SELECT f.uuid::text"*) echo "$FILE" ;;
         *"quote_nullable(display_name)"*)
             echo "$SPK|UPDATE speaker SET display_name=NULL, verified=false, identity_source=NULL, identity_source_at=NULL::timestamptz WHERE uuid='$SPK'" ;;
-        "UPDATE speaker SET display_name='$FC_VOICE_NAME'"*) W_SEEDED=1; W_PURGED=0 ;;
+        "UPDATE speaker SET display_name='$FC_VOICE_NAME'"*) W_SEEDED=1; W_PURGED=0; W_RENAMED=0 ;;
+        "UPDATE speaker SET display_name='$FC_DRIFT_NAME'"*) W_RENAMED=1 ;;
         "UPDATE speaker SET display_name=NULL"*) W_SEEDED=0 ;;
         "SELECT identity_source FROM speaker"*) [[ "$W_SEEDED" == "1" ]] && echo voiceprint ;;
         *"coalesce(identity_source, '<null>')"*)
             if [[ "$W_PURGED" == "1" ]]; then echo '<null>|<null>'; else echo "voiceprint|$FC_VOICE_NAME"; fi ;;
         *"count(attributes_predicted_at)"*) echo '2|2|1000.5' ;;
+        *"FROM pg_indexes"*) [[ "$BREAK" == "v448-no-index" ]] || echo "CREATE UNIQUE INDEX uq_task_active_per_file_type ON public.task USING btree (media_file_id, task_type) WHERE ((status)::text = ANY ((ARRAY['pending'::character varying, 'in_progress'::character varying])::text[]))" ;;
+        *"HAVING count(*) > 1"*) if [[ "$BREAK" == "v448-active-dups" ]]; then echo 1; else echo 0; fi ;;
+        *"WHERE id = 'rehearsal-v448-B'"*) echo "7|1" ;;
+        *"FROM media_file f WHERE lower(f.status::text) = 'completed' ORDER BY f.id DESC"*)
+            if [[ "$BREAK" == "pipe-noseg" ]]; then echo "completed|0|2|native"; else echo "completed|12|2|native"; fi ;;
         *) return 1 ;;
     esac
 }
 
 # ─── harness ────────────────────────────────────────────────────────────────────────────────
 BAD=0
-reset_world() { BREAK="${1:-}"; W_VP=true; W_GENDER=true; W_SEEDED=0; W_PURGED=0; W_DOCFMT=docx; }
+reset_world() { BREAK="${1:-}"; W_VP=true; W_GENDER=true; W_SEEDED=0; W_PURGED=0; W_DOCFMT=docx; W_IDX=0; W_RENAMED=0; rm -f "$TMP/spkdoc" "$TMP/decoydoc"; }
 
 # expect_clean CHECK [ARGS]: a correct backend produces no FAIL and at least one PASS.
 expect_clean() {
     reset_world ""
     local f0=$as_fail p0=$as_pass
-    "$@" >/dev/null
+    "$@" > "$TMP/last-run.txt"
+    # FC_SELFTEST_VERBOSE=1 prints the FAIL lines of a control that misbehaved.
+    if [[ -n "${FC_SELFTEST_VERBOSE:-}" ]]; then grep -a "FAIL" "$TMP/last-run.txt" || true; fi
     if (( as_fail == f0 && as_pass > p0 )); then
         echo -e "  \033[0;32mPASS\033[0m  control: $1 is clean on a correct backend ($((as_pass - p0)) assertions)"
     else
@@ -252,11 +325,53 @@ expect_fires org fc_check_org_endpoints_404
 expect_clean fc_check_aws_bucket_message
 expect_fires aws fc_check_aws_bucket_message
 
+
+expect_clean fc_check_label_index_resync
+expect_fires resync-stuck fc_check_label_index_resync
+expect_fires drift-blind fc_check_label_index_resync
+
+expect_fires os-docs-survive fc_check_audited_purge
+expect_fires decoy-wiped fc_check_audited_purge
+expect_fires residual-short fc_check_audited_purge
+expect_fires seed-fail fc_check_audited_purge
+
+expect_fires cap-env-mismatch fc_check_system_stats
+expect_fires cap-bad fc_check_system_stats
+
+export TEST_USE_GPU=true
+expect_clean fc_check_gpu_pipeline
+expect_fires gpu-no-cuda fc_check_gpu_pipeline
+expect_fires gpu-torchcodec fc_check_gpu_pipeline
+expect_fires gpu-log fc_check_gpu_pipeline
+expect_fires pipe-noseg fc_check_gpu_pipeline
+
+printf 'media_file=2\ntranscript_segment=40\nspeaker=3\ntask=9\n' > "$TMP/c_pre.txt"
+printf 'media_file=3\ntranscript_segment=55\nspeaker=4\ntask=12\nidentity_source_not_null=3\n' > "$TMP/c_post.txt"
+printf 'media_file=2\ntranscript_segment=10\nspeaker=3\ntask=12\nidentity_source_not_null=3\n' > "$TMP/c_lost.txt"
+printf 'media_file=0\ntranscript_segment=0\nspeaker=0\ntask=0\n' > "$TMP/c_empty.txt"
+printf 'media_file=3\ntranscript_segment=55\nspeaker=4\ntask=12\nidentity_source_not_null=9\n' > "$TMP/c_stamp.txt"
+printf 'rehearsal-v448-A|failed|superseded by rehearsal-v448-B\nrehearsal-v448-B|in_progress|\nrehearsal-v448-C|failed|superseded by rehearsal-v448-D\nrehearsal-v448-D|completed|\n' > "$TMP/t_ok.txt"
+printf 'rehearsal-v448-A|pending|\nrehearsal-v448-B|in_progress|\nrehearsal-v448-C|failed|superseded by rehearsal-v448-D\nrehearsal-v448-D|completed|\n' > "$TMP/t_unresolved.txt"
+printf 'rehearsal-v448-B|in_progress|\n' > "$TMP/t_deleted.txt"
+printf '(unseeded: the FROM schema refused the task rows)\n' > "$TMP/t_unseeded.txt"
+pop() { fc_check_upgrade_populated "$TMP/pre.txt" "$TMP/post_ok.txt" "$@"; }
+expect_clean pop "$TMP/c_pre.txt" "$TMP/c_post.txt" "$TMP/t_ok.txt"
+expect_fires counts-lost pop "$TMP/c_pre.txt" "$TMP/c_lost.txt" "$TMP/t_ok.txt"
+expect_fires counts-empty pop "$TMP/c_empty.txt" "$TMP/c_post.txt" "$TMP/t_ok.txt"
+expect_fires stamped-mismatch pop "$TMP/c_pre.txt" "$TMP/c_stamp.txt" "$TMP/t_ok.txt"
+expect_fires v448-unresolved pop "$TMP/c_pre.txt" "$TMP/c_post.txt" "$TMP/t_unresolved.txt"
+expect_fires v448-deleted pop "$TMP/c_pre.txt" "$TMP/c_post.txt" "$TMP/t_deleted.txt"
+expect_fires v448-unseeded pop "$TMP/c_pre.txt" "$TMP/c_post.txt" "$TMP/t_unseeded.txt"
+expect_fires v448-no-index pop "$TMP/c_pre.txt" "$TMP/c_post.txt" "$TMP/t_ok.txt"
+expect_fires v448-active-dups pop "$TMP/c_pre.txt" "$TMP/c_post.txt" "$TMP/t_ok.txt"
+expect_fires v448-dup-allowed pop "$TMP/c_pre.txt" "$TMP/c_post.txt" "$TMP/t_ok.txt"
+
 # The runner must reach every check in its plan, in every mode, with the model healthy.
 for mode in full upgrade lite; do
     reset_world ""
     f0=$as_fail
-    fc_run_all "$mode" "$TMP/pre.txt" "$TMP/post_ok.txt" >/dev/null
+    fc_run_all "$mode" "$TMP/pre.txt" "$TMP/post_ok.txt" "$TMP/c_pre.txt" "$TMP/c_post.txt" "$TMP/t_ok.txt" > "$TMP/last-run.txt"
+    if [[ -n "${FC_SELFTEST_VERBOSE:-}" ]]; then grep -a "FAIL" "$TMP/last-run.txt" || true; fi
     if (( as_fail == f0 )); then
         echo -e "  \033[0;32mPASS\033[0m  fc_run_all $mode is clean on a correct backend"
     else

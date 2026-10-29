@@ -142,6 +142,7 @@ class _Handler(BaseHTTPRequestHandler):
                 "method": self.command,
                 "path": self.path,
                 "authorization": self.headers.get("Authorization"),
+                "range": self.headers.get("Range"),
             }
         )
         if hub.mode in _FAILURE_STATUS:

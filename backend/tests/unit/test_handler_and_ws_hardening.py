@@ -311,6 +311,7 @@ def test_testing_shortcuts_are_inert_when_hardened(monkeypatch):
 
 def test_hardened_refuses_wildcard_cors_with_credentials(monkeypatch):
     from app.core.config import settings
+    from app.core.startup_validation import service_credential_settings
     from app.main import _validate_production_secrets
 
     monkeypatch.setattr(settings, "ENVIRONMENT", "production")
@@ -318,6 +319,8 @@ def test_hardened_refuses_wildcard_cors_with_credentials(monkeypatch):
     monkeypatch.setattr(settings, "ENCRYPTION_KEY", "a-real-and-sufficiently-long-key")
     monkeypatch.setattr(settings, "REDIS_PASSWORD", "redis-pass")
     monkeypatch.setattr(settings, "DEBUG", False)
+    monkeypatch.setattr(service_credential_settings, "FLOWER_PASSWORD", "a-strong-flower-password")
+    monkeypatch.setattr(service_credential_settings, "MINIO_KMS_AUTO_ENCRYPTION", "on")
     monkeypatch.setenv("TESTING", "False")
     monkeypatch.setattr(settings, "CORS_ORIGINS", ["https://app.example.com", "*"])
 

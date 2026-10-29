@@ -58,6 +58,8 @@ services:
     env_file:
       - path: .env
         required: false
+    # The "flower" password default below is for development only; production startup
+    # validation rejects an unset or default FLOWER_PASSWORD.
     command: >
       /bin/sh -c "
       FLOWER_AUTH_B64=$$(printf '%s:%s' '${FLOWER_USER:-admin}' '${FLOWER_PASSWORD:-flower}' | base64 | tr -d '\n') &&

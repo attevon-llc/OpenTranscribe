@@ -78,6 +78,8 @@ services:
       # Key format: <key-name>:<base64-encoded-32-byte-key>
       # Generate with: echo "opentranscribe-key:$(openssl rand -base64 32)"
       - MINIO_KMS_SECRET_KEY=${MINIO_KMS_SECRET_KEY:-}
+      # The "off" default is for development installs without a key; production
+      # startup validation requires "on" (see .env.example).
       - MINIO_KMS_AUTO_ENCRYPTION=${MINIO_KMS_AUTO_ENCRYPTION:-off}
       # No phone-home: MinIO resolves dl.min.io for an update check on EVERY server start
       # unless MINIO_UPDATE=off (verified by DNS logging). Callhome is already off unless a
@@ -1221,6 +1223,8 @@ services:
       - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
       - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       - CELERY_BROKER_URL=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379/0
+      # The "flower" default is for development only; production startup validation
+      # rejects an unset or default FLOWER_PASSWORD.
       - FLOWER_USER=${FLOWER_USER:-admin}
       - FLOWER_PASSWORD=${FLOWER_PASSWORD:-flower}
       - TEMP_DIR=/app/temp

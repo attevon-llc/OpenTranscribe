@@ -30601,7 +30601,7 @@
     },
     "/api/auth/logout": {
       "post": {
-        "description": "Logout the current session by revoking the current tokens.\n\nThis endpoint revokes both the access token (via JTI blacklist) and\nany associated refresh token, effectively logging out the current session.\nFor OIDC users, also terminates the federated identity-provider session.\n\nSecurity (FedRAMP AC-12):\n- Adds access token JTI to Redis blacklist\n- Revokes associated refresh token in database\n- Terminates the OIDC SSO session (if applicable)\n- Tokens cannot be reused after logout\n\nArgs:\n    request: FastAPI request object\n    token: Current access token (from Authorization header)\n    db: Database session\n\nReturns:\n    Success message",
+        "description": "Logout the current session by revoking the current tokens.\n\nThis endpoint revokes both the access token (via JTI blacklist) and the\nrefresh token carried by the refresh cookie, effectively logging out the\ncurrent session. For OIDC users, also terminates the federated\nidentity-provider session.\n\nThe cookies are always cleared. The response is 200 only when every\nrevocation was recorded; otherwise it is 503 (cookies still cleared) and the\nlogout is audited as a failure.\n\nSecurity (FedRAMP AC-12):\n- Revokes the access token JTI and the refresh token\n- Terminates the OIDC SSO session (if applicable)\n- Tokens cannot be reused after logout\n\nArgs:\n    request: FastAPI request object\n    token: Current access token (from Authorization header)\n    db: Database session\n\nReturns:\n    Success message",
         "operationId": "logout_api_auth_logout_post",
         "responses": {
           "200": {
@@ -30611,6 +30611,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "503": {
+            "description": "Cookies were cleared but a revocation was not recorded."
           }
         },
         "security": [
@@ -30636,6 +30639,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "503": {
+            "description": "The sessions could not be revoked; retry."
           }
         },
         "security": [
@@ -31399,6 +31405,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "The rotation could not be recorded; retry."
           }
         },
         "summary": "Refresh Access Token",

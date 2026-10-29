@@ -45,6 +45,7 @@ from app.auth.saml.config import SAMLConfig
 from app.auth.saml.provisioning import sync_saml_user_to_db
 from app.auth.saml.sp import build_auth
 from app.auth.saml.sp import saml_request_data
+from app.auth.token_service import RevocationError
 from app.auth.token_service import token_service
 from app.core.config import settings
 from app.db.base import get_db
@@ -362,40 +363,61 @@ def _complete_saml_sls(
     from app.auth.cookies import get_access_token_from_cookie
     from app.auth.cookies import get_refresh_token_from_cookie
 
+    revocation_failed = False
+    processing_failed = False
+
     def _revoke_current_session() -> None:
+        # The IdP exchange must still complete when a revocation cannot be
+        # recorded, so a failure is remembered for the audit record instead of
+        # being raised into python3-saml.
+        nonlocal revocation_failed
         refresh_value = get_refresh_token_from_cookie(request)
         if refresh_value:
             payload, refresh_row = token_service.verify_refresh_token(db, refresh_value)
             if payload and refresh_row:
-                token_service.revoke_token(db, str(refresh_row.jti), refresh_row.expires_at)
+                try:
+                    token_service.revoke_token(db, str(refresh_row.jti), refresh_row.expires_at)
+                except RevocationError:
+                    revocation_failed = True
         access_value = get_access_token_from_cookie(request)
         if access_value:
-            try:
-                from app.core.security import verify_token
+            from app.core.security import verify_token
 
+            try:
                 access_payload = verify_token(access_value, expected_type=None)
-                jti = access_payload.get("jti")
-                if jti:
-                    token_service.revoke_token(db, jti)
             except HTTPException:
-                pass
+                logger.debug("SAML SLO: access cookie not verifiable, nothing to revoke")
+                return
+            jti = access_payload.get("jti")
+            if jti:
+                try:
+                    token_service.revoke_token(db, jti)
+                except RevocationError:
+                    revocation_failed = True
 
     try:
         redirect_url = auth.process_slo(delete_session_cb=_revoke_current_session)
     except Exception as e:  # noqa: BLE001 - python3-saml raises broad OneLogin_Saml2_ValidationError
         logger.warning("SAML SLO processing failed: %s", e)
         redirect_url = None
+        processing_failed = True
 
     errors = auth.get_errors()
     if errors:
         logger.warning("SAML SLO errors: %s", errors)
 
+    slo_failed = bool(errors) or revocation_failed or processing_failed
     audit_logger.log(
         event_type=AuditEventType.AUTH_LOGOUT,
-        outcome=AuditOutcome.FAILURE if errors else AuditOutcome.SUCCESS,
+        outcome=AuditOutcome.FAILURE if slo_failed else AuditOutcome.SUCCESS,
         source_ip=client_ip,
         user_agent=user_agent,
-        details={"all_sessions": False, "auth_method": AUTH_METHOD},
+        details={
+            "all_sessions": False,
+            "auth_method": AUTH_METHOD,
+            "revocation_failed": revocation_failed,
+            "processing_failed": processing_failed,
+        },
     )
 
     response = RedirectResponse(

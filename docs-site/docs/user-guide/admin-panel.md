@@ -359,7 +359,7 @@ visibility and membership changes (and legal holds) are always recorded, whateve
 - Under a support-access grant the event records the grant's id.
 - **Storage:** roughly 0.8 KB per event. With the de-duplication above an active user writes about
   34 KB a day, so about 1 GB a month for 1,000 active users (one index shard, no replicas, one
-  index per month, kept for the audit retention you configure). The switch shows this estimate.
+  index per month, kept until an operator removes it; there is no automatic purge). The switch shows this estimate.
 - A deployment edition can withhold the feature; the switch then says so, and nothing is
   recorded even when it is on.
 

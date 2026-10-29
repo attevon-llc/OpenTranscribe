@@ -736,6 +736,13 @@ TASK_REPLAY_MAX_ATTEMPTS=2           # Default: 2 (0 = never re-send)
 TASK_REPLAY_MAX_AGE_SECONDS=86400    # Default: 86400
 ```
 
+A production deployment refuses to start unless `MINIO_KMS_AUTO_ENCRYPTION` is `on` (with a valid
+`MINIO_KMS_SECRET_KEY`) or `ALLOW_UNENCRYPTED_OBJECT_STORE=true` is set. The opt-out is for
+installs that knowingly keep objects unencrypted (for example when encryption is provided by the
+disk or storage layer); it does nothing else. **Back up `MINIO_KMS_SECRET_KEY`**: if it is lost,
+every object encrypted with it is permanently unreadable. Development stacks and installs using an
+external object store (`STORAGE_BACKEND` other than `minio`) are not checked.
+
 ## Flower Monitoring Dashboard
 
 ```bash
@@ -743,6 +750,10 @@ FLOWER_USER=admin
 FLOWER_PASSWORD=auto_generated_on_install
 FLOWER_URL_PREFIX=flower  # URL prefix (must match nginx proxy_pass path)
 ```
+
+`FLOWER_PASSWORD` must be a strong, unique value. A production deployment refuses to start when
+it is unset or a known default (`flower`, `changeme`, or a `CHANGE_ME` placeholder). Generate one
+with `openssl rand -hex 16`.
 
 Flower provides industry-standard Celery task monitoring with persistent task history, queue visibility, and worker status. Access at `http://localhost:5175/flower` (or via NGINX at `/flower/`).
 
@@ -899,6 +910,7 @@ failure it exists to prevent. Keep the prefix out of any bucket lifecycle expira
 # Generate with: echo "opentranscribe-key:$(openssl rand -base64 32)"
 MINIO_KMS_SECRET_KEY=auto_generated_on_install
 MINIO_KMS_AUTO_ENCRYPTION=on  # Set to 'on' to enable
+# ALLOW_UNENCRYPTED_OBJECT_STORE=true  # deliberate opt-out, see below
 
 # API Key Encryption (for LLM keys stored in database)
 ENCRYPTION_KEY=auto_generated_on_install  # NEVER change after first use

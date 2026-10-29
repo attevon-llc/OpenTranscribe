@@ -894,9 +894,9 @@ LLM_PROVIDER=
 # change for users and is tracked in #410; this line is about the harness
 # representing a correctly-configured deployment, not about hiding it.
 REDIS_PASSWORD=$(openssl rand -hex 16)
-# Pins every service image. This scenario writes its own .env rather than using
-# lib/env-template.sh, so it needs its own copy of this line; phase 07 rewrites it
-# to the target version when the stack is swapped.
+$(et_service_credentials)
+# Pins every service image (this scenario writes its own .env, not env-template.sh's);
+# phase 07 rewrites it to the target version when the stack is swapped.
 OT_IMAGE_TAG=${OT_TEST_IMAGE_TAG:-latest}
 EOF
     chmod 600 "$stage/.env"

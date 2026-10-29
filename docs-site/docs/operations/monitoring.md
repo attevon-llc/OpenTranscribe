@@ -357,7 +357,7 @@ docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 Flower provides real-time monitoring of all Celery workers and tasks.
 
 **Access:** `http://localhost:5175/flower`
-**Default credentials:** `admin` / `flower` (configurable via `FLOWER_USER` and `FLOWER_PASSWORD` in `.env`)
+**Credentials:** user `admin` (set `FLOWER_USER` to change it) and the password in `FLOWER_PASSWORD` in `.env`. The installer generates a random one. There is no default password: a production install will not start while `FLOWER_PASSWORD` is unset or a known default such as `flower`.
 
 ### What to Monitor in Flower
 

@@ -263,3 +263,60 @@ def test_the_interactive_delete_reports_a_hold_as_a_conflict(db_session, sample_
     assert excinfo.value.status_code == 409
     assert detail_dict(excinfo.value)["error"] == "FILE_UNDER_LEGAL_HOLD"
     assert db_session.query(MediaFile).filter(MediaFile.id == file_id).first() is not None
+
+
+def test_the_sweep_keeps_a_file_whose_retention_override_cannot_be_resolved(
+    db_session, sample_user
+):
+    """An unknown per-org retention is not the global one: keep the file this pass."""
+    from app.core.tenant_limits import resolve_retention_days
+    from app.core.tenant_limits import set_retention_resolver
+
+    def _unavailable(_org_id):
+        raise RuntimeError("retention resolver unavailable")
+
+    ordinary = _make_file(db_session, sample_user)
+    set_retention_resolver(_unavailable)
+    try:
+        cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=_RETENTION_DAYS)
+        expired = cleanup._select_expired_files(
+            db_session, {"delete_error_files": False}, cutoff, cutoff, resolve_retention_days
+        )
+    finally:
+        from app.core.tenant_limits import reset_resolvers
+
+        reset_resolvers()
+
+    assert int(ordinary.id) not in {file_id for file_id, _ in expired}
+
+
+def test_a_resolver_outage_logs_one_traceback_per_pass_not_one_per_file(
+    db_session, sample_user, caplog
+):
+    """Every candidate is kept with a short warning; the cause is logged once."""
+    import logging
+
+    from app.core.tenant_limits import reset_resolvers
+    from app.core.tenant_limits import resolve_retention_days
+    from app.core.tenant_limits import set_retention_resolver
+
+    def _unavailable(_org_id):
+        raise RuntimeError("retention resolver unavailable")
+
+    files = [_make_file(db_session, sample_user) for _ in range(3)]
+    set_retention_resolver(_unavailable)
+    try:
+        cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=_RETENTION_DAYS)
+        with caplog.at_level(logging.WARNING):
+            expired = cleanup._select_expired_files(
+                db_session, {"delete_error_files": False}, cutoff, cutoff, resolve_retention_days
+            )
+    finally:
+        reset_resolvers()
+
+    kept = {int(f.id) for f in files}
+    assert kept.isdisjoint({file_id for file_id, _ in expired})
+    with_traceback = [r for r in caplog.records if r.exc_info]
+    assert len(with_traceback) == 1, [r.getMessage() for r in caplog.records]
+    per_file = [r for r in caplog.records if "keeping file" in r.getMessage()]
+    assert len(per_file) >= len(files)

@@ -169,6 +169,7 @@ layers = [
 exhaustive = false
 unmatched_ignore_imports_alerting = "error"
 ignore_imports = [
+  "app.auth.approval -> app.services.auth_config_service",  # upward import, function level: removal planned (layering)
   "app.auth.email_verification -> app.services.email_service",  # upward import, module level: removal planned (layering)
   "app.auth.invitations -> app.services.email_service",  # upward import, module level: removal planned (layering)
   "app.auth.ldap_auth -> app.services.idp_group_mapping_service",  # upward import, function level: removal planned (layering)

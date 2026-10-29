@@ -62,7 +62,7 @@ minting an account for **every identity in a corporate tenant** on first login.
 |---|---|---|
 | `ldap_user_groups` → `ldap_auth._check_group_access` | LDAP | no group requirement |
 | `oidc_allowed_groups` / `oidc_blocked_groups` → `oidc/admission.py` | OIDC | admit everyone |
-| `require_account_approval` → `auth/approval.py` | self-registration **and** every JIT path | accounts are usable immediately |
+| `require_account_approval` → `auth/approval.py` | self-registration **and** every JIT path | accounts are usable immediately. If the stored setting cannot be read (DB error), `approval_required` returns `None`: new accounts are created `pending` and a pending user gets 503 `auth_config_unavailable` until reads recover |
 
 - **Semicolons delimit both group lists**, matching `ldap_auth._parse_group_list`: a group value
   brokered from a directory is a DN and contains commas. Matching is case-insensitive exact.
@@ -249,7 +249,7 @@ issue #1122). In single-tenant mode nothing changes. A grant never confers `org:
 - `approval.py` — the `approval_status` state machine and `initial_approval_status`, the one
   function every account-creation path asks "does this start pending?".
 - `roles.py` — the authorization contract (read this first, it's about 35 lines).
-- `token_service.py` — JWT issue/verify, `rotate_refresh_token`, `revoke_all_user_tokens`,
+- `token_service.py` — JWT issue/verify, `rotate_refresh_token`, `revoke_all_user_tokens_in_transaction`,
   Redis JTI revocation list + `refresh_token.revoked_at`, **and session lifetime**
   (`_session_within_lifetime`).
 - `mfa.py` (`MFAService`) · `lockout.py` (progressive, per-identifier) · `rate_limit.py`

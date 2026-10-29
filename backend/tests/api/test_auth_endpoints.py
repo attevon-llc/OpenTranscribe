@@ -279,12 +279,9 @@ class TestLogout:
         out = client.post("/api/auth/logout", headers={"Authorization": f"Bearer {access}"})
         assert out.status_code == 200
 
-        # The access token's JTI is blacklisted only when Redis is available; in
-        # the test env (SKIP_REDIS) revocation is best-effort. The refresh token
-        # however is rotated/revoked via the DB record on the next refresh, so a
-        # fresh login is the supported post-logout path. Assert logout response
-        # only here — refresh-revocation-by-DB is covered by rotation tests.
-        assert refresh  # sanity
+        replay = _refresh(client, refresh)
+        assert replay.status_code == 401
+        assert replay.json()["detail"] == "Invalid or expired refresh token"
 
 
 # --------------------------------------------------------------------------- #

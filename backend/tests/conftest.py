@@ -324,8 +324,7 @@ engine = create_engine(SQLALCHEMY_TEST_DATABASE_URL, pool_pre_ping=True)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-# Shared fixture modules. Registered here rather than imported so they are
-# available to every suite without a per-file import.
+# Shared fixture modules, registered here so every suite sees them without a per-file import.
 #
 # NOTE: this line is why `tests/` must NOT gain an `__init__.py`. With one,
 # prepend import mode roots `tests/conftest.py` at `backend/` instead of
@@ -346,6 +345,7 @@ pytest_plugins = [
     "fixtures.auth_state_isolation",
     # `open_registration`: opt-in fixture that opens self-registration in the test savepoint.
     "fixtures.open_registration",
+    "fixtures.production_txn",
     # `summary_plane` + `sync_summary_plane`: seed the OpenSearch summary plane (#963) from
     # Postgres for API-level summary-search tests. Opt-in per module; nothing autouse.
     "fixtures.summary_plane",

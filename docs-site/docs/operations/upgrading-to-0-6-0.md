@@ -190,6 +190,26 @@ message naming the setting. Every S3 call now also carries `ExpectedBucketOwner`
 or `AWS_TRANSCRIBE_BUCKET_OWNER` if the bucket is in another account). See
 [environment variables](../configuration/environment-variables.md).
 
+### Hardened startup checks
+
+A production install now refuses to start when `FLOWER_PASSWORD` is unset or a default
+(`flower`, `changeme`, a `CHANGE_ME` placeholder), or when the bundled MinIO does not encrypt
+objects (`MINIO_KMS_AUTO_ENCRYPTION` is not `on`). An install made by the current installer already
+has both. For an older or hand-made `.env`, `./opentranscribe.sh update` stops before changing
+anything and prints what is missing; add these lines and run it again:
+
+```bash
+FLOWER_PASSWORD=<output of: openssl rand -hex 16>
+MINIO_KMS_SECRET_KEY=opentranscribe-key:<output of: openssl rand -base64 32>
+MINIO_KMS_AUTO_ENCRYPTION=on
+```
+
+Back up `MINIO_KMS_SECRET_KEY` somewhere safe. Objects written from then on are encrypted with
+it, and if it is lost they cannot be read again. Objects stored before encryption was turned on
+stay readable. To keep storing objects unencrypted on purpose, set
+`ALLOW_UNENCRYPTED_OBJECT_STORE=true` instead of the two encryption lines. See
+[environment variables](../configuration/environment-variables.md).
+
 ### Notifications clear themselves
 
 The notifications panel now keeps itself tidy. Read, successful, informational notifications

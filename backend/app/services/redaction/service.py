@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core import constants as C  # noqa: N812
@@ -238,9 +239,7 @@ class RedactionService:
             media.language, supported, skipped
         )
         # Run LLM detector only if the owner enabled it (it needs their provider).
-        run_llm = RedactionService._owner_wants_llm(
-            db, int(media.user_id), organization_id=getattr(media, "organization_id", None)
-        )
+        run_llm = RedactionService._owner_wants_llm_or_defer(db, media)
         if skipped:
             logger.info(
                 "Redaction: skipping detectors %s for file %s (language=%s not supported)",
@@ -575,14 +574,41 @@ class RedactionService:
         return "stale"
 
     @staticmethod
-    def _owner_wants_llm(db: Session, user_id: int, *, organization_id: int | None = None) -> bool:
-        try:
-            from app.services.redaction.config import resolve_effective_config
+    def _owner_wants_llm_or_defer(db: Session, media: MediaFile) -> bool:
+        """Resolve the LLM-detector choice, returning the scan to pending if unreadable.
 
-            cfg = resolve_effective_config(db, user_id, organization_id=organization_id)
-            return "llm" in cfg.detectors
-        except Exception:  # noqa: BLE001
-            return False
+        An owner policy that cannot be read is different from one that is unset.
+        The scan goes back to pending (not failed: failed is a permanent refusal
+        downstream) and the error propagates so the task retries.
+        """
+        file_id = media.id  # read now: a rollback expires the object
+        try:
+            return RedactionService._owner_wants_llm(
+                db, int(media.user_id), organization_id=getattr(media, "organization_id", None)
+            )
+        except Exception:
+            # Unconditional: after a failed SQL statement ``is_active`` still reads
+            # True while PostgreSQL has aborted the transaction. The only earlier
+            # write (PROCESSING) was committed before this point.
+            try:
+                db.rollback()
+                media.redaction_status = C.REDACTION_STATUS_PENDING  # type: ignore[assignment]
+                db.commit()
+                logger.warning(
+                    "Redaction policy unreadable for file %s; scan left pending", file_id
+                )
+            except SQLAlchemyError:
+                logger.error(
+                    "Could not return file %s to pending after an unreadable policy", file_id
+                )
+            raise
+
+    @staticmethod
+    def _owner_wants_llm(db: Session, user_id: int, *, organization_id: int | None = None) -> bool:
+        from app.services.redaction.config import resolve_effective_config
+
+        cfg = resolve_effective_config(db, user_id, organization_id=organization_id)
+        return "llm" in cfg.detectors
 
     # --------------------------------------------------------------- read-time mask
     @staticmethod

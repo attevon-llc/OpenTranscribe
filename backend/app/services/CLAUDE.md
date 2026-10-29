@@ -220,8 +220,8 @@ second is the specific failure mode they were written to prevent.
   it applies the password policy and reuse history, **revokes sessions**, and writes the audit
   event. Those three used to be applied inconsistently across `users.py` / `admin.py` /
   `password_reset.py`. Note the two revocation entry points are split by contract —
-  `revoke_all_user_tokens_in_transaction` (commits nothing, propagates) vs
-  `revoke_all_user_tokens` (best-effort, commits, unsafe mid-transaction).
+  `revoke_all_user_tokens_in_transaction` (commits nothing, propagates; the cache writes inside it are
+  best-effort because the `refresh_token` rows are the record) is the only bulk entry point.
 - **`idp_group_mapping_service.py`** — `resolve_grants` + `reconcile_user` turn a directory's
   claim list into in-app group membership and a role. Three callers share it: login
   (`auth/ldap_auth.py`, `auth/oidc/provisioning.py`, `auth/proxy/provisioning.py`) and the

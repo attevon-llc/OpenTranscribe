@@ -96,12 +96,11 @@ class TestPasswordResetFailsClosed:
         assert order == ["revoke", "commit"], f"expected revoke-then-commit, got {order}"
 
     def test_uses_the_transaction_aware_revocation_helper(self):
-        """The committing helper must not be used here.
+        """Revocation must go through the helper that leaves the commit to the caller.
 
-        ``revoke_all_user_tokens`` commits and, on error, rolls the whole session
-        back — which is precisely what discarded the password change. Calling it
-        from inside an open transaction reintroduces the bug even if the rest of
-        the flow looks right.
+        A helper that commits and, on error, rolls the whole session back is what
+        discarded the password change. The only revocation entry point for bulk
+        revocation is the transaction-aware one, and it must be the one called.
         """
         db = _FakeSession()
         _seed_valid_reset(db)
@@ -110,7 +109,6 @@ class TestPasswordResetFailsClosed:
             patch.object(
                 pr_module.token_service, "revoke_all_user_tokens_in_transaction", return_value=0
             ) as safe,
-            patch.object(pr_module.token_service, "revoke_all_user_tokens") as committing,
             patch.object(pr_module, "check_password_against_history", return_value=True),
             patch.object(pr_module, "add_password_to_history"),
             patch.object(pr_module.settings, "PASSWORD_POLICY_ENABLED", False),
@@ -118,7 +116,7 @@ class TestPasswordResetFailsClosed:
             pr_module.confirm_password_reset(cast(Session, db), "raw-token", "NewPassw0rd!x")
 
         assert safe.called, "must use the transaction-aware helper"
-        assert not committing.called, "must not use the self-committing helper mid-transaction"
+        assert not hasattr(pr_module.token_service, "revoke_all_user_tokens")
 
 
 # ---------------------------------------------------------------------------

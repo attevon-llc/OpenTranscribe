@@ -255,6 +255,10 @@ def reset_resolvers() -> None:
     _redaction_floor_resolver = _community_redaction_floor_resolver
 
 
+class RetentionResolverError(Exception):
+    """The per-org retention resolver failed, so the effective retention is unknown."""
+
+
 def min_retention_override_days() -> int | None:
     """Smallest per-org retention override in effect (days), or None.
 
@@ -270,14 +274,18 @@ def min_retention_override_days() -> int | None:
 def resolve_retention_days(organization_id: int | None) -> int | None:
     """Per-org retention override in days, or ``None`` to use the global setting.
 
-    Best-effort: a misbehaving resolver never breaks cleanup — on any error we
-    fall back to the global value (return None).
+    Unlike the other resolvers there is no safe default on error: the global
+    window may be shorter than the tenant's contracted retention. A failing
+    resolver therefore raises :class:`RetentionResolverError` and the caller
+    keeps the data for that pass.
     """
     try:
         return _retention_resolver(organization_id)
-    except Exception:
-        logger.exception("retention resolver failed; falling back to global setting")
-        return None
+    except Exception as exc:
+        # No traceback here: the sweep calls this once per candidate file and logs
+        # the cause (``__cause__``) once per pass.
+        logger.warning("retention resolver failed; retention unknown for this pass")
+        raise RetentionResolverError(str(exc)) from exc
 
 
 def resolve_upload_limits(organization_id: int | None) -> TenantUploadLimits | None:

@@ -34,6 +34,7 @@ from app.core.exceptions import SearchIndexError
 from app.core.exceptions import StorageError
 from app.core.legacy_auth_env import deprecated_oidc_env_names
 from app.core.logging_config import configure_logging
+from app.core.startup_validation import validate_service_credentials
 from app.core.validation_errors import validation_error_handler
 from app.core.version import APP_VERSION
 from app.middleware.audit import AuditMiddleware
@@ -217,10 +218,7 @@ def _validate_production_secrets():
             "reverse proxy's addresses (e.g. '10.0.0.0/8,172.16.0.0/12')."
         )
 
-    # Check Redis password in production
-    if is_production and not settings.REDIS_PASSWORD:
-        logger.critical("REDIS_PASSWORD must be set in production!")
-        raise ValueError("REDIS_PASSWORD is required in production environment")
+    validate_service_credentials(is_production)
 
     # Check debug mode in production
     if is_production and settings.DEBUG:

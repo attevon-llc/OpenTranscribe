@@ -49,6 +49,9 @@ EXTERNALLY_CONSUMED: set[str] = {
     # and is >= 90, which documents intended future enforcement rather than a stray
     # env var — deleting it would silently regress that control's groundwork.
     "AUDIT_LOG_RETENTION_DAYS",
+    # Read in production, but through app.core.startup_validation.service_credential_settings
+    # (a second BaseSettings object), not the app.core.config singleton this scanner follows.
+    "ALLOW_UNENCRYPTED_OBJECT_STORE",
     # ---------------------------------------------------------------------------
     # The next 14 ARE genuinely read in production, but only via
     # AuthConfigService.ENV_TO_CONFIG_MAPPING (app/services/auth_config_service.py):

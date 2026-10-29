@@ -24,6 +24,7 @@ from app.core.capabilities import COMMUNITY_CAPABILITIES
 from app.core.capabilities import reset_capability_resolver
 from app.core.capabilities import set_capability_resolver
 from app.db.base import get_db
+from app.main import app as real_app
 
 ACTIVE = "/api/asr-settings/local-model/active"
 SET = "/api/asr-settings/local-model/set"
@@ -54,7 +55,8 @@ def _caller(role: str):
 
 
 def _client(role: str) -> TestClient:
-    app = FastAPI()
+    # The capability dependency raises a domain error; render it with the real app's handlers.
+    app = FastAPI(exception_handlers=dict(real_app.exception_handlers))
     app.include_router(api_router, prefix="/api")
     app.dependency_overrides[get_db] = lambda: _NoRows()
     app.dependency_overrides[get_current_active_user] = lambda: _caller(role)

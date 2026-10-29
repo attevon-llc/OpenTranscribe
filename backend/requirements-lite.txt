@@ -212,7 +212,10 @@ narwhals==2.27.1  # transitive (plotly/altair family); pinned so the variant res
 proto-plus==1.28.4
 wcwidth==0.9.3
 # Tracks torch (see requirements.txt); +cpu for the same reason torch is pinned +cpu above.
-torchcodec==0.11.1+cpu
+# The PyTorch CPU index publishes no +cpu torchcodec for aarch64, so the arm64 lite leg failed
+# `No matching distribution found` and could not be built; there PyPI's plain 0.11.1 is the match.
+torchcodec==0.11.1+cpu; platform_machine != "aarch64"
+torchcodec==0.11.1; platform_machine == "aarch64"
 
 # Second transitive drift sweep (2026-10-28): exactly what requirements.txt pins, for the
 # packages this variant resolves (see the matching block there for the reason each exists).

@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.core.env import env_bool
 from app.core.exceptions import ASRConfigurationError
 from app.core.exceptions import DomainError
 from app.core.tenancy import UNSCOPED
@@ -178,9 +179,8 @@ def start_reprocessing_task(
         user_id: Unused (kept for backward compatibility)
         db: Unused (kept for backward compatibility)
     """
-    import os
 
-    if os.environ.get("SKIP_CELERY", "False").lower() != "true":
+    if not env_bool("SKIP_CELERY"):
         # Dispatch 3-stage pipeline chain: CPU preprocess → GPU transcribe → CPU postprocess
         # Queue routing is auto-resolved inside dispatch_transcription_pipeline
         from app.tasks.transcription import dispatch_transcription_pipeline
@@ -318,9 +318,8 @@ def dispatch_task_by_name(
         file_id: Internal file ID (required for search_indexing).
         user_id: Owner user ID (required for search_indexing).
     """
-    import os
 
-    if os.environ.get("SKIP_CELERY", "False").lower() == "true":
+    if env_bool("SKIP_CELERY"):
         logger.info("Skipping Celery task in test environment")
         return
 
@@ -497,9 +496,8 @@ def dispatch_selective_tasks(
         disable_diarization: Skip diarization; honoured by the transcription stage only.
         owner_id: The file owner, whose speaker-detection choice a re-diarize runs with.
     """
-    import os
 
-    if os.environ.get("SKIP_CELERY", "False").lower() == "true":
+    if env_bool("SKIP_CELERY"):
         logger.info("Skipping Celery tasks in test environment")
         return
 

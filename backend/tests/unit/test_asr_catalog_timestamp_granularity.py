@@ -22,6 +22,7 @@ from unittest.mock import patch
 
 import pytest
 
+from app.core.config import settings
 from app.services.asr.factory import ASR_PROVIDER_CATALOG
 from app.services.asr.factory import ASRProviderFactory
 from app.services.asr.types import ASRConfig
@@ -151,7 +152,7 @@ def _aws(tmp_path, model: str, monkeypatch) -> list[ASRSegment]:
     # The provider has no default bucket (#1235). Set it here rather than inheriting a
     # developer's ambient AWS_TRANSCRIBE_BUCKET: CI has none, and the stack that sets it is
     # exactly the one these tests used to pass on by accident.
-    monkeypatch.setenv("AWS_TRANSCRIBE_BUCKET", TEST_BUCKET)
+    monkeypatch.setattr(settings, "AWS_TRANSCRIBE_BUCKET", TEST_BUCKET)
 
     item = {
         "type": "pronunciation",

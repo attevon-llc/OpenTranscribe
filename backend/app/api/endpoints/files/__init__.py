@@ -42,6 +42,7 @@ from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key
 from app.auth.utils import mask_email_for_display
 from app.core.capabilities import require_capability
+from app.core.env import env_bool
 from app.core.env import is_truthy
 from app.core.exceptions import DomainError
 from app.core.locked_settings import effective_whisper_model
@@ -736,9 +737,7 @@ def get_media_file_stream_url(
     expires_seconds = ctx.bypass.presign_ttl(expires_seconds)
 
     # Generate presigned URL (uses existing minio_service function)
-    import os
-
-    if os.environ.get("SKIP_S3", "False").lower() == "true":
+    if env_bool("SKIP_S3"):
         # Test environment - return mock URL
         logger.info("Returning mock presigned URL in test environment")
         return {

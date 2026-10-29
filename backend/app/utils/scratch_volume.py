@@ -38,6 +38,7 @@ from pathlib import Path
 
 from app.core.constants import PIPELINE_SCRATCH_DEFAULT
 from app.core.constants import RESERVED_SCRATCH_NAMESPACES
+from app.core.constants import pipeline_scratch_shared
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ def is_scratch_available() -> bool:
 
 def _scratch_is_shared() -> bool:
     """Whether the scratch mount is shared by all workers (env-gated kill switch)."""
-    return os.getenv("PIPELINE_SCRATCH_SHARED", "true").strip().lower() != "false"
+    return pipeline_scratch_shared()
 
 
 def scratch_dir_for(file_uuid: str) -> Path:

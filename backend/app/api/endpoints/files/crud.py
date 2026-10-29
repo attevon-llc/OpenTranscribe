@@ -1,5 +1,4 @@
 import logging
-import os
 from datetime import datetime
 from typing import Any
 from typing import NamedTuple
@@ -13,6 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.error_handlers import ErrorHandler
 from app.core import constants as C  # noqa: N812
+from app.core.env import env_bool
 from app.core.exceptions import DomainError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
@@ -251,7 +251,7 @@ def set_file_urls(db_file: MediaFile, bypass: PlatformBypass = PlatformBypass.no
 
     if db_file.storage_path:
         # Skip S3 operations in test environment
-        if os.environ.get("SKIP_S3", "False").lower() == "true":
+        if env_bool("SKIP_S3"):
             # download_url/thumbnail_url are response-only fields stapled onto the ORM
             # instance for serialization (declared on schemas.media.MediaFile, not the model)
             db_file.download_url = f"/api/files/{db_file.uuid}/prepare-download"  # type: ignore[attr-defined]
@@ -1428,7 +1428,7 @@ def get_stream_url_info(
     )
 
     # Skip S3 operations in test environment
-    if os.environ.get("SKIP_S3", "False").lower() == "true":
+    if env_bool("SKIP_S3"):
         logger.info("Returning mock URL in test environment")
         return {
             "url": f"/api/files/{db_file.uuid}/content",

@@ -468,3 +468,180 @@ def test_every_env_read_wrapper_is_registered():
         f"env-read wrapper(s) missing from _ENV_READ_WRAPPER_NAMES: {sorted(unregistered)}. "
         "Every key read through one is invisible to this module's consumption scan."
     )
+
+
+def _settings_field_names() -> frozenset[str]:
+    """Annotated fields of the ``Settings`` class in ``core/config.py``."""
+    tree = ast.parse(CONFIG_PY.read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == "Settings":
+            return frozenset(
+                stmt.target.id
+                for stmt in node.body
+                if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name)
+            )
+    raise AssertionError("class Settings not found in core/config.py")  # pragma: no cover
+
+
+#: Modules that may read the process environment for a Settings field name, with the reason.
+RAW_READ_OF_SETTINGS_FIELD_ALLOWED: dict[str, str] = {}
+
+
+def _raw_env_reads_outside_config() -> dict[str, set[str]]:
+    """``{relative path: names}`` read through an env call anywhere but config.py / env.py."""
+    sanctioned = {CONFIG_PY, APP_DIR / "core" / "env.py"}
+    found: dict[str, set[str]] = {}
+    for path in APP_DIR.rglob("*.py"):
+        if path in sanctioned:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        constants = _module_string_constants(tree)
+        for node in ast.walk(tree):
+            name = None
+            if isinstance(node, ast.Call) and node.args:
+                func = node.func
+                called = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+                if called in _ENV_READ_WRAPPER_NAMES and called != "get":
+                    first = node.args[0]
+                    name = (
+                        first.value
+                        if isinstance(first, ast.Constant)
+                        else constants.get(first.id)
+                        if isinstance(first, ast.Name)
+                        else None
+                    )
+                elif (
+                    called == "get"
+                    and isinstance(func, ast.Attribute)
+                    and ast.unparse(func.value) in {"os.environ", "_os.environ", "environ"}
+                    and isinstance(node.args[0], ast.Constant)
+                ):
+                    name = node.args[0].value
+            elif (
+                isinstance(node, ast.Subscript)
+                and isinstance(node.ctx, ast.Load)
+                and ast.unparse(node.value) in {"os.environ", "_os.environ", "environ"}
+                and isinstance(node.slice, ast.Constant)
+            ):
+                name = node.slice.value
+            if isinstance(name, str):
+                found.setdefault(str(path.relative_to(REPO_ROOT)), set()).add(name)
+    return found
+
+
+def test_no_settings_field_is_read_raw_outside_config():
+    """A name that is a ``Settings`` field has ONE source of truth: ``settings.NAME``.
+
+    A second raw read (``os.getenv("NAME", other_default)``) is how code and Settings came to
+    disagree on ``POSTGRES_HOST`` and ``GPU_DEVICE_ID`` defaults.
+    """
+    fields = _settings_field_names()
+    assert len(fields) > 100, "scanner found too few Settings fields to mean anything"
+    offenders = {
+        path: sorted(names & fields)
+        for path, names in _raw_env_reads_outside_config().items()
+        if names & fields and path not in RAW_READ_OF_SETTINGS_FIELD_ALLOWED
+    }
+    assert not offenders, f"raw env read of a Settings field outside config.py: {offenders}"
+
+
+def test_the_raw_read_scanner_sees_a_known_raw_read():
+    """Guard the guard: ``celery.py`` reads ``SKIP_CELERY`` raw, so the scan must report it."""
+    reads = _raw_env_reads_outside_config()
+    assert any("SKIP_CELERY" in names for names in reads.values()), sorted(reads)[:5]
+
+
+#: Compose ``environment:`` names on a backend-image service that the Python code does not read
+#: itself because a LIBRARY or the runtime consumes them. Each carries the reason.
+LIBRARY_CONSUMED_COMPOSE_ENV: dict[str, str] = {
+    "CUDA_VISIBLE_DEVICES": "CUDA runtime device mask",
+    "MKL_NUM_THREADS": "Intel MKL thread cap; the redaction worker sets it for torch/numpy",
+    "PYANNOTE_METRICS_ENABLED": "pyannote telemetry switch (app/core/privacy_env.py)",
+    "HF_HUB_DISABLE_TELEMETRY": "huggingface_hub telemetry switch (app/core/privacy_env.py)",
+    "DO_NOT_TRACK": "third-party telemetry opt-out (app/core/privacy_env.py)",
+    "DENO_NO_UPDATE_CHECK": "deno update-check switch for yt-dlp's JS runtime",
+}
+
+#: Compose ``environment:`` names that NOTHING reads. They are mistakes in a compose file that
+#: ships in the release manifest, so the edit waits until after the release.
+COMPOSE_ENV_READ_BY_NOTHING: dict[str, str] = {
+    "MODELS_DIRECTORY": "compose edit post-release: five services set it; no code reads it",
+    "REDACTION_CONCURRENCY": (
+        "compose edit post-release: only the worker command's ${REDACTION_CONCURRENCY} "
+        "interpolation uses it, the environment line is inert"
+    ),
+    "FLOWER_USER": (
+        "compose edit post-release: only flower's --basic_auth interpolation uses it, "
+        "the environment line is inert"
+    ),
+}
+
+
+def _is_backend_image_service(name: str) -> bool:
+    """Services that run the backend image (API, every celery worker, flower)."""
+    return name == "backend" or name.startswith("celery-") or name == "flower"
+
+
+def _compose_environment_names() -> dict[str, set[str]]:
+    """``{variable: {compose file names}}`` for each backend-image service's ``environment:``."""
+    import yaml
+
+    found: dict[str, set[str]] = {}
+    for compose_file in sorted(REPO_ROOT.glob("docker-compose*.yml")):
+        services = (yaml.safe_load(compose_file.read_text(encoding="utf-8")) or {}).get(
+            "services"
+        ) or {}
+        for name, service in services.items():
+            if not isinstance(service, dict) or not _is_backend_image_service(name):
+                continue
+            env = service.get("environment") or []
+            names = (
+                {str(item).split("=", 1)[0] for item in env} if isinstance(env, list) else set(env)
+            )
+            for var in names:
+                found.setdefault(var, set()).add(compose_file.name)
+    return found
+
+
+def _startup_validation_fields() -> frozenset[str]:
+    """Fields of the second ``BaseSettings`` (``core/startup_validation.py``) that app code reads."""
+    tree = ast.parse((APP_DIR / "core" / "startup_validation.py").read_text(encoding="utf-8"))
+    return frozenset(
+        node.target.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+    )
+
+
+def test_every_compose_environment_variable_has_a_reader():
+    """A variable a compose service sets on a backend container must be read by something.
+
+    ``Settings`` is ``extra="ignore"``, so a name nobody reads is dropped silently: the compose
+    line looks like configuration and does nothing (``MODELS_DIRECTORY`` did for five services).
+    """
+    declared = _compose_environment_names()
+    assert len(declared) > 40, "compose scan found too few variables to mean anything"
+
+    readers = _keys_read_by_code() | _keys_genuinely_consumed() | _startup_validation_fields()
+    unread = {
+        var: sorted(files)
+        for var, files in declared.items()
+        if var not in readers
+        and var not in LIBRARY_CONSUMED_COMPOSE_ENV
+        and var not in COMPOSE_ENV_READ_BY_NOTHING
+    }
+    assert not unread, (
+        f"compose sets variables on backend containers that nothing reads: {unread}. "
+        "Wire a reader, remove the compose line, or list it with a reason."
+    )
+
+
+def test_compose_environment_allowlists_have_no_stale_entries():
+    """An allowlist entry that no longer applies hides the next real orphan under its name."""
+    declared = _compose_environment_names()
+    readers = _keys_read_by_code() | _keys_genuinely_consumed() | _startup_validation_fields()
+
+    gone = (set(LIBRARY_CONSUMED_COMPOSE_ENV) | set(COMPOSE_ENV_READ_BY_NOTHING)) - set(declared)
+    assert not gone, f"allowlisted but no longer in any compose environment: {sorted(gone)}"
+    now_read = (set(LIBRARY_CONSUMED_COMPOSE_ENV) | set(COMPOSE_ENV_READ_BY_NOTHING)) & readers
+    assert not now_read, f"allowlisted but code now reads them: {sorted(now_read)}"

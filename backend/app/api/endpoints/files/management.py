@@ -18,6 +18,7 @@ from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.files.crud import delete_media_file
 from app.api.endpoints.files.crud import get_media_file_by_uuid
+from app.core.env import env_bool
 from app.core.exceptions import ASRConfigurationError
 from app.core.exceptions import DomainError
 from app.core.tenancy import UNSCOPED
@@ -337,9 +338,8 @@ def retry_file_processing(
             )
 
         # Start new transcription task
-        import os
 
-        if os.environ.get("SKIP_CELERY", "False").lower() != "true":
+        if not env_bool("SKIP_CELERY"):
             # Re-run with what the file was submitted with: model, speaker range, and
             # diarization only if it was skipped (issue #1203).
             task_id = dispatch_transcription_pipeline(
@@ -611,7 +611,6 @@ def _handle_retry_action(
     after the single-file route was hardened (issue #545-adjacent — a fix landed on
     fewer than every route reachable for the same action).
     """
-    import os
 
     from app.models.media import MediaFile
 
@@ -665,7 +664,7 @@ def _handle_retry_action(
             error="RESET_FAILED",
         )
 
-    if os.environ.get("SKIP_CELERY", "False").lower() != "true":
+    if not env_bool("SKIP_CELERY"):
         task_id = dispatch_transcription_pipeline(file_uuid=file_uuid, reuse_requested_options=True)
         message = f"Retry started (task: {task_id})"
     else:
@@ -718,7 +717,6 @@ def _handle_reprocess_action(
     ceiling on every future retry of the file too, including through the routes that
     do enforce it.
     """
-    import os
 
     from app.api.endpoints.files.reprocess import MEDIA_REQUIRING_STAGES
     from app.models.media import MediaFile
@@ -833,7 +831,7 @@ def _handle_reprocess_action(
             error="RESET_FAILED",
         )
 
-    if os.environ.get("SKIP_CELERY", "False").lower() != "true":
+    if not env_bool("SKIP_CELERY"):
         task_id = dispatch_transcription_pipeline(
             file_uuid=file_uuid,
             min_speakers=min_speakers,
@@ -853,7 +851,6 @@ def _handle_summarize_action(
     db: Session, file_uuid: str, file_id: int, user_id: int | None = None
 ) -> BulkActionResult:
     """Handle summarize action for bulk operations."""
-    import os
 
     from app.models.media import MediaFile
     from app.services.llm_service import LLMService
@@ -890,7 +887,7 @@ def _handle_summarize_action(
             error="INVALID_STATUS",
         )
 
-    if os.environ.get("SKIP_CELERY", "False").lower() != "true":
+    if not env_bool("SKIP_CELERY"):
         task = summarize_transcript_task.delay(
             file_uuid=file_uuid,
             force_regenerate=False,
@@ -914,7 +911,6 @@ def _handle_identify_speakers_action(
     does — the async ``is_llm_available`` helper the single-file endpoint uses cannot be
     awaited from this synchronous dispatch.
     """
-    import os
 
     from app.models.media import MediaFile
     from app.services.llm_service import LLMService
@@ -960,7 +956,7 @@ def _handle_identify_speakers_action(
             error="NO_SPEAKERS",
         )
 
-    if os.environ.get("SKIP_CELERY", "False").lower() != "true":
+    if not env_bool("SKIP_CELERY"):
         task = identify_speakers_llm_task.delay(file_uuid=file_uuid)
         message = f"Speaker identification started (task: {task.id})"
     else:
@@ -981,7 +977,6 @@ def _handle_redact_action(db: Session, file_uuid: str, file_id: int) -> BulkActi
     healthy file a way to withhold its transcript permanently whenever the broker was
     momentarily unreachable — see that helper for why nothing else recovers the row.
     """
-    import os
 
     from app.api.endpoints.files.crud import claim_and_dispatch_redaction_scan
     from app.models.media import MediaFile
@@ -1002,7 +997,7 @@ def _handle_redact_action(db: Session, file_uuid: str, file_id: int) -> BulkActi
             error="NO_TRANSCRIPT",
         )
 
-    if os.environ.get("SKIP_CELERY", "False").lower() == "true":
+    if env_bool("SKIP_CELERY"):
         # Nothing is published in test mode, so nothing claims `pending` either: a
         # `pending` with no scan behind it is the stranding this function was fixed
         # for, and it is no more recoverable because a test wrote it.

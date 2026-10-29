@@ -1,6 +1,5 @@
 import contextlib
 import logging
-import os
 import tempfile
 import uuid
 from pathlib import Path
@@ -15,6 +14,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.api.error_handlers import ErrorHandler
 from app.core.constants import UPLOAD_CHUNK_SIZE
+from app.core.env import env_bool
 from app.core.exceptions import DomainError
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -197,7 +197,7 @@ def upload_file_to_storage(
         storage_path: Storage path in MinIO
         content_type: MIME type of the file
     """
-    if os.environ.get("SKIP_S3", "False").lower() != "true":
+    if not env_bool("SKIP_S3"):
         file_content.seek(0)
         upload_file_tuned(
             file_content=file_content,
@@ -242,7 +242,7 @@ def start_transcription_task(
         The application-level task_id that was dispatched, or None when
         running with SKIP_CELERY=true.
     """
-    if os.environ.get("SKIP_CELERY", "False").lower() != "true":
+    if not env_bool("SKIP_CELERY"):
         # Dispatch 3-stage pipeline chain: CPU preprocess → GPU transcribe → CPU postprocess
         # Queue routing is auto-resolved inside dispatch_transcription_pipeline
         from app.tasks.transcription import dispatch_transcription_pipeline

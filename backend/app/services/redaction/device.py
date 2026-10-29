@@ -15,7 +15,7 @@ import contextlib
 import logging
 import threading
 
-from app.core import constants as C  # noqa: N812
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -88,13 +88,13 @@ def resolve_device() -> str:
 
     Re-evaluated on every call (cheap), so the choice tracks live GPU availability.
     """
-    policy = (C.REDACTION_DEVICE or "auto").lower()
+    policy = (settings.REDACTION_DEVICE or "auto").lower()
     if policy == "cpu" or _cuda_faulted:
         return "cpu"
     if not _cuda_available():
         return "cpu"
 
-    need = C.REDACTION_MIN_FREE_VRAM_GB
+    need = settings.REDACTION_MIN_FREE_VRAM_GB
     try:
         if policy.startswith("cuda"):
             # Explicit device preference.

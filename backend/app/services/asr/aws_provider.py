@@ -27,6 +27,7 @@ import time
 import uuid
 from collections.abc import Callable
 
+from app.core.config import settings
 from app.core.pipeline_constants import ASR_SEGMENT_MAX_DURATION_SECONDS
 from app.core.pipeline_constants import ASR_SEGMENT_MIN_GAP_SECONDS
 
@@ -143,7 +144,7 @@ class AWSTranscribeProvider(ASRProvider):
     @staticmethod
     def _configured_bucket() -> str:
         """The deployer's bucket, or a clear RuntimeError (issue #1235: no default)."""
-        bucket = os.getenv(BUCKET_ENV, "").strip()
+        bucket = settings.AWS_TRANSCRIBE_BUCKET.strip()
         if not bucket:
             raise RuntimeError(BUCKET_REQUIRED_MESSAGE)
         return bucket
@@ -229,7 +230,7 @@ class AWSTranscribeProvider(ASRProvider):
             import boto3  # noqa: F401
         except ImportError:
             return False, "boto3 not installed. Run: pip install boto3", 0.0
-        if not os.getenv(BUCKET_ENV, "").strip():
+        if not settings.AWS_TRANSCRIBE_BUCKET.strip():
             return False, BUCKET_REQUIRED_MESSAGE, 0.0
         try:
             self._boto_client("transcribe").list_transcription_jobs(MaxResults=1)

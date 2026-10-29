@@ -100,6 +100,28 @@ def test_is_hardened_tracks_environment(environment, hardened):
     assert settings.is_hardened is hardened
 
 
+@pytest.mark.parametrize(
+    ("environment", "debug"),
+    [("development", True), ("testing", True), ("production", False), ("staging", False)],
+)
+def test_debug_default_follows_the_environment_the_settings_were_built_with(environment, debug):
+    """DEBUG's default is resolved from the instance's ENVIRONMENT, not the process env at import.
+
+    The old class-body default froze ``is_relaxed_environment(os.getenv("ENVIRONMENT"))`` when
+    the module loaded, so an ``ENVIRONMENT`` delivered by a ``.env`` file (or init kwarg) left
+    DEBUG on the process-environment answer.
+    """
+    from app.core.config import Settings
+
+    assert Settings(_env_file=None, ENVIRONMENT=environment).DEBUG is debug
+
+
+def test_an_explicit_debug_is_not_overridden_by_the_environment_default():
+    from app.core.config import Settings
+
+    assert Settings(_env_file=None, ENVIRONMENT="development", DEBUG=False).DEBUG is False
+
+
 # ── Bootstrap admin (A0.9) ───────────────────────────────────────────────────────
 
 

@@ -201,6 +201,10 @@ def test_env_fallback_matches_the_runtime_rule(monkeypatch, provider, key, local
         monkeypatch.setenv("ASR_PROVIDER", provider)
     if key is not None:
         monkeypatch.setenv("DEEPGRAM_API_KEY", key)
+    # The migration reads the process environment; the runtime factory reads ``settings``.
+    # Mirror the same inputs into both so the two rules are compared on equal input.
+    monkeypatch.setattr("app.core.config.settings.ASR_PROVIDER", provider or "local")
+    monkeypatch.setattr("app.core.config.settings.DEEPGRAM_API_KEY", key or "")
 
     assert _revision_module().env_asr_is_local() is local
     assert (ASRProviderFactory.resolve_config(None)[0] == "local") is local

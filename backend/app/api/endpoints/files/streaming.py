@@ -1,13 +1,13 @@
 import hashlib
 import io
 import logging
-import os
 
 from fastapi import HTTPException
 from fastapi import status
 from fastapi.responses import StreamingResponse
 
 from app.api.error_handlers import ErrorHandler
+from app.core.env import env_bool
 from app.core.exceptions import DomainError
 from app.models.media import MediaFile
 from app.services.minio_service import download_file
@@ -69,7 +69,7 @@ def get_thumbnail_streaming_response(db_file: MediaFile) -> StreamingResponse:
         "public, max-age=86400, must-revalidate" if is_public else "private, no-store, max-age=0"
     )
 
-    if os.environ.get("SKIP_S3", "False").lower() == "true":
+    if env_bool("SKIP_S3"):
         # Mirror production security headers so they remain testable in SKIP_S3 mode.
         return StreamingResponse(
             content=io.BytesIO(b"Mock thumbnail content"),

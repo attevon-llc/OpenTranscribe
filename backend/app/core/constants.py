@@ -13,6 +13,8 @@ Language Data Sources:
 import logging
 import os as _os
 
+from app.core.env import env_bool
+
 _logger = logging.getLogger(__name__)
 
 # =============================================================================
@@ -268,7 +270,7 @@ CLOUD_ASR_MAX_RETRIES = 5  # attempts, distinct from the GPU path's max_retries=
 
 # Try to import language codes from faster_whisper for validation
 # Skip in test mode to avoid heavy torch import
-if _os.environ.get("SKIP_CELERY", "").lower() == "true":
+if env_bool("SKIP_CELERY"):
     _logger.debug("Test mode: using None for WHISPER_LANGUAGE_CODES")
     WHISPER_LANGUAGE_CODES: set[str] | None = None
 else:
@@ -1228,25 +1230,6 @@ REDACTION_PROFANITY_LANGUAGES = ["en"]
 REDACTION_PII_LANGUAGES = ["en"]
 REDACTION_TOXICITY_LANGUAGES = ["en", "es", "fr", "it", "pt", "tr", "ru"]
 
-# PII name/entity detection engine. Default uses spaCy NER (fast: ~10-20 ms/segment,
-# bundled in Presidio). GLiNER is a higher-accuracy but much slower enhancement
-# (~130 ms/segment on CPU); enable it only when accuracy on diverse/non-Western names
-# matters more than throughput. Ops knob (env-overridable), read by the worker at load.
-REDACTION_PII_USE_GLINER = _os.environ.get("REDACTION_PII_USE_GLINER", "false").lower() == "true"
-
-# Compute device policy for the redaction ML models (toxicity, and GLiNER if enabled).
-#   auto (default) — use GPU automatically WHENEVER it has free VRAM, else CPU. Checked
-#                    at runtime per scan (no restart needed); the model moves GPU<->CPU
-#                    as availability changes. Requires the worker to see a GPU.
-#   cpu            — always CPU.
-#   cuda / cuda:N  — prefer that GPU (still falls back to CPU if it's short on VRAM).
-REDACTION_DEVICE = _os.environ.get("REDACTION_DEVICE", "auto").lower()
-
-# Minimum free VRAM (GB) required to place the redaction models on GPU. Below this, the
-# worker falls back to CPU so it never starves transcription/diarization on a shared GPU.
-# GLiNER (~0.5 GB) + toxic-bert (~0.5 GB) need ~1 GB; 1.5 GB leaves headroom.
-REDACTION_MIN_FREE_VRAM_GB = float(_os.environ.get("REDACTION_MIN_FREE_VRAM_GB", "1.5"))
-
 # Categories that can be redacted (a span's `category`).
 REDACTION_CATEGORIES = ["profanity", "pii", "toxicity", "custom"]
 
@@ -1268,7 +1251,8 @@ REDACTION_PII_ENTITIES = [
 # Mask styles.
 REDACTION_STYLES = ["label", "asterisks", "first_letter", "blur"]
 
-# Per-user redaction defaults (coded — NO env vars). Mirrors DEFAULT_TRANSCRIPTION_*.
+# Per-user redaction defaults (coded, DB-backed; the device/VRAM/GLiNER ops knobs are
+# ``Settings`` fields, not constants). Mirrors DEFAULT_TRANSCRIPTION_*.
 # Redaction is OPT-OUT by default (off): it adds processing time and delays transcript
 # display until the scan completes, so users enable it explicitly. Admins can force it.
 DEFAULT_REDACTION_ENABLED = False
@@ -1625,6 +1609,15 @@ ENGINE_SHARED_VOLUME_DEFAULT = "/scratch/opentranscribe/engine"
 PYANNOTE_DEFAULT_DIARIZATION_MODEL = "precision-3"
 
 
+def pipeline_scratch_shared() -> bool:
+    """Whether every worker shares the scratch mount (``PIPELINE_SCRATCH_SHARED``, default on).
+
+    Read at call time so a test can flip it. Only the literal ``false`` turns it off, so a typo
+    keeps the fast path instead of silently disabling it.
+    """
+    return _os.environ.get("PIPELINE_SCRATCH_SHARED", "true").strip().lower() != "false"
+
+
 def engine_shared_volume_enabled() -> bool:
     """Whether preprocess hands the WAV to the GPU task through the shared volume (#1151).
 
@@ -1638,7 +1631,7 @@ def engine_shared_volume_enabled() -> bool:
     explicit = _os.environ.get("ENGINE_SHARED_VOLUME_ENABLED", "").strip().lower()
     if explicit:
         return explicit != "false"
-    return _os.environ.get("PIPELINE_SCRATCH_SHARED", "true").strip().lower() != "false"
+    return pipeline_scratch_shared()
 
 
 def resolve_engine_shared_volume_path() -> str:

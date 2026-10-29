@@ -10,6 +10,7 @@ from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
 from alembic import context  # type: ignore[attr-defined]
+from app.core.config import settings
 from app.db.base import Base
 
 # NOTE: Alembic is the sole authority for database schema creation and upgrades.
@@ -22,11 +23,11 @@ config = context.config
 
 load_dotenv()
 
-DB_USER = os.getenv("POSTGRES_USER", "postgres")
-DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
-DB_HOST = os.getenv("POSTGRES_HOST", "postgres")
-DB_PORT = os.getenv("POSTGRES_PORT", "5432")
-DB_NAME = os.getenv("POSTGRES_DB", "transcribe_app")
+DB_USER = settings.POSTGRES_USER
+DB_PASSWORD = settings.POSTGRES_PASSWORD
+DB_HOST = settings.POSTGRES_HOST
+DB_PORT = settings.POSTGRES_PORT
+DB_NAME = settings.POSTGRES_DB
 
 config.set_main_option(
     "sqlalchemy.url",

@@ -18,6 +18,7 @@ import logging
 import threading
 
 from app.core import constants as C  # noqa: N812
+from app.core.config import settings
 from app.services.redaction.detectors import DetectorUnavailableError
 from app.services.redaction.spans import RedactionSpan
 from app.services.redaction.spans import build_word_offsets
@@ -172,7 +173,7 @@ def _get_analyzer(use_gliner: bool):
 
 def preload() -> bool:
     """Eagerly build the analyzer (called from the worker_ready hook). Returns success."""
-    return _get_analyzer(C.REDACTION_PII_USE_GLINER) is not None
+    return _get_analyzer(settings.REDACTION_PII_USE_GLINER) is not None
 
 
 def detect_pii(text: str, words: list[dict] | None, cfg: dict) -> list[RedactionSpan]:
@@ -195,7 +196,7 @@ def detect_pii(text: str, words: list[dict] | None, cfg: dict) -> list[Redaction
     """
     if not text or not text.strip():
         return []
-    use_gliner = bool(cfg.get("pii_use_gliner", C.REDACTION_PII_USE_GLINER))
+    use_gliner = bool(cfg.get("pii_use_gliner", settings.REDACTION_PII_USE_GLINER))
     analyzer = _get_analyzer(use_gliner)
     if analyzer is None:
         raise DetectorUnavailableError(
@@ -274,7 +275,7 @@ def detect_pii_batch(
     """
     if not items:
         return []
-    use_gliner = bool(cfg.get("pii_use_gliner", C.REDACTION_PII_USE_GLINER))
+    use_gliner = bool(cfg.get("pii_use_gliner", settings.REDACTION_PII_USE_GLINER))
     if use_gliner:
         return None  # GLiNER adds a second model per worker; not worth the memory
     if _get_analyzer(False) is None:

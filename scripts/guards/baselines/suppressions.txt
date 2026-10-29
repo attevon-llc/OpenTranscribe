@@ -96,7 +96,7 @@ noqa::backend/app/services/redaction/coverage.py	1	suppression: reason to be add
 noqa::backend/app/services/redaction/detectors/llm.py	2	suppression: reason to be added
 noqa::backend/app/services/redaction/detectors/pii_presidio.py	3	suppression: reason to be added
 noqa::backend/app/services/redaction/detectors/toxicity.py	4	suppression: reason to be added
-noqa::backend/app/services/redaction/device.py	5	suppression: reason to be added
+noqa::backend/app/services/redaction/device.py	4	suppression: reason to be added
 noqa::backend/app/services/redaction/export_policy.py	1	suppression: reason to be added
 noqa::backend/app/services/redaction/llm_guard.py	2	suppression: reason to be added
 noqa::backend/app/services/redaction/service.py	11	suppression: reason to be added
@@ -189,7 +189,7 @@ noqa::backend/tests/redaction/test_edit_path_warmup.py	1	suppression: reason to 
 noqa::backend/tests/redaction/test_language_fail_closed.py	2	suppression: reason to be added
 noqa::backend/tests/redaction/test_lazy_redaction_dispatch.py	1	suppression: reason to be added
 noqa::backend/tests/redaction/test_pii_warmup.py	2	suppression: reason to be added
-noqa::backend/tests/redaction/test_presidio.py	2	suppression: reason to be added
+noqa::backend/tests/redaction/test_presidio.py	1	suppression: reason to be added
 noqa::backend/tests/redaction/test_redact_action_gating.py	1	suppression: reason to be added
 noqa::backend/tests/redaction/test_scan_coverage.py	2	suppression: reason to be added
 noqa::backend/tests/redaction/test_segment_edit_redetection.py	3	suppression: reason to be added

@@ -46,6 +46,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from app.core.config import settings
 from app.services.asr import aws_provider as aws_provider_module
 from app.services.asr.aws_provider import AWSTranscribeProvider
 from app.services.asr.types import ASRConfig
@@ -89,7 +90,7 @@ def _sts(account: str | None = TEST_ACCOUNT) -> MagicMock:
 @pytest.fixture(autouse=True)
 def _bucket_configured(monkeypatch):
     """The bucket is required with no default (#1235); tests that need it unset delete it."""
-    monkeypatch.setenv("AWS_TRANSCRIBE_BUCKET", TEST_BUCKET)
+    monkeypatch.setattr(settings, "AWS_TRANSCRIBE_BUCKET", TEST_BUCKET)
     monkeypatch.delenv("AWS_TRANSCRIBE_BUCKET_OWNER", raising=False)
 
 
@@ -371,7 +372,7 @@ def test_access_denied_exception_on_job_start_stays_a_plain_client_error(monkeyp
 
 
 def test_transcribe_without_a_bucket_fails_fast_before_any_aws_call(monkeypatch, audio_file):
-    monkeypatch.delenv("AWS_TRANSCRIBE_BUCKET", raising=False)
+    monkeypatch.setattr(settings, "AWS_TRANSCRIBE_BUCKET", "")
     provider = _provider()
     boto = MagicMock(name="boto_client")
     monkeypatch.setattr(provider, "_boto_client", boto)
@@ -383,7 +384,7 @@ def test_transcribe_without_a_bucket_fails_fast_before_any_aws_call(monkeypatch,
 
 
 def test_a_blank_bucket_is_treated_as_unset(monkeypatch, audio_file):
-    monkeypatch.setenv("AWS_TRANSCRIBE_BUCKET", "   ")
+    monkeypatch.setattr(settings, "AWS_TRANSCRIBE_BUCKET", "   ")
     provider = _provider()
     monkeypatch.setattr(provider, "_boto_client", MagicMock(name="boto_client"))
 
@@ -393,7 +394,7 @@ def test_a_blank_bucket_is_treated_as_unset(monkeypatch, audio_file):
 
 def test_the_old_predictable_default_bucket_is_never_used(monkeypatch, audio_file):
     """Region-derived names (``opentranscribe-tmp-<region>``) are guessable by anyone."""
-    monkeypatch.delenv("AWS_TRANSCRIBE_BUCKET", raising=False)
+    monkeypatch.setattr(settings, "AWS_TRANSCRIBE_BUCKET", "")
     provider = _provider(region="eu-west-1")
     s3 = MagicMock(name="s3")
     monkeypatch.setattr(provider, "_boto_client", lambda service: s3)
@@ -405,7 +406,7 @@ def test_the_old_predictable_default_bucket_is_never_used(monkeypatch, audio_fil
 
 
 def test_validate_connection_names_the_missing_bucket_without_calling_aws(monkeypatch):
-    monkeypatch.delenv("AWS_TRANSCRIBE_BUCKET", raising=False)
+    monkeypatch.setattr(settings, "AWS_TRANSCRIBE_BUCKET", "")
     provider = _provider()
     boto = MagicMock(name="boto_client")
     monkeypatch.setattr(provider, "_boto_client", boto)

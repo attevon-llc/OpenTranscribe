@@ -1,6 +1,5 @@
 import contextlib
 import logging
-import os
 import time
 from datetime import UTC
 from datetime import datetime
@@ -13,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
+from app.core.env import env_bool
 from app.db.session_utils import get_refreshed_object
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -587,7 +587,7 @@ def _schedule_cancellation_reconcile(file_id: int, task_id: str) -> None:
     *backstop* could not be queued would be the wrong answer. Skipped under ``SKIP_CELERY``
     like every other dispatch site in this module's callers.
     """
-    if os.environ.get("SKIP_CELERY", "False").lower() == "true":
+    if env_bool("SKIP_CELERY"):
         return
     try:
         from app.core.constants import CeleryQueues
@@ -692,9 +692,8 @@ def _start_transcription_task(file_uuid: str, file_id: int, task_description: st
         file_id: ID of the media file (for logging)
         task_description: Description of the task type (e.g., "pending", "failed", "orphaned")
     """
-    import os
 
-    if os.environ.get("SKIP_CELERY", "False").lower() != "true":
+    if not env_bool("SKIP_CELERY"):
         from app.tasks.transcription import dispatch_transcription_pipeline
 
         task_id = dispatch_transcription_pipeline(file_uuid=file_uuid, reuse_requested_options=True)
@@ -935,7 +934,7 @@ def media_object_is_resolvable(media_file: MediaFile) -> bool:
         # readers) — there is nothing to look up.
         return False
 
-    if os.environ.get("SKIP_S3", "False").lower() == "true":
+    if env_bool("SKIP_S3"):
         # No object storage is in play in this deployment mode, so there is no
         # absence to confirm and nothing this check could learn. Same switch the
         # upload/streaming/thumbnail paths already read.

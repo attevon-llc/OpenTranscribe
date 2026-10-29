@@ -125,9 +125,10 @@ def test_allow_private_is_not_a_no_op_for_the_same_range():
 
 def test_assert_raises_generic_error_without_leaking_the_reason():
     """SSRF here is semi-blind — the reason must not turn the endpoint into a scanner."""
-    from fastapi import HTTPException
 
-    with pytest.raises(HTTPException) as exc:
+    from app.core.exceptions import DomainError
+
+    with pytest.raises(DomainError) as exc:
         assert_safe_outbound_url("http://169.254.169.254/", purpose="test")
 
     assert exc.value.status_code == 400

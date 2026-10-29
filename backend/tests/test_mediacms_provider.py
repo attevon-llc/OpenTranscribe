@@ -11,17 +11,15 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
-from fastapi import HTTPException
 
+from app.core.exceptions import DomainError
 from app.services.protected_media_plugins.mediacms import MediacmsProvider
 from tests.helpers import stub_pinned_session
 from tests.helpers import stub_public_dns
 
 _MEDIACMS_MODULE = "app.services.protected_media_plugins.mediacms"
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
+# --- Fixtures ---
 
 
 @pytest.fixture(autouse=True)
@@ -310,14 +308,14 @@ class TestTokenAndBaseURL:
     def test_host_not_allowed_raises(self, provider):
         """Raises HTTPException if hostname is not allowed."""
         with patch.object(provider, "_get_allowed_hosts", return_value=set()):
-            with pytest.raises(HTTPException) as exc:
+            with pytest.raises(DomainError) as exc:
                 provider._get_token_and_base_url("https://evil.example.com/view?m=abc")
             assert exc.value.status_code == 400
 
     def test_missing_token_raises(self, provider):
         """Raises HTTPException if no token can be extracted."""
         with patch.object(provider, "_get_allowed_hosts", return_value={"media.example.com"}):
-            with pytest.raises(HTTPException) as exc:
+            with pytest.raises(DomainError) as exc:
                 provider._get_token_and_base_url("https://media.example.com/about")
             assert exc.value.status_code == 400
             assert "Missing media token" in str(exc.value.detail)
@@ -490,7 +488,7 @@ class TestLoginAndGetInfo:
             ),
             patch.object(provider, "_get_stored_credentials", return_value=(None, None)),
         ):
-            with pytest.raises(HTTPException) as exc:
+            with pytest.raises(DomainError) as exc:
                 provider._login_and_get_info("https://m.example.com/view?m=tok")
             assert exc.value.status_code == 400
             assert "Credentials" in str(exc.value.detail)
@@ -512,7 +510,7 @@ class TestLoginAndGetInfo:
             patch.object(provider, "_get_verify_ssl_for_host", return_value=True),
             patch.object(provider, "_get_stored_credentials", return_value=(None, None)),
         ):
-            with pytest.raises(HTTPException) as exc:
+            with pytest.raises(DomainError) as exc:
                 provider._login_and_get_info(
                     "https://m.example.com/view?m=tok", username="u", password="p"
                 )
@@ -534,7 +532,7 @@ class TestLoginAndGetInfo:
             patch.object(provider, "_get_verify_ssl_for_host", return_value=True),
             patch.object(provider, "_get_stored_credentials", return_value=(None, None)),
         ):
-            with pytest.raises(HTTPException) as exc:
+            with pytest.raises(DomainError) as exc:
                 provider._login_and_get_info(
                     "https://m.example.com/view?m=tok", username="u", password="p"
                 )
@@ -666,7 +664,7 @@ class TestDownload:
             patch.object(provider, "_get_verify_ssl_for_host", return_value=True),
             patch.object(provider, "_get_stored_credentials", return_value=(None, None)),
         ):
-            with pytest.raises(HTTPException) as exc:
+            with pytest.raises(DomainError) as exc:
                 provider.download(
                     "https://m.example.com/view?m=vid1",
                     str(tmp_path),
@@ -703,7 +701,7 @@ class TestDownload:
             patch.object(provider, "_get_verify_ssl_for_host", return_value=True),
             patch.object(provider, "_get_stored_credentials", return_value=(None, None)),
         ):
-            with pytest.raises(HTTPException) as exc:
+            with pytest.raises(DomainError) as exc:
                 provider.download(
                     "https://m.example.com/view?m=vid1",
                     str(tmp_path),
@@ -740,7 +738,7 @@ class TestDownload:
             patch.object(provider, "_get_verify_ssl_for_host", return_value=True),
             patch.object(provider, "_get_stored_credentials", return_value=(None, None)),
         ):
-            with pytest.raises(HTTPException) as exc:
+            with pytest.raises(DomainError) as exc:
                 provider.download(
                     "https://m.example.com/view?m=vid1",
                     str(tmp_path),

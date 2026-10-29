@@ -19,14 +19,14 @@ from typing import Any
 
 import requests
 import yt_dlp
-from fastapi import HTTPException
-from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.constants import VALID_AUDIO_QUALITIES
 from app.core.constants import VALID_VIDEO_QUALITIES
 from app.core.exceptions import DomainError
+from app.core.exceptions import InvalidInputError
+from app.core.exceptions import OperationFailedError
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
@@ -906,7 +906,7 @@ class MediaDownloadService:
             Dictionary with video information
 
         Raises:
-            HTTPException: If unable to extract video information
+            InvalidInputError: If unable to extract video information
         """
         # Try protected media providers first (authenticated corporate sites, etc.)
         provider = self._get_protected_provider(url, user_id=user_id)
@@ -934,16 +934,10 @@ class MediaDownloadService:
             # paths or the URL itself) used to reach the response verbatim
             # (#859). Log the real error with a traceback; return a fixed literal.
             logger.exception(f"Error extracting video info from {url}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Could not read information for that media URL.",
-            ) from e
+            raise InvalidInputError("Could not read information for that media URL.") from e
         except Exception as e:
             logger.exception(f"Error extracting video info from {url}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Could not read information for that media URL.",
-            ) from e
+            raise InvalidInputError("Could not read information for that media URL.") from e
 
     def extract_playlist_info(self, url: str) -> dict[str, Any]:
         """
@@ -961,7 +955,7 @@ class MediaDownloadService:
             - videos: List of video entries with URLs and basic info
 
         Raises:
-            HTTPException: If unable to extract playlist information
+            InvalidInputError: If unable to extract playlist information
         """
         ydl_opts = {
             **_YT_DLP_BASE_OPTS,
@@ -1011,10 +1005,7 @@ class MediaDownloadService:
             # Same "create_user_friendly_error is not a sanitizer" reasoning as
             # extract_video_info above — never echo the raw yt-dlp message (#859).
             logger.exception(f"Error extracting playlist info from {url}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Could not read that playlist.",
-            ) from e
+            raise InvalidInputError("Could not read that playlist.") from e
 
     def download_video(
         self,
@@ -1044,7 +1035,8 @@ class MediaDownloadService:
             Dictionary with file path, filename, and video info
 
         Raises:
-            HTTPException: If download fails
+            InvalidInputError: If the URL is refused or the download fails
+            OperationFailedError: On an unexpected download failure
         """
         # Re-validate at FETCH time, not just at submission (issue #284 A0.2).
         # `is_valid_media_url` runs in the request handler, but the download executes
@@ -1058,10 +1050,7 @@ class MediaDownloadService:
         # worker (deny RFC1918 + link-local at the network layer) — infrastructure, not
         # something this process can enforce.
         if not self.is_valid_media_url(url):
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid URL. Please enter a valid HTTP or HTTPS URL.",
-            )
+            raise InvalidInputError("Invalid URL. Please enter a valid HTTP or HTTPS URL.")
 
         # First, try pluggable protected-media providers
         provider = self._get_protected_provider(url, user_id=user_id)
@@ -1232,16 +1221,10 @@ class MediaDownloadService:
             # Same "create_user_friendly_error is not a sanitizer" reasoning as
             # extract_video_info above — never echo the raw yt-dlp message (#859).
             logger.exception(f"yt-dlp download error for {url}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="The media could not be downloaded from that URL.",
-            ) from e
+            raise InvalidInputError("The media could not be downloaded from that URL.") from e
         except Exception as e:
             logger.exception(f"Unexpected error downloading {url}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="The media download failed.",
-            ) from e
+            raise OperationFailedError("The media download failed.") from e
 
     def _extract_technical_metadata(self, file_path: str) -> dict[str, Any]:
         """
@@ -1501,12 +1484,12 @@ class MediaDownloadService:
             Updated MediaFile object
 
         Raises:
-            HTTPException: If processing fails
+            InvalidInputError: If the URL is refused
         """
         from app.utils import benchmark_timing
 
         if not self.is_valid_media_url(url):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid media URL")
+            raise InvalidInputError("Invalid media URL")
 
         # Phase 1 — read the two identifiers the download phase needs, then END
         # the caller's transaction. A yt-dlp download plus a multi-gigabyte MinIO
@@ -1606,7 +1589,7 @@ class MediaDownloadService:
             ``imohash_value``.
 
         Raises:
-            HTTPException: If the video id cannot be extracted.
+            InvalidInputError: If the video id cannot be extracted.
         """
         from app.utils import benchmark_timing
 
@@ -1623,10 +1606,7 @@ class MediaDownloadService:
         video_id = video_info.get("id")
 
         if not video_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Could not extract video ID from URL",
-            )
+            raise InvalidInputError("Could not extract video ID from URL")
 
         # Create temporary directory for download in configured TEMP_DIR
         # This ensures the non-root container user has write permissions
@@ -1776,13 +1756,10 @@ class MediaDownloadService:
             - skipped_videos: List of videos that were skipped (duplicates or errors)
 
         Raises:
-            HTTPException: If playlist extraction fails
+            InvalidInputError: If playlist extraction fails
         """
         if not self.is_playlist_url(url):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="URL is not a valid YouTube playlist",
-            )
+            raise InvalidInputError("URL is not a valid YouTube playlist")
 
         # Extract playlist information
         logger.info(f"Extracting playlist information from: {url}")
@@ -1791,21 +1768,15 @@ class MediaDownloadService:
 
         try:
             playlist_info = self.extract_playlist_info(url)
-        except (HTTPException, DomainError):
+        except DomainError:
             raise
         except Exception as e:
             logger.exception("Error extracting playlist info")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Could not read that playlist.",
-            ) from e
+            raise InvalidInputError("Could not read that playlist.") from e
 
         video_count = playlist_info.get("video_count", 0)
         if video_count == 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Playlist is empty or contains no accessible videos",
-            )
+            raise InvalidInputError("Playlist is empty or contains no accessible videos")
 
         logger.info(
             f"Found {video_count} videos in playlist: {playlist_info.get('playlist_title')}"

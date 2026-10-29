@@ -25,9 +25,9 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
-from fastapi import HTTPException
 from pydantic import ValidationError
 
+from app.core.exceptions import DomainError
 from app.schemas.media_source import UserMediaSourceCreate
 from app.schemas.media_source import UserMediaSourceUpdate
 from app.services.protected_media_plugins.mediacms import MediacmsProvider
@@ -180,7 +180,7 @@ def test_mediacms_refuses_a_private_target_at_request_time(monkeypatch):
 
     with (
         patch.object(provider, "_get_all_sources", return_value=[_HOSTILE_ROW]),
-        pytest.raises(HTTPException) as exc,
+        pytest.raises(DomainError) as exc,
     ):
         provider._login_and_get_info("https://169.254.169.254/view?m=tok", user_id=7)
 
@@ -237,7 +237,7 @@ def test_mediacms_refuses_a_private_download_target(tmp_path, monkeypatch):
 
     with (
         patch.object(provider, "_get_all_sources", return_value=[_HOSTILE_ROW]),
-        pytest.raises(HTTPException),
+        pytest.raises(DomainError),
     ):
         provider.download("https://169.254.169.254/view?m=tok", str(tmp_path), user_id=7)
 

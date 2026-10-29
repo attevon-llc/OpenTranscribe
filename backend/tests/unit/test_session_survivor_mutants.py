@@ -748,3 +748,22 @@ class TestStoreStatePropagatesItsOwnTtl:
         assert expire_at is not None
         expected = datetime.now(UTC).timestamp() + 5
         assert abs(expire_at - expected) < 2
+
+    def test_scan_keys_decodes_bytes_keys_to_str(self):
+        """``isinstance(key, str)`` -> ``... or True``: a client built without
+        ``decode_responses`` yields ``bytes``, which must be decoded before
+        ``_cleanup_oldest_states`` hands them to ``store.delete`` (a bytes key
+        would never match the str-keyed entries it is meant to evict)."""
+
+        class _Store:
+            def scan_iter(self, match=None, count=None):
+                yield f"{OIDC_STATE_PREFIX}a".encode()
+                yield f"{OIDC_STATE_PREFIX}b"
+
+        store = OIDCStateStore(max_states=1000)
+        store._store = _Store()
+
+        collected = store._scan_keys(f"{OIDC_STATE_PREFIX}*", limit=10)
+
+        assert collected == [f"{OIDC_STATE_PREFIX}a", f"{OIDC_STATE_PREFIX}b"]
+        assert all(isinstance(k, str) for k in collected)

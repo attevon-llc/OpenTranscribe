@@ -14,8 +14,10 @@ tests that really execute DDL (issue #431).
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
+from sqlalchemy import event
 from sqlalchemy import text
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -53,10 +55,16 @@ def acquire_ddl_lock_exclusive(connection: Connection) -> None:
         text("SELECT pg_advisory_xact_lock(:k1, :k2)"),
         {"k1": DDL_ISOLATION_LOCK_KEY[0], "k2": DDL_ISOLATION_LOCK_KEY[1]},
     )
+    serialize_auth_config_writes(connection)
 
 
 def acquire_ddl_lock_shared(connection: Connection) -> None:
-    """Take the DDL isolation lock SHARED — what every ordinary DB test does."""
+    """Take the DDL isolation lock SHARED — what every ordinary DB test does.
+
+    Also arms ``serialize_auth_config_writes``: this is the one call every DB-backed test
+    makes on its connection before anything else, so it is the place that covers them all.
+    """
+    serialize_auth_config_writes(connection)
     connection.execute(
         text("SELECT pg_advisory_xact_lock_shared(:k1, :k2)"),
         {"k1": DDL_ISOLATION_LOCK_KEY[0], "k2": DDL_ISOLATION_LOCK_KEY[1]},
@@ -74,3 +82,39 @@ def acquire_ddl_lock_exclusive_raw(cursor) -> None:  # noqa: ANN001 - psycopg2 c
     """
     cursor.execute(f"SET LOCAL lock_timeout = '{DDL_LOCK_TIMEOUT}'")
     cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", DDL_ISOLATION_LOCK_KEY)
+
+
+#: Advisory-lock key serialising **writers of the ``auth_config`` table** across xdist workers.
+#: Separate from ``DDL_ISOLATION_LOCK_KEY`` (that one is shared by every test; this one is
+#: exclusive between the few that write ``auth_config``).
+AUTH_CONFIG_WRITE_LOCK_KEY = (990389, 2)
+
+_AUTH_CONFIG_WRITE = re.compile(
+    r"^\s*(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+\"?auth_config\"?(?![\w])", re.I
+)
+
+
+def serialize_auth_config_writes(connection: Connection) -> None:
+    """Make this test's first ``auth_config`` write take a cross-worker advisory lock.
+
+    ``db_session`` isolates a test by never committing its outer transaction, so the unique
+    index entries it inserts into ``auth_config`` stay as uncommitted row locks until the test
+    ends. ``POST /migrate`` inserts every missing key in one request; another worker's test
+    inserting an overlapping set in a different order waits on the first, which waits on it
+    back — ``DeadlockDetected`` on ``auth_config_config_key_key``, surfacing as a 500 from the
+    handler's broad ``except``. Order-dependent and rare, which is why it passed alone.
+
+    Taking one transaction-scoped advisory lock *before* the first write (and holding it to
+    rollback, exactly as long as the row locks) removes the cycle: a second writer waits at
+    the lock holding no ``auth_config`` row lock. It hooks the SQL rather than a module list,
+    so a new test that writes the table is covered without anyone remembering a marker.
+    """
+    held = False
+
+    @event.listens_for(connection, "before_cursor_execute")
+    def _lock_before_first_write(conn, cursor, statement, parameters, context, executemany):
+        nonlocal held
+        if held or not _AUTH_CONFIG_WRITE.match(statement):
+            return
+        held = True
+        conn.exec_driver_sql("SELECT pg_advisory_xact_lock(%s, %s)", AUTH_CONFIG_WRITE_LOCK_KEY)

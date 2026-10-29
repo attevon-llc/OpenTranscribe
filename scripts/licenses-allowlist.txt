@@ -1,0 +1,17 @@
+# Reasoned exceptions to the licence gate (scripts/check-licenses.py).
+#
+# Line format, tab separated:  ecosystem:name <TAB> licence string exactly as the package declares it <TAB> reason
+# The approval is bound to the licence string: if the package is relicensed the line stops matching,
+# the package fails again and this line is reported as stale. A stale line fails the gate, so remove it
+# when the package is replaced. Reasons are mandatory and are shown in the evidence artifact.
+# A free-text licence BODY is keyed as "<first line> [licence text sha256:<12 hex>]" (see the report).
+# Edits are owner-reviewed (CODEOWNERS).
+pip:mutagen	GPL-2.0-or-later	AGPL-3.0 project; GPL-2.0-or-later is compatible; permissive-only policy exception pending replacement study via yt-dlp[default] extra (transitive dependency of yt-dlp[default]); owner to confirm
+pip:pyannote-audio	(none)	pip report carries no licence for our GPU fork of pyannote-audio (installed from git); upstream pyannote-audio is MIT and the fork keeps its LICENSE; owner to confirm the fork LICENSE file
+pip:pyannote-core	(none)	wheel metadata declares no licence field; the LICENSE file shipped in the 6.1.0 wheel is the MIT License (read from the downloaded wheel)
+pip:pyannote-database	(none)	wheel metadata declares no licence field; the LICENSE file shipped in the 6.1.1 wheel is the MIT License (read from the downloaded wheel)
+pip:pyannote-metrics	(none)	wheel metadata declares no licence field; the LICENSE file shipped in the 4.2.0 wheel is the MIT License (read from the downloaded wheel)
+pip:pyannote-pipeline	(none)	wheel metadata declares no licence field; the LICENSE file shipped in the 4.1.0 wheel is the MIT License (read from the downloaded wheel)
+pip:pyannoteai-sdk	(none)	wheel metadata declares no licence field; the LICENSE file shipped in the 0.4.0 wheel is the MIT License (read from the downloaded wheel)
+pip:cuda-toolkit	(none)	NVIDIA meta-package that ships no code of its own and declares no licence; the NVIDIA libraries it pulls in are classified separately as vendor EULA (PROPRIETARY-REVIEW)
+pip:torchcodec	BSD 3-Clause License [licence text sha256:701584696824]	licence text embedded in the package metadata is the BSD 3-Clause License (Meta), read in full; keyed by digest so a changed text invalidates this line

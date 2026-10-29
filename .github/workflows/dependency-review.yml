@@ -1,0 +1,186 @@
+name: Dependency Review
+
+# What a PR does to the dependency set, as evidence a reviewer can download:
+#   Dependency diff    every manifest-level add/remove/change (artifact: dependency-diff)
+#   Dependency review  GitHub's advisory check on the PR's dependency-graph delta
+#   License gate       the licence policy over the shipped Python + npm closure (artifact: license-evidence)
+# Nothing here needs a secret or a write token, so it behaves the same on a fork PR.
+
+on:
+  pull_request:
+    branches: [master, 'release/**']
+  # A queued entry runs against master-plus-the-queue; a check that is (or later becomes)
+  # required must report there too or the queue hangs.
+  merge_group:
+
+# Cancel a superseded run on the same PR. Never cancel a merge_group run: its verdict is
+# what lets the queue merge.
+concurrency:
+  group: dependency-review-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Granted per job; nothing here writes to the repo, PRs or issues.
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  dependency-diff:
+    name: Dependency diff
+    runs-on: ubuntu-latest
+    # Two pip dry-run legs (base and head) of three files each, about 8 minutes on a hosted runner.
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # 3.13 to match the images; a different minor can resolve differently.
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: '3.13'
+
+      # HEAD is the merge commit GitHub built for the PR; its first parent is the base tip it
+      # was built on. The base branch's moving tip would show later changes on the base as
+      # reversed rows. A merge_group entry is built on an exact base_sha.
+      - name: Work out the base ref
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          QUEUE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          if [ "$EVENT_NAME" = "merge_group" ]; then
+            echo "BASE_REF=$QUEUE_BASE_SHA" >> "$GITHUB_ENV"
+          else
+            echo "BASE_REF=$(git rev-parse HEAD^1)" >> "$GITHUB_ENV"
+          fi
+
+      # The pip dry-run resolves from PyPI, so this step needs network. It runs only when a
+      # backend requirements file changed; otherwise the transitive closure cannot have moved.
+      - name: Resolve the Python closure at base and head
+        id: resolve
+        run: |
+          if ! git diff --quiet "$BASE_REF" HEAD -- 'backend/requirements*.txt'; then
+            python -m pip install --upgrade pip
+            git worktree add "$RUNNER_TEMP/base" "$BASE_REF"
+            # --no-drift-check: the lite-vs-prod parity gate lives in pre-commit.yml; here a
+            # drift must not turn this evidence-only job red.
+            only=(--only requirements.txt --only requirements-nodeps.txt --only requirements-lite.txt --no-drift-check)
+            python3 scripts/check-requirements-resolve.py "${only[@]}" --report-dir "$RUNNER_TEMP/resolved-head"
+            python3 scripts/check-requirements-resolve.py "${only[@]}" --report-dir "$RUNNER_TEMP/resolved-base" \
+              --backend-dir "$RUNNER_TEMP/base/backend"
+            echo "resolved=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No backend/requirements*.txt change: transitive closure not compared."
+            echo "resolved=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Diff the dependency manifests
+        env:
+          RESOLVED: ${{ steps.resolve.outputs.resolved }}
+        run: |
+          args=(--base "$BASE_REF" --head HEAD --out-dir out)
+          if [ "$RESOLVED" = "true" ]; then
+            args+=(--resolved-base "$RUNNER_TEMP/resolved-base" --resolved-head "$RUNNER_TEMP/resolved-head")
+          fi
+          python3 scripts/dependency-diff.py "${args[@]}"
+
+      - name: Write the job summary
+        if: ${{ !cancelled() }}
+        run: |
+          if [ -f out/dependency-diff.md ]; then
+            cat out/dependency-diff.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload the dependency diff
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: dependency-diff
+          path: out/
+          retention-days: 90
+          if-no-files-found: error
+
+  dependency-review:
+    name: Dependency review
+    # The action reads a PR's dependency-graph delta; a merge_group entry has none.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Needs the repository's dependency graph to be enabled (Settings > Advanced Security).
+      # The action writes its own job summary; nothing here needs to repeat it.
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
+        with:
+          fail-on-severity: high
+          fail-on-scopes: runtime
+          # Adoption: report only. Flip to false after two weeks without false positives.
+          warn-only: true
+          vulnerability-check: true
+          # Licences have ONE policy home: the License gate job.
+          license-check: false
+          show-openssf-scorecard: true
+          # A PR comment needs pull-requests: write, which fork PRs never get.
+          comment-summary-in-pr: never
+
+  license-gate:
+    name: License gate
+    runs-on: ubuntu-latest
+    # One pip dry-run leg of three files (about 4 minutes) plus the classification.
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: '3.13'
+
+      # Needs network: the pip dry-run resolves the shipped requirements files from PyPI.
+      # npm licences are read from the committed lockfile, so no Node is needed.
+      - name: Resolve the shipped Python closure
+        run: |
+          python -m pip install --upgrade pip
+          python3 scripts/check-requirements-resolve.py \
+            --only requirements.txt --only requirements-nodeps.txt --only requirements-lite.txt \
+            --no-drift-check --report-dir pipreports
+
+      # Fails the job on exit 1 (policy violation) and 2 (unusable input): the gate is not report-only.
+      - name: Check licences and the committed report version
+        run: |
+          python3 scripts/check-licenses.py --pip-report-dir pipreports --out-dir out --verify-report-version
+
+      - name: Write the job summary
+        if: ${{ !cancelled() }}
+        run: |
+          if [ -f out/license-gate.md ]; then
+            cat out/license-gate.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload the licence evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: license-evidence
+          path: out/
+          retention-days: 90
+          if-no-files-found: error

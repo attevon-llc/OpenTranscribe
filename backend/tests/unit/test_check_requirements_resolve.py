@@ -12,8 +12,6 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
-import pytest
-
 SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "check-requirements-resolve.py"
 
 
@@ -27,23 +25,6 @@ def _load() -> ModuleType:
 
 
 check = _load()
-
-
-def _report(**versions: str) -> dict[str, object]:
-    return {"install": [{"metadata": {"name": n, "version": v}} for n, v in versions.items()]}
-
-
-def test_resolved_versions_normalises_names() -> None:
-    report = _report(**{"pyannote.audio": "4.0.7", "Typing_Extensions": "4.15.0"})
-    assert check.resolved_versions(report) == {
-        "pyannote-audio": "4.0.7",
-        "typing-extensions": "4.15.0",
-    }
-
-
-def test_resolved_versions_rejects_a_report_with_no_install_list() -> None:
-    with pytest.raises(ValueError, match="install"):
-        check.resolved_versions({"version": "1"})
 
 
 def test_a_different_version_is_drift() -> None:

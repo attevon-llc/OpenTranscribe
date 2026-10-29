@@ -27,6 +27,10 @@ Usage::
     python3 scripts/check-requirements-resolve.py            # all files
     python3 scripts/check-requirements-resolve.py --only requirements-lite.txt
         # also resolves requirements.txt: it is the reference the drift check needs
+    python3 scripts/check-requirements-resolve.py --report-dir out/head
+        # keeps each file's raw pip report (<file>.json) for scripts/dependency-diff.py
+    python3 scripts/check-requirements-resolve.py --backend-dir /path/to/other/checkout/backend
+        # resolve another checkout's files (a worktree of the base ref), same pip, same flags
 
 Run it with the interpreter that matches the images (3.13); a different minor can resolve
 differently. Exit codes: 0 pass, 1 conflict or drift, 2 usage / pip too old.
@@ -35,25 +39,16 @@ differently. Exit codes: 0 pass, 1 conflict or drift, 2 usage / pip too old.
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 
-BACKEND = Path(__file__).resolve().parents[1] / 'backend'
-
-#: ``(file, extra pip args)`` in install order. ``requirements.txt`` must stay first: the
-#: drift check uses it as the reference.
-STEPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ('requirements.txt', ()),
-    ('requirements-nodeps.txt', ('--no-deps',)),
-    ('requirements-dev.txt', ()),
-    ('requirements-lite.txt', ()),
-    ('requirements-ci.txt', ()),
-)
+# The pip dry-run machinery lives in scripts/lib/requirements_resolve.py, shared with
+# scripts/dependency-diff.py (scripts/ is not a package, so put its lib/ on the path).
+sys.path.insert(0, str(Path(__file__).resolve().parent / 'lib'))
+from requirements_resolve import BACKEND, STEPS, Outcome, base_version, resolve
 
 #: Files whose resolved set must agree with requirements.txt wherever both resolve a package.
 PARITY_FILES = ('requirements-lite.txt', 'requirements-ci.txt', 'requirements-dev.txt')
@@ -65,38 +60,6 @@ PARITY_EXEMPT: dict[str, str] = {
         'the PyPI release for its ONNX export toolchain (see requirements-lite.txt)'
     ),
 }
-
-
-@dataclass(frozen=True)
-class Outcome:
-    """Result of resolving one requirements file."""
-
-    name: str
-    ok: bool
-    resolved: dict[str, str]
-    detail: str
-
-
-def normalise(name: str) -> str:
-    """PEP 503 name normalisation (``pyannote.audio`` -> ``pyannote-audio``)."""
-    return re.sub(r'[-_.]+', '-', name).lower()
-
-
-def resolved_versions(report: dict[str, object]) -> dict[str, str]:
-    """``normalised name -> version`` for every package a pip ``--report`` would install."""
-    install = report.get('install')
-    if not isinstance(install, list):
-        raise ValueError("pip report has no 'install' list")
-    found: dict[str, str] = {}
-    for item in install:
-        meta = item['metadata']
-        found[normalise(str(meta['name']))] = str(meta['version'])
-    return found
-
-
-def base_version(version: str) -> str:
-    """Drop a PEP 440 local tag: ``2.11.0+cpu`` and ``2.11.0`` are the same upstream release."""
-    return version.split('+', 1)[0]
 
 
 def find_drift(
@@ -130,44 +93,21 @@ def select_steps(only: list[str] | None) -> list[tuple[str, tuple[str, ...]]]:
     return [step for step in STEPS if step[0] in wanted]
 
 
-def _conflict_excerpt(output: str) -> str:
-    """The part of pip's output a human needs: the conflict block, else the last lines."""
-    lines = output.splitlines()
-    for index, line in enumerate(lines):
-        if 'conflict is caused by' in line or line.startswith('ERROR:'):
-            return '\n'.join(lines[index:][:25])
-    return '\n'.join(lines[-25:])
-
-
-def resolve(name: str, extra: tuple[str, ...], workdir: Path) -> Outcome:
-    """Run ``pip install --dry-run`` for one requirements file."""
-    report = workdir / f'{name}.json'
-    command = [
-        sys.executable,
-        '-m',
-        'pip',
-        'install',
-        '--dry-run',
-        '--ignore-installed',
-        '--disable-pip-version-check',
-        '--quiet',
-        '--report',
-        str(report),
-        *extra,
-        '-r',
-        str(BACKEND / name),
-    ]
-    # cwd is the backend dir so relative `-r` includes inside a file resolve.
-    proc = subprocess.run(command, cwd=BACKEND, capture_output=True, text=True, check=False)
-    if proc.returncode != 0:
-        return Outcome(name, False, {}, _conflict_excerpt(proc.stdout + proc.stderr))
-    return Outcome(name, True, resolved_versions(json.loads(report.read_text())), '')
-
-
 def main(argv: list[str] | None = None) -> int:
     """Resolve each requirements file, then check lite/CI/dev against prod."""
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('--only', action='append', metavar='FILE', help='limit to these files')
+    parser.add_argument(
+        '--report-dir', type=Path, metavar='DIR', help="keep each file's pip report here"
+    )
+    parser.add_argument(
+        '--backend-dir', type=Path, metavar='DIR', help='resolve the files under this backend/'
+    )
+    parser.add_argument(
+        '--no-drift-check',
+        action='store_true',
+        help='only prove each file resolves; skip the lite/CI/dev comparison with requirements.txt',
+    )
     args = parser.parse_args(argv)
 
     steps = select_steps(args.only)
@@ -185,10 +125,15 @@ def main(argv: list[str] | None = None) -> int:
 
     failures: list[str] = []
     outcomes: dict[str, Outcome] = {}
+    if args.report_dir:
+        args.report_dir = args.report_dir.resolve()
+        args.report_dir.mkdir(parents=True, exist_ok=True)
+    backend = (args.backend_dir or BACKEND).resolve()
     with tempfile.TemporaryDirectory(prefix='ot-reqs-') as tmp:
+        workdir = args.report_dir or Path(tmp)
         for name, extra in steps:
             print(f'==> resolving {name} {" ".join(extra)}'.rstrip(), flush=True)
-            outcome = resolve(name, extra, Path(tmp))
+            outcome = resolve(name, extra, workdir, backend)
             outcomes[name] = outcome
             if outcome.ok:
                 print(f'    OK ({len(outcome.resolved)} packages)')
@@ -197,12 +142,12 @@ def main(argv: list[str] | None = None) -> int:
                 failures.append(f'{name} does not resolve')
 
     reference = outcomes.get('requirements.txt')
-    if reference and reference.ok:
+    if reference and reference.ok and not args.no_drift_check:
         for name in PARITY_FILES:
-            outcome = outcomes.get(name)
-            if not outcome or not outcome.ok:
+            variant = outcomes.get(name)
+            if not variant or not variant.ok:
                 continue
-            drift = find_drift(reference.resolved, outcome.resolved)
+            drift = find_drift(reference.resolved, variant.resolved)
             if drift:
                 print(f'==> {name} resolves different versions from requirements.txt:')
                 print('    ' + '\n    '.join(drift))

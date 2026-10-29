@@ -46,7 +46,6 @@ scripts/benchmark_parallel.py::run_batch	23	complexity: decomposition planned
 scripts/benchmark_rag.py::main	23	complexity: decomposition planned
 scripts/benchmark_upload_matrix.py::main	19	complexity: decomposition planned
 scripts/cleanup-test-data.py::_sweep_store_planes	17	complexity: decomposition planned
-scripts/generate-sbom-report.py::classify_license_string	17	complexity: decomposition planned
 scripts/generate-sbom-report.py::main	18	complexity: decomposition planned
 scripts/mutation-verify-apply.py::main	20	complexity: decomposition planned
 scripts/vram-probe-diarization.py::run_one	16	complexity: decomposition planned

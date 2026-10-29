@@ -539,8 +539,29 @@ else
     # used to be the dispatcher's silent fallback. An implicit ceiling is invisible at the
     # call site, and "no prefix means the integration number" is exactly the coupling that had
     # to be broken the moment the GPU phase needed a different one.
+    # The integration phase talks to the stack's Redis (deletion seeds, orphan sweep, chat cache).
+    # Nothing exports REDIS_*, so the tests fell back to localhost:5177 with no password (or the
+    # in-network name `redis`) and ~90 of them failed or errored on a perfectly healthy stack.
+    # Resolve host port + password from the compose project's own containers and hand them to
+    # THIS phase only: exporting them to the unit phase flips ~10 memory-path tests to the Redis
+    # path and fails them (measured 2026-10-28: 63 failures instead of 54).
+    REDIS_ENV=()
+    if [ -z "${REDIS_HOST:-}" ] && command -v docker >/dev/null 2>&1; then
+        _proj="${COMPOSE_PROJECT_NAME:-}"
+        _label=(--filter "label=com.docker.compose.service=backend")
+        [ -n "$_proj" ] && _label+=(--filter "label=com.docker.compose.project=$_proj")
+        _backend="$(docker ps "${_label[@]}" --format '{{.Names}}' 2>/dev/null | head -1)"
+        _redis_port="$(docker ps "${_label[@]/backend/redis}" --format '{{.Ports}}' 2>/dev/null \
+            | grep -oE '(127\.0\.0\.1|0\.0\.0\.0):[0-9]+->6379' | head -1 | sed -E 's/.*:([0-9]+)->6379/\1/')"
+        _redis_pw="$([ -n "$_backend" ] && docker exec "$_backend" printenv REDIS_PASSWORD 2>/dev/null)"
+        if [ -n "$_redis_port" ]; then
+            REDIS_ENV=(env REDIS_HOST=localhost "REDIS_PORT=$_redis_port" "REDIS_PASSWORD=$_redis_pw")
+        else
+            echo -e "${YELLOW}⚠ could not resolve the stack's Redis host port; integration tests needing Redis will fail${NC}"
+        fi
+    fi
     run_phase_watching_skips "Integration-marked tests" "$INTEGRATION_SKIP_CEILING" \
-        "${EXPORT_ENV[@]}" "$VENV_PY" -m pytest tests/integration/ tests/test_selective_reprocess.py tests/eval/ \
+        "${REDIS_ENV[@]}" "${EXPORT_ENV[@]}" "$VENV_PY" -m pytest tests/integration/ tests/test_selective_reprocess.py tests/eval/ \
         -o addopts="" -m "$INTEGRATION_SELECTION" -q --tb=short --strict-markers \
         --timeout="${INTEGRATION_TEST_TIMEOUT:-900}" \
         "${SKIP_REASONS[@]}" "${DURATIONS[@]}" --junitxml="$GATE_ARTIFACT_DIR/integration.xml"

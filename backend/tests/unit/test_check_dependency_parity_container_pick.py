@@ -25,7 +25,7 @@ fi
 
 
 def _run(
-    tmp_path: Path, ps_output: str, project: str | None
+    tmp_path: Path, ps_output: str, project: str | None, venv_pip: Path | None = None
 ) -> tuple[subprocess.CompletedProcess, str]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -38,6 +38,8 @@ def _run(
         "OT_DOCKER_LOG": str(log),
         "OT_PS_OUTPUT": ps_output,
     }
+    if venv_pip is not None:
+        env["OT_PARITY_VENV_PIP"] = str(venv_pip)
     if project is not None:
         env["COMPOSE_PROJECT_NAME"] = project
     proc = subprocess.run(  # nosec B603 - fixed argv
@@ -65,10 +67,22 @@ def test_two_dev_backends_with_no_project_set_is_an_error_not_a_guess(tmp_path):
 @pytest.mark.unit
 def test_a_fresh_stack_beside_the_dev_stack_is_not_ambiguous(tmp_path):
     """The default dev stack wins over an ``otfresh-*`` fresh stack when no project is set."""
-    proc, _ = _run(tmp_path, "otfresh-a-backend otfresh-a\nopentranscribe-backend dev\n", None)
+    # A stub pip stands in for backend/venv so the script reaches its "Comparing ..." line and
+    # the exec step identically on a host with and without a real venv.
+    pip = tmp_path / "pip"
+    pip.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    pip.chmod(pip.stat().st_mode | stat.S_IEXEC)
+    proc, log = _run(
+        tmp_path, "otfresh-a-backend otfresh-a\nopentranscribe-backend dev\n", None, pip
+    )
 
-    assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "FAIL" not in proc.stderr
+    # The stub docker returns no package list, so the comparison fails by design (exit 1);
+    # what this pins is WHICH container was picked and that it was not an ambiguity error.
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "COMPOSE_PROJECT_NAME" not in proc.stderr
+    assert "container 'opentranscribe-backend'" in proc.stdout
+    assert "otfresh-a-backend" not in proc.stdout + proc.stderr
+    assert "exec opentranscribe-backend" in log
 
 
 @pytest.mark.unit

@@ -31,7 +31,14 @@ FC_PY="$FC_DIR/feature-checks.py"
 #: The revision that introduced the v0.6.0 speaker columns. A FLOOR for the derived head, never the
 #: expected head itself (that is always derived from the migration graph).
 FC_MIN_ALEMBIC_REV=449
+: "${FC_BACKEND_CONTAINER:=opentranscribe-backend}"
+: "${FC_WORKER_CONTAINER:=opentranscribe-celery-worker}"
+#: How long a label resync may take to reach the chunk index: the debounce (15 s) plus a queued
+#: re-index behind whatever else the worker is doing.
+: "${FC_RESYNC_TIMEOUT_S:=300}"
+FC_PROBE_PY="$FC_DIR/os-probe.py"
 FC_VOICE_NAME="Rehearsal Voice Name"
+FC_DRIFT_NAME="Rehearsal Drift Name"
 
 #: Check lists. `fc_run_all` runs exactly these; backend/tests/unit/test_release_feature_checks.py
 #: pins that every name is a defined function and that the docs list the same set.
@@ -44,9 +51,12 @@ FC_CHECKS_COMMON=(
     fc_check_post_processing
     fc_check_exports
 )
-FC_CHECKS_UPGRADE=(fc_check_upgrade_backfill)
+FC_CHECKS_UPGRADE=(fc_check_upgrade_backfill fc_check_upgrade_populated)
+#: Real GPU pipeline evidence. Not in lite (no GPU by design) and failing, never skipping, where a
+#: GPU deployment cannot see its card.
+FC_CHECKS_GPU=(fc_check_gpu_pipeline)
 #: Mutating, ordered last. The purge is irreversible by design (it deletes voiceprint data).
-FC_CHECKS_STATEFUL=(fc_check_voiceprints_toggle fc_check_audited_purge)
+FC_CHECKS_STATEFUL=(fc_check_voiceprints_toggle fc_check_label_index_resync fc_check_audited_purge)
 
 # ─── transport (replaced wholesale by selftest-feature-checks.sh) ───────────────────────────
 
@@ -97,6 +107,23 @@ fc_sql_strict() {
 fc_sql() { fc_sql_strict "$1" || true; }
 # fc_sql_exec STATEMENT -- a write; returns 0 whatever happens (callers verify by reading back).
 fc_sql_exec() { fc_sql_strict "$1" >/dev/null || true; }
+
+# fc_probe CONTAINER COMMAND [ARGS...] -- run lib/os-probe.py inside a container; one JSON line.
+# A probe that cannot run is reported as {"error": ...} data, so the predicate FAILs it.
+fc_probe() {
+    local container="$1"
+    shift
+    docker exec -i -w /app "$container" python - "$@" < "$FC_PROBE_PY" 2>/dev/null \
+        || echo '{"error": "probe could not run in the container"}'
+}
+# fc_container_env CONTAINER VAR -- the value the container was started with (empty when unset).
+fc_container_env() { docker exec "$1" printenv "$2" 2>/dev/null || true; }
+# fc_container_logs CONTAINER -- the recent log (stdout and stderr).
+fc_container_logs() { docker logs --tail 50000 "$1" 2>&1 || true; }
+# fc_sql_err QUERY -- the statement's output INCLUDING its error text (the caller judges it).
+fc_sql_err() {
+    docker exec "$FC_PG_CONTAINER" psql -U postgres -d opentranscribe -tA -c "$1" 2>&1 || true
+}
 
 # ─── recording ──────────────────────────────────────────────────────────────────────────────
 
@@ -319,9 +346,74 @@ fc_check_voiceprints_toggle() {
     fc_sql_exec "$FC_RESTORE_SQL"
 }
 
+# ─── (4b) a switch change reaches the real chunk index ──────────────────────────────────────
+# fc_wait_labels LABEL FILE MODE -- poll the chunk index until the voice-made label is present/absent.
+fc_wait_labels() {
+    local label="$1" f="$2" mode="$3" rc=1 deadline _try
+    deadline=$((SECONDS + FC_RESYNC_TIMEOUT_S))
+    for _try in $(seq 1 $(( FC_RESYNC_TIMEOUT_S / 5 + 1 ))); do
+        FC_BODY="$(fc_probe "$FC_BACKEND_CONTAINER" labels "$f")"
+        rc=0
+        fc_eval os-labels "$FC_VOICE_NAME" "$mode" || rc=$?
+        [[ "$rc" == "0" ]] && break
+        ((SECONDS < deadline)) || break
+        sleep 5
+    done
+    fc_record "$label" "$rc"
+}
+
+fc_check_label_index_resync() {
+    local f orig
+    f="$(fc_pick_file)"
+    if [[ -z "$f" ]]; then
+        as_record FAIL "label resync: a completed file with speakers to seed" "none found"
+        return 0
+    fi
+    fc_call GET /admin/privacy-policy
+    orig="$(fc_field voiceprint_matching_enabled)"
+    if ! fc_seed_voice_identity "$f"; then
+        as_record FAIL "label resync: seeding a voice-made speaker name" "the speaker row could not be updated and read back"
+        return 0
+    fi
+    fc_set_voiceprints true || true
+    # A name written by SQL alone re-indexes nothing, so whatever the chunk index holds disagrees
+    # with it: a name no earlier step could have indexed makes that independent of the index state
+    # the previous check left behind.
+    fc_sql_exec "UPDATE speaker SET display_name='$FC_DRIFT_NAME' WHERE uuid='$FC_SPK_UUID'"
+    FC_BODY="$(fc_probe "$FC_BACKEND_CONTAINER" drift "$f")"
+    fc_judge "label resync: the drift scan sees an index that disagrees with the database (seed control)" \
+        drift-scan "$FC_DRIFT_NAME" drift
+    fc_sql_exec "UPDATE speaker SET display_name='$FC_VOICE_NAME' WHERE uuid='$FC_SPK_UUID'"
+    # Hide first and wait for it, so the label is provably ABSENT before it is shown again: the
+    # wait for `present` below can then only be satisfied by a real relabel.
+    if fc_set_voiceprints false; then
+        fc_wait_labels "label resync: voiceprints off, the voice-made label is absent from the real chunk index" "$f" absent
+    else
+        as_record FAIL "label resync: switch off" "PUT /admin/privacy-policy answered HTTP $FC_CODE"
+    fi
+    if fc_set_voiceprints true; then
+        fc_wait_labels "label resync: voiceprints back on, the real chunk index gets the voice-made label" "$f" present
+        FC_BODY="$(fc_probe "$FC_BACKEND_CONTAINER" drift "$f")"
+        fc_judge "label resync: once relabelled the drift scan is clean" \
+            drift-scan "$FC_VOICE_NAME" clean
+    else
+        as_record FAIL "label resync: switch on" "PUT /admin/privacy-policy answered HTTP $FC_CODE"
+    fi
+    if fc_set_voiceprints false; then
+        fc_wait_labels "label resync: voiceprints off again, the voice-made label leaves the real chunk index" "$f" absent
+        FC_BODY="$(fc_probe "$FC_BACKEND_CONTAINER" drift "$f")"
+        fc_judge "label resync: after hiding, the drift scan is clean" \
+            drift-scan "$FC_VOICE_NAME" clean
+    else
+        as_record FAIL "label resync: switch off again" "PUT /admin/privacy-policy answered HTTP $FC_CODE"
+    fi
+    fc_sql_exec "$FC_RESTORE_SQL"
+    fc_set_voiceprints "${orig:-true}" || true
+}
+
 # ─── (5) the audited purge ──────────────────────────────────────────────────────────────────
 fc_check_audited_purge() {
-    local f orig task deadline _try rc=0 FC_REQUEST_TIMEOUT_S="$FC_POLL_REQUEST_TIMEOUT_S" body_purge='{"scope":"personal","targets":["voiceprints"],"confirm":"PURGE"}'
+    local f orig task decoy deadline _try rc=0 FC_REQUEST_TIMEOUT_S="$FC_POLL_REQUEST_TIMEOUT_S" body_purge='{"scope":"personal","targets":["voiceprints"],"confirm":"PURGE"}'
     f="$(fc_pick_file)"
     if [[ -z "$f" ]]; then
         as_record FAIL "purge: a completed file with speakers to seed" "none found"
@@ -334,6 +426,14 @@ fc_check_audited_purge() {
         return 0
     fi
     fc_set_voiceprints true || true
+    # Real OpenSearch: an UNSTAMPED speaker document for the seeded speaker, and a decoy no purge
+    # scope contains. The purge selects by Postgres ids, so the first must go and the second stay.
+    FC_BODY="$(fc_probe "$FC_BACKEND_CONTAINER" seed-docs "$FC_SPK_UUID")"
+    decoy="$(fc_field decoy)"
+    fc_judge "purge: unstamped speaker documents and an out-of-scope decoy written to OpenSearch" os-seed
+    FC_BODY="$(fc_probe "$FC_BACKEND_CONTAINER" count-docs "$FC_SPK_UUID" "$decoy")"
+    fc_judge "purge: seed control, the documents are there before the purge" \
+        os-docs "$FC_SPK_UUID" "$decoy" before
     fc_call POST /admin/privacy-policy/purge "$body_purge"
     as_assert_http "purge: refused with 409 while voiceprints are still switched on" 409 "$FC_CODE"
     fc_judge "purge: the 409 names policy_still_enabled" policy-still-enabled
@@ -358,6 +458,12 @@ fc_check_audited_purge() {
         if fc_need "purge: GET /privacy/purge/{task} answers 200" 200; then
             fc_judge "purge: completed with per-store counts, residual_ok and an audit reference" \
                 purge-status 1
+            fc_judge "purge: residual names every measure, speaker/profile/cluster documents included, all 0" \
+                purge-residual-complete
+            FC_BODY="$(fc_probe "$FC_BACKEND_CONTAINER" count-docs "$FC_SPK_UUID" "$decoy")"
+            fc_judge "purge: the seeded documents are gone from every index and the decoy outside the scope stays" \
+                os-docs "$FC_SPK_UUID" "$decoy" after
+            fc_probe "$FC_BACKEND_CONTAINER" delete-doc "$decoy" >/dev/null
         fi
         # Only PASS or the documented "audit off" SKIP end the poll; a FAIL (no event yet, or the
         # store answering with an internal error) is retried until the deadline.
@@ -461,9 +567,12 @@ fc_check_post_processing() {
 
 # ─── (8) system statistics ──────────────────────────────────────────────────────────────────
 fc_check_system_stats() {
+    local env_setting
     fc_call GET /system/stats
     if fc_need "stats: GET /system/stats answers 200" 200; then
-        fc_judge "stats: the response carries the passage-reranker row" stats-reranker
+        env_setting="$(fc_container_env "$FC_BACKEND_CONTAINER" CHAT_RERANKER_TORCH_THREADS)"
+        fc_judge "stats: the reranker thread cap in the live process matches the container's setting" \
+            reranker-cap "$env_setting"
     fi
 }
 
@@ -487,8 +596,95 @@ fc_check_aws_bucket_message() {
     fi
 }
 
+# ─── (11) the upgrade ran over a populated database ──────────────────────────────────────────
+# fc_snapshot_counts OUT [post] -- `table=rows` per core table; `post` adds the stamped-speaker
+# count (the column only exists after v449).
+fc_snapshot_counts() {
+    local t n
+    : > "$1"
+    for t in "${FC_COUNT_TABLES[@]}"; do
+        n="$(fc_sql "SELECT count(*) FROM $t")"
+        echo "$t=${n//[$'\r\n ']/}" >> "$1"
+    done
+    if [[ "${2:-}" == "post" ]]; then
+        n="$(fc_sql "SELECT count(*) FROM speaker WHERE identity_source IS NOT NULL")"
+        echo "identity_source_not_null=${n//[$'\r\n ']/}" >> "$1"
+    fi
+}
+FC_COUNT_TABLES=(media_file transcript_segment speaker task)
+
+# fc_seed_v448_tasks OUT -- BEFORE the upgrade, give v448 real work: two active rows for one
+# (file, step) and an active row with a newer completed one. Writes `(unseeded: why)` on failure
+# so the post-upgrade check FAILs instead of passing over nothing.
+fc_seed_v448_tasks() {
+    local out="$1" row f u
+    row="$(fc_sql "SELECT id::text || '|' || user_id::text FROM media_file ORDER BY id LIMIT 1")"
+    f="${row%%|*}"
+    u="${row#*|}"
+    if [[ -z "$f" || "$f" == "$row" ]]; then
+        echo "(unseeded: no media_file row to hang the tasks on)" > "$out"
+        return 0
+    fi
+    fc_sql_exec "INSERT INTO task (id, user_id, media_file_id, task_type, status, created_at) VALUES
+        ('rehearsal-v448-A', $u, $f, 'rehearsal_v448_dup', 'pending', now() - interval '2 minutes'),
+        ('rehearsal-v448-B', $u, $f, 'rehearsal_v448_dup', 'in_progress', now() - interval '1 minute'),
+        ('rehearsal-v448-C', $u, $f, 'rehearsal_v448_sup', 'in_progress', now() - interval '2 minutes'),
+        ('rehearsal-v448-D', $u, $f, 'rehearsal_v448_sup', 'completed', now() - interval '1 minute')
+        ON CONFLICT (id) DO NOTHING"
+    if [[ "$(fc_sql "SELECT count(*) FROM task WHERE id LIKE 'rehearsal-v448-%'")" == "4" ]]; then
+        echo "seeded" > "$out"
+    else
+        echo "(unseeded: the FROM schema refused the task rows)" > "$out"
+    fi
+}
+
+# fc_snapshot_v448_tasks OUT -- the seeded rows as they stand right after the migration ran.
+fc_snapshot_v448_tasks() {
+    local rows
+    if rows="$(fc_sql_strict "SELECT id || '|' || status || '|' || coalesce(error_message, '') FROM task WHERE id LIKE 'rehearsal-v448-%' ORDER BY id")" && [[ -n "$rows" ]]; then
+        printf '%s\n' "$rows" > "$1"
+    else
+        echo "(unseeded: no rehearsal-v448 rows after the upgrade)" > "$1"
+    fi
+}
+
+# fc_check_upgrade_populated PRE_NAMES POST_NAMES PRE_COUNTS POST_COUNTS POST_V448_TASKS
+fc_check_upgrade_populated() {
+    local dup_row f u refusal idx dups
+    fc_judge "upgrade: core tables were populated before and lost no row (row counts before/after)" \
+        upgrade-counts "${3:-/nonexistent}" "${4:-/nonexistent}"
+    FC_BODY="$(fc_sql "SELECT value FROM system_settings WHERE key = 'privacy.identity_source_backfill'")"
+    fc_judge "upgrade: the v449 backfill record's stamped count equals the speakers carrying an identity_source" \
+        backfill-consistent "${4:-/nonexistent}"
+    FC_BODY="$(cat "${5:-/nonexistent}" 2>/dev/null || echo '(unseeded: no post-upgrade task snapshot)')"
+    fc_judge "upgrade: v448 resolved the duplicate and superseded task rows seeded before it, deleting none" v448-tasks
+    idx="$(fc_sql "SELECT indexdef FROM pg_indexes WHERE indexname = 'uq_task_active_per_file_type'")"
+    dups="$(fc_sql "SELECT count(*) FROM (SELECT 1 FROM task WHERE status IN ('pending','in_progress') AND media_file_id IS NOT NULL GROUP BY media_file_id, task_type HAVING count(*) > 1) s")"
+    dup_row="$(fc_sql "SELECT media_file_id::text || '|' || user_id::text FROM task WHERE id = 'rehearsal-v448-B'")"
+    f="${dup_row%%|*}"
+    u="${dup_row#*|}"
+    refusal="$(fc_sql_err "BEGIN; INSERT INTO task (id, user_id, media_file_id, task_type, status) VALUES ('rehearsal-v448-X', ${u:-0}, ${f:-0}, 'rehearsal_v448_dup', 'pending'); ROLLBACK;")"
+    FC_BODY="$refusal"
+    fc_judge "upgrade: uq_task_active_per_file_type exists, no active duplicate remains, a second one is refused" \
+        v448-guard "$idx" "${dups//[$'\r\n ']/}"
+}
+
+# ─── (12) a real GPU pipeline, loudly ───────────────────────────────────────────────────────
+fc_check_gpu_pipeline() {
+    if [[ "${TEST_USE_GPU:-true}" != "true" ]]; then
+        as_record SKIP "gpu: pipeline evidence" "TEST_USE_GPU=false, the operator chose the documented --cpu opt-out"
+        return 0
+    fi
+    FC_BODY="$(fc_probe "$FC_WORKER_CONTAINER" gpu)"
+    fc_judge "gpu: the worker sees CUDA, torchcodec/torchaudio import, the app loader never reaches torchcodec" gpu-probe
+    FC_BODY="$(fc_sql "SELECT lower(f.status::text) || '|' || (SELECT count(*) FROM transcript_segment t WHERE t.media_file_id = f.id) || '|' || (SELECT count(*) FROM speaker s WHERE s.media_file_id = f.id) || '|' || coalesce(f.diarization_provider, '') FROM media_file f WHERE lower(f.status::text) = 'completed' ORDER BY f.id DESC LIMIT 1")"
+    fc_judge "gpu: the newest completed file has segments, diarized speakers and a diarization engine" pipeline-evidence
+    FC_BODY="$(fc_container_logs "$FC_WORKER_CONTAINER")"
+    fc_judge "gpu: the worker log reports no torchcodec failure over the whole run" worker-log-clean
+}
+
 # ─── runner ─────────────────────────────────────────────────────────────────────────────────
-# fc_run_all MODE [PRE_NAMES POST_NAMES]
+# fc_run_all MODE [PRE_NAMES POST_NAMES PRE_COUNTS POST_COUNTS POST_V448_TASKS]
 #   MODE  full     fresh install: every check, including the mutating ones
 #         upgrade  full + the upgrade-only checks (PRE_NAMES/POST_NAMES from fc_snapshot_speaker_names)
 #         lite     the read-only checks only (the mutating pair needs a GPU-free voiceprint corpus
@@ -497,15 +693,15 @@ fc_run_all() {
     local mode="${1:-full}" check
     local plan=("${FC_CHECKS_COMMON[@]}")
     case "$mode" in
-        full) plan+=("${FC_CHECKS_STATEFUL[@]}") ;;
-        upgrade) plan+=("${FC_CHECKS_UPGRADE[@]}" "${FC_CHECKS_STATEFUL[@]}") ;;
+        full) plan+=("${FC_CHECKS_GPU[@]}" "${FC_CHECKS_STATEFUL[@]}") ;;
+        upgrade) plan+=("${FC_CHECKS_UPGRADE[@]}" "${FC_CHECKS_GPU[@]}" "${FC_CHECKS_STATEFUL[@]}") ;;
         lite) ;;
         *) as_record FAIL "feature checks: unknown mode" "$mode"; return 0 ;;
     esac
     for check in "${plan[@]}"; do
         # `if`, never bare: a check is recorded-not-fatal by design (#617/#618).
-        if [[ "$check" == "fc_check_upgrade_backfill" ]]; then
-            if ! "$check" "${2:-}" "${3:-}"; then as_record FAIL "feature check $check aborted"; fi
+        if [[ "$check" == "fc_check_upgrade_backfill" || "$check" == "fc_check_upgrade_populated" ]]; then
+            if ! "$check" "${2:-}" "${3:-}" "${4:-}" "${5:-}" "${6:-}"; then as_record FAIL "feature check $check aborted"; fi
         elif ! "$check"; then
             as_record FAIL "feature check $check aborted"
         fi

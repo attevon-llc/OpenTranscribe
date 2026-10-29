@@ -1039,6 +1039,18 @@ for path, methods in sorted(spec.get("paths", {}).items()):
     # display_name per speaker (id|name), for phase 11b's "names survive the upgrade" check.
     # Recorded as a parenthesised marker when the FROM schema cannot answer.
     fc_snapshot_speaker_names "$out/speaker_display_names.txt"
+    # Row counts for phase 11b's "the upgrade ran over a POPULATED database and lost nothing". Taken
+    # before the v448 seed below so the seed never inflates the baseline; the post-upgrade file also
+    # carries the stamped-speaker count the v449 backfill record is compared with.
+    if [[ "$label" == "after" ]]; then
+        fc_snapshot_counts "$out/row_counts.txt" post || true
+        # v448 ran during this startup: capture what it did to the rows seeded BEFORE it.
+        fc_snapshot_v448_tasks "$out/v448_tasks.txt" || true
+    else
+        fc_snapshot_counts "$out/row_counts.txt" pre || true
+        # Give v448 real work: duplicate and superseded ACTIVE task rows the FROM schema accepts.
+        fc_seed_v448_tasks "$out/v448_seed.txt" || true
+    fi
 
     # MinIO ETag list (proves no object body mutation)
     local minio="opentranscribe-minio"
@@ -1980,7 +1992,10 @@ phase_11b_feature_checks() {
     # backup over whatever it leaves behind.
     fc_run_all upgrade \
         "$TEST_ROOT/snapshots/before/speaker_display_names.txt" \
-        "$TEST_ROOT/snapshots/after/speaker_display_names.txt"
+        "$TEST_ROOT/snapshots/after/speaker_display_names.txt" \
+        "$TEST_ROOT/snapshots/before/row_counts.txt" \
+        "$TEST_ROOT/snapshots/after/row_counts.txt" \
+        "$TEST_ROOT/snapshots/after/v448_tasks.txt"
 }
 
 phase_12_assert_rollback_precondition() {

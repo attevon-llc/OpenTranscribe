@@ -71,8 +71,17 @@ def export_page(
     context.close()
 
 
-def _download(page: Page, label: str, with_dialog: bool) -> tuple[str, bytes]:
-    """Pick *label* in the Export menu and return (suggested filename, bytes received)."""
+def _download(
+    page: Page,
+    label: str,
+    with_dialog: bool,
+    options: dict[str, str] | None = None,
+) -> tuple[str, bytes]:
+    """Pick *label* in the Export menu and return (suggested filename, bytes received).
+
+    *options* maps a ``<select>`` id in the options dialog to the value to choose before
+    confirming (the document formats' line numbering and page size).
+    """
     page.locator(".export-transcript-button").click()
     entry = page.locator(".export-dropdown-content button", has_text=label)
     expect(entry).to_be_visible()
@@ -81,6 +90,8 @@ def _download(page: Page, label: str, with_dialog: bool) -> tuple[str, bytes]:
         if with_dialog:
             confirm = page.locator("button.export-confirm")
             expect(confirm).to_be_visible(timeout=15000)
+            for select_id, value in (options or {}).items():
+                page.locator(f"#{select_id}").select_option(value)
             confirm.click()
     download: Download = pending.value
     path = download.path()
@@ -145,3 +156,64 @@ def test_each_export_format_downloads_real_content(
         assert body.rstrip().endswith(b"%%EOF")
     else:  # pragma: no cover - the FORMATS table is the only source of ext
         pytest.fail(f"unhandled format {ext}")
+
+
+# --- Document option variants (#1278): what the options dialog PROMISES must reach the file ---
+
+LINE_NUMBERING = "document-export-line-numbering"
+PAGE_SIZE = "document-export-page-size"
+
+
+@pytest.fixture
+def documents_page(export_page: Page, documents_enabled: bool) -> Page:
+    if not documents_enabled:
+        pytest.skip("document export is disabled on this deployment (exports.documents)")
+    return export_page
+
+
+@pytest.mark.parametrize(
+    ("choice", "restart"),
+    [("per_page", "newPage"), ("continuous", "continuous"), ("none", None)],
+)
+def test_docx_line_numbering_choice_reaches_the_file(
+    choice: str, restart: str | None, documents_page: Page
+) -> None:
+    _, body = _download(documents_page, "Word Document (.docx)", True, {LINE_NUMBERING: choice})
+    with zipfile.ZipFile(io.BytesIO(body)) as archive:
+        document_xml = archive.read("word/document.xml").decode("utf-8")
+    found = re.search(r"<w:lnNumType[^>]*>", document_xml)
+    if restart is None:
+        assert found is None, found and found.group(0)
+    else:
+        assert found, "no Word line numbering element"
+        assert f'w:restart="{restart}"' in found.group(0), found.group(0)
+
+
+@pytest.mark.parametrize(
+    ("choice", "size"), [("a4", (595, 842)), ("letter", (612, 792))], ids=["a4", "letter"]
+)
+def test_pdf_page_size_choice_reaches_the_file(
+    choice: str, size: tuple[int, int], documents_page: Page
+) -> None:
+    from pypdf import PdfReader
+
+    _, body = _download(documents_page, "PDF Document (.pdf)", True, {PAGE_SIZE: choice})
+    reader = PdfReader(io.BytesIO(body))
+    box = reader.pages[0].mediabox
+    assert (round(float(box.width)), round(float(box.height))) == size
+    assert FIRST_LINE in reader.pages[0].extract_text()
+
+
+def test_pdf_numbered_lines_follow_the_numbering_choice(documents_page: Page) -> None:
+    """Numbered (default) PDF carries line numbers; ``none`` removes them, same text."""
+    from pypdf import PdfReader
+
+    def first_page_text(choice: str) -> str:
+        _, body = _download(documents_page, "PDF Document (.pdf)", True, {LINE_NUMBERING: choice})
+        return str(PdfReader(io.BytesIO(body)).pages[0].extract_text())
+
+    numbered = first_page_text("per_page")
+    plain = first_page_text("none")
+    assert FIRST_LINE in numbered and FIRST_LINE in plain
+    assert re.search(r"^\s*1\b", numbered, re.M), numbered[:200]
+    assert not re.search(r"^\s*1\s+\S", plain, re.M), plain[:200]

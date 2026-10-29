@@ -146,7 +146,12 @@ def test_summary_is_still_the_last_assertion_phase_and_exit_code_propagates(scri
 
 
 def test_every_check_function_is_defined_planned_once_and_documented() -> None:
-    plan = _array("FC_CHECKS_COMMON") + _array("FC_CHECKS_UPGRADE") + _array("FC_CHECKS_STATEFUL")
+    plan = (
+        _array("FC_CHECKS_COMMON")
+        + _array("FC_CHECKS_UPGRADE")
+        + _array("FC_CHECKS_GPU")
+        + _array("FC_CHECKS_STATEFUL")
+    )
     defined = set(re.findall(r"^(fc_check_\w+)\(\)", LIB_TEXT, re.MULTILINE))
     assert set(plan) == defined, (
         f"defined-but-never-run or planned-but-undefined: {set(plan) ^ defined}"
@@ -168,12 +173,19 @@ def test_every_predicate_the_shell_calls_exists() -> None:
     # may be followed by a line continuation before the predicate name.
     called = set(
         re.findall(
-            r"\b(?:fc_judge\s+\"[^\"]*\"\s*(?:\\\s*\n\s*)?|fc_eval\s+)([a-z][a-z-]+)", LIB_TEXT
+            r"\b(?:fc_judge\s+\"[^\"]*\"\s*(?:\\\s*\n\s*)?|fc_eval\s+)([a-z][a-z0-9-]+)", LIB_TEXT
         )
     )
     assert called, "found no predicate calls to check"
     # The multi-line calls the single-line regex used to miss must now be seen.
     assert {"head", "display-names", "purge-status", "post-processing"} <= called
+    # Every predicate added for the rehearsal gaps (privacy on real OpenSearch, reranker cap, GPU
+    # pipeline, populated upgrade) is called through one of the multi-line shapes as well.
+    assert {
+        "reranker-cap", "os-labels", "drift-scan", "os-seed", "os-docs",
+        "purge-residual-complete", "upgrade-counts", "backfill-consistent", "v448-tasks",
+        "v448-guard", "gpu-probe", "pipeline-evidence", "worker-log-clean",
+    } <= called  # fmt: skip
     assert called <= set(fc.PREDICATES), (
         f"shell calls unknown predicate(s): {called - set(fc.PREDICATES)}"
     )
@@ -217,6 +229,37 @@ FILE_SHOWN = {
     "speakers": [{"uuid": "s1", "display_name": "N", "identity": {"source": "voiceprint"}}]
 }
 FILE_HIDDEN = {"speakers": [{"uuid": "s1", "display_name": None, "identity": None}]}
+
+
+def _rerank(threads: int | None, source: str, setting: str) -> str:
+    row = {"threads": threads, "source": source, "setting": setting}
+    return _j({"system": {"chat_reranker_threads": row}})
+
+
+_RERANK_AUTO = _rerank(4, "auto", "auto")
+_ZERO_RESIDUAL = {k: 0 for k in fc.PURGE_RESIDUAL_KEYS}
+_PRE_COUNTS = "media_file=2\ntranscript_segment=5\nspeaker=3\ntask=4\n"
+_V448_OK = (
+    "rehearsal-v448-A|failed|superseded by rehearsal-v448-B\nrehearsal-v448-B|in_progress|\n"
+    "rehearsal-v448-C|failed|superseded by rehearsal-v448-D\nrehearsal-v448-D|completed|\n"
+)
+_IDX = (
+    "CREATE UNIQUE INDEX uq_task_active_per_file_type ON public.task USING btree "
+    "(media_file_id, task_type) WHERE (status = ANY (ARRAY['pending', 'in_progress']))"
+)
+_GPU_OK = {
+    "cuda_available": True,
+    "device_name": "RTX 3080 Ti",
+    "torchcodec_import": "ok",
+    "torchaudio_import": "ok",
+    "audio_samples": 16000,
+    "app_loader_pulled_torchcodec": False,
+}
+
+
+def _drift(expected: list[str], indexed: list[str], drifted: int) -> str:
+    return _j({"scanned": 1, "drifted": drifted, "expected": expected, "indexed": indexed})
+
 
 CASES: list[tuple[str, tuple[str, ...], int]] = [
     # (predicate, args, expected verdict). 0 = pass, 1 = fail, 2 = skip
@@ -389,20 +432,83 @@ CASES: list[tuple[str, tuple[str, ...], int]] = [
     ("pp-settled", (_j(_with(GOOD_PP, tasks={"a": {"state": "queued", "at": 1}})),), 1),
     ("policy-still-enabled", (_j({"detail": {"code": "policy_still_enabled"}}),), 0),
     ("policy-still-enabled", (_j({"detail": "nope"}),), 1),
+    ("reranker-cap", (_j({"system": {}}), "auto"), 1),  # row absent
+    ("reranker-cap", (_RERANK_AUTO, "auto"), 0),
+    ("reranker-cap", (_RERANK_AUTO, ""), 0),  # unset env is the default, auto
+    ("reranker-cap", (_RERANK_AUTO, "6"), 1),  # the process disagrees with the container env
+    ("reranker-cap", (_rerank(6, "configured", "6"), "6"), 0),
+    ("reranker-cap", (_rerank(4, "configured", "6"), "6"), 1),  # setting 6 applied as 4
+    ("reranker-cap", (_rerank(0, "auto", "auto"), "auto"), 1),  # a zero cap is no cap
+    ("reranker-cap", (_rerank(64, "auto", "auto"), "auto"), 1),  # above the auto ceiling
+    ("reranker-cap", (_rerank(None, "torch_env", "auto"), "auto"), 0),
+    ("reranker-cap", (_rerank(8, "torch_env", "auto"), "auto"), 1),
+    ("os-labels", (_j({"labels": ["N"], "indexed": True}), "N", "present"), 0),
+    ("os-labels", (_j({"labels": ["x"], "indexed": True}), "N", "present"), 1),
+    ("os-labels", (_j({"labels": ["x"], "indexed": True}), "N", "absent"), 0),
+    ("os-labels", (_j({"labels": ["N"], "indexed": True}), "N", "absent"), 1),
     (
-        "stats-reranker",
+        "os-labels",
+        (_j({"labels": [], "indexed": False}), "N", "absent"),
+        1,
+    ),  # no chunks proves nothing
+    ("os-labels", (_j({"error": "boom"}), "N", "absent"), 1),
+    ("drift-scan", (_drift(["N"], ["x"], 1), "N", "drift"), 0),
+    ("drift-scan", (_drift(["N"], ["N"], 0), "N", "drift"), 1),  # a blind scan
+    ("drift-scan", (_drift(["N"], ["N"], 0), "N", "clean"), 0),
+    ("drift-scan", (_drift(["N"], ["x"], 1), "N", "clean"), 1),
+    ("os-seed", (_j({"seeded": ["v4:created"], "decoy": "d"}),), 0),
+    ("os-seed", (_j({"seeded": [], "decoy": ""}),), 1),
+    ("os-docs", (_j({"counts": {"s": 1, "d": 1}}), "s", "d", "before"), 0),
+    ("os-docs", (_j({"counts": {"s": 0, "d": 1}}), "s", "d", "before"), 1),
+    ("os-docs", (_j({"counts": {"s": 0, "d": 1}}), "s", "d", "after"), 0),
+    ("os-docs", (_j({"counts": {"s": 2, "d": 1}}), "s", "d", "after"), 1),  # survivor in one index
+    ("os-docs", (_j({"counts": {"s": 0, "d": 0}}), "s", "d", "after"), 1),  # over-broad delete
+    ("os-docs", (_j({"counts": {"s": None, "d": 1}}), "s", "d", "after"), 1),  # unmeasured != empty
+    ("purge-residual-complete", (_j(_with(GOOD_PURGE, residual=_ZERO_RESIDUAL)),), 0),
+    ("purge-residual-complete", (_j(_with(GOOD_PURGE, residual={"speaker_docs": 0})),), 1),
+    (
+        "purge-residual-complete",
+        (_j(_with(GOOD_PURGE, residual={**_ZERO_RESIDUAL, "cluster_docs": 1})),),
+        1,
+    ),
+    ("upgrade-counts", (_PRE_COUNTS, "media_file=3\ntranscript_segment=9\nspeaker=4\ntask=7\n"), 0),
+    ("upgrade-counts", (_PRE_COUNTS, "media_file=2\ntranscript_segment=1\nspeaker=4\ntask=7\n"), 1),
+    ("upgrade-counts", ("media_file=0\ntranscript_segment=0\nspeaker=0\ntask=0\n", _PRE_COUNTS), 1),
+    ("upgrade-counts", ("", _PRE_COUNTS), 1),
+    ("backfill-consistent", (_j({"stamped": 3}), "identity_source_not_null=3\n"), 0),
+    ("backfill-consistent", (_j({"stamped": 3}), "identity_source_not_null=0\n"), 1),
+    ("backfill-consistent", ("", "identity_source_not_null=0\n"), 1),
+    ("v448-tasks", (_V448_OK,), 0),
+    ("v448-tasks", (_V448_OK.replace("failed|superseded by rehearsal-v448-B", "pending|"),), 1),
+    ("v448-tasks", ("rehearsal-v448-B|in_progress|\n",), 1),  # rows deleted
+    ("v448-tasks", ("(unseeded: why)\n",), 1),
+    (
+        "v448-guard",
         (
-            _j(
-                {
-                    "system": {
-                        "chat_reranker_threads": {"threads": 4, "source": "auto", "setting": "auto"}
-                    }
-                }
-            ),
+            'ERROR: duplicate key value violates unique constraint "uq_task_active_per_file_type"',
+            _IDX,
+            "0",
         ),
         0,
     ),
-    ("stats-reranker", (_j({"system": {}}),), 1),
+    ("v448-guard", ("INSERT 0 1", _IDX, "0"), 1),  # the duplicate was accepted
+    ("v448-guard", ("uq_task_active_per_file_type", "", "0"), 1),  # no index
+    ("v448-guard", ("uq_task_active_per_file_type", _IDX, "2"), 1),  # duplicates remain
+    ("gpu-probe", (_j(_GPU_OK),), 0),
+    ("gpu-probe", (_j({**_GPU_OK, "cuda_available": False}),), 1),
+    ("gpu-probe", (_j({**_GPU_OK, "app_loader_pulled_torchcodec": True}),), 1),
+    # torchcodec is optional (the app never imports it); torchaudio is not.
+    ("gpu-probe", (_j({**_GPU_OK, "torchcodec_import": "OSError: libnppicc.so.12"}),), 0),
+    ("gpu-probe", (_j({**_GPU_OK, "torchaudio_import": "ImportError: x"}),), 1),
+    ("gpu-probe", (_j({"error": "x"}),), 1),
+    ("pipeline-evidence", ("completed|12|2|native",), 0),
+    ("pipeline-evidence", ("completed|0|2|native",), 1),
+    ("pipeline-evidence", ("completed|12|0|native",), 1),
+    ("pipeline-evidence", ("completed|12|2|",), 1),
+    ("pipeline-evidence", ("",), 1),
+    ("worker-log-clean", ("ready\ntask done\n",), 0),
+    ("worker-log-clean", ("RuntimeError: Could not load libtorchcodec\n",), 1),
+    ("worker-log-clean", ("",), 1),
     ("aws-bucket", (_j({"success": False, "message": "AWS_TRANSCRIBE_BUCKET is not set"}),), 0),
     ("aws-bucket", (_j({"success": False, "message": "connection refused"}),), 1),
     ("aws-bucket", (_j({"success": True, "message": "ok"}),), 1),
@@ -459,17 +565,10 @@ def test_cli_maps_verdicts_to_exit_codes_and_survives_malformed_input() -> None:
             check=False,
         )
 
-    assert (
-        run(
-            "stats-reranker",
-            stdin=_j(
-                {"system": {"chat_reranker_threads": {"threads": 1, "source": "s", "setting": "x"}}}
-            ),
-        ).returncode
-        == 0
-    )
-    assert run("stats-reranker", stdin="{}").returncode == 1
-    assert run("stats-reranker", stdin="not json").returncode == 1  # not a traceback, not a skip
+    assert run("reranker-cap", "auto", stdin=_RERANK_AUTO).returncode == 0
+    assert run("reranker-cap", "6", stdin=_RERANK_AUTO).returncode == 1
+    assert run("reranker-cap", stdin="{}").returncode == 1
+    assert run("reranker-cap", stdin="not json").returncode == 1  # not a traceback, not a skip
     assert (
         run("audit-search", stdin=_j({"error": "requires AUDIT_LOG_TO_OPENSEARCH=true"})).returncode
         == 2
@@ -567,3 +666,15 @@ def test_a_resumed_scenario_never_truncates_the_report_unguarded(script: Path) -
             "report, so a resumed run loses the earlier FAILs"
         )
     assert "TEST_ASSERT_LEDGER" in script.read_text(encoding="utf-8")
+
+
+def test_every_probe_command_the_shell_sends_exists_in_the_probe_script() -> None:
+    # An unknown command would come back as {"error": ...} and FAIL at run time, hours into a
+    # rehearsal; this finds the typo in the fast suite.
+    sent = set(re.findall(r'fc_probe\s+"\$\w+"\s+([a-z][a-z-]+)', LIB_TEXT))
+    probe = (RT / "lib" / "os-probe.py").read_text(encoding="utf-8")
+    known = set(re.findall(r'^\s+"([a-z][a-z-]+)": lambda', probe, re.MULTILINE)) | set(
+        re.findall(r"^\s+'([a-z][a-z-]+)': lambda", probe, re.MULTILINE)
+    )
+    assert {"labels", "drift", "seed-docs", "count-docs", "delete-doc", "gpu"} <= sent
+    assert sent <= known, f"fc_probe sends command(s) os-probe.py does not know: {sent - known}"

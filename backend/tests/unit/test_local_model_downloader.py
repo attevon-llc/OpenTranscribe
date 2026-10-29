@@ -170,6 +170,44 @@ def test_a_second_download_resumes_from_the_incomplete_file(hub):
     assert cache.is_complete(TINY.repo_id) is True
 
 
+def _model_bin_ranges(hub, filename: str = "model.bin") -> list[str | None]:
+    return [
+        r["range"] for r in hub.requests if r["method"] == "GET" and r["path"].endswith(filename)
+    ]
+
+
+def test_resume_asks_the_hub_only_for_the_missing_bytes(hub):
+    """A resumed download sends ``Range: bytes=<size on disk>-``; it does not fetch the file again.
+
+    The test above shows the final bytes are right, which a full re-download would also
+    produce. Resume is only real if the hub is asked for the tail, so this reads the request.
+    """
+    plan = downloader.resolve_plan(TINY, None, endpoint=hub.url)
+    downloader.download_blocking(TINY, None, plan.revision, endpoint=hub.url)
+    repo = hub.repos[TINY.repo_id]
+    model_blob = repo.blob_name("model.bin")
+    blobs = cache.repo_dir(TINY.repo_id) / "blobs"
+    half = len(repo.files["model.bin"]) // 2
+    (blobs / f"{model_blob}.incomplete").write_bytes(repo.files["model.bin"][:half])
+    (blobs / model_blob).unlink()
+    hub.requests.clear()
+
+    downloader.download_blocking(TINY, None, plan.revision, endpoint=hub.url)
+
+    assert _model_bin_ranges(hub) == [f"bytes={half}-"]
+    assert (blobs / model_blob).read_bytes() == repo.files["model.bin"]
+
+
+def test_without_a_partial_file_the_whole_file_is_requested(hub):
+    """The control for the test above: no ``.incomplete`` means no ``Range`` header at all."""
+    plan = downloader.resolve_plan(TINY, None, endpoint=hub.url)
+    hub.requests.clear()
+
+    downloader.download_blocking(TINY, None, plan.revision, endpoint=hub.url)
+
+    assert _model_bin_ranges(hub) == [None]
+
+
 @pytest.mark.parametrize(
     ("mode", "code"),
     [("401", "hf_auth_failed"), ("404", "hf_repo_not_found"), ("500", "hf_unreachable")],

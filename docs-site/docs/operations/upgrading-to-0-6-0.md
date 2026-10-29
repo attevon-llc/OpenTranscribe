@@ -241,7 +241,7 @@ Several more behaviors change, because they now honor the policy and the user's 
 
 **Check this afterwards:**
 
-1. As a super admin, open **Settings > Privacy & Redaction > Policy** and confirm the card
+1. As a super admin, open **Settings > Privacy & Redaction > Redaction Policy** and confirm the card
    "Speaker recognition and inferred attributes" shows both switches on, or the choice you intend.
    Turning one off hides data but deletes nothing.
 2. If you run organizations, an organization administrator can review **Privacy policy** in the
@@ -387,12 +387,19 @@ decide. An install without organizations has nothing to stamp and can skip both.
   repair existing files with `POST /api/admin/media-duration-backfill` (dry run by default).
 - **Formats browsers cannot play** (AIFF, WMA, AVI and similar) get a playable copy from now
   on. Files uploaded before 0.6.0 get one when they are reprocessed.
-- **Password policy:** nothing changes on upgrade. An install whose `.env` has no
-  `PASSWORD_POLICY_PROFILE` line keeps the `hardened` rules; see
+- **Password policy:** nothing changes on upgrade. There are now four levels (`basic`, `standard`,
+  `hardened`, `custom`; `nist` and `stig` remain aliases of `standard` and `hardened`). An install
+  whose `.env` has no `PASSWORD_POLICY_PROFILE` line keeps the `hardened` rules (12 characters,
+  complexity, 60-day rotation); only new installs from `.env.example` get `standard`. See
   [Password policy levels](../configuration/password-policy.md) to choose another level.
 - **Telemetry:** third-party telemetry and update checks that used to be on by default
   (pyannote metrics, Hugging Face, Deno, MinIO) are now off. The Privacy block in `.env.example`
   shows how to opt back in.
+- **Worker metrics are per worker.** Counters that a Celery task increments (for example
+  `search_indexing_failures_total`, `task_rows_superseded_total` and `celery_task_total`) are
+  served by the worker, not by the backend's `/metrics`. Set `WORKER_METRICS_PORT` (unset means
+  off) and add a Prometheus job per worker service; the bundled Prometheus does not scrape them.
+  See [Monitoring](./monitoring.md#per-task-worker-metrics).
 - **New optional `.env` settings** for task recovery, GPU memory admission, search indexing
   retries and worker metrics all have defaults. Compare your `.env` with the new `.env.example`
   after upgrading if you want to tune them.
@@ -403,7 +410,11 @@ decide. An install without organizations has nothing to stamp and can skip both.
    ```bash
    ./opentranscribe.sh logs backend | grep -i -E "alembic|migration|error"
    ```
-2. Confirm the version: `curl -s http://localhost:5174/api/version`.
+2. Confirm the version: `curl -s http://localhost:5174/api/version`. `GET /health` only says
+   the API process is serving (`{"status": "healthy", "version": ...}`); it does not check the
+   database. `GET /health/ready` probes PostgreSQL and Redis (a failure returns 503), reports
+   OpenSearch and MinIO without failing, and compares the database schema revision with the
+   image's head, so it is the check that shows migrations finished.
 3. Open **Settings > Processing pipeline** and check that it shows no blocking problem for
    your account.
 4. Upload a short file and check that it transcribes, gets speakers and becomes searchable.

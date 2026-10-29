@@ -14,7 +14,6 @@ import logging
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.core import constants as C  # noqa: N812
 from app.models.chat import ChatConversation
 from app.models.chat import ChatProject
@@ -22,6 +21,7 @@ from app.schemas.chat import ChatScope
 from app.schemas.chat import ConversationDetail
 from app.schemas.chat import ConversationSettings
 from app.schemas.chat import ConversationSummary
+from app.services.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
 

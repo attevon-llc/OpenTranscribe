@@ -6,13 +6,14 @@ from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_user
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
+from app.services.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +130,7 @@ def cancel_upload(
             raise RuntimeError(result.get("error") or "purge_media_file failed")
         logger.info(f"Cancelled upload for file ID {file_id}")
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).

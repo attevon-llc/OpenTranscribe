@@ -203,7 +203,7 @@ def _start(file_uuid: str, task_id: str, engine: str) -> dict:
         PipelinePlanRefusedError: ``engine == "local"`` on a lite deployment, which has no
             local speaker detection (defence in depth behind the plan and the API).
     """
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     if engine == "local" and str(settings.DEPLOYMENT_MODE).lower() == "lite":
         from app.core.exceptions import PipelinePlanRefusedError
@@ -509,7 +509,7 @@ def _record_failure(file_uuid: str, task_id: str, error: Exception) -> str:
     """Fail the file with the classified fixed sentence (raw text to the log only, #959)."""
     from app.services.error_categorization_service import ErrorCategorizationService
     from app.services.search.reindex_dispatch import dispatch_transcript_reindex
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     failure = ErrorCategorizationService.classify_failure(str(error))
     error_msg = failure.user_message

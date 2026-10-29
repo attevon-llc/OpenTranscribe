@@ -21,12 +21,12 @@ from sqlalchemy.exc import IntegrityError
 
 from app.auth.account_linking import assert_email_link_permitted
 from app.auth.account_linking import assert_provider_id_link_permitted
-from app.auth.constants import AUTH_TYPE_LDAP
-from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import role_implies_superuser
+from app.core.auth_types import AUTH_TYPE_LDAP
+from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.core.config import resolve_ldap_search_filter
 from app.core.config import settings as env_settings
 
@@ -789,7 +789,7 @@ def sync_ldap_user_to_db(db, ldap_data: LdapUserData):
     operator remedy.
 
     Raises:
-        HTTPException: 401, when an email-matched link is refused. Deliberately the
+        AuthenticationError: 401, when an email-matched link is refused. Deliberately the
             same response ``_authenticate_ldap_user`` gives for a bad password, so a
             refusal is not an oracle for "this address exists".
     """

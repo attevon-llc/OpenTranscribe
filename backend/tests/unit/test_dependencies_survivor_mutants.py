@@ -169,12 +169,12 @@ from app.api.endpoints.auth.dependencies import get_current_active_user
 from app.api.endpoints.auth.dependencies import get_current_admin_user
 from app.api.endpoints.auth.dependencies import get_current_user
 from app.api.endpoints.auth.dependencies import get_optional_current_user
-from app.auth.constants import TOKEN_TYPE_ACCESS
 from app.auth.direct_auth import create_access_token
 from app.auth.provider_registry import ExternalIdentity
 from app.auth.provider_registry import has_verifiers
 from app.auth.provider_registry import register_verifier
 from app.auth.provider_registry import unregister_verifier
+from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.config import settings
 
 USER_UUID = "019ec90a-1b2c-7def-8000-0000000000ee"
@@ -601,8 +601,8 @@ class TestEnforcePasswordChangeResponseBody:
 
 class TestEnforceProxyIdentityMismatchResponseBody:
     def test_the_response_body_is_exactly_this_shape(self, db_session, monkeypatch):
-        from app.auth.constants import AUTH_TYPE_PROXY
         from app.core.auth_settings import publish_process_auth_setting
+        from app.core.auth_types import AUTH_TYPE_PROXY
 
         publish_process_auth_setting("proxy_enabled", True)
         publish_process_auth_setting("proxy_email_header", "X-Remote-User")

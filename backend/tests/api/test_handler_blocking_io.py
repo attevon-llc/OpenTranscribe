@@ -66,7 +66,7 @@ import app.api.websockets as websockets
 import app.main as app_main
 import app.services.search.neural_bootstrap as neural_bootstrap
 import app.utils.file_hash as file_hash
-import app.utils.thumbnail as thumbnail
+from app.services import thumbnail
 
 # Modules whose route handlers must never be awaitless coroutines.
 HARDENED_MODULES = [

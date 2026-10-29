@@ -29,7 +29,6 @@ from cryptography.x509 import ocsp
 from cryptography.x509.oid import AuthorityInformationAccessOID
 from cryptography.x509.oid import ExtensionOID
 
-from app.auth.constants import AUTH_TYPE_PKI
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.header_trust import header_assertion_permitted
 from app.auth.header_trust import header_source_is_trusted
@@ -43,6 +42,7 @@ from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import role_implies_superuser
 from app.core.auth_settings import get_process_auth_settings
+from app.core.auth_types import AUTH_TYPE_PKI
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -1756,13 +1756,13 @@ def sync_pki_user_to_db(db, pki_data: PKIUserData):
 
     Raises:
         ValueError: If user cannot be created or found after race condition
-        HTTPException: 401, when an email-matched link is refused. Deliberately the
+        AuthenticationError: 401, when an email-matched link is refused. Deliberately the
             same response the PKI login endpoint returns for an invalid certificate,
             so a refusal is not an oracle for "this address exists".
     """
     from app.auth.account_linking import assert_email_link_permitted
     from app.auth.account_linking import assert_provider_id_link_permitted
-    from app.auth.constants import AUTH_TYPE_LOCAL
+    from app.core.auth_types import AUTH_TYPE_LOCAL
     from app.models.user import User
 
     subject_dn = pki_data["subject_dn"]

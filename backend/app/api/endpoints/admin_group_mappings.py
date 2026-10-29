@@ -53,7 +53,7 @@ from app.services.idp_group_mapping_service import RoleNotGrantableError
 from app.services.idp_group_mapping_service import assert_grantable_role
 from app.services.idp_group_mapping_service import normalize_claim_value
 from app.services.idp_group_mapping_service import resolve_grants
-from app.utils.uuid_helpers import get_by_uuid
+from app.services.uuid_helpers import get_by_uuid
 
 logger = logging.getLogger(__name__)
 

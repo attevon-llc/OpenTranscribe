@@ -51,7 +51,8 @@ from collections.abc import Iterable
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
-from app.auth.constants import AUTH_TYPE_OIDC
+from app.core.auth_types import AUTH_TYPE_OIDC
+from app.core.exceptions import AuthenticationError
 
 logger = logging.getLogger(__name__)
 
@@ -149,15 +150,12 @@ def assert_oidc_admission_permitted(
         oidc_data: Verified claims (``OIDCUserData``); ``roles`` is the configured
             claim's contents and ``oidc_subject`` identifies the caller.
         cfg: Resolved :class:`~app.auth.oidc.config.OIDCConfig`.
-        failure_detail: The ``HTTPException`` detail to raise. Must be identical to
+        failure_detail: The ``AuthenticationError`` detail to raise. Must be identical to
             what this path returns for an ordinary credential failure.
 
     Raises:
-        HTTPException: 401, when the identity is not admitted.
+        AuthenticationError: 401, when the identity is not admitted.
     """
-    from fastapi import HTTPException
-    from fastapi import status
-
     allowed_groups = getattr(cfg, "allowed_groups", "")
     blocked_groups = getattr(cfg, "blocked_groups", "")
     subject = str(oidc_data.get("oidc_subject") or "unknown")
@@ -196,7 +194,7 @@ def assert_oidc_admission_permitted(
                 "groupless_provider": bool(oidc_data.get("groupless_provider")),
             },
         )
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=failure_detail)
+        raise AuthenticationError(failure_detail)
 
     reason = check_group_admission(
         oidc_data.get("roles") or [],
@@ -224,4 +222,4 @@ def assert_oidc_admission_permitted(
             "claim_values": list(oidc_data.get("roles") or []),
         },
     )
-    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=failure_detail)
+    raise AuthenticationError(failure_detail)

@@ -54,7 +54,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.core import tenant_limits
 from app.core.config import settings
@@ -62,6 +61,7 @@ from app.core.threadpool import configure_api_threadpool
 from app.db.base import get_db
 from app.main import app
 from app.models.user import User
+from app.services.request_context import RequestContext
 from tests.conftest import TestingSessionLocal
 from tests.user_owned_rows import make_user
 

@@ -43,7 +43,7 @@ def _load_update_plan(
     ``_update_opensearch_profile_info`` made.
     """
     from app.api.endpoints.speakers import _load_speaker_profile_sync_payload
-    from app.utils.uuid_helpers import get_speaker_by_uuid
+    from app.services.uuid_helpers import get_speaker_by_uuid
 
     with session_scope() as db:
         speaker = get_speaker_by_uuid(db, speaker_uuid)
@@ -66,7 +66,7 @@ def _load_completion_notification(speaker_uuid: str) -> dict:
     Runs after the labeling workflow, which can assign a profile, so the profile
     UUID has to be re-read rather than reused from the plan.
     """
-    from app.utils.uuid_helpers import get_speaker_by_uuid
+    from app.services.uuid_helpers import get_speaker_by_uuid
 
     with session_scope() as db:
         speaker = get_speaker_by_uuid(db, speaker_uuid)

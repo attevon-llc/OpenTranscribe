@@ -20,7 +20,6 @@ from fastapi import Request
 from fastapi import status
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import require_org_admin
 from app.api.endpoints.auth.dependencies import _get_client_info
 from app.api.endpoints.org_admin import org_id_of
@@ -36,6 +35,7 @@ from app.schemas.privacy import PurgeAccepted
 from app.schemas.privacy import PurgeRequest
 from app.services.privacy import policy_admin
 from app.services.privacy.purge import PurgeScope
+from app.services.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
 

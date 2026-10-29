@@ -23,10 +23,10 @@ from fastapi import Response
 from fastapi import status
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.core.constants import DEFAULT_AUTO_LABEL_CONFIDENCE_THRESHOLD
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.topic import TopicSuggestion
 from app.models.user import User
@@ -36,9 +36,10 @@ from app.schemas.topic import RetroactiveAutoLabelRequest
 from app.schemas.topic import SuggestedCollection
 from app.schemas.topic import SuggestedTag
 from app.schemas.topic import TopicSuggestionResponse
+from app.services.request_context import RequestContext
 from app.services.topic_extraction_service import TopicExtractionService
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
 from app.tasks.topic_extraction import extract_topics_task
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +90,7 @@ def batch_extract_topics(
                 verified_uuids.append(file_uuid)
             else:
                 logger.warning(f"Skipping file {file_uuid} - no transcript available")
-        except HTTPException as e:
+        except (HTTPException, DomainError) as e:
             logger.warning(f"Skipping file {file_uuid} - {e.detail}")
 
     if not verified_uuids:

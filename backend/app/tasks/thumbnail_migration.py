@@ -23,7 +23,7 @@ from app.models.media import MediaFile
 from app.services.minio_service import delete_file
 from app.services.minio_service import get_file_url
 from app.services.minio_service import upload_file
-from app.utils.thumbnail import generate_thumbnail_from_url
+from app.services.thumbnail import generate_thumbnail_from_url
 
 logger = logging.getLogger(__name__)
 

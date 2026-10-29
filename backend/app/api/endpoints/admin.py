@@ -21,7 +21,6 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_admin_user
@@ -30,7 +29,6 @@ from app.auth.account_linking import emails_agree
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
-from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.lockout import current_store_kind as lockout_current_store_kind
 from app.auth.lockout import list_locked_accounts as lockout_list_locked_accounts
 from app.auth.lockout import normalize_identifier as lockout_normalize_identifier
@@ -46,8 +44,10 @@ from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import VALID_ROLES
 from app.auth.roles import role_implies_superuser
+from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.core.config import settings
 from app.core.constants import CeleryQueues
+from app.core.exceptions import DomainError
 from app.core.security import get_password_hash
 from app.core.version import APP_VERSION
 from app.db.base import get_db
@@ -111,6 +111,7 @@ from app.services.account_security_service import enforce_password_policy
 from app.services.account_security_service import notify_email_changed
 from app.services.account_security_service import revoke_all_sessions
 from app.services.platform_bypass import audit_metadata_access
+from app.services.request_context import RequestContext
 from app.utils.stats_helpers import format_bytes
 
 # No basicConfig here — this module is imported via the API router before
@@ -887,7 +888,7 @@ async def get_admin_stats(
         }
 
         return stats
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -918,7 +919,7 @@ def get_admin_users(
             db.query(User).order_by(func.lower(User.full_name)).offset(offset).limit(limit).all()
         )
         return users
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -961,7 +962,7 @@ def create_admin_user(
 
         # Call the user creation function from the users endpoint
         return create_user_func(user_data=user_data, db=db)
-    except HTTPException as he:
+    except (HTTPException, DomainError) as he:
         logger.error(f"HTTP error creating user: {he.detail}")
         raise he
     except Exception as e:
@@ -1008,7 +1009,7 @@ def delete_admin_user(
     """
     from app.services.file_cleanup_service import load_account_purge_plans
     from app.services.file_cleanup_service import purge_account_external_copies
-    from app.utils.uuid_helpers import get_user_by_uuid
+    from app.services.uuid_helpers import get_user_by_uuid
 
     logger.info(f"Admin deleting user with UUID: {user_uuid}")
 
@@ -1076,7 +1077,7 @@ def delete_admin_user(
             "storage_objects_failed": len(residual_errors),
         }
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception(f"User deletion failed, all changes rolled back: {e}")
@@ -2858,7 +2859,7 @@ def get_gpu_profiles(
                 raw = data if isinstance(data, str) else data.decode()
                 profiles.append(json.loads(raw))
         return profiles
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -3147,7 +3148,7 @@ def quarantine_media_file(
     from app.services.takedown_notice_service import find_notice
     from app.services.takedown_service import TakedownActor
     from app.services.takedown_service import quarantine_file
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     file = get_file_by_uuid(db, file_uuid)
     source_ip, user_agent = _request_meta(request)
@@ -3201,7 +3202,7 @@ def release_media_file(
     """
     from app.services.takedown_service import TakedownActor
     from app.services.takedown_service import release_file
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     file = get_file_by_uuid(db, file_uuid)
     if not file.is_quarantined and not file.legal_hold:

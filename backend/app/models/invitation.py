@@ -24,7 +24,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 
-from app.auth.constants import auth_type_check_sql
+from app.core.auth_types import auth_type_check_sql
 from app.db.base import Base
 from app.utils.uuid7 import uuid7
 
@@ -44,7 +44,7 @@ class UserInvitation(Base):
 
     # Both CHECKs mirror the ones on ``user`` (v377/v383) and are enforced by the
     # database today. The auth-type body is rendered from
-    # ``app.auth.constants.DB_ADMITTED_AUTH_TYPES`` (the single source, issue #866) and
+    # ``app.core.auth_types.DB_ADMITTED_AUTH_TYPES`` (the single source, issue #866) and
     # must not be rebuilt from ``VALID_AUTH_TYPES``: the DB CHECK is required to be a
     # superset of that list. See ``app/models/user.py`` for the full argument.
     __table_args__ = (

@@ -33,12 +33,12 @@ from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.auth.bulk_revocation import PendingBulkRevocation
-from app.auth.constants import TOKEN_TYPE_ACCESS
-from app.auth.constants import TOKEN_TYPE_REFRESH
 from app.auth.revocation_fallback import is_revoked_from_database
 from app.auth.revocation_fallback import record_degradation
 from app.auth.session import InMemoryStore
 from app.auth.session import get_redis_client
+from app.core.auth_types import TOKEN_TYPE_ACCESS
+from app.core.auth_types import TOKEN_TYPE_REFRESH
 from app.core.config import settings
 from app.core.constants import SESSION_CAP_EVICTION_BATCH_LIMIT
 from app.core.security import accepted_algorithms

@@ -205,7 +205,7 @@ def test_preprocess_stands_down_for_a_superseded_run(
         db_session, normal_user, media_file, status="failed", created_ago=timedelta(hours=2)
     )
 
-    with patch("app.utils.uuid_helpers.get_file_by_uuid", side_effect=_PipelineReachedError):
+    with patch("app.services.uuid_helpers.get_file_by_uuid", side_effect=_PipelineReachedError):
         result = preprocess_module.preprocess_for_transcription.run(
             file_uuid=str(media_file.uuid), task_id=failed.id, pipeline_plan=plan_context()
         )

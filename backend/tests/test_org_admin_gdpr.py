@@ -32,7 +32,6 @@ import pytest
 from fastapi import HTTPException
 from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import require_org_admin
 from app.auth.audit import AuditOutcome
 from app.models.media import Collection
@@ -43,6 +42,7 @@ from app.models.media import SpeakerProfile
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.models.user import User
+from app.services.request_context import RequestContext
 
 
 # --------------------------------------------------------------------------- #

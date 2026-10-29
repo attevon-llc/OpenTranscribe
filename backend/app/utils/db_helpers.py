@@ -1,5 +1,4 @@
 import logging
-from typing import TYPE_CHECKING
 from typing import Any
 
 from sqlalchemy import and_
@@ -15,9 +14,6 @@ from app.core.tenancy import _Unscoped
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import TranscriptSegment
-
-if TYPE_CHECKING:
-    from app.api.deps_context import RequestContext
 
 logger = logging.getLogger(__name__)
 
@@ -103,11 +99,6 @@ def get_user_files_query(
     return apply_tenant_scope(
         db.query(MediaFile), MediaFile, user_id=user_id, organization_id=organization_id
     )
-
-
-def get_user_files_query_for_context(db: Session, ctx: "RequestContext") -> Query:
-    """``get_user_files_query`` using a :class:`RequestContext` for tenant scope."""
-    return get_user_files_query(db, ctx.user.id, organization_id=ctx.org_id)
 
 
 def get_or_create[T](

@@ -7,6 +7,7 @@ from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ASRConfigurationError
+from app.core.exceptions import DomainError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import FileStatus
@@ -329,7 +330,7 @@ def dispatch_task_by_name(
         # Resolve file_id and user_id from DB if not provided
         if file_id is None or user_id is None:
             from app.db.session_utils import session_scope
-            from app.utils.uuid_helpers import get_file_by_uuid
+            from app.services.uuid_helpers import get_file_by_uuid
 
             with session_scope() as db:
                 media_file = get_file_by_uuid(db, file_uuid)
@@ -356,7 +357,7 @@ def dispatch_task_by_name(
     elif stage == "speaker_clustering":
         if user_id is None:
             from app.db.session_utils import session_scope
-            from app.utils.uuid_helpers import get_file_by_uuid
+            from app.services.uuid_helpers import get_file_by_uuid
 
             with session_scope() as db:
                 media_file = get_file_by_uuid(db, file_uuid)
@@ -605,10 +606,10 @@ def process_file_reprocess(
     Raises:
         HTTPException: If file not found or user doesn't have permission
     """
+    from app.services.uuid_helpers import get_file_by_uuid_with_permission
     from app.utils.task_utils import cancel_active_task
     from app.utils.task_utils import reset_file_for_retry
     from app.utils.task_utils import transcript_is_regenerable
-    from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
     try:
         is_admin = current_user.is_admin
@@ -756,7 +757,7 @@ def process_file_reprocess(
 
         return media_file
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise HTTP exceptions
         raise
     except ASRConfigurationError:

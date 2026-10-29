@@ -76,7 +76,7 @@ def _load_file_context(file_uuid: str) -> dict[str, Any]:
     Returns **plain data only**; no ORM instance escapes. An escaping instance
     would lazy-load during the provider call and silently reopen a transaction.
     """
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     with session_scope() as db:
         media_file = get_file_by_uuid(db, file_uuid)
@@ -124,7 +124,7 @@ def _resolve_masking(file_uuid: str):
             ``defer_for_redaction`` dispatches a Celery task and must not run
             inside a transaction.
     """
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     with session_scope() as db:
         media_file = get_file_by_uuid(db, file_uuid)
@@ -218,7 +218,7 @@ def _handle_task_error(e: Exception, file_uuid: str) -> dict[str, Any]:
 
     The caller is mid-provider-call and holds no session by design.
     """
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     error_msg = f"Error extracting topics: {str(e)}"
     logger.error(f"{error_msg} for file {file_uuid}")

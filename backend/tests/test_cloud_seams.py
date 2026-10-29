@@ -16,7 +16,6 @@ from fastapi import Request
 
 from app.auth.constants import CLOUD_SEAM_VERSION
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
-from app.auth.constants import VALID_AUTH_TYPES
 from app.auth.external_sync import sync_external_user_to_db
 from app.auth.provider_registry import ExternalIdentity
 from app.auth.provider_registry import get_registered_providers
@@ -24,6 +23,7 @@ from app.auth.provider_registry import has_verifiers
 from app.auth.provider_registry import register_verifier
 from app.auth.provider_registry import unregister_verifier
 from app.auth.provider_registry import verify_external_token
+from app.core.auth_types import VALID_AUTH_TYPES
 from app.core.exceptions import ExternalIdentityLinkRefusedError
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership

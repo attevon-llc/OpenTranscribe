@@ -9,7 +9,6 @@ from fastapi import status
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.core.tenancy import UNSCOPED
@@ -24,9 +23,10 @@ from app.schemas.media import CommentCreateStandalone
 from app.schemas.media import CommentUpdate
 from app.services.permission_service import PermissionService
 from app.services.platform_bypass import PlatformBypass
-from app.utils.uuid_helpers import get_comment_by_uuid
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
-from app.utils.uuid_helpers import require_resource_owner
+from app.services.request_context import RequestContext
+from app.services.uuid_helpers import get_comment_by_uuid
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
+from app.services.uuid_helpers import require_resource_owner
 
 router = APIRouter()
 

@@ -136,12 +136,12 @@ class GovWorld:
         self, user: User, org: Organization | None | bool = True, role: str | None = None
     ) -> Iterator[None]:
         """Run requests as ``user`` in the tenant ``org`` (``None`` = personal workspace)."""
-        from app.api.deps_context import RequestContext
         from app.api.deps_context import get_base_context
         from app.api.deps_context import get_current_context
         from app.api.endpoints.auth import get_current_active_user
         from app.api.endpoints.auth import get_current_user
         from app.main import app
+        from app.services.request_context import RequestContext
 
         org_id = self.org.id if org is True else (org.id if org else None)
         if role is None:

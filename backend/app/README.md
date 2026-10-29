@@ -208,12 +208,12 @@ Postprocess does not hold the GPU for enrichment: speaker embedding, indexing, s
 ### Usage Examples
 ```python
 # Error handling
-from app.utils.error_handlers import ErrorHandler
+from app.api.error_handlers import ErrorHandler
 
 raise ErrorHandler.not_found_error("Resource")
 
 # Authorization — a FastAPI dependency, never a decorator
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
 file_obj = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
 

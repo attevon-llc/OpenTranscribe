@@ -1058,7 +1058,7 @@ def test_no_unallowlisted_raise_path_exception_echo() -> None:
     assert not unallowlisted, (
         "These raise-path sites echo caught exception text into a response-bound "
         "construct with no allowlist entry. Rewrite with a fixed literal (see "
-        "app/utils/error_handlers.py::ErrorHandler), or add a reasoned "
+        "app/api/error_handlers.py::ErrorHandler), or add a reasoned "
         "_RAISE_ALLOWLIST entry if the message is genuinely our own authored "
         "text:\n  " + "\n  ".join(unallowlisted)
     )

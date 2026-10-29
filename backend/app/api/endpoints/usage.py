@@ -24,13 +24,13 @@ from fastapi import Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.db.base import get_db
 from app.models.usage_event import UsageEvent
 from app.services.chat.pricing import RATES_VERIFIED_ON
 from app.services.chat.pricing import estimate_cost_usd
 from app.services.chat.usage import EVENT_TYPE_CHAT_TOKENS
+from app.services.request_context import RequestContext
 from app.utils.db_helpers import org_stamp_is
 
 logger = logging.getLogger(__name__)

@@ -12,12 +12,13 @@ from fastapi import status
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.deps_context import scope_to_context
 from app.api.endpoints.auth import get_current_active_user
+from app.api.error_handlers import ErrorHandler
 from app.core.constants import MAX_AVATAR_SIZE
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.media import Speaker
@@ -31,16 +32,16 @@ from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
 from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import derived_profile_genders
+from app.services.request_context import RequestContext
 from app.services.speaker_matching_service import ConfidenceLevel
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.services.speaker_profile_rename import apply_profile_name_to_speakers
+from app.services.uuid_helpers import _resource_in_tenant_scope
+from app.services.uuid_helpers import require_profile_in_scope
+from app.services.uuid_helpers import require_resource_owner
+from app.services.uuid_helpers import require_speaker_access
 from app.tasks.speaker_update_task import process_speaker_update_background
 from app.utils.db_helpers import org_stamp_is
-from app.utils.error_handlers import ErrorHandler
-from app.utils.uuid_helpers import _resource_in_tenant_scope
-from app.utils.uuid_helpers import require_profile_in_scope
-from app.utils.uuid_helpers import require_resource_owner
-from app.utils.uuid_helpers import require_speaker_access
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,7 @@ def list_speaker_profiles(
 
         if collection_uuid:
             # Filter by collection - convert UUID to ID
-            from app.utils.uuid_helpers import get_by_uuid
+            from app.services.uuid_helpers import get_by_uuid
 
             collection = get_by_uuid(db, SpeakerCollection, collection_uuid)
             if not _resource_in_tenant_scope(collection, ctx.org_id):
@@ -208,7 +209,7 @@ def list_speaker_profiles(
 
         return result
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Intentional auth/validation errors (e.g. the foreign-collection 403 at
         # :65) must propagate unchanged — do not mask them as a generic 500.
         raise
@@ -270,7 +271,7 @@ def create_speaker_profile(
             "updated_at": profile.updated_at.isoformat(),
         }
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception(f"Error creating speaker profile: {e}")
@@ -394,7 +395,7 @@ def update_speaker_profile(
             "updated_at": profile.updated_at.isoformat(),
         }
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception(f"Error updating speaker profile: {e}")
@@ -543,7 +544,7 @@ def assign_speaker_to_profile(
             return {"status": "assigned", "profile_id": str(profile_uuid)}
         return response
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception(f"Error assigning speaker to profile: {e}")
@@ -754,7 +755,7 @@ def get_speaker_profile_suggestions(
         suggestions.sort(key=sort_key)
         return suggestions
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception(f"Error getting speaker suggestions: {e}")
@@ -792,7 +793,7 @@ def get_speaker_profile_occurrences(
 
         return occurrences
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception(f"Error getting speaker occurrences: {e}")
@@ -871,7 +872,7 @@ def delete_speaker_profile(
         raise_if_incomplete(reconcile_speaker_impact(db, impact))
         return None
 
-    except (HTTPException, SpeakerCleanupIncompleteError):
+    except (HTTPException, SpeakerCleanupIncompleteError, DomainError):
         raise
     except Exception as e:
         logger.exception(f"Error deleting speaker profile: {e}")
@@ -946,7 +947,7 @@ async def upload_profile_avatar(
         avatar_url = await run_in_threadpool(get_file_url, object_name, expires=3600)
         return {"uuid": str(profile.uuid), "avatar_url": avatar_url}
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception(f"Error uploading avatar: {e}")
@@ -980,7 +981,7 @@ def delete_profile_avatar(
 
         return None
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception(f"Error deleting avatar: {e}")
@@ -1089,7 +1090,7 @@ def list_speaker_collections(
 
         return result
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -1152,7 +1153,7 @@ def create_speaker_collection(
             "updated_at": collection.updated_at.isoformat(),
         }
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception(f"Error creating speaker collection: {e}")

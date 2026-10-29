@@ -74,9 +74,9 @@ def _load_speaker_embedding_inputs(file_uuid: str, task_id: str) -> dict:
     transaction inside the slow phase and reintroduce the leak this split exists
     to remove.
     """
+    from app.services.uuid_helpers import get_file_by_uuid
     from app.utils.task_utils import create_task_record
     from app.utils.task_utils import update_task_status
-    from app.utils.uuid_helpers import get_file_by_uuid
 
     with session_scope() as db:
         media_file = get_file_by_uuid(db, file_uuid)
@@ -615,7 +615,7 @@ def _load_reassignment_plan(
     Returns plain data only. A ``skip`` key carries the early-return result for
     the guard paths (missing rows, races, too-short segments).
     """
-    from app.utils.uuid_helpers import get_by_uuid
+    from app.services.uuid_helpers import get_by_uuid
 
     with session_scope() as db:
         segment = get_by_uuid(db, TranscriptSegment, segment_uuid)

@@ -15,12 +15,12 @@ from fastapi import Depends
 from fastapi import Query
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.media import TranscriptSegmentsPage
+from app.services.request_context import RequestContext
 from app.services.speaker_provenance_view import ProvenanceViewer
 from app.services.speaker_status_service import SpeakerStatusService
 

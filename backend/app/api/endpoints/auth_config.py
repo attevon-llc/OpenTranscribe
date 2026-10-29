@@ -25,6 +25,7 @@ from app.api.endpoints.auth.dependencies import _get_client_info
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.auth_config import AuthConfig
 from app.models.user import User
@@ -333,7 +334,7 @@ def update_config_category(
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -503,7 +504,7 @@ def migrate_from_env(
             "message": f"Successfully migrated {count} settings from environment to database",
         }
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -689,7 +690,7 @@ async def _test_oidc_connection(config: dict[str, Any]) -> AuthMethodTestRespons
                 purpose="OIDC discovery test-connection",
                 allow_private=True,
             )
-        except HTTPException:
+        except (HTTPException, DomainError):
             return AuthMethodTestResponse(
                 success=False,
                 message="That URL is not an allowed outbound target.",

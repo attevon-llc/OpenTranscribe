@@ -243,11 +243,11 @@ ALLOWLIST: dict[str, str] = {
         "Q: defines who may review quarantined content (the Q class itself); never consulted "
         "for tenant scope"
     ),
-    "utils/uuid_helpers.py::get_file_by_uuid_with_permission": (
+    "services/uuid_helpers.py::get_file_by_uuid_with_permission": (
         "Q: is_hidden_for(is_admin=bypass.user_is_admin) after bypass.allows had its say; "
         "quarantine visibility only"
     ),
-    "utils/uuid_helpers.py::require_speaker_access": (
+    "services/uuid_helpers.py::require_speaker_access": (
         "Q: is_hidden_for(is_admin=False) keeps a taken-down file's speaker 404; it never "
         "grants anything"
     ),

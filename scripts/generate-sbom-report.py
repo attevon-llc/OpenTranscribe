@@ -278,7 +278,7 @@ def main() -> None:
         '**One named exception worth flagging specifically**: `ffmpeg` (GPL, in the OS-package table below) is',
         'not incidental base-image cruft — the backend deliberately invokes it for audio/video processing.',
         'Confirmed via `backend/app/tasks/transcription/waveform_generator.py` and the `ffmpeg-python` wrapper',
-        '(`backend/app/utils/thumbnail.py`, `backend/app/tasks/transcription/audio_processor.py`): the app',
+        '(`backend/app/services/thumbnail.py`, `backend/app/tasks/transcription/audio_processor.py`): the app',
         'always calls the `ffmpeg` binary as a separate subprocess (fork/exec), never links `libavcodec`/`libavformat`',
         'into the Python process. Same "separate program invoked externally" category as the other OS utilities,',
         'but attorneys should confirm this specific one since it is functionally load-bearing, not incidental.',

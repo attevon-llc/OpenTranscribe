@@ -156,8 +156,8 @@ def test_the_application_constant_is_a_subset_of_the_check():
     ``test_v380_migration_consistency.py`` used to pin — see that file's note on why
     ownership moves to whichever revision most recently widened the constraint.
     """
-    from app.auth.constants import AUTH_TYPE_SAML
-    from app.auth.constants import VALID_AUTH_TYPES
+    from app.core.auth_types import AUTH_TYPE_SAML
+    from app.core.auth_types import VALID_AUTH_TYPES
 
     module = _revision_module()
     allowed = {part.strip().strip("'") for part in module.VALID_AUTH_TYPES_SQL.split(",")}
@@ -169,9 +169,9 @@ def test_the_application_constant_is_a_subset_of_the_check():
 def test_saml_has_no_local_password_fallback():
     """SAML groups with LDAP, not OIDC/PKI — an assertion has no local-credential
     concept for a per-user allow_local_fallback flag to opt into."""
-    from app.auth.constants import AUTH_TYPE_SAML
     from app.auth.constants import AUTH_TYPES_NO_LOCAL_FALLBACK
     from app.auth.constants import AUTH_TYPES_SUPPORT_LOCAL_FALLBACK
+    from app.core.auth_types import AUTH_TYPE_SAML
 
     assert AUTH_TYPE_SAML in AUTH_TYPES_NO_LOCAL_FALLBACK
     assert AUTH_TYPE_SAML not in AUTH_TYPES_SUPPORT_LOCAL_FALLBACK

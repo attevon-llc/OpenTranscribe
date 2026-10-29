@@ -24,7 +24,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.api.deps_context import RequestContext
 from app.api.endpoints import transcript_segments
 from app.api.endpoints.files import crud
 from app.api.endpoints.tags import sharing
@@ -35,6 +34,7 @@ from app.services import content_audit
 from app.services import content_hold_service
 from app.services.content_hold_service import record_edit_on_held_file
 from app.services.hold_guard import HoldState
+from app.services.request_context import RequestContext
 
 pytestmark = pytest.mark.unit
 

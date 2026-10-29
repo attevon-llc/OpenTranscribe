@@ -24,7 +24,6 @@ from fastapi import Request
 from fastapi import Response
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import require_org_admin
 from app.api.endpoints.org_admin import org_audit_query
 from app.api.endpoints.org_admin import org_id_of
@@ -43,6 +42,7 @@ from app.core.constants import ORG_AUDIT_EXPORT_RATE_LIMIT
 from app.db.base import get_db
 from app.middleware.audit import get_request_context
 from app.services.org_audit_view import with_display_fields
+from app.services.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
 

@@ -20,6 +20,7 @@ from app.auth.provider_registry import ExternalIdentity
 from app.auth.roles import ELEVATED_ROLES
 from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import role_implies_superuser
+from app.core.exceptions import AuthenticationError
 from app.core.exceptions import ExternalIdentityLinkRefusedError
 from app.models.user import User
 
@@ -98,8 +99,6 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
         # Uses the shared account_linking rule rather than the inline checks
         # below (which are this module's own pre-existing guard for the
         # EMAIL-match branch only).
-        from fastapi import HTTPException
-
         from app.auth.account_linking import assert_provider_id_link_permitted
 
         try:
@@ -110,9 +109,9 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
                 asserted_email=identity.email,
                 failure_detail="External identity could not be verified",
             )
-        except HTTPException as exc:
+        except AuthenticationError as exc:
             # This module's callers expect ExternalIdentityLinkRefusedError, not
-            # HTTPException -- translate so both refusal paths raise the same
+            # AuthenticationError -- translate so both refusal paths raise the same
             # exception type.
             raise ExternalIdentityLinkRefusedError(str(exc.detail)) from exc
 
@@ -164,7 +163,7 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
     # core function). Bound the label to the fixed core provider set so the
     # cardinality stays in {local,ldap,oidc,pki}; anything else maps to
     # "external".
-    from app.auth.constants import VALID_AUTH_TYPES
+    from app.core.auth_types import VALID_AUTH_TYPES
     from app.core.metrics import user_signups_total
 
     method = identity.provider if identity.provider in VALID_AUTH_TYPES else "external"

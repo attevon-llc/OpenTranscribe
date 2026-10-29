@@ -14,10 +14,11 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import load_only
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
+from app.api.error_handlers import ErrorHandler
+from app.core.exceptions import DomainError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.db.base import get_db
@@ -40,6 +41,7 @@ from app.services.privacy.redact_view import machine_identity_clauses
 from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.privacy.redact_view import visible_display_name_expr
 from app.services.privacy.redact_view import visible_profile_id_expr
+from app.services.request_context import RequestContext
 from app.services.speaker_cleanup import SpeakerCleanupIncompleteError
 from app.services.speaker_cleanup import capture_speaker_impact
 from app.services.speaker_cleanup import carry_blacklist
@@ -50,8 +52,9 @@ from app.services.speaker_cleanup import reconcile_speaker_impact
 from app.services.speaker_provenance_view import attach_speaker_provenance
 from app.services.speaker_provenance_view import provenance_for_dict
 from app.services.speaker_status_service import SpeakerStatusService
+from app.services.uuid_helpers import require_profile_in_scope
+from app.services.uuid_helpers import require_speaker_access
 from app.utils.db_helpers import org_stamp_is
-from app.utils.error_handlers import ErrorHandler
 from app.utils.speaker_identity_detail import ORIGIN_ACCEPTED_SUGGESTION
 from app.utils.speaker_identity_detail import ORIGIN_CONFIRMED
 from app.utils.speaker_identity_detail import ORIGIN_CREATED
@@ -65,8 +68,6 @@ from app.utils.speaker_identity_source import record_human_identity
 from app.utils.speaker_labels import PLACEHOLDER_SPEAKER_NAME_PATTERN
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 from app.utils.speaker_labels import is_assigned_speaker_name
-from app.utils.uuid_helpers import require_profile_in_scope
-from app.utils.uuid_helpers import require_speaker_access
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +97,7 @@ def create_speaker(
     """
     Create a new speaker for a specific media file
     """
-    from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+    from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
     # Get media file by UUID and verify permission (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
@@ -402,7 +403,7 @@ def _resolve_file_uuid_to_id(
     """Convert file UUID to internal ID if provided (tenant-gated lookup)."""
     if not file_uuid:
         return None
-    from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+    from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
     media_file = get_file_by_uuid_with_permission(
         db,
@@ -894,7 +895,7 @@ def list_speakers(
 
         return _create_no_cache_response(result)
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. Without this, the broad handler
         # below swallowed the 403 that `_resolve_file_uuid_to_id` raises for a caller with
         # no permission on the requested file and reported it as a 500 — so an
@@ -929,7 +930,7 @@ def cleanup_orphaned_embeddings(
             "deleted_count": deleted_count,
             "message": f"Cleaned up {deleted_count} orphaned speaker embeddings",
         }
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -1142,7 +1143,7 @@ def debug_cross_media_data(
 
         return debug_info
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -1281,7 +1282,7 @@ def debug_cross_media_by_name(
 
         return results
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -1345,7 +1346,7 @@ def get_speaker_cross_media_occurrences(
 
         return result
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception(f"Error getting cross-media occurrences: {e}")
@@ -1416,7 +1417,7 @@ def verify_speaker_identification(
 
         return result
 
-    except (HTTPException, SpeakerCleanupIncompleteError):
+    except (HTTPException, SpeakerCleanupIncompleteError, DomainError):
         raise
     except Exception as e:
         logger.exception(f"Error verifying speaker: {e}")

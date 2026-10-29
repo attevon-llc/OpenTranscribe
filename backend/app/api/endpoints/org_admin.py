@@ -38,7 +38,6 @@ from fastapi import Query
 from fastapi import status
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import require_org_admin
 from app.auth.audit import query_audit_logs
 from app.db.base import get_db
@@ -46,6 +45,7 @@ from app.models.organization import OrganizationMembership
 from app.models.user import User
 from app.services.org_audit_view import member_id_for_uuid
 from app.services.org_audit_view import with_display_fields
+from app.services.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
 

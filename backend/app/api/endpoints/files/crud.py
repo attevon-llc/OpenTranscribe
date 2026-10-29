@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import selectinload
 
+from app.api.error_handlers import ErrorHandler
 from app.core import constants as C  # noqa: N812
+from app.core.exceptions import DomainError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
@@ -42,12 +44,11 @@ from app.services.speaker_provenance_view import ProvenanceViewer
 from app.services.speaker_provenance_view import attach_speaker_provenance
 from app.services.speaker_status_service import SpeakerStatusService
 from app.services.tag_service import tag_ownership
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
 from app.utils.db_helpers import owned_in_tenant
-from app.utils.error_handlers import ErrorHandler
 from app.utils.speaker_labels import canonical_speaker_label
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 from app.utils.time_format import format_timestamp_simple as format_timestamp
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 logger = logging.getLogger(__name__)
 
@@ -922,7 +923,7 @@ def get_media_file_detail(
             db_file = get_media_file_by_uuid(
                 db, file_uuid, current_user.id, bypass=bypass, organization_id=organization_id
             )
-        except HTTPException as denied:
+        except (HTTPException, DomainError) as denied:
             if denied.status_code != status.HTTP_403_FORBIDDEN:
                 raise
             # A file the caller cannot see must answer like a missing one: 403 would
@@ -1052,7 +1053,7 @@ def get_media_file_detail(
 
         return response
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         # The real failure (often a SQL fragment or a DSN) is logged with a

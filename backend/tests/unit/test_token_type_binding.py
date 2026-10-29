@@ -28,10 +28,11 @@ from fastapi import HTTPException
 from app.api.endpoints.auth.dependencies import get_current_user
 from app.api.endpoints.auth.dependencies import get_optional_current_user
 from app.api.endpoints.auth.mfa_tokens import _create_mfa_token
-from app.auth.constants import TOKEN_TYPE_ACCESS
-from app.auth.constants import TOKEN_TYPE_MFA
-from app.auth.constants import TOKEN_TYPE_REFRESH
 from app.auth.direct_auth import create_access_token
+from app.core.auth_types import TOKEN_TYPE_ACCESS
+from app.core.auth_types import TOKEN_TYPE_MFA
+from app.core.auth_types import TOKEN_TYPE_REFRESH
+from app.core.exceptions import AuthenticationError
 from app.core.security import verify_token
 
 USER_UUID = "019ec90a-1b2c-7def-8000-0000000000ff"
@@ -155,12 +156,12 @@ class TestVerifyTokenRejectsForeignTypes:
     """``core.security.verify_token`` is the WebSocket handshake's verifier."""
 
     def test_mfa_token_rejected(self, mfa_token):
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             verify_token(mfa_token)
         assert exc.value.status_code == 401
 
     def test_refresh_token_rejected(self, refresh_token):
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             verify_token(refresh_token)
         assert exc.value.status_code == 401
 

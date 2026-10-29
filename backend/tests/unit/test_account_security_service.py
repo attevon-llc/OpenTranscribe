@@ -50,7 +50,6 @@ from http.cookies import SimpleCookie
 from unittest.mock import Mock
 
 import pytest
-from fastapi import HTTPException
 from fastapi import Response
 
 from app.auth.audit import AuditEventType
@@ -58,6 +57,7 @@ from app.auth.session import InMemoryStore
 from app.auth.token_service import USER_REVOCATION_EPOCH_PREFIX
 from app.auth.token_service import TokenService
 from app.core.config import settings
+from app.core.exceptions import InvalidInputError
 from app.core.security import verify_token
 from app.models.refresh_token import RefreshToken
 from app.services import account_security_service
@@ -302,9 +302,10 @@ def test_assert_password_auth_possible_allows_local_denies_ldap(normal_user):
     account_security_service.assert_password_auth_possible(normal_user)
 
     normal_user.auth_type = "ldap"
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(InvalidInputError) as exc:
         account_security_service.assert_password_auth_possible(normal_user)
     assert exc.value.status_code == 400
+    assert isinstance(exc.value.detail, str)
     assert "cannot set a password" in exc.value.detail.lower()
 
 
@@ -312,6 +313,6 @@ def test_assert_local_fallback_settable_allows_oidc_denies_local():
     # Returns None; oidc supports the fallback flag (no raise).
     account_security_service.assert_local_fallback_settable("oidc")
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(InvalidInputError) as exc:
         account_security_service.assert_local_fallback_settable("local")
     assert exc.value.status_code == 400

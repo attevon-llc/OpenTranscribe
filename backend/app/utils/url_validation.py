@@ -11,7 +11,7 @@ network, including cloud instance-metadata endpoints.
 Three layers are offered:
 
 * :func:`is_safe_url` — boolean check, resolves DNS and rejects non-public targets.
-* :func:`assert_safe_outbound_url` — the same check raising a **generic** ``HTTPException``,
+* :func:`assert_safe_outbound_url` — the same check raising a **generic** ``InvalidInputError``,
   for endpoints. SSRF via these endpoints is semi-blind (the connection error is echoed
   back to the caller), so the rejection reason is logged but never returned.
 * :func:`resolve_pinned_target` — the check **plus** everything the caller needs to connect
@@ -75,6 +75,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 from urllib.parse import urlunparse
+
+from app.core.exceptions import InvalidInputError
 
 if TYPE_CHECKING:  # pragma: no cover - import cost is paid only by type checkers
     import aiohttp
@@ -490,17 +492,11 @@ def assert_safe_outbound_url(url: str, *, purpose: str, allow_private: bool = Fa
         allow_private: Permit private/loopback targets.
 
     Raises:
-        fastapi.HTTPException: 400 if the URL must not be fetched.
+        InvalidInputError: 400 if the URL must not be fetched.
     """
-    from fastapi import HTTPException
-
     safe, reason = is_safe_url(url, allow_private=allow_private)
     if not safe:
         logger.warning("Blocked %s to %r: %s", purpose, url, reason)
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "The provided URL could not be used. It must be a publicly reachable "
-                "http(s) address."
-            ),
+        raise InvalidInputError(
+            "The provided URL could not be used. It must be a publicly reachable http(s) address."
         )

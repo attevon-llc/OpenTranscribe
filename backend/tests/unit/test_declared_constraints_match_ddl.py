@@ -39,7 +39,7 @@ from sqlalchemy import Index
 from sqlalchemy import UniqueConstraint
 from sqlalchemy import text
 
-from app.auth.constants import VALID_AUTH_TYPES
+from app.core.auth_types import VALID_AUTH_TYPES
 from app.db.base import Base
 from tests.unit import _orm_ddl_divergence as derive
 
@@ -378,7 +378,7 @@ def test_a_declared_check_admits_exactly_what_the_database_admits(decl: CheckDec
 
 
 def test_the_auth_type_check_is_a_superset_of_the_code_and_not_derived_from_it(db_session):
-    """``auth/constants.py`` requires containment, not equality — in that direction only.
+    """``core/auth_types.py`` requires containment, not equality — in that direction only.
 
     A value must be able to exist in the DDL before any code supports it, which is how a
     widening migration ships ahead of its provider. So the CHECK body on ``user`` and

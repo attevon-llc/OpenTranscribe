@@ -127,7 +127,7 @@ def revoke_scim_token(
             token. The malformed case used to reach a Postgres UUID comparison and
             die as an unhandled ``DataError`` — a 500 whose aborted transaction also
             poisoned the rest of the request's session. The message matches
-            ``utils/uuid_helpers.get_by_uuid`` so every admin UUID path answers the
+            ``services/uuid_helpers.get_by_uuid`` so every admin UUID path answers the
             same way.
     """
     try:

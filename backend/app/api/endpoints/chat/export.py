@@ -29,7 +29,6 @@ from fastapi import Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.chat.common import get_owned_conversation
 from app.api.endpoints.chat.export_redaction import mask_citations
@@ -41,6 +40,7 @@ from app.models.chat import STATUS_SUPERSEDED
 from app.models.chat import ChatMessage
 from app.services.content_audit import AuditedResource
 from app.services.content_audit import record_content_event
+from app.services.request_context import RequestContext
 from app.utils.content_disposition import attachment_header
 
 logger = logging.getLogger(__name__)

@@ -52,7 +52,7 @@ from app.api.endpoints.auth import dependencies as deps_module
 from app.api.endpoints.auth.dependencies import ERROR_CODE_ACCOUNT_EXPIRED
 from app.api.endpoints.auth.dependencies import get_current_active_user
 from app.api.endpoints.auth.dependencies import get_current_user
-from app.auth.constants import TOKEN_TYPE_ACCESS
+from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.config import settings
 from tests.jwt_compat import jwt
 

@@ -16,12 +16,12 @@ import inspect
 
 import pytest
 
-from app.auth.constants import AUTH_TYPE_LDAP
-from app.auth.constants import AUTH_TYPE_LOCAL
-from app.auth.constants import AUTH_TYPE_OIDC
-from app.auth.constants import AUTH_TYPE_PKI
 from app.auth.utils import local_fallback_permitted_for
 from app.auth.utils import local_password_allowed
+from app.core.auth_types import AUTH_TYPE_LDAP
+from app.core.auth_types import AUTH_TYPE_LOCAL
+from app.core.auth_types import AUTH_TYPE_OIDC
+from app.core.auth_types import AUTH_TYPE_PKI
 
 
 class TestLocalPasswordAllowed:

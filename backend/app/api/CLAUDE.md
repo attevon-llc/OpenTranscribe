@@ -51,7 +51,7 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
 ## Conventions / patterns
 
 - **Path params are UUIDs, never DB integers** (`/{file_uuid}`, `/{speaker_uuid}`). Resolve via
-  `app/utils/uuid_helpers.py` — `get_file_by_uuid_with_permission` also applies the takedown
+  `app/services/uuid_helpers.py` — `get_file_by_uuid_with_permission` also applies the takedown
   and tenant gates, `require_resource_owner` replaces copy-pasted 403 checks. The platform-admin
   bypass is **evaluated on the loaded row** (`ctx.bypass.allows(org_id=row.organization_id, ...)`),
   never in front of the lookup; pass `bypass=ctx.bypass` through the chokepoints and never read

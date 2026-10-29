@@ -21,6 +21,7 @@ from app.api.endpoints.admin import get_system_uptime
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_optional_current_user
 from app.core.capabilities import require_capability
+from app.core.exceptions import DomainError
 from app.core.version import APP_VERSION
 from app.db.base import get_db
 from app.models.user import User
@@ -247,7 +248,7 @@ def get_system_stats(
         }
 
         return stats
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -269,7 +270,7 @@ def get_protected_media_auth(current_user: User = Depends(get_current_active_use
     """
     try:
         return get_protected_media_auth_config(user_id=current_user.id)
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).

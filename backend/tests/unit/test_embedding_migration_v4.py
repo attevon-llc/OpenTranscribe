@@ -168,7 +168,7 @@ class TestPrepareFile:
     """
 
     @patch("app.services.minio_service.minio_client")
-    @patch("app.utils.uuid_helpers.get_file_by_uuid")
+    @patch("app.services.uuid_helpers.get_file_by_uuid")
     @patch("app.tasks.migration_pipeline.session_scope")
     def test_returns_none_when_no_speakers(self, mock_scope, mock_get_file, mock_minio):
         from app.tasks.migration_pipeline import prepare_file
@@ -186,7 +186,7 @@ class TestPrepareFile:
         assert result is None
 
     @patch("app.services.minio_service.minio_client")
-    @patch("app.utils.uuid_helpers.get_file_by_uuid")
+    @patch("app.services.uuid_helpers.get_file_by_uuid")
     @patch("app.tasks.migration_pipeline.session_scope")
     def test_raises_when_file_not_found(self, mock_scope, mock_get_file, mock_minio):
         from app.tasks.migration_pipeline import prepare_file

@@ -9,8 +9,7 @@ fixed sentence from ``services/pipeline_plan.ISSUE_MESSAGES``, never exception t
 
 from __future__ import annotations
 
-from fastapi import HTTPException
-from fastapi import status
+from app.core.exceptions import ConflictError
 
 
 def is_lite_deployment() -> bool:
@@ -20,14 +19,11 @@ def is_lite_deployment() -> bool:
     return str(settings.DEPLOYMENT_MODE).strip().lower() == "lite"
 
 
-def plan_refusal(code: str) -> HTTPException:
+def plan_refusal(code: str) -> ConflictError:
     """The 409 for a pipeline-plan issue code: ``{"code", "message"}``."""
     from app.services.pipeline_plan import ISSUE_MESSAGES
 
-    return HTTPException(
-        status_code=status.HTTP_409_CONFLICT,
-        detail={"code": code, "message": ISSUE_MESSAGES[code]},
-    )
+    return ConflictError({"code": code, "message": ISSUE_MESSAGES[code]})
 
 
 def refuse_on_lite(code: str) -> None:

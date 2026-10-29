@@ -634,12 +634,12 @@ class TestMfaProtectedFloorAtRealCallSites:
         assert user_is_mfa_protected(_FakeDb(False), self._user())
 
     def test_enforce_password_policy_uses_it(self, nist):
-        from fastapi import HTTPException
 
+        from app.core.exceptions import InvalidInputError
         from app.services.account_security_service import enforce_password_policy
 
         enforce_password_policy("xq3vw8zk", self._user(), cast(Any, _FakeDb(True)))  # 8 chars, MFA
-        with pytest.raises(HTTPException):
+        with pytest.raises(InvalidInputError):
             enforce_password_policy("xq3vw8zk", self._user(), cast(Any, _FakeDb(False)))
-        with pytest.raises(HTTPException):
+        with pytest.raises(InvalidInputError):
             enforce_password_policy("xq3vw8zk", self._user())

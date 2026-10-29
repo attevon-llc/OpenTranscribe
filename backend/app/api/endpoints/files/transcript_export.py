@@ -21,11 +21,11 @@ from fastapi import Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.auth.audit import AuditEventType
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import Comment
 from app.models.media import MediaFile
@@ -37,11 +37,12 @@ from app.services.platform_bypass import PlatformBypass
 from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.redaction.export_policy import resolve_export_reveal
 from app.services.redaction.reveal_audit import audit_unredacted_reveal
+from app.services.request_context import RequestContext
 from app.services.transcript_export_markdown import MarkdownMeta
 from app.services.transcript_export_service import VALID_FORMATS
 from app.services.transcript_export_service import build_export_content
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
 from app.utils.content_disposition import attachment_header
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 from .crud import _redaction_pending
 
@@ -228,7 +229,7 @@ def export_transcript(
             csv_header_with_comments=csv_header_with_comments,
             markdown_meta=_markdown_meta(media_file, cfg, reveal) if fmt == "md" else None,
         )
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

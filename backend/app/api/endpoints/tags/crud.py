@@ -15,14 +15,15 @@ from fastapi import status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.tags._common import _resolve_tag
 from app.api.endpoints.tags._common import logger
 from app.api.endpoints.tags._common import router
+from app.api.error_handlers import ErrorHandler
 from app.core.constants import TAG_SOURCE_MANUAL
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import FileTag
 from app.models.media import Tag
@@ -30,11 +31,11 @@ from app.models.user import User
 from app.schemas.media import Tag as TagSchema
 from app.schemas.media import TagBase
 from app.schemas.media import TagWithCount
+from app.services.request_context import RequestContext
 from app.services.tag_collisions import list_tags_filtered
 from app.services.tag_collisions import list_unused_tag_rows
 from app.services.tag_operations import cleanup_unreferenced_tags
 from app.services.tag_service import on_tags_changed
-from app.utils.error_handlers import ErrorHandler
 
 
 @router.post("", response_model=TagSchema, dependencies=[Depends(refuse_under_support_grant)])
@@ -225,7 +226,7 @@ def cleanup_unused_tags(
             "scope": scope,
             "message": f"{count} unused tags deleted successfully",
         }
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -271,7 +272,7 @@ def add_tag_to_file(
     but lets two users attach same-named personal rows of their own to one shared
     personal file (on an organization file both resolve to the org's one row).
     """
-    from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+    from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
     # Get file by UUID and verify permission (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
@@ -331,7 +332,7 @@ def remove_tag_from_file(
     Remove a tag from a media file
     """
     # Get file by UUID with permission check (tenant-gated via ctx.org_id)
-    from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+    from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
     media_file = get_file_by_uuid_with_permission(
         db,

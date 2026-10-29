@@ -27,12 +27,12 @@ def reset_summary_for_retry(db: Session, file_uuid: str) -> bool:
     Returns:
         True if reset was successful, False otherwise
     """
-    from app.utils.uuid_helpers import get_by_uuid_optional
+    from app.services.uuid_helpers import get_by_uuid_optional
 
     # get_by_uuid_optional, NOT get_file_by_uuid: the latter raises
-    # fastapi.HTTPException on a missing/malformed uuid instead of returning a
+    # a DomainError on a missing/malformed uuid instead of returning a
     # falsy value, which made the `if not media_file` guard below dead code and
-    # let an HTTPException escape this plain (non-endpoint) helper uncaught.
+    # let a DomainError escape this plain (non-endpoint) helper uncaught.
     media_file = get_by_uuid_optional(db, MediaFile, file_uuid)
     if not media_file:
         logger.error(f"File {file_uuid} not found")
@@ -98,7 +98,7 @@ async def retry_summary_if_available(db: Session, file_uuid: str) -> bool:
     Returns:
         True if retry was queued successfully, False otherwise
     """
-    from app.utils.uuid_helpers import get_by_uuid_optional
+    from app.services.uuid_helpers import get_by_uuid_optional
 
     # `async def` and `await` here, not `asyncio.run()`: this function's one
     # caller (`retry_summary` in api/endpoints/files/summary_status.py) is

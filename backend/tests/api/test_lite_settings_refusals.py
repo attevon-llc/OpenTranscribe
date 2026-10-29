@@ -358,14 +358,14 @@ def test_full_restart_reaches_the_worker_control(client, super_admin_token_heade
 @pytest.mark.parametrize("model", ["tiny", "base.en"])
 def test_lite_refuses_a_per_file_whisper_model(pipeline_env, model):
     """The one chokepoint upload (prepare/complete/URL) and reprocess call (A7)."""
-    from fastapi import HTTPException
 
+    from app.core.exceptions import ConflictError
     from app.utils.whisper_model_choice import require_servable_whisper_model
 
     assert require_servable_whisper_model(model) == model  # full image: the CPU route
 
     pipeline_env("lite")
-    with pytest.raises(HTTPException) as refused:
+    with pytest.raises(ConflictError) as refused:
         require_servable_whisper_model(model)
     assert refused.value.status_code == status.HTTP_409_CONFLICT
     assert detail_dict(refused.value) == {"code": LOCAL_ASR, "message": ISSUE_MESSAGES[LOCAL_ASR]}

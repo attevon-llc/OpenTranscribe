@@ -28,7 +28,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import models
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_superuser
@@ -36,6 +35,7 @@ from app.api.endpoints.auth.dependencies import _get_client_info
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import Task
 from app.models.organization import Organization
@@ -58,8 +58,9 @@ from app.services.privacy.policy import voiceprint_decision
 from app.services.privacy.purge import PurgeScope
 from app.services.privacy.purge import purge_audit_event_types
 from app.services.privacy.purge import read_record
+from app.services.request_context import RequestContext
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
 from app.tasks.privacy_purge_task import TASK_TYPE
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +145,7 @@ def get_effective_privacy(
                 bypass=ctx.bypass,
                 organization_id=ctx.org_id,
             )
-        except HTTPException as exc:
+        except (HTTPException, DomainError) as exc:
             # The helper answers 403 for a file that exists and 404 for one that does not; this
             # route reports the policy of a file, so both must read as "no such file".
             if exc.status_code in (status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND):

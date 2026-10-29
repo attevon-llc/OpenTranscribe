@@ -5,10 +5,10 @@ from __future__ import annotations
 import copy
 
 import pytest
-from fastapi import HTTPException
 
 from app.core.constants import ASR_CLOUD_PROVIDERS_FOR_USERS_KEY
 from app.core.constants import ASR_USERS_OWN_KEYS_KEY
+from app.core.exceptions import ConflictError
 from app.services import asr_provider_policy as policy
 from app.services import system_settings_service
 from app.services.asr.factory import ASR_PROVIDER_CATALOG
@@ -85,11 +85,11 @@ def test_refuse_config_change_has_fixed_sentences_and_skips_local(db_session):
     policy.save_policy(db_session, ["gladia"], own_keys=False)
     policy.refuse_config_change(db_session, _User("user"), "local", carries_credential=True)
     policy.refuse_config_change(db_session, _User("admin"), "deepgram", carries_credential=True)
-    with pytest.raises(HTTPException) as disallowed:
+    with pytest.raises(ConflictError) as disallowed:
         policy.refuse_config_change(db_session, _User("user"), "deepgram", carries_credential=False)
     assert disallowed.value.status_code == 409
     assert detail_dict(disallowed.value)["code"] == "asr_provider_not_allowed"
-    with pytest.raises(HTTPException) as own_keys:
+    with pytest.raises(ConflictError) as own_keys:
         policy.refuse_config_change(db_session, _User("user"), "gladia", carries_credential=True)
     assert detail_dict(own_keys.value) == {
         "code": "own_asr_keys_disabled",

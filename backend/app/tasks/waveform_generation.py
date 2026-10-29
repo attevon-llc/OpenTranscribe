@@ -31,7 +31,7 @@ def generate_waveform_data_task(self, file_uuid: str | None = None, skip_existin
         file_uuid: Specific file UUID to process, or None to process all eligible files
         skip_existing: Skip files that already have waveform data
     """
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     try:
         with session_scope() as db:

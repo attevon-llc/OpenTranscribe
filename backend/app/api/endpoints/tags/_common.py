@@ -19,7 +19,7 @@ from app.services.tag_service import is_system_tag
 from app.services.tag_service import resolve_or_create_tag
 from app.services.tag_service import tag_in_tenant
 from app.services.tag_service import visible_to
-from app.utils.uuid_helpers import get_by_uuid
+from app.services.uuid_helpers import get_by_uuid
 
 logger = logging.getLogger(__name__)
 

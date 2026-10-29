@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 _REDIS_LOCK_KEY = "storage_orphan_sweep_running"
 _REDIS_LAST_RUN_KEY = "storage_orphan_sweep_last_run"
 
-#: Every object a file owns lives here (``utils/filename.py``, ``utils/thumbnail.py``,
+#: Every object a file owns lives here (``utils/filename.py``, ``services/thumbnail.py``,
 #: ``tasks/thumbnail.py``, the ``.playback.m4a`` rendition and the derived caches).
 _FILE_KEY_RE = re.compile(r"^user_(\d+)/file_(\d+)/")
 

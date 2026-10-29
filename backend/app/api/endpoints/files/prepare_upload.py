@@ -13,11 +13,12 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.files.upload import create_media_file_record
+from app.api.error_handlers import ErrorHandler
 from app.core.constants import TAG_SOURCE_MANUAL
+from app.core.exceptions import DomainError
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
 from app.models.media import CollectionMember
@@ -27,10 +28,10 @@ from app.models.upload_batch import UploadBatch
 from app.models.user import User
 from app.schemas.media import PrepareUploadRequest
 from app.services.collection_visibility import usable_collections
+from app.services.request_context import RequestContext
 from app.services.tag_service import on_tags_changed
 from app.services.tag_service import resolve_or_create_tags
 from app.utils import benchmark_timing
-from app.utils.error_handlers import ErrorHandler
 from app.utils.file_hash import check_duplicate_by_fingerprint
 from app.utils.file_hash import cleanup_failed_duplicates
 from app.utils.media_types import normalize_media_content_type
@@ -440,7 +441,7 @@ async def prepare_upload(
         logger.info(f"Prepared upload for file {request.filename} (ID: {file_id})")
         return response
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Preserve intentional HTTP errors (e.g. 413 tenant size limit, 409
         # duplicate) — don't bury them in a generic 500.
         raise

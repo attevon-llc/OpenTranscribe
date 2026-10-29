@@ -22,7 +22,7 @@ import re
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.auth.constants import DB_ADMITTED_AUTH_TYPES
+from app.core.auth_types import DB_ADMITTED_AUTH_TYPES
 from app.core.exceptions import ExternalProviderNotAdmittedError
 
 logger = logging.getLogger(__name__)

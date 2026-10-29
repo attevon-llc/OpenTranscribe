@@ -20,7 +20,6 @@ This directory contains small, low-dependency helpers shared by endpoints, servi
 utils/
 ├── Database, identity and access
 │   ├── db_helpers.py           # Query builders, get_or_create, tenant scoping (apply_tenant_scope)
-│   ├── uuid_helpers.py         # Hybrid-ID lookup + the permission chokepoint (get_file_by_uuid_with_permission)
 │   ├── uuid7.py                # RFC 9562 UUIDv7 generator (the default= for every model uuid column)
 │   ├── pagination.py           # paginate(): count + offset + limit in one call
 │   ├── tenant_sharing.py       # Tenant gates for per-user items shared "with everyone"
@@ -28,7 +27,6 @@ utils/
 │   ├── client_ip.py            # Single source of truth for "who is this request from?"
 │   └── user_settings_helpers.py, summary_settings.py   # User/system settings access helpers
 ├── Errors
-│   ├── error_handlers.py       # ErrorHandler HTTPException builders, handle_not_found
 │   └── error_classification.py # Fine-grained failure categories (retry policy; not on the wire)
 ├── Tasks and workers
 │   ├── task_utils.py           # Task records, status transitions, cancellation, stuck-file recovery
@@ -50,7 +48,7 @@ utils/
 │   └── whisper_model_choice.py, lite_mode.py      # Per-file Whisper model rules; lite-deployment refusals
 ├── Files and media
 │   ├── file_validation.py, file_hash.py, filename.py, media_types.py, content_disposition.py
-│   ├── thumbnail.py, url_validation.py            # Thumbnails; SSRF-safe URL validation
+│   ├── url_validation.py                          # SSRF-safe URL validation
 │   └── csv_safe.py                                # Spreadsheet-formula neutralization for CSV exports
 ├── Hardware and models
 │   ├── hardware_detection.py   # CUDA/MPS/CPU authority; resolve_cuda_device_index
@@ -72,14 +70,14 @@ Shared transcript-building functions used across tasks and services, so formatti
 
 Import from here rather than reimplementing formatting. Export formats (SRT, VTT, TXT, JSON, CSV, Markdown) live in `services/transcript_export_*.py` and `services/captions/`.
 
-## Authorization (`uuid_helpers.py`, `db_helpers.py`)
+## Authorization (`services/uuid_helpers.py`, `db_helpers.py`)
 
 ### Purpose
 Resource-level authorization. There are **no authorization decorators**; the `auth_decorators.py` module that used to live here was deleted in issue #450 (unreferenced by any route, and silently bypassed by positional calls). Do not reintroduce that shape. Authorization is a FastAPI dependency or an explicit call.
 
 ```python
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
-from app.utils.uuid_helpers import require_resource_owner
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
+from app.services.uuid_helpers import require_resource_owner
 from app.utils.db_helpers import apply_tenant_scope
 
 
@@ -96,7 +94,7 @@ def update_file(
     ...
 ```
 
-`uuid_helpers.py` also provides `get_by_uuid`, `get_<entity>_by_uuid` for the common models, `get_collection_by_uuid_with_permission`, `require_speaker_access` and `require_profile_in_scope`. Privilege gates (`get_current_admin_user`, `get_current_active_superuser`) are FastAPI dependencies in `api/endpoints/auth/dependencies.py`.
+`uuid_helpers.py` (in `app/services/`) also provides `get_by_uuid`, `get_<entity>_by_uuid` for the common models, `get_collection_by_uuid_with_permission`, `require_speaker_access` and `require_profile_in_scope`; it raises `DomainError` subclasses, not `HTTPException`. `get_user_files_query_for_context` lives in `services/request_context.py`. Privilege gates (`get_current_admin_user`, `get_current_active_superuser`) are FastAPI dependencies in `api/endpoints/auth/dependencies.py`.
 
 ## 🗄️ Database Helpers (`db_helpers.py`)
 
@@ -104,9 +102,6 @@ def update_file(
 ```python
 def get_user_files_query(db: Session, user_id: int, *, organization_id=UNSCOPED) -> Query:
     """Standard query for a user's (or organization's) files."""
-
-def get_user_files_query_for_context(db: Session, ctx: RequestContext) -> Query:
-    """The same, scoped by the request's tenant context."""
 
 def apply_tenant_scope(...):
     """SQL-plane default-deny tenant filter; mirrors api/deps_context.scope_to_context."""
@@ -132,22 +127,6 @@ tag, created = get_or_create(
     db, Tag, name=tag_name
 )  # check models: Tag is tenant-scoped, prefer tag_service
 ```
-
-## Error Handlers (`error_handlers.py`)
-
-`ErrorHandler` builds `HTTPException` instances with consistent status codes and messages:
-`database_error(operation, error)`, `validation_error(message)`, `not_found_error(resource)`, `unauthorized_error(message)`, `internal_error(message)` and `file_processing_error(operation, error)`. `handle_not_found(resource_name)` is a decorator factory that raises 404 when the wrapped function returns `None`.
-
-`handle_database_errors` was removed (#914): it reclassified any `HTTPException` the wrapped function raised into an opaque 500.
-
-```python
-from app.utils.error_handlers import ErrorHandler
-
-if not file_obj:
-    raise ErrorHandler.not_found_error("File")
-```
-
-Remember that service-layer code raises the exceptions in `app/core/exceptions.py` instead; `main.py` maps them to HTTP statuses.
 
 ## ⚙️ Task Utilities (`task_utils.py`)
 
@@ -189,7 +168,7 @@ def long_running_task(self, file_uuid: str):
 `session_scope()` (in `app/db/session_utils.py`) is the transactional scope for background work; API endpoints use `Depends(get_db)`. Never hold a session across slow non-database work: read, release, work, then write in a short second session.
 
 ### Validation
-Validate input and raise `ErrorHandler.validation_error(...)` (or the typed exceptions in `core/exceptions.py` from services). Upload validation helpers are in `file_validation.py`; user-supplied URLs go through `url_validation.py` (SSRF protection).
+In endpoints, validate input and raise `ErrorHandler.validation_error(...)` (`app/api/error_handlers.py`); below `app/api` raise a `DomainError` subclass from `core/exceptions.py`. Upload validation helpers are in `file_validation.py`; user-supplied URLs go through `url_validation.py` (SSRF protection).
 
 ## 🧪 Testing Utilities
 

@@ -40,8 +40,8 @@ from app.api.endpoints.auth import mfa_tokens as mfa_tokens_module
 from app.api.endpoints.auth.dependencies import get_current_user
 from app.api.endpoints.auth.mfa_tokens import MFA_SCOPE_ENROLL
 from app.api.endpoints.auth.mfa_tokens import MFA_SCOPE_VERIFY
-from app.auth.constants import TOKEN_TYPE_MFA
 from app.auth.mfa import MFAService
+from app.core.auth_types import TOKEN_TYPE_MFA
 from app.core.config import settings
 from app.models.user import User
 from app.models.user_mfa import UserMFA

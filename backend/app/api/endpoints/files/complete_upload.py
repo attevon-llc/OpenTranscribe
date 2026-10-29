@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
+from app.core.exceptions import DomainError
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
 from app.models.media import FileStatus
@@ -285,7 +286,7 @@ def complete_upload(
 
     try:
         validate_file_size_for_tenant(minio_size, organization_id)
-    except HTTPException:
+    except (HTTPException, DomainError):
         logger.warning(
             "Rejecting oversized upload %s: %d bytes exceeds the ceiling",
             request.file_id,

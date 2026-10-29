@@ -21,9 +21,9 @@ from sqlalchemy.orm import Query
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import defer
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -33,11 +33,12 @@ from app.services import system_settings_service
 from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.file_provenance_view import build_processing_steps
 from app.services.formatting_service import FormattingService
+from app.services.request_context import RequestContext
 from app.services.takedown_service import exclude_quarantined
 from app.services.task_recovery_service import task_recovery_service
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
 from app.utils.db_helpers import owned_in_tenant
 from app.utils.task_utils import get_task_summary_for_media_file
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 logger = logging.getLogger(__name__)
 
@@ -238,7 +239,7 @@ def get_user_file_status(
             "timestamp": now,
         }
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -364,7 +365,7 @@ def get_file_detailed_status(
             ),
         }
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.error("Error getting file detailed status: %s", e, exc_info=True)
@@ -508,7 +509,7 @@ def retry_file_processing(
                 detail="Failed to schedule file retry",
             )
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.error("Error retrying file processing: %s", e, exc_info=True)
@@ -555,7 +556,7 @@ def request_user_recovery(
             "user_id": str(current_user.uuid),
         }
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).

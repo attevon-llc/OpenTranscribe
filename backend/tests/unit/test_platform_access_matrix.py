@@ -523,5 +523,5 @@ def test_the_site_scan_finds_each_shape_and_ignores_unrelated_code():
 def test_a_new_allows_site_is_unclassified_until_someone_decides():
     row = matrix.site_row("allows", "api/endpoints/new_thing.py::get_new_thing")
     assert "UNCLASSIFIED" in row.guard
-    known = matrix.site_row("allows", "utils/uuid_helpers.py::require_speaker_access")
+    known = matrix.site_row("allows", "services/uuid_helpers.py::require_speaker_access")
     assert "UNCLASSIFIED" not in known.guard

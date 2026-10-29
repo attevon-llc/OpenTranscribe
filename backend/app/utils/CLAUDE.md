@@ -50,7 +50,7 @@ so keep heavy imports lazy.
   `response-content-type`. Never store a browser- or `mimetypes`-supplied type raw: Firefox on
   Linux and Python 3.14 both say `audio/vnd.wave`, and browsers won't play that label. The
   frontend twin is `$lib/utils/mediaType.ts`; keep the alias tables in sync.
-- `uuid_helpers.py` — the hybrid-ID + permission chokepoint. `get_*_by_uuid`,
+- `uuid_helpers.py` (lives in `app/services/` since the L1 layering move; it queries models and services, so it cannot sit below them) — the hybrid-ID + permission chokepoint. `get_*_by_uuid`,
   `get_file_by_uuid_with_permission` (load the row → platform bypass asked about the LOADED row's
   own tenant, `bypass.allows(org_id=row.organization_id, ...)`, which in multi-tenant mode is
   False without a support-access grant → takedown 404 → public → tenant gate → owner → shares, in
@@ -68,10 +68,7 @@ so keep heavy imports lazy.
   skipped the check; and `require_verified_user` gated on `is_active` while both its name and its
   403 detail said "verification". Authorization is a FastAPI `Depends`
   (`api/endpoints/auth/dependencies.py` for privilege, `uuid_helpers` for resource access).
-- `error_handlers.py` — `handle_not_found` and `ErrorHandler` builders for opaque 5xx.
-  `handle_database_errors` was deleted (#914 STEP 6): zero call sites under `app/`, and
-  it caught a plain `except Exception` that reclassified any `HTTPException` the wrapped
-  function raised into an opaque 500. `pagination.py` — `paginate()` replaces the
+- `pagination.py` — `paginate()` replaces the
   count+offset+limit boilerplate (counts with `order_by(None)`).
 - `encryption.py` — AES-256-GCM (v3) with legacy Fernet auto-detect. Every stored secret (ASR/LLM
   keys, S3/SMB creds, OIDC refresh/ID tokens) goes through it.
@@ -101,7 +98,7 @@ so keep heavy imports lazy.
 
 ## Conventions / patterns
 
-- No `app.api` imports from here (`db_helpers` types `RequestContext` under `TYPE_CHECKING`).
+- No `app.api` imports from here.
   Import-linter also forbids `cloud` and managed-edition vendor imports — see
   `backend/app/core/CLAUDE.md`.
 - Optional heavy deps (pyannote.metrics, meeteval, torch) are imported **inside** the function

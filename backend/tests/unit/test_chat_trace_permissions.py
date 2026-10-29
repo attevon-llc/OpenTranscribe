@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import uuid as uuid_pkg
 
-from app.api.deps_context import RequestContext
 from app.models.media import MediaFile
 from app.schemas.chat import ChatScope
 from app.services.chat.context_resolver import resolve_scope_file_uuids
@@ -30,6 +29,7 @@ from app.services.chat.trace import ListTraceRecorder
 from app.services.chat.trace import Outcome
 from app.services.chat.trace import QueryStage
 from app.services.chat.trace import emit
+from app.services.request_context import RequestContext
 
 #: A title distinctive enough that a substring search for it cannot match by
 #: accident, so "it does not appear anywhere in the trace" is a real assertion.

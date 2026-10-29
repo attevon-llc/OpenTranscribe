@@ -18,7 +18,7 @@ from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
-from app.auth.constants import auth_type_check_sql
+from app.core.auth_types import auth_type_check_sql
 from app.db.base import Base
 from app.utils.uuid7 import uuid7
 
@@ -81,7 +81,7 @@ class User(Base):
     )
     auth_type: Mapped[str] = mapped_column(
         String, default="local", nullable=False
-    )  # "local", "ldap", "oidc", "pki" — see auth/constants.VALID_AUTH_TYPES
+    )  # "local", "ldap", "oidc", "pki" — see core/auth_types.VALID_AUTH_TYPES
     allow_local_fallback: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )  # When True: user can authenticate via password even if auth_type != 'local'
@@ -219,7 +219,7 @@ class User(Base):
             name="ck_user_superuser_matches_role",
         ),
         # v377/v380/v383. The body is rendered from
-        # ``app.auth.constants.DB_ADMITTED_AUTH_TYPES``, the single source of the set
+        # ``app.core.auth_types.DB_ADMITTED_AUTH_TYPES``, the single source of the set
         # the database admits (issue #866). ⚠️ Do NOT render it from ``VALID_AUTH_TYPES``
         # instead: the CHECK is required to be a **superset** of that list, so a value
         # may be admitted by the database before any code supports it (that ordering is

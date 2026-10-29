@@ -16,12 +16,12 @@ UI integration for SAML is future work.
 
 import logging
 
-from app.auth.constants import AUTH_TYPE_SAML
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import role_implies_superuser
 from app.auth.saml.assertion import SAMLUserData
+from app.core.auth_types import AUTH_TYPE_SAML
 
 logger = logging.getLogger(__name__)
 
@@ -155,13 +155,13 @@ def sync_saml_user_to_db(db, saml_data: SAMLUserData, cfg=None):
             database when omitted.
 
     Raises:
-        HTTPException: 401, when admission is refused or an email-matched link is.
+        AuthenticationError: 401, when admission is refused or an email-matched link is.
     """
     from app.auth.account_linking import assert_email_link_permitted
     from app.auth.account_linking import assert_provider_id_link_permitted
-    from app.auth.constants import AUTH_TYPE_LOCAL
     from app.auth.saml.admission import assert_saml_admission_permitted
     from app.auth.saml.config import SAMLConfig
+    from app.core.auth_types import AUTH_TYPE_LOCAL
     from app.models.user import User
 
     if cfg is None:

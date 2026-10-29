@@ -174,7 +174,7 @@ def process_youtube_url_task(
     Raises:
         Exception: Any error during processing will be caught and returned in result dict.
     """
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     file_id = None  # Initialize to handle exceptions before file_id is assigned
 

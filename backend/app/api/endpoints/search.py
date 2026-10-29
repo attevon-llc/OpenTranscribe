@@ -17,7 +17,6 @@ from fastapi import Response
 from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
@@ -30,6 +29,7 @@ from app.core.constants import SEARCH_DEFAULT_PAGE_SIZE
 from app.core.constants import SEARCH_MAX_PAGE_SIZE
 from app.core.constants import get_speaker_index
 from app.core.constants import get_speaker_index_v4
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.search import RESULT_TYPE_TO_SOURCES
@@ -40,6 +40,7 @@ from app.services.collection_visibility import collections_on_files
 from app.services.collection_visibility import resolve_collection_filter
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 from app.services.platform_access import TenancyMode
+from app.services.request_context import RequestContext
 from app.services.search.reindex_cancel import LEGACY_CANCEL_VALUE
 from app.services.search.reindex_cancel import cancel_requested
 from app.services.search.reindex_cancel import clear_fanout
@@ -423,7 +424,7 @@ def search_transcripts(
                     file_uuid=file_uuid,
                 )
             )
-        except HTTPException as e:
+        except (HTTPException, DomainError) as e:
             # Issue #760, §6: a masking outage must not blank the whole page
             # when more than one source was requested — only the summary leg
             # degrades. `_summary_search_payload` still raises a literal 503
@@ -599,7 +600,7 @@ def search_match_count(
     """
     from app.services.search.hybrid_search_service import HybridSearchService
     from app.services.search.hybrid_search_service import QuarantineExclusionUnavailableError
-    from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+    from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
     if file_uuid:
         # Raises 404/403 on its own — the same chokepoint every other
@@ -1103,7 +1104,7 @@ def stop_reindex(
                 f"is on completes."
             ),
         }
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).

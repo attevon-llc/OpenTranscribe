@@ -25,7 +25,6 @@ from app.api.endpoints.auth.dependencies import _get_client_info
 from app.api.endpoints.auth.dependencies import get_current_admin_user
 from app.auth.audit import AuditEventType
 from app.auth.audit import audit_logger
-from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.invitations import GENERIC_INVALID
 from app.auth.invitations import accept_invitation
 from app.auth.invitations import create_invitation
@@ -36,6 +35,7 @@ from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
 from app.auth.roles import ELEVATED_ROLES
 from app.auth.roles import ROLE_SUPER_ADMIN
+from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.db.base import get_db
 from app.models.invitation import UserInvitation
 from app.models.user import User
@@ -45,7 +45,7 @@ from app.schemas.invitation import InvitationCreate
 from app.schemas.invitation import InvitationLookupRequest
 from app.schemas.invitation import InvitationLookupResponse
 from app.schemas.invitation import InvitationResponse
-from app.utils.uuid_helpers import get_by_uuid
+from app.services.uuid_helpers import get_by_uuid
 
 logger = logging.getLogger(__name__)
 

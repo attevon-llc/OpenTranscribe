@@ -23,11 +23,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.auth.audit import AuditEventType
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.media import SubtitleValidationResult
@@ -38,9 +38,10 @@ from app.services.download_events import DOCUMENT_EXPORT_ERRORS
 from app.services.platform_bypass import PlatformBypass
 from app.services.redaction.export_policy import resolve_export_reveal
 from app.services.redaction.reveal_audit import audit_unredacted_reveal
+from app.services.request_context import RequestContext
 from app.services.subtitle_service import SubtitleService
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
 from app.utils.content_disposition import attachment_header
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 from .crud import _redaction_pending
 
@@ -205,7 +206,7 @@ def get_subtitles(
             },
         )
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # The 404 raised above for an empty transcript is a deliberate status;
         # the broad handler below turned it into a 500 whose detail embedded the
         # 404's message.
@@ -266,7 +267,7 @@ def validate_subtitles(
             total_duration=float(total_duration),
         )
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception(f"Failed to validate subtitles for file {file_uuid}")
@@ -350,7 +351,7 @@ def prepare_bulk_export(
                 bypass=ctx.bypass,
                 organization_id=ctx.org_id,
             )
-        except HTTPException:
+        except (HTTPException, DomainError):
             continue  # inaccessible file — skip silently, mirrors prior per-file skip
         if media_file.status != "completed":
             continue

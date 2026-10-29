@@ -19,7 +19,6 @@ noqa::backend/app/api/endpoints/user_settings.py	3	suppression: reason to be add
 noqa::backend/app/api/endpoints/users.py	1	suppression: reason to be added
 noqa::backend/app/api/endpoints/watch_sources.py	1	suppression: reason to be added
 noqa::backend/app/auth/audit.py	9	suppression: reason to be added
-noqa::backend/app/auth/constants.py	4	suppression: reason to be added
 noqa::backend/app/auth/oidc/provisioning.py	1	suppression: reason to be added
 noqa::backend/app/auth/password_blocklist.py	1	suppression: reason to be added
 noqa::backend/app/auth/pki_auth.py	1	suppression: reason to be added

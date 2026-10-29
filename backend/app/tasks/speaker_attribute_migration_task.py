@@ -138,7 +138,7 @@ def _gender_allowed_for_uuid(file_uuid: str) -> bool:
     failure it is; nothing can be written for a file that is gone.
     """
     from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags_for_file
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     with session_scope() as db:
         media_file = get_file_by_uuid(db, file_uuid)

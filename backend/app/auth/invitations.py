@@ -23,12 +23,12 @@ from datetime import timedelta
 
 from sqlalchemy.orm import Session
 
-from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.password_history import add_password_to_history
 from app.auth.password_policy import validate_password
 from app.auth.roles import role_implies_superuser
 from app.auth.utils import local_password_allowed
+from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.core.config import settings
 from app.core.security import get_password_hash
 from app.models.invitation import UserInvitation

@@ -542,12 +542,12 @@ def route_rows(app: Any) -> list[Row]:
 
 #: ``allows`` call sites, by the kind of row they decide. ``rel::function`` -> chokepoint kind.
 ALLOWS_KINDS: dict[str, str] = {
-    "utils/uuid_helpers.py::require_resource_owner": "media_file",
-    "utils/uuid_helpers.py::get_file_by_uuid_with_permission": "media_file",
-    "utils/uuid_helpers.py::get_collection_by_uuid_with_permission": "collection",
-    "utils/uuid_helpers.py::get_collection_by_uuid_with_sharing": "collection",
-    "utils/uuid_helpers.py::require_speaker_access": "speaker",
-    "utils/uuid_helpers.py::require_profile_in_scope": "speaker_profile",
+    "services/uuid_helpers.py::require_resource_owner": "media_file",
+    "services/uuid_helpers.py::get_file_by_uuid_with_permission": "media_file",
+    "services/uuid_helpers.py::get_collection_by_uuid_with_permission": "collection",
+    "services/uuid_helpers.py::get_collection_by_uuid_with_sharing": "collection",
+    "services/uuid_helpers.py::require_speaker_access": "speaker",
+    "services/uuid_helpers.py::require_profile_in_scope": "speaker_profile",
     "services/delete_permissions.py::get_deletable_file": "media_file",
     "services/delete_permissions.py::can_delete_file": "media_file",
     "services/tag_bulk.py::_require_editor": "media_file",

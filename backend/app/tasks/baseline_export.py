@@ -6,9 +6,9 @@ from app.core.celery import celery_app
 from app.core.constants import UtilityPriority
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
+from app.services.uuid_helpers import get_by_uuid_optional
 from app.utils.transcript_comparison import compare_transcripts
 from app.utils.transcript_comparison import export_baseline
-from app.utils.uuid_helpers import get_by_uuid_optional
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +22,9 @@ def export_baseline_task(file_uuid: str, label: str = "baseline"):
 
     with session_scope() as db:
         # get_by_uuid_optional, NOT get_file_by_uuid: the latter raises
-        # fastapi.HTTPException on a missing/malformed uuid instead of returning a
+        # a DomainError on a missing/malformed uuid instead of returning a
         # falsy value, which made the `if not media_file` guard below dead code and
-        # let an HTTPException escape this Celery task instead of the intended
+        # let a DomainError escape this Celery task instead of the intended
         # graceful {"status": "error", ...} return.
         media_file = get_by_uuid_optional(db, MediaFile, file_uuid)
         if not media_file:

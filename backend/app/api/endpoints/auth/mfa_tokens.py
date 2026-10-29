@@ -33,15 +33,16 @@ from joserfc.jwk import OctKey
 from joserfc.jwt import JWTClaimsRegistry
 from sqlalchemy.orm import Session
 
-from app.auth.constants import AUTH_TYPE_OIDC
-from app.auth.constants import AUTH_TYPE_PKI
-from app.auth.constants import TOKEN_TYPE_MFA
-from app.auth.constants import VALID_AUTH_TYPES
 from app.auth.mfa import MFAService
 from app.auth.mfa_policy import mfa_required_for_user
 from app.auth.session import get_redis_client
 from app.core.auth_settings import get_auth_settings
+from app.core.auth_types import AUTH_TYPE_OIDC
+from app.core.auth_types import AUTH_TYPE_PKI
+from app.core.auth_types import TOKEN_TYPE_MFA
+from app.core.auth_types import VALID_AUTH_TYPES
 from app.core.config import settings
+from app.core.exceptions import DomainError
 from app.models.user import User
 from app.models.user_mfa import UserMFA
 
@@ -152,7 +153,7 @@ def _blacklist_mfa_token(jti: str, expires_seconds: int) -> bool:
                 # Fail-open mode: log warning but allow operation
                 logger.warning("Redis not available for MFA token blacklisting")
                 return False
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception(f"Failed to blacklist MFA token JTI: {e}")

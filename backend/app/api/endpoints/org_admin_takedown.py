@@ -35,13 +35,13 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import aliased
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import require_org_admin
 from app.auth.audit import AuditEventType
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key
 from app.core.constants import ORG_TAKEDOWN_RATE_LIMIT
 from app.core.enums import TakedownOrigin
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.organization import OrganizationMembership
@@ -51,6 +51,7 @@ from app.schemas.org_takedown import OrgQuarantinedFile
 from app.schemas.org_takedown import OrgQuarantinedFilesList
 from app.schemas.org_takedown import OrgQuarantineRequest
 from app.schemas.org_takedown import OrgReleaseRequest
+from app.services.request_context import RequestContext
 from app.services.takedown_authority import CODE_NOT_FOUND
 from app.services.takedown_authority import current_origin
 from app.services.takedown_notices import audit_unresolved_lookup
@@ -120,7 +121,7 @@ def _resolve_or_audit(
     """:func:`get_org_takedown_file`, recording a miss as one FAILURE event in the actor's org."""
     try:
         return get_org_takedown_file(db, file_uuid, _org_id(ctx))
-    except HTTPException as miss:
+    except (HTTPException, DomainError) as miss:
         if miss.status_code == status.HTTP_404_NOT_FOUND:
             source_ip, user_agent = _request_meta(request)
             audit_unresolved_lookup(

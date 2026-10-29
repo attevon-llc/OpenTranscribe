@@ -11,9 +11,9 @@ from fastapi import Query
 from fastapi import status
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import Speaker
 from app.models.media import SpeakerCluster
@@ -31,6 +31,7 @@ from app.services.playback_rendition import resolve_playback
 from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import hide_machine_identities
 from app.services.privacy.redact_view import require_voiceprints
+from app.services.request_context import RequestContext
 from app.services.speaker_cleanup import SpeakerImpact
 from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact
@@ -88,7 +89,7 @@ def list_clusters(
             search=search,
             organization_id=ctx.org_id,
         )
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -156,7 +157,7 @@ def trigger_recluster(
             "task_id": task.id,
             "message": "Re-clustering started in background",
         }
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -466,7 +467,7 @@ def update_cluster(
             "updated_at": cluster.updated_at,
         }
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception("Error updating cluster: %s", e)
@@ -515,7 +516,7 @@ def delete_cluster(
         )
         db.commit()
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception("Error deleting cluster: %s", e)

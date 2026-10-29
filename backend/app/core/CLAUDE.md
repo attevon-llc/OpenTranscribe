@@ -95,6 +95,9 @@ should import `app.api` or `app.services` at module scope.
   containing one. The default echoes the failing value, i.e. a submitted secret. A new write-only
   credential field belongs in that set.
 - `exceptions.py` — the `OpenTranscribeError` hierarchy, handled globally in `main.py`.
+  **Rule:** below `app/api`, raise a `DomainError` subclass, never `fastapi.HTTPException`. Any
+  `except HTTPException` must also catch `DomainError` (`except (HTTPException, DomainError)`); the
+  `main.py` handler renders both identically (status, detail, headers), and a guard test enforces the catch.
   **Service-layer only** — endpoints keep raising `HTTPException` (see its docstring).
 - `task_cancellation.py` — the **per-run** cooperative stand-down (#823), and
   `worker_shutdown.py`'s **process-wide** one (#809). `stand_down_if_requested(where)` is the

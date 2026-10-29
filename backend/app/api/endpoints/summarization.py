@@ -35,12 +35,12 @@ from fastapi import Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.prompts import require_usable_prompt_uuid
 from app.auth.audit import AuditEventType
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.user import User
@@ -50,13 +50,14 @@ from app.schemas.summary import SummaryTaskRequest
 from app.services.content_audit import record_file_event
 from app.services.llm_service import is_llm_available
 from app.services.platform_bypass import PlatformBypass
+from app.services.request_context import RequestContext
 from app.services.summary_export_service import VALID_SUMMARY_EXPORT_FORMATS
 from app.services.summary_export_service import SummaryExportLabels
 from app.services.summary_export_service import build_summary_export
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
 from app.tasks.speaker_tasks import identify_speakers_llm_task
 from app.tasks.summarization import summarize_transcript_task
 from app.utils.content_disposition import attachment_header
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -196,7 +197,7 @@ async def trigger_summarization(
             "topic_extraction": topic_extraction,
         }
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -363,7 +364,7 @@ def export_summary(
 
     try:
         content = build_summary_export(masked, export_format=fmt, labels=labels)
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged (issue #431's guard) — nothing in
         # build_summary_export raises one today, but the broad handler below would report
         # any that appeared as a 500.
@@ -567,7 +568,7 @@ async def identify_speakers(
             speaker_count=len(media_file.speakers),
         )
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -625,7 +626,7 @@ def delete_summary(
             updates, synchronize_session=False
         )
         db.commit()
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. Nothing in the block above
         # raises one today, but the broad handler below would report any that
         # appeared as a 500 (issue #431) — and `test_http_exception_passthrough`

@@ -20,14 +20,13 @@ from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
 
-from fastapi import HTTPException
-from fastapi import status
 from sqlalchemy.orm import Session
 
-from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.core.auth_settings import get_auth_settings
+from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.core.config import settings
+from app.core.exceptions import AccessDeniedError
 from app.models.invitation import EmailVerificationToken
 from app.models.user import User
 from app.services.email_service import EmailDeliveryError
@@ -169,7 +168,7 @@ def assert_email_verified_for_local_login(db: Session, user_uuid: str) -> None:
         user_uuid: UUID of the account that just passed credential verification.
 
     Raises:
-        HTTPException: 403 when verification is required and missing.
+        AccessDeniedError: 403 when verification is required and missing.
     """
     if not email_verification_required(db):
         return
@@ -193,7 +192,6 @@ def assert_email_verified_for_local_login(db: Session, user_uuid: str) -> None:
     # Issued here so the user has a way forward without an admin: the login
     # attempt itself re-sends the link (rate-limited above).
     issue_verification_token(db, user)
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Your email address has not been verified. Check your inbox for the link.",
+    raise AccessDeniedError(
+        "Your email address has not been verified. Check your inbox for the link."
     )

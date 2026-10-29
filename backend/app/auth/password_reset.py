@@ -12,12 +12,12 @@ from sqlalchemy.orm import Session
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
-from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.mfa_policy import user_is_mfa_protected
 from app.auth.password_history import add_password_to_history
 from app.auth.password_history import check_password_against_history
 from app.auth.password_policy import validate_password
 from app.auth.token_service import token_service
+from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.core.config import settings
 from app.core.security import get_password_hash
 from app.models.password_reset import PasswordResetToken

@@ -14,11 +14,12 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_superuser
+from app.api.error_handlers import ErrorHandler
+from app.core.exceptions import DomainError
 from app.core.redis import get_redis
 from app.db.base import get_db
 from app.models.user import User
 from app.tasks.combined_speaker_analysis_task import combined_migration_progress
-from app.utils.error_handlers import ErrorHandler
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ def get_combined_migration_status(
 
         return {"progress": progress}
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -77,7 +78,7 @@ def start_combined_migration(
             "message": "Combined speaker migration dispatched.",
         }
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -156,7 +157,7 @@ def stop_combined_migration(
         else:
             return {"status": "error", "message": "Failed to stop migration"}
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -186,7 +187,7 @@ def clear_combined_progress(
         else:
             return {"status": "error", "message": "Failed to clear progress."}
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).

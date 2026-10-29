@@ -9,7 +9,6 @@ from fastapi import Request
 from fastapi import status
 from sqlalchemy.orm import Session
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.core.tenancy import UNSCOPED
@@ -23,13 +22,14 @@ from app.schemas.media import TranscriptSegment as TranscriptSegmentSchema
 from app.schemas.transcript import SegmentSpeakerUpdate
 from app.services.platform_bypass import PlatformBypass
 from app.services.privacy.redact_view import redact_speaker_rows
+from app.services.request_context import RequestContext
 from app.services.speaker_cleanup import capture_speaker_impact
 from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact
+from app.services.uuid_helpers import _resource_in_tenant_scope
+from app.services.uuid_helpers import get_by_uuid
+from app.services.uuid_helpers import require_resource_owner
 from app.utils.time_format import format_timestamp_simple as format_timestamp
-from app.utils.uuid_helpers import _resource_in_tenant_scope
-from app.utils.uuid_helpers import get_by_uuid
-from app.utils.uuid_helpers import require_resource_owner
 
 logger = logging.getLogger(__name__)
 

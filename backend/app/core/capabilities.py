@@ -97,10 +97,10 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from fastapi import HTTPException
 from fastapi import Request
 
 from app.core.config import settings
+from app.core.exceptions import ResourceNotFoundError
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -425,7 +425,7 @@ def require_capability(key: str, *, platform_admin_bypass: bool = True) -> Calla
             except Exception:
                 # Bypass is best-effort; any failure falls through to 404.
                 logger.debug("platform-admin bypass check failed", exc_info=True)
-        raise HTTPException(status_code=404, detail="Not Found")
+        raise ResourceNotFoundError("Not Found")
 
     return _dependency
 

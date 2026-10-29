@@ -47,7 +47,7 @@ from app.schemas.approval import ApprovalDecisionRequest
 from app.schemas.approval import ApprovalDecisionResponse
 from app.schemas.approval import PendingAccount
 from app.services.account_security_service import revoke_all_sessions
-from app.utils.uuid_helpers import get_user_by_uuid
+from app.services.uuid_helpers import get_user_by_uuid
 
 logger = logging.getLogger(__name__)
 

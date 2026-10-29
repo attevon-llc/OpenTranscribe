@@ -10,16 +10,14 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import HTTPException
-from fastapi import status
-
-from app.auth.constants import AUTH_TYPE_PROXY
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.proxy.assertion import REFUSAL_DETAIL
 from app.auth.proxy.assertion import ProxyAssertion
 from app.auth.proxy.config import ProxyConfig
 from app.auth.roles import ROLE_USER
 from app.auth.roles import role_implies_superuser
+from app.core.auth_types import AUTH_TYPE_PROXY
+from app.core.exceptions import AuthenticationError
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +91,7 @@ def _refuse(email: str, error_code: str, reason: str) -> None:
         error_code=error_code,
         details={"auth_method": AUTH_TYPE_PROXY, "reason": reason},
     )
-    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=REFUSAL_DETAIL)
+    raise AuthenticationError(REFUSAL_DETAIL)
 
 
 def sync_proxy_user_to_db(db, assertion: ProxyAssertion, cfg: ProxyConfig):
@@ -121,13 +119,13 @@ def sync_proxy_user_to_db(db, assertion: ProxyAssertion, cfg: ProxyConfig):
         The ``User`` row for this identity.
 
     Raises:
-        HTTPException: 401 when JIT provisioning is off and no account exists, or
+        AuthenticationError: 401 when JIT provisioning is off and no account exists, or
             when linking to an existing account is refused. Both are the same
             response an untrusted peer gets — a distinct one would be an
             account-existence oracle.
     """
     from app.auth.account_linking import assert_email_link_permitted
-    from app.auth.constants import AUTH_TYPE_LOCAL
+    from app.core.auth_types import AUTH_TYPE_LOCAL
     from app.models.group import MAPPING_SOURCE_PROXY
     from app.models.user import User
     from app.services.idp_group_mapping_service import reconcile_user

@@ -11,11 +11,11 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
-from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.enums import FileStatus
+from app.core.exceptions import AccessDeniedError
 from app.models.media import Collection
 from app.models.media import MediaFile
 from app.models.organization import Organization
@@ -24,10 +24,10 @@ from app.services.platform_access import reset_tenancy_mode_cache
 from app.services.platform_bypass import PlatformBypass
 from app.services.platform_bypass import audit_metadata_access
 from app.services.platform_bypass import build_bypass
-from app.utils.uuid_helpers import get_collection_by_uuid_with_permission
-from app.utils.uuid_helpers import get_collection_by_uuid_with_sharing
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
-from app.utils.uuid_helpers import require_resource_owner
+from app.services.uuid_helpers import get_collection_by_uuid_with_permission
+from app.services.uuid_helpers import get_collection_by_uuid_with_sharing
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
+from app.services.uuid_helpers import require_resource_owner
 
 _AUDIT = "app.auth.audit.audit_logger.log"
 
@@ -85,7 +85,7 @@ def test_none_allows_nothing_and_exposes_no_reach(admin_user, normal_user, db_se
 
 
 def test_a_hand_built_context_fails_closed(admin_user):
-    from app.api.deps_context import RequestContext
+    from app.services.request_context import RequestContext
 
     ctx = RequestContext(user=admin_user)
     assert ctx.bypass == PlatformBypass.none()
@@ -254,7 +254,7 @@ def test_file_helper_multi_mode_admin_is_refused_with_403(admin_user, normal_use
     row = _file(db_session, normal_user, organization_id=org.id)
     bypass = build_bypass(db_session, admin_user, None)
     assert bypass.mode is TenancyMode.MULTI
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(AccessDeniedError) as exc:
         get_file_by_uuid_with_permission(
             db_session, row.uuid, admin_user.id, bypass=bypass, organization_id=None
         )
@@ -266,7 +266,7 @@ def test_file_helper_without_a_bypass_refuses_even_a_single_mode_admin(
 ):
     """Nothing reaches the platform role by default; a caller must hand the bypass in."""
     row = _file(db_session, normal_user)
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(AccessDeniedError) as exc:
         get_file_by_uuid_with_permission(db_session, row.uuid, admin_user.id, organization_id=None)
     assert exc.value.status_code == 403
 
@@ -317,12 +317,12 @@ def test_collection_helpers_multi_mode_admin_is_refused(admin_user, normal_user,
     org = _org(db_session)
     collection = _collection(db_session, normal_user, organization_id=org.id)
     bypass = build_bypass(db_session, admin_user, None)
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(AccessDeniedError) as exc:
         get_collection_by_uuid_with_permission(
             db_session, collection.uuid, admin_user.id, bypass=bypass, organization_id=None
         )
     assert exc.value.status_code == 403
-    with pytest.raises(HTTPException) as exc2:
+    with pytest.raises(AccessDeniedError) as exc2:
         get_collection_by_uuid_with_sharing(
             db_session, collection.uuid, admin_user.id, bypass=bypass, organization_id=None
         )
@@ -337,10 +337,10 @@ def test_require_resource_owner_bypass_follows_the_mode(
     # single mode: admin passes the owner gate when the caller hands the bypass in
     require_resource_owner(row, admin_user, forbidden_detail="no", bypass=bypass)
     # no bypass handed in: refused, as before
-    with pytest.raises(HTTPException):
+    with pytest.raises(AccessDeniedError):
         require_resource_owner(row, admin_user, forbidden_detail="no")
     # multi mode: refused even with the bypass
     _org(db_session)
     multi = build_bypass(db_session, admin_user, None)
-    with pytest.raises(HTTPException):
+    with pytest.raises(AccessDeniedError):
         require_resource_owner(row, admin_user, forbidden_detail="no", bypass=multi)

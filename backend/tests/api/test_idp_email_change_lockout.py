@@ -56,12 +56,12 @@ from datetime import timedelta
 from typing import cast
 
 import pytest
-from fastapi import HTTPException
 from fastapi import status
 
-from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.oidc.claims import OIDCUserData
 from app.auth.oidc.provisioning import sync_oidc_user_to_db
+from app.core.auth_types import AUTH_TYPE_LOCAL
+from app.core.exceptions import AuthenticationError
 from app.core.security import get_password_hash
 from app.models.user import User
 
@@ -136,7 +136,7 @@ def test_an_idp_email_change_locks_the_account_out_permanently(db_session, linke
     original_email = str(linked_user.email)
 
     for attempt in (1, 2):
-        with pytest.raises(HTTPException) as excinfo:
+        with pytest.raises(AuthenticationError) as excinfo:
             sync_oidc_user_to_db(db_session, claims)
         assert excinfo.value.status_code == status.HTTP_401_UNAUTHORIZED, (
             f"attempt {attempt} did not refuse"
@@ -169,7 +169,7 @@ def test_the_refusal_names_the_asserted_email_so_an_operator_can_decide(
     )
 
     new_email = f"alice.renamed-{uuid_pkg.uuid4().hex[:8]}@example.com"
-    with pytest.raises(HTTPException):
+    with pytest.raises(AuthenticationError):
         sync_oidc_user_to_db(db_session, _claims(str(linked_user.oidc_subject), new_email))
 
     assert captured, "the refusal emitted no audit record at all"
@@ -222,7 +222,7 @@ def test_the_admin_remedy_restores_a_locked_out_login(
     new_email = f"alice.renamed-{uuid_pkg.uuid4().hex[:8]}@example.com"
     claims = _claims(str(linked_user.oidc_subject), new_email)
 
-    with pytest.raises(HTTPException):
+    with pytest.raises(AuthenticationError):
         sync_oidc_user_to_db(db_session, claims)
 
     response = client.put(
@@ -300,7 +300,7 @@ def test_a_genuinely_different_person_is_still_refused(db_session, linked_user):
     """The must-not-fire control for fix 1. A recycled ``sub`` asserting somebody else's
     address is the exact attack ``assert_provider_id_link_permitted`` exists to stop, and
     normalising case must not have opened it."""
-    with pytest.raises(HTTPException) as excinfo:
+    with pytest.raises(AuthenticationError) as excinfo:
         sync_oidc_user_to_db(
             db_session,
             _claims(str(linked_user.oidc_subject), f"mallory-{uuid_pkg.uuid4().hex[:8]}@evil.test"),
@@ -495,7 +495,7 @@ def test_every_provider_is_unblocked_once_the_stored_email_is_updated(provider):
     user = _FakeLinkedUser("alice@example.com")
     asserted = "alice.renamed@example.com"
 
-    with pytest.raises(HTTPException):
+    with pytest.raises(AuthenticationError):
         assert_provider_id_link_permitted(
             user,
             provider=provider,
@@ -521,7 +521,7 @@ def test_no_provider_gains_a_super_admin_bypass_from_the_remedy(provider):
     and normalising the comparison must not have made it so."""
     from app.auth.account_linking import assert_provider_id_link_permitted
 
-    with pytest.raises(HTTPException):
+    with pytest.raises(AuthenticationError):
         assert_provider_id_link_permitted(
             _FakeLinkedUser("root@example.com", role="super_admin"),
             provider=provider,

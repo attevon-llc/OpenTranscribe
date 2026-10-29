@@ -11,11 +11,9 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
-from fastapi import HTTPException
 from fastapi import Request
 from sqlalchemy.exc import OperationalError
 
-from app.api.deps_context import RequestContext
 from app.api.deps_context import get_base_context
 from app.api.deps_context import scope_to_context
 from app.auth.external_sync import sync_external_user_to_db
@@ -26,9 +24,11 @@ from app.core.capabilities import get_capabilities
 from app.core.capabilities import require_capability
 from app.core.capabilities import reset_capability_resolver
 from app.core.capabilities import set_capability_resolver
+from app.core.exceptions import ResourceNotFoundError
 from app.models.media import MediaFile
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
+from app.services.request_context import RequestContext
 from app.services.usage_service import record_event
 from app.tasks.transcription.hooks import CompletionContext
 from app.tasks.transcription.hooks import DispatchBlockedError
@@ -102,7 +102,7 @@ class TestCapabilities:
 
     def test_require_capability_404_when_off(self):
         dep = require_capability("billing")  # off in community
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(ResourceNotFoundError) as exc:
             dep(_fake_request())
         assert exc.value.status_code == 404
 

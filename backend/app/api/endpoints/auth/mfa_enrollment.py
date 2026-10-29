@@ -37,10 +37,10 @@ from app.api.endpoints.auth.mfa_tokens import _verify_mfa_token
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
-from app.auth.constants import TOKEN_TYPE_ACCESS
-from app.auth.constants import TOKEN_TYPE_MFA
 from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.token_service import token_service
+from app.core.auth_types import TOKEN_TYPE_ACCESS
+from app.core.auth_types import TOKEN_TYPE_MFA
 from app.core.config import settings
 from app.db.base import get_db
 from app.models.user import User

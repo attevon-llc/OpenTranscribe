@@ -26,7 +26,6 @@ from app.api.endpoints.auth.dependencies import oauth2_scheme
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
-from app.auth.constants import AUTH_TYPE_OIDC
 from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.mfa import MFAService
 from app.auth.oidc import OIDCConfig
@@ -35,6 +34,7 @@ from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
 from app.auth.token_service import RevocationError
 from app.auth.token_service import token_service
+from app.core.auth_types import AUTH_TYPE_OIDC
 from app.core.config import settings
 from app.db.base import get_db
 from app.models.user import User

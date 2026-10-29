@@ -164,10 +164,10 @@ def _share_file(db, owner: User, media_file: MediaFile, target: User, permission
 @contextmanager
 def _acting_as(user: User, org_id: int | None):
     """Run requests as ``user`` in tenant ``org_id`` (None = personal workspace)."""
-    from app.api.deps_context import RequestContext
     from app.api.deps_context import get_current_context
     from app.api.endpoints.auth import get_current_active_user
     from app.main import app
+    from app.services.request_context import RequestContext
 
     app.dependency_overrides[get_current_active_user] = lambda: user
     app.dependency_overrides[get_current_context] = lambda: RequestContext(

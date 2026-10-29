@@ -29,11 +29,11 @@ import pytest
 
 from app.api.endpoints import admin as admin_module
 from app.auth.audit import AuditOutcome
-from app.auth.constants import AUTH_TYPE_LDAP
-from app.auth.constants import AUTH_TYPE_LOCAL
-from app.auth.constants import AUTH_TYPE_OIDC
-from app.auth.constants import AUTH_TYPE_PKI
 from app.auth.roles import ROLE_SUPER_ADMIN
+from app.core.auth_types import AUTH_TYPE_LDAP
+from app.core.auth_types import AUTH_TYPE_LOCAL
+from app.core.auth_types import AUTH_TYPE_OIDC
+from app.core.auth_types import AUTH_TYPE_PKI
 from app.core.security import get_password_hash
 from app.models.refresh_token import RefreshToken
 from app.models.user import User

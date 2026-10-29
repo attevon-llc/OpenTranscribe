@@ -13,7 +13,6 @@ from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
 
-from fastapi import HTTPException
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
@@ -21,6 +20,7 @@ from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.core.constants import SUPPORT_ACCESS_PENDING_EXPIRY_HOURS
+from app.core.exceptions import DomainError
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.models.support_access import SupportAccessGrant
@@ -48,7 +48,7 @@ def _send(user_ids: list[int], notification_type: str, data: dict) -> None:
         send_ws_event(user_id, notification_type, data)
 
 
-def _invalid_target(message: str = "Exactly one valid target is required.") -> HTTPException:
+def _invalid_target(message: str = "Exactly one valid target is required.") -> DomainError:
     return coded_error(422, INVALID_TARGET, message)
 
 

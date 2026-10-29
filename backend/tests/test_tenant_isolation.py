@@ -27,7 +27,7 @@ from app.models.organization import OrganizationMembership
 from app.models.sharing import CollectionShare
 from app.models.user import User
 from app.services.permission_service import PermissionService
-from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
 
 # --------------------------------------------------------------------------- #
@@ -393,9 +393,9 @@ class TestCrossOrgCollectionShareApi:
     """
 
     def _share(self, client, headers, coll, target_user, permission="viewer", org_ctx=None):
-        from app.api.deps_context import RequestContext
         from app.api.deps_context import get_current_context
         from app.main import app
+        from app.services.request_context import RequestContext
 
         if org_ctx is not None:
             user, org_id = org_ctx
@@ -512,9 +512,9 @@ class TestCollectionSubSurfacesTenantGate:
         assert client.delete(f"{base}/shares/{share_uuid}", headers=headers).status_code == 403
 
     def test_org_collection_reachable_in_matching_org_context(self, client, two_orgs):
-        from app.api.deps_context import RequestContext
         from app.api.deps_context import get_current_context
         from app.main import app
+        from app.services.request_context import RequestContext
 
         w = two_orgs
         coll = _mk_collection(w.db, user=w.user_a, org_id=w.org_a.id)
@@ -549,9 +549,9 @@ class TestCollectionSubSurfacesTenantGate:
     def test_add_media_rejects_cross_scope_file(self, client, two_orgs):
         """Under org context, a PERSONAL file can't be pulled into an org
         collection (it would leak via the collection detail)."""
-        from app.api.deps_context import RequestContext
         from app.api.deps_context import get_current_context
         from app.main import app
+        from app.services.request_context import RequestContext
 
         w = two_orgs
         coll = _mk_collection(w.db, user=w.user_a, org_id=w.org_a.id)
@@ -616,9 +616,9 @@ class TestGroupShareOrgMembership:
         headers = _login(client, w.user_b)
 
         # Simulate an org-B request so the tenant gate resolves the collection.
-        from app.api.deps_context import RequestContext
         from app.api.deps_context import get_current_context
         from app.main import app
+        from app.services.request_context import RequestContext
 
         app.dependency_overrides[get_current_context] = lambda: RequestContext(
             user=w.user_b, org_id=w.org_b.id, org_role="org:member"
@@ -642,9 +642,9 @@ class TestGroupShareOrgMembership:
         group = self._mk_group(w.db, w.user_b, [w.user_b, carol])
         headers = _login(client, w.user_b)
 
-        from app.api.deps_context import RequestContext
         from app.api.deps_context import get_current_context
         from app.main import app
+        from app.services.request_context import RequestContext
 
         app.dependency_overrides[get_current_context] = lambda: RequestContext(
             user=w.user_b, org_id=w.org_b.id, org_role="org:member"
@@ -673,10 +673,10 @@ class TestGroupShareOrgMembership:
 # --------------------------------------------------------------------------- #
 class TestProfileOrgStamping:
     def test_create_profile_api_stamps_request_org(self, client, two_orgs):
-        from app.api.deps_context import RequestContext
         from app.api.deps_context import get_current_context
         from app.main import app
         from app.models.media import SpeakerProfile
+        from app.services.request_context import RequestContext
 
         w = two_orgs
         headers = _login(client, w.user_a)
@@ -746,9 +746,9 @@ class TestListCollectionsTenantScope:
         assert org_coll.name not in names
 
     def test_org_listing_excludes_personal_collections(self, client, two_orgs):
-        from app.api.deps_context import RequestContext
         from app.api.deps_context import get_current_context
         from app.main import app
+        from app.services.request_context import RequestContext
 
         w = two_orgs
         org_coll = _mk_collection(w.db, user=w.user_a, org_id=w.org_a.id)

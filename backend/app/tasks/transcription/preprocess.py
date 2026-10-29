@@ -186,7 +186,7 @@ def _run_preprocess(
 ) -> dict:
     """The preprocess stage body (see ``preprocess_for_transcription``)."""
     from app.services.minio_service import upload_temp_audio
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     step_start = time.perf_counter()
 
@@ -597,7 +597,7 @@ def _mark_pipeline_error(file_uuid: str, task_id: str, raw_error: str) -> dict |
     from app.services.error_categorization_service import ErrorCategorizationService
     from app.services.transcription_retry import RunOutcome
     from app.services.transcription_retry import finish_failed_run
-    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.services.uuid_helpers import get_file_by_uuid
 
     from .context import cancelled_payload
 

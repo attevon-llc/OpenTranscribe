@@ -14,7 +14,7 @@ from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.services.minio_service import MinIOService
 from app.services.minio_service import upload_file
-from app.utils.thumbnail import generate_thumbnail_from_url
+from app.services.thumbnail import generate_thumbnail_from_url
 
 logger = logging.getLogger(__name__)
 

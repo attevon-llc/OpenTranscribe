@@ -27,10 +27,8 @@ import logging
 from dataclasses import dataclass
 from datetime import timedelta
 
-from fastapi import HTTPException
 from fastapi import Request
 from fastapi import Response
-from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.auth.audit import AuditEventType
@@ -43,6 +41,7 @@ from app.auth.utils import local_fallback_permitted_for
 from app.auth.utils import local_password_allowed
 from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.config import settings
+from app.core.exceptions import InvalidInputError
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -62,9 +61,8 @@ def enforce_password_policy(password: str, user: User, db: Session | None = None
         mfa_protected=user_is_mfa_protected(db, user) if db is not None else False,
     )
     if not result.is_valid:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="; ".join(result.errors) or "Password does not meet policy requirements",
+        raise InvalidInputError(
+            "; ".join(result.errors) or "Password does not meet policy requirements"
         )
 
 
@@ -79,10 +77,7 @@ def assert_password_auth_possible(user: User) -> None:
         str(user.auth_type), bool(getattr(user, "allow_local_fallback", False))
     )
     if not allowed:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot set a password for this account: {reason}",
-        )
+        raise InvalidInputError(f"Cannot set a password for this account: {reason}")
 
 
 def assert_local_fallback_settable(auth_type: str | None) -> None:
@@ -93,12 +88,9 @@ def assert_local_fallback_settable(auth_type: str | None) -> None:
     of a local-password bypass.
     """
     if not local_fallback_permitted_for(auth_type):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "allow_local_fallback only applies to accounts whose identity is owned "
-                "by PKI or an OIDC provider."
-            ),
+        raise InvalidInputError(
+            "allow_local_fallback only applies to accounts whose identity is owned "
+            "by PKI or an OIDC provider."
         )
 
 

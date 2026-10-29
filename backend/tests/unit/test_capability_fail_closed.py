@@ -13,7 +13,6 @@ from typing import Any
 from typing import cast
 
 import pytest
-from fastapi import HTTPException
 
 from app.core import capabilities
 from app.core.capabilities import COMMUNITY_CAPABILITIES
@@ -22,6 +21,7 @@ from app.core.capabilities import get_capabilities
 from app.core.capabilities import require_capability
 from app.core.capabilities import reset_capability_resolver
 from app.core.capabilities import set_capability_resolver
+from app.core.exceptions import ResourceNotFoundError
 
 #: Keys the community map turns ON that an external edition would tier-gate —
 #: the ones a partial result used to hand out for free.
@@ -71,7 +71,7 @@ def test_one_missing_key_is_denied_and_the_gate_404s():
     assert {k: v for k, v in caps.items() if k != "url_ingest"} == without_url_ingest
     assert capability_enabled("url_ingest") is False
     dep = require_capability("url_ingest", platform_admin_bypass=False)
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(ResourceNotFoundError) as exc:
         dep(cast(Any, None))
     assert exc.value.status_code == 404
 

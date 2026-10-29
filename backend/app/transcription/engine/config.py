@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 
 from app.core.constants import ENGINE_SHARED_VOLUME_DEFAULT
 from app.core.constants import resolve_engine_shared_volume_path
+from app.core.env import env_bool
+from app.core.env import is_truthy
 
 if TYPE_CHECKING:
     from app.transcription.config import TranscriptionConfig
@@ -86,8 +88,8 @@ class EngineConfig:
         def _bool(key: str, env: str) -> bool:
             v = vals.get(key)
             if v is not None:
-                return v.lower() in ("true", "1", "yes", "on")
-            return os.getenv(env, "false").lower() == "true"
+                return is_truthy(v)
+            return env_bool(env, False)
 
         def _float(key: str, env: str, default: float) -> float:
             raw = vals.get(key)

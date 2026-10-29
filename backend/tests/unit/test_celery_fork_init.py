@@ -211,16 +211,16 @@ class TestForkKillBudget:
         assert configured < 300, "the budget must stay finite; a dead fork must still be reaped"
 
     def test_the_budget_is_operator_tunable(self, monkeypatch):
-        from app.core.celery import _float_env
+        from app.core.env import env_float
 
         monkeypatch.setenv("CELERY_PROC_ALIVE_TIMEOUT", "12.5")
-        assert _float_env("CELERY_PROC_ALIVE_TIMEOUT", 30.0) == 12.5
+        assert env_float("CELERY_PROC_ALIVE_TIMEOUT", 30.0) == 12.5
 
     def test_a_garbage_budget_falls_back_instead_of_crashing_the_worker(self, monkeypatch):
-        from app.core.celery import _float_env
+        from app.core.env import env_float
 
         monkeypatch.setenv("CELERY_PROC_ALIVE_TIMEOUT", "not-a-number")
-        assert _float_env("CELERY_PROC_ALIVE_TIMEOUT", 30.0) == 30.0
+        assert env_float("CELERY_PROC_ALIVE_TIMEOUT", 30.0) == 30.0
 
 
 @pytest.mark.unit

@@ -44,6 +44,8 @@ from collections import deque
 from collections.abc import Iterator
 from contextlib import contextmanager
 
+from app.core.env import env_bool
+from app.core.env import env_float
 from app.core.worker_shutdown import TranscriptionAbortedError
 
 logger = logging.getLogger(__name__)
@@ -171,23 +173,12 @@ _config_lock = threading.Lock()
 _init_lock = threading.Lock()
 
 
-def _float_env(name: str, default: float) -> float:
-    raw = os.getenv(name, "").strip()
-    if not raw:
-        return default
-    try:
-        return float(raw)
-    except ValueError:
-        logger.warning("Invalid %s=%r; using %s", name, raw, default)
-        return default
-
-
 def admission_enabled() -> bool:
-    return os.getenv("GPU_VRAM_ADMISSION", "true").strip().lower() not in ("0", "false", "no")
+    return env_bool("GPU_VRAM_ADMISSION", True)
 
 
 def admission_timeout_s() -> float:
-    return _float_env("GPU_VRAM_ADMISSION_TIMEOUT_S", DEFAULT_ADMISSION_TIMEOUT_S)
+    return env_float("GPU_VRAM_ADMISSION_TIMEOUT_S", DEFAULT_ADMISSION_TIMEOUT_S)
 
 
 def _stage_override_raw(stage: str) -> str:
@@ -234,7 +225,7 @@ def configure_from_device(device_index: int = 0) -> VramBudget | None:
 
     total_mb = int(total_b / 1024**2)
     used_mb = total_mb - int(free_b / 1024**2)
-    fraction = min(1.0, max(0.05, _float_env("GPU_VRAM_BUDGET_FRACTION", DEFAULT_BUDGET_FRACTION)))
+    fraction = min(1.0, max(0.05, env_float("GPU_VRAM_BUDGET_FRACTION", DEFAULT_BUDGET_FRACTION)))
     capacity = max(MIN_CAPACITY_MB, int(total_mb * fraction) - used_mb)
     budget = VramBudget(capacity)
     with _config_lock:

@@ -10,6 +10,7 @@ import logging
 from dataclasses import dataclass
 
 from app.core.config import settings as env_settings
+from app.core.env import is_truthy
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +111,7 @@ class OIDCConfig:
             if isinstance(val, bool):
                 return val
             if isinstance(val, str):
-                return val.lower() in ("true", "1", "yes", "on")
+                return is_truthy(val)
             return bool(val)
 
         def _get_int(key: str, default: int) -> int:

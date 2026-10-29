@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core import constants as C  # noqa: N812
 from app.core.chat_flag_registry import CHAT_FLAG_REGISTRY
+from app.core.env import is_truthy
 
 logger = logging.getLogger(__name__)
 
@@ -174,7 +175,7 @@ def _coerce(field: str, raw: str | None) -> int | bool | float:
         return default
     try:
         if isinstance(default, bool):
-            return raw.strip().lower() in ("true", "1", "yes", "on")
+            return is_truthy(raw)
         value: int | float = int(raw) if isinstance(default, int) else float(raw)
     except (ValueError, TypeError):
         logger.warning("Invalid value %r for %s; using default", raw, SETTING_KEYS[field])

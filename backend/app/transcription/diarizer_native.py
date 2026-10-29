@@ -52,6 +52,7 @@ from app.core.constants import DIAR_SIDECAR_MIN_RTF
 from app.core.constants import DIAR_SIDECAR_TIMEOUT_FLOOR_S
 from app.core.constants import PIPELINE_SCRATCH_DEFAULT
 from app.core.constants import resolve_engine_shared_volume_path
+from app.core.env import is_truthy
 from app.services.asr.errors import retry_after_from_headers
 from app.transcription.diarize_result import DiarizeResult
 
@@ -679,7 +680,7 @@ def diarizer_require_sidecar() -> bool:
     except Exception:  # noqa: S110  # nosec B110
         # DB not available (e.g. during testing, worker startup race) — fall back to env.
         logger.debug("Could not read engine.diarizer_require_sidecar from DB, using env var")
-    return str(raw).strip().lower() in ("true", "1", "yes", "on")
+    return is_truthy(str(raw))
 
 
 class NativeSpeakerDiarizer:

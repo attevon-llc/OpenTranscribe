@@ -133,7 +133,7 @@ def _documented_keys() -> set[str]:
 #: Local wrapper functions (K2) whose first string-literal argument is an env var
 #: name, beside the stdlib/oidc names the raw-call scan already recognised. A call to
 #: one of these was invisible to the scan, which produced a false finding for
-#: GPU_SCALE_ENABLED / GPU_SCALE_DEFAULT_WORKER (``tasks/utility.py``'s ``_env_flag``)
+#: GPU_SCALE_ENABLED / GPU_SCALE_DEFAULT_WORKER (``app.core.env.env_bool``)
 #: the first time this test ran against them.
 #:
 #: ⚠️ Hand-maintained, so a NEW wrapper reads as "nothing consumes this key" — a false
@@ -145,9 +145,10 @@ _ENV_READ_WRAPPER_NAMES = {
     "oidc_env",
     "oidc_bool_env",
     "oidc_int_env",
-    "_int_env",
-    "_float_env",
-    "_env_flag",
+    "env_int",
+    "env_float",
+    "env_bool",
+    "_raw",
 }
 
 
@@ -156,7 +157,7 @@ def _keys_read_by_code() -> frozenset[str]:
     """Every env var name the backend reads.
 
     Union of Settings field names and the string literal passed to os.getenv /
-    os.environ.get / the oidc_*_env helpers / local wrappers like ``_env_flag``
+    os.environ.get / the oidc_*_env helpers / the ``app.core.env`` readers
     (K2), found by walking the AST rather than grepping, so a name split across
     lines or wrapped in a helper still counts.
 
@@ -449,7 +450,7 @@ def test_the_env_wrapper_scanner_finds_the_wrappers_we_know_exist():
     """Guard the guard: a scanner that matches nothing would pass everything below."""
     found = _wrapper_functions_reading_their_first_argument()
 
-    assert {"_int_env", "_float_env", "_env_flag"} <= found, sorted(found)
+    assert {"_raw"} <= found, sorted(found)
 
 
 def test_every_env_read_wrapper_is_registered():

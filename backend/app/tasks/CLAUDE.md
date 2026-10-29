@@ -488,7 +488,7 @@ A structural "does it call session_scope" test is not enough.
   and loads `docker-compose.gpu-scale.yml` (N threads on `GPU_SCALE_DEVICE_ID`, tune
   `GPU_SCALE_WORKERS` to VRAM). **`GPU_SCALE_ENABLED` does not enable scaling** — only the
   `--gpu-scale` flag does; no compose file or startup script reads the variable. It *is* read
-  in exactly one place, `tasks/utility.py` (`_env_flag("GPU_SCALE_ENABLED")`), to pick which GPU device IDs the
+  in exactly one place, `tasks/utility.py` (`env_bool("GPU_SCALE_ENABLED")`), to pick which GPU device IDs the
   system-stats task queries — so a stale value misreports which GPU is in use without
   changing any scheduling. Also note
   `GPU_SCALE_DEFAULT_WORKER` defaults to `0` in compose (default GPU worker disabled) but

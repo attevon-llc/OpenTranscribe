@@ -8,29 +8,14 @@ have been moved to app.tasks.recovery for better organization.
 import contextlib
 import json
 import logging
-import os
 
 from app.core.celery import celery_app
 from app.core.constants import CPUPriority
+from app.core.env import env_bool
 from app.core.redis import get_redis
 from app.utils.stats_helpers import format_bytes
 
 logger = logging.getLogger(__name__)
-
-
-def _env_flag(name: str, *, default: bool = False) -> bool:
-    """Read a boolean environment variable, one way for every caller.
-
-    `GPU_SCALE_ENABLED` used `.lower() == "true"` while `GPU_SCALE_DEFAULT_WORKER`
-    three lines later required the literal `"1"` — two booleans from the same
-    `.env`, parsed differently (issue #458). `GPU_SCALE_DEFAULT_WORKER=true` was
-    silently False, and the two documented sources already disagree on the
-    spelling: docker-compose.yml sets `0`, `.env.example` sets `1`.
-    """
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _safe_float(value: str | None) -> float | None:
@@ -209,10 +194,10 @@ def update_gpu_stats(self):
 
         # Determine which GPU devices the app workers are using.
         # All values come from .env via env_file on the cpu-worker service.
-        gpu_scale_enabled = _env_flag("GPU_SCALE_ENABLED", default=False)
+        gpu_scale_enabled = env_bool("GPU_SCALE_ENABLED", default=False)
         scale_device_id = int(os.environ.get("GPU_SCALE_DEVICE_ID", "2"))
         default_device_id = int(os.environ.get("GPU_DEVICE_ID", "0"))
-        scale_default_worker = _env_flag("GPU_SCALE_DEFAULT_WORKER", default=False)
+        scale_default_worker = env_bool("GPU_SCALE_DEFAULT_WORKER", default=False)
 
         if gpu_scale_enabled:
             # Scaled worker is always the primary; add default worker if also active.

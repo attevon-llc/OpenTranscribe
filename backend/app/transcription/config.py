@@ -10,6 +10,8 @@ import os
 from dataclasses import dataclass
 from typing import ClassVar
 
+from app.core.env import env_int
+
 logger = logging.getLogger(__name__)
 
 # Models small enough to run efficiently on CPU (int8).
@@ -492,20 +494,9 @@ class TranscriptionConfig:
         budget = TranscriptionConfig._host_memory_budget_mb()
         if budget is None:
             return None
-        baseline = _int_env("GPU_HOST_BASELINE_MB", DEFAULT_HOST_BASELINE_MB)
-        per_task = max(1, _int_env("GPU_PER_TASK_HOST_MB", DEFAULT_PER_TASK_HOST_MB))
+        baseline = env_int("GPU_HOST_BASELINE_MB", DEFAULT_HOST_BASELINE_MB)
+        per_task = max(1, env_int("GPU_PER_TASK_HOST_MB", DEFAULT_PER_TASK_HOST_MB))
         return max(1, (budget - baseline) // per_task)
-
-
-def _int_env(name: str, default: int) -> int:
-    raw = os.getenv(name, "").strip()
-    if not raw:
-        return default
-    try:
-        return int(raw)
-    except ValueError:
-        logger.warning("Invalid %s=%r; using %d", name, raw, default)
-        return default
 
 
 if __name__ == "__main__":

@@ -11,45 +11,23 @@ was hardcoded, except the transcription-liveness settings, which are new.
 """
 
 import logging
-import os
 from dataclasses import dataclass
 from dataclasses import field
 
+from app.core.env import env_int
+
 logger = logging.getLogger(__name__)
-
-
-def _int_env(name: str, default: int, *, minimum: int = 1) -> int:
-    """Read a positive integer from the environment, falling back to ``default``.
-
-    An unparseable or too-small value logs a warning and uses the default rather than
-    raising: this module is imported by every worker at startup, and a typo in one recovery
-    threshold must not take the whole worker fleet down.
-    """
-    raw = os.getenv(name, "").strip()
-    if not raw:
-        return default
-    try:
-        value = int(raw)
-    except ValueError:
-        logger.warning("%s=%r is not an integer; using the default %d", name, raw, default)
-        return default
-    if value < minimum:
-        logger.warning(
-            "%s=%d is below the minimum %d; using the default %d", name, value, minimum, default
-        )
-        return default
-    return value
 
 
 def _default_max_task_durations() -> dict[str, int]:
     return {
         # Measured from when the run STARTED on a worker, never from when it was queued:
         # a transcription waiting for a GPU worker has not used any of its budget (#1020).
-        "transcription": _int_env("TASK_MAX_DURATION_TRANSCRIPTION_SECONDS", 3600),
+        "transcription": env_int("TASK_MAX_DURATION_TRANSCRIPTION_SECONDS", 3600, minimum=1),
         "extract_audio": 600,  # 10 minutes max for audio extraction
         "analyze_transcript": 900,  # 15 minutes max for analysis
         "summarize_transcript": 900,  # 15 minutes max for summarization
-        "default": _int_env("TASK_MAX_DURATION_DEFAULT_SECONDS", 1800),
+        "default": env_int("TASK_MAX_DURATION_DEFAULT_SECONDS", 1800, minimum=1),
     }
 
 
@@ -62,7 +40,7 @@ class TaskRecoveryConfig:
 
     # Time before considering a task stale (in seconds)
     STALENESS_THRESHOLD: int = field(
-        default_factory=lambda: _int_env("TASK_RECOVERY_STALENESS_SECONDS", 300)
+        default_factory=lambda: env_int("TASK_RECOVERY_STALENESS_SECONDS", 300, minimum=1)
     )
 
     # Time to wait before startup recovery kicks in (in seconds)
@@ -83,7 +61,7 @@ class TaskRecoveryConfig:
 
     # Orphaned task threshold (in hours)
     ORPHANED_TASK_THRESHOLD: int = field(
-        default_factory=lambda: _int_env("TASK_RECOVERY_ORPHANED_HOURS", 1)
+        default_factory=lambda: env_int("TASK_RECOVERY_ORPHANED_HOURS", 1, minimum=1)
     )
 
     # How often a running transcription stage refreshes its lease (heartbeat), and how long
@@ -91,10 +69,10 @@ class TaskRecoveryConfig:
     # cover the longest stretch a worker can go without scheduling its heartbeat thread (six
     # missed beats at the defaults). This TTL is the detection latency for a killed worker.
     TRANSCRIPTION_HEARTBEAT_INTERVAL: int = field(
-        default_factory=lambda: _int_env("TRANSCRIPTION_HEARTBEAT_INTERVAL_SECONDS", 15)
+        default_factory=lambda: env_int("TRANSCRIPTION_HEARTBEAT_INTERVAL_SECONDS", 15, minimum=1)
     )
     TRANSCRIPTION_HEARTBEAT_TTL: int = field(
-        default_factory=lambda: _int_env("TRANSCRIPTION_HEARTBEAT_TTL_SECONDS", 90)
+        default_factory=lambda: env_int("TRANSCRIPTION_HEARTBEAT_TTL_SECONDS", 90, minimum=1)
     )
 
     # How old a transcription run must be (from Task.created_at) before recovery may reclaim
@@ -103,7 +81,7 @@ class TaskRecoveryConfig:
     # younger than this has simply not had the chance to show it is alive. Never shorter than
     # TRANSCRIPTION_HEARTBEAT_TTL_SECONDS.
     TRANSCRIPTION_RECLAIM_GRACE: int = field(
-        default_factory=lambda: _int_env("TRANSCRIPTION_RECLAIM_GRACE_SECONDS", 120)
+        default_factory=lambda: env_int("TRANSCRIPTION_RECLAIM_GRACE_SECONDS", 120, minimum=1)
     )
 
     # Infrastructure requeues per file (a dead worker's stage put back on its queue, or a dead
@@ -111,13 +89,13 @@ class TaskRecoveryConfig:
     # not spend the file's error-retry budget; past this cap the file fails as interrupted
     # instead of cycling workers forever (a file that OOM-kills every worker it reaches).
     TRANSCRIPTION_MAX_INFRA_REQUEUES: int = field(
-        default_factory=lambda: _int_env("TRANSCRIPTION_MAX_INFRA_REQUEUES", 5)
+        default_factory=lambda: env_int("TRANSCRIPTION_MAX_INFRA_REQUEUES", 5, minimum=1)
     )
 
     # How long a transcription may wait in the broker before recovery treats its message as
     # lost. Waiting for a worker is normal and never fails a file before this (#1020).
     TRANSCRIPTION_QUEUE_MAX_WAIT: int = field(
-        default_factory=lambda: _int_env("TRANSCRIPTION_QUEUE_MAX_WAIT_SECONDS", 604800)
+        default_factory=lambda: env_int("TRANSCRIPTION_QUEUE_MAX_WAIT_SECONDS", 604800, minimum=1)
     )
 
     # Broker-level recovery of transcription stages held by a dead worker
@@ -129,10 +107,10 @@ class TaskRecoveryConfig:
     # default), not CELERY_VISIBILITY_TIMEOUT (6 h). The stale age only guards a delivery that
     # has not started yet (no lease is expected before its first beat).
     BROKER_ORPHAN_STALE: int = field(
-        default_factory=lambda: _int_env("BROKER_ORPHAN_STALE_SECONDS", 120)
+        default_factory=lambda: env_int("BROKER_ORPHAN_STALE_SECONDS", 120, minimum=1)
     )
     BROKER_ORPHAN_SWEEP_INTERVAL: int = field(
-        default_factory=lambda: _int_env("BROKER_ORPHAN_SWEEP_INTERVAL_SECONDS", 60)
+        default_factory=lambda: env_int("BROKER_ORPHAN_SWEEP_INTERVAL_SECONDS", 60, minimum=1)
     )
     # Every OTHER ``unacked`` delivery (not a transcription stage) has no run lease, so the
     # only evidence that its worker is gone is that no live worker reports holding it. This is
@@ -140,10 +118,10 @@ class TaskRecoveryConfig:
     # live worker that misses one inspect broadcast. Each message is put back at most
     # BROKER_ORPHAN_MAX_REQUEUES times, so one that kills every worker it reaches stops.
     BROKER_ORPHAN_UNTRACKED_STALE: int = field(
-        default_factory=lambda: _int_env("BROKER_ORPHAN_UNTRACKED_STALE_SECONDS", 600)
+        default_factory=lambda: env_int("BROKER_ORPHAN_UNTRACKED_STALE_SECONDS", 600, minimum=1)
     )
     BROKER_ORPHAN_MAX_REQUEUES: int = field(
-        default_factory=lambda: _int_env("BROKER_ORPHAN_MAX_REQUEUES", 5)
+        default_factory=lambda: env_int("BROKER_ORPHAN_MAX_REQUEUES", 5, minimum=1)
     )
 
     # Worker-loss replay for idempotent tasks (issue #1067, app/core/task_replay.py). A task
@@ -152,18 +130,18 @@ class TaskRecoveryConfig:
     # times. The TTL is how long a dead worker's task waits before it is re-sent. It must
     # cover the longest stretch a process can go without scheduling its heartbeat thread.
     TASK_HEARTBEAT_INTERVAL: int = field(
-        default_factory=lambda: _int_env("TASK_HEARTBEAT_INTERVAL_SECONDS", 30)
+        default_factory=lambda: env_int("TASK_HEARTBEAT_INTERVAL_SECONDS", 30, minimum=1)
     )
     TASK_HEARTBEAT_TTL: int = field(
-        default_factory=lambda: _int_env("TASK_HEARTBEAT_TTL_SECONDS", 120)
+        default_factory=lambda: env_int("TASK_HEARTBEAT_TTL_SECONDS", 120, minimum=1)
     )
     TASK_REPLAY_MAX_ATTEMPTS: int = field(
-        default_factory=lambda: _int_env("TASK_REPLAY_MAX_ATTEMPTS", 2, minimum=0)
+        default_factory=lambda: env_int("TASK_REPLAY_MAX_ATTEMPTS", 2, minimum=0)
     )
     # A replay record older than this is dropped rather than replayed: work lost that long
     # ago is recovered, if at all, by the file-level recovery steps, not re-run blind.
     TASK_REPLAY_MAX_AGE: int = field(
-        default_factory=lambda: _int_env("TASK_REPLAY_MAX_AGE_SECONDS", 86400)
+        default_factory=lambda: env_int("TASK_REPLAY_MAX_AGE_SECONDS", 86400, minimum=1)
     )
 
     # OOM retry configuration

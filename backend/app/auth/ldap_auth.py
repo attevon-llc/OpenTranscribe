@@ -29,6 +29,7 @@ from app.core.auth_types import AUTH_TYPE_LDAP
 from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.core.config import resolve_ldap_search_filter
 from app.core.config import settings as env_settings
+from app.core.env import is_truthy
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +120,7 @@ class LdapConfig:
             if isinstance(val, bool):
                 return val
             if isinstance(val, str):
-                return val.lower() in ("true", "1", "yes", "on")
+                return is_truthy(val)
             return bool(val)
 
         def _get_int(key: str, default: int) -> int:

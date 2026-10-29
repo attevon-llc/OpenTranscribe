@@ -38,12 +38,13 @@ Not addressed here: each task still decodes its whole file into memory (issue #1
 from __future__ import annotations
 
 import logging
-import os
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 
+from app.core.env import env_bool
+from app.core.env import env_int
 from app.core.worker_shutdown import TranscriptionAbortedError
 from app.transcription.vram_budget import VramBudget
 from app.transcription.vram_budget import admission_timeout_s
@@ -97,8 +98,7 @@ _lock = threading.Lock()
 
 
 def admission_enabled() -> bool:
-    raw = os.getenv("GPU_HOST_MEMORY_ADMISSION", "true").strip().lower()
-    return raw not in ("0", "false", "no")
+    return env_bool("GPU_HOST_MEMORY_ADMISSION", True)
 
 
 def decide(configured: int) -> AdmissionDecision:
@@ -106,12 +106,11 @@ def decide(configured: int) -> AdmissionDecision:
     from app.transcription.config import DEFAULT_HOST_BASELINE_MB
     from app.transcription.config import DEFAULT_PER_TASK_HOST_MB
     from app.transcription.config import TranscriptionConfig
-    from app.transcription.config import _int_env
 
     configured = max(1, int(configured))
     budget_mb, source = TranscriptionConfig._host_memory_budget()
-    reserve_mb = _int_env("GPU_HOST_BASELINE_MB", DEFAULT_HOST_BASELINE_MB)
-    per_task_mb = max(1, _int_env("GPU_PER_TASK_HOST_MB", DEFAULT_PER_TASK_HOST_MB))
+    reserve_mb = env_int("GPU_HOST_BASELINE_MB", DEFAULT_HOST_BASELINE_MB)
+    per_task_mb = max(1, env_int("GPU_PER_TASK_HOST_MB", DEFAULT_PER_TASK_HOST_MB))
     host_cap = None if budget_mb is None else max(1, (budget_mb - reserve_mb) // per_task_mb)
     effective = configured if host_cap is None else min(configured, host_cap)
     return AdmissionDecision(

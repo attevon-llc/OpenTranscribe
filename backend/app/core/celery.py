@@ -25,24 +25,6 @@ logger = logging.getLogger(__name__)
 ensure_nltk_data_private()
 
 
-def _int_env(key: str, default: int) -> int:
-    """Read an int env var, falling back to *default* on absence or garbage."""
-    try:
-        return int(os.getenv(key, str(default)))
-    except (TypeError, ValueError):
-        logger.warning("Invalid integer for %s; using %d", key, default)
-        return default
-
-
-def _float_env(key: str, default: float) -> float:
-    """Read a float env var, falling back to *default* on absence or garbage."""
-    try:
-        return float(os.getenv(key, str(default)))
-    except (TypeError, ValueError):
-        logger.warning("Invalid float for %s; using %s", key, default)
-        return default
-
-
 _SKIP_CELERY = os.environ.get("SKIP_CELERY", "").lower() == "true"
 
 
@@ -120,6 +102,8 @@ from kombu import Queue  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.core.constants import CeleryQueues  # noqa: E402
 from app.core.constants import gpu_preferred_queue  # noqa: E402
+from app.core.env import env_float  # noqa: E402 - after ensure_nltk_data_private()
+from app.core.env import env_int  # noqa: E402 - after ensure_nltk_data_private()
 from app.core.task_config import task_recovery_config  # noqa: E402
 
 # Speaker/diarization work that PREFERS a GPU but produces a correct result on CPU
@@ -201,8 +185,8 @@ _redis_ssl_options = (
 # or polling_interval if one is ever set): the drain in Channel.close() may legitimately
 # wait that long, and a timeout under it would turn every idle poll into a reconnect.
 # 30 s also leaves room for a slow-but-alive managed Redis under load.
-_REDIS_SOCKET_TIMEOUT = _float_env("CELERY_REDIS_SOCKET_TIMEOUT", 30.0)
-_REDIS_CONNECT_TIMEOUT = _float_env("CELERY_REDIS_CONNECT_TIMEOUT", 10.0)
+_REDIS_SOCKET_TIMEOUT = env_float("CELERY_REDIS_SOCKET_TIMEOUT", 30.0)
+_REDIS_CONNECT_TIMEOUT = env_float("CELERY_REDIS_CONNECT_TIMEOUT", 10.0)
 _REDIS_HEALTH_CHECK_INTERVAL = 25  # kombu's own default, pinned so it cannot drift to 0
 _REDIS_KEEPALIVE_OPTIONS = {
     opt: value
@@ -322,8 +306,8 @@ celery_app.conf.update(
     # just compose. 0/unset = no recycling. Explicit CLI flags override these. Prefork
     # only; the threads pool ignores both. Memory is in KiB and recycles a child AFTER
     # the task that pushed its RSS over the limit finishes.
-    worker_max_tasks_per_child=_int_env("CELERY_WORKER_MAX_TASKS_PER_CHILD", 0) or None,
-    worker_max_memory_per_child=_int_env("CELERY_WORKER_MAX_MEMORY_PER_CHILD_KB", 0) or None,
+    worker_max_tasks_per_child=env_int("CELERY_WORKER_MAX_TASKS_PER_CHILD", 0) or None,
+    worker_max_memory_per_child=env_int("CELERY_WORKER_MAX_MEMORY_PER_CHILD_KB", 0) or None,
     # Global task time limits (issue #284 A1.2). There were NONE, so a hung CUDA call
     # held the single GPU slot forever and no later transcription could start.
     #
@@ -341,8 +325,8 @@ celery_app.conf.update(
     # --pool=threads — which is exactly what the GPU workers use. Treat these as a
     # backstop for the prefork/CPU queues; on GPU the real protection is
     # visibility_timeout plus the DB-status crash recovery in tasks/recovery.py.
-    task_soft_time_limit=_int_env("CELERY_SOFT_TIME_LIMIT", 10800),  # 3 h
-    task_time_limit=_int_env("CELERY_HARD_TIME_LIMIT", 11700),  # 3 h 15 m
+    task_soft_time_limit=env_int("CELERY_SOFT_TIME_LIMIT", 10800),  # 3 h
+    task_time_limit=env_int("CELERY_HARD_TIME_LIMIT", 11700),  # 3 h 15 m
     # How long a freshly FORKED prefork child has to send its WORKER_UP message
     # before the parent SIGKILLs it and forks a replacement
     # (celery/concurrency/asynpool.py: `verify_process_alive` ->
@@ -369,7 +353,7 @@ celery_app.conf.update(
     # sits there. Absence of the signature is not absence of the problem; check
     # `init_worker_process`'s own "fork init started/finished" pairs, which are emitted
     # regardless of the hub.
-    worker_proc_alive_timeout=_float_env("CELERY_PROC_ALIVE_TIMEOUT", 30.0),
+    worker_proc_alive_timeout=env_float("CELERY_PROC_ALIVE_TIMEOUT", 30.0),
     # --- Worker-loss and shutdown behaviour (see app/core/broker_orphans.py) -------------
     # Soft shutdown (Celery 5.5+): on a COLD shutdown (SIGQUIT, or SIGTERM when the worker
     # runs with REMAP_SIGTERM=SIGQUIT) wait this long for running tasks, then cancel the rest
@@ -377,7 +361,7 @@ celery_app.conf.update(
     # exits, instead of leaving them to the visibility timeout. It does nothing on a warm
     # shutdown (plain SIGTERM), which waits for running tasks with no limit; there a SIGKILL
     # at the end of the container's stop grace period is answered by the orphan reaper.
-    worker_soft_shutdown_timeout=_float_env("CELERY_WORKER_SOFT_SHUTDOWN_TIMEOUT", 30.0),
+    worker_soft_shutdown_timeout=env_float("CELERY_WORKER_SOFT_SHUTDOWN_TIMEOUT", 30.0),
     # Also wait (and so also requeue cleanly) when the worker holds only reserved or
     # ETA-scheduled messages and runs nothing.
     worker_enable_soft_shutdown_on_idle=os.getenv(
@@ -908,7 +892,7 @@ def _pool_concurrency() -> int:
             return max(1, int(value))
         except ValueError:
             break
-    return max(1, _int_env("CELERY_WORKER_CONCURRENCY", 1))
+    return max(1, env_int("CELERY_WORKER_CONCURRENCY", 1))
 
 
 def _cap_torch_threads_to_cpu_quota() -> None:

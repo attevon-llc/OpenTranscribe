@@ -43,7 +43,17 @@ pytestmark = pytest.mark.skipif(
 _DOCKER_NATIVE = frozenset({"COMPOSE_PROJECT_NAME", "COMPOSE_PROFILES", "DOCKER_RUNTIME"})
 
 #: Local helpers that read one literal env-var name, same contract as `os.getenv`.
-_ENV_HELPER_NAMES = frozenset({"oidc_env", "oidc_bool_env", "oidc_int_env", "_int_env"})
+_ENV_HELPER_NAMES = frozenset(
+    {
+        "oidc_env",
+        "oidc_bool_env",
+        "oidc_int_env",
+        "_int_env",
+        "env_int",
+        "env_float",
+        "env_bool",
+    }
+)
 
 _NAME_RE = re.compile(r"[A-Z_][A-Z0-9_]*")
 

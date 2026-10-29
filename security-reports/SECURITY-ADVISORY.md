@@ -1,12 +1,46 @@
 # Security Advisory - OpenTranscribe
 
-**Last Updated**: 2026-09-20
-**Applies to**: OpenTranscribe v0.5.1
-**Base Images**: `python:3.13-slim-trixie` (Debian 13), `nginx:1.29.8-alpine3.23`
+**Last Updated**: 2026-10-28
+**Applies to**: OpenTranscribe v0.6.0 (per-image scan counts below are the v0.5.1 measurement until the v0.6.0 release scan re-measures them; see the note in each section)
+**Base Images**: `python:3.13-slim-trixie` (Debian 13), `nginx:1.31.2-alpine3.23` (frontend and docs)
 
 ## Overview
 
 This document provides transparency about known security vulnerabilities in OpenTranscribe's container images and explains their actual risk to the application. It is updated alongside every tagged release.
+
+## v0.6.0 — Dependency and Image Hardening
+
+Changes since v0.5.1 that affect the security posture of the images. Counts for the v0.6.0
+images are produced by the release `scan` stage and committed under `security-reports/`; the
+tables further down still show the v0.5.1 measurement until that run replaces them.
+
+- **`transformers` 4.57.6 to 5.10.4, `huggingface-hub` 1.17.0.** Takes the fix for the three
+  `transformers` findings listed under the v0.5.1 HIGH summary (CVE-2026-4372, CVE-2026-5241,
+  CVE-2026-9856), which previously required a major bump. `whisperx` caps `huggingface-hub<1.0`
+  upstream, but it is installed with `--no-deps` and the application does not import it at
+  runtime. `huggingface-hub` is held at 1.17.0 because later 1.x releases delete a failed
+  in-flight download, which removes resume.
+- **`msgpack` and `setuptools` HIGH findings were pip's own vendored copies**, not application
+  dependencies. `pip` has been removed from the runtime images, and a scan of the resulting backend
+  image no longer lists them. (This corrects the v0.5.1 note below that left `msgpack` unexplained.)
+- **`nltk` 3.10.4 (GHSA-j456-xh4h-cpf2)** in every requirements file; the advisory concerns
+  `WekaClassifier`, which the application never imports. The API and workers now keep the
+  `nltk_data` tree private (no group or world write bit), because 3.10.4 refuses a writable tree.
+- **`filelock` 4.2.4 (CVE-2026-112940)** pinned in the backend requirements.
+- **OS packages** are refreshed on every image build through the `APT_SECURITY_REFRESH` build
+  argument, which `scripts/docker-build-push.sh` and the release `build` stage set to the current
+  date. A bare `docker build` can reuse an old `apt-get upgrade` layer and keep stale OS findings.
+- **Frontend and docs image base** is `nginx:1.31.2-alpine3.23`, the same as v0.5.1. The v0.5.1 edition of this document named `nginx:1.29.8` in error; the v0.5.1 Dockerfiles already used 1.31.2.
+- **Transitive dependencies are pinned** to the versions the image resolved, and a CI
+  job resolves every backend requirements file so a conflicting pin fails before release.
+- **Application-level changes** (not image findings) are in the changelog under Security: stricter
+  upload content-type checks, tenant isolation with audited support access, CSP/CORS and
+  cross-origin headers, and third-party telemetry off by default.
+
+The libxml2 and Debian OS-level findings below are unchanged in nature and remain tracked in
+issue [#775](https://github.com/attevon-llc/OpenTranscribe/issues/775).
+
+---
 
 ## v0.5.1 — Security Patch Release
 
@@ -28,7 +62,7 @@ invisible copy.
 source-built `psycopg2` links against the system's own `libpq`/`pcre2` rather than vendoring its
 own — the vulnerable copy doesn't exist at all, rather than being merely patched.
 
-**Verified, not assumed**: rebuilt every v0.5.1 release image from scratch and re-scanned.
+**Verified, not assumed** (v0.5.1): rebuilt every v0.5.1 release image from scratch and re-scanned.
 
 | Image | CRITICAL before | CRITICAL after |
 |---|---|---|
@@ -110,11 +144,8 @@ equivalent `-grype.txt` output for the same leg.
   `libsystemd0`/`libudev1`, `perl` family. None have a Debian-provided fix as of 2026-09-20;
   `apt-get upgrade` will pick each up automatically the moment one ships.
 - **3 have a fix available in our own dependency tree, not yet taken**:
-  - `transformers` (CVE-2026-4372/5241/9856, fixed in 5.3.0+/5.5.0+/5.10.0+) — the fix requires
-    a **major version bump** (4.57.6 → 5.x), which the project has an existing `dependabot.yml`
-    ignore rule for: transformers 5.x breaks whisperx/pyannote compatibility. This work is
-    **deliberately deferred to v0.8.0**'s planned backend changes rather than rushed into a
-    security patch release — doing compatibility work now would likely be redone there.
+  - `transformers` (CVE-2026-4372/5241/9856, fixed in 5.3.0+/5.5.0+/5.10.0+) — the fix required
+    a **major version bump** (4.57.6 → 5.x). *Resolved in v0.6.0 (5.10.4); see the v0.6.0 section.*
   - `msgpack` (GHSA-6v7p-g79w-8964, installed 1.1.2, fixed 1.2.1) — confirmed **not actually
     importable** in the running application (`ModuleNotFoundError: No module named 'msgpack'`).
     An orphaned artifact somewhere in the image rather than a reachable dependency; lower-severity
@@ -134,16 +165,16 @@ the raw reports.
 
 ---
 
-## Frontend Image (v0.5.1)
+## Frontend Image
 
-**Base**: `nginx:1.29.8-alpine3.23` + `apk upgrade --no-cache`
+**Base (v0.6.0)**: `nginx:1.31.2-alpine3.23` + `apk upgrade --no-cache`. The Trivy counts below are the v0.5.1 measurement (same base).
 
 Trivy: **0 Critical** on both `amd64` and `arm64`. 11 High on `amd64`, 0 on `arm64` — see
 `security-reports/frontend-amd64-trivy.txt`.
 
-## Docs Image (v0.5.1)
+## Docs Image
 
-**Base**: `nginx:1.29.8-alpine3.23` + `apk upgrade --no-cache`
+**Base**: `nginx:1.31.2-alpine3.23` (counts below are the v0.5.1 measurement) + `apk upgrade --no-cache`
 
 Trivy: **0 Critical** on both `amd64` and `arm64`. 11 High on `amd64`, 0 on `arm64` — see
 `security-reports/docs-amd64-trivy.txt`.
@@ -165,7 +196,7 @@ All scan outputs are committed to `security-reports/` in this repository for tra
 reproducibility. Re-run them yourself with:
 
 ```bash
-IMAGE_TAG=0.5.1 ./scripts/security-scan.sh all
+IMAGE_TAG=0.6.0 ./scripts/security-scan.sh all
 ```
 
 ---
@@ -219,6 +250,6 @@ The application:
 
 ---
 
-**Document Version**: 3.0
-**Applies to**: OpenTranscribe 0.5.1
+**Document Version**: 4.0
+**Applies to**: OpenTranscribe 0.6.0
 **Maintainer**: OpenTranscribe Security Team

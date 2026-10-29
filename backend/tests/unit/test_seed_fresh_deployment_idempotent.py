@@ -17,6 +17,7 @@ on every start and look idempotent on the others.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -83,6 +84,28 @@ def test_a_first_run_against_an_empty_library_uploads_every_seed_file(media_dir:
         assert result.returncode == 0, result.stderr
         assert sorted(stub.uploaded_names) == sorted(SEED_NAMES)
         assert "uploaded 3, already present 0, failed 0 of 3" in result.stdout
+
+
+@pytest.mark.skipif(
+    subprocess.run(["bash", "-c", "command -v file"], capture_output=True, check=False).returncode
+    != 0,
+    reason="file(1) is not installed; the seeder falls back to the extension without it",
+)
+def test_the_declared_type_follows_the_bytes_not_the_extension(tmp_path: Path) -> None:
+    """The corpus holds an '.mp3' that is really an MP4: the upload endpoint rejects a mismatch."""
+    media = tmp_path / "media"
+    media.mkdir()
+    # A minimal ISO base media (mp4) 'ftyp' box under an .mp3 name.
+    (media / "seed_t1_1s_aaaaaaaa_Mislabelled.mp3").write_bytes(
+        b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom" + b"\x00" * 64
+    )
+    with StubBackend() as stub:
+        result = run_seed(media, stub.url)
+
+        assert result.returncode == 0, result.stderr
+        assert stub.uploaded_types["seed_t1_1s_aaaaaaaa_Mislabelled.mp3"].startswith(
+            ("video/mp4", "audio/mp4")
+        )
 
 
 def test_a_second_run_against_the_same_stack_uploads_nothing(media_dir: Path) -> None:
@@ -200,11 +223,19 @@ class TestManifest:
 
             names = [line.split("\t")[0] for line in manifest.stdout.splitlines()[1:]]
             assert sorted(names) == sorted(stub.uploaded_names)
+
+            # The backend stores the sanitized stem, which drops a trailing underscore, so the two
+            # sides are compared on the same normalisation the seeder and the capture wrapper use.
+            def norm(name: str) -> str:
+                return re.sub(r"[ _.]+(\.[^.]+)$", r"\1", name)
+
             sizes = {
-                line.split("\t")[0]: int(line.split("\t")[1])
+                norm(line.split("\t")[0]): int(line.split("\t")[1])
                 for line in manifest.stdout.splitlines()[1:]
             }
-            stored = {f["title"] + Path(f["filename"]).suffix: f["file_size"] for f in stub.library}
+            stored = {
+                norm(f["title"] + Path(f["filename"]).suffix): f["file_size"] for f in stub.library
+            }
             assert sizes == stored
 
     def test_with_no_media_it_says_synthetic_rather_than_printing_an_empty_success(

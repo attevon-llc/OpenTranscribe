@@ -174,7 +174,7 @@ fi
 # NOTE: the Python below sits inside bash single quotes, so it must contain none.
 list_existing() {
   OT_SEED_URL="$BACKEND_URL" OT_SEED_TOKEN="$TOKEN" python3 -I -c '
-import json, os, sys, urllib.request
+import json, os, re, sys, urllib.request
 from pathlib import PurePosixPath
 
 base, token = os.environ["OT_SEED_URL"], os.environ["OT_SEED_TOKEN"]
@@ -192,7 +192,10 @@ while page <= total_pages:
         name = f["filename"]
         title = f.get("title") or PurePosixPath(name).stem
         size = f.get("file_size")
-        print(f"{title}{PurePosixPath(name).suffix}\t{size}")
+        # The backend strips trailing underscores/spaces from a stored title, so compare on the
+        # same normalisation the capture wrapper uses (see update-visual-baselines.sh).
+        stored = re.sub(r"[ _.]+(\.[^.]+)$", r"\1", f"{title}{PurePosixPath(name).suffix}")
+        print(f"{stored}\t{size}")
     page += 1
 '
 }
@@ -213,7 +216,8 @@ for f in "${FILES[@]}"; do
   name="$(basename "$f")"
   # A here-string, not `printf | grep -q`: under pipefail, grep exiting early SIGPIPEs the
   # printf and the pipeline's 141 reads as "not present" -- a duplicate upload.
-  if grep -Fxq -- "$name" <<< "$EXISTING_NAMES"; then
+  norm_name="$(sed -E 's/[ _.]+(\.[^.]+)$/\1/' <<< "$name")"
+  if grep -Fxq -- "$norm_name" <<< "$EXISTING_NAMES"; then
     present=$((present + 1))
     echo "   = ${name} (already present)"
     continue
@@ -230,6 +234,12 @@ for f in "${FILES[@]}"; do
     *.webm) mime="video/webm" ;;
     *) mime="application/octet-stream" ;;
   esac
+  # The upload endpoint checks the real container against the declared type, and the corpus
+  # holds an ".mp3" that is really an MP4 (isobmff) file: declare what the bytes are.
+  if command -v file >/dev/null 2>&1; then
+    sniffed="$(file -b --mime-type -- "$f" 2>/dev/null || true)"
+    case "$sniffed" in audio/*|video/*) mime="$sniffed" ;; esac
+  fi
   echo "📤 seed: uploading ${name} (${mime})..."
   if curl -fsS -X POST "${BACKEND_URL}/api/files" \
        -H "Authorization: Bearer ${TOKEN}" \

@@ -715,6 +715,7 @@ assert_corpus_is_the_seed() {
     OT_FRESH_NAME="$FRESH_NAME" "$VENV_PY" - <<'PYEOF' || return 1
 import collections
 import os
+import re
 import sys
 import time
 from pathlib import PurePosixPath
@@ -801,6 +802,11 @@ def read_library() -> list[dict] | None:
     return items
 
 
+def norm(name: str) -> str:
+    """The backend strips trailing underscores/spaces from a stored title; compare on that."""
+    return re.sub(r"[ _.]+(\.[^.]+)$", r"\1", name)
+
+
 def key(f: dict) -> str:
     """The on-disk basename the seeder uploaded.
 
@@ -809,15 +815,17 @@ def key(f: dict) -> str:
     """
     name = str(f.get("filename") or "")
     path = PurePosixPath(name)
-    return f"{f.get('title') or path.stem}{path.suffix}"
+    return norm(f"{f.get('title') or path.stem}{path.suffix}")
 
 
 def status_of(f: dict) -> str:
     return str(f.get("status", "")).lower() or "unknown"
 
 
-want = collections.Counter(name for name, _ in expected)
-sizes = dict(expected)
+want = collections.Counter(norm(name) for name, _ in expected)
+sizes = {norm(name): size for name, size in expected}
+# Messages name the file as it is on disk, not its normalised comparison key.
+shown = {norm(name): name for name, _ in expected}
 while time.time() < deadline:
     files = read_library()
     if files is None:
@@ -835,12 +843,14 @@ while time.time() < deadline:
         if duplicated:
             lines.append(
                 "  uploaded more than once: "
-                + ", ".join(f"{n} x{have[n]}" for n in duplicated)
+                + ", ".join(f"{shown.get(n, n)} x{have[n]}" for n in duplicated)
             )
         if extras:
-            lines.append("  not part of the seed: " + ", ".join(f"{n} x{have[n]}" for n in extras))
+            lines.append(
+                "  not part of the seed: " + ", ".join(f"{shown.get(n, n)} x{have[n]}" for n in extras)
+            )
         if missing:
-            lines.append("  missing: " + ", ".join(missing))
+            lines.append("  missing: " + ", ".join(shown.get(n, n) for n in missing))
         lines.append(
             "The gallery cannot mask its card count, so photographing this would bake the "
             "stack's history into the baseline."

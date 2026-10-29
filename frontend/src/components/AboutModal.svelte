@@ -1,6 +1,6 @@
 <script lang="ts">
   import { t } from '$stores/locale';
-  import axios from 'axios';
+  import { getServerVersion } from '$lib/api/version';
   import BaseModal from './ui/BaseModal.svelte';
   import { SLOT, splitAtSlot } from '$lib/i18n/slots';
   import { compareBuilds, normalizeCommit, sourceRefFor } from '$lib/utils/buildIdentity';
@@ -40,9 +40,9 @@
       // `version`, plus the `git_sha` the AGPL §13 source offer below has to resolve to.
       // An offer pointing at whatever `master` happens to be today is not an offer of
       // THIS version's Corresponding Source.
-      const res = await axios.get('/api/version');
-      serverVersion = res.data?.version || '';
-      serverCommit = res.data?.git_sha || '';
+      const server = await getServerVersion();
+      serverVersion = server.version;
+      serverCommit = server.git_sha;
     } catch {
       serverVersion = '';
       serverCommit = '';

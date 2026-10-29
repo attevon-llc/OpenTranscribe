@@ -134,7 +134,7 @@ export function rowView(
 }
 
 /** "485 MB" / "3.1 GB" in the active language. */
-export function formatBytes(bytes: number, locale: string): string {
+export function formatModelBytes(bytes: number, locale: string): string {
   const gigabyte = bytes >= 1_000_000_000;
   const value = gigabyte ? bytes / 1_000_000_000 : bytes / 1_000_000;
   return new Intl.NumberFormat(locale, {

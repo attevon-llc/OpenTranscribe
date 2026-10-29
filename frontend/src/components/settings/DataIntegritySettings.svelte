@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatCompactDuration, formatDateTime } from '$lib/utils/formatting';
   import { onMount, onDestroy } from 'svelte';
   import axiosInstance from '$lib/axios';
   import { getErrorStatus } from '$lib/utils/apiError';
@@ -124,17 +125,6 @@
     }
   }
 
-  function formatTimestamp(ts: number): string {
-    return new Date(ts * 1000).toLocaleString();
-  }
-
-  function formatDuration(seconds: number): string {
-    if (seconds < 60) return `${Math.round(seconds)}s`;
-    const m = Math.floor(seconds / 60);
-    const s = Math.round(seconds % 60);
-    return s > 0 ? `${m}m ${s}s` : `${m}m`;
-  }
-
   function getTotalOrphans(results: any): number {
     return results?.summary?.total_orphans_found ?? 0;
   }
@@ -194,7 +184,7 @@
         {#if lastRun}
           <StatusChip
             label={$t('settings.dataIntegrity.chipLastRun')}
-            value={formatTimestamp(lastRun.timestamp)}
+            value={formatDateTime(lastRun.timestamp * 1000)}
             status="neutral"
           />
           <StatusChip
@@ -308,7 +298,7 @@
         <div class="results-section">
           <h4 class="results-title">{$t('settings.dataIntegrity.lastResults')}</h4>
           <p class="results-meta">
-            {$t('settings.dataIntegrity.completedIn', { duration: formatDuration(lastRun.duration_seconds) })}
+            {$t('settings.dataIntegrity.completedIn', { duration: formatCompactDuration(lastRun.duration_seconds) })}
             &mdash;
             {$t('settings.dataIntegrity.orphansSummary', {
               found: getTotalOrphans(lastRun.results),

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatFileSize } from '$lib/utils/formatting';
   import { createEventDispatcher, onDestroy } from 'svelte';
   import { t } from '$stores/locale';
   import {
@@ -23,14 +24,6 @@
   let dropZoneEl: HTMLDivElement | null = null;
   let drag = false;
   let dragDropCleanup: (() => void) | null = null;
-
-  function formatFileSize(bytes: number): string {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
-  }
 
   /**
    * Normalize the MIME type where the browser gave us none, then hand the file up.

@@ -1,4 +1,5 @@
 <script>
+  import { formatDateTime } from '$lib/utils/formatting';
   import { onMount } from 'svelte';
   import axiosInstance from '../lib/axios';
   import { AdminApi } from '$lib/api/admin';
@@ -822,19 +823,6 @@
    * @param {string} dateString
    * @returns {string}
    */
-  function formatDate(dateString) {
-    if (!dateString) return $t('userManagement.notAvailable');
-
-    const date = new Date(dateString);
-    return date.toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  }
-
   /**
    * Toggle add user form
    */
@@ -1121,7 +1109,7 @@
                 <span class="current-role">{roleLabels[currentUser.role] || currentUser.role}</span>
               {/if}
             </td>
-            <td>{formatDate(currentUser.created_at)}</td>
+            <td>{formatDateTime(currentUser.created_at, $t('userManagement.notAvailable'))}</td>
             <td>
               <div class="table-actions">
                 {#if currentUser.uuid !== currentUserId}
@@ -1264,7 +1252,7 @@
                     class:active={currentUser.account_expires_at}
                     on:click={() => openExpirationEditor(currentUser)}
                     title={currentUser.account_expires_at
-                      ? $t('userManagement.editExpirationFor', { name: currentUser.full_name || currentUser.email, date: formatDate(currentUser.account_expires_at) })
+                      ? $t('userManagement.editExpirationFor', { name: currentUser.full_name || currentUser.email, date: formatDateTime(currentUser.account_expires_at, $t('userManagement.notAvailable')) })
                       : $t('userManagement.setExpirationFor', { name: currentUser.full_name || currentUser.email })}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1348,7 +1336,7 @@
                     {invitationStatusLabels[invitation.status] || invitation.status}
                   </span>
                 </td>
-                <td>{formatDate(invitation.expires_at)}</td>
+                <td>{formatDateTime(invitation.expires_at, $t('userManagement.notAvailable'))}</td>
                 <td>
                   <div class="table-actions">
                     <button

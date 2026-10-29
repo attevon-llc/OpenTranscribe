@@ -10,6 +10,7 @@
   import { onMount } from 'svelte';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import Badge from '$components/ui/Badge.svelte';
+  import { formatDate } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { CollectionsApi } from '$lib/api/collections';
@@ -144,13 +145,6 @@
       saving = false;
     }
   }
-
-  const formatDate = (iso: string) =>
-    new Date(iso).toLocaleDateString($locale || 'en', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
 
   onMount(load);
 </script>

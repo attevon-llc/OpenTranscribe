@@ -14,7 +14,7 @@
   import ChatMessageMeta from './ChatMessageMeta.svelte';
   import ChatReasoning from './ChatReasoning.svelte';
   import ChatSources from './ChatSources.svelte';
-  import { formatLanguageNames } from '$lib/utils/formatting';
+  import { formatDateTime, formatLanguageNames } from '$lib/utils/formatting';
   import { chatErrorMessageKey } from '$lib/utils/chatErrors';
   import type { ChatMessage } from '$lib/types/chat';
 
@@ -73,12 +73,6 @@
   }
 
   /** Local time, shown on hover — absolute beats "2 hours ago" when citing. */
-  function formatTimestamp(iso: string | null | undefined): string {
-    if (!iso) return '';
-    const date = new Date(iso);
-    return Number.isNaN(date.getTime()) ? '' : date.toLocaleString();
-  }
-
   $: isUser = message.role === 'user';
   $: hasError = message.status === 'error';
   $: wasCancelled = message.status === 'cancelled';
@@ -106,7 +100,7 @@
   $: unsupportedLanguageList = formatLanguageNames(
     message.msg_metadata?.context_languages?.languages ?? []
   );
-  $: timestamp = formatTimestamp(message.created_at);
+  $: timestamp = formatDateTime(message.created_at);
   $: canEdit = isUser && !message.pending;
 </script>
 

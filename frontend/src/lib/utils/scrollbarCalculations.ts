@@ -8,19 +8,7 @@
  * (`TranscriptDisplay.handleJumpToPlayhead`).
  */
 
-export interface TranscriptSegment {
-  uuid?: string;
-  id?: string | number;
-  start_time: number;
-  end_time: number;
-  text: string;
-  speaker_label?: string;
-  speaker?: {
-    uuid?: string;
-    name?: string;
-    display_name?: string;
-  };
-}
+import type { TranscriptSegment } from '$lib/types/media';
 
 /**
  * Find the segment that contains the current playback time

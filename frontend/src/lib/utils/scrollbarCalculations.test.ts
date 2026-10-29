@@ -8,14 +8,11 @@
  * in the same issue.
  */
 import { describe, it, expect } from 'vitest';
-import {
-  findCurrentSegment,
-  findNearestSegment,
-  type TranscriptSegment,
-} from './scrollbarCalculations';
+import { findCurrentSegment, findNearestSegment } from './scrollbarCalculations';
+import type { TranscriptSegment } from '$lib/types/media';
 
 function segment(start: number, end: number): TranscriptSegment {
-  return { start_time: start, end_time: end, text: 'x' };
+  return { uuid: `seg-${start}`, start_time: start, end_time: end, text: 'x' };
 }
 
 describe('findCurrentSegment', () => {

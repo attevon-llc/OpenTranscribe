@@ -4,11 +4,11 @@
   import type { Notification } from '$stores/websocket';
   import {
     fileLinkFor,
-    formatRelativeTime,
     iconFor,
     notificationTone,
     shortenFilename,
   } from '$lib/notifications/display';
+  import { formatRelativeTime } from '$lib/utils/formatting';
   import NotificationShell from './NotificationShell.svelte';
   import NotificationProgress from './NotificationProgress.svelte';
 

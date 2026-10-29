@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatFileSize } from '$lib/utils/formatting';
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import axiosInstance from '$lib/axios';
   import ConfirmationModal from './ConfirmationModal.svelte';
@@ -810,14 +811,6 @@
   }
 
   // ── Utilities ──
-  function formatFileSize(bytes: number): string {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
-  }
-
   function getSubmitLabel(): string {
     if (activeTab === 'url') return processingUrl ? $t('uploader.processing') : $t('uploader.processVideo');
     if (activeTab === 'record') return $t('uploader.upload');

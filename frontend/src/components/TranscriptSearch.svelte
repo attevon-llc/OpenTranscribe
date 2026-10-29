@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Speaker } from '$lib/types/speaker';
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
-  import { type TranscriptSegment } from '$lib/utils/scrollbarCalculations';
+  import type { TranscriptSegment } from '$lib/types/media';
   import { type SearchMatch } from '$lib/utils/searchHighlight';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';

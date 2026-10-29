@@ -89,7 +89,7 @@
     loadEntries();
   }
 
-  function formatDateTime(iso: string): string {
+  function authAuditTimestamp(iso: string): string {
     const date = new Date(iso);
     if (Number.isNaN(date.getTime())) return iso;
     const currentLocale = $locale || 'en';
@@ -157,7 +157,7 @@
         <tbody>
           {#each entries as entry (entry.uuid)}
             <tr>
-              <td class="mono">{formatDateTime(entry.created_at)}</td>
+              <td class="mono">{authAuditTimestamp(entry.created_at)}</td>
               <td class="mono">{entry.config_key}</td>
               <td>
                 <span class="change-type {entry.change_type}">

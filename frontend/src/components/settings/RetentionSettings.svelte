@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime, formatFileSize } from '$lib/utils/formatting';
   import { onMount, onDestroy } from 'svelte';
   import Spinner from '../ui/Spinner.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
@@ -260,18 +261,6 @@
     enableConfirmed = false;
   }
 
-  function formatBytes(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-  }
-
-  function formatDate(iso: string | null): string {
-    if (!iso) return $t('settings.retention.lastRunNever');
-    return new Date(iso).toLocaleString();
-  }
-
   // ---- Reactive change detection -------------------------------------------
 
   $: {
@@ -392,9 +381,9 @@
     <div class="status-block">
       <div class="status-item">
         <span class="status-label">{$t('settings.retention.lastRunSection')}:</span>
-        <span class="status-value">{formatDate(lastRun)}</span>
+        <span class="status-value">{formatDateTime(lastRun, $t('settings.retention.lastRunNever'))}</span>
         {#if lastRun && lastRunDeleted !== null}
-          <span class="status-badge">{$t('settings.retention.lastRunLabel', { datetime: formatDate(lastRun), count: lastRunDeleted })}</span>
+          <span class="status-badge">{$t('settings.retention.lastRunLabel', { datetime: formatDateTime(lastRun, $t('settings.retention.lastRunNever')), count: lastRunDeleted })}</span>
         {/if}
       </div>
       <div class="status-item">
@@ -462,7 +451,7 @@
         {:else}
           <p class="preview-note">{$t('settings.retention.previewNote')}</p>
           <p class="preview-summary">
-            {$t('settings.retention.previewCount', { count: previewResult.file_count, size: formatBytes(previewResult.total_size_bytes) })}
+            {$t('settings.retention.previewCount', { count: previewResult.file_count, size: formatFileSize(previewResult.total_size_bytes) })}
             {#if previewResult.file_count > previewResult.files.length}
               &nbsp;{$t('settings.retention.previewMore', { count: previewResult.file_count - previewResult.files.length })}
             {/if}
@@ -484,9 +473,9 @@
                   <tr>
                     <td class="col-title">{file.title}</td>
                     <td>{file.owner_email}</td>
-                    <td>{formatDate(file.completed_at)}</td>
+                    <td>{formatDateTime(file.completed_at, $t('settings.retention.lastRunNever'))}</td>
                     <td>{file.age_days}d</td>
-                    <td>{formatBytes(file.size_bytes)}</td>
+                    <td>{formatFileSize(file.size_bytes)}</td>
                     <td>{file.status}</td>
                   </tr>
                 {/each}

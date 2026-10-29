@@ -11,7 +11,7 @@
     type SearchOrphanReport,
     type StorageOrphanReport,
   } from '$lib/api/dataIntegrity';
-  import { formatFileSize } from '$lib/utils/metadataMapper';
+  import { formatFileSize } from '$lib/utils/formatting';
   import ConfirmationModal from '../ConfirmationModal.svelte';
   import Spinner from '../ui/Spinner.svelte';
 

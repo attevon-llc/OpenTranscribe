@@ -2,11 +2,11 @@
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { createEventDispatcher } from 'svelte';
   import {
-    formatFileSize,
     calculateCompressionRatio,
     estimateAudioSize,
     estimateDurationFromFileSize,
   } from '$lib/utils/metadataMapper';
+  import { formatFileSize } from '$lib/utils/formatting';
   import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import { DEFAULT_EXTRACTION_CONFIG } from '$lib/types/audioExtraction';
   import { t } from '$stores/locale';

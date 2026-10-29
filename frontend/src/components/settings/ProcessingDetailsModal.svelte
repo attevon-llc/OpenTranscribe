@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { QUEUE_NAME_KEYS } from '$lib/i18n/keyMaps';
   import { t } from '$stores/locale';
@@ -22,11 +23,6 @@
     if (minutes > 0 || hours > 0) result += `${minutes}m `;
     result += `${secs}s`;
     return result.trim();
-  }
-
-  function formatDateTime(isoString: string | null): string {
-    if (!isoString) return $t('common.notAvailable');
-    return new Date(isoString).toLocaleString();
   }
 
   const queueDescriptions: Record<string, string> = {
@@ -137,7 +133,7 @@
                 {#if stats.eta.est_completion}
                   <div class="detail-row">
                     <span class="detail-label">{$t('settings.statistics.estimatedCompletion')}</span>
-                    <span class="detail-value">{formatDateTime(stats.eta.est_completion)}</span>
+                    <span class="detail-value">{formatDateTime(stats.eta.est_completion, $t('common.notAvailable'))}</span>
                   </div>
                 {/if}
               </div>

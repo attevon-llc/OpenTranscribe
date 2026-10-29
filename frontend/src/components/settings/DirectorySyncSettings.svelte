@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { onMount } from 'svelte';
   import Spinner from '../ui/Spinner.svelte';
@@ -129,11 +130,6 @@
 
   // ---- Formatting --------------------------------------------------------------
 
-  function formatDate(iso: string | null | undefined): string {
-    if (!iso) return $t('settings.directorySync.lastRunNever');
-    return new Date(iso).toLocaleString();
-  }
-
   // ---- Reactive change detection -------------------------------------------------
 
   $: hasChanges =
@@ -214,7 +210,7 @@
     <div class="status-block">
       <div class="status-item">
         <span class="status-label">{$t('settings.directorySync.lastRunSection')}:</span>
-        <span class="status-value">{formatDate(lastRunAt)}</span>
+        <span class="status-value">{formatDateTime(lastRunAt, $t('settings.directorySync.lastRunNever'))}</span>
         {#if lastResult}
           {#if lastResult.status === 'ok'}
             <span class="status-badge ok">

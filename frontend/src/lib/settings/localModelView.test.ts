@@ -5,7 +5,7 @@ import {
   rowView,
   errorKeyFor,
   apiErrorCode,
-  formatBytes,
+  formatModelBytes,
   isDownloadActive,
   LOCAL_MODEL_ERROR_CODES,
 } from './localModelView';
@@ -191,13 +191,13 @@ describe('apiErrorCode', () => {
   });
 });
 
-describe('formatBytes', () => {
+describe('formatModelBytes', () => {
   it('uses megabytes below a gigabyte and gigabytes above', () => {
-    expect(formatBytes(485_000_000, 'en')).toBe('485 MB');
-    expect(formatBytes(3_100_000_000, 'en')).toBe('3.1 GB');
+    expect(formatModelBytes(485_000_000, 'en')).toBe('485 MB');
+    expect(formatModelBytes(3_100_000_000, 'en')).toBe('3.1 GB');
   });
 
   it('formats with the active locale', () => {
-    expect(formatBytes(3_100_000_000, 'de')).toMatch(/^3,1\s?GB$/);
+    expect(formatModelBytes(3_100_000_000, 'de')).toMatch(/^3,1\s?GB$/);
   });
 });

@@ -13,8 +13,7 @@
   import { createEventDispatcher } from 'svelte';
   import type { SearchHit } from '$stores/search';
   import { t } from '$stores/locale';
-  import { formatClock, formatDate, formatLanguageNames } from '$lib/utils/formatting';
-  import { formatFileSize } from '$lib/utils/metadataMapper';
+  import { formatClock, formatDate, formatFileSize, formatLanguageNames } from '$lib/utils/formatting';
   import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
 

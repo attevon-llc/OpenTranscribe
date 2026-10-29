@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime, formatFileSize } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { createEventDispatcher, onMount } from 'svelte';
   import Spinner from '../ui/Spinner.svelte';
@@ -206,18 +207,6 @@
 
   // ---- Formatting ----------------------------------------------------------
 
-  function formatBytes(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-  }
-
-  function formatDate(iso: string | null | undefined): string {
-    if (!iso) return $t('settings.backup.mirror.lastRunNever');
-    return new Date(iso).toLocaleString();
-  }
-
   // ---- Reactive change detection -------------------------------------------
 
   $: {
@@ -385,7 +374,7 @@
     <div class="status-block">
       <div class="status-item">
         <span class="status-label">{$t('settings.backup.mirror.lastRunSection')}:</span>
-        <span class="status-value">{formatDate(lastRunAt)}</span>
+        <span class="status-value">{formatDateTime(lastRunAt, $t('settings.backup.mirror.lastRunNever'))}</span>
         {#if running}
           <span class="status-badge running">{$t('settings.backup.mirror.runningBadge')}</span>
         {/if}
@@ -395,7 +384,7 @@
               {$t('settings.backup.mirror.lastRunOk', {
                 copied: lastResult.objects_copied ?? 0,
                 skipped: lastResult.objects_skipped ?? 0,
-                bytes: formatBytes(lastResult.bytes_copied ?? 0),
+                bytes: formatFileSize(lastResult.bytes_copied ?? 0),
               })}
             </span>
           {:else}

@@ -117,7 +117,7 @@
    * rather than hand-rolling (or adding) one. The absolute timestamp stays
    * available as the cell's `title`.
    */
-  function formatRelative(iso: string, currentLocale: string): string {
+  function relativeFromNow(iso: string, currentLocale: string): string {
     const target = new Date(iso).getTime();
     if (Number.isNaN(target)) return iso;
     const deltaSeconds = (target - Date.now()) / 1000;
@@ -184,10 +184,10 @@
               </td>
               <td class="mono">{session.ip_address || $t('settings.sessions.unknownIp')}</td>
               <td title={absoluteTime(session.created_at)}>
-                {formatRelative(session.created_at, $locale)}
+                {relativeFromNow(session.created_at, $locale)}
               </td>
               <td title={absoluteTime(session.expires_at)}>
-                {formatRelative(session.expires_at, $locale)}
+                {relativeFromNow(session.expires_at, $locale)}
               </td>
             </tr>
           {/each}

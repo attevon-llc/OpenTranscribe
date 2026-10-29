@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatCompactDuration, formatDateTime } from '$lib/utils/formatting';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, onDestroy } from 'svelte';
   import axiosInstance from '$lib/axios';
@@ -160,17 +161,6 @@
     }
   }
 
-  function formatTimestamp(ts: number): string {
-    return new Date(ts * 1000).toLocaleString();
-  }
-
-  function formatDuration(seconds: number): string {
-    if (seconds < 60) return `${Math.round(seconds)}s`;
-    const m = Math.floor(seconds / 60);
-    const s = Math.round(seconds % 60);
-    return s > 0 ? `${m}m ${s}s` : `${m}m`;
-  }
-
   onMount(() => {
     window.addEventListener('embedding-consistency-progress', handleProgress as EventListener);
     window.addEventListener('embedding-consistency-complete', handleComplete as EventListener);
@@ -210,7 +200,7 @@
           {#if lastRun}
             <StatusChip
               label={$t('settings.embeddingConsistency.chipLastRun')}
-              value={formatTimestamp(lastRun.timestamp)}
+              value={formatDateTime(lastRun.timestamp * 1000)}
               status="neutral"
             />
             <StatusChip
@@ -311,7 +301,7 @@
               ({Math.round((processedFiles / totalFiles) * 100)}%)
               {#if etaSeconds != null && etaSeconds > 0}
                 <span class="progress-eta">
-                  {$t('settings.embeddingConsistency.eta', { eta: formatDuration(etaSeconds) })}
+                  {$t('settings.embeddingConsistency.eta', { eta: formatCompactDuration(etaSeconds) })}
                 </span>
               {/if}
             </span>
@@ -338,7 +328,7 @@
         <div class="results-section">
           <h4 class="results-title">{$t('settings.embeddingConsistency.lastResults')}</h4>
           <p class="results-meta">
-            {$t('settings.embeddingConsistency.completedIn', { duration: formatDuration(lastRun.duration_seconds) })}
+            {$t('settings.embeddingConsistency.completedIn', { duration: formatCompactDuration(lastRun.duration_seconds) })}
             {#if lastRun.status === 'healthy'}
               &mdash; {$t('settings.embeddingConsistency.allSpeakersIndexed')}
             {:else if lastRun.status === 'repaired'}

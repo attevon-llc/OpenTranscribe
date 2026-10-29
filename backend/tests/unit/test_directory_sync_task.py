@@ -248,7 +248,7 @@ def task_env(monkeypatch):
     # it with a FakeSession regardless of the (always-None) db argument, the
     # same technique test_speaker_attribute_migration_task.py uses for
     # session_scope.
-    monkeypatch.setattr(svc, "_session", lambda _db: contextlib.nullcontext(FakeSession()))
+    monkeypatch.setattr(svc, "session_scope", lambda _db: contextlib.nullcontext(FakeSession()))
 
     revocations: list[tuple[str, str]] = []
 

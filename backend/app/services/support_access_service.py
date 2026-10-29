@@ -25,6 +25,7 @@ from app.models.support_access import SupportAccessGrant
 from app.models.support_access import SupportAccessUse
 from app.models.user import User
 from app.services.platform_bypass import SupportGrantView
+from app.utils.time_format import as_utc
 
 logger = logging.getLogger(__name__)
 
@@ -36,14 +37,8 @@ def coded_error(http_status: int, code: str, message: str) -> DomainError:
     return domain_error_for_status(http_status)({"code": code, "message": message})
 
 
-def _aware(value: datetime | None) -> datetime | None:
-    if value is None:
-        return None
-    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
-
-
 def pending_expires_at(grant: SupportAccessGrant) -> datetime:
-    requested = _aware(grant.requested_at)
+    requested = as_utc(grant.requested_at)
     assert requested is not None
     return requested + timedelta(hours=SUPPORT_ACCESS_PENDING_EXPIRY_HOURS)
 
@@ -61,7 +56,7 @@ def compute_status(grant: SupportAccessGrant, now: datetime | None = None) -> st
         return "revoked"
     if grant.decision == "denied":
         return "denied"
-    starts, expires = _aware(grant.starts_at), _aware(grant.expires_at)
+    starts, expires = as_utc(grant.starts_at), as_utc(grant.expires_at)
     if (grant.decision == "approved" or grant.grant_mode == "break_glass") and expires is not None:
         if now >= expires:
             return "expired"
@@ -113,7 +108,7 @@ def resolve_active_grant(db: Session, grant_uuid: str, user: User) -> SupportGra
         raise coded_error(403, "support_grant_not_active", "Support access grant is not active.")
     if not _target_is_usable(db, grant):
         raise invalid
-    expires = _aware(grant.expires_at)
+    expires = as_utc(grant.expires_at)
     assert expires is not None
     return SupportGrantView(
         id=int(grant.id),

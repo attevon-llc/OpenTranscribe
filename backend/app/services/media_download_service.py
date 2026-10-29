@@ -429,7 +429,7 @@ def _check_existing_youtube_video(
     """
     from sqlalchemy import text
 
-    from app.utils.file_hash import org_stamp_is
+    from app.utils.db_helpers import org_stamp_is
 
     result = (
         db.query(MediaFile)

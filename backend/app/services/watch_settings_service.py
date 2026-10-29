@@ -13,9 +13,7 @@ hold a session).
 
 from __future__ import annotations
 
-import contextlib
 import logging
-from collections.abc import Iterator
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -28,6 +26,9 @@ from app.core.constants import DEFAULT_WATCH_FS_EVENTS_POLL_SECONDS
 from app.core.constants import DEFAULT_WATCH_MAX_IMPORTS_PER_SCAN
 from app.core.constants import WATCH_FS_EVENTS_MODES
 from app.services import system_settings_service
+from app.services.scheduled_job_settings import bool_value
+from app.services.scheduled_job_settings import int_value
+from app.services.scheduled_job_settings import session_scope
 
 logger = logging.getLogger(__name__)
 
@@ -44,28 +45,13 @@ KEY_FS_EVENTS_POLL_SECONDS = "watch.fs_events_poll_seconds"
 LEGACY_KEY_MAX_CONCURRENT_IMPORTS = "watch.max_concurrent_imports"
 
 
-@contextlib.contextmanager
-def _session(db: Session | None) -> Iterator[Session]:
-    """Yield the passed session, or a short-lived one that is closed after use."""
-    if db is not None:
-        yield db
-        return
-    from app.db.base import SessionLocal
-
-    own = SessionLocal()
-    try:
-        yield own
-    finally:
-        own.close()
-
-
 def is_enabled(db: Session | None = None) -> bool:
-    with _session(db) as s:
+    with session_scope(db) as s:
         return system_settings_service.get_setting_bool(s, KEY_ENABLED, DEFAULT_WATCH_ENABLED)
 
 
 def file_stability_seconds(db: Session | None = None) -> int:
-    with _session(db) as s:
+    with session_scope(db) as s:
         return system_settings_service.get_setting_int(
             s, KEY_FILE_STABILITY_SECONDS, DEFAULT_WATCH_FILE_STABILITY_SECONDS
         )
@@ -73,7 +59,7 @@ def file_stability_seconds(db: Session | None = None) -> int:
 
 def max_imports_per_scan(db: Session | None = None) -> int:
     """Max standalone files one scan imports (a per-scan cap, not a concurrency limit)."""
-    with _session(db) as s:
+    with session_scope(db) as s:
         legacy_default = system_settings_service.get_setting_int(
             s, LEGACY_KEY_MAX_CONCURRENT_IMPORTS, DEFAULT_WATCH_MAX_IMPORTS_PER_SCAN
         )
@@ -81,7 +67,7 @@ def max_imports_per_scan(db: Session | None = None) -> int:
 
 
 def fs_events_enabled(db: Session | None = None) -> bool:
-    with _session(db) as s:
+    with session_scope(db) as s:
         return system_settings_service.get_setting_bool(
             s, KEY_FS_EVENTS_ENABLED, DEFAULT_WATCH_FS_EVENTS_ENABLED
         )
@@ -101,7 +87,7 @@ def normalize_fs_events_mode(value: str | None) -> str:
 
 def fs_events_mode(db: Session | None = None) -> str:
     """Observer selection mode: ``auto`` | ``native`` | ``polling`` | ``off``."""
-    with _session(db) as s:
+    with session_scope(db) as s:
         return normalize_fs_events_mode(
             system_settings_service.get_setting(s, KEY_FS_EVENTS_MODE, DEFAULT_WATCH_FS_EVENTS_MODE)
         )
@@ -109,7 +95,7 @@ def fs_events_mode(db: Session | None = None) -> str:
 
 def fs_events_poll_seconds(db: Session | None = None) -> int:
     """Stat-sweep interval used by the PollingObserver fallback (>= 1 s)."""
-    with _session(db) as s:
+    with session_scope(db) as s:
         return max(
             1,
             system_settings_service.get_setting_int(
@@ -120,7 +106,7 @@ def fs_events_poll_seconds(db: Session | None = None) -> int:
 
 def get_global_settings(db: Session | None = None) -> dict[str, Any]:
     """Return all global watch settings as a dict (single SELECT for all keys)."""
-    with _session(db) as s:
+    with session_scope(db) as s:
         vals = system_settings_service.get_settings_map(
             s,
             [
@@ -134,32 +120,24 @@ def get_global_settings(db: Session | None = None) -> dict[str, Any]:
             ],
         )
 
-        def _b(key: str, default: bool) -> bool:
-            v = vals.get(key)
-            return v.lower() in ("true", "1", "yes", "on") if v is not None else default
-
-        def _i(key: str, default: int) -> int:
-            v = vals.get(key)
-            if v is None:
-                return default
-            try:
-                return int(v)
-            except (ValueError, TypeError):
-                return default
-
         return {
-            "enabled": _b(KEY_ENABLED, DEFAULT_WATCH_ENABLED),
-            "file_stability_seconds": _i(
-                KEY_FILE_STABILITY_SECONDS, DEFAULT_WATCH_FILE_STABILITY_SECONDS
+            "enabled": bool_value(vals, KEY_ENABLED, DEFAULT_WATCH_ENABLED),
+            "file_stability_seconds": int_value(
+                vals, KEY_FILE_STABILITY_SECONDS, DEFAULT_WATCH_FILE_STABILITY_SECONDS
             ),
-            "max_imports_per_scan": _i(
+            "max_imports_per_scan": int_value(
+                vals,
                 KEY_MAX_IMPORTS_PER_SCAN,
-                _i(LEGACY_KEY_MAX_CONCURRENT_IMPORTS, DEFAULT_WATCH_MAX_IMPORTS_PER_SCAN),
+                int_value(
+                    vals, LEGACY_KEY_MAX_CONCURRENT_IMPORTS, DEFAULT_WATCH_MAX_IMPORTS_PER_SCAN
+                ),
             ),
-            "fs_events_enabled": _b(KEY_FS_EVENTS_ENABLED, DEFAULT_WATCH_FS_EVENTS_ENABLED),
+            "fs_events_enabled": bool_value(
+                vals, KEY_FS_EVENTS_ENABLED, DEFAULT_WATCH_FS_EVENTS_ENABLED
+            ),
             "fs_events_mode": normalize_fs_events_mode(vals.get(KEY_FS_EVENTS_MODE)),
             "fs_events_poll_seconds": max(
-                1, _i(KEY_FS_EVENTS_POLL_SECONDS, DEFAULT_WATCH_FS_EVENTS_POLL_SECONDS)
+                1, int_value(vals, KEY_FS_EVENTS_POLL_SECONDS, DEFAULT_WATCH_FS_EVENTS_POLL_SECONDS)
             ),
         }
 

@@ -48,6 +48,7 @@ import time
 from collections.abc import Iterable
 from typing import Any
 
+from app.core import redis as redis_core
 from app.core.task_config import task_recovery_config
 
 logger = logging.getLogger(__name__)
@@ -95,12 +96,6 @@ def is_replayable(task_name: str | None) -> bool:
     )
 
 
-def _redis():
-    from app.core.redis import get_redis
-
-    return get_redis()
-
-
 def _decode(raw: bytes | str | None) -> str | None:
     if raw is None:
         return None
@@ -122,7 +117,7 @@ def _beat_all() -> None:
         return
     ttl = task_recovery_config.TASK_HEARTBEAT_TTL
     try:
-        pipe = _redis().pipeline()
+        pipe = redis_core.get_redis().pipeline()
         for task_id in ids:
             pipe.setex(HEARTBEAT_KEY.format(task_id=task_id), ttl, "1")
         pipe.execute()
@@ -166,7 +161,7 @@ def on_task_start(task: Any, task_id: str, args: Iterable | None, kwargs: dict |
         return
     queue, priority = _delivery_route(task)
     try:
-        client = _redis()
+        client = redis_core.get_redis()
         existing = _decode(client.hget(REPLAY_HASH, task_id))
         # A replay (or a Celery retry) of the same id keeps the attempt count the sweep gave
         # it, which is what bounds a poison message.
@@ -208,7 +203,7 @@ def on_task_end(task: Any, task_id: str) -> None:
     if not was_running:
         return
     try:
-        pipe = _redis().pipeline()
+        pipe = redis_core.get_redis().pipeline()
         pipe.hdel(REPLAY_HASH, task_id)
         pipe.delete(HEARTBEAT_KEY.format(task_id=task_id))
         pipe.execute()
@@ -219,7 +214,7 @@ def on_task_end(task: Any, task_id: str) -> None:
 def is_alive(task_id: str) -> bool | None:
     """Whether ``task_id`` is heartbeating right now; None when Redis can't be read."""
     try:
-        return bool(_redis().exists(HEARTBEAT_KEY.format(task_id=task_id)))
+        return bool(redis_core.get_redis().exists(HEARTBEAT_KEY.format(task_id=task_id)))
     except Exception as e:  # noqa: BLE001
         logger.warning("Could not read the heartbeat of %s: %s", task_id, e)
         return None
@@ -236,7 +231,7 @@ def replay_tracked_ids(task_ids: Iterable[str]) -> set[str]:
     if not ids:
         return set()
     try:
-        client = _redis()
+        client = redis_core.get_redis()
         beats = client.mget([HEARTBEAT_KEY.format(task_id=t) for t in ids])
         pipe = client.pipeline()
         for task_id in ids:
@@ -286,7 +281,7 @@ def reclaim_lost_tasks(send_task=None) -> dict[str, int]:
     """
     summary = {"records": 0, "alive": 0, "replayed": 0, "exhausted": 0, "dropped": 0}
     try:
-        client = _redis()
+        client = redis_core.get_redis()
         records = client.hgetall(REPLAY_HASH)
     except Exception as e:  # noqa: BLE001 — conclude nothing from an unreadable Redis
         logger.warning("Lost-task sweep skipped, Redis unreadable: %s", e)

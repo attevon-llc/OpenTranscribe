@@ -31,6 +31,7 @@ from app.models.organization import Organization
 from app.models.organization_policy import OrganizationPolicy
 from app.models.prompt import UserSetting
 from app.models.system_settings import SystemSettings
+from app.services import migration_admin_notify
 from app.services import post_processing_status
 from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags
 from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags_for_file
@@ -437,7 +438,7 @@ def _run_orchestrator(db_session, monkeypatch, *, force: bool, user) -> tuple[di
     dispatched: list[list[str]] = []
     monkeypatch.setattr(migration.attribute_migration_progress, "_redis_client", _FakeRedis())
     monkeypatch.setattr(migration, "session_scope", lambda: _real_scope(db_session))
-    monkeypatch.setattr(migration, "send_ws_event", lambda *a, **kw: None)
+    monkeypatch.setattr(migration_admin_notify, "send_ws_event", lambda *a, **kw: None)
 
     def fake_apply_async(kwargs, priority):
         dispatched.append(list(kwargs["file_uuids"]))

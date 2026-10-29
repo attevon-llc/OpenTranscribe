@@ -225,7 +225,7 @@ class TestOidcStoreDegradation:
         self._reset()
         with (
             patch.object(session_module, "get_redis_client", return_value=None),
-            patch.object(session_module, "_record_degradation") as degraded,
+            patch.object(session_module, "record_degradation") as degraded,
         ):
             store = session_module._get_store()
 
@@ -354,7 +354,7 @@ class TestOidcStoreDegradation:
         self._reset()
         with (
             patch.object(session_module, "get_redis_client", return_value=None),
-            patch.object(session_module, "_record_degradation"),
+            patch.object(session_module, "record_degradation"),
         ):
             first = session_module._get_store()
 
@@ -372,7 +372,7 @@ class TestOidcStoreDegradation:
         self._reset()
         with (
             patch.object(session_module, "get_redis_client", return_value=None),
-            patch.object(session_module, "_record_degradation"),
+            patch.object(session_module, "record_degradation"),
         ):
             stores = [session_module._get_store() for _ in range(4)]
 
@@ -390,7 +390,7 @@ class TestOidcStoreDegradation:
         healthy = _RecordingRedis([])
         with (
             patch.object(session_module, "get_redis_client", return_value=healthy),
-            patch.object(session_module, "_record_degradation") as degraded,
+            patch.object(session_module, "record_degradation") as degraded,
         ):
             for _ in range(3):
                 assert session_module._get_store() is healthy
@@ -398,7 +398,7 @@ class TestOidcStoreDegradation:
         degraded.assert_not_called()
 
     def test_a_broken_metrics_backend_cannot_break_the_login_flow(self):
-        """`_record_degradation` swallows everything, and that contract is load-bearing.
+        """`record_degradation` swallows everything, and that contract is load-bearing.
 
         It runs on the fallback path — i.e. when infrastructure is *already* degraded — so
         a raising metrics import would turn "Redis is down, logins still work per-replica"
@@ -437,7 +437,7 @@ class TestRateLimiterDegradation:
 
         with (
             patch.object(rate_limit_module, "limiter", create=True) as fake_limiter,
-            patch.object(rate_limit_module, "_record_degradation") as degraded,
+            patch.object(rate_limit_module, "record_degradation") as degraded,
         ):
             fake_limiter._storage_dead = storage_dead
             key_func(cast(Request, _FakeRequest()))

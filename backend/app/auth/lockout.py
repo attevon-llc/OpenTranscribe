@@ -24,6 +24,8 @@ from datetime import datetime
 from datetime import timedelta
 from typing import TypedDict
 
+from app.auth.degradation import record_degradation
+from app.auth.utils import mask_identifier
 from app.core.auth_settings import get_process_auth_settings
 from app.core.config import settings
 
@@ -232,20 +234,6 @@ def _get_memory_fallback_store() -> InMemoryLockoutStore:
         return _in_memory_store
 
 
-def _record_degradation(control: str, fallback: str) -> None:
-    """Count a security control running without its shared state store.
-
-    Imported lazily and never allowed to raise: a broken metrics backend must not be
-    able to turn into a failed login. Mirrors ``revocation_fallback.record_degradation``.
-    """
-    try:
-        from app.core.metrics import security_state_degraded_total
-
-        security_state_degraded_total.labels(control=control, fallback=fallback).inc()
-    except Exception:  # pragma: no cover - metrics must never break auth
-        logger.debug("Could not record security degradation metric", exc_info=True)
-
-
 #: Compare-and-set write for the lockout record.
 #:
 #: ``WATCH`` cannot guard this operation. ``redis.Redis.watch()`` issues WATCH on a
@@ -409,17 +397,6 @@ def canonical_identifier(submitted: str, account_email: str | None) -> str:
     return _normalize_identifier(account_email or submitted)
 
 
-def _mask_identifier(identifier: str) -> str:
-    """Mask identifier for safe logging to prevent sensitive data exposure.
-
-    Delegates to shared utility. Kept as module-private alias for
-    backward compatibility with existing callers.
-    """
-    from app.auth.utils import mask_identifier
-
-    return mask_identifier(identifier)
-
-
 def _get_lockout_duration_minutes(lockout_count: int) -> int:
     """Calculate lockout duration based on lockout count and settings.
 
@@ -506,7 +483,7 @@ def _record_attempt_audit_only(identifier: str) -> None:
     _save_record(record)
 
     logger.warning(
-        f"Super admin account {_mask_identifier(identifier)} had failed login "
+        f"Super admin account {mask_identifier(identifier)} had failed login "
         f"attempt #{record.failed_attempts} — exempt from lockout"
     )
 
@@ -582,7 +559,7 @@ def _apply_successful_login(
     """
     if record.failed_attempts > 0 or locked_until_dt:
         logger.info(
-            f"Successful login for {_mask_identifier(record.identifier)}, "
+            f"Successful login for {mask_identifier(record.identifier)}, "
             f"clearing {record.failed_attempts} failed attempts"
         )
     record.failed_attempts = 0
@@ -615,7 +592,7 @@ def _check_lockout_threshold(
     record.lockout_count += 1
 
     logger.warning(
-        f"Account locked: {_mask_identifier(identifier)}, "
+        f"Account locked: {mask_identifier(identifier)}, "
         f"lockout #{record.lockout_count}, "
         f"duration: {duration_minutes} minutes, "
         f"until: {unlock_time.isoformat()}"
@@ -647,7 +624,7 @@ def _apply_failed_login(
         record.first_failed_attempt = now.isoformat()
 
     logger.info(
-        f"Failed login attempt for {_mask_identifier(identifier)}: "
+        f"Failed login attempt for {mask_identifier(identifier)}: "
         f"attempt {record.failed_attempts}/"
         f"{get_process_auth_settings().account_lockout_threshold}"
     )
@@ -684,7 +661,7 @@ def _check_and_record_attempt_redis(
             # Currently locked: nothing to write, so no CAS is needed.
             if locked_until_dt and now < locked_until_dt:
                 logger.warning(
-                    f"Login attempt on locked account: {_mask_identifier(identifier)}, "
+                    f"Login attempt on locked account: {mask_identifier(identifier)}, "
                     f"locked until {locked_until_dt.isoformat()}"
                 )
                 return True, locked_until_dt
@@ -705,18 +682,18 @@ def _check_and_record_attempt_redis(
 
             raw = current
             logger.debug(
-                f"Lockout record for {_mask_identifier(identifier)} changed concurrently, "
+                f"Lockout record for {mask_identifier(identifier)} changed concurrently, "
                 "recomputing from the winning value"
             )
 
         logger.warning(
-            f"Lockout write for {_mask_identifier(identifier)} lost {CAS_MAX_RETRIES} "
+            f"Lockout write for {mask_identifier(identifier)} lost {CAS_MAX_RETRIES} "
             "compare-and-set races; falling back to in-memory tracking"
         )
     except Exception as e:
         logger.warning(f"Redis lockout transaction failed, falling back to in-memory: {e}")
 
-    _record_degradation("account_lockout", "local")
+    record_degradation("account_lockout", "local")
     return _check_and_record_attempt_memory(
         _get_memory_fallback_store(), key, identifier, success, now
     )
@@ -745,7 +722,7 @@ def _check_and_record_attempt_memory(
         # Check if currently locked
         if locked_until_dt and now < locked_until_dt:
             logger.warning(
-                f"Login attempt on locked account: {_mask_identifier(identifier)}, "
+                f"Login attempt on locked account: {mask_identifier(identifier)}, "
                 f"locked until {locked_until_dt.isoformat()}"
             )
             return True, locked_until_dt
@@ -760,7 +737,7 @@ def _check_and_record_attempt_memory(
             # Successful login - clear failed attempts
             if record.failed_attempts > 0 or locked_until_dt:
                 logger.info(
-                    f"Successful login for {_mask_identifier(identifier)}, "
+                    f"Successful login for {mask_identifier(identifier)}, "
                     f"clearing {record.failed_attempts} failed attempts"
                 )
             record.failed_attempts = 0
@@ -782,7 +759,7 @@ def _check_and_record_attempt_memory(
 
             threshold = get_process_auth_settings().account_lockout_threshold
             logger.info(
-                f"Failed login attempt for {_mask_identifier(identifier)}: "
+                f"Failed login attempt for {mask_identifier(identifier)}: "
                 f"attempt {record.failed_attempts}/{threshold}"
             )
 
@@ -797,7 +774,7 @@ def _check_and_record_attempt_memory(
                 is_locked = True
 
                 logger.warning(
-                    f"Account locked: {_mask_identifier(identifier)}, "
+                    f"Account locked: {mask_identifier(identifier)}, "
                     f"lockout #{record.lockout_count}, "
                     f"duration: {duration_minutes} minutes, "
                     f"until: {unlock_time.isoformat()}"
@@ -877,18 +854,16 @@ def unlock_account(identifier: str) -> bool:
 
     record = _get_record(identifier)
     if not record:
-        logger.info(f"Admin unlock requested for unknown account: {_mask_identifier(identifier)}")
+        logger.info(f"Admin unlock requested for unknown account: {mask_identifier(identifier)}")
         return False
 
     locked_until_dt = record.get_locked_until_datetime()
     if locked_until_dt is None or now >= locked_until_dt:
-        logger.info(
-            f"Admin unlock requested for non-locked account: {_mask_identifier(identifier)}"
-        )
+        logger.info(f"Admin unlock requested for non-locked account: {mask_identifier(identifier)}")
         return False
 
     logger.warning(
-        f"Admin unlocking account: {_mask_identifier(identifier)}, "
+        f"Admin unlocking account: {mask_identifier(identifier)}, "
         f"was locked until {locked_until_dt.isoformat()}, "
         f"lockout #{record.lockout_count}"
     )
@@ -1214,7 +1189,7 @@ def reset_lockout_state(identifier: str, *, clear_lock: bool = False) -> Lockout
         # Lost the race — recompute from the value that beat us, next iteration.
 
     logger.warning(
-        f"Lockout reset for {_mask_identifier(identifier)} lost {CAS_MAX_RETRIES} "
+        f"Lockout reset for {mask_identifier(identifier)} lost {CAS_MAX_RETRIES} "
         "compare-and-set races in a row"
     )
     return {

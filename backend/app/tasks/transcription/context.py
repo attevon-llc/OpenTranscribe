@@ -13,6 +13,7 @@ from typing import NoReturn
 
 from celery.exceptions import Reject
 
+from app.core import redis as redis_core
 from app.core.constants import DIAR_SIDECAR_MAX_RETRIES
 from app.core.constants import DIAR_SIDECAR_RETRY_BASE
 from app.core.constants import DIAR_SIDECAR_RETRY_MAX
@@ -186,12 +187,6 @@ _POISONED_REQUEUE_KEY = "gpu_poisoned_requeues:{task_id}"
 _POISONED_REQUEUE_TTL_S = 86_400
 
 
-def _redis_client():
-    from app.core.redis import get_redis
-
-    return get_redis()
-
-
 def _poisoned_requeue_allowed(task_id: str) -> bool:
     """Count one more poisoned-context requeue for ``task_id``; False once past the cap.
 
@@ -204,7 +199,7 @@ def _poisoned_requeue_allowed(task_id: str) -> bool:
         cap = 2
     key = _POISONED_REQUEUE_KEY.format(task_id=task_id)
     try:
-        client = _redis_client()
+        client = redis_core.get_redis()
         count = int(client.incr(key))
         client.expire(key, _POISONED_REQUEUE_TTL_S)
     except Exception as exc:  # noqa: BLE001 - see docstring

@@ -3,7 +3,7 @@
 For an S3-destination backup, ``_perform_backup_s3`` always deletes the local artifact
 after upload — the file exists **only in the bucket**. The credentials to reach that
 bucket are the AES-256-GCM-encrypted ``backup.s3_secret_key`` row in ``SystemSettings``,
-decryptable only via ``ENCRYPTION_KEY`` (``backup_service._get_s3_secret_key``). A host
+decryptable only via ``ENCRYPTION_KEY`` (``backup_service.get_s3_secret_key``). A host
 shell script cannot obtain them — so this fetch step has to run **inside the backend
 container**, where the app's DB session and encryption key are already available.
 
@@ -19,7 +19,7 @@ Usage (inside the backend container, ``./opentr.sh shell backend`` or via
     python -m app.scripts.fetch_backup --list
     python -m app.scripts.fetch_backup opentranscribe-20260827-030000.dump [--force]
 
-Reuses ``backup_service.get_settings`` / ``_build_s3_client`` / ``_get_s3_secret_key`` /
+Reuses ``backup_service.get_settings`` / ``_build_s3_client`` / ``get_s3_secret_key`` /
 ``list_backups_s3`` — no new S3 client construction, no new credential handling. Writes
 into ``cfg["destination"]`` (``/backups`` by default, mounted from ``BACKUP_HOST_PATH`` on
 the host), refuses to overwrite an existing file without ``--force``, and verifies the
@@ -100,7 +100,7 @@ def _looks_like_our_artifact(data: bytes, filename: str) -> bool:
 def _do_list(cfg: dict[str, Any]) -> int:
     """List available backups. Takes no session — ``list_backups_s3(cfg, db=None)`` opens
     its own short-lived session just for the secret lookup, closed before the slow S3
-    listing begins (``backup_service._session``), so nothing is held open here either.
+    listing begins (``scheduled_job_settings.session_scope``), so nothing is held open here either.
     """
     backups = bs.list_backups_s3(cfg, None)
     print(json.dumps(backups, indent=2))  # noqa: T201 - intentional CLI output
@@ -203,7 +203,7 @@ def main(argv: list[str] | None = None) -> int:
     # A second short session, only when actually fetching — closed before the slow
     # head/download calls, never held across them.
     with session_scope() as secret_db:
-        secret = bs._get_s3_secret_key(secret_db)
+        secret = bs.get_s3_secret_key(secret_db)
 
     try:
         target = _fetch(cfg, secret, args.filename, force=args.force)

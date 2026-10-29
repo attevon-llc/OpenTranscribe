@@ -25,7 +25,6 @@ import shutil
 import subprocess  # noqa: S404 - pg_dump/gpg invoked with a fixed argv list, no shell
 import tempfile
 import time
-from collections.abc import Iterator
 from datetime import UTC
 from datetime import datetime
 from pathlib import Path
@@ -36,8 +35,12 @@ from sqlalchemy.orm import Session
 from app.core import constants as C  # noqa: N812
 from app.core.config import settings
 from app.services import system_settings_service as sss
-from app.utils.encryption import decrypt_api_key
-from app.utils.encryption import encrypt_api_key
+from app.services.scheduled_job_settings import bool_value
+from app.services.scheduled_job_settings import int_value
+from app.services.scheduled_job_settings import json_value
+from app.services.scheduled_job_settings import read_encrypted_secret
+from app.services.scheduled_job_settings import session_scope
+from app.services.scheduled_job_settings import store_encrypted_secret
 
 logger = logging.getLogger(__name__)
 
@@ -83,27 +86,12 @@ _GPG_SUFFIX = ".dump.gpg"
 _TS_RE = re.compile(r"opentranscribe-(\d{8})-(\d{6})\.dump(?:\.gpg)?$")
 
 
-@contextlib.contextmanager
-def _session(db: Session | None) -> Iterator[Session]:
-    """Yield the passed session, or a short-lived one closed after use."""
-    if db is not None:
-        yield db
-        return
-    from app.db.base import SessionLocal
-
-    own = SessionLocal()
-    try:
-        yield own
-    finally:
-        own.close()
-
-
 # =============================================================================
 # Settings round-trip
 # =============================================================================
 def get_settings(db: Session | None = None) -> dict[str, Any]:
     """Return all backup settings as a plain dict (coded defaults for unset keys)."""
-    with _session(db) as s:
+    with session_scope(db) as s:
         # One SELECT for every backup key instead of 11 round-trips.
         vals = sss.get_settings_map(
             s,
@@ -129,36 +117,25 @@ def get_settings(db: Session | None = None) -> dict[str, Any]:
             ],
         )
 
-        def _b(key: str, default: bool) -> bool:
-            v = vals.get(key)
-            return v.lower() in ("true", "1", "yes", "on") if v is not None else default
-
-        def _i(key: str, default: int) -> int:
-            v = vals.get(key)
-            if v is None:
-                return default
-            try:
-                return int(v)
-            except (ValueError, TypeError):
-                return default
-
-        last_result_raw = vals.get(KEY_LAST_RESULT)
-        last_result: dict[str, Any] | None = None
-        if last_result_raw:
-            try:
-                last_result = json.loads(last_result_raw)
-            except (ValueError, TypeError):
-                last_result = None
+        last_result = json_value(vals, KEY_LAST_RESULT)
         return {
-            "enabled": _b(KEY_ENABLED, C.DEFAULT_BACKUP_ENABLED),
+            "enabled": bool_value(vals, KEY_ENABLED, C.DEFAULT_BACKUP_ENABLED),
             "schedule": vals.get(KEY_SCHEDULE) or C.DEFAULT_BACKUP_SCHEDULE,
             "destination": vals.get(KEY_DESTINATION) or C.DEFAULT_BACKUP_DESTINATION,
-            "retention_daily": _i(KEY_RETENTION_DAILY, C.DEFAULT_BACKUP_RETENTION_DAILY),
-            "retention_weekly": _i(KEY_RETENTION_WEEKLY, C.DEFAULT_BACKUP_RETENTION_WEEKLY),
-            "retention_monthly": _i(KEY_RETENTION_MONTHLY, C.DEFAULT_BACKUP_RETENTION_MONTHLY),
-            "encrypt": _b(KEY_ENCRYPT, C.DEFAULT_BACKUP_ENCRYPT),
+            "retention_daily": int_value(
+                vals, KEY_RETENTION_DAILY, C.DEFAULT_BACKUP_RETENTION_DAILY
+            ),
+            "retention_weekly": int_value(
+                vals, KEY_RETENTION_WEEKLY, C.DEFAULT_BACKUP_RETENTION_WEEKLY
+            ),
+            "retention_monthly": int_value(
+                vals, KEY_RETENTION_MONTHLY, C.DEFAULT_BACKUP_RETENTION_MONTHLY
+            ),
+            "encrypt": bool_value(vals, KEY_ENCRYPT, C.DEFAULT_BACKUP_ENCRYPT),
             "passphrase_file": vals.get(KEY_PASSPHRASE_FILE) or C.DEFAULT_BACKUP_PASSPHRASE_FILE,
-            "include_opensearch": _b(KEY_INCLUDE_OPENSEARCH, C.DEFAULT_BACKUP_INCLUDE_OPENSEARCH),
+            "include_opensearch": bool_value(
+                vals, KEY_INCLUDE_OPENSEARCH, C.DEFAULT_BACKUP_INCLUDE_OPENSEARCH
+            ),
             "last_run_at": vals.get(KEY_LAST_RUN_AT),
             "last_result": last_result,
             "destination_type": vals.get(KEY_DESTINATION_TYPE) or C.DEFAULT_BACKUP_DESTINATION_TYPE,
@@ -252,22 +229,12 @@ def update_settings(
 
 def _store_s3_secret(db: Session, s3_secret_key: str) -> None:
     """Encrypt + persist the S3 secret (empty string clears it)."""
-    if not s3_secret_key:
-        sss.set_setting(db, KEY_S3_SECRET_KEY, "", "S3 secret access key (encrypted)")
-        return
-    encrypted = encrypt_api_key(s3_secret_key)
-    if not encrypted:
-        raise ValueError("Failed to encrypt S3 secret key")
-    sss.set_setting(db, KEY_S3_SECRET_KEY, encrypted, "S3 secret access key (encrypted)")
+    store_encrypted_secret(db, KEY_S3_SECRET_KEY, s3_secret_key, "S3 secret access key (encrypted)")
 
 
-def _get_s3_secret_key(db: Session | None) -> str | None:
+def get_s3_secret_key(db: Session | None) -> str | None:
     """Decrypt and return the stored S3 secret key (runtime-only — never exposed via API)."""
-    with _session(db) as s:
-        raw = sss.get_setting(s, KEY_S3_SECRET_KEY)
-    if not raw:
-        return None
-    return decrypt_api_key(raw)
+    return read_encrypted_secret(db, KEY_S3_SECRET_KEY)
 
 
 def update_settings_last_run(db: Session, run_at_iso: str) -> None:
@@ -559,7 +526,7 @@ def s3_bucket_status(cfg: dict[str, Any], db: Session | None = None) -> dict[str
         result["error"] = "No S3 bucket configured"
         return result
     try:
-        client = _build_s3_client(cfg, _get_s3_secret_key(db))
+        client = _build_s3_client(cfg, get_s3_secret_key(db))
         client.head_bucket(Bucket=bucket)
         result["reachable"] = True
     except Exception as exc:  # noqa: BLE001 - report any failure, never raise to the caller
@@ -586,7 +553,7 @@ def list_backups_s3(cfg: dict[str, Any], db: Session | None = None) -> list[dict
         return []
     prefix = _s3_prefix(cfg)
     try:
-        client = _build_s3_client(cfg, _get_s3_secret_key(db))
+        client = _build_s3_client(cfg, get_s3_secret_key(db))
         paginator = client.get_paginator("list_objects_v2")
         out: list[dict[str, Any]] = []
         for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
@@ -618,7 +585,7 @@ def prune_backups_s3(cfg: dict[str, Any], client=None, db: Session | None = None
         return []
     prefix = _s3_prefix(cfg)
     if client is None:
-        client = _build_s3_client(cfg, _get_s3_secret_key(db))
+        client = _build_s3_client(cfg, get_s3_secret_key(db))
     keys = _s3_list_keys(client, bucket, prefix)
     to_delete = select_backups_to_delete(
         keys,
@@ -647,7 +614,7 @@ def test_s3_connection(
     bucket = (cfg.get("s3_bucket") or "").strip()
     if not bucket:
         return {"ok": False, "error": "No S3 bucket configured", "bucket": bucket}
-    secret = override_secret if override_secret else _get_s3_secret_key(db)
+    secret = override_secret if override_secret else get_s3_secret_key(db)
     try:
         client = _build_s3_client(cfg, secret)
         client.head_bucket(Bucket=bucket)
@@ -966,7 +933,7 @@ def _perform_backup_s3(cfg: dict[str, Any], db: Session | None) -> dict[str, Any
             passphrase_file=cfg["passphrase_file"],
         )
         size = artifact.stat().st_size
-        secret = _get_s3_secret_key(db)
+        secret = get_s3_secret_key(db)
         client = _build_s3_client(cfg, secret)
         prefix = _s3_prefix(cfg)
         key = f"{prefix}{artifact.name}"
@@ -1055,7 +1022,7 @@ def _record_result(db: Session | None, run_at_iso: str, result: dict[str, Any]) 
     ``backup_alerts.notify_backup_result`` (never raises).
     """
     ok = bool(result.get("ok"))
-    with _session(db) as s:
+    with session_scope(db) as s:
         sss.set_setting(s, KEY_LAST_RUN_AT, run_at_iso, "Timestamp of the last backup run (UTC)")
         sss.set_setting(s, KEY_LAST_RESULT, json.dumps(result), "Result of the last backup run")
         counter_key = KEY_RUNS_SUCCESS if ok else KEY_RUNS_FAILURE

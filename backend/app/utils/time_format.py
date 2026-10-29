@@ -4,6 +4,22 @@ Provides canonical implementations for timestamp formatting used across
 the application (transcript segments, file endpoints, subtitle generation).
 """
 
+from datetime import UTC
+from datetime import datetime
+
+
+def as_utc(value: datetime | None) -> datetime | None:
+    """Coerce a timestamp to an aware UTC datetime (a naive value is taken to be UTC).
+
+    A row constructed in memory, or read through a driver configured otherwise, can carry
+    a naive value even from a ``TIMESTAMP WITH TIME ZONE`` column, and comparing naive to
+    aware raises ``TypeError`` -- inside an auth path that would surface as a 500 rather
+    than a denial. ``None`` passes through.
+    """
+    if value is None:
+        return None
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
 
 def _split_hms(seconds: float) -> tuple[int, int, float]:
     """Break ``seconds`` into ``(hours, minutes, remaining seconds)``.

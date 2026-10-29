@@ -701,7 +701,7 @@ class TestRedisDegradationFallback:
     clear it) -- so with ``broken_redis`` active, ``get_lockout_info`` reads through
     the STILL-BROKEN client, not the fallback store the write actually landed in.
     That read/write split is a pre-existing property of the degradation design
-    (the same one the module's ``_record_degradation`` metric exists to surface,
+    (the same one the module's ``record_degradation`` metric exists to surface,
     not something these three mutants touch), so it is worked around here rather
     than re-litigated.
     """

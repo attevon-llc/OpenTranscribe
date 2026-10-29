@@ -52,11 +52,11 @@ Full triage of the 73:
     healthy; kept as ``real`` rather than folded into equivalence (see the
     docstring on ``TestGetStoreDoesNotWarnWhenRedisIsHealthy`` for why the line is
     biased toward a test rather than a proof, even though the RETURN value and the
-    ``_record_degradation`` metric are provably unaffected).
-  - **``_record_degradation``'s label values actually reaching the metric (4).**
+    ``record_degradation`` metric are provably unaffected).
+  - **``record_degradation``'s label values reaching the metric (4; now tests/unit/test_auth_degradation.py).**
     Nothing called the REAL function and inspected what reached
     ``security_state_degraded_total.labels(...)`` -- every existing caller mocks
-    ``_record_degradation`` itself (``test_auth_state_degradation.py``'s
+    ``record_degradation`` itself (``test_auth_state_degradation.py``'s
     ``degraded.call_args.args == (...)`` assertions), so the function's OWN
     ``control=``/``fallback=`` kwargs wiring had no test. A corrupted or dropped
     label silently mis-labels (or, for the real Prometheus client, likely raises
@@ -178,7 +178,7 @@ Full triage of the 73:
 * **33 noise** -- a log string (``logger.debug``/``.warning``/``.info``/``.error``)
   no caller observes, or a condition/argument that feeds *only* a log call: the
   ``_get_store`` fallback/recovery messages (11: casing/``XX``-wrap variants plus
-  two ``None``-body swaps), ``_record_degradation``'s own except-block debug
+  two ``None``-body swaps), ``record_degradation``'s own except-block debug
   message and its ``exc_info`` kwarg (7 -- the swallow-everything CONTRACT itself
   is exercised via ``test_a_broken_metrics_backend_cannot_break_the_login_flow``;
   only the log's own text/kwargs are untested, and asserting them would break on
@@ -210,7 +210,6 @@ from app.auth import session as session_module
 from app.auth.session import OIDC_STATE_PREFIX
 from app.auth.session import InMemoryStore
 from app.auth.session import OIDCStateStore
-from app.core import metrics as metrics_module
 
 #: Issue #810 order-dependence hygiene. This file previously restored the cached-state
 #: globals it dirties only via `teardown_method` on one class (`TestGetStoreColdBoot`), which
@@ -364,50 +363,6 @@ class TestGetStoreColdBoot:
 
         assert store is healthy
         warning.assert_not_called()
-
-
-# ── _record_degradation: the metric's own label wiring ───────────────────────────
-
-
-@pytest.mark.unit
-class TestRecordDegradationLabels:
-    """Nothing calls the REAL function and inspects the metric -- every existing
-    caller mocks ``_record_degradation`` itself, so its own ``.labels(...)`` call
-    had no test. The lazy ``from app.core.metrics import
-    security_state_degraded_total`` re-resolves at call time, so patching the
-    module-level object's identity (not just an attribute) is picked up.
-    """
-
-    class _FakeCounter:
-        def __init__(self):
-            self.captured: dict[str, object] = {}
-            self.inc_calls = 0
-
-        def labels(self, **kwargs):
-            self.captured = kwargs
-            return self
-
-        def inc(self):
-            self.inc_calls += 1
-
-    def test_the_real_control_and_fallback_values_reach_the_metric(self, monkeypatch):
-        fake = self._FakeCounter()
-        monkeypatch.setattr(metrics_module, "security_state_degraded_total", fake)
-
-        session_module._record_degradation("oidc_state", "local")
-
-        assert fake.captured == {"control": "oidc_state", "fallback": "local"}
-        assert fake.inc_calls == 1
-
-    def test_a_different_call_carries_its_own_values_not_a_stale_default(self, monkeypatch):
-        """The control for the test above: two different calls must not collapse
-        onto the same labels (e.g. a mutant hardcoding one argument)."""
-        fake = self._FakeCounter()
-        monkeypatch.setattr(metrics_module, "security_state_degraded_total", fake)
-
-        session_module._record_degradation("rate_limit", "memory")
-
-        assert fake.captured == {"control": "rate_limit", "fallback": "memory"}
 
 
 # ── InMemoryStore: expiry boundary, prefix isolation, TTL propagation ────────────

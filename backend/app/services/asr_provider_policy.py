@@ -28,11 +28,10 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from fastapi import HTTPException
-
 from app.auth.roles import ELEVATED_ROLES
 from app.core.constants import ASR_CLOUD_PROVIDERS_FOR_USERS_KEY
 from app.core.constants import ASR_USERS_OWN_KEYS_KEY
+from app.core.exceptions import ConflictError
 from app.services import system_settings_service
 
 if TYPE_CHECKING:
@@ -141,7 +140,7 @@ def refuse_config_change(
             either a new config or a credential, so a rename is not blocked by it.
 
     Raises:
-        HTTPException: 409 ``{code, message}`` with a fixed sentence.
+        ConflictError: 409 ``{code, message}`` with a fixed sentence.
     """
     if not provider or provider == LOCAL:
         return
@@ -153,12 +152,9 @@ def refuse_config_change(
     policy = load_policy(db)
     if not provider_allowed(role, provider, policy):
         code = "asr_provider_not_allowed"
-        raise HTTPException(status_code=409, detail={"code": code, "message": ISSUE_MESSAGES[code]})
+        raise ConflictError({"code": code, "message": ISSUE_MESSAGES[code]})
     if carries_credential and not policy.own_keys:
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "own_asr_keys_disabled", "message": OWN_KEYS_DISABLED_MESSAGE},
-        )
+        raise ConflictError({"code": "own_asr_keys_disabled", "message": OWN_KEYS_DISABLED_MESSAGE})
 
 
 def visible_providers(

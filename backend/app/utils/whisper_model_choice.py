@@ -8,9 +8,7 @@ carry out. Rejecting it up front is the honest answer.
 
 from __future__ import annotations
 
-from fastapi import HTTPException
-from fastapi import status
-
+from app.core.exceptions import UnprocessableInputError
 from app.transcription.config import LIGHTWEIGHT_MODELS
 from app.transcription.config import TranscriptionConfig
 
@@ -46,12 +44,9 @@ def require_servable_whisper_model(model: str | None) -> str | None:
         resolve_loadable_model_name(model) == resolve_loadable_model_name(served)
     ):
         return model
-    raise HTTPException(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        detail=(
-            f"Whisper model '{model}' is not available for per-file selection. This "
-            f"deployment runs '{served}' on the GPU; the only other choices are the "
-            f"lightweight CPU models ({', '.join(sorted(LIGHTWEIGHT_MODELS))}). Omit "
-            "whisper_model to use the deployment model."
-        ),
+    raise UnprocessableInputError(
+        f"Whisper model '{model}' is not available for per-file selection. This "
+        f"deployment runs '{served}' on the GPU; the only other choices are the "
+        f"lightweight CPU models ({', '.join(sorted(LIGHTWEIGHT_MODELS))}). Omit "
+        "whisper_model to use the deployment model."
     )

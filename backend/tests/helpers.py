@@ -16,6 +16,8 @@ import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
 
+from app.core.exceptions import DomainError
+
 #: A globally-routable literal, used as the answer for stubbed documentation hostnames.
 PUBLIC_TEST_ADDRESS = "93.184.216.34"
 
@@ -168,8 +170,8 @@ def reset_rate_limiter() -> None:
         limiter._storage_dead = False
 
 
-def detail_dict(exc: HTTPException) -> dict[str, Any]:
-    """The structured ``detail`` payload of an ``HTTPException`` raised with a dict.
+def detail_dict(exc: HTTPException | DomainError) -> dict[str, Any]:
+    """The structured ``detail`` payload of an ``HTTPException`` or ``DomainError`` raised with a dict.
 
     Starlette types ``HTTPException.detail`` as ``str``, but the app raises these with
     ``{"code": ..., "message": ...}`` dicts (FastAPI serialises them as JSON). Narrowing

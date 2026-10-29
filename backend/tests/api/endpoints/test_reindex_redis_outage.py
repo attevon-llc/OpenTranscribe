@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 import pytest
 from fastapi import status
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.services.search.reindex_lock import ReindexLockUnavailableError
 
@@ -85,3 +86,25 @@ def test_stop_is_503_when_only_the_lock_lookup_fails(client, admin_token_headers
         response = client.post(REINDEX_STOP, headers=admin_token_headers)
 
     assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+
+
+class _LockReadFailsRedis:
+    """Answers every read except the per-owner reindex lock, whose GET raises."""
+
+    def get(self, key: str) -> None:
+        if key.startswith("reindex_lock:"):
+            raise RedisConnectionError(_REDIS_DOWN_TEXT)
+        return None
+
+
+def test_stop_is_503_when_the_lock_reader_itself_hits_a_redis_error(client, admin_token_headers):
+    """Fan-out read succeeds; ``reindex_lock`` GET raises a real redis error and converts it."""
+    with patch("app.core.redis.get_redis", return_value=_LockReadFailsRedis()):
+        response = client.post(REINDEX_STOP, headers=admin_token_headers)
+
+    assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+    assert response.json()["detail"] == (
+        "Reindex state is temporarily unavailable. Please try again shortly."
+    )
+    assert _REDIS_DOWN_TEXT not in response.text
+    assert "not_running" not in response.text

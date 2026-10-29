@@ -7,6 +7,8 @@ legitimate-looking empty result. Callers that need the distinction use
 
 from minio.error import S3Error
 
+# NoSuchBucket counts as absent: the temp-audio probe just falls back, and the sidecar
+# caller lists the same bucket first (discover_youtube_ids), so a missing bucket fails there.
 #: S3 error codes that mean "the object is not there" — the only answers that are not an outage.
 _ABSENT_S3_CODES = frozenset({"NoSuchKey", "NoSuchBucket", "ResourceNotFound"})
 

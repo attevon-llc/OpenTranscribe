@@ -16,7 +16,7 @@ backend/app/api/endpoints/media_collections.py	1848	oversize: split by concern p
 backend/app/api/endpoints/prompts.py	921	oversize: split by concern planned
 backend/app/api/endpoints/search.py	2036	oversize: split by concern planned
 backend/app/api/endpoints/speaker_profiles.py	1160	oversize: split by concern planned
-backend/app/api/endpoints/speaker_update.py	786	oversize: split by concern planned
+backend/app/api/endpoints/speaker_update.py	752	oversize: split by concern planned
 backend/app/api/endpoints/speakers.py	2849	oversize: split by concern planned
 backend/app/api/endpoints/tasks.py	1097	oversize: split by concern planned
 backend/app/api/endpoints/user_settings.py	1874	oversize: split by concern planned

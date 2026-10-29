@@ -18,6 +18,9 @@ from typing import Any
 import numpy as np
 from sqlalchemy.orm import Session
 
+from app.api.endpoints.speaker_match_notify import (
+    send_bulk_update_notification as _send_bulk_update_notification,
+)
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import SpeakerMatch
@@ -27,6 +30,7 @@ from app.services.opensearch_service import get_speaker_embedding
 from app.services.permission_service import file_ids_in_scope
 from app.services.privacy import policy as privacy_policy
 from app.services.privacy.redact_view import PrivacyView
+from app.services.speaker_match_errors import SuggestionSyncIncompleteError
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.utils.db_helpers import org_stamp_is
 from app.utils.speaker_identity_detail import ORIGIN_PROFILE_ASSIGNED
@@ -503,58 +507,6 @@ def _load_suggestion_speaker_documents(
     return [_speaker_sync_document(db, speaker) for speaker in suggestion_speakers]
 
 
-def _send_bulk_update_notification(
-    trigger: dict[str, Any], auto_applied_count: int, suggested_count: int
-) -> None:
-    """Send WebSocket notification about bulk speaker updates.
-
-    Takes the labeled speaker as plain data: the caller has committed by this point,
-    and reading an attribute off an expired ORM instance would open a fresh
-    transaction just to render a notification.
-
-    ``speakers_bulk_updated`` has no dedicated frontend handler (issue #603) — it is
-    absent from ``NotificationType`` in ``frontend/src/stores/websocket.ts``, so it
-    falls through the generic unmatched-type path and is stored in
-    ``$ws.notifications`` without a targeted UI reaction. Harmless (the per-speaker
-    ``speaker_processing_complete``/``speaker_updated`` events already drive the
-    file-detail page's live update), but intentionally unhandled rather than an
-    oversight — leave it emitting until a UI surface actually consumes it.
-    """
-    if auto_applied_count == 0:
-        return
-
-    try:
-        import asyncio
-
-        from app.api.websockets import publish_notification
-
-        coro = publish_notification(
-            user_id=trigger["user_id"],
-            notification_type="speakers_bulk_updated",
-            data={
-                "trigger_speaker_id": trigger["id"],
-                "display_name": str(trigger["display_name"]),
-                "auto_applied_count": auto_applied_count,
-                "suggested_count": suggested_count,
-                "message": f"Auto-applied '{trigger['display_name']}' to {auto_applied_count} additional speakers",
-            },
-        )
-
-        # This sync function runs in a threadpool, so schedule on the main event loop
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(coro)
-        except RuntimeError:
-            # No running loop in this thread - use run() to create one
-            asyncio.run(coro)
-
-        logger.info(
-            f"Sent WebSocket notification for bulk speaker update: {auto_applied_count} speakers"
-        )
-    except Exception as e:
-        logger.warning(f"Failed to send WebSocket notification for bulk speaker update: {e}")
-
-
 def _blocked_candidate_ids(
     db: Session, trigger: dict[str, Any], candidate_ids: list[int]
 ) -> set[int]:
@@ -722,11 +674,25 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> dict[
         # use for the same tracker (issue #605): a rolled-back match must never
         # reach the index, so this must run after the commit, not before it.
         tracker.flush(db)
-        documents.extend(_load_suggestion_speaker_documents(db, trigger))
-        db.commit()
+        # A failed suggestion load must not drop the index push of matches Postgres
+        # already committed above: push and notify first, then raise with the real counts.
+        suggestion_load_error: Exception | None = None
+        try:
+            documents.extend(_load_suggestion_speaker_documents(db, trigger))
+            db.commit()
+        except Exception as exc:
+            logger.exception(f"Suggestion-speaker sync load failed for speaker {speaker_id}")
+            db.rollback()
+            suggestion_load_error = exc
 
         # Phase 3 — index writes. NO transaction is open here.
         _push_speaker_documents(documents)
+
+        if suggestion_load_error is not None:
+            _send_bulk_update_notification(trigger, auto_applied_count, suggested_count)
+            raise SuggestionSyncIncompleteError(
+                auto_applied_count, suggested_count
+            ) from suggestion_load_error
 
         logger.info(
             f"Retroactive matching complete: {auto_applied_count} auto-applied, {suggested_count} suggested"

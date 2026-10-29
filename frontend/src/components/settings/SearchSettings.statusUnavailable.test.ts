@@ -113,6 +113,40 @@ describe('SearchSettings — reindex status unavailable (fail-open fix)', () => 
       expect(screen.queryByText('settings.search.statusUnavailable')).not.toBeInTheDocument();
     });
     expect(screen.getByText('search.reindexAll').closest('button')).not.toBeDisabled();
+
+    // Known status: the retry timer must be gone, not left polling forever.
+    const afterRecovery = statusCalls();
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(statusCalls()).toBe(afterRecovery);
+  });
+
+  it('starts no poll timer when it unmounts before the first status response resolves', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let resolveStatus: (value: unknown) => void = () => {};
+    get.mockImplementation((url: string) => {
+      if (url === '/search/reindex/status') {
+        return new Promise((resolve) => {
+          resolveStatus = resolve;
+        });
+      }
+      if (url === '/search/models') {
+        return Promise.resolve({ data: { models: [], current_model_id: 'm1' } });
+      }
+      if (url === '/search/index-health') return Promise.resolve({ data: {} });
+      if (url === '/search/models/neural/status') {
+        return Promise.resolve({ data: { bootstrap: null } });
+      }
+      return Promise.reject(new Error(`unexpected GET ${url}`));
+    });
+
+    const { unmount } = render(SearchSettings);
+    await waitFor(() => expect(statusCalls()).toBe(1));
+
+    unmount();
+    resolveStatus({ data: statusBody({ status_unavailable: true }) });
+    await vi.advanceTimersByTimeAsync(35000);
+
+    expect(statusCalls()).toBe(1);
   });
 
   it('still renders the live-progress panel with a stop button while a run is in progress', async () => {

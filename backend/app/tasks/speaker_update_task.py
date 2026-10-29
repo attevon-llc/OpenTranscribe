@@ -216,6 +216,7 @@ def process_speaker_update_background(
     from app.api.endpoints.speakers import _push_speaker_display_names
     from app.api.endpoints.speakers import _push_speaker_profile_info
     from app.api.endpoints.speakers import _update_opensearch_speaker_name
+    from app.services.speaker_match_errors import SuggestionSyncIncompleteError
     from app.utils.websocket_notify import send_ws_event
     from app.utils.websocket_notify import send_ws_event_for_file
 
@@ -282,6 +283,16 @@ def process_speaker_update_background(
                 display_name_changed,
                 old_profile_id,
                 new_profile_id,
+            )
+        except SuggestionSyncIncompleteError as exc:
+            # Matches were committed and indexed; only the suggestion documents are missing.
+            matching_failed = True
+            auto_applied_count = exc.auto_applied_count
+            suggested_count = exc.suggested_count
+            logger.error(
+                f"Suggestion sync incomplete for speaker {speaker_uuid}: "
+                f"{auto_applied_count} auto-applied, {suggested_count} suggested",
+                exc_info=True,
             )
         except Exception as exc:
             # The label itself is saved; only profile assignment / matching failed.

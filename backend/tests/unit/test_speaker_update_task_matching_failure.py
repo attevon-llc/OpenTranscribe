@@ -96,3 +96,21 @@ def test_genuinely_empty_matching_is_still_success(task_env, monkeypatch):
     assert result["matching_failed"] is False
     assert result["cleanup_incomplete_stages"] == []
     assert task_env["ws"][0][1]["matching_failed"] is False
+
+
+def test_incomplete_suggestion_sync_reports_the_real_counts(task_env, monkeypatch):
+    from app.services.speaker_match_errors import SuggestionSyncIncompleteError
+
+    def _partial_workflow(db, speaker_id, display_name, user_id=None):
+        raise SuggestionSyncIncompleteError(3, 2)
+
+    monkeypatch.setattr(spk, "_handle_speaker_labeling_workflow", _partial_workflow)
+
+    result = _run()
+
+    assert result["status"] == "partial", result
+    assert result["matching_failed"] is True
+    assert (result["auto_applied_count"], result["suggested_count"]) == (3, 2)
+    data = task_env["ws"][0][1]
+    assert (data["auto_applied_count"], data["suggested_count"]) == (3, 2)
+    assert data["matching_failed"] is True

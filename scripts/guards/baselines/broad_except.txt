@@ -26,7 +26,7 @@ backend/app/api/endpoints/search.py	4	ratchet: may only go down
 backend/app/api/endpoints/speaker_attribute_migration.py	3	ratchet: may only go down
 backend/app/api/endpoints/speaker_clusters.py	2	ratchet: may only go down
 backend/app/api/endpoints/speaker_profiles.py	5	ratchet: may only go down
-backend/app/api/endpoints/speaker_update.py	3	ratchet: may only go down
+backend/app/api/endpoints/speaker_update.py	2	ratchet: may only go down
 backend/app/api/endpoints/speakers.py	5	ratchet: may only go down
 backend/app/api/endpoints/transcript_segments.py	1	ratchet: may only go down
 backend/app/api/endpoints/watch_sources.py	1	ratchet: may only go down
@@ -160,6 +160,7 @@ backend/app/services/speaker_analysis_models.py	3	ratchet: may only go down
 backend/app/services/speaker_cleanup.py	1	ratchet: may only go down
 backend/app/services/speaker_clustering_service.py	11	ratchet: may only go down
 backend/app/services/speaker_embedding_service.py	5	ratchet: may only go down
+backend/app/api/endpoints/speaker_match_notify.py	1	ratchet: may only go down
 backend/app/services/speaker_matching_service.py	10	ratchet: may only go down
 backend/app/services/speaker_rename_tracker.py	1	ratchet: may only go down
 backend/app/services/speaker_status_service.py	2	ratchet: may only go down

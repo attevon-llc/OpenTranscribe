@@ -140,7 +140,10 @@
     window.addEventListener('reindex-stopped', handleReindexStopped as EventListener);
   });
 
+  let destroyed = false;
+
   onDestroy(() => {
+    destroyed = true;
     window.removeEventListener('reindex-progress', handleReindexProgress as EventListener);
     window.removeEventListener('reindex-complete', handleReindexComplete as EventListener);
     window.removeEventListener('reindex-stopped', handleReindexStopped as EventListener);
@@ -249,6 +252,7 @@
       console.error('Failed to load index status:', e);
     }
     // While the run state is unknown (Redis unreachable) keep asking; stop once it is known.
+    if (destroyed) return;
     if (indexStatus?.status_unavailable && !statusPollHandle) {
       statusPollHandle = setInterval(loadStatus, STATUS_RETRY_MS);
     } else if (!indexStatus?.status_unavailable && statusPollHandle) {

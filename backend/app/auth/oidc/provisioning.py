@@ -226,7 +226,7 @@ def sync_oidc_user_to_db(db, oidc_data: OIDCUserData, cfg=None):
             several.
 
     Raises:
-        HTTPException: 401, when admission is refused or an email-matched link is.
+        AuthenticationError: 401, when admission is refused or an email-matched link is.
             Both are the *same* response an unusable token gets — a distinct one
             would be an account-existence oracle.
     """

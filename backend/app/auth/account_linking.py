@@ -97,13 +97,11 @@ by design, and that pairing is not touched by either narrowing).
 
 import logging
 
-from fastapi import HTTPException
-from fastapi import status
-
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.auth.roles import ROLE_SUPER_ADMIN
+from app.core.exceptions import AuthenticationError
 
 logger = logging.getLogger(__name__)
 
@@ -153,12 +151,12 @@ def assert_email_link_permitted(
         source_identifier: The external identity being asserted (LDAP uid, subject DN).
         email_verified: Whether the source asserts this address as verified. Fails
             closed: pass ``False`` whenever the source has no verified-address concept.
-        failure_detail: The ``HTTPException`` detail to raise. Must be byte-identical
+        failure_detail: The ``AuthenticationError`` detail to raise. Must be byte-identical
             to what this auth path returns for an ordinary credential failure.
         failure_headers: Optional response headers to match that same failure.
 
     Raises:
-        HTTPException: 401, when the link is refused.
+        AuthenticationError: 401, when the link is refused.
     """
     reason: str | None = None
     if str(getattr(user, "role", "")) == ROLE_SUPER_ADMIN:
@@ -190,11 +188,7 @@ def assert_email_link_permitted(
             "matched_by": "email",
         },
     )
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail=failure_detail,
-        headers=failure_headers,
-    )
+    raise AuthenticationError(failure_detail, headers=failure_headers)
 
 
 def assert_provider_id_link_permitted(
@@ -271,12 +265,12 @@ def assert_provider_id_link_permitted(
             subject, SAML subject, PKI subject DN, or external id).
         asserted_email: The email address this login asserts, or ``None``/empty
             when the source asserts none.
-        failure_detail: The ``HTTPException`` detail to raise. Must be byte-identical
+        failure_detail: The ``AuthenticationError`` detail to raise. Must be byte-identical
             to what this auth path returns for an ordinary credential failure.
         failure_headers: Optional response headers to match that same failure.
 
     Raises:
-        HTTPException: 401, when the match is refused.
+        AuthenticationError: 401, when the match is refused.
     """
     reason: str | None = None
     if str(getattr(user, "role", "")) == ROLE_SUPER_ADMIN and not getattr(
@@ -315,8 +309,4 @@ def assert_provider_id_link_permitted(
         error_code=LINK_REFUSED_ERROR_CODE,
         details=details,
     )
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail=failure_detail,
-        headers=failure_headers,
-    )
+    raise AuthenticationError(failure_detail, headers=failure_headers)

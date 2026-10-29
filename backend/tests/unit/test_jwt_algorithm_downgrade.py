@@ -44,11 +44,11 @@ from __future__ import annotations
 import time
 
 import pytest
-from fastapi import HTTPException
 
 from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.auth_types import TOKEN_TYPE_MFA
 from app.core.config import settings
+from app.core.exceptions import AuthenticationError
 from app.core.security import verify_token
 from tests.jwt_compat import jwt
 
@@ -137,14 +137,14 @@ class TestStrictModeRefusesTheLegacyAlgorithm:
     its FIPS migration window — the whole point of ``strict``."""
 
     def test_a_legacy_signed_token_is_rejected(self, strict_mode):
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             verify_token(_legacy())
 
         assert exc.value.status_code == 401
 
     def test_the_rejection_does_not_disclose_why(self, strict_mode):
         """The 401 body is the same one an expired or forged token gets."""
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             verify_token(_legacy())
 
         assert exc.value.detail == "Invalid authentication credentials"
@@ -157,7 +157,7 @@ class TestStrictModeRefusesTheLegacyAlgorithm:
         assert payload["sub"] == SUBJECT
 
     def test_no_fallback_is_audited_because_none_happened(self, strict_mode, audited):
-        with pytest.raises(HTTPException):
+        with pytest.raises(AuthenticationError):
             verify_token(_legacy())
 
         assert audited == []
@@ -240,13 +240,13 @@ class TestPurposeBindingSurvivesEitherMode:
         )
 
     def test_strict_mode_refuses_a_non_access_token(self, strict_mode):
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             verify_token(self._mfa_half_token(V3_ALGORITHM))
 
         assert exc.value.status_code == 401
 
     def test_compatible_mode_refuses_a_non_access_token(self, compatible_mode):
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             verify_token(self._mfa_half_token(LEGACY_ALGORITHM))
 
         assert exc.value.status_code == 401
@@ -286,7 +286,7 @@ class TestStrictModeNeverRefusesWhatTheDeploymentSigns:
         Without this, the test above would pass equally against a verifier that had
         simply stopped enforcing anything.
         """
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             verify_token(_v3())
 
         assert exc.value.status_code == 401

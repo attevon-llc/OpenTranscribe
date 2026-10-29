@@ -28,7 +28,6 @@ from typing import cast
 from unittest.mock import patch
 
 import pytest
-from fastapi import HTTPException
 
 from app.auth import account_linking
 from app.auth import external_sync
@@ -37,6 +36,7 @@ from app.auth import pki_auth
 from app.auth.oidc import provisioning as oidc_provisioning
 from app.auth.provider_registry import ExternalIdentity
 from app.auth.saml import provisioning as saml_provisioning
+from app.core.exceptions import AuthenticationError
 from app.core.exceptions import ExternalIdentityLinkRefusedError
 
 
@@ -98,7 +98,7 @@ class TestProviderIdLinkGuardRule:
 
     def test_divergent_asserted_email_is_refused(self):
         """The exploit: the identifier matched, but the person behind it changed."""
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             account_linking.assert_provider_id_link_permitted(
                 _FakeUser(email="victim@example.com"),
                 provider="ldap",
@@ -130,7 +130,7 @@ class TestProviderIdLinkGuardRule:
 
     def test_super_admin_is_refused_even_with_a_matching_email(self):
         """Unconditional — a matching email does not lift the super_admin guard."""
-        with pytest.raises(HTTPException):
+        with pytest.raises(AuthenticationError):
             account_linking.assert_provider_id_link_permitted(
                 _FakeUser(email="victim@example.com", role="super_admin"),
                 provider="oidc",
@@ -142,7 +142,7 @@ class TestProviderIdLinkGuardRule:
     def test_super_admin_is_still_refused_by_default_when_the_flag_is_absent(self):
         """Regression (issue #993): with no explicit opt-in, self-serve/JIT login can
         never produce or refresh a super_admin — the pre-fix behavior is unchanged."""
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             account_linking.assert_provider_id_link_permitted(
                 _FakeUser(
                     email="victim@example.com",
@@ -173,7 +173,7 @@ class TestProviderIdLinkGuardRule:
     def test_flagged_super_admin_row_still_refused_on_a_divergent_email(self):
         """The flag lifts ONLY the super_admin refusal — email corroboration (check 2)
         still runs unconditionally, even on an explicitly-authorized row."""
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             account_linking.assert_provider_id_link_permitted(
                 _FakeUser(
                     email="victim@example.com",
@@ -189,7 +189,7 @@ class TestProviderIdLinkGuardRule:
 
     def test_refusal_is_audited_as_provider_id_match(self):
         with patch.object(account_linking.audit_logger, "log") as log:
-            with pytest.raises(HTTPException):
+            with pytest.raises(AuthenticationError):
                 account_linking.assert_provider_id_link_permitted(
                     _FakeUser(email="victim@example.com"),
                     provider="ldap",
@@ -203,7 +203,7 @@ class TestProviderIdLinkGuardRule:
         assert log.call_args.kwargs["details"]["matched_by"] == "provider_id"
 
     def test_refusal_response_matches_the_ordinary_failure(self):
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             account_linking.assert_provider_id_link_permitted(
                 _FakeUser(email="victim@example.com"),
                 provider="ldap",
@@ -236,7 +236,7 @@ class TestLdapSyncProviderIdGuard:
         db = _FakeProviderIdSession(user)
 
         with patch.object(ldap_auth, "_update_ldap_user") as update:
-            with pytest.raises(HTTPException) as exc:
+            with pytest.raises(AuthenticationError) as exc:
                 ldap_auth.sync_ldap_user_to_db(db, _ldap_data("attacker@example.com"))
 
         assert exc.value.status_code == 401
@@ -261,7 +261,7 @@ class TestLdapSyncProviderIdGuard:
         db = _FakeProviderIdSession(user)
 
         with patch.object(ldap_auth, "_update_ldap_user") as update:
-            with pytest.raises(HTTPException) as exc:
+            with pytest.raises(AuthenticationError) as exc:
                 ldap_auth.sync_ldap_user_to_db(db, _ldap_data("victim@example.com"))
 
         assert exc.value.status_code == 401
@@ -294,7 +294,7 @@ class TestPkiSyncProviderIdGuard:
         db = _FakeProviderIdSession(user)
 
         with patch.object(pki_auth, "_update_pki_user") as update:
-            with pytest.raises(HTTPException) as exc:
+            with pytest.raises(AuthenticationError) as exc:
                 pki_auth.sync_pki_user_to_db(db, _pki_data("attacker@example.com"))
 
         assert exc.value.status_code == 401
@@ -315,7 +315,7 @@ class TestPkiSyncProviderIdGuard:
         db = _FakeProviderIdSession(user)
 
         with patch.object(pki_auth, "_update_pki_user") as update:
-            with pytest.raises(HTTPException) as exc:
+            with pytest.raises(AuthenticationError) as exc:
                 pki_auth.sync_pki_user_to_db(db, _pki_data("victim@example.com"))
 
         assert exc.value.status_code == 401
@@ -354,7 +354,7 @@ class TestOidcSyncProviderIdGuard:
             ),
             patch("app.services.idp_group_mapping_service.reconcile_user", return_value=None),
         ):
-            with pytest.raises(HTTPException) as exc:
+            with pytest.raises(AuthenticationError) as exc:
                 oidc_provisioning.sync_oidc_user_to_db(
                     db, cast("Any", _oidc_data("attacker@example.com"))
                 )
@@ -396,7 +396,7 @@ class TestOidcSyncProviderIdGuard:
                 return_value=None,
             ),
         ):
-            with pytest.raises(HTTPException) as exc:
+            with pytest.raises(AuthenticationError) as exc:
                 oidc_provisioning.sync_oidc_user_to_db(
                     db, cast("Any", _oidc_data("victim@example.com"))
                 )
@@ -429,7 +429,7 @@ class TestSamlSyncProviderIdGuard:
                 return_value=None,
             ),
         ):
-            with pytest.raises(HTTPException) as exc:
+            with pytest.raises(AuthenticationError) as exc:
                 saml_provisioning.sync_saml_user_to_db(
                     db, cast("Any", _saml_data("attacker@example.com"))
                 )
@@ -466,7 +466,7 @@ class TestSamlSyncProviderIdGuard:
                 return_value=None,
             ),
         ):
-            with pytest.raises(HTTPException) as exc:
+            with pytest.raises(AuthenticationError) as exc:
                 saml_provisioning.sync_saml_user_to_db(
                     db, cast("Any", _saml_data("victim@example.com"))
                 )

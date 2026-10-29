@@ -186,7 +186,6 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException
 from joserfc import jwt as _jwt
 from joserfc.jwk import OctKey
 
@@ -198,6 +197,7 @@ from app.core.auth_types import AUTH_TYPE_PKI
 from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.auth_types import TOKEN_TYPE_REFRESH
 from app.core.config import settings
+from app.core.exceptions import AuthenticationError
 
 PROBE_PASSWORD = "correct horse battery staple"  # noqa: S105 - test fixture literal, not a secret
 
@@ -478,7 +478,7 @@ class TestVerifyTokenWrongTypeResponseBody:
             {"sub": "1", "type": TOKEN_TYPE_REFRESH, "exp": int(time.time()) + 600}
         )
 
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             security.verify_token(refresh_like, expected_type=TOKEN_TYPE_ACCESS)
 
         assert exc.value.detail == "Invalid authentication credentials"
@@ -491,7 +491,7 @@ class TestVerifyTokenDecodeFailureResponseBody:
     checked."""
 
     def test_the_headers_are_exactly_this_dict(self):
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             security.verify_token("not-a-jwt")
 
         assert exc.value.status_code == 401

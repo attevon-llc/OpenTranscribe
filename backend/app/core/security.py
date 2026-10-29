@@ -3,8 +3,6 @@ import os
 import unicodedata
 from typing import Any
 
-from fastapi import HTTPException
-from fastapi import status
 from joserfc import jwt
 from joserfc.errors import JoseError
 from joserfc.jwk import OctKey
@@ -16,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.auth.utils import local_password_allowed
 from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.config import settings
+from app.core.exceptions import AuthenticationError
 from app.models.user import User
 
 
@@ -423,9 +422,8 @@ def verify_token(token: str, expected_type: str | None = TOKEN_TYPE_ACCESS) -> d
         payload: dict[str, Any] = token_obj.claims
 
         if expected_type is not None and payload.get("type") != expected_type:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication credentials",
+            raise AuthenticationError(
+                "Invalid authentication credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
@@ -455,8 +453,7 @@ def verify_token(token: str, expected_type: str | None = TOKEN_TYPE_ACCESS) -> d
 
         return payload
     except JoseError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials",
+        raise AuthenticationError(
+            "Invalid authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         ) from e

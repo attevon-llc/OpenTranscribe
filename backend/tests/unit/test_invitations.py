@@ -33,6 +33,7 @@ from sqlalchemy.sql import operators as sa_ops
 
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.utils import local_password_allowed
+from app.core.exceptions import AccessDeniedError
 from app.models.invitation import EmailVerificationToken
 from app.models.user import User
 
@@ -398,14 +399,13 @@ class TestEmailVerification:
         assert user.email_verified is False
 
     def test_local_login_is_blocked_when_verification_is_required(self, db, mailer, monkeypatch):
-        from fastapi import HTTPException
 
         from app.auth.email_verification import assert_email_verified_for_local_login
 
         user = self._user(db)
         self._require(monkeypatch, True)
 
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AccessDeniedError) as exc:
             assert_email_verified_for_local_login(db, str(user.uuid))
         assert exc.value.status_code == 403
         # The blocked attempt hands the user a way forward without an admin.

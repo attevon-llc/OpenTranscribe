@@ -1,4 +1,4 @@
-"""Wire shapes of ``/api/admin/asr-providers`` (issue #1246, WP6)."""
+"""Wire shapes of ``/api/admin/asr-providers`` (issue #1246)."""
 
 from __future__ import annotations
 

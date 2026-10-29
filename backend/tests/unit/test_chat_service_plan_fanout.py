@@ -1,4 +1,4 @@
-"""Tests for `_run_plan_fanout` / `_validate_plan_speakers` (#403 W2.6).
+"""Tests for `_run_plan_fanout` / `_validate_plan_speakers` (#403).
 
 **T9, the red-check invariant this file exists to pin:** a plan may only ADD
 legs of kinds the rules could already produce, and it NEVER gets a wider file

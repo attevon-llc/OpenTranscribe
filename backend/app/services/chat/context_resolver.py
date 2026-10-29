@@ -64,7 +64,7 @@ def _visible_files_query(db: Session, ctx: RequestContext):
 
     # Quarantined files are invisible here to EVERYONE, admins included — no
     # exception, unlike the review surfaces (issue #262g originally carved one
-    # out; W2.0g's adversarial review removed it). Chat is a retrieval surface,
+    # out; a later adversarial review removed it). Chat is a retrieval surface,
     # not a review one (see this module's docstring and `_resolve_explicit_files`
     # below), and `service.py`'s phase-3.5 `_drop_quarantined_hits` already drops
     # a quarantined file's hits for an admin's unscoped turn unconditionally. An

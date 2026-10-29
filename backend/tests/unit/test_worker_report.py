@@ -1,4 +1,4 @@
-"""The loaded-model report a Whisper worker writes after pinning its model (#1246 WP4).
+"""The loaded-model report a Whisper worker writes after pinning its model (#1246).
 
 Real Redis for the round trip; the worker's ``preload_models`` hook is driven with every heavy
 dependency stubbed, so what is asserted is the ORDER (pin first, then report) and the node name

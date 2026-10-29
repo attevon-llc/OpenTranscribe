@@ -1,4 +1,4 @@
-"""SSRF guards on user-configured MediaCMS media sources (audit finding A1).
+"""SSRF guards on user-configured MediaCMS media sources (SSRF audit).
 
 ``schemas/media_source.py`` carried a second "is this host safe" implementation beside
 the canonical ``utils/url_validation``: a hostname regex, a "must contain a dot" rule,
@@ -245,7 +245,7 @@ def test_mediacms_refuses_a_private_download_target(tmp_path, monkeypatch):
 
 
 def test_mediacms_media_info_redirect_is_not_followed(monkeypatch):
-    """The exact exploit in finding A1: a benign login followed by a redirecting
+    """The exact exploit in the SSRF audit: a benign login followed by a redirecting
     media-info response must not be chased to a private/link-local target.
 
     Before this fix, none of the three outbound calls in ``mediacms.py`` passed

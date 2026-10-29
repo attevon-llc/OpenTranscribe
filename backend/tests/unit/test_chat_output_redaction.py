@@ -300,7 +300,7 @@ async def _run_turn(monkeypatch, *, deltas, cfg, chunks=None):
     monkeypatch.setattr(
         chat_service,
         "_prepare_context",
-        # Six values since #403 W2.6 added the fan-out's `<synthesis>`/
+        # Six values since #403 added the fan-out's `<synthesis>`/
         # `<recurrence>` blocks to `_prepare_context`'s return; both empty for
         # a turn the router left on the serial chunk-plane pipeline — every
         # turn this file drives.

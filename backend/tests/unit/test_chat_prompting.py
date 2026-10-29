@@ -587,7 +587,7 @@ def test_diagnostics_are_opt_in():
 
 
 # ---------------------------------------------------------------------------
-# Evidence-block budget discipline (Wave 2: counted/overview/recurrence/synthesis)
+# Evidence-block budget discipline (counted/overview/recurrence/synthesis)
 # ---------------------------------------------------------------------------
 
 
@@ -726,7 +726,7 @@ def test_a_pathologically_small_window_with_oversized_framing_blocks_still_answe
 
 
 def test_build_messages_accepts_recurrence_and_synthesis_blocks_and_orders_them():
-    """Wave 2 blocks join AFTER counted/overview, in `_BLOCK_PRIORITY` order."""
+    """The newer blocks join AFTER counted/overview, in `_BLOCK_PRIORITY` order."""
     messages, _ = build_messages(
         system_prompt="SYS",
         chunks=[],

@@ -1,11 +1,11 @@
-"""W2.3: ``_resolve_summary_tier`` routes a speaker-scoped summarize turn to
+"""``_resolve_summary_tier`` routes a speaker-scoped summarize turn to
 ``scope_speaker_digest_hits`` — the fix for the gap ``Route.wants_speaker_
 digest_map`` documents.
 
 Drives the real ``ChatService._prepare_context``/``_resolve_summary_tier``
 with ``route``, ``retrieve_context``, ``mask_chunks``, ``scope_speaker_digest_
 hits`` and ``mask_digests`` stubbed (network/DB-free) — same harness shape as
-``test_chat_map_decoupling.py`` (W2.1's sibling suite for the recording-level
+``test_chat_map_decoupling.py`` (the sibling suite for the recording-level
 map), one level down: a speaker filter this time, not an unranked scope.
 ``build_file_summaries``/``build_overview`` run for REAL, so assertions are
 against genuine rendered ``<overview>`` text.

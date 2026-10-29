@@ -2,7 +2,7 @@
 
 ``resource_type`` / ``resource_uuid`` / ``tenant_scope`` are top-level keyword fields so "all
 that happened to this file" is one filter and a personal-scope event is never attributed to an
-organization through its actor (finding F5). These tests pin the writer, the index mapping and
+organization through its actor. These tests pin the writer, the index mapping and
 the query clause with no cluster; ``tests/integration/test_audit_org_scope_opensearch.py``
 evaluates the same clause against a real index.
 """

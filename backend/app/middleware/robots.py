@@ -1,4 +1,4 @@
-"""Tell crawlers not to index API responses (issue #668, finding 3).
+"""Tell crawlers not to index API responses (issue #668).
 
 `frontend/static/robots.txt` covers the pages a crawler discovers by following links, but a
 crawler that hits an API URL directly (a shared link, a stray reference, a misconfigured

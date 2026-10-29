@@ -17,7 +17,7 @@
 # "scan,rehearse" after test/build already passed) instead of re-running
 # everything -- ALWAYS intersected against SAFE_STAGES below, so a typo or a
 # copy-pasted dangerous stage name can never slip through. An intersection
-# that comes back EMPTY is an error (issue #784 finding N6), not a fallback to
+# that comes back EMPTY is an error (issue #784), not a fallback to
 # running every safe stage: that used to be the behavior, and it meant a typo
 # in [stages] (or every requested stage being a dangerous one, silently
 # dropped by the intersection) launched the full 45-120 minute rehearsal

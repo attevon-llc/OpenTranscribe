@@ -161,7 +161,7 @@ def _facts_db(sentences, *, status="completed", segment_batches=None):
             result.filter.return_value.first.return_value = (digest_payload,)
             # `_gather_digest_plans` now reads every hit's digest through ONE
             # batched `file_id IN (...)` query (`_load_digest_rows`) instead of
-            # a per-hit `_digest_sentences` call (W2.1 amendment b). Every hit
+            # a per-hit `_digest_sentences` call. Every hit
             # in this module uses `_digest_hit()`'s default `file_id=5`, so a
             # single-row `.all()` answer covers every existing test here.
             result.filter.return_value.all.return_value = [(5, digest_payload)]
@@ -240,9 +240,9 @@ def test_the_digest_path_returns_only_the_digest_sentences():
     assert len(masked[0].content) <= len(DIGEST_TEXT) + 1
 
 
-# ------------------------------------------------ speaker-scoped masking (W2.3)
+# ------------------------------------------------ speaker-scoped masking
 #
-# `mapreduce.scope_speaker_digest_hits` (W2.3) filters a real section's
+# `mapreduce.scope_speaker_digest_hits` filters a real section's
 # sentences by speaker to build a hit's own PRE-MASK content — but masking
 # comes back to `file_facts.digest` and re-reads the WHOLE real section
 # fresh, because that section may hold other speakers' sentences too. Without
@@ -356,7 +356,7 @@ def test_mask_digests_end_to_end_never_quotes_the_other_speaker():
 
 
 def test_an_unset_speaker_filter_reproduces_the_pre_w23_behaviour_exactly():
-    """A digest hit that never sets `speaker` (every hit before W2.3, and
+    """A digest hit that never sets `speaker` (every hit before speaker-scoped maps existed, and
     every ordinary — non-speaker-scoped — hit today) must mask identically to
     before this change: both sentences survive."""
     sentences = [

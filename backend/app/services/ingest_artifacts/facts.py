@@ -23,7 +23,7 @@ from typing import Any
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABELS
 
-#: Bumped when the payload's shape changes. v2 (#W2.0): ``roster``/``speakers`` exclude
+#: Bumped when the payload's shape changes. v2: ``roster``/``speakers`` exclude
 #: the undiarized bucket and a new ``coverage`` key reports it, instead of an "Unknown
 #: Speaker" row silently appearing as a participant.
 FACTS_SCHEMA_VERSION = 2

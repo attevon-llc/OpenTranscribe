@@ -1,4 +1,4 @@
-"""Running the five aggregation shapes (#403 Stage 4, Phase 5; W2.4 adds the fifth).
+"""Running the five aggregation shapes (#403 Stage 4, Phase 5; the fifth shape is the speaker-stats one).
 
 The pure half — subject extraction, shape choice, filter construction — lives in
 :mod:`app.services.chat.aggregation` and is testable with no services. This is
@@ -12,7 +12,7 @@ occurrence count. It was one until the date filter moved off the index; see
 The scope itself is capped at
 :data:`app.core.constants.CHAT_MAX_SCOPE_FILES` upstream, and that cap is reused
 here rather than a second one being invented. Two exceptions to the "three
-statements" ceiling, both W2.4: the speaker facet's content-scope choice and
+statements" ceiling, both the speaker facet's content-scope choice and
 ``SHAPE_SPEAKER_STATS``'s enable check each cost one more short single-row
 read (:func:`_flag_enabled`) when that shape is chosen — bounded, and paid
 only by the two shapes that need it. ``SHAPE_SPEAKER_STATS`` itself issues
@@ -73,13 +73,13 @@ logger = logging.getLogger(__name__)
 _MENTION_FIELDS = ("content.exact",)
 
 #: The speaker facet scopes by the recording's title, which is app metadata the
-#: indexer writes, not something a participant said. This is the pre-W2.4
+#: indexer writes, not something a participant said. This is the original
 #: default and stays the mechanism when ``chat.aggregate.speaker_facet_content_
 #: scope`` is off — "who discussed X" then answers "who attended a recording
 #: whose TITLE matches X", which is attendance, not participation.
 _TITLE_FIELDS = ("title",)
 
-#: W2.4 flag-gated setting keys. Read via :func:`_flag_enabled`, never through
+#: Flag-gated setting keys. Read via :func:`_flag_enabled`, never through
 #: :mod:`app.services.chat.settings` — that module resolves all thirteen (now
 #: fifteen) RAG knobs in one query, and pulling it in here for two booleans
 #: would couple a module that already budgets its own Postgres statement count
@@ -557,7 +557,7 @@ def answer_aggregation(
                 # existed (see router.py's `_AGGREGATE_HEADS_STANDALONE`,
                 # where "who talked the most" already satisfies the older
                 # `who-most` pattern). This is what keeps the flag OFF path
-                # byte-identical to the pre-W2.4 behaviour.
+                # byte-identical to the behaviour before the speaker-facet flags existed.
                 fallback_signals = set(route.signals) - {"who-talked-most"}
                 if fallback_signals & {"which-speakers", "who-most"}:
                     return _run_speaker_facet(
@@ -853,7 +853,7 @@ def _run_speaker_stats(
 
 
 # --------------------------------------------------------------------------- #
-# W2.5 — cross-meeting recurrence. Postgres-only, no OpenSearch, and therefore
+# cross-meeting recurrence. Postgres-only, no OpenSearch, and therefore
 # entirely separate from `answer_aggregation` above: recurrence produces an
 # EVIDENCE BLOCK (`<recurrence>`, rendered by `prompting.format_recurrence_block`)
 # rather than a single counted number, so it does not join `aggregation.SHAPES`
@@ -1069,7 +1069,7 @@ def answer_recurrence(
     """Answer a cross-meeting recurrence question, or decline.
 
     **Flag-gated at THIS layer too, independently of the router.** ``chat.
-    recurrence_enabled`` must gate "the patterns AND the shape" (W2.5 brief):
+    recurrence_enabled`` must gate "the patterns AND the shape":
     the router never PRODUCES ``Route.wants_recurrence`` with the flag off,
     but this function also refuses to build the block if somehow called with
     the flag off anyway — so no single call site's omission can leak the

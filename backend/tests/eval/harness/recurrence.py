@@ -16,7 +16,7 @@ success. See :data:`PLANTED_FIELDS` below, which is exactly the seven prompt key
 
 **Recurrence detection itself does not exist in the product yet.** `chat/prompting.py`
 already reserves a ``<recurrence>`` prompt block and `schemas/chat.py`'s
-``RECURRENCE_UNAVAILABLE`` warning code, both explicitly commented "(Wave 2; no emitter
+``RECURRENCE_UNAVAILABLE`` warning code, both explicitly commented "(no emitter
 yet)". So today the only honest thing to submit against this harness is the ``none``
 answerer's floor — zero groups, scoring 0 recall — exactly as Stage 4's aggregation
 class established its own pre-product floor with the null answerer (see

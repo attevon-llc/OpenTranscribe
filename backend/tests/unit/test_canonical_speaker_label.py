@@ -262,7 +262,7 @@ def test_facts_and_digest_agree_with_get_speaker_name_on_the_same_speaker():
     assert section_speakers == {resolved}
 
 
-# ------------------------------------------------- W2.1: the remaining planes agree too
+# ------------------------------------------------- the remaining planes agree too
 #
 # The module docstring named five planes that disagreed. facts/digest/
 # speaker_status_service/transcript_builders were unified above; these tests

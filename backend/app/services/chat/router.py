@@ -61,7 +61,7 @@ INTENT_LOOKUP = "lookup"
 INTENT_TEMPORAL = "temporal"
 INTENT_SUMMARIZE = "summarize"
 INTENT_AGGREGATE = "aggregate"
-#: W2.5. "What keeps coming up across our meetings" — most specific of the
+#: "What keeps coming up across our meetings" — most specific of the
 #: five, and flag-gated end to end (``chat.recurrence_enabled``): with the
 #: flag off, :func:`classify` never tests the recurrence lexicon at all, so
 #: this label is never produced and every existing route is byte-identical.
@@ -82,7 +82,7 @@ _SPECIFICITY: dict[str, int] = {name: rank for rank, name in enumerate(INTENTS)}
 TIER_CHUNK = "chunk"
 TIER_DIGEST = "digest"
 TIER_AGGREGATE = "aggregate"
-#: W2.5. The scope-wide, no-ranking recurrence detector
+#: The scope-wide, no-ranking recurrence detector
 #: (``aggregation_service.answer_recurrence``) — reads ``summary_data`` and
 #: ``file_facts.keyphrases`` across a bounded scope, the same "bounded scope,
 #: Postgres, no ranking" shape ``TIER_AGGREGATE`` already uses.
@@ -143,7 +143,7 @@ _AGGREGATE_HEADS_SCOPED: tuple[tuple[str, str], ...] = (
 #: the sentence also contains the word "meetings", and requiring a second marker
 #: would send it to the ranking tier, which cannot enumerate. ``which-plural``
 #: is here because the plural corpus noun is inside its own pattern.
-#: W2.4. Distinct from ``who-most`` below: "who attended the most" is about
+#: Distinct from ``who-most`` below: "who attended the most" is about
 #: SESSIONS (a title-scoped facet tally), "who talked the most" is about TALK
 #: TIME (``file_facts.facts['speakers']``) — different mechanisms, different
 #: answers, and this repo shipped the bug of answering the second question with
@@ -225,7 +225,7 @@ _SUMMARIZE_WEAK: tuple[tuple[str, str], ...] = (
 #: transcript they are far more often reported speech than a filter — "why were
 #: the thanks expressed to the House of Commons today" is a lookup — and they
 #: were the only temporal false positive in the first run.
-#: W2.5. STRONG markers only, deliberately — recurrence changes the retrieval
+#: STRONG markers only, deliberately — recurrence changes the retrieval
 #: shape entirely (a bounded, no-ranking, cross-file detector rather than a
 #: chunk search), so a weak/ambiguous marker misrouting a lookup here is a
 #: worse failure than the ``_SUMMARIZE_WEAK`` case, which still gets the
@@ -380,7 +380,7 @@ class Route:
     #: narrow a per-speaker answer to the one name already in scope with no new
     #: parameter threaded through ``answer_aggregation``.
     speakers: tuple[str, ...] = ()
-    #: W2.2. An AXIS, not a fifth intent: whether ``chat.speaker_resolver``
+    #: An AXIS, not a fifth intent: whether ``chat.speaker_resolver``
     #: found a UNIQUE speaker mention in the question text paired with a
     #: speaker-verb frame ("what did Dana say about pricing"). Orthogonal to
     #: ``intent``/``tiers`` — it never changes either, and it is not consulted
@@ -397,7 +397,7 @@ class Route:
 
     @property
     def wants_recurrence(self) -> bool:
-        """W2.5. Whether this turn asked for the cross-meeting recurrence block.
+        """Whether this turn asked for the cross-meeting recurrence block.
 
         Derived from ``intent`` alone, exactly like :attr:`wants_digest` — the
         flag gate lives upstream, in :func:`route` (which never produces
@@ -412,7 +412,7 @@ class Route:
 
     @property
     def wants_speaker_digest_map(self) -> bool:
-        """W2.3. A speaker-scoped summarize turn: the closed routing gap.
+        """A speaker-scoped summarize turn: the closed routing gap.
 
         ``_apply_structure`` removes :data:`TIER_DIGEST` whenever an explicit
         speaker filter is active, because the INDEXED digest genuinely cannot
@@ -637,12 +637,12 @@ def route(
             but it is a reasonable tiebreak for a query with no signal at all.
         speakers: Active speaker scope, which narrows the tiers (see
             :func:`_apply_structure`).
-        speaker_focus: W2.2. Whether ``chat.speaker_resolver`` found a unique
+        speaker_focus: Whether ``chat.speaker_resolver`` found a unique
             mention plus a speaker-verb frame. Carried onto :attr:`Route.speaker_focus`
             unchanged — this function does not derive it, only records it,
             since resolving a mention needs the roster (Postgres) and this
             module loads nothing and calls nothing.
-        recurrence_enabled: W2.5. ``chat.recurrence_enabled``. Threaded into
+        recurrence_enabled: ``chat.recurrence_enabled``. Threaded into
             every :func:`classify` call AND into the LLM-tiebreak branch below
             — both are how a question could reach ``INTENT_RECURRENCE``, and
             flag-off must close both, not just the lexicon, or a rewrite's

@@ -1,4 +1,4 @@
-"""W2.3: ``Route.wants_speaker_digest_map`` — the routing gap this closes.
+"""``Route.wants_speaker_digest_map`` — the routing gap this closes.
 
 Before this property existed, "summarize what Alice said" was structurally
 impossible: ``_apply_structure`` strips ``TIER_DIGEST`` whenever an explicit

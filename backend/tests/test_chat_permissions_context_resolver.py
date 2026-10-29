@@ -1,4 +1,4 @@
-"""Two more scope-resolution permission fixes (W2.0g), alongside the
+"""Two more scope-resolution permission fixes, alongside the
 pre-existing coverage in ``test_chat_context_resolver.py``:
 
 * Fix #3 — the admin bypass (``is_admin=True``) in ``_resolve_explicit_files``

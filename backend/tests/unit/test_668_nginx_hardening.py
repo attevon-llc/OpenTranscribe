@@ -3,7 +3,7 @@
 Verified against `master` before making any change here (see the branch's PR description
 for the full write-up):
 
-* **Finding 1** (`RATE_LIMIT_TRUSTED_PROXIES` empty behind nginx collapses every per-IP
+* **Problem 1** (`RATE_LIMIT_TRUSTED_PROXIES` empty behind nginx collapses every per-IP
   rate limit into one global bucket) is **already fixed on master**. Every proxy-fronting
   compose overlay (`docker-compose.nginx.yml`, `.prod.yml`, `.pki.yml`, `.pki-dev.yml`)
   ships a coded `${RATE_LIMIT_TRUSTED_PROXIES:-127.0.0.1/32,172.16.0.0/12}` default
@@ -13,12 +13,12 @@ for the full write-up):
   was still missing: an *empirical* test that two distinct client IPs behind a trusted
   proxy land in independent rate-limit buckets, per the issue's own instruction not to
   trust a config-file read for this class of bug.
-* **Finding 2** (nginx buffers the full request body before auth can reject it) is
+* **Problem 2** (nginx buffers the full request body before auth can reject it) is
   **already fixed on master** — `nginx/site.conf.template` sets
   `proxy_request_buffering off` on both `location /api/` (the upload path) and
   `location /s3/` (direct MinIO uploads). Pinned below so a future edit cannot drop it
   silently the way the issue warned a server-level-only fix would.
-* **Finding 3** (no `robots.txt`, no `X-Robots-Tag` on API responses) was **not** fixed —
+* **Problem 3** (no `robots.txt`, no `X-Robots-Tag` on API responses) was **not** fixed —
   this is the actual change on this branch: `frontend/static/robots.txt` (served through
   nginx's catch-all `location /` in every proxy topology, and directly by Vite in dev) and
   `app.middleware.robots.RobotsHeaderMiddleware`.
@@ -64,7 +64,7 @@ def _module_with_proxies(monkeypatch, trusted: str):
     return importlib.reload(client_ip)
 
 
-# ─── Finding 1: empirically, not by reading config ───────────────────────────────
+# ─── Problem 1: empirically, not by reading config ───────────────────────────────
 
 
 def test_two_clients_behind_a_trusted_proxy_get_independent_rate_limit_keys(monkeypatch):
@@ -113,7 +113,7 @@ def test_rate_limiter_key_func_is_the_same_resolver_under_test(monkeypatch):
     assert "resolve_client_ip" in inspect.getsource(rate_limit._get_key_func)
 
 
-# ─── Finding 2: nginx body-buffering pin ──────────────────────────────────────────
+# ─── Problem 2: nginx body-buffering pin ──────────────────────────────────────────
 
 
 def test_upload_locations_disable_request_buffering():
@@ -133,7 +133,7 @@ def test_upload_locations_disable_request_buffering():
         )
 
 
-# ─── Finding 3: robots.txt + X-Robots-Tag (the actual fix on this branch) ─────────
+# ─── Problem 3: robots.txt + X-Robots-Tag (the actual fix on this branch) ─────────
 
 
 def test_robots_txt_disallows_api_and_media_paths():

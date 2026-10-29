@@ -1,6 +1,6 @@
 """#532 (Unit U4): the content-free ``meta["overview"]`` diagnostics.
 
-Same harness shape as ``test_chat_map_decoupling.py`` (W2.1's sibling suite):
+Same harness shape as ``test_chat_map_decoupling.py`` (the sibling suite):
 drives the real ``ChatService._prepare_context`` with ``route``,
 ``retrieve_context``, ``mask_chunks``, ``scope_digest_hits`` and
 ``mask_digests`` stubbed (network/DB-free); ``build_file_summaries``/

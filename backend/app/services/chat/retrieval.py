@@ -51,7 +51,7 @@ class RetrievalResult:
     #: caller with an empty ``chunks`` list distinguish "your library has
     #: nothing about this" from "search was down" (issue #438's open half).
     retrieval_failed: bool = False
-    #: W2.2. How many hits the parallel speaker-focus leg (see
+    #: How many hits the parallel speaker-focus leg (see
     #: ``retrieve_context``'s ``speaker_focus_names``) contributed that the
     #: main leg had not already found. ``0`` both when the leg was not run and
     #: when it ran and added nothing new — the caller only needs to know a
@@ -124,7 +124,7 @@ def retrieve_context(
         search_mode: ``hybrid`` | ``semantic`` | ``keyword``.
         wants_digest: Run the digest leg as well (the router's summarize tier).
         digest_size: How many digest sections to fetch.
-        speaker_focus_names: W2.2. Names ``chat.speaker_resolver`` resolved
+        speaker_focus_names: Names ``chat.speaker_resolver`` resolved
             from a MENTION in the question text (behind
             ``chat.speaker_resolver_enabled``, off by default) — NOT the
             explicit ``speakers`` scope above, and never merged with it.
@@ -334,7 +334,7 @@ def retrieve_context(
         **({"reason": "search_failed"} if result.retrieval_failed else {}),
     )
 
-    # W2.2: the parallel speaker-focus leg. Additive only — see the
+    # the parallel speaker-focus leg. Additive only — see the
     # `speaker_focus_names` docstring above for why this never narrows the
     # main leg and never touches the explicit `speakers` scope.
     focus_file_uuids: frozenset[str] = frozenset()

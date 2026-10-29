@@ -1,4 +1,4 @@
-"""W2.2: deterministic, Postgres-only speaker-mention resolution.
+"""Deterministic, Postgres-only speaker-mention resolution.
 
 Three groups:
 

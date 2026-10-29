@@ -55,11 +55,11 @@ class ChatSettings:
     messages_per_hour: int = C.DEFAULT_CHAT_MESSAGES_PER_HOUR
     max_concurrent_streams: int = C.DEFAULT_CHAT_MAX_CONCURRENT_STREAMS
     retention_days: int = C.DEFAULT_CHAT_RETENTION_DAYS
-    #: W2.4. Score the speaker facet ("which speakers discussed X") by spoken
+    #: Score the speaker facet ("which speakers discussed X") by spoken
     #: content instead of the recording's title. Off by default: it changes
     #: what an existing mechanism answers.
     speaker_facet_content_scope: bool = C.DEFAULT_CHAT_AGGREGATE_SPEAKER_FACET_CONTENT_SCOPE
-    #: W2.4. Answer "who talked the most" from exact per-speaker talk time in
+    #: Answer "who talked the most" from exact per-speaker talk time in
     #: ``file_facts``, distinct from the attendance-style speaker facet. Off by
     #: default: a new shape, gated for rollout.
     speaker_stats_enabled: bool = C.DEFAULT_CHAT_AGGREGATE_SPEAKER_STATS_ENABLED
@@ -69,30 +69,30 @@ class ChatSettings:
     #: ``file_facts`` row. Off by default: on-by-default needs measured
     #: answer-quality evidence this flag does not yet have.
     map_tier_summaries: bool = C.DEFAULT_CHAT_MAP_TIER_SUMMARIES
-    #: W2.2. Resolve a speaker named in the question text (e.g. "what did Dana
+    #: Resolve a speaker named in the question text (e.g. "what did Dana
     #: say about pricing") against the caller's roster and, on a unique match
     #: paired with a speaker-verb frame, add a PARALLEL speaker-scoped chunk
     #: leg (`services/chat/speaker_resolver.py`). Off by default: a new,
     #: unmeasured retrieval shape.
     speaker_resolver_enabled: bool = C.DEFAULT_CHAT_SPEAKER_RESOLVER_ENABLED
-    #: W2.3. Extends #464's map-tier-summaries pattern to the per-speaker map
+    #: Extends #464's map-tier-summaries pattern to the per-speaker map
     #: (`mapreduce.scope_speaker_digest_hits`). When a file's LLM summary is
     #: FRESH, prefer its `speakers_analysis[]` entry for the focus speaker
     #: (plus owner-matched action items) over the per-sentence digest
     #: fallback. Off by default: a new, unmeasured retrieval shape.
     map_tier_speaker_summaries: bool = C.DEFAULT_CHAT_MAP_TIER_SPEAKER_SUMMARIES
-    #: W2.5. Cross-meeting recurrence detection: gates both the router's
+    #: Cross-meeting recurrence detection: gates both the router's
     #: recurrence lexicon and the `<recurrence>` evidence block. Off by
     #: default — a new, unmeasured shape.
     recurrence_enabled: bool = C.DEFAULT_CHAT_RECURRENCE_ENABLED
-    #: W2.6. Build a plan for a multi-part/ambiguous/recurrence turn and run
+    #: Build a plan for a multi-part/ambiguous/recurrence turn and run
     #: its legs in parallel (`services/chat/planner.py` + `legs.py`). Off by
     #: default — a new, unmeasured shape; with the flag off (or no LLM
     #: configured) every turn routes exactly as it did before this existed.
     planner_enabled: bool = C.DEFAULT_CHAT_PLANNER_ENABLED
-    #: W2.6. Ceiling on the shared leg executor for one turn's fan-out.
+    #: Ceiling on the shared leg executor for one turn's fan-out.
     planner_max_parallel_legs: int = C.DEFAULT_CHAT_PLANNER_MAX_PARALLEL_LEGS
-    #: W2.6. One bounded non-streaming call reconciling merged fan-out
+    #: One bounded non-streaming call reconciling merged fan-out
     #: evidence into a `<synthesis>` block. Independent of `planner_enabled`.
     enrichment_enabled: bool = C.DEFAULT_CHAT_ENRICHMENT_ENABLED
     #: GH #514. Emit a per-stage execution trace over SSE for the query panel.

@@ -1,4 +1,4 @@
-"""Tests for parallel leg execution (#403 W2.6): merge, dedup, degrade, cancel.
+"""Tests for parallel leg execution (#403): merge, dedup, degrade, cancel.
 
 Nothing here needs Postgres/Redis/OpenSearch — `legs.py` itself makes no I/O;
 every leg in these tests is a plain Python callable.

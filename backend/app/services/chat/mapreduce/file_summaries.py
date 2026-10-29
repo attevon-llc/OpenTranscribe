@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 #: don't have to spell it twice.
 MAP_TIER_SUMMARIES_SETTING_KEY = "chat.rag.map_tier_summaries"
 
-#: SystemSettings key for the W2.3 per-speaker tiering flag, resolved as
+#: SystemSettings key for the per-speaker tiering flag, resolved as
 #: ``ChatSettings.map_tier_speaker_summaries``. Same convention as the
 #: constant above.
 MAP_TIER_SPEAKER_SUMMARIES_SETTING_KEY = "chat.rag.map_tier_speaker_summaries"
@@ -53,13 +53,13 @@ class FileSummary:
     #: `digest`. `""` for a plain digest-tier file. The two are different KINDS of
     #: text and are kept in separate fields rather than joined into one.
     llm_summary: str = ""
-    #: W2.3. When this summary was built for a speaker-scoped map
+    #: When this summary was built for a speaker-scoped map
     #: (`scope_speaker_digest_hits`), the focus speaker's own
     #: `file_facts.facts["speakers"]` entry (`total_time`/`turn_count`/
     #: `longest_turn`) — `None` when no speaker focus was requested, or the
     #: focus speaker has no stats entry in this file at all.
     speaker_stats: dict[str, Any] | None = None
-    #: W2.3. True when the focus speaker's canonical name IS in this file's
+    #: True when the focus speaker's canonical name IS in this file's
     #: `facts["roster"]`, independent of whether `speaker_stats`/`digest`
     #: above actually carry anything — kept separate so "named in the roster
     #: but nothing came back" is a coverage note the reducer can render,
@@ -114,7 +114,7 @@ def build_file_summaries(
         digests: Digest ``ChunkHit``s, in rank order.
         masked_text: ``id(hit) -> masked content``. Passed in rather than read off
             the hit so this module cannot be handed unmasked text by accident.
-        speaker_focus: W2.3. A single active focus speaker's canonical name —
+        speaker_focus: A single active focus speaker's canonical name —
             same convention `aggregation_service._run_speaker_stats` uses
             (``route.speakers[0] if len(route.speakers) == 1 else None``).
             When set, each summary's `speaker_stats`/`speaker_in_roster` are

@@ -1,5 +1,5 @@
 """
-E2E: Settings > Transcription > Provider > Local models (issue #1246, WP5).
+E2E: Settings > Transcription > Provider > Local models (issue #1246).
 
 Every route the library uses is fulfilled in the browser with scripted responses, so nothing
 reaches the backend for them: no download starts, no network, no cache or worker change, no dev

@@ -305,7 +305,7 @@ def _run_prepare_context(monkeypatch, db, *, file_uuids, chunk_file_uuids):
 
     # It returns SIX values — (masked, meta, counted, overview, synthesis_block,
     # recurrence_block) — since the router gained the counted and overview tiers
-    # and W2.6 added the two fan-out blocks. Only the first two matter here;
+    # and #403 added the two fan-out blocks. Only the first two matter here;
     # unpacking all six keeps this helper honest about the contract rather than
     # silently swallowing a future seventh.
     (
@@ -409,7 +409,7 @@ async def _stream_warnings(monkeypatch, *, meta, use_context=True):
     chunks = [MaskedChunk(source=chunk, content=chunk.content)]
 
     monkeypatch.setattr("app.db.session_utils.session_scope", _null_session)
-    # SIX values since #403 W2.6: (masked, meta, counted, overview,
+    # SIX values since #403: (masked, meta, counted, overview,
     # synthesis_block, recurrence_block). The counted/overview pair are the
     # router's structured blocks and the last two are the fan-out's rendered
     # blocks; all four are absent for this turn — but the arity has to match, or

@@ -1,4 +1,4 @@
-"""Tests for the LLM query planner (#403 W2.6): trigger, schema, calls.
+"""Tests for the LLM query planner (#403): trigger, schema, calls.
 
 Nothing here needs Postgres/Redis/OpenSearch — the planner module loads
 nothing and calls nothing except the LLM stub the tests provide.

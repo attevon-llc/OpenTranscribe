@@ -1,4 +1,4 @@
-"""The chat-plane quarantine gate (W2.0g fix #1).
+"""The chat-plane quarantine gate.
 
 Quarantine is not an OpenSearch filter field — `api/endpoints/search.py`'s
 `_drop_quarantined_search_hits` post-filters the search UI's results in

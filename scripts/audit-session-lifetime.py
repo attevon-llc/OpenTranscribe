@@ -266,7 +266,7 @@ RULES: tuple[Rule, ...] = (
                 'ThreadPoolExecutor',
                 'ProcessPoolExecutor',
                 'as_completed',
-                # #403 W2.6: `services/chat/legs.py`'s process-wide leg
+                # #403: `services/chat/legs.py`'s process-wide leg
                 # executor. `run_legs` is the one call site every fan-out
                 # goes through, and it BLOCKS the caller until every leg's
                 # future resolves — the same shape a bare
@@ -741,7 +741,7 @@ SELFTEST_CASES: tuple[tuple[str, str], ...] = (
         '        with ThreadPoolExecutor(max_workers=8) as pool:\n'
         '            pool.submit(work)\n',
     ),
-    # #403 W2.6: `legs.run_legs` blocks on every leg's future exactly like a
+    # #403: `legs.run_legs` blocks on every leg's future exactly like a
     # bare `with ThreadPoolExecutor()`, but the pool itself lives OUTSIDE the
     # call site (`legs.get_executor`'s lazy singleton) — nothing about this
     # call looks like a thread pool unless the name is listed.
@@ -868,7 +868,7 @@ SELFTEST_CLEAN: tuple[str, ...] = (
     '        pool.submit(work, name)\n',
     # A pure-CPU helper with no session and no slow call.
     'def _merge(segments):\n    return sorted(segments, key=lambda s: s["start"])\n',
-    # #403 W2.6's real fix shape: `run_legs` called with NO session open at
+    # #403's real fix shape: `run_legs` called with NO session open at
     # all — each leg opens its own SHORT session internally (a different
     # function's body, invisible to a call-site scan, which is the point).
     'def prep(assistant_message_uuid):\n'

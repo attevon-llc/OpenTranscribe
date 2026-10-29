@@ -470,7 +470,7 @@ def test_a_synthetic_error_code_missing_from_the_frontend_union_is_detected():
 
 
 # ---------------------------------------------------------------------------
-# ChatWarningCode: the specific members Wave 2 adds
+# ChatWarningCode: the specific members added for the newer chat features
 # ---------------------------------------------------------------------------
 
 

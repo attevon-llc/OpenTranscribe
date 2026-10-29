@@ -472,7 +472,7 @@ def _load_digest_rows(db: Session, file_ids: list[int]) -> dict[int, Any]:
 
 
 def _filter_sentences_by_speaker(sentences: list[dict], speaker_filter: str) -> list[dict]:
-    """Keep only the sentences ``speaker_filter`` names. THE MASKING SEAM (W2.3).
+    """Keep only the sentences ``speaker_filter`` names. THE MASKING SEAM.
 
     ``mapreduce.scope_speaker_digest_hits`` already filtered a real section's
     sentences by speaker once, to build its hit's own (unmasked, pre-mask)
@@ -491,7 +491,7 @@ def _filter_sentences_by_speaker(sentences: list[dict], speaker_filter: str) -> 
         speaker_filter: :attr:`ChunkHit.speaker`, as set by
             ``scope_speaker_digest_hits`` — the requested names, pipe-joined.
             An ordinary (non-speaker-scoped) digest hit never sets this field,
-            so this function is a no-op for every pre-W2.3 caller.
+            so this function is a no-op for every caller that predates speaker-scoped digests.
 
     Returns:
         The subset of ``sentences`` whose own ``speaker`` matches one of the

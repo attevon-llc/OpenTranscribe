@@ -245,7 +245,7 @@ gr_check_container_names() {
     # `--filter 'name=^opentranscribe-'` reports a false positive that then
     # refuses to start for a reason that was never true.
     #
-    # ⚠️ BOTH project labels, not just one (issue #783 finding N1) — the SAME
+    # ⚠️ BOTH project labels, not just one (issue #783) — the SAME
     # ${OPENTR_STOP_PROJECT_LABEL:-opentranscribe} / ${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}
     # mechanism scripts/release/10-preflight.sh's live-stack check uses, not a
     # second definition. A repo clone's compose project defaults to the

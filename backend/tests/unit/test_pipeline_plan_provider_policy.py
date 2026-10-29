@@ -1,4 +1,4 @@
-"""The provider allow-list as a pipeline plan error (issue #1246, WP6).
+"""The provider allow-list as a pipeline plan error (issue #1246).
 
 An administrator can limit which cloud providers users may send audio to. The decision is
 the plan's, so dispatch, set-active and the speaker-source PUT refuse without a check of

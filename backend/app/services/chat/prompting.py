@@ -146,7 +146,7 @@ _CONTEXT_SAFETY_MARGIN_TOKENS = 50
 # assembles from user-influenced text, because a wrapper the model is told to
 # trust unconditionally (base rules 10 and 12) is exactly the wrapper worth
 # forging. `counted`/`overview` ship today; `recurrence`/`synthesis`/
-# `scope_note` are Wave 2 additions defused ahead of the callers that emit them.
+# `scope_note` are additions defused ahead of the callers that emit them.
 _BLOCK_TAG_RE = re.compile(
     r"<\s*/?\s*(?:excerpt|counted|overview|recurrence|synthesis|scope_note)",
     re.IGNORECASE,
@@ -425,7 +425,7 @@ def format_counted_block(result) -> str:
     if result.count is not None:
         lines.append(f"total: {int(result.count)}")
     if result.speaker:
-        # `speaker_seconds` (SHAPE_SPEAKER_STATS, W2.4: exact talk time) and
+        # `speaker_seconds` (SHAPE_SPEAKER_STATS, exact talk time) and
         # `speaker_sessions` (SHAPE_SPEAKER_FACET: attendance) are different
         # units of the same "top speaker" idea and never both set — rendering
         # sessions for a talk-time result would report "(0 recordings)" next
@@ -456,7 +456,7 @@ def format_counted_block(result) -> str:
     return _COUNTED_OPEN + "\n".join(lines) + "\n" + _COUNTED_CLOSE
 
 
-# W2.5. Same row-cap posture as `_MAX_COUNTED_ROWS` — a 1,500-item recurrence
+# Same row-cap posture as `_MAX_COUNTED_ROWS` — a 1,500-item recurrence
 # scan can produce more groups than a prompt can afford to list, and a
 # truncated list read as complete is the same silent-wrong-answer shape the
 # rest of this module exists to remove.
@@ -535,7 +535,7 @@ def format_recurrence_block(result) -> str:
     return _RECURRENCE_OPEN + "\n".join(lines) + "\n" + _RECURRENCE_CLOSE
 
 
-# #403 W2.6. Same posture as `format_recurrence_block`: a bounded, sanitized
+# #403. Same posture as `format_recurrence_block`: a bounded, sanitized
 # block that precedes the excerpts. Unlike `counted`/`overview`/`recurrence`,
 # its text is FREE-RUNNING MODEL PROSE (the enrichment call's own reply), not
 # assembled from discrete named fields — so it goes through the body-safe
@@ -567,7 +567,7 @@ def format_synthesis_block(text: str) -> str:
 # Priority order for the evidence blocks that precede the excerpts, HIGHEST
 # priority first. `counted` IS the answer to an aggregation (base rule 10);
 # `overview` covers every recording in scope (base rule 12); `recurrence` and
-# `synthesis` are Wave 2 additions (not produced by any caller yet) that add
+# `synthesis` are additions (not produced by any caller yet) that add
 # broader framing on top of those two. Used only to fix the JOIN order in
 # `build_messages` — trimming eligibility is `_TRIMMABLE_BLOCKS` below, which
 # deliberately excludes `counted`.
@@ -747,9 +747,9 @@ def build_messages(
             the rule that decides how much room excerpts get.
         counted_block: Rendered ``<counted>`` block, or ``""``.
         overview_block: Rendered ``<overview>`` block, or ``""``.
-        recurrence_block: Rendered ``<recurrence>`` block, or ``""`` (Wave 2;
-            no caller populates this yet).
-        synthesis_block: Rendered ``<synthesis>`` block, or ``""`` (Wave 2; no
+        recurrence_block: Rendered ``<recurrence>`` block, or ``""`` (no
+            caller populates this yet).
+        synthesis_block: Rendered ``<synthesis>`` block, or ``""`` (no
             caller populates this yet).
         overview_block_rule: #532 arm (b). Attach the anti-narrowing rule to
             the overview block itself rather than relying on base rule 12

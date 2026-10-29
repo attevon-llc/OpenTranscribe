@@ -1,4 +1,4 @@
-"""Deterministic, Postgres-only speaker-mention resolution (W2.2, issue #403 family).
+"""Deterministic, Postgres-only speaker-mention resolution (issue #403 family).
 
 Matches a name typed in the question text ("what did Dana say about pricing?")
 against the caller's *accessible* speaker roster, purely with SQL + string

@@ -1,7 +1,7 @@
 """Block-tag defusing hardening for RAG chat prompt assembly (issue #52+).
 
-`_EXCERPT_TAG_RE` (now `_BLOCK_TAG_RE`) used to defuse only `<excerpt>`. Wave 2
-adds more high-trust evidence blocks (`<counted>`, `<overview>`, and the
+`_EXCERPT_TAG_RE` (now `_BLOCK_TAG_RE`) used to defuse only `<excerpt>`. Newer chat
+features add more high-trust evidence blocks (`<counted>`, `<overview>`, and the
 not-yet-shipped `<recurrence>`/`<synthesis>`/`<scope_note>`), and the widened
 regex must defuse breakout attempts against every one of them, not just
 `<excerpt>`.
@@ -121,14 +121,14 @@ def test_hostile_speaker_name_is_defused_in_the_system_prompt():
 
     assert "</overview>" not in prompt
     # Base rules 13 and 15 NAME `<recurrence>` and `<synthesis>` in their own
-    # prose (#403 W2.6), so a bare `"<synthesis" not in prompt` now fails on the
+    # prose (#403), so a bare `"<synthesis" not in prompt` now fails on the
     # RULES rather than on the injection. The system prompt's own authored text
     # is not user data and is deliberately not defused; what must hold is that
     # the INTERPOLATED speaker name contributed no occurrence of its own. Do not
     # "fix" this by narrowing the defusing allowlist in `prompting.py` — it
     # covers `counted|overview|recurrence|synthesis|scope_note|excerpt` because
     # speaker names and keyphrases are OWNER-controlled on a shared recording and
-    # were reaching high-trust prompt blocks unsanitized (W2.0a).
+    # were reaching high-trust prompt blocks unsanitized.
     assert prompt.count("<synthesis") == authored.count("<synthesis")
     assert "<\\" in prompt  # the hostile openers were defused, not deleted
     # The words survive as inert text — real speaker names can contain anything.

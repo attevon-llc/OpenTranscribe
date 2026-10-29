@@ -1,5 +1,5 @@
-"""Quarantine enforcement on the chat aggregation ("counted") tier (W2.0g fix #1,
-the finding the earlier pass shipped incomplete-but-documented-complete).
+"""Quarantine enforcement on the chat aggregation ("counted") tier (the gap an
+earlier pass shipped incomplete-but-documented-complete).
 
 `_drop_quarantined_hits` (``service.py`` phase 3.5) only ever filtered the
 RANKED tiers — `result.chunks` and `result.digests`. The counted tier

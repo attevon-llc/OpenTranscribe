@@ -1,5 +1,5 @@
 """``speaker_id`` / ``profile_id`` — the first two fields shipped through the additive
-mapping machinery (issue #W2.7b/c/d).
+mapping machinery.
 
 Three properties matter more than the fields themselves:
 
@@ -524,7 +524,7 @@ def test_a_legacy_chunk_fails_an_exists_check_on_speaker_id():
 #
 # This section used to sample the LIVE dev chunk index. It was wrong twice over:
 #
-#   * It could not fail honestly. `speaker_id` coverage is ~0% before backfill (issue #W2.7c),
+#   * It could not fail honestly. `speaker_id` coverage is ~0% before backfill,
 #     so the sample came back empty and it SKIPPED — a green run proving nothing, on every
 #     machine, most of the time.
 #   * When it did run it raced the reindexer. Its own docstring documented the window: every

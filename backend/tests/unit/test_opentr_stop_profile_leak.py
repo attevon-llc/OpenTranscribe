@@ -1,5 +1,5 @@
 """`stop_all_containers()`'s two `down`/`stop`/etc. chains must reach every profile-gated
-GPU service, or `./opentr.sh stop` leaves them running (issue #782, finding N5).
+GPU service, or `./opentr.sh stop` leaves them running (issue #782).
 
 Sibling of `test_opentr_fresh_destroy_profile_leak.py`, which closed the identical defect
 shape for `fresh_destroy()`: `docker compose down` only tears down services whose profile

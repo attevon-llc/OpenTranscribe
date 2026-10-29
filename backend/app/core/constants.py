@@ -1479,7 +1479,7 @@ DEFAULT_CHAT_MESSAGES_PER_HOUR = 120  # chat.limits.messages_per_hour
 DEFAULT_CHAT_MAX_CONCURRENT_STREAMS = 6  # chat.limits.max_concurrent_streams
 DEFAULT_CHAT_RETENTION_DAYS = 0  # chat.retention_days (0 = keep forever)
 
-# W2.4: the aggregation tier's speaker-facet/speaker-stats fixes. Both default
+# the aggregation tier's speaker-facet/speaker-stats fixes. Both default
 # OFF — they change what an existing question mechanism answers (facet scope)
 # or add a new one (talk-time stats), and either is a measurement-gated rollout
 # rather than a safe-by-construction default.
@@ -1510,7 +1510,7 @@ DEFAULT_CHAT_SEARCH_MODE = "hybrid"
 # rejected (HTTP 400) rather than silently truncated.
 CHAT_MAX_SCOPE_FILES = 500
 
-# W2.2: deterministic, Postgres-only speaker-mention resolution
+# deterministic, Postgres-only speaker-mention resolution
 # (`services/chat/speaker_resolver.py`) — matches a name typed in the question
 # text against the caller's accessible roster and, on a unique match paired
 # with a speaker-verb frame ("what did X say"), adds a PARALLEL speaker-scoped
@@ -1519,7 +1519,7 @@ CHAT_MAX_SCOPE_FILES = 500
 # this is a new, unmeasured retrieval shape.
 DEFAULT_CHAT_SPEAKER_RESOLVER_ENABLED = False  # chat.speaker_resolver_enabled
 
-# W2.3: extends #464's map-tier-summaries pattern to the per-speaker map
+# extends #464's map-tier-summaries pattern to the per-speaker map
 # (`chat/mapreduce.scope_speaker_digest_hits`). When a fresh LLM summary exists
 # for a file, prefer its `summary_data.speakers_analysis[]` entry (plus
 # owner-matched action items) for the focus speaker over the per-sentence
@@ -1527,7 +1527,7 @@ DEFAULT_CHAT_SPEAKER_RESOLVER_ENABLED = False  # chat.speaker_resolver_enabled
 # needs measured answer-quality evidence this flag does not yet have.
 DEFAULT_CHAT_MAP_TIER_SPEAKER_SUMMARIES = False  # chat.rag.map_tier_speaker_summaries
 
-# W2.5: cross-meeting recurrence detection — "what keeps coming up across our
+# cross-meeting recurrence detection — "what keeps coming up across our
 # meetings". Gates BOTH the router's recurrence lexicon (`router.classify`)
 # and the `<recurrence>` evidence block (`aggregation_service.answer_recurrence`),
 # so flag-off is byte-identical to before this feature existed on every layer,
@@ -1536,7 +1536,7 @@ DEFAULT_CHAT_MAP_TIER_SPEAKER_SUMMARIES = False  # chat.rag.map_tier_speaker_sum
 # (issue #402) — see `services/chat/CLAUDE.md`.
 DEFAULT_CHAT_RECURRENCE_ENABLED = False  # chat.recurrence_enabled
 
-# W2.6: the LLM query planner + parallel-leg fan-out
+# the LLM query planner + parallel-leg fan-out
 # (`services/chat/planner.py` + `services/chat/legs.py`). OFF by default: with
 # no LLM configured (or the flag off) every turn routes exactly as it did
 # before this module existed — rules-only routing, D6's "no LLM provider is
@@ -1549,7 +1549,7 @@ DEFAULT_CHAT_PLANNER_ENABLED = False  # chat.planner_enabled
 # same trade every other lazy singleton in this package makes (see
 # `reranker.py`).
 DEFAULT_CHAT_PLANNER_MAX_PARALLEL_LEGS = 4  # chat.planner.max_parallel_legs
-# W2.6: a single bounded non-streaming call that reconciles merged evidence
+# a single bounded non-streaming call that reconciles merged evidence
 # from a multi-leg fan-out into a `<synthesis>` block. OFF by default and
 # INDEPENDENT of `chat.planner_enabled` — a deployment can run the fan-out
 # without ever paying for the extra reconciliation call.

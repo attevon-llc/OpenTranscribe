@@ -1884,29 +1884,6 @@ def _push_speaker_display_names(rows: list[tuple[str, str]]) -> None:
     logger.info(f"Synced renamed profile to OpenSearch for {len(rows)} speakers")
 
 
-def _sync_profile_rename_to_opensearch(db: Session, profile_id: int) -> None:
-    """Replay a profile rename onto every linked speaker's OpenSearch document.
-
-    Runs in ``process_speaker_update_background`` (issue #284 A2.6), never in the
-    request path. Names are re-read from Postgres rather than passed in, so a rename
-    that landed while the task was queued still wins.
-
-    Read, **release the transaction**, then push: the fan-out is one OpenSearch write
-    per linked speaker, and holding the caller's transaction across them queues every
-    ALTER TABLE for as long as the cluster takes. ``db.commit()`` is safe here because
-    the only statement this function issues is the SELECT above. The task calls the two
-    halves directly so that no session exists at all during the push.
-
-    The profile's consolidated embedding is deliberately NOT recomputed here:
-    ``_handle_profile_embedding_updates`` case 4 (display name changed, same profile)
-    already calls ``ProfileEmbeddingService.update_profile_embedding`` earlier in the
-    same task, and a profile rename always satisfies that case.
-    """
-    rows = _load_profile_speaker_names(db, profile_id)
-    db.commit()
-    _push_speaker_display_names(rows)
-
-
 def _handle_create_new_profile_action(
     speaker: Speaker, new_name: str, current_user: User, db: Session
 ) -> None:

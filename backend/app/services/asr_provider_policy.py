@@ -128,11 +128,6 @@ def provider_allowed(role: str | None, provider: str, policy: ProviderPolicy) ->
     return policy.allowed is None or provider in policy.allowed
 
 
-def may_store_own_key(role: str | None, policy: ProviderPolicy) -> bool:
-    """Whether a user of ``role`` may save a cloud configuration or key of their own."""
-    return is_exempt(role) or policy.own_keys
-
-
 def refuse_config_change(
     db: Session, user: object, provider: str | None, *, carries_credential: bool
 ) -> None:

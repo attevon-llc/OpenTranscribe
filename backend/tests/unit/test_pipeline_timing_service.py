@@ -4,9 +4,8 @@ Flushes a ``benchmark:{task_id}`` Redis hash into ``file_pipeline_timing``. Spli
 what's genuinely out-of-process:
 
 * The parsing pipeline (``_to_ms``/``_coerce_*``, ``_extract_timestamps``,
-  ``_extract_context``, ``_compute_derived_durations``, ``build_row_payload``,
-  ``derived_durations``) is pure ``dict[str, str] -> dict[str, Any]`` logic — tested
-  directly with real input dicts, no mocking.
+  ``_extract_context``, ``_compute_derived_durations``, ``build_row_payload``) is pure
+  ``dict[str, str] -> dict[str, Any]`` logic — tested directly with real input dicts, no mocking.
 * ``record_pipeline_timing`` needs a real Postgres row (the upsert semantics, the
   FK to ``media_file``, and the exception-swallowing contract are all real DB
   behavior) — exercised against the savepoint-isolated ``db_session``, with only
@@ -261,7 +260,7 @@ def test_compute_derived_durations_treats_an_epoch_ms_of_zero_as_a_real_start_ti
 
 
 # =============================================================================
-# build_row_payload / derived_durations — the combined pipeline
+# build_row_payload — the combined pipeline
 # =============================================================================
 
 
@@ -284,40 +283,6 @@ def test_build_row_payload_combines_timestamps_context_and_derived_durations():
     assert row["whisper_model"] == "large-v3"
     assert row["file_size_bytes"] == 1024
     assert row["user_perceived_duration_ms"] == 10000
-
-
-def test_derived_durations_returns_only_the_two_duration_keys():
-    raw = {
-        "http_request_received": "1000.0",
-        "completion_notified": "1003.0",
-        "whisper_model": "large-v3",
-        "file_size_bytes": "1024",
-    }
-
-    out = svc.derived_durations(raw)
-
-    assert out == {"user_perceived_duration_ms": 3000}
-    assert "whisper_model" not in out
-    assert "file_size_bytes" not in out
-
-
-def test_derived_durations_empty_when_no_relevant_markers_present():
-    assert svc.derived_durations({"whisper_model": "large-v3"}) == {}
-
-
-# =============================================================================
-# now_ms
-# =============================================================================
-
-
-def test_now_ms_is_a_plausible_current_epoch_millisecond_value():
-    import time
-
-    before = int(time.time() * 1000)
-    value = svc.now_ms()
-    after = int(time.time() * 1000)
-
-    assert before <= value <= after
 
 
 # =============================================================================

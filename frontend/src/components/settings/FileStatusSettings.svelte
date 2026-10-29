@@ -17,6 +17,7 @@
   } from '$lib/settings/sectionData';
   import { settingsReturnQuery, stampSettingsReturn } from '$lib/settings/returnToSettings';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import { createPoller } from '$lib/utils/poller';
   import { t } from '$stores/locale';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import Badge from '$components/ui/Badge.svelte';
@@ -49,7 +50,6 @@
   let data: StatusPayload | null = peekSectionData<StatusPayload>(SectionDataKey.fileStatus) ?? null;
   let loading = data === null;
   let error: string | null = null;
-  let timer: ReturnType<typeof setInterval> | null = null;
 
   function variantFor(status: string | null): 'success' | 'warning' | 'error' | 'info' | 'default' {
     switch (status) {
@@ -86,6 +86,8 @@
     }
   }
 
+  const poller = createPoller(() => load(true), { intervalMs: POLL_MS });
+
   const onInvalidated = (event: Event) => {
     const scope = (event as CustomEvent).detail?.scope;
     if (scope === 'files' || scope === 'all') void load(true);
@@ -93,12 +95,12 @@
 
   onMount(() => {
     void load();
-    timer = setInterval(() => void load(true), POLL_MS);
+    poller.start();
     window.addEventListener('cache-invalidated', onInvalidated);
   });
 
   onDestroy(() => {
-    if (timer) clearInterval(timer);
+    poller.stop();
     if (typeof window !== 'undefined') window.removeEventListener('cache-invalidated', onInvalidated);
   });
 </script>

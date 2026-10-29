@@ -8,6 +8,7 @@
   import { authStore } from '../stores/auth';
   import TruncatedText from './TruncatedText.svelte';
   import ConfirmationModal from './ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import EmptyState from './ui/EmptyState.svelte';
   import { toastStore } from '../stores/toast';
   import { t } from '../stores/locale';
@@ -35,11 +36,12 @@
   let editingCommentText = '';
 
   // Confirmation modal state
-  let showConfirmModal = false;
-  let confirmModalTitle = '';
-  let confirmModalMessage = '';
-  /** @type {(() => void) | null} */
-  let confirmCallback = null;
+  const confirmDialog = createConfirmDialog();
+  const {
+    isOpen: confirmOpen,
+    title: confirmTitle,
+    message: confirmMessage,
+  } = confirmDialog;
 
   // Event dispatcher
   const dispatch = createEventDispatcher();
@@ -327,43 +329,11 @@
   }
 
   /**
-   * Show confirmation modal
-   * @param {string} title - The modal title
-   * @param {string} message - The confirmation message
-   * @param {() => void} callback - The callback to execute on confirmation
-   */
-  function showConfirmation(title, message, callback) {
-    confirmModalTitle = title;
-    confirmModalMessage = message;
-    confirmCallback = callback;
-    showConfirmModal = true;
-  }
-
-  /**
-   * Handle confirmation modal confirm
-   */
-  function handleConfirmModalConfirm() {
-    if (confirmCallback) {
-      confirmCallback();
-      confirmCallback = null;
-    }
-    showConfirmModal = false;
-  }
-
-  /**
-   * Handle confirmation modal cancel
-   */
-  function handleConfirmModalCancel() {
-    confirmCallback = null;
-    showConfirmModal = false;
-  }
-
-  /**
    * Delete a comment
    * @param {string} commentId - The UUID of the comment to delete
    */
   async function deleteComment(commentId) {
-    showConfirmation(
+    confirmDialog.request(
       $t('comments.deleteTitle'),
       $t('comments.deleteConfirmMessage'),
       () => executeDeleteComment(commentId)
@@ -603,16 +573,16 @@
 
 <!-- Confirmation Modal -->
 <ConfirmationModal
-  bind:isOpen={showConfirmModal}
-  title={confirmModalTitle}
-  message={confirmModalMessage}
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
   confirmText={$t('comments.delete')}
   cancelText={$t('comments.cancel')}
   confirmButtonClass="modal-delete-button"
   cancelButtonClass="modal-cancel-button"
-  on:confirm={handleConfirmModalConfirm}
-  on:cancel={handleConfirmModalCancel}
-  on:close={handleConfirmModalCancel}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
 />
 
 <style>

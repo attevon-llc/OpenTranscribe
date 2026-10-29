@@ -8,6 +8,7 @@
   import { toastStore } from '../stores/toast';
   import { t } from '../stores/locale';
   import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
+  import { createPoller } from '$lib/utils/poller';
   import { getFlowerUrl } from '$lib/utils/url';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import SkeletonLoader from './ui/SkeletonLoader.svelte';
@@ -30,7 +31,12 @@
   let retryingFiles = new Set();
 
   // Auto-refresh settings (enabled by default)
-  let refreshInterval: any = null;
+  // WebSocket push handles real-time updates; this is a fallback safety net to catch any
+  // missed notifications, every 2 minutes.
+  const refreshPoller = createPoller(
+    () => Promise.all([fetchFileStatus(true), showTasksSection ? fetchTasks(true) : undefined]),
+    { intervalMs: 120000 }
+  );
 
   // Tasks section state
   let tasks: any[] = [];
@@ -92,7 +98,7 @@
   onMount(() => {
     fetchFileStatus();
     setupWebSocketUpdates();
-    startAutoRefresh();
+    refreshPoller.start();
 
     // Listen for push-based cache invalidation from WebSocket
     window.addEventListener('cache-invalidated', handleCacheInvalidation);
@@ -320,17 +326,6 @@
     }
   }
 
-  function startAutoRefresh() {
-    // WebSocket push handles real-time updates; this is a fallback safety net
-    // to catch any missed notifications (runs every 2 minutes instead of 30s)
-    refreshInterval = setInterval(() => {
-      fetchFileStatus(true); // Silent refresh
-      if (showTasksSection) {
-        fetchTasks(true); // Silent refresh
-      }
-    }, 120000); // Fallback refresh every 2 minutes
-  }
-
   function showMessage(message: any, type: any) {
     if (type === 'success') {
       toastStore.success(message);
@@ -379,9 +374,7 @@
 
   // Cleanup on component destroy
   onDestroy(() => {
-    if (refreshInterval) {
-      clearInterval(refreshInterval);
-    }
+    refreshPoller.stop();
     if (unsubscribeWebSocket) {
       unsubscribeWebSocket();
     }

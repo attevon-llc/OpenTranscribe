@@ -182,7 +182,6 @@ backend/tests/unit/test_user_cancel_cooperative.py	980	oversize: split by concer
 backend/tests/unit/test_user_deletion_fk_coverage.py	843	oversize: split by concern planned
 backend/tests/unit/test_visual_baseline_update_tool.py	707	oversize: split by concern planned
 frontend/scripts/audit-frontend-tests.mjs	1123	oversize: split by concern planned
-frontend/src/components/CommentSection.svelte	1019	oversize: split by concern planned
 frontend/src/components/FileUploader.svelte	1467	oversize: split by concern planned
 frontend/src/components/FilterSidebar.svelte	1313	oversize: split by concern planned
 frontend/src/components/FilterSidebar.test.ts	721	oversize: split by concern planned
@@ -190,9 +189,9 @@ frontend/src/components/Navbar.svelte	1280	oversize: split by concern planned
 frontend/src/components/SegmentSpeakerDropdown.svelte	1083	oversize: split by concern planned
 frontend/src/components/SegmentSpeakerDropdown.test.ts	754	oversize: split by concern planned
 frontend/src/components/SelectiveReprocessModal.svelte	1409	oversize: split by concern planned
-frontend/src/components/SettingsModal.svelte	1967	oversize: split by concern planned
+frontend/src/components/SettingsModal.svelte	1950	oversize: split by concern planned
 frontend/src/components/SettingsModal.test.ts	1121	oversize: split by concern planned
-frontend/src/components/UserManagementTable.svelte	2114	oversize: split by concern planned
+frontend/src/components/UserManagementTable.svelte	2072	oversize: split by concern planned
 frontend/src/components/VideoPlayer.svelte	1071	oversize: split by concern planned
 frontend/src/components/settings/ASRSettings.svelte	1287	oversize: split by concern planned
 frontend/src/components/settings/BackupSettings.svelte	1007	oversize: split by concern planned
@@ -206,7 +205,7 @@ frontend/src/components/transcript/TranscriptSegmentList.svelte	1026	oversize: s
 frontend/src/lib/services/audioExtractionService.ts	701	oversize: split by concern planned
 frontend/src/lib/services/uploadService.test.ts	943	oversize: split by concern planned
 frontend/src/lib/services/uploadService.ts	1393	oversize: split by concern planned
-frontend/src/routes/+page.svelte	1746	oversize: split by concern planned
+frontend/src/routes/+page.svelte	1717	oversize: split by concern planned
 frontend/src/routes/files/[id]/+page.svelte	2876	oversize: split by concern planned
 frontend/src/routes/login/+page.svelte	1731	oversize: split by concern planned
 frontend/src/routes/search/+page.svelte	1306	oversize: split by concern planned

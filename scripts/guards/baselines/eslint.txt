@@ -77,7 +77,7 @@ frontend/src/components/TranscriptSearch.svelte::no-useless-assignment	3	lint: b
 frontend/src/components/TranscriptSearch.svelte::svelte/prefer-svelte-reactivity	1	lint: burn-down planned
 frontend/src/components/UploadManager.svelte::no-restricted-imports	2	lint: burn-down planned
 frontend/src/components/UploadProgress.svelte::no-restricted-imports	2	lint: burn-down planned
-frontend/src/components/UserFileStatus.svelte::@typescript-eslint/no-explicit-any	13	lint: burn-down planned
+frontend/src/components/UserFileStatus.svelte::@typescript-eslint/no-explicit-any	12	lint: burn-down planned
 frontend/src/components/UserFileStatus.svelte::no-restricted-imports	5	lint: burn-down planned
 frontend/src/components/UserFileStatus.svelte::prefer-const	1	lint: burn-down planned
 frontend/src/components/UserFileStatus.svelte::svelte/infinite-reactive-loop	2	lint: burn-down planned

@@ -6,6 +6,7 @@
   import { supportSession } from '$stores/supportSession';
   import { settingsModalStore } from '$stores/settingsModalStore';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import { createPoller } from '$lib/utils/poller';
   import { SupportAccessApi, type SupportGrant } from '$lib/api/supportAccess';
   import { SUPPORT_ACCESS_EVENT } from '$lib/supportAccess/events';
   import { grantTargetLabel } from '$lib/supportAccess/format';
@@ -111,15 +112,15 @@
   }
 
   const onPush = () => void load(true);
-  let timer: ReturnType<typeof setInterval> | undefined;
+  const poller = createPoller(() => load(true), { intervalMs: POLL_MS });
 
   onMount(() => {
     void load();
-    timer = setInterval(() => void load(true), POLL_MS);
+    poller.start();
     window.addEventListener(SUPPORT_ACCESS_EVENT, onPush);
   });
   onDestroy(() => {
-    if (timer) clearInterval(timer);
+    poller.stop();
     if (typeof window !== 'undefined') window.removeEventListener(SUPPORT_ACCESS_EVENT, onPush);
   });
 </script>

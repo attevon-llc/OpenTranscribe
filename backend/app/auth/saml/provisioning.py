@@ -155,7 +155,7 @@ def sync_saml_user_to_db(db, saml_data: SAMLUserData, cfg=None):
             database when omitted.
 
     Raises:
-        HTTPException: 401, when admission is refused or an email-matched link is.
+        AuthenticationError: 401, when admission is refused or an email-matched link is.
     """
     from app.auth.account_linking import assert_email_link_permitted
     from app.auth.account_linking import assert_provider_id_link_permitted

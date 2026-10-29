@@ -17,7 +17,6 @@ from __future__ import annotations
 import uuid as uuid_pkg
 
 import pytest
-from fastapi import HTTPException
 
 from app.auth.oidc.admission import REASON_BLOCKED
 from app.auth.oidc.admission import REASON_GROUPS_UNKNOWN
@@ -28,6 +27,7 @@ from app.auth.oidc.admission import parse_group_list
 from app.auth.oidc.config import OIDCConfig
 from app.auth.oidc.provisioning import LINK_REFUSED_DETAIL
 from app.auth.oidc.provisioning import sync_oidc_user_to_db
+from app.core.exceptions import AuthenticationError
 from app.models.user import User
 from app.services.auth_config_service import AuthConfigService
 
@@ -164,7 +164,7 @@ class TestProvisioningRefusesBeforeItWrites:
     def test_refused_identity_creates_no_account(self, db_session):
         claims = _claims(roles=["Everyone"])
 
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             sync_oidc_user_to_db(db_session, claims, self._cfg(allowed_groups="Transcribe-Users"))
 
         assert exc.value.status_code == 401
@@ -177,7 +177,7 @@ class TestProvisioningRefusesBeforeItWrites:
 
     def test_refusal_is_byte_identical_to_the_invalid_token_response(self, db_session):
         """A distinct message would answer "does this deployment know me?"."""
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             sync_oidc_user_to_db(
                 db_session, _claims(roles=["Everyone"]), self._cfg(allowed_groups="Staff")
             )
@@ -187,7 +187,7 @@ class TestProvisioningRefusesBeforeItWrites:
         """Refusal precedes the email-match link, not just the create."""
         claims = _claims(email=str(normal_user.email), roles=["Contractors"])
 
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             sync_oidc_user_to_db(db_session, claims, self._cfg(blocked_groups="Contractors"))
 
         assert exc.value.status_code == 401
@@ -202,7 +202,7 @@ class TestProvisioningRefusesBeforeItWrites:
         sync_oidc_user_to_db(db_session, claims, self._cfg(allowed_groups="Transcribe-Users"))
 
         # Same subject, next login, now carrying a blocked group.
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             sync_oidc_user_to_db(
                 db_session,
                 _claims(**{**claims, "roles": ["Contractors"]}),
@@ -269,7 +269,7 @@ class TestGroupsWithheldNotEmpty:
 
     def test_overage_is_refused_when_an_allow_list_is_configured(self):
         claims = _claims(roles=[], groups_overage=True)
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             assert_oidc_admission_permitted(
                 claims, self._cfg(allowed_groups="Transcribe-Users"), failure_detail="nope"
             )
@@ -277,7 +277,7 @@ class TestGroupsWithheldNotEmpty:
 
     def test_groupless_provider_is_refused_when_a_block_list_is_configured(self):
         claims = _claims(roles=[], groupless_provider=True)
-        with pytest.raises(HTTPException):
+        with pytest.raises(AuthenticationError):
             assert_oidc_admission_permitted(
                 claims, self._cfg(blocked_groups="Contractors"), failure_detail="nope"
             )
@@ -292,7 +292,7 @@ class TestGroupsWithheldNotEmpty:
         """Without the overage/groupless flag, empty roles is an ordinary refusal —
         this behaviour must not change for every other provider."""
         claims = _claims(roles=[])
-        with pytest.raises(HTTPException):
+        with pytest.raises(AuthenticationError):
             assert_oidc_admission_permitted(
                 claims, self._cfg(allowed_groups="Transcribe-Users"), failure_detail="nope"
             )
@@ -304,7 +304,7 @@ class TestGroupsWithheldNotEmpty:
         assert REASON_GROUPS_UNKNOWN != REASON_NOT_ALLOWED
 
         claims = _claims(roles=[], groups_overage=True)
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             assert_oidc_admission_permitted(
                 claims, self._cfg(allowed_groups="Transcribe-Users"), failure_detail="nope"
             )
@@ -325,7 +325,7 @@ class TestTheAdminSettingReachesTheCheck:
         cfg = OIDCConfig.from_db(db_session)
         assert cfg.allowed_groups == "Transcribe-Users"
 
-        with pytest.raises(HTTPException):
+        with pytest.raises(AuthenticationError):
             sync_oidc_user_to_db(db_session, _claims(roles=["Everyone"]), cfg)
         db_session.rollback()
 
@@ -340,6 +340,6 @@ class TestTheAdminSettingReachesTheCheck:
         cfg = OIDCConfig.from_db(db_session)
         assert cfg.blocked_groups == "Contractors"
 
-        with pytest.raises(HTTPException):
+        with pytest.raises(AuthenticationError):
             sync_oidc_user_to_db(db_session, _claims(roles=["Contractors"]), cfg)
         db_session.rollback()

@@ -17,12 +17,12 @@ from __future__ import annotations
 import uuid as uuid_pkg
 
 import pytest
-from fastapi import HTTPException
 
 from app.auth.saml.assertion import SAML_ASSERTS_EMAIL_VERIFIED
 from app.auth.saml.config import SAMLConfig
 from app.auth.saml.provisioning import LINK_REFUSED_DETAIL
 from app.auth.saml.provisioning import sync_saml_user_to_db
+from app.core.exceptions import AuthenticationError
 from app.models.user import User
 
 pytestmark = pytest.mark.xdist_group("saml_admission")
@@ -58,7 +58,7 @@ class TestProvisioningRefusesBeforeItWrites:
     def test_refused_identity_creates_no_account(self, db_session):
         assertion = _assertion(groups=["Everyone"])
 
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             sync_saml_user_to_db(
                 db_session, assertion, self._cfg(allowed_groups="Transcribe-Users")
             )
@@ -71,7 +71,7 @@ class TestProvisioningRefusesBeforeItWrites:
         db_session.rollback()
 
     def test_refusal_is_byte_identical_to_the_invalid_assertion_response(self, db_session):
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             sync_saml_user_to_db(
                 db_session, _assertion(groups=["Everyone"]), self._cfg(allowed_groups="Staff")
             )
@@ -83,7 +83,7 @@ class TestProvisioningRefusesBeforeItWrites:
         admission refusal fires first, before the link attempt is even reached."""
         assertion = _assertion(email=str(normal_user.email), groups=["Contractors"])
 
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             sync_saml_user_to_db(db_session, assertion, self._cfg(blocked_groups="Contractors"))
 
         assert exc.value.status_code == 401
@@ -107,7 +107,7 @@ class TestEmailVerifiedNeverOpensTheAccountLinkGuard:
     def test_an_email_match_to_an_existing_local_account_is_refused(self, db_session, normal_user):
         assertion = _assertion(email=str(normal_user.email))
 
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             sync_saml_user_to_db(db_session, assertion, SAMLConfig(enabled=True))
 
         assert exc.value.status_code == 401
@@ -120,7 +120,7 @@ class TestEmailVerifiedNeverOpensTheAccountLinkGuard:
     ):
         assertion = _assertion(email=str(super_admin_user.email))
 
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             sync_saml_user_to_db(db_session, assertion, SAMLConfig(enabled=True))
 
         assert exc.value.status_code == 401

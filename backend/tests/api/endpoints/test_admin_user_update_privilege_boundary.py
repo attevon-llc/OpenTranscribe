@@ -36,8 +36,8 @@ from datetime import datetime
 from datetime import timedelta
 
 import pytest
-from fastapi import HTTPException
 
+from app.core.exceptions import AccessDeniedError
 from app.core.security import get_password_hash
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
@@ -488,7 +488,7 @@ def test_the_new_address_is_actually_unverified_at_login(
     assert response.status_code == 200, response.text
     db_session.refresh(normal_user)
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(AccessDeniedError) as exc:
         ev.assert_email_verified_for_local_login(db_session, str(normal_user.uuid))
     assert exc.value.status_code == 403
 

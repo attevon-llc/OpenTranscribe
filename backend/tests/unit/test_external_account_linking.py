@@ -21,11 +21,11 @@ from typing import cast
 from unittest.mock import patch
 
 import pytest
-from fastapi import HTTPException
 
 from app.auth import account_linking
 from app.auth import ldap_auth
 from app.auth import pki_auth
+from app.core.exceptions import AuthenticationError
 
 
 class _FakeUser:
@@ -70,7 +70,7 @@ class TestLinkGuardRule:
     """The shared rule, exercised directly."""
 
     def test_unverified_source_is_refused(self):
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             account_linking.assert_email_link_permitted(
                 _FakeUser(),
                 provider="ldap",
@@ -82,7 +82,7 @@ class TestLinkGuardRule:
 
     def test_super_admin_is_refused_even_when_verified(self):
         """The super_admin guard is unconditional — a verified address does not lift it."""
-        with pytest.raises(HTTPException):
+        with pytest.raises(AuthenticationError):
             account_linking.assert_email_link_permitted(
                 _FakeUser(role="super_admin"),
                 provider="pki",
@@ -103,7 +103,7 @@ class TestLinkGuardRule:
 
     def test_refusal_is_audited(self):
         with patch.object(account_linking.audit_logger, "log") as log:
-            with pytest.raises(HTTPException):
+            with pytest.raises(AuthenticationError):
                 account_linking.assert_email_link_permitted(
                     _FakeUser(role="super_admin"),
                     provider="ldap",
@@ -117,7 +117,7 @@ class TestLinkGuardRule:
 
     def test_refusal_response_matches_the_ordinary_failure(self):
         """A distinct error would itself be the oracle the guard exists to remove."""
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(AuthenticationError) as exc:
             account_linking.assert_email_link_permitted(
                 _FakeUser(),
                 provider="ldap",
@@ -150,7 +150,7 @@ class TestLdapSyncRefusesEmailMatch:
             patch.object(ldap_auth, "_create_ldap_user") as create,
             patch.object(ldap_auth, "_convert_local_user_to_ldap") as convert,
         ):
-            with pytest.raises(HTTPException) as exc:
+            with pytest.raises(AuthenticationError) as exc:
                 ldap_auth.sync_ldap_user_to_db(db, ldap_data)
 
         assert exc.value.status_code == 401
@@ -189,7 +189,7 @@ class TestPkiSyncRefusesEmailMatch:
             patch.object(pki_auth, "_create_pki_user") as create,
             patch.object(pki_auth, "_convert_local_user_to_pki") as convert,
         ):
-            with pytest.raises(HTTPException) as exc:
+            with pytest.raises(AuthenticationError) as exc:
                 pki_auth.sync_pki_user_to_db(db, pki_data)
 
         assert exc.value.status_code == 401

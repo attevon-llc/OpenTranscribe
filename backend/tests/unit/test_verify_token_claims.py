@@ -24,7 +24,6 @@ import time
 from typing import Any
 
 import pytest
-from fastapi import HTTPException
 from joserfc import jwt
 from joserfc.jwk import OctKey
 
@@ -32,6 +31,7 @@ from app.core import security
 from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.auth_types import TOKEN_TYPE_REFRESH
 from app.core.config import settings
+from app.core.exceptions import AuthenticationError
 
 
 def _mint(claims: dict[str, Any], *, algorithm: str | None = None) -> str:
@@ -55,7 +55,7 @@ def test_a_token_with_no_exp_claim_is_rejected():
     """
     token = _mint({"sub": "1", "type": TOKEN_TYPE_ACCESS})
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(AuthenticationError) as exc:
         security.verify_token(token)
 
     assert exc.value.status_code == 401
@@ -79,7 +79,7 @@ def test_an_expired_token_is_rejected():
     Kept alongside the no-`exp` test so the pair distinguishes "the claim is validated" from
     "the claim is merely required to be present".
     """
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(AuthenticationError) as exc:
         security.verify_token(
             _mint({"sub": "1", "type": TOKEN_TYPE_ACCESS, "exp": int(time.time()) - 60})
         )
@@ -96,7 +96,7 @@ def test_a_wrong_type_rejection_carries_the_www_authenticate_header():
     """
     refresh_like = _mint({"sub": "1", "type": TOKEN_TYPE_REFRESH, "exp": int(time.time()) + 600})
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(AuthenticationError) as exc:
         security.verify_token(refresh_like, expected_type=TOKEN_TYPE_ACCESS)
 
     assert exc.value.status_code == 401
@@ -138,7 +138,7 @@ def test_an_unparseable_token_is_a_401_not_a_crash():
     proper 401. A mutant that changes what is suppressed turns a garbage `Authorization`
     header — trivially sent by anyone — into a 500.
     """
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(AuthenticationError) as exc:
         security.verify_token("not-a-jwt")
 
     assert exc.value.status_code == 401
@@ -152,7 +152,7 @@ def test_a_token_signed_with_the_wrong_key_is_rejected():
         OctKey.import_key("a-different-secret-of-sufficient-length-for-hs256-xxxxx"),
     )
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(AuthenticationError) as exc:
         security.verify_token(foreign)
 
     assert exc.value.status_code == 401

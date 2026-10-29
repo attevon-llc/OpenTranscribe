@@ -1756,7 +1756,7 @@ def sync_pki_user_to_db(db, pki_data: PKIUserData):
 
     Raises:
         ValueError: If user cannot be created or found after race condition
-        HTTPException: 401, when an email-matched link is refused. Deliberately the
+        AuthenticationError: 401, when an email-matched link is refused. Deliberately the
             same response the PKI login endpoint returns for an invalid certificate,
             so a refusal is not an oracle for "this address exists".
     """

@@ -789,7 +789,7 @@ def sync_ldap_user_to_db(db, ldap_data: LdapUserData):
     operator remedy.
 
     Raises:
-        HTTPException: 401, when an email-matched link is refused. Deliberately the
+        AuthenticationError: 401, when an email-matched link is refused. Deliberately the
             same response ``_authenticate_ldap_user`` gives for a bad password, so a
             refusal is not an oracle for "this address exists".
     """

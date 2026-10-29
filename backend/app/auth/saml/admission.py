@@ -18,6 +18,7 @@ from app.auth.audit import audit_logger
 from app.auth.oidc.admission import check_group_admission
 from app.auth.saml.assertion import SAMLUserData
 from app.core.auth_types import AUTH_TYPE_SAML
+from app.core.exceptions import AuthenticationError
 
 logger = logging.getLogger(__name__)
 
@@ -39,16 +40,13 @@ def assert_saml_admission_permitted(
             attribute's values and ``saml_subject`` identifies the caller (the
             assertion's ``NameID``).
         cfg: Resolved :class:`~app.auth.saml.config.SAMLConfig`.
-        failure_detail: The ``HTTPException`` detail to raise. Must be identical to
+        failure_detail: The ``AuthenticationError`` detail to raise. Must be identical to
             what this path returns for an ordinary credential failure — a distinct
             message would be an account-existence oracle.
 
     Raises:
-        HTTPException: 401, when the identity is not admitted.
+        AuthenticationError: 401, when the identity is not admitted.
     """
-    from fastapi import HTTPException
-    from fastapi import status
-
     reason = check_group_admission(
         saml_data.get("groups") or [],
         allowed_groups=getattr(cfg, "allowed_groups", ""),
@@ -76,4 +74,4 @@ def assert_saml_admission_permitted(
             "groups": list(saml_data.get("groups") or []),
         },
     )
-    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=failure_detail)
+    raise AuthenticationError(failure_detail)

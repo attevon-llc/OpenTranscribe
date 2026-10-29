@@ -137,6 +137,15 @@ what it appears to. A green one from the wrong schema is worse.
     have meant something. Raising the ceiling to "make room" reopens exactly that hole for the
     next unrelated skip.
 
+    **Redis for the integration phase.** The gate resolves the compose project's Redis host port and
+    password (from the stack's own containers) and hands `REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD`
+    to the **Integration-marked tests** phase only; you no longer export them by hand. They are
+    deliberately NOT given to the unit phase: they flip about ten memory-path unit tests onto the
+    Redis path and fail them. A bare `pytest tests/integration` outside the gate still needs the
+    three variables set yourself, or the Redis-backed tests fall back to `localhost:5177` with no
+    password and fail on a healthy stack. (Needs the `run-integration-tests.sh` change from commit
+    `326f3ae06`.)
+
     **Why the ceiling is 7, and not an arbitrary number**: `run-integration-tests.sh` names all
     seven — 4 in `test_fusion_strategy_switch.py` (7 matching chunks, needs >=10) and 3 in
     `test_rag_eval_harness.py` (the QMSum manifest's files landed in a different cluster) — and

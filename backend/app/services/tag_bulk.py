@@ -44,6 +44,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.constants import TAG_SOURCE_MANUAL
+from app.core.exceptions import DomainError
 from app.models.media import FileTag
 from app.models.media import MediaFile
 from app.models.media import Tag
@@ -171,7 +172,7 @@ def _require_editor(
         PermissionService.check_file_access(
             db, file_id, user_id, min_permission=REQUIRED_PERMISSION
         )
-    except HTTPException as exc:
+    except (HTTPException, DomainError) as exc:
         return BulkTagResult(BulkTagOutcome.FAILED, str(exc.detail), PERMISSION_ERROR)
     return None
 

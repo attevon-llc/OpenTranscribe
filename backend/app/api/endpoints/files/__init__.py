@@ -41,6 +41,7 @@ from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key
 from app.auth.utils import mask_email_for_display
 from app.core.capabilities import require_capability
+from app.core.exceptions import DomainError
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
 from app.models.media import MediaFile
@@ -764,7 +765,7 @@ def get_media_file_stream_url(
             "playback": playback,
             "is_public": getattr(db_file, "is_public", False),
         }
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -1092,7 +1093,7 @@ def download_stream(
         """
         try:
             ready = _resolve_ready_download(db_file, mode, variant)
-        except HTTPException as e:
+        except (HTTPException, DomainError) as e:
             # `_resolve_ready_download`'s only raise site is the 422 below, but the
             # "code" here stays a fixed literal slug — never `e.detail` itself — so
             # the SSE contract guard (test_chat_sse_contract.py) can pin it structurally.
@@ -1391,7 +1392,7 @@ def clear_video_cache(
 
         return None
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception(f"Error clearing video cache for file {file_id}: {e}")
@@ -1457,7 +1458,7 @@ def refresh_analytics(
 
         return None
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception(f"Error refreshing analytics for file {file_id}: {e}")

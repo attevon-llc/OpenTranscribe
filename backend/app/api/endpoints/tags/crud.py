@@ -22,6 +22,7 @@ from app.api.endpoints.tags._common import _resolve_tag
 from app.api.endpoints.tags._common import logger
 from app.api.endpoints.tags._common import router
 from app.core.constants import TAG_SOURCE_MANUAL
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import FileTag
 from app.models.media import Tag
@@ -225,7 +226,7 @@ def cleanup_unused_tags(
             "scope": scope,
             "message": f"{count} unused tags deleted successfully",
         }
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).

@@ -48,6 +48,7 @@ from app.auth.saml.sp import saml_request_data
 from app.auth.token_service import RevocationError
 from app.auth.token_service import token_service
 from app.core.config import settings
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 
 router = APIRouter()
@@ -385,7 +386,7 @@ def _complete_saml_sls(
 
             try:
                 access_payload = verify_token(access_value, expected_type=None)
-            except HTTPException:
+            except (HTTPException, DomainError):
                 logger.debug("SAML SLO: access cookie not verifiable, nothing to revoke")
                 return
             jti = access_payload.get("jti")

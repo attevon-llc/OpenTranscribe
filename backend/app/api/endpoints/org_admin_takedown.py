@@ -41,6 +41,7 @@ from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key
 from app.core.constants import ORG_TAKEDOWN_RATE_LIMIT
 from app.core.enums import TakedownOrigin
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.organization import OrganizationMembership
@@ -120,7 +121,7 @@ def _resolve_or_audit(
     """:func:`get_org_takedown_file`, recording a miss as one FAILURE event in the actor's org."""
     try:
         return get_org_takedown_file(db, file_uuid, _org_id(ctx))
-    except HTTPException as miss:
+    except (HTTPException, DomainError) as miss:
         if miss.status_code == status.HTTP_404_NOT_FOUND:
             source_ip, user_agent = _request_meta(request)
             audit_unresolved_lookup(

@@ -17,6 +17,7 @@ from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.files.upload import create_media_file_record
 from app.core.constants import TAG_SOURCE_MANUAL
+from app.core.exceptions import DomainError
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
 from app.models.media import CollectionMember
@@ -440,7 +441,7 @@ async def prepare_upload(
         logger.info(f"Prepared upload for file {request.filename} (ID: {file_id})")
         return response
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Preserve intentional HTTP errors (e.g. 413 tenant size limit, 409
         # duplicate) — don't bury them in a generic 500.
         raise

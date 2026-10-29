@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.core.constants import UPLOAD_CHUNK_SIZE
+from app.core.exceptions import DomainError
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
@@ -173,7 +174,7 @@ def create_media_file_record(
 
         return db_file
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -753,7 +754,7 @@ async def process_file_upload(
             db.commit()
             db.refresh(db_file)
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise HTTP exceptions after cleanup. Everything below this try/except
         # only runs once the row has committed with its storage_path, i.e. the
         # bytes are already in object storage — nothing past this point may

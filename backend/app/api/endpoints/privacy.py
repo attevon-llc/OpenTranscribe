@@ -35,6 +35,7 @@ from app.api.endpoints.auth.dependencies import _get_client_info
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import Task
 from app.models.organization import Organization
@@ -144,7 +145,7 @@ def get_effective_privacy(
                 bypass=ctx.bypass,
                 organization_id=ctx.org_id,
             )
-        except HTTPException as exc:
+        except (HTTPException, DomainError) as exc:
             # The helper answers 403 for a file that exists and 404 for one that does not; this
             # route reports the policy of a file, so both must read as "no such file".
             if exc.status_code in (status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND):

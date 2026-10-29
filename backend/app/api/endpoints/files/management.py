@@ -19,6 +19,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.files.crud import delete_media_file
 from app.api.endpoints.files.crud import get_media_file_by_uuid
 from app.core.exceptions import ASRConfigurationError
+from app.core.exceptions import DomainError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.db.base import get_db
@@ -207,7 +208,7 @@ def get_file_status_detail(
             recommendations=recommendations,
         )
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception(f"Error getting file status detail for {file_uuid}: {e}")
@@ -257,7 +258,7 @@ def cancel_file_processing(
 
         return {"message": "File processing cancelled successfully", "file_id": str(db_file.uuid)}
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception(f"Error cancelling file {file_uuid}: {e}")
@@ -359,7 +360,7 @@ def retry_file_processing(
                 "retry_attempt": db_file.retry_count,
             }
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except ASRConfigurationError:
         # A deliberate refusal (e.g. a lite deployment with no cloud ASR
@@ -411,7 +412,7 @@ def recover_file(
             "recovery_attempts": db_file.recovery_attempts,
         }
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception(f"Error recovering file {file_uuid}: {e}")
@@ -446,7 +447,7 @@ def force_delete_file(
         )
         return {"message": "File force deleted successfully", "file_uuid": file_uuid}
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception(f"Error force deleting file {file_uuid}: {e}")
@@ -495,7 +496,7 @@ def get_stuck_files(
                         "recovery_attempts": db_file.recovery_attempts,
                     }
                 )
-            except HTTPException:
+            except (HTTPException, DomainError):
                 # User doesn't have access to this file, skip it
                 continue
 
@@ -505,7 +506,7 @@ def get_stuck_files(
             "threshold_hours": threshold_hours,
         }
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -551,7 +552,7 @@ def _handle_delete_action(
             is_org_admin=is_org_admin,
             bypass=bypass,
         )
-    except HTTPException as e:
+    except (HTTPException, DomainError) as e:
         from app.services.hold_guard import LEGAL_HOLD_ERROR_CODE
         from app.services.hold_guard import LEGAL_HOLD_REFUSAL
 
@@ -1242,7 +1243,7 @@ def bulk_file_action(
                 # A policy-wide refusal, not a per-file failure: surface it as the 409
                 # it is so the caller sees why instead of a 200 with an inner error.
                 raise
-            except HTTPException as e:
+            except (HTTPException, DomainError) as e:
                 results.append(
                     BulkActionResult(
                         file_uuid=file_uuid,
@@ -1287,7 +1288,7 @@ def bulk_file_action(
 
         return results
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -1371,7 +1372,7 @@ def recover_stuck_files_bulk(
 
         return cleanup_results
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).

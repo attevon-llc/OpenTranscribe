@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.constants import VALID_AUDIO_QUALITIES
 from app.core.constants import VALID_VIDEO_QUALITIES
+from app.core.exceptions import DomainError
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
@@ -1790,7 +1791,7 @@ class MediaDownloadService:
 
         try:
             playlist_info = self.extract_playlist_info(url)
-        except HTTPException:
+        except (HTTPException, DomainError):
             raise
         except Exception as e:
             logger.exception("Error extracting playlist info")

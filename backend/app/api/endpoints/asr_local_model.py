@@ -30,6 +30,7 @@ from app.auth.rate_limit import get_api_rate_limit
 from app.auth.rate_limit import limiter
 from app.core import local_whisper_catalog
 from app.core.constants import WHISPER_WORKER_PREFIXES
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.services.asr.factory import ASR_PROVIDER_CATALOG
 from app.services.local_models import cache as local_model_cache
@@ -254,7 +255,7 @@ def restart_gpu_worker(
     # Send warm shutdown to GPU workers only
     try:
         celery_app.control.broadcast("shutdown", destination=gpu_workers)
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).

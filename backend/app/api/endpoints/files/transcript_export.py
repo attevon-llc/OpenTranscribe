@@ -25,6 +25,7 @@ from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.auth.audit import AuditEventType
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import Comment
 from app.models.media import MediaFile
@@ -228,7 +229,7 @@ def export_transcript(
             csv_header_with_comments=csv_header_with_comments,
             markdown_meta=_markdown_meta(media_file, cfg, reveal) if fmt == "md" else None,
         )
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

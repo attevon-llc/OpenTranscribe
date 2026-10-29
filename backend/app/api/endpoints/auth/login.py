@@ -49,6 +49,7 @@ from app.core.auth_types import AUTH_TYPE_OIDC
 from app.core.auth_types import AUTH_TYPE_PKI
 from app.core.config import settings
 from app.core.constants import SESSION_CAP_EVICTION_BATCH_LIMIT
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.user import User
 from app.models.user_mfa import UserMFA
@@ -98,7 +99,7 @@ def _perform_authentication(
             db, username, password
         )
         return True, user_uuid_str, user_data, actual_auth_method
-    except HTTPException as auth_error:
+    except (HTTPException, DomainError) as auth_error:
         if auth_error.status_code == status.HTTP_401_UNAUTHORIZED:
             return False, "", {}, ""
         if auth_error.status_code == status.HTTP_400_BAD_REQUEST:
@@ -720,7 +721,7 @@ def login_for_access_token(
             auth_method=actual_auth_method,
         )
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.error("Unexpected error during authentication: %s", e, exc_info=True)

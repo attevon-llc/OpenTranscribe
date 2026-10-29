@@ -28,6 +28,7 @@ from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
 from app.core.exceptions import ASRConfigurationError
+from app.core.exceptions import DomainError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.db.base import get_db
@@ -380,7 +381,7 @@ def list_tasks(
             has_more=page < total_pages,
         )
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # A deliberate status raised below (or by a helper) must reach the client as
         # itself, not be relabelled 500 by the broad handler.
         raise
@@ -492,7 +493,7 @@ def task_system_health(
             },
             "timestamp": datetime.now(UTC),
         }
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -580,7 +581,7 @@ def recover_all_stuck_tasks(
                 f"{len(retry_failures)} could not be re-queued"
             ),
         }
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -622,7 +623,7 @@ def trigger_startup_recovery(
             "success": True,
             "message": "Startup recovery task scheduled successfully",
         }
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -660,7 +661,7 @@ def trigger_all_user_file_recovery(
         background_tasks.add_task(run_all_user_recovery)
 
         return {"success": True, "message": "File recovery scheduled for all users"}
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -708,7 +709,7 @@ def trigger_user_file_recovery(
             "message": f"File recovery scheduled for user {target_user.email}",
             "user_uuid": user_uuid,
         }
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.error("Error triggering user file recovery: %s", e, exc_info=True)
@@ -774,7 +775,7 @@ def recover_task(
             "retry_scheduled": retry_scheduled,
             "dispatch_error": dispatch_error,
         }
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except ASRConfigurationError:
         # A deliberate refusal (e.g. lite deployment, no cloud ASR — #865). Let it
@@ -819,7 +820,7 @@ def fix_inconsistent_file(
             # Nullable status: a fix that could not determine a status leaves it as it was.
             "new_status": media_file.status.value if media_file.status else None,
         }
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.error("Error in fix_inconsistent_file: %s", e, exc_info=True)
@@ -859,7 +860,7 @@ def fix_all_inconsistent_files(
             "total": len(inconsistent_files),
             "message": f"Successfully fixed {fixed_count} of {len(inconsistent_files)} files",
         }
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -969,7 +970,7 @@ def retry_file_processing(
             "file_id": str(media_file.uuid),
             "message": "File processing restarted (test mode)",
         }
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except ASRConfigurationError:
         # A deliberate refusal (e.g. lite deployment, no cloud ASR — #865). Let it
@@ -1087,7 +1088,7 @@ def get_task(
 
         return Task(**task_dict)
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.error("Error in get_task: %s", e, exc_info=True)

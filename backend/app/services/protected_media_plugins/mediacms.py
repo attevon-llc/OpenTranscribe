@@ -20,6 +20,7 @@ from urllib.parse import urlunparse
 import requests
 from fastapi import HTTPException
 
+from app.core.exceptions import DomainError
 from app.services.protected_media_providers import ProtectedMediaProvider
 from app.utils.url_validation import pinned_requests_session
 from app.utils.url_validation import resolve_pinned_target
@@ -378,7 +379,7 @@ class MediacmsProvider(ProtectedMediaProvider):
             info_resp.raise_for_status()
             info = info_resp.json()
 
-        except HTTPException:
+        except (HTTPException, DomainError):
             raise
         except requests.exceptions.RequestException as e:
             # Re-wrap as HTTPException for consistency with FastAPI error handling.
@@ -554,7 +555,7 @@ class MediacmsProvider(ProtectedMediaProvider):
                             progress = int(20 + (downloaded / total_bytes) * 40)
                             progress_callback(min(progress, 60), "Downloading media...")
 
-        except HTTPException:
+        except (HTTPException, DomainError):
             raise
         except requests.exceptions.RequestException as e:
             # Clean up partial file on failure. The raw requests exception

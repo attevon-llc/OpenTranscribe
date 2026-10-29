@@ -52,4 +52,8 @@ WHITELIST = (
     # PEP 562 module-level __getattr__: the interpreter calls it on a missing attribute of
     # app.services.opensearch_service, never a visible call site.
     _.__getattr__,
+    # Foundation of the DomainError taxonomy (L2): the status-parameterised coded_error factory in
+    # services/support_access_service.py is its production caller once that site is converted; until
+    # then only test_domain_errors.py pins the status-to-class mapping.
+    _.domain_error_for_status,
 )

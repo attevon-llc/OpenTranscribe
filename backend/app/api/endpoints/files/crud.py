@@ -12,6 +12,7 @@ from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import selectinload
 
 from app.core import constants as C  # noqa: N812
+from app.core.exceptions import DomainError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
@@ -922,7 +923,7 @@ def get_media_file_detail(
             db_file = get_media_file_by_uuid(
                 db, file_uuid, current_user.id, bypass=bypass, organization_id=organization_id
             )
-        except HTTPException as denied:
+        except (HTTPException, DomainError) as denied:
             if denied.status_code != status.HTTP_403_FORBIDDEN:
                 raise
             # A file the caller cannot see must answer like a missing one: 403 would
@@ -1052,7 +1053,7 @@ def get_media_file_detail(
 
         return response
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         # The real failure (often a SQL fragment or a DSN) is logged with a

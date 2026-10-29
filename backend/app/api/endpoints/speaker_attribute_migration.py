@@ -14,6 +14,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_superuser
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.user import User
 from app.tasks.speaker_attribute_migration_task import attribute_migration_progress
@@ -76,7 +77,7 @@ def get_attribute_migration_status(
             "progress": progress,
         }
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -121,7 +122,7 @@ def start_attribute_migration(
             "message": "Speaker attribute migration dispatched.",
         }
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -209,7 +210,7 @@ def stop_attribute_migration(
                 "message": "Failed to stop migration",
             }
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -242,7 +243,7 @@ def clear_attribute_progress(
         else:
             return {"status": "error", "message": "Failed to clear progress."}
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).

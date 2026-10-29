@@ -31,6 +31,7 @@ from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.token_service import token_service
 from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.config import settings
+from app.core.exceptions import DomainError
 from app.core.security import accepted_algorithms
 from app.db.base import get_db
 from app.models.user import User
@@ -701,7 +702,7 @@ def get_current_user(
         request.state.user_id = user.id
         request.state.org_id = getattr(user, "external_org_id", None)
         return user  # type: ignore[no-any-return]
-    except HTTPException:
+    except (HTTPException, DomainError):
         # FAIL CLOSED. `credentials_exception` (401, unknown user) and the 400
         # "Inactive user" raised above are *authorization decisions*, not
         # infrastructure errors — but they are HTTPExceptions, so the broad

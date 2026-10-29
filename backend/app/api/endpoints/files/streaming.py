@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from fastapi import status
 from fastapi.responses import StreamingResponse
 
+from app.core.exceptions import DomainError
 from app.models.media import MediaFile
 from app.services.minio_service import download_file
 from app.utils.content_disposition import attachment_header
@@ -110,7 +111,7 @@ def get_thumbnail_streaming_response(db_file: MediaFile) -> StreamingResponse:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Thumbnail not found in storage",
         ) from e
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.endpoints.auth.dependencies import get_current_active_user
 from app.api.endpoints.auth.dependencies import get_current_user
 from app.api.endpoints.auth.dependencies import oauth2_scheme
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.user import User as UserSchema
@@ -50,7 +51,7 @@ def session_status(
             "refreshable": False,
             "user": UserSchema.model_validate(user).model_dump(mode="json"),
         }
-    except HTTPException as exc:
+    except (HTTPException, DomainError) as exc:
         if exc.status_code != status.HTTP_401_UNAUTHORIZED:
             raise
         return {

@@ -27,6 +27,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.core.config import settings
 from app.core.constants import VALID_AUDIO_QUALITIES
 from app.core.constants import VALID_VIDEO_QUALITIES
+from app.core.exceptions import DomainError
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
 from app.models.media import FileStatus
@@ -323,7 +324,7 @@ def _handle_playlist_processing(
             url=normalized_url,
         )
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -365,7 +366,7 @@ def _extract_video_info(
         )
         video_id = video_info.get("id")
         video_title = video_info.get("title", "Media Video")
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise HTTPExceptions (they already have proper error messages)
         raise
     except Exception as e:
@@ -593,7 +594,7 @@ def _dispatch_video_task(
         from app.core.metrics import files_uploaded_total
 
         files_uploaded_total.labels(source="url").inc()
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -835,7 +836,7 @@ def process_media_url(
         # ORM MediaFile serialized to the schema via response_model (from_attributes)
         return media_file  # type: ignore[return-value]
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.error(f"Unexpected error processing media URL: {e}", exc_info=True)

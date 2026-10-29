@@ -29,6 +29,7 @@ from app.core.constants import SEARCH_DEFAULT_PAGE_SIZE
 from app.core.constants import SEARCH_MAX_PAGE_SIZE
 from app.core.constants import get_speaker_index
 from app.core.constants import get_speaker_index_v4
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.search import RESULT_TYPE_TO_SOURCES
@@ -423,7 +424,7 @@ def search_transcripts(
                     file_uuid=file_uuid,
                 )
             )
-        except HTTPException as e:
+        except (HTTPException, DomainError) as e:
             # Issue #760, §6: a masking outage must not blank the whole page
             # when more than one source was requested — only the summary leg
             # degrades. `_summary_search_payload` still raises a literal 503
@@ -1103,7 +1104,7 @@ def stop_reindex(
                 f"is on completes."
             ),
         }
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).

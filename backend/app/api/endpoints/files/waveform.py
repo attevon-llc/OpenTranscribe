@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.user import User
@@ -195,7 +196,7 @@ def _generate_and_cache_waveform(
 
         return waveform_data
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         # The real ffmpeg/librosa failure is logged, never returned (#859).
@@ -315,7 +316,7 @@ def get_audio_waveform_peaks(
     # Extract waveform data
     try:
         waveform_data = _extract_waveform_from_file(str(db_file.storage_path), target_samples)
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -388,7 +389,7 @@ def generate_waveform_for_file(
             "force_regenerate": force_regenerate,
         }
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         # The real DB/Celery failure is logged, never returned (#859).
@@ -451,7 +452,7 @@ def generate_waveforms_for_files(
             "force_regenerate": force_regenerate,
         }
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -517,7 +518,7 @@ def get_waveform_status(
             ),
         }
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).

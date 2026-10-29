@@ -47,6 +47,7 @@ from app.auth.roles import role_implies_superuser
 from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.core.config import settings
 from app.core.constants import CeleryQueues
+from app.core.exceptions import DomainError
 from app.core.security import get_password_hash
 from app.core.version import APP_VERSION
 from app.db.base import get_db
@@ -887,7 +888,7 @@ async def get_admin_stats(
         }
 
         return stats
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -918,7 +919,7 @@ def get_admin_users(
             db.query(User).order_by(func.lower(User.full_name)).offset(offset).limit(limit).all()
         )
         return users
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -961,7 +962,7 @@ def create_admin_user(
 
         # Call the user creation function from the users endpoint
         return create_user_func(user_data=user_data, db=db)
-    except HTTPException as he:
+    except (HTTPException, DomainError) as he:
         logger.error(f"HTTP error creating user: {he.detail}")
         raise he
     except Exception as e:
@@ -1076,7 +1077,7 @@ def delete_admin_user(
             "storage_objects_failed": len(residual_errors),
         }
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception(f"User deletion failed, all changes rolled back: {e}")
@@ -2858,7 +2859,7 @@ def get_gpu_profiles(
                 raw = data if isinstance(data, str) else data.decode()
                 profiles.append(json.loads(raw))
         return profiles
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).

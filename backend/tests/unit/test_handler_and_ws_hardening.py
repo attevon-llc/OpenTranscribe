@@ -51,7 +51,9 @@ def test_http_exceptions_are_re_raised(func_name):
     from app.api.endpoints import files as files_module
 
     source = inspect.getsource(getattr(files_module, func_name))
-    assert "except HTTPException:" in source, f"{func_name} must re-raise HTTPException"
+    assert "except (HTTPException, DomainError):" in source, (
+        f"{func_name} must re-raise HTTPException"
+    )
 
 
 @pytest.mark.parametrize("func_name", ["clear_video_cache", "refresh_analytics"])

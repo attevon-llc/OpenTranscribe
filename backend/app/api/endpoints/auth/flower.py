@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.api.endpoints.auth.dependencies import get_current_active_user
 from app.api.endpoints.auth.dependencies import get_current_admin_user
 from app.api.endpoints.auth.dependencies import get_current_user
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.user import User
 
@@ -77,7 +78,7 @@ def flower_authz(
         )
     try:
         get_current_admin_user(get_current_active_user(request, current_user, db))
-    except HTTPException as exc:
+    except (HTTPException, DomainError) as exc:
         if exc.status_code == status.HTTP_403_FORBIDDEN:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

@@ -20,6 +20,7 @@ from app.auth.utils import mask_identifier
 from app.core.auth_settings import get_auth_settings
 from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.core.auth_types import AUTH_TYPE_PKI
+from app.core.exceptions import DomainError
 from app.core.security import authenticate_user
 from app.models.user import User
 
@@ -338,7 +339,7 @@ def _authenticate_production_user(
     try:
         uuid_str, data = _authenticate_ldap_user(db, username, password)
         return uuid_str, data, "ldap"
-    except HTTPException:
+    except (HTTPException, DomainError):
         # LDAP failed, try local auth as fallback if user exists
         if not local_user:
             raise

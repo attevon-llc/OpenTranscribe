@@ -10,11 +10,15 @@ from contextlib import asynccontextmanager
 from contextlib import suppress
 
 from fastapi import FastAPI
+from fastapi import HTTPException
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from starlette.concurrency import run_in_threadpool
+from starlette.requests import Request
 from starlette.responses import JSONResponse
+from starlette.responses import Response
 
 from app.api.router import api_router
 from app.auth.rate_limit import limiter
@@ -26,7 +30,7 @@ from app.core.constants import NEURAL_BOOTSTRAP_STARTUP_DELAY_SECONDS
 from app.core.entropy import assert_csprng_available
 from app.core.entropy import validate_secret_entropy
 from app.core.exceptions import ASRConfigurationError
-from app.core.exceptions import AuthenticationError
+from app.core.exceptions import DomainError
 from app.core.exceptions import EmailDeliveryError
 from app.core.exceptions import LLMServiceError
 from app.core.exceptions import OpenTranscribeError
@@ -1151,7 +1155,6 @@ app.add_middleware(ObservabilityMiddleware)
 @app.exception_handler(OpenTranscribeError)
 async def handle_app_error(request, exc: OpenTranscribeError):
     status_map = {
-        AuthenticationError: 401,
         StorageError: 503,
         SearchIndexError: 503,
         LLMServiceError: 502,
@@ -1163,6 +1166,17 @@ async def handle_app_error(request, exc: OpenTranscribeError):
     return JSONResponse(
         status_code=status,
         content={"detail": exc.message},
+    )
+
+
+# A DomainError is a deliberate refusal raised below the API layer. Delegating to FastAPI's own
+# HTTPException handler makes status, body bytes, headers and the body-less-status branch those of
+# the HTTPException it replaces, by construction. Starlette picks the handler by walking the MRO,
+# so this beats handle_app_error above for every DomainError subclass.
+@app.exception_handler(DomainError)
+async def handle_domain_error(request: Request, exc: DomainError) -> Response:
+    return await http_exception_handler(
+        request, HTTPException(status_code=exc.status_code, detail=exc.detail, headers=exc.headers)
     )
 
 

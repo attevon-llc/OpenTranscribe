@@ -7,6 +7,7 @@ from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ASRConfigurationError
+from app.core.exceptions import DomainError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import FileStatus
@@ -756,7 +757,7 @@ def process_file_reprocess(
 
         return media_file
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise HTTP exceptions
         raise
     except ASRConfigurationError:

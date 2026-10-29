@@ -17,6 +17,7 @@ from sqlalchemy.orm import load_only
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
+from app.core.exceptions import DomainError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.db.base import get_db
@@ -894,7 +895,7 @@ def list_speakers(
 
         return _create_no_cache_response(result)
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. Without this, the broad handler
         # below swallowed the 403 that `_resolve_file_uuid_to_id` raises for a caller with
         # no permission on the requested file and reported it as a 500 — so an
@@ -929,7 +930,7 @@ def cleanup_orphaned_embeddings(
             "deleted_count": deleted_count,
             "message": f"Cleaned up {deleted_count} orphaned speaker embeddings",
         }
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -1142,7 +1143,7 @@ def debug_cross_media_data(
 
         return debug_info
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -1281,7 +1282,7 @@ def debug_cross_media_by_name(
 
         return results
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422
         # raised inside this block as an internal server error (issue #431).
@@ -1345,7 +1346,7 @@ def get_speaker_cross_media_occurrences(
 
         return result
 
-    except HTTPException:
+    except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception(f"Error getting cross-media occurrences: {e}")
@@ -1416,7 +1417,7 @@ def verify_speaker_identification(
 
         return result
 
-    except (HTTPException, SpeakerCleanupIncompleteError):
+    except (HTTPException, SpeakerCleanupIncompleteError, DomainError):
         raise
     except Exception as e:
         logger.exception(f"Error verifying speaker: {e}")

@@ -20,6 +20,7 @@ from app.auth.provider_registry import ExternalIdentity
 from app.auth.roles import ELEVATED_ROLES
 from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import role_implies_superuser
+from app.core.exceptions import DomainError
 from app.core.exceptions import ExternalIdentityLinkRefusedError
 from app.models.user import User
 
@@ -110,7 +111,7 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
                 asserted_email=identity.email,
                 failure_detail="External identity could not be verified",
             )
-        except HTTPException as exc:
+        except (HTTPException, DomainError) as exc:
             # This module's callers expect ExternalIdentityLinkRefusedError, not
             # HTTPException -- translate so both refusal paths raise the same
             # exception type.

@@ -65,8 +65,7 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 # anywhere outside tests.
 "**/opensearch_service/repair.py" = ["C901"]
 "**/opensearch_service/speaker_read.py" = ["C901"]
-# Migrations and alembic versions use string-based SQL construction
-"**/migrations/**" = ["E501", "F401"]
+# Alembic versions use string-based SQL construction
 "**/alembic/**" = ["S608"]
 
 [tool.ruff.lint.mccabe]
@@ -110,6 +109,243 @@ name = "Core (app) must not import the closed cloud edition"
 type = "forbidden"
 source_modules = ["app"]
 forbidden_modules = ["cloud", "clerk", "stripe"]
+
+# Layering contracts. The ignore lists were generated from an empty list: every
+# ignore below is one real edge that exists today, so a new upward import fails and
+# a removed one makes its ignore stale (unmatched_ignore_imports_alerting = "error")
+# until it is deleted.
+[[tool.importlinter.contracts]]
+name = "Lower layers must not import app.api"
+type = "forbidden"
+source_modules = [
+  "app.models", "app.schemas", "app.db", "app.core", "app.utils", "app.services",
+  "app.tasks", "app.transcription", "app.auth", "app.middleware",
+]
+forbidden_modules = ["app.api"]
+allow_indirect_imports = false
+unmatched_ignore_imports_alerting = "error"
+ignore_imports = [
+  "app.core.capabilities -> app.api.endpoints.auth",  # upward import, function level: removal planned (layering)
+  "app.services.chat.context_resolver -> app.api.deps_context",  # upward import, module level: removal planned (layering)
+  "app.services.pipeline_plan_inputs -> app.api.deps_context",  # upward import, function level: removal planned (layering)
+  "app.services.speaker_provenance_view -> app.api.deps_context",  # type-checking only: removal planned (layering)
+  "app.services.storage_recovery_service -> app.api.endpoints.files.upload",  # upward import, function level: removal planned (layering)
+  "app.services.watch_sources.processing -> app.api.endpoints.files.prepare_upload",  # upward import, function level: removal planned (layering)
+  "app.services.watch_sources.processing -> app.api.endpoints.files.upload",  # upward import, function level: removal planned (layering)
+  "app.tasks.rediarize_task -> app.api.endpoints.files.reprocess",  # upward import, function level: removal planned (layering)
+  "app.tasks.speaker_merge_task -> app.api.endpoints.speakers",  # upward import, function level: removal planned (layering)
+  "app.tasks.speaker_update_task -> app.api.endpoints.speaker_update",  # upward import, function level: removal planned (layering)
+  "app.tasks.speaker_update_task -> app.api.endpoints.speakers",  # upward import, function level: removal planned (layering)
+  "app.tasks.youtube_processing -> app.api.endpoints.files.prepare_upload",  # upward import, function level: removal planned (layering)
+  "app.utils.db_helpers -> app.api.deps_context",  # type-checking only: removal planned (layering)
+]
+
+[[tool.importlinter.contracts]]
+name = "Foundation layers must not import app.tasks"
+type = "forbidden"
+source_modules = ["app.models", "app.schemas", "app.db", "app.core", "app.utils"]
+forbidden_modules = ["app.tasks"]
+allow_indirect_imports = true
+unmatched_ignore_imports_alerting = "error"
+ignore_imports = [
+  "app.utils.task_utils -> app.tasks.search_indexing_task",  # deliberate late binding: Celery task lookup
+  "app.utils.task_utils -> app.tasks.transcription",  # deliberate late binding: Celery task lookup
+  "app.utils.task_utils -> app.tasks.transcription.cancellation",  # deliberate late binding: Celery task lookup
+]
+
+[[tool.importlinter.contracts]]
+name = "Application layers import downward only"
+type = "layers"
+containers = ["app"]
+layers = [
+  "api",
+  "tasks",
+  "services : transcription",
+  "auth",
+  "schemas",
+  "models",
+  "db : utils : core",
+]
+exhaustive = false
+unmatched_ignore_imports_alerting = "error"
+ignore_imports = [
+  "app.auth.email_verification -> app.services.email_service",  # upward import, module level: removal planned (layering)
+  "app.auth.invitations -> app.services.email_service",  # upward import, module level: removal planned (layering)
+  "app.auth.ldap_auth -> app.services.idp_group_mapping_service",  # upward import, function level: removal planned (layering)
+  "app.auth.oidc.provisioning -> app.services.idp_group_mapping_service",  # upward import, function level: removal planned (layering)
+  "app.auth.password_reset -> app.services.email_service",  # upward import, module level: removal planned (layering)
+  "app.auth.proxy.provisioning -> app.services.idp_group_mapping_service",  # upward import, function level: removal planned (layering)
+  "app.core.auth_settings -> app.services.auth_config_service",  # upward import, function level: removal planned (layering)
+  "app.core.backup_metrics -> app.services.backup_service",  # upward import, function level: removal planned (layering)
+  "app.core.backup_metrics -> app.services.media_mirror_service",  # upward import, function level: removal planned (layering)
+  "app.core.backup_metrics -> app.services.search.index_retry",  # upward import, function level: removal planned (layering)
+  "app.core.backup_metrics -> app.services.system_settings_service",  # upward import, function level: removal planned (layering)
+  "app.core.backup_metrics -> app.services.task_row_supersede",  # upward import, function level: removal planned (layering)
+  "app.core.broker_orphans -> app.services.transcription_retry",  # upward import, function level: removal planned (layering)
+  "app.core.capabilities -> app.api.endpoints.auth",  # upward import, function level: removal planned (layering)
+  "app.core.capabilities -> app.models.user",  # type-checking only: removal planned (layering)
+  "app.core.celery -> app.services.huggingface_token",  # upward import, function level: removal planned (layering)
+  "app.core.celery -> app.services.local_models.worker_report",  # upward import, function level: removal planned (layering)
+  "app.core.celery -> app.services.redaction.detectors.pii_presidio",  # upward import, function level: removal planned (layering)
+  "app.core.celery -> app.services.redaction.detectors.toxicity",  # upward import, function level: removal planned (layering)
+  "app.core.celery -> app.services.redaction.pii_pool",  # upward import, function level: removal planned (layering)
+  "app.core.celery -> app.services.watch_sources.fs_events",  # upward import, function level: removal planned (layering)
+  "app.core.celery -> app.transcription.config",  # upward import, function level: removal planned (layering)
+  "app.core.celery -> app.transcription.host_memory_admission",  # upward import, function level: removal planned (layering)
+  "app.core.celery -> app.transcription.model_manager",  # upward import, function level: removal planned (layering)
+  "app.core.celery -> app.transcription.vram_budget",  # upward import, function level: removal planned (layering)
+  "app.core.celery_metrics -> app.models.media",  # upward import, function level: removal planned (layering)
+  "app.core.infra_requeue_reset -> app.models.media",  # upward import, function level: removal planned (layering)
+  "app.core.security -> app.auth.audit",  # upward import, function level: removal planned (layering)
+  "app.core.security -> app.auth.constants",  # upward import, module level: removal planned (layering)
+  "app.core.security -> app.auth.utils",  # upward import, module level: removal planned (layering)
+  "app.core.security -> app.models.user",  # upward import, module level: removal planned (layering)
+  "app.core.settings_cache -> app.services.system_settings_service",  # upward import, function level: removal planned (layering)
+  "app.core.task_replay -> app.models.media",  # upward import, function level: removal planned (layering)
+  "app.core.tenant_limits -> app.models.organization_policy",  # upward import, function level: removal planned (layering)
+  "app.models.invitation -> app.auth.constants",  # upward import, module level: removal planned (layering)
+  "app.models.user -> app.auth.constants",  # upward import, module level: removal planned (layering)
+  "app.models.user_llm_settings -> app.services.bedrock_settings",  # upward import, function level: removal planned (layering)
+  "app.schemas.admin -> app.auth.constants",  # upward import, function level: removal planned (layering)
+  "app.schemas.invitation -> app.auth.constants",  # upward import, module level: removal planned (layering)
+  "app.schemas.invitation -> app.auth.roles",  # upward import, module level: removal planned (layering)
+  "app.schemas.media -> app.services.ingest_artifacts.recorded_date_service",  # upward import, function level: removal planned (layering)
+  "app.schemas.user -> app.auth.constants",  # upward import, module level: removal planned (layering)
+  "app.schemas.user -> app.auth.password_policy",  # upward import, function level: removal planned (layering)
+  "app.services.ai_insights_companion -> app.tasks.topic_extraction",  # upward import, function level: removal planned (layering)
+  "app.services.auto_label_service -> app.tasks.search_indexing_task",  # deliberate late binding: Celery task lookup
+  "app.services.chat.context_resolver -> app.api.deps_context",  # upward import, module level: removal planned (layering)
+  "app.services.content_hold_service -> app.tasks.erasure_reconciliation",  # deliberate late binding: Celery task lookup
+  "app.services.group_file_index_service -> app.tasks.search_indexing_task",  # upward import, module level: removal planned (layering)
+  "app.services.media_download_service -> app.tasks.thumbnail",  # deliberate late binding: Celery task lookup
+  "app.services.media_download_service -> app.tasks.transcription.metadata_extractor",  # upward import, function level: removal planned (layering)
+  "app.services.notification_service -> app.tasks.transcription.notifications",  # upward import, function level: removal planned (layering)
+  "app.services.pipeline_plan_inputs -> app.api.deps_context",  # upward import, function level: removal planned (layering)
+  "app.services.privacy.label_reindex -> app.tasks.ingest_artifacts_task",  # deliberate late binding: Celery task lookup
+  "app.services.privacy.label_reindex -> app.tasks.privacy_label_resync_task",  # deliberate late binding: Celery task lookup
+  "app.services.privacy.policy_admin -> app.tasks.privacy_purge_task",  # deliberate late binding: Celery task lookup
+  "app.services.redaction.llm_guard -> app.tasks.redaction_task",  # deliberate late binding: Celery task lookup
+  "app.services.redaction.service -> app.tasks.redaction_task",  # deliberate late binding: Celery task lookup
+  "app.services.search.model_switch -> app.tasks.reindex_task",  # deliberate late binding: Celery task lookup
+  "app.services.search.reindex_dispatch -> app.tasks.search_indexing_task",  # deliberate late binding: Celery task lookup
+  "app.services.speaker_label_backfill -> app.tasks.ingest_artifacts_task",  # deliberate late binding: Celery task lookup
+  "app.services.speaker_provenance_view -> app.api.deps_context",  # type-checking only: removal planned (layering)
+  "app.services.speaker_rename_tracker -> app.tasks.rename_propagation_task",  # deliberate late binding: Celery task lookup
+  "app.services.storage_recovery_service -> app.api.endpoints.files.upload",  # upward import, function level: removal planned (layering)
+  "app.services.tag_service -> app.tasks.search_indexing_task",  # deliberate late binding: Celery task lookup
+  "app.services.takedown_service -> app.tasks.erasure_reconciliation",  # deliberate late binding: Celery task lookup
+  "app.services.task_recovery_service -> app.tasks.analytics",  # deliberate late binding: Celery task lookup
+  "app.services.task_recovery_service -> app.tasks.search_indexing_task",  # deliberate late binding: Celery task lookup
+  "app.services.task_recovery_service -> app.tasks.speaker_tasks",  # deliberate late binding: Celery task lookup
+  "app.services.task_recovery_service -> app.tasks.summarization",  # deliberate late binding: Celery task lookup
+  "app.services.task_recovery_service -> app.tasks.topic_extraction",  # deliberate late binding: Celery task lookup
+  "app.services.task_recovery_service -> app.tasks.transcription",  # deliberate late binding: Celery task lookup
+  "app.services.task_recovery_service -> app.tasks.transcription.notifications",  # upward import, function level: removal planned (layering)
+  "app.services.task_recovery_service -> app.tasks.youtube_processing",  # deliberate late binding: Celery task lookup
+  "app.services.transcription_retry -> app.tasks.transcription.cancellation",  # upward import, function level: removal planned (layering)
+  "app.services.transcription_retry -> app.tasks.transcription.hooks",  # upward import, function level: removal planned (layering)
+  "app.services.transcription_retry -> app.tasks.transcription.notifications",  # upward import, function level: removal planned (layering)
+  "app.services.watch_sources.fs_events.dispatcher -> app.tasks.watch_source_tasks",  # deliberate late binding: Celery task lookup
+  "app.services.watch_sources.processing -> app.api.endpoints.files.prepare_upload",  # upward import, function level: removal planned (layering)
+  "app.services.watch_sources.processing -> app.api.endpoints.files.upload",  # upward import, function level: removal planned (layering)
+  "app.tasks.rediarize_task -> app.api.endpoints.files.reprocess",  # upward import, function level: removal planned (layering)
+  "app.tasks.speaker_merge_task -> app.api.endpoints.speakers",  # upward import, function level: removal planned (layering)
+  "app.tasks.speaker_update_task -> app.api.endpoints.speaker_update",  # upward import, function level: removal planned (layering)
+  "app.tasks.speaker_update_task -> app.api.endpoints.speakers",  # upward import, function level: removal planned (layering)
+  "app.tasks.youtube_processing -> app.api.endpoints.files.prepare_upload",  # upward import, function level: removal planned (layering)
+  "app.utils.benchmark_timing -> app.models.media",  # upward import, function level: removal planned (layering)
+  "app.utils.db_helpers -> app.api.deps_context",  # type-checking only: removal planned (layering)
+  "app.utils.db_helpers -> app.models.media",  # upward import, module level: removal planned (layering)
+  "app.utils.db_helpers -> app.services.redis_cache_service",  # upward import, function level: removal planned (layering)
+  "app.utils.file_hash -> app.models.media",  # upward import, function level: removal planned (layering)
+  "app.utils.file_hash -> app.models.organization",  # upward import, function level: removal planned (layering)
+  "app.utils.file_hash -> app.services.minio_service",  # upward import, function level: removal planned (layering)
+  "app.utils.lite_mode -> app.services.pipeline_plan",  # upward import, function level: removal planned (layering)
+  "app.utils.prompt_manager -> app.models",  # upward import, module level: removal planned (layering)
+  "app.utils.segment_postprocess -> app.transcription.boundary_resolver",  # upward import, function level: removal planned (layering)
+  "app.utils.speaker_identity_source -> app.models.media",  # upward import, function level: removal planned (layering)
+  "app.utils.speaker_labels -> app.services.privacy.redact_view",  # upward import, function level: removal planned (layering)
+  "app.utils.stats_helpers -> app.models.media",  # upward import, module level: removal planned (layering)
+  "app.utils.stats_helpers -> app.models.user",  # upward import, module level: removal planned (layering)
+  "app.utils.stats_helpers -> app.services.search.settings_service",  # upward import, function level: removal planned (layering)
+  "app.utils.stats_helpers -> app.transcription.diarizer_native",  # upward import, function level: removal planned (layering)
+  "app.utils.summary_settings -> app.models.prompt",  # upward import, function level: removal planned (layering)
+  "app.utils.summary_settings -> app.services.system_settings_service",  # upward import, function level: removal planned (layering)
+  "app.utils.task_utils -> app.models.media",  # upward import, module level: removal planned (layering)
+  "app.utils.task_utils -> app.services.hold_guard",  # upward import, function level: removal planned (layering)
+  "app.utils.task_utils -> app.services.minio_service",  # upward import, function level: removal planned (layering)
+  "app.utils.task_utils -> app.services.speaker_cleanup",  # upward import, function level: removal planned (layering)
+  "app.utils.task_utils -> app.services.speaker_correction_carryover",  # upward import, function level: removal planned (layering)
+  "app.utils.task_utils -> app.services.system_settings_service",  # upward import, module level: removal planned (layering)
+  "app.utils.task_utils -> app.services.takedown_service",  # upward import, function level: removal planned (layering)
+  "app.utils.task_utils -> app.services.task_row_supersede",  # upward import, module level: removal planned (layering)
+  "app.utils.task_utils -> app.tasks.search_indexing_task",  # deliberate late binding: Celery task lookup
+  "app.utils.task_utils -> app.tasks.transcription",  # deliberate late binding: Celery task lookup
+  "app.utils.task_utils -> app.tasks.transcription.cancellation",  # deliberate late binding: Celery task lookup
+  "app.utils.tenant_sharing -> app.models.group",  # upward import, function level: removal planned (layering)
+  "app.utils.tenant_sharing -> app.models.organization",  # upward import, module level: removal planned (layering)
+  "app.utils.thumbnail -> app.services.minio_service",  # upward import, module level: removal planned (layering)
+  "app.utils.transcript_builders -> app.services.redaction.service",  # upward import, function level: removal planned (layering)
+  "app.utils.transcript_comparison -> app.models.media",  # upward import, module level: removal planned (layering)
+  "app.utils.user_settings_helpers -> app.models.prompt",  # upward import, module level: removal planned (layering)
+  "app.utils.uuid_helpers -> app.models.media",  # upward import, module level: removal planned (layering)
+  "app.utils.uuid_helpers -> app.models.prompt",  # upward import, module level: removal planned (layering)
+  "app.utils.uuid_helpers -> app.models.user",  # upward import, module level: removal planned (layering)
+  "app.utils.uuid_helpers -> app.models.user_llm_settings",  # upward import, module level: removal planned (layering)
+  "app.utils.uuid_helpers -> app.services.collection_visibility",  # upward import, function level: removal planned (layering)
+  "app.utils.uuid_helpers -> app.services.permission_service",  # upward import, function level: removal planned (layering)
+  "app.utils.uuid_helpers -> app.services.platform_bypass",  # upward import, module level: removal planned (layering)
+  "app.utils.uuid_helpers -> app.services.takedown_service",  # upward import, function level: removal planned (layering)
+  "app.utils.websocket_notify -> app.services.takedown_service",  # upward import, function level: removal planned (layering)
+  "app.utils.whisper_model_choice -> app.services.asr.model_discovery",  # upward import, function level: removal planned (layering)
+  "app.utils.whisper_model_choice -> app.transcription.config",  # upward import, module level: removal planned (layering)
+]
+
+[[tool.importlinter.contracts]]
+name = "app.models must not import services, tasks or api"
+type = "forbidden"
+source_modules = ["app.models"]
+forbidden_modules = ["app.services", "app.tasks", "app.api"]
+allow_indirect_imports = false
+unmatched_ignore_imports_alerting = "error"
+ignore_imports = [
+  "app.models.user_llm_settings -> app.services.bedrock_settings",  # upward import, function level: removal planned (layering)
+]
+
+[[tool.importlinter.contracts]]
+name = "app.utils must not import services, tasks or api"
+type = "forbidden"
+source_modules = ["app.utils"]
+forbidden_modules = ["app.services", "app.tasks", "app.api"]
+allow_indirect_imports = true
+unmatched_ignore_imports_alerting = "error"
+ignore_imports = [
+  "app.utils.db_helpers -> app.api.deps_context",  # type-checking only: removal planned (layering)
+  "app.utils.db_helpers -> app.services.redis_cache_service",  # upward import, function level: removal planned (layering)
+  "app.utils.file_hash -> app.services.minio_service",  # upward import, function level: removal planned (layering)
+  "app.utils.lite_mode -> app.services.pipeline_plan",  # upward import, function level: removal planned (layering)
+  "app.utils.speaker_labels -> app.services.privacy.redact_view",  # upward import, function level: removal planned (layering)
+  "app.utils.stats_helpers -> app.services.search.settings_service",  # upward import, function level: removal planned (layering)
+  "app.utils.summary_settings -> app.services.system_settings_service",  # upward import, function level: removal planned (layering)
+  "app.utils.task_utils -> app.services.hold_guard",  # upward import, function level: removal planned (layering)
+  "app.utils.task_utils -> app.services.minio_service",  # upward import, function level: removal planned (layering)
+  "app.utils.task_utils -> app.services.speaker_cleanup",  # upward import, function level: removal planned (layering)
+  "app.utils.task_utils -> app.services.speaker_correction_carryover",  # upward import, function level: removal planned (layering)
+  "app.utils.task_utils -> app.services.system_settings_service",  # upward import, module level: removal planned (layering)
+  "app.utils.task_utils -> app.services.takedown_service",  # upward import, function level: removal planned (layering)
+  "app.utils.task_utils -> app.services.task_row_supersede",  # upward import, module level: removal planned (layering)
+  "app.utils.task_utils -> app.tasks.search_indexing_task",  # deliberate late binding: Celery task lookup
+  "app.utils.task_utils -> app.tasks.transcription",  # deliberate late binding: Celery task lookup
+  "app.utils.task_utils -> app.tasks.transcription.cancellation",  # deliberate late binding: Celery task lookup
+  "app.utils.thumbnail -> app.services.minio_service",  # upward import, module level: removal planned (layering)
+  "app.utils.transcript_builders -> app.services.redaction.service",  # upward import, function level: removal planned (layering)
+  "app.utils.uuid_helpers -> app.services.collection_visibility",  # upward import, function level: removal planned (layering)
+  "app.utils.uuid_helpers -> app.services.permission_service",  # upward import, function level: removal planned (layering)
+  "app.utils.uuid_helpers -> app.services.platform_bypass",  # upward import, module level: removal planned (layering)
+  "app.utils.uuid_helpers -> app.services.takedown_service",  # upward import, function level: removal planned (layering)
+  "app.utils.websocket_notify -> app.services.takedown_service",  # upward import, function level: removal planned (layering)
+  "app.utils.whisper_model_choice -> app.services.asr.model_discovery",  # upward import, function level: removal planned (layering)
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

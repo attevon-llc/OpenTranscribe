@@ -1,0 +1,65 @@
+# CodeQL SAST (advanced setup: default setup cannot take a config file).
+# Report-only: results land in Security > Code scanning; blocking is a ruleset decision, not made here.
+#
+# Coverage gap: CodeQL does NOT analyse .svelte files (its JavaScript extension list has .vue and
+# .html but not .svelte), so <script> blocks in Svelte components are unscanned. .ts/.js modules are.
+name: CodeQL
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master, 'release/**']
+  merge_group: # docs: required when the repo uses a merge queue
+  schedule:
+    - cron: '20 14 * * 1' # weekly: new queries land without a code change; runs on the default branch only
+  workflow_dispatch:
+
+# Deny by default; the analyze job asks for exactly what it needs.
+permissions: {}
+
+# `shell: bash` makes GitHub run `bash -eo pipefail` instead of `bash -e`.
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60 # docs give no figure; 60 leaves headroom over a typical 2-4x slower cold python/JS extraction while bounding a hung run
+    permissions:
+      contents: read # checkout; the codeql-action README requires it on private repos
+      security-events: write # required for every advanced-setup workflow
+    strategy:
+      fail-fast: false
+      matrix:
+        # build-mode none: both languages are interpreted, so no build step.
+        # javascript-typescript covers .js/.ts, not .svelte (see header).
+        # actions analyses the workflow files themselves (injection, permission problems).
+        include:
+          - language: python
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+          - language: actions
+            build-mode: none
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false # nothing here pushes
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          config-file: ./.github/codeql/codeql-config.yml
+          # security-extended = the default suite plus extra lower-precision security queries,
+          # so expect more alerts to triage on day one.
+          queries: security-extended
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          category: '/language:${{ matrix.language }}'

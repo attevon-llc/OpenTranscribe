@@ -1841,20 +1841,80 @@
       "stage": "now",
       "released": false,
       "scheduled": true,
-      "total": 30,
-      "closed": 6,
+      "total": 75,
+      "closed": 74,
       "areas": [
+        {
+          "key": "asr-engines",
+          "name": "ASR Engines",
+          "scope": "Alternative and native transcription engines",
+          "known": true,
+          "total": 8,
+          "closed": 8,
+          "issues": [
+            {
+              "number": 1198,
+              "title": "fix(speakers): saved speaker range is overridden on watch-source, cloud re-diarize and reprocess paths, and \"use defaults\" uses the wrong values",
+              "done": true
+            },
+            {
+              "number": 1199,
+              "title": "fix(transcription): the user garbage-cleanup setting does nothing; the pipeline reads an admin value that has no UI",
+              "done": true
+            },
+            {
+              "number": 1200,
+              "title": "fix(speakers): gender-detection and show-on-cards toggles are never read, and sidecar gender is stored even with attribute detection off",
+              "done": true
+            },
+            {
+              "number": 1202,
+              "title": "fix(api): reprocess, prepare-upload and bulk requests accept per-file diarization, language and model options and silently drop them",
+              "done": true
+            },
+            {
+              "number": 1203,
+              "title": "fix(files): retry rewrites a file's diarization source and drops its requested model and speaker range",
+              "done": true
+            },
+            {
+              "number": 1204,
+              "title": "fix(speakers): the pyannote.ai diarization choice can never work; no endpoint stores its credential and the fallback is silent",
+              "done": true
+            },
+            {
+              "number": 1205,
+              "title": "fix(gpu): acoustic boundary re-check settings only apply on the local fast path; gpu-split ignores the admin values",
+              "done": true
+            },
+            {
+              "number": 1228,
+              "title": "feat(lite): lite is cloud-only for transcription and speaker detection, voiceprints stay local (pipeline WP6)",
+              "done": true
+            }
+          ]
+        },
         {
           "key": "docs-release-ops",
           "name": "Docs & Release Ops",
           "scope": "Docs site, release pipeline, repo tooling",
           "known": true,
-          "total": 1,
-          "closed": 1,
+          "total": 3,
+          "closed": 3,
           "issues": [
             {
               "number": 758,
               "title": "docs(site): homepage polish — install copy button, comparison table, hero blurb",
+              "done": true
+            },
+            {
+              "number": 1209,
+              "title": "docs: Settings paths in five docs pages name sidebar rows that no longer exist",
+              "done": true
+            },
+            {
+              "number": 1230,
+              "title": "docs(architecture): regenerate pipeline diagrams and docs pages for the shipped mix-and-match flow (pipeline WP8)",
               "done": true
             }
           ]
@@ -1864,23 +1924,23 @@
           "name": "Frontend & UI",
           "scope": "App surfaces, admin screens, and interface defects",
           "known": true,
-          "total": 17,
-          "closed": 1,
+          "total": 31,
+          "closed": 31,
           "issues": [
             {
               "number": 569,
               "title": "feat(notifications): wire persistent download notifications into the live notification bell",
-              "done": false
+              "done": true
             },
             {
               "number": 570,
               "title": "feat(admin): expose locked-account management (view and reset)",
-              "done": false
+              "done": true
             },
             {
               "number": 576,
               "title": "feat(admin): quarantine/release admin UI for the existing backend (legal-hold risk FIXED via #664)",
-              "done": false
+              "done": true
             },
             {
               "number": 682,
@@ -1890,67 +1950,137 @@
             {
               "number": 747,
               "title": "feat(gallery): redesign the gallery/list toolbar into a two-row layout",
-              "done": false
+              "done": true
             },
             {
               "number": 748,
               "title": "feat(file-detail): reorganize the file detail page around speaker editing",
-              "done": false
+              "done": true
             },
             {
               "number": 749,
               "title": "feat(gallery): unify grid/list status indicators and fix GRID typography (grid is the outlier, not list)",
-              "done": false
+              "done": true
             },
             {
               "number": 750,
               "title": "feat(gallery): overhaul the filter panel — spacing, quick chips, keyboard dates, ownership search",
-              "done": false
+              "done": true
             },
             {
               "number": 751,
               "title": "feat(upload): fit wizard step widths and clarify the model options (summary-toggle item is a phantom)",
-              "done": false
+              "done": true
             },
             {
               "number": 752,
               "title": "fix(upload): five defects in the EXISTING upload tray — contrast, drag, z-index, persistence, class collisions",
-              "done": false
+              "done": true
             },
             {
               "number": 753,
               "title": "feat(notifications): notification panel duration chip and icon parity pass",
-              "done": false
+              "done": true
             },
             {
               "number": 754,
               "title": "feat(navbar): restyle, relabel Chat as \"AI chat\", and fix the file-status icon",
-              "done": false
+              "done": true
             },
             {
               "number": 755,
               "title": "feat(search): consolidate the transcript modal onto the file-detail transcript components",
-              "done": false
+              "done": true
             },
             {
               "number": 757,
               "title": "feat(ui): unify the tags/collections multi-select",
-              "done": false
+              "done": true
             },
             {
               "number": 785,
               "title": "fix(a11y): re-key the axe baseline as a per-surface ratchet and scan every main screen",
-              "done": false
+              "done": true
             },
             {
               "number": 788,
               "title": "feat(ux): surface Retry-After so rate limits show a wait time instead of a generic error",
-              "done": false
+              "done": true
             },
             {
               "number": 861,
               "title": "feat(ui): regroup the settings sidebar",
-              "done": false
+              "done": true
+            },
+            {
+              "number": 960,
+              "title": "fix(i18n): backend error prose is English-only, so 11 of 12 locales show an untranslated failure reason",
+              "done": true
+            },
+            {
+              "number": 966,
+              "title": "feat(gallery): ownership filter — searchable multi-select by specific owner",
+              "done": true
+            },
+            {
+              "number": 1086,
+              "title": "feat(ui): name a speaker inline from the segment speaker dropdown; clarify 'Add speaker'",
+              "done": true
+            },
+            {
+              "number": 1121,
+              "title": "fix(upload): model chosen in the upload wizard is never sent to the server",
+              "done": true
+            },
+            {
+              "number": 1149,
+              "title": "fix(ui): suggested-speaker-name chips in the transcript view render very large",
+              "done": true
+            },
+            {
+              "number": 1201,
+              "title": "fix(upload): speaker counts and model are dropped for URL import, in-wizard recording and the extracted-audio fallback; Speakers step shown when it cannot apply",
+              "done": true
+            },
+            {
+              "number": 1208,
+              "title": "fix(ui): Speaker Embedding System is shown to admins but its migration routes are super_admin, so admins see \"Admin access required\"",
+              "done": true
+            },
+            {
+              "number": 1217,
+              "title": "feat(notifications): decide and build notification auto-clear (UX review item 15)",
+              "done": true
+            },
+            {
+              "number": 1218,
+              "title": "feat(ui): file detail header and gallery toolbar rows need the designer's mockup (UX review items 39, 40)",
+              "done": true
+            },
+            {
+              "number": 1219,
+              "title": "feat(settings): show which ASR providers also diarize and warn on Automatic speaker detection without it",
+              "done": true
+            },
+            {
+              "number": 1220,
+              "title": "chore(i18n): fix the English source strings the 11 translation reviewers flagged, then re-review",
+              "done": true
+            },
+            {
+              "number": 1227,
+              "title": "feat(settings): Processing pipeline view with Local/Cloud chips, speakers-included badges and warnings (pipeline WP5, absorbs #1219)",
+              "done": true
+            },
+            {
+              "number": 1229,
+              "title": "feat(files): per-file processing provenance on file details and file status (pipeline WP7)",
+              "done": true
+            },
+            {
+              "number": 1234,
+              "title": "fix(i18n): ~130 admin-settings strings ship as English in 7+ locales; check:i18n only enforces parity",
+              "done": true
             }
           ]
         },
@@ -1959,13 +2089,88 @@
           "name": "LLM Providers",
           "scope": "Provider integrations and configuration",
           "known": true,
-          "total": 1,
-          "closed": 0,
+          "total": 2,
+          "closed": 2,
           "issues": [
             {
               "number": 644,
               "title": "feat(llm-provider): surface discoverable local base URLs in admin LLM provider setup",
+              "done": true
+            },
+            {
+              "number": 1148,
+              "title": "feat(llm): settings to disable automatic topic extraction and automatic LLM speaker identification",
+              "done": true
+            }
+          ]
+        },
+        {
+          "key": "native-diarizer",
+          "name": "Native Diarizer",
+          "scope": "Rust/ONNX diarization; retiring PyTorch/PyAnnote",
+          "known": true,
+          "total": 5,
+          "closed": 5,
+          "issues": [
+            {
+              "number": 1223,
+              "title": "fix(speakers): refuse pyannote.ai speaker detection with local transcription instead of silently ignoring it (pipeline WP1)",
+              "done": true
+            },
+            {
+              "number": 1224,
+              "title": "feat(pipeline): PipelinePlan resolver, validity matrix and GET /user-settings/pipeline (pipeline WP2)",
+              "done": true
+            },
+            {
+              "number": 1225,
+              "title": "feat(pipeline): post-transcription speaker detection stage so transcription and speaker detection mix and match (pipeline WP3)",
+              "done": true
+            },
+            {
+              "number": 1226,
+              "title": "feat(pipeline): use any cloud vendor as the speaker detector via an adapter, one merge path (pipeline WP4)",
+              "done": true
+            },
+            {
+              "number": 1236,
+              "title": "fix(pipeline): close the gaps WP3 left (silent local fallback for an unbuildable cloud provider, config delete response, segment-timing merge test)",
+              "done": true
+            }
+          ]
+        },
+        {
+          "key": "platform-ops",
+          "name": "Platform & Operations",
+          "scope": "Build, deploy, workers, GPU tuning, governance",
+          "known": true,
+          "total": 5,
+          "closed": 4,
+          "issues": [
+            {
+              "number": 961,
+              "title": "fix(docker): a --fresh stack started from a git worktree fails twice — no .env, and the second Vite dev server hits EMFILE",
+              "done": true
+            },
+            {
+              "number": 962,
+              "title": "fix(docker): ./opentr.sh start exits 0 when a core service crash-loops, so automation proceeds onto a dead stack",
+              "done": true
+            },
+            {
+              "number": 968,
+              "title": "fix(docker): WebSocket is rejected with 403 on any --port-offset stack — CORS_ORIGINS keeps the unoffset port",
+              "done": true
+            },
+            {
+              "number": 1002,
+              "title": "security(deps): 5 fixable HIGH CVEs in backend image (transformers <5.10, msgpack, setuptools)",
               "done": false
+            },
+            {
+              "number": 1134,
+              "title": "perf: structured per-stage timing for every processing task (where does the time go?)",
+              "done": true
             }
           ]
         },
@@ -1974,8 +2179,8 @@
           "name": "RAG & Chat Quality",
           "scope": "Retrieval, grounding, citations, summary search",
           "known": true,
-          "total": 6,
-          "closed": 2,
+          "total": 8,
+          "closed": 8,
           "issues": [
             {
               "number": 462,
@@ -1985,17 +2190,17 @@
             {
               "number": 464,
               "title": "feat(rag-chat): emit kind:\"summary\" citations — tiering is built, only the emitter is missing",
-              "done": false
+              "done": true
             },
             {
               "number": 506,
               "title": "task(rag-chat): measure dropping the stemmed BM25 leg for non-English queries (deferred from #453)",
-              "done": false
+              "done": true
             },
             {
               "number": 523,
               "title": "task(rag-chat): short speaker turns become content-free chunks — route speaker questions, expand context at read time",
-              "done": false
+              "done": true
             },
             {
               "number": 526,
@@ -2005,7 +2210,17 @@
             {
               "number": 532,
               "title": "task(rag-chat): retrieval offers 99% of scope but the answer cites 75% — synthesis, not retrieval",
-              "done": false
+              "done": true
+            },
+            {
+              "number": 963,
+              "title": "feat(search): rebuild OpenSearch summary indexing as a proper leg (single source of truth, no duplicate writes)",
+              "done": true
+            },
+            {
+              "number": 990,
+              "title": "task(rag-chat): #975's min_file_score=0.0 file-pruning neutralizes #523's speaker-resolver router-fix",
+              "done": true
             }
           ]
         },
@@ -2015,12 +2230,27 @@
           "scope": "Indexing, reindex correctness, index drift",
           "known": true,
           "total": 1,
-          "closed": 0,
+          "closed": 1,
           "issues": [
             {
               "number": 760,
               "title": "feat(search): multi-select result sources on the search page — title, transcript, summary, speaker",
-              "done": false
+              "done": true
+            }
+          ]
+        },
+        {
+          "key": "compliance",
+          "name": "Security & Compliance",
+          "scope": "Hardening, data protection, certification",
+          "known": true,
+          "total": 1,
+          "closed": 1,
+          "issues": [
+            {
+              "number": 1122,
+              "title": "security(tenancy): decide whether the platform-admin bypass should be organization-scoped in multi-tenant deployments",
+              "done": true
             }
           ]
         },
@@ -2029,13 +2259,18 @@
           "name": "Speaker Intelligence",
           "scope": "Voiceprints, personas, cross-file identity",
           "known": true,
-          "total": 1,
-          "closed": 0,
+          "total": 2,
+          "closed": 2,
           "issues": [
             {
               "number": 756,
               "title": "feat(speakers): speaker management surface pass — banner, gender labels, \"Review\" rename",
-              "done": false
+              "done": true
+            },
+            {
+              "number": 1233,
+              "title": "fix(speakers): follow-ups to the shared speaker cleanup (#1214): promoted-cluster unassign, drift paths, reindex residuals, teardown",
+              "done": true
             }
           ]
         },
@@ -2044,8 +2279,8 @@
           "name": "Test Suite Health",
           "scope": "Coverage, gates, and verification matrices",
           "known": true,
-          "total": 3,
-          "closed": 2,
+          "total": 9,
+          "closed": 9,
           "issues": [
             {
               "number": 789,
@@ -2060,7 +2295,37 @@
             {
               "number": 829,
               "title": "test(eval): AMI-81 has no corpus-scale scope, so ranking-vs-mapping divergence is untested",
-              "done": false
+              "done": true
+            },
+            {
+              "number": 965,
+              "title": "fix(testing): E2E silently tests the live stack — pytest.ini's base_url beats E2E_FRONTEND_URL and run-e2e.sh hardcodes 5173/5174",
+              "done": true
+            },
+            {
+              "number": 972,
+              "title": "fix(a11y): the axe suite scans light theme only, so a dark-only contrast failure ships green",
+              "done": true
+            },
+            {
+              "number": 973,
+              "title": "Visual-baseline capture seeds an empty corpus in a worktree and its processing gate passes with zero completed files",
+              "done": true
+            },
+            {
+              "number": 976,
+              "title": "bug(testing): quote_fidelity harness false-negatives on AMI/QMSum's space-before-punctuation tokenization",
+              "done": true
+            },
+            {
+              "number": 1221,
+              "title": "chore(release): v0.6.0 final verification on the combined branch (backend gate, a11y, e2e, visual, stack restart, cleanup)",
+              "done": true
+            },
+            {
+              "number": 1222,
+              "title": "chore(testing): remaining leaks and gaps from the #1195 test-hygiene pass",
+              "done": true
             }
           ]
         }
@@ -2073,21 +2338,96 @@
       "stage": "next",
       "released": false,
       "scheduled": true,
-      "total": 14,
-      "closed": 3,
+      "total": 31,
+      "closed": 8,
       "areas": [
         {
-          "key": "frontend-ui",
-          "name": "Frontend & UI",
-          "scope": "App surfaces, admin screens, and interface defects",
+          "key": "asr-engines",
+          "name": "ASR Engines",
+          "scope": "Alternative and native transcription engines",
+          "known": true,
+          "total": 2,
+          "closed": 1,
+          "issues": [
+            {
+              "number": 1206,
+              "title": "task(config): transcription config has duplicated defaults and env vars that are always shadowed on the task path",
+              "done": false
+            },
+            {
+              "number": 1207,
+              "title": "fix(asr): disabling user ASR providers also removes local-model pinning, and UserASRSettings.is_active is ignored",
+              "done": true
+            }
+          ]
+        },
+        {
+          "key": "data-safety",
+          "name": "Data Safety",
+          "scope": "Recoverable delete, per-user hide, ownership transfer, delayed erase",
+          "known": true,
+          "total": 5,
+          "closed": 0,
+          "issues": [
+            {
+              "number": 1091,
+              "title": "feat(data-safety): per-user hide, recoverable org trash, and ownership transfer instead of destructive delete",
+              "done": false
+            },
+            {
+              "number": 1101,
+              "title": "feat(data-safety): soft-delete organization trash with restore and scheduled purge",
+              "done": false
+            },
+            {
+              "number": 1102,
+              "title": "feat(data-safety): per-user hide (remove from my view) for media files",
+              "done": false
+            },
+            {
+              "number": 1104,
+              "title": "feat(data-safety): transfer organization content to an admin on member removal",
+              "done": false
+            },
+            {
+              "number": 1105,
+              "title": "feat(data-safety): owner-only delayed org/member erase with cancellation and audit log",
+              "done": false
+            }
+          ]
+        },
+        {
+          "key": "document-ingestion",
+          "name": "Document Ingestion",
+          "scope": "Documents as first-class library items",
           "known": true,
           "total": 1,
           "closed": 0,
           "issues": [
             {
+              "number": 1150,
+              "title": "feat(watch-sources): Google Drive, Dropbox, OneDrive/SharePoint and Box sources, plus event-driven triggers",
+              "done": false
+            }
+          ]
+        },
+        {
+          "key": "frontend-ui",
+          "name": "Frontend & UI",
+          "scope": "App surfaces, admin screens, and interface defects",
+          "known": true,
+          "total": 2,
+          "closed": 1,
+          "issues": [
+            {
               "number": 794,
               "title": "feat(frontend): no performance budget — a bundle-size regression cannot be caught",
               "done": false
+            },
+            {
+              "number": 1210,
+              "title": "fix(a11y): ChatSettingsPanel tabs have no keyboard support or tabpanel; Watch Sources has no initialTab deep link",
+              "done": true
             }
           ]
         },
@@ -2111,8 +2451,8 @@
           "name": "Platform & Operations",
           "scope": "Build, deploy, workers, GPU tuning, governance",
           "known": true,
-          "total": 8,
-          "closed": 1,
+          "total": 14,
+          "closed": 3,
           "issues": [
             {
               "number": 468,
@@ -2137,12 +2477,7 @@
             {
               "number": 866,
               "title": "fix(auth): reconcile the auth_type migration allowlist with the pluggable provider registry",
-              "done": false
-            },
-            {
-              "number": 868,
-              "title": "fix(core): capability resolver merge fails open on a partial/incomplete resolver result",
-              "done": false
+              "done": true
             },
             {
               "number": 869,
@@ -2152,6 +2487,41 @@
             {
               "number": 894,
               "title": "fix(core): elect a leader for backend startup maintenance so replicas are safe (docs half DONE)",
+              "done": true
+            },
+            {
+              "number": 920,
+              "title": "perf(backend): add caching where it is provably safe, and write down where it is not",
+              "done": false
+            },
+            {
+              "number": 931,
+              "title": "task(storage): re-evaluate the S3-compatible object store — MinIO has ended community distribution",
+              "done": false
+            },
+            {
+              "number": 1019,
+              "title": "Add anonymous opt-in usage telemetry (installs/versions/features), non-invasive, PII-free",
+              "done": false
+            },
+            {
+              "number": 1159,
+              "title": "Worker-loss recovery for remaining early-ack user tasks (downloads, index updates, speaker edits)",
+              "done": false
+            },
+            {
+              "number": 1174,
+              "title": "test(scale): multi-user load framework, seeded large-dataset builder and a scaling & sizing guide",
+              "done": false
+            },
+            {
+              "number": 1264,
+              "title": "task(install): follow-ups from the small-business LAN install work (#1239)",
+              "done": false
+            },
+            {
+              "number": 1265,
+              "title": "task(admin): follow-ups from the email-not-configured work (#1240)",
               "done": false
             }
           ]
@@ -2182,6 +2552,21 @@
           ]
         },
         {
+          "key": "rag-quality",
+          "name": "RAG & Chat Quality",
+          "scope": "Retrieval, grounding, citations, summary search",
+          "known": true,
+          "total": 1,
+          "closed": 1,
+          "issues": [
+            {
+              "number": 991,
+              "title": "sections_budget divides characters by files, not sections — contradicts its own docstring at corpus scale",
+              "done": true
+            }
+          ]
+        },
+        {
           "key": "compliance",
           "name": "Security & Compliance",
           "scope": "Hardening, data protection, certification",
@@ -2195,6 +2580,21 @@
               "done": true
             }
           ]
+        },
+        {
+          "key": "test-suite-health",
+          "name": "Test Suite Health",
+          "scope": "Coverage, gates, and verification matrices",
+          "known": true,
+          "total": 1,
+          "closed": 0,
+          "issues": [
+            {
+              "number": 1099,
+              "title": "ci: backend pytest (~18 min) and pre-commit (~13 min) dominate PR turnaround",
+              "done": false
+            }
+          ]
         }
       ]
     },
@@ -2205,7 +2605,7 @@
       "stage": "later",
       "released": false,
       "scheduled": true,
-      "total": 16,
+      "total": 21,
       "closed": 1,
       "areas": [
         {
@@ -2258,7 +2658,7 @@
           "name": "Native Diarizer",
           "scope": "Rust/ONNX diarization; retiring PyTorch/PyAnnote",
           "known": true,
-          "total": 3,
+          "total": 4,
           "closed": 0,
           "issues": [
             {
@@ -2275,6 +2675,11 @@
               "number": 659,
               "title": "feat(search): a real rollback path for the v3→v4 speaker-index alias swap",
               "done": false
+            },
+            {
+              "number": 1231,
+              "title": "feat(lite): Rust voiceprint extractor for cloud-only lite installs (replaces the CPU embedding task)",
+              "done": false
             }
           ]
         },
@@ -2283,7 +2688,7 @@
           "name": "Platform & Operations",
           "scope": "Build, deploy, workers, GPU tuning, governance",
           "known": true,
-          "total": 2,
+          "total": 4,
           "closed": 0,
           "issues": [
             {
@@ -2295,6 +2700,16 @@
               "number": 369,
               "title": "perf(gpu): calibrate transcriber eviction + concurrency from measurement, not magic numbers (limited-VRAM cards)",
               "done": false
+            },
+            {
+              "number": 1073,
+              "title": "perf(gpu): size GPU concurrency by host RAM too, and stop decoding whole files into memory per task",
+              "done": false
+            },
+            {
+              "number": 1171,
+              "title": "perf: per-stage timing, part 2 — persisted stage records, waterfall view, realtime factor, benchmark CLI",
+              "done": false
             }
           ]
         },
@@ -2303,13 +2718,23 @@
           "name": "Search Infrastructure",
           "scope": "Indexing, reindex correctness, index drift",
           "known": true,
-          "total": 1,
+          "total": 3,
           "closed": 1,
           "issues": [
             {
               "number": 845,
               "title": "feat(search): embedding-model fingerprint on speaker index docs — DUPLICATE of #659 §5, land it there",
               "done": true
+            },
+            {
+              "number": 978,
+              "title": "feat(search): app-side text embeddings decoupled from OpenSearch ML Commons, then a multi-model serving layer with per-user/org model selection",
+              "done": false
+            },
+            {
+              "number": 1076,
+              "title": "epic(search): web-search-grade results — fast, comprehensive, smart queries on top of OpenSearch",
+              "done": false
             }
           ]
         },
@@ -2347,7 +2772,7 @@
       "stage": "later",
       "released": false,
       "scheduled": true,
-      "total": 5,
+      "total": 6,
       "closed": 0,
       "areas": [
         {
@@ -2355,7 +2780,7 @@
           "name": "Security & Compliance",
           "scope": "Hardening, data protection, certification",
           "known": true,
-          "total": 5,
+          "total": 6,
           "closed": 0,
           "issues": [
             {
@@ -2381,6 +2806,11 @@
             {
               "number": 796,
               "title": "feat(gdpr): add an account-level Article 15/20 data export",
+              "done": false
+            },
+            {
+              "number": 1132,
+              "title": "feat(privacy): consent, per-profile retention, deletion and export for voiceprints and personal data",
               "done": false
             }
           ]
@@ -2476,7 +2906,7 @@
       "stage": "later",
       "released": false,
       "scheduled": true,
-      "total": 4,
+      "total": 5,
       "closed": 0,
       "areas": [
         {
@@ -2484,7 +2914,7 @@
           "name": "Document Ingestion",
           "scope": "Documents as first-class library items",
           "known": true,
-          "total": 4,
+          "total": 5,
           "closed": 0,
           "issues": [
             {
@@ -2505,6 +2935,11 @@
             {
               "number": 552,
               "title": "task(documents): re-land doc ingestion — 13 conflicting files, NO migration renumbering needed, cost grows daily",
+              "done": false
+            },
+            {
+              "number": 1252,
+              "title": "feat(search): speaker-pivoted fused search and citation-jump across recordings and documents",
               "done": false
             }
           ]
@@ -2642,7 +3077,7 @@
       "stage": "later",
       "released": false,
       "scheduled": true,
-      "total": 5,
+      "total": 7,
       "closed": 0,
       "areas": [
         {
@@ -2689,6 +3124,36 @@
               "done": false
             }
           ]
+        },
+        {
+          "key": "frontend-ui",
+          "name": "Frontend & UI",
+          "scope": "App surfaces, admin screens, and interface defects",
+          "known": true,
+          "total": 1,
+          "closed": 0,
+          "issues": [
+            {
+              "number": 1055,
+              "title": "Video playback: transcode undecodable video (AVI/WMV/MPEG/FLV/…) to H.264/AAC — costs, NVENC, plan",
+              "done": false
+            }
+          ]
+        },
+        {
+          "key": "meeting-capture",
+          "name": "Meeting Capture",
+          "scope": "Meeting ingestion, calendar, pre-meeting briefs",
+          "known": true,
+          "total": 1,
+          "closed": 0,
+          "issues": [
+            {
+              "number": 1136,
+              "title": "feat(recording): capture meeting audio — microphone + system/tab audio in the browser recorder",
+              "done": false
+            }
+          ]
         }
       ]
     },
@@ -2696,8 +3161,8 @@
       "version": "v0.5.1",
       "headline": "",
       "summary": "",
-      "stage": "complete",
-      "released": false,
+      "stage": "shipped",
+      "released": true,
       "scheduled": false,
       "total": 4,
       "closed": 4,
@@ -2738,6 +3203,83 @@
             {
               "number": 940,
               "title": "v0.5.1 dependency maintenance: triage the 7 Dependabot PRs and close the 2 critical alerts",
+              "done": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "version": "v0.5.2",
+      "headline": "",
+      "summary": "",
+      "stage": "complete",
+      "released": false,
+      "scheduled": false,
+      "total": 7,
+      "closed": 7,
+      "areas": [
+        {
+          "key": "asr-engines",
+          "name": "ASR Engines",
+          "scope": "Alternative and native transcription engines",
+          "known": true,
+          "total": 1,
+          "closed": 1,
+          "issues": [
+            {
+              "number": 1153,
+              "title": "precision-2: pyannoteAI asks to migrate by October 17, 2026",
+              "done": true
+            }
+          ]
+        },
+        {
+          "key": "platform-ops",
+          "name": "Platform & Operations",
+          "scope": "Build, deploy, workers, GPU tuning, governance",
+          "known": true,
+          "total": 5,
+          "closed": 5,
+          "issues": [
+            {
+              "number": 868,
+              "title": "fix(core): capability resolver merge fails open on a partial/incomplete resolver result",
+              "done": true
+            },
+            {
+              "number": 1151,
+              "title": "feat(asr): setting to disable the shared-volume WAV handoff for multi-node deployments",
+              "done": true
+            },
+            {
+              "number": 1152,
+              "title": "GET /api/files/{uuid} returns 500 on a Postgres deadlock: the file-detail read writes speaker rows (add_computed_status + commit)",
+              "done": true
+            },
+            {
+              "number": 1169,
+              "title": "Upload-size validation runs the tenant-limit resolver synchronously on the event loop",
+              "done": true
+            },
+            {
+              "number": 1172,
+              "title": "perf(metrics): measure Celery queue wait — per-task histogram at task start + oldest-waiting-message age per queue",
+              "done": true
+            }
+          ]
+        },
+        {
+          "key": "rag-quality",
+          "name": "RAG & Chat Quality",
+          "scope": "Retrieval, grounding, citations, summary search",
+          "known": true,
+          "total": 1,
+          "closed": 1,
+          "issues": [
+            {
+              "number": 975,
+              "title": "bug(rag-chat): corpus-scale retrieval collapses to 2 files regardless of scope, independent of #532's synthesis gap",
               "done": true
             }
           ]

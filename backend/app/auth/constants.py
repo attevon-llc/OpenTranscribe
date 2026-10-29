@@ -1,9 +1,39 @@
 """Auth-layer constants: the cloud-seam version and local-password-fallback policy."""
 
 from app.core.auth_types import AUTH_TYPE_LDAP
+from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.core.auth_types import AUTH_TYPE_OIDC
 from app.core.auth_types import AUTH_TYPE_PKI
+from app.core.auth_types import AUTH_TYPE_PROXY
 from app.core.auth_types import AUTH_TYPE_SAML
+from app.core.auth_types import DB_ADMITTED_AUTH_TYPES
+from app.core.auth_types import TOKEN_TYPE_ACCESS
+from app.core.auth_types import TOKEN_TYPE_MFA
+from app.core.auth_types import TOKEN_TYPE_REFRESH
+from app.core.auth_types import VALID_AUTH_TYPES
+from app.core.auth_types import auth_type_check_sql
+
+# These names live in ``app.core.auth_types`` (the models layer needs them and may not import
+# ``app.auth``). They are re-exported here deliberately: ``app.auth.constants`` is part of the
+# cloud-extension seam, and the private cloud repo imports them from this path.
+__all__ = [
+    "AUTH_TYPE_LDAP",
+    "AUTH_TYPE_LOCAL",
+    "AUTH_TYPE_OIDC",
+    "AUTH_TYPE_PKI",
+    "AUTH_TYPE_PROXY",
+    "AUTH_TYPE_SAML",
+    "AUTH_TYPES_NO_LOCAL_FALLBACK",
+    "AUTH_TYPES_SUPPORT_LOCAL_FALLBACK",
+    "CLOUD_SEAM_VERSION",
+    "DB_ADMITTED_AUTH_TYPES",
+    "EXTERNAL_AUTH_NO_PASSWORD",
+    "TOKEN_TYPE_ACCESS",
+    "TOKEN_TYPE_MFA",
+    "TOKEN_TYPE_REFRESH",
+    "VALID_AUTH_TYPES",
+    "auth_type_check_sql",
+]
 
 # Version of the cloud-extension seam surface (verifier registry, pipeline
 # hooks, capability resolver, ExternalIdentity shape). Bump on ANY signature

@@ -27272,7 +27272,7 @@
     },
     "/api/admin/scim-tokens/{token_uuid}": {
       "delete": {
-        "description": "Revoke a token. Idempotent, and never reversible.\n\nRaises:\n    HTTPException: 400 when *token_uuid* is not a UUID, 404 when it names no\n        token. The malformed case used to reach a Postgres UUID comparison and\n        die as an unhandled ``DataError`` — a 500 whose aborted transaction also\n        poisoned the rest of the request's session. The message matches\n        ``utils/uuid_helpers.get_by_uuid`` so every admin UUID path answers the\n        same way.",
+        "description": "Revoke a token. Idempotent, and never reversible.\n\nRaises:\n    HTTPException: 400 when *token_uuid* is not a UUID, 404 when it names no\n        token. The malformed case used to reach a Postgres UUID comparison and\n        die as an unhandled ``DataError`` — a 500 whose aborted transaction also\n        poisoned the rest of the request's session. The message matches\n        ``services/uuid_helpers.get_by_uuid`` so every admin UUID path answers the\n        same way.",
         "operationId": "revoke_scim_token_api_admin_scim_tokens__token_uuid__delete",
         "parameters": [
           {

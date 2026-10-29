@@ -94,7 +94,7 @@ def update_file(
     ...
 ```
 
-`uuid_helpers.py` also provides `get_by_uuid`, `get_<entity>_by_uuid` for the common models, `get_collection_by_uuid_with_permission`, `require_speaker_access` and `require_profile_in_scope`. Privilege gates (`get_current_admin_user`, `get_current_active_superuser`) are FastAPI dependencies in `api/endpoints/auth/dependencies.py`.
+`uuid_helpers.py` (in `app/services/`) also provides `get_by_uuid`, `get_<entity>_by_uuid` for the common models, `get_collection_by_uuid_with_permission`, `require_speaker_access` and `require_profile_in_scope`; it raises `DomainError` subclasses, not `HTTPException`. `get_user_files_query_for_context` lives in `services/request_context.py`. Privilege gates (`get_current_admin_user`, `get_current_active_superuser`) are FastAPI dependencies in `api/endpoints/auth/dependencies.py`.
 
 ## 🗄️ Database Helpers (`db_helpers.py`)
 
@@ -102,9 +102,6 @@ def update_file(
 ```python
 def get_user_files_query(db: Session, user_id: int, *, organization_id=UNSCOPED) -> Query:
     """Standard query for a user's (or organization's) files."""
-
-def get_user_files_query_for_context(db: Session, ctx: RequestContext) -> Query:
-    """The same, scoped by the request's tenant context."""
 
 def apply_tenant_scope(...):
     """SQL-plane default-deny tenant filter; mirrors api/deps_context.scope_to_context."""
@@ -171,7 +168,7 @@ def long_running_task(self, file_uuid: str):
 `session_scope()` (in `app/db/session_utils.py`) is the transactional scope for background work; API endpoints use `Depends(get_db)`. Never hold a session across slow non-database work: read, release, work, then write in a short second session.
 
 ### Validation
-Validate input and raise `ErrorHandler.validation_error(...)` (or the typed exceptions in `core/exceptions.py` from services). Upload validation helpers are in `file_validation.py`; user-supplied URLs go through `url_validation.py` (SSRF protection).
+In endpoints, validate input and raise `ErrorHandler.validation_error(...)` (`app/api/error_handlers.py`); below `app/api` raise a `DomainError` subclass from `core/exceptions.py`. Upload validation helpers are in `file_validation.py`; user-supplied URLs go through `url_validation.py` (SSRF protection).
 
 ## 🧪 Testing Utilities
 

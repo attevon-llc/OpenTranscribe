@@ -98,7 +98,7 @@ so keep heavy imports lazy.
 
 ## Conventions / patterns
 
-- No `app.api` imports from here (`db_helpers` types `RequestContext` under `TYPE_CHECKING`).
+- No `app.api` imports from here.
   Import-linter also forbids `cloud` and managed-edition vendor imports — see
   `backend/app/core/CLAUDE.md`.
 - Optional heavy deps (pyannote.metrics, meeteval, torch) are imported **inside** the function

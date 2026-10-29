@@ -15,6 +15,7 @@ from fastapi import Depends
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from app.core.exceptions import ConflictError
 from app.core.exceptions import DomainError
@@ -22,6 +23,7 @@ from app.core.exceptions import InvalidInputError
 from app.core.exceptions import ResourceNotFoundError
 from app.core.exceptions import UnprocessableInputError
 from app.main import handle_domain_error
+from app.models.user import User
 
 pytestmark = pytest.mark.xdist_group("l2_ge_policy_errors")
 
@@ -32,14 +34,15 @@ def _app_with(
     route_fn: Any, path: str = "/probe", dependencies: list[Any] | None = None
 ) -> TestClient:
     probe = FastAPI()
-    probe.add_exception_handler(DomainError, handle_domain_error)  # type: ignore[arg-type]
+    probe.exception_handler(DomainError)(handle_domain_error)
     probe.add_api_route(path, route_fn, methods=["GET"], dependencies=dependencies)
     return TestClient(probe, raise_server_exceptions=False)
 
 
 def _pin(exc: BaseException, status: int, detail: Any) -> None:
-    assert exc.status_code == status  # type: ignore[attr-defined]
-    assert exc.detail == detail  # type: ignore[attr-defined]
+    assert isinstance(exc, REFUSAL)
+    assert exc.status_code == status
+    assert exc.detail == detail
     assert getattr(exc, "headers", None) is None
     assert str(exc) == f"{status}: {detail}"
 
@@ -51,13 +54,13 @@ def test_enforce_password_policy_refusal_is_400_with_joined_errors():
     from app.auth.password_policy import validate_password
     from app.services.account_security_service import enforce_password_policy
 
-    user = SimpleNamespace(email="alice@example.com", full_name="Alice Smith")
+    user = User(email="alice@example.com", full_name="Alice Smith")
     expected = "; ".join(
         validate_password("a", email="alice@example.com", full_name="Alice Smith").errors
     )
     assert expected  # the weak password is genuinely refused
     with pytest.raises(REFUSAL) as exc:
-        enforce_password_policy("a", user)  # type: ignore[arg-type]
+        enforce_password_policy("a", user)
     _pin(exc.value, 400, expected)
 
 
@@ -65,7 +68,7 @@ def test_password_endpoint_body_is_400_detail():
     from app.services.account_security_service import enforce_password_policy
 
     def route() -> dict:
-        enforce_password_policy("a", SimpleNamespace(email="a@example.com", full_name="A"))  # type: ignore[arg-type]
+        enforce_password_policy("a", User(email="a@example.com", full_name="A"))
         return {}
 
     res = _app_with(route).get("/probe")
@@ -78,10 +81,10 @@ def test_assert_password_auth_possible_refuses_ldap_with_reason():
     from app.auth.utils import local_password_allowed
     from app.services.account_security_service import assert_password_auth_possible
 
-    user = SimpleNamespace(auth_type="ldap", allow_local_fallback=False)
+    user = User(auth_type="ldap", allow_local_fallback=False)
     _, reason = local_password_allowed("ldap", False)
     with pytest.raises(REFUSAL) as exc:
-        assert_password_auth_possible(user)  # type: ignore[arg-type]
+        assert_password_auth_possible(user)
     _pin(exc.value, 400, f"Cannot set a password for this account: {reason}")
 
 
@@ -216,7 +219,7 @@ def test_require_capability_dependency_404_body_headers_and_str():
 
     dep = require_capability("billing")  # off in community
     with pytest.raises(REFUSAL) as exc:
-        dep(SimpleNamespace(state=SimpleNamespace()))  # type: ignore[arg-type]
+        dep(Request({"type": "http", "headers": []}))
     _pin(exc.value, 404, "Not Found")
 
     def route() -> dict:

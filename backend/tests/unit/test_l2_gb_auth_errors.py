@@ -372,6 +372,67 @@ def test_ldap_link_refusal_over_the_endpoint_is_the_uniform_401_and_records_the_
     assert all(success is False for _identifier, success in attempts)
 
 
+def test_ldap_email_match_without_a_local_row_is_the_uniform_401_and_one_failed_attempt(
+    client, db_session, monkeypatch
+):
+    """The takeover case: the directory user has no local row but asserts a victim's email.
+
+    With no local account, ``authenticators`` has no local fallback to turn the refusal
+    into a fresh 401, so the link refusal itself must reach ``login._perform_authentication``
+    and be treated as a failed attempt rather than escaping unrecorded.
+    """
+    victim = _local_user(db_session, hashed_password="!")
+    ghost = f"ghost_{uuid_pkg.uuid4().hex[:8]}"
+    monkeypatch.setenv("TESTING", "false")
+    # _authenticate_ldap_user imports get_auth_settings inside the function, so the
+    # module-level name in ``authenticators`` is not the one it calls. Patching only
+    # that name leaves LDAP "disabled" and the test would take the plain HTTPException
+    # 401 instead of the link-refusal DomainError this case exists to pin.
+    from app.core import auth_settings as auth_settings_module
+
+    real = auth_settings_module.get_auth_settings
+
+    class _LdapOn:
+        def __init__(self, inner):
+            self._inner = inner
+            self.ldap_enabled = True
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    monkeypatch.setattr(auth_settings_module, "get_auth_settings", lambda db: _LdapOn(real(db)))
+    monkeypatch.setattr(
+        authenticators,
+        "ldap_authenticate",
+        lambda username, password, db=None: {
+            "username": ghost,
+            "email": victim.email,
+            "full_name": "Attacker",
+            "is_admin": False,
+            "groups": [],
+        },
+    )
+    attempts: list[tuple[str, bool]] = []
+
+    def _record(identifier, success, exempt_from_lockout=False):
+        attempts.append((identifier, success))
+        return False, None
+
+    monkeypatch.setattr(login_module, "check_and_record_attempt", _record)
+
+    response = client.post(
+        "/api/auth/token",
+        data={"username": ghost, "password": "whatever"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Incorrect username or password"}
+    assert response.headers["www-authenticate"] == "Bearer"
+    assert len(attempts) == 1
+    assert attempts[0][1] is False
+
+
 # -- verify_token (#9, #10) ----------------------------------------------------
 
 

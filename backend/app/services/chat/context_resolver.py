@@ -26,7 +26,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -109,7 +108,7 @@ def _resolve_explicit_files(db: Session, ctx: RequestContext, file_uuids: list[s
                 ctx.user.id,
                 organization_id=ctx.org_id,
             )
-        except (HTTPException, DomainError):
+        except DomainError:
             logger.info("Chat scope: skipping inaccessible file %s", file_uuid)
             continue
         if media_file.status != "completed":
@@ -289,7 +288,7 @@ def count_scope_files(db: Session, ctx: RequestContext, scope: ChatScope) -> int
     # it is most useful.
     try:
         resolved = resolve_scope_file_uuids(db, ctx, scope)
-    except (HTTPException, DomainError) as exc:
+    except DomainError as exc:
         if exc.status_code != 400:
             raise
         return C.CHAT_MAX_SCOPE_FILES + 1

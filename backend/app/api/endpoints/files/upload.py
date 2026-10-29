@@ -368,12 +368,12 @@ def dispatch_upload_pipeline_or_mark_error(
 def _mark_upload_dispatch_failed(db: Session, file_id: int, user_id: int, exc: Exception) -> None:
     """Persist ERROR + ``last_error_message`` on a stored-but-undispatchable upload.
 
-    Best-effort, never raises: the caller re-raises the real failure regardless of
-    whether this bookkeeping succeeds.
+    Best-effort, never raises: the caller re-raises the real failure either way.
     """
     from app.utils.task_utils import update_media_file_status
 
-    message = getattr(exc, "message", None) or str(exc) or exc.__class__.__name__
+    text = str(exc) if isinstance(exc, DomainError) else getattr(exc, "message", None)
+    message = text or str(exc) or exc.__class__.__name__
     try:
         media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
         if media_file is None:

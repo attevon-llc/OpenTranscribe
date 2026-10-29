@@ -36,4 +36,20 @@ WHITELIST = (
     # against the real singleton.
     _.current_budget,
     _.current_gate,
+    # Used only inside a quoted cast("CursorResult[Any]", ...) annotation on the same module,
+    # which vulture does not read as a use; ruff would flag removing the import.
+    _.CursorResult,
+    # Re-export kept for the PKI suite, which imports this name from app.auth.pki_auth
+    # (test_pki_auth.py and test_proxy_header_auth.py assert it is header_trust.ip_in_networks).
+    _._is_pki_trusted_proxy,
+    # http.server.BaseHTTPRequestHandler dispatches do_GET, do_POST and log_message by name
+    # (the mock LLM and mock ASR servers); nothing calls them directly.
+    _.do_GET,
+    _.do_POST,
+    _.log_message,
+    # torch.nn.Module.__call__ dispatches forward by name (the ONNX export spike module).
+    _.forward,
+    # PEP 562 module-level __getattr__: the interpreter calls it on a missing attribute of
+    # app.services.opensearch_service, never a visible call site.
+    _.__getattr__,
 )

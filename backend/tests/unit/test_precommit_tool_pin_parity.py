@@ -76,6 +76,12 @@ def test_ruff_ratchet_hook_uses_the_exact_dev_pin() -> None:
     assert _hook_dependencies(config, "guard-ruff-ratchet") == [f"ruff=={_dev_pin(req, 'ruff')}"]
 
 
+def test_vulture_hook_uses_the_exact_dev_pin() -> None:
+    # check_vulture.py refuses any other vulture version; its hook env must carry the dev pin.
+    config, req = _load()
+    assert _hook_dependencies(config, "guard-vulture") == [f"vulture=={_dev_pin(req, 'vulture')}"]
+
+
 def test_checkers_detect_a_mismatch() -> None:
     config = {
         "repos": [

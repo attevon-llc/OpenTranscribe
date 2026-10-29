@@ -349,6 +349,15 @@ repos:
         additional_dependencies: ['ruff==0.16.7']
         pass_filenames: false
         files: ^((backend/app|backend/alembic|scripts)/.*\.py|scripts/guards/.*)$
+      # Runs vulture itself and refuses any version but the one pinned in
+      # backend/requirements-dev.txt; language: python gives it its own env with that pin.
+      - id: guard-vulture
+        name: unused functions, methods, classes and imports ratchet (baselined)
+        entry: python scripts/guards/check_vulture.py
+        language: python
+        additional_dependencies: ['vulture==2.16']
+        pass_filenames: false
+        files: ^((backend/app|scripts)/.*\.py|scripts/guards/.*)$
       # eslint takes about a minute, so this is a push-stage cost like the frontend build;
       # CI runs both stages. `[ -d node_modules ] || npm ci` for the same reason as docs-build.
       - id: guard-eslint-ratchet

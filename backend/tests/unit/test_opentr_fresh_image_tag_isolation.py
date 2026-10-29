@@ -295,13 +295,50 @@ def test_non_fresh_dry_run_resets_a_stale_inherited_tag_from_a_prior_fresh_sessi
     )
 
 
+def _published_base_ports() -> list[int]:
+    """The base ports ``--fresh`` offsets, read from opentr.sh's own FRESH_PORT_VARS."""
+    text = OPENTR.read_text(encoding="utf-8")
+    block = text.split("FRESH_PORT_VARS=(", 1)[1].split("\n)", 1)[0]
+    ports = [int(m) for m in re.findall(r'"[A-Z_]+_PORT=(\d+)"', block)]
+    assert ports, "could not parse FRESH_PORT_VARS from opentr.sh"
+    return ports
+
+
+def _free_port_offset(start: int, avoid: tuple[int, ...] = ()) -> int:
+    """First offset >= ``start`` whose every mapped port is free on this host right now.
+
+    opentr.sh refuses a --fresh start when any ``base + offset`` is bound, so the test must
+    not hard-code an offset that another stack on the host may happen to occupy.
+    """
+    import socket
+
+    bases = _published_base_ports()
+    for offset in range(start, start + 6000, 37):
+        if any(abs(offset - a) < 100 for a in avoid):
+            continue
+        busy = False
+        for base in bases:
+            with socket.socket() as sock:
+                sock.settimeout(0.2)
+                if sock.connect_ex(("127.0.0.1", base + offset)) == 0:
+                    busy = True
+                    break
+        if not busy:
+            return offset
+    raise AssertionError("no free port offset found")
+
+
 def test_two_different_fresh_names_resolve_to_two_different_tags(tmp_path: Path):
     """Two independent fresh stacks must not collide with each other either."""
+    off_a = _free_port_offset(4200)
+    off_b = _free_port_offset(off_a + 100, avoid=(off_a,))
     stdout_a = _dry_run(
-        tmp_path / "a", ["start", "dev", "--fresh", "alpha", "--port-offset", "4200", "--dry-run"]
+        tmp_path / "a",
+        ["start", "dev", "--fresh", "alpha", "--port-offset", str(off_a), "--dry-run"],
     )
     stdout_b = _dry_run(
-        tmp_path / "b", ["start", "dev", "--fresh", "bravo", "--port-offset", "4300", "--dry-run"]
+        tmp_path / "b",
+        ["start", "dev", "--fresh", "bravo", "--port-offset", str(off_b), "--dry-run"],
     )
     tag_a = _dry_run_tag(stdout_a)
     tag_b = _dry_run_tag(stdout_b)

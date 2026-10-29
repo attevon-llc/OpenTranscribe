@@ -20,7 +20,13 @@ _STUB = """#!/usr/bin/env bash
 echo "$@" >> "$OT_DOCKER_LOG"
 if [[ "$1" == "ps" ]]; then
     printf '%b' "$OT_PS_OUTPUT"
+elif [[ "$1" == "exec" ]]; then
+    echo "fakepkg==1.0"
 fi
+"""
+
+_PIP_STUB = """#!/usr/bin/env bash
+echo "fakepkg==1.0"
 """
 
 
@@ -32,6 +38,15 @@ def _run(
     docker = bin_dir / "docker"
     docker.write_text(_STUB, encoding="utf-8")
     docker.chmod(docker.stat().st_mode | stat.S_IEXEC)
+    # Run a COPY of the script under tmp_path so its PROJECT_ROOT/backend/venv/bin/pip is a
+    # stub too: otherwise the outcome depends on whether the host happens to have a venv.
+    script = tmp_path / "scripts" / "check-dependency-parity.sh"
+    script.parent.mkdir()
+    script.write_text(SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
+    pip = tmp_path / "backend" / "venv" / "bin" / "pip"
+    pip.parent.mkdir(parents=True)
+    pip.write_text(_PIP_STUB, encoding="utf-8")
+    pip.chmod(pip.stat().st_mode | stat.S_IEXEC)
     log = tmp_path / "docker.log"
     env = {
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
@@ -41,7 +56,7 @@ def _run(
     if project is not None:
         env["COMPOSE_PROJECT_NAME"] = project
     proc = subprocess.run(  # nosec B603 - fixed argv
-        ["bash", str(SCRIPT)], capture_output=True, text=True, env=env, timeout=60, check=False
+        ["bash", str(script)], capture_output=True, text=True, env=env, timeout=60, check=False
     )
     return proc, log.read_text(encoding="utf-8") if log.exists() else ""
 
@@ -65,10 +80,13 @@ def test_two_dev_backends_with_no_project_set_is_an_error_not_a_guess(tmp_path):
 @pytest.mark.unit
 def test_a_fresh_stack_beside_the_dev_stack_is_not_ambiguous(tmp_path):
     """The default dev stack wins over an ``otfresh-*`` fresh stack when no project is set."""
-    proc, _ = _run(tmp_path, "otfresh-a-backend otfresh-a\nopentranscribe-backend dev\n", None)
+    proc, log = _run(tmp_path, "otfresh-a-backend otfresh-a\nopentranscribe-backend dev\n", None)
 
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "FAIL" not in proc.stderr
+    # Proves the stand-in was consulted and the DEV container (not the fresh one) was read.
+    assert "exec opentranscribe-backend python" in log
+    assert "otfresh-a-backend" not in log.split("exec", 1)[1]
 
 
 @pytest.mark.unit

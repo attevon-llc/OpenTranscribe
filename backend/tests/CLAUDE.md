@@ -707,7 +707,7 @@ cannot touch the dev database, its volumes, or the NAS data:
 ```
 
 The flag may appear anywhere; everything else is forwarded to pytest. It starts
-`ot-testdb-<worktree-slug>` (tmpfs data dir, loopback port from 55432 up, random password, both
+`ot-testdb-<random-hex>` (random per-run suffix, never derived from the directory; tmpfs data dir, loopback port from 55432 up, random password, both
 `com.docker.compose.project` and `org.opentranscribe.purpose=throwaway-test-db` labels), runs
 `alembic upgrade head`, runs the tests, and stops the container by its exact name on exit. It
 refuses to start if that name already exists. Inspect with

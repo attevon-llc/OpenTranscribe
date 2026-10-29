@@ -127,7 +127,7 @@ repos:
         # stream, not TypeScript — its .ts extension makes pre-commit misclassify it as a
         # prettier `ts` file regardless of .prettierignore, which only applies when prettier
         # resolves ignores itself, not to files pre-commit passes explicitly).
-        exclude: ^frontend/ffmpeg-wasm-build/(dist|src|test/(fixtures|node_modules))/
+        exclude: ^frontend/ffmpeg-wasm-build/(src|test/fixtures)/
         types_or: [javascript, jsx, ts, tsx, json, yaml, html, css, scss, markdown]
         args: [--write, --ignore-unknown]
 
@@ -234,9 +234,6 @@ repos:
       - id: bandit
         name: bandit (staged backend files)
         files: ^backend/
-        # Belt and braces: pre-commit only ever passes TRACKED files and backend/mutants
-        # is gitignored, but a stray `git add` of a mutant must not become a finding.
-        exclude: ^backend/mutants/
         args: [-c, pyproject.toml]
         additional_dependencies: ["bandit[toml]"]
         stages: [pre-commit]
@@ -265,7 +262,7 @@ repos:
   - repo: local
     hooks:
       - id: import-linter
-        name: import-linter (app must not import cloud)
+        name: import-linter (layer contracts and the cloud seam)
         # language: python so pre-commit provisions import-linter in its OWN
         # isolated env — the pre-commit CI job installs only `pre-commit` (no
         # backend venv, no project deps), so a hardcoded venv/bin path or a
@@ -277,7 +274,70 @@ repos:
         language: python
         additional_dependencies: ['import-linter==2.15']
         pass_filenames: false
-        files: ^backend/app/.*\.py$
+        # pyproject.toml too: the ignore lists live there, and a commit that only edits them
+        # would otherwise skip the hook and be seen first by CI.
+        files: ^backend/(app/.*\.py|pyproject\.toml)$
+
+  # Ratchet guards (scripts/guards/): each counts one class of problem, compares it with a
+  # committed baseline in scripts/guards/baselines/ and fails when a count grows, when a
+  # baseline entry is stale, or when a value fell and the baseline was not lowered
+  # (`--tighten`). A baseline only shrinks; never raise a value to make a guard pass.
+  # They read the whole tracked tree (git ls-files), so `pass_filenames: false`; `files:`
+  # only decides whether a commit can change the answer. Stdlib only unless noted, so they
+  # run on a bare CI runner. Each has a unit test under backend/tests/unit/test_guard_*.py.
+  - repo: local
+    hooks:
+      - id: guard-file-size
+        name: file size caps (700 code / 1000 svelte / 400 CLAUDE.md, baselined)
+        entry: python3 scripts/guards/check_file_size.py
+        language: system
+        pass_filenames: false
+        files: ^(backend/|scripts/|frontend/(src|scripts)/|docs-site/src/|[^/]+\.sh$)|(^|/)CLAUDE\.md$
+      - id: guard-process-ids
+        name: no wave, round or work-package ids in comments or test names
+        entry: python3 scripts/guards/check_process_ids.py
+        language: system
+        pass_filenames: false
+        files: ^(backend/|scripts/|frontend/src/|\.github/|docker-compose[^/]*\.yml$|\.pre-commit-config\.yaml$)
+      - id: guard-api-boundary
+        name: fastapi, HTTPException and ORM calls stay in the API layer (baselined)
+        entry: python3 scripts/guards/check_api_boundary.py
+        language: system
+        pass_filenames: false
+        files: ^(backend/app/.*\.py|scripts/guards/.*)$
+      - id: guard-raw-env
+        name: environment reads go through the settings module (baselined)
+        entry: python3 scripts/guards/check_raw_env.py
+        language: system
+        pass_filenames: false
+        files: ^(backend/app/.*\.py|scripts/guards/.*)$
+      - id: guard-suppressions
+        name: noqa, type-ignore, nosec, eslint-disable carry a code and a reason (baselined)
+        entry: python3 scripts/guards/check_suppressions.py
+        language: system
+        pass_filenames: false
+        files: ^((backend|scripts)/.*\.py|frontend/src/.*\.(ts|js|svelte)|scripts/guards/.*)$
+      # Runs ruff itself, so it needs ruff importable by the interpreter that runs it, and the
+      # guard refuses any version but the one pinned in backend/requirements-dev.txt.
+      # language: python gives it its own env with exactly that pin (the pre-commit CI job
+      # installs nothing else).
+      - id: guard-ruff-ratchet
+        name: complexity and broad-except ratchet (baselined, ignores noqa)
+        entry: python scripts/guards/check_ruff_ratchet.py
+        language: python
+        additional_dependencies: ['ruff==0.16.7']
+        pass_filenames: false
+        files: ^((backend/app|backend/alembic|scripts)/.*\.py|scripts/guards/.*)$
+      # eslint takes about a minute, so this is a push-stage cost like the frontend build;
+      # CI runs both stages. `[ -d node_modules ] || npm ci` for the same reason as docs-build.
+      - id: guard-eslint-ratchet
+        name: frontend lint warnings ratchet (baselined)
+        entry: bash -c '{ [ -d frontend/node_modules ] || (cd frontend && npm ci); } && python3 scripts/guards/check_eslint_ratchet.py'
+        language: system
+        pass_filenames: false
+        files: ^(frontend/(src/|eslint\.config\.js$|package\.json$)|scripts/guards/.*)
+        stages: [pre-push]
+        verbose: true
 
   # Version consistency — VERSION, pyproject.toml, frontend/package.json,
   # frontend/package-lock.json (BOTH version fields), the Alembic single-head

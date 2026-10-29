@@ -164,6 +164,7 @@ pytest-cov==7.1.0
 pytest-xdist==3.8.0
 pytest-timeout==2.4.0  # pyproject addopts passes --timeout; absence is a collection error
 pytest-base-url==2.1.0  # unit/test_e2e_base_url_precedence.py proves the REAL plugin/ini interaction (#965); without it the --base-url flag does not exist
+import-linter==2.15  # unit/test_import_contracts.py runs lint-imports and fails (not skips) under CI without it; mirrors requirements-dev.txt
 
 # Transitive packages pinned to EXACTLY what requirements.txt pins. This file did not pin them,
 # so `pip install -r requirements-ci.txt` resolved the newest release of each (starlette 1.10.0 against the

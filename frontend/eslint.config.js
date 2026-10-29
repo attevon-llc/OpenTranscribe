@@ -89,6 +89,19 @@ export default tseslint.config(
       'svelte/no-useless-mustaches': 'warn',
       'svelte/no-immutable-reactive-statements': 'warn',
       'svelte/no-reactive-reassign': 'warn',
+      // Repo convention is the $lib/$components/$stores aliases. Assets have no alias.
+      'no-restricted-imports': [
+        'warn',
+        {
+          patterns: [
+            {
+              group: ['../*', '!../assets', '!../assets/*'],
+              message:
+                'Use the $lib, $components or $stores alias instead of a relative ../ import.',
+            },
+          ],
+        },
+      ],
     },
   },
   {

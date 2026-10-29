@@ -194,6 +194,7 @@ off by default.
 
 ### Added
 
+- Ratchet guards for file size, complexity and broad exception handlers, process ids in comments, API-layer boundaries, raw environment reads, suppressions without a reason, frontend lint warnings and frontend dead code or import cycles. Each compares a count with a committed baseline in `scripts/guards/baselines/`, fails when it grows, and is checked by a test that plants a violation. New import-linter contracts keep lower layers from importing the API, task or service layers.
 - `./scripts/run-backend-tests.sh --throwaway-db` runs the backend suite against a disposable, labelled Postgres container (stopped on exit) instead of the live dev database; `scripts/check-venv-drift.py` names any host-venv package that differs from the pinned requirements; `scripts/smoke-container-free.sh` checks shell syntax, the app import, the route table, the OpenAPI and pipeline-docs drift checks and the compose dry-run without starting a container. A test now keeps the ruff and import-linter pre-commit pins equal to the requirements pins.
 - **Restricted organization collections (#1275).** An organization collection is shared by every
   member, which is wrong for a legal matter or an HR review. The creator or an organization admin

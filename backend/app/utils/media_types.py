@@ -54,3 +54,17 @@ def normalize_media_content_type(content_type: str | None) -> str | None:
         return content_type
     base = content_type.split(";", 1)[0].strip().lower()
     return _CANONICAL_BY_ALIAS.get(base, content_type)
+
+
+def file_extension(name: str | None) -> str:
+    """Return the lowercase extension of a file name or object key, with its dot, or ``""``.
+
+    Only the last path component counts, with ``/`` and ``\\`` both separators, so a dot in a
+    directory name (``dir.v2/song``) is never an extension. A leading-dot name (``.mp3``) has
+    the extension ``.mp3``; a trailing dot gives ``"."``. ``tasks/transcription/audio_processor``
+    keeps ``os.path.splitext`` on purpose: see ``get_audio_file_extension``.
+    """
+    if not name:
+        return ""
+    base = name.replace("\\", "/").rsplit("/", 1)[-1]
+    return ("." + base.rsplit(".", 1)[-1].lower()) if "." in base else ""

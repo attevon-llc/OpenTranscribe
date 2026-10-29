@@ -40,6 +40,8 @@ from app.schemas.media import OverallAnalytics
 from app.schemas.media import QuestionStats
 from app.schemas.media import SpeakerTimeStats
 from app.schemas.media import TurnTakingStats
+from app.utils.speaker_stats import segment_duration
+from app.utils.speaker_stats import tally_by_speaker
 
 logger = logging.getLogger(__name__)
 
@@ -126,14 +128,13 @@ class AnalyticsService:
             - Speaking pace is calculated as total words / total talk time
             - Silence ratio is (total_duration - talk_time) / total_duration
         """
-        # Initialize counters
-        speaker_times: dict[str, float] = {}
-        speaker_words: dict[str, int] = {}
-        speaker_turns: dict[str, int] = {}
+        # Talk time, words and per-speaker segment counts come from the tally shared with
+        # `compute_speaker_stats`, keyed here by the raw SPEAKER_## label.
+        tallies = tally_by_speaker(segments, AnalyticsService._get_analytics_speaker_key)
         speaker_interruptions: dict[str, int] = {}
         speaker_questions: dict[str, int] = {}
 
-        total_words = 0
+        total_words = sum(tally.word_count for tally in tallies.values())
         total_talk_time = 0.0
         total_interruptions = 0
         total_questions = 0
@@ -143,18 +144,6 @@ class AnalyticsService:
         for i, segment in enumerate(segments):
             # Get speaker key for analytics (always use SPEAKER_## format for consistency)
             segment_speaker = AnalyticsService._get_analytics_speaker_key(segment)
-
-            # Calculate segment duration and word count
-            segment_duration = float((segment.end_time or 0) - (segment.start_time or 0))
-            words = segment.text.split() if segment.text else []
-            word_count = len([word for word in words if word.strip()])
-
-            # Update speaker stats
-            speaker_times[segment_speaker] = (
-                speaker_times.get(segment_speaker, 0) + segment_duration
-            )
-            speaker_words[segment_speaker] = speaker_words.get(segment_speaker, 0) + word_count
-            speaker_turns[segment_speaker] = speaker_turns.get(segment_speaker, 0) + 1
 
             # Check for questions (simple heuristic)
             if segment.text and segment.text.strip().endswith("?"):
@@ -170,8 +159,7 @@ class AnalyticsService:
                     )
                     total_interruptions += 1
 
-            total_words += word_count
-            total_talk_time += segment_duration
+            total_talk_time += segment_duration(segment)
             previous_speaker = segment_speaker
 
         # Calculate speaking pace
@@ -187,11 +175,17 @@ class AnalyticsService:
         return OverallAnalytics(
             word_count=total_words,
             duration_seconds=total_duration,
-            talk_time=SpeakerTimeStats(by_speaker=speaker_times, total=total_talk_time),
+            talk_time=SpeakerTimeStats(
+                by_speaker={key: tally.total_time for key, tally in tallies.items()},
+                total=total_talk_time,
+            ),
             interruptions=InterruptionStats(
                 by_speaker=speaker_interruptions, total=total_interruptions
             ),
-            turn_taking=TurnTakingStats(by_speaker=speaker_turns, total_turns=len(segments)),
+            turn_taking=TurnTakingStats(
+                by_speaker={key: tally.segment_count for key, tally in tallies.items()},
+                total_turns=len(segments),
+            ),
             questions=QuestionStats(by_speaker=speaker_questions, total=total_questions),
             speaking_pace=speaking_pace,
             silence_ratio=silence_ratio,

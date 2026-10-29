@@ -9,6 +9,8 @@ malicious file uploads.
 import logging
 from typing import BinaryIO
 
+from app.utils.media_types import file_extension
+
 logger = logging.getLogger(__name__)
 
 # Bytes needed to identify every container below. MPEG transport streams are only
@@ -203,13 +205,6 @@ def get_magic_bytes(file_content: bytes | BinaryIO, size: int = HEADER_READ_SIZE
     return header
 
 
-def _extension(filename: str | None) -> str:
-    if not filename:
-        return ""
-    base = filename.replace("\\", "/").rsplit("/", 1)[-1]
-    return ("." + base.rsplit(".", 1)[-1].lower()) if "." in base else ""
-
-
 def validate_magic_bytes(
     header: bytes, declared_mime_type: str, filename: str | None = None
 ) -> tuple[bool, str]:
@@ -253,7 +248,7 @@ def validate_magic_bytes(
             f"File contents ({family}) do not match the declared type {declared_mime_type}.",
         )
 
-    ext_families = _EXTENSION_FAMILIES.get(_extension(filename))
+    ext_families = _EXTENSION_FAMILIES.get(file_extension(filename))
     if ext_families is not None and family not in ext_families:
         logger.warning(f"Extension mismatch: name={filename!r}, detected={family}")
         return False, f"File contents ({family}) do not match the file extension."

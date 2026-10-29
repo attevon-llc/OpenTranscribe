@@ -44,6 +44,7 @@ from app.core.config import settings
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
+from app.utils.media_types import file_extension
 from app.utils.media_types import normalize_media_content_type
 
 logger = logging.getLogger(__name__)
@@ -125,15 +126,6 @@ class ReingestSummary:
         }
 
 
-def _object_extension(object_name: str) -> str:
-    """Return the lowercase extension (with dot) of an object key, or ''."""
-    dot = object_name.rfind(".")
-    slash = object_name.rfind("/")
-    if dot <= slash:
-        return ""
-    return object_name[dot:].lower()
-
-
 def content_type_for(object_name: str) -> str:
     """Resolve a MIME type from the object key's extension.
 
@@ -141,7 +133,7 @@ def content_type_for(object_name: str) -> str:
     OpenTranscribe's own ingest paths with a correct extension, so the
     extension is authoritative here.
     """
-    ext = _object_extension(object_name)
+    ext = file_extension(object_name)
     if ext in _RECOVERY_CONTENT_TYPE_OVERRIDE_BY_EXT:
         return _RECOVERY_CONTENT_TYPE_OVERRIDE_BY_EXT[ext]
     guessed, _ = mimetypes.guess_type(object_name)
@@ -178,7 +170,7 @@ def iter_media_objects(minio_client: Any, user_id: int | None = None) -> Iterato
         name = obj.object_name
         if not name:
             continue
-        if _object_extension(name) not in MEDIA_EXTENSIONS:
+        if file_extension(name) not in MEDIA_EXTENSIONS:
             continue
         yield name, int(obj.size or 0)
 

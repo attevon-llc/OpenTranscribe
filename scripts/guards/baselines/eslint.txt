@@ -237,7 +237,7 @@ frontend/src/components/settings/RetrySettings.svelte::no-restricted-imports	2	l
 frontend/src/components/settings/SAMLSettings.svelte::svelte/no-immutable-reactive-statements	1	lint: burn-down planned
 frontend/src/components/settings/SCIMTokenSettings.svelte::no-restricted-imports	5	lint: burn-down planned
 frontend/src/components/settings/SearchSettings.svelte::@typescript-eslint/no-explicit-any	3	lint: burn-down planned
-frontend/src/components/settings/SearchSettings.svelte::no-restricted-imports	3	lint: burn-down planned
+frontend/src/components/settings/SearchSettings.svelte::no-restricted-imports	2	lint: burn-down planned
 frontend/src/components/settings/SearchSettings.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/settings/SecuritySettings.svelte::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/settings/SecuritySettings.svelte::svelte/require-each-key	1	lint: burn-down planned

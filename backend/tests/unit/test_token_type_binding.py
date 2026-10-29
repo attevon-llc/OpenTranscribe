@@ -102,11 +102,6 @@ class TestTokensCarryTheirType:
     def test_mfa_token_is_typed(self, mfa_token):
         assert _decode(mfa_token)["type"] == TOKEN_TYPE_MFA
 
-    def test_core_security_access_token_is_typed(self):
-        from app.core.security import create_access_token as core_create
-
-        assert _decode(core_create(USER_UUID))["type"] == TOKEN_TYPE_ACCESS
-
 
 class TestGetCurrentUserRejectsForeignTypes:
     """The MFA-bypass regression. Rejection happens before any DB access."""

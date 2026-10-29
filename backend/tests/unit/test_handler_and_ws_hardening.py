@@ -238,7 +238,7 @@ async def test_websocket_endpoint_survives_session_close(db_session, normal_user
     from sqlalchemy.orm import Session
 
     from app.api import websockets as ws_module
-    from app.core.security import create_access_token
+    from app.auth.direct_auth import create_access_token
 
     # session_scope() normally opens its own SessionLocal() connection, which can't see
     # normal_user (created on the test's savepoint-isolated db_session, never really
@@ -262,7 +262,7 @@ async def test_websocket_endpoint_survives_session_close(db_session, normal_user
     # subscribe attempt against an unreachable Redis would just add unrelated noise.
     monkeypatch.setattr(ws_module, "setup_redis", lambda: None)
 
-    token = create_access_token(normal_user.uuid)
+    token = create_access_token({"sub": str(normal_user.uuid), "role": normal_user.role})
 
     fake_ws = AsyncMock()
     fake_ws.cookies = {"access_token": token}

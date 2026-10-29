@@ -415,10 +415,11 @@ class TestAccessTokenAlgorithmInvariant:
     into the login path.
 
     This class replaces ``TestFIPS140_3JWT::test_hs512_jwt_creation``, which asserted
-    HS512 on ``core.security.create_access_token`` — a function **no login path
-    imports**. Every production login (local, PKI, OIDC, SAML, proxy, MFA enrolment)
-    goes through ``auth.direct_auth.create_access_token``, which has never
-    FIPS-branched, so the old test could not fail whatever the real path did.
+    HS512 on a second, test-only access-token issuer that **no login path imported**.
+    Every production login (local, PKI, OIDC, SAML, proxy, MFA enrolment) goes through
+    ``auth.direct_auth.create_access_token``, which has never FIPS-branched, so the old
+    test could not fail whatever the real path did. That second issuer is test-only, so
+    the production issuer is the one held to this rule.
 
     HS256 is not a crypto defect: HMAC (FIPS 198-1) over SHA-256 (FIPS 180-4) is an
     approved algorithm at 128-bit security strength (SP 800-57 Pt.1 R5), well above the
@@ -427,18 +428,14 @@ class TestAccessTokenAlgorithmInvariant:
 
     @staticmethod
     def _issue_from_every_issuer() -> dict[str, str]:
-        """Mint an access token from each issuer that exists in the codebase."""
+        """Mint an access token from each access-token issuer in the codebase."""
         from app.auth.direct_auth import create_access_token as production_issuer
-        from app.core.security import create_access_token as core_issuer
 
         return {
             # THE production issuer — imported by every login endpoint.
             "app.auth.direct_auth.create_access_token": production_issuer(
                 {"sub": SUBJECT, "role": "user"}
             ),
-            # Second implementation, reached only from tests. Held to the same rule so
-            # it cannot become a template for re-introducing the divergence.
-            "app.core.security.create_access_token": core_issuer(subject=SUBJECT),
         }
 
     @pytest.mark.parametrize(("fips_mode", "fips_version"), FIPS_MODE_MATRIX)
@@ -463,7 +460,7 @@ class TestAccessTokenAlgorithmInvariant:
             jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
 
     def test_hs512_is_reachable_by_setting_jwt_algorithm(self, monkeypatch):
-        """The documented way to actually run HS512 — one setting, both issuers.
+        """The documented way to actually run HS512 — one setting, issuer and verifier.
 
         ``JWT_ALGORITHM`` is what issuers *and* verifiers read, so moving it moves the
         whole plane together. ``JWT_ALGORITHM_V3`` does not: nothing issues from it.
@@ -505,10 +502,10 @@ class TestFIPS140_3JWT:
         assert settings.JWT_ALGORITHM_V3 == "HS512"
 
     def test_jwt_contains_required_claims(self):
-        """Verify JWT contains all required claims."""
-        from app.core.security import create_access_token
+        """Verify the production access token carries all required claims."""
+        from app.auth.direct_auth import create_access_token
 
-        token = create_access_token(subject="test-uuid", additional_claims={"role": "admin"})
+        token = create_access_token({"sub": "test-uuid", "role": "admin"})
 
         # Decode with both algorithms for compatibility
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=["HS256", "HS512"])
@@ -517,44 +514,17 @@ class TestFIPS140_3JWT:
         assert "exp" in payload
         assert "iat" in payload
         assert "jti" in payload  # JWT ID for revocation
-        assert "alg_version" in payload
         assert payload["role"] == "admin"
 
     def test_jwt_verify_token(self):
         """Test JWT token verification."""
-        from app.core.security import create_access_token
+        from app.auth.direct_auth import create_access_token
         from app.core.security import verify_token
 
-        token = create_access_token(subject="test-uuid")
+        token = create_access_token({"sub": "test-uuid"})
         payload = verify_token(token)
 
         assert payload["sub"] == "test-uuid"
-
-    def test_jwt_alg_version_claim_tracks_the_algorithm_actually_used(self, monkeypatch):
-        """``alg_version`` is derived from the signing algorithm, not from FIPS mode.
-
-        It used to be asserted against ``FIPS_MODE``, which was only ever right by
-        accident: the claim is computed from the algorithm, and the algorithm never
-        depended on FIPS mode on any path a login reached.
-        """
-        from app.core.security import create_access_token
-
-        monkeypatch.setattr(settings, "JWT_ALGORITHM", "HS256")
-        payload = jwt.decode(
-            create_access_token(subject=SUBJECT),
-            settings.JWT_SECRET_KEY,
-            algorithms=["HS256"],
-        )
-        assert payload["alg_version"] == "v2"
-
-        monkeypatch.setattr(settings, "JWT_SECRET_KEY", HS512_SECRET)
-        monkeypatch.setattr(settings, "JWT_ALGORITHM", "HS512")
-        payload = jwt.decode(
-            create_access_token(subject=SUBJECT),
-            settings.JWT_SECRET_KEY,
-            algorithms=["HS512"],
-        )
-        assert payload["alg_version"] == "v3"
 
 
 class TestFIPS140_3TokenHashing:

@@ -235,7 +235,7 @@ def run_legs(
     cancellation inside every retrieval/aggregation call this fans out to,
     which none of them support), but a cancelled turn stops queuing NEW work
     the moment the flag is seen. This is the "between leg submissions"
-    cancellation point ``service.py``'s docstring names.
+    cancellation point ``turn._TurnCancelled``'s docstring names.
 
     A leg that raises, or that does not finish within ``timeout_seconds``,
     is recorded in ``FanOutResult.failed`` and contributes nothing — the

@@ -25,8 +25,8 @@ import pytest
 
 from app.models.chat import ChatConversation
 from app.models.chat import ChatMessage
-from app.services.chat.service import ChatTurn
-from app.services.chat.service import _persist_reply
+from app.services.chat.persistence import _persist_reply
+from app.services.chat.turn import ChatTurn
 
 
 def _fake_llm() -> SimpleNamespace:

@@ -46,6 +46,7 @@ from contextlib import contextmanager
 
 import pytest
 
+from app.services.chat import evidence as chat_evidence
 from app.services.chat import service as chat_service
 from app.services.chat.retrieval import RetrievalResult
 from app.services.chat.settings import ChatSettings
@@ -94,7 +95,7 @@ def test_drop_quarantined_hits_removes_a_quarantined_files_chunk(db_session, nor
     """LEAK: a quarantined file's chunk hit must not survive the filter."""
     blocked = _make_file(db_session, normal_user, quarantined=True, title="Blocked")
 
-    kept = chat_service._drop_quarantined_hits(db_session, [_hit(str(blocked.uuid))])
+    kept = chat_evidence._drop_quarantined_hits(db_session, [_hit(str(blocked.uuid))])
 
     assert kept == []
 
@@ -104,7 +105,7 @@ def test_drop_quarantined_hits_removes_a_quarantined_files_digest(db_session, no
     and the earlier version of this fix only ran the check on one of them."""
     blocked = _make_file(db_session, normal_user, quarantined=True, title="Blocked")
 
-    kept = chat_service._drop_quarantined_hits(
+    kept = chat_evidence._drop_quarantined_hits(
         db_session, [_hit(str(blocked.uuid), digest_section=0)]
     )
 
@@ -119,7 +120,7 @@ def test_drop_quarantined_hits_keeps_an_ordinary_accessible_hit(db_session, norm
     """
     ok = _make_file(db_session, normal_user, quarantined=False, title="Fine")
 
-    kept = chat_service._drop_quarantined_hits(db_session, [_hit(str(ok.uuid))])
+    kept = chat_evidence._drop_quarantined_hits(db_session, [_hit(str(ok.uuid))])
 
     assert [h.file_uuid for h in kept] == [str(ok.uuid)]
 
@@ -129,7 +130,7 @@ def test_drop_quarantined_hits_filters_a_mixed_list(db_session, normal_user):
     blocked = _make_file(db_session, normal_user, quarantined=True, title="Blocked")
     ok = _make_file(db_session, normal_user, quarantined=False, title="Fine")
 
-    kept = chat_service._drop_quarantined_hits(
+    kept = chat_evidence._drop_quarantined_hits(
         db_session, [_hit(str(blocked.uuid), index=0), _hit(str(ok.uuid), index=1)]
     )
 
@@ -138,7 +139,7 @@ def test_drop_quarantined_hits_filters_a_mixed_list(db_session, normal_user):
 
 def test_drop_quarantined_hits_handles_an_empty_list(db_session):
     """No unconditional query against an empty batch."""
-    assert chat_service._drop_quarantined_hits(db_session, []) == []
+    assert chat_evidence._drop_quarantined_hits(db_session, []) == []
 
 
 # ---------------------------------------------------------------------------

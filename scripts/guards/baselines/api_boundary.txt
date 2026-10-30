@@ -10,7 +10,9 @@ fastapi_import::backend/app/services/account_security_service.py	2	layering: rem
 fastapi_import::backend/app/services/asr_switch_plan.py	1	layering: removal planned
 fastapi_import::backend/app/services/auth_config_service.py	1	layering: removal planned
 fastapi_import::backend/app/services/chat/hooks.py	1	layering: removal planned
+fastapi_import::backend/app/services/chat/persistence.py	1	layering: removal planned
 fastapi_import::backend/app/services/chat/service.py	2	layering: removal planned
+fastapi_import::backend/app/services/chat/streaming.py	1	layering: removal planned
 fastapi_import::backend/app/services/content_audit.py	1	layering: removal planned
 fastapi_import::backend/app/services/content_hold_service.py	1	layering: removal planned
 fastapi_import::backend/app/services/diarization/factory.py	1	layering: removal planned

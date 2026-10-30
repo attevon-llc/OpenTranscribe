@@ -12,8 +12,6 @@ backend/app/services/asr/pyannote_provider.py::PyAnnoteProvider.transcribe	24	co
 backend/app/services/auto_label_service.py::AutoLabelService.group_batch_by_topics	16	complexity: decomposition planned
 backend/app/services/backup_service.py::update_settings	16	complexity: decomposition planned
 backend/app/services/chat/aggregation_service.py::gather_recurrence_source_items	16	complexity: decomposition planned
-backend/app/services/chat/service.py::ChatService.stream_reply	45	complexity: decomposition planned
-backend/app/services/chat/service.py::_prepare_context	16	complexity: decomposition planned
 backend/app/services/llm_bedrock.py::stream_converse	16	complexity: decomposition planned
 backend/app/services/llm_service.py::LLMService._repair_truncated_json	17	complexity: decomposition planned
 backend/app/services/llm_stream.py::parse_anthropic_sse	16	complexity: decomposition planned

@@ -722,8 +722,8 @@ def test_the_service_builds_separate_mask_kwargs_for_each_plane():
     ``mask_chunks``, ``mask_digests`` AND the summary tier. Consolidating them looked
     like tidying; it coupled two planes that this codebase deliberately keeps apart.
     """
-    from app.services.chat.service import _build_digest_mask_kwargs
-    from app.services.chat.service import _build_mask_kwargs
+    from app.services.chat.masking import _build_digest_mask_kwargs
+    from app.services.chat.masking import _build_mask_kwargs
 
     settings = SimpleNamespace(context_expansion_enabled=True)
     llm = None  # remote/absent provider — the common case

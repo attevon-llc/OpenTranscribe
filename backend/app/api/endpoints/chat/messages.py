@@ -56,9 +56,9 @@ from app.services.chat.context_resolver import count_scope_files
 from app.services.chat.context_resolver import resolve_scope_file_uuids
 from app.services.chat.hooks import ChatDispatchContext
 from app.services.chat.hooks import fire_before_message
+from app.services.chat.prompt_budget import resolve_answer_tokens
 from app.services.chat.prompting import build_system_prompt
 from app.services.chat.service import ChatService
-from app.services.chat.service import resolve_answer_tokens
 from app.services.chat.service import sse
 from app.services.chat.settings import apply_tenant_limits
 from app.services.chat.settings import apply_user_preferences

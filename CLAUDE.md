@@ -554,8 +554,8 @@ subsystem, and put new subsystem detail **there**, not in this file.
 > off the **provider**, never a global setting.
 >
 > ✅ **The provider keying is BUILT and shipped**, not just decided. `chat/service.py._prepare_context`
-> resolves `redaction.llm_guard.is_local_provider(llm.config)` once per turn (via `_build_mask_kwargs` /
-> `_build_digest_mask_kwargs`) and threads it as
+> resolves `redaction.llm_guard.is_local_provider(llm.config)` once per turn (via `chat/masking.py`'s
+> `_build_mask_kwargs` / `_build_digest_mask_kwargs`) and threads it as
 > `unmask_for_local` to all three masking call sites (`mask_chunks`, and both `mask_digests` calls).
 > A **local** model (a `vllm`/`ollama`/`custom` config whose `base_url` resolves to
 > loopback/RFC1918/link-local/a docker-compose hostname) receives excerpt text unmasked; a

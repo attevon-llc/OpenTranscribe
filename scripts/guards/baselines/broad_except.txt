@@ -83,15 +83,16 @@ backend/app/services/backup_alerts.py	2	ratchet: may only go down
 backend/app/services/backup_service.py	4	ratchet: may only go down
 backend/app/services/bedrock_settings.py	1	ratchet: may only go down
 backend/app/services/cache_management_service.py	2	ratchet: may only go down
+backend/app/services/chat/fanout.py	2	ratchet: may only go down
 backend/app/services/chat/legs.py	1	ratchet: may only go down
 backend/app/services/chat/limits.py	7	ratchet: may only go down
 backend/app/services/chat/mapreduce/reducers.py	1	ratchet: may only go down
 backend/app/services/chat/planner.py	1	ratchet: may only go down
+backend/app/services/chat/planning_steps.py	1	ratchet: may only go down
 backend/app/services/chat/query_rewriter.py	1	ratchet: may only go down
 backend/app/services/chat/reranker.py	2	ratchet: may only go down
 backend/app/services/chat/reranker_threads.py	2	ratchet: may only go down
 backend/app/services/chat/retrieval_cache.py	8	ratchet: may only go down
-backend/app/services/chat/service.py	3	ratchet: may only go down
 backend/app/services/chat/settings.py	1	ratchet: may only go down
 backend/app/services/content_audit.py	1	ratchet: may only go down
 backend/app/services/diarization/pyannote_provider.py	2	ratchet: may only go down

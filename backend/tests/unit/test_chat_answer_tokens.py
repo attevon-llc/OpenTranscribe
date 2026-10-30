@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.chat.service import MIN_ANSWER_TOKENS
-from app.services.chat.service import resolve_answer_tokens
+from app.services.chat.prompt_budget import MIN_ANSWER_TOKENS
+from app.services.chat.prompt_budget import resolve_answer_tokens
 
 WINDOW = 32_000
 DEFAULT = 8_000

@@ -33,7 +33,16 @@ Each stage is its own module so the two security-critical ones (`redactor.py`,
 | `redactor.py` | Re-masks retrieved chunks before the LLM |
 | `prompting.py` | Layered system prompt + delimited excerpts, concatenation only |
 | `citations.py` | Structured citations |
-| `service.py` | SSE orchestration, persistence, audit, hooks |
+| `service.py` | SSE orchestration and the context-preparation phases |
+| `turn.py` | Turn state, cancel signal |
+| `prompt_budget.py` | Reply token budget and prompt assembly |
+| `planning_steps.py` | Query rewrite, the query plan, speaker-name resolution |
+| `fanout.py` | Planned parallel retrieval legs, enrichment, recurrence |
+| `masking.py` | Whether excerpt text is masked before the LLM (local vs remote provider) |
+| `evidence.py` | Quarantine drop, fail-closed filtering after masking, grounding diagnostics |
+| `summary_tier.py` | The `<overview>` block's source leg and composition |
+| `streaming.py` | Output redaction on the token stream |
+| `persistence.py` | Persistence, metering and audit |
 | `limits.py` | Per-user hourly + concurrency caps |
 | `hooks.py` | Cloud seam |
 | `trace.py` | Query-trace vocabulary: 16 stages, 6 outcomes, a scrubbed detail allowlist |
@@ -225,7 +234,7 @@ rendering — otherwise the server reports a problem the user never sees.
 
 ## Audit logging: metadata only
 
-Every chat turn fires a `CHAT_MESSAGE_SEND` audit event from `service.py`, after usage is
+Every chat turn fires a `CHAT_MESSAGE_SEND` audit event from `persistence.py`, after usage is
 persisted. The rule is strict and has no exceptions: the audit event and every logger line
 around it carry **ids and lengths only** — conversation id, message id, excerpt count, token
 counts. **Message content and transcript excerpts are never written to the audit log or
@@ -235,7 +244,7 @@ question, not just "does this help debugging."
 
 `fire_before_message` runs in the **endpoint**, before `StreamingResponse` is constructed, so
 a quota rejection surfaces as a clean HTTP 402 rather than a mid-stream error frame.
-`fire_message_complete` runs in `service.py`; its idempotency scope is `message_uuid`.
+`fire_message_complete` runs in `persistence.py`; its idempotency scope is `message_uuid`.
 
 ## Local development without a GPU or API key
 

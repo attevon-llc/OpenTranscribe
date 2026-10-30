@@ -15,7 +15,6 @@ backend/app/services/chat/aggregation_service.py::gather_recurrence_source_items
 backend/app/services/chat/service.py::ChatService.stream_reply	45	complexity: decomposition planned
 backend/app/services/chat/service.py::_prepare_context	16	complexity: decomposition planned
 backend/app/services/llm_bedrock.py::stream_converse	16	complexity: decomposition planned
-backend/app/services/llm_service.py::LLMService._repair_truncated_json	17	complexity: decomposition planned
 backend/app/services/llm_stream.py::parse_anthropic_sse	16	complexity: decomposition planned
 backend/app/services/opensearch_service/repair.py::rebuild_speaker_index	31	complexity: decomposition planned
 backend/app/services/opensearch_service/speaker_read.py::iter_speaker_embeddings	17	complexity: decomposition planned

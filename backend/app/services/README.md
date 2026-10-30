@@ -67,7 +67,9 @@ Most services are plain modules of functions that take a `Session`; a few are cl
 ### LLM
 | Module | Purpose |
 |---|---|
-| `llm_service.py` | Synchronous multi-provider client (OpenAI, vLLM, Ollama, Anthropic, OpenRouter, Bedrock, custom OpenAI-compatible); summarization, speaker identification, topic extraction, section chunking for long transcripts |
+| `llm_service.py` | Synchronous multi-provider client (OpenAI, vLLM, Ollama, Anthropic, OpenRouter, Bedrock, custom OpenAI-compatible): transport, SSRF-pinned session, streaming, and the `create_from_*` factories. Composed from the mixins below |
+| `llm_types.py`, `llm_host.py` | `LLMProvider` / `LLMConfig` / `LLMResponse`; the attribute contract every `LLMService` mixin may assume |
+| `llm_payloads.py`, `llm_json_extract.py`, `llm_chunking.py`, `llm_summarization.py`, `llm_speaker_id.py`, `llm_health.py` | `LLMService` mixins: per-provider payload/response shapes; JSON extraction, truncated-JSON repair and summary parsing; token estimate and transcript chunking; chunked summary pipeline; speaker identification; connection validation and health probes |
 | `llm_bedrock.py`, `bedrock_settings.py`, `llm_stream.py` | Bedrock provider, its connection settings, streaming parsers |
 | `llm_reasoning.py`, `llm_context_window.py` | Measured per-model reasoning off-switch and context window |
 | `auto_llm_settings.py`, `ai_insights_companion.py`, `auto_label_service.py`, `topic_extraction_service.py` | Per-user automatic AI steps, auto-labelling, topic suggestions |

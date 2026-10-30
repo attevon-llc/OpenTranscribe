@@ -25,7 +25,7 @@ import pytest
 from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V4
 from app.services.opensearch_service import speaker_write
 from app.tasks import embedding_consistency_repair as repair_task
-from app.tasks import embedding_migration_v4 as migration_task
+from app.tasks import embedding_migration_v4_writer as migration_task
 from app.tasks import speaker_merge_task
 from app.tasks.migration_pipeline import PreparedFile
 from app.tasks.migration_pipeline import SpeakerSnapshot

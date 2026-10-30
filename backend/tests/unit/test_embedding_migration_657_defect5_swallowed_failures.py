@@ -111,7 +111,7 @@ class _FakeSessionCtx:
 @pytest.mark.unit
 class TestEmbeddingResultWriterRaisesOnBulkWriteFailure:
     def test_total_bulk_write_failure_raises_instead_of_reporting_success(self, monkeypatch):
-        from app.tasks import embedding_migration_v4 as mig
+        from app.tasks import embedding_migration_v4_writer as mig
 
         prepared = MagicMock()
         prepared.extra = {"speaker_profiles": {}}
@@ -128,7 +128,7 @@ class TestEmbeddingResultWriterRaisesOnBulkWriteFailure:
             mig._embedding_result_writer(prepared, {"embedding": [segment_result]})
 
     def test_full_bulk_write_success_does_not_raise(self, monkeypatch):
-        from app.tasks import embedding_migration_v4 as mig
+        from app.tasks import embedding_migration_v4_writer as mig
 
         prepared = MagicMock()
         prepared.extra = {"speaker_profiles": {}}
@@ -153,5 +153,6 @@ def _writers_run_under_an_allowing_privacy_policy(monkeypatch):
     reads as "deny". The gate has its own tests in ``test_embedding_migration_policy``.
     """
     monkeypatch.setattr(
-        "app.tasks.embedding_migration_v4._file_skipped_by_policy", lambda media_file_id: False
+        "app.tasks.embedding_migration_v4_writer._file_skipped_by_policy",
+        lambda media_file_id: False,
     )

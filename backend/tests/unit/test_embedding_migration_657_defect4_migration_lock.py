@@ -84,7 +84,7 @@ class TestOrchestratorAcquiresLockBeforeDispatch:
     def test_finalize_always_deactivates_lock(self):
         import inspect
 
-        from app.tasks import embedding_migration_v4 as mig
+        from app.tasks import embedding_migration_v4_finalize as mig
 
         source = inspect.getsource(mig.finalize_v4_migration_task)
         assert "migration_lock.deactivate()" in source

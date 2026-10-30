@@ -524,7 +524,7 @@ def test_the_combined_writer_still_writes_embeddings_but_not_forbidden_gender(
         return 3
 
     monkeypatch.setattr(
-        "app.tasks.embedding_migration_v4._embedding_result_writer", fake_embedding_writer
+        "app.tasks.embedding_migration_v4_writer._embedding_result_writer", fake_embedding_writer
     )
 
     written = combined._combined_result_writer(

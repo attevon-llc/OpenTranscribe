@@ -21,7 +21,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.services import migration_progress_service as progress_mod
-from app.tasks import embedding_migration_v4 as mig
+from app.tasks import embedding_migration_v4_scope as mig
 from app.tasks import migration_pipeline as pipeline_mod
 
 

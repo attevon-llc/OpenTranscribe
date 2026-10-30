@@ -193,7 +193,7 @@ nothing changed" is the expected symptom, not a second bug:
 |---|---|---|
 | `segment_dedup.split_sentences_nltk` | returns segments unsplit | **yes** — retried per call |
 | `text_preprocessing._get_stopwords` | empty stopword set | **no** — `@lru_cache(maxsize=1)` |
-| `search/chunking_service` | regex splitter | **no** — `_nltk_load_failed` latches (#449) |
+| `search/sentence_splitter` | regex splitter | **no** — `_nltk_load_failed` latches (#449) |
 
 The chunking latch is **deliberate and must not be removed**: a retry lets one re-index chunk
 its early files with the regex and its later files with punkt, which disagree on abbreviations

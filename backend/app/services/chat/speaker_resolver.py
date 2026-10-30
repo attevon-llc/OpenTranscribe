@@ -62,7 +62,7 @@ from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import hidden_suggestion_clause
 from app.services.privacy.redact_view import machine_identity_clauses
 from app.services.privacy.redact_view import visible_display_name_expr
-from app.services.search.chunking_service import _NO_SPACE_CHAR_RE
+from app.services.search.sentence_splitter import _NO_SPACE_CHAR_RE
 from app.utils.speaker_identity_source import visible_profile_id
 from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABELS

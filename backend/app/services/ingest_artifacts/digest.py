@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from typing import Any
 from typing import Protocol
 
-from app.services.search.chunking_service import split_into_sentences
+from app.services.search.sentence_splitter import split_into_sentences
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
 
 from . import sizing

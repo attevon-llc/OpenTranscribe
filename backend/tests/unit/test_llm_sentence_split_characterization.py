@@ -12,7 +12,7 @@ import pytest
 from app.services.llm_service import LLMService
 from app.services.llm_types import LLMConfig
 from app.services.llm_types import LLMProvider
-from app.services.search import chunking_service
+from app.services.search import sentence_splitter
 
 pytestmark = pytest.mark.unit
 
@@ -24,9 +24,9 @@ EVERYTHING_FITS = 10_000
 def _fresh_sentence_splitter():
     # Another test may have latched the punkt-unavailable fallback for this process (#449);
     # the sentence cuts below are only defined for the real splitter.
-    chunking_service.reset_sentence_splitter_state()
+    sentence_splitter.reset_sentence_splitter_state()
     yield
-    chunking_service.reset_sentence_splitter_state()
+    sentence_splitter.reset_sentence_splitter_state()
 
 
 @pytest.fixture

@@ -94,7 +94,7 @@ backend/app/services/redaction/detectors/base.py::class::Detector	1	residual aft
 backend/app/services/redis_cache_service.py::method::invalidate_collections	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/redis_cache_service.py::method::invalidate_metadata	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/redis_cache_service.py::method::invalidate_tags_for_file	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/services/search/chunking_service.py::function::reset_sentence_splitter_state	1	residual after the dead-code pass; delete or whitelist when touched
+backend/app/services/search/sentence_splitter.py::function::reset_sentence_splitter_state	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/search/ml_ingest_pipelines.py::method::delete_ingest_pipeline	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/search/ml_ingest_pipelines.py::method::update_ingest_pipeline_model	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/search/search_infra.py::function::reset_infrastructure_state	1	residual after the dead-code pass; delete or whitelist when touched

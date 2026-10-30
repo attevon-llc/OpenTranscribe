@@ -49,6 +49,7 @@ from typing import Any
 import pytest
 
 from app.services.search import chunking_service
+from app.services.search import sentence_splitter
 from app.services.search.chunking_service import chunk_transcript_by_speaker_turns
 
 #: Metadata every call needs; none of it participates in boundary decisions.
@@ -67,22 +68,21 @@ BASE_KWARGS: dict[str, Any] = {
 def sentence_splitter_state():
     """Save/restore the module-level NLTK tokenizer cache and the failure latch.
 
-    ``chunking_service`` memoises punkt tokenizers in ``_nltk_tokenizers`` and latches
-    ``_nltk_load_failed`` once a load fails. Both are process-global, so a test that
-    touches either would otherwise leak its choice of sentence splitter into every later
-    test in the worker.
+    ``sentence_splitter`` memoises punkt tokenizers in ``_nltk_tokenizers`` and latches
+    ``_nltk_load_failed`` once a load fails. Both are process-global, so a test that touches
+    either would otherwise leak its splitter choice into every later test in the worker.
 
     The latch replaced a five-minute retry cooldown in issue #449: a cooldown meant the
     splitter could change part-way through one re-index, so the same corpus was chunked
     two different ways in a single pass. Restoring it here is what keeps that permanence
     from making the suite order-dependent.
     """
-    saved_tokenizers = dict(chunking_service._nltk_tokenizers)
-    saved_latch = chunking_service._nltk_load_failed
+    saved_tokenizers = dict(sentence_splitter._nltk_tokenizers)
+    saved_latch = sentence_splitter._nltk_load_failed
     yield
-    chunking_service._nltk_tokenizers.clear()
-    chunking_service._nltk_tokenizers.update(saved_tokenizers)
-    chunking_service._nltk_load_failed = saved_latch
+    sentence_splitter._nltk_tokenizers.clear()
+    sentence_splitter._nltk_tokenizers.update(saved_tokenizers)
+    sentence_splitter._nltk_load_failed = saved_latch
 
 
 def _force_regex_sentence_split() -> None:
@@ -93,8 +93,8 @@ def _force_regex_sentence_split() -> None:
     so they assert one fixed set of boundaries everywhere. Requires the
     ``sentence_splitter_state`` fixture.
     """
-    chunking_service._nltk_tokenizers.clear()
-    chunking_service._nltk_load_failed = True
+    sentence_splitter._nltk_tokenizers.clear()
+    sentence_splitter._nltk_load_failed = True
 
 
 def _monologue(sentence_count: int = 50, words_per_sentence: int = 10) -> str:
@@ -831,8 +831,8 @@ def test_sentence_splitter_availability_changes_the_chunk_boundaries(sentence_sp
         segments, **BASE_KWARGS, target_words=40, overlap_words=8
     )
 
-    chunking_service._nltk_load_failed = False
-    chunking_service._nltk_tokenizers["english"] = _AbbreviationAwareTokenizer()
+    sentence_splitter._nltk_load_failed = False
+    sentence_splitter._nltk_tokenizers["english"] = _AbbreviationAwareTokenizer()
     with_punkt = chunk_transcript_by_speaker_turns(
         segments, **BASE_KWARGS, target_words=40, overlap_words=8
     )
@@ -866,7 +866,7 @@ def test_the_splitter_choice_is_latched_for_the_process(sentence_splitter_state)
 
     # punkt becomes loadable. Under the cooldown this is precisely the moment the
     # splitter flipped; under the latch it must be ignored for this process.
-    chunking_service._nltk_tokenizers["english"] = _AbbreviationAwareTokenizer()
+    sentence_splitter._nltk_tokenizers["english"] = _AbbreviationAwareTokenizer()
     after = chunk_transcript_by_speaker_turns(
         segments, **BASE_KWARGS, target_words=40, overlap_words=8
     )
@@ -880,8 +880,8 @@ def test_the_splitter_choice_is_latched_for_the_process(sentence_splitter_state)
     # The control: clearing the latch — which only tests do — must let punkt back in,
     # or the assertion above would hold for the trivial reason that the injected
     # tokenizer is never consulted at all.
-    chunking_service.reset_sentence_splitter_state()
-    chunking_service._nltk_tokenizers["english"] = _AbbreviationAwareTokenizer()
+    sentence_splitter.reset_sentence_splitter_state()
+    sentence_splitter._nltk_tokenizers["english"] = _AbbreviationAwareTokenizer()
     unlatched = chunk_transcript_by_speaker_turns(
         segments, **BASE_KWARGS, target_words=40, overlap_words=8
     )

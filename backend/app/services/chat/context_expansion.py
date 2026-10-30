@@ -52,7 +52,7 @@ from typing import Protocol
 from sqlalchemy.orm import Session
 
 from app.services.search.chunk_retrieval import ChunkHit
-from app.services.search.chunking_service import count_words
+from app.services.search.sentence_splitter import count_words
 
 logger = logging.getLogger(__name__)
 

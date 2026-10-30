@@ -154,7 +154,7 @@ def test_chunking_reaches_its_punkt_fallback_when_punkt_tab_is_unreadable(raised
     function outright, so the ``punkt`` fallback below it was dead code for that
     failure mode even when it would have loaded fine.
     """
-    from app.services.search import chunking_service
+    from app.services.search import sentence_splitter
 
     sentinel = object()
     calls: list[str] = []
@@ -166,7 +166,7 @@ def test_chunking_reaches_its_punkt_fallback_when_punkt_tab_is_unreadable(raised
                 raise raised
             return sentinel
 
-    result = chunking_service._load_punkt_model(_FakeNltkData(), "english")
+    result = sentence_splitter._load_punkt_model(_FakeNltkData(), "english")
 
     assert len(calls) == 2, f"the punkt fallback was never attempted; calls={calls}"
     assert result is sentinel, "the working fallback tokenizer was not returned"
@@ -179,24 +179,24 @@ def test_chunking_latches_and_degrades_rather_than_raising():
     one re-index cannot chunk its corpus two different ways. That is why
     repairing the corpus on disk needs a WORKER RESTART.
     """
-    from app.services.search import chunking_service
+    from app.services.search import sentence_splitter
 
-    chunking_service.reset_sentence_splitter_state()
+    sentence_splitter.reset_sentence_splitter_state()
     try:
         with patch.object(
-            chunking_service,
+            sentence_splitter,
             "_load_punkt_model",
             side_effect=PermissionError(PATHSEC_MESSAGE),
         ):
-            first = chunking_service._get_nltk_tokenizer("english")
+            first = sentence_splitter._get_nltk_tokenizer("english")
         assert first is None, "expected the regex fallback signal (None)"
-        assert chunking_service._nltk_load_failed is True, "the failure did not latch"
+        assert sentence_splitter._nltk_load_failed is True, "the failure did not latch"
 
         # Latched: even a now-working corpus is not retried this process.
-        with patch.object(chunking_service, "_load_punkt_model", return_value=object()):
-            second = chunking_service._get_nltk_tokenizer("english")
+        with patch.object(sentence_splitter, "_load_punkt_model", return_value=object()):
+            second = sentence_splitter._get_nltk_tokenizer("english")
         assert second is None, (
             "the latch was not honoured — chunk boundaries could change mid-reindex (#449)"
         )
     finally:
-        chunking_service.reset_sentence_splitter_state()
+        sentence_splitter.reset_sentence_splitter_state()

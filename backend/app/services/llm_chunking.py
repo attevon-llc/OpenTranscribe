@@ -4,7 +4,7 @@ import logging
 import re
 
 from app.services.llm_host import LLMHost
-from app.services.search.chunking_service import split_into_sentences
+from app.services.search.sentence_splitter import split_into_sentences
 
 logger = logging.getLogger(__name__)
 

@@ -21,7 +21,7 @@ attributable one.
 ⚠️ **This is a guard, not a fallback.** Every caller still needs its own
 degradation path for the case where the corpus is genuinely absent and offline was
 never declared; see ``text_preprocessing._get_stopwords`` and
-``search/chunking_service`` for the two shapes (degrade with a warning, and latch
+``search/sentence_splitter`` for the two shapes (degrade with a warning, and latch
 the regex splitter for the process).
 """
 

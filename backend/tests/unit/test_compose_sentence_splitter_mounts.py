@@ -241,8 +241,14 @@ def _mount_targets(service: dict) -> set[str]:
 def test_the_call_graph_walk_finds_the_known_callers() -> None:
     """Guard on the guard: a walk matching nothing would pass every assertion."""
     tainted = _splitter_dependent_modules()
+    # The walk seeds on CALLERS of the name, so the defining module is never tainted
+    # itself: assert it still defines the anchor, and that its in-package caller (the
+    # chunker) is reached.
+    assert SPLITTER_FUNCTION in _functions_in(
+        _python_sources()["app/services/search/sentence_splitter.py"]
+    ), "sentence_splitter.py no longer defines the anchor the walk follows outward from."
     assert "app/services/search/chunking_service.py" in tainted, (
-        "The splitter's own module is not tainted — the walk is not walking."
+        "The chunker is not tainted — the walk is not walking."
     )
     reached = set(_chunking_task_names().values())
     missing = EXPECTED_TASK_MODULES - reached

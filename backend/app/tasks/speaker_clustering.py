@@ -111,7 +111,7 @@ def cluster_speakers_for_file(self, file_uuid: str, user_id: int):
                 logger.info(f"Clustering for file {file_uuid} skipped by privacy policy")
                 return {"status": "skipped", "reason": "skipped_by_policy"}
 
-            # Tracked via active_task_id so `is_file_safe_to_delete` (task_utils.py)
+            # Tracked via active_task_id so `is_file_safe_to_delete` (file_retry.py)
             # can see this task is live and refuse a concurrent delete — clustering
             # writes to the same speaker-embedding OpenSearch plane a file delete
             # cleans up, so an unguarded delete mid-cluster can leave orphaned

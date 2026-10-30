@@ -83,14 +83,15 @@ so keep heavy imports lazy.
 - `uuid7.py` — RFC 9562 UUIDv7, the `default=` for every model `uuid` column (index locality).
 - `scratch_volume.py` — cross-worker WAV handoff at `/scratch/opentranscribe`. **Presence of the
   mount is the feature flag** — there is no enable/disable env var.
-- `task_utils.cancel_active_task` is **phase one of a two-phase stop** (#823), not a
+- `task_cancel.cancel_active_task` is **phase one of a two-phase stop** (#823), not a
   termination. It arms `core/task_cancellation.request_cancel` and writes
   `FileStatus.CANCELLING` — *we asked*; the worker writes `CANCELLED` when it has actually
   stood down. It **retains** `active_task_id` (the handle both halves key on) and queues
   `transcription.reconcile_cancellation` as a bounded backstop. It no longer calls
   `celery_app.control.revoke`, which was dead on every pool type — see `app/tasks/CLAUDE.md`.
 - `task_lock.py` — Redis lock preventing overlapping periodic tasks. `task_utils.py` — task
-  records, status transitions, stuck-file recovery. `error_classification.py` — permanent vs
+  records, status transitions; `task_cancel.py`, `stuck_file_recovery.py` and `file_retry.py`
+  hold cancellation, stuck-file recovery and the retry reset. `error_classification.py` — permanent vs
   retriable, gating retry decisions.
 - `hardware_detection.py` — the CUDA/MPS/CPU authority (`should_use_hybrid_mode`), and the
   **single home for "which CUDA ordinal is ours"** (`resolve_cuda_device_index`, issue #719).

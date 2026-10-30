@@ -737,7 +737,7 @@ def wait_until_safe_to_delete(
 ) -> bool:
     """Poll until *file_uuid* has no live ``active_task_id``, not merely ``completed``.
 
-    ``is_file_safe_to_delete`` (``app/utils/task_utils.py``) is deliberately NOT gated
+    ``is_file_safe_to_delete`` (``app/utils/file_retry.py``) is deliberately NOT gated
     on ``status == PROCESSING``: a selective follow-on stage on an already-completed
     file (search_indexing/analytics/speaker_llm/summarization/topic_extraction/
     speaker_clustering) sets ``active_task_id`` via ``create_task_record`` without ever

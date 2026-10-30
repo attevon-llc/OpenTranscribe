@@ -72,7 +72,6 @@ backend/app/tasks/transcription/postprocess.py	802	oversize: split by concern pl
 backend/app/tasks/youtube_processing.py	916	oversize: split by concern planned
 backend/app/transcription/diarizer_native.py	1147	oversize: split by concern planned
 backend/app/transcription/engine/stages.py	1300	oversize: split by concern planned
-backend/app/utils/task_utils.py	1125	oversize: split by concern planned
 backend/tests/CLAUDE.md	946	oversize: split by concern planned
 backend/tests/api/endpoints/test_auth_comprehensive.py	757	oversize: split by concern planned
 backend/tests/api/endpoints/test_search_admin_routes.py	1103	oversize: split by concern planned

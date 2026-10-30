@@ -28,7 +28,7 @@ from app.models.media import TranscriptSegment  # noqa: E402
 from app.utils.error_classification import ErrorCategory  # noqa: E402
 from app.utils.error_classification import categorize_error  # noqa: E402
 from app.utils.error_classification import should_retry  # noqa: E402
-from app.utils.task_utils import reset_file_for_retry  # noqa: E402
+from app.utils.file_retry import reset_file_for_retry  # noqa: E402
 from app.utils.task_utils import update_media_file_status  # noqa: E402
 
 RETRIABLE_CATEGORIES = (

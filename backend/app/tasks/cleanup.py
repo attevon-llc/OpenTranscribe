@@ -157,7 +157,7 @@ def emergency_file_recovery(self, file_uuids: list):
         }
 
         with session_scope() as db:
-            from app.utils.task_utils import recover_stuck_file
+            from app.utils.stuck_file_recovery import recover_stuck_file
 
             for file_uuid in file_uuids:
                 try:

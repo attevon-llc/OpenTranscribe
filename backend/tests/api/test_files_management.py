@@ -323,7 +323,7 @@ def test_force_delete_admin_cancels_a_live_active_task_200(
         active_task_id=task_id,
     )
     with (
-        patch("app.utils.task_utils.AsyncResult") as mock_async_result,
+        patch("app.utils.file_retry.AsyncResult") as mock_async_result,
         patch("app.core.task_cancellation.request_cancel", return_value=True) as mock_arm,
     ):
         mock_async_result.return_value.state = "STARTED"
@@ -400,7 +400,7 @@ def test_bulk_delete_force_by_non_admin_is_not_honoured(
         file_status="completed",
         active_task_id="44444444-4444-4444-4444-444444444444",
     )
-    with patch("app.utils.task_utils.AsyncResult") as mock_async_result:
+    with patch("app.utils.file_retry.AsyncResult") as mock_async_result:
         mock_async_result.return_value.state = "STARTED"
         response = client.post(
             "/api/files/management/bulk-action",
@@ -429,7 +429,7 @@ def test_bulk_delete_force_by_admin_is_honoured(
         active_task_id="55555555-5555-5555-5555-555555555555",
     )
     with (
-        patch("app.utils.task_utils.AsyncResult") as mock_async_result,
+        patch("app.utils.file_retry.AsyncResult") as mock_async_result,
         patch("app.core.task_cancellation.request_cancel", return_value=True),
     ):
         mock_async_result.return_value.state = "STARTED"

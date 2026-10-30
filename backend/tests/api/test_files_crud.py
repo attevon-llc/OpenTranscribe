@@ -440,7 +440,7 @@ def test_delete_file_nonexistent_404(client, user_token_headers):
 def test_delete_file_with_live_active_task_409(client, user_token_headers, normal_user, db_session):
     """A file with a genuinely live active task is refused a plain delete.
 
-    ``is_file_safe_to_delete`` (``app/utils/task_utils.py``) is deliberately NOT
+    ``is_file_safe_to_delete`` (``app/utils/file_retry.py``) is deliberately NOT
     gated on ``status == PROCESSING`` — a follow-on stage on an already-``completed``
     file (summarization/embedding/search_indexing/...) sets ``active_task_id``
     without ever touching ``status``. Found live: a full pipeline run's DELETE right
@@ -456,7 +456,7 @@ def test_delete_file_with_live_active_task_409(client, user_token_headers, norma
         file_status="completed",
         active_task_id="11111111-1111-1111-1111-111111111111",
     )
-    with patch("app.utils.task_utils.AsyncResult") as mock_async_result:
+    with patch("app.utils.file_retry.AsyncResult") as mock_async_result:
         mock_async_result.return_value.state = "STARTED"
         response = client.delete(f"/api/files/{media_file.uuid}", headers=user_token_headers)
     assert response.status_code == status.HTTP_409_CONFLICT
@@ -485,7 +485,7 @@ def test_delete_file_with_stale_active_task_204(
         file_status="completed",
         active_task_id="22222222-2222-2222-2222-222222222222",
     )
-    with patch("app.utils.task_utils.AsyncResult") as mock_async_result:
+    with patch("app.utils.file_retry.AsyncResult") as mock_async_result:
         mock_async_result.return_value.state = "SUCCESS"
         response = client.delete(f"/api/files/{media_file.uuid}", headers=user_token_headers)
     assert response.status_code == status.HTTP_204_NO_CONTENT

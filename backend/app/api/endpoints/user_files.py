@@ -475,7 +475,7 @@ def retry_file_processing(
             # Count this dispatch against the ceiling just checked above. `retry_count`
             # is nullable with a Python-side default of 0 (a row written before that
             # default applied, or by raw SQL, holds NULL), so a bare `+= 1` would raise —
-            # normalize first, matching `task_utils.reset_file_for_retry`'s same guard.
+            # normalize first, matching `file_retry.reset_file_for_retry`'s same guard.
             media_file.retry_count = int(media_file.retry_count or 0) + 1
 
             # Mark old tasks as failed

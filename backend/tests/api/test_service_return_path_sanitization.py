@@ -107,7 +107,7 @@ def test_watch_source_dispatch_failure_never_leaks_the_broker_url(
         raise RuntimeError(f"Retry limit exceeded reconnecting to {BROKER_SENTINEL}")
 
     monkeypatch.setattr(
-        "app.api.endpoints.files.upload.dispatch_upload_pipeline",
+        "app.api.endpoints.files.upload_dispatch.dispatch_upload_pipeline",
         _raise,
     )
 

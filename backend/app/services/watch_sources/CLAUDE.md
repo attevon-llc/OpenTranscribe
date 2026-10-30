@@ -72,7 +72,7 @@ Samba test share. Seed data: `bash scripts/setup-watch-source-test-data.sh ./wat
   supervisor reconciles the watched set from the DB every 30 s, debounces bursts for
   `file_stability_seconds + 5`, and dispatches under `watch_source:fs_dispatch:{id}`.
   `docker-compose.watch.yml` mounts the watch folder into **celery-beat** for it.
-- Import tail is `api/endpoints/files/upload.py::dispatch_upload_pipeline` — identical to manual
+- Import tail is `api/endpoints/files/upload_dispatch.py::dispatch_upload_pipeline` — identical to manual
   upload. Gallery gets `file_created`; scans emit `watch_source_scan` over WS.
 - `models/`, `schemas/`, `api/endpoints/watch_sources*.py` (tenant gate: `watch_sources_access.py`); migration `v366_add_watch_sources`
   (4 tables). Frontend: `components/settings/{WatchSourcesSettings,WatchSourceModal,EmailConfigModal}.svelte`

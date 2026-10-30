@@ -193,7 +193,7 @@ def complete_upload(
     from urllib3.exceptions import MaxRetryError
 
     from app.api.endpoints.files.upload import _update_file_hash
-    from app.api.endpoints.files.upload import dispatch_upload_pipeline_or_mark_error
+    from app.api.endpoints.files.upload_dispatch import dispatch_upload_pipeline_or_mark_error
     from app.services.minio_service import object_exists_and_size
 
     benchmark_timing.mark(request.task_id, "http_request_received")

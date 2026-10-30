@@ -355,7 +355,7 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   delete it — persist `status=ERROR` + `last_error_message`, invalidate the file-list cache, and
   re-raise unchanged (so `ASRConfigurationError` still reaches `main.py`'s `OpenTranscribeError`
   handler as 503 with the real message). Both routes funnel their post-commit dispatch through
-  `files/upload.py::dispatch_upload_pipeline_or_mark_error` so this can't drift between them
+  `files/upload_dispatch.py::dispatch_upload_pipeline_or_mark_error` so this can't drift between them
   again. Before this fix, the legacy route's single broad `except Exception` around the whole
   request body caught a post-storage dispatch failure the same as a pre-storage one and deleted
   the row + leaked the MinIO object; the presigned route had no handling around dispatch at all,

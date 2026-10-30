@@ -4,7 +4,7 @@ carry the raw exception text.
 1. `send_error_notification` (`tasks/transcription/notifications.py`) is the chokepoint the
    plan asks for: every caller (preprocess, and both context.py failure handlers) routes
    through it, so fixing it here fixes the notifications-panel leak in one place.
-2. `_send_dispatch_failed_ws_event` (`api/endpoints/files/upload.py`) is the one path by
+2. `_send_dispatch_failed_ws_event` (`api/endpoints/files/upload_dispatch.py`) is the one path by
    which raw text has ever reached the gallery — its `file` payload is spread wholesale into
    the client's file object.
 3. `_handle_outer_exception` (`tasks/transcription/context.py`) persists the FIXED sentence,
@@ -58,7 +58,7 @@ def test_the_error_notification_is_not_the_raw_exception(monkeypatch, caplog):
 
 @pytest.mark.unit
 def test_the_dispatch_failed_ws_payload_carries_no_raw_message(monkeypatch):
-    from app.api.endpoints.files import upload as upload_module
+    from app.api.endpoints.files import upload_dispatch as upload_module
 
     captured: dict = {}
 

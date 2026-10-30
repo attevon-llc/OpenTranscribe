@@ -541,7 +541,7 @@ def _dispatch_pipeline(media_file: MediaFile, user_id: int, source: WatchSource)
     the import is already committed by the time this runs, so a swallowed failure here
     is invisible (issue #906)."""
     try:
-        from app.api.endpoints.files.upload import dispatch_upload_pipeline
+        from app.api.endpoints.files.upload_dispatch import dispatch_upload_pipeline
 
         dispatch_upload_pipeline(
             media_file,

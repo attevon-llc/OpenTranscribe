@@ -459,7 +459,7 @@ A structural "does it call session_scope" test is not enough.
 ## How it connects
 
 - `dispatch_upload_pipeline` — the shared post-upload tail — lives in
-  **`app/api/endpoints/files/upload.py`**, not here. `services/watch_sources/processing.py`
+  **`app/api/endpoints/files/upload_dispatch.py`**, not here. `services/watch_sources/processing.py`
   calls it so auto-import and manual upload share one path.
 - Boundary smoothing is applied in `transcription/core.py` at the `finalize_segments()`
   chokepoint (`app/utils/segment_postprocess.py`). Deep detail: `app/transcription/CLAUDE.md`.

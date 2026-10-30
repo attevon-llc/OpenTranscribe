@@ -296,7 +296,7 @@ def test_a_watch_import_passes_no_range_so_the_saved_one_applies(monkeypatch):
     def _tail(media_file, **kwargs):
         seen.update(kwargs)
 
-    monkeypatch.setattr("app.api.endpoints.files.upload.dispatch_upload_pipeline", _tail)
+    monkeypatch.setattr("app.api.endpoints.files.upload_dispatch.dispatch_upload_pipeline", _tail)
     source = MagicMock(min_speakers=None, max_speakers=None)
     assert processing._dispatch_pipeline(MagicMock(), 1, source) is None
     assert seen["min_speakers"] is None

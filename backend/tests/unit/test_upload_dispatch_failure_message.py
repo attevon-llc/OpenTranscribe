@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import HTTPException
 
-from app.api.endpoints.files import upload
+from app.api.endpoints.files import upload_dispatch
 from app.core.exceptions import ASRConfigurationError
 from app.core.exceptions import InvalidInputError
 
@@ -36,6 +36,6 @@ def test_stored_message(monkeypatch, exc, expected):
     monkeypatch.setattr("app.utils.task_utils.update_media_file_status", lambda *a, **k: None)
     row = SimpleNamespace(last_error_message=None)
 
-    upload._mark_upload_dispatch_failed(_db_with_row(row), 1, 1, exc)
+    upload_dispatch._mark_upload_dispatch_failed(_db_with_row(row), 1, 1, exc)
 
     assert row.last_error_message == expected

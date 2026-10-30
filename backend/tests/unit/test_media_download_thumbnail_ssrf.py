@@ -22,26 +22,40 @@ def service() -> MediaDownloadService:
 
 class TestThumbnailSsrfGuard:
     def test_a_private_thumbnail_target_is_refused_before_any_http_call(self, service, monkeypatch):
-        def explode(*a, **kw):  # pragma: no cover - the assertion is that it never runs
-            raise AssertionError("an SSRF-blocked thumbnail URL must never be dialled")
+        dialled: list[str] = []
 
-        monkeypatch.setattr("app.services.media_download_service.requests.get", explode)
+        def record(url, *a, **kw):
+            # Record, don't raise: the service catches every Exception, so an
+            # AssertionError raised here would be swallowed and the test would pass
+            # even with the guard removed.
+            dialled.append(url)
+            raise ConnectionError("no real network in a unit test")
+
+        monkeypatch.setattr("app.services.media_download_service.requests.get", record)
 
         result = service._download_media_thumbnail_sync(
             {"thumbnail": "http://169.254.169.254/latest/meta-data"}, user_id=1
         )
         assert result is None
+        assert dialled == []
 
     def test_a_localhost_thumbnail_target_is_refused(self, service, monkeypatch):
-        def explode(*a, **kw):  # pragma: no cover
-            raise AssertionError("an SSRF-blocked thumbnail URL must never be dialled")
+        dialled: list[str] = []
 
-        monkeypatch.setattr("app.services.media_download_service.requests.get", explode)
+        def record(url, *a, **kw):
+            # Record, don't raise: the service catches every Exception, so an
+            # AssertionError raised here would be swallowed and the test would pass
+            # even with the guard removed.
+            dialled.append(url)
+            raise ConnectionError("no real network in a unit test")
+
+        monkeypatch.setattr("app.services.media_download_service.requests.get", record)
 
         result = service._download_media_thumbnail_sync(
             {"thumbnail": "http://127.0.0.1:6379/"}, user_id=1
         )
         assert result is None
+        assert dialled == []
 
     def test_a_public_thumbnail_target_still_reaches_the_fetch(self, service, monkeypatch):
         """Control: the guard doesn't block legitimate thumbnails, only unsafe ones —
@@ -65,10 +79,16 @@ class TestThumbnailSsrfGuard:
         the highest-width entry in media_info['thumbnails'], resolved by
         `_resolve_thumbnail_url`. Both shapes must be checked."""
 
-        def explode(*a, **kw):  # pragma: no cover
-            raise AssertionError("an SSRF-blocked thumbnail URL must never be dialled")
+        dialled: list[str] = []
 
-        monkeypatch.setattr("app.services.media_download_service.requests.get", explode)
+        def record(url, *a, **kw):
+            # Record, don't raise: the service catches every Exception, so an
+            # AssertionError raised here would be swallowed and the test would pass
+            # even with the guard removed.
+            dialled.append(url)
+            raise ConnectionError("no real network in a unit test")
+
+        monkeypatch.setattr("app.services.media_download_service.requests.get", record)
 
         result = service._download_media_thumbnail_sync(
             {
@@ -80,3 +100,4 @@ class TestThumbnailSsrfGuard:
             user_id=1,
         )
         assert result is None
+        assert dialled == []

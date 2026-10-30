@@ -143,7 +143,7 @@ class TestPlaylistPlaceholderOrgStamp:
         }
 
     def test_placeholder_stamps_threaded_org(self, db_session, normal_user):
-        from app.services.media_download_service import _create_playlist_video_placeholder
+        from app.services.media_download_playlist import _create_playlist_video_placeholder
 
         org = _mk_org(db_session, "pl")
         media_file = _create_playlist_video_placeholder(
@@ -159,7 +159,7 @@ class TestPlaylistPlaceholderOrgStamp:
     def test_placeholder_personal_despite_membership(self, db_session, normal_user):
         """organization_id=None means PERSONAL — a membership in some org must
         not be resolved into the placeholder (the removed guess)."""
-        from app.services.media_download_service import _create_playlist_video_placeholder
+        from app.services.media_download_playlist import _create_playlist_video_placeholder
 
         other_org = _mk_org(db_session, "plother")
         db_session.add(
@@ -180,7 +180,7 @@ class TestPlaylistPlaceholderOrgStamp:
         assert media_file.organization_id is None
 
     def test_process_playlist_videos_threads_org(self, db_session, normal_user):
-        from app.services.media_download_service import _process_playlist_videos
+        from app.services.media_download_playlist import _process_playlist_videos
 
         org = _mk_org(db_session, "plthread")
         created, skipped = _process_playlist_videos(

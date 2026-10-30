@@ -47,7 +47,7 @@ backend/app/services/chat/speaker_resolver.py	1134	oversize: split by concern pl
 backend/app/services/file_cleanup_service.py	1240	oversize: split by concern planned
 backend/app/services/gdpr_erasure_service.py	1097	oversize: split by concern planned
 backend/app/services/llm_service.py	1127	oversize: split by concern planned
-backend/app/services/media_download_service.py	1858	oversize: split by concern planned
+backend/app/services/media_download_service.py	859	oversize: split by concern planned
 backend/app/services/minio_service.py	824	oversize: split by concern planned
 backend/app/services/privacy/purge_voiceprints.py	711	oversize: split by concern planned
 backend/app/services/profile_embedding_service.py	702	oversize: split by concern planned

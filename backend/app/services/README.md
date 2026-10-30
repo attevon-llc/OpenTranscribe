@@ -136,7 +136,7 @@ minio_service.delete_file(object_name)
 
 ### Speaker services
 - `SmartSpeakerSuggestionService` consolidates profile and individual voice-match suggestions (profile matches win, duplicate names merge, unlabeled `SPEAKER_XX` names are filtered, refused identities are removed with `without_refused`).
-- `ProfileEmbeddingService` maintains profile-level voice embeddings (`update_profile_embedding`, `add_speaker_to_profile_embedding`, `calculate_profile_similarity`).
+- `ProfileEmbeddingService` maintains profile-level voice embeddings (`update_profile_embedding`, `calculate_profile_similarity`).
 - `SpeakerStatusService` computes verification status fields for display (`compute_speaker_status`, `add_computed_status`).
 
 ### Error categorization (`error_categorization_service.py`)

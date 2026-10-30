@@ -907,7 +907,7 @@ class TestPromptShareAudit:
         self, client, db_session, normal_user, user_token_headers, monkeypatch
     ):
         """Sharing a prompt logs a PROMPT_SHARE audit event."""
-        from app.api.endpoints import prompts as prompts_module
+        from app.api.endpoints import prompts_sharing as prompts_module
         from app.auth.audit_events import AuditEventType
 
         events = []

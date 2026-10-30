@@ -8,7 +8,8 @@ noqa::backend/app/api/endpoints/auth/mfa_tokens.py	1	suppression: reason to be a
 noqa::backend/app/api/endpoints/auth/proxy.py	1	suppression: reason to be added
 noqa::backend/app/api/endpoints/custom_vocabulary.py	2	suppression: reason to be added
 noqa::backend/app/api/endpoints/files/crud.py	3	suppression: reason to be added
-noqa::backend/app/api/endpoints/prompts.py	4	suppression: reason to be added
+noqa::backend/app/api/endpoints/prompts_access.py	1	suppression: reason to be added
+noqa::backend/app/api/endpoints/prompts_sharing.py	3	suppression: reason to be added
 noqa::backend/app/api/endpoints/speakers.py	1	suppression: reason to be added
 noqa::backend/app/api/endpoints/tags/__init__.py	4	suppression: reason to be added
 noqa::backend/app/api/endpoints/user_settings_media_sources.py	3	suppression: reason to be added

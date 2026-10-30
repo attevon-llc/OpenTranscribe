@@ -19,7 +19,7 @@ import uuid
 from fastapi import status
 
 from app import models
-from app.api.endpoints.prompts import MAX_USER_PROMPTS
+from app.api.endpoints.prompts_access import MAX_USER_PROMPTS
 
 
 def _make_prompt(

@@ -603,7 +603,7 @@ def test_prompt_stamped_for_another_org_stays_there(client, world):
 def test_explicit_prompt_on_summarize_scoped(world, viewer, tenant, owner, expected):
     from fastapi import HTTPException
 
-    from app.api.endpoints.prompts import require_usable_prompt_uuid
+    from app.api.endpoints.prompts_access import require_usable_prompt_uuid
     from app.services.request_context import RequestContext
 
     prompt_uuid = _share_prompt(world.db, world.users[owner])

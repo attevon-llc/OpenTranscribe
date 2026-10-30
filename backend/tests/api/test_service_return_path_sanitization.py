@@ -213,7 +213,7 @@ def test_batch_verify_speakers_per_speaker_failure_never_leaks_exception_text(
     db_session.commit()
     db_session.refresh(speaker)
 
-    from app.services import speaker_clustering_service as scs
+    from app.services.clustering import verification as scs
 
     real_label = scs.canonical_speaker_label_for_row
 

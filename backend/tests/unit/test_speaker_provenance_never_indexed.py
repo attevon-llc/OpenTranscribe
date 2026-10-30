@@ -33,6 +33,8 @@ _GUARDED_DIRS = (
     "services/opensearch_service",
     "services/chat",
     "api/endpoints/chat",
+    # builds the cluster Inbox items and the cluster list/detail: responses with no identity block
+    "services/clustering",
 )
 _GUARDED_FILES = (
     # model prompts
@@ -53,8 +55,6 @@ _GUARDED_FILES = (
     "tasks/embedding_migration_v4.py",
     "tasks/speaker_embedding_migration.py",
     "services/speaker_rename_tracker.py",
-    # builds the cluster Inbox items: a response with no identity block
-    "services/speaker_clustering_service.py",
 )
 
 
@@ -92,7 +92,7 @@ def test_the_guard_covers_real_files():
     assert len(paths) > 30 and all(p.is_file() for p in paths), "a renamed module left the guard"
     covered = {p.relative_to(APP).as_posix() for p in paths}
     for known in (
-        "services/speaker_clustering_service.py",
+        "services/clustering/verification.py",
         "tasks/embedding_migration_v4.py",
         "tasks/speaker_embedding_migration.py",
         "services/speaker_rename_tracker.py",
@@ -136,7 +136,7 @@ def test_the_detector_fires_on_a_use_and_stays_clean_otherwise():
 def test_a_record_placed_in_the_inbox_item_or_the_facts_mask_is_caught():
     """The two placements an earlier version of this guard missed (the file was not listed, and
     the attached ``identity`` object was not a name it knew)."""
-    inbox = (APP / "services/speaker_clustering_service.py").read_text()
+    inbox = (APP / "services/clustering/verification.py").read_text()
     facts = (APP / "services/ingest_artifacts/service.py").read_text()
     in_item = inbox + "\n\ndef _leak(speaker):\n    return {'d': speaker.identity_source_detail}\n"
     in_mask = facts + "\n\ndef _leak(row):\n    return getattr(row, 'identity', None)\n"

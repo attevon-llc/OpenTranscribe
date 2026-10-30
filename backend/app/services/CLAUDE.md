@@ -38,7 +38,7 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
 - **Speakers** — `speaker_*_service.py`, `profile_embedding_service.py`,
   `smart_speaker_suggestion_service.py`, `embedding_mode_service.py`,
   `metadata_speaker_extractor.py`. **Any code that deletes a speaker or moves one out of a
-  cluster or profile goes through `speaker_cleanup.py`** — see "Removing a voice" below.
+  cluster or profile goes through `speaker_cleanup.py`** — see "Removing a voice" below. Clustering is `speaker_clustering_service.py` + `clustering/` (its CLAUDE.md).
 - **Privacy policy** — `privacy/` (#1280) is the ONE answer to "may voiceprints exist / may gender be inferred" for a
   (user, organization): `policy.py` ANDs platform (`set_privacy_ceiling_resolver`), instance (`SystemSettings` `privacy.*`),
   organization (`organization_policy` row; none = inherit) and user (`UserSetting`), and every error path DENIES. Call

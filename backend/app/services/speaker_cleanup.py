@@ -329,7 +329,7 @@ def _refresh_clusters(db: Session, impact: SpeakerImpact, fail: _Fail) -> None:
     from app.models.media import SpeakerCluster
     from app.models.media import SpeakerClusterMember
     from app.services import file_cleanup_service as fcs
-    from app.services.speaker_clustering_service import CentroidRecomputeError
+    from app.services.clustering.centroids import CentroidRecomputeError
     from app.services.speaker_clustering_service import SpeakerClusteringService
 
     to_erase: list[str] = []

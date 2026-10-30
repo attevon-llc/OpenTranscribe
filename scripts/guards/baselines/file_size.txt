@@ -53,8 +53,6 @@ backend/app/services/speaker_cleanup.py	1026	oversize: split by concern planned
 backend/app/services/speaker_embedding_service.py	716	oversize: split by concern planned
 backend/app/services/tag_operations.py	911	oversize: split by concern planned
 backend/app/services/tag_service.py	747	oversize: split by concern planned
-backend/app/services/task_detection_service.py	1214	oversize: split by concern planned
-backend/app/services/task_recovery_service.py	1201	oversize: split by concern planned
 backend/app/services/topic_extraction_service.py	771	oversize: split by concern planned
 backend/app/services/video_processing_service.py	1111	oversize: split by concern planned
 backend/app/tasks/CLAUDE.md	508	oversize: split by concern planned

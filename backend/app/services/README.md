@@ -56,7 +56,7 @@ Most services are plain modules of functions that take a `Session`; a few are cl
 |---|---|
 | `pipeline_plan.py`, `pipeline_plan_inputs.py`, `asr_switch_plan.py` | The one decision point for how a recording is processed (engines, queues, validity) |
 | `asr_provider_policy.py` | Which cloud ASR providers users may choose |
-| `task_detection_service.py`, `task_filtering_service.py`, `task_recovery_service.py`, `task_row_supersede.py`, `transcription_retry.py`, `post_processing_status.py` | Task health, listing, recovery, supersede rules, retry policy |
+| `task_detection_service.py` (+ `task_detection_{stuck,errors,post_transcription}.py` mixins), `task_filtering_service.py`, `task_recovery_service.py` (+ `task_recovery_{stuck,retry,post_transcription}.py` mixins), `task_row_supersede.py`, `transcription_retry.py`, `post_processing_status.py` | Task health, listing, recovery, supersede rules, retry policy |
 | `progress_tracker.py`, `notification_service.py`, `download_events.py`, `pipeline_timing_service.py` | EWMA ETA progress tracking, WebSocket notifications (`send_task_notification()`), download events, pipeline timing |
 | `error_categorization_service.py` | User-facing error classification (fixed sentences; the raw exception never reaches a client) |
 | `migration_lock_service.py`, `migration_progress_service.py` | Redis lock and progress for batch migrations |

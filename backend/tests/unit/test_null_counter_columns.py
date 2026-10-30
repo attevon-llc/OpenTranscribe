@@ -203,14 +203,14 @@ def test_recover_stuck_file_normalizes_a_null_recovery_attempts(
 
 
 # =============================================================================
-# app/services/task_recovery_service.py
+# app/services/task_recovery_*.py (stuck / retry / post_transcription mixins)
 # =============================================================================
 def test_recover_stuck_files_without_celery_tasks_normalizes_a_null_retry_count(
     service, db_session, normal_user
 ):
     """The no-worker recovery sweep must increment a NULL ``retry_count``.
 
-    Site: ``task_recovery_service.py`` ``recover_stuck_files_without_celery_tasks``
+    Site: ``task_recovery_stuck.py`` ``recover_stuck_files_without_celery_tasks``
     — ``media_file.retry_count += 1``.
 
     Every read *around* it already says ``int(media_file.retry_count or 0)`` — the
@@ -245,7 +245,7 @@ def test_recover_user_files_normalizes_a_null_retry_count_on_a_stuck_processing_
 ):
     """The per-user sweep must increment a NULL ``retry_count`` on a stuck file.
 
-    Site: ``task_recovery_service.py`` ``recover_user_files`` — the
+    Site: ``task_recovery_retry.py`` ``recover_user_files`` — the
     ``media_file.retry_count += 1`` in the "PROCESSING with incomplete
     transcription" branch. The ``should_retry_file`` gate immediately above reads
     ``retry_count or 0`` and lets the row through; the write then raises TypeError
@@ -269,7 +269,7 @@ def test_recover_user_files_normalizes_a_null_retry_count_on_a_long_pending_file
 ):
     """The PENDING-too-long branch must increment a NULL ``retry_count``.
 
-    Site: ``task_recovery_service.py`` ``recover_user_files`` — the second
+    Site: ``task_recovery_retry.py`` ``recover_user_files`` — the second
     ``media_file.retry_count += 1``, reached when a PENDING file is older than
     ``PENDING_FILE_RETRY_THRESHOLD`` (6 h here). Same TypeError, and because this
     branch's only other effect is the dispatch, a NULL row's retry is dropped
@@ -305,7 +305,7 @@ def test_recover_user_files_recovers_a_file_with_a_null_upload_time(
 ):
     """A NULL ``upload_time`` must not abort the recovery of a stuck file.
 
-    Site: ``task_recovery_service.py`` ``recover_user_files`` —
+    Site: ``task_recovery_retry.py`` ``recover_user_files`` —
     ``assert media_file.upload_time is not None  # server_default=now()``.
 
     The premise is wrong: a ``server_default`` fills the column only for an INSERT
@@ -335,7 +335,7 @@ def test_recover_retriable_error_files_normalizes_both_null_counters(
 ):
     """The retriable-ERROR sweep must increment both NULL counters.
 
-    Sites: ``task_recovery_service.py`` ``recover_retriable_error_files`` —
+    Sites: ``task_recovery_retry.py`` ``recover_retriable_error_files`` —
     ``media_file.retry_count += 1`` and ``media_file.recovery_attempts += 1`` on
     consecutive lines.
 
@@ -368,7 +368,7 @@ def test_update_media_file_if_no_active_tasks_normalizes_a_null_retry_count(
 ):
     """The post-task-recovery reset must increment a NULL ``retry_count``.
 
-    Site: ``task_recovery_service.py`` ``_update_media_file_if_no_active_tasks``
+    Site: ``task_recovery_stuck.py`` ``_update_media_file_if_no_active_tasks``
     — ``media_file.retry_count += 1``, guarded by a ``should_retry(...,
     int(media_file.retry_count or 0))`` on the line above that normalizes the
     very same column.
@@ -397,7 +397,7 @@ def test_recover_stuck_llm_tasks_marks_a_task_with_a_null_created_at_failed(
 ):
     """A NULL ``created_at`` must not stop a stuck LLM task being marked failed.
 
-    Site: ``task_recovery_service.py`` ``recover_stuck_llm_tasks`` —
+    Site: ``task_recovery_post_transcription.py`` ``recover_stuck_llm_tasks`` —
     ``assert task.created_at is not None  # server_default=now()``, whose only
     consumer is the duration in the log message.
 

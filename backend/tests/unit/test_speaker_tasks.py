@@ -10,7 +10,7 @@ module —
   → ``identify_speakers_llm_task``
 - ``app/api/endpoints/transcript_segments.py`` → ``update_speaker_embedding_on_reassignment``
 - ``app/api/endpoints/speakers.py`` → ``process_speaker_update_background``
-- ``app/services/task_recovery_service.py`` and ``app/tasks/speaker_attribute_task.py`` →
+- ``app/services/task_recovery_post_transcription.py`` and ``app/tasks/speaker_attribute_task.py`` →
   ``identify_speakers_llm_task``
 
 So a break here (a stale re-export, a rename in the origin module not mirrored, or the

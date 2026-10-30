@@ -1012,8 +1012,8 @@ _CONTAINER_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
         1,
         "internal-only: `skipped_videos` is returned to process_youtube_playlist_sync "
         "(media_download_playlist.py:339), which puts it on its result dict (:372); the one consumer of that "
-        "dict, tasks/youtube_processing.py::_handle_playlist_result (via :764), reads "
-        "`result.get('skipped_count', 0)` (:810) and never the per-video reasons",
+        "dict, tasks/media_playlist_processing.py::_handle_playlist_result (via :292), reads "
+        "`result.get('skipped_count', 0)` (:341) and never the per-video reasons",
     ),
 }
 

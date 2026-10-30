@@ -38,8 +38,8 @@ from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.formatting_service import FormattingService
 from app.services.media_download_service import MediaDownloadService
 from app.services.request_context import RequestContext
+from app.tasks.media_playlist_processing import process_youtube_playlist_task
 from app.tasks.transcription.requested_options import apply_requested_options
-from app.tasks.youtube_processing import process_youtube_playlist_task
 from app.tasks.youtube_processing import process_youtube_url_task
 from app.utils.db_helpers import org_stamp_is
 from app.utils.whisper_model_choice import require_servable_whisper_model

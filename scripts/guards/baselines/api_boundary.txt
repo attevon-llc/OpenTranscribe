@@ -97,7 +97,16 @@ orm_call_in_api::backend/app/api/endpoints/topics.py	6	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/transcript_segments.py	5	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/usage.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/user_files.py	6	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/user_settings.py	29	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/user_settings.py	1	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/user_settings_audio_extraction.py	2	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/user_settings_common.py	1	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/user_settings_download.py	2	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/user_settings_media_sources.py	6	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/user_settings_organization_context.py	9	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/user_settings_recording.py	3	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/user_settings_speaker_attributes.py	2	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/user_settings_transcription.py	2	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/user_settings_transcription_validators.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/users.py	5	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/watch_sources.py	18	layering: removal planned
 orm_call_in_api::backend/app/api/websockets.py	1	layering: removal planned

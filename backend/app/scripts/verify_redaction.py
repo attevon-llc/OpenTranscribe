@@ -79,7 +79,7 @@ def main() -> int:  # noqa: C901
         with session_scope() as db:
             import json
 
-            from app.api.endpoints.user_settings import _upsert_user_setting
+            from app.api.endpoints.user_settings_common import _upsert_user_setting
 
             # Redaction is opt-out by default — enable it for this verification user.
             _upsert_user_setting(db, user_id, "redaction_enabled", "true")

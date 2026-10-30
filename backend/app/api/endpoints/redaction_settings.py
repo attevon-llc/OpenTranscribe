@@ -144,7 +144,7 @@ def update_redaction_settings(
     current_user: models.User = Depends(get_current_active_user),
 ) -> RedactionSettings:
     """Update the user's redaction preferences (only provided fields)."""
-    from app.api.endpoints.user_settings import _upsert_user_setting
+    from app.api.endpoints.user_settings_common import _upsert_user_setting
 
     updates = body.model_dump(exclude_none=True)
     for field, value in updates.items():

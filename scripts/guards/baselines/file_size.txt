@@ -18,7 +18,6 @@ backend/app/api/endpoints/search.py	2037	oversize: split by concern planned
 backend/app/api/endpoints/speaker_profiles.py	1161	oversize: split by concern planned
 backend/app/api/endpoints/speaker_update.py	752	oversize: split by concern planned
 backend/app/api/endpoints/tasks.py	1091	oversize: split by concern planned
-backend/app/api/endpoints/user_settings.py	1875	oversize: split by concern planned
 backend/app/api/endpoints/users.py	853	oversize: split by concern planned
 backend/app/api/endpoints/watch_sources.py	1291	oversize: split by concern planned
 backend/app/auth/CLAUDE.md	511	oversize: split by concern planned

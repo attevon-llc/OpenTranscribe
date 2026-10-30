@@ -111,7 +111,7 @@ def test_detect_and_mask(seeded_file):
         assert seg0.redactions and any(s["category"] == "profanity" for s in seg0.redactions)
 
         # Redaction is opt-out by default — enable it + give the user a custom word.
-        from app.api.endpoints.user_settings import _upsert_user_setting
+        from app.api.endpoints.user_settings_common import _upsert_user_setting
 
         _upsert_user_setting(db, user_id, "redaction_enabled", "true")
         _upsert_user_setting(db, user_id, "redaction_custom_words", json.dumps(["Bluefin"]))

@@ -50,7 +50,7 @@ _skip_pki_unit = pytest.mark.pki
 # process-level cache a real save primes.
 def set_pki(**values):
     """Publish DB-backed PKI settings for the current test."""
-    from app.core.auth_settings import publish_process_auth_setting
+    from app.core.process_auth_settings import publish_process_auth_setting
 
     for key, value in values.items():
         publish_process_auth_setting(key, value)
@@ -59,7 +59,7 @@ def set_pki(**values):
 @pytest.fixture(autouse=True)
 def _isolate_process_auth_settings():
     """Keep one test's published PKI settings out of the next one's."""
-    from app.core.auth_settings import clear_process_auth_settings_cache
+    from app.core.process_auth_settings import clear_process_auth_settings_cache
 
     clear_process_auth_settings_cache()
     yield

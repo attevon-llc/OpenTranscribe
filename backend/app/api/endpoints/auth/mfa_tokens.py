@@ -66,7 +66,7 @@ def mfa_token_ttl_seconds() -> int:
     being replayed. Those two must not diverge — a blacklist entry that expires
     before the token does re-opens the replay window the claim exists to close.
     """
-    from app.core.auth_settings import get_process_auth_settings
+    from app.core.process_auth_settings import get_process_auth_settings
 
     return get_process_auth_settings().mfa_token_expire_minutes * 60
 

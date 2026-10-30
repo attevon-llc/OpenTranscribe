@@ -24,10 +24,10 @@ from app.auth import password_blocklist
 from app.auth.mfa_policy import mfa_required_for_user
 from app.auth.password_policy import password_policy
 from app.auth.password_policy import validate_password
-from app.core.auth_settings import get_process_auth_settings
-from app.core.auth_settings import publish_process_auth_setting
 from app.core.config import Settings
 from app.core.config import settings
+from app.core.process_auth_settings import get_process_auth_settings
+from app.core.process_auth_settings import publish_process_auth_setting
 from app.core.security import get_password_hash
 from app.core.security import normalize_password
 from app.core.security import verify_password

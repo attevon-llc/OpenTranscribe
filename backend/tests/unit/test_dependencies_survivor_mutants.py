@@ -601,8 +601,8 @@ class TestEnforcePasswordChangeResponseBody:
 
 class TestEnforceProxyIdentityMismatchResponseBody:
     def test_the_response_body_is_exactly_this_shape(self, db_session, monkeypatch):
-        from app.core.auth_settings import publish_process_auth_setting
         from app.core.auth_types import AUTH_TYPE_PROXY
+        from app.core.process_auth_settings import publish_process_auth_setting
 
         publish_process_auth_setting("proxy_enabled", True)
         publish_process_auth_setting("proxy_email_header", "X-Remote-User")

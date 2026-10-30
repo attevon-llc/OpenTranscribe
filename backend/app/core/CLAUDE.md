@@ -154,6 +154,11 @@ should import `app.api` or `app.services` at module scope.
   `get_auth_settings(db)` returns a `DynamicAuthSettings` that resolves **DB > .env > coded
   default**. Resolve it **once per request** and pass it down: a handler that resolves it for
   enforcement but reads `settings.*` for the audit record documents a policy nobody applied.
+- `process_auth_settings.py` — `get_process_auth_settings()`, the same `DynamicAuthSettings`
+  rule for enforcement points that hold no session (lockout, password policy, PKI revocation,
+  MFA). Process-wide cache, 30 s TTL (infinite under `TESTING`), primed after commit by
+  `AuthConfigService.set_config` and cleared per test by the autouse
+  `_clear_process_auth_cache` fixture. Prefer `get_auth_settings(db)` whenever a session exists.
 - `auth_settings.py`'s `proxy_*` properties are the layered readers for trusted-header auth;
   the `.env` fallbacks (`PROXY_*` in `config.py`) exist mainly so `main.py`'s fail-closed
   boot guard can see `PROXY_ENABLED`/`PROXY_TRUSTED_PROXIES` before a DB session exists.

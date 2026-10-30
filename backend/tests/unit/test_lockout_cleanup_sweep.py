@@ -46,7 +46,7 @@ IDLE_HOURS = 24
 @pytest.fixture
 def store(monkeypatch) -> InMemoryLockoutStore:
     """A fresh in-memory lockout store, with lockout enforcement switched on."""
-    from app.core.auth_settings import publish_process_auth_setting
+    from app.core.process_auth_settings import publish_process_auth_setting
 
     publish_process_auth_setting("account_lockout_enabled", True)
     backing = InMemoryLockoutStore()
@@ -214,7 +214,7 @@ class TestTheSweepRespectsItsPreconditions:
     expiry and where reaching into ``_data``/``_lock`` would simply crash."""
 
     def test_a_disabled_lockout_policy_sweeps_nothing(self, store):
-        from app.core.auth_settings import publish_process_auth_setting
+        from app.core.process_auth_settings import publish_process_auth_setting
 
         publish_process_auth_setting("account_lockout_enabled", False)
         _write(store, _expired_and_idle())
@@ -222,7 +222,7 @@ class TestTheSweepRespectsItsPreconditions:
         assert cleanup_expired_lockouts() == 0
 
     def test_a_disabled_policy_leaves_the_record_in_place(self, store):
-        from app.core.auth_settings import publish_process_auth_setting
+        from app.core.process_auth_settings import publish_process_auth_setting
 
         publish_process_auth_setting("account_lockout_enabled", False)
         _write(store, _expired_and_idle())
@@ -233,7 +233,7 @@ class TestTheSweepRespectsItsPreconditions:
 
     def test_a_redis_backed_store_is_left_to_its_ttls(self, monkeypatch):
         """Detected by the presence of ``pipeline`` — the Redis-only API."""
-        from app.core.auth_settings import publish_process_auth_setting
+        from app.core.process_auth_settings import publish_process_auth_setting
 
         publish_process_auth_setting("account_lockout_enabled", True)
         redis_like = _RedisLikeStore()

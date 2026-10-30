@@ -195,6 +195,7 @@ ignore_imports = [
   "app.core.celery -> app.transcription.vram_budget",  # upward import, function level: removal planned (layering)
   "app.core.celery_metrics -> app.models.media",  # upward import, function level: removal planned (layering)
   "app.core.infra_requeue_reset -> app.models.media",  # upward import, function level: removal planned (layering)
+  "app.core.process_auth_settings -> app.services.auth_config_service",  # upward import, function level: removal planned (layering)
   "app.core.security -> app.auth.audit",  # upward import, function level: removal planned (layering)
   "app.core.security -> app.auth.audit_events",  # upward import, function level: removal planned (layering)
   "app.core.security -> app.auth.utils",  # upward import, module level: removal planned (layering)

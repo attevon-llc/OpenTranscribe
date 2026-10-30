@@ -18,8 +18,8 @@ from typing import Any
 from fastapi import Request
 from sqlalchemy.orm import Session
 
-from app.core.auth_settings import prime_process_auth_settings
 from app.core.config import settings
+from app.core.process_auth_settings import prime_process_auth_settings
 from app.models.auth_config import AuthConfig
 from app.models.auth_config import AuthConfigAudit
 from app.schemas.auth_config import CATEGORY_SCHEMAS

@@ -21,7 +21,6 @@ backend/app/auth/lockout.py	1201	oversize: split by concern planned
 backend/app/auth/password_policy.py	888	oversize: split by concern planned
 backend/app/auth/pki_auth.py	1815	oversize: split by concern planned
 backend/app/auth/token_service.py	1116	oversize: split by concern planned
-backend/app/core/auth_settings.py	859	oversize: split by concern planned
 backend/app/core/celery.py	1415	oversize: split by concern planned
 backend/app/core/config.py	1594	oversize: split by concern planned
 backend/app/schemas/auth_config.py	701	oversize: split by concern planned

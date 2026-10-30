@@ -78,7 +78,7 @@ def approval_required(db) -> bool | None:
         ``api/endpoints/auth/dependencies.py``).
     """
     if db is None or not hasattr(db, "query"):
-        from app.core.auth_settings import get_process_auth_settings
+        from app.core.process_auth_settings import get_process_auth_settings
 
         return bool(get_process_auth_settings().require_account_approval)
 

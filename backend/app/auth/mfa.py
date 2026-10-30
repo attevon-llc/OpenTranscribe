@@ -37,8 +37,8 @@ import pyotp
 import qrcode
 from passlib.context import CryptContext
 
-from app.core.auth_settings import get_process_auth_settings
 from app.core.config import settings
+from app.core.process_auth_settings import get_process_auth_settings
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
 

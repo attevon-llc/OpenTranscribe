@@ -39,7 +39,7 @@ _warned_providers: set[str] = set()
 
 def _absolute_timeout_minutes() -> int:
     """Admin UI > ``.env`` > default, from the process-wide cache (hot path)."""
-    from app.core.auth_settings import get_process_auth_settings
+    from app.core.process_auth_settings import get_process_auth_settings
 
     return int(get_process_auth_settings().session_absolute_timeout_minutes)
 

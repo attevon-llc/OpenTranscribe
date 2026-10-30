@@ -4,7 +4,8 @@ Transcription module for OpenTranscribe.
 Pipeline tasks (3-stage Celery chain for maximum GPU utilization):
 - preprocess.py: CPU task — download, FFmpeg audio extraction, MinIO temp staging
 - core.py: GPU task — Whisper transcription + PyAnnote diarization + DB save
-- postprocess.py: CPU task — speaker embeddings, search indexing, downstream dispatch
+- postprocess.py: CPU task — speaker embeddings, finalize, enrichment hand-off
+- enrich.py: background fan-out — search indexing, redaction, speaker attributes/clustering
 - dispatch.py: Chain orchestration and batch dispatch
 
 Shared utilities:

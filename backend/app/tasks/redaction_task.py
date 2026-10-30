@@ -3,7 +3,7 @@
 **Dispatch is gated, not unconditional.** Redaction is opt-out by default
 (``DEFAULT_REDACTION_ENABLED = False``) because the scan delays transcript display,
 so the pipeline only dispatches this task when the owner has redaction enabled or an
-admin forces it — see ``tasks/transcription/postprocess.py::_dispatch_redaction``,
+admin forces it — see ``tasks/transcription/enrich.py::_dispatch_redaction``,
 which returns early unless ``resolve_effective_config(db, user_id).enabled``. A user
 who enables redaction later gets detection dispatched **lazily, the first time they
 open the file**, so an existing transcript with no spans is expected rather than a bug.

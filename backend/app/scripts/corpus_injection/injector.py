@@ -288,7 +288,7 @@ def dispatch_redaction(
     """Hand the file to the production redaction-detection task, when the owner masks.
 
     The transcription pipeline does this from
-    ``tasks/transcription/postprocess._dispatch_redaction`` once a file completes.
+    ``tasks/transcription/enrich._dispatch_redaction`` once a file completes.
     Injection is the only writer that produces a COMPLETED file with a transcript
     *without* entering that pipeline, so nothing did it here — and the consequence is
     not cosmetic. ``api/endpoints/files/crud._redaction_pending`` withholds a

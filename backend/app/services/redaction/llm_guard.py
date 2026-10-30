@@ -11,7 +11,7 @@ the edge case:
 
 * **Detection has not finished.** ``redaction_detect_task`` is dispatched by the
   same post-processing step that dispatches these three tasks
-  (``tasks/transcription/postprocess.py``), onto a separate CPU queue. Nothing
+  (``tasks/transcription/enrich.py``), onto a separate CPU queue. Nothing
   orders them, so the LLM tasks routinely reach a transcript whose
   ``TranscriptSegment.redactions`` are still NULL — and
   ``RedactionService.mask_segment`` with an empty span list masks nothing and

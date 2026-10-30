@@ -51,7 +51,6 @@ backend/app/tasks/speaker_identification_task.py	720	oversize: split by concern 
 backend/app/tasks/summarization.py	804	oversize: split by concern planned
 backend/app/tasks/transcription/core.py	711	oversize: split by concern planned
 backend/app/tasks/transcription/dispatch.py	737	oversize: split by concern planned
-backend/app/tasks/transcription/postprocess.py	802	oversize: split by concern planned
 backend/app/transcription/engine/stages.py	1300	oversize: split by concern planned
 backend/tests/CLAUDE.md	946	oversize: split by concern planned
 backend/tests/api/endpoints/test_auth_comprehensive.py	757	oversize: split by concern planned
@@ -126,7 +125,7 @@ backend/tests/unit/test_opentr_restore_safety.py	765	oversize: split by concern 
 backend/tests/unit/test_opentr_stop_container_scoping.py	748	oversize: split by concern planned
 backend/tests/unit/test_password_policy_controls.py	791	oversize: split by concern planned
 backend/tests/unit/test_pipeline_execution_matrix.py	747	oversize: split by concern planned
-backend/tests/unit/test_post_processing_status.py	771	oversize: split by concern planned
+backend/tests/unit/test_post_processing_status.py	769	oversize: split by concern planned
 backend/tests/unit/test_privacy_policy.py	744	oversize: split by concern planned
 backend/tests/unit/test_pyannote_provider.py	838	oversize: split by concern planned
 backend/tests/unit/test_recovery_tasks.py	748	oversize: split by concern planned

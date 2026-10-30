@@ -134,7 +134,7 @@ class ChunkPlaneMixin(OrphanProbeMixin):
           production ``refresh_interval``, and the stale tail survived **11 of 12
           pairs**.
         * **Nothing serialises the callers.** Five dispatch sites reach the
-          single-file indexing task — ``tasks/transcription/postprocess.py``,
+          single-file indexing task — ``tasks/transcription/enrich.py``,
           ``tasks/transcription/background.py``, ``services/task_recovery_service.py``,
           ``api/endpoints/files/reprocess.py`` (user-triggered, at any moment, with no
           in-flight or lock check) and ``scripts/corpus_injection/injector.py`` — plus

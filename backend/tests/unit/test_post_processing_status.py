@@ -389,27 +389,25 @@ class TestStoredState:
 class TestPlan:
     @pytest.fixture
     def fanout(self, monkeypatch, privacy_allows_all):
-        from app.tasks.transcription import postprocess
+        from app.tasks.transcription import enrich
 
         plans: list[tuple[int, dict, float]] = []
         monkeypatch.setattr(
-            postprocess.post_processing_status,
+            enrich.post_processing_status,
             "resolve_file",
             lambda file_id: pps.FileRef(id=file_id, uuid="uuid-1", owner_id=7),
         )
         monkeypatch.setattr(
-            postprocess.post_processing_status,
+            enrich.post_processing_status,
             "report_plan",
             lambda ref, decisions, run_at: plans.append((ref.id, dict(decisions), run_at)),
         )
-        monkeypatch.setattr(
-            postprocess, "_index_transcript", lambda *a, **k: PostProcessingState.QUEUED
-        )
+        monkeypatch.setattr(enrich, "_index_transcript", lambda *a, **k: PostProcessingState.QUEUED)
         monkeypatch.setattr(
             "app.tasks.ingest_artifacts_task.dispatch_file_facts", lambda *a, **k: True
         )
         monkeypatch.setattr(
-            postprocess, "_dispatch_redaction", lambda *a, **k: PostProcessingState.SKIPPED
+            enrich, "_dispatch_redaction", lambda *a, **k: PostProcessingState.SKIPPED
         )
         monkeypatch.setattr(
             "app.tasks.transcription.core.trigger_automatic_summarization",
@@ -427,13 +425,13 @@ class TestPlan:
             "app.tasks.speaker_clustering.cluster_speakers_for_file.delay",
             lambda *a, **k: SimpleNamespace(id="x"),
         )
-        return postprocess, plans
+        return enrich, plans
 
     def test_every_dispatch_decision_lands_in_one_plan(self, fanout):
-        postprocess, plans = fanout
+        enrich, plans = fanout
         before = time.time()
 
-        postprocess.enrich_and_dispatch(file_id=42, file_uuid="uuid-1", user_id=7)
+        enrich.enrich_and_dispatch(file_id=42, file_uuid="uuid-1", user_id=7)
 
         ((file_id, decisions, run_at),) = plans
         assert file_id == 42
@@ -450,7 +448,7 @@ class TestPlan:
         }
 
     def test_a_failed_dispatch_is_in_the_plan_as_failed(self, fanout, monkeypatch):
-        postprocess, plans = fanout
+        enrich, plans = fanout
 
         def broken(*a: object, **k: object) -> None:
             raise ConnectionError("broker down")
@@ -460,7 +458,7 @@ class TestPlan:
         )
         monkeypatch.setattr("app.tasks.speaker_clustering.cluster_speakers_for_file.delay", broken)
 
-        postprocess.enrich_and_dispatch(file_id=42, file_uuid="uuid-1", user_id=7)
+        enrich.enrich_and_dispatch(file_id=42, file_uuid="uuid-1", user_id=7)
 
         decisions = plans[0][1]
         assert decisions[PostProcessingTask.SPEAKER_ATTRIBUTES] is PostProcessingState.FAILED
@@ -469,12 +467,12 @@ class TestPlan:
         assert decisions[PostProcessingTask.SEARCH_INDEXING] is PostProcessingState.QUEUED
 
     def test_detection_off_plans_attributes_as_skipped(self, fanout, monkeypatch):
-        postprocess, plans = fanout
+        enrich, plans = fanout
         monkeypatch.setattr(
             "app.tasks.speaker_attribute_task.dispatch_speaker_attribute_pipeline",
             lambda *a, **k: "llm_only",
         )
-        postprocess.enrich_and_dispatch(file_id=42, file_uuid="uuid-1", user_id=7)
+        enrich.enrich_and_dispatch(file_id=42, file_uuid="uuid-1", user_id=7)
         assert plans[0][1][PostProcessingTask.SPEAKER_ATTRIBUTES] is PostProcessingState.SKIPPED
 
 

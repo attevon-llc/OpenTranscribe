@@ -138,7 +138,7 @@ def test_the_sweep_finds_the_readers_it_is_meant_to_check() -> None:
     """Guard on the guard: a sweep that matches nothing passes everything."""
     keys = {key for key, _, _ in _functions_touching_the_chunks_index()}
     for expected in (
-        "services/search/indexing_service.py::delete_transcript_chunks",
+        "services/search/indexing/chunk_plane.py::delete_transcript_chunks",
         "services/search/hybrid_search_service.py::get_available_filters",
         "services/search/hybrid_search_service.py::get_suggestions",
         "tasks/reindex_task.py::_cleanup_orphaned_chunks",
@@ -201,9 +201,9 @@ def test_the_plane_builders_agree_on_what_a_legacy_document_is(
     builder: str, expects_compat: bool
 ) -> None:
     """A legacy chunk (no ``doc_type``) belongs to the chunk plane and nowhere else."""
-    from app.services.search import indexing_service
+    from app.services.search import plane_queries
 
-    body = getattr(indexing_service, builder)("some-uuid")
+    body = getattr(plane_queries, builder)("some-uuid")
     rendered = repr(body)
     has_compat = "must_not" in rendered and "doc_type" in rendered
     assert has_compat is expects_compat, (

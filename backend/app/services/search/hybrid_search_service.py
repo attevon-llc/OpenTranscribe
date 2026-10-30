@@ -33,8 +33,8 @@ from app.services.search.access_filter import access_filter_clause
 from app.services.search.fusion import FusionConfig
 from app.services.search.fusion import resolve_fusion
 from app.services.search.fusion import search_pipeline_id
-from app.services.search.indexing_service import ensure_chunks_index_exists
-from app.services.search.indexing_service import ensure_search_pipeline_exists
+from app.services.search.index_admin import ensure_chunks_index_exists
+from app.services.search.pipelines import ensure_search_pipeline_exists
 from app.services.search.snippet_redaction import mask_snippets
 
 if TYPE_CHECKING:  # pragma: no cover - import cost paid only by type checkers
@@ -520,7 +520,7 @@ def _search_corpus_version() -> str:
     Reusing ``chat.retrieval_cache.corpus_version()`` rather than inventing a
     second counter: it is already bumped, cross-process via Redis, by every
     real content-changing write to the chunk plane
-    (``indexing_service._invalidate_chat_retrieval_cache``, called from
+    (``corpus_cache._invalidate_chat_retrieval_cache``, called from
     ``index_transcript_chunks`` and the rename-propagation tasks) — exactly the
     set of events that should also invalidate a cached search page. Folding it
     into the cache key means a version bump makes every previously cached key

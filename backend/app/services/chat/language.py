@@ -22,7 +22,7 @@ Which stage is English-only, and what changes it:
   what makes a deployment multilingual, and :func:`supported_rag_languages` reads
   that selection.
 * **BM25** — the ``transcript_chunks`` analyzer is ``english_stop`` +
-  ``english_snowball`` (``services/search/indexing_service.py:55``). Partially
+  ``english_snowball`` (``services/search/index_schema.py``). Partially
   mitigated already: ``content.exact`` (standard analyzer) is queried alongside the
   stemmed leg, so non-English keyword matching degrades rather than vanishing.
 * **Reranking** — ``ms-marco-MiniLM-L-6-v2`` is English MS MARCO. It is **skipped

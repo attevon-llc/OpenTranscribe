@@ -54,7 +54,7 @@ def throwaway_indices(monkeypatch):
     """
     from app.core.config import settings
     from app.services.opensearch_service import get_opensearch_client
-    from app.services.search import indexing_service as svc
+    from app.services.search import pipelines
     from app.services.search.hybrid_search_service import reset_infrastructure_state
 
     client = get_opensearch_client()
@@ -64,14 +64,14 @@ def throwaway_indices(monkeypatch):
     transcripts_name = f"test_reindex666_transcripts_{uuid.uuid4().hex[:12]}"
     monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", chunks_name)
     monkeypatch.setattr(settings, "OPENSEARCH_TRANSCRIPT_INDEX", transcripts_name)
-    svc.reset_neural_pipeline_state()
+    pipelines.reset_neural_pipeline_state()
     reset_infrastructure_state()
     try:
         yield client
     finally:
         client.indices.delete(index=chunks_name, ignore=[404])
         client.indices.delete(index=transcripts_name, ignore=[404])
-        svc.reset_neural_pipeline_state()
+        pipelines.reset_neural_pipeline_state()
         reset_infrastructure_state()
 
 

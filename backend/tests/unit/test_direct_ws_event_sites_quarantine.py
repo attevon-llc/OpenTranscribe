@@ -626,7 +626,7 @@ class TestRenamePropagationMultiFile:
             },
         )
         monkeypatch.setattr(
-            "app.services.search.indexing_service.is_neural_pipeline_available", lambda: False
+            "app.services.search.pipelines.is_neural_pipeline_available", lambda: False
         )
         monkeypatch.setattr(
             "app.services.search.indexing_service.TranscriptIndexingService._index_digest_plane",

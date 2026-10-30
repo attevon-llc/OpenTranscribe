@@ -1082,7 +1082,7 @@ class OpenSearchMLModelService:
         used to return ``list_models(deployed_only=True)[0]`` — the first hit of a
         ``match_all`` search with no sort, i.e. an arbitrary model. The caller
         that matters is
-        :func:`~app.services.search.indexing_service.ensure_neural_ingest_pipeline`,
+        :func:`~app.services.search.pipelines.ensure_neural_ingest_pipeline`,
         which writes whatever it is handed into the ingest pipeline; the drift
         check then sees the model change and recreates the pipeline. So an
         arbitrary pick silently repoints embedding at a different model **with no

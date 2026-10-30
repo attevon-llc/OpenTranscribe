@@ -608,7 +608,7 @@ def _erase_transcript_chunks(file_uuid: str, fail: Callable[[str, object], None]
     written for.
 
     Neither the delete nor the count builds its predicate here: both are
-    ``file_plane_query``, in ``search/indexing_service``, which owns the plane
+    ``file_plane_query``, in ``search/plane_queries``, which owns the plane
     vocabulary. Building a second predicate at this call site is what would let
     the check and the thing it checks drift apart.
     """

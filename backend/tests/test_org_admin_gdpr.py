@@ -199,7 +199,7 @@ def fake_opensearch():
         with (
             patch("app.services.opensearch_service.opensearch_client", cluster),
             patch("app.services.opensearch_service.client.opensearch_client", cluster),
-            patch("app.services.search.indexing_service.opensearch_client", cluster),
+            patch("app.services.search.indexing.chunk_plane.opensearch_client", cluster),
         ):
             yield cluster
 
@@ -1152,7 +1152,7 @@ class TestPartialErasureIsReportedAsPartial:
         with (
             patch("app.services.opensearch_service.opensearch_client", None),
             patch("app.services.opensearch_service.client.opensearch_client", None),
-            patch("app.services.search.indexing_service.opensearch_client", None),
+            patch("app.services.search.indexing.chunk_plane.opensearch_client", None),
             captured_audit() as fake_audit,
         ):
             summary = erase_user(db_session, user.id)

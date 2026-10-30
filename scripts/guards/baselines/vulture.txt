@@ -100,7 +100,6 @@ backend/app/services/redis_cache_service.py::method::invalidate_metadata	1	resid
 backend/app/services/redis_cache_service.py::method::invalidate_tags_for_file	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/search/chunking_service.py::function::reset_sentence_splitter_state	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/search/hybrid_search_service.py::function::reset_infrastructure_state	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/services/search/indexing_service.py::function::survey_speaker_id_coverage	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/search/ml_model_service.py::method::delete_ingest_pipeline	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/search/ml_model_service.py::method::update_ingest_pipeline_model	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/similarity_service.py::method::get_device_info	1	residual after the dead-code pass; delete or whitelist when touched
@@ -183,3 +182,4 @@ backend/app/utils/transcript_comparison.py::function::export_word_reference	1	re
 backend/app/utils/vram_profiler.py::method::save_report	1	residual after the dead-code pass; delete or whitelist when touched
 scripts/cleanup-test-users.py::class::UserRow	1	residual after the dead-code pass; delete or whitelist when touched
 scripts/lib/sbom_license.py::function::declared_component_license	1	residual after the dead-code pass; delete or whitelist when touched
+backend/app/services/search/index_admin.py::function::survey_speaker_id_coverage	1	residual after the dead-code pass; delete or whitelist when touched

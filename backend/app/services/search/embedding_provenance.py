@@ -20,7 +20,7 @@ and nothing keeps them consistent: ``POST /search/models`` wrote only the first
 and ``PUT /search/models/neural/active`` only the second. A label read from the
 settings table can therefore name a model that never touched the vector it is
 attached to, which is worse than no label. :func:`active_embedding_model` returns
-what :func:`~app.services.search.indexing_service.ensure_neural_ingest_pipeline`
+what :func:`~app.services.search.pipelines.ensure_neural_ingest_pipeline`
 resolved from the pipeline it actually wrote.
 
 **``"neural"`` means UNKNOWN, and keeps meaning it.** Every document indexed

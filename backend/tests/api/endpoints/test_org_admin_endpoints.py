@@ -284,7 +284,7 @@ class TestEraseOrganizationConfirmGate:
         """
         monkeypatch.setattr("app.services.opensearch_service.opensearch_client", None)
         monkeypatch.setattr("app.services.opensearch_service.client.opensearch_client", None)
-        monkeypatch.setattr("app.services.search.indexing_service.opensearch_client", None)
+        monkeypatch.setattr("app.services.search.indexing.chunk_plane.opensearch_client", None)
 
         response = client.post(f"{ERASE_ORG_PATH}?confirm=true", headers=org_admin_request)
 

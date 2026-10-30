@@ -111,7 +111,8 @@ backend/app/services/email_service.py	1	ratchet: may only go down
 backend/app/services/embedding_mode_service.py	5	ratchet: may only go down
 backend/app/services/erasure_ledger_service.py	9	ratchet: may only go down
 backend/app/services/file_cleanup_service.py	19	ratchet: may only go down
-backend/app/services/gdpr_erasure_service.py	5	ratchet: may only go down
+backend/app/services/gdpr_erasure_steps.py	1	ratchet: may only go down
+backend/app/services/gdpr_voiceprint_erasure.py	4	ratchet: may only go down
 backend/app/services/huggingface_token.py	2	ratchet: may only go down
 backend/app/services/imohash_service.py	2	ratchet: may only go down
 backend/app/services/ingest_artifacts/textrank.py	1	ratchet: may only go down

@@ -3,7 +3,7 @@
 The defect this exists to catch
 -------------------------------
 ``api/endpoints/admin._delete_user_owned_records`` and
-``services/gdpr_erasure_service._delete_owner_scoped_rows`` are two independent,
+``services/gdpr_erasure_steps._delete_owner_scoped_rows`` are two independent,
 hand-maintained lists of the foreign keys that have no ``ON DELETE CASCADE``.
 Nothing in the application compares them, neither is derived from the schema, and
 both are the *only* thing standing between a new table and a permanently broken
@@ -89,8 +89,8 @@ _SENTINELS = frozenset({DB_SET_NULL, DB_CASCADE_VIA_SIBLING, ORM_CASCADE})
 _ADMIN_OWNED = "app.services.user_deletion_service._delete_user_owned_records"
 _ADMIN_SPEAKERS = "app.services.user_deletion_service._delete_user_speakers"
 _ADMIN_FILES = "app.services.user_deletion_service._delete_user_media_files"
-_GDPR_ROWS = "app.services.gdpr_erasure_service._delete_owner_scoped_rows"
-_GDPR_FILES = "app.services.gdpr_erasure_service._purge_files"
+_GDPR_ROWS = "app.services.gdpr_erasure_steps._delete_owner_scoped_rows"
+_GDPR_FILES = "app.services.gdpr_erasure_steps._purge_files"
 
 
 @dataclass(frozen=True)
@@ -531,7 +531,7 @@ def _referenced_model_names(dotted: str) -> set[str]:
     * ``admin.py`` imports ``Task as TaskModel``, so comparing the two lists on their
       *local* names would report a divergence that does not exist. Resolution through
       the module fixes that.
-    * ``gdpr_erasure_service`` deletes three of its models through a
+    * ``gdpr_erasure_steps`` deletes three of its models through a
       ``for model, key in ((SpeakerCollection, ...), ...)`` loop, where the class
       appears only in a tuple literal and ``db.query(model)`` names a loop variable.
       A scan keyed on the call would find none of them, and the comparison would
@@ -807,7 +807,7 @@ def test_the_two_hand_maintained_owner_lists_agree():
     """Compare the two lists nothing in the application compares.
 
     ``admin._delete_user_owned_records`` and
-    ``gdpr_erasure_service._delete_owner_scoped_rows`` were written independently and
+    ``gdpr_erasure_steps._delete_owner_scoped_rows`` were written independently and
     have drifted: each deletes models the other does not. Divergence is legitimate —
     the two use different delete shapes, and only one has a legal-hold branch — but it
     has to be a *decision*, and the four current ones are recorded in

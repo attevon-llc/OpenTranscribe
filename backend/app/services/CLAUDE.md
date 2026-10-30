@@ -181,7 +181,7 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   (`/admin/hf-token`, write-only, fixed-sentence Test, audit entries carry the action only).
   Only the process that saved a token busts its cache at once; others see it within the TTL.
 - **Ops** — backup/recovery, cleanup, migration lock+progress, task detection/filtering/recovery,
-  system settings, usage, GDPR erasure (`gdpr_erasure_service.py` +
+  system settings, usage, GDPR erasure (`gdpr_erasure_service.py` with `gdpr_erasure_steps.py` and `gdpr_voiceprint_erasure.py` +
   `erasure_ledger_service.py` — **see below**).
 - **Superseded task rows** — `task_row_supersede.py` (#1185) is the one definition of "this active task
   row was superseded by a newer completed run of the same step for the same file": the health-check sweep,

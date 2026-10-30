@@ -672,8 +672,8 @@ def purge_voiceprint_docs(
         ``{"speaker_docs_deleted", "profile_docs_deleted", "cluster_docs_deleted"}``: what
         OpenSearch reports as deleted, never the number of ids asked for.
     """
-    from app.services.gdpr_erasure_service import delete_speaker_docs_by_ids
-    from app.services.gdpr_erasure_service import delete_speaker_docs_by_query
+    from app.services.gdpr_voiceprint_erasure import delete_speaker_docs_by_ids
+    from app.services.gdpr_voiceprint_erasure import delete_speaker_docs_by_query
 
     if scope.kind == "instance_all":
         # Everything: no ids to enumerate, and orphan documents with no Postgres row go too.

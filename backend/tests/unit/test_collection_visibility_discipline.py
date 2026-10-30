@@ -123,7 +123,7 @@ ALLOWLIST: dict[str, str] = {
         "W: reads the tenant's collection names only to REFUSE an LLM suggestion that matches "
         "one the file owner cannot use; the result is a boolean that is never shown"
     ),
-    "services/gdpr_erasure_service.py::_delete_owner_scoped_rows": (
+    "services/gdpr_erasure_steps.py::_delete_owner_scoped_rows": (
         "W: Art. 17 erasure deletes the subject's collections"
     ),
     "services/gdpr_erasure_service.py::erase_org_member_data": (

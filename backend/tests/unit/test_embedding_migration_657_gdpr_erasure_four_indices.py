@@ -1,6 +1,6 @@
 """GDPR Art. 17 voiceprint erasure must still cover all four indices (issue #657).
 
-The task explicitly calls out ``gdpr_erasure_service.py``'s
+The task explicitly calls out ``gdpr_voiceprint_erasure.py``'s
 ``_erase_voiceprints`` (delete-by-query over ``{alias, v3, v4, v3_backup}``)
 as a location that must not regress: its own docstring records that
 ``_restore_v3_from_backup`` once RESURRECTED erased biometric data. None of
@@ -17,13 +17,13 @@ import inspect
 
 import pytest
 
-from app.services import gdpr_erasure_service
+from app.services import gdpr_voiceprint_erasure
 
 
 @pytest.mark.unit
 class TestVoiceprintErasureCoversAllFourIndices:
     def test_erasure_queries_alias_v3_v4_and_v3_backup(self):
-        source = inspect.getsource(gdpr_erasure_service)
+        source = inspect.getsource(gdpr_voiceprint_erasure)
         # Locate the specific block building the erasure index set, not just
         # any mention of these four helpers anywhere in the file.
         marker = "indices = {"
@@ -42,6 +42,6 @@ class TestVoiceprintErasureCoversAllFourIndices:
         pin its presence so a rewrite cannot silently drop the warning along
         with the behavior it explains.
         """
-        source = inspect.getsource(gdpr_erasure_service)
+        source = inspect.getsource(gdpr_voiceprint_erasure)
         assert "speakers_v3_backup" in source
         assert "resurrect" in source.lower() or "restore_v3_from_backup" in source

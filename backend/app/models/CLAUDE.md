@@ -106,7 +106,7 @@ authority. See `backend/app/db/CLAUDE.md`.
   (`MediaFile.organization_id`), credited to the file owner; and a merge never crosses
   tenants except *into* a system tag (`tag_operations.TagTenantMismatchError`). User deletion
   deletes personal tags and de-attributes org tags (`admin._delete_user_owned_records`,
-  `gdpr_erasure_service._delete_owner_scoped_rows`); `erase_organization` deletes the org's
+  `gdpr_erasure_steps._delete_owner_scoped_rows`); `erase_organization` deletes the org's
   tags, because `tag.organization_id` is a plain FK.
 - **`ContentHold` / `ContentHoldFile`** (`v447`, issue #1276, `models/content_hold.py`) are an
   ORGANIZATION's holds: scope `file` or `collection`, active while `released_at IS NULL`, released

@@ -572,7 +572,7 @@ def test_usage_reports_only_the_active_tenant(client, world, relation, stamped, 
 def test_reindex_status_counts_only_the_active_tenant(
     client, world, monkeypatch, relation, stamped, visible
 ):
-    from app.api.endpoints import search
+    from app.api.endpoints import search_reindex as search
     from app.db import session_utils
     from app.models.media import TranscriptSegment
 

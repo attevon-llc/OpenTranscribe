@@ -258,7 +258,7 @@ def test_repair_indices_probes_opensearch_outside_the_transaction(
     admin_user, tracked_db, repair_env
 ):
     """All eight probes run with the request transaction released."""
-    from app.api.endpoints import search as search_ep
+    from app.api.endpoints import search_index_health as search_ep
 
     repair_env(tracked_db, healthy=True)
 
@@ -284,7 +284,7 @@ def test_repair_indices_rebuilds_speakers_in_a_transaction_of_its_own(
     admin_user, tracked_db, repair_env
 ):
     """The Postgres rebuild is the LAST phase and does get a live transaction."""
-    from app.api.endpoints import search as search_ep
+    from app.api.endpoints import search_index_health as search_ep
 
     recorded = repair_env(tracked_db, healthy=False)
 

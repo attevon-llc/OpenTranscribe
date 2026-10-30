@@ -195,7 +195,7 @@ ALLOWLIST: dict[str, str] = {
         "Q: include_quarantined for a collection already authorized through the chokepoint; "
         "argument is ctx.bypass.user_is_admin"
     ),
-    "api/endpoints/search.py::_source_counts": (
+    "api/endpoints/search_helpers.py::_source_counts": (
         "Q: quarantine visibility of per-source counts inside the caller's own tenant filter; "
         "argument is ctx.bypass.user_is_admin"
     ),
@@ -203,7 +203,7 @@ ALLOWLIST: dict[str, str] = {
         "Q: quarantine visibility of facet counts inside the caller's own tenant filter; "
         "argument is ctx.bypass.user_is_admin"
     ),
-    "api/endpoints/search.py::get_index_health": (
+    "api/endpoints/search_index_health.py::get_index_health": (
         "P: instance index health; non-admins get doc counts scoped to themselves, admins the "
         "platform totals (counts, no content)"
     ),

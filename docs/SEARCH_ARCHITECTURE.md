@@ -233,5 +233,5 @@ Transcript segments can optionally store word-level timestamps from faster-whisp
 | `backend/app/services/search/hybrid_search_service.py` | Search query construction, RRF combination, result grouping |
 | `backend/app/services/search/indexing_service.py` | Index mapping, analyzer definitions, bulk indexing |
 | `backend/app/services/search/chunking_service.py` | Speaker-turn chunking strategy |
-| `backend/app/api/endpoints/search.py` | Search API endpoint |
+| `backend/app/api/endpoints/search.py` (+ `search_helpers.py`, `search_reindex.py`, `search_index_health.py`, `search_models.py`) | Search API endpoints |
 | `backend/app/core/config.py` | Search configuration defaults |

@@ -688,18 +688,18 @@ _RAISE_ALLOWLIST: dict[str, tuple[int, str]] = {
         1,
         "our own ValueError from media_mirror_service.update_settings — a validator message",
     ),
-    "api/endpoints/search.py::_summary_search_payload": (
+    "api/endpoints/search_helpers.py::_summary_search_payload": (
         1,
         "our own SummaryMaskingUnavailableError — a fail-closed masking-outage "
         "message we author, not a caught library exception",
     ),
-    "api/endpoints/search.py::trigger_reindex": (
+    "api/endpoints/search_reindex.py::trigger_reindex": (
         1,
         "our own ReindexDispatchError message — only true now that "
         "services/search/model_switch.py::dispatch_reindex_for_every_owner (#891 "
         "exemplar) no longer interpolates the raw broker exception into that message",
     ),
-    "api/endpoints/search.py::_switch_model": (
+    "api/endpoints/search_models.py::_switch_model": (
         3,
         "our own UnknownEmbeddingModelError / EmbeddingModelNotDeployedError / "
         "ReindexDispatchError messages, all authored by model_switch.py itself",

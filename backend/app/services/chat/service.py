@@ -233,7 +233,7 @@ def _drop_quarantined_hits(db: Session, hits: list[ChunkHit]) -> list[ChunkHit]:
     scoped. An **unscoped** turn (``file_uuids is None``) never routes through
     that resolver at all: retrieval goes straight to the index, which still
     returns the quarantined file's chunks and digest sections. This is the
-    chat-plane analogue of ``api/endpoints/search.py::_drop_quarantined_search_hits``
+    chat-plane analogue of ``api/endpoints/search_helpers.py::_drop_quarantined_search_hits``
     and must run over both planes, since a summarize-routed turn's digest hits
     never pass through the chunk leg.
 

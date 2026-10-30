@@ -41,7 +41,7 @@ def _call_with_org_grant(w, surveyed):
     unreachable over HTTP today. It is still code, and it is what would run the day that
     refusal is lifted, so its tenant predicate is pinned here rather than left to chance.
     """
-    from app.api.endpoints.search import get_degraded_embeddings
+    from app.api.endpoints.search_reindex import get_degraded_embeddings
     from app.services.platform_bypass import build_bypass
     from app.services.request_context import RequestContext
     from app.services.support_access_service import resolve_active_grant

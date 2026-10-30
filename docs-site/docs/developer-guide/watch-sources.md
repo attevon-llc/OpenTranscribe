@@ -213,7 +213,7 @@ Graph `sendMail` for M365. **Delivery is experimental** — verify against a rea
 
 ## API & frontend
 
-- API: `api/endpoints/watch_sources.py` (CRUD, test, scan, paginated file history with status +
+- API: `api/endpoints/watch_sources*.py` (CRUD, test, scan, paginated file history with status +
   filename filters, batch retry, batch delete, folder browse, capabilities, multipart-regex
   tester, email-config CRUD + test, per-source email links, admin global settings), registered
   in `api/router.py` under `/watch-sources`.

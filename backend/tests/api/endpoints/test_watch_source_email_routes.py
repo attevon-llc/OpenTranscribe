@@ -1,4 +1,4 @@
-"""Functional tests for the watch-source email routes (``watch_sources.py``).
+"""Functional tests for the watch-source email routes (``watch_sources_email_configs.py`` / ``_email_links.py``).
 
 Three routes ``scripts/audit-route-coverage.py`` listed as referenced by no test:
 

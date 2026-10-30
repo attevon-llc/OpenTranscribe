@@ -556,7 +556,7 @@ def _dispatch_pipeline(media_file: MediaFile, user_id: int, source: WatchSource)
     except Exception as e:  # noqa: BLE001 - one file's failure must not abort the scan
         # This return value is persisted verbatim onto the tracking row's
         # error_message and rendered in the watch-source file listing
-        # (api/endpoints/watch_sources.py) — never interpolate the raw exception
+        # (api/endpoints/watch_sources_files.py) — never interpolate the raw exception
         # text, which can carry the #891 Redis broker URL with an embedded
         # credential. Only the class of failure survives; the real cause is
         # still diagnosable via the log below.

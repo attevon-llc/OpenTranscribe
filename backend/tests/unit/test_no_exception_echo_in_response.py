@@ -723,7 +723,7 @@ _RAISE_ALLOWLIST: dict[str, tuple[int, str]] = {
         1,
         "our own TagShareError message from services/tag_sharing.share_tag",
     ),
-    "api/endpoints/watch_sources.py::browse_directories": (
+    "api/endpoints/watch_sources_settings.py::browse_directories": (
         1,
         "verified: folder_browser.list_directories raises only three fixed-literal "
         "ValueErrors, never a host path",
@@ -783,7 +783,7 @@ _RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
         1,
         "same: narrow aiohttp.ClientError, the dial result IS the product",
     ),
-    "api/endpoints/watch_sources.py::test_multipart_regex": (
+    "api/endpoints/watch_sources_settings.py::test_multipart_regex": (
         1,
         "narrow ValueError echoing the caller's OWN regex back — the entire point "
         "of a regex-test endpoint",

@@ -1,7 +1,7 @@
 """Which email configuration carries transactional auth mail (super_admin).
 
 Mounted under ``/api/admin/auth-config`` rather than beside the
-``EmailNotificationConfig`` CRUD in ``watch_sources.py``, for two reasons:
+``EmailNotificationConfig`` CRUD in ``watch_sources_email_configs.py``, for two reasons:
 
 * **It is an authentication decision, not a watch-source one.** The designated
   row carries password resets, invitations and verification links — credentials.

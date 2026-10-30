@@ -363,13 +363,13 @@ class TestDesignatedConfigIsProtected:
 
     @staticmethod
     def _delete(db, uuid):
-        from app.api.endpoints.watch_sources import delete_email_config
+        from app.api.endpoints.watch_sources_email_configs import delete_email_config
 
         return delete_email_config(uuid, db, cast(Any, FakeUser()))
 
     @staticmethod
     def _disable(db, uuid, enabled=False):
-        from app.api.endpoints.watch_sources import update_email_config
+        from app.api.endpoints.watch_sources_email_configs import update_email_config
         from app.schemas.email_notification import EmailConfigUpdate
 
         return update_email_config(

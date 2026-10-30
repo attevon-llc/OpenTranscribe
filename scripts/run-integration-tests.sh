@@ -180,43 +180,31 @@ run_phase() {
     fi
 }
 
-#: Skips this phase may legitimately report — RE-DERIVED 2026-09-07, not raised.
+#: Skips this phase may legitimately report: ZERO. Derived 2026-10-30, replacing the 2026-09-07
+#: derivation of 7.
 #:
-#: Measured with `-rs` on the live dev stack with the mock-llm/mock-asr/keycloak/diar-native
-#: overlays up (the configuration run-dev-tests.sh --full brings up): 170 passed, 15 skipped,
-#: 922 s. The previous run's 21 was 15 + the 6 lite-mode tests that the unit suite's
-#: mock-llm kill had made unrunnable — fixed separately, and the 6 now pass.
+#: The 7 were 4 skips in test_fusion_strategy_switch.py ("7 matching chunks, needs >=10") and 3 in
+#: test_rag_eval_harness.py ("the QMSum manifest was injected into a different cluster"): one class,
+#: tests that asserted on whatever corpus the target deployment happened to hold. On a fresh
+#: isolated stack it was really 13 (all 6 fusion + 3 rag-eval + the 4 hybrid completeness tests,
+#: which skipped without OPENSEARCH_TEST_MODEL_ID, a variable nothing set), and on a corpus-rich dev
+#: stack 7 was a different seven from the documented ones. That is a ceiling absorbing a
+#: permanently-skipping test class, not measuring anything.
 #:
-#: Of those 15, EIGHT are now DESELECTED rather than skipped, because they are not runnable on
-#: this deployment shape at all and a skip only inflates the total:
-#:   6  multi_gpu   — test_gpu_scale_smoke_live (2), test_diar_native_cross_card_placement_live
-#:                    (2), test_diar_native_multigpu_provider_live (2): need a running
-#:                    celery-worker-gpu-scaled/-gpu-diarize. Selected back in automatically
-#:                    when that topology IS up (see MULTI_GPU_FILTER below).
-#:   1  opt_in_gate — test_export_toolchain_in_shipped_images (RUN_EXPORT_CAPABILITY_TEST;
-#:                    ~150 s + gated weights). `--export-capability` selects it back in.
-#:   1  opt_in_gate — test_speaker_label_index_drift (RUN_INDEX_AUDIT): an audit of a
-#:                    DEPLOYMENT's accumulated data, not a regression test of this code.
-#:   1  opt_in_gate — test_chat_cache_share_revocation: the cache under test IS Redis, and
-#:                    the dev stack's Redis is password-protected and in-network only, so a
-#:                    host-run gate can NEVER satisfy its reachability gates. It needs an
-#:                    isolated stack. Marked rather than ceiling-raised — adding this file
-#:                    took the phase 7 -> 8 skips and turned it NOT MEASURED, which is the
-#:                    ceiling doing its job, not a number that wanted incrementing.
+#: Now no test in this phase depends on deployment data or an operator-exported variable:
+#:   fusion     seeds its own throwaway index (embedded by the stack's own model) and deletes it
+#:   rag-eval   injects a QMSum-format fixture under a pytest-<hex> seed and purge_injected()s it
+#:   hybrid     OPENSEARCH_TEST_MODEL_ID is resolved from the stack and verified DEPLOYED/384 by the
+#:              integration-env block below; when it cannot be, the block prints why and the 4 tests
+#:              skip, which now trips the ceiling and reports NOT MEASURED instead of hiding
+#: The multi_gpu and opt_in_gate deselections below are unchanged.
 #:
-#: That leaves SEVEN honest skips, all one class — this deployment's corpus does not hold the
-#: data the assertions need, which is issue #403 / the plan's P2-2 "seed it" work, not a gate
-#: misconfiguration:
-#:   4  test_fusion_strategy_switch.py:209,222,234,252 — 7 matching chunks, needs >=10
-#:   3  test_rag_eval_harness.py:61,73,100            — the QMSum manifest's files were
-#:                                                      injected into a different cluster
-#:
-#: ⚠️ RE-DERIVE this number, never raise it to make a phase pass, and never raise it without
-#: updating the list above. Every skip is either a gate that should be running (fix the gate),
-#: a test that cannot run here (give it a NAMED marker and deselect it, so it is visibly absent
-#: rather than silently counted), or dead (delete it). A skip is the one outcome that looks
-#: like a pass and proves nothing. When P2-2 seeds the corpus this drops to 0.
-INTEGRATION_SKIP_CEILING="${INTEGRATION_SKIP_CEILING:-7}"
+#: ⚠️ RE-DERIVE this number, never raise it to make a phase pass. Every skip is either a gate that
+#: should be running (fix the gate), a test that cannot run here (give it a NAMED marker and
+#: deselect it, so it is visibly absent rather than silently counted), or dead (delete it). A skip
+#: is the one outcome that looks like a pass and proves nothing. Measured with the stack's overlays
+#: the release `test` stage brings up (mock-llm, mock-asr) -- run-dev-tests.sh starts them.
+INTEGRATION_SKIP_CEILING="${INTEGRATION_SKIP_CEILING:-0}"
 
 #: The GPU phase gets the same treatment. It previously had NO ceiling at all and reported
 #: `✓ passed` on 8 passed / 18 skipped — 69% of the phase unmeasured, under a green tick.
@@ -547,12 +535,17 @@ else
     # Resolve host port + password from the compose project's own containers and hand them to
     # THIS phase only: exporting them to the unit phase flips ~10 memory-path tests to the Redis
     # path and fails them (measured 2026-10-28: 63 failures instead of 54).
+    # --- BEGIN integration-env ---
     REDIS_ENV=()
-    if [ -z "${REDIS_HOST:-}" ] && command -v docker >/dev/null 2>&1; then
-        _proj="${COMPOSE_PROJECT_NAME:-}"
-        _label=(--filter "label=com.docker.compose.service=backend")
-        [ -n "$_proj" ] && _label+=(--filter "label=com.docker.compose.project=$_proj")
+    INTEGRATION_ENV=()
+    _proj="${COMPOSE_PROJECT_NAME:-}"
+    _label=(--filter "label=com.docker.compose.service=backend")
+    [ -n "$_proj" ] && _label+=(--filter "label=com.docker.compose.project=$_proj")
+    _backend=""
+    if command -v docker >/dev/null 2>&1; then
         _backend="$(docker ps "${_label[@]}" --format '{{.Names}}' 2>/dev/null | head -1)"
+    fi
+    if [ -z "${REDIS_HOST:-}" ] && command -v docker >/dev/null 2>&1; then
         _redis_port="$(docker ps "${_label[@]/backend/redis}" --format '{{.Ports}}' 2>/dev/null \
             | grep -oE '(127\.0\.0\.1|0\.0\.0\.0):[0-9]+->6379' | head -1 | sed -E 's/.*:([0-9]+)->6379/\1/')"
         _redis_pw="$([ -n "$_backend" ] && docker exec "$_backend" printenv REDIS_PASSWORD 2>/dev/null)"
@@ -562,8 +555,46 @@ else
             echo -e "${YELLOW}⚠ could not resolve the stack's Redis host port; integration tests needing Redis will fail${NC}"
         fi
     fi
+    # The 4 hybrid completeness tests (test_search_completeness_opensearch.py) need a DEPLOYED
+    # 384-dimension text-embedding model and skip without OPENSEARCH_TEST_MODEL_ID. Nothing set
+    # it, so they skipped on every gate run since they landed. Resolve the id from the stack's own
+    # backend (the same source the app uses) and VERIFY it on the cluster: the test hardcodes 384
+    # in its throwaway index mapping, so a different dimension would fail the bulk, not skip.
+    # An operator-exported value always wins. A model that cannot be verified is reported by name
+    # and left unset, so the phase is NOT MEASURED (ceiling 0) rather than silently skipping.
+    if [ -z "${OPENSEARCH_TEST_MODEL_ID:-}" ]; then
+        _mid=""
+        _mid_why=""
+        if [ -z "$_backend" ]; then
+            _mid_why="no backend container to ask"
+        else
+            _mid_out="$(docker exec "$_backend" python -c 'from app.services.search.ml_model_service import get_ml_model_service as g; print("MODELID:" + (g().get_active_model_id() or ""))' 2>/dev/null)" || _mid_out=""
+            while IFS= read -r _mid_line; do
+                case "$_mid_line" in MODELID:*) _mid="${_mid_line#MODELID:}" ;; esac
+            done <<<"$_mid_out"
+            [ -n "$_mid" ] || _mid_why="the stack reports no active embedding model"
+        fi
+        if [ -n "$_mid" ]; then
+            _mjson="$(curl -sS --max-time 15 "http://localhost:${OPENSEARCH_PORT:-5180}/_plugins/_ml/models/$_mid" 2>/dev/null)" || _mjson=""
+            _mcheck="$(printf '%s' "$_mjson" | python3 -c 'import json,sys
+try:
+    d = json.load(sys.stdin)
+    print("%s %s" % (d.get("model_state"), (d.get("model_config") or {}).get("embedding_dimension")))
+except Exception:
+    print("unreadable unreadable")' 2>/dev/null)" || _mcheck="unreadable unreadable"
+            if [ "$_mcheck" = "DEPLOYED 384" ]; then
+                INTEGRATION_ENV=(env "OPENSEARCH_TEST_MODEL_ID=$_mid")
+            else
+                _mid_why="model $_mid is not usable (state/dimension: ${_mcheck}; needs DEPLOYED 384)"
+            fi
+        fi
+        if [ -n "$_mid_why" ]; then
+            echo -e "${YELLOW}⚠ OPENSEARCH_TEST_MODEL_ID not provisioned: ${_mid_why}; the hybrid completeness tests will skip${NC}"
+        fi
+    fi
+    # --- END integration-env ---
     run_phase_watching_skips "Integration-marked tests" "$INTEGRATION_SKIP_CEILING" \
-        "${REDIS_ENV[@]}" "${EXPORT_ENV[@]}" "$VENV_PY" -m pytest tests/integration/ tests/test_selective_reprocess.py tests/eval/ \
+        "${REDIS_ENV[@]}" "${INTEGRATION_ENV[@]}" "${EXPORT_ENV[@]}" "$VENV_PY" -m pytest tests/integration/ tests/test_selective_reprocess.py tests/eval/ \
         -o addopts="" -m "$INTEGRATION_SELECTION" -q --tb=short --strict-markers \
         --timeout="${INTEGRATION_TEST_TIMEOUT:-900}" \
         "${SKIP_REASONS[@]}" "${DURATIONS[@]}" --junitxml="$GATE_ARTIFACT_DIR/integration.xml"

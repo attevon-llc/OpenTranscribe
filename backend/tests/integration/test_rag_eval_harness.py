@@ -4,22 +4,31 @@ The metric and qrels tests are pure logic and need nothing running. These cover
 the parts that only exist against a cluster: force-merge, reading chunk documents
 back, and driving the production chat retriever over them.
 
-There is no stand-in. Without a reachable cluster **that has an eval corpus
-injected**, every test here skips with the reason — a fake index would prove the
-fake behaves, and the specific failures this guards (an id shape that no longer
-matches the qrels, a gold span that maps to no chunk) can only happen against
-documents the production indexer wrote.
+There is no stand-in. The module OWNS its data: it writes a miniature QMSum tree
+(``fixtures/qmsum_corpus.py``, original text, ``Committee`` domain so no AMI/ICSI
+recordings are needed), injects it through the production injector and indexing task
+under a per-run ``pytest-<hex>`` seed, and purges it with ``purge_injected`` afterwards.
+A fake index would prove the fake behaves, and the failures this guards (an id shape that
+no longer matches the qrels, a gold span that maps to no chunk) can only happen against
+documents the production indexer wrote. This used to read a manifest an operator injected
+from the NAS download and skipped without one, so on a fresh stack the whole module
+vanished.
 
-    ./opentr.sh start dev --fresh rag403 --port-offset 100
-    ./scripts/inject-eval-corpus.sh --fresh rag403 --corpus qmsum --limit 3
-    OPENSEARCH_PORT=5280 pytest tests/integration/test_rag_eval_harness.py -m integration
+    OPENSEARCH_PORT=5280 POSTGRES_PORT=5276 MINIO_PORT=5278 \\
+        pytest tests/integration/test_rag_eval_harness.py -m integration
+
+``RAG_EVAL_MANIFEST_DIR`` points the module at a manifest an operator injected instead
+(a real QMSum corpus). That mode keeps the old skips and is not part of the gate.
 """
 
 from __future__ import annotations
 
+import os
+import uuid
 from pathlib import Path
 
 import pytest
+from fixtures.qmsum_corpus import write_qmsum_fixture
 
 pytestmark = pytest.mark.integration
 
@@ -28,34 +37,89 @@ pytest.importorskip(
     reason="pytrec_eval_terrier is eval-only (licence); pip install -r requirements-eval.txt",
 )
 
-MANIFEST_DIR = Path(__file__).resolve().parents[3] / ".rag-403" / "injections" / "qmsum"
+_OPERATOR_MANIFEST = os.environ.get("RAG_EVAL_MANIFEST_DIR", "")
+CORPUS = "qmsum"
 
 
 @pytest.fixture(scope="module")
-def injected():
-    """Manifest + live chunk documents, or an explicit skip naming what is missing."""
+def injected(tmp_path_factory):
+    """Seed a QMSum-format corpus, yield (corpus, turns, chunks), purge it afterwards."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+
     from app.core.config import settings
+    from app.db.base import engine
+    from app.models.user import User
+    from app.scripts.corpus_injection import manifest as manifest_mod
+    from app.scripts.corpus_injection.adapters.qmsum import QMSumAdapter
+    from app.scripts.corpus_injection.env import describe_target
+    from app.scripts.corpus_injection.injector import dispatch_indexing
+    from app.scripts.corpus_injection.injector import inject_meeting
+    from app.scripts.corpus_injection.purge import purge_injected
     from app.services.opensearch_service import get_opensearch_client
     from tests.eval.harness import corpora
     from tests.eval.harness import index_reader
 
-    if not (MANIFEST_DIR / "manifest.json").is_file():
-        pytest.skip(f"no injection manifest at {MANIFEST_DIR} — inject a corpus first")
-
     client = get_opensearch_client()
-    if client is None:
-        pytest.skip("no OpenSearch client — the stack is not reachable")
+    assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but no client built"
 
-    corpus = corpora.load_manifest(MANIFEST_DIR)
-    turns = corpora.load_turns(MANIFEST_DIR)
-    index_reader.prepare_index(client, settings.OPENSEARCH_CHUNKS_INDEX)
-    chunks = index_reader.fetch_chunks(client, settings.OPENSEARCH_CHUNKS_INDEX, corpus.file_uuids)
-    if not chunks:
-        pytest.skip(
-            "the manifest's files are not in this cluster's chunk index — "
-            "this stack was not the injection target"
+    if _OPERATOR_MANIFEST:
+        manifest_dir = Path(_OPERATOR_MANIFEST)
+        if not (manifest_dir / "manifest.json").is_file():
+            pytest.skip(f"no injection manifest at {manifest_dir} — inject a corpus first")
+        corpus = corpora.load_manifest(manifest_dir)
+        turns = corpora.load_turns(manifest_dir)
+        index_reader.prepare_index(client, settings.OPENSEARCH_CHUNKS_INDEX)
+        chunks = index_reader.fetch_chunks(
+            client, settings.OPENSEARCH_CHUNKS_INDEX, corpus.file_uuids
         )
-    return corpus, turns, chunks
+        if not chunks:
+            pytest.skip("the manifest's files are not in this cluster's chunk index")
+        yield corpus, turns, chunks
+        return
+
+    seed = f"pytest-{uuid.uuid4().hex[:12]}"
+    adapter = QMSumAdapter(write_qmsum_fixture(tmp_path_factory.mktemp("qmsum")))
+    manifest_dir = tmp_path_factory.mktemp("qmsum-manifest")
+    with Session(engine) as db:
+        owner = db.scalar(select(User.id).order_by(User.id).limit(1))
+        assert owner is not None, "no user on the target stack; nothing can own an injected file"
+        records = []
+        turns_by_file = {}
+        try:
+            for meeting_id in adapter.meeting_ids():
+                record, turn_rows = inject_meeting(
+                    db, adapter.load(meeting_id), owner, seed=seed, tool_version="pytest"
+                )
+                db.commit()
+                records.append(record)
+                turns_by_file[record.file_uuid] = turn_rows
+                dispatch_indexing(record, owner, mode="eager")
+            manifest_mod.write(
+                manifest_dir,
+                adapter.describe(),
+                records,
+                turns_by_file,
+                seed=seed,
+                tool_version="pytest",
+                target=describe_target(),
+                dispatch_mode="eager",
+            )
+            corpus = corpora.load_manifest(manifest_dir)
+            turns = corpora.load_turns(manifest_dir)
+            index_reader.prepare_index(client, settings.OPENSEARCH_CHUNKS_INDEX)
+            chunks = index_reader.fetch_chunks(
+                client, settings.OPENSEARCH_CHUNKS_INDEX, corpus.file_uuids
+            )
+            assert chunks, "the injected fixture files have no chunks in the index"
+            yield corpus, turns, chunks
+        finally:
+            db.rollback()
+            # Refresh BEFORE deleting: the indexer bulk-loads with refresh=false and
+            # delete_by_query refreshes after it runs, so fresh chunks would survive it.
+            client.indices.refresh(index=settings.OPENSEARCH_CHUNKS_INDEX)
+            report = purge_injected(db, owner, CORPUS, seed)
+            assert report.clean, f"injected corpus not cleanly purged: {report.failed}"
 
 
 def test_indexed_chunks_carry_what_the_qrels_join_on(injected):
@@ -81,8 +145,9 @@ def test_gold_spans_map_onto_indexed_chunks(injected):
         for query in corpora.load_qmsum_queries(corpus)
         if all(span.file_uuid in chunks for span in query.spans)
     ]
-    if not queries:
+    if _OPERATOR_MANIFEST and not queries:
         pytest.skip("no QMSum queries whose gold files are all present in this index")
+    assert queries, "the fixture's gold files are all indexed, so its queries must load"
 
     builder = QrelsBuilder(turns, chunks)
     judged = {query.query_id: builder.judgements(list(query.spans)) for query in queries[:25]}
@@ -117,8 +182,9 @@ def test_the_chat_retriever_and_the_metric_engine_meet(injected):
             qrels[query.query_id] = judged
         if len(queries) == 5:
             break
-    if not queries:
+    if _OPERATOR_MANIFEST and not queries:
         pytest.skip("no judgeable QMSum queries against this index")
+    assert queries, "the fixture's gold spans must be judgeable against its own chunks"
 
     run = runner_mod.execute(
         queries,
@@ -139,7 +205,7 @@ def test_the_chat_retriever_and_the_metric_engine_meet(injected):
 def _owner_id(corpus) -> int:
     """The user the corpus was injected as — retrieval is filtered by it.
 
-    Skips rather than returns None: a retrieval run under the wrong user id
+    Asserts rather than returns None: a retrieval run under the wrong user id
     returns nothing and would score a clean, meaningless zero.
     """
     from sqlalchemy import select
@@ -152,6 +218,5 @@ def _owner_id(corpus) -> int:
         rows = db.execute(
             select(MediaFile.user_id).where(MediaFile.uuid.in_(corpus.file_uuids[:5]))
         ).all()
-    if not rows:
-        pytest.skip("the corpus owner is not resolvable on this stack's database")
+    assert rows, "the corpus owner is not resolvable on this stack's database"
     return int(rows[0][0])

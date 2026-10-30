@@ -146,13 +146,15 @@ what it appears to. A green one from the wrong schema is worse.
     password and fail on a healthy stack. (Needs the `run-integration-tests.sh` change from commit
     `326f3ae06`.)
 
-    **Why the ceiling is 7, and not an arbitrary number**: `run-integration-tests.sh` names all
-    seven — 4 in `test_fusion_strategy_switch.py` (7 matching chunks, needs >=10) and 3 in
-    `test_rag_eval_harness.py` (the QMSum manifest's files landed in a different cluster) — and
-    they are one class: this deployment's corpus lacks the data those assertions need, tracked as
-    issue #403 / plan item P2-2 ("seed it"), not a gate misconfiguration. When #403/P2-2 seeds the
-    corpus, the ceiling drops to **zero**, not to 8 — 8 would be quietly re-legitimizing the room
-    this worked example just used.
+    **Why the ceiling is 0** (it was 7 until 2026-10-30): the seven were 4 skips in
+    `test_fusion_strategy_switch.py` and 3 in `test_rag_eval_harness.py`, tests that asserted on
+    whatever corpus the target deployment held. On a fresh isolated stack it was really 13, because
+    the 4 hybrid completeness tests also skipped (nothing set `OPENSEARCH_TEST_MODEL_ID`). All three
+    now own their data: the fusion test seeds a throwaway index, the rag-eval test injects a
+    QMSum-format fixture (`fixtures/qmsum_corpus.py`) and `purge_injected`s it, and the gate's
+    `integration-env` block resolves the stack's embedding model and verifies it is DEPLOYED with 384
+    dimensions. A skip in this phase therefore means a precondition broke (missing overlay, no
+    model), and the phase reports NOT MEASURED; never raise the ceiling to make room.
 - Registered (pyproject): `slow`, `unit`, `pki`, `e2e`, `integration`, `gpu`, `models`,
   `ddl_exclusive`, `multi_gpu`, `export_capability`, `opt_in_gate`. `addopts` =
   `-n auto --dist loadgroup --tb=short -q --strict-markers --durations=25 --timeout=300 -m 'not integration and not gpu'`;

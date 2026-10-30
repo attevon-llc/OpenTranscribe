@@ -42,6 +42,7 @@ def scratch(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
     (root / "scripts" / "lib").mkdir(parents=True)
     shutil.copy(BUILD_ALL, root / "scripts" / "build-all.sh")
+    shutil.copy(REPO_ROOT / "scripts" / "lib" / "log.sh", root / "scripts" / "lib" / "log.sh")
     (root / "docker-compose.yml").write_text("services: {}\n")
     (root / "VERSION").write_text("v9.8.7\n")
     # The recorder: what VERSION did the push script actually receive?

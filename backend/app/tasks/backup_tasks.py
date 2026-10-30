@@ -24,6 +24,8 @@ from app.core.queues import CeleryQueues
 from app.core.queues import DownloadPriority
 from app.core.queues import UtilityPriority
 from app.db.session_utils import session_scope
+from app.services import backup_config
+from app.services import backup_cron
 from app.services import backup_service
 from app.services import media_mirror_service
 from app.utils.task_lock import task_lock_manager
@@ -41,22 +43,22 @@ def check_backup_schedule() -> dict:
     from datetime import datetime
 
     with session_scope() as db:
-        cfg = backup_service.get_settings(db)
+        cfg = backup_config.get_settings(db)
         if not cfg["enabled"]:
             return {"status": "disabled"}
-        if not backup_service.is_due(cfg["schedule"], cfg["last_run_at"]):
+        if not backup_cron.is_due(cfg["schedule"], cfg["last_run_at"]):
             return {"status": "not_due", "schedule": cfg["schedule"]}
         # Claim this window before dispatching so overlapping ticks don't double-fire.
         prior_last_run = cfg["last_run_at"]
         now_iso = datetime.now(UTC).isoformat()
-        backup_service.update_settings_last_run(db, now_iso)
+        backup_config.update_settings_last_run(db, now_iso)
 
     try:
         run_backup.apply_async(queue="utility", priority=UtilityPriority.ROUTINE)
     except Exception as e:
         logger.error("Failed to dispatch backup.run, reverting claimed window: %s", e)
         with session_scope() as db:
-            backup_service.update_settings_last_run(db, prior_last_run)
+            backup_config.update_settings_last_run(db, prior_last_run)
         raise
     logger.info("Scheduled backup is due — dispatched backup.run")
     return {"status": "dispatched", "schedule": cfg["schedule"]}
@@ -99,7 +101,7 @@ def check_mirror_schedule() -> dict:
         cfg = media_mirror_service.get_settings(db)
         if not cfg["enabled"]:
             return {"status": "disabled"}
-        if not backup_service.is_due(cfg["schedule"], cfg["last_run_at"]):
+        if not backup_cron.is_due(cfg["schedule"], cfg["last_run_at"]):
             return {"status": "not_due", "schedule": cfg["schedule"]}
         prior_last_run = cfg["last_run_at"]
         now_iso = datetime.now(UTC).isoformat()

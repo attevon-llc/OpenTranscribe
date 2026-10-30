@@ -142,14 +142,14 @@ def update_settings(
 ) -> dict[str, Any]:
     """Persist any provided directory-sync settings; return the full current set.
 
-    Mirrors ``backup_service.update_settings``'s only-provided-fields contract.
+    Mirrors ``backup_config.update_settings``'s only-provided-fields contract.
     """
     if enabled is not None:
         sss.set_setting(
             db, KEY_ENABLED, enabled, "Periodic LDAP reconciliation/deprovisioning master toggle"
         )
     if schedule is not None:
-        from app.services.backup_service import is_valid_cron
+        from app.services.backup_cron import is_valid_cron
 
         if not is_valid_cron(schedule):
             raise ValueError(f"Invalid cron schedule: {schedule!r}")

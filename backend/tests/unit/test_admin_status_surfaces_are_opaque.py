@@ -40,6 +40,7 @@ def test_backup_status_never_leaks_pg_dump_stderr(
     db_session, admin_user, monkeypatch, caplog, tmp_path
 ):
     from app.api.endpoints import backup_settings
+    from app.services import backup_config
     from app.services import backup_service
 
     def _raise_pg_dump(*_args, **_kwargs):
@@ -49,7 +50,7 @@ def test_backup_status_never_leaks_pg_dump_stderr(
 
     monkeypatch.setattr(backup_service, "run_pg_dump", _raise_pg_dump)
 
-    cfg = backup_service.get_settings(db_session)
+    cfg = backup_config.get_settings(db_session)
     cfg = {**cfg, "encrypt": False, "include_opensearch": False}
     # destination_status() must report writable; the coded default under
     # DEFAULT_BACKUP_DESTINATION is not guaranteed to exist in this sandbox.

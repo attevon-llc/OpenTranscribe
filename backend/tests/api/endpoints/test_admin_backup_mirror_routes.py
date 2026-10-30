@@ -37,7 +37,7 @@ from fastapi import status
 
 from app.core import constants as C  # noqa: N812
 from app.models.system_settings import SystemSettings
-from app.services import backup_service as bs
+from app.services import backup_config
 from app.services import media_mirror_service as mm
 from app.services import system_settings_service as sss
 from app.utils.encryption import decrypt_api_key
@@ -205,14 +205,14 @@ def test_put_does_not_touch_the_database_dump_settings(
     """
     mirror_dir = tmp_path / "mirror"
     mirror_dir.mkdir()
-    dump_destination_before = bs.get_settings(db_session)["destination"]
+    dump_destination_before = backup_config.get_settings(db_session)["destination"]
 
     response = client.put(
         BASE, headers=super_admin_token_headers, json={"destination": str(mirror_dir)}
     )
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["destination"] == str(mirror_dir)
-    assert bs.get_settings(db_session)["destination"] == dump_destination_before
+    assert backup_config.get_settings(db_session)["destination"] == dump_destination_before
 
 
 def test_put_with_no_fields_is_a_400(client, super_admin_token_headers, clean_mirror_settings):

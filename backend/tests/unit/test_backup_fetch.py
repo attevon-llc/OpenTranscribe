@@ -23,7 +23,8 @@ from unittest import mock
 import pytest
 
 from app.scripts import fetch_backup as fb
-from app.services import backup_service as bs
+from app.services import backup_config
+from app.services import backup_s3
 from tests.fixtures.fake_s3 import FakeS3Client
 
 pytestmark = pytest.mark.xdist_group("backup_system_settings")
@@ -70,7 +71,7 @@ def test_looks_like_our_artifact_rejects_an_xml_error_body() -> None:
 
 
 def _configure_s3(db_session, *, destination: str) -> None:
-    bs.update_settings(
+    backup_config.update_settings(
         db_session,
         destination_type="s3",
         destination=destination,
@@ -84,12 +85,12 @@ def test_fetch_downloads_into_the_configured_destination(db_session, tmp_path: P
     dest = tmp_path / "backups"
     dest.mkdir()
     _configure_s3(db_session, destination=str(dest))
-    cfg = bs.get_settings(db_session)
+    cfg = backup_config.get_settings(db_session)
 
     body = b"PGDMP" + b"\x00" * 100
     fake = FakeS3Client(contents={"ot/opentranscribe-20260827-030000.dump": body})
 
-    with mock.patch("app.services.backup_service._build_s3_client", return_value=fake):
+    with mock.patch("app.services.backup_s3._build_s3_client", return_value=fake):
         target = fb._fetch(cfg, None, "opentranscribe-20260827-030000.dump", force=False)
 
     assert target == dest / "opentranscribe-20260827-030000.dump"
@@ -99,8 +100,8 @@ def test_fetch_downloads_into_the_configured_destination(db_session, tmp_path: P
 
 @pytest.mark.unit
 def test_fetch_refuses_when_destination_type_is_not_s3(db_session, tmp_path: Path) -> None:
-    bs.update_settings(db_session, destination_type="local", destination=str(tmp_path))
-    cfg = bs.get_settings(db_session)
+    backup_config.update_settings(db_session, destination_type="local", destination=str(tmp_path))
+    cfg = backup_config.get_settings(db_session)
 
     with pytest.raises(fb.FetchError, match="not 's3'"):
         fb._fetch(cfg, None, "opentranscribe-x.dump", force=False)
@@ -110,7 +111,7 @@ def test_fetch_refuses_when_destination_type_is_not_s3(db_session, tmp_path: Pat
 def test_fetch_refuses_when_destination_is_not_writable(db_session, tmp_path: Path) -> None:
     unwritable = tmp_path / "does-not-exist"
     _configure_s3(db_session, destination=str(unwritable))
-    cfg = bs.get_settings(db_session)
+    cfg = backup_config.get_settings(db_session)
 
     with pytest.raises(fb.FetchError, match="not a writable mount"):
         fb._fetch(cfg, None, "opentranscribe-x.dump", force=False)
@@ -124,11 +125,11 @@ def test_fetch_refuses_to_overwrite_an_existing_file_without_force(
     dest.mkdir()
     (dest / "opentranscribe-x.dump").write_bytes(b"already here")
     _configure_s3(db_session, destination=str(dest))
-    cfg = bs.get_settings(db_session)
+    cfg = backup_config.get_settings(db_session)
 
     fake = FakeS3Client(contents={"ot/opentranscribe-x.dump": b"PGDMP" + b"\x00" * 10})
     with (
-        mock.patch("app.services.backup_service._build_s3_client", return_value=fake),
+        mock.patch("app.services.backup_s3._build_s3_client", return_value=fake),
         pytest.raises(fb.FetchError, match="already exists"),
     ):
         fb._fetch(cfg, None, "opentranscribe-x.dump", force=False)
@@ -140,11 +141,11 @@ def test_fetch_force_overwrites_an_existing_file(db_session, tmp_path: Path) -> 
     dest.mkdir()
     (dest / "opentranscribe-x.dump").write_bytes(b"stale content")
     _configure_s3(db_session, destination=str(dest))
-    cfg = bs.get_settings(db_session)
+    cfg = backup_config.get_settings(db_session)
 
     fresh_body = b"PGDMP" + b"\x00" * 20
     fake = FakeS3Client(contents={"ot/opentranscribe-x.dump": fresh_body})
-    with mock.patch("app.services.backup_service._build_s3_client", return_value=fake):
+    with mock.patch("app.services.backup_s3._build_s3_client", return_value=fake):
         target = fb._fetch(cfg, None, "opentranscribe-x.dump", force=True)
 
     assert target.read_bytes() == fresh_body
@@ -156,7 +157,7 @@ def test_fetch_rejects_a_truncated_download(db_session, tmp_path: Path) -> None:
     dest = tmp_path / "backups"
     dest.mkdir()
     _configure_s3(db_session, destination=str(dest))
-    cfg = bs.get_settings(db_session)
+    cfg = backup_config.get_settings(db_session)
 
     fake = FakeS3Client(contents={"ot/opentranscribe-x.dump": b"PGDMP" + b"\x00" * 100})
     # Lie about the size after construction — simulates a download that stops partway
@@ -164,7 +165,7 @@ def test_fetch_rejects_a_truncated_download(db_session, tmp_path: Path) -> None:
     fake.objects["ot/opentranscribe-x.dump"] = 1_000_000
 
     with (
-        mock.patch("app.services.backup_service._build_s3_client", return_value=fake),
+        mock.patch("app.services.backup_s3._build_s3_client", return_value=fake),
         pytest.raises(fb.FetchError, match="truncated|interrupted"),
     ):
         fb._fetch(cfg, None, "opentranscribe-x.dump", force=False)
@@ -183,13 +184,13 @@ def test_fetch_rejects_a_body_without_our_magic_bytes(db_session, tmp_path: Path
     dest = tmp_path / "backups"
     dest.mkdir()
     _configure_s3(db_session, destination=str(dest))
-    cfg = bs.get_settings(db_session)
+    cfg = backup_config.get_settings(db_session)
 
     junk = b"not a database dump at all, just some junk bytes"
     fake = FakeS3Client(contents={"ot/opentranscribe-x.dump": junk})
 
     with (
-        mock.patch("app.services.backup_service._build_s3_client", return_value=fake),
+        mock.patch("app.services.backup_s3._build_s3_client", return_value=fake),
         pytest.raises(fb.FetchError, match="does not look like"),
     ):
         fb._fetch(cfg, None, "opentranscribe-x.dump", force=False)
@@ -201,8 +202,10 @@ def test_fetch_rejects_a_body_without_our_magic_bytes(db_session, tmp_path: Path
 def test_fetch_refuses_when_no_bucket_configured(db_session, tmp_path: Path) -> None:
     dest = tmp_path / "backups"
     dest.mkdir()
-    bs.update_settings(db_session, destination_type="s3", destination=str(dest), s3_bucket="")
-    cfg = bs.get_settings(db_session)
+    backup_config.update_settings(
+        db_session, destination_type="s3", destination=str(dest), s3_bucket=""
+    )
+    cfg = backup_config.get_settings(db_session)
 
     with pytest.raises(fb.FetchError, match="no bucket configured"):
         fb._fetch(cfg, None, "opentranscribe-x.dump", force=False)
@@ -218,13 +221,13 @@ def test_do_list_matches_list_backups_s3(db_session, tmp_path: Path, capsys) -> 
     dest = tmp_path / "backups"
     dest.mkdir()
     _configure_s3(db_session, destination=str(dest))
-    cfg = bs.get_settings(db_session)
+    cfg = backup_config.get_settings(db_session)
 
     fake = FakeS3Client(
         contents={"ot/opentranscribe-20260827-030000.dump": b"PGDMP" + b"\x00" * 10}
     )
-    with mock.patch("app.services.backup_service._build_s3_client", return_value=fake):
-        expected = bs.list_backups_s3(cfg, db_session)
+    with mock.patch("app.services.backup_s3._build_s3_client", return_value=fake):
+        expected = backup_s3.list_backups_s3(cfg, db_session)
         exit_code = fb._do_list(cfg)
 
     assert exit_code == 0
@@ -245,7 +248,7 @@ def test_do_list_matches_list_backups_s3(db_session, tmp_path: Path, capsys) -> 
 def test_secret_never_printed_or_logged(db_session, tmp_path: Path, capsys, caplog) -> None:
     dest = tmp_path / "backups"
     dest.mkdir()
-    bs.update_settings(
+    backup_config.update_settings(
         db_session,
         destination_type="s3",
         destination=str(dest),
@@ -253,16 +256,16 @@ def test_secret_never_printed_or_logged(db_session, tmp_path: Path, capsys, capl
         s3_prefix="ot/",
         s3_secret_key="SENTINEL-S3-SECRET-VALUE",
     )
-    cfg = bs.get_settings(db_session)
+    cfg = backup_config.get_settings(db_session)
     # The real decrypted secret, exactly as main() resolves it — a fetch() called with
     # None here would make this test pass trivially (nothing to leak).
-    secret = bs.get_s3_secret_key(db_session)
+    secret = backup_config.get_s3_secret_key(db_session)
     assert secret == "SENTINEL-S3-SECRET-VALUE", "test setup didn't actually store the secret"
 
     fake = FakeS3Client(contents={"ot/opentranscribe-x.dump": b"PGDMP" + b"\x00" * 10})
     with (
         caplog.at_level("DEBUG"),
-        mock.patch("app.services.backup_service._build_s3_client", return_value=fake),
+        mock.patch("app.services.backup_s3._build_s3_client", return_value=fake),
     ):
         fb._fetch(cfg, secret, "opentranscribe-x.dump", force=False)
 

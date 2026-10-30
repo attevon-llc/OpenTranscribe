@@ -9,7 +9,6 @@ backend/app/services/asr/gladia_provider.py::GladiaProvider.transcribe	26	comple
 backend/app/services/asr/google_provider.py::GoogleASRProvider.transcribe	16	complexity: decomposition planned
 backend/app/services/asr/pyannote_provider.py::PyAnnoteProvider.transcribe	24	complexity: decomposition planned
 backend/app/services/auto_label_service.py::AutoLabelService.group_batch_by_topics	16	complexity: decomposition planned
-backend/app/services/backup_service.py::update_settings	16	complexity: decomposition planned
 backend/app/services/llm_bedrock.py::stream_converse	16	complexity: decomposition planned
 backend/app/services/llm_stream.py::parse_anthropic_sse	16	complexity: decomposition planned
 backend/app/services/opensearch_service/repair.py::rebuild_speaker_index	31	complexity: decomposition planned

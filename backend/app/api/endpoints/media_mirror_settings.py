@@ -27,7 +27,7 @@ from app import models
 # holds the mirror destination and its stored S3 secret.
 from app.api.endpoints.auth import get_current_active_superuser
 from app.db.base import get_db
-from app.services import backup_service
+from app.services import backup_config
 from app.services import media_mirror_service
 
 logger = logging.getLogger(__name__)
@@ -131,7 +131,7 @@ def _settings_response(cfg: dict, db: Session) -> MediaMirrorSettings:
         **{k: v for k, v in cfg.items() if k != "last_result"},
         last_result=cfg.get("last_result"),
         destination_status=MirrorDestinationStatus(
-            **backup_service.destination_status(cfg["destination"])
+            **backup_config.destination_status(cfg["destination"])
         ),
         s3_status=_s3_status(cfg, db),
         running=task_lock_manager.is_locked(media_mirror_service.MIRROR_LOCK_KEY),

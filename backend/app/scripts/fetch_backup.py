@@ -3,7 +3,7 @@
 For an S3-destination backup, ``_perform_backup_s3`` always deletes the local artifact
 after upload — the file exists **only in the bucket**. The credentials to reach that
 bucket are the AES-256-GCM-encrypted ``backup.s3_secret_key`` row in ``SystemSettings``,
-decryptable only via ``ENCRYPTION_KEY`` (``backup_service.get_s3_secret_key``). A host
+decryptable only via ``ENCRYPTION_KEY`` (``backup_config.get_s3_secret_key``). A host
 shell script cannot obtain them — so this fetch step has to run **inside the backend
 container**, where the app's DB session and encryption key are already available.
 
@@ -19,7 +19,7 @@ Usage (inside the backend container, ``./opentr.sh shell backend`` or via
     python -m app.scripts.fetch_backup --list
     python -m app.scripts.fetch_backup opentranscribe-20260827-030000.dump [--force]
 
-Reuses ``backup_service.get_settings`` / ``_build_s3_client`` / ``get_s3_secret_key`` /
+Reuses ``backup_config.get_settings`` / ``backup_s3._build_s3_client`` / ``get_s3_secret_key`` /
 ``list_backups_s3`` — no new S3 client construction, no new credential handling. Writes
 into ``cfg["destination"]`` (``/backups`` by default, mounted from ``BACKUP_HOST_PATH`` on
 the host), refuses to overwrite an existing file without ``--force``, and verifies the
@@ -45,7 +45,9 @@ from pathlib import Path
 from typing import Any
 
 from app.db.session_utils import session_scope
-from app.services import backup_service as bs
+from app.services import backup_config
+from app.services import backup_retention
+from app.services import backup_s3
 
 logger = logging.getLogger("fetch_backup")
 
@@ -92,7 +94,7 @@ def _looks_like_our_artifact(data: bytes, filename: str) -> bool:
         return False
     if data.startswith(b"<"):
         return False
-    if filename.endswith(bs._GPG_SUFFIX):
+    if filename.endswith(backup_retention._GPG_SUFFIX):
         return bool(data[0] & 0x80)
     return data[:5] == b"PGDMP"
 
@@ -102,7 +104,7 @@ def _do_list(cfg: dict[str, Any]) -> int:
     its own short-lived session just for the secret lookup, closed before the slow S3
     listing begins (``scheduled_job_settings.session_scope``), so nothing is held open here either.
     """
-    backups = bs.list_backups_s3(cfg, None)
+    backups = backup_s3.list_backups_s3(cfg, None)
     print(json.dumps(backups, indent=2))  # noqa: T201 - intentional CLI output
     return 0
 
@@ -120,13 +122,13 @@ def _fetch(cfg: dict[str, Any], secret: str | None, filename: str, *, force: boo
     corrupt file at the final path — writes to a sibling ``.part`` file and renames only
     after both size and magic-byte checks pass.
     """
-    if cfg["destination_type"] != bs.DEST_S3:
+    if cfg["destination_type"] != backup_config.DEST_S3:
         raise FetchError(
             f"backup.destination_type is {cfg['destination_type']!r}, not 's3' — there is "
             "nothing to fetch. A local-destination backup is already on disk."
         )
 
-    dest_status = bs.destination_status(cfg["destination"])
+    dest_status = backup_config.destination_status(cfg["destination"])
     if not dest_status["writable"]:
         raise FetchError(
             f"destination {cfg['destination']!r} is not a writable mount — refusing to fetch. "
@@ -141,8 +143,8 @@ def _fetch(cfg: dict[str, Any], secret: str | None, filename: str, *, force: boo
     if not bucket:
         raise FetchError("S3 backup destination has no bucket configured.")
 
-    client = bs._build_s3_client(cfg, secret)
-    key = f"{bs._s3_prefix(cfg)}{filename}"
+    client = backup_s3._build_s3_client(cfg, secret)
+    key = f"{backup_s3._s3_prefix(cfg)}{filename}"
 
     try:
         head = client.head_object(Bucket=bucket, Key=key)
@@ -195,7 +197,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Short read session: plain settings dict, session closed before any S3 network work.
     with session_scope() as db:
-        cfg = bs.get_settings(db)
+        cfg = backup_config.get_settings(db)
 
     if args.list:
         return _do_list(cfg)
@@ -203,7 +205,7 @@ def main(argv: list[str] | None = None) -> int:
     # A second short session, only when actually fetching — closed before the slow
     # head/download calls, never held across them.
     with session_scope() as secret_db:
-        secret = bs.get_s3_secret_key(secret_db)
+        secret = backup_config.get_s3_secret_key(secret_db)
 
     try:
         target = _fetch(cfg, secret, args.filename, force=args.force)

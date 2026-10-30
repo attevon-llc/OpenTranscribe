@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from app import models
 from app.api.endpoints.auth import get_current_active_superuser
 from app.db.base import get_db
-from app.services import backup_service
+from app.services import backup_cron
 from app.services import directory_sync_service
 
 logger = logging.getLogger(__name__)
@@ -133,7 +133,7 @@ def get_directory_sync_status(
     next_due = False
     if cfg["enabled"]:
         try:
-            next_due = backup_service.is_due(cfg["schedule"], cfg["last_run_at"], datetime.now(UTC))
+            next_due = backup_cron.is_due(cfg["schedule"], cfg["last_run_at"], datetime.now(UTC))
         except ValueError:
             next_due = False
     return DirectorySyncStatus(

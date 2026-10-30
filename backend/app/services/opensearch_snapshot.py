@@ -166,7 +166,7 @@ def prune_snapshots(client: Any, cfg: dict[str, Any]) -> list[str]:
     to the bare snapshot name for the DELETE — the *same* daily/weekly/monthly policy then
     applies identically to snapshots and pg dumps. Returns deleted snapshot names.
     """
-    from app.services.backup_service import select_backups_to_delete
+    from app.services.backup_retention import select_backups_to_delete
 
     names = list_snapshot_names(client)
     if not names:

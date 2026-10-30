@@ -96,7 +96,7 @@ def test_check_schedule_not_due_dispatches_nothing_and_does_not_stamp(use_test_s
     sss.set_setting(use_test_session, svc.KEY_ENABLED, "true", "enabled for this test")
     sss.set_setting(use_test_session, svc.KEY_SCHEDULE, "0 3 * * *", "cron for this test")
 
-    from app.services import backup_service as bs
+    from app.services import backup_cron
 
     # "Does not stamp" means UNCHANGED, not None: this is a SystemSettings row in the shared
     # dev DB that the running celery-beat commits whenever a sync window is claimed. The
@@ -104,7 +104,7 @@ def test_check_schedule_not_due_dispatches_nothing_and_does_not_stamp(use_test_s
     before = svc.get_settings(use_test_session)["last_run_at"]
 
     with (
-        mock.patch.object(bs, "is_due", return_value=False),
+        mock.patch.object(backup_cron, "is_due", return_value=False),
         mock.patch.object(task_mod.run_directory_sync, "apply_async") as dispatch,
     ):
         result = task_mod.check_directory_sync_schedule()
@@ -115,14 +115,14 @@ def test_check_schedule_not_due_dispatches_nothing_and_does_not_stamp(use_test_s
 
 
 def test_check_schedule_due_stamps_last_run_and_dispatches_on_cpu_queue(use_test_session):
-    from app.services import backup_service as bs
+    from app.services import backup_cron
     from app.services import system_settings_service as sss
 
     sss.set_setting(use_test_session, svc.KEY_ENABLED, "true", "enabled for this test")
     sss.set_setting(use_test_session, svc.KEY_SCHEDULE, "0 3 * * *", "cron for this test")
 
     with (
-        mock.patch.object(bs, "is_due", return_value=True),
+        mock.patch.object(backup_cron, "is_due", return_value=True),
         mock.patch.object(task_mod.run_directory_sync, "apply_async") as dispatch,
     ):
         result = task_mod.check_directory_sync_schedule()

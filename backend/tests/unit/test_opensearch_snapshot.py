@@ -15,6 +15,8 @@ from datetime import timedelta
 from types import SimpleNamespace
 from unittest import mock
 
+from app.services import backup_config
+from app.services import backup_retention
 from app.services import backup_service as bs
 from app.services import opensearch_snapshot as oss
 
@@ -79,7 +81,7 @@ def test_prune_snapshots_reuses_gfs_selector():
 
     # The selector keeps the 2 newest; the 3 oldest are deleted. It parses the date off a
     # .dump-suffixed name, so prune_snapshots maps names → <name>.dump and back.
-    selected_dump = bs.select_backups_to_delete(
+    selected_dump = backup_retention.select_backups_to_delete(
         [f"{n}.dump" for n in names], retention_daily=2, retention_weekly=0, retention_monthly=0
     )
     expected = [d[: -len(".dump")] for d in selected_dump]
@@ -196,7 +198,7 @@ def _fake_pg_dump(cmd, **kwargs):
 
 
 def test_perform_backup_no_opensearch_calls_when_disabled(db_session, tmp_path):
-    bs.update_settings(db_session, destination=str(tmp_path), include_opensearch=False)
+    backup_config.update_settings(db_session, destination=str(tmp_path), include_opensearch=False)
     with (
         mock.patch("app.services.backup_service.subprocess.run", side_effect=_fake_pg_dump),
         mock.patch("app.services.opensearch_snapshot.perform_snapshot") as snap,
@@ -208,7 +210,7 @@ def test_perform_backup_no_opensearch_calls_when_disabled(db_session, tmp_path):
 
 
 def test_perform_backup_records_opensearch_subresult_when_enabled(db_session, tmp_path):
-    bs.update_settings(db_session, destination=str(tmp_path), include_opensearch=True)
+    backup_config.update_settings(db_session, destination=str(tmp_path), include_opensearch=True)
     with (
         mock.patch("app.services.backup_service.subprocess.run", side_effect=_fake_pg_dump),
         mock.patch(
@@ -225,7 +227,7 @@ def test_perform_backup_records_opensearch_subresult_when_enabled(db_session, tm
 
 
 def test_perform_backup_pg_ok_even_when_opensearch_errors(db_session, tmp_path):
-    bs.update_settings(db_session, destination=str(tmp_path), include_opensearch=True)
+    backup_config.update_settings(db_session, destination=str(tmp_path), include_opensearch=True)
     with (
         mock.patch("app.services.backup_service.subprocess.run", side_effect=_fake_pg_dump),
         mock.patch(

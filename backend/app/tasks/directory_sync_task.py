@@ -45,13 +45,13 @@ def check_directory_sync_schedule() -> dict:
     Claims the window by stamping ``directory_sync.last_run_at`` before dispatch, so
     an overlapping tick can't double-fire the same window.
     """
-    from app.services import backup_service
+    from app.services import backup_cron
 
     with session_scope() as db:
         cfg = directory_sync_service.get_settings(db)
         if not cfg["enabled"]:
             return {"status": "disabled"}
-        if not backup_service.is_due(cfg["schedule"], cfg["last_run_at"]):
+        if not backup_cron.is_due(cfg["schedule"], cfg["last_run_at"]):
             return {"status": "not_due", "schedule": cfg["schedule"]}
         prior_last_run = cfg["last_run_at"]
         directory_sync_service.update_settings_last_run(db, datetime.now(UTC).isoformat())

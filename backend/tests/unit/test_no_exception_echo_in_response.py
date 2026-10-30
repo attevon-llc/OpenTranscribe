@@ -668,7 +668,7 @@ _RAISE_ALLOWLIST: dict[str, tuple[int, str]] = {
     ),
     "api/endpoints/backup_settings.py::update_backup_settings": (
         1,
-        "our own ValueError from backup_service.update_settings — a validator message",
+        "our own ValueError from backup_config.update_settings — a validator message",
     ),
     "api/endpoints/directory_sync_settings.py::update_directory_sync_settings": (
         1,
@@ -858,7 +858,7 @@ _SERVICE_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
         1,
         "dial result, same self._sanitize_error path as assemblyai_provider.py",
     ),
-    "services/backup_service.py::test_s3_connection": (
+    "services/backup_s3.py::test_s3_connection": (
         1,
         "dial result: the admin's own S3 destination test, via "
         "POST /admin/backup/test-s3 -- the connection outcome IS the product",
@@ -964,7 +964,7 @@ _CONTAINER_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
         "raise can put caught library text into one. The sibling `except Exception` "
         "branch WAS a real leak and is fixed (type(e).__name__ + logger.exception)",
     ),
-    "services/backup_service.py::s3_bucket_status": (
+    "services/backup_s3.py::s3_bucket_status": (
         1,
         "dial result: reachability of the ADMIN'S OWN S3 backup destination, reached "
         "via backup_settings.py::_s3_status (:192) -> S3Status(error=raw.get('error')) "
@@ -975,7 +975,7 @@ _CONTAINER_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
     ),
     "services/media_mirror_service.py::s3_bucket_status": (
         1,
-        "dial result, the media-mirror twin of backup_service.py::s3_bucket_status: "
+        "dial result, the media-mirror twin of backup_s3.py::s3_bucket_status: "
         "media_mirror_settings.py::_s3_status (:124) -> MirrorS3Status(**...), whose "
         "s3_endpoint_url/s3_bucket are likewise already fields of the same settings "
         "response (and s3_secret_key_set is a bool, never the secret)",

@@ -87,7 +87,7 @@ Most services are plain modules of functions that take a `Session`; a few are cl
 | `tenant_stamp_backfill.py` | Stamp legacy rows with a tenant |
 
 ### Identity and configuration
-`auth_config_service.py`, `auth_mail_config_service.py`, `account_security_service.py`, `idp_group_mapping_service.py`, `directory_sync_service.py`, `scim_service.py`, `scim_group_service.py`, `scim_token_service.py`, `email_service.py`, `watch_email_service.py`, `watch_settings_service.py`, `system_settings_service.py`, `huggingface_token.py`, `usage_service.py`, `backup_service.py`, `backup_recovery.py`, `backup_alerts.py`, `opensearch_snapshot.py`, `redis_cache_service.py`. The auth methods themselves are in `app/auth/`.
+`auth_config_service.py`, `auth_mail_config_service.py`, `account_security_service.py`, `idp_group_mapping_service.py`, `directory_sync_service.py`, `scim_service.py`, `scim_group_service.py`, `scim_token_service.py`, `email_service.py`, `watch_email_service.py`, `watch_settings_service.py`, `system_settings_service.py`, `huggingface_token.py`, `usage_service.py`, `backup_service.py`, `backup_config.py`, `backup_cron.py`, `backup_retention.py`, `backup_s3.py`, `backup_recovery.py`, `backup_alerts.py`, `opensearch_snapshot.py`, `redis_cache_service.py`. The auth methods themselves are in `app/auth/`.
 
 ### Tags, groups and analytics
 `tag_service.py`, `tag_operations.py`, `tag_bulk.py`, `tag_collisions.py`, `tag_sharing.py`, `group_file_index_service.py`, `analytics_service.py`, `formatting_service.py`, `interfaces.py`.

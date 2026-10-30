@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 
 from app.core import constants as app_constants
-from app.services import backup_service
+from app.services import backup_config
 from app.services import directory_sync_service
 from app.services import system_settings_service
 from app.services import watch_settings_service
@@ -31,7 +31,7 @@ def settings_map(monkeypatch):
 
 _BOOL_SERVICES = [
     pytest.param(
-        lambda db: backup_service.get_settings(db)["enabled"],
+        lambda db: backup_config.get_settings(db)["enabled"],
         "backup.enabled",
         app_constants.DEFAULT_BACKUP_ENABLED,
         id="backup",
@@ -52,7 +52,7 @@ _BOOL_SERVICES = [
 
 _INT_SERVICES = [
     pytest.param(
-        lambda db: backup_service.get_settings(db)["retention_daily"],
+        lambda db: backup_config.get_settings(db)["retention_daily"],
         "backup.retention_daily",
         app_constants.DEFAULT_BACKUP_RETENTION_DAILY,
         id="backup",
@@ -72,7 +72,7 @@ _INT_SERVICES = [
 ]
 
 _RESULT_SERVICES = [
-    pytest.param(lambda db: backup_service.get_settings(db), "backup.last_result", id="backup"),
+    pytest.param(lambda db: backup_config.get_settings(db), "backup.last_result", id="backup"),
     pytest.param(
         lambda db: directory_sync_service.get_settings(db),
         "directory_sync.last_result",
@@ -161,7 +161,7 @@ def fake_session_local(monkeypatch):
 
 
 _GETTERS = [
-    pytest.param(backup_service.get_settings, id="backup"),
+    pytest.param(backup_config.get_settings, id="backup"),
     pytest.param(directory_sync_service.get_settings, id="directory_sync"),
     pytest.param(watch_settings_service.get_global_settings, id="watch"),
 ]
@@ -198,7 +198,7 @@ def test_the_short_lived_session_is_closed_when_the_read_raises(
 @pytest.mark.parametrize(
     ("stamp", "key"),
     [
-        pytest.param(backup_service.update_settings_last_run, "backup.last_run_at", id="backup"),
+        pytest.param(backup_config.update_settings_last_run, "backup.last_run_at", id="backup"),
         pytest.param(
             directory_sync_service.update_settings_last_run,
             "directory_sync.last_run_at",

@@ -62,12 +62,12 @@ def collect_warnings(result: dict[str, Any]) -> list[str]:
 
 def _maybe_send_keys_notice(db: Session, result: dict[str, Any]) -> None:
     """One-time admin warning that unencrypted backups exclude the encryption keys."""
-    from app.services import backup_service
+    from app.services import backup_config
     from app.services import system_settings_service as sss
 
     if (result.get("recovery") or {}).get("status") != "readme_written":
         return
-    if sss.get_setting_bool(db, backup_service.KEY_RECOVERY_NOTICE_SENT, False):
+    if sss.get_setting_bool(db, backup_config.KEY_RECOVERY_NOTICE_SENT, False):
         return
     _notify_admins(
         db,
@@ -82,7 +82,7 @@ def _maybe_send_keys_notice(db: Session, result: dict[str, Any]) -> None:
     )
     sss.set_setting(
         db,
-        backup_service.KEY_RECOVERY_NOTICE_SENT,
+        backup_config.KEY_RECOVERY_NOTICE_SENT,
         True,
         "One-time 'backups exclude encryption keys' admin notice was sent",
     )

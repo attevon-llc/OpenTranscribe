@@ -72,14 +72,14 @@ def _sync_counter_to_db(counter, metric_name: str, pairs, vals: dict[str, str | 
 
 def _sync_run_counters(vals: dict[str, str | None]) -> None:
     """Increment ``backup_runs_total`` up to the DB-persisted cumulative counts."""
-    from app.services import backup_service
+    from app.services import backup_config
 
     _sync_counter_to_db(
         backup_runs_total,
         "backup_runs_total",
         (
-            ("success", backup_service.KEY_RUNS_SUCCESS),
-            ("failure", backup_service.KEY_RUNS_FAILURE),
+            ("success", backup_config.KEY_RUNS_SUCCESS),
+            ("failure", backup_config.KEY_RUNS_FAILURE),
         ),
         vals,
     )
@@ -92,14 +92,14 @@ def update_backup_metrics(db: Session | None = None) -> None:
     short-lived session.
     """
     try:
-        from app.services import backup_service
+        from app.services import backup_config
         from app.services import system_settings_service as sss
 
         keys = [
-            backup_service.KEY_LAST_RESULT,
-            backup_service.KEY_LAST_SUCCESS_AT,
-            backup_service.KEY_RUNS_SUCCESS,
-            backup_service.KEY_RUNS_FAILURE,
+            backup_config.KEY_LAST_RESULT,
+            backup_config.KEY_LAST_SUCCESS_AT,
+            backup_config.KEY_RUNS_SUCCESS,
+            backup_config.KEY_RUNS_FAILURE,
         ]
         if db is not None:
             vals = sss.get_settings_map(db, keys)
@@ -112,13 +112,13 @@ def update_backup_metrics(db: Session | None = None) -> None:
             finally:
                 own.close()
 
-        last_success = vals.get(backup_service.KEY_LAST_SUCCESS_AT)
+        last_success = vals.get(backup_config.KEY_LAST_SUCCESS_AT)
         if last_success:
             with contextlib.suppress(ValueError, TypeError):
                 backup_last_success_timestamp_seconds.set(
                     datetime.fromisoformat(last_success).timestamp()
                 )
-        raw_result = vals.get(backup_service.KEY_LAST_RESULT)
+        raw_result = vals.get(backup_config.KEY_LAST_RESULT)
         if raw_result:
             with contextlib.suppress(ValueError, TypeError):
                 backup_last_status.set(1 if json.loads(raw_result).get("ok") else 0)

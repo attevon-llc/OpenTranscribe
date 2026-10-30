@@ -4,7 +4,7 @@ The pure grouping logic lives in :mod:`app.services.chat.recurrence`; this is th
 ``summary_data`` / ``file_facts.keyphrases`` from Postgres and masks every item PER FILE before it
 reaches the detector. Postgres-only, no OpenSearch, and separate from ``answer_aggregation``:
 recurrence produces an EVIDENCE BLOCK (``<recurrence>``, rendered by
-``prompting.format_recurrence_block``) rather than one counted number, so it does not join
+``prompt_blocks.format_recurrence_block``) rather than one counted number, so it does not join
 ``aggregation.SHAPES`` or ``choose_shape``.
 """
 

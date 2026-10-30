@@ -78,7 +78,7 @@ SNIPPET_CHARS = 10 * settings.SEARCH_CHUNK_TARGET_WORDS
 #: overestimate of the true ceiling.
 #:
 #: ⚠️ Do not reuse this for an ordinary (unexpanded) chunk. The excerpt budget
-#: (``prompting.format_excerpts``) is untouched by #526 — this only changes how
+#: (``prompt_blocks.format_excerpts``) is untouched by #526 — this only changes how
 #: much of an ALREADY-SENT excerpt the citation shows the reader, never what
 #: reaches the prompt.
 EXPANDED_SNIPPET_CHARS = 10 * 250
@@ -297,7 +297,7 @@ def build_offered_citations(
     Sent as the ``sources`` SSE frame so the UI can show what is being consulted
     while the answer streams.
 
-    ``excerpt_ids`` are the 1-based ids :func:`prompting.format_excerpts`
+    ``excerpt_ids`` are the 1-based ids :func:`prompt_blocks.format_excerpts`
     emitted. Passing them is what keeps the citation list and the prompt in
     agreement: the excerpt budget can drop retrieved chunks, and citing a chunk
     the model never saw presents an answer as sourced when it is not

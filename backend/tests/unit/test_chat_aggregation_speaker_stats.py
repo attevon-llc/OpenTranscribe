@@ -620,7 +620,7 @@ def test_the_counted_block_renders_talk_time_not_session_count():
     "(N recordings)" phrasing would misreport a talk-time result as having
     appeared in zero recordings."""
     from app.services.chat.aggregation import AggregationResult
-    from app.services.chat.prompting import format_counted_block
+    from app.services.chat.prompt_blocks import format_counted_block
 
     block = format_counted_block(
         AggregationResult(
@@ -643,7 +643,7 @@ def test_the_counted_block_reports_a_disclosure_with_no_speaker_or_count():
     refusal (unbounded scope, partial coverage, a tie) must still produce a
     block the model can read — not an empty one."""
     from app.services.chat.aggregation import AggregationResult
-    from app.services.chat.prompting import format_counted_block
+    from app.services.chat.prompt_blocks import format_counted_block
 
     block = format_counted_block(
         AggregationResult(

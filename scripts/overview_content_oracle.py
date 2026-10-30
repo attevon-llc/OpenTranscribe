@@ -85,7 +85,7 @@ def structured_summary_text(summary_data: dict[str, Any], budget_chars: int) -> 
     ``recurrence.normalize_leaf``).
     """
     from app.services.chat.mapreduce.file_summaries import _summary_highlight_text
-    from app.services.chat.prompting import _cut_at_boundary
+    from app.services.chat.prompt_blocks import _cut_at_boundary
     from app.services.chat.recurrence import LEAF_ACTION_ITEM, LEAF_KEY_DECISION, normalize_leaf
 
     lead = _summary_highlight_text(summary_data)
@@ -117,7 +117,7 @@ def _load_app_functions():
     from app.services.chat.citations import DIGEST_SNIPPET_CHARS
     from app.services.chat.mapreduce.file_summaries import _summary_highlight_text
     from app.services.chat.mapreduce.overview import sections_budget
-    from app.services.chat.prompting import _cut_at_boundary
+    from app.services.chat.prompt_blocks import _cut_at_boundary
 
     return {
         'DIGEST_SNIPPET_CHARS': DIGEST_SNIPPET_CHARS,

@@ -58,7 +58,7 @@ Same rule as `prompting.py` and for the same reason: a recording title
 containing ``{evil}`` would raise or interpolate under `str.format`.
 
 ⚠️ **This section used to claim every value reaching a prompt here went
-through ``prompting._sanitize_attribute`` first. That was false, and the gap
+through ``prompt_sanitize._sanitize_attribute`` first. That was false, and the gap
 was a real cross-user prompt-injection surface.** Per-file titles and digests
 in the listed-recordings section always went through it — but the CORPUS
 HEADER's speaker roster and recurring-keyphrase list (``reducers._corpus_header``)
@@ -69,7 +69,7 @@ attacker-controlled text landing, unescaped, in the highest-trust part of the
 prompt the model is told to treat as authoritative (base rule 12).
 
 Fixed: the roster and keyphrases now go through
-``prompting._sanitize_body_text`` — the BODY-safe sanitizer, not the
+``prompt_sanitize._sanitize_body_text`` — the BODY-safe sanitizer, not the
 attribute one. That distinction matters here specifically: the attribute
 sanitizer caps at 120 chars, which is fine for one title but would silently
 truncate a roster of a dozen names or a keyphrase list mid-render if applied

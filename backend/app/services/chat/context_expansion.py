@@ -34,7 +34,7 @@ that gate, and masking still fails closed exactly as it does for an
 unexpanded chunk.
 
 **Budget.** Expansion competes for the same hard excerpt-budget ceiling
-(``prompting.format_excerpts``) as everything else, so unbounded growth on
+(``prompt_blocks.format_excerpts``) as everything else, so unbounded growth on
 one short chunk would silently evict other files' evidence — trading this
 bug for #517's coverage bug. :data:`MAX_EXPANSION_SEGMENTS` and
 :data:`MAX_EXPANDED_WORDS` bound how much one chunk may grow, and the

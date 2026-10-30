@@ -472,7 +472,7 @@ def test_base_rules_tell_the_model_not_to_recount():
 
 
 def test_the_counted_block_reports_the_total_and_the_recordings():
-    from app.services.chat.prompting import format_counted_block
+    from app.services.chat.prompt_blocks import format_counted_block
 
     block = format_counted_block(
         _counted(count=2, file_uuids=("a", "b"), file_titles=("Atlas kickoff", "Atlas retro"))
@@ -484,14 +484,14 @@ def test_the_counted_block_reports_the_total_and_the_recordings():
 
 
 def test_no_aggregation_produces_no_block():
-    from app.services.chat.prompting import format_counted_block
+    from app.services.chat.prompt_blocks import format_counted_block
 
     assert format_counted_block(None) == ""
 
 
 def test_a_long_file_list_is_capped_and_says_so():
     """A truncated list read as complete is the failure this tier removes."""
-    from app.services.chat.prompting import format_counted_block
+    from app.services.chat.prompt_blocks import format_counted_block
 
     block = format_counted_block(
         _counted(count=400, file_uuids=tuple(f"f{n}" for n in range(400)), file_titles=())
@@ -502,7 +502,7 @@ def test_a_long_file_list_is_capped_and_says_so():
 
 
 def test_a_hostile_recording_title_cannot_break_out_of_the_block():
-    from app.services.chat.prompting import format_counted_block
+    from app.services.chat.prompt_blocks import format_counted_block
 
     block = format_counted_block(
         _counted(
@@ -516,8 +516,8 @@ def test_a_hostile_recording_title_cannot_break_out_of_the_block():
 
 
 def test_the_counted_block_reaches_the_prompt_ahead_of_the_excerpts():
+    from app.services.chat.prompt_blocks import format_counted_block
     from app.services.chat.prompting import build_messages
-    from app.services.chat.prompting import format_counted_block
 
     block = format_counted_block(_counted(count=7))
     messages, _ids = build_messages(
@@ -536,8 +536,8 @@ def test_the_counted_block_reaches_the_prompt_ahead_of_the_excerpts():
 
 def test_the_counted_block_survives_a_budget_that_fits_no_excerpts():
     """It IS the answer; excerpts are illustration. Losing it to fit a turn is wrong."""
+    from app.services.chat.prompt_blocks import format_counted_block
     from app.services.chat.prompting import build_messages
-    from app.services.chat.prompting import format_counted_block
     from app.services.chat.redactor import MaskedChunk
     from app.services.search.chunk_retrieval import ChunkHit
 

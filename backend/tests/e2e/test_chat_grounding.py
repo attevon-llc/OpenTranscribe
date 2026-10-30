@@ -3,7 +3,7 @@
 `test_chat.py` covers the happy path — a grounded, cited answer. This file covers
 the property underneath it: **the citations a user can see and click are exactly
 the excerpts the model was given.** That invariant is enforced in three separate
-places (`prompting.format_excerpts` returns the ids it emitted,
+places (`prompt_blocks.format_excerpts` returns the ids it emitted,
 `citations.build_offered_citations` maps from those ids, and `service.stream_reply`
 emits `sources` only after `build_messages`), and unit tests pin each one. What
 none of them can prove is that the three still line up once a real browser talks

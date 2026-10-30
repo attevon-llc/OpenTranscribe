@@ -326,7 +326,7 @@ def test_the_withheld_chunk_reaches_no_prompt():
     layer read some other attribute, so this drives the real excerpt renderer —
     the last stage before the text leaves the deployment.
     """
-    from app.services.chat.prompting import format_excerpts
+    from app.services.chat.prompt_blocks import format_excerpts
 
     db = _db_with("done", [])
 

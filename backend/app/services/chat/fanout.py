@@ -308,7 +308,7 @@ def _run_enrichment(
     if not text:
         return "", 1, 0, 0
 
-    from app.services.chat.prompting import format_synthesis_block
+    from app.services.chat.prompt_blocks import format_synthesis_block
 
     try:
         prompt_tokens = llm.estimate_tokens(system + user_content)
@@ -390,7 +390,7 @@ def _render_recurrence(recurrence_result, meta: dict[str, Any]) -> str:
     """Phase 5 of ``_prepare_context``: the ``<recurrence>`` block, ``""`` when none."""
     recurrence_block = ""
     if recurrence_result is not None:
-        from app.services.chat.prompting import format_recurrence_block
+        from app.services.chat.prompt_blocks import format_recurrence_block
 
         recurrence_block = format_recurrence_block(recurrence_result)
         if recurrence_block:

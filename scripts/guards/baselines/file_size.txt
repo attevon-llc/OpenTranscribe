@@ -26,7 +26,6 @@ backend/app/core/celery.py	1415	oversize: split by concern planned
 backend/app/core/config.py	1594	oversize: split by concern planned
 backend/app/schemas/auth_config.py	701	oversize: split by concern planned
 backend/app/services/CLAUDE.md	1044	oversize: split by concern planned
-backend/app/services/asr/factory.py	891	oversize: split by concern planned
 backend/app/services/auth_config_service.py	959	oversize: split by concern planned
 backend/app/services/auto_label_service.py	712	oversize: split by concern planned
 backend/app/services/chat/CLAUDE.md	958	oversize: split by concern planned

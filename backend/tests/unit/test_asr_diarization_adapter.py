@@ -26,7 +26,7 @@ import pytest
 
 from app.core.config import settings as app_settings
 from app.services.asr.base import ASRProvider
-from app.services.asr.factory import ASR_PROVIDER_CATALOG
+from app.services.asr.catalog import ASR_PROVIDER_CATALOG
 from app.services.asr.factory import ASRProviderFactory
 from app.services.asr.types import ASRResult
 from app.services.asr.types import ASRSegment

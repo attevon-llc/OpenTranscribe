@@ -71,7 +71,7 @@ def _shared_by_provider(db: Session, org_id: int | None) -> dict[str, list[Share
 
 
 def _document(db: Session, org_id: int | None) -> ProviderPolicyResponse:
-    from app.services.asr.factory import ASR_PROVIDER_CATALOG
+    from app.services.asr.catalog import ASR_PROVIDER_CATALOG
 
     policy = policy_service.load_policy(db)
     shared = _shared_by_provider(db, org_id)

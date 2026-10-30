@@ -60,7 +60,7 @@ class ProviderPolicy:
 
 def cloud_provider_ids() -> list[str]:
     """Every catalog provider id except ``local``, in catalog order."""
-    from app.services.asr.factory import ASR_PROVIDER_CATALOG
+    from app.services.asr.catalog import ASR_PROVIDER_CATALOG
 
     return [pid for pid in ASR_PROVIDER_CATALOG if pid != LOCAL]
 

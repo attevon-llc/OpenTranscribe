@@ -36,8 +36,8 @@ import pytest
 from app import models
 from app.core.config import settings
 from app.core.exceptions import ASRConfigurationError
+from app.services.asr.catalog import ASR_PROVIDER_CATALOG
 from app.services.asr.deepgram_provider import DeepgramProvider
-from app.services.asr.factory import ASR_PROVIDER_CATALOG
 from app.services.asr.factory import ASRProviderFactory
 from app.services.asr.local_provider import LocalASRProvider
 from app.utils.encryption import encrypt_api_key

@@ -62,7 +62,9 @@ noqa::backend/app/services/chat/limits.py	4	suppression: reason to be added
 noqa::backend/app/services/chat/mapreduce/reducers.py	2	suppression: reason to be added
 noqa::backend/app/services/chat/persistence.py	2	suppression: reason to be added
 noqa::backend/app/services/chat/prompting.py	16	suppression: reason to be added
-noqa::backend/app/services/chat/redactor.py	10	suppression: reason to be added
+noqa::backend/app/services/chat/redactor.py	5	suppression: reason to be added
+noqa::backend/app/services/chat/redactor_chunk_plans.py	2	suppression: reason to be added
+noqa::backend/app/services/chat/redactor_digest_plans.py	3	suppression: reason to be added
 noqa::backend/app/services/chat/reranker.py	2	suppression: reason to be added
 noqa::backend/app/services/chat/retrieval_cache.py	6	suppression: reason to be added
 noqa::backend/app/services/chat/trace.py	2	suppression: reason to be added

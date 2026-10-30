@@ -302,7 +302,7 @@ def test_an_unfiltered_section_read_over_discloses_the_other_speaker():
     `ChunkHit.speaker` were ever left unset, or the filter it drives were
     removed.
     """
-    from app.services.chat.redactor import _digest_sentences_from_row
+    from app.services.chat.redactor_digest_plans import _digest_sentences_from_row
 
     unfiltered_hit = _speaker_digest_hit(speaker=None)
 
@@ -320,7 +320,7 @@ def test_an_unfiltered_section_read_over_discloses_the_other_speaker():
 
 def test_the_speaker_filter_excludes_the_other_speakers_sentences():
     """The must-stay-clean twin: the SAME mixed section, filtered to Dana."""
-    from app.services.chat.redactor import _digest_sentences_from_row
+    from app.services.chat.redactor_digest_plans import _digest_sentences_from_row
 
     dana_hit = _speaker_digest_hit(speaker="Dana")
 
@@ -662,7 +662,7 @@ def test_section_zero_resolves_because_zero_is_falsy_not_absent():
     applied, but by re-detecting rather than from cached spans, silently and on
     the request path.
     """
-    from app.services.chat.redactor import _digest_sentences
+    from app.services.chat.redactor_digest_plans import _digest_sentences
 
     db = _facts_db([_sentence("We agreed the budget.", [1])])
     found = _digest_sentences(db, _digest_hit())

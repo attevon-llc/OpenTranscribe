@@ -33,7 +33,7 @@ Each stage is its own module so the two security-critical ones (`redactor.py`,
 | `reranker_threads.py` | Runs `predict` on a small pool whose threads latch the deployment's torch thread cap (#1270) — see below |
 | `query_rewriter.py` | Follow-up → standalone query; every failure returns the original |
 | `retrieval_cache.py` | Redis exact-query cache, keyed by user+org+query+scope+settings-rev |
-| `redactor.py` | **Re-masks retrieved chunks before the LLM** (the *egress* control) |
+| `redactor.py` + siblings | **Re-masks retrieved chunks before the LLM** (the *egress* control). `redactor` = the masking half (`mask_chunks`, `mask_digests`, `_gather`, `_mask_inline`, `_egress_style`); `redactor_chunk_plans` / `redactor_digest_plans` = phase A, the Postgres gather that returns plain-data plans (the strictest-wins `_effective_cfg_for_owner` lives in the former) |
 | `output_redactor.py` | **Re-masks what the MODEL WRITES, sentence by sentence** (the *display* control) |
 | `prompting.py` | Layered system prompt + delimited excerpts, concatenation only |
 | `citations.py` | Structured citations; `[n]` markers only SELECT, never construct |
@@ -265,7 +265,7 @@ pii_entities/custom_words unioned, `allowlist` **intersected** (an allowlist
 exempts, so unioning it would be the opposite of strictest-wins), style/
 toxicity_threshold take the more protective value, and the admin force floor
 (`locked_categories`, `redact_before_llm_locked`) is OR'd so neither side can
-shed it. `chat/redactor._effective_cfg_for_owner` resolves this **per chunk /
+shed it. `chat/redactor_chunk_plans._effective_cfg_for_owner` resolves this **per chunk /
 per digest section**, not once for the whole turn — a single global union
 across a many-file scope would over-mask every file to the strictest owner in
 the set, which per-file resolution avoids

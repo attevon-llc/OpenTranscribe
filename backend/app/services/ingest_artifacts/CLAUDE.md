@@ -97,7 +97,7 @@ against the live model, with a negative control that fails if the window ever gr
 - **Speaker rename (#405)** needs no separate trigger: the fingerprint covers the *resolved*
   display name, so a rename invalidates the row by itself.
 - **Redaction**: digest sentences are verbatim segment text with segment ids attached, so
-  `redactor._gather_chunk_segments` can re-mask them from the cached spans. Any path that sends
+  `redactor_chunk_plans._gather_chunk_segments` can re-mask them from the cached spans. Any path that sends
   digest text to an LLM still has to mask it — the artifacts are stored **unredacted**, the
   same as `transcript_segment.text` and the chunk index.
 

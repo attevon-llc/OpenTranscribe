@@ -154,13 +154,15 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
     file until it is re-scanned. That was already true of the span cache; the column makes it
     enforced rather than tacit.
 - **Both LLM egress paths are wired to coverage — `llm_guard` AND `chat/redactor`.**
-  `_gather_chunk_segments` and `mask_digests`' gather each call `uncovered_detectors` beside their existing
+  `_gather_chunk_segments` and `_gather_digest_plans` (`chat/redactor_{chunk,digest}_plans.py`, the gather
+  halves of `mask_chunks`/`mask_digests`) each call `uncovered_detectors` beside their existing
   `redaction_status == done` check; a gap returns `None` (chunks) or skips the provenance read
   (digests), and both fall through to `_mask_inline`, which runs the detector here and now and
   fails closed. **The subject differs between them and that is deliberate**: `llm_guard` resolves
-  the FILE OWNER's policy (the content is theirs), chat resolves the REQUESTING USER's (one turn
-  spans a library of shared recordings with no single owner). Pinned by
-  `tests/unit/test_chat_redactor.py::test_the_cached_path_refuses_a_scan_that_never_ran_pii`.
+  the FILE OWNER's policy (the content is theirs), chat resolves owner ∪ requester per file
+  (task #40, strictest-wins; see `chat/CLAUDE.md`). Pinned for chunks by
+  `tests/unit/test_chat_redactor.py::test_the_cached_path_refuses_a_scan_that_never_ran_pii`, and
+  for digests by `tests/unit/test_chat_redactor_fail_closed_branches.py`.
   ⚠️ That guard's predecessor was **unfalsifiable**: it used `555-1234`, which Presidio does not
   recognise as a phone number, so it passed whether the cached path or the inline path ran — it
   asserted the hazard with a string that could not demonstrate it either way. Any test here that
@@ -265,8 +267,8 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   because nothing can realign them to edited text), and on a **blocking** failure sets the file
   to `pending` + queues `redaction_detect_task`.
   `pending`, not a new sentinel: every status-aware reader already honours it (`_redaction_pending`
-  withholds, `chat/_gather_chunk_segments` refuses non-`done` and falls through to inline
-  fail-closed masking, `llm_guard` defers **retryably**). Not `failed` — that is non-retryable in
+  withholds, `chat/redactor_chunk_plans._gather_chunk_segments` refuses non-`done` and falls
+  through to inline fail-closed masking, `llm_guard` defers **retryably**). Not `failed` — that is non-retryable in
   `llm_guard`. Not a 4xx — a detector outage must not block a user fixing a typo.
   **The queue drains in one hop**: `detect_and_store` writes `processing` then `done` or
   `failed` and never `pending`, so only an edit can set it and there is no cycle; a second edit

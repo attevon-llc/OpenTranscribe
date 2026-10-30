@@ -444,7 +444,7 @@ def union_effective_config(
         ``a is b`` returns ``a`` unchanged rather than rebuilding an equal object.
         This is a real optimization (the common case — a file the requester owns —
         resolves the SAME config object for both subjects, see
-        ``chat/redactor._effective_cfg_for_owner``) and it is also what keeps every
+        ``chat/redactor_chunk_plans._effective_cfg_for_owner``) and it is also what keeps every
         existing single-subject caller and test byte-for-byte unaffected when a
         test double supplies one canned config for every ``resolve_effective_config``
         call: the union of a policy with itself is that exact policy, not a

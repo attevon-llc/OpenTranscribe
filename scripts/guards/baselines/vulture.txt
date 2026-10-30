@@ -54,7 +54,7 @@ backend/app/services/chat/hooks.py::function::clear_hooks	1	residual after the d
 backend/app/services/chat/hooks.py::function::register_before_message	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/chat/language.py::function::resolve_text_field_preset_for_locale	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/chat/legs.py::function::reset_executor_for_tests	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/services/chat/redactor.py::function::_digest_sentences	1	residual after the dead-code pass; delete or whitelist when touched
+backend/app/services/chat/redactor_digest_plans.py::function::_digest_sentences	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/chat/reranker.py::function::reset_reranker_state	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/chat/trace.py::class::ListTraceRecorder	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/diarization/asr_adapter.py::method::supports_speaker_count	1	residual after the dead-code pass; delete or whitelist when touched

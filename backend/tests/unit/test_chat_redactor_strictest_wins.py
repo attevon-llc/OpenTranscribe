@@ -599,7 +599,7 @@ def test_fail_closed_when_the_owners_policy_read_raises():
         enabled_categories=set(),
     )
 
-    def _resolve(_db, user_id):
+    def _resolve(_db, user_id, organization_id=None):
         if user_id == 999:  # the owner
             raise RuntimeError("db down resolving the owner's policy")
         return requester_permissive  # the requester
@@ -621,9 +621,9 @@ def test_fail_closed_when_the_owners_policy_read_raises():
     with patch("app.services.redaction.config.resolve_effective_config", side_effect=_resolve):
         masked = mask_chunks(_factory(db), [_chunk(5)], user_id=1)
 
-    assert PHONE not in masked[0].content, (
-        "an owner whose policy could not be read must fail closed to masking, "
-        "not fall through to the requester's permissive policy alone"
+    assert PHONE not in masked[0].content and masked[0].content.startswith("Call Dana at"), (
+        "an owner whose policy could not be read must fail closed to masking the PII, "
+        "not fall through to the requester's policy alone (nor withhold the whole chunk)"
     )
     assert masked[0].was_masked is True
 

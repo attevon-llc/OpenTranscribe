@@ -157,7 +157,7 @@ def scope_speaker_digest_hits(
     because that section may hold other speakers' sentences too. Without a
     matching filter on that side, "a summary of Alice" would come back
     quoting Bob. That second filter lives in
-    ``redactor._digest_sentences_from_row``, keyed off ``ChunkHit.speaker`` —
+    ``redactor_digest_plans._digest_sentences_from_row``, keyed off ``ChunkHit.speaker`` —
     set below to every requested name, pipe-joined — so it can be re-applied
     with no session held. See that function's docstring and
     ``tests/unit/test_chat_digest_masking.py``'s must-fire guard.

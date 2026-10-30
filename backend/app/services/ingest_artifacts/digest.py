@@ -7,8 +7,8 @@ is what lets a deployment with ``LLM_PROVIDER`` empty still have a summary tier.
 Three properties the rest of the epic depends on:
 
 1. **Every sentence is quotable.** It is verbatim source text, so Stage 4 can cite it and
-   the read-time masking path (``redactor._gather_chunk_segments``) can re-mask it from the
-   cached spans of the very segments named in its provenance.
+   the read-time masking path (``redactor_chunk_plans._gather_chunk_segments``) can re-mask it
+   from the cached spans of the very segments named in its provenance.
 2. **Every sentence carries provenance** (:mod:`.provenance`, D3) — segment ids *and*
    real timestamps, so a digest citation deep-links to when it was said instead of to
    ``0:00`` (addendum G7).

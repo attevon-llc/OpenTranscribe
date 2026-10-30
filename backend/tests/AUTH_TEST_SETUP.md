@@ -69,7 +69,7 @@ docker run -d --name lldap-test \
   -e LLDAP_LDAP_BASE_DN="dc=example,dc=com" \
   -e LLDAP_LDAP_USER_PASS="admin_password" \
   -e LLDAP_JWT_SECRET="test-jwt-secret-key-change-me" \
-  lldap/lldap:stable
+  lldap/lldap:v0.6.3
 ```
 
 Create test users after LLDAP starts. `./opentr.sh start dev --with-ldap-test` (via

@@ -101,7 +101,7 @@ services:
   # Step CA for PKI testing (dev only)
   # Start with: docker compose -f docker-compose.keycloak.yml --profile pki up -d
   step-ca:
-    image: smallstep/step-ca:latest
+    image: smallstep/step-ca:0.30.2
     profiles: ["pki"]
     security_opt:
       - no-new-privileges:true

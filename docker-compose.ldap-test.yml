@@ -20,7 +20,7 @@
 
 services:
   lldap:
-    image: lldap/lldap:stable
+    image: lldap/lldap:v0.6.3
     container_name: lldap-test
     security_opt:
       - no-new-privileges:true

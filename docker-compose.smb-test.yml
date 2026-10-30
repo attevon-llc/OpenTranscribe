@@ -15,7 +15,7 @@
 
 services:
   smb-test:
-    image: dperson/samba:latest
+    image: dperson/samba@sha256:66088b78a19810dd1457a8f39340e95e663c728083efa5fe7dc0d40b2478e869  # digest pin: the repo publishes no version tags (only :latest)
     container_name: opentranscribe-smb-test
     security_opt:
       - no-new-privileges:true

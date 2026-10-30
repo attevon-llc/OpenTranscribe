@@ -26,7 +26,7 @@ import redis.asyncio as redis
 from app.core.config import settings
 from app.core.constants import VIDEO_CHUNK_SIZE
 from app.db.session_utils import session_scope
-from app.services.minio_service import MinIOService
+from app.services.minio_bucket_admin import MinIOService
 from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.redaction.config import resolve_effective_config
 from app.services.redaction.export_policy import ExportRedactionNotReadyError

@@ -102,7 +102,7 @@ def recovery_seams(monkeypatch):
     # The task constructs these inside its body; neither stub is ever called by the stubs above.
     import app.services.minio_service as minio_service
 
-    monkeypatch.setattr(minio_service, "MinIOService", lambda: object())
+    monkeypatch.setattr("app.services.minio_bucket_admin.MinIOService", lambda: object())
     monkeypatch.setattr(minio_service, "minio_client", object(), raising=False)
 
     return rec
@@ -342,9 +342,8 @@ def test_backfill_short_circuits_on_an_empty_sidecar_without_opening_a_session(m
     session anyway fails loudly instead of silently scanning every row of the user's
     library on the CPU worker.
     """
-    import app.services.minio_service as minio_service
 
-    monkeypatch.setattr(minio_service, "MinIOService", lambda: object())
+    monkeypatch.setattr("app.services.minio_bucket_admin.MinIOService", lambda: object())
     monkeypatch.setattr(recovery_tasks.recovery, "load_metadata_sidecar", lambda _svc: {})
 
     def _explode():
@@ -406,9 +405,7 @@ def test_backfill_only_offers_unenriched_rows_to_the_matcher(monkeypatch, db_ses
     db_session.add_all([named, placeholder, no_duration])
     db_session.commit()
 
-    import app.services.minio_service as minio_service
-
-    monkeypatch.setattr(minio_service, "MinIOService", lambda: object())
+    monkeypatch.setattr("app.services.minio_bucket_admin.MinIOService", lambda: object())
     monkeypatch.setattr(
         recovery_tasks.recovery,
         "load_metadata_sidecar",
@@ -448,9 +445,7 @@ def test_backfill_reports_the_row_count_the_apply_step_actually_wrote(monkeypatc
     """
     import contextlib
 
-    import app.services.minio_service as minio_service
-
-    monkeypatch.setattr(minio_service, "MinIOService", lambda: object())
+    monkeypatch.setattr("app.services.minio_bucket_admin.MinIOService", lambda: object())
     monkeypatch.setattr(
         recovery_tasks.recovery,
         "load_metadata_sidecar",

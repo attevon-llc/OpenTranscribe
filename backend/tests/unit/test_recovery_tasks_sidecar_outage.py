@@ -57,7 +57,7 @@ def test_fetch_does_not_overwrite_the_stored_sidecar_when_the_load_hits_an_outag
 
     stored = b'{"vid1": {"title": "Kept", "duration": 10}}'
     fake = _InMemoryMinio(stored, _outage())
-    monkeypatch.setattr(minio_service, "MinIOService", lambda: fake)
+    monkeypatch.setattr("app.services.minio_bucket_admin.MinIOService", lambda: fake)
     monkeypatch.setattr(recovery_tasks, "_YT_METADATA_DELAY_SECONDS", 0.0)
     monkeypatch.setattr(minio_service, "minio_client", object(), raising=False)
     monkeypatch.setattr(
@@ -82,10 +82,9 @@ def test_fetch_does_not_overwrite_the_stored_sidecar_when_the_load_hits_an_outag
 def test_backfill_raises_on_a_sidecar_outage_instead_of_reporting_an_empty_success(
     monkeypatch,
 ):
-    import app.services.minio_service as minio_service
 
     fake = _InMemoryMinio(b"{}", _outage())
-    monkeypatch.setattr(minio_service, "MinIOService", lambda: fake)
+    monkeypatch.setattr("app.services.minio_bucket_admin.MinIOService", lambda: fake)
     monkeypatch.setattr(
         recovery_tasks.recovery, "load_metadata_sidecar", real.load_metadata_sidecar
     )
@@ -98,7 +97,7 @@ def test_fetch_requests_a_celery_retry_on_a_sidecar_outage(monkeypatch):
     """Through the task's own retry hook, not by swallowing the error."""
     import app.services.minio_service as minio_service
 
-    monkeypatch.setattr(minio_service, "MinIOService", lambda: object())
+    monkeypatch.setattr("app.services.minio_bucket_admin.MinIOService", lambda: object())
     monkeypatch.setattr(minio_service, "minio_client", object(), raising=False)
     monkeypatch.setattr(recovery_tasks.recovery, "discover_youtube_ids", lambda *_a: ["v"])
 

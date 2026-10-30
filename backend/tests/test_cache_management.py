@@ -14,7 +14,7 @@ from app.core.config import settings
 from app.models.media import MediaFile
 from app.services import cache_management_service
 from app.services import system_settings_service
-from app.services.minio_service import MinIOService
+from app.services.minio_bucket_admin import MinIOService
 from app.services.video_processing_service import VideoProcessingService
 
 

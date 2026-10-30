@@ -26,7 +26,7 @@ from app.schemas.transcript_export import TranscriptDocumentExportRequest
 from app.services.download_events import DOCUMENT_EXPORT_ERRORS
 from app.services.download_events import publish_bulk_event
 from app.services.download_events import release_document_export_guard
-from app.services.minio_service import MinIOService
+from app.services.minio_bucket_admin import MinIOService
 from app.services.video_processing_service import VideoProcessingService
 
 logger = logging.getLogger(__name__)

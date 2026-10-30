@@ -27,7 +27,7 @@ from app.models.collection import CollectionMember
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.models.sharing import CollectionShare
-from app.services.minio_service import MinIOService
+from app.services.minio_bucket_admin import MinIOService
 from app.services.video_processing_service import VideoProcessingService
 
 API_ENDPOINTS_DIR = pathlib.Path(__file__).resolve().parents[2] / "app" / "api" / "endpoints"

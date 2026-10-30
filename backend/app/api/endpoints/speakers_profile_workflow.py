@@ -134,7 +134,7 @@ def _clear_video_cache_for_speaker(media_file_id: int) -> None:
     try:
         from app.db.session_utils import session_scope
         from app.models.media import MediaFile
-        from app.services.minio_service import MinIOService
+        from app.services.minio_bucket_admin import MinIOService
         from app.services.video_processing_service import VideoProcessingService
 
         minio_service = MinIOService()

@@ -817,7 +817,7 @@ def _resolve_ready_download(
             masked under *your* policy exists" rather than "somebody once rendered this
             file". Empty for audio modes and for policies that mask nothing.
     """
-    from app.services.minio_service import MinIOService
+    from app.services.minio_bucket_admin import MinIOService
     from app.services.minio_service import get_presigned_download_url
     from app.services.video_processing_service import VideoProcessingService
 
@@ -1347,7 +1347,7 @@ def _clear_derived_cache(file_id: int, filename: str) -> None:
         file_id: Internal media file id.
         filename: The file's original filename; the cache keys derive from it.
     """
-    from app.services.minio_service import MinIOService
+    from app.services.minio_bucket_admin import MinIOService
     from app.services.video_processing_service import VideoProcessingService
 
     VideoProcessingService(MinIOService()).clear_derived_cache(file_id, filename)

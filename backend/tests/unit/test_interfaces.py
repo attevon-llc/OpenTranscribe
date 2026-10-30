@@ -101,19 +101,19 @@ class TestStorageServiceMatchesMinIOService:
     """``StorageService`` documents itself as mirroring ``MinIOService``."""
 
     def test_upload_file_signature_matches(self):
-        from app.services.minio_service import MinIOService
+        from app.services.minio_bucket_admin import MinIOService
 
         assert _params(StorageService.upload_file) == _params(MinIOService.upload_file)
         assert _defaults(StorageService.upload_file) == _defaults(MinIOService.upload_file)
 
     def test_download_file_signature_matches(self):
-        from app.services.minio_service import MinIOService
+        from app.services.minio_bucket_admin import MinIOService
 
         assert _params(StorageService.download_file) == _params(MinIOService.download_file)
         assert _defaults(StorageService.download_file) == _defaults(MinIOService.download_file)
 
     def test_get_presigned_url_signature_matches(self):
-        from app.services.minio_service import MinIOService
+        from app.services.minio_bucket_admin import MinIOService
 
         assert _params(StorageService.get_presigned_url) == _params(MinIOService.get_presigned_url)
         assert _defaults(StorageService.get_presigned_url) == _defaults(
@@ -121,7 +121,7 @@ class TestStorageServiceMatchesMinIOService:
         )
 
     def test_delete_object_signature_matches(self):
-        from app.services.minio_service import MinIOService
+        from app.services.minio_bucket_admin import MinIOService
 
         assert _params(StorageService.delete_object) == _params(MinIOService.delete_object)
 

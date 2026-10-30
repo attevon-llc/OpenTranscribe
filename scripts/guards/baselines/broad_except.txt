@@ -133,7 +133,8 @@ backend/app/services/media_download_thumbnails.py	3	ratchet: may only go down
 backend/app/services/media_mirror_service.py	2	ratchet: may only go down
 backend/app/services/migration_lock_service.py	1	ratchet: may only go down
 backend/app/services/migration_progress_service.py	7	ratchet: may only go down
-backend/app/services/minio_service.py	10	ratchet: may only go down
+backend/app/services/minio_bucket_admin.py	5	ratchet: may only go down
+backend/app/services/minio_service.py	5	ratchet: may only go down
 backend/app/services/multipart_upload.py	5	ratchet: may only go down
 backend/app/services/native_embedding_client.py	1	ratchet: may only go down
 backend/app/services/notification_service.py	1	ratchet: may only go down

@@ -17,7 +17,7 @@ from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.services.download_events import publish_download_event
 from app.services.download_events import release_download_prep_guard
-from app.services.minio_service import MinIOService
+from app.services.minio_bucket_admin import MinIOService
 from app.services.redaction.export_policy import ExportRedactionNotReadyError
 from app.services.takedown_service import exclude_quarantined
 from app.services.takedown_service import is_review_admin

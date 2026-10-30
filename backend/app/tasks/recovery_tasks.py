@@ -84,7 +84,7 @@ def youtube_metadata_fetch(self, user_id: int, limit: int | None = None) -> dict
     Returns:
         ``{ids_discovered, fetched, already_present, failed, total_cached}``.
     """
-    from app.services.minio_service import MinIOService
+    from app.services.minio_bucket_admin import MinIOService
     from app.services.minio_service import minio_client
 
     svc = MinIOService()
@@ -155,7 +155,7 @@ def youtube_metadata_backfill(self, user_id: int) -> dict:
     Returns:
         ``{candidate_rows, matched, updated}``.
     """
-    from app.services.minio_service import MinIOService
+    from app.services.minio_bucket_admin import MinIOService
 
     svc = MinIOService()
     cache = _load_sidecar_or_retry(self, svc)

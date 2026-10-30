@@ -59,7 +59,9 @@ backend/app/core/task_liveness.py	11	ratchet: may only go down
 backend/app/core/task_replay.py	7	ratchet: may only go down
 backend/app/core/worker_metrics.py	9	ratchet: may only go down
 backend/app/db/migrations.py	2	ratchet: may only go down
-backend/app/main.py	26	ratchet: may only go down
+backend/app/main.py	11	ratchet: may only go down
+backend/app/startup/maintenance.py	8	ratchet: may only go down
+backend/app/startup/warmups.py	7	ratchet: may only go down
 backend/app/scripts/batch_speaker_matching.py	1	ratchet: may only go down
 backend/app/scripts/probe_torch_thread_scope.py	1	ratchet: may only go down
 backend/app/scripts/reingest_minio.py	2	ratchet: may only go down
@@ -175,7 +177,10 @@ backend/app/services/search/indexing/chunk_plane.py	2	ratchet: may only go down
 backend/app/services/search/indexing/digest_plane.py	3	ratchet: may only go down
 backend/app/services/search/indexing/orphans.py	1	ratchet: may only go down
 backend/app/services/search/indexing/summary_plane.py	2	ratchet: may only go down
-backend/app/services/search/ml_model_service.py	14	ratchet: may only go down
+backend/app/services/search/ml_ingest_pipelines.py	3	ratchet: may only go down
+backend/app/services/search/ml_model_deployment.py	5	ratchet: may only go down
+backend/app/services/search/ml_model_registration.py	3	ratchet: may only go down
+backend/app/services/search/ml_model_service.py	3	ratchet: may only go down
 backend/app/services/search/model_downloader.py	5	ratchet: may only go down
 backend/app/services/search/neural_bootstrap.py	7	ratchet: may only go down
 backend/app/services/search/pipelines.py	6	ratchet: may only go down
@@ -208,7 +213,9 @@ backend/app/services/takedown_notices.py	4	ratchet: may only go down
 backend/app/services/takedown_notification_service.py	1	ratchet: may only go down
 backend/app/services/takedown_predicates.py	3	ratchet: may only go down
 backend/app/services/takedown_service.py	5	ratchet: may only go down
-backend/app/services/task_recovery_service.py	22	ratchet: may only go down
+backend/app/services/task_recovery_post_transcription.py	9	ratchet: may only go down
+backend/app/services/task_recovery_retry.py	7	ratchet: may only go down
+backend/app/services/task_recovery_stuck.py	6	ratchet: may only go down
 backend/app/services/task_row_supersede.py	1	ratchet: may only go down
 backend/app/services/topic_extraction_service.py	6	ratchet: may only go down
 backend/app/services/transcription_retry.py	3	ratchet: may only go down
@@ -229,7 +236,10 @@ backend/app/tasks/auto_labeling.py	1	ratchet: may only go down
 backend/app/tasks/cleanup.py	6	ratchet: may only go down
 backend/app/tasks/combined_speaker_analysis_task.py	4	ratchet: may only go down
 backend/app/tasks/embedding_consistency_repair.py	2	ratchet: may only go down
-backend/app/tasks/embedding_migration_v4.py	15	ratchet: may only go down
+backend/app/tasks/embedding_migration_v4.py	3	ratchet: may only go down
+backend/app/tasks/embedding_migration_v4_finalize.py	5	ratchet: may only go down
+backend/app/tasks/embedding_migration_v4_scope.py	6	ratchet: may only go down
+backend/app/tasks/embedding_migration_v4_writer.py	1	ratchet: may only go down
 backend/app/tasks/erasure_reconciliation.py	3	ratchet: may only go down
 backend/app/tasks/imohash_recompute.py	2	ratchet: may only go down
 backend/app/tasks/ingest_artifacts_task.py	1	ratchet: may only go down
@@ -305,7 +315,9 @@ backend/app/utils/pyannote_utils.py	2	ratchet: may only go down
 backend/app/utils/segment_dedup.py	1	ratchet: may only go down
 backend/app/utils/stats_helpers.py	3	ratchet: may only go down
 backend/app/utils/task_lock.py	4	ratchet: may only go down
-backend/app/utils/task_utils.py	6	ratchet: may only go down
+backend/app/utils/task_cancel.py	2	ratchet: may only go down
+backend/app/utils/stuck_file_recovery.py	1	ratchet: may only go down
+backend/app/utils/file_retry.py	3	ratchet: may only go down
 backend/app/utils/text_preprocessing.py	2	ratchet: may only go down
 backend/app/services/thumbnail.py	3	ratchet: may only go down
 backend/app/utils/vram_profiler.py	1	ratchet: may only go down

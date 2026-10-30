@@ -671,7 +671,7 @@ print(value if value is not None else "")
 # "container-specific" — so the upgrade stack registers the model over the network from cold,
 # exactly like the other two. There is no warmer stack; there was a number nobody re-derived.
 #
-# The number that IS derived: `ml_model_service._REGISTRATION_MAX_WAIT` is 300 s, and
+# The number that IS derived: `ml_model_registration._REGISTRATION_MAX_WAIT` is 300 s, and
 # test-fresh-install.sh recorded that even 300 was not always enough on this host under
 # concurrent build/scan load. 600 gives headroom for that variance and costs nothing on a
 # healthy run — the poll exits on the first successful probe.

@@ -368,7 +368,7 @@ def test_reprocess_and_retry_are_refused_while_held_and_say_so(client, gov):
 
 
 def test_the_retry_reset_backstop_refuses_a_held_file(gov):
-    from app.utils.task_utils import reset_file_for_retry
+    from app.utils.file_retry import reset_file_for_retry
 
     f = gov.file(gov.alice, status=FileStatus.ERROR.value)
     hold = _hold(gov, f)

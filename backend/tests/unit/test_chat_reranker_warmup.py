@@ -250,12 +250,12 @@ def test_lifespan_in_test_mode_does_not_start_the_warmup(monkeypatch):
 
 def test_control_the_lifespan_hook_does_start_the_warmup(monkeypatch):
     """Control for the test above: the hook the lifespan calls reaches the starter."""
-    from app import main
+    from app.startup import warmups
 
     calls: list[object] = []
     monkeypatch.setattr(reranker_warmup, "start_reranker_warmup", lambda *a: calls.append(a))
 
-    main._start_reranker_warmup()
+    warmups._start_reranker_warmup()
     assert len(calls) == 1
 
 
@@ -271,7 +271,9 @@ def test_only_the_api_lifespan_starts_the_warmup():
         if "start_reranker_warmup(" in path.read_text(encoding="utf-8")
         and path.name != "reranker_warmup.py"
     )
-    assert callers == ["main.py"]
+    # main.py matches through its ``_start_reranker_warmup()`` lifespan call (the hook defined
+    # in startup/warmups.py, the only code that calls the starter itself).
+    assert callers == ["main.py", "startup/warmups.py"]
     source = (_APP_DIR / "main.py").read_text(encoding="utf-8")
     lifespan = source[source.index("async def lifespan(") :]
     assert lifespan.index('"Test mode: skipping startup tasks"') < lifespan.index(

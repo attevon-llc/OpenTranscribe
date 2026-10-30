@@ -23,7 +23,7 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.models.media import FileStatus  # noqa: E402
 from app.models.media import MediaFile  # noqa: E402
-from app.utils.task_utils import reset_file_for_retry  # noqa: E402
+from app.utils.file_retry import reset_file_for_retry  # noqa: E402
 
 
 def main():

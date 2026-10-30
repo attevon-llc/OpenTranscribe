@@ -138,14 +138,14 @@ def test_purge_rebuilds_the_profile_of_a_deleted_files_speaker(
 def test_retry_reset_erases_the_voiceprints_it_deletes(
     db_session, normal_user, speaker_os_seams, monkeypatch
 ):
-    from app.utils import task_utils
+    from app.utils import file_retry
 
-    monkeypatch.setattr(task_utils, "transcript_is_regenerable", lambda db, mf: True)
+    monkeypatch.setattr(file_retry, "transcript_is_regenerable", lambda db, mf: True)
     monkeypatch.setattr("app.tasks.search_indexing_task.index_file_summary.delay", lambda *a: None)
     _fa, fb, _sa, sb, cluster = make_pair(db_session, normal_user, speaker_os_seams)
     victim = str(sb.uuid)
 
-    assert task_utils.reset_file_for_retry(db_session, fb.id) is True
+    assert file_retry.reset_file_for_retry(db_session, fb.id) is True
 
     assert speaker_os_seams["erased_speakers"] == [victim], "retry left the deleted voiceprint"
     assert cosine(speaker_os_seams["clusters"][str(cluster.uuid)], VOICE_A) >= MATCH

@@ -56,7 +56,7 @@ Most services are plain modules of functions that take a `Session`; a few are cl
 |---|---|
 | `pipeline_plan.py`, `pipeline_plan_inputs.py`, `asr_switch_plan.py` | The one decision point for how a recording is processed (engines, queues, validity) |
 | `asr_provider_policy.py` | Which cloud ASR providers users may choose |
-| `task_detection_service.py`, `task_filtering_service.py`, `task_recovery_service.py`, `task_row_supersede.py`, `transcription_retry.py`, `post_processing_status.py` | Task health, listing, recovery, supersede rules, retry policy |
+| `task_detection_service.py` (+ `task_detection_{stuck,errors,post_transcription}.py` mixins), `task_filtering_service.py`, `task_recovery_service.py` (+ `task_recovery_{stuck,retry,post_transcription}.py` mixins), `task_row_supersede.py`, `transcription_retry.py`, `post_processing_status.py` | Task health, listing, recovery, supersede rules, retry policy |
 | `progress_tracker.py`, `notification_service.py`, `download_events.py`, `pipeline_timing_service.py` | EWMA ETA progress tracking, WebSocket notifications (`send_task_notification()`), download events, pipeline timing |
 | `error_categorization_service.py` | User-facing error classification (fixed sentences; the raw exception never reaches a client) |
 | `migration_lock_service.py`, `migration_progress_service.py` | Redis lock and progress for batch migrations |
@@ -126,7 +126,7 @@ minio_service.delete_file(object_name)
 `storage_backend.py` owns the differences between bundled MinIO and native AWS S3 (`STORAGE_BACKEND`), and `storage_presign_identity.py` provides the least-privilege identity that signs browser-facing GET URLs. Every presigned URL expiry is clamped by `clamp_presigned_expiry`.
 
 ### File cleanup service (`file_cleanup_service.py`)
-`FileCleanupService` detects files stuck in processing or pending states and recovers them (`run_cleanup_cycle`, `force_cleanup_orphaned_files(db, dry_run=...)`, `get_cleanup_statistics`), with recovery-attempt limits that mark a file `ORPHANED` and force-delete eligible. It uses `check_for_stuck_files()` and `recover_stuck_file()` from `utils/task_utils.py`. The module also holds the full file purge path (`purge_media_file`).
+`FileCleanupService` detects files stuck in processing or pending states and recovers them (`run_cleanup_cycle`, `force_cleanup_orphaned_files(db, dry_run=...)`, `get_cleanup_statistics`), with recovery-attempt limits that mark a file `ORPHANED` and force-delete eligible. It uses `check_for_stuck_files()` and `recover_stuck_file()` from `utils/stuck_file_recovery.py`. The module also holds the full file purge path (`purge_media_file`).
 
 ### Analytics service (`analytics_service.py`)
 `AnalyticsService` (static methods `compute_analytics`, `save_analytics`, `refresh_analytics`, `compute_and_save_analytics`) computes per-file analytics: speaker talk time, interruptions, turn-taking, question frequency, speaking pace and silence ratio. `POST /files/{uuid}/analytics/refresh` triggers a recompute.

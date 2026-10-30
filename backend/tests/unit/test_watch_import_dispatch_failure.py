@@ -22,7 +22,7 @@ asserted the caught exception's own text reached ``error_message``, and
 exemplar leak in a second route: a dispatch failure here is almost always the Celery
 broker refusing a connection, and the redis-py/kombu message for that quotes the broker
 URL **with its embedded password**, straight onto a field the watch-source file listing
-renders (``api/endpoints/watch_sources.py``). ``_dispatch_pipeline`` now persists only
+renders (``api/endpoints/watch_sources_files.py``). ``_dispatch_pipeline`` now persists only
 the exception CLASS and logs the rest, so the three assertions below are:
 
 * the fixed literal IS present — the user still learns dispatch failed, and which class,

@@ -84,7 +84,7 @@ The chunk plane in this package carries no voiceprint and is not gated.
   request pieces it binds are sibling modules (its module docstring lists them).
 - `snippet_redaction.py` — read-time masking of the snippets on a search page. See
   "Snippets are masked, and the tags make that non-obvious" below.
-- `ml_model_service.py` — ML Commons register/deploy. `model_downloader.py`,
+- `ml_model_service.py` — `OpenSearchMLModelService` (client, settings, status/listing) composed from three mixins over `ml_model_host.py`: `ml_model_registration.py` (register, local artifacts), `ml_model_deployment.py` (deploy, verify, ensure-deployed), `ml_ingest_pipelines.py` (ingest pipeline, active model). The client is owned only by `ml_model_service` (`__init__`/`_ensure_client`): mixins must never import `get_opensearch_client`, or tests patching it stop taking effect. `model_downloader.py`,
   `settings_service.py` (DB-backed model + dimension), `tenant_scope.py`.
 - `embedding_provenance.py` — which model produced the vectors, and the one-query
   mixed-index survey. `model_switch.py` — the whole model switch, shared by both
@@ -101,7 +101,7 @@ The chunk plane in this package carries no voiceprint and is not gated.
   `all-MiniLM-L6-v2` (384d, 80 MB). Tiers in `core/embedding_models.py:OPENSEARCH_EMBEDDING_MODELS`
   (fast 384d / balanced 768d / best, English + multilingual). Offline pre-fetch:
   `DOWNLOAD_ALL_OPENSEARCH_MODELS=true bash scripts/download-models.sh models`.
-- Startup (`app/main.py`, `_initialize_neural_search`) sleeps 15 s, configures ML Commons cluster settings, scans
+- Startup (`app/startup/warmups.py`, `_initialize_neural_search`) sleeps 15 s, configures ML Commons cluster settings, scans
   the read-only `/ml-models/` mount, downloads the default model if internet is reachable, then
   `ensure_model_deployed` registers via `file://` and **falls back to remote HF** if that fails.
   Active model id persists as SystemSettings `search.opensearch_model_id`.
@@ -573,7 +573,7 @@ becomes an outage. It is deliberately **not** in `POST /search/repair-indices`, 
 is close/reopen/force-merge and cannot repair a vector space — reporting it there would imply
 the repair had addressed it.
 
-`ml_model_service.get_active_model_id()` **refuses to guess.** It used to return
+`ml_ingest_pipelines.get_active_model_id()` **refuses to guess.** It used to return
 `list_models(deployed_only=True)[0]` — the first hit of an unsorted `match_all` — whenever the
 stored model was not deployed, and `ensure_neural_ingest_pipeline` writes whatever it is handed
 straight into the pipeline. That silently repointed embedding **with no user action**. Exactly
@@ -646,18 +646,18 @@ shape it was written for.
   value. That is the `search_index_maintenance`-dispatched run, which has no admin-facing run id;
   its behaviour is unchanged from before #691. Those automatic per-owner runs are deliberately
   **not** swept up by an admin's stop — the button cancels the run *you* started.
-- **`reindex_fanout:*` is NOT in `app/main.py`'s startup sweep**, unlike `reindex_cancel:*`. The
+- **`reindex_fanout:*` is NOT in `app/startup/maintenance.py`'s startup sweep**, unlike `reindex_cancel:*`. The
   API process restarts independently of the Celery workers still executing the fan-out, and
   deleting the record takes the only handle `stop` has on those coordinators with it. A 1-hour
   TTL bounds it instead.
 
 ## The bootstrap self-heals, and why it is a beat task (#625)
 
-**The old bootstrap was a one-shot startup task with no retry.** `app/main.py`'s
+**The old bootstrap was a one-shot startup task with no retry.** `app/startup/warmups.py`'s
 `_initialize_neural_search` fired exactly once from `lifespan` via `asyncio.create_task`, and
 every failure arm was a bare `return` after a `logger.warning`. Nothing ever re-entered it.
 
-The specific race: `ml_model_service._REGISTRATION_MAX_WAIT` (300s) is a poll **ceiling on our
+The specific race: `ml_model_registration._REGISTRATION_MAX_WAIT` (300s) is a poll **ceiling on our
 own polling**, not on OpenSearch's registration task, which keeps running server-side after we
 stop looking. A model can finish `REGISTERED, deployed=False` a few minutes after the API
 process gave up, and then sit there forever — nothing re-checks it. Consequence: the ingest
@@ -673,7 +673,7 @@ be inlined in `_initialize_neural_search`. It is a **sequencer**, not a state ma
 `ensure_model_deployed` and `ensure_neural_ingest_pipeline` are already fully
 idempotent/resumable, so this module reimplements none of that.
 
-- **Caller 1: the startup fast path.** `app/main.py::_initialize_neural_search` sleeps
+- **Caller 1: the startup fast path.** `app/startup/warmups.py::_initialize_neural_search` sleeps
   `NEURAL_BOOTSTRAP_STARTUP_DELAY_SECONDS` (15s), then calls the same function once via
   `run_in_threadpool`, elected with `run_once_per_boot("neural_search_bootstrap")` so N
   replicas booting together don't all race the same expensive OpenSearch calls. This is no
@@ -700,7 +700,7 @@ wait for. `run_bootstrap_tick`'s 600s backoff after one failure happened to matc
 `test-fresh-install.sh`'s 600s poll window exactly, which is why one race guaranteed the
 rehearsal's assertion would fail.
 
-The fix is a state guard, not a lock alone: `ml_model_service._DEPLOYABLE_STATES` /
+The fix is a state guard, not a lock alone: `ml_model_deployment._DEPLOYABLE_STATES` /
 `_IN_FLIGHT_STATES` plus `_await_deployable_state()` make `ensure_model_deployed` wait out
 `REGISTERING`/`DEPLOYING` rather than deploying into it, so the destructive path is closed even
 if two callers still overlap. **Defense in depth, not a substitute**: `_initialize_neural_search`

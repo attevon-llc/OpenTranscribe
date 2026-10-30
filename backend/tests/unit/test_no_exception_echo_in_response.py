@@ -85,7 +85,7 @@ Two scoping decisions, both measured rather than assumed:
   Direct mutation only: measured **zero** false positives across the whole tree.
 * **Rooted at ``app/api/`` + ``app/services/``, not ``app/tasks/``.** A Celery task's
   return value goes to the result backend, and this application reads it back in exactly
-  two places — ``app/utils/task_utils.py:461`` and ``:670`` — both of which read
+  two places — ``app/utils/file_retry.py:52`` and ``app/utils/stuck_file_recovery.py:83`` — both of which read
   ``.state`` and never ``.result``. So a task return is not a response body here.
   ``test_a_celery_result_is_never_read_into_a_response`` pins that premise mechanically,
   so the scope stays honest if someone ever wires a task result into an endpoint.
@@ -723,7 +723,7 @@ _RAISE_ALLOWLIST: dict[str, tuple[int, str]] = {
         1,
         "our own TagShareError message from services/tag_sharing.share_tag",
     ),
-    "api/endpoints/watch_sources.py::browse_directories": (
+    "api/endpoints/watch_sources_settings.py::browse_directories": (
         1,
         "verified: folder_browser.list_directories raises only three fixed-literal "
         "ValueErrors, never a host path",
@@ -783,7 +783,7 @@ _RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
         1,
         "same: narrow aiohttp.ClientError, the dial result IS the product",
     ),
-    "api/endpoints/watch_sources.py::test_multipart_regex": (
+    "api/endpoints/watch_sources_settings.py::test_multipart_regex": (
         1,
         "narrow ValueError echoing the caller's OWN regex back — the entire point "
         "of a regex-test endpoint",
@@ -886,7 +886,7 @@ _SERVICE_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
         "whose _notify (:205-221) forwards only status/segments/pii_entities_found/"
         "language/skipped_detectors to the WS event -- error is dropped, never sent",
     ),
-    "services/search/ml_model_service.py::verify_model_can_embed": (
+    "services/search/ml_model_deployment.py::verify_model_can_embed": (
         1,
         "internal-only: the one call site (:657) reads the result into a logger "
         "call only, never a response",
@@ -1273,8 +1273,8 @@ def test_a_celery_result_is_never_read_into_a_response() -> None:
     # Non-vacuity: a scan that found no AsyncResult binding at all would pass the
     # assertion below while proving nothing.
     assert binding_count >= 2, (
-        f"expected at least 2 AsyncResult bindings under app/ (they live in "
-        f"utils/task_utils.py), found {binding_count} — either they moved or this "
+        "expected at least 2 AsyncResult bindings under app/ (they live in utils/file_retry.py "
+        f"and utils/stuck_file_recovery.py), found {binding_count} — either they moved or this "
         "guard stopped matching, and scanner 4's app/tasks/ exclusion is unproven"
     )
     assert not bindings, (

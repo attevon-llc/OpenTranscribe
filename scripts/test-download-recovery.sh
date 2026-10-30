@@ -32,14 +32,14 @@ echo
 echo "2. Verifying recovery code is in place..."
 
 # Check if recovery method exists
-if grep -q "identify_stuck_downloading_files" backend/app/services/task_detection_service.py; then
+if grep -q "identify_stuck_downloading_files" backend/app/services/task_detection_errors.py; then
     echo "✓ Detection: identify_stuck_downloading_files() exists"
 else
     echo "✗ Detection method missing"
     exit 1
 fi
 
-if grep -q "recover_stuck_downloading_files" backend/app/services/task_recovery_service.py; then
+if grep -q "recover_stuck_downloading_files" backend/app/services/task_recovery_retry.py; then
     echo "✓ Recovery: recover_stuck_downloading_files() exists"
 else
     echo "✗ Recovery method missing"
@@ -57,7 +57,7 @@ echo
 echo "3. Checking schedule_file_retry logic..."
 
 # Verify it dispatches the correct task type
-if grep -q "process_youtube_url_task.delay" backend/app/services/task_recovery_service.py; then
+if grep -q "process_youtube_url_task.delay" backend/app/services/task_recovery_retry.py; then
     echo "✓ Retry logic: Dispatches download task for files with source_url"
 else
     echo "✗ Download retry logic missing"

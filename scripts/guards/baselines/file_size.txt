@@ -16,7 +16,6 @@ backend/app/api/endpoints/speaker_profiles.py	1161	oversize: split by concern pl
 backend/app/api/endpoints/speaker_update.py	752	oversize: split by concern planned
 backend/app/api/endpoints/tasks.py	1091	oversize: split by concern planned
 backend/app/api/endpoints/users.py	853	oversize: split by concern planned
-backend/app/api/endpoints/watch_sources.py	1291	oversize: split by concern planned
 backend/app/auth/CLAUDE.md	511	oversize: split by concern planned
 backend/app/auth/ldap_auth.py	1024	oversize: split by concern planned
 backend/app/auth/lockout.py	1201	oversize: split by concern planned
@@ -24,9 +23,8 @@ backend/app/auth/password_policy.py	888	oversize: split by concern planned
 backend/app/auth/pki_auth.py	1815	oversize: split by concern planned
 backend/app/auth/token_service.py	1116	oversize: split by concern planned
 backend/app/core/auth_settings.py	859	oversize: split by concern planned
-backend/app/core/celery.py	1414	oversize: split by concern planned
+backend/app/core/celery.py	1415	oversize: split by concern planned
 backend/app/core/config.py	1594	oversize: split by concern planned
-backend/app/main.py	1336	oversize: split by concern planned
 backend/app/schemas/auth_config.py	701	oversize: split by concern planned
 backend/app/services/CLAUDE.md	1044	oversize: split by concern planned
 backend/app/services/asr/factory.py	891	oversize: split by concern planned
@@ -34,7 +32,6 @@ backend/app/services/auth_config_service.py	959	oversize: split by concern plann
 backend/app/services/auto_label_service.py	712	oversize: split by concern planned
 backend/app/services/backup_service.py	1045	oversize: split by concern planned
 backend/app/services/chat/CLAUDE.md	958	oversize: split by concern planned
-backend/app/services/chat/aggregation_service.py	1117	oversize: split by concern planned
 backend/app/services/chat/prompting.py	884	oversize: split by concern planned
 backend/app/services/chat/redactor.py	1099	oversize: split by concern planned
 backend/app/services/chat/service.py	1503	oversize: split by concern planned
@@ -48,17 +45,13 @@ backend/app/services/privacy/purge_voiceprints.py	711	oversize: split by concern
 backend/app/services/profile_embedding_service.py	702	oversize: split by concern planned
 backend/app/services/search/CLAUDE.md	910	oversize: split by concern planned
 backend/app/services/search/chunking_service.py	841	oversize: split by concern planned
-backend/app/services/search/ml_model_service.py	1164	oversize: split by concern planned
 backend/app/services/speaker_cleanup.py	1026	oversize: split by concern planned
 backend/app/services/speaker_embedding_service.py	716	oversize: split by concern planned
 backend/app/services/tag_operations.py	911	oversize: split by concern planned
 backend/app/services/tag_service.py	747	oversize: split by concern planned
-backend/app/services/task_detection_service.py	1214	oversize: split by concern planned
-backend/app/services/task_recovery_service.py	1201	oversize: split by concern planned
 backend/app/services/topic_extraction_service.py	771	oversize: split by concern planned
 backend/app/services/video_processing_service.py	1111	oversize: split by concern planned
 backend/app/tasks/CLAUDE.md	508	oversize: split by concern planned
-backend/app/tasks/embedding_migration_v4.py	1256	oversize: split by concern planned
 backend/app/tasks/rediarize_task.py	707	oversize: split by concern planned
 backend/app/tasks/rename_propagation_task.py	836	oversize: split by concern planned
 backend/app/tasks/search_indexing_task.py	865	oversize: split by concern planned
@@ -71,7 +64,6 @@ backend/app/tasks/transcription/dispatch.py	737	oversize: split by concern plann
 backend/app/tasks/transcription/postprocess.py	802	oversize: split by concern planned
 backend/app/tasks/youtube_processing.py	916	oversize: split by concern planned
 backend/app/transcription/engine/stages.py	1300	oversize: split by concern planned
-backend/app/utils/task_utils.py	1125	oversize: split by concern planned
 backend/tests/CLAUDE.md	946	oversize: split by concern planned
 backend/tests/api/endpoints/test_auth_comprehensive.py	757	oversize: split by concern planned
 backend/tests/api/endpoints/test_search_admin_routes.py	1103	oversize: split by concern planned

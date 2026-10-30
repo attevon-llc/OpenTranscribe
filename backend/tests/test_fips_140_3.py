@@ -1029,7 +1029,7 @@ class TestEncryptionAlgorithmEnforcedAtBoot:
 
     def test_unimplemented_algorithm_refuses_to_boot_under_fips(self, fips_boot_settings):
         """Red case: an algorithm this build does not implement must stop startup."""
-        from app.main import _validate_production_secrets
+        from app.core.startup_validation import _validate_production_secrets
 
         fips_boot_settings.setattr(settings, "ENCRYPTION_ALGORITHM_V3", "AES-128-CBC")
 
@@ -1050,7 +1050,7 @@ class TestEncryptionAlgorithmEnforcedAtBoot:
         Case and surrounding whitespace are normalised. Refusing to boot over ``aes-256-gcm``
         would be a false refusal — the operator asked for exactly what this build does.
         """
-        from app.main import _validate_production_secrets
+        from app.core.startup_validation import _validate_production_secrets
 
         fips_boot_settings.setattr(settings, "ENCRYPTION_ALGORITHM_V3", configured)
 
@@ -1063,7 +1063,7 @@ class TestEncryptionAlgorithmEnforcedAtBoot:
         Without this, a gate that rejected the value in every deployment would pass the red
         case too — and would brick every non-FIPS install that ever typed the setting.
         """
-        from app.main import _validate_production_secrets
+        from app.core.startup_validation import _validate_production_secrets
 
         fips_boot_settings.setattr(settings, "FIPS_MODE", False)
         fips_boot_settings.setattr(settings, "ENCRYPTION_ALGORITHM_V3", "AES-128-CBC")
@@ -1096,7 +1096,7 @@ class TestFIPSEntropyValidationAtBoot:
 
     def test_low_entropy_encryption_key_refuses_to_boot(self, fips_boot_settings):
         """Red case: 32 bytes of one repeated character must stop startup."""
-        from app.main import _validate_production_secrets
+        from app.core.startup_validation import _validate_production_secrets
 
         fips_boot_settings.setattr(settings, "ENCRYPTION_KEY", "A" * 32)
 
@@ -1109,7 +1109,7 @@ class TestFIPSEntropyValidationAtBoot:
         The distinguishing assertion is that JWT_SECRET_KEY is named while ENCRYPTION_KEY —
         which is fine in this scenario — is not.
         """
-        from app.main import _validate_production_secrets
+        from app.core.startup_validation import _validate_production_secrets
 
         fips_boot_settings.setattr(settings, "JWT_SECRET_KEY", "B" * 40)
 
@@ -1120,7 +1120,7 @@ class TestFIPSEntropyValidationAtBoot:
 
     def test_csprng_derived_keys_boot(self, fips_boot_settings):
         """Control A: real key material from ``os.urandom`` must be accepted."""
-        from app.main import _validate_production_secrets
+        from app.core.startup_validation import _validate_production_secrets
 
         fips_boot_settings.setattr(settings, "ENCRYPTION_KEY", _random_secret())
         fips_boot_settings.setattr(settings, "JWT_SECRET_KEY", _random_secret())
@@ -1136,7 +1136,7 @@ class TestFIPSEntropyValidationAtBoot:
         entirely — would pass the red case above and be indistinguishable from a working
         control. Same key, same FIPS profile, opposite verdict, driven only by the flag.
         """
-        from app.main import _validate_production_secrets
+        from app.core.startup_validation import _validate_production_secrets
 
         fips_boot_settings.setattr(settings, "ENCRYPTION_KEY", "A" * 32)
         fips_boot_settings.setattr(settings, "FIPS_VALIDATE_ENTROPY", True)
@@ -1154,7 +1154,7 @@ class TestFIPSEntropyValidationAtBoot:
         reused under one key destroys both confidentiality and integrity. Simulated, since
         no host here has a broken CSPRNG to test against.
         """
-        from app.main import _validate_production_secrets
+        from app.core.startup_validation import _validate_production_secrets
 
         def _refuse(_n):
             raise OSError("entropy source unavailable")

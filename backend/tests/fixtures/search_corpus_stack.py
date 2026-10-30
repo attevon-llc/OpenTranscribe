@@ -135,11 +135,11 @@ def search_corpus_token(search_corpus_user):
 def _ensure_neural_ready() -> None:
     """Force the neural model into a deployed, ingest-ready state before indexing (issue #612).
 
-    ``app.main._initialize_neural_search`` is a ONE-SHOT background task, 15s after backend
+    ``app.startup.warmups._initialize_neural_search`` is a ONE-SHOT background task, 15s after backend
     startup: register -> deploy -> configure the ingest pipeline, with no retry. On a genuinely
     cold ``--fresh`` deployment (no cached OpenSearch ML Commons artifacts) that one attempt can
     lose the race against its own internal polling ceilings
-    (``ml_model_service._REGISTRATION_MAX_WAIT`` = 300s) — measured live: registration's
+    (``ml_model_registration._REGISTRATION_MAX_WAIT`` = 300s) — measured live: registration's
     OpenSearch-side async task kept running and completed a few minutes AFTER our poll gave up,
     but nothing ever re-checked, so the model sat ``REGISTERED``/``deployed: False`` forever and
     ``ensure_neural_ingest_pipeline`` was never called. ``ensure_model_deployed`` (below) is the

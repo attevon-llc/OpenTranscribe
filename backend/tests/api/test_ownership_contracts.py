@@ -561,7 +561,7 @@ class TestGroupOwnership:
 
 
 # --------------------------------------------------------------------------- #
-# WatchSource — watch_sources.py:157-158 (admin role bypass)
+# WatchSource — watch_sources_access.py::_get_source_or_404 (admin role bypass)
 # --------------------------------------------------------------------------- #
 class TestWatchSourceOwnership:
     def test_watch_source_get_403_other_user(

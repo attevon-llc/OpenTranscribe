@@ -179,7 +179,7 @@ def _run_plan_fanout(
         decision.wants_recurrence or "recurrence" in plan.wants
     )
     if wants_recurrence:
-        from app.services.chat.aggregation_service import answer_recurrence
+        from app.services.chat.recurrence_service import answer_recurrence
 
         built.append(
             legs.Leg(

@@ -17,7 +17,7 @@ Consequence if it fires: `as_assert_ge "OpenSearch ML model deployed post-upgrad
 and a rehearsal reports a neural-search regression that is really a timeout. Hybrid search
 passes anyway via BM25 fallback, so the finding reads as specific and real.
 
-The number that IS derived: `ml_model_service._REGISTRATION_MAX_WAIT` is 300 s, and
+The number that IS derived: `ml_model_registration._REGISTRATION_MAX_WAIT` is 300 s, and
 `test-fresh-install.sh` recorded that even 300 was not always enough on this host under
 concurrent build/scan load. 600 costs nothing on a healthy run — the poll exits on the first
 successful probe.

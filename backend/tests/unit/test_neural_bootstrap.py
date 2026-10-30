@@ -1,7 +1,7 @@
 """Neural-search bootstrap self-heal (issue #625).
 
-The root cause: ``app.main._initialize_neural_search`` used to be a one-shot startup task
-with no retry, and ``ml_model_service._REGISTRATION_MAX_WAIT`` (300s) is a ceiling on OUR
+The root cause: ``app.startup.warmups._initialize_neural_search`` used to be a one-shot startup task
+with no retry, and ``ml_model_registration._REGISTRATION_MAX_WAIT`` (300s) is a ceiling on OUR
 polling, not on OpenSearch's own async registration task — a model can finish
 ``REGISTERED, deployed=False`` minutes after the API process gave up, and nothing ever
 re-checked. ``neural_bootstrap.py`` fixes this with one idempotent function
@@ -13,7 +13,7 @@ headline falsifiable test: it proves the SECOND tick recovers what the first one
 Verified red-first per this repo's standard, against a ``git archive HEAD`` tree — the second
 tick never ran on old ``app.main`` code because nothing called the bootstrap a second time.
 
-None of these tests wait anywhere near real ceilings: ``ml_model_service._wait_for_registration``
+None of these tests wait anywhere near real ceilings: ``ml_model_registration._wait_for_registration``
 / ``_wait_for_deployment`` take injectable ``max_wait``/``poll_interval`` keyword args
 specifically so this suite stays fast.
 """

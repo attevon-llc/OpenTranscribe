@@ -29,7 +29,10 @@ utils/
 ├── Errors
 │   └── error_classification.py # Fine-grained failure categories (retry policy; not on the wire)
 ├── Tasks and workers
-│   ├── task_utils.py           # Task records, status transitions, cancellation, stuck-file recovery
+│   ├── task_utils.py           # Task records, status transitions
+│   ├── task_cancel.py          # Cooperative cancellation of a file's active task
+│   ├── stuck_file_recovery.py  # Stuck-file detection and recovery
+│   ├── file_retry.py           # Delete-safety checks and the retry reset
 │   ├── task_lock.py            # Redis lock to stop periodic tasks overlapping (with_task_lock)
 │   ├── boot_once.py            # Run a startup step once across replicas
 │   ├── host_slots.py           # Non-blocking per-host concurrency slots (flock)
@@ -129,9 +132,10 @@ tag, created = get_or_create(
 )  # check models: Tag is tenant-scoped, prefer tag_service
 ```
 
-## ⚙️ Task Utilities (`task_utils.py`)
+## ⚙️ Task Utilities (`task_utils.py`, `task_cancel.py`, `stuck_file_recovery.py`, `file_retry.py`)
 
-Task-row and file-status management for Celery tasks:
+Task-row and file-status management for Celery tasks (the last five functions live in
+`task_cancel`, `stuck_file_recovery` and `file_retry`):
 
 ```python
 create_task_record(

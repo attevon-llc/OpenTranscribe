@@ -17,7 +17,8 @@ backend/app/core/version.py	3	env: single reader planned
 backend/app/core/worker_metrics.py	3	env: single reader planned
 backend/app/core/worker_shutdown.py	1	env: single reader planned
 backend/app/db/migrations.py	1	env: single reader planned
-backend/app/main.py	3	env: single reader planned
+backend/app/core/startup_validation.py	1	env: single reader planned
+backend/app/main.py	2	env: single reader planned
 backend/app/scripts/benchmark_reranker_threads.py	1	env: single reader planned
 backend/app/scripts/build_password_blocklist.py	1	env: single reader planned
 backend/app/scripts/corpus_injection/adapters/miracl.py	1	env: single reader planned

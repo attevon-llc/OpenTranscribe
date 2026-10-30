@@ -90,7 +90,7 @@ logger = logging.getLogger(__name__)
 
 #: A callable returning a session context manager — ``db.session_utils.session_scope``
 #: in production, the test's own session in the suites. Same contract as
-#: ``aggregation_service.SessionFactory``, except that ``None`` is not accepted:
+#: ``aggregation_queries.SessionFactory``, except that ``None`` is not accepted:
 #: "no Postgres" is not a decline here, it is a policy that cannot be resolved,
 #: and this module fails closed on that rather than passing text through.
 SessionFactory = Callable[[], contextlib.AbstractContextManager[Session]]

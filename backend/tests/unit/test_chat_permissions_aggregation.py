@@ -21,8 +21,8 @@ import uuid as uuid_pkg
 
 import pytest
 
-from app.services.chat.aggregation_service import _files_in_period
-from app.services.chat.aggregation_service import _occurrence_count
+from app.services.chat.aggregation_queries import _files_in_period
+from app.services.chat.aggregation_queries import _occurrence_count
 
 pytestmark = pytest.mark.unit
 
@@ -80,7 +80,7 @@ def _add_segment(db, media_file, text):
 
 
 # ---------------------------------------------------------------------------
-# `_occurrence_count` (aggregation_service.py ~line 312)
+# `_occurrence_count` (aggregation_queries.py)
 # ---------------------------------------------------------------------------
 
 
@@ -118,7 +118,7 @@ def test_occurrence_count_org_scope_still_counts_its_own_files(db_session, norma
 
 
 # ---------------------------------------------------------------------------
-# `_files_in_period` (aggregation_service.py ~line 149)
+# `_files_in_period` (aggregation_queries.py)
 # ---------------------------------------------------------------------------
 
 

@@ -1,6 +1,6 @@
 """Entropy validation for FIPS 140-3 deployments (``FIPS_VALIDATE_ENTROPY``).
 
-Two questions, both asked at boot by ``app.main._validate_production_secrets`` and only
+Two questions, both asked at boot by ``app.core.startup_validation._validate_production_secrets`` and only
 when ``settings.fips_140_3_active and settings.FIPS_VALIDATE_ENTROPY``:
 
 1. **Is the OS CSPRNG usable?** ``utils/encryption.py`` draws every salt and every GCM

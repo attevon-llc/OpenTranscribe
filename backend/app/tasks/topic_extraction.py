@@ -94,7 +94,7 @@ def _record_task_start(task_id: str, user_id: int, file_id: int) -> None:
 
     ``create_task_record`` sets ``MediaFile.active_task_id`` — this task
     previously ran with no such tracking at all, so ``is_file_safe_to_delete``
-    (task_utils.py) could not see it as live and a concurrent delete could run
+    (file_retry.py) could not see it as live and a concurrent delete could run
     while topic/tag extraction was mid-write.
 
     Called only once a provider has been resolved. A run that skips for want of

@@ -26,7 +26,7 @@ Each stage is its own module so the two security-critical ones (`redactor.py`,
 | `retrieval.py` | Cache → retrieve → rerank → diversity sample; returns `RetrievalResult` with diagnostics |
 | `router.py` | Rules-only intent + tiers (#403 Stage 4). Loads nothing, calls nothing |
 | `aggregation.py` | Counted answers, pure half: shapes, subject extraction, filters |
-| `aggregation_service.py` | Counted answers, I/O half: OpenSearch aggs + Postgres |
+| `aggregation_service.py` + siblings | Counted answers, I/O half. `aggregation_service` = `answer_aggregation` (dispatch, date scope); `aggregation_queries` = scoped I/O primitives and the **tenant/quarantine chokepoints** `_accessible_scoped_files` (Postgres) / `_quarantined_among` (OpenSearch shapes); `aggregation_speakers` = facet + talk-time stats; `recurrence_service` = recurrence I/O twin of pure `recurrence.py` (masks per file, fails closed) |
 | `mapreduce/` | `tree_summarize` over the digest plane; two reducers, one no-LLM. A **package**, not a single module (split from a 1242-line `mapreduce.py` — see its own `__init__.py` docstring for the seam table); every pre-split name is still re-exported from `app.services.chat.mapreduce` |
 | `reranker.py` | Lazy CPU cross-encoder singleton; `None` when the model cache is absent |
 | `reranker_warmup.py` | Loads that singleton on a daemon thread at API startup (#1269) — see below |
@@ -48,7 +48,7 @@ Each stage is its own module so the two security-critical ones (`redactor.py`,
 `get_reranker()` is lazy, so the first chat in each fresh API process paid the cold load
 inside retrieval. Measured in the dev backend container, fresh process, host load average
 59-90 on 48 cores: **9.9-12.3 s** for the first `get_reranker()` (6 runs); the cloud report
-was ~15 s. `main.lifespan` → `_start_reranker_warmup()` → `reranker_warmup.start_reranker_warmup()`
+was ~15 s. `main.lifespan` → `startup.warmups._start_reranker_warmup()` → `reranker_warmup.start_reranker_warmup()`
 now does that load on a daemon thread: the lifespan pays `Thread.start()` (**0.4-4 ms**, 3
 runs), and once the thread finishes the first `get_reranker()` is **0.000 s**.
 

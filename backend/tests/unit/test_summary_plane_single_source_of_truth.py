@@ -137,7 +137,7 @@ def test_every_summary_data_clear_dispatches_the_reindex_task() -> None:
     sites = {
         _BACKEND_APP / "tasks" / "summarization.py": True,
         _BACKEND_APP / "tasks" / "summary_retry.py": True,
-        _BACKEND_APP / "utils" / "task_utils.py": True,
+        _BACKEND_APP / "utils" / "file_retry.py": True,
         _BACKEND_APP / "api" / "endpoints" / "files" / "reprocess.py": True,
         _BACKEND_APP / "api" / "endpoints" / "summarization.py": True,
     }

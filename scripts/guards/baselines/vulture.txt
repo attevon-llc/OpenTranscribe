@@ -107,13 +107,6 @@ backend/app/services/similarity_service.py::method::pairwise_similarity_matrix	1
 backend/app/services/similarity_service.py::method::top_k_similar	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/speaker_attribute_service.py::method::_load_audio_ffmpeg	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/speaker_embedding_service.py::method::extract_embedding_from_segment	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/services/speaker_matching_service.py::method::add_speaker_to_collection	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/services/speaker_matching_service.py::method::create_speaker_profile	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/services/speaker_matching_service.py::method::find_unlabeled_speaker_matches	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/services/speaker_matching_service.py::method::get_speaker_matches	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/services/speaker_matching_service.py::method::match_speaker_to_profile	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/services/speaker_matching_service.py::method::process_speaker_segments	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/services/speaker_matching_service.py::method::update_speaker_embeddings	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/speaker_status_service.py::method::compute_status_for_speakers	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/speaker_status_service.py::method::refresh_all_speaker_statuses	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/task_detection_service.py::method::identify_retriable_error_files	1	residual after the dead-code pass; delete or whitelist when touched

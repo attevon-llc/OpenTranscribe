@@ -559,7 +559,7 @@ def test_a_re_matched_speaker_is_not_linked_to_a_profile_it_was_unassigned_from(
     )
     # Imported by name at module scope there.
     monkeypatch.setattr(
-        "app.services.speaker_matching_service.add_speaker_embedding", lambda **kw: True
+        "app.services.speaker_matching.match_handling.add_speaker_embedding", lambda **kw: True
     )
     match = {
         "profile_id": trio["profile"].id,

@@ -376,14 +376,14 @@ def test_the_scan_sees_the_known_writers():
     """Guard the guard: a walker that matched nothing would pass everything."""
     _, writers = _scan()
     for known in (
-        "services/speaker_matching_service.py::_handle_speaker_match",
+        "services/speaker_matching/match_handling.py::_apply_auto_accept",
         "services/speaker_cleanup.py::join_cluster_identity",
         "services/speaker_cleanup.py::unlink_from_profile",
         "api/endpoints/speakers_suggestions.py::_accept_speaker_profile_match",
         "api/endpoints/speaker_update.py::_apply_high_confidence_match",
         # the writers of a recommendation
         "api/endpoints/speaker_update.py::_persist_match_results",
-        "services/speaker_matching_service.py::_handle_no_speaker_match",
+        "services/speaker_matching/match_handling.py::handle_no_speaker_match",
         "tasks/speaker_identification_task.py::_store_speaker_predictions",
         "scripts/batch_speaker_matching.py::batch_process_speaker_matches",
         "services/privacy/purge_voiceprints.py::_revert_machine_identities",

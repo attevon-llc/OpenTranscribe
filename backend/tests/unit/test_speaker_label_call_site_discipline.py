@@ -62,9 +62,9 @@ _ALLOWED: dict[str, str] = {
     "services/speaker_cleanup.py::unlink_from_profile": "tracker before/after capture",
     "services/clustering/verification.py::_verify_speaker": "tracker capture",
     "services/clustering/cluster_identity.py::promote_cluster_to_profile": "tracker capture",
-    "services/speaker_matching_service.py::_handle_no_speaker_match": "tracker capture",
-    "services/speaker_matching_service.py::_handle_speaker_match": "tracker capture",
-    "services/speaker_matching_service.py::assign_speaker_to_profile": "tracker capture",
+    "services/speaker_matching/match_handling.py::handle_no_speaker_match": "tracker capture",
+    "services/speaker_matching/match_handling.py::handle_speaker_match": "tracker capture",
+    "services/speaker_matching/profiles.py::assign_speaker_to_profile": "tracker capture",
     "services/speaker_profile_rename.py::apply_profile_name_to_speakers": "tracker capture",
     "tasks/speaker_identification_task.py::_store_speaker_predictions": "tracker capture",
     # --- labels computed from rows an endpoint already redacted -----------------------------

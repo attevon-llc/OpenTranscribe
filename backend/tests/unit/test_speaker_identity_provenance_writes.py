@@ -95,8 +95,8 @@ def _auto_accept(db, user, speaker, match_name: str, *, profile_id: int | None =
         "profile_id": profile_id,
     }
     with (
-        patch("app.services.speaker_matching_service.add_speaker_embedding"),
-        patch("app.services.speaker_matching_service.update_speaker_profile", create=True),
+        patch("app.services.speaker_matching.match_handling.add_speaker_embedding"),
+        patch("app.services.speaker_matching.match_handling.update_speaker_profile", create=True),
         patch.object(SpeakerMatchingService, "find_and_store_speaker_matches"),
         patch.object(SpeakerMatchingService, "_propagate_profile_assignment"),
         patch.object(SpeakerMatchingService, "match_speaker_to_known_speakers", return_value=match),

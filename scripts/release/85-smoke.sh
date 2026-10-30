@@ -244,6 +244,26 @@ if [[ -n "$blocking_names" ]]; then
     # unchecked, and the library's exit 2 would bury the real reason behind a wiring error.
     exit 3
 fi
+
+# The label filter above sees only the `opentranscribe` project. Any other stack holding the
+# stock ports (an `otfresh-*` test stack, the `transcribe-app` dev stack) would otherwise reach
+# the guardrails and fail as a scenario FAIL (exit 1) rather than an unmet precondition.
+# --- BEGIN stock-port-owners-check ---
+# shellcheck source=scripts/lib/stock-port-owners.sh
+source "$REPO_ROOT/scripts/lib/stock-port-owners.sh"
+stock_port_state=0
+stock_port_check || stock_port_state=$?
+if [[ "$stock_port_state" -eq 1 ]]; then
+    record live-stack-stopped fail "$STOCK_PORT_SUMMARY" "$STOCK_PORT_FIX"
+    echo -e "${RED}${STOCK_PORT_SUMMARY}${NC}" >&2
+    echo -e "${RED}  the Hub install smoke needs them free — stop it with: ${STOCK_PORT_FIX}${NC}" >&2
+    if [[ "$JSON_OUT" == "true" ]]; then
+        printf '{"stage":"smoke","version":"%s","status":"fail","criteria":[%s],"next":["%s"]}\n' \
+            "$VERSION" "$(criteria_json)" "${STOCK_PORT_FIX//\"/\'}"
+    fi
+    exit 3
+fi
+# --- END stock-port-owners-check ---
 record live-stack-stopped pass
 
 # Tear down the install-smoke stack + everything it created -- on the happy path,

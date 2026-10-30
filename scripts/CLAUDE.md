@@ -554,6 +554,15 @@ this file is for.
     their own inline copies; anything else must source it. The severity (`blocking`/`warn`) is the
     **file's** decision, so `record` accepts only `pass|fail|not-measured` — passing `warn` as an
     outcome is exit 2, because a caller choosing its own severity is how the two drifted before.
+  - **Stock-port ownership and same-commit evidence.** `lib/stock-port-owners.sh` asks docker which
+    container publishes 5173-5180 and for which compose project, so `rehearse`/`smoke` exit **3**
+    (`live-stack-stopped` fail, naming the project and its stop command) for an `otfresh-*` stack too —
+    the old label check saw only `opentranscribe`/`transcribe-app` and the scenarios then died in
+    `gr_check_ports_free` as a scenario FAIL (exit 1). `preflight` warns on the same evidence. And
+    `70-tag.sh`'s `artifacts-match-tagged-commit` refuses to tag unless the ledger's `test`, `build`,
+    `scan`, `rehearse` are `done`/`overridden` with a sha that resolves to HEAD (ledger sha is
+    short; compared as resolved commits). Both are tested by extracting their `BEGIN/END` blocks
+    (`test_stock_port_owners.py`, `test_tag_artifacts_match_commit.py`).
   - **`not-measured` is not a pass and not a failure.** Against a blocking criterion it stops the
     stage exactly as a failure does; a fifth `waived` argument downgrades it to a warning, and
     that is for an EXPLICIT operator opt-out only (`NO_COMMIT=true`, `SKIP_CI_CHECK=true`) — never

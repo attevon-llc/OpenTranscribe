@@ -326,13 +326,25 @@ live_stack_names="$( {
     docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}'
     docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}'
 } | sort -u)"
-if [ -n "$live_stack_names" ]; then
+# The labels above know only the two stock projects; the port owners include `otfresh-*` fresh
+# stacks too, which hold the same ports and make rehearse/smoke refuse (exit 3) just the same.
+# --- BEGIN stock-port-owners-check ---
+# shellcheck source=scripts/lib/stock-port-owners.sh
+source "$REPO_ROOT/scripts/lib/stock-port-owners.sh"
+stock_port_state=0
+stock_port_check || stock_port_state=$?
+if [ "$stock_port_state" -eq 1 ]; then
+    record live-stack fail \
+        "$STOCK_PORT_SUMMARY — the rehearse and smoke stages require them free" \
+        "$STOCK_PORT_FIX"
+elif [ -n "$live_stack_names" ]; then
     record live-stack fail \
         "the live stack is running — the rehearse stage requires it stopped" \
         "./opentr.sh stop  (preserves all data)"
 else
     record live-stack pass
 fi
+# --- END stock-port-owners-check ---
 
 # ── The criteria file and this script must agree ───────────────────────────
 # The other half of the contract. `record` rejects an id this stage does not

@@ -1,4 +1,4 @@
-"""The per-file routes of ``watch_sources.py`` — list, filter, delete, retry.
+"""The per-file routes of ``watch_sources_files.py`` — list, filter, delete, retry.
 
 These were effectively untested before #489: the existing suite covered the empty
 envelope and the ``page_size > 200`` guard, so there was no test with actual rows, no

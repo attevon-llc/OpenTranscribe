@@ -181,8 +181,8 @@ def test_summary_plane_clause_matches_only_the_summary_doc_type():
 
 def test_additive_version_is_now_three():
     """T-B10: step 3 landed additively; steps 1 and 2 stay byte-for-byte."""
-    from app.services.search.indexing_service import _ADDITIVE_VERSION
-    from app.services.search.indexing_service import ADDITIVE_MAPPING_STEPS
+    from app.services.search.index_schema import _ADDITIVE_VERSION
+    from app.services.search.index_schema import ADDITIVE_MAPPING_STEPS
 
     assert _ADDITIVE_VERSION == 3
     versions = [s.version for s in ADDITIVE_MAPPING_STEPS]

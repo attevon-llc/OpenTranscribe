@@ -20,17 +20,20 @@ from __future__ import annotations
 import pytest
 
 from app.services.search import hybrid_search_service as hss
+from app.services.search import search_cache
+from app.services.search import search_infra
+from app.services.search.search_cache import _make_cache_key
 
 pytestmark = [pytest.mark.unit, pytest.mark.xdist_group("search_cache_state")]
 
 
 @pytest.fixture(autouse=True)
 def _clean_cache_state():
-    hss.reset_infrastructure_state()
-    hss._search_cache.clear()
+    search_infra.reset_infrastructure_state()
+    search_cache._search_cache.clear()
     yield
-    hss.reset_infrastructure_state()
-    hss._search_cache.clear()
+    search_infra.reset_infrastructure_state()
+    search_cache._search_cache.clear()
 
 
 def test_clear_search_cache_no_longer_exists():
@@ -40,12 +43,13 @@ def test_clear_search_cache_no_longer_exists():
     leaving two paths doing the same job.
     """
     assert not hasattr(hss, "clear_search_cache")
+    assert not hasattr(search_cache, "clear_search_cache")
 
 
 class TestCorpusVersionFoldsIntoTheCacheKey:
     def test_two_corpus_versions_produce_different_cache_keys(self):
-        key_v0 = hss._make_cache_key(query="q", user_id=1, corpus_version="0")
-        key_v1 = hss._make_cache_key(query="q", user_id=1, corpus_version="1")
+        key_v0 = _make_cache_key(query="q", user_id=1, corpus_version="0")
+        key_v1 = _make_cache_key(query="q", user_id=1, corpus_version="1")
         assert key_v0 != key_v1
 
     def test_a_redis_read_failure_degrades_to_a_fixed_version_rather_than_raising(
@@ -58,14 +62,14 @@ class TestCorpusVersionFoldsIntoTheCacheKey:
             "app.services.chat.retrieval_cache.corpus_version",
             lambda: (_ for _ in ()).throw(RuntimeError("redis is down")),
         )
-        assert hss._search_corpus_version() == "0"
+        assert search_cache._search_corpus_version() == "0"
 
     def test_reads_the_same_counter_chat_retrieval_bumps(self, monkeypatch):
         """Not a second counter — literally `chat.retrieval_cache.corpus_version`."""
         from app.services.chat import retrieval_cache
 
         monkeypatch.setattr(retrieval_cache, "corpus_version", lambda: "42")
-        assert hss._search_corpus_version() == "42"
+        assert search_cache._search_corpus_version() == "42"
 
 
 @pytest.fixture

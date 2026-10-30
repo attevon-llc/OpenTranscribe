@@ -83,7 +83,7 @@ FILLER = [
 @pytest.fixture(scope="module")
 def embedder():
     """A callable ``(texts) -> vectors`` against the deployed model, or a skip."""
-    from app.services.search.indexing_service import get_opensearch_client
+    from app.services.opensearch_service import get_opensearch_client
 
     client = get_opensearch_client()
     if client is None:

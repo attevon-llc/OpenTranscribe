@@ -38,9 +38,11 @@ import pytest
 
 from app.models.media import MediaFile
 from app.models.user import User
-from app.services.search import hybrid_search_service as hss
+from app.services.search import quarantine_exclusion
+from app.services.search import search_infra
+from app.services.search import suggestions
 from app.services.search.hybrid_search_service import HybridSearchService
-from app.services.search.hybrid_search_service import QuarantineExclusionUnavailableError
+from app.services.search.quarantine_exclusion import QuarantineExclusionUnavailableError
 
 DISTINCTIVE_SPEAKER = "Zzyzx-Facet-Speaker"
 
@@ -80,8 +82,8 @@ class _FakeOpenSearch:
 def fake_cluster(monkeypatch) -> _FakeOpenSearch:
     """Point the service at a stub cluster that would happily serve facets."""
     fake = _FakeOpenSearch()
-    monkeypatch.setattr(hss, "opensearch_client", fake)
-    monkeypatch.setattr(hss, "_index_verified", True)
+    monkeypatch.setattr(suggestions, "opensearch_client", fake)
+    monkeypatch.setattr(search_infra, "_index_verified", True)
     return fake
 
 
@@ -195,7 +197,7 @@ def test_exceeding_the_cap_is_refused_not_silently_truncated(
     baseline = _quarantined_count(db)
     _make_quarantined_file(db, normal_user)
     _make_quarantined_file(db, normal_user)
-    monkeypatch.setattr(hss, "_QUARANTINED_UUID_CAP", baseline + 1)
+    monkeypatch.setattr(quarantine_exclusion, "_QUARANTINED_UUID_CAP", baseline + 1)
 
     service = HybridSearchService()
     with pytest.raises(QuarantineExclusionUnavailableError):
@@ -220,7 +222,7 @@ def test_exactly_at_the_cap_the_exclusion_is_applied_in_full(
     baseline = _quarantined_count(db)
     first = _make_quarantined_file(db, normal_user)
     second = _make_quarantined_file(db, normal_user)
-    monkeypatch.setattr(hss, "_QUARANTINED_UUID_CAP", baseline + 2)
+    monkeypatch.setattr(quarantine_exclusion, "_QUARANTINED_UUID_CAP", baseline + 2)
 
     service = HybridSearchService()
     result = service.get_available_filters(user_id=normal_user.id, is_admin=False)

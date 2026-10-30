@@ -22,7 +22,7 @@ from typing import Any
 import pytest
 
 from app.core.config import settings
-from app.services.search import indexing_service as svc
+from app.services.search import pipelines
 
 MODEL_ID = "abc123-model"
 
@@ -88,9 +88,9 @@ def client(monkeypatch):
 
     def _install(live: dict[str, Any] | None) -> _FakeClient:
         fake = _FakeClient(live)
-        monkeypatch.setattr(svc, "opensearch_client", fake)
+        monkeypatch.setattr(pipelines, "opensearch_client", fake)
         monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_SEARCH_ENABLED", True)
-        svc.reset_neural_pipeline_state()
+        pipelines.reset_neural_pipeline_state()
         return fake
 
     return _install
@@ -117,7 +117,7 @@ def test_field_map_change_recreates_the_pipeline(client):
     """
     fake = client(_live_pipeline(field_map=dict(PRE_V6_FIELD_MAP)))
 
-    assert svc.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
+    assert pipelines.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
 
     assert _written_processor(fake)["field_map"] == CURRENT_FIELD_MAP
 
@@ -126,7 +126,7 @@ def test_batch_size_change_recreates_the_pipeline(client):
     """Same model, same field_map, a batch size that no longer matches config."""
     fake = client(_live_pipeline(batch_size=settings.SEARCH_NEURAL_BATCH_SIZE + 17))
 
-    assert svc.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
+    assert pipelines.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
 
     assert _written_processor(fake)["batch_size"] == settings.SEARCH_NEURAL_BATCH_SIZE
 
@@ -135,7 +135,7 @@ def test_model_change_still_recreates_the_pipeline(client):
     """The one drift the old code did catch — it must keep working."""
     fake = client(_live_pipeline(model_id="a-previous-model"))
 
-    assert svc.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
+    assert pipelines.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
 
     assert _written_processor(fake)["model_id"] == MODEL_ID
 
@@ -143,7 +143,7 @@ def test_model_change_still_recreates_the_pipeline(client):
 def test_absent_pipeline_is_created(client):
     fake = client(None)
 
-    assert svc.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
+    assert pipelines.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
 
     assert _written_processor(fake)["model_id"] == MODEL_ID
 
@@ -157,7 +157,7 @@ def test_matching_pipeline_is_left_alone(client):
     """The control: without this, a test that always recreates would look correct."""
     fake = client(_live_pipeline())
 
-    assert svc.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
+    assert pipelines.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
 
     assert fake.ingest.puts == []
 
@@ -170,7 +170,7 @@ def test_pipeline_written_without_batch_size_is_not_recreated_every_boot(client)
     """
     fake = client(_live_pipeline(batch_size=_ABSENT))
 
-    assert svc.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
+    assert pipelines.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
 
     assert fake.ingest.puts == []
 
@@ -199,7 +199,7 @@ def test_an_extra_processor_recreates_the_pipeline(client):
     correct = _live_pipeline()["processors"][0]
     fake = client(_with_processors([correct, {"set": {"field": "injected", "value": 1}}]))
 
-    assert svc.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
+    assert pipelines.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
 
     assert fake.ingest.puts, "an extra processor did not trigger recreation"
     assert len(fake.ingest.puts[-1]["processors"]) == 1, (
@@ -219,7 +219,7 @@ def test_a_processor_ahead_of_the_embedding_recreates_the_pipeline(client):
         _with_processors([{"set": {"field": "embedding_text", "value": "clobbered"}}, correct])
     )
 
-    assert svc.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
+    assert pipelines.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
 
     assert fake.ingest.puts, "a processor ahead of the embedding did not trigger recreation"
     assert "text_embedding" in fake.ingest.puts[-1]["processors"][0]
@@ -229,7 +229,7 @@ def test_a_pipeline_with_no_embedding_processor_is_recreated(client):
     """The complement: a pipeline that lost its embedding processor entirely."""
     fake = client(_with_processors([{"set": {"field": "injected", "value": 1}}]))
 
-    assert svc.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
+    assert pipelines.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
 
     assert fake.ingest.puts, "a pipeline with no text_embedding was left in place"
 
@@ -243,7 +243,7 @@ def test_the_exact_shipped_shape_is_still_left_alone(client):
     """
     fake = client(_live_pipeline())
 
-    assert svc.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
+    assert pipelines.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
 
     assert not fake.ingest.puts, "the correct pipeline was recreated anyway"
 
@@ -260,8 +260,8 @@ def test_a_model_change_is_logged_as_the_worse_drift(client, caplog):
 
     fake = client(_live_pipeline(model_id="a-different-model"))
 
-    with caplog.at_level(logging.WARNING, logger=svc.logger.name):
-        assert svc.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
+    with caplog.at_level(logging.WARNING, logger=pipelines.logger.name):
+        assert pipelines.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
 
     warnings = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
     assert any("DIFFERENT" in message and "FULL reindex" in message for message in warnings), (
@@ -276,8 +276,8 @@ def test_a_field_map_change_does_not_warn_about_the_model(client, caplog):
 
     client(_live_pipeline(field_map=dict(PRE_V6_FIELD_MAP)))
 
-    with caplog.at_level(logging.WARNING, logger=svc.logger.name):
-        assert svc.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
+    with caplog.at_level(logging.WARNING, logger=pipelines.logger.name):
+        assert pipelines.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
 
     warnings = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
     assert not any("FULL reindex" in message for message in warnings), (

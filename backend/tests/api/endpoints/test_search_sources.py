@@ -18,8 +18,8 @@ needs no live OpenSearch. Field-level OR-union (content/title/speaker as one
 from __future__ import annotations
 
 from app.services.search.hybrid_search_service import HybridSearchService
-from app.services.search.hybrid_search_service import SearchHit
-from app.services.search.hybrid_search_service import SearchResponse
+from app.services.search.search_types import SearchHit
+from app.services.search.search_types import SearchResponse
 
 SEARCH_PATH = "/api/search"
 
@@ -198,7 +198,7 @@ class TestSourceCounts:
         assert set(body["source_counts"].keys()) == {"content", "title", "speaker", "summary"}
 
     def test_a_failed_count_is_null_never_zero(self, client, user_token_headers, monkeypatch):
-        from app.services.search.hybrid_search_service import SearchCountUnavailableError
+        from app.services.search.quarantine_exclusion import SearchCountUnavailableError
 
         _install_transcript_stub(monkeypatch)
         _install_summary_stub(monkeypatch)

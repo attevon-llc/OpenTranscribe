@@ -19,7 +19,7 @@ These tasks follow the precedent set by ``search_indexing_task``'s
 ``update_file_access_index`` / ``update_file_tags_index``: a targeted
 ``update_by_query`` on the chunk plane, ``conflicts="proceed"``, one refresh at
 the end. The predicate is built by
-``services.search.indexing_service.chunk_plane_query`` so the ``doc_type``
+``services.search.plane_queries.chunk_plane_query`` so the ``doc_type``
 discriminator #383 Phase 3 adds reaches these rewrites too.
 
 Both tasks bump the chat corpus version when they change anything. Skipping that
@@ -297,7 +297,7 @@ def _finish(index_name: str, file_uuid: str, updated: int) -> None:
     # Importing the private helper deliberately: it is the ONE place that knows
     # how a corpus-version bump must fail (contained, never raising into the
     # caller), and a second copy here would be a second implementation of it.
-    from app.services.search.indexing_service import _invalidate_chat_retrieval_cache
+    from app.services.search.corpus_cache import _invalidate_chat_retrieval_cache
 
     _invalidate_chat_retrieval_cache()
 
@@ -348,7 +348,7 @@ def propagate_speaker_rename(
     """
     from app.core.config import settings
     from app.services.opensearch_service import get_opensearch_client
-    from app.services.search.indexing_service import chunk_plane_query
+    from app.services.search.plane_queries import chunk_plane_query
 
     # Re-resolve before computing `stale`: the current name may be one of the
     # names we were told to replace (A->B then B->C, executed out of order).
@@ -497,7 +497,7 @@ def propagate_title_rename(self: Any, file_uuid: str, new_title: str) -> dict[st
     """
     from app.core.config import settings
     from app.services.opensearch_service import get_opensearch_client
-    from app.services.search.indexing_service import file_plane_query
+    from app.services.search.plane_queries import file_plane_query
 
     if not file_uuid or not new_title:
         return {"status": "skipped", "reason": "nothing_to_rename", "updated": 0}
@@ -608,7 +608,7 @@ def regenerate_rename_digests(
     from app.models.media import MediaFile
     from app.services.search.embedding_provenance import active_embedding_model
     from app.services.search.indexing_service import TranscriptIndexingService
-    from app.services.search.indexing_service import is_neural_pipeline_available
+    from app.services.search.pipelines import is_neural_pipeline_available
     from app.tasks.search_indexing_task import extract_file_index_metadata
     from app.utils.websocket_notify import send_ws_event_for_file
 

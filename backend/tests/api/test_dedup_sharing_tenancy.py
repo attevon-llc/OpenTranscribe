@@ -446,7 +446,7 @@ def test_url_duplicate_is_tenant_scoped(world, file_org, caller_org, duplicate):
 
 @pytest.mark.parametrize(("file_org", "caller_org", "duplicate"), _UPLOAD_CASES)
 def test_playlist_duplicate_is_tenant_scoped(world, file_org, caller_org, duplicate):
-    from app.services.media_download_service import _check_existing_youtube_video
+    from app.services.media_download_playlist import _check_existing_youtube_video
 
     w = world
     video_id = uuid_pkg.uuid4().hex[:11]

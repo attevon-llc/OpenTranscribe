@@ -369,7 +369,7 @@ def test_prepare_context_completes_with_no_llm_configured(monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-# Layer A: the resolver + both kwargs builders (`chat/service.py`)
+# Layer A: the resolver + both kwargs builders (`chat/masking.py`)
 #
 # `_prepare_context`'s D6 test above proves the call site survives `llm=None`;
 # these prove the RESOLVER itself distinguishes local from remote before any
@@ -383,15 +383,15 @@ _REMOTE_LLM = SimpleNamespace(config=SimpleNamespace(provider="openai", base_url
 
 
 def test_a_local_llm_config_resolves_the_exemption():
-    from app.services.chat.service import _unmask_for_local
+    from app.services.chat.masking import _unmask_for_local
 
     assert _unmask_for_local(_LOCAL_LLM) is True
     assert _unmask_for_local(_REMOTE_LLM) is False
 
 
 def test_both_kwargs_builders_carry_the_exemption():
-    from app.services.chat.service import _build_digest_mask_kwargs
-    from app.services.chat.service import _build_mask_kwargs
+    from app.services.chat.masking import _build_digest_mask_kwargs
+    from app.services.chat.masking import _build_mask_kwargs
 
     # context_expansion_enabled held explicitly OFF (default flipped ON by #523's
     # A/B, 2026-09-21) so this test isolates the LOCAL-PROVIDER exemption this

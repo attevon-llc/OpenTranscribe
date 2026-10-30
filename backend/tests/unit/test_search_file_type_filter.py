@@ -13,8 +13,8 @@ still matches plenty on its own.
 
 from __future__ import annotations
 
+from app.services.search.filters import _file_type_filter_clause
 from app.services.search.hybrid_search_service import HybridSearchService
-from app.services.search.hybrid_search_service import _file_type_filter_clause
 
 
 def test_coarse_audio_bucket_becomes_a_mime_prefix_match():

@@ -29,7 +29,9 @@ from typing import Any
 import pytest
 
 from app.services.ingest_artifacts import index_mapping as digest_mapping
-from app.services.search import indexing_service as svc
+from app.services.search import plane_queries
+from app.services.search.indexing import chunk_plane as chunk_plane_module
+from tests.fixtures.indexing_client import bind_indexing_client
 
 FILE_UUID = "11111111-2222-3333-4444-555555555555"
 OTHER_UUID = "99999999-8888-7777-6666-555555555555"
@@ -144,10 +146,12 @@ def cluster(monkeypatch):
     """Install a stand-in cluster in place of the module-global client, and hand it back."""
 
     def _install(fake: _FakeOpenSearch) -> _FakeOpenSearch:
-        monkeypatch.setattr(svc, "opensearch_client", fake)
+        bind_indexing_client(monkeypatch, fake)
         # Contained in production (its failure must never fail indexing) and it
         # would reach for Redis here; counted so the invalidation is still asserted.
-        monkeypatch.setattr(svc, "_invalidate_chat_retrieval_cache", fake.record_cache_bump)
+        monkeypatch.setattr(
+            chunk_plane_module, "_invalidate_chat_retrieval_cache", fake.record_cache_bump
+        )
         return fake
 
     return _install
@@ -171,8 +175,8 @@ def test_the_stand_in_can_tell_the_planes_apart() -> None:
     """Without this, every assertion below could pass on an evaluator that matches all."""
     digest, chunk, legacy = _digest(), _chunk(), _chunk(legacy=True)
 
-    file_plane = svc.file_plane_query(FILE_UUID)
-    chunk_plane = svc.chunk_plane_query(FILE_UUID)
+    file_plane = plane_queries.file_plane_query(FILE_UUID)
+    chunk_plane = plane_queries.chunk_plane_query(FILE_UUID)
 
     assert [_matches(doc, file_plane) for doc in (digest, chunk, legacy)] == [True, True, True]
     assert [_matches(doc, chunk_plane) for doc in (digest, chunk, legacy)] == [False, True, True]
@@ -190,7 +194,9 @@ def test_a_stranded_digest_is_reported_as_a_residual(cluster) -> None:
     A chunk-plane survivor count answers 0 here, so the erasure would report
     success with a verbatim summary of the deleted recording still indexed.
     """
-    fake = cluster(_FakeOpenSearch([_chunk(), _digest()], delete_scope=svc.chunk_plane_query))
+    fake = cluster(
+        _FakeOpenSearch([_chunk(), _digest()], delete_scope=plane_queries.chunk_plane_query)
+    )
 
     residual = _erase()
 

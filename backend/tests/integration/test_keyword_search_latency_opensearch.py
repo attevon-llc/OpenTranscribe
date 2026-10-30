@@ -85,13 +85,13 @@ def _vocabulary(rng: random.Random, size: int) -> list[str]:
 def keyword_index():
     """A seeded throwaway chunks index with the REAL mapping; deleted afterwards."""
     from app.services.opensearch_service import get_opensearch_client
-    from app.services.search import indexing_service as svc
+    from app.services.search import index_admin
 
     client = get_opensearch_client()
     assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
 
     name = f"test_kw_latency_{uuid.uuid4().hex[:12]}"
-    client.indices.create(index=name, body=svc._get_index_body_with_dimension(384))
+    client.indices.create(index=name, body=index_admin._get_index_body_with_dimension(384))
     try:
         rng = random.Random(1064)  # noqa: S311 — deterministic test corpus, not crypto
         vocab = _vocabulary(rng, 6000)

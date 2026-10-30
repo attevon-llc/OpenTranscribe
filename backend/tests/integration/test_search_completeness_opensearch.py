@@ -204,7 +204,7 @@ def _bulk(client, index: str, docs: list[tuple[str, dict[str, Any]]]) -> None:
 @pytest.fixture(scope="module")
 def corpus():
     from app.services.opensearch_service import get_opensearch_client
-    from app.services.search import indexing_service as svc
+    from app.services.search import index_admin
 
     client = get_opensearch_client()
     assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
@@ -224,7 +224,7 @@ def corpus():
                     ]
                 },
             )
-        client.indices.create(index=name, body=svc._get_index_body_with_dimension(384))
+        client.indices.create(index=name, body=index_admin._get_index_body_with_dimension(384))
         rng = random.Random(1078)  # noqa: S311 — deterministic test corpus, not crypto
         docs = [d for f in range(N_FILES) for d in _file_docs(f, rng)]
         marker_base = {
@@ -262,6 +262,7 @@ def corpus():
 @pytest.fixture
 def wired(corpus, monkeypatch):
     from app.core.config import settings
+    from app.services.search import filters
     from app.services.search import hybrid_search_service as hss
 
     client, name, rng = corpus
@@ -273,7 +274,7 @@ def wired(corpus, monkeypatch):
     # (the same `f % 3 + 1` each document's `collection_ids` records). Without this the
     # `collection_id` filterset would match nothing on both sides and prove nothing.
     monkeypatch.setattr(
-        hss,
+        filters,
         "_collection_filter_clause",
         lambda cid: {
             "terms": {"file_uuid": [f"cmp-{f:04d}" for f in range(N_FILES) if f % 3 + 1 == cid]}
@@ -505,7 +506,7 @@ def test_the_digest_plane_never_surfaces(wired):
     [("launch", True), ("rocket launch", True), ("budget", False), ("Joe Rogan", False)],
 )
 def test_hybrid_reaches_every_keyword_matching_file(wired, query, deep):
-    from app.services.search.hybrid_search_service import ensure_fusion_pipeline
+    from app.services.search.search_infra import ensure_fusion_pipeline
 
     client, index, _ = wired
     pipeline = ensure_fusion_pipeline()

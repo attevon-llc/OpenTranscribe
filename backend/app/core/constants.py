@@ -374,7 +374,7 @@ SEARCH_MAX_PAGE_SIZE = 100
 SEARCH_MAX_SNIPPETS_PER_FILE = 10  # Top occurrences per file (reduces memory/latency)
 SEARCH_MAX_SEMANTIC_SNIPPETS_PER_FILE = 2  # Display limit for card view (deprecated)
 # SEARCH_HYBRID_MIN_SCORE lives in config.Settings (env-tunable, default 0.005) —
-# hybrid_search_service reads settings.SEARCH_HYBRID_MIN_SCORE. A same-named
+# services/search/result_processing.py reads settings.SEARCH_HYBRID_MIN_SCORE. A same-named
 # constant here was dead and shadowed the real value when tuning.
 SEARCH_CACHE_TTL_SECONDS = 300
 SEARCH_CACHE_MAX_SIZE = 256
@@ -1750,7 +1750,7 @@ RESERVED_SCRATCH_NAMESPACES = frozenset({"engine", "diar"})
 
 # Coarse buckets the SPA's `file_type` filter sends, mapped to the MIME family prefix that
 # actually appears in the indexed/stored `content_type` field (`audio/mpeg`, `video/mp4`, ...).
-# The single source of truth for both the search plane (hybrid_search_service's
+# The single source of truth for both the search plane (services/search/filters.py's
 # _file_type_filter_clause) and the gallery plane (files/filtering.py's
 # apply_file_type_filter) — issue #871. They used to keep separate copies, and only the
 # search plane's got the #463 fix that makes an unrecognized value narrow to nothing instead

@@ -182,15 +182,15 @@ def test_a_healthy_cluster_repairs_nothing(healthy_cluster):
 def test_opensearch_service_forms_no_import_cycle_with_the_search_package():
     """One import edge silently deleted type checking across 66 call sites.
 
-    ``search.indexing_service`` imports ``opensearch_service``. Putting the chunk
-    rebuild in ``opensearch_service/repair.py`` meant importing ``indexing_service``
+    ``search.index_admin`` imports ``opensearch_service``. Putting the chunk
+    rebuild in ``opensearch_service/repair.py`` meant importing ``index_admin``
     back the other way — a package **cycle**. It runs fine (the import sits inside a
     function) and mypy resolves the cycle by degrading the module to ``Any``, so
-    every ``opensearch_client.indices.…`` access in ``indexing_service`` and
+    every ``opensearch_client.indices.…`` access in ``index_admin`` and
     ``reindex_task`` stopped being checked.
 
     MEASURED, not assumed: with a clean mypy cache, adding a single function-level
-    ``from app.services.search.indexing_service import CHUNKS_ALIAS_NAME`` to
+    ``from app.services.search.index_schema import CHUNKS_ALIAS_NAME`` to
     ``repair.py`` produces **66 errors in 5 files**; removing it produces zero.
 
     The rule is "no cycle", not "no edge": ``client.py`` already imports
@@ -235,12 +235,13 @@ def test_the_cycle_guard_would_notice_a_real_cycle():
     services = BACKEND / "app" / "services"
     edge_re = re.compile(r"from\s+app\.services\.search\.([A-Za-z0-9_]+)\s+import")
 
-    match = edge_re.search("    from app.services.search.indexing_service import CHUNKS_ALIAS_NAME")
-    assert match is not None and match.group(1) == "indexing_service"
+    match = edge_re.search(
+        "    from app.services.search.index_admin import ensure_chunks_index_exists"
+    )
+    assert match is not None and match.group(1) == "index_admin"
     assert (
-        "app.services.opensearch_service"
-        in (services / "search" / "indexing_service.py").read_text()
-    ), "indexing_service must still import opensearch_service, or the guard is moot"
+        "app.services.opensearch_service" in (services / "search" / "index_admin.py").read_text()
+    ), "index_admin must still import opensearch_service, or the guard is moot"
 
     # ...and stay clean for the leaf edge that is legitimately present today.
     leaf = edge_re.search("    from app.services.search.tenant_scope import org_filter_clauses")

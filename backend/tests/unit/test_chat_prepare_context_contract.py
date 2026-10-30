@@ -37,6 +37,7 @@ from pathlib import Path
 import pytest
 
 from app.services.chat import service as chat_service
+from app.services.chat import turn as chat_turn
 from app.services.chat.redactor import MaskedChunk
 from app.services.chat.settings import ChatSettings
 from app.services.llm_stream import LLMStreamEvent
@@ -202,7 +203,7 @@ def test_omitting_the_uuid_fails_open_rather_than_reading_a_real_turns_cancel_fl
         return False
 
     monkeypatch.setattr(chat_service.limits, "is_cancelled", _record)
-    chat_service._check_cancelled("")
+    chat_turn._check_cancelled("")
 
     assert probed == [""], "the default no longer probes the empty key"
 

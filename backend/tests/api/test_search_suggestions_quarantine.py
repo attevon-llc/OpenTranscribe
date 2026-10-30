@@ -33,6 +33,8 @@ import pytest
 from app.models.media import MediaFile
 from app.models.user import User
 from app.services.search import hybrid_search_service as hss
+from app.services.search import search_infra
+from app.services.search import suggestions
 
 SUGGESTIONS = "/api/search/suggestions"
 
@@ -87,8 +89,8 @@ class _FakeSuggestionsCluster:
 def fake_cluster(monkeypatch) -> _FakeSuggestionsCluster:
     """Point the service at a stub cluster that would happily serve suggestions."""
     fake = _FakeSuggestionsCluster()
-    monkeypatch.setattr(hss, "opensearch_client", fake)
-    monkeypatch.setattr(hss, "_index_verified", True)
+    monkeypatch.setattr(suggestions, "opensearch_client", fake)
+    monkeypatch.setattr(search_infra, "_index_verified", True)
     return fake
 
 

@@ -33,11 +33,11 @@ from app.models.prompt import UserSetting
 from app.models.user_llm_settings import UserLLMSettings
 from app.services import llm_context_window
 from app.services.chat import service as chat_service
+from app.services.chat.prompt_budget import resolve_answer_tokens
 from app.services.chat.prompting import _CHARS_PER_TOKEN
 from app.services.chat.prompting import _CONTEXT_SAFETY_MARGIN_TOKENS
 from app.services.chat.prompting import build_messages
 from app.services.chat.redactor import MaskedChunk
-from app.services.chat.service import resolve_answer_tokens
 from app.services.chat.settings import ChatSettings
 from app.services.llm_service import LLMService
 from app.services.llm_stream import LLMStreamEvent

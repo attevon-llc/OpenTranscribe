@@ -316,7 +316,7 @@ async def test_an_empty_scope_still_means_match_nothing(monkeypatch):
 # --------------------------------------------------------------------------- #403: the fan-out
 #
 # Extends this file's coverage to the planner-driven parallel leg fan-out
-# (`chat_service._run_plan_fanout`, backed by `legs.run_legs`'s shared
+# (`fanout._run_plan_fanout`, backed by `legs.run_legs`'s shared
 # executor). The same rule applies PER LEG here, not just per turn — a
 # fan-out multiplies any session-held-across-slow-work violation by leg
 # count, so this is the test that would catch a leg built with an open

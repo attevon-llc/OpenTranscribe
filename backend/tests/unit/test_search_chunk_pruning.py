@@ -46,9 +46,13 @@ from typing import Any
 import pytest
 
 from app.core.config import settings
+from app.services.search import index_schema
 from app.services.search import indexing_service as svc
+from app.services.search import pipelines
 from app.services.search.fusion import FusionConfig
 from app.services.search.fusion import search_pipeline_id
+from app.services.search.indexing import orphans
+from tests.fixtures.indexing_client import bind_indexing_client
 
 FILE_UUID = "11111111-2222-3333-4444-555555555555"
 OTHER_UUID = "99999999-8888-7777-6666-555555555555"
@@ -72,7 +76,7 @@ class _FakeIndices:
         return True
 
     def get_mapping(self, index: str) -> dict[str, Any]:
-        return {index: {"mappings": {"_meta": {"version": svc._INDEX_VERSION}}}}
+        return {index: {"mappings": {"_meta": {"version": index_schema._INDEX_VERSION}}}}
 
     def get_settings(self, index: str) -> dict[str, Any]:
         return {index: {"settings": {"index": {"refresh_interval": "1s"}}}}
@@ -210,10 +214,10 @@ class _FakeIndex:
 def fake_index(monkeypatch) -> _FakeIndex:
     """Point the indexing service at the in-memory index, text-only (no neural pipeline)."""
     client = _FakeIndex()
-    monkeypatch.setattr(svc, "opensearch_client", client)
+    bind_indexing_client(monkeypatch, client)
     monkeypatch.setattr(svc, "get_opensearch_client", lambda: client)
     monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_SEARCH_ENABLED", False)
-    svc.reset_neural_pipeline_state()
+    pipelines.reset_neural_pipeline_state()
     return client
 
 
@@ -302,7 +306,7 @@ def test_first_index_after_transcription_issues_no_delete(fake_index):
     assert fake_index.delete_bodies == []
     assert fake_index.count_bodies == [], "the prune must not issue a searcher-dependent gate"
     assert fake_index.mget_id_batches == [
-        [f"{FILE_UUID}_{i}" for i in range(5, 5 + svc._ORPHAN_PROBE_WINDOW)]
+        [f"{FILE_UUID}_{i}" for i in range(5, 5 + orphans._ORPHAN_PROBE_WINDOW)]
     ], "one probe window, starting at the first index the new chunking did not write"
 
 

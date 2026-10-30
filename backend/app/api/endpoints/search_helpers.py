@@ -145,8 +145,8 @@ def _source_counts(
     Summary pill's count, which is exactly the failure §6 exists to avoid.
     """
     from app.services.search.hybrid_search_service import HybridSearchService
-    from app.services.search.hybrid_search_service import SearchCountUnavailableError
     from app.services.search.hybrid_search_service import _quarantined_file_uuids
+    from app.services.search.quarantine_exclusion import SearchCountUnavailableError
 
     service = HybridSearchService()
     counts: dict[str, int | None] = {
@@ -298,7 +298,7 @@ def _summary_search_payload(
     the takedown case (`takedown_service.quarantine_file`/`release_file` both
     call `bump_corpus_version`). It is now bumped by exactly FOUR things, and
     those are all of them: chunk-plane indexing writes
-    (`indexing_service._invalidate_chat_retrieval_cache`, from
+    (`corpus_cache._invalidate_chat_retrieval_cache`, from
     `index_transcript_chunks` and rename propagation), quarantine, release, and
     — as of the share-revocation cache-invalidation fix — an ACL rewrite via
     `tasks.search_indexing_task.update_file_access_index` (the single call site
@@ -344,7 +344,7 @@ def _summary_search_payload(
     """
     from app.services.redaction.config import resolve_effective_config
     from app.services.redaction.summary_redaction import SummaryMaskingUnavailableError
-    from app.services.search.hybrid_search_service import QuarantineExclusionUnavailableError
+    from app.services.search.quarantine_exclusion import QuarantineExclusionUnavailableError
     from app.services.search.summary_search import search_summaries
 
     cfg = resolve_effective_config(db, ctx.user.id, organization_id=ctx.org_id)

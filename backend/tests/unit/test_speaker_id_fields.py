@@ -32,7 +32,7 @@ from unittest.mock import patch
 
 import pytest
 
-import app.services.search.indexing_service as svc
+import app.services.search.index_admin as svc
 from app.core.config import settings
 from app.services.ingest_artifacts import index_mapping as digest_mapping
 from app.services.search.chunking_service import chunk_transcript_by_speaker_turns

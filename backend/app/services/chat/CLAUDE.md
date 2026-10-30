@@ -37,7 +37,7 @@ Each stage is its own module so the two security-critical ones (`redactor.py`,
 | `output_redactor.py` | **Re-masks what the MODEL WRITES, sentence by sentence** (the *display* control) |
 | `prompting.py` | Layered system prompt + delimited excerpts, concatenation only |
 | `citations.py` | Structured citations; `[n]` markers only SELECT, never construct |
-| `service.py` | SSE orchestration, persistence, audit, hooks |
+| `service.py` | SSE orchestration and `_prepare_context`'s phase wiring; the phases live in the siblings its docstring maps: `turn.py`, `prompt_budget.py`, `planning_steps.py`, `fanout.py`, **`masking.py` (whether excerpts are masked before the LLM)**, `evidence.py` (quarantine drop, fail-closed filter), `summary_tier.py`, `streaming.py`, `persistence.py` |
 | `limits.py` | Per-user hourly + concurrency caps, cancel flags (fail open) |
 | `hooks.py` | Cloud seam, mirrors `tasks/transcription/hooks.py` exactly |
 | `trace.py` | **The query-trace vocabulary** (GH #514): 16 stages, 6 outcomes, a scrubbed detail allowlist, and a no-op-by-default `emit()` |
@@ -447,7 +447,7 @@ the excerpt budget** rather than out of what is left after it:
 | `<counted>` | `aggregation_service.answer_aggregation` | It *is* the answer to "how many"; excerpts are examples beside it |
 | `<overview>` | `mapreduce.build_overview` | It covers every recording in scope; excerpts cover a handful |
 | `<recurrence>` | `recurrence.detect_recurring_items` | Items that recurred across TWO OR MORE recordings; excerpts show only one at a time |
-| `<synthesis>` | `service._maybe_run_enrichment` → `prompting.format_synthesis_block` | A machine-drafted reconciliation of evidence, not itself evidence |
+| `<synthesis>` | `fanout._maybe_run_enrichment` → `prompting.format_synthesis_block` | A machine-drafted reconciliation of evidence, not itself evidence |
 
 Base rules exist for each, because rule 3 ("answer from the excerpts") fights all of them: rule
 **10** says report a `<counted>` number exactly and never recount from the excerpts; rule **12**
@@ -534,7 +534,7 @@ that would assert support on a deployment still running English-only embeddings.
 | Stage | State |
 |---|---|
 | Embeddings | **The one that matters, and it is configurable.** Default `all-MiniLM-L6-v2` is `"languages": ["en"]`. Measured by `scripts/verify-embedding-models.py`, cosine of a translation against its English original: **0.10 (es) / 0.01 (zh)** for the default vs **0.98 / 0.95** for `paraphrase-multilingual-MiniLM-L12-v2` — also 384d, so adopting it is a re-embed and **not** an index recreation. Selecting it is what makes a deployment multilingual |
-| BM25 | Still `english_stop` + `english_snowball` (`services/search/indexing_service.py:225-240`). **Partly mitigated already**: `content.exact` (standard analyzer) is queried alongside the stemmed leg, so non-English keyword matching degrades rather than vanishing. Dropping the stemmed leg query-side for non-English is #453 step 6 and is measurement-gated |
+| BM25 | Still `english_stop` + `english_snowball` (`services/search/index_schema.py`). **Partly mitigated already**: `content.exact` (standard analyzer) is queried alongside the stemmed leg, so non-English keyword matching degrades rather than vanishing. Dropping the stemmed leg query-side for non-English is #453 step 6 and is measurement-gated |
 | Reranking | `ms-marco-MiniLM-L-6-v2` is English MS MARCO and is now **skipped when the candidate head is predominantly non-English** (`reranker._is_mostly_non_english`). Not an optimisation: `rerank` **overwrites** `hit.score`, so letting it run destroys a correct retrieval order using a model that cannot read the text. Distinct from the #363 question of whether it helps on *English* — that stays open, blocked on #463 |
 | ~~Prompting~~ | **FIXED (#453).** Both prompts are authored in English but now instruct in it: answer in the question's language, quote in the original and never translate a quotation (a translated quote is a paraphrase wearing quote marks), and never translate the rewritten query. `tests/unit/test_chat_answer_language.py` |
 
@@ -727,7 +727,7 @@ already-narrowed value and cannot widen it back out. Reranking is one-way: a
 user may turn it off, but `True` cannot enable it when the admin has it off,
 because the cross-encoder may not be installed on that deployment.
 
-`resolve_answer_tokens` (in `service.py`) does the same for the reply budget and
+`resolve_answer_tokens` (in `prompt_budget.py`) does the same for the reply budget and
 is resolved **before** `build_messages`, which reserves context for the answer —
 raising `max_tokens` afterwards would let prompt + answer overrun the window.
 `GET /api/chat/answer-budget` exposes the same function's result (default and ceiling) for
@@ -942,7 +942,7 @@ persist the partial answer.
 - `fire_before_message` — in the **endpoint**, before `StreamingResponse` is
   constructed, so a quota rejection is a clean HTTP 402 rather than a mid-stream
   error frame.
-- `fire_message_complete` — in `service.py` after usage is persisted; idempotency
+- `fire_message_complete` — in `persistence._finalize_turn` after usage is persisted; idempotency
   scope is `message_uuid`.
 - Audit (`CHAT_MESSAGE_SEND`) — metadata only. **Never message content**, and
   logger lines carry ids and lengths only.

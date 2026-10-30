@@ -40,7 +40,7 @@ def _summary_plane_index():
         )
 
     from app.services.opensearch_service import get_opensearch_client
-    from app.services.search import indexing_service as svc
+    from app.services.search import index_admin
 
     client = get_opensearch_client()
     assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
@@ -52,7 +52,7 @@ def _summary_plane_index():
     # queued.
     client.indices.create(
         index=name,
-        body=svc._get_index_body_with_dimension(384),
+        body=index_admin._get_index_body_with_dimension(384),
         params={"request_timeout": 180},
     )
     try:
@@ -74,7 +74,7 @@ def summary_plane(monkeypatch, db_session, _summary_plane_index):
     from app.core.config import settings
     from app.services.opensearch_service import get_opensearch_client
     from app.services.search import hybrid_search_service as hybrid
-    from app.services.search import indexing_service as svc
+    from app.services.search import pipelines
 
     client = get_opensearch_client()
     assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
@@ -86,7 +86,7 @@ def summary_plane(monkeypatch, db_session, _summary_plane_index):
     monkeypatch.setattr("app.db.session_utils.session_scope", _test_session)
     monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", _summary_plane_index)
     monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_SEARCH_ENABLED", False)
-    svc.reset_neural_pipeline_state()
+    pipelines.reset_neural_pipeline_state()
     hybrid.reset_neural_search_state()
     try:
         yield client
@@ -97,7 +97,7 @@ def summary_plane(monkeypatch, db_session, _summary_plane_index):
             refresh=True,
             conflicts="proceed",
         )
-        svc.reset_neural_pipeline_state()
+        pipelines.reset_neural_pipeline_state()
         hybrid.reset_neural_search_state()
 
 

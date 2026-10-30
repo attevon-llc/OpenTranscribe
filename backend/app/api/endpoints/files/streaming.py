@@ -89,7 +89,7 @@ def get_thumbnail_streaming_response(db_file: MediaFile) -> StreamingResponse:
         # usedforsecurity=False is required and not merely tidy: without it this call
         # RAISES on a host whose OpenSSL enforces FIPS, and every thumbnail fetch 500s.
         # Declaring it to the runtime also satisfies the linters, so the suppression
-        # comments this line used to carry are gone (matches hybrid_search_service.py).
+        # comments this line used to carry are gone (matches services/search/search_cache.py).
         etag = hashlib.md5(thumbnail_path.encode(), usedforsecurity=False).hexdigest()
 
         return StreamingResponse(

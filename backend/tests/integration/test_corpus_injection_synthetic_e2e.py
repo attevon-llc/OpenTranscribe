@@ -243,8 +243,8 @@ class TestGoldSpansBecomeJudgementsOverRealChunks:
         wrong-plane failure.
         """
         from app.core.config import settings
-        from app.services.search.indexing_service import chunk_plane_query
-        from app.services.search.indexing_service import digest_plane_query
+        from app.services.search.plane_queries import chunk_plane_query
+        from app.services.search.plane_queries import digest_plane_query
 
         records, _ = injected
         file_uuid = records["T001-S0-0002"].file_uuid

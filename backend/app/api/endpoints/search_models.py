@@ -455,10 +455,10 @@ def get_neural_search_status(
     """
     from app.services.opensearch_service import probe_knn_health_cached
     from app.services.search.embedding_provenance import survey_embedding_models
-    from app.services.search.indexing_service import is_neural_pipeline_available
     from app.services.search.ml_model_service import get_ml_model_service
     from app.services.search.model_switch import provenance_payload
     from app.services.search.neural_bootstrap import bootstrap_status
+    from app.services.search.pipelines import is_neural_pipeline_available
 
     ml_service = get_ml_model_service()
     active_model_id = ml_service.get_active_model_id()

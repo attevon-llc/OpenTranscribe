@@ -17,8 +17,8 @@ from typing import cast
 from app.services.ingest_artifacts import index_mapping as target
 from app.services.ingest_artifacts import sizing
 from app.services.ingest_artifacts.digest import build_digest
-from app.services.search.indexing_service import _INDEX_VERSION
-from app.services.search.indexing_service import TRANSCRIPT_CHUNKS_INDEX_BODY
+from app.services.search.index_schema import _INDEX_VERSION
+from app.services.search.index_schema import TRANSCRIPT_CHUNKS_INDEX_BODY
 
 
 def _digest():
@@ -70,7 +70,7 @@ def test_the_ingest_pipeline_embeds_the_contextualized_field():
     repoint reach an upgraded deployment at all — the drift check compares ``field_map``,
     so a live pipeline is recreated rather than left silently embedding ``content``.
     """
-    from app.services.search.indexing_service import _build_neural_ingest_pipeline
+    from app.services.search.pipelines import _build_neural_ingest_pipeline
 
     processor = _build_neural_ingest_pipeline("model-1")["processors"][0]["text_embedding"]
     assert processor["field_map"] == {"embedding_text": "embedding"}

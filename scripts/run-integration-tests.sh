@@ -180,43 +180,31 @@ run_phase() {
     fi
 }
 
-#: Skips this phase may legitimately report — RE-DERIVED 2026-09-07, not raised.
+#: Skips this phase may legitimately report: ZERO. Derived 2026-10-30, replacing the 2026-09-07
+#: derivation of 7.
 #:
-#: Measured with `-rs` on the live dev stack with the mock-llm/mock-asr/keycloak/diar-native
-#: overlays up (the configuration run-dev-tests.sh --full brings up): 170 passed, 15 skipped,
-#: 922 s. The previous run's 21 was 15 + the 6 lite-mode tests that the unit suite's
-#: mock-llm kill had made unrunnable — fixed separately, and the 6 now pass.
+#: The 7 were 4 skips in test_fusion_strategy_switch.py ("7 matching chunks, needs >=10") and 3 in
+#: test_rag_eval_harness.py ("the QMSum manifest was injected into a different cluster"): one class,
+#: tests that asserted on whatever corpus the target deployment happened to hold. On a fresh
+#: isolated stack it was really 13 (all 6 fusion + 3 rag-eval + the 4 hybrid completeness tests,
+#: which skipped without OPENSEARCH_TEST_MODEL_ID, a variable nothing set), and on a corpus-rich dev
+#: stack 7 was a different seven from the documented ones. That is a ceiling absorbing a
+#: permanently-skipping test class, not measuring anything.
 #:
-#: Of those 15, EIGHT are now DESELECTED rather than skipped, because they are not runnable on
-#: this deployment shape at all and a skip only inflates the total:
-#:   6  multi_gpu   — test_gpu_scale_smoke_live (2), test_diar_native_cross_card_placement_live
-#:                    (2), test_diar_native_multigpu_provider_live (2): need a running
-#:                    celery-worker-gpu-scaled/-gpu-diarize. Selected back in automatically
-#:                    when that topology IS up (see MULTI_GPU_FILTER below).
-#:   1  opt_in_gate — test_export_toolchain_in_shipped_images (RUN_EXPORT_CAPABILITY_TEST;
-#:                    ~150 s + gated weights). `--export-capability` selects it back in.
-#:   1  opt_in_gate — test_speaker_label_index_drift (RUN_INDEX_AUDIT): an audit of a
-#:                    DEPLOYMENT's accumulated data, not a regression test of this code.
-#:   1  opt_in_gate — test_chat_cache_share_revocation: the cache under test IS Redis, and
-#:                    the dev stack's Redis is password-protected and in-network only, so a
-#:                    host-run gate can NEVER satisfy its reachability gates. It needs an
-#:                    isolated stack. Marked rather than ceiling-raised — adding this file
-#:                    took the phase 7 -> 8 skips and turned it NOT MEASURED, which is the
-#:                    ceiling doing its job, not a number that wanted incrementing.
+#: Now no test in this phase depends on deployment data or an operator-exported variable:
+#:   fusion     seeds its own throwaway index (embedded by the stack's own model) and deletes it
+#:   rag-eval   injects a QMSum-format fixture under a pytest-<hex> seed and purge_injected()s it
+#:   hybrid     OPENSEARCH_TEST_MODEL_ID is resolved from the stack and verified DEPLOYED/384 by the
+#:              integration-env block below; when it cannot be, the block prints why and the 4 tests
+#:              skip, which now trips the ceiling and reports NOT MEASURED instead of hiding
+#: The multi_gpu and opt_in_gate deselections below are unchanged.
 #:
-#: That leaves SEVEN honest skips, all one class — this deployment's corpus does not hold the
-#: data the assertions need, which is issue #403 / the plan's P2-2 "seed it" work, not a gate
-#: misconfiguration:
-#:   4  test_fusion_strategy_switch.py:209,222,234,252 — 7 matching chunks, needs >=10
-#:   3  test_rag_eval_harness.py:61,73,100            — the QMSum manifest's files were
-#:                                                      injected into a different cluster
-#:
-#: ⚠️ RE-DERIVE this number, never raise it to make a phase pass, and never raise it without
-#: updating the list above. Every skip is either a gate that should be running (fix the gate),
-#: a test that cannot run here (give it a NAMED marker and deselect it, so it is visibly absent
-#: rather than silently counted), or dead (delete it). A skip is the one outcome that looks
-#: like a pass and proves nothing. When P2-2 seeds the corpus this drops to 0.
-INTEGRATION_SKIP_CEILING="${INTEGRATION_SKIP_CEILING:-7}"
+#: ⚠️ RE-DERIVE this number, never raise it to make a phase pass. Every skip is either a gate that
+#: should be running (fix the gate), a test that cannot run here (give it a NAMED marker and
+#: deselect it, so it is visibly absent rather than silently counted), or dead (delete it). A skip
+#: is the one outcome that looks like a pass and proves nothing. Measured with the stack's overlays
+#: the release `test` stage brings up (mock-llm, mock-asr) -- run-dev-tests.sh starts them.
+INTEGRATION_SKIP_CEILING="${INTEGRATION_SKIP_CEILING:-0}"
 
 #: The GPU phase gets the same treatment. It previously had NO ceiling at all and reported
 #: `✓ passed` on 8 passed / 18 skipped — 69% of the phase unmeasured, under a green tick.

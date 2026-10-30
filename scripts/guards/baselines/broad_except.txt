@@ -264,8 +264,9 @@ backend/app/tasks/rename_propagation_task.py	8	ratchet: may only go down
 backend/app/tasks/search_indexing_task.py	8	ratchet: may only go down
 backend/app/tasks/search_maintenance_task.py	3	ratchet: may only go down
 backend/app/tasks/search_reembed_task.py	1	ratchet: may only go down
+backend/app/tasks/speaker_attribute_inference.py	1	ratchet: may only go down
 backend/app/tasks/speaker_attribute_migration_task.py	1	ratchet: may only go down
-backend/app/tasks/speaker_attribute_task.py	7	ratchet: may only go down
+backend/app/tasks/speaker_attribute_task.py	6	ratchet: may only go down
 backend/app/tasks/speaker_clustering.py	1	ratchet: may only go down
 backend/app/tasks/speaker_embedding_consistency.py	2	ratchet: may only go down
 backend/app/tasks/speaker_embedding_migration.py	6	ratchet: may only go down

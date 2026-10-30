@@ -45,7 +45,7 @@ backend/app/services/speaker_attribute_settings.py	1	env: single reader planned
 backend/app/services/speaker_embedding_service.py	3	env: single reader planned
 backend/app/tasks/baseline_export.py	1	env: single reader planned
 backend/app/tasks/rediarize_task.py	1	env: single reader planned
-backend/app/tasks/speaker_attribute_task.py	2	env: single reader planned
+backend/app/tasks/speaker_attribute_inference.py	2	env: single reader planned
 backend/app/tasks/transcription/audio_processor.py	2	env: single reader planned
 backend/app/tasks/transcription/context.py	1	env: single reader planned
 backend/app/tasks/transcription/core.py	1	env: single reader planned

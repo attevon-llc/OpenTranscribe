@@ -18,11 +18,11 @@ from app.api.endpoints.tags._common import _writable_tag_ids
 from app.api.endpoints.tags._common import router
 from app.db.base import get_db
 from app.models.user import User
-from app.schemas.media import TagImpact
-from app.schemas.media import TagMergeRequest
-from app.schemas.media import TagMutationResult
-from app.schemas.media import TagPromoteRequest
-from app.schemas.media import TagRenameRequest
+from app.schemas.tag import TagImpact
+from app.schemas.tag import TagMergeRequest
+from app.schemas.tag import TagMutationResult
+from app.schemas.tag import TagPromoteRequest
+from app.schemas.tag import TagRenameRequest
 from app.services.platform_access import TenancyMode
 from app.services.request_context import RequestContext
 from app.services.tag_operations import delete_tags

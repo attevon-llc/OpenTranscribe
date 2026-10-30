@@ -18,10 +18,10 @@ from app.api.endpoints.tags._common import router
 from app.db.base import get_db
 from app.models.tag import Tag
 from app.models.user import User
-from app.schemas.media import TagCollisionCluster as TagCollisionClusterSchema
-from app.schemas.media import TagFileList
-from app.schemas.media import TaggedFile
-from app.schemas.media import TagOnSelection
+from app.schemas.tag import TagCollisionCluster as TagCollisionClusterSchema
+from app.schemas.tag import TagFileList
+from app.schemas.tag import TaggedFile
+from app.schemas.tag import TagOnSelection
 from app.services.formatting_service import FormattingService
 from app.services.request_context import RequestContext
 from app.services.tag_collisions import files_for_tag

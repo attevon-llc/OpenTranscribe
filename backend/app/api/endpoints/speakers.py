@@ -21,8 +21,8 @@ from app.api.endpoints.speakers_profile_workflow import _handle_profile_action
 from app.db.base import get_db
 from app.models.speaker import Speaker
 from app.models.user import User
-from app.schemas.media import Speaker as SpeakerSchema
-from app.schemas.media import SpeakerUpdate
+from app.schemas.speaker import Speaker as SpeakerSchema
+from app.schemas.speaker import SpeakerUpdate
 from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.request_context import RequestContext
 from app.services.speaker_cleanup import capture_speaker_impact

@@ -28,8 +28,8 @@ from app.middleware.audit import get_request_context
 from app.models.sharing import TagShare
 from app.models.tag import Tag
 from app.models.user import User
-from app.schemas.media import TagShareCreate
-from app.schemas.media import TagShareTarget
+from app.schemas.tag import TagShareCreate
+from app.schemas.tag import TagShareTarget
 from app.services.request_context import RequestContext
 from app.services.tag_service import on_tags_changed
 from app.services.tag_sharing import TagShareError

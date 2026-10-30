@@ -16,7 +16,7 @@ from app.core.local_whisper_catalog import LOCAL_WHISPER_MODELS
 from app.models.user_asr_settings import UserASRSettings
 from app.schemas.asr_settings import ASRProvider
 from app.schemas.asr_settings import UserASRSettingsCreate
-from app.schemas.media import VALID_LOCAL_WHISPER_MODELS
+from app.schemas.processing_request import VALID_LOCAL_WHISPER_MODELS
 from app.services.asr.factory import ASRProviderFactory
 
 # ---------------------------------------------------------------------------

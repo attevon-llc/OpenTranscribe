@@ -27,7 +27,7 @@ import uuid as uuid_pkg
 import pytest
 
 from app.core import redaction_defaults
-from app.schemas.media import TranscriptSegmentUpdate
+from app.schemas.transcript import TranscriptSegmentUpdate
 from app.services.redaction.detectors import pii_presidio
 
 PHONE = "555-867-5309"

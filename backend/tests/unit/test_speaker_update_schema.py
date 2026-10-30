@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.media import SpeakerUpdate
+from app.schemas.speaker import SpeakerUpdate
 
 
 def test_display_name_at_limit_is_accepted() -> None:

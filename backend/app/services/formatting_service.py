@@ -46,7 +46,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.schemas.media import MediaFile as MediaFileSchema
-from app.schemas.media import TranscriptSegment
+from app.schemas.transcript import TranscriptSegment
 from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.privacy.redact_view import PrivacyView
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL

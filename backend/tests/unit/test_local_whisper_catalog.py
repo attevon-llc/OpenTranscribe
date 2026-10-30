@@ -13,7 +13,7 @@ import re
 import pytest
 
 from app.core import local_whisper_catalog as catalog
-from app.schemas.media import VALID_LOCAL_WHISPER_MODELS
+from app.schemas.processing_request import VALID_LOCAL_WHISPER_MODELS
 from app.services.asr.factory import ASRProviderFactory
 
 EXPECTED_IDS = {

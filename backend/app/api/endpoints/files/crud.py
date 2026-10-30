@@ -27,10 +27,10 @@ from app.models.tag import Tag
 from app.models.user import User
 from app.schemas.media import MediaFileDetail
 from app.schemas.media import MediaFileUpdate
-from app.schemas.media import Speaker as SpeakerResponseSchema
-from app.schemas.media import Tag as TagSchema
-from app.schemas.media import TranscriptSegment as TranscriptSegmentSchema
-from app.schemas.media import TranscriptSegmentUpdate
+from app.schemas.speaker import Speaker as SpeakerResponseSchema
+from app.schemas.tag import Tag as TagSchema
+from app.schemas.transcript import TranscriptSegment as TranscriptSegmentSchema
+from app.schemas.transcript import TranscriptSegmentUpdate
 from app.services.content_hold_queries import file_hold_summary
 from app.services.file_provenance_view import build_processing_steps
 from app.services.formatting_service import FormattingService
@@ -450,7 +450,7 @@ def _build_grouped_segments(formatted_segments: list[Any], index_offset: int = 0
     Returns:
         List of ``GroupedTranscriptSegment`` schema objects.
     """
-    from app.schemas.media import GroupedTranscriptSegment
+    from app.schemas.transcript import GroupedTranscriptSegment
 
     groups: list[Any] = []
     i = 0

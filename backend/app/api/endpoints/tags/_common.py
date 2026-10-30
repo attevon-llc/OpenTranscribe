@@ -10,8 +10,8 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.models.tag import Tag
-from app.schemas.media import TagMutationResult
-from app.schemas.media import TagShareTarget
+from app.schemas.tag import TagMutationResult
+from app.schemas.tag import TagShareTarget
 from app.services.tag_operations import TagNotFoundError
 from app.services.tag_operations import TagTenantMismatchError
 from app.services.tag_service import InvalidTagNameError

@@ -16,7 +16,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Model registry - must match _MODEL_FILE_PATTERNS in ml_model_service.py
+# Model registry - must match _MODEL_FILE_PATTERNS in ml_model_registration.py
 _OPENSEARCH_MODEL_REGISTRY = {
     "huggingface/sentence-transformers/all-MiniLM-L6-v2": {
         "short_name": "all-MiniLM-L6-v2",
@@ -79,7 +79,7 @@ _OPENSEARCH_MODEL_REGISTRY = {
 # Default model cache directory (backend container path).
 # This is the SAME path OpenSearch mounts read-only at /ml-models (docker-compose.yml),
 # backed by ${MODEL_CACHE_DIR}/opensearch-ml on the host -- not a private backend-only
-# cache. ml_model_service.get_local_model_path() reads from this exact path, so a model
+# cache. ml_model_registration.get_local_model_path() reads from this exact path, so a model
 # downloaded anywhere else is invisible to it (issue #638).
 _DEFAULT_CACHE_DIR = Path("/ml-models")
 

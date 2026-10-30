@@ -738,7 +738,7 @@ async def _initialize_neural_search():
         # beat self-heal (`neural_search_bootstrap_task`, every 10 minutes) on the
         # SAME replica -- that race is what let one caller deploy a model the other
         # was still registering, deleting the in-flight registration's cache
-        # directory (see `ml_model_service._DEPLOYABLE_STATES`'s docstring). Taking
+        # directory (see `ml_model_deployment._DEPLOYABLE_STATES`'s docstring). Taking
         # the beat task's own lock here means only one of the two callers ever runs
         # the bootstrap sequence at a time.
         with task_lock_manager.acquire_lock(

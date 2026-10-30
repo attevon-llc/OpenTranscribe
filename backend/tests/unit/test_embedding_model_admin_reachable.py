@@ -219,8 +219,8 @@ def test_registry_descriptions_cannot_sink_a_registration() -> None:
     deploy 500ed on its first real use. The description is pure metadata nobody's
     code reads back; it must never be able to fail the operation.
     """
-    from app.services.search.ml_model_service import _DESCRIPTION_ALLOWED
-    from app.services.search.ml_model_service import _safe_description
+    from app.services.search.ml_model_registration import _DESCRIPTION_ALLOWED
+    from app.services.search.ml_model_registration import _safe_description
 
     assert OPENSEARCH_EMBEDDING_MODELS, "empty registry — the loop below would pass vacuously"
     for model_id, info in OPENSEARCH_EMBEDDING_MODELS.items():
@@ -234,7 +234,7 @@ def test_registry_descriptions_cannot_sink_a_registration() -> None:
 
 def test_sanitizing_degrades_words_rather_than_fusing_them() -> None:
     """'50+ languages' must become '50 languages', never '50languages'."""
-    from app.services.search.ml_model_service import _safe_description
+    from app.services.search.ml_model_registration import _safe_description
 
     assert _safe_description("Fast. 50+ languages — good quality.") == (
         "Fast. 50 languages good quality."

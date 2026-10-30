@@ -225,7 +225,7 @@ scripts/benchmark_rag.py	1036	oversize: split by concern planned
 scripts/build_probe_question_set.py	721	oversize: split by concern planned
 scripts/cleanup-test-data.py	1158	oversize: split by concern planned
 scripts/common.sh	1873	oversize: split by concern planned
-scripts/docker-build-push.sh	1575	oversize: split by concern planned
+scripts/docker-build-push.sh	1554	oversize: split by concern planned
 scripts/download-models.py	1173	oversize: split by concern planned
 scripts/e2e/update-visual-baselines.sh	1312	oversize: split by concern planned
 scripts/fetch-rag-eval-data.sh	1282	oversize: split by concern planned
@@ -242,7 +242,7 @@ scripts/run-dev-tests.sh	896	oversize: split by concern planned
 scripts/run-integration-tests.sh	792	oversize: split by concern planned
 scripts/run-mutation-tests.sh	1168	oversize: split by concern planned
 scripts/run_benchmark.py	789	oversize: split by concern planned
-scripts/security-scan.sh	1193	oversize: split by concern planned
+scripts/security-scan.sh	1165	oversize: split by concern planned
 scripts/test-all-auth.sh	785	oversize: split by concern planned
 scripts/tests/test-publish-platforms.sh	782	oversize: split by concern planned
 scripts/vram-probe-diarization.py	750	oversize: split by concern planned

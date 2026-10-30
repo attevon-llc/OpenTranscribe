@@ -367,7 +367,7 @@ DEFAULT_DIRECTORY_SYNC_MAX_DISABLES_PER_RUN = 10
 # an established deployment can easily have more than 10 genuinely stale accounts.
 ACCOUNT_INACTIVITY_MAX_DISABLES_PER_RUN = 500
 
-# FedRAMP AC-10 concurrent-session ceiling (issue #632). `token_service.
+# FedRAMP AC-10 concurrent-session ceiling (issue #632). `session_ceiling.
 # enforce_session_ceiling` revokes every active session beyond the newest N in one
 # UPDATE ... OFFSET :limit statement; this bounds the per-call blast radius against a
 # large pre-existing backlog (a user who accumulated hundreds of sessions before the

@@ -40,12 +40,12 @@ from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.lockout import check_and_record_attempt
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
+from app.auth.revocation_error import RevocationError
 from app.auth.saml.assertion import extract_saml_user_data
 from app.auth.saml.config import SAMLConfig
 from app.auth.saml.provisioning import sync_saml_user_to_db
 from app.auth.saml.sp import build_auth
 from app.auth.saml.sp import saml_request_data
-from app.auth.token_service import RevocationError
 from app.auth.token_service import token_service
 from app.core.config import settings
 from app.core.exceptions import DomainError

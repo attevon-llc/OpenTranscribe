@@ -38,7 +38,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.auth import token_service as token_service_module
+from app.auth import session_ceiling as session_ceiling_module
 from app.auth.token_service import TokenService
 from app.core.config import settings
 from app.models.refresh_token import RefreshToken
@@ -386,7 +386,7 @@ class TestTimeoutsAreDatabaseBacked:
             staticmethod(lambda db, key: stored.get(key)),
         )
 
-        assert token_service_module._session_lifetime_minutes(_FakeDB()) == (
+        assert session_ceiling_module._session_lifetime_minutes(_FakeDB()) == (
             5,
             60,
             settings.MAX_CONCURRENT_SESSIONS,
@@ -399,7 +399,7 @@ class TestTimeoutsAreDatabaseBacked:
 
         broken = SimpleNamespace()  # no .query at all
 
-        assert token_service_module._session_lifetime_minutes(broken) == (
+        assert session_ceiling_module._session_lifetime_minutes(broken) == (
             15,
             480,
             settings.MAX_CONCURRENT_SESSIONS,

@@ -39,7 +39,7 @@ from app.auth.password_policy import is_password_expired
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
 from app.auth.roles import ROLE_SUPER_ADMIN
-from app.auth.token_service import enforce_session_ceiling
+from app.auth.session_ceiling import enforce_session_ceiling
 from app.auth.token_service import token_service
 from app.auth.utils import local_password_allowed
 from app.core.auth_settings import DynamicAuthSettings

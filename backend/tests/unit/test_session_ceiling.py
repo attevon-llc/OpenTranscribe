@@ -7,7 +7,7 @@ concurrent logins could both mint with no eviction at all, netting the count UP.
 Five other minting paths (OIDC, SAML, PKI, proxy, MFA enrollment,
 ``account_security_service.reissue_current_session``) enforced nothing whatsoever.
 
-The fix is a shared post-condition, ``token_service.enforce_session_ceiling``: "keep
+The fix is a shared post-condition, ``session_ceiling.enforce_session_ceiling``: "keep
 the newest N active sessions, revoke the rest" — expressed as one
 ``UPDATE ... WHERE id IN (SELECT ... OFFSET :limit)`` statement, applied both at
 login (``login.py``) and inside the universal choke point
@@ -28,8 +28,8 @@ from datetime import timedelta
 import pytest
 from sqlalchemy.orm import Session
 
+from app.auth.session_ceiling import enforce_session_ceiling
 from app.auth.token_service import TokenService
-from app.auth.token_service import enforce_session_ceiling
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.services.auth_config_service import AuthConfigService

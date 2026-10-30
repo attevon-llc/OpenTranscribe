@@ -1,8 +1,9 @@
 """``as_utc``: the one naive-to-aware coercion for timestamps read back from the database.
 
-It replaced identical copies in ``auth/token_service.py`` and
-``services/support_access_service.py``. A naive value compared with an aware one raises
-``TypeError``, which inside an auth path surfaces as a 500 instead of a denial.
+It replaced identical copies in ``auth/token_service.py`` (the calls now live in
+``auth/refresh_tokens.py``) and ``services/support_access_service.py``. A naive value
+compared with an aware one raises ``TypeError``, which inside an auth path surfaces as a 500
+instead of a denial.
 """
 
 from datetime import UTC

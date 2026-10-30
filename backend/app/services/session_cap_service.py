@@ -1,6 +1,6 @@
 """FedRAMP AC-10 concurrent-session ceiling — the periodic sweep half (issue #632).
 
-``token_service.enforce_session_ceiling`` is now called from every session-minting
+``session_ceiling.enforce_session_ceiling`` is now called from every session-minting
 path (see its docstring), so a session count above the cap should be self-correcting
 at the next login. This sweep is defence in depth for the cases that are not: a cap
 LOWERED by an admin (existing sessions minted under the old, higher cap do not
@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
-from app.auth.token_service import enforce_session_ceiling
+from app.auth.session_ceiling import enforce_session_ceiling
 from app.core.auth_settings import get_auth_settings
 from app.core.constants import SESSION_CAP_SWEEP_MAX_PER_USER
 from app.models.user import User

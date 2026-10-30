@@ -105,7 +105,7 @@ def test_get_reports_sidecar_status_from_the_readiness_probe(
     client, super_admin_token_headers, monkeypatch, probe, expected
 ):
     """The chip reflects sidecar_ready(): serving => reachable, not serving => unreachable."""
-    monkeypatch.setattr("app.transcription.diarizer_native.sidecar_ready", probe)
+    monkeypatch.setattr("app.transcription.diar_sidecar_status.sidecar_ready", probe)
     resp = client.get(_BASE, headers=super_admin_token_headers)
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json()["diarizer_sidecar_status"] == expected
@@ -119,7 +119,7 @@ def test_get_reports_unknown_when_the_probe_errors_without_echoing_it(
     def boom() -> bool:
         raise RuntimeError("secret-internal-host:5171 refused")
 
-    monkeypatch.setattr("app.transcription.diarizer_native.sidecar_ready", boom)
+    monkeypatch.setattr("app.transcription.diar_sidecar_status.sidecar_ready", boom)
     resp = client.get(_BASE, headers=super_admin_token_headers)
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json()["diarizer_sidecar_status"] == "unknown"

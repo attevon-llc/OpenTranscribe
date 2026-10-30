@@ -61,7 +61,7 @@ Full ``/diarize`` additionally shifts segment boundaries by up to one segmentati
 land either side; that is a separate, larger effect and is why `/diarize` is never routed
 to CPU by anything in this codebase.
 So `_embed_window` sends `"device": "cpu"` gated on
-``diarizer_native.sidecar_supports_cpu_device()``, which reads `/healthz`'s **``devices``**
+``diar_sidecar_status.sidecar_supports_cpu_device()``, which reads `/healthz`'s **``devices``**
 (the providers actually LOADED, chosen at start-up by ``DIAR_DEVICES``) — never
 ``supported_devices``, which is a build-time capability list. Keying on the capability made
 the gate true on every GPU deployment, so `/embed_window` was sent ``device: "cpu"``,
@@ -85,9 +85,9 @@ import logging
 
 import numpy as np
 
+from app.transcription.diar_sidecar_status import sidecar_ready
+from app.transcription.diar_sidecar_status import sidecar_supports_cpu_device
 from app.transcription.diarizer_native import post_json
-from app.transcription.diarizer_native import sidecar_ready
-from app.transcription.diarizer_native import sidecar_supports_cpu_device
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +111,7 @@ _EMBED_TIMEOUT_S = 60.0
 def native_embedding_available(base_url: str | None = None) -> bool:
     """True when the sidecar can serve embeddings right now.
 
-    Shares ``diarizer_native.sidecar_ready`` so the embedding path and the
+    Shares ``diar_sidecar_status.sidecar_ready`` so the embedding path and the
     diarization path agree on what "the sidecar can serve" means — readiness, not mere
     liveness. ``/embed_window`` runs the same weights ``/diarize`` does, so a sidecar
     whose models are unusable cannot serve embeddings either, however cheerfully its
@@ -194,7 +194,7 @@ def embed_waveform(samples: np.ndarray, base_url: str | None = None) -> np.ndarr
         never means "this audio has no speaker", so callers must not treat it as
         a result.
     """
-    from app.transcription.diarizer_native import default_base_url
+    from app.transcription.diar_sidecar_status import default_base_url
 
     windows = fit_to_window(samples)
     if not windows:

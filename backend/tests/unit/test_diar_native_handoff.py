@@ -32,21 +32,20 @@ import threading
 import numpy as np
 import pytest
 
+import app.transcription.diar_shared_volume as diar_shared_volume
+import app.transcription.diar_sidecar_status as diar_sidecar_status
 import app.transcription.diarizer_native as diarizer_native
+from app.transcription.diar_sidecar_status import reset_readiness_cache
+from app.transcription.diar_sidecar_status import sidecar_ready
 from app.transcription.diarizer_native import NativeSpeakerDiarizer
-from app.transcription.diarizer_native import reset_readiness_cache
-from app.transcription.diarizer_native import sidecar_ready
 
-#: All diar-native tests that stand up a real HTTP server, or drive diarizer_native's
-#: module-level state, run on ONE xdist worker.
-#:
-#: `_free_port()` binds port 0, reads the number, then CLOSES the socket and returns it — so
-#: between that close and the caller's `HTTPServer((host, port))` bind, another worker can be
-#: handed the same ephemeral port. Seven modules use that helper and none were grouped, which
-#: is why a DIFFERENT diar test failed on each full-suite run while every one of them passed in
-#: isolation. Same remedy the repo already uses for tests sharing mutable global state
-#: (backend/tests/CLAUDE.md's `--dist loadgroup` note); here the shared state is the machine's
-#: ephemeral-port pool plus diarizer_native's readiness caches.
+#: All diar-native tests that stand up a real HTTP server, or drive the sidecar modules'
+#: module-level state, run on ONE xdist worker. `_free_port()` binds port 0, reads the
+#: number, then CLOSES the socket and returns it, so another worker can be handed the same
+#: ephemeral port before the caller's `HTTPServer` binds it. Seven modules use that helper and
+#: none were grouped, which is why a DIFFERENT diar test failed on each full-suite run while
+#: every one passed in isolation. Same remedy as backend/tests/CLAUDE.md's `--dist loadgroup`
+#: note; the shared state is the ephemeral-port pool plus diar_sidecar_status's readiness caches.
 pytestmark = pytest.mark.xdist_group("diar_native_state")
 
 
@@ -71,7 +70,7 @@ class TestWavHandoff:
         engine_shared = tmp_path / "engine-shared"
         engine_shared.mkdir()
         diar_scratch = tmp_path / "diar-native-scratch"
-        monkeypatch.setattr(diarizer_native, "_SHARED_VOLUME_ROOT", str(engine_shared))
+        monkeypatch.setattr(diar_shared_volume, "_SHARED_VOLUME_ROOT", str(engine_shared))
         monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(diar_scratch))
 
         pre_wav = engine_shared / "task-abc123.wav"
@@ -105,7 +104,7 @@ class TestWavHandoff:
     def test_a_supplied_wav_is_never_deleted_by_diarize(self, tmp_path, monkeypatch):
         engine_shared = tmp_path / "engine-shared"
         engine_shared.mkdir()
-        monkeypatch.setattr(diarizer_native, "_SHARED_VOLUME_ROOT", str(engine_shared))
+        monkeypatch.setattr(diar_shared_volume, "_SHARED_VOLUME_ROOT", str(engine_shared))
         monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-native-scratch"))
 
         pre_wav = engine_shared / "task-keepme.wav"
@@ -239,7 +238,7 @@ class TestRetryPolicy:
         try:
             engine_shared = tmp_path / "engine-shared"
             engine_shared.mkdir()
-            monkeypatch.setattr(diarizer_native, "_SHARED_VOLUME_ROOT", str(engine_shared))
+            monkeypatch.setattr(diar_shared_volume, "_SHARED_VOLUME_ROOT", str(engine_shared))
             monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-scratch"))
 
             pre_wav = engine_shared / "task-422.wav"
@@ -271,7 +270,7 @@ class TestRetryPolicy:
         with _accept_and_hang_server() as (base_url, accepted):
             engine_shared = tmp_path / "engine-shared"
             engine_shared.mkdir()
-            monkeypatch.setattr(diarizer_native, "_SHARED_VOLUME_ROOT", str(engine_shared))
+            monkeypatch.setattr(diar_shared_volume, "_SHARED_VOLUME_ROOT", str(engine_shared))
             monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-scratch"))
             monkeypatch.setattr("app.transcription.diarizer.SpeakerDiarizer", _FakeFallback)
 
@@ -334,7 +333,7 @@ class TestRetryPolicy:
         with _accept_and_hang_server() as (base_url, accepted):
             engine_shared = tmp_path / "engine-shared"
             engine_shared.mkdir()
-            monkeypatch.setattr(diarizer_native, "_SHARED_VOLUME_ROOT", str(engine_shared))
+            monkeypatch.setattr(diar_shared_volume, "_SHARED_VOLUME_ROOT", str(engine_shared))
             monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-scratch"))
 
             pre_wav = engine_shared / "task-timeout2.wav"
@@ -382,7 +381,7 @@ class TestSidecarFailureClassification:
             engine_shared = tmp_path / "engine-shared"
             engine_shared.mkdir()
             diar_scratch = tmp_path / "diar-scratch"
-            monkeypatch.setattr(diarizer_native, "_SHARED_VOLUME_ROOT", str(engine_shared))
+            monkeypatch.setattr(diar_shared_volume, "_SHARED_VOLUME_ROOT", str(engine_shared))
             monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(diar_scratch))
 
             pre_wav = engine_shared / "task-429.wav"
@@ -392,7 +391,7 @@ class TestSidecarFailureClassification:
             diarizer.is_loaded = True
             audio = np.zeros(16_000, dtype=np.float32)
 
-            from app.transcription.diarizer_native import DiarSidecarUnavailableError
+            from app.transcription.diar_sidecar_status import DiarSidecarUnavailableError
 
             # allow_local_fallback=False (the overlap thread) always wraps in a plain
             # RuntimeError regardless of classification — see that flag's docstring — so the
@@ -422,7 +421,7 @@ class TestSidecarFailureClassification:
         with _accept_and_hang_server() as (base_url, accepted):
             engine_shared = tmp_path / "engine-shared"
             engine_shared.mkdir()
-            monkeypatch.setattr(diarizer_native, "_SHARED_VOLUME_ROOT", str(engine_shared))
+            monkeypatch.setattr(diar_shared_volume, "_SHARED_VOLUME_ROOT", str(engine_shared))
             monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-scratch"))
 
             pre_wav = engine_shared / "task-saturated.wav"
@@ -432,7 +431,7 @@ class TestSidecarFailureClassification:
             diarizer.is_loaded = True
             audio = np.zeros(16_000, dtype=np.float32)
 
-            from app.transcription.diarizer_native import DiarSidecarUnavailableError
+            from app.transcription.diar_sidecar_status import DiarSidecarUnavailableError
 
             with pytest.raises(RuntimeError) as excinfo:
                 diarizer.diarize(audio, wav_path=str(pre_wav), allow_local_fallback=False)
@@ -454,7 +453,7 @@ class TestSidecarFailureClassification:
         diarizer.is_loaded = True
         audio = np.zeros(16_000, dtype=np.float32)
 
-        from app.transcription.diarizer_native import DiarSidecarUnavailableError
+        from app.transcription.diar_sidecar_status import DiarSidecarUnavailableError
 
         with pytest.raises(RuntimeError) as excinfo:
             diarizer.diarize(audio, allow_local_fallback=False)
@@ -475,7 +474,7 @@ class TestSidecarFailureClassification:
         try:
             engine_shared = tmp_path / "engine-shared"
             engine_shared.mkdir()
-            monkeypatch.setattr(diarizer_native, "_SHARED_VOLUME_ROOT", str(engine_shared))
+            monkeypatch.setattr(diar_shared_volume, "_SHARED_VOLUME_ROOT", str(engine_shared))
             monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-scratch"))
 
             pre_wav = engine_shared / "task-422b.wav"
@@ -538,7 +537,7 @@ class TestRequireSidecarPolicy:
             diarizer.is_loaded = True
             audio = np.zeros(16_000, dtype=np.float32)
 
-            from app.transcription.diarizer_native import DiarSidecarUnavailableError
+            from app.transcription.diar_sidecar_status import DiarSidecarUnavailableError
 
             with pytest.raises(DiarSidecarUnavailableError):
                 diarizer.diarize(audio)
@@ -587,7 +586,7 @@ class TestReuseObservability:
 
         engine_shared = tmp_path / "engine-shared"
         engine_shared.mkdir()
-        monkeypatch.setattr(diarizer_native, "_SHARED_VOLUME_ROOT", str(engine_shared))
+        monkeypatch.setattr(diar_shared_volume, "_SHARED_VOLUME_ROOT", str(engine_shared))
         monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-scratch"))
         monkeypatch.setattr(diarizer_native, "post_json", _fake_diarize_reply)
 
@@ -613,7 +612,7 @@ class TestReuseObservability:
 
         engine_shared = tmp_path / "engine-shared"
         engine_shared.mkdir()
-        monkeypatch.setattr(diarizer_native, "_SHARED_VOLUME_ROOT", str(engine_shared))
+        monkeypatch.setattr(diar_shared_volume, "_SHARED_VOLUME_ROOT", str(engine_shared))
         monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-scratch"))
         monkeypatch.setattr(diarizer_native, "post_json", _fake_diarize_reply)
 
@@ -675,7 +674,7 @@ def _counting_sidecar(state: dict):
 
 class TestSidecarReadyTTLCache:
     def test_two_calls_within_the_ttl_issue_exactly_one_http_request(self, monkeypatch):
-        monkeypatch.setattr(diarizer_native, "_READY_CACHE_TTL_S", 60.0)
+        monkeypatch.setattr(diar_sidecar_status, "_READY_CACHE_TTL_S", 60.0)
         reset_readiness_cache()
         state = {"hits": 0, "code": 200}
         with _counting_sidecar(state) as url:
@@ -686,7 +685,7 @@ class TestSidecarReadyTTLCache:
 
     def test_a_negative_result_is_cached_too(self, monkeypatch):
         """Negative results are the expensive case this cache exists to stop re-paying."""
-        monkeypatch.setattr(diarizer_native, "_READY_CACHE_TTL_S", 60.0)
+        monkeypatch.setattr(diar_sidecar_status, "_READY_CACHE_TTL_S", 60.0)
         reset_readiness_cache()
         state = {"hits": 0, "code": 503}
         with _counting_sidecar(state) as url:
@@ -706,11 +705,11 @@ class TestSidecarReadyTTLCache:
         the pre-fix ordering it issues a second request.
         """
         clock = {"now": 1000.0}
-        monkeypatch.setattr(diarizer_native.time, "monotonic", lambda: clock["now"])
+        monkeypatch.setattr(diar_sidecar_status.time, "monotonic", lambda: clock["now"])
         # The TTL must be SHORTER than the probe for this to discriminate. With a longer
         # one both orderings produce a hit — the first draft of this test used TTL 6 against
         # a 5 s probe and passed against the bug it was written to catch.
-        monkeypatch.setattr(diarizer_native, "_READY_CACHE_TTL_S", 3.0)
+        monkeypatch.setattr(diar_sidecar_status, "_READY_CACHE_TTL_S", 3.0)
         reset_readiness_cache()
 
         calls: list[str] = []
@@ -720,9 +719,9 @@ class TestSidecarReadyTTLCache:
             clock["now"] += 5.0  # an unreachable sidecar burns the whole connect timeout
             return False
 
-        monkeypatch.setattr(diarizer_native, "_sidecar_ready_uncached", _slow_probe)
-        assert diarizer_native.sidecar_ready("http://example.invalid") is False
-        assert diarizer_native.sidecar_ready("http://example.invalid") is False
+        monkeypatch.setattr(diar_sidecar_status, "_sidecar_ready_uncached", _slow_probe)
+        assert diar_sidecar_status.sidecar_ready("http://example.invalid") is False
+        assert diar_sidecar_status.sidecar_ready("http://example.invalid") is False
         assert len(calls) == 1, (
             "the second call re-probed: the entry was stamped with a pre-probe clock read, "
             "so it was born 5s old against a 3s TTL — the cache serves nothing in the exact "
@@ -732,7 +731,7 @@ class TestSidecarReadyTTLCache:
 
     def test_liveness_is_cached_independently_of_readiness(self, monkeypatch):
         """`/healthz` is probed twice per failing job and used to be uncached entirely."""
-        monkeypatch.setattr(diarizer_native, "_READY_CACHE_TTL_S", 60.0)
+        monkeypatch.setattr(diar_sidecar_status, "_READY_CACHE_TTL_S", 60.0)
         reset_readiness_cache()
         health: list[str] = []
 
@@ -740,9 +739,9 @@ class TestSidecarReadyTTLCache:
             health.append(url)
             return True
 
-        monkeypatch.setattr(diarizer_native, "_sidecar_healthy_uncached", _probe)
-        assert diarizer_native.sidecar_healthy("http://example.invalid") is True
-        assert diarizer_native.sidecar_healthy("http://example.invalid") is True
+        monkeypatch.setattr(diar_sidecar_status, "_sidecar_healthy_uncached", _probe)
+        assert diar_sidecar_status.sidecar_healthy("http://example.invalid") is True
+        assert diar_sidecar_status.sidecar_healthy("http://example.invalid") is True
         assert len(health) == 1, "liveness must be cached too, not just readiness"
         reset_readiness_cache()
 
@@ -750,7 +749,7 @@ class TestSidecarReadyTTLCache:
         """A TTL under the probe timeout makes every entry born expired, so it is floored.
 
         Exercises the REAL module-level resolution (``max(env value, floor)`` in
-        ``diarizer_native.py``) by configuring a too-small value in a fresh interpreter,
+        ``diar_sidecar_status.py``) by configuring a too-small value in a fresh interpreter,
         rather than comparing the two already-floored module constants against each other —
         which passes even with the flooring logic deleted outright.
 
@@ -769,7 +768,7 @@ class TestSidecarReadyTTLCache:
         Bisected to this reload by running the grouped modules pairwise.
         """
         out = run_in_clean_process(
-            "from app.transcription import diarizer_native as d;"
+            "from app.transcription import diar_sidecar_status as d;"
             "print(f'{d._READY_CACHE_TTL_S},{d._PROBE_TIMEOUT_S}')",
             DIAR_NATIVE_READY_CACHE_TTL_S="1",
         )
@@ -788,8 +787,8 @@ class TestSidecarReadyTTLCache:
         cache reads the clock through the module, so replacing that one function is enough.
         """
         clock = {"now": 1000.0}
-        monkeypatch.setattr(diarizer_native.time, "monotonic", lambda: clock["now"])
-        monkeypatch.setattr(diarizer_native, "_READY_CACHE_TTL_S", 10.0)
+        monkeypatch.setattr(diar_sidecar_status.time, "monotonic", lambda: clock["now"])
+        monkeypatch.setattr(diar_sidecar_status, "_READY_CACHE_TTL_S", 10.0)
         reset_readiness_cache()
         state = {"hits": 0, "code": 200}
         with _counting_sidecar(state) as url:
@@ -815,7 +814,7 @@ class TestSidecarReadyTTLCache:
         the cache between phases a verdict cached before the flip would mask the new state
         until the TTL lapsed.
         """
-        monkeypatch.setattr(diarizer_native, "_READY_CACHE_TTL_S", 60.0)
+        monkeypatch.setattr(diar_sidecar_status, "_READY_CACHE_TTL_S", 60.0)
         reset_readiness_cache()
         state = {"hits": 0, "code": 200}
         with _counting_sidecar(state) as url:
@@ -844,7 +843,7 @@ class TestSidecarDiagnostics:
         thread = threading.Thread(target=srv.serve_forever, daemon=True)
         thread.start()
         try:
-            info = diarizer_native.sidecar_diagnostics(f"http://127.0.0.1:{port}")
+            info = diar_sidecar_status.sidecar_diagnostics(f"http://127.0.0.1:{port}")
             assert info["live"] is True
             assert info["ready"] is True
             assert info["max_inflight"] == 3
@@ -861,7 +860,7 @@ class TestSidecarDiagnostics:
         port = srv.getsockname()[1]
         srv.close()
 
-        info = diarizer_native.sidecar_diagnostics(f"http://127.0.0.1:{port}")
+        info = diar_sidecar_status.sidecar_diagnostics(f"http://127.0.0.1:{port}")
         assert info["live"] is False
         assert info["ready"] is False
         reset_readiness_cache()

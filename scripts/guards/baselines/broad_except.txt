@@ -295,7 +295,8 @@ backend/app/tasks/youtube_processing.py	8	ratchet: may only go down
 backend/app/transcription/config.py	3	ratchet: may only go down
 backend/app/transcription/cuda_health.py	4	ratchet: may only go down
 backend/app/transcription/diarizer.py	4	ratchet: may only go down
-backend/app/transcription/diarizer_native.py	6	ratchet: may only go down
+backend/app/transcription/diar_sidecar_status.py	4	ratchet: may only go down
+backend/app/transcription/diarizer_native.py	2	ratchet: may only go down
 backend/app/transcription/engine/audio_loader.py	3	ratchet: may only go down
 backend/app/transcription/engine/metrics.py	7	ratchet: may only go down
 backend/app/transcription/engine/stages.py	8	ratchet: may only go down

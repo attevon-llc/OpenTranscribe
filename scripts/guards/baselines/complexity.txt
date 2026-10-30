@@ -20,7 +20,6 @@ backend/app/tasks/recovery.py::periodic_health_check_task	16	complexity: decompo
 backend/app/tasks/recovery_tasks.py::media_duration_backfill	16	complexity: decomposition planned
 backend/app/tasks/speaker_embedding_consistency.py::speaker_embedding_consistency_check_task	16	complexity: decomposition planned
 backend/app/tasks/transcription/core.py::transcribe_gpu_task	16	complexity: decomposition planned
-backend/app/transcription/diarizer_native.py::NativeSpeakerDiarizer.diarize	16	complexity: decomposition planned
 scripts/audit-session-lifetime.py::main	21	complexity: decomposition planned
 scripts/audit-session-lifetime.py::scan_source	21	complexity: decomposition planned
 scripts/audit-tests.py::main	21	complexity: decomposition planned

@@ -146,7 +146,7 @@ class EngineSettingsResponse(BaseModel):
 def _sidecar_status() -> Literal["reachable", "unreachable", "unknown"]:
     """Read-only sidecar state for the admin UI; never raises and never echoes failure text."""
     try:
-        from app.transcription.diarizer_native import sidecar_ready
+        from app.transcription.diar_sidecar_status import sidecar_ready
 
         return "reachable" if sidecar_ready() else "unreachable"
     except Exception as exc:

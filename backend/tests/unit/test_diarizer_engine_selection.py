@@ -227,7 +227,7 @@ class TestOverlapDiarizationEnabled:
             probed.append(True)
             return answer
 
-        monkeypatch.setattr("app.transcription.diarizer_native.sidecar_ready", _fake_ready)
+        monkeypatch.setattr("app.transcription.diar_sidecar_status.sidecar_ready", _fake_ready)
         return probed
 
     def test_disabled_for_pyannote_backend_without_probing(self, monkeypatch: pytest.MonkeyPatch):
@@ -270,7 +270,7 @@ class TestOverlapDiarizationEnabled:
         """
         monkeypatch.delenv("DIAR_OVERLAP", raising=False)
         monkeypatch.setattr(
-            "app.transcription.diarizer_native._DEFAULT_URL",
+            "app.transcription.diar_sidecar_status._DEFAULT_URL",
             f"http://127.0.0.1:{_free_port()}",
         )
         tc = TranscriptionConfig(diarizer_backend="native")
@@ -301,7 +301,7 @@ class TestDiarizerCurrent:
         cannot decide whether to send work here. See test_diar_native_readiness_gate.py.
         """
         monkeypatch.setattr(
-            "app.transcription.diarizer_native.sidecar_ready", lambda *a, **kw: True
+            "app.transcription.diar_sidecar_status.sidecar_ready", lambda *a, **kw: True
         )
         config = TranscriptionConfig(diarizer_backend="native")
         cached = cast(SpeakerDiarizer, NativeSpeakerDiarizer(config))
@@ -312,10 +312,10 @@ class TestDiarizerCurrent:
     ):
         """A sidecar that is GONE must say "unreachable", not merely "not ready"."""
         monkeypatch.setattr(
-            "app.transcription.diarizer_native.sidecar_ready", lambda *a, **kw: False
+            "app.transcription.diar_sidecar_status.sidecar_ready", lambda *a, **kw: False
         )
         monkeypatch.setattr(
-            "app.transcription.diarizer_native.sidecar_healthy", lambda *a, **kw: False
+            "app.transcription.diar_sidecar_status.sidecar_healthy", lambda *a, **kw: False
         )
         config = TranscriptionConfig(diarizer_backend="native")
         cached = cast(SpeakerDiarizer, NativeSpeakerDiarizer(config))
@@ -332,10 +332,10 @@ class TestDiarizerCurrent:
         when the actual fault is an unprovisioned or broken models directory.
         """
         monkeypatch.setattr(
-            "app.transcription.diarizer_native.sidecar_ready", lambda *a, **kw: False
+            "app.transcription.diar_sidecar_status.sidecar_ready", lambda *a, **kw: False
         )
         monkeypatch.setattr(
-            "app.transcription.diarizer_native.sidecar_healthy", lambda *a, **kw: True
+            "app.transcription.diar_sidecar_status.sidecar_healthy", lambda *a, **kw: True
         )
         config = TranscriptionConfig(diarizer_backend="native")
         cached = cast(SpeakerDiarizer, NativeSpeakerDiarizer(config))
@@ -356,8 +356,8 @@ class TestDiarizerCurrent:
         # BOTH predicates, so this stays a real assertion. The routing probe moved from
         # sidecar_healthy to sidecar_ready; patching only the old one would leave this
         # test passing vacuously while a probe it is meant to forbid ran unnoticed.
-        monkeypatch.setattr("app.transcription.diarizer_native.sidecar_healthy", _fake_probe)
-        monkeypatch.setattr("app.transcription.diarizer_native.sidecar_ready", _fake_probe)
+        monkeypatch.setattr("app.transcription.diar_sidecar_status.sidecar_healthy", _fake_probe)
+        monkeypatch.setattr("app.transcription.diar_sidecar_status.sidecar_ready", _fake_probe)
         config = TranscriptionConfig(diarizer_backend="pyannote")
         cached = cast(SpeakerDiarizer, NativeSpeakerDiarizer(config))
         assert ModelManager._diarizer_current(cached, config) is False
@@ -385,7 +385,7 @@ class TestRealFailover:
         """
         closed_port = _free_port()  # bound-then-released: guaranteed nothing is listening
         monkeypatch.setattr(
-            "app.transcription.diarizer_native._DEFAULT_URL",
+            "app.transcription.diar_sidecar_status._DEFAULT_URL",
             f"http://127.0.0.1:{closed_port}",
         )
         monkeypatch.setattr("app.transcription.model_manager.SpeakerDiarizer", FakeSpeakerDiarizer)
@@ -595,7 +595,7 @@ class TestOverlapMidJobFailureDegradesSafely:
             monkeypatch.setattr("app.transcription.diarizer.SpeakerDiarizer", FakeSpeakerDiarizer)
             monkeypatch.setattr("app.transcription.diarizer_native._SHARED_DIR", str(tmp_path))
             monkeypatch.setattr(
-                "app.transcription.diarizer_native._DEFAULT_URL", f"http://127.0.0.1:{port}"
+                "app.transcription.diar_sidecar_status._DEFAULT_URL", f"http://127.0.0.1:{port}"
             )
             # This host has real GPUs with >16GB VRAM, which would otherwise take
             # `_make_room_for_local_diarizer`'s "both models fit, keep loaded" branch and
@@ -752,7 +752,7 @@ class TestSaturatedSidecarSkipsSecondAttempt:
             monkeypatch.setattr("app.transcription.diarizer.SpeakerDiarizer", FakeSpeakerDiarizer)
             monkeypatch.setattr("app.transcription.diarizer_native._SHARED_DIR", str(tmp_path))
             monkeypatch.setattr(
-                "app.transcription.diarizer_native._DEFAULT_URL", f"http://127.0.0.1:{port}"
+                "app.transcription.diar_sidecar_status._DEFAULT_URL", f"http://127.0.0.1:{port}"
             )
             # A tiny per-request budget so the test doesn't wait out a real _TIMEOUT_S.
             monkeypatch.setattr(

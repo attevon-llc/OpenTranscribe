@@ -16,7 +16,7 @@ from app.core.task_liveness import run_heartbeat
 from app.core.worker_shutdown import TranscriptionAbortedError
 from app.db.session_utils import session_scope
 from app.transcription import host_memory_admission
-from app.transcription.diarizer_native import DiarSidecarUnavailableError
+from app.transcription.diar_sidecar_status import DiarSidecarUnavailableError
 from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
 

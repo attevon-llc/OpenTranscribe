@@ -25,7 +25,7 @@ from app.transcription import cuda_health
 from app.utils.task_utils import update_task_status
 
 if TYPE_CHECKING:
-    from app.transcription.diarizer_native import DiarSidecarUnavailableError
+    from app.transcription.diar_sidecar_status import DiarSidecarUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +105,7 @@ def retry_transcribe_gpu_exception(task, exc, file_uuid: str) -> NoReturn:
     Keeping the isinstance check here (rather than in the task body) keeps that function's
     own cyclomatic complexity under the repo's C901 gate; always raises.
     """
-    from app.transcription.diarizer_native import DiarSidecarUnavailableError
+    from app.transcription.diar_sidecar_status import DiarSidecarUnavailableError
 
     if isinstance(exc, DiarSidecarUnavailableError):
         retry_on_diar_sidecar_unavailable(task, exc, file_uuid)

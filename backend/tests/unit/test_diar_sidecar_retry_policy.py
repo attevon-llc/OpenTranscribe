@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 
 from app.core.constants import DIAR_SIDECAR_MAX_RETRIES
-from app.transcription.diarizer_native import DiarSidecarUnavailableError
+from app.transcription.diar_sidecar_status import DiarSidecarUnavailableError
 from app.transcription.diarizer_native import NativeSpeakerDiarizer
 from tests.unit._plan_contexts import plan_context
 

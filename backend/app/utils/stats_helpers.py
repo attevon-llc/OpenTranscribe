@@ -444,7 +444,7 @@ def get_models_info() -> dict[str, dict[str, Any]]:
     # name does not vary with the engine; only the description/backend fields do.
     diarization_name = "pyannote/speaker-diarization-community-1"
     try:
-        from app.transcription.diarizer_native import describe_diarizer_status
+        from app.transcription.diar_sidecar_status import describe_diarizer_status
 
         diarizer_status = describe_diarizer_status()
     except Exception:  # noqa: BLE001 — a stats panel never fails over a display value

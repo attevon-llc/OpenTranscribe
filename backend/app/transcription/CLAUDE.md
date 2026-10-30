@@ -44,10 +44,17 @@ pinned like the model name — so an admin toggle and a recovered sidecar both t
 a worker restart. The old ad-hoc `DIARIZER_ENGINE` env reads are gone (#58); setting it does
 nothing.
 
+- The sidecar client is split by concern. `diarizer_native.py` holds `NativeSpeakerDiarizer` and
+  `post_json`; `diar_sidecar_status.py` holds the TTL-cached probes (`sidecar_ready`,
+  `sidecar_healthy`, `sidecar_status`), `describe_diarizer_status`, `DiarSidecarUnavailableError`
+  and `diarizer_require_sidecar`; `diar_shared_volume.py` holds the reuse-WAV containment check.
+  The client calls the probes through its own module globals, so a test that patches the client
+  path patches `diarizer_native` and one that patches the manager/admin path patches
+  `diar_sidecar_status`. A test driving both must patch both.
 - `ModelManager._build_diarizer` constructs `NativeSpeakerDiarizer` (`diarizer_native.py`) for
   `native` and falls back to the in-process `SpeakerDiarizer` on **any** exception, logging
   `Native diarizer unavailable (...); falling back to PyAnnote`.
-- `ModelManager._diarizer_current` re-probes `diarizer_native.sidecar_ready()` per task and
+- `ModelManager._diarizer_current` re-probes `diar_sidecar_status.sidecar_ready()` per task and
   rebuilds in **both** directions — losing the sidecar mid-queue drops to PyAnnote, and a
   recovered sidecar is picked back up. (This was documented here as `sidecar_healthy()` — that
   is the liveness probe, not the readiness one the routing decision actually gates on; fixed
@@ -75,7 +82,7 @@ host can run the sidecar (#660). One binary serves both devices (`/healthz` adve
 optional `"device": "cpu"|"cuda"` field, but the sidecar's request structs have no
 `deny_unknown_fields` — an OLD sidecar (pre this field) silently ignores an unrecognised
 `device` key and answers 200 having run on CUDA anyway, indistinguishable from success. So
-**nothing may send it without first checking `diarizer_native.sidecar_supports_cpu_device()`**
+**nothing may send it without first checking `diar_sidecar_status.sidecar_supports_cpu_device()`**
 (reads `/healthz`'s `devices` — the set actually LOADED — never `supported_devices`, which is only what the binary *could* load and is true on every GPU deployment; TTL-cached the same way as `sidecar_ready`/
 `sidecar_healthy` — one cache, not a second one per capability). Implemented for the
 embedding-only path only: `services/native_embedding_client.py`'s `_embed_window` routes to
@@ -265,12 +272,12 @@ Docs: `docs-site/docs/features/boundary-correction.md`,
 - `EngineConfig` is deliberately **DB-free** — settings are resolved and passed in, not read
   from the DB inside the engine. Keep it that way so the engine stays unit-testable.
 - **Overlapped diarization requires a REACHABLE sidecar**, not merely a configured one.
-  `engine/stages._overlap_diarization_enabled` gates on `diarizer_native.sidecar_ready()`
+  `engine/stages._overlap_diarization_enabled` gates on `diar_sidecar_status.sidecar_ready()`
   (`DIAR_OVERLAP=0` still forces the sequential order). This matters because when overlap is on,
   `_collect_diarization` skips `_make_room_for_local_diarizer` — the only `release_transcriber()`
   call site **on the combined-stage path** — so keying it off configuration alone left Whisper
   and the in-process PyAnnote fallback co-resident on one GPU (#665, fixed). The probe is
-  TTL-cached in `diarizer_native.py`; the cache is deliberately short so an admin toggle and a
+  TTL-cached in `diar_sidecar_status.py`; the cache is deliberately short so an admin toggle and a
   recovered sidecar are still picked up without a worker restart.
   ⚠️ This bullet said **"the only `release_transcriber()` call site"** until it was checked
   (2026-09-10): there are **two** in `engine/stages.py` — `_make_room_for_local_diarizer`, and

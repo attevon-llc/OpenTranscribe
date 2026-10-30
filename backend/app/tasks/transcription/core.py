@@ -37,7 +37,7 @@ from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.services.asr.errors import ASRRateLimitedError
 from app.transcription import host_memory_admission
-from app.transcription.diarizer_native import DiarSidecarUnavailableError
+from app.transcription.diar_sidecar_status import DiarSidecarUnavailableError
 from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
 

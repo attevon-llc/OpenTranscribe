@@ -34,10 +34,10 @@ from collections.abc import Iterator
 import pytest
 
 from app.services.native_embedding_client import native_embedding_available
+from app.transcription.diar_sidecar_status import reset_readiness_cache
+from app.transcription.diar_sidecar_status import sidecar_healthy
+from app.transcription.diar_sidecar_status import sidecar_ready
 from app.transcription.diarizer_native import NativeSpeakerDiarizer
-from app.transcription.diarizer_native import reset_readiness_cache
-from app.transcription.diarizer_native import sidecar_healthy
-from app.transcription.diarizer_native import sidecar_ready
 
 #: All diar-native tests that stand up a real HTTP server, or drive diarizer_native's
 #: module-level state, run on ONE xdist worker.
@@ -291,14 +291,14 @@ class TestDeviceRoutingGate:
     """
 
     def test_probe_true_when_cpu_is_actually_loaded(self):
-        from app.transcription.diarizer_native import sidecar_supports_cpu_device
+        from app.transcription.diar_sidecar_status import sidecar_supports_cpu_device
 
         with _sidecar(readyz=200, health_body={**_READY, "devices": ["cpu"]}) as url:
             assert sidecar_supports_cpu_device(url) is True
 
     def test_probe_false_when_cpu_is_only_a_capability_not_loaded(self):
         """The regression: capability says cpu, the running server serves only cuda."""
-        from app.transcription.diarizer_native import sidecar_supports_cpu_device
+        from app.transcription.diar_sidecar_status import sidecar_supports_cpu_device
 
         body = {**_READY, "devices": ["cuda"], "supported_devices": ["cuda", "cpu"]}
         with _sidecar(readyz=200, health_body=body) as url:
@@ -309,13 +309,13 @@ class TestDeviceRoutingGate:
 
     def test_probe_false_when_the_field_is_absent(self):
         """The pre-#679 shape: /healthz answers, but says nothing about devices."""
-        from app.transcription.diarizer_native import sidecar_supports_cpu_device
+        from app.transcription.diar_sidecar_status import sidecar_supports_cpu_device
 
         with _sidecar(readyz=200, health_body=_READY) as url:
             assert sidecar_supports_cpu_device(url) is False
 
     def test_probe_true_when_both_devices_are_loaded(self):
-        from app.transcription.diarizer_native import sidecar_supports_cpu_device
+        from app.transcription.diar_sidecar_status import sidecar_supports_cpu_device
 
         with _sidecar(readyz=200, health_body={**_READY, "devices": ["cuda", "cpu"]}) as url:
             assert sidecar_supports_cpu_device(url) is True

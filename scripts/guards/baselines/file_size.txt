@@ -11,7 +11,6 @@ backend/app/api/endpoints/files/reprocess.py	772	oversize: split by concern plan
 backend/app/api/endpoints/files/upload.py	815	oversize: split by concern planned
 backend/app/api/endpoints/files/url_processing.py	862	oversize: split by concern planned
 backend/app/api/endpoints/media_collections.py	1848	oversize: split by concern planned
-backend/app/api/endpoints/prompts.py	921	oversize: split by concern planned
 backend/app/api/endpoints/speaker_profiles.py	1161	oversize: split by concern planned
 backend/app/api/endpoints/speaker_update.py	752	oversize: split by concern planned
 backend/app/api/endpoints/tasks.py	1091	oversize: split by concern planned

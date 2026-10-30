@@ -82,7 +82,10 @@ orm_call_in_api::backend/app/api/endpoints/org_admin.py	2	layering: removal plan
 orm_call_in_api::backend/app/api/endpoints/org_admin_holds.py	8	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/org_admin_takedown.py	3	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/privacy.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/prompts.py	24	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/prompts.py	9	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/prompts_access.py	3	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/prompts_active.py	7	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/prompts_sharing.py	5	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/redaction_settings.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/scim/groups.py	5	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/scim/users.py	3	layering: removal planned

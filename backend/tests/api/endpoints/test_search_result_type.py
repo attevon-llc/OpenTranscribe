@@ -820,7 +820,7 @@ class TestSummaryLegHonoursTheFileMetadataFilters:
         """#1188: the summary plane carries its own copy of the speaker roster, so a rename
         that only rewrote the chunk and digest planes left the speaker filter matching the OLD
         name. Runs the real rename-propagation task and then searches."""
-        from app.tasks.rename_propagation_task import regenerate_rename_digests
+        from app.tasks.rename_digest_task import regenerate_rename_digests
 
         file = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
         speaker = _add_speaker(

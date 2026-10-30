@@ -608,7 +608,7 @@ class TestSpeakerUpdateDisplayNameLeak:
 
 class TestRenamePropagationMultiFile:
     def _run(self, db, file_uuids, monkeypatch):
-        from app.tasks import rename_propagation_task as rpt
+        from app.tasks import rename_digest_task as rpt
 
         monkeypatch.setattr(
             "app.tasks.search_indexing_task.extract_file_index_metadata",

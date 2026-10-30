@@ -54,6 +54,7 @@ _GUARDED_FILES = (
     "tasks/reindex_index_ops.py",
     "tasks/reindex_run_state.py",
     "tasks/reindex_task.py",
+    "tasks/rename_digest_task.py",
     "tasks/rename_propagation_task.py",
     "tasks/embedding_migration_v4.py",
     "tasks/embedding_migration_v4_finalize.py",

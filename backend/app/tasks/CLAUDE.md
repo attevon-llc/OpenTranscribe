@@ -73,7 +73,7 @@ indexing → WebSocket notification.
   in a hook needs a tight timeout.
 - `speaker_tasks.py` — a **re-export shim, NOT dead code**. Keeps legacy task-name routing
   alive; must stay in `celery_app`'s `include=` list.
-- `rename_propagation_task.py` — `propagate_speaker_rename` / `propagate_title_rename`
+- `rename_propagation_task.py` — `propagate_speaker_rename` / `propagate_title_rename` (+ `rename_digest_task.py`: `regenerate_rename_digests`)
   (**cpu** queue, issue #405). Chunk docs snapshot the speaker display name and the file title
   at index time; renames used to touch only the speaker and full-document indices, so chat's
   speaker scope (an exact `terms` match on the CURRENT name) silently lost every pre-rename

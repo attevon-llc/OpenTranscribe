@@ -49,7 +49,6 @@ backend/app/services/topic_extraction_service.py	771	oversize: split by concern 
 backend/app/services/video_processing_service.py	1111	oversize: split by concern planned
 backend/app/tasks/CLAUDE.md	508	oversize: split by concern planned
 backend/app/tasks/rediarize_task.py	707	oversize: split by concern planned
-backend/app/tasks/rename_propagation_task.py	836	oversize: split by concern planned
 backend/app/tasks/search_indexing_task.py	865	oversize: split by concern planned
 backend/app/tasks/speaker_attribute_task.py	766	oversize: split by concern planned
 backend/app/tasks/speaker_embedding_task.py	788	oversize: split by concern planned

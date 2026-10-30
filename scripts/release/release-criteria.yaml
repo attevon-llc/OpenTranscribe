@@ -353,6 +353,14 @@ stages:
           components with a host leg is COULD NOT CHECK, never a pass.
         severity: blocking
 
+      - id: leg-image-ids-recorded
+        description: >-
+          Every declared leg's local image ID (and architecture) was read back and written to
+          .release/<version>/legs.tsv. This is the record 80-publish.sh checks before it
+          pushes, so that the bytes published are the bytes built, scanned and rehearsed.
+          An unreadable ID or a wrong architecture is a failure; zero legs is COULD NOT CHECK.
+        severity: blocking
+
   # ─── Tag. Reaches outside the repo. ─────────────────────────────────────
   tag:
     description: Annotate and push the release tag
@@ -400,14 +408,32 @@ stages:
 
   # ─── Publish. The first stage that writes to Docker Hub. ────────────────
   publish:
-    description: Push every leg, assemble each index, and verify the published manifests
+    description: Push the locally built legs unchanged, assemble each index from them, and verify the published manifests
     criteria:
       - id: remote-builder-available
         description: The multi-arch buildx builder exists and no node reports an error
         severity: blocking
 
+      - id: built-legs-match-ledger
+        description: >-
+          Every declared leg is present in the build stage's record and its local image ID
+          still equals the one recorded at build time. Checked for ALL legs before ANY push,
+          so a mismatch publishes nothing. Missing record is COULD NOT CHECK.
+        severity: blocking
+
       - id: images-pushed
-        description: docker-build-push.sh all (BUILD_MODE=push) succeeded
+        description: Every built leg was pushed with `docker push` (no rebuild) and each index assembled from those pushed digests
+        severity: blocking
+
+      - id: registry-digest-matches-pushed
+        description: Each leg tag in the registry resolves to the digest `docker push` reported, and the vX.Y.Z index lists exactly that digest for the leg's platform
+        severity: blocking
+
+      - id: registry-leg-matches-built-image
+        description: >-
+          Each pushed leg's config digest in the registry equals the local image ID recorded
+          at build time (its manifest digest also qualifies, for a containerd image store) —
+          the content identity that survives a push on a classic-store daemon.
         severity: blocking
 
       - id: leg-declares-its-platform

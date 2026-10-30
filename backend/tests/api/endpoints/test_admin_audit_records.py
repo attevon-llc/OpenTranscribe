@@ -447,10 +447,10 @@ def test_admin_session_termination_audits_the_acting_admin(
     client, admin_token_headers, admin_user, normal_user, db_session, monkeypatch
 ):
     """The endpoint's own record names WHO forced the logout, and from where."""
-    from app.api.endpoints import admin as admin_module
+    from app.api.endpoints import admin_accounts
 
     _issue_a_session(db_session, normal_user)
-    events = _collect(monkeypatch, admin_module)
+    events = _collect(monkeypatch, admin_accounts)
 
     response = client.delete(
         f"/api/admin/users/{normal_user.uuid}/sessions", headers=admin_token_headers
@@ -488,11 +488,11 @@ def test_mfa_reset_of_an_enrolled_account_is_recorded_as_a_disable(
     working case was the one recorded wrongly. Hence the state assertion below: a
     record without a real state change is what this endpoint has always produced.
     """
-    from app.api.endpoints import admin as admin_module
+    from app.api.endpoints import admin_identity
     from app.models.user_mfa import UserMFA
 
     _enrol_mfa(db_session, normal_user)
-    events = _collect(monkeypatch, admin_module)
+    events = _collect(monkeypatch, admin_identity)
 
     response = client.post(
         f"/api/admin/users/{normal_user.uuid}/mfa/reset", headers=super_admin_token_headers
@@ -527,9 +527,9 @@ def test_mfa_reset_of_an_unenrolled_account_is_not_recorded_as_a_disable(
     itself worth seeing); only the outcome changes. Dropping the record entirely
     would trade one wrong answer for a blind spot.
     """
-    from app.api.endpoints import admin as admin_module
+    from app.api.endpoints import admin_identity
 
-    events = _collect(monkeypatch, admin_module)
+    events = _collect(monkeypatch, admin_identity)
 
     response = client.post(
         f"/api/admin/users/{normal_user.uuid}/mfa/reset", headers=super_admin_token_headers
@@ -583,11 +583,11 @@ def test_admin_account_routes_record_where_the_request_came_from(
     A test asserting only that the event fired passes with both fields ``null``,
     which is the state all four were in.
     """
-    from app.api.endpoints import admin as admin_module
+    from app.api.endpoints import admin_accounts
 
     headers = admin_token_headers if tier == "admin" else super_admin_token_headers
     headers = {**headers, "User-Agent": "ot-audit-probe/1.0"}
-    events = _collect(monkeypatch, admin_module)
+    events = _collect(monkeypatch, admin_accounts)
 
     response = client.request(method, template.format(uuid=normal_user.uuid), headers=headers)
     assert response.status_code == status.HTTP_200_OK, response.text

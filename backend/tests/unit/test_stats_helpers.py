@@ -1009,9 +1009,9 @@ class TestFormatBytes:
         assert format_bytes(byte_count) == expected
 
     def test_admin_endpoint_module_imports_the_same_function(self):
-        from app.api.endpoints import admin as admin_module
+        from app.api.endpoints import admin_system_metrics
 
-        assert admin_module.format_bytes is format_bytes
+        assert admin_system_metrics.format_bytes is format_bytes
 
     def test_tasks_utility_module_imports_the_same_function(self):
         from app.tasks import utility as utility_module

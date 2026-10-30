@@ -176,11 +176,16 @@ def routes():
 
 
 class TestSingleDefinitionOfTheSuperAdminGate:
-    def test_admin_module_reexports_the_canonical_dependency(self):
-        from app.api.endpoints import admin
+    def test_admin_modules_use_the_canonical_dependency_without_an_alias(self):
+        from app.api.endpoints import admin_accounts
+        from app.api.endpoints import admin_audit_logs
+        from app.api.endpoints import admin_identity
+        from app.api.endpoints import admin_maintenance
         from app.api.endpoints.auth.dependencies import get_current_active_superuser
 
-        assert admin.get_current_super_admin_user is get_current_active_superuser
+        for module in (admin_accounts, admin_audit_logs, admin_identity, admin_maintenance):
+            assert module.get_current_active_superuser is get_current_active_superuser
+            assert not hasattr(module, "get_current_super_admin_user")
 
     def test_auth_config_module_reexports_the_canonical_dependency(self):
         from app.api.endpoints import auth_config

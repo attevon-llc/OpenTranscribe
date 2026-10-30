@@ -125,11 +125,11 @@ ALLOWLIST: dict[str, str] = {
         "P: a grant is usable only while its grantee still holds the platform role, so a "
         "demoted admin's grant dies with the role; it narrows access, it never widens it"
     ),
-    "api/endpoints/admin.py::quarantine_media_file": (
+    "api/endpoints/admin_quarantine.py::quarantine_media_file": (
         "P: abuse/DMCA takedown is an admin-gated platform operation; it flips a quarantine "
         "flag on the named file and returns no tenant content (plan 3.3)"
     ),
-    "api/endpoints/admin.py::release_media_file": (
+    "api/endpoints/admin_quarantine.py::release_media_file": (
         "P: the inverse of the takedown above, same admin gate, state change only, no content "
         "returned"
     ),

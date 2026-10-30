@@ -84,7 +84,7 @@ def scan_tree() -> set[str]:
 
 #: ``key -> reason``; see the module docstring for the classes.
 ALLOWLIST: dict[str, str] = {
-    "api/endpoints/admin.py::_delete_user_owned_records": (
+    "services/user_deletion_service.py::_delete_user_owned_records": (
         "W: account deletion removes the user's personal collections and de-attributes the "
         "organization ones; it deletes rows, it names no collection to anyone"
     ),

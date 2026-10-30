@@ -558,12 +558,12 @@ def _delete_throwaway_user(engine: Any, user_id: int) -> None:
     """Delete a throwaway account the way ``DELETE /api/users/{uuid}`` does, if it exists."""
     from sqlalchemy.orm import Session
 
-    from app.api.endpoints.admin import _delete_user_media_files
-    from app.api.endpoints.admin import _delete_user_owned_records
-    from app.api.endpoints.admin import _delete_user_speakers
     from app.models.user import User
     from app.services.file_cleanup_service import load_account_purge_plans
     from app.services.file_cleanup_service import purge_account_external_copies
+    from app.services.user_deletion_service import _delete_user_media_files
+    from app.services.user_deletion_service import _delete_user_owned_records
+    from app.services.user_deletion_service import _delete_user_speakers
 
     with Session(engine) as db:
         user = db.query(User).filter(User.id == user_id).one_or_none()

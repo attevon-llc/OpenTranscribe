@@ -20,6 +20,7 @@ from fastapi import status
 from sqlalchemy import select
 
 from app.core.enums import FileStatus
+from app.core.exceptions import ConflictError
 from app.models.content_hold import ContentHold
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
@@ -231,13 +232,13 @@ def test_cancelling_a_pending_upload_is_refused_while_held(client, gov, monkeypa
 
 
 def test_deleting_an_account_that_owns_an_org_held_file_is_refused(gov):
-    from app.api.endpoints.admin import _assert_no_held_files
+    from app.services.user_deletion_service import _assert_no_held_files
 
     f = gov.file(gov.alice)
     gov.file(gov.alice)  # an unheld sibling: only the held one counts
     hold = _hold(gov, f)
 
-    with pytest.raises(HTTPException) as refused:
+    with pytest.raises(ConflictError) as refused:
         _assert_no_held_files(gov.db, gov.alice.id)
     detail = refused.value.detail
     assert isinstance(detail, dict)

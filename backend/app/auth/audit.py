@@ -88,7 +88,7 @@ class AuditEventType(StrEnum):
     AUTH_ACCOUNT_UNLOCK = "auth.account.unlock"
     #: Admin clearing the progressive lockout counter (issue #570) — distinct from
     #: AUTH_ACCOUNT_UNLOCK, which also reactivates a disabled account. See
-    #: `api/endpoints/admin.py::admin_reset_lockout_counter`.
+    #: `api/endpoints/admin_accounts.py::admin_reset_lockout_counter`.
     AUTH_LOCKOUT_COUNTER_RESET = "auth.lockout.counter_reset"  # noqa: S105 # nosec B105
     AUTH_ACCOUNT_DISABLED = "auth.account.disabled"
     AUTH_ACCOUNT_EXPIRED = "auth.account.expired"

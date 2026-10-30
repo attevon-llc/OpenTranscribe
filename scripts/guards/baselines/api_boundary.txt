@@ -19,7 +19,13 @@ fastapi_import::backend/app/tasks/transcription/hooks.py	1	layering: removal pla
 fastapi_import::backend/app/utils/client_ip.py	1	layering: removal planned
 fastapi_import::backend/app/utils/pagination.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/deps_context.py	2	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/admin.py	52	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/admin.py	1	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/admin_accounts.py	9	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/admin_audit_logs.py	2	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/admin_identity.py	7	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/admin_maintenance.py	2	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/admin_quarantine.py	2	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/admin_settings.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/admin_approvals.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/admin_group_mappings.py	4	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/admin_timing.py	3	layering: removal planned

@@ -86,9 +86,9 @@ DB_CASCADE_VIA_SIBLING = "<db-cascade-via-sibling-fk>"
 ORM_CASCADE = "<orm-delete-orphan-on-instance-delete>"
 _SENTINELS = frozenset({DB_SET_NULL, DB_CASCADE_VIA_SIBLING, ORM_CASCADE})
 
-_ADMIN_OWNED = "app.api.endpoints.admin._delete_user_owned_records"
-_ADMIN_SPEAKERS = "app.api.endpoints.admin._delete_user_speakers"
-_ADMIN_FILES = "app.api.endpoints.admin._delete_user_media_files"
+_ADMIN_OWNED = "app.services.user_deletion_service._delete_user_owned_records"
+_ADMIN_SPEAKERS = "app.services.user_deletion_service._delete_user_speakers"
+_ADMIN_FILES = "app.services.user_deletion_service._delete_user_media_files"
 _GDPR_ROWS = "app.services.gdpr_erasure_service._delete_owner_scoped_rows"
 _GDPR_FILES = "app.services.gdpr_erasure_service._purge_files"
 

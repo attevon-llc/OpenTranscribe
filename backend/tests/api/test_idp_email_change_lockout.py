@@ -271,10 +271,12 @@ def test_the_remedy_is_audited_naming_its_target(
     client, super_admin_token_headers, db_session, linked_user, monkeypatch
 ):
     """Issue #443's invariant: ``user_id`` is the ACTOR, the subject is a top-level target."""
-    from app.api.endpoints import admin as admin_module
+    from app.api.endpoints import admin_identity
 
     captured: list[dict] = []
-    monkeypatch.setattr(admin_module.audit_logger, "log", lambda **kwargs: captured.append(kwargs))
+    monkeypatch.setattr(
+        admin_identity.audit_logger, "log", lambda **kwargs: captured.append(kwargs)
+    )
 
     new_email = f"alice.renamed-{uuid_pkg.uuid4().hex[:8]}@example.com"
     response = client.put(
@@ -313,10 +315,12 @@ def test_the_remedy_refuses_a_super_admin_target(
 ):
     """Matching ``link-identity``: a super_admin is local-only and is the break-glass
     account for exactly the IdP that might be failing."""
-    from app.api.endpoints import admin as admin_module
+    from app.api.endpoints import admin_identity
 
     captured: list[dict] = []
-    monkeypatch.setattr(admin_module.audit_logger, "log", lambda **kwargs: captured.append(kwargs))
+    monkeypatch.setattr(
+        admin_identity.audit_logger, "log", lambda **kwargs: captured.append(kwargs)
+    )
 
     response = client.put(
         _REMEDY.format(uuid=super_admin_user.uuid),
@@ -344,10 +348,12 @@ def test_the_remedy_refuses_an_account_with_no_external_identity(
     and not be silently subsumed by the newer ``auth_type == local`` check below it, which
     is why the audited ``action`` is asserted rather than just the status code.
     """
-    from app.api.endpoints import admin as admin_module
+    from app.api.endpoints import admin_identity
 
     captured: list[dict] = []
-    monkeypatch.setattr(admin_module.audit_logger, "log", lambda **kwargs: captured.append(kwargs))
+    monkeypatch.setattr(
+        admin_identity.audit_logger, "log", lambda **kwargs: captured.append(kwargs)
+    )
 
     response = client.put(
         _REMEDY.format(uuid=normal_user.uuid),
@@ -396,13 +402,15 @@ def test_the_remedy_refuses_a_local_password_account_carrying_an_identifier(
 def test_the_local_account_refusal_is_audited(
     client, super_admin_token_headers, db_session, normal_user, monkeypatch
 ):
-    from app.api.endpoints import admin as admin_module
+    from app.api.endpoints import admin_identity
 
     normal_user.external_id = f"scim-{uuid_pkg.uuid4().hex[:8]}"
     db_session.commit()
 
     captured: list[dict] = []
-    monkeypatch.setattr(admin_module.audit_logger, "log", lambda **kwargs: captured.append(kwargs))
+    monkeypatch.setattr(
+        admin_identity.audit_logger, "log", lambda **kwargs: captured.append(kwargs)
+    )
 
     response = client.put(
         _REMEDY.format(uuid=normal_user.uuid),

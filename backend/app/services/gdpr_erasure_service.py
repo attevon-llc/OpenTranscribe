@@ -488,7 +488,7 @@ def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]
     the summary, i.e. an Art. 17 request that silently did not complete.
 
     **This list is hand-maintained and its twin is
-    ``api/endpoints/admin._delete_user_owned_records``.** The two are independent
+    ``services/user_deletion_service._delete_user_owned_records``.** The two are independent
     and nothing in the application compares them;
     ``tests/unit/test_user_deletion_fk_coverage.py`` derives the FKs from the live
     schema and requires both paths to account for each one.

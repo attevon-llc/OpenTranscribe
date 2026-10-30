@@ -4,11 +4,17 @@ from fastapi import APIRouter
 
 from . import websockets
 from .endpoints import admin
+from .endpoints import admin_accounts
 from .endpoints import admin_approvals
 from .endpoints import admin_audit_content_access
+from .endpoints import admin_audit_logs
 from .endpoints import admin_group_mappings
 from .endpoints import admin_hf_token
+from .endpoints import admin_identity
+from .endpoints import admin_maintenance
+from .endpoints import admin_quarantine
 from .endpoints import admin_scim_tokens
+from .endpoints import admin_settings
 from .endpoints import admin_storage_integrity
 from .endpoints import admin_takedown_notices
 from .endpoints import admin_timing
@@ -171,7 +177,15 @@ include_router_with_consistency(
     capability="watch_sources",
 )
 include_router_with_consistency(tasks.router, prefix="/tasks", tags=["tasks"])
+# The admin.py monolith was split by concern. These routers keep its original registration
+# order (stats/users, settings, accounts, identity, audit, maintenance, quarantine).
 include_router_with_consistency(admin.router, prefix="/admin", tags=["admin"])
+include_router_with_consistency(admin_settings.router, prefix="/admin", tags=["admin"])
+include_router_with_consistency(admin_accounts.router, prefix="/admin", tags=["admin"])
+include_router_with_consistency(admin_identity.router, prefix="/admin", tags=["admin"])
+include_router_with_consistency(admin_audit_logs.router, prefix="/admin", tags=["admin"])
+include_router_with_consistency(admin_maintenance.router, prefix="/admin", tags=["admin"])
+include_router_with_consistency(admin_quarantine.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(admin_timing.router, prefix="/admin", tags=["admin-timing"])
 include_router_with_consistency(
     admin_storage_integrity.router, prefix="/admin", tags=["admin-storage-integrity"]

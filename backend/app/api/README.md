@@ -28,7 +28,8 @@ api/
 │   ├── files/             # File package (see below)
 │   ├── scim/              # SCIM 2.0 provisioning (mounted at /scim/v2, outside /api)
 │   ├── tags/              # Tag CRUD, discovery, operations, sharing
-│   ├── admin*.py          # Platform admin: users/stats (admin.py), approvals, SCIM tokens, HF token,
+│   ├── admin*.py          # Platform admin: users/stats (admin.py), settings, accounts, identity, audit logs, maintenance,
+│   │                      #   quarantine (admin_*.py split of the old admin.py), approvals, SCIM tokens, HF token,
 │   │                      #   group mappings, storage integrity, takedown notices, timing, content-access audit
 │   ├── org_admin*.py      # Organization admin: audit logs, legal holds, takedown/quarantine, GDPR erase
 │   ├── support_access.py  # Support-access grants

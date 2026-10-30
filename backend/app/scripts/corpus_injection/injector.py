@@ -291,7 +291,7 @@ def dispatch_redaction(
     ``tasks/transcription/enrich._dispatch_redaction`` once a file completes.
     Injection is the only writer that produces a COMPLETED file with a transcript
     *without* entering that pipeline, so nothing did it here — and the consequence is
-    not cosmetic. ``api/endpoints/files/crud._redaction_pending`` withholds a
+    not cosmetic. ``api/endpoints/files/redaction_gate._redaction_pending`` withholds a
     transcript whose ``redaction_status`` is anything but ``done``/``failed``, so for
     an owner with redaction enabled every injected meeting reads back as
     ``transcript_segments: []`` with ``redaction_pending: true`` until it is opened

@@ -88,7 +88,7 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   to a provider resolves its config through `resolve_llm_masking(db, media_file)` — summarization,
   speaker identification and topic extraction (chat has its own, see below). Do not call
   `resolve_effective_config` directly from a new LLM path; see the gotcha below for why.
-- Reveal via `?redact=false` → `cfg.reveal_categories(...)` in `api/endpoints/files/crud.py`
+- Reveal via `?redact=false` → `cfg.reveal_categories(...)` in `api/endpoints/files/redaction_gate.py`
   (`_resolve_redaction_for_request`) and `files/subtitles.py`; both audited as
   `transcript.view_unredacted` through the single `reveal_audit.audit_unredacted_reveal` (the export
   half was missing until #85). **Admin-forced categories never reveal.**

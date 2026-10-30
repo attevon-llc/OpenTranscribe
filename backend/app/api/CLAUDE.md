@@ -97,7 +97,7 @@ reason there.
 The detector keys on path literals in `frontend/src`, which gives it two blind spots — check
 both before believing it:
 
-- **Server-provided URLs.** `set_file_urls` (`files/crud.py`) stamps `thumbnail_url` onto file
+- **Server-provided URLs.** `set_file_urls` (`files/detail_response.py`) stamps `thumbnail_url` onto file
   responses, so the SPA consumes the field and never builds `/files/{uuid}/thumbnail`. That
   route is normally a presigned MinIO URL but falls back to the API path under `SKIP_S3` and on
   presign failure — genuinely reachable, invisible to the scan.
@@ -395,7 +395,7 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   `require_voiceprints` and answers 409 `{code: "voiceprints_disabled", locked_by}`; list routes keep their response models and
   return empty. Per-record decisions take the scope from the record's row (file or profile owner and organization), not from
   `ctx`; the cluster actions act on the caller's own active scope (`current_user`, `ctx.org_id`).
-  A response that EMBEDS a speaker is shaped too: `files/crud.redact_response_speakers` (file detail and
+  A response that EMBEDS a speaker is shaped too: `files/transcript_view.redact_response_speakers` (file detail and
   `GET /files/{uuid}/segments`) and `redact_speaker_rows` in the segment text-edit and speaker-reassign responses; the stored
   `attribute_confidence` keys `gender`, `alignment` and `alignment_hint` are withheld together. A NEW route that returns a
   `Speaker` (directly or on a segment) must do the same, after its last commit. `GET|PUT /user-settings/speaker-attributes`
@@ -531,7 +531,7 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   `SubtitleService` masks with the segment's **cached** spans (`seg.redactions or []`), so on a
   file whose detection scan never ran, is queued, or is mid-flight there is nothing to apply and
   the export writes the **raw transcript to disk** — with nothing in the file to say the scan was
-  incomplete. The endpoint therefore calls the same `_redaction_pending` (`files/crud.py`) the
+  incomplete. The endpoint therefore calls the same `_redaction_pending` (`files/redaction_gate.py`) the
   detail and segments endpoints use, and answers **409** when it returns True. Not 503: that code
   is already taken by `_resolve_subtitle_redaction`'s "the policy could not be resolved", and the
   two are different problems (the server is fine; the *file* is not ready). Deliberately not an

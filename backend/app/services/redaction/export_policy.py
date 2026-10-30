@@ -67,7 +67,7 @@ class ExportRedactionNotReadyError(Exception):
 def export_masking_is_pending(cfg: EffectiveRedactionConfig | None, status: str | None) -> bool:
     """Whether an export must be withheld until the file's detection scan finishes.
 
-    The status rule ``api/endpoints/files/crud.py::_redaction_pending`` applies, minus
+    The status rule ``api/endpoints/files/redaction_gate.py::_redaction_pending`` applies, minus
     its lazy re-dispatch: ``done`` and ``failed`` never withhold (``failed`` means the
     scan could not run, and trapping the user forever is worse than the read the page
     already allows), anything else does. A worker deliberately does **not** dispatch a

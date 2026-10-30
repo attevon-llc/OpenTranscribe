@@ -341,7 +341,7 @@ def test_presigned_urls_are_capped_under_a_grant(support_world):
 
 def test_redaction_is_resolved_for_the_file_owner_under_a_grant(support_world):
     """Support sees what the tenant's policy shows, not the staff member's looser one."""
-    from app.api.endpoints.files.crud import _resolve_redaction_for_request
+    from app.api.endpoints.files.redaction_gate import _resolve_redaction_for_request
 
     w = support_world
     grant = SupportGrantView(

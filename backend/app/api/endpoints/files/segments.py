@@ -24,13 +24,13 @@ from app.services.request_context import RequestContext
 from app.services.speaker_provenance_view import ProvenanceViewer
 from app.services.speaker_status_service import SpeakerStatusService
 
-from .crud import _build_grouped_segments
-from .crud import _format_transcript_segments
-from .crud import _get_transcript_segments
-from .crud import _redaction_pending
-from .crud import _resolve_redaction_for_request
 from .crud import get_media_file_by_uuid
-from .crud import redact_response_speakers
+from .redaction_gate import _redaction_pending
+from .redaction_gate import _resolve_redaction_for_request
+from .transcript_view import _build_grouped_segments
+from .transcript_view import _format_transcript_segments
+from .transcript_view import _get_transcript_segments
+from .transcript_view import redact_response_speakers
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

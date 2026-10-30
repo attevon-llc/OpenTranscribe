@@ -239,7 +239,7 @@ speaker is masked, not a first name on its own.
 While gender is off for a recording's owner and organization, a response never carries the
 inferred value, wherever it embeds a speaker. A segment embeds its full speaker, so the speaker
 list and each segment's speaker are redacted together, by one function
-(`redact_response_speakers` in `backend/app/api/endpoints/files/crud.py`). It covers:
+(`redact_response_speakers` in `backend/app/api/endpoints/files/transcript_view.py`). It covers:
 
 - the file detail (`GET /files/{file_uuid}`),
 - `GET /files/{file_uuid}/segments`,

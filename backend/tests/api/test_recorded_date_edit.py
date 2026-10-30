@@ -200,7 +200,7 @@ def test_the_gallery_list_carries_the_provenance_too(
     """The list is the surface a user SCANS, so it is where an unattributed date is worst.
 
     The detail page and the list are built by two different functions
-    (``crud.get_media_file_detail`` and ``FormattingService.format_media_file_response``);
+    (``detail_response.get_media_file_detail`` and ``FormattingService.format_media_file_response``);
     wiring one and not the other is the realistic mistake, and it would leave every
     gallery date unattributed while the detail page looked correct.
     """

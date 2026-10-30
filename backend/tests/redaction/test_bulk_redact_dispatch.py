@@ -13,7 +13,7 @@ raised on at ``pending`` with nothing queued.
 **That state is not recoverable by anything the product does on its own**, which is
 what makes it worse here than on a legacy unscanned file:
 
-* ``crud._redaction_pending`` re-dispatches only from ``NULL``. ``pending`` is not
+* ``redaction_gate._redaction_pending`` re-dispatches only from ``NULL``. ``pending`` is not
   ``NULL``, so reloading the page does nothing.
 * ``RedactionService._mark_redaction_stale`` returns early when the status is already
   ``pending``/``processing``, so editing a segment does not re-queue it either.
@@ -247,7 +247,7 @@ def test_a_failed_publish_leaves_a_never_scanned_file_re_dispatchable(
 ):
     """Restoring the *previous* status, not some fixed value, is what buys recovery.
 
-    ``NULL`` is the one status ``crud._redaction_pending`` dispatches from, so a file
+    ``NULL`` is the one status ``redaction_gate._redaction_pending`` dispatches from, so a file
     that was unscanned before the click has to be unscanned after it — then the next
     ordinary read queues the scan for free.
     """
@@ -262,7 +262,7 @@ def test_a_failed_publish_leaves_a_never_scanned_file_re_dispatchable(
     )
 
     broker.reachable = True
-    from app.api.endpoints.files.crud import _redaction_pending
+    from app.api.endpoints.files.redaction_gate import _redaction_pending
     from app.services.redaction.config import resolve_effective_config
 
     cfg = resolve_effective_config(db_session, redacting_user.id)
@@ -336,7 +336,7 @@ def test_the_withdrawal_does_not_overwrite_a_status_another_writer_moved_on(
 def test_the_claim_and_withdraw_protocol_has_exactly_one_implementation():
     """Two copies of this recovery protocol is precisely how the bug shipped.
 
-    ``crud._lazy_dispatch_redaction`` was fixed and ``management._handle_redact_action``
+    ``redaction_gate._lazy_dispatch_redaction`` was fixed and ``management._handle_redact_action``
     — the identical claim-then-publish, twenty lines of a different module away — was
     not. This pins the shared helper as the only way ``management`` may touch either
     the status or the task, so a future re-fork fails here instead of in production.
@@ -349,7 +349,7 @@ def test_the_claim_and_withdraw_protocol_has_exactly_one_implementation():
 
     assert "redaction_detect_task" not in source, (
         "management.py publishes the redaction scan itself again — it must go through "
-        "crud.claim_and_dispatch_redaction_scan, which owns the withdrawal on failure"
+        "redaction_gate.claim_and_dispatch_redaction_scan, which owns the withdrawal on failure"
     )
     assert "REDACTION_STATUS_PENDING" not in source, (
         "management.py writes the pending claim itself again — the claim and its "

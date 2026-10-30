@@ -10,7 +10,7 @@ This is the sixth instance of that shape in this codebase, and the fifth read
 surface to be gated. The other two transcript read paths already refuse:
 
 * ``GET /files/{uuid}`` and ``GET /files/{uuid}/segments`` withhold the segments
-  via ``_redaction_pending`` (``files/crud.py``);
+  via ``_redaction_pending`` (``files/redaction_gate.py``);
 * chat's cached-span masker returns ``None`` for any non-``done`` status and the
   caller falls through to inline fail-closed masking.
 

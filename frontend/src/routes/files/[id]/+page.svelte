@@ -204,7 +204,7 @@
   let aiTagSuggestions: TagSuggestion[] = [];
   let aiCollectionSuggestions: CollectionSuggestion[] = [];
 
-  // Caller's permission on this file. Backend convention (files/crud.py:778):
+  // Caller's permission on this file. Backend convention (files/detail_response.py):
   // `null` = you are the owner. `undefined` = not fetched yet / fetch failed —
   // never treated as owner, so every gate below fails closed until load.
   let myPermission: string | null | undefined = undefined;

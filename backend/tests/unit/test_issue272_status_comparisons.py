@@ -9,7 +9,7 @@ members; these tests pin the now-active behavior.
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
-from app.api.endpoints.files.crud import _get_or_compute_analytics
+from app.api.endpoints.files.detail_response import _get_or_compute_analytics
 from app.core.enums import FileStatus
 
 

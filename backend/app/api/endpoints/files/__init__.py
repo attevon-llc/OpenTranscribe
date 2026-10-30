@@ -77,15 +77,15 @@ from . import complete_upload
 from . import multipart
 from . import prepare_upload
 from .captions import router as captions_router
-from .crud import _get_or_compute_analytics
 from .crud import delete_media_file
 from .crud import get_media_file_by_id
 from .crud import get_media_file_by_uuid
-from .crud import get_media_file_detail
 from .crud import get_stream_url_info
-from .crud import set_file_urls
 from .crud import update_media_file
 from .crud import update_single_transcript_segment
+from .detail_response import _get_or_compute_analytics
+from .detail_response import get_media_file_detail
+from .detail_response import set_file_urls
 from .filtering import LIST_SPEAKER_COLUMNS
 from .filtering import apply_all_filters
 from .filtering import get_accessible_owners

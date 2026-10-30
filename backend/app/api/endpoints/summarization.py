@@ -444,7 +444,7 @@ def _redacted_summary(
     Raises:
         HTTPException: 503 when the policy cannot be resolved or a detector feeding
             an enabled category could not run. Fail closed — the same disposition
-            ``files/crud.py`` takes for a transcript it cannot mask.
+            ``files/redaction_gate.py`` takes for a transcript it cannot mask.
     """
     from app.services.redaction.config import resolve_effective_config
     from app.services.redaction.summary_redaction import SummaryMaskingUnavailableError

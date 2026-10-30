@@ -43,7 +43,7 @@ from app.services.subtitle_service import SubtitleService
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
 from app.utils.content_disposition import attachment_header
 
-from .crud import _redaction_pending
+from .redaction_gate import _redaction_pending
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

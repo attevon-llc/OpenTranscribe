@@ -292,7 +292,7 @@ def test_file_detail_lists_the_orgs_collections(client, org_world):
     w.db.add(CollectionMember(collection_id=org_coll.id, media_file_id=org_file.id))
     w.db.commit()
 
-    from app.api.endpoints.files.crud import get_file_collections
+    from app.api.endpoints.files.detail_response import get_file_collections
 
     names = {c["name"] for c in get_file_collections(w.db, org_file.id, w.bob.id, w.org_a.id)}
     assert names == {org_coll.name}

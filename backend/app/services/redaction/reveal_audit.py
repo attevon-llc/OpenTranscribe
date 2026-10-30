@@ -1,6 +1,6 @@
 """The ``transcript.view_unredacted`` compliance event, written by ONE implementation.
 
-It lived inline in ``files/crud.py::_resolve_redaction_for_request`` while
+It lived inline in ``files/redaction_gate.py::_resolve_redaction_for_request`` while
 ``files/subtitles.py``, the path that writes the revealed transcript to a **file on the user's
 disk**, wrote no audit event at all (issue #85). Two copies of a compliance trail is how one of
 them silently stops matching the other. It lives here, in a service, so a Celery task (the

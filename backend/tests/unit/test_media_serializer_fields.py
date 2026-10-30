@@ -14,8 +14,8 @@ from datetime import datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
-from app.api.endpoints.files.crud import _build_grouped_segments
 from app.api.endpoints.files.crud import _resolve_segment_speaker_name
+from app.api.endpoints.files.transcript_view import _build_grouped_segments
 from app.schemas.transcript import TranscriptSegment
 from app.services.formatting_service import FormattingService
 from app.services.speaker_status_service import SpeakerStatusService

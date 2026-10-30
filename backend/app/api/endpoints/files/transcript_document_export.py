@@ -40,7 +40,7 @@ from app.services.download_events import document_export_guard_key
 from app.services.request_context import RequestContext
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
-from .crud import _redaction_pending
+from .redaction_gate import _redaction_pending
 from .subtitles import new_bulk_job_id
 
 router = APIRouter()

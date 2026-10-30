@@ -23,7 +23,7 @@ from fastapi import status
 from sqlalchemy import event
 from sqlalchemy import text
 
-from app.api.endpoints.files.crud import get_media_file_detail
+from app.api.endpoints.files.detail_response import get_media_file_detail
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker

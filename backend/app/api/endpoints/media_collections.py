@@ -34,7 +34,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
-from app.api.endpoints.files.crud import set_file_urls
+from app.api.endpoints.files.detail_response import set_file_urls
 from app.api.endpoints.files.filtering import LIST_SPEAKER_COLUMNS
 from app.api.endpoints.files.filtering import apply_all_filters
 from app.api.endpoints.files.filtering import hidden_speaker_name_clause

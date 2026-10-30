@@ -43,7 +43,7 @@ git push -u origin <branch>              # rehearse installs the branch's files 
 ./opentr.sh stop                         # rehearse and smoke need the live stack down
 ./scripts/release.sh rehearse            # fresh-install, upgrade and lite-mode scenarios
 ./scripts/release.sh tag --yes           # ← first step that leaves this machine
-./scripts/release.sh publish --yes       # :vX.Y.Z only, never :latest
+./scripts/release.sh publish --yes       # pushes the BUILT legs + assembles :vX.Y.Z; never :latest, never rebuilds
 ./scripts/release.sh smoke               # install from Hub; check capability and arch
 ./scripts/release.sh promote --yes       # move :latest by digest
 ./scripts/release.sh finish --yes        # GitHub release + assets
@@ -63,9 +63,16 @@ operator abort.
 
 ## Ordering rules that must not be reordered
 
-- **`build` → `scan` → `rehearse` → `publish`.** Validated bytes reach Docker Hub
-  only after the scenarios pass, because `:latest` is what every existing user
-  pulls.
+- **`build` → `scan` → `rehearse` → `publish`.** The bytes that reach Docker
+  Hub are the bytes `build` produced and `scan`/`rehearse` validated: `build`
+  records every leg's local image ID in `.release/<v>/legs.tsv`, and `publish`
+  refuses (exit 1, naming the leg, before any push) when a leg's ID no longer
+  matches, then pushes the local leg tags with `docker push` and assembles each
+  `vX.Y.Z` index from the pushed digests with `imagetools create`. It never
+  rebuilds and never re-scans. `:latest` moves only in `promote`, by digest.
+  Rebuilding after `scan`/`rehearse` therefore needs a fresh `scan`/`rehearse`
+  before `publish` (the ledger records the new IDs, so publish itself would
+  not catch a rebuild that was never re-validated).
 - **`tag` before `publish`** so CI validates the metadata while the 13.8 GB build
   runs. `tag` also cuts `release/<major>.<minor>` from the tag it just pushed (never
   from `master`) and, on a patch, asserts the tag is an ancestor of that branch.

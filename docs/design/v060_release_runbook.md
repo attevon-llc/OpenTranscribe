@@ -153,7 +153,13 @@ Write the CHANGELOG prose and the blog post right AFTER `bump` (it promotes `[Un
 `[0.6.0] - <date>` and opens a fresh one) and BEFORE `verify` (which builds the docs site so a
 duplicate blog slug is caught). Build uses `BUILD_MODE=local ./scripts/docker-build-push.sh` via the
 stage, never a bare `docker build` (it would report version "unknown"). `tag` before `publish`;
-`promote` and `finish` last. `scan` scans the local images.
+`promote` and `finish` last. `scan` scans the local images. `build` records each leg's image ID in
+`.release/0.6.0/legs.tsv`; `publish` pushes exactly those local images (no rebuild, no re-scan; it
+refuses before any push if a leg's ID changed, so do not rebuild between `scan`/`rehearse` and
+`publish` without re-running them) and assembles the indexes from the pushed digests. Expect
+publish to take minutes of upload, not an hour of rebuild. The arm64 legs are pushed from the local
+daemon where the remote builder `--load`ed them; their registry manifest digest will differ from
+BuildKit's export (overlay2 regenerates it), which is expected and checked by config digest.
 Run `./scripts/release.sh reset 0.6.0` first (rehearsal history reads as current until reset; a
 preflight run on Oct 28 already wrote a ledger entry).
 `rehearse` refuses (exit 3) while the live stack is up. Exit codes: 0 pass, 1 gate failed, 2 misuse,

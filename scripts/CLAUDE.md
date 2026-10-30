@@ -979,6 +979,33 @@ exemptions (below).
   `push-security-reports.sh` when `PUSH_SECURITY_REPORTS=true`, which **git-commits and pushes**
   `security-reports/` to whatever branch is checked out.
 
+### `80-publish.sh` pushes the BUILT legs; it never builds (audit P1-3)
+
+`40-build.sh` writes `.release/<v>/legs.tsv` (`component, repo, platform, leg tag, local image
+ID`; block `leg-image-ids`, criterion `leg-image-ids-recorded`, which also reads the
+architecture back). `80-publish.sh` (block `push-built-legs`) then: (1) requires every
+non-blackwell leg of `list-platforms` in that file and its CURRENT local ID equal to the recorded
+one, for ALL legs before ANY push (`built-legs-match-ledger`; missing file = exit 3
+not-measured, mismatch = exit 1 naming the leg); (2) `docker push <leg tag>` per leg, parsing
+the digest the push reports; (3) `imagetools create --tag repo:vX.Y.Z repo@<pushed digests>`
+(digests, not tags) -- never `:latest`, `promote` does that; (4) reads the registry back:
+leg tag digest and the index entry for the platform must equal the pushed digest
+(`registry-digest-matches-pushed`), and the pushed manifest's config digest must equal the
+recorded ID (`registry-leg-matches-built-image`). No `docker-build-push.sh` build, no
+`--no-cache`, no re-scan (scan already examined these image IDs). Tests:
+`unit/test_publish_pushes_built_legs.py` (fake docker + fake registry, markers `BEGIN/END`).
+
+⚠️ **What a push preserves.** The host daemon here is classic overlay2 (27.x). Remote-builder
+arm64 legs are `--load`ed into it as images with a foreign architecture; they push fine, but the
+manifest is regenerated at push time (layers may be recompressed), so the registry manifest
+digest is NOT BuildKit's. The image config survives, and `docker image inspect .Id` is the
+config digest, hence the config comparison; a containerd-store daemon preserves the manifest
+and the manifest digest equals `.Id` (both accepted). `--load` also drops provenance
+attestations (check (a) already falls back to the config blob). **Unverified until a real
+publish:** a real `docker push` of a loaded arm64 image from this daemon. `remote-builder-available`
+is still checked although publish no longer uses the builder. A rebuild between `scan`/`rehearse`
+and `publish` re-records new IDs, so publish cannot detect that those were not re-run.
+
 ### `80-publish.sh`'s manifest gate: two document shapes, three exit codes
 
 ⚠️ **`imagetools inspect --raw` returns two different documents and they carry different

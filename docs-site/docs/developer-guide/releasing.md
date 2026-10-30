@@ -120,16 +120,23 @@ rather than silently ignored.
 | `scan` | Trivy/Grype against the **locally built** images | no |
 | `rehearse` | Fresh-install, upgrade and lite-mode scenarios; **needs the live stack stopped** (it can stop and restore it for you, with approval) | no |
 | `tag` | Annotated tag + push; cuts (or confirms) `release/<major>.<minor>` from the tag | **yes** |
-| `publish` | Multi-arch push of `:vX.Y.Z` only | **yes** |
+| `publish` | Pushes the **already-built** legs (`docker push`, no rebuild, no re-scan) and assembles the `:vX.Y.Z` indexes; `:vX.Y.Z` only | **yes** |
 | `smoke` | Install from Docker Hub; verify each image's capability (CUDA vs CPU) and architecture; **needs the live stack stopped** | no |
 | `promote` | Move `:latest` **by digest** — refuses to move it backwards on a backport | **yes** |
 | `finish` | GitHub release + assets | **yes** |
 
 ### Ordering rules that must not be reordered
 
-- **`build` → `scan` → `rehearse` → `publish`.** Validated bytes reach Docker Hub
-  only after the scenarios pass, because `:latest` is what every existing user
-  pulls.
+- **`build` → `scan` → `rehearse` → `publish`.** The bytes that reach Docker
+  Hub are the bytes `build` produced and `scan`/`rehearse` validated: `build`
+  records every leg's local image ID in `.release/<v>/legs.tsv`, and `publish`
+  refuses (exit 1, naming the leg, before any push) when a leg's ID no longer
+  matches, then pushes the local leg tags with `docker push` and assembles each
+  `vX.Y.Z` index from the pushed digests with `imagetools create`. It never
+  rebuilds and never re-scans. `:latest` moves only in `promote`, by digest.
+  Rebuilding after `scan`/`rehearse` therefore needs a fresh `scan`/`rehearse`
+  before `publish` (the ledger records the new IDs, so publish itself would
+  not catch a rebuild that was never re-validated).
 - **`tag` before `publish`**, so CI validates the metadata while the 13.8 GB
   build runs.
 - **`promote` and `finish` last.** The GitHub Release is what the installer
@@ -444,7 +451,16 @@ torch wheel at the pinned version, `onnxruntime-gpu` publishes no aarch64 wheels
 diar-native ships no CUDA arm64 build of its sidecar. So the full image is **amd64-only**, and
 `opentranscribe.sh` defaults an arm64 host to the lite image with an explanation.
 
-`publish` verifies structure, not just existence — the pre-#680 check only grepped the
+`publish` first proves it is pushing the validated bytes: every declared leg must be in
+the build stage's record (`.release/<v>/legs.tsv`) with an unchanged local image ID
+(criterion `built-legs-match-ledger`, checked for all legs before any push), each pushed
+leg is read back from the registry (`registry-digest-matches-pushed`: the leg tag and the
+index both resolve to the digest `docker push` reported) and its config digest must equal the
+built image ID (`registry-leg-matches-built-image`). The arm64 legs were `--load`ed from the
+remote builder into the local daemon and are pushed from there. On a classic-store (overlay2)
+daemon the manifest is regenerated at push time, so the registry manifest digest is not the
+one BuildKit exported; the image config (hence the image ID) is the identity that survives,
+and that is what is compared. Then it verifies structure, not just existence — the pre-#680 check only grepped the
 manifest for an architecture string, which a *degraded but present* arm64 leg passes:
 
 1. each `-<cap>-<arch>` leg tag declares **exactly one** platform, the declared one;

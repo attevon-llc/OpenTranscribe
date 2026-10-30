@@ -9,7 +9,7 @@ one `pytestmark`, not just the one file that happened to define the fixture firs
 one that actually fired. #810's own CI failure is not locally reproducible (six clean runs
 here). Worse: the flaky test cannot be explained by a leaked global at all —
 `test_auth_state_degradation.py`'s `TestLockoutStoreDegradation._reset()` runs at the top of
-the test body, and `frozen` is derived two lines later from `lockout_module._last_redis_probe`,
+the test body, and `frozen` is derived two lines later from `lockout_store_module._last_redis_probe`,
 a value the test itself just stamped via that same `_reset()`. No neighbour's leftover global
 survives that reset to reach the assertion. Any mechanism that actually explains the flake has
 to write `_last_redis_probe` *during* the test body from *outside* it — i.e. concurrency — and
@@ -27,9 +27,10 @@ from __future__ import annotations
 import pytest
 
 from app.auth import lockout as lockout_module
+from app.auth import lockout_store as lockout_store_module
 from app.auth import session as session_module
 
-#: Module-level names in `session` and `lockout` that hold per-process CACHED STATE — a
+#: Module-level names in `session`, `lockout` and `lockout_store` that hold per-process CACHED STATE — a
 #: Redis handle, the in-memory fallback, whether the store was initialised, when it was
 #: last probed. Every one is a value a test can dirty for whichever test runs next in the
 #: same worker.
@@ -45,7 +46,7 @@ AUTH_STATEFUL_GLOBALS = (
     "_cas_script_client",
 )
 
-AUTH_STATE_MODULES = (session_module, lockout_module)
+AUTH_STATE_MODULES = (session_module, lockout_module, lockout_store_module)
 
 
 @pytest.fixture

@@ -421,6 +421,8 @@ only_mutate = [
     "app/core/security.py",
     "app/api/endpoints/auth/dependencies.py",
     "app/auth/lockout.py",
+    "app/auth/lockout_store.py",
+    "app/auth/lockout_admin.py",
     "app/auth/session.py",
 ]
 # Test SELECTION is per-module and comes from scripts/run-mutation-tests.sh via

@@ -38,7 +38,8 @@ backend/app/auth/audit.py	4	ratchet: may only go down
 backend/app/auth/audit_query.py	2	ratchet: may only go down
 backend/app/auth/direct_auth.py	3	ratchet: may only go down
 backend/app/auth/ldap_auth.py	3	ratchet: may only go down
-backend/app/auth/lockout.py	2	ratchet: may only go down
+backend/app/auth/lockout.py	1	ratchet: may only go down
+backend/app/auth/lockout_store.py	1	ratchet: may only go down
 backend/app/auth/mfa.py	3	ratchet: may only go down
 backend/app/auth/oidc/claims.py	1	ratchet: may only go down
 backend/app/auth/oidc/flow.py	1	ratchet: may only go down

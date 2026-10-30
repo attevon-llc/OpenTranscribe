@@ -14,7 +14,7 @@ redis-py's unbounded defaults on purpose — blocking reads and pub/sub waits
 use it, and a global socket timeout would break them.
 
 Out of scope (they use separate Redis databases or async clients):
-- ``auth/rate_limit.py`` / ``auth/lockout.py`` (Redis db != 0)
+- ``auth/rate_limit.py`` / ``auth/lockout_store.py`` (Redis db != 0)
 - ``redis_cache_service.py`` (db=1)
 - ``youtube_rate_limiter.py`` (db=1)
 - ``video_processing_service.py`` (async)

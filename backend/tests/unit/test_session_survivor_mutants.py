@@ -473,7 +473,7 @@ class TestInMemoryStoreKeysScoping:
 
     def test_keys_strips_only_the_trailing_wildcard_not_arbitrary_characters(self):
         """``rstrip("*")`` -> ``rstrip("XX*XX")``: the exact bug class already
-        pinned for ``lockout.InMemoryLockoutStore.keys`` -- a mutant widening the
+        pinned for ``lockout_store.InMemoryLockoutStore.keys`` -- a mutant widening the
         strip set to include the literal character ``X`` over-strips a prefix
         that happens to end in one."""
         store = InMemoryStore()

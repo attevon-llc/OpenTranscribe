@@ -690,7 +690,7 @@ class TestAtomicLockoutMechanism:
     def test_lockout_after_threshold_reached(self):
         """Test that account is locked after threshold failed attempts."""
         from app.auth.lockout import check_and_record_attempt
-        from app.auth.lockout import get_lockout_info
+        from app.auth.lockout_admin import get_lockout_info
         from app.core.config import settings
 
         sample_user = f"lockout_test_{datetime.now().timestamp()}@example.com"
@@ -707,14 +707,14 @@ class TestAtomicLockoutMechanism:
 
         finally:
             # Cleanup - unlock account
-            from app.auth.lockout import unlock_account
+            from app.auth.lockout_admin import unlock_account
 
             unlock_account(sample_user)
 
     def test_successful_login_clears_failed_attempts(self):
         """Test that successful login clears failed attempt counter."""
         from app.auth.lockout import check_and_record_attempt
-        from app.auth.lockout import get_lockout_info
+        from app.auth.lockout_admin import get_lockout_info
 
         sample_user = f"clear_test_{datetime.now().timestamp()}@example.com"
 

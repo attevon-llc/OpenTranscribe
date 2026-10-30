@@ -44,6 +44,10 @@
 # ⚠️ ALL SIX ROWS WERE RE-MEASURED FROM SCRATCH 2026-08-28 (spans, lockout, security, session,
 # dependencies, password_policy — see each row). `--check-baseline` now passes for all six.
 #
+# ⚠️ 2026-10-30: auth/lockout.py was split into lockout.py + lockout_store.py + lockout_admin.py
+# (keys `lockout`, `lockout_store`, `lockout_admin`). NOT re-measured yet: the two new keys have no
+# row on purpose (no invented numbers), and the three counts together must stay <= the 72 below.
+#
 # HOW TO UPDATE
 #
 #   ./scripts/run-mutation-tests.sh --clean            # stale cached verdicts are the #1 trap

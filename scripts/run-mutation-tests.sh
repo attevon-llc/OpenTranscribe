@@ -20,7 +20,7 @@
 #   auth/password_policy.py ~5-15 min   pure predicates over DB-backed settings
 #   core/security.py        ~10-30 min  bcrypt/JWT — each mutant pays a KDF round
 #   auth/dependencies.py    ~20-60 min  every mutant boots the FastAPI test client
-#   auth/lockout.py         ~30-90 min  1,068 lines, Redis-backed
+#   auth/lockout*.py        ~30-90 min  policy, store and admin keys; Redis-backed
 #   auth/session.py         ~15-45 min
 #   ALL of them             hours       do not do this casually
 #
@@ -120,6 +120,8 @@ declare -A MODULE_PATH=(
     [security]="app/core/security.py"
     [dependencies]="app/api/endpoints/auth/dependencies.py"
     [lockout]="app/auth/lockout.py"
+    [lockout_store]="app/auth/lockout_store.py"
+    [lockout_admin]="app/auth/lockout_admin.py"
     [session]="app/auth/session.py"
 )
 
@@ -150,7 +152,9 @@ declare -A MODULE_TESTS=(
     # it omitted test_lockout_atomicity.py (named for the module it tests) and
     # test_auth_config_behaviour.py, both of which import app.auth.lockout directly, plus
     # the login path that drives it end to end. Now 80.4%.
-    [lockout]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_cleanup_sweep.py tests/unit/test_lockout_atomicity.py tests/unit/test_auth_config_behaviour.py tests/api/test_auth_endpoints.py tests/unit/test_lockout_survivor_mutants.py"
+    [lockout]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_cleanup_sweep.py tests/unit/test_lockout_atomicity.py tests/unit/test_auth_config_behaviour.py tests/api/test_auth_endpoints.py tests/unit/test_lockout_survivor_mutants.py tests/unit/test_lockout_admin_surface.py"
+    [lockout_store]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_cleanup_sweep.py tests/unit/test_lockout_atomicity.py tests/unit/test_auth_config_behaviour.py tests/api/test_auth_endpoints.py tests/unit/test_lockout_survivor_mutants.py tests/unit/test_lockout_store_mutants.py"
+    [lockout_admin]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_cleanup_sweep.py tests/unit/test_lockout_atomicity.py tests/unit/test_auth_config_behaviour.py tests/api/test_auth_endpoints.py tests/unit/test_lockout_survivor_mutants.py tests/unit/test_lockout_admin_surface.py tests/test_admin_security.py"
     # HISTORY, kept because the reasoning still applies to the next target like it:
     # this entry used to warn that ~every OIDCStateStore mutant would survive, because
     # `store_state`/`get_state`/`delete_state` had no test at all and the target
@@ -835,7 +839,7 @@ print(f"  timeout_constant: {cfg.get('timeout_constant', 'unset')}s")
 PY
     echo
     echo -e "${BLUE}Module aliases and the tests each one runs${NC}"
-    for key in spans password_policy security dependencies lockout session; do
+    for key in spans password_policy security dependencies lockout lockout_store lockout_admin session; do
         printf "  %-16s %s\n" "$key" "${MODULE_PATH[$key]}"
         printf "  %-16s   tests: %s\n" "" "${MODULE_TESTS[$key]}"
     done
@@ -976,7 +980,7 @@ fi
 # Run
 # ---------------------------------------------------------------------------
 if [[ "$MODULE" == ALL ]]; then
-    MODULES=(spans password_policy security dependencies lockout session)
+    MODULES=(spans password_policy security dependencies lockout lockout_store lockout_admin session)
     echo -e "${YELLOW}--all mutates every configured module. Expect HOURS.${NC}"
     echo -e "${YELLOW}Prefer one module at a time (--module spans).${NC}"
     echo
@@ -1027,9 +1031,10 @@ for key in "${MODULES[@]}"; do
 
     # mutmut 3.x has NO --paths-to-mutate flag (it exits 2 on the unknown option) and
     # takes MUTANT_NAMES positionally instead, so per-module scoping is a dotted-path
-    # glob over the mutant ids: app/services/redaction/spans.py -> app.services.redaction.spans*
+    # glob over the mutant ids: app/services/redaction/spans.py -> app.services.redaction.spans.*
+    # (the dot is load-bearing: `app.auth.lockout*` would also mutate lockout_store/lockout_admin).
     mutant_glob="${path%.py}"
-    mutant_glob="${mutant_glob//\//.}*"
+    mutant_glob="${mutant_glob//\//.}.*"
 
     if ! $DRY_RUN && [[ -n $(warn_if_test_list_changed "$key" "$tests" "$OUT_DIR" "$BACKEND/mutants") ]]; then
         echo -e "${RED}    ⚠ MODULE_TESTS[$key] changed since the cached results were written.${NC}" >&2

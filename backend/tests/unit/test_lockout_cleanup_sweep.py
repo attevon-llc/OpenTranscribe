@@ -17,7 +17,7 @@ base lockout, forever: the escalation control is gone while the dashboard still 
 lockouts happening. ``rg cleanup_expired_lockouts backend/`` found no caller and no test
 outside ``lockout.py`` itself before this file.
 
-The store is a real :class:`~app.auth.lockout.InMemoryLockoutStore` — the backend this
+The store is a real :class:`~app.auth.lockout_store.InMemoryLockoutStore` — the backend this
 function exists for — so no Redis is involved and the assertions are about the records,
 not about a mock.
 """
@@ -34,10 +34,11 @@ from unittest.mock import patch
 import pytest
 
 from app.auth import lockout as lockout_module
+from app.auth import lockout_admin as lockout_admin_module
 from app.auth.lockout import LOCKOUT_PREFIX
-from app.auth.lockout import InMemoryLockoutStore
 from app.auth.lockout import LockoutRecord
-from app.auth.lockout import cleanup_expired_lockouts
+from app.auth.lockout_admin import cleanup_expired_lockouts
+from app.auth.lockout_store import InMemoryLockoutStore
 
 #: The sweep's own idle window. Anything more recent than this is live state.
 IDLE_HOURS = 24
@@ -50,7 +51,7 @@ def store(monkeypatch) -> InMemoryLockoutStore:
 
     publish_process_auth_setting("account_lockout_enabled", True)
     backing = InMemoryLockoutStore()
-    monkeypatch.setattr(lockout_module, "_get_store", lambda: backing)
+    monkeypatch.setattr(lockout_admin_module, "_get_store", lambda: backing)
     return backing
 
 
@@ -237,7 +238,7 @@ class TestTheSweepRespectsItsPreconditions:
 
         publish_process_auth_setting("account_lockout_enabled", True)
         redis_like = _RedisLikeStore()
-        monkeypatch.setattr(lockout_module, "_get_store", lambda: redis_like)
+        monkeypatch.setattr(lockout_admin_module, "_get_store", lambda: redis_like)
 
         assert cleanup_expired_lockouts() == 0
 
@@ -314,7 +315,7 @@ class TestTheSweepsBoundariesAndItsWholeLoop:
         record.first_failed_attempt = exactly.isoformat()
         _write(store, record)
 
-        with patch.object(lockout_module, "datetime", _FrozenDatetime):
+        with patch.object(lockout_admin_module, "datetime", _FrozenDatetime):
             assert cleanup_expired_lockouts() == 0
         assert _exists(store, "on-threshold@example.com")
 
@@ -374,7 +375,7 @@ class TestTheSweepsBoundariesAndItsWholeLoop:
         )
         _write(store, record)
 
-        with patch.object(lockout_module, "datetime", _FrozenDatetime):
+        with patch.object(lockout_admin_module, "datetime", _FrozenDatetime):
             assert cleanup_expired_lockouts() == 1
         assert not _exists(store, "expiring-now@example.com")
 

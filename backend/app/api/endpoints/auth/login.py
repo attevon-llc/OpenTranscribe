@@ -33,7 +33,7 @@ from app.auth.audit_events import AuditOutcome
 from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.lockout import canonical_identifier
 from app.auth.lockout import check_and_record_attempt
-from app.auth.lockout import get_lockout_info
+from app.auth.lockout_admin import get_lockout_info
 from app.auth.password_policy import get_days_until_expiration
 from app.auth.password_policy import is_password_expired
 from app.auth.rate_limit import get_auth_rate_limit

@@ -43,7 +43,7 @@ app/
 │   ├── direct_auth.py, ldap_auth.py, pki_auth.py   # Local, LDAP/AD, PKI/X.509
 │   ├── oidc/, saml/, proxy/                       # OIDC, SAML, trusted-proxy identity
 │   ├── mfa.py, mfa_policy.py                      # TOTP MFA and who must use it
-│   ├── password_*.py, lockout.py, rate_limit.py   # Password policy/history/reset, lockout, rate limits
+│   ├── password_*.py, lockout*.py, rate_limit.py  # Password policy/history/reset, lockout, rate limits
 │   ├── token_service.py, cookies.py, session.py   # JWT/refresh tokens, httpOnly cookies, login-flow state
 │   ├── roles.py, approval.py, invitations.py      # Role model, account approval, invitations
 │   └── audit.py, audit_events.py, audit_query.py, audit_export.py  # Audit writer, event vocabulary, read path, export

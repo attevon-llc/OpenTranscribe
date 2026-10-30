@@ -20,11 +20,11 @@ from app.api.endpoints.auth.dependencies import _get_client_info
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
-from app.auth.lockout import current_store_kind as lockout_current_store_kind
-from app.auth.lockout import list_locked_accounts as lockout_list_locked_accounts
 from app.auth.lockout import normalize_identifier as lockout_normalize_identifier
-from app.auth.lockout import reset_lockout_state as lockout_reset_lockout_state
-from app.auth.lockout import unlock_account as lockout_unlock_account
+from app.auth.lockout_admin import current_store_kind as lockout_current_store_kind
+from app.auth.lockout_admin import list_locked_accounts as lockout_list_locked_accounts
+from app.auth.lockout_admin import reset_lockout_state as lockout_reset_lockout_state
+from app.auth.lockout_admin import unlock_account as lockout_unlock_account
 from app.auth.password_history import add_password_to_history
 from app.auth.password_history import check_password_against_history
 from app.auth.rate_limit import get_auth_rate_limit

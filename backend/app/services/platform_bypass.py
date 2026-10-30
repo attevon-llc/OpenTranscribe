@@ -240,9 +240,9 @@ class PlatformBypass:
         if same_tenant or key in self._audited:
             return
         self._audited.add(key)
-        from app.auth.audit import AuditEventType
-        from app.auth.audit import AuditOutcome
         from app.auth.audit import audit_logger
+        from app.auth.audit_events import AuditEventType
+        from app.auth.audit_events import AuditOutcome
 
         audit_logger.log(
             AuditEventType.PLATFORM_ADMIN_CONTENT_ACCESS,
@@ -272,9 +272,9 @@ def audit_metadata_access(
     """
     if tenancy_mode(db) is not TenancyMode.MULTI:
         return False
-    from app.auth.audit import AuditEventType
-    from app.auth.audit import AuditOutcome
     from app.auth.audit import audit_logger
+    from app.auth.audit_events import AuditEventType
+    from app.auth.audit_events import AuditOutcome
 
     audit_logger.log(
         AuditEventType.PLATFORM_ADMIN_METADATA_ACCESS,

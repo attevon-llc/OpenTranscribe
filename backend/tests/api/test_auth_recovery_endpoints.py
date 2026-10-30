@@ -283,7 +283,7 @@ class TestPasswordResetConfirm:
         (#910). Under ``TestClient`` the peer is literally ``"testclient"``, so this
         asserts the field is populated at all, not an exact value."""
         from app.auth import password_reset as password_reset_module
-        from app.auth.audit import AuditEventType
+        from app.auth.audit_events import AuditEventType
 
         captured: list[dict] = []
         monkeypatch.setattr(
@@ -311,7 +311,7 @@ class TestPasswordResetConfirm:
         """The FAILURE branch — a bogus token — must carry a source_ip too; the bug
         was in the wiring shared by every exit path, not just the success path."""
         from app.auth import password_reset as password_reset_module
-        from app.auth.audit import AuditEventType
+        from app.auth.audit_events import AuditEventType
 
         captured: list[dict] = []
         monkeypatch.setattr(

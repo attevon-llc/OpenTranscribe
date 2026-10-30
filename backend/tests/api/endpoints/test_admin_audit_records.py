@@ -21,8 +21,8 @@ from typing import Any
 import pytest
 from fastapi import status
 
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 
 
 def _collect(monkeypatch, module) -> list[dict]:
@@ -276,10 +276,11 @@ def test_erasure_sequence_is_queryable_through_the_real_audit_log_endpoint(
     FOUR records and the ``== 3`` assertions catch it.
     """
     from app.auth import audit as audit_module
+    from app.auth import audit_query
 
     fake = _FilteringFakeAuditOS()
     monkeypatch.setattr(audit_module.audit_logger, "_opensearch_client", fake)
-    monkeypatch.setattr(audit_module, "_build_audit_opensearch_client", lambda: fake)
+    monkeypatch.setattr(audit_query, "_build_audit_opensearch_client", lambda: fake)
     monkeypatch.setattr(audit_module.settings, "AUDIT_LOG_TO_OPENSEARCH", True)
 
     target_id = int(normal_user.id)

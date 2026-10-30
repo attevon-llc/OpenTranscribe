@@ -908,7 +908,7 @@ class TestPromptShareAudit:
     ):
         """Sharing a prompt logs a PROMPT_SHARE audit event."""
         from app.api.endpoints import prompts as prompts_module
-        from app.auth.audit import AuditEventType
+        from app.auth.audit_events import AuditEventType
 
         events = []
         monkeypatch.setattr(
@@ -933,7 +933,7 @@ class TestPromptShareAudit:
     ):
         """Cloning a prompt logs a PROMPT_CLONE audit event referencing the source."""
         from app.api.endpoints import prompts as prompts_module
-        from app.auth.audit import AuditEventType
+        from app.auth.audit_events import AuditEventType
 
         events = []
         monkeypatch.setattr(

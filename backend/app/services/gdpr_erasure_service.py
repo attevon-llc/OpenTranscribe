@@ -84,9 +84,9 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.models.chat import ChatConversation
 from app.models.collection import Collection
 from app.models.custom_vocabulary import CustomVocabulary

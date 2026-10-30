@@ -24,9 +24,9 @@ from app.api.deps_context import require_org_admin
 from app.api.endpoints.auth.dependencies import _get_client_info
 from app.api.endpoints.org_admin import org_id_of
 from app.api.endpoints.privacy import queue_purge
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.core.capabilities import capability_enabled
 from app.db.base import get_db
 from app.schemas.privacy import OrgPolicy

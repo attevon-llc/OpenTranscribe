@@ -27,8 +27,8 @@ import numpy as np
 import pytest
 from fastapi import status
 
-from app.auth.audit import AuditEventType
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
 from app.core import constants
 from app.core.capabilities import COMMUNITY_CAPABILITIES
 from app.core.capabilities import reset_capability_resolver

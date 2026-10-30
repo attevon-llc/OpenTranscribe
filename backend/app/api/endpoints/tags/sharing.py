@@ -17,12 +17,12 @@ from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.tags._common import _share_target
 from app.api.endpoints.tags._common import _writable_tag_ids
 from app.api.endpoints.tags._common import router
-from app.auth.audit import TENANT_SCOPE_ORG
-from app.auth.audit import TENANT_SCOPE_PERSONAL
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.auth.audit import request_org_id
+from app.auth.audit_events import TENANT_SCOPE_ORG
+from app.auth.audit_events import TENANT_SCOPE_PERSONAL
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.db.base import get_db
 from app.middleware.audit import get_request_context
 from app.models.sharing import TagShare

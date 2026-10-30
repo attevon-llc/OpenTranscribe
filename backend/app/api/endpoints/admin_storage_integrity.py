@@ -24,9 +24,9 @@ from pydantic import BaseModel
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_admin_user
 from app.api.endpoints.auth.dependencies import _get_client_info
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.models.user import User
 from app.services.request_context import RequestContext
 

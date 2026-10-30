@@ -60,7 +60,7 @@ def _event(label: str, **fields) -> dict:
 
 
 def _visible(client, index: str, scope_org: int, members: list[int]) -> set[str]:
-    from app.auth.audit import build_org_scope_clause
+    from app.auth.audit_query import build_org_scope_clause
 
     client.indices.refresh(index=index)
     body = {"size": 50, "query": {"bool": {"must": [build_org_scope_clause(scope_org, members)]}}}

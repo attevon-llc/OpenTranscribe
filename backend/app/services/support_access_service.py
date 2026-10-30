@@ -164,9 +164,9 @@ def record_use(
             "Support access could not be recorded; the request was not served.",
         ) from None
 
-    from app.auth.audit import AuditEventType
-    from app.auth.audit import AuditOutcome
     from app.auth.audit import audit_logger
+    from app.auth.audit_events import AuditEventType
+    from app.auth.audit_events import AuditOutcome
 
     audit_logger.log(
         AuditEventType.SUPPORT_ACCESS_USED,

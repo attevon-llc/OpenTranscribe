@@ -36,7 +36,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import aliased
 
 from app.api.deps_context import require_org_admin
-from app.auth.audit import AuditEventType
+from app.auth.audit_events import AuditEventType
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key
 from app.core.constants import ORG_TAKEDOWN_RATE_LIMIT

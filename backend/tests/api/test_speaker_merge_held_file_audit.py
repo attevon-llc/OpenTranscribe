@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.auth.audit import AuditEventType
+from app.auth.audit_events import AuditEventType
 from app.models.media import TranscriptSegment
 from app.services import content_audit
 from app.services import content_hold_service

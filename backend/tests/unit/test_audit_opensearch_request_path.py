@@ -16,9 +16,9 @@ from unittest.mock import patch
 import pytest
 
 from app.auth import audit as audit_module
-from app.auth.audit import AuditEventType
 from app.auth.audit import AuditLogger
-from app.auth.audit import AuditOutcome
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.core.config import settings
 
 

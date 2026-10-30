@@ -24,9 +24,9 @@ from app.api.endpoints.chat.common import resolve_llm_config_id
 from app.api.endpoints.chat.common import to_detail
 from app.api.endpoints.chat.common import to_summary
 from app.api.endpoints.chat.projects import get_owned_project
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.db.base import get_db
 from app.models.chat import ChatConversation
 from app.models.chat import ChatMessage

@@ -38,11 +38,11 @@ from app.api.endpoints.files.crud import set_file_urls
 from app.api.endpoints.files.filtering import LIST_SPEAKER_COLUMNS
 from app.api.endpoints.files.filtering import apply_all_filters
 from app.api.endpoints.files.filtering import hidden_speaker_name_clause
-from app.auth.audit import TENANT_SCOPE_ORG
-from app.auth.audit import TENANT_SCOPE_PERSONAL
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import TENANT_SCOPE_ORG
+from app.auth.audit_events import TENANT_SCOPE_PERSONAL
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.core.constants import NOTIFICATION_TYPE_COLLECTION_ACCESS_CHANGED
 from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARE_REVOKED
 from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARE_UPDATED

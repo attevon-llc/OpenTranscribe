@@ -39,7 +39,7 @@ from app.api.endpoints.auth.dependencies import ERROR_CODE_PASSWORD_CHANGE_REQUI
 from app.api.endpoints.auth.dependencies import get_current_active_user
 from app.api.endpoints.auth.dependencies import get_current_admin_user
 from app.auth import password_policy as policy_module
-from app.auth.audit import AuditEventType
+from app.auth.audit_events import AuditEventType
 from app.core.auth_settings import get_process_auth_settings
 from app.core.config import settings
 from app.models.user import User

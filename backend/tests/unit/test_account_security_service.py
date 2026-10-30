@@ -52,7 +52,7 @@ from unittest.mock import Mock
 import pytest
 from fastapi import Response
 
-from app.auth.audit import AuditEventType
+from app.auth.audit_events import AuditEventType
 from app.auth.session import InMemoryStore
 from app.auth.token_service import USER_REVOCATION_EPOCH_PREFIX
 from app.auth.token_service import TokenService

@@ -38,8 +38,8 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.core.enums import FileStatus
 from app.core.enums import TakedownOrigin
 from app.models.media import MediaFile

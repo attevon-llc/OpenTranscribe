@@ -23,8 +23,8 @@ from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.dependencies import _get_client_info
 from app.api.endpoints.auth.dependencies import get_current_admin_user
-from app.auth.audit import AuditEventType
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
 from app.auth.invitations import GENERIC_INVALID
 from app.auth.invitations import accept_invitation
 from app.auth.invitations import create_invitation

@@ -16,9 +16,9 @@ from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
 from app.api.endpoints.auth.dependencies import _get_client_info
 from app.auth.account_linking import emails_agree
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.email_verification import email_verification_required
 from app.auth.email_verification import issue_verification_token

@@ -19,7 +19,7 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.routing import APIRoute
 
-from app.auth.audit import AuditEventType
+from app.auth.audit_events import AuditEventType
 from app.core.enums import FileStatus
 from app.models.media import MediaFile
 from app.models.takedown import TakedownNotification

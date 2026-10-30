@@ -57,8 +57,8 @@ from starlette.requests import Request
 from app.api.endpoints.auth import dependencies as deps_module
 from app.api.endpoints.auth.dependencies import ERROR_CODE_PROXY_IDENTITY_MISMATCH
 from app.api.endpoints.auth.dependencies import get_current_active_user
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.core.config import settings
 from app.core.security import get_password_hash
 from app.models.refresh_token import RefreshToken

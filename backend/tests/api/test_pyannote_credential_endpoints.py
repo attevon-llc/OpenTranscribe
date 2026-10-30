@@ -26,7 +26,7 @@ from collections.abc import Iterator
 import pytest
 from fastapi import status
 
-from app.auth.audit import AuditEventType
+from app.auth.audit_events import AuditEventType
 from app.models import UserSetting
 from app.models.user_diarization_settings import UserDiarizationSettings
 

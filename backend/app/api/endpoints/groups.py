@@ -14,9 +14,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 
 from app.api.deps_context import get_current_context
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.core.constants import NOTIFICATION_TYPE_GROUP_MEMBER_ADDED
 from app.core.constants import NOTIFICATION_TYPE_GROUP_MEMBER_REMOVED
 from app.db.base import get_db

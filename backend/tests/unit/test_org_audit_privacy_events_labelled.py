@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from app.auth.audit import AuditEventType
+from app.auth.audit_events import AuditEventType
 
 FRONTEND = Path(__file__).resolve().parents[3] / "frontend" / "src" / "lib" / "i18n"
 EVENTS = {

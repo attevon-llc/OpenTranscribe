@@ -241,9 +241,9 @@ def run_storage_orphan_sweep(dry_run: bool = True, force: bool = False) -> dict[
 
 def _audit_completion(user_id: int | None, result: dict[str, Any]) -> None:
     """Record the outcome with counters only: no keys, file ids, names or error text."""
-    from app.auth.audit import AuditEventType
-    from app.auth.audit import AuditOutcome
     from app.auth.audit import audit_logger
+    from app.auth.audit_events import AuditEventType
+    from app.auth.audit_events import AuditOutcome
 
     failed = bool(result.get("error")) or bool(result.get("refused"))
     audit_logger.log(

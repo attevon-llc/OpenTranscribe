@@ -315,7 +315,7 @@ class TestEndpointContract:
         assert audited[0]["admin_username"] == "root@example.com"
 
     def test_the_audit_event_is_the_settings_change_type(self, store, no_env_smtp, audited):
-        from app.auth.audit import AuditEventType
+        from app.auth.audit_events import AuditEventType
 
         self._put(_db(FakeConfig()), CONFIG_UUID)
 

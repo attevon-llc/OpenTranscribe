@@ -32,9 +32,9 @@ from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth.dependencies import _get_client_info
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import Task

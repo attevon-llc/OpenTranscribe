@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.auth.audit import AuditEventType
+from app.auth.audit_events import AuditEventType
 from app.core.constants import AUDIT_CONTENT_ACCESS_SETTING_KEY
 from app.models.user import User
 from app.services import content_audit

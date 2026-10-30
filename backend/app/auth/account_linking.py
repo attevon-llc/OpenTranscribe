@@ -97,9 +97,9 @@ by design, and that pairing is not touched by either narrowing).
 
 import logging
 
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.core.exceptions import AuthenticationError
 

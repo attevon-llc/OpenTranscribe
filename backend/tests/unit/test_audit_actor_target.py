@@ -33,9 +33,9 @@ import pathlib
 
 import pytest
 
-from app.auth.audit import AuditEventType
 from app.auth.audit import AuditLogger
-from app.auth.audit import AuditOutcome
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 
 _APP = pathlib.Path(__file__).resolve().parents[2] / "app"
 

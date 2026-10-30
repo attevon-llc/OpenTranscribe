@@ -22,9 +22,9 @@ from sqlalchemy.orm import Session
 from app import models
 from app.api.endpoints.auth.dependencies import _get_client_info
 from app.api.endpoints.auth.dependencies import get_current_active_superuser
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.core.capabilities import capability_enabled
 from app.core.constants import AUDIT_ACTIVE_USER_BYTES_PER_DAY_ESTIMATE
 from app.core.constants import AUDIT_CONTENT_ACCESS_DEFAULT

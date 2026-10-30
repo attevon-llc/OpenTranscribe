@@ -36,7 +36,7 @@ from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_optional_current_user
 from app.api.error_handlers import ErrorHandler
-from app.auth.audit import AuditEventType
+from app.auth.audit_events import AuditEventType
 from app.auth.rate_limit import get_directory_rate_limit
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key

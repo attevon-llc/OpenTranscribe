@@ -39,7 +39,7 @@ from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import require_org_admin
-from app.auth.audit import query_audit_logs
+from app.auth.audit_query import query_audit_logs
 from app.db.base import get_db
 from app.models.organization import OrganizationMembership
 from app.models.user import User

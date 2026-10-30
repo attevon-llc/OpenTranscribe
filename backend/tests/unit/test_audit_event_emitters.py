@@ -9,7 +9,7 @@ before being wired; this is the guard so a member never regresses to it silently
 
 Why AST and not grep
 ---------------------
-A grep for the member name matches its own declaration line in ``audit.py``, a
+A grep for the member name matches its own declaration line in ``audit_events.py``, a
 docstring reference (this file has several), a comment. An emitter has to be a
 real ``AuditEventType.<MEMBER>`` attribute access — the class-body declaration
 (``AUTH_LOGIN_SUCCESS = "..."``) is an assignment to a bare name, not an attribute
@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pytest
 
-from app.auth.audit import AuditEventType
+from app.auth.audit_events import AuditEventType
 
 _APP_ROOT = Path(__file__).resolve().parents[2] / "app"
 

@@ -16,9 +16,9 @@ from sqlalchemy.orm import Session
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
 from app.api.endpoints.auth.dependencies import _get_client_info
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.db.base import get_db
 from app.legal import acceptance

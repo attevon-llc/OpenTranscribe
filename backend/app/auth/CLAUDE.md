@@ -255,7 +255,7 @@ issue #1122). In single-tenant mode nothing changes. A grant never confers `org:
 - `mfa.py` (`MFAService`) · `lockout.py` (progressive, per-identifier) · `rate_limit.py`
   (slowapi, per-IP with trusted-proxy parsing) · `session.py` (`OIDCStateStore`,
   `InMemoryStore`, `get_redis_client` — **OIDC login state only, not sessions**) ·
-  `audit.py` (`AuditLogger`, `AuditEventType`).
+  `audit.py` (`AuditLogger` writer) · `audit_events.py` (`AuditEventType`, `AuditOutcome`) · `audit_query.py` (read path).
 - `provider_registry.py` — **cloud-edition seam**, empty in community. `constants.py`
   carries `CLOUD_SEAM_VERSION`; bump it on any seam signature change.
   ⚠️ `get_optional_current_user` (`api/endpoints/auth/dependencies.py`) must stay in step with
@@ -284,7 +284,7 @@ issue #1122). In single-tenant mode nothing changes. A grant never confers `org:
   `900cad2a6` (its cited `plans/session-ownership-decision.md` was untracked in `d8e1e4c7b`).
 - TOTP per RFC 6238/4226 (Google Authenticator / Authy compatible). MFA tokens are
   single-use — the JTI is blacklisted in Redis after verification.
-- Auth events go to the **audit log, which is OpenSearch-backed** (`audit.py`), not a table.
+- Auth events go to the **audit log, which is OpenSearch-backed** (`audit.py`), not a table; reads: `audit_query.py`.
 - **A resource event names its OWN tenant** (#1277): `log(..., resource_type=, resource_uuid=,
   tenant_scope="org"|"personal")` are typed top-level keywords (a pre-existing monthly index gets them
   by `put_mapping`, once per process; a conflict is a WARNING and the next month is right).

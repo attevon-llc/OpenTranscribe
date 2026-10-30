@@ -39,7 +39,7 @@ from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.prompts import require_usable_prompt_uuid
-from app.auth.audit import AuditEventType
+from app.auth.audit_events import AuditEventType
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import MediaFile

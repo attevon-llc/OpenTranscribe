@@ -19,8 +19,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.core.config import settings
 from app.models.organization import OrganizationMembership
 from tests.fixtures.support_world import GRANT_HEADER

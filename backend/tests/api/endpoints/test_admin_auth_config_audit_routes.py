@@ -262,7 +262,7 @@ def _collect_audit(monkeypatch) -> list[dict]:
 
 
 def _settings_changes(events: list[dict], action: str) -> list[dict]:
-    from app.auth.audit import AuditEventType
+    from app.auth.audit_events import AuditEventType
 
     return [
         e
@@ -281,7 +281,7 @@ def test_a_category_update_reaches_the_central_audit_log(
     changed key swapped or absent, so this pins the ACTOR (who), the CATEGORY and
     KEY (what), and the new VALUE.
     """
-    from app.auth.audit import AuditOutcome
+    from app.auth.audit_events import AuditOutcome
 
     events = _collect_audit(monkeypatch)
 
@@ -342,7 +342,7 @@ def test_a_refused_change_is_audited_as_a_failure(
     while ``local_enabled`` is false is the one cross-field rule the schema
     rejects, so this drives the real 400 path rather than a synthetic one.
     """
-    from app.auth.audit import AuditOutcome
+    from app.auth.audit_events import AuditOutcome
 
     events = _collect_audit(monkeypatch)
     # Read the fixture's identity BEFORE the request: the refusal path calls

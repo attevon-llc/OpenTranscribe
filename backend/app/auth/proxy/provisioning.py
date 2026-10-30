@@ -79,9 +79,9 @@ def _create_proxy_user(db, assertion: ProxyAssertion):
 
 def _refuse(email: str, error_code: str, reason: str) -> None:
     """Audit and raise the single generic refusal."""
-    from app.auth.audit import AuditEventType
-    from app.auth.audit import AuditOutcome
     from app.auth.audit import audit_logger
+    from app.auth.audit_events import AuditEventType
+    from app.auth.audit_events import AuditOutcome
 
     logger.warning("Refusing proxy login for %s: %s", email, reason)
     audit_logger.log(

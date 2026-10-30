@@ -9,9 +9,9 @@ from datetime import timedelta
 
 from sqlalchemy.orm import Session
 
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.auth.mfa_policy import user_is_mfa_protected
 from app.auth.password_history import add_password_to_history
 from app.auth.password_history import check_password_against_history

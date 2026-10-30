@@ -23,9 +23,9 @@ import logging
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.auth.token_service import enforce_session_ceiling
 from app.core.auth_settings import get_auth_settings
 from app.core.constants import SESSION_CAP_SWEEP_MAX_PER_USER

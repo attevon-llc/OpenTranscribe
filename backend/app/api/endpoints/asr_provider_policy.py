@@ -25,9 +25,9 @@ from app import models
 from app.api.deps_context import get_base_context
 from app.api.endpoints.auth.dependencies import _get_client_info
 from app.api.endpoints.auth.dependencies import get_current_active_superuser
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.auth.roles import ELEVATED_ROLES
 from app.db.base import get_db
 from app.models.user_asr_settings import UserASRSettings

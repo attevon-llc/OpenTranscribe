@@ -287,7 +287,7 @@ class TestAuditLogging:
 
     def test_audit_event_types_defined(self):
         """All required audit event types should be defined."""
-        from app.auth.audit import AuditEventType
+        from app.auth.audit_events import AuditEventType
 
         required_events = [
             "AUTH_LOGIN_SUCCESS",

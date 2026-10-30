@@ -16,9 +16,9 @@ from datetime import timedelta
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.core.constants import SUPPORT_ACCESS_PENDING_EXPIRY_HOURS
 from app.core.exceptions import DomainError
 from app.models.organization import Organization

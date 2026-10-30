@@ -46,7 +46,7 @@ app/
 │   ├── password_*.py, lockout.py, rate_limit.py   # Password policy/history/reset, lockout, rate limits
 │   ├── token_service.py, cookies.py, session.py   # JWT/refresh tokens, httpOnly cookies, login-flow state
 │   ├── roles.py, approval.py, invitations.py      # Role model, account approval, invitations
-│   └── audit.py, audit_export.py                  # Authentication audit logging and export
+│   └── audit.py, audit_events.py, audit_query.py, audit_export.py  # Audit writer, event vocabulary, read path, export
 ├── core/                  # Core configuration (config.py, constants.py, celery.py, enums.py, exceptions.py,
 │                          #   redis.py, security.py, metrics, task liveness/cancellation helpers, tenancy seams)
 ├── db/                    # base.py (engine, SessionLocal, Base, get_db), session_utils.py, migrations.py

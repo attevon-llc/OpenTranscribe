@@ -35,11 +35,11 @@ def audit_unredacted_reveal(
     if not reveal:
         return
     try:
-        from app.auth.audit import TENANT_SCOPE_ORG
-        from app.auth.audit import TENANT_SCOPE_PERSONAL
-        from app.auth.audit import AuditEventType
-        from app.auth.audit import AuditOutcome
         from app.auth.audit import audit_logger
+        from app.auth.audit_events import TENANT_SCOPE_ORG
+        from app.auth.audit_events import TENANT_SCOPE_PERSONAL
+        from app.auth.audit_events import AuditEventType
+        from app.auth.audit_events import AuditOutcome
 
         audit_logger.log(
             event_type=AuditEventType.TRANSCRIPT_VIEW_UNREDACTED,

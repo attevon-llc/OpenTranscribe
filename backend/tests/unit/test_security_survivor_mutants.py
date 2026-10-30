@@ -189,8 +189,8 @@ import pytest
 from joserfc import jwt as _jwt
 from joserfc.jwk import OctKey
 
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.auth.direct_auth import create_access_token
 from app.core import security
 from app.core.auth_types import AUTH_TYPE_PKI

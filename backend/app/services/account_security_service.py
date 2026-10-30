@@ -31,9 +31,9 @@ from fastapi import Request
 from fastapi import Response
 from sqlalchemy.orm import Session
 
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.auth.mfa_policy import user_is_mfa_protected
 from app.auth.password_policy import validate_password
 from app.auth.token_service import token_service

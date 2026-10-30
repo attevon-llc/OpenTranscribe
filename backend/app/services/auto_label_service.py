@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.auth.audit import AuditEventType
+from app.auth.audit_events import AuditEventType
 from app.core.constants import DEFAULT_AUTO_LABEL_CONFIDENCE_THRESHOLD
 from app.core.constants import FUZZY_MATCH_THRESHOLD
 from app.core.constants import TAG_SOURCE_AUTO_AI

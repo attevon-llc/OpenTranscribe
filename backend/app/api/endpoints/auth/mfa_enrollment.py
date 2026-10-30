@@ -34,9 +34,9 @@ from app.api.endpoints.auth.mfa_tokens import MFA_SCOPE_ENROLL
 from app.api.endpoints.auth.mfa_tokens import _claim_mfa_token
 from app.api.endpoints.auth.mfa_tokens import _user_can_setup_mfa
 from app.api.endpoints.auth.mfa_tokens import _verify_mfa_token
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.token_service import token_service
 from app.core.auth_types import TOKEN_TYPE_ACCESS

@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from app.auth.audit import AuditOutcome
+from app.auth.audit_events import AuditOutcome
 from app.core.celery import celery_app
 from app.core.queues import CPUPriority
 from app.db.base import SessionLocal

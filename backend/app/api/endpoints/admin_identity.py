@@ -15,9 +15,9 @@ from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_admin_user
 from app.api.endpoints.auth.dependencies import _get_client_info
 from app.auth.account_linking import emails_agree
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.auth.refusal_audit import audit_user_update_refusal
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.core.auth_types import AUTH_TYPE_LOCAL

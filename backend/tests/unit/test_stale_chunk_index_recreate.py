@@ -14,12 +14,12 @@ from unittest.mock import patch
 import pytest
 
 from app.core.config import settings
-from app.services.search.indexing_service import _INDEX_VERSION
+from app.services.search.index_schema import _INDEX_VERSION
 from app.tasks import reindex_task
 
 _INDEX = settings.OPENSEARCH_CHUNKS_INDEX
 _CLIENT_PATH = "app.services.opensearch_service.opensearch_client"
-_BODY_PATH = "app.services.search.indexing_service._get_index_body_with_dimension"
+_BODY_PATH = "app.services.search.index_admin._get_index_body_with_dimension"
 
 _OLD_MAPPINGS: dict[str, Any] = {
     "_meta": {"version": _INDEX_VERSION - 1},

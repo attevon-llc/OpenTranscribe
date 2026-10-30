@@ -205,7 +205,7 @@ def test_managed_mode_adopts_the_configured_model_without_touching_the_cluster(
     ml_service = MagicMock()
 
     with patch(
-        "app.services.search.indexing_service.ensure_neural_ingest_pipeline", return_value=True
+        "app.services.search.pipelines.ensure_neural_ingest_pipeline", return_value=True
     ) as ensure_pipeline:
         _adopt_managed_embedding_model(ml_service)
 
@@ -222,9 +222,7 @@ def test_managed_mode_without_a_model_id_falls_back_to_the_active_one(monkeypatc
     ml_service = MagicMock()
     ml_service.get_active_model_id.return_value = "already-registered"
 
-    with patch(
-        "app.services.search.indexing_service.ensure_neural_ingest_pipeline", return_value=True
-    ):
+    with patch("app.services.search.pipelines.ensure_neural_ingest_pipeline", return_value=True):
         _adopt_managed_embedding_model(ml_service)
 
     ml_service.set_active_model_id.assert_called_once_with("already-registered")
@@ -237,9 +235,7 @@ def test_managed_mode_with_no_model_at_all_is_a_logged_no_op(monkeypatch):
     ml_service = MagicMock()
     ml_service.get_active_model_id.return_value = None
 
-    with patch(
-        "app.services.search.indexing_service.ensure_neural_ingest_pipeline"
-    ) as ensure_pipeline:
+    with patch("app.services.search.pipelines.ensure_neural_ingest_pipeline") as ensure_pipeline:
         _adopt_managed_embedding_model(ml_service)
 
     ml_service.set_active_model_id.assert_not_called()

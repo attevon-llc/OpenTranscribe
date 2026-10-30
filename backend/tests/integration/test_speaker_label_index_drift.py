@@ -134,7 +134,7 @@ def isolated_chunk_index(monkeypatch):
     """
     from app.core.config import settings
     from app.services.opensearch_service import get_opensearch_client
-    from app.services.search import indexing_service as svc
+    from app.services.search import index_admin
 
     client = get_opensearch_client()
     # An assert, not a skip: the module-level `skipif` already established that a cluster is
@@ -146,7 +146,7 @@ def isolated_chunk_index(monkeypatch):
     )
 
     name = f"test_label_drift_{uuid.uuid4().hex[:12]}"
-    client.indices.create(index=name, body=svc._get_index_body_with_dimension(384))
+    client.indices.create(index=name, body=index_admin._get_index_body_with_dimension(384))
     try:
         monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
         yield client, name

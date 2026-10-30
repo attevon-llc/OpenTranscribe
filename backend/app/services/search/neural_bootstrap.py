@@ -81,8 +81,8 @@ def neural_search_ready() -> bool:
     if not settings.OPENSEARCH_NEURAL_SEARCH_ENABLED:
         return True  # disabled is not degraded
 
-    from app.services.search.indexing_service import is_neural_pipeline_available
     from app.services.search.ml_model_service import get_ml_model_service
+    from app.services.search.pipelines import is_neural_pipeline_available
 
     ml_service = get_ml_model_service()
     return bool(ml_service.get_active_model_id()) and is_neural_pipeline_available()
@@ -101,7 +101,7 @@ def _adopt_managed_embedding_model(ml_service: Any) -> BootstrapResult:
     (typically a remote-model connector), and all we do is adopt its id and wire the ingest
     pipeline.
     """
-    from app.services.search.indexing_service import ensure_neural_ingest_pipeline
+    from app.services.search.pipelines import ensure_neural_ingest_pipeline
 
     model_id = settings.OPENSEARCH_NEURAL_MODEL_ID.strip() or ml_service.get_active_model_id()
     if not model_id:
@@ -127,7 +127,7 @@ def _adopt_managed_embedding_model(ml_service: Any) -> BootstrapResult:
 
 def _bootstrap_local_mode(ml_service: Any) -> BootstrapResult:
     """The non-managed path: cluster settings, local/downloaded model, deploy, pipeline."""
-    from app.services.search.indexing_service import ensure_neural_ingest_pipeline
+    from app.services.search.pipelines import ensure_neural_ingest_pipeline
 
     if not ml_service.configure_ml_settings():
         detail = "Could not configure ML Commons settings"

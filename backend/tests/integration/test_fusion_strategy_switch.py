@@ -39,7 +39,7 @@ from app.services.search.fusion import NORMALIZATION
 from app.services.search.fusion import RRF
 from app.services.search.fusion import FusionConfig
 from app.services.search.fusion import search_pipeline_id
-from app.services.search.indexing_service import ensure_search_pipeline_exists
+from app.services.search.pipelines import ensure_search_pipeline_exists
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 

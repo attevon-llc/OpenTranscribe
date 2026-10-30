@@ -88,7 +88,7 @@ def _wait_for_indexed(file_uuids: list[str], timeout: float = 60.0) -> None:
     """
     from app.core.config import settings
     from app.services.opensearch_service import get_opensearch_client
-    from app.services.search.indexing_service import chunk_plane_query
+    from app.services.search.plane_queries import chunk_plane_query
 
     client = get_opensearch_client()
     if client is None:
@@ -160,8 +160,8 @@ def _ensure_neural_ready() -> None:
     if not settings.OPENSEARCH_NEURAL_SEARCH_ENABLED:
         return
 
-    from app.services.search.indexing_service import ensure_neural_ingest_pipeline
     from app.services.search.ml_model_service import get_ml_model_service
+    from app.services.search.pipelines import ensure_neural_ingest_pipeline
 
     ml_service = get_ml_model_service()
     if not ml_service.get_active_model_id():

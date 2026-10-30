@@ -72,8 +72,8 @@ def _ensure_neural_pipeline_ready() -> bool:
         return False
 
     try:
-        from app.services.search.indexing_service import ensure_neural_ingest_pipeline
-        from app.services.search.indexing_service import reset_neural_pipeline_state
+        from app.services.search.pipelines import ensure_neural_ingest_pipeline
+        from app.services.search.pipelines import reset_neural_pipeline_state
 
         # Reset state to force re-check
         reset_neural_pipeline_state()
@@ -95,7 +95,7 @@ def _handle_model_switch(model_id: str) -> dict[str, Any] | None:
     Only handles OpenSearch neural models.
     """
     from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
-    from app.services.search.indexing_service import recreate_index_for_dimension
+    from app.services.search.index_admin import recreate_index_for_dimension
 
     if model_id in OPENSEARCH_EMBEDDING_MODELS:
         model_info = OPENSEARCH_EMBEDDING_MODELS[model_id]
@@ -395,8 +395,8 @@ def _check_and_recreate_stale_index() -> None:
     """
     try:
         from app.services.opensearch_service import opensearch_client
-        from app.services.search.indexing_service import _INDEX_VERSION
-        from app.services.search.indexing_service import _get_index_body_with_dimension
+        from app.services.search.index_admin import _get_index_body_with_dimension
+        from app.services.search.index_schema import _INDEX_VERSION
 
         if not opensearch_client:
             return
@@ -755,7 +755,7 @@ def reindex_transcripts_task(
             # Reconcile index dimension with settings (handles model switch via API
             # where model_id is not passed to this task but is already saved to DB)
             try:
-                from app.services.search.indexing_service import recreate_index_for_dimension
+                from app.services.search.index_admin import recreate_index_for_dimension
                 from app.services.search.settings_service import get_search_embedding_dimension
 
                 target_dim = get_search_embedding_dimension()

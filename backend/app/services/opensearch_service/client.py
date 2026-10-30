@@ -211,7 +211,7 @@ def get_opensearch_client() -> "OpenSearch | None":
         return None
 
 
-# Differs from indexing_service._retry_failed_docs: re-sends the SAME call after a read timeout only;
+# Differs from indexing.bulk.BulkIndexMixin._retry_failed_docs: re-sends the SAME call after a read timeout only;
 # it never inspects per-item bulk errors.
 def call_idempotent_write(write: Callable[..., Any], /, **kwargs: Any) -> Any:
     """Call an indexing write with the indexing timeout, retrying read timeouts (#1182).
@@ -624,7 +624,7 @@ def probe_knn_health(index_name: str) -> KnnProbeResult:
 
 #: ``index name -> (monotonic timestamp, verdict)``. Deliberately a wall-clock
 #: TTL rather than the verify-once-and-trust-forever module flag used by
-#: ``indexing_service.is_neural_pipeline_available`` — a sticky boolean is the
+#: ``pipelines.is_neural_pipeline_available`` — a sticky boolean is the
 #: same "registry state assumed to be runtime truth" shape as issue #540 itself.
 _knn_health_cache: dict[str, tuple[float, KnnProbeResult]] = {}
 

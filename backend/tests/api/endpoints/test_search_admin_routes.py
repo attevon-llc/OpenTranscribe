@@ -226,12 +226,12 @@ def deployed_model():
             return_value=service,
         ),
         patch(
-            "app.services.search.indexing_service.ensure_neural_ingest_pipeline",
+            "app.services.search.pipelines.ensure_neural_ingest_pipeline",
             side_effect=lambda model_id: recorder.pipelines.append(model_id) or True,
         ),
-        patch("app.services.search.indexing_service.reset_neural_pipeline_state"),
+        patch("app.services.search.pipelines.reset_neural_pipeline_state"),
         patch(
-            "app.services.search.indexing_service.recreate_index_for_dimension",
+            "app.services.search.index_admin.recreate_index_for_dimension",
             side_effect=lambda dim: recorder.dimensions.append(dim) or True,
         ),
         patch("app.services.search.hybrid_search_service.reset_neural_search_state"),

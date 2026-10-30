@@ -14,7 +14,7 @@ the package's client singleton uses on import. Run inside the backend container:
 
 from app.services.opensearch_service import ensure_indices_exist
 from app.services.opensearch_service import ensure_v4_index_exists
-from app.services.search.indexing_service import ensure_chunks_index_exists
+from app.services.search.index_admin import ensure_chunks_index_exists
 
 
 def main() -> int:

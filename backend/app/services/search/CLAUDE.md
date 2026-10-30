@@ -3,7 +3,7 @@
 ## ⚠️ Cosine scores: OpenSearch `cosinesimil` is NOT raw cosine
 
 Every kNN field in this app maps `"space_type": "cosinesimil"` with `engine: lucene`
-(`indexing_service.py:295` for the chunks index; `opensearch_service/repair.py` +
+(`index_schema.py` for the chunks index; `opensearch_service/repair.py` +
 `opensearch_service/indices.py` for the speaker indices). Lucene's `cosinesimil` returns
 **`(1 + cosine) / 2`**, range 0–1.
 
@@ -75,9 +75,9 @@ The chunk plane in this package carries no voiceprint and is not gated.
     languages also must NOT fall back to English punkt: it loads fine, runs fine, and
     returns a Chinese transcript as one sentence, so the regex fallback was never reached.
     `reset_sentence_splitter_state()` exists for tests only.
-- `indexing_service.py` — index body + `_INDEX_VERSION` (bump ⇒ startup logs a "run a full
-  reindex" warning, it does **not** migrate), search + neural ingest pipeline lifecycle,
-  `TranscriptIndexingService`.
+- `index_schema.py` (body, `_INDEX_VERSION`: bump logs a "full reindex" warning, never migrates), `index_admin.py`
+  (create/recreate/additive steps), `pipelines.py`, `plane_queries.py`, `corpus_cache.py`; `indexing_service.py` +
+  `indexing/` = `TranscriptIndexingService` (per-plane mixins) — see `indexing/CLAUDE.md`.
 - `fusion.py` — **what a fusion strategy IS**: `FusionConfig`, the derived pipeline id, the
   pipeline body, and drift detection. See "Fusion is selectable per request" below.
 - `hybrid_search_service.py` — `HybridSearchService.search`, the only query path.
@@ -333,7 +333,7 @@ A search pipeline is **query-time** metadata: it is attached per request via the
 be A/B'd against one live index with **no reindex and no global state swap** — the property
 #363's A/B is built on. Adding a pipeline is safe; changing a *mapping* is not.
 
-`fusion.py` owns what a strategy is; `indexing_service.ensure_search_pipeline_exists(cfg)` owns
+`fusion.py` owns what a strategy is; `pipelines.ensure_search_pipeline_exists(cfg)` owns
 its lifecycle in the cluster; `hybrid_search_service.ensure_fusion_pipeline(cfg)` owns the
 per-process cache and returns the id to attach.
 
@@ -445,7 +445,7 @@ original (control = an unrelated English sentence):
 | **distiluse-base-multilingual-cased-v1** | 512 | **0.90** | **0.87** | **0.85** | **0.93** | −0.01 |
 
 ⚠️ **A high CONTROL score means the model is not cosine-trained, and this index is.**
-`indexing_service.py` maps `"space_type": "cosinesimil"`. Two rejected candidates scored
+`index_schema.py` maps `"space_type": "cosinesimil"`. Two rejected candidates scored
 **0.385** (`multi-qa-mpnet-base-dot-v1`) and **0.703** (`msmarco-distilbert-base-tas-b`) on
 two *unrelated* sentences — they are dot-product models, whose magnitude carries the signal
 cosine discards. Ranking them here is silent and wrong, the same family as the repo-wide

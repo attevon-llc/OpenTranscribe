@@ -194,7 +194,7 @@ def dispatched(monkeypatch, redis) -> list[list[Any]]:  # noqa: ARG001
         monkeypatch.setattr(reindex_task, name, lambda: None)
     monkeypatch.setattr(reindex_task, "_ensure_neural_pipeline_ready", lambda: False)
     monkeypatch.setattr(
-        "app.services.search.indexing_service.recreate_index_for_dimension", lambda dim: True
+        "app.services.search.index_admin.recreate_index_for_dimension", lambda dim: True
     )
     monkeypatch.setattr(
         "app.services.search.settings_service.get_search_embedding_dimension", lambda: 384

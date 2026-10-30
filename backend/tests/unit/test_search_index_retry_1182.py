@@ -134,12 +134,13 @@ class TestIdempotentWriteHelper:
 class TestCallSitesUseTheIndexTimeout:
     def test_chunk_bulk_uses_index_timeout(self, monkeypatch):
         from app.services.search import indexing_service
+        from app.services.search.indexing import bulk
 
         monkeypatch.setattr(settings, "OPENSEARCH_INDEX_TIMEOUT_S", 61)
         client = _RecordingClient()
         chunk = {"file_uuid": "f", "chunk_index": 0, "text": "t"}
 
-        with patch.object(indexing_service, "opensearch_client", client):
+        with patch.object(bulk, "opensearch_client", client):
             indexed = indexing_service.TranscriptIndexingService()._bulk_index_chunks([chunk])
 
         assert indexed == 1
@@ -147,11 +148,12 @@ class TestCallSitesUseTheIndexTimeout:
 
     def test_digest_bulk_uses_index_timeout(self, monkeypatch):
         from app.services.search import indexing_service
+        from app.services.search.indexing import bulk
 
         monkeypatch.setattr(settings, "OPENSEARCH_INDEX_TIMEOUT_S", 62)
         client = _RecordingClient()
 
-        with patch.object(indexing_service, "opensearch_client", client):
+        with patch.object(bulk, "opensearch_client", client):
             indexed = indexing_service.TranscriptIndexingService()._bulk_index_documents(
                 [("f_digest_0", {"a": 1})], use_neural_pipeline=False
             )
@@ -240,7 +242,7 @@ def _task_harness(*, retries: int, index_error: Exception):
                 "app.services.search.indexing_service.TranscriptIndexingService",
                 return_value=service,
             ),
-            patch("app.services.search.indexing_service.reset_neural_pipeline_state"),
+            patch("app.services.search.pipelines.reset_neural_pipeline_state"),
             patch("app.services.opensearch_service.index_transcript"),
             patch("app.services.post_processing_status.report"),
             patch.object(task, "retry", retry_mock),

@@ -101,7 +101,6 @@ noqa::backend/app/services/redaction/service.py	11	suppression: reason to be add
 noqa::backend/app/services/redaction/warmup.py	1	suppression: reason to be added
 noqa::backend/app/services/redis_cache_service.py	1	suppression: reason to be added
 noqa::backend/app/services/scim_token_service.py	1	suppression: reason to be added
-noqa::backend/app/services/search/indexing_service.py	3	suppression: reason to be added
 noqa::backend/app/services/search/model_downloader.py	4	suppression: reason to be added
 noqa::backend/app/services/speaker_embedding_service.py	1	suppression: reason to be added
 noqa::backend/app/services/watch_email_service.py	2	suppression: reason to be added

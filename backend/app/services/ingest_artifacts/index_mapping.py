@@ -14,7 +14,7 @@ Stage 3, by ``services/search/indexing_service.py``.
 
 1. Add :data:`TARGET_MAPPING_ADDITIONS` to ``TRANSCRIPT_CHUNKS_INDEX_BODY["mappings"]
    ["properties"]`` and set ``_INDEX_VERSION = 6`` (:data:`TARGET_INDEX_VERSION`).
-2. Add :data:`DOC_TYPE_FIELD` to the predicate in ``indexing_service.chunk_plane_query``
+2. Add :data:`DOC_TYPE_FIELD` to the predicate in ``plane_queries.chunk_plane_query``
    — one line, one place (that function exists for this).
 3. Put :func:`chunk_plane_clause` into ``_build_filters`` **and** into the four readers
    that build their own filter lists (addendum G3): ``get_suggestions``,

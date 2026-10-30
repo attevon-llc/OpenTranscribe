@@ -162,7 +162,7 @@ def _wait_for_chunks_indexed(file_uuid: str, timeout: float = CHUNKS_INDEXED_TIM
     """
     from app.core.config import settings
     from app.services.opensearch_service import get_opensearch_client
-    from app.services.search.indexing_service import chunk_plane_query
+    from app.services.search.plane_queries import chunk_plane_query
 
     client = get_opensearch_client()
     assert client is not None, (

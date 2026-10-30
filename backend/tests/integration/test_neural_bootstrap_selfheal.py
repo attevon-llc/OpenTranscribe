@@ -47,24 +47,24 @@ def test_bootstrap_reaches_ok_and_is_idempotent():
     )
     assert first.model_id
 
-    from app.services.search import indexing_service
+    from app.services.search import pipelines
 
     # A hand-rolled counting spy, not unittest.mock.patch — this is a REAL cluster call
     # being counted, not a mocked-away one, and the audit-tests external-service-mock
     # detector cannot tell "wraps=" (a spy that still calls through) from a real
     # replacement. Save/restore the bound method manually instead.
-    real_put_pipeline = indexing_service.opensearch_client.ingest.put_pipeline
+    real_put_pipeline = pipelines.opensearch_client.ingest.put_pipeline
     call_count = {"n": 0}
 
     def _counting_put_pipeline(*args: object, **kwargs: object):
         call_count["n"] += 1
         return real_put_pipeline(*args, **kwargs)
 
-    indexing_service.opensearch_client.ingest.put_pipeline = _counting_put_pipeline
+    pipelines.opensearch_client.ingest.put_pipeline = _counting_put_pipeline
     try:
         second = ensure_neural_search_bootstrap()
     finally:
-        indexing_service.opensearch_client.ingest.put_pipeline = real_put_pipeline
+        pipelines.opensearch_client.ingest.put_pipeline = real_put_pipeline
 
     assert second.state == "ok"
     assert second.model_id == first.model_id

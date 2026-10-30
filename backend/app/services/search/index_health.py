@@ -5,15 +5,15 @@ Why this lives in ``services/search`` and not beside
 -----------------------------------------------------------------------------
 Repairing ``transcript_chunks`` needs ``ensure_chunks_index_exists``, the read
 alias name, and the reindex coordinator — all of which live in this package.
-``opensearch_service`` is the layer *below* this one: ``indexing_service``
+``opensearch_service`` is the layer *below* this one: ``index_admin``
 imports it, and every other module here does too.
 
 Putting the repair in ``opensearch_service/repair.py`` therefore created a
-package **cycle** (``opensearch_service.repair`` -> ``search.indexing_service``
+package **cycle** (``opensearch_service.repair`` -> ``search.index_admin``
 -> ``opensearch_service``). It works at runtime because the import is inside a
 function, and it is still wrong: mypy resolves a cycle by degrading the imported
 module to ``Any``, which silently deleted type checking for **66 call sites**
-across ``indexing_service`` and ``reindex_task`` — including every
+across ``index_admin`` and ``reindex_task`` — including every
 ``opensearch_client.indices.…`` access. A guard that stops guarding is worse
 than no guard.
 
@@ -31,8 +31,8 @@ from typing import TYPE_CHECKING
 from app.core.config import settings
 from app.services.opensearch_service import probe_knn_health
 from app.services.opensearch_service import reset_knn_health_cache
-from app.services.search.indexing_service import CHUNKS_ALIAS_NAME
-from app.services.search.indexing_service import ensure_chunks_index_exists
+from app.services.search.index_admin import ensure_chunks_index_exists
+from app.services.search.index_schema import CHUNKS_ALIAS_NAME
 
 if TYPE_CHECKING:
     from app.services.opensearch_service.client import KnnProbeResult

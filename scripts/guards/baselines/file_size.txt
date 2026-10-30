@@ -54,7 +54,6 @@ backend/app/services/profile_embedding_service.py	702	oversize: split by concern
 backend/app/services/search/CLAUDE.md	910	oversize: split by concern planned
 backend/app/services/search/chunking_service.py	841	oversize: split by concern planned
 backend/app/services/search/hybrid_search_service.py	4051	oversize: split by concern planned
-backend/app/services/search/indexing_service.py	2328	oversize: split by concern planned
 backend/app/services/search/ml_model_service.py	1164	oversize: split by concern planned
 backend/app/services/speaker_cleanup.py	1026	oversize: split by concern planned
 backend/app/services/speaker_clustering_service.py	2894	oversize: split by concern planned

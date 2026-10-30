@@ -82,13 +82,13 @@ def chunk_index(monkeypatch):
     """
     from app.core.config import settings
     from app.services.opensearch_service import get_opensearch_client
-    from app.services.search import indexing_service as svc
+    from app.services.search import index_admin
 
     client = get_opensearch_client()
     assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
 
     name = f"test_rename_chunks_{uuid.uuid4().hex[:12]}"
-    client.indices.create(index=name, body=svc._get_index_body_with_dimension(384))
+    client.indices.create(index=name, body=index_admin._get_index_body_with_dimension(384))
     try:
         monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
         yield client
@@ -309,7 +309,7 @@ def test_speaker_rename_is_built_through_chunk_plane_query(chunk_index, monkeypa
     the roster alone would half-correct the document and hide that regeneration
     (#383 addendum G1) is the real fix.
     """
-    from app.services.search import indexing_service as svc
+    from app.services.search import plane_queries
     from app.tasks import rename_propagation_task as task_module
 
     file_uuid = str(uuid.uuid4())
@@ -322,14 +322,14 @@ def test_speaker_rename_is_built_through_chunk_plane_query(chunk_index, monkeypa
         ],
     )
 
-    real_query = svc.chunk_plane_query
+    real_query = plane_queries.chunk_plane_query
 
     def _with_doc_type(file_uuid_arg: str, **kwargs):
         query = real_query(file_uuid_arg, **kwargs)
         query["bool"]["filter"].append({"term": {"doc_type": "chunk"}})
         return query
 
-    monkeypatch.setattr(svc, "chunk_plane_query", _with_doc_type)
+    monkeypatch.setattr(plane_queries, "chunk_plane_query", _with_doc_type)
     assert task_module.propagate_speaker_rename(file_uuid, [OLD_NAME], NEW_NAME)["updated"] == 1
 
     by_index = {d["chunk_index"]: d for d in _sources(chunk_index, file_uuid)}

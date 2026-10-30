@@ -20,7 +20,8 @@ from typing import cast
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
-import app.services.search.indexing_service as svc
+import app.services.search.index_admin as svc
+import app.services.search.index_schema as schema
 from app.core.config import settings
 
 _INDEX = settings.OPENSEARCH_CHUNKS_INDEX
@@ -146,7 +147,7 @@ def test_no_function_in_this_module_other_than_itself_calls_the_destructive_recr
     endpoint (``model_switch.py``) and the reindex-task dimension reconciliation
     (``tasks/reindex_task.py``) -- both live OUTSIDE this module and import it lazily
     rather than going through a local wrapper defined here. So within
-    ``indexing_service.py`` itself, the only function whose body may call
+    ``index_admin.py`` itself, the only function whose body may call
     ``recreate_index_for_dimension`` is the destructive function's own name, appearing as
     the AST node it defines (it does not call itself). Anything else reaching it --
     whether from the additive machinery, the new env-tunable index topology, or a
@@ -163,7 +164,7 @@ def test_no_function_in_this_module_other_than_itself_calls_the_destructive_recr
     }
     assert not offending, (
         f"{sorted(offending)} reach recreate_index_for_dimension (DELETES the index) from "
-        "inside indexing_service.py. The only legitimate callers are in OTHER modules "
+        "inside index_admin.py. The only legitimate callers are in OTHER modules "
         "(model_switch.py, tasks/reindex_task.py) that import it explicitly for an "
         "intentional embedding-dimension change -- nothing defined in this module should "
         "route to it internally."
@@ -225,18 +226,18 @@ def recreate_index_for_dimension(dimension):
 
 
 def test_a_fresh_index_body_is_stamped_at_the_latest_additive_version():
-    mappings = cast(dict[str, Any], svc.TRANSCRIPT_CHUNKS_INDEX_BODY["mappings"])
+    mappings = cast(dict[str, Any], schema.TRANSCRIPT_CHUNKS_INDEX_BODY["mappings"])
     meta = mappings["_meta"]
-    assert meta["version"] == svc._INDEX_VERSION
-    assert meta["additive_version"] == svc._ADDITIVE_VERSION
-    assert svc._ADDITIVE_VERSION >= 1, "no additive steps registered — nothing to test"
+    assert meta["version"] == schema._INDEX_VERSION
+    assert meta["additive_version"] == schema._ADDITIVE_VERSION
+    assert schema._ADDITIVE_VERSION >= 1, "no additive steps registered — nothing to test"
 
 
 def test_a_fresh_index_body_already_carries_every_additive_field():
-    assert svc.ADDITIVE_MAPPING_STEPS, "no additive steps registered — the loop below is vacuous"
-    mappings = cast(dict[str, Any], svc.TRANSCRIPT_CHUNKS_INDEX_BODY["mappings"])
+    assert schema.ADDITIVE_MAPPING_STEPS, "no additive steps registered — the loop below is vacuous"
+    mappings = cast(dict[str, Any], schema.TRANSCRIPT_CHUNKS_INDEX_BODY["mappings"])
     properties = mappings["properties"]
-    for step in svc.ADDITIVE_MAPPING_STEPS:
+    for step in schema.ADDITIVE_MAPPING_STEPS:
         assert step.properties, f"step {step.version} declares no fields at all"
         for field, definition in step.properties.items():
             assert properties.get(field) == definition, (
@@ -247,7 +248,7 @@ def test_a_fresh_index_body_already_carries_every_additive_field():
 
 
 def test_applying_pending_steps_bumps_additive_version_and_preserves_major_version():
-    client = _client({"version": svc._INDEX_VERSION, "additive_version": 0})
+    client = _client({"version": schema._INDEX_VERSION, "additive_version": 0})
 
     with patch.object(svc, "opensearch_client", client):
         svc._apply_pending_additive_steps(_INDEX)
@@ -257,8 +258,8 @@ def test_applying_pending_steps_bumps_additive_version_and_preserves_major_versi
 
     # Every step's `properties` fragment was PUT...
     field_calls = [c for c in put_calls if "properties" in c.kwargs.get("body", {})]
-    assert len(field_calls) == len(svc.ADDITIVE_MAPPING_STEPS)
-    for step, call in zip(svc.ADDITIVE_MAPPING_STEPS, field_calls, strict=True):
+    assert len(field_calls) == len(schema.ADDITIVE_MAPPING_STEPS)
+    for step, call in zip(schema.ADDITIVE_MAPPING_STEPS, field_calls, strict=True):
         assert call.kwargs["body"]["properties"] == step.properties
 
     # ...and the FINAL call wrote the new additive_version while preserving the
@@ -266,8 +267,8 @@ def test_applying_pending_steps_bumps_additive_version_and_preserves_major_versi
     meta_calls = [c for c in put_calls if "_meta" in c.kwargs.get("body", {})]
     assert len(meta_calls) == 1
     written_meta = meta_calls[0].kwargs["body"]["_meta"]
-    assert written_meta["version"] == svc._INDEX_VERSION
-    assert written_meta["additive_version"] == svc._ADDITIVE_VERSION
+    assert written_meta["version"] == schema._INDEX_VERSION
+    assert written_meta["additive_version"] == schema._ADDITIVE_VERSION
 
 
 def test_an_index_already_at_the_target_additive_version_is_untouched():
@@ -278,7 +279,9 @@ def test_an_index_already_at_the_target_additive_version_is_untouched():
     the public contract — "the index exists and is usable" — must still hold true
     when there was nothing to apply.
     """
-    client = _client({"version": svc._INDEX_VERSION, "additive_version": svc._ADDITIVE_VERSION})
+    client = _client(
+        {"version": schema._INDEX_VERSION, "additive_version": schema._ADDITIVE_VERSION}
+    )
 
     with patch.object(svc, "opensearch_client", client):
         result = svc.ensure_chunks_index_exists()
@@ -289,7 +292,7 @@ def test_an_index_already_at_the_target_additive_version_is_untouched():
 
 def test_applying_pending_steps_twice_is_idempotent():
     """Idempotency, case 2: running it twice in a row does the work exactly once."""
-    client = _client({"version": svc._INDEX_VERSION, "additive_version": 0})
+    client = _client({"version": schema._INDEX_VERSION, "additive_version": 0})
 
     with patch.object(svc, "opensearch_client", client):
         svc._apply_pending_additive_steps(_INDEX)
@@ -304,8 +307,8 @@ def test_applying_pending_steps_twice_is_idempotent():
             _INDEX: {
                 "mappings": {
                     "_meta": {
-                        "version": svc._INDEX_VERSION,
-                        "additive_version": svc._ADDITIVE_VERSION,
+                        "version": schema._INDEX_VERSION,
+                        "additive_version": schema._ADDITIVE_VERSION,
                     }
                 }
             }
@@ -325,7 +328,7 @@ def test_applying_pending_steps_never_recreates_the_index():
     confirm the additive fields actually landed via the surviving mock's own
     tracked state, alongside the "nothing destructive happened" assertions.
     """
-    client = _client({"version": svc._INDEX_VERSION, "additive_version": 0})
+    client = _client({"version": schema._INDEX_VERSION, "additive_version": 0})
 
     with patch.object(svc, "opensearch_client", client):
         svc._apply_pending_additive_steps(_INDEX)
@@ -341,7 +344,7 @@ def test_applying_pending_steps_never_recreates_the_index():
 def test_ensure_chunks_index_exists_applies_pending_steps_for_an_existing_index():
     """The wiring: an existing index gets walked forward on every call, not just at
     creation time."""
-    client = _client({"version": svc._INDEX_VERSION, "additive_version": 0})
+    client = _client({"version": schema._INDEX_VERSION, "additive_version": 0})
 
     with patch.object(svc, "opensearch_client", client):
         result = svc.ensure_chunks_index_exists()

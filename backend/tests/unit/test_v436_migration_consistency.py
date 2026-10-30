@@ -75,7 +75,7 @@ def test_the_frozen_table_matched_the_catalog_when_written():
     If a later catalog change makes this fail, the revision stays as it is (it describes the
     rule of its own time): update this test's expectation, never the revision.
     """
-    from app.services.asr.factory import ASR_PROVIDER_CATALOG
+    from app.services.asr.catalog import ASR_PROVIDER_CATALOG
     from app.services.asr.factory import ASRProviderFactory
 
     module = _module()

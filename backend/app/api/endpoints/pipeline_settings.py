@@ -20,7 +20,7 @@ from app.db.base import get_db
 from app.schemas.pipeline import PipelineIssueOut
 from app.schemas.pipeline import PipelineStepOut
 from app.schemas.pipeline import PipelineView
-from app.services.asr.factory import ASR_PROVIDER_CATALOG
+from app.services.asr.catalog import ASR_PROVIDER_CATALOG
 from app.services.pipeline_plan import PYANNOTE_AI
 from app.services.pipeline_plan import PipelinePlan
 from app.services.pipeline_plan import resolve_pipeline_plan

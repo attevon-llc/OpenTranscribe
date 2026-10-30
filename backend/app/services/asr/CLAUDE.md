@@ -17,8 +17,9 @@ deepgram, assemblyai, openai, google, azure, aws, speechmatics, gladia, pyannote
   they are module-level precisely so neither hierarchy needs an instance of the other's ABC (#299).
 - `types.py` — normalized DTOs: `ASRConfig` in, `ASRResult`/`ASRSegment`/`ASRWord` out. Plain
   dataclasses, not Pydantic.
-- `factory.py` — `ASR_PROVIDER_CATALOG` (the admin UI's whole provider/model/price table,
-  incl. per-model `supports_translation` and `status: tested|experimental`) + `ASRProviderFactory`.
+- `catalog.py` — `ASR_PROVIDER_CATALOG` (the admin UI's whole provider/model/price table,
+  incl. per-model `supports_translation` and `status: tested|experimental`) + `_capabilities`.
+- `factory.py` — `ASRProviderFactory` (resolution, construction, `get_model_capabilities` over the catalog).
   Every provider entry (and a model entry where it differs) also carries the two capabilities
   the pipeline plan (`services/pipeline_plan.py`, #1224) is built on, each **pinned to the
   provider module's code, never to vendor docs**:
@@ -57,9 +58,9 @@ deepgram, assemblyai, openai, google, azure, aws, speechmatics, gladia, pyannote
 
 ## Adding a provider
 
-New `<vendor>_provider.py` subclassing `ASRProvider`, then three edits **all inside `factory.py`**:
-an entry in `ASR_PROVIDER_CATALOG` (this alone drives the UI), an `if provider == "<name>"` branch in
-**both** `_from_env()` and `create_from_config()`, and the env-var name in `_KEY_REQUIRED` if it needs
+New `<vendor>_provider.py` subclassing `ASRProvider`, then three edits in `catalog.py` and `factory.py`:
+an entry in `ASR_PROVIDER_CATALOG` in `catalog.py` (this alone drives the UI), an `if provider == "<name>"` branch in
+**both** `_from_env()` and `create_from_config()` (`factory.py`), and the env-var name in `_KEY_REQUIRED` if it needs
 a key. Finally add the module to `ASR_PROVIDER_MODULES` in `tests/unit/test_provider_sdk_compat.py` —
 providers lazy-import their SDK *inside* methods, so that import smoke test is the only guard against
 SDK drift. **There is no decorator/registry**; dispatch is a literal if/elif chain deliberately

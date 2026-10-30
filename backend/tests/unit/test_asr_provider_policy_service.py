@@ -11,7 +11,7 @@ from app.core.constants import ASR_USERS_OWN_KEYS_KEY
 from app.core.exceptions import ConflictError
 from app.services import asr_provider_policy as policy
 from app.services import system_settings_service
-from app.services.asr.factory import ASR_PROVIDER_CATALOG
+from app.services.asr.catalog import ASR_PROVIDER_CATALOG
 from tests.helpers import detail_dict
 
 pytestmark = pytest.mark.xdist_group("asr_provider_policy_system_settings")

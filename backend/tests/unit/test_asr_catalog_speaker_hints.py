@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from app.services.asr.factory import ASR_PROVIDER_CATALOG
+from app.services.asr.catalog import ASR_PROVIDER_CATALOG
 from app.services.asr.types import ASRConfig
 from app.services.pipeline_plan import ALL_HINTS
 

@@ -23,7 +23,7 @@ Default: `large-v3-turbo`. Resolution order is pinned value → `SystemSettings`
 | `medium` / `small` | Low-VRAM, hybrid CPU leg | ~5 GB / ~2 GB | Yes |
 
 Those figures and the `supports_translation` flags come from `ASR_PROVIDER_CATALOG` in
-`services/asr/factory.py` — the same catalog the settings UI reads. Keep them in sync there,
+`services/asr/catalog.py` — the same catalog the settings UI reads. Keep them in sync there,
 not here.
 
 **Translation gotcha:** requesting "Translate to English" on a model that cannot translate does

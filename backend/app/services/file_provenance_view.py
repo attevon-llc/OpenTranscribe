@@ -49,7 +49,7 @@ _LEGACY_VOICEPRINT_MODEL = {
 
 
 def _vendor_display(provider: str) -> str | None:
-    from app.services.asr.factory import ASR_PROVIDER_CATALOG
+    from app.services.asr.catalog import ASR_PROVIDER_CATALOG
 
     entry = ASR_PROVIDER_CATALOG.get(provider)
     return str(entry["display_name"]) if entry and provider != "local" else None

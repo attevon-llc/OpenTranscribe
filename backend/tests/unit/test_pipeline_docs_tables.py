@@ -17,7 +17,7 @@ from types import ModuleType
 
 import pytest
 
-from app.services.asr.factory import ASR_PROVIDER_CATALOG
+from app.services.asr.catalog import ASR_PROVIDER_CATALOG
 from app.services.pipeline_plan import BLOCKING_CODES
 
 REPO_ROOT = Path(__file__).resolve().parents[3]

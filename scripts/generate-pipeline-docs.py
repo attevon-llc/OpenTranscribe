@@ -122,7 +122,8 @@ def _hints(hints) -> str:
 
 def render_provider_speakers() -> str:
     _prepare_environment()
-    from app.services.asr.factory import ASR_PROVIDER_CATALOG, ASRProviderFactory
+    from app.services.asr.catalog import ASR_PROVIDER_CATALOG
+    from app.services.asr.factory import ASRProviderFactory
     from app.services.pipeline_plan import ALL_HINTS
 
     rows = []
@@ -217,7 +218,8 @@ def _cell(plan) -> str:
 
 
 def _matrix_rows(mode: str) -> list[list[str]]:
-    from app.services.asr.factory import ASR_PROVIDER_CATALOG, ASRProviderFactory
+    from app.services.asr.catalog import ASR_PROVIDER_CATALOG
+    from app.services.asr.factory import ASRProviderFactory
     from app.services.pipeline_plan import DiarizerConfigInfo, PlanInputs, resolve_pipeline_plan
 
     d_caps = ASRProviderFactory.get_model_capabilities(*DIARIZER_EXAMPLE)

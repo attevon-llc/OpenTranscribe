@@ -32,7 +32,7 @@ from app.core.config import settings
 from app.core.constants import WHISPER_WORKER_PREFIXES
 from app.core.exceptions import DomainError
 from app.db.base import get_db
-from app.services.asr.factory import ASR_PROVIDER_CATALOG
+from app.services.asr.catalog import ASR_PROVIDER_CATALOG
 from app.services.local_models import cache as local_model_cache
 from app.services.local_models import worker_report
 from app.utils.lite_mode import refuse_on_lite

@@ -23,7 +23,7 @@ from unittest.mock import patch
 import pytest
 
 from app.core.config import settings
-from app.services.asr.factory import ASR_PROVIDER_CATALOG
+from app.services.asr.catalog import ASR_PROVIDER_CATALOG
 from app.services.asr.factory import ASRProviderFactory
 from app.services.asr.types import ASRConfig
 from app.services.asr.types import ASRSegment

@@ -140,7 +140,7 @@ def _validate_region(provider: str | None, region: str | None) -> None:
 def _get_provider_catalog() -> dict:
     """Return the ASR provider catalog, or empty dict if not yet available."""
     try:
-        from app.services.asr.factory import ASR_PROVIDER_CATALOG  # type: ignore[import]
+        from app.services.asr.catalog import ASR_PROVIDER_CATALOG  # type: ignore[import]
 
         return ASR_PROVIDER_CATALOG
     except ImportError:

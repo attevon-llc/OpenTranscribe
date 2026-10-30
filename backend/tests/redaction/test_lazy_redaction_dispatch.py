@@ -5,7 +5,7 @@ file whose detection scan never ran, and the gate that reads it withholds the
 transcript for NULL exactly as it does for ``pending``. **That equivalence is
 load-bearing and must not be relaxed**: the status rule lives in
 ``services/redaction/export_policy.export_masking_is_pending``, which the
-transcript read (``crud._redaction_pending``), the single-file subtitle
+transcript read (``redaction_gate._redaction_pending``), the single-file subtitle
 download, the bulk-export ZIP and the burned-in-subtitle render all share. A
 "fix" that let NULL through there would hand three export surfaces a transcript
 no detector ever looked at, which is issue #85 reintroduced.
@@ -118,7 +118,7 @@ def broker(monkeypatch):
 
 def _read_gate(db_session, user, media) -> bool:
     """Ask the real transcript-read gate whether this file is withheld."""
-    from app.api.endpoints.files.crud import _redaction_pending
+    from app.api.endpoints.files.redaction_gate import _redaction_pending
     from app.services.redaction.config import resolve_effective_config
 
     return _redaction_pending(db_session, resolve_effective_config(db_session, user.id), media)

@@ -66,7 +66,7 @@ class SummaryMaskingUnavailableError(RuntimeError):
     """A detector feeding one of the user's enabled categories could not run.
 
     Raised rather than returning partially-masked text. The endpoint turns this
-    into a 503, matching what ``files/crud.py`` already does when the redaction
+    into a 503, matching what ``files/redaction_gate.py`` already does when the redaction
     config itself cannot be resolved: a summary that is *supposed* to be masked
     is withheld rather than served in the clear.
     """

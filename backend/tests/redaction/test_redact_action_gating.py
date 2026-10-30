@@ -137,7 +137,7 @@ def test_bulk_redact_still_runs_when_redaction_is_on(db_session, normal_user, br
     [({}, False), ({"redaction_enabled": "true"}, True)],
 )
 def test_file_detail_reports_redaction_enabled(db_session, normal_user, prefs, expected):
-    from app.api.endpoints.files.crud import get_media_file_detail
+    from app.api.endpoints.files.detail_response import get_media_file_detail
 
     _set_prefs(db_session, normal_user, **prefs)
     media = _completed_file(db_session, normal_user)

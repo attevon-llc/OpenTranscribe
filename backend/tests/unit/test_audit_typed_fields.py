@@ -123,7 +123,7 @@ def test_the_legacy_branch_refuses_an_event_that_names_its_own_tenant():
 
 
 def test_the_unredacted_reveal_uses_the_enum_and_names_the_files_tenant(monkeypatch):
-    from app.api.endpoints.files import crud
+    from app.api.endpoints.files import redaction_gate
 
     seen: list[dict] = []
     monkeypatch.setattr(audit_module.audit_logger, "log", lambda **kw: seen.append(kw))
@@ -132,7 +132,7 @@ def test_the_unredacted_reveal_uses_the_enum_and_names_the_files_tenant(monkeypa
 
     for org_id, scope in ((9, "org"), (None, "personal")):
         media_file = MediaFile(id=1, uuid=file_uuid, organization_id=org_id)
-        crud.audit_unredacted_reveal(media_file, user, {"email"}, surface="transcript")
+        redaction_gate.audit_unredacted_reveal(media_file, user, {"email"}, surface="transcript")
         assert seen[-1]["event_type"] is AuditEventType.TRANSCRIPT_VIEW_UNREDACTED
         assert (seen[-1]["resource_type"], seen[-1]["resource_uuid"]) == (
             "media_file",

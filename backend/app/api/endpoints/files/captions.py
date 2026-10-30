@@ -37,9 +37,9 @@ from app.services.captions import to_webvtt
 from app.services.captions.source import load_caption_segments
 from app.services.request_context import RequestContext
 
-from .crud import _redaction_pending
-from .crud import _resolve_redaction_for_request
 from .crud import get_media_file_by_uuid
+from .redaction_gate import _redaction_pending
+from .redaction_gate import _resolve_redaction_for_request
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

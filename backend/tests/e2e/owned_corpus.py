@@ -385,7 +385,7 @@ def _inject_transcript(
             #
             # `inject_meeting` leaves `redaction_status` NULL — the transcription
             # pipeline sets it, and injection skips the pipeline. But
-            # `api/endpoints/files/crud.py::_redaction_pending` treats
+            # `api/endpoints/files/redaction_gate.py::_redaction_pending` treats
             # `None | pending | processing` alike, so `GET /api/files/{uuid}` and
             # `/segments` both answer `transcript_segments: []` with
             # `redaction_pending: true` **forever**. Measured directly: 12 rows in

@@ -368,7 +368,7 @@ SCOPE_WIDENER_SITES: dict[str, str] = {
     ),
 }
 REVEAL_WIDENER_SITES: dict[str, str] = {
-    "api/endpoints/files/crud.py::_resolve_redaction_for_request": (
+    "api/endpoints/files/redaction_gate.py::_resolve_redaction_for_request": (
         "owner-only reveal in multi mode, admin reveal only in single mode; detail view: the owner reveals; a non-owner admin only where the bypass allows it, which is single mode"
     ),
     "api/endpoints/files/subtitles.py::_resolve_subtitle_redaction": (

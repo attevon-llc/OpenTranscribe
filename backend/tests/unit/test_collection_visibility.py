@@ -214,7 +214,7 @@ class TestCollectionsOnFiles:
         assert many == one
 
     def test_the_file_page_names_exactly_what_the_search_card_names(self, db_session):
-        from app.api.endpoints.files.crud import get_file_collections
+        from app.api.endpoints.files.detail_response import get_file_collections
 
         alice = _user(db_session, "alice")
         mallory = _user(db_session, "mallory")

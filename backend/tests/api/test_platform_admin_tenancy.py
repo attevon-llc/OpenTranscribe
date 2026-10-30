@@ -186,7 +186,7 @@ def _fake_cfg() -> MagicMock:
 
 
 def _reveal_via_detail(db_session, media_file, user, bypass):
-    from app.api.endpoints.files.crud import _resolve_redaction_for_request
+    from app.api.endpoints.files.redaction_gate import _resolve_redaction_for_request
 
     return _resolve_redaction_for_request(
         db_session, media_file, user, bypass=bypass, redact=False

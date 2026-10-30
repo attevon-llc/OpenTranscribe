@@ -559,7 +559,7 @@ ALLOWS_KINDS: dict[str, str] = {
     "api/endpoints/watch_sources.py::create_watch_source": "watch_source_owner",
     "api/endpoints/prompts_sharing.py::share_prompt": "prompt",
     "api/endpoints/files/crud.py::get_media_file_by_id": "media_file",
-    "api/endpoints/files/crud.py::get_media_file_detail": "media_file",
+    "api/endpoints/files/detail_response.py::get_media_file_detail": "media_file",
     "api/endpoints/files/__init__.py::get_thumbnail": "thumbnail",
     "services/speaker_provenance_view.py::_can_see_actor": "media_file",
 }

@@ -11,7 +11,7 @@ whose ``_dispatch_redaction`` hands the file to the detection scan.
 
 Injection skipped that step, so an injected row is born with
 ``redaction_status`` NULL. For an owner who has redaction enabled that is not
-cosmetic: ``api/endpoints/files/crud._redaction_pending`` withholds the
+cosmetic: ``api/endpoints/files/redaction_gate._redaction_pending`` withholds the
 transcript for NULL, so ``GET /api/files/{uuid}`` and ``/segments`` answer
 ``transcript_segments: []`` with ``redaction_pending: true``. Measured on the dev
 stack 2026-09-07 against a freshly injected 6-segment meeting: 6 rows in
@@ -113,7 +113,7 @@ def test_a_freshly_injected_transcript_is_withheld_by_the_read_gate(
     dispatch below exists to resolve, so that if the gate's rule ever changes
     this file explains itself rather than looking like ceremony.
     """
-    from app.api.endpoints.files.crud import _redaction_pending
+    from app.api.endpoints.files.redaction_gate import _redaction_pending
     from app.models.media import MediaFile
     from app.models.media import TranscriptSegment
     from app.services.redaction.config import resolve_effective_config

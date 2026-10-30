@@ -971,14 +971,14 @@ def _handle_redact_action(db: Session, file_uuid: str, file_id: int) -> BulkActi
     Re-runs redaction detection for a completed file (e.g., old files that predate the
     feature, or to apply a settings change). Idempotent — replaces cached spans.
 
-    The status claim and its withdrawal are ``crud.claim_and_dispatch_redaction_scan``,
+    The status claim and its withdrawal are ``redaction_gate.claim_and_dispatch_redaction_scan``,
     shared with the lazy dispatch on a transcript read. This site used to set
     ``pending``, commit, and then publish unguarded, which made pressing "Redact" on a
     healthy file a way to withhold its transcript permanently whenever the broker was
     momentarily unreachable — see that helper for why nothing else recovers the row.
     """
 
-    from app.api.endpoints.files.crud import claim_and_dispatch_redaction_scan
+    from app.api.endpoints.files.redaction_gate import claim_and_dispatch_redaction_scan
     from app.models.media import MediaFile
 
     db_file = db.query(MediaFile).filter_by(id=file_id).first()
@@ -1078,7 +1078,7 @@ def _require_redaction_enabled(
     Uses the same policy resolution as the transcript read, so the button the UI
     shows and the action the server accepts can never disagree.
     """
-    from app.api.endpoints.files.crud import _resolve_redaction_for_request
+    from app.api.endpoints.files.redaction_gate import _resolve_redaction_for_request
 
     cfg, _ = _resolve_redaction_for_request(
         db,

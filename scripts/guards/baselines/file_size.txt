@@ -5,7 +5,6 @@ backend/app/api/endpoints/auth/dependencies.py	931	oversize: split by concern pl
 backend/app/api/endpoints/auth/login.py	732	oversize: split by concern planned
 backend/app/api/endpoints/auth_config.py	766	oversize: split by concern planned
 backend/app/api/endpoints/files/__init__.py	1480	oversize: split by concern planned
-backend/app/api/endpoints/files/crud.py	1443	oversize: split by concern planned
 backend/app/api/endpoints/files/management.py	1380	oversize: split by concern planned
 backend/app/api/endpoints/files/reprocess.py	772	oversize: split by concern planned
 backend/app/api/endpoints/files/url_processing.py	862	oversize: split by concern planned

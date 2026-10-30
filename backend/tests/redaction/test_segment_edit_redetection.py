@@ -325,7 +325,7 @@ def test_the_transcript_read_withholds_until_the_repair_scan_lands(
     ``_redaction_pending`` is the existing gate, and it keys off exactly the
     status the edit path now writes — no new concept, no new reader.
     """
-    from app.api.endpoints.files.crud import _redaction_pending
+    from app.api.endpoints.files.redaction_gate import _redaction_pending
     from app.services.redaction.config import resolve_effective_config
 
     monkeypatch.setattr(pii_presidio, "_get_analyzer", lambda _use_gliner: None)

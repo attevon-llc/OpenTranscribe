@@ -29,7 +29,7 @@ current.
 | Schema authority (revisions) | `backend/alembic/versions/` (`v010_baseline.py` is the first) |
 | ORM models (the table list; table names are singular, e.g. `user`, `media_file`, `transcript_segment`, `speaker`, `tag`, `collection`, `task`) | `backend/app/models/` |
 | API schemas | `backend/app/schemas/` |
-| Startup migration runner and schema-version detection | `backend/app/db/migrations.py` |
+| Startup migration runner and schema-version detection | `backend/app/db/migrations.py`, `backend/app/db/schema_detect/` |
 | Seed data and the bootstrap admin | `backend/app/initial_data.py` |
 | Written overview of the tables | `docs/database-schema.md` (check it against the models before relying on it) |
 | Model-versus-live-schema comparison | `scripts/check-schema-drift.py` |
@@ -63,8 +63,9 @@ authoring the revision file. In short:
    current head from the `down_revision` graph rather than from any list written in prose.
 2. Update the SQLAlchemy model in `backend/app/models/`.
 3. Update the Pydantic schema in `backend/app/schemas/` if it is exposed through the API.
-4. Add a detection guard for the new revision to `_detect_schema_version()` (a marker unique to
-   the revision, at the top of the newest-first ladder), or untracked databases are mis-stamped.
+4. Add a detection guard for the new revision to `_detect_schema_version()`'s ladder in
+   `backend/app/db/schema_detect/` (a marker unique to the revision, at the top of the
+   newest-first ladder), or untracked databases are mis-stamped.
 5. Test both paths: a full chain from scratch (`./opentr.sh reset dev`) and a restart over an
    existing database.
 

@@ -39,11 +39,17 @@ ALLOWED: dict[str, str] = {
         "adapter over names, not a second implementation — nothing downstream, "
         "including AuthConfigService.ENV_TO_CONFIG_MAPPING, sees the old spelling."
     ),
-    "db/migrations.py": (
-        "Historical schema fingerprints. _detect_schema_version() probes for columns "
+    "db/schema_detect/legacy.py": (
+        "Historical schema fingerprints. The schema-detection ladder probes for columns "
         "as they existed at v031 and v170 in order to stamp an untracked database. "
         "Those column names are facts about the past and cannot be renamed without "
         "breaking detection for every pre-v378 deployment."
+    ),
+    "db/schema_detect/auth_identity.py": (
+        "Historical data fingerprint. v379's detection arm keys on the ABSENCE of the "
+        "retired config-key prefix in auth_config / auth_config_audit rows (the revision "
+        "is data-only, so those rows are its only marker), and the arm returns that "
+        "revision's immutable id, which names the old provider."
     ),
     "schemas/user.py": (
         "AuthMethodsResponse emits a deprecated duplicate of oidc_enabled for one "

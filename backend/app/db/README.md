@@ -12,6 +12,7 @@ This directory contains core database configuration, session management, and the
 db/
 ├── base.py           # Engine, SessionLocal, Base, get_db(), build_libpq_options()
 ├── migrations.py     # Startup Alembic runner + schema version detection
+├── schema_detect/    # Detection ladder: per-era probes + arms, newest first
 ├── session_utils.py  # session_scope(), get_refreshed_object()
 ├── CLAUDE.md         # Agent/contributor rules (schema-change checklist, gotchas)
 └── README.md         # This documentation
@@ -148,7 +149,7 @@ Table definitions are grouped by domain in `app/models/`; `app/models/README.md`
 1. **Schema Changes**: Create a new Alembic migration in `backend/alembic/versions/`
 2. **Model Updates**: Modify SQLAlchemy models in `app/models/`
 3. **Schema Updates**: Update Pydantic schemas in `app/schemas/`
-4. **Migration Detection**: Add a detection guard for the new revision in `_detect_schema_version()` in `app/db/migrations.py`
+4. **Migration Detection**: Add a detection guard for the new revision in `_detect_schema_version()`'s ladder (`app/db/schema_detect/`)
 5. **Reset Database**: Run `./opentr.sh reset dev` to test the full migration chain (this deletes all data), and also restart over an existing database to test the upgrade path
 
 ## Production Approach
@@ -178,6 +179,7 @@ backend/
     ├── db/                   # Database layer (session management)
     │   ├── base.py           # Engine, SessionLocal, Base
     │   ├── migrations.py     # Startup runner + version detection
+    │   ├── schema_detect/    # Detection ladder (per-era probes + arms)
     │   └── session_utils.py  # session_scope(), get_refreshed_object()
     ├── models/               # SQLAlchemy ORM models (one module per domain)
     └── schemas/              # Pydantic validation schemas

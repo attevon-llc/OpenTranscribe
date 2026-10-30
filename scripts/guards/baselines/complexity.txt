@@ -3,7 +3,6 @@ backend/app/api/endpoints/files/__init__.py::download_stream	16	complexity: deco
 backend/app/api/endpoints/prompts.py::get_prompts	16	complexity: decomposition planned
 backend/app/api/endpoints/users.py::update_current_user	16	complexity: decomposition planned
 backend/app/api/websockets.py::websocket_endpoint	16	complexity: decomposition planned
-backend/app/db/migrations.py::_detect_schema_version	96	complexity: decomposition planned
 backend/app/main.py::lifespan	16	complexity: decomposition planned
 backend/app/services/asr/aws_provider.py::AWSTranscribeProvider.transcribe	43	complexity: decomposition planned
 backend/app/services/asr/gladia_provider.py::GladiaProvider.transcribe	26	complexity: decomposition planned

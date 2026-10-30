@@ -511,8 +511,8 @@ class TranscriptSegment(Base):
     # ``v353`` replaced it with this functional unique index because btree's
     # 2704-byte key limit broke on seven-minute monologues. That history is why it
     # is declarable ONLY as an ``Index`` over a ``text()`` expression, never as a
-    # ``UniqueConstraint``, and why ``app/db/migrations.py``'s v071/v073 detection
-    # arms probe ``pg_constraint`` for it and correctly find nothing.
+    # ``UniqueConstraint``, and why ``app/db/schema_detect/legacy.py``'s v071/v073
+    # detection arms probe ``pg_constraint`` for it and correctly find nothing.
     #
     # ASR never collides on it — one segment per detected utterance, timings
     # float-distinct. A turn-per-segment corpus collides immediately (two speakers

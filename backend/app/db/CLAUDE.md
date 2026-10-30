@@ -10,8 +10,15 @@ pending. `alembic upgrade head` by hand is **production-only**.
 
 ## Key files
 
-- `migrations.py` — the runner plus `_detect_schema_version()`, a ~1,400-line ladder of
-  `information_schema` probes that maps a schema fingerprint to a revision to stamp.
+- `migrations.py` — the runner plus `_detect_schema_version()`, which runs every probe and
+  returns the first matching arm of the newest-first ladder (or `v010_baseline`).
+- `schema_detect/` — the ladder itself, one module per era of the chain, each holding that
+  era's `information_schema` probes (`probe()` → a frozen facts dataclass) and its slice of
+  arms (`ARMS`, newest first): `legacy.py` v010-v366, `cloud_seams.py` v367-v376,
+  `auth_identity.py` v377-v388, `ingest_tenancy.py` v389-v433, `governance.py` v434-v449.
+  `ladder.py` runs every probe oldest era first (`collect_facts`) and concatenates the slices
+  newest era first (`LADDER`). Every arm's position is pinned without a database by
+  `tests/unit/test_schema_detection_ladder.py`.
 - `base.py` — `engine`, `SessionLocal`, `Base`, `get_db()`, `build_libpq_options()`.
   `session_utils.py` — `session_scope()` (the contextmanager tasks use),
   `get_refreshed_object`.
@@ -23,9 +30,12 @@ pending. `alembic upgrade head` by hand is **production-only**.
    `DO $$ … END $$` guards). Every existing revision follows this.
 2. Update the SQLAlchemy model in `app/models/`.
 3. Update the Pydantic schema in `app/schemas/` if it's exposed via API.
-4. **Add a detection guard for the new version in `_detect_schema_version()`** — a marker
-   column/table/constraint unique to your revision, inserted at the TOP of the
-   newest-first return ladder. Skipping this silently mis-stamps untracked DBs.
+4. **Add a detection guard for the new version in `_detect_schema_version()`'s ladder** — a
+   marker column/table/constraint unique to your revision: a probe (and a facts field) in the
+   newest era module of `schema_detect/`, and an arm at the TOP of that module's `ARMS`
+   (start a new era module, prepended to `LADDER`, only when a module outgrows its size cap).
+   Add the revision's step to `_MODERN_CHAIN` in `tests/unit/test_schema_detection_ladder.py`.
+   Skipping this silently mis-stamps untracked DBs.
 5. Test both paths: `./opentr.sh reset dev` (full chain from scratch) **and** a
    rebuild-and-restart (migration applied on startup over an existing DB).
 
@@ -238,10 +248,11 @@ Configuration-only assertions would have passed against a backstop that did noth
   `lock_conn`, with the `engine.dispose()` ordered so it cannot touch the lock engine) and
   `::test_unlock_uses_the_same_session` (no second engine for the unlock). If you refactor the runner, do not move the
   acquire into a context manager and do not introduce an `unlock_engine`.
-- **`_detect_schema_version()` legitimately names the pre-`v380` column spellings.**
-  Those probes describe the schema *as it was* at v031 and v170; they are the only
-  possible fingerprints for those revisions. This file and `core/legacy_auth_env.py`
-  are the two modules the OIDC naming invariant
+- **The detection ladder legitimately names the pre-`v380` spellings.**
+  Its probes describe the schema *as it was* at v031 and v170 (`schema_detect/legacy.py`)
+  and v379's data marker is the retired config-key prefix (`schema_detect/auth_identity.py`);
+  they are the only possible fingerprints for those revisions. Those two modules and
+  `core/legacy_auth_env.py` are what the OIDC naming invariant
   (`tests/unit/test_oidc_naming_invariant.py`) exempts on that basis.
 - **A superseded revision's detection test compares chain position, not identity.**
   `assert _detect_schema_version(...) == REVISION` is only true while that revision is

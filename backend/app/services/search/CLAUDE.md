@@ -84,7 +84,7 @@ The chunk plane in this package carries no voiceprint and is not gated.
   request pieces it binds are sibling modules (its module docstring lists them).
 - `snippet_redaction.py` — read-time masking of the snippets on a search page. See
   "Snippets are masked, and the tags make that non-obvious" below.
-- `ml_model_service.py` — ML Commons register/deploy. `model_downloader.py`,
+- `ml_model_service.py` — `OpenSearchMLModelService` (client, settings, status/listing) composed from three mixins over `ml_model_host.py`: `ml_model_registration.py` (register, local artifacts), `ml_model_deployment.py` (deploy, verify, ensure-deployed), `ml_ingest_pipelines.py` (ingest pipeline, active model). The client is owned only by `ml_model_service` (`__init__`/`_ensure_client`): mixins must never import `get_opensearch_client`, or tests patching it stop taking effect. `model_downloader.py`,
   `settings_service.py` (DB-backed model + dimension), `tenant_scope.py`.
 - `embedding_provenance.py` — which model produced the vectors, and the one-query
   mixed-index survey. `model_switch.py` — the whole model switch, shared by both
@@ -573,7 +573,7 @@ becomes an outage. It is deliberately **not** in `POST /search/repair-indices`, 
 is close/reopen/force-merge and cannot repair a vector space — reporting it there would imply
 the repair had addressed it.
 
-`ml_model_service.get_active_model_id()` **refuses to guess.** It used to return
+`ml_ingest_pipelines.get_active_model_id()` **refuses to guess.** It used to return
 `list_models(deployed_only=True)[0]` — the first hit of an unsorted `match_all` — whenever the
 stored model was not deployed, and `ensure_neural_ingest_pipeline` writes whatever it is handed
 straight into the pipeline. That silently repointed embedding **with no user action**. Exactly
@@ -657,7 +657,7 @@ shape it was written for.
 `_initialize_neural_search` fired exactly once from `lifespan` via `asyncio.create_task`, and
 every failure arm was a bare `return` after a `logger.warning`. Nothing ever re-entered it.
 
-The specific race: `ml_model_service._REGISTRATION_MAX_WAIT` (300s) is a poll **ceiling on our
+The specific race: `ml_model_registration._REGISTRATION_MAX_WAIT` (300s) is a poll **ceiling on our
 own polling**, not on OpenSearch's registration task, which keeps running server-side after we
 stop looking. A model can finish `REGISTERED, deployed=False` a few minutes after the API
 process gave up, and then sit there forever — nothing re-checks it. Consequence: the ingest
@@ -700,7 +700,7 @@ wait for. `run_bootstrap_tick`'s 600s backoff after one failure happened to matc
 `test-fresh-install.sh`'s 600s poll window exactly, which is why one race guaranteed the
 rehearsal's assertion would fail.
 
-The fix is a state guard, not a lock alone: `ml_model_service._DEPLOYABLE_STATES` /
+The fix is a state guard, not a lock alone: `ml_model_deployment._DEPLOYABLE_STATES` /
 `_IN_FLIGHT_STATES` plus `_await_deployable_state()` make `ensure_model_deployed` wait out
 `REGISTERING`/`DEPLOYING` rather than deploying into it, so the destructive path is closed even
 if two callers still overlap. **Defense in depth, not a substitute**: `_initialize_neural_search`

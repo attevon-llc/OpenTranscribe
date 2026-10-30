@@ -17,7 +17,7 @@ Nothing could catch that, because the four registries are four separate literals
 nothing compared:
 
   1. ``core/embedding_models.OPENSEARCH_EMBEDDING_MODELS``   - what the admin UI offers
-  2. ``search/ml_model_service._MODEL_FILE_PATTERNS`` - offline file:// registration
+  2. ``search/ml_model_registration._MODEL_FILE_PATTERNS`` - offline file:// registration
   3. ``search/model_downloader._OPENSEARCH_MODEL_REGISTRY`` - the in-app downloader
   4. ``scripts/download-models.py``                   - the offline packaging download
 
@@ -75,7 +75,7 @@ def _offered() -> set[str]:
 
 
 def _file_patterns() -> set[str]:
-    from app.services.search.ml_model_service import _MODEL_FILE_PATTERNS
+    from app.services.search.ml_model_registration import _MODEL_FILE_PATTERNS
 
     return {_short(name) for name in _MODEL_FILE_PATTERNS}
 
@@ -115,7 +115,7 @@ def test_no_registry_still_carries_a_model_measured_as_broken() -> None:
     """
     everywhere = {
         "embedding_models.OPENSEARCH_EMBEDDING_MODELS": _offered(),
-        "ml_model_service._MODEL_FILE_PATTERNS": _file_patterns(),
+        "ml_model_registration._MODEL_FILE_PATTERNS": _file_patterns(),
         "model_downloader._OPENSEARCH_MODEL_REGISTRY": _downloader_registry(),
         "scripts/download-models.py": _download_script_models(),
     }
@@ -130,7 +130,7 @@ def test_no_registry_still_carries_a_model_measured_as_broken() -> None:
 @pytest.mark.parametrize(
     "registry_name",
     [
-        "ml_model_service._MODEL_FILE_PATTERNS",
+        "ml_model_registration._MODEL_FILE_PATTERNS",
         "model_downloader._OPENSEARCH_MODEL_REGISTRY",
         "scripts/download-models.py",
     ],
@@ -145,7 +145,7 @@ def test_every_offered_model_can_also_be_fetched_and_registered_offline(
     downloaders that put the artifact on disk in the first place.
     """
     registries = {
-        "ml_model_service._MODEL_FILE_PATTERNS": _file_patterns(),
+        "ml_model_registration._MODEL_FILE_PATTERNS": _file_patterns(),
         "model_downloader._OPENSEARCH_MODEL_REGISTRY": _downloader_registry(),
         "scripts/download-models.py": _download_script_models(),
     }

@@ -886,7 +886,7 @@ _SERVICE_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
         "whose _notify (:205-221) forwards only status/segments/pii_entities_found/"
         "language/skipped_detectors to the WS event -- error is dropped, never sent",
     ),
-    "services/search/ml_model_service.py::verify_model_can_embed": (
+    "services/search/ml_model_deployment.py::verify_model_can_embed": (
         1,
         "internal-only: the one call site (:657) reads the result into a logger "
         "call only, never a response",

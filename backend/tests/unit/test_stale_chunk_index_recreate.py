@@ -1,4 +1,4 @@
-"""``reindex_task._check_and_recreate_stale_index`` deletes the whole chunks index.
+"""``reindex_index_ops._check_and_recreate_stale_index`` deletes the whole chunks index.
 
 The reindex that follows only repopulates the **calling user's** files, so every
 other account's chunks are gone until each of them runs a reindex of their own.
@@ -15,7 +15,7 @@ import pytest
 
 from app.core.config import settings
 from app.services.search.index_schema import _INDEX_VERSION
-from app.tasks import reindex_task
+from app.tasks import reindex_index_ops
 
 _INDEX = settings.OPENSEARCH_CHUNKS_INDEX
 _CLIENT_PATH = "app.services.opensearch_service.opensearch_client"
@@ -52,7 +52,7 @@ def test_index_without_meta_is_not_destroyed(new_index_body):
     client = _client({"properties": {"embedding": {"dimension": 768}}})
 
     with patch(_CLIENT_PATH, client):
-        reindex_task._check_and_recreate_stale_index()
+        reindex_index_ops._check_and_recreate_stale_index()
 
     assert client.indices.delete.call_count == 0
     assert new_index_body.call_count == 0
@@ -68,7 +68,7 @@ def test_unreadable_dimension_aborts_before_any_delete(new_index_body):
     client = _client({"_meta": {"version": _INDEX_VERSION - 1}, "properties": {}})
 
     with patch(_CLIENT_PATH, client):
-        reindex_task._check_and_recreate_stale_index()
+        reindex_index_ops._check_and_recreate_stale_index()
 
     assert client.indices.delete.call_count == 0
     assert new_index_body.call_count == 0
@@ -85,7 +85,7 @@ def test_failed_create_restores_an_index_rather_than_leaving_none(new_index_body
     client.indices.create.side_effect = [RuntimeError("mapping rejected"), None]
 
     with patch(_CLIENT_PATH, client):
-        reindex_task._check_and_recreate_stale_index()
+        reindex_index_ops._check_and_recreate_stale_index()
 
     assert client.indices.create.call_count == 2
     assert client.indices.create.call_args_list[-1].kwargs["body"] == {"mappings": _OLD_MAPPINGS}
@@ -100,7 +100,7 @@ def test_stale_index_is_recreated_at_the_mapped_dimension(new_index_body):
     client = _client(dict(_OLD_MAPPINGS))
 
     with patch(_CLIENT_PATH, client):
-        reindex_task._check_and_recreate_stale_index()
+        reindex_index_ops._check_and_recreate_stale_index()
 
     assert new_index_body.call_args.args == (768,)
     assert client.indices.create.call_count == 1

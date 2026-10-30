@@ -539,7 +539,7 @@ def test_the_structural_index_calls_are_taken_under_a_lock():
 def test_the_structure_lock_is_scoped_to_the_index_name():
     """A lock keyed on anything coarser serialises unrelated work."""
     from app.core.config import settings
-    from app.tasks import reindex_task
+    from app.tasks import reindex_index_ops
 
     captured: list[str] = []
 
@@ -555,7 +555,7 @@ def test_the_structure_lock_is_scoped_to_the_index_name():
     original = tl.task_lock_manager
     tl.task_lock_manager = _Manager()  # type: ignore[assignment]
     try:
-        with reindex_task._index_structure_lock():
+        with reindex_index_ops._index_structure_lock():
             pass
     finally:
         tl.task_lock_manager = original

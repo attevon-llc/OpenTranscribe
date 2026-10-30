@@ -240,7 +240,10 @@ backend/app/tasks/recovery.py	5	ratchet: may only go down
 backend/app/tasks/recovery_tasks.py	1	ratchet: may only go down
 backend/app/tasks/redaction_task.py	2	ratchet: may only go down
 backend/app/tasks/rediarize_task.py	10	ratchet: may only go down
-backend/app/tasks/reindex_task.py	15	ratchet: may only go down
+backend/app/tasks/reindex_completion.py	1	ratchet: may only go down
+backend/app/tasks/reindex_index_ops.py	9	ratchet: may only go down
+backend/app/tasks/reindex_run_state.py	1	ratchet: may only go down
+backend/app/tasks/reindex_task.py	4	ratchet: may only go down
 backend/app/tasks/rename_propagation_task.py	10	ratchet: may only go down
 backend/app/tasks/search_indexing_task.py	8	ratchet: may only go down
 backend/app/tasks/search_maintenance_task.py	3	ratchet: may only go down

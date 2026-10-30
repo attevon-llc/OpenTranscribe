@@ -163,11 +163,15 @@ class _FakeTracker:
 @pytest.fixture
 def redis(monkeypatch) -> _FakeRedis:
     """One fake Redis shared by every seam in `reindex_task`."""
+    from app.tasks import reindex_completion
+    from app.tasks import reindex_run_state
     from app.tasks import reindex_task
 
     fake = _FakeRedis()
     monkeypatch.setattr(reindex_task, "get_redis", lambda: fake)
-    monkeypatch.setattr(reindex_task, "send_ws_event", lambda *a, **k: None)
+    monkeypatch.setattr(reindex_run_state, "get_redis", lambda: fake)
+    monkeypatch.setattr(reindex_run_state, "send_ws_event", lambda *a, **k: None)
+    monkeypatch.setattr(reindex_completion, "send_ws_event", lambda *a, **k: None)
     monkeypatch.setattr("app.services.progress_tracker.ProgressTracker", _FakeTracker)
     monkeypatch.setattr(
         "app.services.progress_tracker.emit_progress_notification", lambda *a, **k: None
@@ -205,7 +209,7 @@ def dispatched(monkeypatch, redis) -> list[list[Any]]:  # noqa: ARG001
 @pytest.fixture
 def swept(monkeypatch, redis) -> list[set[str]]:  # noqa: ARG001
     """Record every call the completion handler makes to the destructive sweep."""
-    from app.tasks import reindex_task
+    from app.tasks import reindex_completion
 
     calls: list[set[str]] = []
 
@@ -213,13 +217,13 @@ def swept(monkeypatch, redis) -> list[set[str]]:  # noqa: ARG001
         calls.append(set(indexed_file_uuids))
         return 0
 
-    monkeypatch.setattr(reindex_task, "_cleanup_orphaned_chunks", _record)
+    monkeypatch.setattr(reindex_completion, "_cleanup_orphaned_chunks", _record)
     for name in (
         "_restore_normal_mode",
         "_refresh_index_and_clear_cache",
         "_force_merge_after_reindex",
     ):
-        monkeypatch.setattr(reindex_task, name, lambda: None)
+        monkeypatch.setattr(reindex_completion, name, lambda: None)
     return calls
 
 
@@ -481,7 +485,7 @@ def test_the_coordinator_cannot_ttl_a_set_that_does_not_exist_yet(
 
 
 def _complete(redis_client: Any, run_id: str | None, state: str, uuids: str) -> None:
-    from app.tasks.reindex_task import _handle_reindex_completion
+    from app.tasks.reindex_completion import _handle_reindex_completion
 
     _handle_reindex_completion(redis_client, USER_ID, state, uuids, run_id)
 

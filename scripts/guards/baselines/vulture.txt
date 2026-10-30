@@ -111,7 +111,7 @@ backend/app/services/speaker_status_service.py::method::refresh_all_speaker_stat
 backend/app/services/task_detection_service.py::method::identify_retriable_error_files	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/video_processing_service.py::method::check_ffmpeg_availability	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/video_processing_service.py::method::get_cached_video_stream	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/tasks/reindex_task.py::function::_periodic_refresh	1	residual after the dead-code pass; delete or whitelist when touched
+backend/app/tasks/reindex_index_ops.py::function::_periodic_refresh	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/tasks/transcription/hooks.py::function::clear_hooks	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/tasks/transcription/hooks.py::function::register_before_dispatch	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/tasks/transcription/hooks.py::function::register_transcription_complete	1	residual after the dead-code pass; delete or whitelist when touched

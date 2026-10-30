@@ -60,7 +60,7 @@ class _FakeRedis:
 @pytest.fixture
 def swept(monkeypatch) -> list[set[str]]:
     """Record every call the completion handler makes to the destructive sweep."""
-    from app.tasks import reindex_task
+    from app.tasks import reindex_completion
 
     calls: list[set[str]] = []
 
@@ -68,20 +68,20 @@ def swept(monkeypatch) -> list[set[str]]:
         calls.append(set(indexed_file_uuids))
         return 0
 
-    monkeypatch.setattr(reindex_task, "_cleanup_orphaned_chunks", _record)
+    monkeypatch.setattr(reindex_completion, "_cleanup_orphaned_chunks", _record)
     # Everything else the handler does reaches OpenSearch, Redis or a websocket.
     for name in (
         "_restore_normal_mode",
         "_refresh_index_and_clear_cache",
         "_force_merge_after_reindex",
     ):
-        monkeypatch.setattr(reindex_task, name, lambda: None)
-    monkeypatch.setattr(reindex_task, "send_ws_event", lambda *a, **k: None)
+        monkeypatch.setattr(reindex_completion, name, lambda: None)
+    monkeypatch.setattr(reindex_completion, "send_ws_event", lambda *a, **k: None)
     return calls
 
 
 def _complete(redis: Any) -> None:
-    from app.tasks.reindex_task import _handle_reindex_completion
+    from app.tasks.reindex_completion import _handle_reindex_completion
 
     _handle_reindex_completion(redis, 1, "reindex_state:1", "reindex_uuids:1")
 
@@ -161,11 +161,11 @@ class _FakeOpenSearch:
 
 
 def _sweep(monkeypatch, indexed_in_index: set[str], this_run: set[str]) -> _FakeOpenSearch:
-    from app.tasks import reindex_task
+    from app.tasks import reindex_completion
 
     client = _FakeOpenSearch(indexed_in_index)
     monkeypatch.setattr("app.services.opensearch_service.opensearch_client", client)
-    reindex_task._cleanup_orphaned_chunks(1, this_run)
+    reindex_completion._cleanup_orphaned_chunks(1, this_run)
     return client
 
 

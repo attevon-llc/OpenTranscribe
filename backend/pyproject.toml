@@ -225,14 +225,14 @@ ignore_imports = [
   "app.services.storage_recovery_service -> app.api.endpoints.files.upload",  # upward import, function level: removal planned (layering)
   "app.services.tag_service -> app.tasks.search_indexing_task",  # deliberate late binding: Celery task lookup
   "app.services.takedown_service -> app.tasks.erasure_reconciliation",  # deliberate late binding: Celery task lookup
-  "app.services.task_recovery_service -> app.tasks.analytics",  # deliberate late binding: Celery task lookup
-  "app.services.task_recovery_service -> app.tasks.search_indexing_task",  # deliberate late binding: Celery task lookup
-  "app.services.task_recovery_service -> app.tasks.speaker_tasks",  # deliberate late binding: Celery task lookup
-  "app.services.task_recovery_service -> app.tasks.summarization",  # deliberate late binding: Celery task lookup
-  "app.services.task_recovery_service -> app.tasks.topic_extraction",  # deliberate late binding: Celery task lookup
-  "app.services.task_recovery_service -> app.tasks.transcription",  # deliberate late binding: Celery task lookup
-  "app.services.task_recovery_service -> app.tasks.transcription.notifications",  # upward import, function level: removal planned (layering)
-  "app.services.task_recovery_service -> app.tasks.youtube_processing",  # deliberate late binding: Celery task lookup
+  "app.services.task_recovery_post_transcription -> app.tasks.analytics",  # deliberate late binding: Celery task lookup
+  "app.services.task_recovery_post_transcription -> app.tasks.search_indexing_task",  # deliberate late binding: Celery task lookup
+  "app.services.task_recovery_post_transcription -> app.tasks.speaker_tasks",  # deliberate late binding: Celery task lookup
+  "app.services.task_recovery_post_transcription -> app.tasks.summarization",  # deliberate late binding: Celery task lookup
+  "app.services.task_recovery_post_transcription -> app.tasks.topic_extraction",  # deliberate late binding: Celery task lookup
+  "app.services.task_recovery_retry -> app.tasks.transcription",  # deliberate late binding: Celery task lookup
+  "app.services.task_recovery_retry -> app.tasks.transcription.notifications",  # upward import, function level: removal planned (layering)
+  "app.services.task_recovery_retry -> app.tasks.youtube_processing",  # deliberate late binding: Celery task lookup
   "app.services.transcription_retry -> app.tasks.transcription.cancellation",  # upward import, function level: removal planned (layering)
   "app.services.transcription_retry -> app.tasks.transcription.hooks",  # upward import, function level: removal planned (layering)
   "app.services.transcription_retry -> app.tasks.transcription.notifications",  # upward import, function level: removal planned (layering)

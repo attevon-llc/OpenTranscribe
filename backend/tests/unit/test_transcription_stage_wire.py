@@ -295,7 +295,7 @@ def test_oom_retry_frame_carries_prepare():
     calls = [
         (func, call)
         for path, func, call in _calls_named("send_notification_via_redis")
-        if path.name == "task_recovery_service.py"
+        if path.name == "task_recovery_retry.py"
     ]
     assert len(calls) == 1
     assert _stage_expr(calls[0][1]) == "PREPARE"

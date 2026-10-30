@@ -55,9 +55,9 @@ from app.schemas.media import MediaFileDetail
 from app.schemas.media import MediaFilePublicInfo
 from app.schemas.media import MediaFileUpdate
 from app.schemas.media import PaginatedMediaFileResponse
-from app.schemas.media import ReprocessRequest
-from app.schemas.media import TranscriptSegment
-from app.schemas.media import TranscriptSegmentUpdate
+from app.schemas.processing_request import ReprocessRequest
+from app.schemas.transcript import TranscriptSegment
+from app.schemas.transcript import TranscriptSegmentUpdate
 from app.schemas.user import UserSearchResult
 from app.services.content_audit import KIND_DOWNLOAD_PREPARE
 from app.services.content_audit import KIND_DOWNLOAD_STREAM

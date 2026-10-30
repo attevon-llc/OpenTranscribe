@@ -10,10 +10,12 @@ Request/response shaping and validation only; logic lives in `app/services`. 42 
 - `base.py` — `UUIDBaseSchema`: sets `from_attributes=True` **plus** a `@model_validator(mode="before")`
   that strips the internal integer `id` and rewrites the `user` / `media_file` / `speaker` / `profile` /
   `shared_by_user` relations into `*_id` **UUIDs**. Inherit it for anything validated from an ORM row.
-- `media.py` (~1,300 lines, the outlier) — MediaFile, Speaker, TranscriptSegment, Tag, Comment, Task,
-  Analytics, Collection + 3 local enums. `validate_whisper_model` gates on `VALID_LOCAL_WHISPER_MODELS`
-  (near the top of the file); the whisper-model / `min<=max` / positive-speaker validator trio is
-  duplicated verbatim on `ReprocessRequest` and `PrepareUploadRequest`.
+- `media.py` — MediaFile/MediaFileDetail, Comment, Task, Analytics, `CollectionResponse`, subtitle
+  validation. The domain schemas it embeds live beside it: `speaker.py` (Speaker, profiles,
+  `split_attribute_confidence`), `transcript.py` (segments + paging), `tag.py`, `collection.py`
+  (imported by `media.py`, never the reverse), and `processing_request.py` (`ReprocessRequest`,
+  `PrepareUploadRequest`; `validate_whisper_model` gates on `VALID_LOCAL_WHISPER_MODELS`; the
+  whisper-model / `min<=max` / positive-speaker validator trio is duplicated verbatim on both).
 - `media_source.py:22` — `_validated_hostname` is an **SSRF gate**, not a format check: the value
   becomes an allowed host that `services/protected_media_plugins/mediacms.py` fetches server-side. It
   delegates to `app/utils/url_validation.is_safe_url`, which resolves the name and rejects on
@@ -37,7 +39,7 @@ Request/response shaping and validation only; logic lives in `app/services`. 42 
   `class Config:` (`auth_config`, `download_settings`, `transcription_settings`). All work.
 - **No aliases anywhere**: zero `Field(alias=)`, `serialization_alias`, `populate_by_name`. Wire names
   always equal Python names.
-- **Enums are local, not shared.** Few schemas import from `core/enums` (`media.py` re-exports `FileStatus` for back-compat;
+- **Enums are local, not shared.** Few schemas import from `core/enums` (`media.py` imports `FileStatus`;
   `post_processing.py`, `llm_settings.py` and `takedown_notice.py` import the enums their wire shapes carry);
   `ASRProvider`, `LLMProvider`, `SourceType`, `TaskStatus` etc. are each
   declared in their own schema module. Defaults for DB-backed settings come from `core/constants.py`.
@@ -148,7 +150,7 @@ value falls back to. They were dead code while the write path accepted a bare `d
   orphans on top of the original 5 — deliberately not chased in the same pass; check the
   audit-remediation branch's Phase B re-audit notes before assuming this list is now
   exhaustive.
-- **There is exactly one tag shape (#326).** `media.py:Tag` (`uuid`/`name`/`source`) is what
+- **There is exactly one tag shape (#326).** `tag.py:Tag` (`uuid`/`name`/`source`) is what
   `/api/tags` (as `TagWithCount`), `POST /api/tags`, `POST /api/tags/files/{uuid}/tags` **and**
   `MediaFileDetail.tags` all serve. `MediaFileDetail.tags` was `list[str]` until #326 — don't
   reintroduce a name-only projection; `source` is the AI-vs-manual signal and names are unique

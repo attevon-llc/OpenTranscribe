@@ -433,7 +433,7 @@ def test_a_segment_edit_without_toxicity_weights_does_not_queue_a_rescan(
     exactly the same state.
     """
     from app.api.endpoints.files.crud import update_single_transcript_segment
-    from app.schemas.media import TranscriptSegmentUpdate
+    from app.schemas.transcript import TranscriptSegmentUpdate
 
     media, segment = _seed_unscanned_file(db_session, default_categories_user)
     RedactionService.detect_and_store(db_session, media.id)

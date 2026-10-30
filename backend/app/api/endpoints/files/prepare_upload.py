@@ -26,7 +26,7 @@ from app.models.media import MediaFile
 from app.models.tag import FileTag
 from app.models.upload_batch import UploadBatch
 from app.models.user import User
-from app.schemas.media import PrepareUploadRequest
+from app.schemas.processing_request import PrepareUploadRequest
 from app.services.collection_visibility import usable_collections
 from app.services.request_context import RequestContext
 from app.services.tag_service import on_tags_changed

@@ -28,8 +28,8 @@ from app.api.endpoints import transcript_segments
 from app.api.endpoints.files import crud
 from app.api.endpoints.tags import sharing
 from app.auth.audit_events import AuditEventType
-from app.schemas.media import TranscriptSegmentUpdate
 from app.schemas.transcript import SegmentSpeakerUpdate
+from app.schemas.transcript import TranscriptSegmentUpdate
 from app.services import content_audit
 from app.services import content_hold_service
 from app.services.content_hold_service import record_edit_on_held_file

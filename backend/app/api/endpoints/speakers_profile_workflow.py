@@ -10,7 +10,7 @@ from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerProfile
 from app.models.user import User
-from app.schemas.media import SpeakerUpdate
+from app.schemas.speaker import SpeakerUpdate
 from app.services.opensearch_service import update_speaker_display_name
 from app.services.permission_service import org_scope_pred
 from app.services.platform_bypass import PlatformBypass

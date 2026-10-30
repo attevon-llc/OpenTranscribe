@@ -28,9 +28,9 @@ from app.db.base import get_db
 from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.models.user import User
-from app.schemas.media import Tag as TagSchema
-from app.schemas.media import TagBase
-from app.schemas.media import TagWithCount
+from app.schemas.tag import Tag as TagSchema
+from app.schemas.tag import TagBase
+from app.schemas.tag import TagWithCount
 from app.services.request_context import RequestContext
 from app.services.tag_collisions import list_tags_filtered
 from app.services.tag_collisions import list_unused_tag_rows

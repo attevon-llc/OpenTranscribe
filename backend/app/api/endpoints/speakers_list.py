@@ -29,7 +29,7 @@ from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.models.user import User
-from app.schemas.media import split_attribute_confidence
+from app.schemas.speaker import split_attribute_confidence
 from app.services.permission_service import file_ids_in_scope
 from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import redact_speaker_rows

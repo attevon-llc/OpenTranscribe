@@ -236,7 +236,7 @@ def _transcript_doc(client, index_name: str, file_uuid: str) -> dict[str, Any]:
 
 def test_segment_text_edit_reaches_both_indices(throwaway_indices, real_db):
     from app.api.endpoints.files.crud import update_single_transcript_segment
-    from app.schemas.media import TranscriptSegmentUpdate
+    from app.schemas.transcript import TranscriptSegmentUpdate
 
     db, created_media_file_ids, created_user_ids = real_db
     user = _make_user(db, created_user_ids)

@@ -17,7 +17,7 @@ from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.models.user import User
-from app.schemas.media import Speaker as SpeakerSchema
+from app.schemas.speaker import Speaker as SpeakerSchema
 from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.request_context import RequestContext
 from app.services.speaker_cleanup import capture_speaker_impact

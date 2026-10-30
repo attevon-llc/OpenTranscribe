@@ -58,16 +58,16 @@ from app.models.organization import OrganizationMembership
 from app.models.prompt import SummaryPrompt
 from app.models.sharing import CollectionShare
 from app.models.user import User
+from app.schemas.collection import Collection as CollectionSchema
+from app.schemas.collection import CollectionCreate
+from app.schemas.collection import CollectionMemberAdd
+from app.schemas.collection import CollectionMemberRemove
+from app.schemas.collection import CollectionOnSelection
+from app.schemas.collection import CollectionUpdate
+from app.schemas.collection import CollectionVisibilityUpdate
+from app.schemas.collection import CollectionWithCount
 from app.schemas.content_hold import HoldSummary
-from app.schemas.media import Collection as CollectionSchema
-from app.schemas.media import CollectionCreate
-from app.schemas.media import CollectionMemberAdd
-from app.schemas.media import CollectionMemberRemove
-from app.schemas.media import CollectionOnSelection
 from app.schemas.media import CollectionResponse
-from app.schemas.media import CollectionUpdate
-from app.schemas.media import CollectionVisibilityUpdate
-from app.schemas.media import CollectionWithCount
 from app.schemas.media import PaginatedMediaFileResponse
 from app.schemas.sharing import Share
 from app.schemas.sharing import ShareCreate

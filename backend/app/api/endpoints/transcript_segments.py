@@ -18,8 +18,8 @@ from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
 from app.models.user import User
-from app.schemas.media import TranscriptSegment as TranscriptSegmentSchema
 from app.schemas.transcript import SegmentSpeakerUpdate
+from app.schemas.transcript import TranscriptSegment as TranscriptSegmentSchema
 from app.services.platform_bypass import PlatformBypass
 from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.request_context import RequestContext

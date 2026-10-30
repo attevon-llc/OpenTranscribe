@@ -16,7 +16,7 @@ from uuid import uuid4
 
 from app.api.endpoints.files.crud import _build_grouped_segments
 from app.api.endpoints.files.crud import _resolve_segment_speaker_name
-from app.schemas.media import TranscriptSegment
+from app.schemas.transcript import TranscriptSegment
 from app.services.formatting_service import FormattingService
 from app.services.speaker_status_service import SpeakerStatusService
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL

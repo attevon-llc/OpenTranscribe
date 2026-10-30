@@ -26,9 +26,6 @@ backend/app/models/mixins.py::class::TimestampMixin	1	residual after the dead-co
 backend/app/models/mixins.py::class::UUIDMixin	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/schemas/asr_settings.py::class::ASRConnectionTestResult	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/schemas/chat.py::class::ChatWarningCode	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/schemas/media.py::class::SpeakerCollectionBase	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/schemas/media.py::class::TaskStatus	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/schemas/media.py::class::VideoFormat	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/schemas/search.py::class::EmbeddingModelSchema	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/schemas/search.py::class::NeuralModelInfoSchema	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/schemas/search.py::class::SearchResponseSchema	1	residual after the dead-code pass; delete or whitelist when touched

@@ -378,7 +378,7 @@ def search_match_count(
             exclusion — or the count query itself — could not be resolved.
     """
     from app.services.search.hybrid_search_service import HybridSearchService
-    from app.services.search.hybrid_search_service import QuarantineExclusionUnavailableError
+    from app.services.search.quarantine_exclusion import QuarantineExclusionUnavailableError
     from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
     if file_uuid:
@@ -445,7 +445,7 @@ def search_suggestions(
         HTTPException: 503 when the quarantine exclusion could not be applied.
     """
     from app.services.search.hybrid_search_service import HybridSearchService
-    from app.services.search.hybrid_search_service import QuarantineExclusionUnavailableError
+    from app.services.search.quarantine_exclusion import QuarantineExclusionUnavailableError
 
     search_service = HybridSearchService()
     try:
@@ -488,7 +488,7 @@ def get_available_filters(
         HTTPException: 503 when the quarantine exclusion could not be applied.
     """
     from app.services.search.hybrid_search_service import HybridSearchService
-    from app.services.search.hybrid_search_service import QuarantineExclusionUnavailableError
+    from app.services.search.quarantine_exclusion import QuarantineExclusionUnavailableError
 
     search_service = HybridSearchService()
     try:

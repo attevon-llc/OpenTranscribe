@@ -23,6 +23,7 @@ import pytest
 
 from app.core.constants import SEARCH_MAX_SNIPPETS_PER_FILE
 from app.services.search import hybrid_search_service as hss
+from app.services.search.search_types import SearchResponse
 
 pytestmark = [pytest.mark.unit]
 
@@ -104,7 +105,7 @@ def fake(monkeypatch) -> _FakeOpenSearch:
     return client
 
 
-def _keyword_search(query: str = "budget", page: int = 1) -> hss.SearchResponse:
+def _keyword_search(query: str = "budget", page: int = 1) -> SearchResponse:
     return hss.HybridSearchService()._search_with_collapse(
         query=query,
         search_query=query,

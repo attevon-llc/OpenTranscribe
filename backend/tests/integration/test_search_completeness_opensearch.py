@@ -262,6 +262,7 @@ def corpus():
 @pytest.fixture
 def wired(corpus, monkeypatch):
     from app.core.config import settings
+    from app.services.search import filters
     from app.services.search import hybrid_search_service as hss
 
     client, name, rng = corpus
@@ -273,7 +274,7 @@ def wired(corpus, monkeypatch):
     # (the same `f % 3 + 1` each document's `collection_ids` records). Without this the
     # `collection_id` filterset would match nothing on both sides and prove nothing.
     monkeypatch.setattr(
-        hss,
+        filters,
         "_collection_filter_clause",
         lambda cid: {
             "terms": {"file_uuid": [f"cmp-{f:04d}" for f in range(N_FILES) if f % 3 + 1 == cid]}
@@ -505,7 +506,7 @@ def test_the_digest_plane_never_surfaces(wired):
     [("launch", True), ("rocket launch", True), ("budget", False), ("Joe Rogan", False)],
 )
 def test_hybrid_reaches_every_keyword_matching_file(wired, query, deep):
-    from app.services.search.hybrid_search_service import ensure_fusion_pipeline
+    from app.services.search.search_infra import ensure_fusion_pipeline
 
     client, index, _ = wired
     pipeline = ensure_fusion_pipeline()

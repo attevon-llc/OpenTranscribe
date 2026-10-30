@@ -88,14 +88,14 @@ _ALLOWED: dict[str, str] = {
         "Takes its filter list as a parameter from _build_filters, which carries "
         "the arm. Building a second one here is what G3 warns against."
     ),
-    "services/search/hybrid_search_service.py::_search_with_two_phase": (
+    "services/search/two_phase_search.py::_search_with_two_phase": (
         "Same: the filters are passed in, already armed by _build_filters."
     ),
-    "services/search/hybrid_search_service.py::_execute_split_bm25_collapse": (
+    "services/search/split_bm25.py::_execute_split_bm25_collapse": (
         "Same: it re-sends the filters of the collapse body it is handed, which "
         "_build_filters armed, narrowed to that body's own result files (#1064)."
     ),
-    "services/search/hybrid_search_service.py::_hydrate_page_highlights": (
+    "services/search/split_bm25.py::_hydrate_page_highlights": (
         "Same: the collapse body's own filters, narrowed to ids that body returned."
     ),
 }
@@ -139,8 +139,8 @@ def test_the_sweep_finds_the_readers_it_is_meant_to_check() -> None:
     keys = {key for key, _, _ in _functions_touching_the_chunks_index()}
     for expected in (
         "services/search/indexing/chunk_plane.py::delete_transcript_chunks",
-        "services/search/hybrid_search_service.py::get_available_filters",
-        "services/search/hybrid_search_service.py::get_suggestions",
+        "services/search/suggestions.py::get_available_filters",
+        "services/search/suggestions.py::get_suggestions",
         "tasks/reindex_task.py::_cleanup_orphaned_chunks",
         "tasks/search_indexing_task.py::update_file_access_index",
     ):

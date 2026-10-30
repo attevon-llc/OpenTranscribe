@@ -22,7 +22,7 @@ from app.core.config import settings
 from app.services.opensearch_service import get_opensearch_client
 from app.services.search.fusion import FusionConfig
 from app.services.search.hybrid_search_service import HybridSearchService
-from app.services.search.hybrid_search_service import ensure_fusion_pipeline
+from app.services.search.search_infra import ensure_fusion_pipeline
 
 logger = logging.getLogger(__name__)
 

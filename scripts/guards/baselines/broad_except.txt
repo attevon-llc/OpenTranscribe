@@ -153,7 +153,9 @@ backend/app/services/redaction/spans.py	1	ratchet: may only go down
 backend/app/services/redis_cache_service.py	7	ratchet: may only go down
 backend/app/services/search/chunk_retrieval.py	2	ratchet: may only go down
 backend/app/services/search/chunking_service.py	2	ratchet: may only go down
-backend/app/services/search/hybrid_search_service.py	15	ratchet: may only go down
+backend/app/services/search/collapse_bodies.py	1	ratchet: may only go down
+backend/app/services/search/collapsed_search.py	4	ratchet: may only go down
+backend/app/services/search/hybrid_search_service.py	2	ratchet: may only go down
 backend/app/services/search/index_admin.py	6	ratchet: may only go down
 backend/app/services/search/index_health.py	2	ratchet: may only go down
 backend/app/services/search/indexing/bulk.py	3	ratchet: may only go down
@@ -167,6 +169,11 @@ backend/app/services/search/neural_bootstrap.py	7	ratchet: may only go down
 backend/app/services/search/pipelines.py	6	ratchet: may only go down
 backend/app/services/search/reindex_cancel.py	3	ratchet: may only go down
 backend/app/services/search/settings_service.py	3	ratchet: may only go down
+backend/app/services/search/search_infra.py	1	ratchet: may only go down
+backend/app/services/search/split_bm25.py	1	ratchet: may only go down
+backend/app/services/search/suggestions.py	2	ratchet: may only go down
+backend/app/services/search/summary_plane_search.py	1	ratchet: may only go down
+backend/app/services/search/two_phase_search.py	2	ratchet: may only go down
 backend/app/services/smart_speaker_suggestion_service.py	1	ratchet: may only go down
 backend/app/services/speaker_analysis_models.py	3	ratchet: may only go down
 backend/app/services/speaker_cleanup.py	1	ratchet: may only go down

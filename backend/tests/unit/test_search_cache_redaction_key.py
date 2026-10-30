@@ -26,6 +26,10 @@ import pytest
 
 from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.search import hybrid_search_service as hss
+from app.services.search import search_cache
+from app.services.search import search_infra
+from app.services.search.search_cache import _make_cache_key
+from app.services.search.search_cache import _redaction_policy_fingerprint
 
 pytestmark = [pytest.mark.unit, pytest.mark.xdist_group("search_cache_state")]
 
@@ -36,11 +40,11 @@ _UNMASKED = EffectiveRedactionConfig(enabled=False, enabled_categories=set())
 @pytest.fixture(autouse=True)
 def _clean_cache_state():
     """No cached page or verified-pipeline id survives into or out of a test here."""
-    hss.reset_infrastructure_state()
-    hss._search_cache.clear()
+    search_infra.reset_infrastructure_state()
+    search_cache._search_cache.clear()
     yield
-    hss.reset_infrastructure_state()
-    hss._search_cache.clear()
+    search_infra.reset_infrastructure_state()
+    search_cache._search_cache.clear()
 
 
 # --------------------------------------------------------------------------- #
@@ -50,19 +54,17 @@ def _clean_cache_state():
 
 class TestRedactionPolicyFingerprint:
     def test_masking_on_and_off_produce_different_fingerprints(self):
-        assert hss._redaction_policy_fingerprint(_MASKED) != hss._redaction_policy_fingerprint(
-            _UNMASKED
-        )
+        assert _redaction_policy_fingerprint(_MASKED) != _redaction_policy_fingerprint(_UNMASKED)
 
     def test_category_set_order_does_not_matter(self):
         a = EffectiveRedactionConfig(enabled=True, enabled_categories={"pii", "profanity"})
         b = EffectiveRedactionConfig(enabled=True, enabled_categories={"profanity", "pii"})
-        assert hss._redaction_policy_fingerprint(a) == hss._redaction_policy_fingerprint(b)
+        assert _redaction_policy_fingerprint(a) == _redaction_policy_fingerprint(b)
 
     def test_a_different_category_set_moves_the_fingerprint(self):
         pii_only = EffectiveRedactionConfig(enabled=True, enabled_categories={"pii"})
         profanity_only = EffectiveRedactionConfig(enabled=True, enabled_categories={"profanity"})
-        assert hss._redaction_policy_fingerprint(pii_only) != hss._redaction_policy_fingerprint(
+        assert _redaction_policy_fingerprint(pii_only) != _redaction_policy_fingerprint(
             profanity_only
         )
 
@@ -71,14 +73,14 @@ class TestRedactionPolicyFingerprint:
             enabled=True, enabled_categories={"custom"}, custom_words=["alpha"]
         )
         changed = dataclasses.replace(base, custom_words=["beta"])
-        assert hss._redaction_policy_fingerprint(base) != hss._redaction_policy_fingerprint(changed)
+        assert _redaction_policy_fingerprint(base) != _redaction_policy_fingerprint(changed)
 
     def test_a_toxicity_only_category_that_masks_nothing_here_is_unmasked(self):
         """`toxicity` has no maskable spans on this surface — same as `enabled=False`."""
         toxicity_only = EffectiveRedactionConfig(enabled=True, enabled_categories={"toxicity"})
-        assert hss._redaction_policy_fingerprint(
-            toxicity_only
-        ) == hss._redaction_policy_fingerprint(_UNMASKED)
+        assert _redaction_policy_fingerprint(toxicity_only) == _redaction_policy_fingerprint(
+            _UNMASKED
+        )
 
     def test_style_and_toxicity_threshold_do_not_move_it(self):
         """Neither field can change `mask_snippets`'s output on this surface:
@@ -90,22 +92,24 @@ class TestRedactionPolicyFingerprint:
             enabled=True, enabled_categories={"pii"}, style="blur", toxicity_threshold=0.1
         )
         b = dataclasses.replace(a, style="asterisks", toxicity_threshold=0.9)
-        assert hss._redaction_policy_fingerprint(a) == hss._redaction_policy_fingerprint(b)
+        assert _redaction_policy_fingerprint(a) == _redaction_policy_fingerprint(b)
 
     def test_unresolvable_gets_its_own_fixed_bucket(self):
-        assert hss._redaction_policy_fingerprint(None) == "unresolvable"
-        assert hss._redaction_policy_fingerprint(None) != hss._redaction_policy_fingerprint(
-            _UNMASKED
-        )
+        assert _redaction_policy_fingerprint(None) == "unresolvable"
+        assert _redaction_policy_fingerprint(None) != _redaction_policy_fingerprint(_UNMASKED)
 
 
 class TestCacheKeyFoldsInTheFingerprint:
     def test_masking_on_vs_off_produce_different_cache_keys(self):
-        key_masked = hss._make_cache_key(
-            query="q", user_id=1, redaction_policy=hss._redaction_policy_fingerprint(_MASKED)
+        key_masked = _make_cache_key(
+            query="q",
+            user_id=1,
+            redaction_policy=_redaction_policy_fingerprint(_MASKED),
         )
-        key_unmasked = hss._make_cache_key(
-            query="q", user_id=1, redaction_policy=hss._redaction_policy_fingerprint(_UNMASKED)
+        key_unmasked = _make_cache_key(
+            query="q",
+            user_id=1,
+            redaction_policy=_redaction_policy_fingerprint(_UNMASKED),
         )
         assert key_masked != key_unmasked
 

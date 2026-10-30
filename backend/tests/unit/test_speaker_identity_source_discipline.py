@@ -379,7 +379,7 @@ def test_the_scan_sees_the_known_writers():
         "services/speaker_matching_service.py::_handle_speaker_match",
         "services/speaker_cleanup.py::join_cluster_identity",
         "services/speaker_cleanup.py::unlink_from_profile",
-        "api/endpoints/speakers.py::_accept_speaker_profile_match",
+        "api/endpoints/speakers_suggestions.py::_accept_speaker_profile_match",
         "api/endpoints/speaker_update.py::_apply_high_confidence_match",
         # the writers of a recommendation
         "api/endpoints/speaker_update.py::_persist_match_results",

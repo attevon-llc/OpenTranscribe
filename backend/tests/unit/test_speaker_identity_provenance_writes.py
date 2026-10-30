@@ -384,7 +384,7 @@ def test_promoting_a_cluster_makes_its_members_human(db_session, normal_user):
 
 
 def test_creating_a_new_profile_from_a_typed_name_is_a_human_identity(db_session, normal_user):
-    from app.api.endpoints.speakers import _handle_create_new_profile_action
+    from app.api.endpoints.speakers_profile_workflow import _handle_create_new_profile_action
 
     speaker, _ = _machine_named(db_session, normal_user, linked=False)
 

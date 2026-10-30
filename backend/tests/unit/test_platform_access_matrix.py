@@ -464,7 +464,7 @@ def test_the_role_scan_ignores_other_objects_and_the_bypass_flag():
 def test_a_widener_outside_the_tables_is_unclassified():
     assert "UNCLASSIFIED" in matrix.site_row("scope-widener", "api/new.py::list_things").guard
     assert "UNCLASSIFIED" in matrix.site_row("reveal-widener", "api/new.py::show_things").guard
-    known = matrix.site_row("scope-widener", "api/endpoints/speakers.py::list_speakers")
+    known = matrix.site_row("scope-widener", "api/endpoints/speakers_list.py::list_speakers")
     assert "UNCLASSIFIED" not in known.guard
 
 

@@ -113,11 +113,11 @@ def process_speaker_merge_background(
         hiccup; an aggregate that may still hold the source's voice is logged at ERROR
         by ``speaker_cleanup`` and reported as ``status: partial`` with its stages.
     """
-    from app.api.endpoints.speakers import _clear_speaker_video_cache
-    from app.api.endpoints.speakers import _merge_speaker_embeddings
-    from app.api.endpoints.speakers import _reconcile_speakers_after_merge
-    from app.api.endpoints.speakers import _refresh_analytics_after_merge
-    from app.api.endpoints.speakers import _update_opensearch_speaker_merge
+    from app.api.endpoints.speakers_merge import _clear_speaker_video_cache
+    from app.api.endpoints.speakers_merge import _merge_speaker_embeddings
+    from app.api.endpoints.speakers_merge import _reconcile_speakers_after_merge
+    from app.api.endpoints.speakers_merge import _refresh_analytics_after_merge
+    from app.api.endpoints.speakers_merge import _update_opensearch_speaker_merge
     from app.utils.websocket_notify import send_ws_event
     from app.utils.websocket_notify import send_ws_event_for_file
 

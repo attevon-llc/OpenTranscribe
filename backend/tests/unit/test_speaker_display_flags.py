@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.api.endpoints.speakers import _compute_display_flags
+from app.api.endpoints.speakers_list import _compute_display_flags
 from app.models.media import Speaker
 
 pytestmark = pytest.mark.unit

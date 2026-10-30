@@ -318,7 +318,7 @@ def test_segment_speaker_reassignment_reaches_the_chunk_plane(throwaway_indices,
 
 
 def test_speaker_merge_reaches_the_chunk_plane(throwaway_indices, real_db):
-    from app.api.endpoints.speakers import merge_speakers
+    from app.api.endpoints.speakers_merge import merge_speakers
 
     db, created_media_file_ids, created_user_ids = real_db
     user = _make_user(db, created_user_ids)

@@ -4,10 +4,10 @@
 # site — same convention as tests/unit/test_task_session_lifetime.py.
 """The speaker plane must not hold a DB transaction across OpenSearch or MinIO work.
 
-Sibling of ``test_task_session_lifetime.py``. That module covers the Celery tasks
-found in the first two sweeps; this one covers the sixteen findings
-``scripts/audit-session-lifetime.py`` catalogued in the **speaker** plane, which
-had been allowlisted as ``BACKLOG`` rather than fixed:
+Sibling of ``test_task_session_lifetime.py``. That module covers the Celery tasks found
+in the first two sweeps; this one covers the sixteen findings
+``scripts/audit-session-lifetime.py`` catalogued in the **speaker** plane, which had
+been allowlisted as ``BACKLOG`` rather than fixed:
 
 ===========================================================  =========================
 scope                                                        slow work formerly inside
@@ -17,11 +17,11 @@ scope                                                        slow work formerly 
                                                              ONE ``session_scope``
 ``process_speaker_merge_background``                         voiceprint average, MinIO
                                                              purge, index merge, ditto
-``speakers._clear_video_cache_for_speaker`` / ``_clear_speaker_video_cache``
+``speakers_profile_workflow._clear_video_cache_for_speaker`` / ``speakers_merge._clear_speaker_video_cache``
                                                              storage client + object
                                                              deletes on the caller's
                                                              session
-``speakers.debug_cross_media_data``                          2 index searches on the
+``speakers_debug.debug_cross_media_data``                    2 index searches on the
                                                              REQUEST session
 ``speaker_update._apply_high_confidence_match``              index write per match
 ``speaker_update._sync_suggestion_speakers_to_opensearch``   index write per suggestion
@@ -33,27 +33,25 @@ scope                                                        slow work formerly 
                                                              a caller session open
 ===========================================================  =========================
 
-Why it matters (measured, twice in one day, on two different workers): a plain
-SELECT takes ACCESS SHARE for the life of its transaction, so such a hold queues
-every ``ALTER TABLE`` — i.e. it hangs an Alembic upgrade, and dev runs migrations
-automatically on backend startup — pins the vacuum horizon on
-``transcript_segment``, and burns a pool connection.
+Why it matters (measured, twice in one day, on two different workers): a plain SELECT
+takes ACCESS SHARE for the life of its transaction, so such a hold queues every
+``ALTER TABLE`` — i.e. it hangs an Alembic upgrade, and dev runs migrations automatically
+on backend startup — pins the vacuum horizon on ``transcript_segment``, and burns a pool connection.
 
 Two shapes of test, because the plane has two shapes of session:
 
-* **Tasks** own their sessions. Those tests swap the module's ``session_scope``
-  for the depth-tracking stand-in from ``test_task_session_lifetime`` and have
-  every slow-call stub report the open-scope depth *at the moment it runs*. Each
-  also asserts at least two scopes were opened, so a task that stopped touching
-  the DB entirely cannot pass.
+* **Tasks** own their sessions. Those tests swap the module's ``session_scope`` for the
+  depth-tracking stand-in from ``test_task_session_lifetime`` and have every slow-call
+  stub report the open-scope depth *at the moment it runs*. Each also asserts at least
+  two scopes were opened, so a task that stopped touching the DB entirely cannot pass.
 * **Request/caller-owned sessions** (``trigger_retroactive_matching``,
-  ``debug_cross_media_data``) cannot open or close a scope — the fix there is to finish the DB work and **commit** before
-  the network hop. Those tests count ``commit()`` calls on the very session the
-  function was handed and assert each slow call ran in a LATER commit generation
-  than the DB work it depends on. Under the savepoint harness a commit does not
-  end the outer transaction, so the generation counter is the observable proxy;
-  it is falsifiable in exactly the way that matters — move the push back above the
-  commit and the counts collapse.
+  ``debug_cross_media_data``) cannot open or close a scope — the fix there is to finish
+  the DB work and **commit** before the network hop. Those tests count ``commit()`` calls
+  on the very session the function was handed and assert each slow call ran in a LATER
+  commit generation than the DB work it depends on. Under the savepoint harness a commit
+  does not end the outer transaction, so the generation counter is the observable proxy;
+  it is falsifiable in exactly the way that matters — move the push back above the commit
+  and the counts collapse.
 """
 
 from __future__ import annotations
@@ -69,7 +67,9 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.api.endpoints import speaker_update as su
-from app.api.endpoints import speakers as spk
+from app.api.endpoints import speakers_debug as spk_debug
+from app.api.endpoints import speakers_merge as spk_merge
+from app.api.endpoints import speakers_profile_workflow as spk_workflow
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import SpeakerProfile
@@ -90,7 +90,7 @@ _AUDITOR = Path(__file__).resolve().parents[3] / "scripts" / "audit-session-life
 _KNOWN_RESIDUAL_SCOPES: set[str] = set()
 
 _SPEAKER_PLANE_FILES = (
-    "api/endpoints/speakers.py",
+    "api/endpoints/speakers*.py",
     "api/endpoints/speaker_update.py",
     "tasks/speaker_update_task.py",
     "tasks/speaker_merge_task.py",
@@ -186,25 +186,25 @@ def update_task_env(db_session, monkeypatch):
         tracker.observe("profile_embeddings")
         recorded["embedding_args"] = args
 
-    monkeypatch.setattr(spk, "_handle_profile_embedding_updates", _embeddings)
+    monkeypatch.setattr(spk_workflow, "_handle_profile_embedding_updates", _embeddings)
 
     def _speaker_name(speaker_uuid, display_name):
         tracker.observe("os_speaker_name")
         recorded["speaker_name"] = (speaker_uuid, display_name)
 
-    monkeypatch.setattr(spk, "_update_opensearch_speaker_name", _speaker_name)
+    monkeypatch.setattr(spk_workflow, "_update_opensearch_speaker_name", _speaker_name)
 
     def _profile_info(payload):
         tracker.observe("os_profile_info")
         recorded["profile_info"] = payload
 
-    monkeypatch.setattr(spk, "_push_speaker_profile_info", _profile_info)
+    monkeypatch.setattr(spk_workflow, "_push_speaker_profile_info", _profile_info)
 
     def _display_names(rows):
         tracker.observe("os_profile_rename")
         recorded["rename_rows"] = rows
 
-    monkeypatch.setattr(spk, "_push_speaker_display_names", _display_names)
+    monkeypatch.setattr(spk_workflow, "_push_speaker_display_names", _display_names)
 
     def _workflow(db, speaker_id, display_name, user_id=None):
         # Also DB work: it commits the profile assignment before matching.
@@ -212,13 +212,13 @@ def update_task_env(db_session, monkeypatch):
         recorded["workflow"] = (speaker_id, display_name)
         return {"auto_applied_count": 2, "suggested_count": 1}
 
-    monkeypatch.setattr(spk, "_handle_speaker_labeling_workflow", _workflow)
+    monkeypatch.setattr(spk_workflow, "_handle_speaker_labeling_workflow", _workflow)
 
     def _cache(media_file_id):
         tracker.observe("clear_video_cache")
         recorded["cache_file_id"] = media_file_id
 
-    monkeypatch.setattr(spk, "_clear_video_cache_for_speaker", _cache)
+    monkeypatch.setattr(spk_workflow, "_clear_video_cache_for_speaker", _cache)
     # send_ws_event_for_file (issue #908) resolves quarantine via its OWN
     # session_scope() on a real connection, which cannot see this test's
     # savepoint-isolated MediaFile — stub the check itself, rather than bridge
@@ -365,26 +365,26 @@ def merge_task_env(db_session, monkeypatch):
         tracker.observe("voiceprint_average")
         recorded["merge_args"] = (source_speaker_uuid, target)
 
-    monkeypatch.setattr(spk, "_merge_speaker_embeddings", _merge_embeddings)
+    monkeypatch.setattr(spk_merge, "_merge_speaker_embeddings", _merge_embeddings)
 
     def _cache(affected):
         tracker.observe("clear_video_cache")
         recorded["cache_files"] = set(affected)
 
-    monkeypatch.setattr(spk, "_clear_speaker_video_cache", _cache)
+    monkeypatch.setattr(spk_merge, "_clear_speaker_video_cache", _cache)
 
     def _index_merge(source_uuid, target_uuid):
         tracker.observe("index_merge")
         recorded["index_merge"] = (source_uuid, target_uuid)
 
-    monkeypatch.setattr(spk, "_update_opensearch_speaker_merge", _index_merge)
+    monkeypatch.setattr(spk_merge, "_update_opensearch_speaker_merge", _index_merge)
     monkeypatch.setattr(
-        spk,
+        spk_merge,
         "_reconcile_speakers_after_merge",
         lambda db, *a: tracker.observe("profile_embeddings"),
     )
     monkeypatch.setattr(
-        spk,
+        spk_merge,
         "_refresh_analytics_after_merge",
         lambda db, *a: tracker.observe("analytics"),
     )
@@ -520,7 +520,7 @@ def test_clear_video_cache_opens_its_own_short_session(db_session, normal_user, 
     monkeypatch.setattr(minio_mod, "MinIOService", _FakeMinIO)
     monkeypatch.setattr(vps, "VideoProcessingService", _FakeVideoService)
 
-    spk._clear_video_cache_for_speaker(media_file.id)
+    spk_workflow._clear_video_cache_for_speaker(media_file.id)
 
     assert tracker.seen["storage_client"] == 0, _leak(tracker, "storage_client")
     assert tracker.seen["clear_cache"] == 0, _leak(tracker, "clear_cache")
@@ -554,7 +554,7 @@ def test_clear_speaker_video_cache_uses_one_session_per_file(db_session, normal_
     monkeypatch.setattr(minio_mod, "MinIOService", lambda: object())
     monkeypatch.setattr(vps, "VideoProcessingService", _FakeVideoService)
 
-    spk._clear_speaker_video_cache({first.id, second.id})
+    spk_merge._clear_speaker_video_cache({first.id, second.id})
 
     assert sorted(purged) == sorted([first.id, second.id])
     # Each purge runs at depth 0 — the per-file read scope closes before it. The scope
@@ -749,7 +749,7 @@ def test_profile_rename_read_returns_plain_data(db_session, normal_user):
     )
     db_session.flush()
 
-    rows = spk._load_profile_speaker_names(db_session, profile.id)
+    rows = spk_workflow._load_profile_speaker_names(db_session, profile.id)
 
     assert rows == [(str(speaker.uuid), "A")]
     for row in rows:
@@ -781,9 +781,9 @@ def test_debug_cross_media_reads_the_index_after_committing(db_session, normal_u
             "opensearch_profiles": [],
         }
 
-    monkeypatch.setattr(spk, "_collect_index_debug_documents", _collect)
+    monkeypatch.setattr(spk_debug, "_collect_index_debug_documents", _collect)
 
-    report = spk.debug_cross_media_data(db=db_session, current_user=normal_user)
+    report = spk_debug.debug_cross_media_data(db=db_session, current_user=normal_user)
 
     assert tracker.at("index_read") == [1], _held(tracker, "index_read")
 
@@ -904,11 +904,11 @@ def test_speaker_plane_has_no_session_lifetime_findings_left(auditor):
     forces the matching allowlist line to be deleted in the same change.
     """
     root = Path(__file__).resolve().parents[2] / "app"
-    findings = []
-    for relative in _SPEAKER_PLANE_FILES:
-        path = root / relative
-        assert path.exists(), f"{relative} moved — update _SPEAKER_PLANE_FILES"
-        findings.extend(auditor.scan_file(path, root))
+    findings: list = []
+    for pattern in _SPEAKER_PLANE_FILES:
+        paths = sorted(root.glob(pattern))
+        assert paths, f"{pattern} matched nothing — update _SPEAKER_PLANE_FILES"
+        findings.extend(f for path in paths for f in auditor.scan_file(path, root))
 
     unexpected = [f for f in findings if f.scope not in _KNOWN_RESIDUAL_SCOPES]
     assert not unexpected, "new session-lifetime findings in the speaker plane:\n  " + "\n  ".join(

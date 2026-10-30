@@ -451,7 +451,7 @@ def test_container_append_then_return_is_invisible_to_the_return_scanner() -> No
 
 # --- Case 19: MUST FIRE — subscript assignment into a returned dict ---
 #
-# The api/endpoints/speakers.py::_collect_index_debug_documents shape.
+# The api/endpoints/speakers_debug.py::_collect_index_debug_documents shape.
 
 _SUBSCRIPT_ASSIGN_THEN_RETURN = """
     def handler():

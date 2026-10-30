@@ -430,7 +430,7 @@ def test_rejecting_a_profile_identification_is_honoured_by_retroactive_matching(
 ):
     """``verify?action=reject`` on a speaker auto-linked to Bob: Bob must not come back."""
     from app.api.endpoints import speaker_update
-    from app.api.endpoints.speakers import _reject_speaker_suggestion
+    from app.api.endpoints.speakers_suggestions import _reject_speaker_suggestion
 
     group = _bob_cluster(db_session, normal_user, speaker_os_seams)
     bob = group["profile"]
@@ -458,7 +458,7 @@ def test_rejecting_a_suggestion_blocks_the_profile_it_named(
     db_session, normal_user, speaker_os_seams
 ):
     """An unlinked speaker carrying a "Bob" suggestion: rejecting it means not Bob."""
-    from app.api.endpoints.speakers import _reject_speaker_suggestion
+    from app.api.endpoints.speakers_suggestions import _reject_speaker_suggestion
 
     bob = make_profile(db_session, normal_user, BOB)
     s = _voiced(db_session, normal_user, speaker_os_seams, VA)

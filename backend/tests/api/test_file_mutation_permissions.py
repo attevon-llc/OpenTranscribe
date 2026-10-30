@@ -319,10 +319,10 @@ MUTATING_ENDPOINTS: list[SiteKey] = [
     # Speaker writes: a speaker is reached through its file (``require_speaker_access``).
     ("speaker_profiles.py", "assign_speaker_to_profile"),
     ("speakers.py", "create_speaker"),
-    ("speakers.py", "verify_speaker_identification"),
-    ("speakers.py", "confirm_speaker_gender"),
-    ("speakers.py", "merge_speakers"),  # source and target
-    ("speakers.py", "merge_speakers"),
+    ("speakers_suggestions.py", "verify_speaker_identification"),
+    ("speakers_suggestions.py", "confirm_speaker_gender"),
+    ("speakers_merge.py", "merge_speakers"),  # source and target
+    ("speakers_merge.py", "merge_speakers"),
     ("speakers.py", "update_speaker"),
     ("speakers.py", "delete_speaker"),
     ("media_collections.py", "update_collection"),

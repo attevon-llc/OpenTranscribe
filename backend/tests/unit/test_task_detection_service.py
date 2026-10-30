@@ -581,7 +581,7 @@ def test_rejecting_every_suggestion_on_a_file_does_not_re_offer_speaker_id(
     """
     from unittest.mock import patch
 
-    from app.api.endpoints.speakers import _reject_speaker_suggestion
+    from app.api.endpoints.speakers_suggestions import _reject_speaker_suggestion
     from app.models.media import Speaker
 
     media_file = _file(

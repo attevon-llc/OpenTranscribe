@@ -64,7 +64,9 @@ def no_opensearch():
     it is looked up.
     """
     with (
-        patch("app.api.endpoints.speakers.update_speaker_display_name") as name_mock,
+        patch(
+            "app.api.endpoints.speakers_profile_workflow.update_speaker_display_name"
+        ) as name_mock,
         patch("app.services.opensearch_service.get_speaker_embedding") as get_mock,
         patch("app.services.opensearch_service.add_speaker_embedding") as add_mock,
         patch("app.services.opensearch_service.merge_speaker_embeddings") as merge_mock,

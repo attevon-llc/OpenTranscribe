@@ -357,7 +357,7 @@ def test_labeling_workflow_stops_when_profile_assignment_fails(
     from sqlalchemy.exc import OperationalError
 
     from app.api.endpoints import speaker_update
-    from app.api.endpoints import speakers
+    from app.api.endpoints import speakers_profile_workflow
 
     mf = _make_file(db_session, normal_user)
     spk = _make_speaker(db_session, normal_user, mf)
@@ -374,5 +374,5 @@ def test_labeling_workflow_stops_when_profile_assignment_fails(
     monkeypatch.setattr(speaker_update, "trigger_retroactive_matching", _matching)
 
     with pytest.raises(OperationalError):
-        speakers._handle_speaker_labeling_workflow(db_session, spk.id, "Dana Lee")
+        speakers_profile_workflow._handle_speaker_labeling_workflow(db_session, spk.id, "Dana Lee")
     assert ran["matching"] is False

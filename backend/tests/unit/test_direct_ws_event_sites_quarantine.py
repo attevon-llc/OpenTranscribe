@@ -358,20 +358,21 @@ class TestSpeakerMergeDisplayNameLeak:
         db.commit()
 
         monkeypatch.setattr(
-            "app.api.endpoints.speakers._clear_speaker_video_cache", lambda *a: None
+            "app.api.endpoints.speakers_merge._clear_speaker_video_cache", lambda *a: None
         )
         monkeypatch.setattr(
-            "app.api.endpoints.speakers._merge_speaker_embeddings", lambda *a, **k: None
+            "app.api.endpoints.speakers_merge._merge_speaker_embeddings", lambda *a, **k: None
         )
         monkeypatch.setattr(
-            "app.api.endpoints.speakers._update_opensearch_speaker_merge", lambda *a, **k: None
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers._reconcile_speakers_after_merge",
+            "app.api.endpoints.speakers_merge._update_opensearch_speaker_merge",
             lambda *a, **k: None,
         )
         monkeypatch.setattr(
-            "app.api.endpoints.speakers._refresh_analytics_after_merge", lambda *a, **k: None
+            "app.api.endpoints.speakers_merge._reconcile_speakers_after_merge",
+            lambda *a, **k: None,
+        )
+        monkeypatch.setattr(
+            "app.api.endpoints.speakers_merge._refresh_analytics_after_merge", lambda *a, **k: None
         )
         monkeypatch.setattr(smt, "session_scope", lambda: _yield_session(db))
 
@@ -415,20 +416,21 @@ class TestSpeakerMergeDisplayNameLeak:
         db.commit()
 
         monkeypatch.setattr(
-            "app.api.endpoints.speakers._clear_speaker_video_cache", lambda *a: None
+            "app.api.endpoints.speakers_merge._clear_speaker_video_cache", lambda *a: None
         )
         monkeypatch.setattr(
-            "app.api.endpoints.speakers._merge_speaker_embeddings", lambda *a, **k: None
+            "app.api.endpoints.speakers_merge._merge_speaker_embeddings", lambda *a, **k: None
         )
         monkeypatch.setattr(
-            "app.api.endpoints.speakers._update_opensearch_speaker_merge", lambda *a, **k: None
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers._reconcile_speakers_after_merge",
+            "app.api.endpoints.speakers_merge._update_opensearch_speaker_merge",
             lambda *a, **k: None,
         )
         monkeypatch.setattr(
-            "app.api.endpoints.speakers._refresh_analytics_after_merge", lambda *a, **k: None
+            "app.api.endpoints.speakers_merge._reconcile_speakers_after_merge",
+            lambda *a, **k: None,
+        )
+        monkeypatch.setattr(
+            "app.api.endpoints.speakers_merge._refresh_analytics_after_merge", lambda *a, **k: None
         )
         monkeypatch.setattr(smt, "session_scope", lambda: _yield_session(db))
 
@@ -476,26 +478,32 @@ class TestSpeakerUpdateDisplayNameLeak:
         db.commit()
 
         monkeypatch.setattr(
-            "app.api.endpoints.speakers._handle_profile_embedding_updates", lambda *a, **k: None
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers._update_opensearch_speaker_name", lambda *a, **k: None
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers._push_speaker_profile_info", lambda *a, **k: None
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers._push_speaker_display_names", lambda *a, **k: None
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers._handle_speaker_labeling_workflow",
+            "app.api.endpoints.speakers_profile_workflow._handle_profile_embedding_updates",
             lambda *a, **k: None,
         )
         monkeypatch.setattr(
-            "app.api.endpoints.speakers._load_profile_speaker_names", lambda *a, **k: []
+            "app.api.endpoints.speakers_profile_workflow._update_opensearch_speaker_name",
+            lambda *a, **k: None,
         )
         monkeypatch.setattr(
-            "app.api.endpoints.speakers._clear_video_cache_for_speaker", lambda *a, **k: None
+            "app.api.endpoints.speakers_profile_workflow._push_speaker_profile_info",
+            lambda *a, **k: None,
+        )
+        monkeypatch.setattr(
+            "app.api.endpoints.speakers_profile_workflow._push_speaker_display_names",
+            lambda *a, **k: None,
+        )
+        monkeypatch.setattr(
+            "app.api.endpoints.speakers_profile_workflow._handle_speaker_labeling_workflow",
+            lambda *a, **k: None,
+        )
+        monkeypatch.setattr(
+            "app.api.endpoints.speakers_profile_workflow._load_profile_speaker_names",
+            lambda *a, **k: [],
+        )
+        monkeypatch.setattr(
+            "app.api.endpoints.speakers_profile_workflow._clear_video_cache_for_speaker",
+            lambda *a, **k: None,
         )
         monkeypatch.setattr(sut, "session_scope", lambda: _yield_session(db))
 
@@ -541,26 +549,32 @@ class TestSpeakerUpdateDisplayNameLeak:
         db.commit()
 
         monkeypatch.setattr(
-            "app.api.endpoints.speakers._handle_profile_embedding_updates", lambda *a, **k: None
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers._update_opensearch_speaker_name", lambda *a, **k: None
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers._push_speaker_profile_info", lambda *a, **k: None
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers._push_speaker_display_names", lambda *a, **k: None
-        )
-        monkeypatch.setattr(
-            "app.api.endpoints.speakers._handle_speaker_labeling_workflow",
+            "app.api.endpoints.speakers_profile_workflow._handle_profile_embedding_updates",
             lambda *a, **k: None,
         )
         monkeypatch.setattr(
-            "app.api.endpoints.speakers._load_profile_speaker_names", lambda *a, **k: []
+            "app.api.endpoints.speakers_profile_workflow._update_opensearch_speaker_name",
+            lambda *a, **k: None,
         )
         monkeypatch.setattr(
-            "app.api.endpoints.speakers._clear_video_cache_for_speaker", lambda *a, **k: None
+            "app.api.endpoints.speakers_profile_workflow._push_speaker_profile_info",
+            lambda *a, **k: None,
+        )
+        monkeypatch.setattr(
+            "app.api.endpoints.speakers_profile_workflow._push_speaker_display_names",
+            lambda *a, **k: None,
+        )
+        monkeypatch.setattr(
+            "app.api.endpoints.speakers_profile_workflow._handle_speaker_labeling_workflow",
+            lambda *a, **k: None,
+        )
+        monkeypatch.setattr(
+            "app.api.endpoints.speakers_profile_workflow._load_profile_speaker_names",
+            lambda *a, **k: [],
+        )
+        monkeypatch.setattr(
+            "app.api.endpoints.speakers_profile_workflow._clear_video_cache_for_speaker",
+            lambda *a, **k: None,
         )
         monkeypatch.setattr(sut, "session_scope", lambda: _yield_session(db))
 

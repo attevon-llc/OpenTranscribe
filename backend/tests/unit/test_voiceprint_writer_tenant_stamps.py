@@ -149,7 +149,7 @@ def test_the_v4_migration_stamps_the_documents_it_bulk_writes(
 def test_a_merged_speakers_averaged_voiceprint_keeps_the_files_organization(
     privacy_world, cluster, normal_user, monkeypatch, in_org
 ):
-    from app.api.endpoints.speakers import _merge_speaker_embeddings
+    from app.api.endpoints.speakers_merge import _merge_speaker_embeddings
     from tests.fixtures.speaker_cleanup_seams import make_speaker
 
     org_id = privacy_world.new_org().id if in_org else None

@@ -5,7 +5,7 @@ the ORM (no MinIO/media-upload dependency) and exercise the mutating route with 
 `db_session` fixture rolling everything back.
 
 Pinned real behavior of ``verify_speaker_identification`` / ``_reject_speaker_suggestion``
-(``app/api/endpoints/speakers.py``):
+(the speakers_* endpoint modules):
 - ``action="reject"`` sets ``speaker.verified = True`` and ``speaker.confidence = None``,
   and clears ``profile_id`` — it does NOT require a ``profile_uuid``/``profile_name``.
 - Authorization is by file permission (``PermissionService.get_file_permission``), not by

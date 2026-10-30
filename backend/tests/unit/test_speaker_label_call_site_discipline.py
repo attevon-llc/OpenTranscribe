@@ -55,7 +55,7 @@ _ALLOWED: dict[str, str] = {
     "api/endpoints/files/reprocess.py::clear_selective_data": "tracker before/after capture",
     "api/endpoints/speaker_update.py::_apply_high_confidence_match": "tracker before/after capture",
     "api/endpoints/speaker_update.py::_persist_match_results": "tracker before/after capture",
-    "api/endpoints/speakers.py::_reject_speaker_suggestion": "tracker before/after capture",
+    "api/endpoints/speakers_suggestions.py::_reject_speaker_suggestion": "tracker before/after capture",
     "api/endpoints/speakers.py::update_speaker": "tracker before/after capture",
     "scripts/batch_speaker_matching.py::batch_process_speaker_matches": "tracker capture",
     "services/speaker_cleanup.py::join_cluster_identity": "tracker before/after capture",
@@ -236,7 +236,7 @@ QUERY_ALLOWED: dict[str, str] = {
         "a voiceprint stage: it runs only while the gate allows voiceprints, and the name is "
         "only compared against the trigger's, never printed"
     ),
-    "api/endpoints/speakers.py::_load_profile_speaker_names": (
+    "api/endpoints/speakers_profile_workflow.py::_load_profile_speaker_names": (
         "feeds the speaker-document sync (voiceprint index), whose documents the purge deletes "
         "and whose reads are closed while voiceprints are off"
     ),

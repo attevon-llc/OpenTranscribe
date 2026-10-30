@@ -712,7 +712,7 @@ class TestProfileOrgStamping:
 
     def test_speakers_helper_creates_profile_with_speaker_org(self, two_orgs):
         """speakers.py create-new-profile paths inherit the SPEAKER's tenant."""
-        from app.api.endpoints.speakers import _handle_create_new_profile_action
+        from app.api.endpoints.speakers_profile_workflow import _handle_create_new_profile_action
         from app.models.media import SpeakerProfile
 
         w = two_orgs

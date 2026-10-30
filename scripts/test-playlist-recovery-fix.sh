@@ -38,7 +38,7 @@ GROUP BY status;
 # Verify recovery service skips QUEUED files
 echo
 echo "3. Verifying recovery logic (checking code)..."
-if grep -q "FileStatus.QUEUED" backend/app/services/media_download_service.py; then
+if grep -q "FileStatus.QUEUED" backend/app/services/media_download_playlist.py; then
     echo "✓ MediaDownloadService uses QUEUED status for placeholders"
 else
     echo "✗ MediaDownloadService does not use QUEUED status"

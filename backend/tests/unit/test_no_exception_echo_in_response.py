@@ -1008,10 +1008,10 @@ _CONTAINER_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
         "`cleanup.periodic` Celery task; same log-and-return-as-task-result shape as "
         "force_cleanup_orphaned_files above",
     ),
-    "services/media_download_service.py::_process_playlist_videos": (
+    "services/media_download_playlist.py::_process_playlist_videos": (
         1,
         "internal-only: `skipped_videos` is returned to process_youtube_playlist_sync "
-        "(:1812), which puts it on its result dict (:1843); the one consumer of that "
+        "(media_download_playlist.py:339), which puts it on its result dict (:372); the one consumer of that "
         "dict, tasks/youtube_processing.py::_handle_playlist_result (via :764), reads "
         "`result.get('skipped_count', 0)` (:810) and never the per-video reasons",
     ),

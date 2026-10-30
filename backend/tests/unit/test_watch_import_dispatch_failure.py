@@ -12,7 +12,7 @@ Follows the ``media_file_stubs`` pattern from
 ``upload_file_tuned`` are stubbed so this stays a unit test with no MinIO
 dependency (CI has none), and ``_notify_file_created`` is stubbed to avoid a
 Redis-based WS publish. ``_dispatch_pipeline``'s own target,
-``app.api.endpoints.files.upload.dispatch_upload_pipeline``, is patched at its
+``app.api.endpoints.files.upload_dispatch.dispatch_upload_pipeline``, is patched at its
 source so the local import inside ``_dispatch_pipeline`` picks up the patched
 version.
 
@@ -101,7 +101,7 @@ class TestWatchImportDispatchFailureVisibility:
     def test_a_failed_dispatch_after_a_successful_import_is_recorded_on_the_row(
         self, db_session, normal_user, media_file_stubs, monkeypatch, caplog
     ):
-        import app.api.endpoints.files.upload as upload_module
+        import app.api.endpoints.files.upload_dispatch as upload_module
         from app.services.watch_sources.processing import ingest_prepared_file
 
         monkeypatch.setattr(
@@ -148,7 +148,7 @@ class TestWatchImportDispatchFailureVisibility:
         self, db_session, normal_user, media_file_stubs, monkeypatch
     ):
         """CONTROL: same fixture shape, dispatch succeeds."""
-        import app.api.endpoints.files.upload as upload_module
+        import app.api.endpoints.files.upload_dispatch as upload_module
         from app.services.watch_sources.processing import ingest_prepared_file
 
         monkeypatch.setattr(upload_module, "dispatch_upload_pipeline", lambda *a, **k: "task-id")

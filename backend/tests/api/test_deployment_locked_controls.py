@@ -158,7 +158,8 @@ class TestModelChoice:
             patch("app.services.minio_service.range_read", side_effect=RuntimeError("no s3")),
             patch("app.api.endpoints.files.complete_upload._fingerprint_object", return_value=None),
             patch(
-                "app.api.endpoints.files.upload.dispatch_upload_pipeline_or_mark_error", dispatch
+                "app.api.endpoints.files.upload_dispatch.dispatch_upload_pipeline_or_mark_error",
+                dispatch,
             ),
         ):
             response = client.post(

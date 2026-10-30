@@ -185,7 +185,7 @@ def test_reingest_dispatches_per_file(db_session, normal_user):
     with (
         patch.object(recovery, "fingerprint_object", lambda mf: None),
         patch(
-            "app.api.endpoints.files.upload.dispatch_upload_pipeline",
+            "app.api.endpoints.files.upload_dispatch.dispatch_upload_pipeline",
             return_value="task-1",
         ) as mock_dispatch,
     ):

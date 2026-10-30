@@ -308,7 +308,7 @@ def reingest_objects(
 
         if dispatch:
             try:
-                from app.api.endpoints.files.upload import dispatch_upload_pipeline
+                from app.api.endpoints.files.upload_dispatch import dispatch_upload_pipeline
 
                 dispatch_upload_pipeline(
                     media_file,

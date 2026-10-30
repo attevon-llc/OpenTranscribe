@@ -97,10 +97,11 @@ def test_legacy_upload_keeps_the_row_at_error_when_asr_is_refused(
     client, user_token_headers, normal_user, sample_wav_bytes, db_session, monkeypatch
 ):
     from app.api.endpoints.files import upload as upload_mod
+    from app.api.endpoints.files import upload_dispatch as dispatch_mod
 
     filename = f"legacy-asr-refused-{uuid.uuid4().hex[:8]}.wav"
     monkeypatch.setattr(upload_mod, "upload_file_to_storage", lambda *a, **k: None)
-    monkeypatch.setattr(upload_mod, "dispatch_upload_pipeline", _raise_asr_configuration_error)
+    monkeypatch.setattr(dispatch_mod, "dispatch_upload_pipeline", _raise_asr_configuration_error)
 
     response = _post_legacy_upload(client, user_token_headers, sample_wav_bytes, filename)
 
@@ -121,13 +122,13 @@ def test_legacy_upload_keeps_the_row_at_error_when_asr_is_refused(
 def test_presigned_complete_keeps_the_row_at_error_when_asr_is_refused(
     client, user_token_headers, normal_user, db_session, monkeypatch
 ):
-    from app.api.endpoints.files import upload as upload_mod
+    from app.api.endpoints.files import upload_dispatch as dispatch_mod
 
     seeded = _seed_pending_file_with_storage_path(
         db_session, normal_user, f"complete-asr-refused-{uuid.uuid4().hex[:8]}.wav"
     )
     monkeypatch.setattr("app.services.minio_service.object_exists_and_size", lambda *a, **k: 4096)
-    monkeypatch.setattr(upload_mod, "dispatch_upload_pipeline", _raise_asr_configuration_error)
+    monkeypatch.setattr(dispatch_mod, "dispatch_upload_pipeline", _raise_asr_configuration_error)
 
     response = client.post(
         "/api/files/complete",
@@ -161,10 +162,11 @@ def test_legacy_upload_keeps_the_row_at_error_on_a_generic_dispatch_failure(
     monkeypatch,
 ):
     from app.api.endpoints.files import upload as upload_mod
+    from app.api.endpoints.files import upload_dispatch as dispatch_mod
 
     filename = f"legacy-generic-failure-{uuid.uuid4().hex[:8]}.wav"
     monkeypatch.setattr(upload_mod, "upload_file_to_storage", lambda *a, **k: None)
-    monkeypatch.setattr(upload_mod, "dispatch_upload_pipeline", _raise_generic_failure)
+    monkeypatch.setattr(dispatch_mod, "dispatch_upload_pipeline", _raise_generic_failure)
 
     response = _post_legacy_upload(
         app_for_raising_client, user_token_headers, sample_wav_bytes, filename
@@ -191,13 +193,13 @@ def test_presigned_complete_keeps_the_row_at_error_on_a_generic_dispatch_failure
     app_for_raising_client, user_token_headers, normal_user, db_session, monkeypatch
 ):
     """This is the test that catches the previously-unfiled PENDING-forever bug."""
-    from app.api.endpoints.files import upload as upload_mod
+    from app.api.endpoints.files import upload_dispatch as dispatch_mod
 
     seeded = _seed_pending_file_with_storage_path(
         db_session, normal_user, f"complete-generic-failure-{uuid.uuid4().hex[:8]}.wav"
     )
     monkeypatch.setattr("app.services.minio_service.object_exists_and_size", lambda *a, **k: 4096)
-    monkeypatch.setattr(upload_mod, "dispatch_upload_pipeline", _raise_generic_failure)
+    monkeypatch.setattr(dispatch_mod, "dispatch_upload_pipeline", _raise_generic_failure)
 
     response = app_for_raising_client.post(
         "/api/files/complete",
@@ -223,9 +225,10 @@ def test_both_upload_paths_report_the_same_outcome_for_one_refusal(
     client, user_token_headers, normal_user, sample_wav_bytes, db_session, monkeypatch
 ):
     from app.api.endpoints.files import upload as upload_mod
+    from app.api.endpoints.files import upload_dispatch as dispatch_mod
 
     monkeypatch.setattr(upload_mod, "upload_file_to_storage", lambda *a, **k: None)
-    monkeypatch.setattr(upload_mod, "dispatch_upload_pipeline", _raise_asr_configuration_error)
+    monkeypatch.setattr(dispatch_mod, "dispatch_upload_pipeline", _raise_asr_configuration_error)
 
     legacy_filename = f"parity-legacy-{uuid.uuid4().hex[:8]}.wav"
     legacy = _post_legacy_upload(client, user_token_headers, sample_wav_bytes, legacy_filename)
@@ -326,13 +329,14 @@ def test_dispatch_failure_pushes_a_live_ws_update_and_invalidates_cache(
     only path by which raw error text ever reached the gallery.
     """
     from app.api.endpoints.files import upload as upload_mod
+    from app.api.endpoints.files import upload_dispatch as dispatch_mod
 
     ws_mock = mock.Mock(return_value=True)
     cache_mock = mock.Mock()
 
     monkeypatch.setattr(upload_mod, "upload_file_to_storage", lambda *a, **k: None)
-    monkeypatch.setattr(upload_mod, "dispatch_upload_pipeline", _raise_asr_configuration_error)
-    monkeypatch.setattr(upload_mod, "send_ws_event_for_file", ws_mock)
+    monkeypatch.setattr(dispatch_mod, "dispatch_upload_pipeline", _raise_asr_configuration_error)
+    monkeypatch.setattr(dispatch_mod, "send_ws_event_for_file", ws_mock)
     monkeypatch.setattr("app.services.redis_cache_service.redis_cache", cache_mock)
 
     filename = f"ws-push-{uuid.uuid4().hex[:8]}.wav"
@@ -370,6 +374,7 @@ def test_dispatch_failure_still_invalidates_cache_when_the_ws_push_fails(
     invalidation or mask the real dispatch failure being re-raised (#911).
     """
     from app.api.endpoints.files import upload as upload_mod
+    from app.api.endpoints.files import upload_dispatch as dispatch_mod
 
     cache_mock = mock.Mock()
 
@@ -377,8 +382,8 @@ def test_dispatch_failure_still_invalidates_cache_when_the_ws_push_fails(
         raise RuntimeError("redis publish exploded")
 
     monkeypatch.setattr(upload_mod, "upload_file_to_storage", lambda *a, **k: None)
-    monkeypatch.setattr(upload_mod, "dispatch_upload_pipeline", _raise_asr_configuration_error)
-    monkeypatch.setattr(upload_mod, "send_ws_event_for_file", _raise_ws_failure)
+    monkeypatch.setattr(dispatch_mod, "dispatch_upload_pipeline", _raise_asr_configuration_error)
+    monkeypatch.setattr(dispatch_mod, "send_ws_event_for_file", _raise_ws_failure)
     monkeypatch.setattr("app.services.redis_cache_service.redis_cache", cache_mock)
 
     filename = f"ws-push-failure-{uuid.uuid4().hex[:8]}.wav"

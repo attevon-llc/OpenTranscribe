@@ -595,7 +595,7 @@ def complete_upload_env(monkeypatch):
     )
     monkeypatch.setattr("app.api.endpoints.files.upload._update_file_hash", lambda f, h, name: None)
     monkeypatch.setattr(
-        "app.api.endpoints.files.upload.dispatch_upload_pipeline", lambda *a, **kw: None
+        "app.api.endpoints.files.upload_dispatch.dispatch_upload_pipeline", lambda *a, **kw: None
     )
     monkeypatch.setattr(
         "app.utils.file_validation.validate_uploaded_file", lambda b, ct, name: (True, "")

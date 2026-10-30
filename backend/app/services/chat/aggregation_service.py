@@ -296,7 +296,7 @@ def _quarantined_among(
     session_factory: SessionFactory | None, file_uuids: Iterable[str]
 ) -> frozenset[str]:
     """Which of ``file_uuids`` belong to a quarantined file — the aggregation
-    tier's post-filter, mirroring ``api/endpoints/search.py::
+    tier's post-filter, mirroring ``api/endpoints/search_helpers.py::
     _drop_quarantined_search_hits`` and ``service._drop_quarantined_hits``.
 
     Quarantine is not an OpenSearch filter field (see ``context_resolver``'s

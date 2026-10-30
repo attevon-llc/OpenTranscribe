@@ -46,6 +46,9 @@ from .endpoints import privacy
 from .endpoints import prompts
 from .endpoints import redaction_settings
 from .endpoints import search
+from .endpoints import search_index_health
+from .endpoints import search_models
+from .endpoints import search_reindex
 from .endpoints import speaker_attribute_migration
 from .endpoints import speaker_clusters
 from .endpoints import speaker_profiles
@@ -133,6 +136,15 @@ include_router_with_consistency(files_router, prefix="/files", tags=["files"])
 include_router_with_consistency(file_management_router, prefix="/files", tags=["file-management"])
 include_router_with_consistency(
     search.router, prefix="/search", tags=["search"], refuse_under_grant=True
+)
+include_router_with_consistency(
+    search_reindex.router, prefix="/search", tags=["search"], refuse_under_grant=True
+)
+include_router_with_consistency(
+    search_index_health.router, prefix="/search", tags=["search"], refuse_under_grant=True
+)
+include_router_with_consistency(
+    search_models.router, prefix="/search", tags=["search"], refuse_under_grant=True
 )
 include_router_with_consistency(speakers.router, prefix="/speakers", tags=["speakers"])
 include_router_with_consistency(

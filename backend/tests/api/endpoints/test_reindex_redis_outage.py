@@ -80,7 +80,7 @@ def test_stop_is_503_not_not_running_when_redis_is_unreachable(
 def test_stop_is_503_when_only_the_lock_lookup_fails(client, admin_token_headers, standin_redis):
     """Fan-out read works but the lock lookup cannot tell: still 503, never "not_running"."""
     with patch(
-        "app.api.endpoints.search._running_reindex_run_id",
+        "app.api.endpoints.search_reindex._running_reindex_run_id",
         side_effect=ReindexLockUnavailableError("x"),
     ):
         response = client.post(REINDEX_STOP, headers=admin_token_headers)

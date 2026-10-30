@@ -60,17 +60,17 @@ OPS = (
         "/api/search/reindex",
         "app.services.search.model_switch.dispatch_reindex_for_every_owner",
     ),
-    Op("POST", "/api/search/reindex/stop", "app.api.endpoints.search.read_fanout"),
+    Op("POST", "/api/search/reindex/stop", "app.api.endpoints.search_reindex.read_fanout"),
     Op(
         "POST",
         "/api/search/repair-indices",
-        "app.api.endpoints.search._probe_index_health",
+        "app.api.endpoints.search_index_health._probe_index_health",
         extra_patches={"app.services.opensearch_service.opensearch_client": object()},
     ),
     Op(
         "POST",
         "/api/search/models",
-        "app.api.endpoints.search._switch_model",
+        "app.api.endpoints.search_models._switch_model",
         kwargs={"json": {"model_id": MODEL}},
     ),
     Op(
@@ -91,7 +91,7 @@ OPS = (
     Op(
         "PUT",
         "/api/search/models/neural/active",
-        "app.api.endpoints.search._switch_model",
+        "app.api.endpoints.search_models._switch_model",
         kwargs={"params": {"model_name": MODEL}},
     ),
     Op(

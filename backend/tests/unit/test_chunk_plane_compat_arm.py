@@ -73,24 +73,16 @@ _ALLOWED: dict[str, str] = {
         "Reports index SIZE for the admin panel. Every document counts, including "
         "digests; filtering would under-report what the cluster is holding."
     ),
-    "api/endpoints/search.py::_probe_index_health": (
+    "api/endpoints/search_index_health.py::_probe_index_health": (
         "A liveness probe — match_all/size 0 against each of eight indices, asking "
         "whether the index answers at all. It selects no documents to act on, and "
         "seven of the eight have no planes. Extracted from repair_indices, which "
         "held this same exemption before the session-lifetime split."
     ),
-    "api/endpoints/search.py::_scope_doc_counts_to_caller": (
+    "api/endpoints/search_index_health.py::_scope_doc_counts_to_caller": (
         "The non-admin twin of get_index_health's _cat/indices doc count: the "
         "caller's own document count per index, every plane included, so it "
         "measures the same thing the admin number does."
-    ),
-    "api/endpoints/search.py::search_transcripts": (
-        "Not a reader — the HTTP endpoint. It builds no OpenSearch body: the sweep "
-        "matches `HybridSearchService.search(...)` on the `.search` call name and "
-        '`"query"` on the empty-response PAYLOAD dict it constructs for a '
-        "`summaries`-only request. The real query is built in `_build_filters`, "
-        "which carries the arm — same shape as the two hybrid_search_service "
-        "entries just below."
     ),
     "services/search/hybrid_search_service.py::count_matches": (
         "Takes its filter list as a parameter from _build_filters, which carries "

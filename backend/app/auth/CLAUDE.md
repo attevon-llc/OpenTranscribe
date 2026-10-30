@@ -249,9 +249,9 @@ issue #1122). In single-tenant mode nothing changes. A grant never confers `org:
 - `approval.py` — the `approval_status` state machine and `initial_approval_status`, the one
   function every account-creation path asks "does this start pending?".
 - `roles.py` — the authorization contract (read this first, it's about 35 lines).
-- `token_service.py` — JWT issue/verify, `rotate_refresh_token`, `revoke_all_user_tokens_in_transaction`,
-  Redis JTI revocation list + `refresh_token.revoked_at`, **and session lifetime**
-  (`_session_within_lifetime`).
+- `token_service.py` — JWT issue/verify, revocation (`revoke_token`, `revoke_all_user_tokens_in_transaction`, Redis JTI list,
+  user epoch); mixes in `refresh_tokens.py` (create/verify/`rotate_refresh_token`, **session lifetime** `_session_within_lifetime`).
+  `session_ceiling.py`: `_session_lifetime_minutes`, `enforce_session_ceiling`; `revocation_error.py`: `RevocationError`.
 - `mfa.py` (`MFAService`) · `lockout.py` (progressive, per-identifier; store `lockout_store.py`, admin `lockout_admin.py`) · `rate_limit.py`
   (slowapi, per-IP with trusted-proxy parsing) · `session.py` (`OIDCStateStore`,
   `InMemoryStore`, `get_redis_client` — **OIDC login state only, not sessions**) ·

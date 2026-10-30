@@ -32,7 +32,7 @@ from app.auth.oidc import OIDCConfig
 from app.auth.oidc import call_federated_logout
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
-from app.auth.token_service import RevocationError
+from app.auth.revocation_error import RevocationError
 from app.auth.token_service import token_service
 from app.core.auth_types import AUTH_TYPE_OIDC
 from app.core.config import settings

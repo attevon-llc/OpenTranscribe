@@ -22,7 +22,9 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy.orm import Session
 
+from app.auth import token_service as token_service_module
 from app.auth.token_service import TokenService
+from app.models.refresh_token import RefreshToken
 
 
 @pytest.mark.unit
@@ -119,6 +121,36 @@ class TestRevocationFailsClosed:
             revoked = _Row(revoked_at=datetime.now(UTC))
             assert svc.is_token_revoked("jti", db=cast(Session, _DbReturning(revoked))) is True
             assert svc.degraded is True, "must latch the degraded flag"
+
+
+def test_the_real_fallback_store_is_never_consulted_while_degraded(
+    db_session, normal_user, monkeypatch
+):
+    """With Redis down at startup, the per-process fallback store must not answer.
+
+    Every test above swaps the ``store`` property for a raising stand-in, so a degraded
+    check that read the store anyway was rescued by the store raising. The production
+    fallback is an empty ``InMemoryStore`` that answers "not revoked" to everything.
+    """
+    monkeypatch.setattr(token_service_module, "get_redis_client", lambda: None)
+    svc = TokenService()
+    db_session.add(
+        RefreshToken(
+            user_id=normal_user.id,
+            token_hash="hash-revoked-session",
+            jti="revoked-session-jti",
+            expires_at=datetime.now(UTC) + timedelta(days=1),
+            revoked_at=datetime.now(UTC),
+        )
+    )
+    db_session.commit()
+
+    revoked = svc.is_token_revoked(
+        "an-access-jti", db=db_session, user_uuid=str(normal_user.uuid), issued_at=1
+    )
+
+    assert svc.degraded is True
+    assert revoked is True
 
 
 # ---------------------------------------------------------------------------

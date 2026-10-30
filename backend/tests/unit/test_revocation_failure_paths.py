@@ -20,8 +20,8 @@ from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.auth.cookies import REFRESH_COOKIE
+from app.auth.revocation_error import RevocationError
 from app.auth.saml.config import SAMLConfig
-from app.auth.token_service import RevocationError
 from app.auth.token_service import TokenService
 from app.auth.token_service import token_service
 from app.models.refresh_token import RefreshToken

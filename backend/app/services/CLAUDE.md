@@ -468,7 +468,7 @@ suggestion UIs with its confidence and nothing more; accepting it writes `displa
   query (`reindex_task`, `rename_propagation_task`, the chat roster) must select
   `Speaker.suggestion_source` too; omitting it silently reads as "unknown source".
 - **The chat roster only finds a speaker through `suggested_name` when a voiceprint wrote it**
-  (`speaker_resolver.build_candidate_roster`): a "who said X" question must not resolve a speaker
+  (`speaker_roster.build_candidate_roster`): a "who said X" question must not resolve a speaker
   through a guess.
 - **The LLM task will not overwrite a voiceprint suggestion** — that would replace the evidence
   the label rests on with a guess.

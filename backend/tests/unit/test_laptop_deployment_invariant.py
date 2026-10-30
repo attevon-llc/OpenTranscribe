@@ -38,7 +38,11 @@ from app.services.chat import aggregation_speakers as aggregation_speakers_modul
 from app.services.chat import recurrence as recurrence_module
 from app.services.chat import recurrence_service as recurrence_service_module
 from app.services.chat import reranker as reranker_module
+from app.services.chat import speaker_mention_extract as speaker_mention_extract_module
+from app.services.chat import speaker_name_match as speaker_name_match_module
+from app.services.chat import speaker_name_text as speaker_name_text_module
 from app.services.chat import speaker_resolver as speaker_resolver_module
+from app.services.chat import speaker_roster as speaker_roster_module
 
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
@@ -102,9 +106,17 @@ def test_the_forbidden_import_detector_stays_clean_on_an_unrelated_import():
 
 def test_speaker_resolver_has_no_llm_or_model_import():
     """``chat/speaker_resolver.py``'s own docstring: "no embedding, no LLM call, no
-    OpenSearch round trip" -- Postgres + string matching only."""
-    forbidden = _forbidden_imports(inspect.getsource(speaker_resolver_module))
-    assert forbidden == set(), f"speaker_resolver.py imports: {sorted(forbidden)}"
+    OpenSearch round trip" -- Postgres + string matching only. The resolver is split across
+    five flat modules; every one is held to the invariant."""
+    for module in (
+        speaker_resolver_module,
+        speaker_roster_module,
+        speaker_name_text_module,
+        speaker_mention_extract_module,
+        speaker_name_match_module,
+    ):
+        forbidden = _forbidden_imports(inspect.getsource(module))
+        assert forbidden == set(), f"{module.__name__} imports: {sorted(forbidden)}"
 
 
 def test_recurrence_has_no_llm_or_model_import():

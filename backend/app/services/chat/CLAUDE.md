@@ -22,7 +22,7 @@ Each stage is its own module so the two security-critical ones (`redactor.py`,
 |---|---|
 | `settings.py` | Admin knobs resolved in ONE `get_settings_map()` call; `.revision` digest keys the retrieval cache so a retune invalidates it |
 | `language.py` | **The English-only scope of RAG**, and the warning that makes it visible |
-| `context_resolver.py` | Scope (files/collections/tags) → file uuids, **in Postgres** |
+| `context_resolver.py` | Scope (files/collections/tags) → file uuids, **in Postgres**; speaker mentions (no LLM/model, all held to that by `test_laptop_deployment_invariant`): `speaker_resolver.resolve_speaker_mentions`, `speaker_roster.build_candidate_roster` (permission-gated, accessible + non-quarantined files only), `speaker_mention_extract`, `speaker_name_match.match_candidate`, `speaker_name_text` (shared normalization) |
 | `retrieval.py` | Cache → retrieve → rerank → diversity sample; returns `RetrievalResult` with diagnostics |
 | `router.py` | Rules-only intent + tiers (#403 Stage 4). Loads nothing, calls nothing |
 | `aggregation.py` | Counted answers, pure half: shapes, subject extraction, filters |

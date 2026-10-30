@@ -104,8 +104,8 @@ def _validate_plan_speakers(
     """
     if not names:
         return []
-    from app.services.chat.speaker_resolver import build_candidate_roster
-    from app.services.chat.speaker_resolver import match_candidate
+    from app.services.chat.speaker_name_match import match_candidate
+    from app.services.chat.speaker_roster import build_candidate_roster
 
     try:
         with session_scope() as db:

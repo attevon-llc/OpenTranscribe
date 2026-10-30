@@ -266,7 +266,7 @@ def test_get_stream_parser_parametrize_covers_every_llmprovider_member():
     """A future provider added to `LLMProvider` without a matching parametrize entry
     above must fail loudly here, not fall through untested to the OpenAI dialect.
     """
-    from app.services.llm_service import LLMProvider
+    from app.services.llm_types import LLMProvider
 
     covered = {
         "openai",
@@ -289,9 +289,9 @@ def test_bedrock_stream_never_reaches_get_stream_parser_or_session_post():
     """
     from unittest.mock import patch
 
-    from app.services.llm_service import LLMConfig
-    from app.services.llm_service import LLMProvider
     from app.services.llm_service import LLMService
+    from app.services.llm_types import LLMConfig
+    from app.services.llm_types import LLMProvider
 
     service = LLMService(LLMConfig(provider=LLMProvider.BEDROCK, model="test-model"))
     session = _transport(service)
@@ -327,9 +327,9 @@ def test_apply_stream_payload_requests_usage_only_where_supported():
 
 
 def _service(provider: str = "openai"):
-    from app.services.llm_service import LLMConfig
-    from app.services.llm_service import LLMProvider
     from app.services.llm_service import LLMService
+    from app.services.llm_types import LLMConfig
+    from app.services.llm_types import LLMProvider
 
     return LLMService(
         LLMConfig(

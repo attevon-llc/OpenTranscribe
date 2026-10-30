@@ -24,10 +24,10 @@ import json
 from typing import Any
 from unittest import mock
 
-from app.services.llm_service import LLMConfig
-from app.services.llm_service import LLMProvider
-from app.services.llm_service import LLMResponse
 from app.services.llm_service import LLMService
+from app.services.llm_types import LLMConfig
+from app.services.llm_types import LLMProvider
+from app.services.llm_types import LLMResponse
 
 VALID_SUMMARY = json.dumps(
     {

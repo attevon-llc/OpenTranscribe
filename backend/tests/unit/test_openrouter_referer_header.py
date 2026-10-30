@@ -9,9 +9,9 @@ from __future__ import annotations
 import pytest
 
 from app.core.config import settings
-from app.services.llm_service import LLMConfig
-from app.services.llm_service import LLMProvider
 from app.services.llm_service import LLMService
+from app.services.llm_types import LLMConfig
+from app.services.llm_types import LLMProvider
 
 
 def _headers() -> dict[str, str]:

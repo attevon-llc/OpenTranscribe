@@ -316,9 +316,9 @@ def test_the_secret_never_reaches_the_provider_over_the_wire(mock_llm_url):
     response IS asserting on the bytes the app actually sent — not on whether
     a masking function was invoked.
     """
-    from app.services.llm_service import LLMConfig
-    from app.services.llm_service import LLMProvider
     from app.services.llm_service import LLMService
+    from app.services.llm_types import LLMConfig
+    from app.services.llm_types import LLMProvider
 
     segment = SimpleNamespace(text=CONTENT, redactions=[_SPAN], words=None)
     db = _chunk_db(segment)

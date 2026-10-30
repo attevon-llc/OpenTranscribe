@@ -31,9 +31,9 @@ from app.services import llm_reasoning
 from app.services.bedrock_settings import BedrockConnection
 from app.services.bedrock_settings import connection_from_encrypted
 from app.services.bedrock_settings import merge_stored
-from app.services.llm_service import LLMConfig
-from app.services.llm_service import LLMProvider as ServiceLLMProvider
 from app.services.llm_service import LLMService
+from app.services.llm_types import LLMConfig
+from app.services.llm_types import LLMProvider as ServiceLLMProvider
 from app.services.request_context import RequestContext
 from app.utils.encryption import decrypt_api_key
 

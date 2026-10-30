@@ -50,10 +50,10 @@ from pathlib import Path
 
 import pytest
 
-from app.services.llm_service import LLMConfig
-from app.services.llm_service import LLMProvider
-from app.services.llm_service import LLMResponse
 from app.services.llm_service import LLMService
+from app.services.llm_types import LLMConfig
+from app.services.llm_types import LLMProvider
+from app.services.llm_types import LLMResponse
 
 # The exact malformation class found live: a JSON string value containing a
 # literal, unescaped double quote from a feet/inches measurement mentioned in

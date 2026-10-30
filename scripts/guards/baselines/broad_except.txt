@@ -106,8 +106,11 @@ backend/app/services/imohash_service.py	2	ratchet: may only go down
 backend/app/services/ingest_artifacts/textrank.py	1	ratchet: may only go down
 backend/app/services/llm_bedrock.py	3	ratchet: may only go down
 backend/app/services/llm_context_window.py	1	ratchet: may only go down
+backend/app/services/llm_health.py	1	ratchet: may only go down
+backend/app/services/llm_json_extract.py	2	ratchet: may only go down
 backend/app/services/llm_reasoning.py	2	ratchet: may only go down
-backend/app/services/llm_service.py	11	ratchet: may only go down
+backend/app/services/llm_service.py	7	ratchet: may only go down
+backend/app/services/llm_summarization.py	1	ratchet: may only go down
 backend/app/services/local_models/runner.py	1	ratchet: may only go down
 backend/app/services/local_models/supervisor.py	2	ratchet: may only go down
 backend/app/services/local_models/worker_report.py	2	ratchet: may only go down

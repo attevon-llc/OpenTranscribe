@@ -29,11 +29,11 @@ import pytest
 from app.core.config import settings
 from app.schemas.llm_settings import LLMProvider as SchemaLLMProvider
 from app.schemas.llm_settings import UserLLMSettingsCreate
-from app.services.llm_service import PROVIDERS_REQUIRING_API_KEY
-from app.services.llm_service import SDK_PROVIDERS
-from app.services.llm_service import LLMConfig
-from app.services.llm_service import LLMProvider
 from app.services.llm_service import LLMService
+from app.services.llm_types import PROVIDERS_REQUIRING_API_KEY
+from app.services.llm_types import SDK_PROVIDERS
+from app.services.llm_types import LLMConfig
+from app.services.llm_types import LLMProvider
 
 MODEL = "anthropic.claude-haiku-4-5-20251001-v1:0"
 

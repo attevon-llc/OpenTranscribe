@@ -36,9 +36,9 @@ from app.models.organization import Organization
 from app.models.user import User
 from app.services import gdpr_erasure_service as gdpr
 from app.services import media_mirror_engine as eng
-from app.services.llm_service import LLMConfig
-from app.services.llm_service import LLMProvider
 from app.services.llm_service import LLMService
+from app.services.llm_types import LLMConfig
+from app.services.llm_types import LLMProvider
 from app.services.media_mirror_engine import SourceObject
 
 SENTINEL = "SENTINEL-svc-/srv/internal/secret-path-and-redis://:hunter2@broker:6379/0"

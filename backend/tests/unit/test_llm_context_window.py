@@ -33,8 +33,8 @@ from app.services.llm_context_window import ContextWindowStatus
 from app.services.llm_context_window import discovery_key
 from app.services.llm_context_window import measured_window
 from app.services.llm_context_window import probe
-from app.services.llm_service import LLMConfig
-from app.services.llm_service import LLMProvider
+from app.services.llm_types import LLMConfig
+from app.services.llm_types import LLMProvider
 from app.utils.url_validation import PinnedTarget
 
 

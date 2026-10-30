@@ -198,11 +198,13 @@ def _service(base_url: str, *, allow_private: bool, monkeypatch):
     """An `LLMService` pointed at *base_url*, with the private-endpoint flag set."""
     from app.core.config import settings
     from app.services import llm_service as llm_module
+    from app.services.llm_types import LLMConfig
+    from app.services.llm_types import LLMProvider
 
     monkeypatch.setattr(settings, "LLM_ALLOW_PRIVATE_ENDPOINTS", allow_private, raising=False)
     return llm_module.LLMService(
-        llm_module.LLMConfig(
-            provider=llm_module.LLMProvider.CUSTOM,
+        LLMConfig(
+            provider=LLMProvider.CUSTOM,
             model="test-model",
             api_key="sk-test",
             base_url=base_url,

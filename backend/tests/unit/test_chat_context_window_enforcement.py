@@ -39,10 +39,10 @@ from app.services.chat.prompting import build_messages
 from app.services.chat.redactor import MaskedChunk
 from app.services.chat.service import resolve_answer_tokens
 from app.services.chat.settings import ChatSettings
-from app.services.llm_service import LLMConfig
-from app.services.llm_service import LLMProvider
 from app.services.llm_service import LLMService
 from app.services.llm_stream import LLMStreamEvent
+from app.services.llm_types import LLMConfig
+from app.services.llm_types import LLMProvider
 from app.services.search.chunk_retrieval import ChunkHit
 
 

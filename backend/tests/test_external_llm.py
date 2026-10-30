@@ -21,9 +21,9 @@ from unittest.mock import patch
 
 import pytest
 
-from app.services.llm_service import LLMConfig
-from app.services.llm_service import LLMProvider
 from app.services.llm_service import LLMService
+from app.services.llm_types import LLMConfig
+from app.services.llm_types import LLMProvider
 
 logger = logging.getLogger(__name__)
 

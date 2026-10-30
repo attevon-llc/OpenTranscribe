@@ -302,9 +302,9 @@ def test_llm_validate_connection_never_leaks_the_endpoint_host(
     """
     from types import SimpleNamespace
 
-    from app.services.llm_service import LLMConfig
-    from app.services.llm_service import LLMProvider
     from app.services.llm_service import LLMService
+    from app.services.llm_types import LLMConfig
+    from app.services.llm_types import LLMProvider
 
     def _fake_create_from_settings(*_args, **_kwargs):
         return LLMService(
@@ -343,9 +343,9 @@ def test_llm_validate_connection_never_leaks_the_endpoint_host(
 def test_combine_sections_failure_never_leaks_exception_text(
     db_session, normal_user, user_token_headers, client, monkeypatch, caplog
 ):
-    from app.services.llm_service import LLMConfig
-    from app.services.llm_service import LLMProvider
     from app.services.llm_service import LLMService
+    from app.services.llm_types import LLMConfig
+    from app.services.llm_types import LLMProvider
 
     media_file = _make_file(db_session, normal_user)
 

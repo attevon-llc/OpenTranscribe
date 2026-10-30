@@ -605,9 +605,9 @@ def process_file_reprocess(
         HTTPException: If file not found or user doesn't have permission
     """
     from app.services.uuid_helpers import get_file_by_uuid_with_permission
-    from app.utils.task_utils import cancel_active_task
-    from app.utils.task_utils import reset_file_for_retry
-    from app.utils.task_utils import transcript_is_regenerable
+    from app.utils.file_retry import reset_file_for_retry
+    from app.utils.file_retry import transcript_is_regenerable
+    from app.utils.task_cancel import cancel_active_task
 
     try:
         is_admin = current_user.is_admin

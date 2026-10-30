@@ -31,7 +31,7 @@ from sqlalchemy.exc import OperationalError
 
 from app.models.media import FileStatus
 from app.models.media import MediaFile
-from app.utils.task_utils import reset_file_for_retry
+from app.utils.file_retry import reset_file_for_retry
 
 
 class _FakeQuery:

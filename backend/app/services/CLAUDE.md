@@ -336,7 +336,7 @@ and retroactive matching), `speaker_profiles.py` (profile delete), `speaker_clus
 (cluster delete), `speaker_clustering_service` (unassign, split, merge, promote, batch
 assign, upload-time clustering, re-cluster), `speaker_matching_service` (profile
 propagation), `speaker_embedding_task` (segment-reassign voiceprint drift),
-`files/reprocess.py` (transcription and rediarize clears), `task_utils.reset_file_for_retry`,
+`files/reprocess.py` (transcription and rediarize clears), `file_retry.reset_file_for_retry`,
 `speaker_merge_task` (the target half) and `file_cleanup_service.purge_media_file`.
 
 The same module is also the ONE implementation of **assignment** bookkeeping (#1233): a path

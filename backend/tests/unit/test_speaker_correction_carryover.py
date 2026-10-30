@@ -94,13 +94,13 @@ def _corrected_file(db, user, seams) -> dict[str, Any]:
 
 def _clear(db, media, how: str, monkeypatch) -> None:
     if how == "retry":
-        from app.utils import task_utils
+        from app.utils import file_retry
 
-        monkeypatch.setattr(task_utils, "transcript_is_regenerable", lambda *a, **k: True)
+        monkeypatch.setattr(file_retry, "transcript_is_regenerable", lambda *a, **k: True)
         monkeypatch.setattr(
             "app.tasks.search_indexing_task.index_file_summary.delay", lambda *a, **k: None
         )
-        assert task_utils.reset_file_for_retry(db, int(media.id)) is True
+        assert file_retry.reset_file_for_retry(db, int(media.id)) is True
         return
     from app.api.endpoints.files.reprocess import clear_selective_data
 

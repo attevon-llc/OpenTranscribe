@@ -2,7 +2,7 @@
 Summary retry utilities for OpenTranscribe
 
 This module provides functionality to retry failed AI summaries,
-similar to the transcription retry mechanism in task_utils.py
+similar to the transcription retry mechanism in utils/file_retry.py
 """
 
 import logging

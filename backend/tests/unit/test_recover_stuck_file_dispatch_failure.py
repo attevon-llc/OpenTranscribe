@@ -1,4 +1,4 @@
-"""``task_utils.recover_stuck_file`` — a dispatch failure one frame down (inside
+"""``stuck_file_recovery.recover_stuck_file`` — a dispatch failure one frame down (inside
 ``_start_transcription_task``) must not vanish into a bare ``logger.error`` (issue #906).
 
 ``_recover_failed_file``/``_recover_orphaned_file`` COMMIT a state change (retry reset,
@@ -132,9 +132,9 @@ class TestRecoverStuckFileDispatchFailure:
         try:
             row.null_out("recovery_attempts")
 
-            from app.utils import task_utils
+            from app.utils import stuck_file_recovery
 
-            result = task_utils.recover_stuck_file(row.session, row.id)
+            result = stuck_file_recovery.recover_stuck_file(row.session, row.id)
 
             assert result is False
             assert row.refresh().recovery_attempts == 1
@@ -145,10 +145,10 @@ class TestRecoverStuckFileDispatchFailure:
         _fail_dispatch(monkeypatch)
         row = _RealRow(status=FileStatus.ORPHANED)
         try:
-            from app.utils import task_utils
+            from app.utils import stuck_file_recovery
 
             with caplog.at_level("ERROR"):
-                task_utils.recover_stuck_file(row.session, row.id)
+                stuck_file_recovery.recover_stuck_file(row.session, row.id)
 
             matching = [r for r in caplog.records if "Failed to recover stuck file" in r.message]
             assert matching, "expected a 'Failed to recover stuck file' error log record"
@@ -164,7 +164,7 @@ class TestRecoverStuckFileDispatchFailure:
     ):
         """CONTROL: same shape, dispatch succeeds — `db.rollback()` never runs, so the
         ordinary savepoint-nested ``db_session`` fixture is safe to use here."""
-        from app.utils import task_utils
+        from app.utils import stuck_file_recovery
 
         monkeypatch.setenv("SKIP_CELERY", "true")
 
@@ -188,7 +188,7 @@ class TestRecoverStuckFileDispatchFailure:
         db_session.refresh(media_file)
         assert media_file.recovery_attempts is None
 
-        result = task_utils.recover_stuck_file(db_session, int(media_file.id))
+        result = stuck_file_recovery.recover_stuck_file(db_session, int(media_file.id))
 
         assert result is True
         db_session.refresh(media_file)
@@ -209,9 +209,9 @@ class TestRecoverStuckFileDispatchFailure:
         try:
             row.null_out("recovery_attempts")
 
-            from app.utils import task_utils
+            from app.utils import stuck_file_recovery
 
-            result = task_utils.recover_stuck_file(row.session, row.id)
+            result = stuck_file_recovery.recover_stuck_file(row.session, row.id)
 
             assert result is False
             assert row.refresh().recovery_attempts == 1

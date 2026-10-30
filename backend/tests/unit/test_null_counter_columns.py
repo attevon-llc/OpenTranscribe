@@ -1,4 +1,4 @@
-"""NULL-column reads in the task-recovery plane (``task_utils`` + ``task_recovery_service``).
+"""NULL-column reads in the task-recovery plane (``file_retry``/``stuck_file_recovery`` + ``task_recovery_service``).
 
 ``MediaFile.retry_count`` and ``MediaFile.recovery_attempts`` are
 ``Mapped[int | None]`` whose ``0`` is a **Python-side** ``default=``, and
@@ -103,12 +103,12 @@ def _assert_retries_allowed(db) -> None:
 
 
 # =============================================================================
-# app/utils/task_utils.py
+# app/utils/file_retry.py, stuck_file_recovery.py
 # =============================================================================
 def test_reset_file_for_retry_normalizes_a_null_retry_count(db_session, normal_user):
     """``reset_file_for_retry`` must increment a NULL ``retry_count`` to 1.
 
-    Site: ``task_utils.py`` ``reset_file_for_retry`` — ``media_file.retry_count += 1``.
+    Site: ``file_retry.py`` ``reset_file_for_retry`` — ``media_file.retry_count += 1``.
 
     This is the **manual retry entry point**: ``POST /api/my-files/{uuid}/retry``
     and the recovery sweeps both land here. On a NULL row ``None += 1`` raises
@@ -118,7 +118,7 @@ def test_reset_file_for_retry_normalizes_a_null_retry_count(db_session, normal_u
     that implementation this test fails on both assertions: ``False`` is returned
     and ``retry_count`` is still NULL.
     """
-    from app.utils.task_utils import reset_file_for_retry
+    from app.utils.file_retry import reset_file_for_retry
 
     media_file = _file(db_session, normal_user, status=FileStatus.ERROR)
     _null_out(db_session, MediaFile, media_file.id, "retry_count")
@@ -133,7 +133,7 @@ def test_reset_file_for_retry_normalizes_a_null_retry_count(db_session, normal_u
 def test_recover_stuck_file_reads_a_null_retry_count_as_zero(db_session, normal_user, monkeypatch):
     """``recover_stuck_file`` must treat a NULL ``retry_count`` as 0, not raise.
 
-    Site: ``task_utils.py`` ``recover_stuck_file`` —
+    Site: ``stuck_file_recovery.py`` ``recover_stuck_file`` —
     ``should_retry_file(db, int(media_file.retry_count))``.
 
     ``int(None)`` is a TypeError, raised *before* the retry decision is even
@@ -146,7 +146,7 @@ def test_recover_stuck_file_reads_a_null_retry_count_as_zero(db_session, normal_
     ``SKIP_CELERY`` suppresses only the final dispatch (``_start_transcription_task``),
     so the whole decision path — retry budget, reset, status transition — is real.
     """
-    from app.utils.task_utils import recover_stuck_file
+    from app.utils.stuck_file_recovery import recover_stuck_file
 
     monkeypatch.setenv("SKIP_CELERY", "true")
     _assert_retries_allowed(db_session)
@@ -172,7 +172,7 @@ def test_recover_stuck_file_normalizes_a_null_recovery_attempts(
 ):
     """The recovery-tracking write must increment a NULL ``recovery_attempts`` to 1.
 
-    Site: ``task_utils.py`` ``_update_recovery_tracking`` —
+    Site: ``stuck_file_recovery.py`` ``_update_recovery_tracking`` —
     ``media_file.recovery_attempts += 1``.
 
     A PROCESSING file with no transcript segments takes the fall-through branch,
@@ -182,7 +182,7 @@ def test_recover_stuck_file_normalizes_a_null_recovery_attempts(
     sweep makes exactly the same doomed attempt. ``retry_count`` is set to 0
     explicitly so ``recovery_attempts`` is the only NULL under test.
     """
-    from app.utils.task_utils import recover_stuck_file
+    from app.utils.stuck_file_recovery import recover_stuck_file
 
     monkeypatch.setenv("SKIP_CELERY", "true")
 

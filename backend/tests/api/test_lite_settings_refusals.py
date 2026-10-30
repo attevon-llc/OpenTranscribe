@@ -383,9 +383,9 @@ def transcribed_file(db_session, normal_user, monkeypatch):
     from app.models.media import FileStatus
     from app.models.media import MediaFile
     from app.models.speaker import Speaker
-    from app.utils import task_utils
+    from app.utils import file_retry
 
-    monkeypatch.setattr(task_utils, "transcript_is_regenerable", lambda db, media_file: True)
+    monkeypatch.setattr(file_retry, "transcript_is_regenerable", lambda db, media_file: True)
     media = MediaFile(
         uuid=uuid_pkg.uuid4(),
         user_id=normal_user.id,

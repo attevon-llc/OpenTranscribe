@@ -1178,8 +1178,8 @@ def delete_media_file(
         bypass: The request's platform bypass (``ctx.bypass``).
     """
     from app.services.delete_permissions import get_deletable_file
-    from app.utils.task_utils import cancel_active_task
-    from app.utils.task_utils import is_file_safe_to_delete
+    from app.utils.file_retry import is_file_safe_to_delete
+    from app.utils.task_cancel import cancel_active_task
 
     # Capability flags offered back to the client in the 409 below: whether the platform
     # role could cancel or force this delete (class P, not a content-access decision).

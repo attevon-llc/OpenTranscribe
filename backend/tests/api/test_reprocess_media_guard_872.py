@@ -35,7 +35,7 @@ from app.models.media import Analytics
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
-from app.utils.task_utils import reset_file_for_retry
+from app.utils.file_retry import reset_file_for_retry
 
 
 def _make_file_with_transcript(db_session, owner, **overrides) -> MediaFile:

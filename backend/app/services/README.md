@@ -126,7 +126,7 @@ minio_service.delete_file(object_name)
 `storage_backend.py` owns the differences between bundled MinIO and native AWS S3 (`STORAGE_BACKEND`), and `storage_presign_identity.py` provides the least-privilege identity that signs browser-facing GET URLs. Every presigned URL expiry is clamped by `clamp_presigned_expiry`.
 
 ### File cleanup service (`file_cleanup_service.py`)
-`FileCleanupService` detects files stuck in processing or pending states and recovers them (`run_cleanup_cycle`, `force_cleanup_orphaned_files(db, dry_run=...)`, `get_cleanup_statistics`), with recovery-attempt limits that mark a file `ORPHANED` and force-delete eligible. It uses `check_for_stuck_files()` and `recover_stuck_file()` from `utils/task_utils.py`. The module also holds the full file purge path (`purge_media_file`).
+`FileCleanupService` detects files stuck in processing or pending states and recovers them (`run_cleanup_cycle`, `force_cleanup_orphaned_files(db, dry_run=...)`, `get_cleanup_statistics`), with recovery-attempt limits that mark a file `ORPHANED` and force-delete eligible. It uses `check_for_stuck_files()` and `recover_stuck_file()` from `utils/stuck_file_recovery.py`. The module also holds the full file purge path (`purge_media_file`).
 
 ### Analytics service (`analytics_service.py`)
 `AnalyticsService` (static methods `compute_analytics`, `save_analytics`, `refresh_analytics`, `compute_and_save_analytics`) computes per-file analytics: speaker talk time, interruptions, turn-taking, question frequency, speaking pace and silence ratio. `POST /files/{uuid}/analytics/refresh` triggers a recompute.

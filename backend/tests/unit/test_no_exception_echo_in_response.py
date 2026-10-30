@@ -85,7 +85,7 @@ Two scoping decisions, both measured rather than assumed:
   Direct mutation only: measured **zero** false positives across the whole tree.
 * **Rooted at ``app/api/`` + ``app/services/``, not ``app/tasks/``.** A Celery task's
   return value goes to the result backend, and this application reads it back in exactly
-  two places — ``app/utils/task_utils.py:461`` and ``:670`` — both of which read
+  two places — ``app/utils/file_retry.py:52`` and ``app/utils/stuck_file_recovery.py:83`` — both of which read
   ``.state`` and never ``.result``. So a task return is not a response body here.
   ``test_a_celery_result_is_never_read_into_a_response`` pins that premise mechanically,
   so the scope stays honest if someone ever wires a task result into an endpoint.
@@ -1273,8 +1273,8 @@ def test_a_celery_result_is_never_read_into_a_response() -> None:
     # Non-vacuity: a scan that found no AsyncResult binding at all would pass the
     # assertion below while proving nothing.
     assert binding_count >= 2, (
-        f"expected at least 2 AsyncResult bindings under app/ (they live in "
-        f"utils/task_utils.py), found {binding_count} — either they moved or this "
+        "expected at least 2 AsyncResult bindings under app/ (they live in utils/file_retry.py "
+        f"and utils/stuck_file_recovery.py), found {binding_count} — either they moved or this "
         "guard stopped matching, and scanner 4's app/tasks/ exclusion is unproven"
     )
     assert not bindings, (

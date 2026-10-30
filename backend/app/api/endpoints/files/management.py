@@ -42,12 +42,12 @@ from app.services.tag_bulk import resolve_bulk_tag
 from app.services.tag_service import InvalidTagNameError
 from app.tasks.summarization import summarize_transcript_task
 from app.tasks.transcription import dispatch_transcription_pipeline
-from app.utils.task_utils import cancel_active_task
-from app.utils.task_utils import check_for_stuck_files
-from app.utils.task_utils import is_file_safe_to_delete
-from app.utils.task_utils import recover_stuck_file
-from app.utils.task_utils import reset_file_for_retry
-from app.utils.task_utils import transcript_is_regenerable
+from app.utils.file_retry import is_file_safe_to_delete
+from app.utils.file_retry import reset_file_for_retry
+from app.utils.file_retry import transcript_is_regenerable
+from app.utils.stuck_file_recovery import check_for_stuck_files
+from app.utils.stuck_file_recovery import recover_stuck_file
+from app.utils.task_cancel import cancel_active_task
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

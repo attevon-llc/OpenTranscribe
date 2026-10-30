@@ -147,6 +147,22 @@ def resolve_digest(doc: dict, platform: str) -> str:
     return ''
 
 
+def config_digest(doc: dict) -> str:
+    """The config-blob digest a single-platform image MANIFEST names.
+
+    For a classic-store daemon this equals `docker image inspect .Id`, which is what
+    makes it the content identity that survives a `docker push` (the manifest digest is
+    regenerated at push time there, the config blob is not). Raises CannotCheck for an
+    index, which has no config of its own.
+    """
+    if 'manifests' in doc:
+        raise CannotCheck('this document is an index; it names no config blob of its own')
+    digest = (doc.get('config') or {}).get('digest', '')
+    if not digest:
+        raise CannotCheck('manifest names no config digest')
+    return str(digest)
+
+
 def check_image_config(doc: dict, expect_platform: str) -> tuple[bool, str]:
     """Verify a leg's platform from its CONFIG BLOB rather than its manifest.
 
@@ -324,6 +340,11 @@ def _dispatch(argv: list[str]) -> int:
         print(digest)
         return EXIT_OK
 
+    if cmd == 'config-digest':
+        # config-digest <manifest.json>  -> config blob digest on stdout
+        print(config_digest(_load(argv[2])))
+        return EXIT_OK
+
     print(f'unknown command: {cmd}', file=sys.stderr)
     return EXIT_MISUSE
 
@@ -332,7 +353,7 @@ def main(argv: list[str]) -> int:
     if len(argv) < 2:
         print(
             'usage: manifest_platform_check.py <check-leg|check-index|check-ratio'
-            '|check-image-config|resolve-digest> ...',
+            '|check-image-config|resolve-digest|config-digest> ...',
             file=sys.stderr,
         )
         return EXIT_MISUSE

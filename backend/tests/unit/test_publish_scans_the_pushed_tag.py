@@ -50,16 +50,21 @@ def test_the_scripts_exist():
 
 
 def test_publish_still_withholds_latest():
-    """The precondition that makes this bug possible — pinned so the reasoning stays valid.
+    """The precondition that makes this bug possible -- pinned so the reasoning stays valid.
 
-    If publish ever started pushing `:latest` itself, scanning `:latest` would no longer
-    be wrong, and the guard below could be relaxed. Until then it is load-bearing.
+    `80-publish.sh` no longer runs `docker-build-push.sh` at all (it pushes the legs `build`
+    produced; see test_publish_pushes_built_legs.py), so the push-mode scan below is now
+    reachable only from a direct `docker-build-push.sh` run. The premise still holds there:
+    the release path never pushes `:latest` itself, `90-promote.sh` does that by digest.
     """
     source = PUBLISH_STAGE.read_text(encoding="utf-8")
-    assert "PUSH_LATEST=false" in source, (
-        "80-publish.sh no longer sets PUSH_LATEST=false. Re-derive whether the "
-        "publish-time scan should still target the version tag — this test's premise "
-        "is that `:latest` is NOT what publish pushes."
+    code = "\n".join(ln for ln in source.splitlines() if not ln.lstrip().startswith("#"))
+    pushers = [ln for ln in code.splitlines() if "imagetools create" in ln or "docker push" in ln]
+    assert pushers, "80-publish.sh no longer pushes anything -- this guard has nothing to read"
+    offenders = [ln.strip() for ln in pushers if "latest" in ln]
+    assert not offenders, (
+        f"80-publish.sh now names :latest ({offenders}). Re-derive whether the "
+        "push-mode scan target should still be the version tag."
     )
 
 

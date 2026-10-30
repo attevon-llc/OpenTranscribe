@@ -221,7 +221,7 @@ def test_the_live_indexer_labels_a_chunk_like_the_reindex(db_session, world):
 def test_chat_cannot_resolve_a_speaker_through_a_hidden_voice_match(db_session, normal_user, world):
     """The roster is what a 'who said X' question is resolved against (and what reaches the
     model): a voice-matched name must not answer while the file's voiceprints are off."""
-    from app.services.chat.speaker_resolver import build_candidate_roster
+    from app.services.chat.speaker_roster import build_candidate_roster
 
     def names() -> set[str]:
         roster = build_candidate_roster(db_session, normal_user.id, [MATCHED, TYPED])

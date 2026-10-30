@@ -15,7 +15,7 @@ by what each script structurally needs:
   grapheme-level, unanchored prefix rung (``_prefix_rung(..., anchored=False)``).
 - **ko** (Hangul — spaced, no case, particles attach to names): the
   suffix-tolerant, anchored prefix rung, bounded by
-  :data:`speaker_resolver._KOREAN_PARTICLE_MAX_CHARS`.
+  :data:`speaker_name_text._KOREAN_PARTICLE_MAX_CHARS`.
 - **ar / hi** (Arabic, Hindi/Devanagari — spaced, no case, no particles):
   ordinary tokenization with no common-word/sentence-initial filter, since
   that filter exists to use a capitalization signal these scripts lack.
@@ -29,11 +29,11 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.chat.speaker_resolver import Roster
-from app.services.chat.speaker_resolver import RosterEntry
-from app.services.chat.speaker_resolver import extract_script_aware_candidates
-from app.services.chat.speaker_resolver import match_candidate
+from app.services.chat.speaker_mention_extract import extract_script_aware_candidates
+from app.services.chat.speaker_name_match import match_candidate
 from app.services.chat.speaker_resolver import resolve_speaker_mentions
+from app.services.chat.speaker_roster import Roster
+from app.services.chat.speaker_roster import RosterEntry
 
 pytestmark = pytest.mark.unit
 

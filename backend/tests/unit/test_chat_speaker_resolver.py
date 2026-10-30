@@ -19,15 +19,15 @@ import uuid as uuid_pkg
 
 import pytest
 
+from app.services.chat.speaker_mention_extract import extract_candidates
+from app.services.chat.speaker_name_match import match_candidate
 from app.services.chat.speaker_resolver import MAX_RESOLUTION_ITEMS
-from app.services.chat.speaker_resolver import Roster
-from app.services.chat.speaker_resolver import RosterEntry
-from app.services.chat.speaker_resolver import SpeakerResolutionDeclineReason
-from app.services.chat.speaker_resolver import build_candidate_roster
-from app.services.chat.speaker_resolver import extract_candidates
 from app.services.chat.speaker_resolver import has_speaker_verb_frame
-from app.services.chat.speaker_resolver import match_candidate
 from app.services.chat.speaker_resolver import resolve_speaker_mentions
+from app.services.chat.speaker_roster import Roster
+from app.services.chat.speaker_roster import RosterEntry
+from app.services.chat.speaker_roster import SpeakerResolutionDeclineReason
+from app.services.chat.speaker_roster import build_candidate_roster
 
 pytestmark = pytest.mark.unit
 
@@ -575,7 +575,7 @@ def test_candidate_row_cap_declines_an_unsafely_large_candidate_lookup(
     entries) would hit. Replaces the old whole-roster
     `ROSTER_DISTINCT_CAP`/`build_roster` decline test (#524): the cap now
     bounds ONE candidate's targeted lookup, never the caller's whole roster."""
-    import app.services.chat.speaker_resolver as resolver_mod
+    import app.services.chat.speaker_roster as resolver_mod
 
     monkeypatch.setattr(resolver_mod, "_CANDIDATE_ROW_CAP", 2)
     media = _make_file(db_session, normal_user)
@@ -599,7 +599,7 @@ def test_too_many_candidates_are_capped_not_declined(db_session, normal_user, mo
     more candidates than the cap must not refuse the whole turn — it resolves
     the first `MAX_CANDIDATES_PER_QUESTION` and silently drops the rest, the
     same way `MAX_RESOLUTION_ITEMS` already caps the OUTPUT lists."""
-    import app.services.chat.speaker_resolver as resolver_mod
+    import app.services.chat.speaker_roster as resolver_mod
 
     monkeypatch.setattr(resolver_mod, "MAX_CANDIDATES_PER_QUESTION", 2)
     media = _make_file(db_session, normal_user)

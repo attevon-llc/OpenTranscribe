@@ -77,11 +77,11 @@ def test_every_chunk_leg_reuses_the_exact_same_file_scope():
             side_effect=_fake_retrieve_chunks,
         ),
         patch(
-            "app.services.chat.speaker_resolver.build_candidate_roster",
+            "app.services.chat.speaker_roster.build_candidate_roster",
             side_effect=_fake_build_candidate_roster,
         ),
         patch(
-            "app.services.chat.speaker_resolver.match_candidate",
+            "app.services.chat.speaker_name_match.match_candidate",
             return_value=SimpleNamespace(matched="Dana", ambiguous_with=(), reason=""),
         ),
     ):
@@ -170,7 +170,7 @@ def test_unvalidated_plan_speakers_never_reach_a_leg():
             side_effect=_fake_retrieve_chunks,
         ),
         patch(
-            "app.services.chat.speaker_resolver.build_candidate_roster",
+            "app.services.chat.speaker_roster.build_candidate_roster",
             return_value=SimpleNamespace(entries=(), declined=False),
         ),
     ):

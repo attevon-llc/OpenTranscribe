@@ -337,7 +337,7 @@ def test_chat_speaker_resolution_cannot_find_a_speaker_through_an_llm_suggestion
 ):
     """'Who said ...' resolves a mentioned name against speaker labels. A speaker the LLM
     only guessed at must not answer to the guess, while a voiceprint match does."""
-    from app.services.chat.speaker_resolver import build_candidate_roster
+    from app.services.chat.speaker_roster import build_candidate_roster
 
     _file_and_speakers(
         db_session,

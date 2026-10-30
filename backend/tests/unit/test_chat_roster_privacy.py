@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.chat.speaker_resolver import build_candidate_roster
+from app.services.chat.speaker_roster import build_candidate_roster
 from app.services.privacy import policy
 from tests.fixtures.privacy_switches import make_org
 from tests.fixtures.provenance_world import ALICE
@@ -75,7 +75,7 @@ def test_the_decision_is_the_files_not_the_askers(db_session, normal_user):
 
 def test_a_hidden_name_cannot_be_probed_through_the_row_cap(db_session, normal_user):
     """A cap that trips only for hidden rows would tell the asker the name exists."""
-    from app.services.chat.speaker_resolver import _CANDIDATE_ROW_CAP
+    from app.services.chat.speaker_roster import _CANDIDATE_ROW_CAP
     from tests.fixtures.privacy_switches import set_instance_switch
 
     media_file = make_file(db_session, normal_user)
@@ -121,7 +121,7 @@ def test_a_hidden_voice_suggestion_is_not_a_candidate_column(db_session, normal_
 
 
 def test_a_hidden_voice_suggestion_cannot_be_probed_through_the_row_cap(db_session, normal_user):
-    from app.services.chat.speaker_resolver import _CANDIDATE_ROW_CAP
+    from app.services.chat.speaker_roster import _CANDIDATE_ROW_CAP
     from tests.fixtures.privacy_switches import set_instance_switch
 
     media_file = make_file(db_session, normal_user)

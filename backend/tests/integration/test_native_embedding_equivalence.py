@@ -185,7 +185,7 @@ def _in_process(service, samples: np.ndarray) -> np.ndarray:
 
 
 def test_both_backends_produce_the_native_dimension(sidecar_url, audio) -> None:
-    from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V4
+    from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V4
 
     clip = audio[: 10 * SAMPLE_RATE]
     native = _native(clip, sidecar_url)

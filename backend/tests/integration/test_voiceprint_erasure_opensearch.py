@@ -34,8 +34,8 @@ from typing import Any
 
 import pytest
 
-from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V3
-from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V4
+from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V3
+from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V4
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 
@@ -89,10 +89,10 @@ def _profile_doc(profile_uuid: str) -> dict:
 def speaker_indices(monkeypatch):
     """Throwaway v3/v4(+alias)/v3_backup speaker indices with auto-refresh switched off."""
     from app.core.config import settings
-    from app.core.constants import get_speaker_index
-    from app.core.constants import get_speaker_index_v3
-    from app.core.constants import get_speaker_index_v3_backup
-    from app.core.constants import get_speaker_index_v4
+    from app.core.embedding_models import get_speaker_index
+    from app.core.embedding_models import get_speaker_index_v3
+    from app.core.embedding_models import get_speaker_index_v3_backup
+    from app.core.embedding_models import get_speaker_index_v4
     from app.services.opensearch_service import client as _client
     from app.services.opensearch_service.indices import _ensure_versioned_speaker_index
 

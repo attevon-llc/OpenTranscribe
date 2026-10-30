@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 import threading
 
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 from app.services.redaction.detectors import DetectorUnavailableError
 
 logger = logging.getLogger(__name__)
@@ -40,8 +40,8 @@ _load_lock = threading.Lock()
 
 def _model_for_language(language: str | None) -> str:
     if language and language.lower() not in ("en", "en-us", "english", "auto", ""):
-        return C.REDACTION_TOXICITY_MODEL_MULTI
-    return C.REDACTION_TOXICITY_MODEL_EN
+        return redaction_defaults.REDACTION_TOXICITY_MODEL_MULTI
+    return redaction_defaults.REDACTION_TOXICITY_MODEL_EN
 
 
 def _get_pipe(model_name: str):
@@ -129,7 +129,7 @@ def _run_pipe(model_name: str, pipe, payload, **kwargs):
 
 def preload() -> bool:
     """Eagerly load the default English toxicity model (worker_ready hook)."""
-    return _get_pipe(C.REDACTION_TOXICITY_MODEL_EN) is not None
+    return _get_pipe(redaction_defaults.REDACTION_TOXICITY_MODEL_EN) is not None
 
 
 def _normalize_scores(raw, model_name: str) -> dict:

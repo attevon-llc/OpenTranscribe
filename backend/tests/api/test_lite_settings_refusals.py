@@ -541,7 +541,7 @@ def test_lite_manual_re_detection_with_pyannote_ai_is_published_on_cloud_asr(
     from contextlib import contextmanager
 
     from app.api.endpoints.files import reprocess
-    from app.core.constants import CeleryQueues
+    from app.core.queues import CeleryQueues
     from app.db import session_utils
     from app.tasks.rediarize_task import rediarize_task
 

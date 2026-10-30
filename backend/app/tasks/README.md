@@ -160,13 +160,13 @@ Legacy flat names (for example `generate_thumbnail`, `extract_speaker_embeddings
 
 1. **Define queue routing in `task_routes` only** (`backend/app/core/celery.py`), the single source of truth
 2. **Do NOT put `queue=` in task decorators.** A decorator queue silently overrides `task_routes`. Enforced by `tests/unit/test_task_routes_complete.py`
-3. **Use `CeleryQueues.*` constants** from `app.core.constants`, never raw queue-name strings
+3. **Use `CeleryQueues.*` constants** from `app.core.queues`, never raw queue-name strings
 4. **Exception**: tasks routed at call time (for example `transcription.gpu_transcribe`, `cpu_transcribe`, the plan's post stage) are listed with a reason in `INTENTIONALLY_UNROUTED_TASKS` in `core/celery.py`
 5. **Lite deployments**: work that prefers a GPU but is correct without one is listed in `GPU_PREFERRED_TASKS` and routed through `gpu_preferred_queue()`, which resolves to `cpu` when `DEPLOYMENT_MODE=lite`
 
 ### Queue Definitions
 
-All valid queues are declared in `CeleryQueues` (`backend/app/core/constants.py`); `task_create_missing_queues=False` makes a queue-name typo raise at dispatch time. Worker services and concurrency come from `docker-compose.yml` (concurrency values are environment-tunable):
+All valid queues are declared in `CeleryQueues` (`backend/app/core/queues.py`); `task_create_missing_queues=False` makes a queue-name typo raise at dispatch time. Worker services and concurrency come from `docker-compose.yml` (concurrency values are environment-tunable):
 
 | Queue | Worker service | Concurrency | Purpose |
 |-------|----------------|-------------|---------|
@@ -182,7 +182,7 @@ All valid queues are declared in `CeleryQueues` (`backend/app/core/constants.py`
 | `embedding` | `celery-embedding-worker` | 1 | Transcript search indexing |
 | `redaction` | `celery-redaction` | 2 | Content-redaction detection |
 
-Priorities are per queue (`GPUPriority`, `CPUPriority`, `NLPPriority`, `UtilityPriority`, ... in `core/constants.py`); the scheme is documented above `task_routes` in `core/celery.py`.
+Priorities are per queue (`GPUPriority`, `CPUPriority`, `NLPPriority`, `UtilityPriority`, ... in `core/queues.py`); the scheme is documented above `task_routes` in `core/celery.py`.
 
 ### Startup Validation
 `tests/unit/test_task_routes_complete.py` fails on any registered task missing from `task_routes` and not listed (with a reason) in `INTENTIONALLY_UNROUTED_TASKS`. On worker startup `_validate_task_routes()` logs the same check as a WARNING, because an unrouted task would otherwise land on the default `celery` queue.
@@ -242,7 +242,7 @@ Useful structural tests: `test_task_routes_complete.py` (routing), `test_task_se
 ### Task Template
 ```python
 from app.core.celery import celery_app
-from app.core.constants import CPUPriority
+from app.core.queues import CPUPriority
 from app.db.session_utils import session_scope
 from app.utils.task_utils import update_task_status
 

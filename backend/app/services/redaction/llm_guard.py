@@ -41,7 +41,7 @@ from urllib.parse import urlparse
 
 from sqlalchemy.orm import Session
 
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.redaction.config import resolve_effective_config
 from app.services.redaction.coverage import describe_gap
@@ -118,7 +118,7 @@ def resolve_llm_masking(db: Session, media_file) -> EffectiveRedactionConfig | N
         return None
 
     status = getattr(media_file, "redaction_status", None)
-    if status == C.REDACTION_STATUS_DONE:
+    if status == redaction_defaults.REDACTION_STATUS_DONE:
         # A finished scan is not necessarily a complete one. Masking a file whose PII
         # detector never ran produces a transcript that is untouched, from a call the
         # caller has every reason to believe masked it.
@@ -141,7 +141,7 @@ def resolve_llm_masking(db: Session, media_file) -> EffectiveRedactionConfig | N
             file_id=int(media_file.id),
         )
 
-    if status == C.REDACTION_STATUS_FAILED:
+    if status == redaction_defaults.REDACTION_STATUS_FAILED:
         raise RedactionNotReadyError(
             f"Redaction detection failed for file {media_file.id}; "
             "refusing to send unmasked transcript to an LLM provider",
@@ -179,7 +179,7 @@ def defer_for_redaction(task, exc: RedactionNotReadyError, *, countdown: int = 6
         raise exc
 
     retries = task.request.retries or 0
-    if retries >= C.REDACTION_LLM_MAX_DEFERRALS:
+    if retries >= redaction_defaults.REDACTION_LLM_MAX_DEFERRALS:
         logger.error("Giving up after %d deferrals waiting for redaction spans: %s", retries, exc)
         raise exc
 
@@ -190,7 +190,9 @@ def defer_for_redaction(task, exc: RedactionNotReadyError, *, countdown: int = 6
         _dispatch_detection(exc.file_id)
 
     logger.info("Deferring %s for redaction (attempt %d): %s", task.name, retries + 1, exc)
-    raise task.retry(exc=exc, countdown=countdown, max_retries=C.REDACTION_LLM_MAX_DEFERRALS)
+    raise task.retry(
+        exc=exc, countdown=countdown, max_retries=redaction_defaults.REDACTION_LLM_MAX_DEFERRALS
+    )
 
 
 def _dispatch_detection(file_id: int) -> None:

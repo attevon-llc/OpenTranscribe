@@ -28,9 +28,9 @@ from dataclasses import field
 from typing import Any
 
 from app.core.celery import celery_app
-from app.core.constants import CPUPriority
 from app.core.enums import DurationSource
 from app.core.enums import FileStatus
+from app.core.queues import CPUPriority
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.services import storage_recovery_service as recovery

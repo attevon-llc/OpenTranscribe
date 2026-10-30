@@ -5,10 +5,10 @@ import logging
 
 from opensearchpy.exceptions import NotFoundError
 
-from app.core.constants import get_speaker_index
-from app.core.constants import get_speaker_index_v3
-from app.core.constants import get_speaker_index_v3_backup
-from app.core.constants import get_speaker_index_v4
+from app.core.embedding_models import get_speaker_index
+from app.core.embedding_models import get_speaker_index_v3
+from app.core.embedding_models import get_speaker_index_v3_backup
+from app.core.embedding_models import get_speaker_index_v4
 from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 from app.services.opensearch_service.client import OpenSearchUnavailableError

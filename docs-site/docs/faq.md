@@ -220,7 +220,7 @@ Transcription and speaker diarization work without any LLM.
 ### Can I generate AI summaries in languages other than English?
 
 Yes! AI summaries can be generated in **12 languages** (`LLM_OUTPUT_LANGUAGES`,
-`backend/app/core/constants.py`):
+`backend/app/core/languages.py`):
 - English, Spanish, French, German
 - Italian, Portuguese, Dutch, Russian
 - Chinese, Japanese, Korean, Arabic

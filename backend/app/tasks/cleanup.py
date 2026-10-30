@@ -11,7 +11,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.core.celery import celery_app
-from app.core.constants import UtilityPriority
+from app.core.queues import UtilityPriority
 from app.db.session_utils import session_scope
 from app.services.file_cleanup_service import cleanup_service
 

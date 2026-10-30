@@ -584,7 +584,7 @@ def _real_cfg(*, redact_before_llm_locked: bool) -> EffectiveRedactionConfig:
     every call fail closed to `""` regardless of masking, which proves nothing
     about genuine detection either way.
     """
-    from app.core.constants import DEFAULT_REDACTION_PII_ENTITIES
+    from app.core.redaction_defaults import DEFAULT_REDACTION_PII_ENTITIES
 
     return EffectiveRedactionConfig(
         enabled=True,

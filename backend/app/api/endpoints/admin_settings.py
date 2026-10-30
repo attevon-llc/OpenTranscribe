@@ -16,7 +16,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_admin_user
-from app.core.constants import CeleryQueues
+from app.core.queues import CeleryQueues
 from app.db.base import get_db
 from app.models.media import FileStatus
 from app.models.media import MediaFile

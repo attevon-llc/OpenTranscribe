@@ -30,7 +30,7 @@ from kombu.transport.redis import Channel
 
 from app.core.celery_metrics import _RESERVED_ATTRIBUTION_LIMIT
 from app.core.celery_metrics import queue_snapshot
-from app.core.constants import CeleryQueues
+from app.core.queues import CeleryQueues
 
 SEP = Channel.sep
 UNACKED_KEY = Channel.unacked_key

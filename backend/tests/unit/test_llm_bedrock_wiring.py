@@ -102,7 +102,7 @@ def test_get_provider_config_is_none_without_a_region(monkeypatch):
 
 def test_get_provider_config_falls_back_to_the_coded_default_model(monkeypatch):
     """A blank model setting is not "unconfigured": the coded default profile id applies."""
-    from app.core.constants import DEFAULT_BEDROCK_MODEL_ID
+    from app.core.llm_defaults import DEFAULT_BEDROCK_MODEL_ID
 
     monkeypatch.setattr(settings, "BEDROCK_MODEL_NAME", "")
     monkeypatch.setattr(settings, "BEDROCK_REGION", "us-east-1")

@@ -18,6 +18,7 @@ from fastapi import status
 from app.auth.audit import AuditEventType
 from app.auth.audit import audit_logger
 from app.core import constants
+from app.core import redaction_defaults
 from app.core.capabilities import COMMUNITY_CAPABILITIES
 from app.core.capabilities import reset_capability_resolver
 from app.core.capabilities import set_capability_resolver
@@ -374,7 +375,7 @@ def _org_file_with_a_cached_word_span(db, owner, org) -> MediaFile:
         is_public=False,
         user_id=owner.id,
         organization_id=org.id,
-        redaction_status=constants.REDACTION_STATUS_DONE,
+        redaction_status=redaction_defaults.REDACTION_STATUS_DONE,
     )
     db.add(media_file)
     db.commit()

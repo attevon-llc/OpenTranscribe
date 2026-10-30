@@ -17,7 +17,7 @@ first time one is added.
 
 from __future__ import annotations
 
-from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
+from app.core.embedding_models import OPENSEARCH_EMBEDDING_MODELS
 
 
 def test_every_model_reports_its_language_type(client, auth_headers) -> None:

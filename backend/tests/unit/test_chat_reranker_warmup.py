@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from app.core import constants as C  # noqa: N812
+from app.core import chat_defaults
 from app.services.chat import reranker as reranker_mod
 from app.services.chat import reranker_warmup
 from app.services.system_settings_service import set_setting
@@ -134,7 +134,7 @@ def test_a_chat_arriving_mid_warmup_waits_for_the_one_load(monkeypatch):
     chat.join(timeout=10)
 
     assert loader.calls == 1, "warm-up and first chat must share one load"
-    assert loader.models == [C.CHAT_RERANKER_MODEL], "only the default model is warmed"
+    assert loader.models == [chat_defaults.CHAT_RERANKER_MODEL], "only the default model is warmed"
     assert warm_result["ok"] is True
     # The chat was actually reranked by the model the warm-up loaded.
     assert [h.content for h in chat_result["order"]] == [

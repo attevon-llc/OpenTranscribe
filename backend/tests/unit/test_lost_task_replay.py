@@ -24,7 +24,7 @@ import pytest
 
 from app.core import task_replay as tr
 from app.core.celery import celery_app
-from app.core.constants import CeleryQueues
+from app.core.queues import CeleryQueues
 from app.core.task_config import TaskRecoveryConfig
 from app.models.media import FileStatus
 from app.models.media import MediaFile

@@ -204,8 +204,8 @@ def run_mirror_now(
     The run task itself holds the Redis overlap lock, so a dispatch while another
     run is active records a no-op skip rather than a second concurrent mirror.
     """
-    from app.core.constants import CeleryQueues
-    from app.core.constants import DownloadPriority
+    from app.core.queues import CeleryQueues
+    from app.core.queues import DownloadPriority
     from app.tasks.backup_tasks import run_media_mirror
 
     task = run_media_mirror.apply_async(

@@ -400,7 +400,7 @@ def get_queue_depths() -> dict[str, int]:
         Dictionary mapping queue name to task count, plus a ``"total"`` key.
     """
     from app.core.celery_metrics import queue_snapshot
-    from app.core.constants import CeleryQueues
+    from app.core.queues import CeleryQueues
 
     try:
         snapshot = queue_snapshot()

@@ -100,10 +100,10 @@ from celery.signals import worker_shutting_down  # noqa: E402
 from kombu import Queue  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
-from app.core.constants import CeleryQueues  # noqa: E402
-from app.core.constants import gpu_preferred_queue  # noqa: E402
 from app.core.env import env_float  # noqa: E402 - after ensure_nltk_data_private()
 from app.core.env import env_int  # noqa: E402 - after ensure_nltk_data_private()
+from app.core.queues import CeleryQueues  # noqa: E402
+from app.core.queues import gpu_preferred_queue  # noqa: E402
 from app.core.task_config import task_recovery_config  # noqa: E402
 
 # Speaker/diarization work that PREFERS a GPU but produces a correct result on CPU

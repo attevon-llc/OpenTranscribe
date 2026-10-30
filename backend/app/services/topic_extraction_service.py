@@ -23,9 +23,9 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.core.constants import DEFAULT_LLM_OUTPUT_LANGUAGE
-from app.core.constants import LLM_OUTPUT_LANGUAGES
 from app.core.enums import PostProcessingTask
+from app.core.languages import DEFAULT_LLM_OUTPUT_LANGUAGE
+from app.core.languages import LLM_OUTPUT_LANGUAGES
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.models.prompt import UserSetting

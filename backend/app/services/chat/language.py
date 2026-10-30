@@ -102,7 +102,7 @@ def supported_rag_languages(db: Session | None = None) -> frozenset[str] | None:
     if db is None:
         return SUPPORTED_RAG_LANGUAGES
     try:
-        from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
+        from app.core.embedding_models import OPENSEARCH_EMBEDDING_MODELS
         from app.services.search.settings_service import get_search_embedding_model
 
         info = OPENSEARCH_EMBEDDING_MODELS.get(get_search_embedding_model()) or {}

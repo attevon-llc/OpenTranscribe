@@ -939,7 +939,7 @@ services:
   #
   # celery-worker-gpu-transcribe only receives work because
   # transcription/dispatch.py:_plan_for_dispatch() routes the initial GPU stage
-  # to the 'gpu-transcribe' queue when app.core.constants.gpu_split_enabled()
+  # to the 'gpu-transcribe' queue when app.core.queues.gpu_split_enabled()
   # is true. Before issue #703's fix, nothing ever published to that queue —
   # this worker held its GPU reservation and sat idle under --with-gpu-split.
   # ENGINE_GPU_SPLIT propagation to the dispatching containers (backend,
@@ -1288,7 +1288,7 @@ volumes:
   # three namespaces). Holds the preprocessed 16 kHz WAV under `<file_uuid>/` (one per
   # in-flight file, plus ephemeral derived artifacts — see backend/app/utils/scratch_volume.py
   # for that contract), the engine's Stage-1→Stage-2 handoff WAV under `engine/`
-  # (ENGINE_SHARED_VOLUME_PATH, backend/app/core/constants.py), and the diar-native sidecar's
+  # (ENGINE_SHARED_VOLUME_PATH, backend/app/core/scratch_paths.py), and the diar-native sidecar's
   # own-copy fallback under `diar/` (DIAR_NATIVE_SHARED_DIR). Same volume for all three is what
   # lets the engine handoff be an `os.link` instead of a cross-filesystem copy. Defaults to a
   # regular disk-backed volume so the stack works on every host; override to tmpfs in an

@@ -26,7 +26,7 @@ from typing import Any
 
 from app.auth.audit import AuditOutcome
 from app.core.celery import celery_app
-from app.core.constants import CPUPriority
+from app.core.queues import CPUPriority
 from app.db.base import SessionLocal
 from app.db.session_utils import session_scope
 from app.models.user import User

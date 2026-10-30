@@ -31,9 +31,16 @@ should import `app.api` or `app.services` at module scope.
   its CLAUDE.md. Self-signed HTTPS, a real reverse proxy, and cloud/EC2 deployments all already
   work under the default (`Secure` only requires the `https:` scheme, not a browser-trusted CA),
   so this flag is never the right fix for those; a plain-HTTP LAN is the only legitimate case.
-- `constants.py` — magic numbers, `CeleryQueues` (**single source of truth for queue names**),
-  the `OPENSEARCH_EMBEDDING_MODELS` tiers, and the `DEFAULT_*` values backing DB-stored settings
-  (redaction, watch sources, engine/boundary). **Check here before adding a `.env` var.**
+- `constants.py` — magic numbers and the `DEFAULT_*` values backing DB-stored settings (upload,
+  watch sources, backup, directory sync, VAD/diarization, support access). **Check here, and in
+  the domain modules below, before adding a `.env` var.** Domain groups split out by concern:
+  `queues.py` (`CeleryQueues` — **single source of truth for queue names** — the priority
+  classes, `gpu_preferred_queue`/`speaker_clustering_queue`/`gpu_split_enabled`, cloud-ASR retry),
+  `scratch_paths.py` (pipeline scratch + engine shared-volume resolution), `languages.py`,
+  `embedding_models.py` (`OPENSEARCH_EMBEDDING_MODELS` tiers, `get_speaker_index*`),
+  `chat_defaults.py`, `llm_defaults.py` (incl. `LLM_REASONING_*`, Bedrock), `redaction_defaults.py`.
+  The env-reading runtime functions live with their module; import from the home, never via
+  `constants`.
 - `celery.py` — `celery_app`, explicit `task_queues`, `task_routes`, beat schedule. Patches
   `torch.load(weights_only=False)` *before* any ML import; the whole ML block is skipped when
   `SKIP_CELERY=true` (test startup, **and** `scripts/celery_pool_healthcheck.py`, which is a
@@ -84,7 +91,7 @@ should import `app.api` or `app.services` at module scope.
   `app/tasks/CLAUDE.md`). `ReasoningOffSwitch` lives here rather than beside its probe because
   three layers read it (the service that measures it, the Pydantic response that carries it,
   and the chat path that gates on it).
-- **`LLM_REASONING_*` in `constants.py` are a probe's INSTRUMENT SETTINGS, not tunables** —
+- **`LLM_REASONING_*` in `llm_defaults.py` are a probe's INSTRUMENT SETTINGS, not tunables** —
   prompt, temperature 0, token ceiling, the 10% suppression tolerance and the 32-character
   floor. Changing one re-defines what "the off-switch works" means, so change it with the
   measurement that justifies the new value. The *result* is not here at all: it is a

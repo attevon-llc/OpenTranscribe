@@ -37,7 +37,7 @@ import uuid as uuid_pkg
 import pytest
 from fastapi import status
 
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 
@@ -149,7 +149,8 @@ def _export(client, headers, media_file, fmt: str = "srt"):
 
 @pytest.mark.parametrize("fmt", ["srt", "webvtt", "txt"])
 @pytest.mark.parametrize(
-    "redaction_status", [C.REDACTION_STATUS_PENDING, C.REDACTION_STATUS_PROCESSING]
+    "redaction_status",
+    [redaction_defaults.REDACTION_STATUS_PENDING, redaction_defaults.REDACTION_STATUS_PROCESSING],
 )
 def test_an_incomplete_scan_withholds_the_export(
     client, user_token_headers, redacting_user, db_session, queued_scans, fmt, redaction_status
@@ -172,7 +173,9 @@ def test_the_withheld_response_says_why_and_that_it_is_retryable(
     client, user_token_headers, redacting_user, db_session, queued_scans
 ):
     """A 409 that reads as 'permanently unavailable' would send callers away."""
-    media_file = _make_file(db_session, redacting_user, redaction_status=C.REDACTION_STATUS_PENDING)
+    media_file = _make_file(
+        db_session, redacting_user, redaction_status=redaction_defaults.REDACTION_STATUS_PENDING
+    )
     _add_segments(db_session, media_file, with_cached_spans=False)
 
     detail = _export(client, user_token_headers, media_file).json()["detail"].lower()
@@ -193,7 +196,7 @@ def test_a_never_scanned_file_is_withheld_and_has_its_scan_dispatched(
     assert response.status_code == status.HTTP_409_CONFLICT
     assert queued_scans, "the export withheld but never queued the scan it is waiting for"
     db_session.refresh(media_file)
-    assert media_file.redaction_status == C.REDACTION_STATUS_PENDING
+    assert media_file.redaction_status == redaction_defaults.REDACTION_STATUS_PENDING
 
 
 def test_an_owner_reveal_request_cannot_bypass_the_gate(
@@ -207,7 +210,7 @@ def test_an_owner_reveal_request_cannot_bypass_the_gate(
     parameter.
     """
     media_file = _make_file(
-        db_session, redacting_user, redaction_status=C.REDACTION_STATUS_PROCESSING
+        db_session, redacting_user, redaction_status=redaction_defaults.REDACTION_STATUS_PROCESSING
     )
     _add_segments(db_session, media_file, with_cached_spans=False)
 
@@ -230,7 +233,9 @@ def test_a_completed_scan_exports_with_its_cached_spans_applied(
     client, user_token_headers, redacting_user, db_session, queued_scans
 ):
     """The gate must not break the case it exists to protect."""
-    media_file = _make_file(db_session, redacting_user, redaction_status=C.REDACTION_STATUS_DONE)
+    media_file = _make_file(
+        db_session, redacting_user, redaction_status=redaction_defaults.REDACTION_STATUS_DONE
+    )
     _add_segments(db_session, media_file, with_cached_spans=True)
 
     response = _export(client, user_token_headers, media_file)
@@ -250,7 +255,9 @@ def test_a_failed_scan_still_exports_matching_the_transcript_view(
     no operator remedy. If that disposition is ever revisited it must move in both
     places at once, which is what this test enforces.
     """
-    media_file = _make_file(db_session, redacting_user, redaction_status=C.REDACTION_STATUS_FAILED)
+    media_file = _make_file(
+        db_session, redacting_user, redaction_status=redaction_defaults.REDACTION_STATUS_FAILED
+    )
     _add_segments(db_session, media_file, with_cached_spans=True)
 
     response = _export(client, user_token_headers, media_file)

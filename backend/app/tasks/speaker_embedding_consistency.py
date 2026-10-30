@@ -24,12 +24,12 @@ from typing import Any
 from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_EMBEDDING_CONSISTENCY_COMPLETE
 from app.core.constants import NOTIFICATION_TYPE_EMBEDDING_CONSISTENCY_PROGRESS
-from app.core.constants import CPUPriority
-from app.core.constants import GPUPriority
-from app.core.constants import get_speaker_index
-from app.core.constants import get_speaker_index_v3
-from app.core.constants import get_speaker_index_v4
+from app.core.embedding_models import get_speaker_index
+from app.core.embedding_models import get_speaker_index_v3
+from app.core.embedding_models import get_speaker_index_v4
 from app.core.pipeline_constants import FILES_PER_BATCH_TASK
+from app.core.queues import CPUPriority
+from app.core.queues import GPUPriority
 from app.core.redis import get_redis
 from app.db.session_utils import session_scope
 from app.tasks.opensearch_integrity_task import _exceeds_delete_ratio

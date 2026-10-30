@@ -25,7 +25,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V4
+from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V4
 from app.models.media import SpeakerProfile
 from app.services.opensearch_service import profiles as os_profiles
 from app.services.opensearch_service import speaker_write

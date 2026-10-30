@@ -174,17 +174,17 @@ def test_the_harness_measures_the_shipped_retrieval_budget() -> None:
     while chat shipped 12 / 4, so every ``--stage rerank`` number described a
     deployment nobody runs.
     """
-    from app.core import constants as C  # noqa: N812
+    from app.core import chat_defaults
 
-    assert DEFAULT_SIZE == C.DEFAULT_CHAT_RAG_CANDIDATE_POOL
-    assert DEFAULT_FINAL_CHUNKS == C.DEFAULT_CHAT_RAG_FINAL_CHUNKS
-    assert DEFAULT_MAX_PER_FILE == C.DEFAULT_CHAT_RAG_MAX_CHUNKS_PER_FILE
-    assert DEFAULT_RERANK_MAX_PAIRS == C.DEFAULT_CHAT_RAG_RERANK_MAX_PAIRS
+    assert DEFAULT_SIZE == chat_defaults.DEFAULT_CHAT_RAG_CANDIDATE_POOL
+    assert DEFAULT_FINAL_CHUNKS == chat_defaults.DEFAULT_CHAT_RAG_FINAL_CHUNKS
+    assert DEFAULT_MAX_PER_FILE == chat_defaults.DEFAULT_CHAT_RAG_MAX_CHUNKS_PER_FILE
+    assert DEFAULT_RERANK_MAX_PAIRS == chat_defaults.DEFAULT_CHAT_RAG_RERANK_MAX_PAIRS
 
     config = RetrievalConfig(stage="rerank")
     recorded = config.as_dict()
-    assert recorded["final_chunks"] == C.DEFAULT_CHAT_RAG_FINAL_CHUNKS
-    assert recorded["max_chunks_per_file"] == C.DEFAULT_CHAT_RAG_MAX_CHUNKS_PER_FILE
+    assert recorded["final_chunks"] == chat_defaults.DEFAULT_CHAT_RAG_FINAL_CHUNKS
+    assert recorded["max_chunks_per_file"] == chat_defaults.DEFAULT_CHAT_RAG_MAX_CHUNKS_PER_FILE
 
 
 def test_every_query_contributes_one_retrieval_timing(legs) -> None:

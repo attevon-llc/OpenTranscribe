@@ -30,7 +30,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.core.config import settings
-from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
+from app.core.embedding_models import OPENSEARCH_EMBEDDING_MODELS
 from app.models.media import SpeakerProfile
 from app.services.platform_access import reset_tenancy_mode_cache
 

@@ -5,7 +5,7 @@ import logging
 from typing import Any
 
 from app.core.config import settings
-from app.core.constants import get_speaker_index
+from app.core.embedding_models import get_speaker_index
 from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.indices import ensure_indices_exist
 from app.services.search.tenant_scope import org_filter_clauses

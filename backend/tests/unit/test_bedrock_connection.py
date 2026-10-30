@@ -39,7 +39,7 @@ def test_region_is_empty_when_nothing_is_set(monkeypatch):
 
 
 def test_default_model_uses_the_server_setting_then_the_coded_default(monkeypatch):
-    from app.core.constants import DEFAULT_BEDROCK_MODEL_ID
+    from app.core.llm_defaults import DEFAULT_BEDROCK_MODEL_ID
 
     monkeypatch.setattr(settings, "BEDROCK_MODEL_NAME", "global.anthropic.claude-sonnet-4-6")
     assert bs.resolve_default_model() == "global.anthropic.claude-sonnet-4-6"

@@ -27,7 +27,7 @@ from app import models
 # sets the deployment-wide redaction governance floor.
 from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_active_user
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 from app.core.env import is_truthy
 from app.db.base import get_db
 from app.schemas.redaction_settings import RedactionPolicy
@@ -90,16 +90,16 @@ def _parse_value(field: str, raw: str | None, default: Any) -> Any:
 
 
 _DEFAULTS = {
-    "enabled": C.DEFAULT_REDACTION_ENABLED,
-    "detectors": list(C.DEFAULT_REDACTION_DETECTORS),
-    "categories": list(C.DEFAULT_REDACTION_CATEGORIES),
-    "pii_entities": list(C.DEFAULT_REDACTION_PII_ENTITIES),
-    "style": C.DEFAULT_REDACTION_STYLE,
+    "enabled": redaction_defaults.DEFAULT_REDACTION_ENABLED,
+    "detectors": list(redaction_defaults.DEFAULT_REDACTION_DETECTORS),
+    "categories": list(redaction_defaults.DEFAULT_REDACTION_CATEGORIES),
+    "pii_entities": list(redaction_defaults.DEFAULT_REDACTION_PII_ENTITIES),
+    "style": redaction_defaults.DEFAULT_REDACTION_STYLE,
     "custom_words": [],
     "allowlist": [],
-    "toxicity_threshold": C.DEFAULT_REDACTION_TOXICITY_THRESHOLD,
-    "redact_before_llm": C.DEFAULT_REDACTION_REDACT_BEFORE_LLM,
-    "default_export_redacted": C.DEFAULT_REDACTION_DEFAULT_EXPORT_REDACTED,
+    "toxicity_threshold": redaction_defaults.DEFAULT_REDACTION_TOXICITY_THRESHOLD,
+    "redact_before_llm": redaction_defaults.DEFAULT_REDACTION_REDACT_BEFORE_LLM,
+    "default_export_redacted": redaction_defaults.DEFAULT_REDACTION_DEFAULT_EXPORT_REDACTED,
 }
 
 
@@ -227,9 +227,13 @@ def _read_policy(db: Session) -> RedactionPolicy:
             return raw is not None and is_truthy(raw)
         if field in _POLICY_FLOAT:
             try:
-                return float(raw) if raw is not None else C.DEFAULT_REDACTION_TOXICITY_THRESHOLD
+                return (
+                    float(raw)
+                    if raw is not None
+                    else redaction_defaults.DEFAULT_REDACTION_TOXICITY_THRESHOLD
+                )
             except (ValueError, TypeError):
-                return C.DEFAULT_REDACTION_TOXICITY_THRESHOLD
+                return redaction_defaults.DEFAULT_REDACTION_TOXICITY_THRESHOLD
         return raw
 
     return RedactionPolicy(**{field: val(field) for field in _POLICY_KEY})

@@ -4,11 +4,11 @@ import logging
 from typing import Any
 
 from app.core.config import settings
-from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V4
-from app.core.constants import SENTENCE_TRANSFORMER_DIMENSION
-from app.core.constants import get_speaker_index
-from app.core.constants import get_speaker_index_v3
-from app.core.constants import get_speaker_index_v4
+from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V4
+from app.core.embedding_models import SENTENCE_TRANSFORMER_DIMENSION
+from app.core.embedding_models import get_speaker_index
+from app.core.embedding_models import get_speaker_index_v3
+from app.core.embedding_models import get_speaker_index_v4
 from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.aliases import _count_docs
 from app.services.opensearch_service.aliases import migrate_to_alias_based_indices
@@ -77,7 +77,7 @@ def _restore_v3_from_backup(v3_index: str) -> None:
     Args:
         v3_index: The concrete v3 speaker index to restore into.
     """
-    from app.core.constants import get_speaker_index_v3_backup
+    from app.core.embedding_models import get_speaker_index_v3_backup
 
     if not _client.opensearch_client:
         return
@@ -242,7 +242,7 @@ def ensure_indices_exist():
             logger.info(f"Speaker index alias migration: {migration_result}")
 
         # Ensure the versioned speaker indices exist
-        from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V3
+        from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V3
 
         v3_index = get_speaker_index_v3()
         _ensure_versioned_speaker_index(v3_index, PYANNOTE_EMBEDDING_DIMENSION_V3)

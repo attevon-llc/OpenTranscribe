@@ -21,7 +21,7 @@ import logging
 from typing import Any
 
 from app.core.celery import celery_app
-from app.core.constants import CPUPriority
+from app.core.queues import CPUPriority
 from app.db.session_utils import session_scope
 from app.utils.task_lock import with_task_lock
 from app.utils.task_utils import TASK_STATUS_COMPLETED

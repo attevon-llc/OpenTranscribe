@@ -590,7 +590,7 @@ def _schedule_cancellation_reconcile(file_id: int, task_id: str) -> None:
     if env_bool("SKIP_CELERY"):
         return
     try:
-        from app.core.constants import CeleryQueues
+        from app.core.queues import CeleryQueues
         from app.tasks.transcription.cancellation import CANCEL_RECONCILE_DELAY_S
         from app.tasks.transcription.cancellation import reconcile_cancellation
 

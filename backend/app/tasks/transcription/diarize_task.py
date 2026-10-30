@@ -7,8 +7,8 @@ import contextlib
 import logging
 
 from app.core.celery import celery_app
-from app.core.constants import GPUPriority
 from app.core.enums import TranscriptionStage
+from app.core.queues import GPUPriority
 from app.core.task_cancellation import TranscriptionCancelledError
 from app.core.task_cancellation import cancellation_scope
 from app.core.task_cancellation import stand_down_if_requested

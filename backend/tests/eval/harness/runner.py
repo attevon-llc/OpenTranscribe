@@ -54,7 +54,7 @@ SCOPES = ("corpus", "gold-files")
 
 #: The production retrieval budget — candidate pool, what reaches the prompt,
 #: and the per-file ceiling. These are Stage 5's ``48/12/4`` sweep axes, and they
-#: are the **shipped** values (``core/constants.DEFAULT_CHAT_RAG_*``): a rerank
+#: are the **shipped** values (``core/chat_defaults.DEFAULT_CHAT_RAG_*``): a rerank
 #: measurement taken at some other budget describes a deployment nobody runs.
 #: Restated rather than imported because ``app.core.constants`` pulls
 #: ``faster_whisper`` in at import time and these logic tests must stay

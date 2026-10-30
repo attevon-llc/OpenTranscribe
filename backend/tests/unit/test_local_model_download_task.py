@@ -13,7 +13,7 @@ from fixtures.mock_hf_hub import default_repo
 from app.core import local_whisper_catalog as catalog
 from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_LOCAL_MODEL_DOWNLOAD
-from app.core.constants import CeleryQueues
+from app.core.queues import CeleryQueues
 from app.services.local_models import cache
 from app.services.local_models.state import DownloadStore
 from app.tasks import local_model_download as task_module

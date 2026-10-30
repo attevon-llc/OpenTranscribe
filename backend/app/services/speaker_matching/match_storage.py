@@ -206,7 +206,7 @@ def perform_opensearch_query(
     Returns:
         OpenSearch response or None if client unavailable
     """
-    from app.core.constants import get_speaker_index
+    from app.core.embedding_models import get_speaker_index
     from app.services.opensearch_service import opensearch_client
 
     query = self._build_speaker_match_query(

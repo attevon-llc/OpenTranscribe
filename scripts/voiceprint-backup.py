@@ -190,7 +190,7 @@ def speaker_index_names(client: _Client, index_base: str) -> list:
     ``_cat/indices`` resolves the ``speakers`` alias onto its concrete target, so a
     pattern scan finds ``speakers_v3`` / ``speakers_v4`` / ``speakers_v3_backup``
     and any future sibling without this file having to keep its own list of the
-    names ``app/core/constants.py`` derives.
+    names ``app/core/embedding_models.py`` derives.
     """
     rows = client.request('GET', f'/_cat/indices/{index_base}*?format=json&h=index')
     if not isinstance(rows, list):

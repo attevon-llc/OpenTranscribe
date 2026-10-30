@@ -21,7 +21,7 @@ from prometheus_client.parser import text_string_to_metric_families
 from sqlalchemy import event
 
 from app.core import backup_metrics
-from app.core.constants import CeleryQueues
+from app.core.queues import CeleryQueues
 
 
 @pytest.fixture

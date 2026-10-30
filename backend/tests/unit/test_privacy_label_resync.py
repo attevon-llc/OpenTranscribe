@@ -26,7 +26,7 @@ import pytest
 
 from app.core.celery import celery_app
 from app.core.config import settings
-from app.core.constants import CeleryQueues
+from app.core.queues import CeleryQueues
 from app.models.system_settings import SystemSettings
 from app.schemas.privacy import OrgPolicyUpdate
 from app.services.privacy import label_reindex

@@ -5,8 +5,8 @@ import logging
 from typing import Any
 
 from app.core.config import settings
-from app.core.constants import get_speaker_index
-from app.core.constants import get_speaker_index_v4
+from app.core.embedding_models import get_speaker_index
+from app.core.embedding_models import get_speaker_index_v4
 from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.aliases import get_speaker_embedding_dimension
 from app.services.opensearch_service.aliases import invalidate_active_speaker_index_cache

@@ -20,9 +20,9 @@ import logging
 from datetime import UTC
 
 from app.core.celery import celery_app
-from app.core.constants import CeleryQueues
-from app.core.constants import DownloadPriority
-from app.core.constants import UtilityPriority
+from app.core.queues import CeleryQueues
+from app.core.queues import DownloadPriority
+from app.core.queues import UtilityPriority
 from app.db.session_utils import session_scope
 from app.services import backup_service
 from app.services import media_mirror_service

@@ -17,7 +17,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from app.core import constants
+from app.core import embedding_models
 
 
 class FakeOpenSearch:
@@ -77,7 +77,7 @@ class FakeOpenSearch:
     def delete_by_query(self, index, body, refresh=True, conflicts="proceed"):
         self.queries.append(body)
         # The same documents sit in every index in this model, so count them once.
-        if index != constants.get_speaker_index_v4():
+        if index != embedding_models.get_speaker_index_v4():
             return {"deleted": 0}
         keep = [d for d in self.docs if not self._matches(d, body["query"])]
         deleted = len(self.docs) - len(keep)

@@ -22,7 +22,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V4
+from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V4
 from app.services.opensearch_service import speaker_write
 from app.tasks import embedding_consistency_repair as repair_task
 from app.tasks import embedding_migration_v4 as migration_task

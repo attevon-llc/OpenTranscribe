@@ -100,7 +100,7 @@ def _queues(command: str | None) -> set[str]:
 
 def _attribute_queues() -> set[str]:
     from app.core.celery import celery_app
-    from app.core.constants import gpu_preferred_queue
+    from app.core.queues import gpu_preferred_queue
 
     routes = celery_app.conf.task_routes or {}
     queues = set()

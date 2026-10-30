@@ -189,7 +189,7 @@ class TestSpeakerEmbeddingQueueRouting:
         the file's voiceprints silently never materialize. The CPU worker
         (-Q cpu,utility,cpu-transcribe) is what stays up in lite mode.
         """
-        from app.core.constants import CeleryQueues
+        from app.core.queues import CeleryQueues
         from app.tasks.transcription.postprocess import finalize_transcription
 
         result = finalize_transcription.__wrapped__(self._gpu_result())
@@ -225,7 +225,7 @@ class TestSpeakerEmbeddingQueueRouting:
         clustering (real diarization, not just embedding extraction), so it must
         stay on 'gpu' — this path is deliberately untouched by the #584 fix.
         """
-        from app.core.constants import CeleryQueues
+        from app.core.queues import CeleryQueues
         from app.tasks.transcription.postprocess import finalize_transcription
 
         result = finalize_transcription.__wrapped__(
@@ -250,7 +250,7 @@ class TestTaskRoutesQueueAssignment:
 
     def test_extract_speaker_embeddings_route_is_not_gpu(self):
         from app.core.celery import celery_app
-        from app.core.constants import CeleryQueues
+        from app.core.queues import CeleryQueues
 
         assert celery_app.conf.task_routes["extract_speaker_embeddings"] == {
             "queue": CeleryQueues.CPU
@@ -259,6 +259,6 @@ class TestTaskRoutesQueueAssignment:
     def test_rediarize_route_is_still_gpu(self):
         """rediarize genuinely needs the GPU diarization model — untouched."""
         from app.core.celery import celery_app
-        from app.core.constants import CeleryQueues
+        from app.core.queues import CeleryQueues
 
         assert celery_app.conf.task_routes["rediarize"] == {"queue": CeleryQueues.GPU}

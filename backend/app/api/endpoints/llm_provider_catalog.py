@@ -5,9 +5,9 @@ from typing import Any
 from fastapi import APIRouter
 
 from app import schemas
-from app.core.constants import BEDROCK_REGIONS
-from app.core.constants import BEDROCK_SUGGESTED_MODELS
-from app.core.constants import DEFAULT_BEDROCK_MODEL_ID
+from app.core.llm_defaults import BEDROCK_REGIONS
+from app.core.llm_defaults import BEDROCK_SUGGESTED_MODELS
+from app.core.llm_defaults import DEFAULT_BEDROCK_MODEL_ID
 
 router = APIRouter()
 

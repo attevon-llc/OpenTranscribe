@@ -19,8 +19,8 @@ import logging
 
 import pytest
 
-from app.core import constants as engine_constants
-from app.core.constants import engine_shared_volume_enabled
+from app.core import scratch_paths
+from app.core.scratch_paths import engine_shared_volume_enabled
 from app.tasks.transcription import core as gpu_core
 from app.tasks.transcription import preprocess
 from app.tasks.transcription.preprocess import stage_engine_shared_volume_wav
@@ -31,7 +31,7 @@ def engine_dir(tmp_path, monkeypatch):
     target = tmp_path / "engine"
     monkeypatch.setenv("ENGINE_SHARED_VOLUME_PATH", str(target))
     monkeypatch.setattr(
-        engine_constants, "ENGINE_SHARED_VOLUME_DEFAULT", str(tmp_path / "no-such-default")
+        scratch_paths, "ENGINE_SHARED_VOLUME_DEFAULT", str(tmp_path / "no-such-default")
     )
     monkeypatch.delenv("ENGINE_SHARED_VOLUME_ENABLED", raising=False)
     monkeypatch.delenv("PIPELINE_SCRATCH_SHARED", raising=False)

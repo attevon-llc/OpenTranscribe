@@ -27,7 +27,7 @@ import uuid as uuid_pkg
 import pytest
 from fastapi import status
 
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 from app.core.tenant_limits import RedactionFloor
 from app.core.tenant_limits import reset_resolvers
 from app.core.tenant_limits import set_redaction_floor_resolver
@@ -87,7 +87,7 @@ def _make_org_file(db_session, owner, org: Organization) -> MediaFile:
         is_public=False,
         user_id=owner.id,
         organization_id=org.id,
-        redaction_status=C.REDACTION_STATUS_DONE,
+        redaction_status=redaction_defaults.REDACTION_STATUS_DONE,
     )
     db_session.add(media_file)
     db_session.commit()

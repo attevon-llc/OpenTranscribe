@@ -32,9 +32,9 @@ import pytest
 from fastapi import status
 
 from app.core.config import settings
-from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
-from app.core.constants import get_speaker_index
-from app.core.constants import get_speaker_index_v4
+from app.core.embedding_models import OPENSEARCH_EMBEDDING_MODELS
+from app.core.embedding_models import get_speaker_index
+from app.core.embedding_models import get_speaker_index_v4
 
 MODELS = "/api/search/models"
 REINDEX = "/api/search/reindex"

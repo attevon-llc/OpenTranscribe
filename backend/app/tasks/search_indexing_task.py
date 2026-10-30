@@ -6,9 +6,9 @@ from typing import Any
 
 from app.core import stage_timing
 from app.core.celery import celery_app
-from app.core.constants import EmbeddingPriority
-from app.core.constants import UtilityPriority
 from app.core.enums import PostProcessingTask
+from app.core.queues import EmbeddingPriority
+from app.core.queues import UtilityPriority
 from app.services.post_processing_status import tracks_post_processing
 from app.utils import benchmark_timing
 
@@ -843,7 +843,7 @@ def backfill_speaker_id_fields_task(limit: int = 200) -> dict[str, Any]:
     if not by_user:
         return {"status": "skipped", "reason": "fully_covered"}
 
-    from app.core.constants import CPUPriority
+    from app.core.queues import CPUPriority
     from app.tasks.reindex_task import reindex_transcripts_task
 
     dispatched_files = 0

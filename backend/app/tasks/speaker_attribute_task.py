@@ -26,9 +26,9 @@ from concurrent.futures import ThreadPoolExecutor
 from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
-from app.core.constants import CPUPriority
 from app.core.enums import PostProcessingState
 from app.core.enums import PostProcessingTask
+from app.core.queues import CPUPriority
 from app.db.session_utils import session_scope
 from app.services import post_processing_status
 from app.services.audio_segment_utils import center_window

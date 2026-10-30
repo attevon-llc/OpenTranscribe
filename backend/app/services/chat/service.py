@@ -60,7 +60,7 @@ import anyio
 from starlette.concurrency import iterate_in_threadpool
 from starlette.concurrency import run_in_threadpool
 
-from app.core import constants as C  # noqa: N812
+from app.core import chat_defaults
 from app.services.chat import citations as citations_mod
 from app.services.chat import limits
 from app.services.chat import planner
@@ -1056,7 +1056,7 @@ async def _answer_frames(
     conversation_uuid: str,
 ) -> AsyncGenerator[str, None]:
     """Stream the provider's answer as frames, then flush what redaction still holds."""
-    first_token_deadline = time.monotonic() + C.DEFAULT_CHAT_FIRST_TOKEN_TIMEOUT_S
+    first_token_deadline = time.monotonic() + chat_defaults.DEFAULT_CHAT_FIRST_TOKEN_TIMEOUT_S
     got_first_token = False
 
     stream = llm.chat_completion_stream(messages, cancel_event=cancel_event, **kwargs)

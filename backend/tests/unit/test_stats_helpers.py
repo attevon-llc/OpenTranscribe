@@ -62,7 +62,7 @@ import pytest
 from sqlalchemy import bindparam
 from sqlalchemy import text
 
-from app.core.constants import CeleryQueues
+from app.core.queues import CeleryQueues
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import Task

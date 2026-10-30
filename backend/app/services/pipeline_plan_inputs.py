@@ -161,8 +161,8 @@ def load_plan_inputs(
     organization forbids it (issue #1280). Without a request it plans in personal scope.
     """
     from app.core.config import settings
-    from app.core.constants import gpu_split_enabled
     from app.core.locked_settings import locked_transcription_fields
+    from app.core.queues import gpu_split_enabled
     from app.services.asr.factory import ASRProviderFactory
     from app.services.diarization.factory import get_pyannote_credential
     from app.transcription.config import LIGHTWEIGHT_MODELS

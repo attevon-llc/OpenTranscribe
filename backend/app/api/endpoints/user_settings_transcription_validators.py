@@ -9,9 +9,9 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.core.constants import DEFAULT_DIARIZATION_SOURCE
-from app.core.constants import LLM_OUTPUT_LANGUAGES
 from app.core.constants import VALID_SPEAKER_PROMPT_BEHAVIORS
-from app.core.constants import WHISPER_LANGUAGES
+from app.core.languages import LLM_OUTPUT_LANGUAGES
+from app.core.languages import WHISPER_LANGUAGES
 from app.schemas.transcription_settings import TranscriptionSettings
 
 

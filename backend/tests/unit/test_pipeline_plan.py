@@ -16,7 +16,7 @@ import json
 
 import pytest
 
-from app.core.constants import CeleryQueues
+from app.core.queues import CeleryQueues
 from app.services.pipeline_plan import ISSUE_MESSAGES
 from app.services.pipeline_plan import DiarizerConfigInfo
 from app.services.pipeline_plan import PipelinePlan

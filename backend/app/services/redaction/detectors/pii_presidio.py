@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import threading
 
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 from app.core.config import settings
 from app.services.redaction.detectors import DetectorUnavailableError
 from app.services.redaction.spans import RedactionSpan
@@ -106,7 +106,7 @@ def _build_analyzer(use_gliner: bool):
         # Resolver verifies CUDA + free VRAM, else falls back to CPU.
         map_location = resolve_device()
         gliner = GLiNERRecognizer(
-            model_name=C.REDACTION_PII_GLINER_MODEL,
+            model_name=redaction_defaults.REDACTION_PII_GLINER_MODEL,
             entity_mapping={
                 "person": "PERSON",
                 "name": "PERSON",
@@ -121,7 +121,7 @@ def _build_analyzer(use_gliner: bool):
         analyzer.registry.add_recognizer(gliner)
         logger.info(
             "GLiNER PII recognizer registered (%s, device=%s)",
-            C.REDACTION_PII_GLINER_MODEL,
+            redaction_defaults.REDACTION_PII_GLINER_MODEL,
             map_location,
         )
     except Exception as exc:  # noqa: BLE001 — optional enhancement
@@ -204,8 +204,10 @@ def detect_pii(text: str, words: list[dict] | None, cfg: dict) -> list[Redaction
             "or weights); this text was never examined for PII"
         )
 
-    keep_entities = set(cfg.get("pii_entities", C.REDACTION_PII_ENTITIES))
-    min_score = float(cfg.get("pii_confidence", C.DEFAULT_REDACTION_PII_CONFIDENCE))
+    keep_entities = set(cfg.get("pii_entities", redaction_defaults.REDACTION_PII_ENTITIES))
+    min_score = float(
+        cfg.get("pii_confidence", redaction_defaults.DEFAULT_REDACTION_PII_CONFIDENCE)
+    )
     word_offsets = build_word_offsets(text, words)
 
     spans: list[RedactionSpan] = []
@@ -300,8 +302,10 @@ def detect_pii_batch(
     if raw_all is None:
         return None
 
-    keep_entities = set(cfg.get("pii_entities", C.REDACTION_PII_ENTITIES))
-    min_score = float(cfg.get("pii_confidence", C.DEFAULT_REDACTION_PII_CONFIDENCE))
+    keep_entities = set(cfg.get("pii_entities", redaction_defaults.REDACTION_PII_ENTITIES))
+    min_score = float(
+        cfg.get("pii_confidence", redaction_defaults.DEFAULT_REDACTION_PII_CONFIDENCE)
+    )
     offsets_by_item = {
         idx: build_word_offsets(items[idx][0], items[idx][1]) for idx, _ in set(origin)
     }

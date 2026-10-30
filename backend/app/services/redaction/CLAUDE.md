@@ -56,7 +56,7 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   decision made where the policy lives. **`toxicity` follows the same three outcomes** (its
   `None` now means "blank text" and nothing else) — but with a different blocking disposition,
   because it produces no spans. See its gotcha below.
-- NO `.env` vars for behavior; coded `DEFAULT_REDACTION_*` in `core/constants.py`.
+- NO `.env` vars for behavior; coded `DEFAULT_REDACTION_*` in `core/redaction_defaults.py`.
   `REDACTION_DEVICE` / `REDACTION_MIN_FREE_VRAM_GB` / `REDACTION_PII_USE_GLINER` are ops knobs.
 
 ## How it connects

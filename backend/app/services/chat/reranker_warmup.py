@@ -31,7 +31,7 @@ Constraints, each of which rules out an obvious alternative:
   running it, and ``TESTING=true`` returns before any startup task. Skipped when the
   admin has reranking off (``chat.rag.rerank_enabled``), because no turn would use the
   model, and when the ``chat.rag.rerank_warmup_enabled`` row is false (the opt-out;
-  default :data:`~app.core.constants.DEFAULT_CHAT_RAG_RERANK_WARMUP_ENABLED`). Only the
+  default :data:`~app.core.chat_defaults.DEFAULT_CHAT_RAG_RERANK_WARMUP_ENABLED`). Only the
   English model is loaded. The multilingual arm is used only for a predominantly
   non-English pool and only when its own flag is on; its first such turn still pays
   its own load.
@@ -46,7 +46,7 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING
 
-from app.core import constants as C  # noqa: N812
+from app.core import chat_defaults
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -76,7 +76,9 @@ def warm_reranker() -> bool:
     from app.services.chat import reranker_threads
 
     started = time.perf_counter()
-    model = reranker.get_reranker(C.CHAT_RERANKER_MODEL, start_cooldown_on_failure=False)
+    model = reranker.get_reranker(
+        chat_defaults.CHAT_RERANKER_MODEL, start_cooldown_on_failure=False
+    )
     if model is None:
         logger.warning(
             "Chat reranker warm-up did not load the model; the first chat will try "
@@ -115,7 +117,7 @@ def warmup_wanted(session_factory: _SessionFactory | None = None) -> bool:
     try:
         with session_factory() as db:
             enabled = get_setting_bool(
-                db, WARMUP_SETTING_KEY, C.DEFAULT_CHAT_RAG_RERANK_WARMUP_ENABLED
+                db, WARMUP_SETTING_KEY, chat_defaults.DEFAULT_CHAT_RAG_RERANK_WARMUP_ENABLED
             )
             rerank_enabled = get_chat_settings(db).rerank_enabled
     except Exception:  # noqa: BLE001 — a warm-up decision must never surface

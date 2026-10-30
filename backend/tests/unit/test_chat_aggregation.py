@@ -221,7 +221,7 @@ def test_an_untruncated_aggregation_is_returned():
 
 def test_the_bucket_ceiling_clears_the_scope_cap():
     """MAX_BUCKETS must never be the thing that truncates a full-scope answer."""
-    from app.core.constants import CHAT_MAX_SCOPE_FILES
+    from app.core.chat_defaults import CHAT_MAX_SCOPE_FILES
 
     assert MAX_BUCKETS > CHAT_MAX_SCOPE_FILES
 

@@ -41,7 +41,7 @@ import threading
 from collections.abc import Iterator
 from typing import Any
 
-from app.core import constants as C  # noqa: N812
+from app.core import llm_defaults
 from app.core.config import settings
 from app.services import bedrock_settings
 from app.services.bedrock_settings import BedrockConnection
@@ -139,7 +139,7 @@ def resolve_model_id(model: str, region: str) -> str:
     # A full inference-profile ARN or an already-prefixed ID is used verbatim.
     if ident.startswith("arn:") or ident.startswith(GEO_PREFIXES):
         return ident
-    prefix = C.BEDROCK_GEO_PREFIX_BY_REGION.get(region.split("-")[0], "")
+    prefix = llm_defaults.BEDROCK_GEO_PREFIX_BY_REGION.get(region.split("-")[0], "")
     return f"{prefix}{ident}" if prefix else ident
 
 

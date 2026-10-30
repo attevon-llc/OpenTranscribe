@@ -12,7 +12,7 @@ import contextlib
 import logging
 
 from app.core.celery import celery_app
-from app.core.constants import GPUPriority
+from app.core.queues import GPUPriority
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.models.media import Speaker

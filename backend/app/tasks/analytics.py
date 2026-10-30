@@ -1,8 +1,8 @@
 import logging
 
 from app.core.celery import celery_app
-from app.core.constants import CPUPriority
 from app.core.enums import PostProcessingTask
+from app.core.queues import CPUPriority
 from app.db.session_utils import session_scope
 from app.services.analytics_service import AnalyticsService
 from app.services.post_processing_status import tracks_post_processing

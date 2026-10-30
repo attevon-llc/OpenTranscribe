@@ -444,7 +444,7 @@ def test_capture_queue_depth_writes_json_depths_and_in_flight_count(
     _enable(monkeypatch)
     import contextlib
 
-    from app.core.constants import CeleryQueues
+    from app.core.queues import CeleryQueues
 
     monkeypatch.setattr(
         "app.db.session_utils.session_scope",

@@ -113,7 +113,7 @@ class TestGpuDiarizeConsumerPresent:
 
     def test_consumer_present_routes_to_gpu_diarize(self, monkeypatch):
         self._reset_cache()
-        from app.core.constants import CeleryQueues
+        from app.core.queues import CeleryQueues
         from app.tasks.transcription.core import _resolve_gpu_diarize_queue
 
         class _FakeInspect:
@@ -133,7 +133,7 @@ class TestGpuDiarizeConsumerPresent:
         fail-closed direction the transcribe leg uses (diarize_gpu_task is registered
         there too, since the main 'gpu' worker imports the full app)."""
         self._reset_cache()
-        from app.core.constants import CeleryQueues
+        from app.core.queues import CeleryQueues
         from app.tasks.transcription.core import _resolve_gpu_diarize_queue
 
         class _FakeInspect:
@@ -154,7 +154,7 @@ class TestGpuDiarizeConsumerPresent:
         gpu-split diarize job into a dead queue, whereas failing closed just costs the
         dedicated worker's isolation/affinity benefits for this one dispatch."""
         self._reset_cache()
-        from app.core.constants import CeleryQueues
+        from app.core.queues import CeleryQueues
         from app.tasks.transcription.core import _resolve_gpu_diarize_queue
 
         def _boom(timeout=2.0):
@@ -170,7 +170,7 @@ class TestGpuDiarizeConsumerPresent:
     def test_cache_short_circuits_a_second_probe_within_ttl(self, monkeypatch):
         """The TTL cache must not re-probe on every call — only once per window."""
         self._reset_cache()
-        from app.core.constants import CeleryQueues
+        from app.core.queues import CeleryQueues
         from app.tasks.transcription.core import _gpu_diarize_consumer_present
 
         call_count = {"n": 0}
@@ -204,7 +204,7 @@ class TestDispatchGpuSplitDiarizeChainQueueSelection:
         can be inspected directly, rather than fighting unbound-method patching on
         ``celery.canvas._chain.apply_async``.
         """
-        from app.core.constants import CeleryQueues
+        from app.core.queues import CeleryQueues
         from app.tasks.transcription.core import _dispatch_gpu_split_diarize_chain
 
         monkeypatch.setattr(f"{_CORE}._resolve_gpu_diarize_queue", lambda: CeleryQueues.GPU)

@@ -46,7 +46,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
-from app.core import constants as C  # noqa: N812
+from app.core import chat_defaults
 from app.core.config import settings
 from app.utils.cpu_budget import effective_cpu_count
 from app.utils.cpu_budget import parse_thread_count_setting
@@ -83,7 +83,9 @@ class ThreadCap:
 
 def auto_thread_cap() -> int:
     """Return the ``auto`` cap for this process's CPU budget."""
-    return min(C.CHAT_RERANKER_TORCH_THREADS_AUTO_MAX, max(1, effective_cpu_count() // 2))
+    return min(
+        chat_defaults.CHAT_RERANKER_TORCH_THREADS_AUTO_MAX, max(1, effective_cpu_count() // 2)
+    )
 
 
 def resolve_thread_cap(raw: str | None = None) -> ThreadCap:
@@ -156,7 +158,7 @@ def _build_pool(cap: int) -> ThreadPoolExecutor:
     """Start every scoring thread at ``cap``, then restore the process default."""
     import torch
 
-    workers = C.CHAT_RERANKER_SCORING_WORKERS
+    workers = chat_defaults.CHAT_RERANKER_SCORING_WORKERS
     default = _on_fresh_thread(torch.get_num_threads)
     executor = ThreadPoolExecutor(
         max_workers=workers,

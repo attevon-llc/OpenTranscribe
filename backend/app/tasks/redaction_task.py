@@ -22,9 +22,9 @@ from typing import Any
 
 from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_REDACTION_STATUS
-from app.core.constants import REDACTION_MODEL_VERSION
-from app.core.constants import RedactionPriority
 from app.core.enums import PostProcessingTask
+from app.core.queues import RedactionPriority
+from app.core.redaction_defaults import REDACTION_MODEL_VERSION
 from app.services.post_processing_status import tracks_post_processing
 from app.utils import benchmark_timing
 

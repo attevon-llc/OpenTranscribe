@@ -27,7 +27,7 @@ from celery import signals
 
 from app.core import queue_wait
 from app.core import worker_metrics
-from app.core.constants import CeleryQueues
+from app.core.queues import CeleryQueues
 
 HEADER = "x-ot-published-at"
 

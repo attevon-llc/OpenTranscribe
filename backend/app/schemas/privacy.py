@@ -34,7 +34,7 @@ from pydantic import Field
 from pydantic import field_validator
 from pydantic import model_validator
 
-from app.core import constants
+from app.core import redaction_defaults
 
 #: Every layer a decision can be locked by. ``consent`` only ever appears for voiceprint creation.
 PrivacyLayer = Literal["platform", "instance", "organization", "user", "consent"]
@@ -170,7 +170,7 @@ class RedactionFloorIn(BaseModel):
     def _entities(cls, value: list[str] | None) -> list[str] | None:
         if value is None:
             return None
-        unknown = sorted(set(value) - set(constants.REDACTION_PII_ENTITIES))
+        unknown = sorted(set(value) - set(redaction_defaults.REDACTION_PII_ENTITIES))
         if unknown:
             raise ValueError(f"unknown PII entities {unknown}")
         return list(dict.fromkeys(value))

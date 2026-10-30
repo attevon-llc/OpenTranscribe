@@ -7,7 +7,7 @@ from datetime import datetime
 import psutil
 
 from app.core.config import settings
-from app.core.constants import CeleryQueues
+from app.core.queues import CeleryQueues
 from app.utils.stats_helpers import format_bytes
 
 # No basicConfig here — this module is imported via the API router before

@@ -121,9 +121,9 @@ def _worker(args: argparse.Namespace) -> dict[str, Any]:
         torch.set_num_threads(int(args.threads))
     from sentence_transformers import CrossEncoder
 
-    from app.core import constants as c
+    from app.core import chat_defaults
 
-    model = CrossEncoder(c.CHAT_RERANKER_MODEL, device="cpu", max_length=512)
+    model = CrossEncoder(chat_defaults.CHAT_RERANKER_MODEL, device="cpu", max_length=512)
     passages = synthetic_passages(args.pairs)
     pairs = [(_QUERY, p) for p in passages]
 
@@ -131,7 +131,7 @@ def _worker(args: argparse.Namespace) -> dict[str, Any]:
         from app.services.chat import reranker
         from app.services.chat import reranker_threads
 
-        reranker._rerankers[c.CHAT_RERANKER_MODEL] = model
+        reranker._rerankers[chat_defaults.CHAT_RERANKER_MODEL] = model
         reranker_threads.score_pairs(model, [pairs[0]])  # starts the pool, like warm-up
 
         def call() -> list[float]:

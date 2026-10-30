@@ -19,7 +19,7 @@ from typing import Any
 import numpy as np
 from sqlalchemy.orm import Session
 
-from app.core.constants import get_speaker_index
+from app.core.embedding_models import get_speaker_index
 from app.models.media import Speaker
 from app.models.media import SpeakerProfile
 from app.services.opensearch_service import get_speaker_embedding

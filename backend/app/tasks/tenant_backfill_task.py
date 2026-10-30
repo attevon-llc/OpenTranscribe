@@ -83,7 +83,7 @@ from typing import Any
 
 from app.core.celery import celery_app
 from app.core.config import settings
-from app.core.constants import CPUPriority
+from app.core.queues import CPUPriority
 
 logger = logging.getLogger(__name__)
 
@@ -268,9 +268,9 @@ def _chunked(ids: list, size: int = _TERMS_CHUNK) -> list[list]:
 
 def _speaker_indices(client: Any) -> list[str]:
     """Existing speaker indices to backfill (active alias + versioned)."""
-    from app.core.constants import get_speaker_index
-    from app.core.constants import get_speaker_index_v3
-    from app.core.constants import get_speaker_index_v4
+    from app.core.embedding_models import get_speaker_index
+    from app.core.embedding_models import get_speaker_index_v3
+    from app.core.embedding_models import get_speaker_index_v4
 
     indices = []
     for index_name in {get_speaker_index(), get_speaker_index_v3(), get_speaker_index_v4()}:

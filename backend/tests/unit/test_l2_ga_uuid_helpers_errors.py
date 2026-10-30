@@ -16,7 +16,7 @@ import uuid as uuid_pkg
 import pytest
 from fastapi import HTTPException
 
-from app.core import constants as app_constants
+from app.core import chat_defaults
 from app.core.exceptions import AccessDeniedError
 from app.core.exceptions import InvalidInputError
 from app.core.exceptions import ResourceNotFoundError
@@ -447,7 +447,7 @@ OVERSIZED = "Selection resolves to 3 files; the maximum is 2. Narrow the selecti
 
 
 def test_oversized_scope_is_400_with_exact_sentence(world, monkeypatch):
-    monkeypatch.setattr(app_constants, "CHAT_MAX_SCOPE_FILES", 2)
+    monkeypatch.setattr(chat_defaults, "CHAT_MAX_SCOPE_FILES", 2)
     files = [_file(world["db"], world["owner"]) for _ in range(3)]
     scope = ChatScope(file_uuids=[str(f.uuid) for f in files])
     with pytest.raises((HTTPException, InvalidInputError)) as exc:
@@ -456,7 +456,7 @@ def test_oversized_scope_is_400_with_exact_sentence(world, monkeypatch):
 
 
 def test_count_scope_files_swallows_only_the_400(world, monkeypatch):
-    monkeypatch.setattr(app_constants, "CHAT_MAX_SCOPE_FILES", 2)
+    monkeypatch.setattr(chat_defaults, "CHAT_MAX_SCOPE_FILES", 2)
     files = [_file(world["db"], world["owner"]) for _ in range(3)]
     scope = ChatScope(file_uuids=[str(f.uuid) for f in files])
     assert count_scope_files(world["db"], _ctx(world["owner"]), scope) == 3
@@ -479,7 +479,7 @@ def test_count_scope_files_reraises_a_non_400(world, monkeypatch):
     monkeypatch.setattr(module, "resolve_scope_file_uuids", refuse)
     assert (
         count_scope_files(world["db"], _ctx(world["owner"]), scope)
-        == app_constants.CHAT_MAX_SCOPE_FILES + 1
+        == chat_defaults.CHAT_MAX_SCOPE_FILES + 1
     )
 
 
@@ -535,7 +535,7 @@ def test_wire_speaker_missing_is_404(client, user_token_headers):
 def test_wire_chat_estimate_reports_max_plus_one_for_oversized_scope(
     client, user_token_headers, normal_user, db_session, monkeypatch
 ):
-    monkeypatch.setattr(app_constants, "CHAT_MAX_SCOPE_FILES", 2)
+    monkeypatch.setattr(chat_defaults, "CHAT_MAX_SCOPE_FILES", 2)
     files = [_file(db_session, normal_user) for _ in range(3)]
     response = client.post(
         "/api/chat/context/estimate",

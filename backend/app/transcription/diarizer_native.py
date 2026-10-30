@@ -47,12 +47,12 @@ from typing import cast
 
 import numpy as np
 
-from app.core.constants import DIAR_NATIVE_SHARED_DIR_DEFAULT
 from app.core.constants import DIAR_SIDECAR_MIN_RTF
 from app.core.constants import DIAR_SIDECAR_TIMEOUT_FLOOR_S
-from app.core.constants import PIPELINE_SCRATCH_DEFAULT
-from app.core.constants import resolve_engine_shared_volume_path
 from app.core.env import is_truthy
+from app.core.scratch_paths import DIAR_NATIVE_SHARED_DIR_DEFAULT
+from app.core.scratch_paths import PIPELINE_SCRATCH_DEFAULT
+from app.core.scratch_paths import resolve_engine_shared_volume_path
 from app.services.asr.errors import retry_after_from_headers
 from app.transcription.diarize_result import DiarizeResult
 

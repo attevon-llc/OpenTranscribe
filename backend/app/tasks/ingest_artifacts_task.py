@@ -21,8 +21,8 @@ from __future__ import annotations
 import logging
 
 from app.core.celery import celery_app
-from app.core.constants import NLPPriority
 from app.core.enums import PostProcessingTask
+from app.core.queues import NLPPriority
 from app.db.session_utils import session_scope
 from app.services.ingest_artifacts.recorded_date_service import resolve_for_file
 from app.services.ingest_artifacts.service import generate_file_artifacts

@@ -64,7 +64,6 @@ import logging
 import time
 from typing import Any
 
-from app.core.constants import CeleryQueues
 from app.core.metrics import celery_queue_depth
 from app.core.metrics import celery_queue_oldest_message_age_seconds
 from app.core.metrics import celery_queue_oldest_unacked_age_seconds
@@ -72,6 +71,7 @@ from app.core.metrics import celery_queue_orphaned
 from app.core.metrics import celery_queue_reserved
 from app.core.metrics import transcription_files_infra_requeued
 from app.core.metrics import transcription_runs_without_lease
+from app.core.queues import CeleryQueues
 
 logger = logging.getLogger(__name__)
 

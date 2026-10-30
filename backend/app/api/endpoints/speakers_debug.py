@@ -75,7 +75,7 @@ def _collect_index_debug_documents(user_id: int) -> dict[str, Any]:
     """
     section: dict[str, Any] = {"opensearch_speakers": [], "opensearch_profiles": []}
     try:
-        from app.core.constants import get_speaker_index
+        from app.core.embedding_models import get_speaker_index
         from app.services.opensearch_service import opensearch_client
 
         if not opensearch_client:

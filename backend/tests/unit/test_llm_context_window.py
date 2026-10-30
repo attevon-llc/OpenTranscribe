@@ -26,8 +26,8 @@ import pytest
 import requests
 from sqlalchemy.orm import Session
 
-from app.core.constants import LLM_CONTEXT_WINDOW_KEY_PREFIX
-from app.core.constants import LLM_REASONING_CAPABILITY_KEY_PREFIX
+from app.core.llm_defaults import LLM_CONTEXT_WINDOW_KEY_PREFIX
+from app.core.llm_defaults import LLM_REASONING_CAPABILITY_KEY_PREFIX
 from app.services import llm_context_window
 from app.services.llm_context_window import ContextWindowStatus
 from app.services.llm_context_window import discovery_key

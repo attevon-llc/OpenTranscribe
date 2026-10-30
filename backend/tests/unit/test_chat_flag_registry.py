@@ -130,7 +130,7 @@ def test_every_registry_field_exists_on_the_chatsettings_dataclass():
 
 
 def test_every_registry_default_matches_the_coded_default_in_settings_py():
-    """The registry's `default` is sourced from `core.constants`, same as
+    """The registry's `default` is sourced from `core.chat_defaults`, same as
     `services.chat.settings.DEFAULTS` — this proves neither drifted from the
     other independently."""
     assert BY_FIELD, "the registry is empty — this test would pass vacuously"

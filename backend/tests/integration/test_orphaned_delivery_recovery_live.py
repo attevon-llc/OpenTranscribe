@@ -46,7 +46,7 @@ import redis as redis_lib
 from kombu import Connection
 from kombu.transport.redis import Channel
 
-from app.core.constants import CPUPriority
+from app.core.queues import CPUPriority
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task

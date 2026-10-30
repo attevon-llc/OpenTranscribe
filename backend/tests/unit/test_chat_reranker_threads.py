@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-from app.core import constants as C  # noqa: N812
+from app.core import chat_defaults
 from app.core.config import settings
 from app.services.chat import reranker as reranker_mod
 
@@ -125,7 +125,7 @@ def _configure(monkeypatch, value: str) -> None:
 @pytest.fixture
 def model():
     loaded = _RecordingModel()
-    reranker_mod._rerankers[C.CHAT_RERANKER_MODEL] = loaded
+    reranker_mod._rerankers[chat_defaults.CHAT_RERANKER_MODEL] = loaded
     return loaded
 
 
@@ -145,7 +145,7 @@ def test_scoring_threads_latch_the_resolved_cap(monkeypatch, fake_torch, model):
 
     scoring = [(name, n) for name, n in fake_torch.calls if name.startswith(_PREFIX)]
     assert scoring, "no scoring thread ever set a cap"
-    assert len({name for name, _ in scoring}) == C.CHAT_RERANKER_SCORING_WORKERS
+    assert len({name for name, _ in scoring}) == chat_defaults.CHAT_RERANKER_SCORING_WORKERS
     assert {n for _, n in scoring} == {3}
 
 
@@ -181,7 +181,7 @@ def test_explicit_omp_num_threads_skips_auto_but_not_an_explicit_integer(
     assert fake_torch.calls == []
 
     reranker_mod.reset_reranker_state()
-    reranker_mod._rerankers[C.CHAT_RERANKER_MODEL] = model
+    reranker_mod._rerankers[chat_defaults.CHAT_RERANKER_MODEL] = model
     model.threads.clear()
     _configure(monkeypatch, "2")
     assert reranker_threads.resolve_thread_cap().threads == 2
@@ -194,7 +194,7 @@ def test_auto_cap_follows_the_cpu_budget_up_to_the_ceiling(monkeypatch, cpus, ex
     from app.services.chat import reranker_threads
 
     monkeypatch.setattr(reranker_threads, "effective_cpu_count", lambda: cpus)
-    want = C.CHAT_RERANKER_TORCH_THREADS_AUTO_MAX if expected == "ceiling" else expected
+    want = chat_defaults.CHAT_RERANKER_TORCH_THREADS_AUTO_MAX if expected == "ceiling" else expected
 
     cap = reranker_threads.resolve_thread_cap("auto")
 
@@ -302,9 +302,9 @@ def _wait_until(predicate, timeout: float = 30.0) -> bool:
 def test_at_most_the_scoring_workers_run_at_once(monkeypatch, fake_torch):
     release = threading.Event()
     slow = _RecordingModel(hold=release)
-    reranker_mod._rerankers[C.CHAT_RERANKER_MODEL] = slow
+    reranker_mod._rerankers[chat_defaults.CHAT_RERANKER_MODEL] = slow
     _configure(monkeypatch, "3")
-    callers_total = C.CHAT_RERANKER_SCORING_WORKERS * 3
+    callers_total = chat_defaults.CHAT_RERANKER_SCORING_WORKERS * 3
     arrived = []
 
     def caller() -> None:
@@ -319,13 +319,13 @@ def test_at_most_the_scoring_workers_run_at_once(monkeypatch, fake_torch):
         # an unbounded implementation has all of them inside predict by now, a bounded one
         # only the scoring workers.
         assert _wait_until(lambda: len(arrived) == callers_total)
-        assert _wait_until(lambda: slow.active >= C.CHAT_RERANKER_SCORING_WORKERS)
+        assert _wait_until(lambda: slow.active >= chat_defaults.CHAT_RERANKER_SCORING_WORKERS)
     finally:
         release.set()
         for t in callers:
             t.join(timeout=30)
 
-    assert slow.max_active == C.CHAT_RERANKER_SCORING_WORKERS
+    assert slow.max_active == chat_defaults.CHAT_RERANKER_SCORING_WORKERS
 
 
 def test_rerank_order_matches_score_order(model):

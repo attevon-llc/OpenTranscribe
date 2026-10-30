@@ -10,7 +10,7 @@ from datetime import UTC
 from datetime import datetime
 
 from app.core.celery import celery_app
-from app.core.constants import UtilityPriority
+from app.core.queues import UtilityPriority
 from app.core.task_config import task_recovery_config
 from app.core.task_liveness import TRANSCRIPTION_TASK_TYPE
 from app.core.task_liveness import supersede_run

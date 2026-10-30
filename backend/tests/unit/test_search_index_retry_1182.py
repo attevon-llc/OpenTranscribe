@@ -23,7 +23,7 @@ from opensearchpy.exceptions import ConnectionTimeout
 from prometheus_client import REGISTRY
 
 from app.core.config import settings
-from app.core.constants import EmbeddingPriority
+from app.core.queues import EmbeddingPriority
 from app.models.media import MediaFile
 from app.models.media import Task
 from app.models.media import TranscriptSegment

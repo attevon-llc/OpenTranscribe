@@ -26,7 +26,7 @@ import uuid as uuid_pkg
 
 import pytest
 
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 from app.services.redaction.config import blocking_detector_failures
 from app.services.redaction.config import detection_config_for_all
 from app.services.redaction.detectors import DetectorUnavailableError
@@ -239,7 +239,7 @@ def test_an_absent_presidio_does_not_flip_the_file_to_failed(db_session, seeded_
     result = RedactionService.detect_and_store(db_session, seeded_file.id)
 
     assert result["status"] == "done"
-    assert seeded_file.redaction_status == C.REDACTION_STATUS_DONE
+    assert seeded_file.redaction_status == redaction_defaults.REDACTION_STATUS_DONE
     assert "pii" in result["skipped_detectors"], "an unexamined detector must be reported skipped"
     assert "pii" not in result["detectors"], "a detector that never ran must not be reported as ran"
 
@@ -256,7 +256,7 @@ def test_a_broken_presidio_still_flips_the_file_to_failed(db_session, seeded_fil
 
     assert result["status"] == "failed"
     assert result["detectors"] == ["pii"]
-    assert seeded_file.redaction_status == C.REDACTION_STATUS_FAILED
+    assert seeded_file.redaction_status == redaction_defaults.REDACTION_STATUS_FAILED
 
 
 def test_a_healthy_scan_reports_pii_as_run_and_skips_nothing(db_session, seeded_file, monkeypatch):

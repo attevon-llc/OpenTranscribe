@@ -318,7 +318,7 @@ Tasks are separated into queues by resource type to prevent resource contention:
 | `utility` | varies | Maintenance tasks, error handlers, reindexing |
 | `redaction` | 2 | PII / toxicity / profanity detection on a dedicated CPU service; isolates the redaction ML models from the GPU worker |
 
-Three further queues exist for specific topologies: `cpu-transcribe` (lightweight per-file Whisper, drained by the CPU worker), `gpu-transcribe` / `gpu-diarize` (the optional gpu-split workers), and the default `celery` queue (drained by the NLP worker). `CeleryQueues` in `backend/app/core/constants.py` is the single source of truth.
+Three further queues exist for specific topologies: `cpu-transcribe` (lightweight per-file Whisper, drained by the CPU worker), `gpu-transcribe` / `gpu-diarize` (the optional gpu-split workers), and the default `celery` queue (drained by the NLP worker). `CeleryQueues` in `backend/app/core/queues.py` is the single source of truth.
 
 This separation ensures GPU workers are never blocked waiting for a download to complete, and CPU-intensive postprocessing does not compete with GPU transcription for worker slots.
 

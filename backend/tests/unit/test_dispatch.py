@@ -40,8 +40,8 @@ import pytest
 from kombu.exceptions import OperationalError
 
 from app.core.config import settings
-from app.core.constants import CeleryQueues
 from app.core.exceptions import ASRConfigurationError
+from app.core.queues import CeleryQueues
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
@@ -94,28 +94,28 @@ class TestGetPipelineErrorMessage:
 
 
 class TestGpuSplitEnabled:
-    """``app.core.constants.gpu_split_enabled()`` — the one signal both
+    """``app.core.queues.gpu_split_enabled()`` — the one signal both
     ``dispatch.py`` and ``transcription/core.py``'s forward-to-diarize check read
     (issue #703). Both call sites must observe the identical value for a given
     environment, which is the whole point of centralizing it.
     """
 
     def test_default_is_false(self, monkeypatch):
-        from app.core.constants import gpu_split_enabled
+        from app.core.queues import gpu_split_enabled
 
         monkeypatch.delenv("ENGINE_GPU_SPLIT", raising=False)
 
         assert gpu_split_enabled() is False
 
     def test_true_when_set(self, monkeypatch):
-        from app.core.constants import gpu_split_enabled
+        from app.core.queues import gpu_split_enabled
 
         monkeypatch.setenv("ENGINE_GPU_SPLIT", "true")
 
         assert gpu_split_enabled() is True
 
     def test_is_case_insensitive(self, monkeypatch):
-        from app.core.constants import gpu_split_enabled
+        from app.core.queues import gpu_split_enabled
 
         monkeypatch.setenv("ENGINE_GPU_SPLIT", "TRUE")
 
@@ -124,7 +124,7 @@ class TestGpuSplitEnabled:
     def test_any_other_value_is_false(self, monkeypatch):
         """Only the literal 'true' (any case) enables it — a typo like 'yes' or '1'
         must fail closed toward the always-staffed queue, not toward the split one."""
-        from app.core.constants import gpu_split_enabled
+        from app.core.queues import gpu_split_enabled
 
         monkeypatch.setenv("ENGINE_GPU_SPLIT", "yes")
 

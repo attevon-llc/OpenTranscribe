@@ -1369,7 +1369,7 @@ solved shape, and the digest plane is a working precedent for it.
 ### The retrieval budget sweep
 
 `candidate_pool` / `final_chunks` / `max_chunks_per_file` are **48 / 40 / 12**
-(`core/constants.DEFAULT_CHAT_RAG_*`). The original 48/12/4 was chosen by judgement and never
+(`core/chat_defaults.DEFAULT_CHAT_RAG_*`). The original 48/12/4 was chosen by judgement and never
 measured; #531 (2026-08-21) measured 40/12 at ~1.8–2× the AMI-81 answer-content recall of 12/4
 on two corpora, judge-corroborated, with negative controls intact and +13% latency, and shipped
 it. Note these knobs are inert to retrieval nDCG — they move **answer** metrics only, which is

@@ -26,27 +26,27 @@ from app.api.endpoints.user_settings_transcription_validators import (
 )
 from app.api.endpoints.user_settings_transcription_validators import _validate_speaker_range
 from app.core.config import settings as app_settings
-from app.core.constants import COMMON_LANGUAGES
 from app.core.constants import DEFAULT_DIARIZATION_SOURCE
 from app.core.constants import DEFAULT_GARBAGE_CLEANUP_ENABLED
 from app.core.constants import DEFAULT_GARBAGE_CLEANUP_THRESHOLD
 from app.core.constants import DEFAULT_HALLUCINATION_SILENCE_THRESHOLD
-from app.core.constants import DEFAULT_LLM_OUTPUT_LANGUAGE
 from app.core.constants import DEFAULT_REPETITION_PENALTY
-from app.core.constants import DEFAULT_SOURCE_LANGUAGE
 from app.core.constants import DEFAULT_SPEAKER_PROMPT_BEHAVIOR
 from app.core.constants import DEFAULT_TRANSCRIPTION_MAX_SPEAKERS
 from app.core.constants import DEFAULT_TRANSCRIPTION_MIN_SPEAKERS
-from app.core.constants import DEFAULT_TRANSLATE_TO_ENGLISH
 from app.core.constants import DEFAULT_VAD_MIN_SILENCE_MS
 from app.core.constants import DEFAULT_VAD_MIN_SPEECH_MS
 from app.core.constants import DEFAULT_VAD_SPEECH_PAD_MS
 from app.core.constants import DEFAULT_VAD_THRESHOLD
-from app.core.constants import LLM_OUTPUT_LANGUAGES
 from app.core.constants import TRANSCRIPTION_SETTING_GROUPS
 from app.core.constants import VALID_DIARIZATION_SOURCES
 from app.core.constants import VALID_SPEAKER_PROMPT_BEHAVIORS
-from app.core.constants import WHISPER_LANGUAGES
+from app.core.languages import COMMON_LANGUAGES
+from app.core.languages import DEFAULT_LLM_OUTPUT_LANGUAGE
+from app.core.languages import DEFAULT_SOURCE_LANGUAGE
+from app.core.languages import DEFAULT_TRANSLATE_TO_ENGLISH
+from app.core.languages import LLM_OUTPUT_LANGUAGES
+from app.core.languages import WHISPER_LANGUAGES
 from app.db.base import get_db
 from app.schemas.transcription_settings import TranscriptionSettings
 from app.schemas.transcription_settings import TranscriptionSettingsUpdate

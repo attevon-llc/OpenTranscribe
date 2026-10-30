@@ -344,7 +344,7 @@ def _inject_transcript(
     """
     from conftest import TEST_ADMIN_EMAIL
 
-    from app.core.constants import REDACTION_STATUS_DONE
+    from app.core.redaction_defaults import REDACTION_STATUS_DONE
     from app.db.base import SessionLocal
     from app.models.media import MediaFile
     from app.scripts.corpus_injection.injector import inject_meeting

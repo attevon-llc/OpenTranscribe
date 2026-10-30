@@ -28,7 +28,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 from app.services.chat import prompting
 from app.services.chat.redactor import _mask_from_spans
 from app.services.chat.redactor import _SegmentSpans
@@ -181,7 +181,7 @@ def _chunk_db(segment, *, user_id=1):
     scan_q = MagicMock()
     scan_q.filter.return_value.first.return_value = SimpleNamespace(
         id=1,
-        redaction_status=C.REDACTION_STATUS_DONE,
+        redaction_status=redaction_defaults.REDACTION_STATUS_DONE,
         redaction_coverage=None,
         language="en",
         user_id=user_id,
@@ -259,7 +259,7 @@ def _digest_db(sentence_segment_rows, *, user_id=1):
         if "redaction_status" in key:
             result.filter.return_value.first.return_value = SimpleNamespace(
                 id=1,
-                redaction_status=C.REDACTION_STATUS_DONE,
+                redaction_status=redaction_defaults.REDACTION_STATUS_DONE,
                 redaction_coverage=None,
                 language="en",
                 user_id=user_id,

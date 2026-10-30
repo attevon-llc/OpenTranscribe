@@ -23,8 +23,8 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import Literal
 
-from app.core.constants import CeleryQueues
-from app.core.constants import gpu_preferred_queue
+from app.core.queues import CeleryQueues
+from app.core.queues import gpu_preferred_queue
 
 TranscriptionEngine = Literal["local_gpu", "local_cpu", "cloud"]
 DiarizationEngine = Literal["asr", "local", "pyannote_ai", "asr_config", "off"]

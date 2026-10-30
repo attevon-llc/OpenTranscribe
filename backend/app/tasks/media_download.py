@@ -12,7 +12,7 @@ existing ``download_progress`` WebSocket channel.
 import logging
 
 from app.core.celery import celery_app
-from app.core.constants import DownloadPriority
+from app.core.queues import DownloadPriority
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.services.download_events import publish_download_event

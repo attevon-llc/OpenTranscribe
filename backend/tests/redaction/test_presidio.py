@@ -105,11 +105,13 @@ def test_the_default_name_backend_is_the_configured_one(detector):
 @pytest.fixture
 def gliner_analyzer(detector):
     """An analyzer built with GLiNER requested; the default one is restored afterwards."""
-    from app.core import constants as C  # noqa: N812
+    from app.core import redaction_defaults
     from app.core.config import settings
 
-    if not hf_weights_cached(C.REDACTION_PII_GLINER_MODEL):
-        pytest.skip(f"GLiNER weights {C.REDACTION_PII_GLINER_MODEL} not cached on this machine")
+    if not hf_weights_cached(redaction_defaults.REDACTION_PII_GLINER_MODEL):
+        pytest.skip(
+            f"GLiNER weights {redaction_defaults.REDACTION_PII_GLINER_MODEL} not cached on this machine"
+        )
     analyzer = detector._get_analyzer(True)
     yield analyzer
     detector._get_analyzer(settings.REDACTION_PII_USE_GLINER)

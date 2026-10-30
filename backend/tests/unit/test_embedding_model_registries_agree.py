@@ -16,7 +16,7 @@ in **nine** files.
 Nothing could catch that, because the four registries are four separate literals that
 nothing compared:
 
-  1. ``core/constants.OPENSEARCH_EMBEDDING_MODELS``   - what the admin UI offers
+  1. ``core/embedding_models.OPENSEARCH_EMBEDDING_MODELS``   - what the admin UI offers
   2. ``search/ml_model_service._MODEL_FILE_PATTERNS`` - offline file:// registration
   3. ``search/model_downloader._OPENSEARCH_MODEL_REGISTRY`` - the in-app downloader
   4. ``scripts/download-models.py``                   - the offline packaging download
@@ -55,7 +55,7 @@ VERIFIED_WORKING = {
 }
 
 #: Measured and rejected. Re-adding any of these needs a fresh measurement, not an
-#: assumption — each failed for its own reason (see constants.py for the detail).
+#: assumption — each failed for its own reason (see embedding_models.py for the detail).
 VERIFIED_BROKEN = {
     "paraphrase-multilingual-mpnet-base-v2",  # not an OpenSearch-provided model
     "msmarco-distilbert-base-tas-b",  # dot-product; control 0.703 under cosine
@@ -69,7 +69,7 @@ def _short(name: str) -> str:
 
 
 def _offered() -> set[str]:
-    from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
+    from app.core.embedding_models import OPENSEARCH_EMBEDDING_MODELS
 
     return {_short(name) for name in OPENSEARCH_EMBEDDING_MODELS}
 
@@ -114,7 +114,7 @@ def test_no_registry_still_carries_a_model_measured_as_broken() -> None:
     downloader still trying to fetch it.
     """
     everywhere = {
-        "constants.OPENSEARCH_EMBEDDING_MODELS": _offered(),
+        "embedding_models.OPENSEARCH_EMBEDDING_MODELS": _offered(),
         "ml_model_service._MODEL_FILE_PATTERNS": _file_patterns(),
         "model_downloader._OPENSEARCH_MODEL_REGISTRY": _downloader_registry(),
         "scripts/download-models.py": _download_script_models(),

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.core import constants as C  # noqa: N812
+from app.core import chat_defaults
 
 # ---------------------------------------------------------------------------
 # Per-user preferences
@@ -20,9 +20,9 @@ from app.core import constants as C  # noqa: N812
 def test_defaults_are_returned_before_anything_is_saved(client, auth_headers):
     body = client.get("/api/user-settings/chat", headers=auth_headers).json()
 
-    assert body["system_prompt"] == C.DEFAULT_CHAT_SYSTEM_PROMPT
-    assert body["use_context_default"] is C.DEFAULT_CHAT_USE_CONTEXT
-    assert body["default_search_mode"] == C.DEFAULT_CHAT_SEARCH_MODE
+    assert body["system_prompt"] == chat_defaults.DEFAULT_CHAT_SYSTEM_PROMPT
+    assert body["use_context_default"] is chat_defaults.DEFAULT_CHAT_USE_CONTEXT
+    assert body["default_search_mode"] == chat_defaults.DEFAULT_CHAT_SEARCH_MODE
 
 
 def test_settings_round_trip(client, auth_headers):
@@ -91,8 +91,8 @@ def test_reset_restores_the_coded_defaults(client, auth_headers):
     client.delete("/api/user-settings/chat", headers=auth_headers)
 
     body = client.get("/api/user-settings/chat", headers=auth_headers).json()
-    assert body["system_prompt"] == C.DEFAULT_CHAT_SYSTEM_PROMPT
-    assert body["use_context_default"] is C.DEFAULT_CHAT_USE_CONTEXT
+    assert body["system_prompt"] == chat_defaults.DEFAULT_CHAT_SYSTEM_PROMPT
+    assert body["use_context_default"] is chat_defaults.DEFAULT_CHAT_USE_CONTEXT
 
 
 def test_settings_are_per_user(client, auth_headers, other_user_auth_headers):
@@ -110,10 +110,10 @@ def test_settings_are_per_user(client, auth_headers, other_user_auth_headers):
 def test_admin_settings_expose_the_coded_defaults(client, admin_auth_headers):
     body = client.get("/api/admin/chat-settings", headers=admin_auth_headers).json()
 
-    assert body["candidate_pool"] == C.DEFAULT_CHAT_RAG_CANDIDATE_POOL
-    assert body["final_chunks"] == C.DEFAULT_CHAT_RAG_FINAL_CHUNKS
-    assert body["rerank_enabled"] is C.DEFAULT_CHAT_RAG_RERANK_ENABLED
-    assert body["retention_days"] == C.DEFAULT_CHAT_RETENTION_DAYS
+    assert body["candidate_pool"] == chat_defaults.DEFAULT_CHAT_RAG_CANDIDATE_POOL
+    assert body["final_chunks"] == chat_defaults.DEFAULT_CHAT_RAG_FINAL_CHUNKS
+    assert body["rerank_enabled"] is chat_defaults.DEFAULT_CHAT_RAG_RERANK_ENABLED
+    assert body["retention_days"] == chat_defaults.DEFAULT_CHAT_RETENTION_DAYS
 
 
 def test_admin_settings_round_trip(client, admin_auth_headers):

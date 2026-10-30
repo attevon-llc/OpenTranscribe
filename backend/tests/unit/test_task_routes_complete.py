@@ -17,7 +17,7 @@ from __future__ import annotations
 from app.core.celery import INTENTIONALLY_UNROUTED_TASKS
 from app.core.celery import celery_app
 from app.core.celery import unrouted_task_names
-from app.core.constants import CeleryQueues
+from app.core.queues import CeleryQueues
 
 # The five tasks issue #1268 found unrouted, with the queue each must reach.
 _ISSUE_1268_ROUTES = {

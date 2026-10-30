@@ -234,7 +234,7 @@ backend/
 2. **Database Models**: Add to `app/models/`
 3. **Validation Schemas**: Add to `app/schemas/`
 4. **Business Logic**: Add to `app/services/` (LLM service, upload service, etc.)
-5. **Background Tasks**: Add to `app/tasks/`; declare any new queue in `CeleryQueues` (`app/core/constants.py`) because Celery runs with `task_create_missing_queues=False`
+5. **Background Tasks**: Add to `app/tasks/`; declare any new queue in `CeleryQueues` (`app/core/queues.py`) because Celery runs with `task_create_missing_queues=False`
 6. **Core Components**: Add config, constants and enums to `app/core/`; shared helpers go in `app/utils/`
 7. **Tests**: Add to `tests/` (see Testing below)
 8. **API snapshot**: regenerate `openapi.json` when routes or schemas change (`scripts/generate-openapi.py --write`)
@@ -319,7 +319,7 @@ python scripts/db_inspect.py       # Debug dump of the tag tables (scripts/READM
 ## ⚙️ Background Tasks
 
 ### Task System
-- **Celery** with a Redis broker; queues are declared once in `CeleryQueues` (`app/core/constants.py`) and routed in `app/core/celery.py`
+- **Celery** with a Redis broker; queues are declared once in `CeleryQueues` (`app/core/queues.py`) and routed in `app/core/celery.py`
 - **Flower** monitoring at http://localhost:5175/flower
 - **Composed transcription pipeline**: a per-file plan (`app/services/pipeline_plan.py`) chains the stage tasks in `app/tasks/transcription/` (`transcription.preprocess` -> `transcription.gpu_transcribe` / `transcription.diarize_gpu` / `transcription.cpu_transcribe` or a cloud-ASR task -> `transcription.postprocess`), so a file only visits the stages and queues its settings require
 - Enrichment (embeddings, indexing, summaries, redaction, ...) is dispatched asynchronously after postprocess, so it does not hold the GPU

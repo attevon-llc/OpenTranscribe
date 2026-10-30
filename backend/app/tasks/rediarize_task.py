@@ -29,9 +29,9 @@ from typing import Any
 from app.core import stage_timing
 from app.core.celery import celery_app
 from app.core.config import settings
-from app.core.constants import CeleryQueues
-from app.core.constants import GPUPriority
 from app.core.enums import TranscriptionStage
+from app.core.queues import CeleryQueues
+from app.core.queues import GPUPriority
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import TranscriptSegment

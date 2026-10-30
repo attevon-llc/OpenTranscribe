@@ -4,7 +4,7 @@ import logging
 from collections.abc import Generator
 from typing import Any
 
-from app.core.constants import get_speaker_index
+from app.core.embedding_models import get_speaker_index
 from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.aliases import get_active_speaker_index
 from app.services.opensearch_service.client import _is_index_corruption_error

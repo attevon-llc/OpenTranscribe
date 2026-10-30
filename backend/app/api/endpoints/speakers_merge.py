@@ -260,7 +260,7 @@ def _clear_speaker_video_cache(affected_media_files: set[int]) -> None:
 def _update_opensearch_speaker_merge(source_speaker_uuid: str, target_speaker_uuid: str) -> None:
     """Update OpenSearch index after speaker merge."""
     try:
-        from app.core.constants import get_speaker_index
+        from app.core.embedding_models import get_speaker_index
         from app.services.opensearch_service import client as _os_client
         from app.services.opensearch_service import merge_speaker_embeddings
 

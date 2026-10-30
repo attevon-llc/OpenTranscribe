@@ -30,8 +30,8 @@ from typing import Any
 from celery.exceptions import Retry
 
 from app.core.celery import celery_app
-from app.core.constants import NLPPriority
 from app.core.enums import PostProcessingTask
+from app.core.queues import NLPPriority
 from app.db.session_utils import session_scope
 from app.services.post_processing_status import announce_started
 from app.services.post_processing_status import tracks_post_processing

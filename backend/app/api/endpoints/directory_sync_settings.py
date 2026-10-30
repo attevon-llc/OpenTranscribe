@@ -156,8 +156,8 @@ def run_directory_sync_now(
     Uses the configured ``dry_run`` setting — same as the scheduled beat dispatch —
     so this is a "run the configured sweep now" action, not a way to bypass dry-run.
     """
-    from app.core.constants import CeleryQueues
-    from app.core.constants import CPUPriority
+    from app.core.queues import CeleryQueues
+    from app.core.queues import CPUPriority
     from app.tasks.directory_sync_task import run_directory_sync
 
     task = run_directory_sync.apply_async(queue=CeleryQueues.CPU, priority=CPUPriority.MAINTENANCE)

@@ -22,11 +22,11 @@ from celery import chain
 
 from app.core import stage_timing
 from app.core.celery import celery_app
-from app.core.constants import CeleryQueues
-from app.core.constants import GPUPriority
-from app.core.constants import engine_shared_volume_enabled
-from app.core.constants import gpu_split_enabled
 from app.core.enums import TranscriptionStage
+from app.core.queues import CeleryQueues
+from app.core.queues import GPUPriority
+from app.core.queues import gpu_split_enabled
+from app.core.scratch_paths import engine_shared_volume_enabled
 from app.core.task_cancellation import TranscriptionCancelledError
 from app.core.task_cancellation import cancellation_scope
 from app.core.task_cancellation import stand_down_if_requested

@@ -39,7 +39,7 @@ import uuid as uuid_pkg
 
 import pytest
 
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 
 
 @pytest.fixture(autouse=True)
@@ -108,8 +108,8 @@ def scanned_file(db_session, redacting_user):
     backfill's ``only_stale`` filter keys on ``redaction_model_version``, so a file
     holding the current version is *skipped* by the operator's only recovery tool.
     """
-    media = _completed_file(db_session, redacting_user, C.REDACTION_STATUS_DONE)
-    media.redaction_model_version = C.REDACTION_MODEL_VERSION
+    media = _completed_file(db_session, redacting_user, redaction_defaults.REDACTION_STATUS_DONE)
+    media.redaction_model_version = redaction_defaults.REDACTION_MODEL_VERSION
     db_session.flush()
     return media
 
@@ -209,7 +209,7 @@ def test_a_bulk_redact_that_reaches_the_broker_claims_pending_and_queues_the_sca
     assert [call["file_id"] for call in broker.published] == [scanned_file.id]
 
     db_session.refresh(scanned_file)
-    assert scanned_file.redaction_status == C.REDACTION_STATUS_PENDING
+    assert scanned_file.redaction_status == redaction_defaults.REDACTION_STATUS_PENDING
 
 
 # ----------------------------------------------- the bug: a publish that never lands
@@ -231,7 +231,7 @@ def test_a_failed_publish_leaves_a_scanned_file_exactly_as_readable_as_before(
     _redact_through_the_batch(db_session, redacting_user, scanned_file)
 
     db_session.refresh(scanned_file)
-    assert scanned_file.redaction_status == C.REDACTION_STATUS_DONE, (
+    assert scanned_file.redaction_status == redaction_defaults.REDACTION_STATUS_DONE, (
         f"expected the file to be returned to 'done' — the status it held before the "
         f"click — but it is {scanned_file.redaction_status!r}. At 'pending' the row "
         "claims a scan is queued when the publish raised and none is; no read, no "
@@ -314,7 +314,7 @@ def test_the_withdrawal_does_not_overwrite_a_status_another_writer_moved_on(
         db_session.execute(
             update(MediaFile)
             .where(MediaFile.id == scanned_file.id)
-            .values(redaction_status=C.REDACTION_STATUS_PROCESSING)
+            .values(redaction_status=redaction_defaults.REDACTION_STATUS_PROCESSING)
         )
         db_session.commit()
 
@@ -324,7 +324,7 @@ def test_the_withdrawal_does_not_overwrite_a_status_another_writer_moved_on(
     _redact_through_the_batch(db_session, redacting_user, scanned_file)
 
     db_session.refresh(scanned_file)
-    assert scanned_file.redaction_status == C.REDACTION_STATUS_PROCESSING, (
+    assert scanned_file.redaction_status == redaction_defaults.REDACTION_STATUS_PROCESSING, (
         "the withdrawal clobbered a status this call did not write; a worker that is "
         "actually scanning has had its progress overwritten with a stale terminal state"
     )

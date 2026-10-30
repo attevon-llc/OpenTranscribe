@@ -447,9 +447,9 @@ def _facts_db_for_summary_hit(sections_count: int, *, status: str = "completed")
     """A session whose scan/digest probes describe a file with EXACTLY
     ``sections_count`` real sections (0..sections_count-1) — so a summary
     hit's ``digest_section == sections_count`` is provably out of range."""
-    from app.core import constants as C  # noqa: N812
+    from app.core import redaction_defaults
 
-    resolved_status = C.REDACTION_STATUS_DONE if status == "completed" else status
+    resolved_status = redaction_defaults.REDACTION_STATUS_DONE if status == "completed" else status
     digest_payload = {
         "sections": [
             {

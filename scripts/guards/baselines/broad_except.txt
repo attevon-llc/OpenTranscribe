@@ -26,7 +26,9 @@ backend/app/api/endpoints/speaker_attribute_migration.py	3	ratchet: may only go 
 backend/app/api/endpoints/speaker_clusters.py	2	ratchet: may only go down
 backend/app/api/endpoints/speaker_profiles.py	5	ratchet: may only go down
 backend/app/api/endpoints/speaker_update.py	2	ratchet: may only go down
-backend/app/api/endpoints/speakers.py	5	ratchet: may only go down
+backend/app/api/endpoints/speakers.py	2	ratchet: may only go down
+backend/app/api/endpoints/speakers_merge.py	2	ratchet: may only go down
+backend/app/api/endpoints/speakers_suggestions.py	1	ratchet: may only go down
 backend/app/api/endpoints/transcript_segments.py	1	ratchet: may only go down
 backend/app/api/endpoints/watch_sources.py	1	ratchet: may only go down
 backend/app/api/websockets.py	9	ratchet: may only go down

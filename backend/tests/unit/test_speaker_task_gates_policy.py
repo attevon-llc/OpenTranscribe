@@ -102,7 +102,7 @@ def _moved_out_of_a_profile(db, user, org, seams):
 
 
 def _call_speakers_endpoint(db, speaker, old, new):
-    from app.api.endpoints.speakers import _handle_profile_embedding_updates
+    from app.api.endpoints.speakers_profile_workflow import _handle_profile_embedding_updates
 
     return _handle_profile_embedding_updates(db, speaker.id, old.id, new.id, False)
 
@@ -194,16 +194,16 @@ def test_the_merge_plan_carries_the_policy_answer_for_the_survivors_file(
 @pytest.fixture
 def merge_downstream(monkeypatch) -> list[str]:
     """Stand in for everything the merge task does after the plan; returns the averaged sources."""
-    from app.api.endpoints import speakers as speakers_module
+    from app.api.endpoints import speakers_merge
 
     averaged: list[str] = []
     monkeypatch.setattr(
-        speakers_module, "_merge_speaker_embeddings", lambda src, target: averaged.append(src)
+        speakers_merge, "_merge_speaker_embeddings", lambda src, target: averaged.append(src)
     )
     for name in ("_clear_speaker_video_cache", "_update_opensearch_speaker_merge"):
-        monkeypatch.setattr(speakers_module, name, lambda *a, **k: None)
-    monkeypatch.setattr(speakers_module, "_reconcile_speakers_after_merge", lambda *a, **k: [])
-    monkeypatch.setattr(speakers_module, "_refresh_analytics_after_merge", lambda *a, **k: None)
+        monkeypatch.setattr(speakers_merge, name, lambda *a, **k: None)
+    monkeypatch.setattr(speakers_merge, "_reconcile_speakers_after_merge", lambda *a, **k: [])
+    monkeypatch.setattr(speakers_merge, "_refresh_analytics_after_merge", lambda *a, **k: None)
     monkeypatch.setattr(
         speaker_merge_task, "session_scope", lambda: contextlib.nullcontext(object())
     )

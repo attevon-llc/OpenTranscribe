@@ -125,7 +125,7 @@ def test_merging_speakers_drops_the_source_from_its_cluster_before_answering(
 def test_the_merge_background_half_rebuilds_the_target_and_proves_the_source_gone(
     db_session, normal_user, speaker_os_seams
 ):
-    from app.api.endpoints.speakers import _reconcile_speakers_after_merge
+    from app.api.endpoints.speakers_merge import _reconcile_speakers_after_merge
 
     fa = make_file(db_session, normal_user)
     target = make_speaker(db_session, normal_user, fa)
@@ -211,7 +211,7 @@ def test_a_manual_profile_move_rebuilds_the_profile_the_speaker_left(
     db_session, normal_user, speaker_os_seams
 ):
     """It used to be rebuilt only for an auto-labeled speaker; a manual move kept the voice."""
-    from app.api.endpoints.speakers import _handle_profile_embedding_updates
+    from app.api.endpoints.speakers_profile_workflow import _handle_profile_embedding_updates
 
     old = make_profile(db_session, normal_user, "Old")
     new = make_profile(db_session, normal_user, "New")

@@ -228,7 +228,7 @@ def test_update_opensearch_speaker_merge_preserves_target_collection_membership(
     OpenSearch collection it belonged to on every merge. The caller must now
     read the target's CURRENT collection_ids and pass those through instead.
     """
-    from app.api.endpoints.speakers import _update_opensearch_speaker_merge
+    from app.api.endpoints.speakers_merge import _update_opensearch_speaker_merge
 
     source_uuid = str(uuid_pkg.uuid4())
     target_uuid = str(uuid_pkg.uuid4())
@@ -252,7 +252,7 @@ def test_update_opensearch_speaker_merge_preserves_target_collection_membership(
 def test_update_opensearch_speaker_merge_defaults_to_empty_when_target_has_none(
     speaker_indices,
 ):
-    from app.api.endpoints.speakers import _update_opensearch_speaker_merge
+    from app.api.endpoints.speakers_merge import _update_opensearch_speaker_merge
 
     source_uuid = str(uuid_pkg.uuid4())
     target_uuid = str(uuid_pkg.uuid4())

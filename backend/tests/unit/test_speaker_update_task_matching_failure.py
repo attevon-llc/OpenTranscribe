@@ -12,7 +12,7 @@ from contextlib import contextmanager
 import pytest
 from sqlalchemy.exc import OperationalError
 
-from app.api.endpoints import speakers as spk
+from app.api.endpoints import speakers_profile_workflow as spk
 from app.tasks import speaker_update_task as spt
 
 

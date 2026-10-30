@@ -57,7 +57,7 @@ def _make_speaker(db_session, user, media_file, name: str, **kwargs) -> Speaker:
 def quiet_opensearch():
     """Keep the request path off OpenSearch without hiding the dispatch under test."""
     with (
-        patch("app.api.endpoints.speakers.update_speaker_display_name"),
+        patch("app.api.endpoints.speakers_profile_workflow.update_speaker_display_name"),
         patch("app.services.opensearch_service.update_speaker_profile"),
     ):
         yield
@@ -471,7 +471,7 @@ class TestSpeakerProfileUpdateEndpoint:
 class TestProfileRenameCapture:
     def test_the_pre_rename_names_are_returned_before_the_overwrite(self, db_session, normal_user):
         """``_handle_update_profile_action`` is the last place the old names exist."""
-        from app.api.endpoints.speakers import _handle_update_profile_action
+        from app.api.endpoints.speakers_profile_workflow import _handle_update_profile_action
 
         profile = SpeakerProfile(uuid=str(uuid_mod.uuid4()), user_id=normal_user.id, name="Bob")
         db_session.add(profile)
@@ -504,7 +504,7 @@ class TestProfileRenameCapture:
         self, db_session, normal_user
     ):
         """``None`` means "no such profile"; ``[]`` means "renamed, nothing to replay"."""
-        from app.api.endpoints.speakers import _handle_update_profile_action
+        from app.api.endpoints.speakers_profile_workflow import _handle_update_profile_action
 
         empty = SpeakerProfile(uuid=str(uuid_mod.uuid4()), user_id=normal_user.id, name="Empty")
         db_session.add(empty)
@@ -527,7 +527,7 @@ class TestProfileRenameCapture:
         match nothing against the real indexed text and log ``status:
         success`` while the drift survived.
         """
-        from app.api.endpoints.speakers import _handle_update_profile_action
+        from app.api.endpoints.speakers_profile_workflow import _handle_update_profile_action
 
         profile = SpeakerProfile(uuid=str(uuid_mod.uuid4()), user_id=normal_user.id, name="Host")
         db_session.add(profile)

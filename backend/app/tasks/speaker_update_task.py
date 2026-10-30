@@ -42,7 +42,7 @@ def _load_update_plan(
     search document needs no profile write — the same early return the pre-split
     ``_update_opensearch_profile_info`` made.
     """
-    from app.api.endpoints.speakers import _load_speaker_profile_sync_payload
+    from app.api.endpoints.speakers_profile_workflow import _load_speaker_profile_sync_payload
     from app.services.uuid_helpers import get_speaker_by_uuid
 
     with session_scope() as db:
@@ -136,7 +136,7 @@ def _run_matching_step(
     Returns ``(auto_applied_count, suggested_count)``. Raises on failure so the
     caller can tell it apart from a pass that matched nothing.
     """
-    from app.api.endpoints.speakers import _handle_speaker_labeling_workflow
+    from app.api.endpoints.speakers_profile_workflow import _handle_speaker_labeling_workflow
 
     result = None
     if display_name_changed and display_name and display_name.strip():
@@ -210,12 +210,12 @@ def process_speaker_update_background(
             — to step 3b here (issue #284 A2.6). Defaults to None so tasks published by
             an older API replica still unpack.
     """
-    from app.api.endpoints.speakers import _clear_video_cache_for_speaker
-    from app.api.endpoints.speakers import _handle_profile_embedding_updates
-    from app.api.endpoints.speakers import _load_profile_speaker_names
-    from app.api.endpoints.speakers import _push_speaker_display_names
-    from app.api.endpoints.speakers import _push_speaker_profile_info
-    from app.api.endpoints.speakers import _update_opensearch_speaker_name
+    from app.api.endpoints.speakers_profile_workflow import _clear_video_cache_for_speaker
+    from app.api.endpoints.speakers_profile_workflow import _handle_profile_embedding_updates
+    from app.api.endpoints.speakers_profile_workflow import _load_profile_speaker_names
+    from app.api.endpoints.speakers_profile_workflow import _push_speaker_display_names
+    from app.api.endpoints.speakers_profile_workflow import _push_speaker_profile_info
+    from app.api.endpoints.speakers_profile_workflow import _update_opensearch_speaker_name
     from app.services.speaker_match_errors import SuggestionSyncIncompleteError
     from app.utils.websocket_notify import send_ws_event
     from app.utils.websocket_notify import send_ws_event_for_file

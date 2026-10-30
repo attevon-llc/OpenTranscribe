@@ -372,7 +372,7 @@ def test_the_speaker_api_still_returns_the_llm_suggestion_but_not_as_the_name(
 ):
     """The suggestion stays visible (with its confidence and source) so the human can verify
     it; ``resolved_display_name`` -- what the SPA's name slot may render -- stays the placeholder."""
-    from app.api.endpoints.speakers import _process_single_speaker_with_suggestions
+    from app.api.endpoints.speakers_list import _process_single_speaker_with_suggestions
 
     _, speaker = _file_and_speakers(
         db_session,
@@ -395,7 +395,7 @@ def test_the_speaker_api_does_not_claim_a_voice_match_for_a_suggestion_of_unknow
 ):
     """A legacy suggestion v439 could not attribute stays unattributed on the wire: badging it
     ``voice_match`` claims the voiceprint evidence the canonical label itself refuses."""
-    from app.api.endpoints.speakers import _process_single_speaker_with_suggestions
+    from app.api.endpoints.speakers_list import _process_single_speaker_with_suggestions
 
     _, speaker = _file_and_speakers(
         db_session, normal_user, suggested_name="Joe Rogan", confidence=0.95

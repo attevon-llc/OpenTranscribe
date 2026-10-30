@@ -333,25 +333,25 @@ SCOPE_WIDENER_SITES: dict[str, str] = {
     "api/endpoints/speaker_profiles.py::update_speaker_profile": (
         "widens a list to every user's rows; a rename reaches other users' speakers only after the profile itself passed the tenant gate"
     ),
-    "api/endpoints/speakers.py::_get_display_name_based_occurrences": (
+    "api/endpoints/speakers_occurrences.py::_get_display_name_based_occurrences": (
         "widens a list to every user's rows; cross-media occurrences keep the organization predicate on the file"
     ),
-    "api/endpoints/speakers.py::_get_profile_based_occurrences": (
+    "api/endpoints/speakers_occurrences.py::_get_profile_based_occurrences": (
         "widens a list to every user's rows; cross-media occurrences keep the organization predicate on the file"
     ),
-    "api/endpoints/speakers.py::_get_unique_speakers_for_filter": (
+    "api/endpoints/speakers_list_filters.py::_get_unique_speakers_for_filter": (
         "widens a list to every user's rows; the speaker picker offers speakers of files in the active scope only"
     ),
-    "api/endpoints/speakers.py::_handle_update_profile_action": (
+    "api/endpoints/speakers_profile_workflow.py::_handle_update_profile_action": (
         "widens a list to every user's rows; the profile is looked up inside the tenant before the rename is applied"
     ),
-    "api/endpoints/speakers.py::_resolve_profile_filter_id": (
+    "api/endpoints/speakers_list_filters.py::_resolve_profile_filter_id": (
         "widens a list to every user's rows; a profile uuid resolves only inside the active tenant"
     ),
-    "api/endpoints/speakers.py::debug_cross_media_by_name": (
+    "api/endpoints/speakers_debug.py::debug_cross_media_by_name": (
         "widens a list to every user's rows; the admin diagnostic stays inside the active tenant and widens the owner filter only under the bypass"
     ),
-    "api/endpoints/speakers.py::list_speakers": (
+    "api/endpoints/speakers_list.py::list_speakers": (
         "widens a list to every user's rows; every speaker of files in the active scope; the owner filter is the only thing dropped"
     ),
     "api/endpoints/tasks.py::_get_task_row_by_id": (
@@ -389,13 +389,19 @@ TENANT_MARKERS: dict[str, tuple[str, ...]] = {
     "api/endpoints/search.py::get_degraded_embeddings": ("org_scope_pred",),
     "api/endpoints/speaker_profiles.py::list_speaker_profiles": ("org_scope_pred",),
     "api/endpoints/speaker_profiles.py::update_speaker_profile": ("require_profile_in_scope",),
-    "api/endpoints/speakers.py::_get_display_name_based_occurrences": ("org_scope_pred",),
-    "api/endpoints/speakers.py::_get_profile_based_occurrences": ("org_scope_pred",),
-    "api/endpoints/speakers.py::_get_unique_speakers_for_filter": ("file_ids_in_scope",),
-    "api/endpoints/speakers.py::_handle_update_profile_action": ("org_scope_pred",),
-    "api/endpoints/speakers.py::_resolve_profile_filter_id": ("org_scope_pred",),
-    "api/endpoints/speakers.py::debug_cross_media_by_name": ("file_ids_in_scope",),
-    "api/endpoints/speakers.py::list_speakers": ("file_ids_in_scope",),
+    "api/endpoints/speakers_occurrences.py::_get_display_name_based_occurrences": (
+        "org_scope_pred",
+    ),
+    "api/endpoints/speakers_occurrences.py::_get_profile_based_occurrences": ("org_scope_pred",),
+    "api/endpoints/speakers_list_filters.py::_get_unique_speakers_for_filter": (
+        "file_ids_in_scope",
+    ),
+    "api/endpoints/speakers_profile_workflow.py::_handle_update_profile_action": (
+        "org_scope_pred",
+    ),
+    "api/endpoints/speakers_list_filters.py::_resolve_profile_filter_id": ("org_scope_pred",),
+    "api/endpoints/speakers_debug.py::debug_cross_media_by_name": ("file_ids_in_scope",),
+    "api/endpoints/speakers_list.py::list_speakers": ("file_ids_in_scope",),
     "api/endpoints/tasks.py::_get_task_row_by_id": (),
     "api/endpoints/tasks.py::_visible_in_tenant": ("org_scope_pred",),
     "api/endpoints/tasks.py::get_active_progress": ("get_active_tasks",),

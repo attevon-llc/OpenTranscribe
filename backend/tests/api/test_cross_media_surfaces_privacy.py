@@ -13,7 +13,9 @@ import uuid as uuid_pkg
 
 import pytest
 
-from app.api.endpoints import speakers as speakers_module
+from app.api.endpoints import speakers_debug
+from app.api.endpoints import speakers_merge
+from app.api.endpoints import speakers_occurrences
 from app.core import constants
 from app.models.organization import Organization
 from app.models.organization_policy import OrganizationPolicy
@@ -176,7 +178,7 @@ def test_each_occurrence_is_judged_by_its_own_files_scope(db_session, normal_use
     make_speaker(db_session, normal_user, files["off_h"], identity_source="human", **kw)
     db_session.commit()
 
-    rows = speakers_module._get_profile_based_occurrences(subject, normal_user, db_session)
+    rows = speakers_occurrences._get_profile_based_occurrences(subject, normal_user, db_session)
 
     shown = {row["media_file_id"] for row in rows}
     assert shown == {str(files[k].uuid) for k in ("self", "on", "off_h")}
@@ -270,7 +272,7 @@ def test_the_admin_data_debug_route_withholds_a_voiceprint_name_link_and_confide
     client, admin_token_headers, db_session, admin_user, monkeypatch
 ):
     human, machine, _, _ = _pair(db_session, admin_user)
-    monkeypatch.setattr(speakers_module, "_collect_index_debug_documents", lambda uid: {})
+    monkeypatch.setattr(speakers_debug, "_collect_index_debug_documents", lambda uid: {})
     _off(db_session, admin_user)
 
     r = client.get("/api/speakers/debug/cross-media-data", headers=_headers(admin_token_headers))
@@ -296,7 +298,7 @@ def test_the_admin_data_debug_route_blanks_the_index_names_of_withheld_speakers(
         ],
         "opensearch_profiles": [],
     }
-    monkeypatch.setattr(speakers_module, "_collect_index_debug_documents", lambda uid: docs)
+    monkeypatch.setattr(speakers_debug, "_collect_index_debug_documents", lambda uid: docs)
     _off(db_session, admin_user)
 
     r = client.get("/api/speakers/debug/cross-media-data", headers=_headers(admin_token_headers))
@@ -316,7 +318,7 @@ def test_the_admin_data_debug_route_keeps_the_name_a_person_gave_a_machine_linke
         ],
         "opensearch_profiles": [],
     }
-    monkeypatch.setattr(speakers_module, "_collect_index_debug_documents", lambda uid: docs)
+    monkeypatch.setattr(speakers_debug, "_collect_index_debug_documents", lambda uid: docs)
     _off(db_session, admin_user)
 
     r = client.get("/api/speakers/debug/cross-media-data", headers=_headers(admin_token_headers))
@@ -333,10 +335,10 @@ def merge_events(monkeypatch) -> list[dict]:
 
     sent: list[dict] = []
     for name in ("_clear_speaker_video_cache", "_update_opensearch_speaker_merge"):
-        monkeypatch.setattr(speakers_module, name, lambda *a, **k: None)
-    monkeypatch.setattr(speakers_module, "_merge_speaker_embeddings", lambda *a, **k: None)
-    monkeypatch.setattr(speakers_module, "_reconcile_speakers_after_merge", lambda *a, **k: [])
-    monkeypatch.setattr(speakers_module, "_refresh_analytics_after_merge", lambda *a, **k: None)
+        monkeypatch.setattr(speakers_merge, name, lambda *a, **k: None)
+    monkeypatch.setattr(speakers_merge, "_merge_speaker_embeddings", lambda *a, **k: None)
+    monkeypatch.setattr(speakers_merge, "_reconcile_speakers_after_merge", lambda *a, **k: [])
+    monkeypatch.setattr(speakers_merge, "_refresh_analytics_after_merge", lambda *a, **k: None)
     monkeypatch.setattr(
         speaker_merge_task, "session_scope", lambda: contextlib.nullcontext(object())
     )

@@ -107,13 +107,13 @@ _DIRECT_SEND_ALLOWLIST: dict[str, tuple[int, str]] = {
         1,
         "admin migration control-plane event, no MediaFile identity",
     ),
-    "api/endpoints/speakers.py::verify_speaker_identification": (
+    "api/endpoints/speakers_suggestions.py::verify_speaker_identification": (
         1,
         "fallback branch only: the speaker has no media_file at all "
         "(media_file_uuid is None), so there is no file a quarantine could hide. "
         "The primary send in this function IS guarded via send_ws_event_for_file.",
     ),
-    "api/endpoints/speakers.py::confirm_speaker_gender": (
+    "api/endpoints/speakers_suggestions.py::confirm_speaker_gender": (
         1,
         "fallback branch only: the speaker has no media_file at all "
         "(media_file_uuid is None), so there is no file a quarantine could hide. "

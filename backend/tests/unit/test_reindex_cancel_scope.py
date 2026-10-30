@@ -67,13 +67,14 @@ def fake_redis():
     """Point every ``get_redis()`` the cancel plane resolves at one dict.
 
     ``reindex_cancel`` imports ``get_redis`` inside each function body precisely
-    so this single patch reaches it; ``reindex_task`` binds it at module import,
-    hence the second target.
+    so this single patch reaches it; ``reindex_task`` and ``reindex_run_state`` bind it at
+    module import, hence the extra targets.
     """
     fake = _StandInRedis()
     with (
         patch("app.core.redis.get_redis", return_value=fake),
         patch("app.tasks.reindex_task.get_redis", return_value=fake),
+        patch("app.tasks.reindex_run_state.get_redis", return_value=fake),
     ):
         yield fake
 

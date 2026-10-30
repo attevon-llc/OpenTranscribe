@@ -150,11 +150,11 @@ _DIRECT_SEND_ALLOWLIST: dict[str, tuple[int, str]] = {
         "the exemplar this issue's finding B fix copies: already gated on "
         "`user_id is None`, corpus-wide data-integrity status",
     ),
-    "tasks/reindex_task.py::_send_reindex_progress": (
+    "tasks/reindex_run_state.py::_send_reindex_progress": (
         1,
         "corpus-wide reindex progress counters, no single MediaFile identity",
     ),
-    "tasks/reindex_task.py::_handle_reindex_completion": (
+    "tasks/reindex_completion.py::_handle_reindex_completion": (
         2,
         "corpus-wide reindex completion counters, no single MediaFile identity",
     ),

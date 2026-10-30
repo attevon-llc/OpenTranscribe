@@ -50,6 +50,9 @@ _GUARDED_FILES = (
     # index documents and the writers that rebuild them
     "services/ingest_artifacts/service.py",
     "tasks/search_indexing_task.py",
+    "tasks/reindex_completion.py",
+    "tasks/reindex_index_ops.py",
+    "tasks/reindex_run_state.py",
     "tasks/reindex_task.py",
     "tasks/rename_propagation_task.py",
     "tasks/embedding_migration_v4.py",

@@ -141,7 +141,7 @@ def test_the_sweep_finds_the_readers_it_is_meant_to_check() -> None:
         "services/search/indexing/chunk_plane.py::delete_transcript_chunks",
         "services/search/suggestions.py::get_available_filters",
         "services/search/suggestions.py::get_suggestions",
-        "tasks/reindex_task.py::_cleanup_orphaned_chunks",
+        "tasks/reindex_completion.py::_cleanup_orphaned_chunks",
         "tasks/search_indexing_task.py::update_file_access_index",
     ):
         assert expected in keys, f"the sweep no longer reaches {expected} — it is broken"

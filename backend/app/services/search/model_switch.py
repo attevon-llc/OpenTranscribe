@@ -76,7 +76,7 @@ def dispatch_reindex_for_every_owner(
     deployment that leaves every other user's chunks holding vectors from the
     previous model, permanently and silently, in the same kNN space as the freshly
     embedded ones — and it is not a race or a rare interleaving, it is what the
-    documented happy path does. ``reindex_task._check_and_recreate_stale_index``
+    documented happy path does. ``reindex_index_ops._check_and_recreate_stale_index``
     already names this hazard for the index-*version* case; this is the same
     hazard on the model axis.
 

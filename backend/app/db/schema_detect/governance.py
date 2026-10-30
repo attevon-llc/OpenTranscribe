@@ -73,9 +73,18 @@ def _has_unstamped_voiceprint_suggestion(conn, tables: list[str]) -> bool:
     """v439's data marker: a legacy suggestion that provably came from a voiceprint match.
 
     The predicate is read from the revision itself, so detection and the stamp it detects
-    cannot drift apart.
+    cannot drift apart. The predicate reads ``speaker.suggestion_source``, which ``v091``
+    added long after the table existed, so a database at v010-v090 has all three tables
+    and not the column: asking it would raise ``UndefinedColumn`` and abort detection.
+    Such a database has no source to be unstamped, and the older arms place it.
     """
     if not {"speaker", "speaker_profile", "speaker_match"} <= set(tables):
+        return False
+    if not check_exists(
+        conn,
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'speaker' AND column_name = 'suggestion_source')",
+    ):
         return False
     module = _revision_module("v439_infer_legacy_voiceprint_suggestion_source")
     return bool(conn.execute(text(module.DETECT_SQL)).scalar())

@@ -33,8 +33,8 @@ from __future__ import annotations
 import pytest
 
 from app.services.search.chunking_service import chunk_transcript_by_speaker_turns
-from app.services.search.chunking_service import count_words
-from app.services.search.chunking_service import split_into_sentences
+from app.services.search.sentence_splitter import count_words
+from app.services.search.sentence_splitter import split_into_sentences
 
 
 @pytest.fixture(autouse=True, scope="module")

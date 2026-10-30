@@ -120,7 +120,7 @@ def _split_sentence(
     run: TokenRun, a: int, b: int, fits, rules: CaptionRules
 ) -> list[tuple[int, int]]:
     """Cut ``tokens[a:b]`` into cue-sized ranges at the best break points."""
-    # Sibling of chunking_service.split_into_sentences; this cuts timed tokens to cue width.
+    # Sibling of sentence_splitter.split_into_sentences; this cuts timed tokens to cue width.
     out: list[tuple[int, int]] = []
     s = a
     while s < b:

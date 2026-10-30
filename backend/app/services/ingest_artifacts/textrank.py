@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 #: ISO 639-1 → NLTK Snowball stemmer language. Snowball's set overlaps punkt's but is not
 #: identical (no Estonian, no Slovene, no Greek, no Czech), so this is its own map rather
-#: than a reuse of ``search/chunking_service._PUNKT_LANG_MAP``.
+#: than a reuse of ``search/sentence_splitter._PUNKT_LANG_MAP``.
 _SNOWBALL_LANG_MAP: dict[str, str] = {
     "ar": "arabic",
     "da": "danish",
@@ -115,7 +115,7 @@ def _combining_mark_ranges(limit: int = 0x10000) -> str:
     keyphrase extraction for every language written this way.
 
     Computed once at import from ``unicodedata`` rather than hand-listing script
-    blocks (contrast ``search/chunking_service._NO_SPACE_SCRIPT``, which deliberately
+    blocks (contrast ``search/sentence_splitter._NO_SPACE_SCRIPT``, which deliberately
     IS a hand-picked script list for a different problem — scriptio-continua word
     counting): a general-category sweep covers every combining script, not only the
     two exercised by this fix's tests. Bounded to the BMP — combining marks in the

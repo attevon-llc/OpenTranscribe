@@ -6,7 +6,7 @@ different places. Re-indexing one unchanged corpus (issue #403, D5) compares a
 control index against a treatment index, so any input the chunker reads that is
 not the transcript makes the comparison meaningless.
 
-``chunking_service._get_nltk_tokenizer`` used to retry a failed punkt load after a 5-minute
+``sentence_splitter._get_nltk_tokenizer`` used to retry a failed punkt load after a 5-minute
 ``time.time()`` cooldown. A single transient failure — the ``nltk_data`` mount
 not yet readable while the stack chowns the model cache — therefore flipped the
 splitter to regex and, 300 seconds later, flipped it back **mid-reindex**, so
@@ -20,6 +20,7 @@ import time
 import pytest
 
 from app.services.search import chunking_service
+from app.services.search import sentence_splitter
 
 # ~480 words in one turn: comfortably over SEARCH_CHUNK_TARGET_WORDS (200), so
 # the turn reaches _split_long_turn and the sentence splitter actually decides
@@ -60,7 +61,7 @@ def _chunk() -> list[str]:
 def flaky_punkt(monkeypatch):
     """punkt fails the first load attempt, then succeeds on every later one."""
     # A tokenizer resolved by an earlier test would short-circuit the load path.
-    monkeypatch.setattr(chunking_service, "_nltk_tokenizers", {})
+    monkeypatch.setattr(sentence_splitter, "_nltk_tokenizers", {})
     attempts: list[str] = []
 
     def _load(_nltk_data_module, language: str):
@@ -69,7 +70,7 @@ def flaky_punkt(monkeypatch):
             raise OSError("nltk_data mount not readable yet")
         return _TwoSentenceTokenizer()
 
-    monkeypatch.setattr(chunking_service, "_load_punkt_model", _load)
+    monkeypatch.setattr(sentence_splitter, "_load_punkt_model", _load)
     return attempts
 
 
@@ -104,9 +105,9 @@ def test_regex_fallback_is_reported_at_warning_level(flaky_punkt, caplog):
     test process resolved punkt and exercised the other branch.
     """
     monkeypatch_free_language = "english"
-    with caplog.at_level(logging.WARNING, logger=chunking_service.__name__):
-        chunking_service.reset_sentence_splitter_state()
-        assert chunking_service._get_nltk_tokenizer(monkeypatch_free_language) is None
+    with caplog.at_level(logging.WARNING, logger=sentence_splitter.__name__):
+        sentence_splitter.reset_sentence_splitter_state()
+        assert sentence_splitter._get_nltk_tokenizer(monkeypatch_free_language) is None
 
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert warnings, "regex fallback engaged without a WARNING"
@@ -120,10 +121,10 @@ def test_punkt_unavailability_is_not_retried(flaky_punkt):
 
     Without this, the only thing stopping a flip is how much time passed.
     """
-    chunking_service.reset_sentence_splitter_state()
+    sentence_splitter.reset_sentence_splitter_state()
 
-    first = chunking_service._get_nltk_tokenizer("english")
-    second = chunking_service._get_nltk_tokenizer("english")
+    first = sentence_splitter._get_nltk_tokenizer("english")
+    second = sentence_splitter._get_nltk_tokenizer("english")
 
     assert first is None and second is None
     assert len(flaky_punkt) == 1, (

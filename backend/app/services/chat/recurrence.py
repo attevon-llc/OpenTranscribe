@@ -114,7 +114,7 @@ _OWNER_KEYS: tuple[str, ...] = ("owner", "assigned_to")
 #: Languages with no inter-word whitespace. Excluded from grouping, with
 #: disclosure — see the module docstring's "Language" section. Deliberately a
 #: short, explicit, hand-picked set (matching the spirit of
-#: ``search/chunking_service._NO_SPACE_SCRIPT``, not imported from it: that
+#: ``search/sentence_splitter._NO_SPACE_SCRIPT``, not imported from it: that
 #: module solves a different problem — per-character word counting in mixed
 #: text — and pulling it in here would couple a pure, dependency-free module
 #: to the chunker's heavier regex machinery for two constants' worth of value).

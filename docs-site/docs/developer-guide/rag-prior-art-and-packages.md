@@ -140,7 +140,7 @@ part.** A generic package cannot know about speaker turns, and speaker turns are
 
 :::note[Sharing beats reimplementing, even internally]
 When the document chunker needed to split over-long blocks, it imported
-`chunking_service.split_into_sentences` rather than writing a third splitter — the transcript
+`sentence_splitter.split_into_sentences` rather than writing a third splitter — the transcript
 chunker and the digest builder already shared it. Three splitters over the same words means three
 sets of boundaries and three sets of off-by-one bugs. The same test applies inside the codebase as
 outside it.

@@ -167,7 +167,7 @@ backend/app/services/redaction/service.py	7	ratchet: may only go down
 backend/app/services/redaction/spans.py	1	ratchet: may only go down
 backend/app/services/redis_cache_service.py	7	ratchet: may only go down
 backend/app/services/search/chunk_retrieval.py	2	ratchet: may only go down
-backend/app/services/search/chunking_service.py	2	ratchet: may only go down
+backend/app/services/search/sentence_splitter.py	2	ratchet: may only go down
 backend/app/services/search/collapse_bodies.py	1	ratchet: may only go down
 backend/app/services/search/collapsed_search.py	4	ratchet: may only go down
 backend/app/services/search/hybrid_search_service.py	2	ratchet: may only go down

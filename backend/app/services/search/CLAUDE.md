@@ -68,7 +68,7 @@ The chunk plane in this package carries no voiceprint and is not gated.
     `split()` for Latin, so no existing boundary moves. Chunk text is sliced from the
     ORIGINAL string via `_word_spans`; `" ".join(...)` would put a space between every
     Chinese character.
-  - **The sentence-splitter choice is latched per process** (`_nltk_load_failed`). It used
+  - **The sentence-splitter choice is latched per process** (`_nltk_load_failed`, in `sentence_splitter.py` with `count_words`). It used
     to be a 5-minute retry cooldown, which let a single re-index chunk its early files with
     the regex and its later files with punkt — the two disagree on abbreviations, so that
     is one corpus chunked two ways in one pass. Never reintroduce a retry here. Unmapped

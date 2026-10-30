@@ -10,7 +10,7 @@ It does **not** prove, and must never be read as proving, that this removes the 
 behind #810's flake. The strongest argument against that reading is structural: in
 `test_auth_state_degradation.py::TestLockoutStoreDegradation::test_it_re_probes_exactly_at_the_
 interval_boundary`, the test calls `self._reset()` at the top of its own body and then derives
-`frozen = lockout_module._last_redis_probe + REDIS_REPROBE_SECONDS` two lines later, from a
+`frozen = lockout_store_module._last_redis_probe + REDIS_REPROBE_SECONDS` two lines later, from a
 value it just stamped itself. No neighbour's leftover global can reach that assertion --
 whatever ran before is already overwritten by the time `frozen` is computed. Any real
 explanation for the flake needs `_last_redis_probe` to change *during* the test body from
@@ -63,7 +63,7 @@ SENTINELS: dict[str, object] = {
     "_cas_script_client": "SENTINEL-CAS-SCRIPT-CLIENT-837201",
 }
 
-SESSION_MODULES = ("app.auth.session", "app.auth.lockout")
+SESSION_MODULES = ("app.auth.session", "app.auth.lockout", "app.auth.lockout_store")
 
 
 def _child_env(**extra: str) -> dict[str, str]:

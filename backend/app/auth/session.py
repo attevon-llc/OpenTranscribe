@@ -156,7 +156,7 @@ class InMemoryStore:
             return set(json.loads(existing[0]))  # type: ignore[arg-type]
 
 
-# Singleton stores. Mirrors app/auth/lockout.py: the Redis client is cached rather
+# Singleton stores. Mirrors app/auth/lockout_store.py: the Redis client is cached rather
 # than rebuilt per call, and while it is down the fallback is re-probed on a timer
 # instead of latching for the process lifetime.
 _redis_client = None
@@ -179,7 +179,7 @@ def _get_store(*, clock: Callable[[], float] | None = None):
       OIDC login state per-replica (states stored on one replica, redeemed on another —
       i.e. logins that fail at random behind a load balancer) looked healthy.
 
-    The re-probe policy is ``lockout.REDIS_REPROBE_SECONDS``, imported rather than
+    The re-probe policy is ``lockout_store.REDIS_REPROBE_SECONDS``, imported rather than
     re-declared so the two controls cannot drift apart.
 
     Args:
@@ -190,7 +190,7 @@ def _get_store(*, clock: Callable[[], float] | None = None):
     """
     global _redis_client, _in_memory_store, _store_initialized, _last_redis_probe
 
-    from app.auth.lockout import REDIS_REPROBE_SECONDS
+    from app.auth.lockout_store import REDIS_REPROBE_SECONDS
 
     with _store_lock:
         if not _store_initialized:

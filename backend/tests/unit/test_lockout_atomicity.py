@@ -31,6 +31,8 @@ from datetime import timedelta
 import pytest
 
 from app.auth import lockout
+from app.auth import lockout_admin
+from app.auth import lockout_store
 from app.core.config import settings
 
 
@@ -119,21 +121,21 @@ def lockout_settings(monkeypatch):
 @pytest.fixture(autouse=True)
 def reset_module_state(monkeypatch):
     """Clear the module singletons so each test starts on a known store."""
-    monkeypatch.setattr(lockout, "_redis_client", None)
-    monkeypatch.setattr(lockout, "_in_memory_store", None)
-    monkeypatch.setattr(lockout, "_store_initialized", False)
+    monkeypatch.setattr(lockout_store, "_redis_client", None)
+    monkeypatch.setattr(lockout_store, "_in_memory_store", None)
+    monkeypatch.setattr(lockout_store, "_store_initialized", False)
     monkeypatch.setattr(lockout, "_cas_script", None)
     monkeypatch.setattr(lockout, "_cas_script_client", None)
     # issue #810: this fixture set five cached globals but missed `_last_redis_probe`,
     # so monkeypatch (which only restores what it itself set) left a live
     # `time.monotonic()` reading behind for whichever test reaches `_get_store()` next.
-    monkeypatch.setattr(lockout, "_last_redis_probe", 0.0)
+    monkeypatch.setattr(lockout_store, "_last_redis_probe", 0.0)
 
 
 def _use(monkeypatch, client) -> None:
     """Install ``client`` as the active store without probing a real Redis."""
-    monkeypatch.setattr(lockout, "_redis_client", client)
-    monkeypatch.setattr(lockout, "_store_initialized", True)
+    monkeypatch.setattr(lockout_store, "_redis_client", client)
+    monkeypatch.setattr(lockout_store, "_store_initialized", True)
 
 
 def _record(fake: _FakeRedis, identifier: str) -> dict:
@@ -246,7 +248,7 @@ def test_redis_failure_falls_back_to_a_real_in_memory_store(monkeypatch):
     results = [lockout.check_and_record_attempt(identifier, success=False)[0] for _ in range(3)]
 
     assert results == [False, False, True]
-    assert isinstance(lockout._in_memory_store, lockout.InMemoryLockoutStore)
+    assert isinstance(lockout_store._in_memory_store, lockout_store.InMemoryLockoutStore)
 
 
 def test_degradation_is_counted_for_alerting(monkeypatch):
@@ -275,7 +277,7 @@ def test_threshold_reached_locks_the_account(monkeypatch):
 
     assert [locked for locked, _ in results] == [False, False, True]
     assert results[-1][1] is not None
-    assert lockout.get_lockout_info(identifier)["is_locked"] is True
+    assert lockout_admin.get_lockout_info(identifier)["is_locked"] is True
 
 
 def test_locked_account_short_circuits_without_writing(monkeypatch):
@@ -365,7 +367,7 @@ def test_exempt_account_is_recorded_but_never_locked(monkeypatch):
     stored = _record(fake, identifier)
     assert stored["failed_attempts"] == 6
     assert stored["locked_until"] is None
-    assert lockout.get_lockout_info(identifier)["is_locked"] is False
+    assert lockout_admin.get_lockout_info(identifier)["is_locked"] is False
 
 
 def test_lockout_disabled_records_nothing(monkeypatch):
@@ -421,9 +423,9 @@ class _FakeMemoryStore:
 
 def _use_memory(monkeypatch) -> _FakeMemoryStore:
     store = _FakeMemoryStore()
-    monkeypatch.setattr(lockout, "_redis_client", None)
-    monkeypatch.setattr(lockout, "_in_memory_store", store)
-    monkeypatch.setattr(lockout, "_store_initialized", True)
+    monkeypatch.setattr(lockout_store, "_redis_client", None)
+    monkeypatch.setattr(lockout_store, "_in_memory_store", store)
+    monkeypatch.setattr(lockout_store, "_store_initialized", True)
     assert not hasattr(store, "pipeline"), "a `pipeline` attribute would divert to Redis"
     return store
 
@@ -554,7 +556,7 @@ def _lock_out(identifier: str) -> None:
     """Drive a real lockout through the public API, rather than hand-writing a record."""
     for _ in range(3):
         lockout.check_and_record_attempt(identifier, success=False)
-    assert lockout.get_lockout_info(identifier)["is_locked"] is True
+    assert lockout_admin.get_lockout_info(identifier)["is_locked"] is True
 
 
 def test_unlock_clears_the_lockout_and_reports_true(monkeypatch):
@@ -563,13 +565,13 @@ def test_unlock_clears_the_lockout_and_reports_true(monkeypatch):
     identifier = "unlock-me@example.com"
     _lock_out(identifier)
 
-    assert lockout.unlock_account(identifier) is True
+    assert lockout_admin.unlock_account(identifier) is True
 
     record = _record(fake, identifier)
     assert record["locked_until"] is None
     assert record["failed_attempts"] == 0
     assert record["admin_unlocked_at"] is not None
-    assert lockout.get_lockout_info(identifier)["is_locked"] is False
+    assert lockout_admin.get_lockout_info(identifier)["is_locked"] is False
 
 
 def test_unlock_preserves_the_lockout_count_for_the_audit_trail(monkeypatch):
@@ -585,7 +587,7 @@ def test_unlock_preserves_the_lockout_count_for_the_audit_trail(monkeypatch):
     count_before = _record(fake, identifier)["lockout_count"]
     assert count_before == 1
 
-    lockout.unlock_account(identifier)
+    lockout_admin.unlock_account(identifier)
 
     assert _record(fake, identifier)["lockout_count"] == count_before
 
@@ -602,7 +604,7 @@ def test_unlocking_a_non_locked_account_reports_false_and_writes_nothing(monkeyp
     lockout.check_and_record_attempt(identifier, success=False)
     writes_before = len(fake.writes)
 
-    assert lockout.unlock_account(identifier) is False
+    assert lockout_admin.unlock_account(identifier) is False
     assert len(fake.writes) == writes_before
 
 
@@ -610,7 +612,7 @@ def test_unlocking_an_unknown_account_reports_false(monkeypatch):
     fake = _FakeRedis()
     _use(monkeypatch, fake)
 
-    assert lockout.unlock_account("no-such-account@example.com") is False
+    assert lockout_admin.unlock_account("no-such-account@example.com") is False
     assert fake.data == {}
 
 
@@ -629,7 +631,7 @@ def test_unlocking_an_already_expired_lockout_reports_false(monkeypatch):
     expired.set_locked_until(datetime.now(UTC) - timedelta(minutes=1))
     fake.data[lockout._lockout_key(identifier)] = json.dumps(expired.to_dict())
 
-    assert lockout.unlock_account(identifier) is False
+    assert lockout_admin.unlock_account(identifier) is False
 
 
 def test_unlock_uses_the_canonical_identifier(monkeypatch):
@@ -645,8 +647,8 @@ def test_unlock_uses_the_canonical_identifier(monkeypatch):
     _lock_out("Canonical-Case@Example.com")
 
     # Same account, as an operator would plausibly type it into the admin panel.
-    assert lockout.unlock_account("  canonical-case@example.com  ") is True
-    assert lockout.get_lockout_info("Canonical-Case@Example.com")["is_locked"] is False
+    assert lockout_admin.unlock_account("  canonical-case@example.com  ") is True
+    assert lockout_admin.get_lockout_info("Canonical-Case@Example.com")["is_locked"] is False
 
 
 def test_after_an_unlock_the_counter_restarts_but_escalation_continues(monkeypatch):
@@ -661,7 +663,7 @@ def test_after_an_unlock_the_counter_restarts_but_escalation_continues(monkeypat
     _lock_out(identifier)
     first_duration = lockout._get_lockout_duration_minutes(0)
 
-    lockout.unlock_account(identifier)
+    lockout_admin.unlock_account(identifier)
     lockout.check_and_record_attempt(identifier, success=False)
 
     assert _record(fake, identifier)["failed_attempts"] == 1

@@ -627,7 +627,7 @@ cross-worker concurrency on it is this repo's known deadlock shape (the advisory
 `redaction/spans.py` (masking off-by-one leaks the character it should hide),
 `auth/password_policy.py` (five independent `require_*` predicates), `core/security.py`
 (JWT/bcrypt), `api/endpoints/auth/dependencies.py` (the privilege gates — an inverted role
-comparison is privilege escalation), `auth/lockout.py`, `auth/session.py`. A whole-codebase run
+comparison is privilege escalation), `auth/lockout.py` (+ `lockout_store.py`, `lockout_admin.py`), `auth/session.py`. A whole-codebase run
 is hours and is not the point.
 
 ```bash

@@ -16,7 +16,6 @@ backend/app/api/endpoints/tasks.py	1091	oversize: split by concern planned
 backend/app/api/endpoints/users.py	853	oversize: split by concern planned
 backend/app/auth/CLAUDE.md	511	oversize: split by concern planned
 backend/app/auth/ldap_auth.py	1024	oversize: split by concern planned
-backend/app/auth/lockout.py	1201	oversize: split by concern planned
 backend/app/auth/password_policy.py	888	oversize: split by concern planned
 backend/app/auth/pki_auth.py	1815	oversize: split by concern planned
 backend/app/auth/token_service.py	1116	oversize: split by concern planned
@@ -113,7 +112,7 @@ backend/tests/unit/test_dispatch.py	860	oversize: split by concern planned
 backend/tests/unit/test_e2e_data_hygiene.py	1295	oversize: split by concern planned
 backend/tests/unit/test_gladia_provider.py	817	oversize: split by concern planned
 backend/tests/unit/test_install_upgrade_scripts.py	1687	oversize: split by concern planned
-backend/tests/unit/test_lockout_survivor_mutants.py	881	oversize: split by concern planned
+backend/tests/unit/test_lockout_survivor_mutants.py	788	oversize: split by concern planned
 backend/tests/unit/test_metadata_speaker_extractor.py	763	oversize: split by concern planned
 backend/tests/unit/test_mfa_enforcement.py	971	oversize: split by concern planned
 backend/tests/unit/test_no_exception_echo_in_response.py	1350	oversize: split by concern planned
@@ -202,7 +201,7 @@ scripts/release-tests/test-upgrade.sh	2949	oversize: split by concern planned
 scripts/run-auth-e2e.sh	830	oversize: split by concern planned
 scripts/run-dev-tests.sh	896	oversize: split by concern planned
 scripts/run-integration-tests.sh	792	oversize: split by concern planned
-scripts/run-mutation-tests.sh	1168	oversize: split by concern planned
+scripts/run-mutation-tests.sh	1173	oversize: split by concern planned
 scripts/run_benchmark.py	789	oversize: split by concern planned
 scripts/security-scan.sh	1165	oversize: split by concern planned
 scripts/test-all-auth.sh	785	oversize: split by concern planned

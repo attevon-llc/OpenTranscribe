@@ -56,7 +56,9 @@ from unittest.mock import patch
 import pytest
 
 from app.auth import lockout
-from app.auth.lockout import InMemoryLockoutStore
+from app.auth import lockout_admin
+from app.auth import lockout_store
+from app.auth.lockout_store import InMemoryLockoutStore
 from app.core.config import settings
 
 
@@ -76,15 +78,15 @@ def lockout_settings(monkeypatch):
 @pytest.fixture(autouse=True)
 def reset_module_state(monkeypatch):
     """Clear the module singletons so each test starts on a known store."""
-    monkeypatch.setattr(lockout, "_redis_client", None)
-    monkeypatch.setattr(lockout, "_in_memory_store", None)
-    monkeypatch.setattr(lockout, "_store_initialized", False)
+    monkeypatch.setattr(lockout_store, "_redis_client", None)
+    monkeypatch.setattr(lockout_store, "_in_memory_store", None)
+    monkeypatch.setattr(lockout_store, "_store_initialized", False)
     monkeypatch.setattr(lockout, "_cas_script", None)
     monkeypatch.setattr(lockout, "_cas_script_client", None)
     # issue #810: this fixture set five cached globals but missed `_last_redis_probe`,
     # so monkeypatch (which only restores what it itself set) left a live
     # `time.monotonic()` reading behind for whichever test reaches `_get_store()` next.
-    monkeypatch.setattr(lockout, "_last_redis_probe", 0.0)
+    monkeypatch.setattr(lockout_store, "_last_redis_probe", 0.0)
 
 
 @pytest.fixture
@@ -95,8 +97,11 @@ def memory_store(monkeypatch) -> InMemoryLockoutStore:
     ``hasattr(store, "pipeline")`` dispatch correctly sends everything through the
     MEMORY path, since ``InMemoryLockoutStore`` has no ``pipeline`` attribute.
     """
-    store = lockout.InMemoryLockoutStore()
+    store = lockout_store.InMemoryLockoutStore()
+    # Both modules that read ``_get_store`` at call time: the counting path (``lockout``)
+    # and the admin surface (``lockout_admin``, e.g. ``cleanup_expired_lockouts``).
     monkeypatch.setattr(lockout, "_get_store", lambda: store)
+    monkeypatch.setattr(lockout_admin, "_get_store", lambda: store)
     return store
 
 
@@ -192,29 +197,6 @@ class TestGetCasScript:
         assert store_b.register_calls == 1, "the new store's own script must be registered"
         assert script_a != script_b, (
             "reusing store A's script for store B would write through the wrong client"
-        )
-
-
-# ── InMemoryLockoutStore.keys: prefix matching, not a character class ─────────────
-
-
-class TestInMemoryStoreKeys:
-    def test_keys_strips_only_the_trailing_wildcard_not_arbitrary_characters(self) -> None:
-        """``rstrip("*")`` must treat ``"*"`` as a literal suffix marker.
-
-        ``str.rstrip`` strips every trailing character IN its argument's character
-        set. A mutant widening the argument to ``"XX*XX"`` still strips the ``*``
-        (still in the set) but ALSO strips any trailing ``X`` from the prefix
-        itself, silently broadening the match to keys that were never asked for.
-        """
-        store = lockout.InMemoryLockoutStore()
-        store.set("lockout:userX", "keep")
-        store.set("lockout:user999", "must-not-match")
-
-        matched = store.keys("lockout:userX*")
-
-        assert matched == ["lockout:userX"], (
-            "a pattern ending in 'X*' must strip only the '*', not the prefix's own 'X'"
         )
 
 
@@ -357,7 +339,7 @@ class TestRecordAttemptAuditOnly:
 
         lockout._record_attempt_audit_only(identifier)
 
-        info = lockout.get_lockout_info(identifier)
+        info = lockout_admin.get_lockout_info(identifier)
         last_failed_attempt = info["last_failed_attempt"]
         assert last_failed_attempt is not None
         parsed = datetime.fromisoformat(last_failed_attempt)
@@ -373,7 +355,7 @@ class TestRecordAttemptAuditOnly:
         lockout._record_attempt_audit_only(identifier)
 
         after = datetime.now(UTC)
-        last_failed_attempt = lockout.get_lockout_info(identifier)["last_failed_attempt"]
+        last_failed_attempt = lockout_admin.get_lockout_info(identifier)["last_failed_attempt"]
         assert last_failed_attempt is not None
         parsed = datetime.fromisoformat(last_failed_attempt)
         assert before <= parsed <= after, (
@@ -384,87 +366,12 @@ class TestRecordAttemptAuditOnly:
         identifier = "audit-first@example.com"
 
         lockout._record_attempt_audit_only(identifier)
-        first = lockout.get_lockout_info(identifier)["first_failed_attempt"]
+        first = lockout_admin.get_lockout_info(identifier)["first_failed_attempt"]
         assert first is not None
 
         lockout._record_attempt_audit_only(identifier)
-        second = lockout.get_lockout_info(identifier)["first_failed_attempt"]
+        second = lockout_admin.get_lockout_info(identifier)["first_failed_attempt"]
         assert second == first, "a later exempt attempt must not move the window's start"
-
-
-# ── _get_redis_client: must actually use the configured URL ───────────────────────
-
-
-class TestGetRedisClient:
-    def test_connects_to_the_configured_url(self, monkeypatch) -> None:
-        """Dropping ``settings.REDIS_URL`` to ``None`` would make every connection
-        attempt fail (or connect to whatever redis-py defaults to), silently
-        disabling distributed lockout storage for the life of the process."""
-        import redis
-
-        calls: list[object] = []
-
-        class _FakePinger:
-            def ping(self) -> bool:
-                return True
-
-        def fake_from_url(cls, url, **kwargs):
-            calls.append(url)
-            return _FakePinger()
-
-        monkeypatch.setattr(redis.Redis, "from_url", classmethod(fake_from_url))
-
-        client = lockout._get_redis_client()
-
-        assert calls == [settings.REDIS_URL]
-        assert client is not None
-
-
-# ── _get_store: the reprobe timestamp must stay usable ─────────────────────────────
-
-
-@pytest.fixture
-def store_on_fallback_after_a_failed_reprobe(monkeypatch) -> None:
-    """Put ``_get_store()`` through exactly one failed reprobe attempt.
-
-    Common setup for both tests below, so neither has to repeat the four
-    ``monkeypatch.setattr`` calls that put the module in "just probed, still on
-    the fallback" state.
-    """
-    monkeypatch.setattr(lockout, "_store_initialized", True)
-    monkeypatch.setattr(lockout, "_redis_client", None)
-    monkeypatch.setattr(lockout, "_in_memory_store", lockout.InMemoryLockoutStore())
-    monkeypatch.setattr(lockout, "_last_redis_probe", 0.0)  # force the window open
-
-    with patch.object(lockout, "_get_redis_client", return_value=None):
-        lockout._get_store()
-
-
-class TestGetStoreReprobe:
-    """``_last_redis_probe = None`` would make the NEXT call's
-    ``now - _last_redis_probe`` raise ``TypeError`` -- crashing every login while
-    Redis stays down, instead of just skipping the reprobe."""
-
-    def test_a_failed_reprobe_records_a_real_timestamp(
-        self, store_on_fallback_after_a_failed_reprobe
-    ) -> None:
-        assert isinstance(lockout._last_redis_probe, float)
-        assert lockout._last_redis_probe > 0, "0.0 is the pre-probe sentinel, not a real clock read"
-
-    def test_a_second_call_inside_the_window_does_not_crash_or_reprobe(
-        self, store_on_fallback_after_a_failed_reprobe
-    ) -> None:
-        probe_calls: list[int] = []
-
-        def _count_and_return_none():
-            probe_calls.append(1)
-            return None
-
-        with patch.object(lockout, "_get_redis_client", side_effect=_count_and_return_none):
-            store = lockout._get_store()  # raises TypeError under the mutant if this crashes
-
-        assert probe_calls == [], "still inside the reprobe window -- must not probe again"
-        assert isinstance(store, lockout.InMemoryLockoutStore)
 
 
 def _stored(store: InMemoryLockoutStore, key: str) -> dict:
@@ -485,7 +392,7 @@ class TestMemoryPathBoundariesAndFields:
     for the Redis path in ``test_lockout_atomicity.py``."""
 
     def test_unlocks_at_the_exact_expiry_instant_and_restarts_the_window(self) -> None:
-        store = lockout.InMemoryLockoutStore()
+        store = lockout_store.InMemoryLockoutStore()
         identifier = "boundary-mem@example.com"
         frozen = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
         record = lockout.LockoutRecord(
@@ -516,7 +423,7 @@ class TestMemoryPathBoundariesAndFields:
         )
 
     def test_progressive_lockout_count_increments_not_resets(self) -> None:
-        store = lockout.InMemoryLockoutStore()
+        store = lockout_store.InMemoryLockoutStore()
         identifier = "progressive-mem@example.com"
         key = lockout._lockout_key(identifier)
         now = datetime(2026, 1, 1, tzinfo=UTC)
@@ -540,7 +447,7 @@ class TestMemoryPathBoundariesAndFields:
         )
 
     def test_a_brand_new_record_gets_its_own_identifier_field(self) -> None:
-        store = lockout.InMemoryLockoutStore()
+        store = lockout_store.InMemoryLockoutStore()
         identifier = "new-mem@example.com"
 
         lockout._check_and_record_attempt_memory(
@@ -554,7 +461,7 @@ class TestMemoryPathBoundariesAndFields:
         ``_apply_successful_login`` -- ``TestApplySuccessfulLoginFieldUpdates``
         exercises the shared helper the REDIS path calls, but does not reach this
         copy at all."""
-        store = lockout.InMemoryLockoutStore()
+        store = lockout_store.InMemoryLockoutStore()
         identifier = "mem-success-fields@example.com"
         key = lockout._lockout_key(identifier)
         record = lockout.LockoutRecord(
@@ -575,7 +482,7 @@ class TestMemoryPathBoundariesAndFields:
     ) -> None:
         """The memory path's failure branch is an INLINE duplicate of
         ``_apply_failed_login`` -- same reasoning as the success-branch test above."""
-        store = lockout.InMemoryLockoutStore()
+        store = lockout_store.InMemoryLockoutStore()
         identifier = "mem-failed-fields@example.com"
         key = lockout._lockout_key(identifier)
         record = lockout.LockoutRecord(
@@ -594,7 +501,7 @@ class TestMemoryPathBoundariesAndFields:
     def test_a_failed_login_sets_first_failed_attempt_once_and_never_overwrites_it(
         self,
     ) -> None:
-        store = lockout.InMemoryLockoutStore()
+        store = lockout_store.InMemoryLockoutStore()
         identifier = "mem-first-attempt@example.com"
         key = lockout._lockout_key(identifier)
         first = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
@@ -623,7 +530,7 @@ class TestMemoryDispatch:
 
         lockout.check_and_record_attempt(identifier, success=False)
 
-        assert lockout.get_lockout_info(identifier)["identifier"] == identifier
+        assert lockout_admin.get_lockout_info(identifier)["identifier"] == identifier
 
 
 # ── The Redis path: the same boundary, plus the degradation fallback ──────────────
@@ -707,7 +614,7 @@ class TestRedisDegradationFallback:
     """
 
     def _fallback_record(self, identifier: str) -> dict:
-        store = lockout._get_memory_fallback_store()
+        store = lockout_store._get_memory_fallback_store()
         raw = store.get(lockout._lockout_key(identifier))
         assert raw is not None, f"no fallback record was written for {identifier}"
         record: dict = json.loads(raw)
@@ -773,8 +680,8 @@ class TestUnlockAccountBoundary:
             def now(cls, tz=None):  # noqa: ARG003 - signature must match
                 return frozen
 
-        with patch.object(lockout, "datetime", _Frozen):
-            result = lockout.unlock_account(identifier)
+        with patch.object(lockout_admin, "datetime", _Frozen):
+            result = lockout_admin.unlock_account(identifier)
 
         assert result is False
         stored = _stored(memory_store, lockout._lockout_key(identifier))
@@ -791,7 +698,7 @@ class TestGetLockoutInfoShape:
     the rest -- and the ``is_locked`` boundary -- unchecked."""
 
     def test_an_unknown_identifier_returns_the_full_default_shape(self, memory_store) -> None:
-        info = lockout.get_lockout_info("nobody-here@example.com")
+        info = lockout_admin.get_lockout_info("nobody-here@example.com")
 
         assert info == {
             "identifier": "nobody-here@example.com",
@@ -819,7 +726,7 @@ class TestGetLockoutInfoShape:
         )
         memory_store.set(lockout._lockout_key(identifier), json.dumps(record.to_dict()))
 
-        info = lockout.get_lockout_info(identifier)
+        info = lockout_admin.get_lockout_info(identifier)
 
         assert info == {
             "identifier": identifier,
@@ -849,8 +756,8 @@ class TestGetLockoutInfoShape:
             def now(cls, tz=None):  # noqa: ARG003 - signature must match
                 return frozen
 
-        with patch.object(lockout, "datetime", _Frozen):
-            info = lockout.get_lockout_info(identifier)
+        with patch.object(lockout_admin, "datetime", _Frozen):
+            info = lockout_admin.get_lockout_info(identifier)
 
         assert info["is_locked"] is False
 
@@ -876,6 +783,6 @@ class TestCleanupHandlesFirstOnlyRecords:
         )
         memory_store.set(lockout._lockout_key(identifier), json.dumps(record.to_dict()))
 
-        cleaned = lockout.cleanup_expired_lockouts()  # must not raise
+        cleaned = lockout_admin.cleanup_expired_lockouts()  # must not raise
 
         assert cleaned == 0, "a record active moments ago must not be swept"

@@ -42,7 +42,7 @@ Auth method configuration is stored in the database (Admin UI → Settings → A
 - `mfa.py` - TOTP multi-factor authentication with backup codes
 - `password_policy.py` - Configurable password complexity rules
 - `password_history.py` - Password reuse prevention
-- `lockout.py` - Account lockout after failed attempts
+- `lockout.py` - Account lockout after failed attempts (`lockout_store.py`: Redis/in-memory store; `lockout_admin.py`: admin inspect/unlock/reset)
 - `rate_limit.py` - Authentication rate limiting
 - `session.py` - Session management with token rotation
 - `audit.py` - Authentication event logging

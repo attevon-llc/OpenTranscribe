@@ -25,8 +25,8 @@ from fastapi.testclient import TestClient
 
 from app.api.endpoints.auth import saml as saml_module
 from app.auth.lockout import check_and_record_attempt
-from app.auth.lockout import get_lockout_info
-from app.auth.lockout import unlock_account
+from app.auth.lockout_admin import get_lockout_info
+from app.auth.lockout_admin import unlock_account
 from app.core.config import settings
 from app.core.security import get_password_hash
 from app.db.base import get_db

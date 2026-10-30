@@ -575,6 +575,8 @@ backend/app/auth/
 ├── password_history.py  # Password reuse prevention
 ├── rate_limit.py        # Per-IP and per-user rate limiting
 ├── lockout.py           # Account lockout (NIST AC-7 compliant)
+├── lockout_store.py     # Lockout record store (Redis, in-memory fallback)
+├── lockout_admin.py     # Lockout inspection, admin unlock/reset, sweep
 ├── session.py           # Session/token management
 ├── token_service.py     # JWT token operations
 ├── audit.py             # Structured JSON and CEF audit logging

@@ -27,10 +27,10 @@ from fixtures.auth_state_isolation import AUTH_STATE_MODULES as _STATE_MODULES
 from fixtures.auth_state_isolation import AUTH_STATEFUL_GLOBALS as _STATEFUL_GLOBALS
 from starlette.requests import Request
 
-from app.auth import lockout as lockout_module
+from app.auth import lockout_store as lockout_store_module
 from app.auth import rate_limit as rate_limit_module
 from app.auth import session as session_module
-from app.auth.lockout import REDIS_REPROBE_SECONDS
+from app.auth.lockout_store import REDIS_REPROBE_SECONDS
 
 #: Issue #810. The snapshot/restore isolation fixture used to live here; it is now shared via
 #: `tests/fixtures/auth_state_isolation.py` so `test_session_survivor_mutants.py` (which shares
@@ -110,7 +110,7 @@ class _RecordingRedis:
         return True
 
     def ping(self):
-        # `lockout._get_redis_client` PINGs before returning the client, so a stand-in
+        # `lockout_store._get_redis_client` PINGs before returning the client, so a stand-in
         # without this is reported as an unreachable Redis and the test silently exercises
         # the fallback instead of the path it names.
         return True
@@ -261,7 +261,7 @@ class TestOidcStoreDegradation:
 
         source = inspect.getsource(session_module._get_store)
         assert "REDIS_REPROBE_SECONDS" in source
-        assert "from app.auth.lockout import REDIS_REPROBE_SECONDS" in source
+        assert "from app.auth.lockout_store import REDIS_REPROBE_SECONDS" in source
 
     # ---------------------------------------------------------------- mutation gaps
     #
@@ -303,7 +303,7 @@ class TestOidcStoreDegradation:
         Pinned because `>` differs from `>=` only on the boundary, and a policy that is
         one tick late forever is indistinguishable from one that works until you measure it.
         """
-        from app.auth.lockout import REDIS_REPROBE_SECONDS
+        from app.auth.lockout_store import REDIS_REPROBE_SECONDS
 
         self._reset()
         recovered = _RecordingRedis([])
@@ -464,7 +464,7 @@ def test_degradation_counter_exists_with_bounded_labels():
 
 @pytest.mark.unit
 class TestLockoutStoreDegradation:
-    """``lockout._get_store`` — the same shape as ``session._get_store``, same stakes.
+    """``lockout_store._get_store`` — the same shape as ``session._get_store``, same stakes.
 
     Lockout state is what stops password guessing, so when Redis goes down the fallback and
     its recovery are a security control, not a convenience. Mutation testing left the whole
@@ -479,10 +479,10 @@ class TestLockoutStoreDegradation:
     """
 
     def _reset(self):
-        lockout_module._redis_client = None
-        lockout_module._in_memory_store = None
-        lockout_module._store_initialized = False
-        lockout_module._last_redis_probe = 0.0
+        lockout_store_module._redis_client = None
+        lockout_store_module._in_memory_store = None
+        lockout_store_module._store_initialized = False
+        lockout_store_module._last_redis_probe = 0.0
 
     def test_the_client_decodes_responses(self):
         """``decode_responses=True`` is not cosmetic.
@@ -502,7 +502,7 @@ class TestLockoutStoreDegradation:
                 return _RecordingRedis([])
 
         with patch.dict("sys.modules", {"redis": type("_M", (), {"Redis": _FromUrlSpy})}):
-            client = lockout_module._get_redis_client()
+            client = lockout_store_module._get_redis_client()
 
         assert client is not None
         assert captured["decode_responses"] is True
@@ -513,15 +513,15 @@ class TestLockoutStoreDegradation:
         """`ImportError` must degrade, not 500 the login route."""
         self._reset()
         with patch.dict("sys.modules", {"redis": None}):
-            assert lockout_module._get_redis_client() is None
+            assert lockout_store_module._get_redis_client() is None
 
     def test_the_fallback_store_is_a_real_store(self):
         self._reset()
-        with patch.object(lockout_module, "_get_redis_client", return_value=None):
-            store = lockout_module._get_store()
+        with patch.object(lockout_store_module, "_get_redis_client", return_value=None):
+            store = lockout_store_module._get_store()
 
         assert store is not None
-        assert isinstance(store, lockout_module.InMemoryLockoutStore)
+        assert isinstance(store, lockout_store_module.InMemoryLockoutStore)
 
     def test_every_fallback_caller_shares_one_store(self):
         """One store per process, or two login attempts do not see each other's count.
@@ -530,8 +530,8 @@ class TestLockoutStoreDegradation:
         all" — the threshold is never reached and the control is off.
         """
         self._reset()
-        with patch.object(lockout_module, "_get_redis_client", return_value=None):
-            stores = [lockout_module._get_store() for _ in range(4)]
+        with patch.object(lockout_store_module, "_get_redis_client", return_value=None):
+            stores = [lockout_store_module._get_store() for _ in range(4)]
 
         assert all(s is stores[0] for s in stores)
 
@@ -539,9 +539,9 @@ class TestLockoutStoreDegradation:
         self._reset()
         healthy = _RecordingRedis([])
         probe = _CountingProbe(result=healthy)
-        with patch.object(lockout_module, "_get_redis_client", probe):
+        with patch.object(lockout_store_module, "_get_redis_client", probe):
             for _ in range(5):
-                assert lockout_module._get_store() is healthy
+                assert lockout_store_module._get_store() is healthy
 
         assert probe.calls == 1
 
@@ -549,36 +549,38 @@ class TestLockoutStoreDegradation:
         """The always-true interval mutation restores a PING per unauthenticated attempt."""
         self._reset()
         probe = _CountingProbe(result=None)
-        with patch.object(lockout_module, "_get_redis_client", probe):
-            first = lockout_module._get_store()
-            rest = [lockout_module._get_store() for _ in range(5)]
+        with patch.object(lockout_store_module, "_get_redis_client", probe):
+            first = lockout_store_module._get_store()
+            rest = [lockout_store_module._get_store() for _ in range(5)]
 
         assert probe.calls == 1, (
             f"Redis probed {probe.calls}x across 6 calls — every failed login would pay a "
             "connection setup and a PING"
         )
-        assert isinstance(first, lockout_module.InMemoryLockoutStore)
+        assert isinstance(first, lockout_store_module.InMemoryLockoutStore)
         assert all(store is first for store in rest)
 
     def test_it_re_probes_exactly_at_the_interval_boundary(self):
         """``>=``, not ``>``. Needs a PATCHED clock: rewinding lands past the boundary."""
         self._reset()
         recovered = _RecordingRedis([])
-        with patch.object(lockout_module, "_get_redis_client", return_value=None):
-            assert isinstance(lockout_module._get_store(), lockout_module.InMemoryLockoutStore)
+        with patch.object(lockout_store_module, "_get_redis_client", return_value=None):
+            assert isinstance(
+                lockout_store_module._get_store(), lockout_store_module.InMemoryLockoutStore
+            )
 
         # Frozen for this call only; see the session twin for why not `time.monotonic`.
-        frozen = lockout_module._last_redis_probe + lockout_module.REDIS_REPROBE_SECONDS
-        with patch.object(lockout_module, "_get_redis_client", return_value=recovered):
-            assert lockout_module._get_store(clock=lambda: frozen) is recovered
+        frozen = lockout_store_module._last_redis_probe + lockout_store_module.REDIS_REPROBE_SECONDS
+        with patch.object(lockout_store_module, "_get_redis_client", return_value=recovered):
+            assert lockout_store_module._get_store(clock=lambda: frozen) is recovered
 
     def test_the_boundary_probe_survives_a_concurrent_caller(self):
         """Issue #1160's mechanism, made deterministic: another thread calls in between."""
         first, probes, at_boundary, recovered = _reprobe_boundary_survives_a_concurrent_caller(
-            lockout_module, probe_name="_get_redis_client"
+            lockout_store_module, probe_name="_get_redis_client"
         )
 
-        assert isinstance(first, lockout_module.InMemoryLockoutStore)
+        assert isinstance(first, lockout_store_module.InMemoryLockoutStore)
         assert probes == 1, "the concurrent caller re-probed inside the interval"
         assert at_boundary is recovered
 
@@ -590,21 +592,23 @@ class TestLockoutStoreDegradation:
         """
         self._reset()
         recovered = _RecordingRedis([])
-        with patch.object(lockout_module, "_get_redis_client", return_value=None):
-            assert isinstance(lockout_module._get_store(), lockout_module.InMemoryLockoutStore)
+        with patch.object(lockout_store_module, "_get_redis_client", return_value=None):
+            assert isinstance(
+                lockout_store_module._get_store(), lockout_store_module.InMemoryLockoutStore
+            )
 
-        lockout_module._last_redis_probe -= 10_000
-        with patch.object(lockout_module, "_get_redis_client", return_value=recovered):
-            assert lockout_module._get_store() is recovered
+        lockout_store_module._last_redis_probe -= 10_000
+        with patch.object(lockout_store_module, "_get_redis_client", return_value=recovered):
+            assert lockout_store_module._get_store() is recovered
         # ...and it stays adopted without re-probing.
-        assert lockout_module._redis_client is recovered
+        assert lockout_store_module._redis_client is recovered
 
     def test_a_probe_that_still_fails_keeps_the_same_fallback_store(self):
         """The negative of adoption: a failed re-probe must not discard accumulated counts."""
         self._reset()
-        with patch.object(lockout_module, "_get_redis_client", return_value=None):
-            first = lockout_module._get_store()
-            lockout_module._last_redis_probe -= 10_000
-            second = lockout_module._get_store()
+        with patch.object(lockout_store_module, "_get_redis_client", return_value=None):
+            first = lockout_store_module._get_store()
+            lockout_store_module._last_redis_probe -= 10_000
+            second = lockout_store_module._get_store()
 
         assert second is first

@@ -252,7 +252,7 @@ issue #1122). In single-tenant mode nothing changes. A grant never confers `org:
 - `token_service.py` — JWT issue/verify, `rotate_refresh_token`, `revoke_all_user_tokens_in_transaction`,
   Redis JTI revocation list + `refresh_token.revoked_at`, **and session lifetime**
   (`_session_within_lifetime`).
-- `mfa.py` (`MFAService`) · `lockout.py` (progressive, per-identifier) · `rate_limit.py`
+- `mfa.py` (`MFAService`) · `lockout.py` (progressive, per-identifier; store `lockout_store.py`, admin `lockout_admin.py`) · `rate_limit.py`
   (slowapi, per-IP with trusted-proxy parsing) · `session.py` (`OIDCStateStore`,
   `InMemoryStore`, `get_redis_client` — **OIDC login state only, not sessions**) ·
   `audit.py` (`AuditLogger` writer) · `audit_events.py` (`AuditEventType`, `AuditOutcome`) · `audit_query.py` (read path).

@@ -18,6 +18,8 @@ import functools
 import pytest
 
 from app.auth import lockout
+from app.auth import lockout_admin
+from app.auth import lockout_store
 from app.auth.mfa import MFAService
 from app.auth.password_policy import validate_password
 from app.services.auth_config_service import AuthConfigService
@@ -35,13 +37,13 @@ def save(db, user, category: str, config: dict) -> None:
 @pytest.fixture
 def isolated_lockout_store(monkeypatch):
     """Give the lockout plane a private in-memory store for this test."""
-    monkeypatch.setattr(lockout, "_redis_client", None)
-    monkeypatch.setattr(lockout, "_in_memory_store", lockout.InMemoryLockoutStore())
-    monkeypatch.setattr(lockout, "_store_initialized", True)
+    monkeypatch.setattr(lockout_store, "_redis_client", None)
+    monkeypatch.setattr(lockout_store, "_in_memory_store", lockout_store.InMemoryLockoutStore())
+    monkeypatch.setattr(lockout_store, "_store_initialized", True)
     # issue #810: this fixture set three cached globals but missed `_last_redis_probe`,
     # so monkeypatch (which only restores what it itself set) left a live
     # `time.monotonic()` reading behind for whichever test reaches `_get_store()` next.
-    monkeypatch.setattr(lockout, "_last_redis_probe", 0.0)
+    monkeypatch.setattr(lockout_store, "_last_redis_probe", 0.0)
 
 
 # ── local ───────────────────────────────────────────────────────────────────────
@@ -167,7 +169,7 @@ def test_lockout_can_be_switched_off_entirely(db_session, super_admin_user, isol
 
     for _ in range(10):
         assert lockout.check_and_record_attempt("off@example.com", success=False) == (False, None)
-    assert lockout.get_lockout_info("off@example.com")["failed_attempts"] == 0
+    assert lockout_admin.get_lockout_info("off@example.com")["failed_attempts"] == 0
 
 
 # ── mfa ─────────────────────────────────────────────────────────────────────────

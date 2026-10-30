@@ -62,6 +62,14 @@ import app.api.endpoints.tasks as tasks_endpoints
 import app.api.endpoints.topics as topics
 import app.api.endpoints.user_files as user_files
 import app.api.endpoints.user_settings as user_settings
+import app.api.endpoints.user_settings_ai_features as user_settings_ai_features
+import app.api.endpoints.user_settings_audio_extraction as user_settings_audio_extraction
+import app.api.endpoints.user_settings_download as user_settings_download
+import app.api.endpoints.user_settings_media_sources as user_settings_media_sources
+import app.api.endpoints.user_settings_organization_context as user_settings_organization_context
+import app.api.endpoints.user_settings_recording as user_settings_recording
+import app.api.endpoints.user_settings_speaker_attributes as user_settings_speaker_attributes
+import app.api.endpoints.user_settings_transcription as user_settings_transcription
 import app.api.websockets as websockets
 import app.main as app_main
 import app.services.search.neural_bootstrap as neural_bootstrap
@@ -96,6 +104,14 @@ HARDENED_MODULES = [
     tags_sharing,
     user_files,
     user_settings,
+    user_settings_ai_features,
+    user_settings_audio_extraction,
+    user_settings_download,
+    user_settings_media_sources,
+    user_settings_organization_context,
+    user_settings_recording,
+    user_settings_speaker_attributes,
+    user_settings_transcription,
 ]
 
 _ROUTE_METHODS = (
@@ -215,7 +231,7 @@ HARDENED_HANDLERS = [
     (system_endpoints, "get_system_stats"),
     (tags_crud, "add_tag_to_file"),
     (user_files, "request_user_recovery"),
-    (user_settings, "get_auto_label_settings"),
+    (user_settings_ai_features, "get_auto_label_settings"),
 ]
 
 

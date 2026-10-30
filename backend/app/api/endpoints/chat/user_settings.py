@@ -42,7 +42,7 @@ def update_chat_user_settings(
     current_user: models.User = Depends(get_current_active_user),
 ) -> ChatUserSettings:
     """Update the caller's chat preferences (only provided fields)."""
-    from app.api.endpoints.user_settings import _upsert_user_setting
+    from app.api.endpoints.user_settings_common import _upsert_user_setting
 
     for field, value in body.model_dump(exclude_none=True).items():
         _upsert_user_setting(db, current_user.id, USER_SETTING_KEYS[field], value)

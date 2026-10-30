@@ -15,7 +15,7 @@ noqa::backend/app/api/endpoints/prompts.py	4	suppression: reason to be added
 noqa::backend/app/api/endpoints/redaction_settings.py	1	suppression: reason to be added
 noqa::backend/app/api/endpoints/speakers.py	1	suppression: reason to be added
 noqa::backend/app/api/endpoints/tags/__init__.py	4	suppression: reason to be added
-noqa::backend/app/api/endpoints/user_settings.py	3	suppression: reason to be added
+noqa::backend/app/api/endpoints/user_settings_media_sources.py	3	suppression: reason to be added
 noqa::backend/app/api/endpoints/users.py	1	suppression: reason to be added
 noqa::backend/app/api/endpoints/watch_sources.py	1	suppression: reason to be added
 noqa::backend/app/auth/audit.py	9	suppression: reason to be added

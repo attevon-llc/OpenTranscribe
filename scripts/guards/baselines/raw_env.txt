@@ -2,7 +2,7 @@ backend/app/api/endpoints/auth/dependencies.py	1	env: single reader planned
 backend/app/api/endpoints/auth/login.py	1	env: single reader planned
 backend/app/api/endpoints/engine_settings.py	1	env: single reader planned
 backend/app/api/endpoints/system.py	1	env: single reader planned
-backend/app/api/endpoints/user_settings.py	1	env: single reader planned
+backend/app/api/endpoints/user_settings_speaker_attributes.py	1	env: single reader planned
 backend/app/core/auth_settings.py	2	env: single reader planned
 backend/app/core/celery.py	16	env: single reader planned
 backend/app/core/celery_metrics.py	1	env: single reader planned

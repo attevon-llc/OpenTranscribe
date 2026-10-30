@@ -43,8 +43,8 @@ from sqlalchemy.orm import Session
 from app.core.constants import LLM_CONTEXT_WINDOW_KEY_PREFIX
 from app.core.constants import LLM_CONTEXT_WINDOW_PROBE_TIMEOUT_S
 from app.core.enums import ContextWindowStatus
-from app.services.llm_service import LLMConfig
-from app.services.llm_service import LLMProvider
+from app.services.llm_types import LLMConfig
+from app.services.llm_types import LLMProvider
 
 if TYPE_CHECKING:
     from app.utils.url_validation import PinnedTarget

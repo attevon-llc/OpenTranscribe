@@ -204,7 +204,7 @@ def _bulk(client, index: str, docs: list[tuple[str, dict[str, Any]]]) -> None:
 @pytest.fixture(scope="module")
 def corpus():
     from app.services.opensearch_service import get_opensearch_client
-    from app.services.search import indexing_service as svc
+    from app.services.search import index_admin
 
     client = get_opensearch_client()
     assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
@@ -224,7 +224,7 @@ def corpus():
                     ]
                 },
             )
-        client.indices.create(index=name, body=svc._get_index_body_with_dimension(384))
+        client.indices.create(index=name, body=index_admin._get_index_body_with_dimension(384))
         rng = random.Random(1078)  # noqa: S311 — deterministic test corpus, not crypto
         docs = [d for f in range(N_FILES) for d in _file_docs(f, rng)]
         marker_base = {

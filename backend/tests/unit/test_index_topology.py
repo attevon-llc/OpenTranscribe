@@ -19,7 +19,8 @@ from typing import Any
 from typing import cast
 
 from app.core.config import settings
-from app.services.search import indexing_service as svc
+from app.services.search import index_admin
+from app.services.search import index_schema
 
 # --------------------------------------------------------------------------------------- #
 # The defaults, pinned byte-identically.
@@ -40,7 +41,9 @@ def test_default_replica_count_is_zero():
 
 def test_fresh_index_body_carries_the_configured_topology():
     """The module constant a fresh install actually creates the index from."""
-    index_settings = cast(dict[str, Any], svc.TRANSCRIPT_CHUNKS_INDEX_BODY["settings"])["index"]
+    index_settings = cast(dict[str, Any], index_schema.TRANSCRIPT_CHUNKS_INDEX_BODY["settings"])[
+        "index"
+    ]
     assert index_settings["number_of_shards"] == settings.OPENSEARCH_CHUNKS_INDEX_SHARDS
     assert index_settings["number_of_replicas"] == settings.OPENSEARCH_CHUNKS_INDEX_REPLICAS
 
@@ -49,7 +52,9 @@ def test_fresh_index_body_topology_is_the_pinned_default_in_this_process():
     """Byte-identical pin end to end: with no override in this test process's env, a fresh
     index body is 1 shard / 0 replicas -- not merely "whatever settings says", but the actual
     shipped numbers."""
-    index_settings = cast(dict[str, Any], svc.TRANSCRIPT_CHUNKS_INDEX_BODY["settings"])["index"]
+    index_settings = cast(dict[str, Any], index_schema.TRANSCRIPT_CHUNKS_INDEX_BODY["settings"])[
+        "index"
+    ]
     assert index_settings["number_of_shards"] == 1
     assert index_settings["number_of_replicas"] == 0
 
@@ -60,7 +65,7 @@ def test_recreate_dimension_path_shares_the_same_topology_source():
     a dimension change can never silently drop back to hardcoded 1/0 topology -- it stays
     whatever this process was configured with. This only builds a dict; it never touches a
     real cluster."""
-    body = svc._get_index_body_with_dimension(384)
+    body = index_admin._get_index_body_with_dimension(384)
     index_settings = body["settings"]["index"]
     assert index_settings["number_of_shards"] == settings.OPENSEARCH_CHUNKS_INDEX_SHARDS
     assert index_settings["number_of_replicas"] == settings.OPENSEARCH_CHUNKS_INDEX_REPLICAS
@@ -75,7 +80,7 @@ def test_recreate_dimension_path_shares_the_same_topology_source():
 # --------------------------------------------------------------------------------------- #
 
 _PRINT_TOPOLOGY = (
-    "from app.services.search.indexing_service import TRANSCRIPT_CHUNKS_INDEX_BODY as b;"
+    "from app.services.search.index_schema import TRANSCRIPT_CHUNKS_INDEX_BODY as b;"
     "idx = b['settings']['index'];"
     "print(f\"{idx['number_of_shards']}|{idx['number_of_replicas']}\")"
 )

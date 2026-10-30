@@ -35,9 +35,9 @@ from app.core.config import settings as app_settings
 from app.services.chat.prompting import build_messages
 from app.services.chat.prompting import build_system_prompt
 from app.services.chat.redactor import MaskedChunk
-from app.services.llm_service import LLMConfig
-from app.services.llm_service import LLMProvider
 from app.services.llm_service import LLMService
+from app.services.llm_types import LLMConfig
+from app.services.llm_types import LLMProvider
 from app.services.search.chunk_retrieval import ChunkHit
 
 #: Same variable `tests/eval/test_eval_faithfulness_judge.py` reads, so this follows a

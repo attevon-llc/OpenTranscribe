@@ -143,7 +143,8 @@ def chunk_index(monkeypatch, db_session):
 
     from app.core.config import settings
     from app.services.opensearch_service import get_opensearch_client
-    from app.services.search import indexing_service as svc
+    from app.services.search import index_admin
+    from app.services.search import pipelines
 
     client = get_opensearch_client()
     assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
@@ -155,15 +156,15 @@ def chunk_index(monkeypatch, db_session):
     monkeypatch.setattr("app.db.session_utils.session_scope", _test_session)
 
     name = f"test_summary_plane_{uuid_pkg.uuid4().hex[:12]}"
-    client.indices.create(index=name, body=svc._get_index_body_with_dimension(384))
+    client.indices.create(index=name, body=index_admin._get_index_body_with_dimension(384))
     try:
         monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
         monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_SEARCH_ENABLED", False)
-        svc.reset_neural_pipeline_state()
+        pipelines.reset_neural_pipeline_state()
         yield client
     finally:
         client.indices.delete(index=name, ignore=[404])
-        svc.reset_neural_pipeline_state()
+        pipelines.reset_neural_pipeline_state()
 
 
 def _segments_for(media_file, db_session) -> list[dict[str, Any]]:
@@ -488,9 +489,10 @@ def test_semantic_retrieval_finds_a_summary_leaf_with_no_lexical_overlap(monkeyp
 
     from app.core.config import settings
     from app.services.opensearch_service import get_opensearch_client
-    from app.services.search import indexing_service as svc
+    from app.services.search import index_admin
+    from app.services.search import pipelines
     from app.services.search.hybrid_search_service import HybridSearchService
-    from app.services.search.indexing_service import is_neural_pipeline_available
+    from app.services.search.pipelines import is_neural_pipeline_available
 
     client = get_opensearch_client()
     assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
@@ -502,12 +504,12 @@ def test_semantic_retrieval_finds_a_summary_leaf_with_no_lexical_overlap(monkeyp
     monkeypatch.setattr("app.db.session_utils.session_scope", _test_session)
 
     name = f"test_summary_plane_semantic_{uuid_pkg.uuid4().hex[:12]}"
-    client.indices.create(index=name, body=svc._get_index_body_with_dimension(384))
+    client.indices.create(index=name, body=index_admin._get_index_body_with_dimension(384))
     try:
         monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
         monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_SEARCH_ENABLED", True)
-        svc.reset_neural_pipeline_state()
-        svc.ensure_chunks_index_exists()
+        pipelines.reset_neural_pipeline_state()
+        index_admin.ensure_chunks_index_exists()
         assert is_neural_pipeline_available(), (
             "the neural ingest pipeline could not be verified against this cluster — "
             "this test must FAIL, not skip, because a skip here is indistinguishable "
@@ -573,4 +575,4 @@ def test_semantic_retrieval_finds_a_summary_leaf_with_no_lexical_overlap(monkeyp
         )
     finally:
         client.indices.delete(index=name, ignore=[404])
-        svc.reset_neural_pipeline_state()
+        pipelines.reset_neural_pipeline_state()

@@ -90,7 +90,7 @@ CROSS_LINGUAL_THRESHOLD = 0.5
 #:     dot-product      control  0.385 (multi-qa-mpnet-base-dot-v1)
 #:                              0.703 (msmarco-distilbert-base-tas-b)
 #: 0.25 sits in that gap. This MATTERS here specifically: the chunks index maps
-#: `"space_type": "cosinesimil"` (services/search/indexing_service.py), so a
+#: `"space_type": "cosinesimil"` (services/search/index_schema.py), so a
 #: dot-product model would be ranked by a metric it was not trained for — silently,
 #: with plausible-looking scores. It is the same family of trap as the repo-wide
 #: `cosinesimil` conversion note in the root CLAUDE.md.

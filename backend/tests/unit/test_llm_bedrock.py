@@ -430,9 +430,9 @@ def test_non_streaming_bedrock_does_not_crash_on_a_missing_endpoint():
     `git archive HEAD` pre-fix (KeyError), green here (a clean, non-KeyError failure —
     or a real response — depending on what `stream_converse` does).
     """
-    from app.services.llm_service import LLMConfig
-    from app.services.llm_service import LLMProvider
     from app.services.llm_service import LLMService
+    from app.services.llm_types import LLMConfig
+    from app.services.llm_types import LLMProvider
 
     service = LLMService(LLMConfig(provider=LLMProvider.BEDROCK, model=MODEL))
 
@@ -489,9 +489,9 @@ def test_chat_completion_raw_is_not_supported_for_bedrock():
     not a regression: `llm_reasoning.PROBEABLE_PROVIDERS` already deliberately excludes
     Bedrock.
     """
-    from app.services.llm_service import LLMConfig
-    from app.services.llm_service import LLMProvider
     from app.services.llm_service import LLMService
+    from app.services.llm_types import LLMConfig
+    from app.services.llm_types import LLMProvider
 
     service = LLMService(LLMConfig(provider=LLMProvider.BEDROCK, model=MODEL))
 
@@ -503,9 +503,9 @@ def test_openai_config_still_reaches_send_llm_request_unchanged():
     """Control: the Bedrock branch in `chat_completion` must not affect any other
     provider's non-streaming path.
     """
-    from app.services.llm_service import LLMConfig
-    from app.services.llm_service import LLMProvider
     from app.services.llm_service import LLMService
+    from app.services.llm_types import LLMConfig
+    from app.services.llm_types import LLMProvider
 
     service = LLMService(
         LLMConfig(provider=LLMProvider.OPENAI, model="gpt-test", api_key="sk-test")

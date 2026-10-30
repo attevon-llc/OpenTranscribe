@@ -298,7 +298,7 @@ def _summary_search_payload(
     the takedown case (`takedown_service.quarantine_file`/`release_file` both
     call `bump_corpus_version`). It is now bumped by exactly FOUR things, and
     those are all of them: chunk-plane indexing writes
-    (`indexing_service._invalidate_chat_retrieval_cache`, from
+    (`corpus_cache._invalidate_chat_retrieval_cache`, from
     `index_transcript_chunks` and rename propagation), quarantine, release, and
     — as of the share-revocation cache-invalidation fix — an ACL rewrite via
     `tasks.search_indexing_task.update_file_access_index` (the single call site

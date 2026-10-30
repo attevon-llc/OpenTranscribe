@@ -52,7 +52,7 @@ def _search_corpus_version() -> str:
     Reusing ``chat.retrieval_cache.corpus_version()`` rather than inventing a
     second counter: it is already bumped, cross-process via Redis, by every
     real content-changing write to the chunk plane
-    (``indexing_service._invalidate_chat_retrieval_cache``, called from
+    (``corpus_cache._invalidate_chat_retrieval_cache``, called from
     ``index_transcript_chunks`` and the rename-propagation tasks) — exactly the
     set of events that should also invalidate a cached search page. Folding it
     into the cache key means a version bump makes every previously cached key

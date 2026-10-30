@@ -149,7 +149,7 @@ def test_a_timed_out_registration_is_recovered_on_the_next_tick(
             return_value=eventually_ready_service,
         ),
         patch(
-            "app.services.search.indexing_service.ensure_neural_ingest_pipeline",
+            "app.services.search.pipelines.ensure_neural_ingest_pipeline",
             side_effect=_fake_ensure_pipeline,
         ),
         patch("app.core.redis.get_redis", return_value=fake_redis),
@@ -312,7 +312,7 @@ def test_managed_mode_short_circuits(monkeypatch):
             return_value=ml_service,
         ),
         patch(
-            "app.services.search.indexing_service.ensure_neural_ingest_pipeline",
+            "app.services.search.pipelines.ensure_neural_ingest_pipeline",
             return_value=True,
         ),
     ):

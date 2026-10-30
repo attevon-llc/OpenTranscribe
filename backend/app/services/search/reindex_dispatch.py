@@ -14,13 +14,13 @@ routes through ``index_transcript_search_task`` — the same full weight-class
 task the initial transcription pipeline uses — rather than a narrower
 ``update_by_query`` path, because ``update_by_query`` can rewrite keyword
 fields but cannot re-embed: the neural embedding pipeline is attached per bulk
-*index* action (``services/search/indexing_service.py``'s ingest pipeline),
+*index* action (``services/search/pipelines.py``'s ingest pipeline),
 never as the chunks index's ``default_pipeline``, so a query-only rewrite
 would leave the vector stale even though the text field looked fixed. The
 full task also refreshes the ``transcripts`` full-document index
 (``opensearch_service.index_transcript``, called from inside the task) and,
 via ``TranscriptIndexingService.index_transcript_chunks``, bumps the chat
-corpus version — see ``indexing_service._invalidate_chat_retrieval_cache`` —
+corpus version — see ``corpus_cache._invalidate_chat_retrieval_cache`` —
 which the search response cache now also keys on (``hybrid_search_service``'s
 ``corpus_version`` cache-key field), so a stale cached search page is never
 served past its own bump either, without needing a second invalidation path.

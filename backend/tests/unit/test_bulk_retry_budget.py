@@ -45,11 +45,11 @@ def test_the_retry_budget_outlasts_a_multi_second_transient(monkeypatch):
     shape that failed — a transient clearing after the old budget would have
     expired — now succeeds.
     """
-    from app.services.search import indexing_service
+    from app.services.search.indexing import bulk
     from app.services.search.indexing_service import TranscriptIndexingService
 
     slept: list[float] = []
-    monkeypatch.setattr(indexing_service.time, "sleep", lambda s: slept.append(s))
+    monkeypatch.setattr(bulk.time, "sleep", lambda s: slept.append(s))
 
     docs = [{"file_uuid": "u", "chunk_index": n} for n in range(8)]
     calls = {"n": 0}
@@ -69,7 +69,7 @@ def test_the_retry_budget_outlasts_a_multi_second_transient(monkeypatch):
                 }
             return {"errors": False, "items": [{"index": {}} for _ in docs]}
 
-    monkeypatch.setattr(indexing_service, "opensearch_client", _Client())
+    monkeypatch.setattr(bulk, "opensearch_client", _Client())
 
     recovered = TranscriptIndexingService()._retry_failed_docs(docs, "transcript_chunks", True)
 
@@ -91,7 +91,7 @@ def test_the_backoff_is_jittered_so_concurrent_workers_do_not_resynchronise(monk
     at the same instant; on a fixed schedule they all come back at the same instant
     too. The jitter is what breaks that up, so it is asserted rather than assumed.
     """
-    from app.services.search import indexing_service
+    from app.services.search.indexing import bulk
     from app.services.search.indexing_service import TranscriptIndexingService
 
     docs = [{"file_uuid": "u", "chunk_index": 0}]
@@ -105,12 +105,12 @@ def test_the_backoff_is_jittered_so_concurrent_workers_do_not_resynchronise(monk
                 "items": [{"index": {"error": {"type": "circuit_breaking_exception"}}}],
             }
 
-    monkeypatch.setattr(indexing_service, "opensearch_client", _AlwaysOpen())
+    monkeypatch.setattr(bulk, "opensearch_client", _AlwaysOpen())
 
     runs: list[list[float]] = []
     for _ in range(6):
         slept: list[float] = []
-        monkeypatch.setattr(indexing_service.time, "sleep", lambda s, acc=slept: acc.append(s))
+        monkeypatch.setattr(bulk.time, "sleep", lambda s, acc=slept: acc.append(s))
         TranscriptIndexingService()._retry_failed_docs(docs, "transcript_chunks", True)
         runs.append(slept)
 
@@ -193,8 +193,8 @@ def test_the_retryable_set_still_covers_the_errors_that_actually_fired(error_typ
     If it were ever moved to the permanent set, a false breaker trip would silently
     drop documents instead of retrying them.
     """
-    from app.services.search.indexing_service import _PERMANENT_ERROR_TYPES
-    from app.services.search.indexing_service import _RETRYABLE_ERROR_TYPES
+    from app.services.search.indexing.bulk import _PERMANENT_ERROR_TYPES
+    from app.services.search.indexing.bulk import _RETRYABLE_ERROR_TYPES
 
     assert error_type in _RETRYABLE_ERROR_TYPES
     assert error_type not in _PERMANENT_ERROR_TYPES

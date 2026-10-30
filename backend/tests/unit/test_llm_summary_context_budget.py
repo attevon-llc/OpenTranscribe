@@ -14,9 +14,9 @@ No live stack needed -- LLMService's token-budget math is pure.
 
 from __future__ import annotations
 
-from app.services.llm_service import LLMConfig
-from app.services.llm_service import LLMProvider
 from app.services.llm_service import LLMService
+from app.services.llm_types import LLMConfig
+from app.services.llm_types import LLMProvider
 
 
 def _service(max_tokens: int) -> LLMService:

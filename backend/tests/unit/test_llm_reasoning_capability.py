@@ -29,9 +29,9 @@ from app.core.constants import LLM_REASONING_PROBE_MIN_CHARS
 from app.core.constants import LLM_REASONING_PROBE_TEMPERATURE
 from app.core.enums import ReasoningOffSwitch
 from app.services import llm_reasoning
-from app.services.llm_service import LLMConfig
-from app.services.llm_service import LLMProvider
 from app.services.llm_service import LLMService
+from app.services.llm_types import LLMConfig
+from app.services.llm_types import LLMProvider
 
 #: The measured gemma-4-e4b arms, as (on, off, omitted) reasoning characters.
 GEMMA_ARMS = (1656, 931, 931)

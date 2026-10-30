@@ -511,7 +511,7 @@ def check_and_repair_indices() -> list[str]:
     chunk plane needs ``ensure_chunks_index_exists`` and the reindex coordinator,
     both of which live in ``services/search`` — the layer *above* this package —
     so importing them here forms a cycle that makes mypy resolve
-    ``indexing_service``'s view of this module to ``Any`` and silently deletes
+    ``index_admin``'s view of this module to ``Any`` and silently deletes
     type checking across 66 call sites. Its health check lives in
     ``services/search/index_health.check_and_repair_chunks_index``, which the
     same two callers invoke immediately after this function (issue #540).

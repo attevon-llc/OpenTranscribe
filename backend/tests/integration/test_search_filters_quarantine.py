@@ -68,7 +68,8 @@ def chunk_index(monkeypatch, db_session):
     """
     from app.core.config import settings
     from app.services.opensearch_service import get_opensearch_client
-    from app.services.search import indexing_service as svc
+    from app.services.search import index_admin
+    from app.services.search import pipelines
 
     client = get_opensearch_client()
     assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
@@ -80,15 +81,15 @@ def chunk_index(monkeypatch, db_session):
     monkeypatch.setattr("app.db.session_utils.session_scope", _test_session)
 
     name = f"test_search_filters_quarantine_{uuid_pkg.uuid4().hex[:12]}"
-    client.indices.create(index=name, body=svc._get_index_body_with_dimension(384))
+    client.indices.create(index=name, body=index_admin._get_index_body_with_dimension(384))
     try:
         monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
         monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_SEARCH_ENABLED", False)
-        svc.reset_neural_pipeline_state()
+        pipelines.reset_neural_pipeline_state()
         yield client
     finally:
         client.indices.delete(index=name, ignore=[404])
-        svc.reset_neural_pipeline_state()
+        pipelines.reset_neural_pipeline_state()
 
 
 def _user(db_session) -> User:

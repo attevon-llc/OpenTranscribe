@@ -34,8 +34,8 @@ from app.schemas.topic import LLMSuggestionResponse
 from app.services import post_processing_status
 from app.services.file_provenance import llm_facts
 from app.services.file_provenance import record_stage
-from app.services.llm_service import LLMProvider
 from app.services.llm_service import LLMService
+from app.services.llm_types import LLMProvider
 from app.utils.llm_log_safety import describe_llm_text
 from app.utils.llm_log_safety import log_llm_text_excerpt
 
@@ -536,7 +536,7 @@ IMPORTANT GUIDELINES:
         Returns:
             Parsed LLM response or None
         """
-        from app.services.llm_service import LLMProvider
+        from app.services.llm_types import LLMProvider
 
         # Build language instruction for non-English output
         output_language_name = self._get_language_name(output_language)

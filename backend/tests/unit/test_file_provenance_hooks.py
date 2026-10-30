@@ -34,8 +34,8 @@ from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import TranscriptSegment
 from app.models.user import User
-from app.services.llm_service import LLMConfig
-from app.services.llm_service import LLMProvider
+from app.services.llm_types import LLMConfig
+from app.services.llm_types import LLMProvider
 from app.tasks.transcription.context import TranscriptionContext
 
 WESPEAKER = "pyannote/wespeaker-voxceleb-resnet34-LM"

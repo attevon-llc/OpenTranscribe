@@ -171,7 +171,7 @@ def index_transcript_search_task(  # noqa: C901
     #
     # Cost is one `ingest.get_pipeline` per file. A TTL would bound the staleness
     # instead of removing it; this is the pattern `reindex_task` already uses.
-    from app.services.search.indexing_service import reset_neural_pipeline_state
+    from app.services.search.pipelines import reset_neural_pipeline_state
 
     reset_neural_pipeline_state()
 
@@ -694,7 +694,7 @@ def index_file_summary(file_id: int) -> dict[str, Any]:
     from app.models.media import MediaFile
     from app.services.search.embedding_provenance import active_embedding_model
     from app.services.search.indexing_service import TranscriptIndexingService
-    from app.services.search.indexing_service import is_neural_pipeline_available
+    from app.services.search.pipelines import is_neural_pipeline_available
 
     with session_scope() as db:
         media_file = db.query(MediaFile).filter(MediaFile.id == file_id).one_or_none()
@@ -761,7 +761,7 @@ def backfill_speaker_id_fields_task(limit: int = 200) -> dict[str, Any]:
     Candidates are found with a ``composite`` aggregation over CHUNK-plane
     documents lacking ``speaker_id`` — paginated by ``after_key``, not the
     50,000-bucket ``terms`` ceiling ``_get_indexed_uuids`` has (see its warning in
-    ``services/search/indexing_service.py``), so this scales past that ceiling by
+    ``tasks/search_maintenance_task.py``), so this scales past that ceiling by
     construction rather than by coincidence of corpus size.
 
     Args:

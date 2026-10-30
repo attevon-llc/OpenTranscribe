@@ -109,21 +109,22 @@ def chunk_index(monkeypatch):
     """
     from app.core.config import settings
     from app.services.opensearch_service import get_opensearch_client
-    from app.services.search import indexing_service as svc
+    from app.services.search import index_admin
+    from app.services.search import pipelines
 
     client = get_opensearch_client()
     assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
 
     name = f"test_chunk_prune_{uuid.uuid4().hex[:12]}"
-    client.indices.create(index=name, body=svc._get_index_body_with_dimension(384))
+    client.indices.create(index=name, body=index_admin._get_index_body_with_dimension(384))
     try:
         monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
         monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_SEARCH_ENABLED", False)
-        svc.reset_neural_pipeline_state()
+        pipelines.reset_neural_pipeline_state()
         yield client
     finally:
         client.indices.delete(index=name, ignore=[404])
-        svc.reset_neural_pipeline_state()
+        pipelines.reset_neural_pipeline_state()
 
 
 def _segments(count: int, *, marker: str) -> list[dict[str, Any]]:
@@ -320,8 +321,8 @@ def test_first_index_probes_by_id_and_issues_no_delete(chunk_index):
     ``delete_by_query`` remains the expensive thing the gate exists to avoid on the
     path every completed transcription takes — it forces a whole-index refresh.
     """
-    from app.services.search.indexing_service import _ORPHAN_PROBE_WINDOW
-    from app.services.search.indexing_service import chunk_plane_query
+    from app.services.search.indexing.orphans import _ORPHAN_PROBE_WINDOW
+    from app.services.search.plane_queries import chunk_plane_query
 
     file_uuid = str(uuid.uuid4())
 
@@ -395,11 +396,10 @@ def _unarmed_chunk_plane_query(
     return {"bool": {"filter": filters}}
 
 
-def _patch_chunk_plane_query(monkeypatch, base, svc, clause: dict[str, Any]) -> None:
+def _swap_plane_query(monkeypatch, base, module, clause: dict[str, Any]) -> None:
     """Swap the shipped predicate for *base* + *clause*.
 
-    *base* is passed in rather than read off the module so that re-patching within one
-    test replaces the simulated clause instead of stacking a second one on top of it.
+    *base* is passed in so a second swap replaces the simulated clause, never stacks on it.
     """
 
     def _with_doc_type(file_uuid_arg: str, **kwargs: Any) -> dict[str, Any]:
@@ -407,7 +407,7 @@ def _patch_chunk_plane_query(monkeypatch, base, svc, clause: dict[str, Any]) -> 
         query["bool"]["filter"].append(clause)
         return query
 
-    monkeypatch.setattr(svc, "chunk_plane_query", _with_doc_type)
+    monkeypatch.setattr(module, "chunk_plane_query", _with_doc_type)
 
 
 def _strip_doc_type_from_chunks(client, file_uuid: str) -> None:
@@ -521,7 +521,7 @@ def test_a_bare_doc_type_term_silently_stops_pruning_the_existing_corpus(chunk_i
     hazard unreachable. Failure mode, not a fix: the assertion records what a bare term
     does, and the control shows the shipped clause prunes the identical corpus correctly.
     """
-    from app.services.search import indexing_service as svc
+    from app.services.search.indexing import chunk_plane
 
     hazard_uuid = str(uuid.uuid4())
     control_uuid = str(uuid.uuid4())
@@ -529,15 +529,15 @@ def test_a_bare_doc_type_term_silently_stops_pruning_the_existing_corpus(chunk_i
         _seed_chunks_and_a_digest(chunk_index, file_uuid, chunks=6)
         _strip_doc_type_from_chunks(chunk_index, file_uuid)
 
-    real_query = svc.chunk_plane_query
-    _patch_chunk_plane_query(monkeypatch, _unarmed_chunk_plane_query, svc, _BARE_CHUNK_CLAUSE)
-    shrunk = _index(_segments(2, marker="EDITED"), file_uuid=hazard_uuid)
+    with monkeypatch.context() as hazard:
+        _swap_plane_query(hazard, _unarmed_chunk_plane_query, chunk_plane, _BARE_CHUNK_CLAUSE)
+        shrunk = _index(_segments(2, marker="EDITED"), file_uuid=hazard_uuid)
 
     assert shrunk["stale_removed"] == 0, "the bare term matched no pre-v6 chunk"
     assert _chunk_indexes(chunk_index, hazard_uuid) == [*range(6), 99], "the tail is still there"
 
-    # Control: same corpus, same shrink, the clause actually shipped — the tail goes.
-    monkeypatch.setattr(svc, "chunk_plane_query", real_query)
+    # Control: same corpus, same shrink, the clause actually shipped (the swap above was
+    # undone with its context) — the tail goes.
     _strip_doc_type_from_chunks(chunk_index, control_uuid)
     controlled = _index(_segments(2, marker="EDITED"), file_uuid=control_uuid)
 
@@ -583,7 +583,7 @@ def test_reindex_inside_the_refresh_window_still_prunes_the_tail(chunk_index):
     is frozen for the whole test instead of for a few hundred milliseconds.
     """
     from app.core.config import settings
-    from app.services.search.indexing_service import chunk_plane_query
+    from app.services.search.plane_queries import chunk_plane_query
 
     index_name = settings.OPENSEARCH_CHUNKS_INDEX
     chunk_index.indices.put_settings(index=index_name, body={"index": {"refresh_interval": "-1"}})
@@ -657,7 +657,7 @@ def test_a_hole_larger_than_the_probe_window_does_not_strand_the_tail(chunk_inde
     ``chunk_index >= keep_count`` — so finding *any* orphan above the hole is
     enough to remove all of them.
     """
-    from app.services.search.indexing_service import _ORPHAN_PROBE_WINDOW
+    from app.services.search.indexing.orphans import _ORPHAN_PROBE_WINDOW
 
     file_uuid = str(uuid.uuid4())
     survivors = list(range(_ORPHAN_PROBE_WINDOW + 37, _ORPHAN_PROBE_WINDOW + 60))
@@ -682,7 +682,7 @@ def test_a_tail_longer_than_one_probe_window_is_pruned_whole(chunk_index):
     Every existing case in this module has a tail of 5 or 6 — well inside one
     window — so a walk that only ever probed once would have passed all of them.
     """
-    from app.services.search.indexing_service import _ORPHAN_PROBE_WINDOW
+    from app.services.search.indexing.orphans import _ORPHAN_PROBE_WINDOW
 
     file_uuid = str(uuid.uuid4())
     previous = _ORPHAN_PROBE_WINDOW * 2 + 5

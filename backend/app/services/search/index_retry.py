@@ -48,7 +48,7 @@ def retry_delay_seconds(retries: int) -> int:
     "Equal jitter": half the nominal delay is fixed and half is random, so concurrent failures
     (a whole wave of files timing out together) spread out instead of retrying in lockstep,
     while the wait never collapses toward zero. ``secrets`` rather than ``random`` for the same
-    reason ``indexing_service._retry_failed_docs`` uses it.
+    reason ``indexing.bulk.BulkIndexMixin._retry_failed_docs`` uses it.
     """
     ceiling = _nominal_delay(retries)
     floor = ceiling // 2

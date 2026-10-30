@@ -61,9 +61,9 @@ from app.core.constants import LLM_REASONING_PROBE_SUPPRESSION_RATIO
 from app.core.constants import LLM_REASONING_PROBE_TEMPERATURE
 from app.core.constants import LLM_REASONING_PROBE_TIMEOUT_S
 from app.core.enums import ReasoningOffSwitch
-from app.services.llm_service import LLMConfig
-from app.services.llm_service import LLMProvider
 from app.services.llm_service import LLMService
+from app.services.llm_types import LLMConfig
+from app.services.llm_types import LLMProvider
 
 logger = logging.getLogger(__name__)
 

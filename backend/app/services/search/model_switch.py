@@ -218,10 +218,10 @@ def apply_embedding_model_switch(model_name: str, triggered_by: int) -> dict[str
     from app.services.search.embedding_provenance import reset_search_provenance_advisory
     from app.services.search.embedding_provenance import survey_embedding_models
     from app.services.search.hybrid_search_service import reset_neural_search_state
-    from app.services.search.indexing_service import ensure_neural_ingest_pipeline
-    from app.services.search.indexing_service import recreate_index_for_dimension
-    from app.services.search.indexing_service import reset_neural_pipeline_state
+    from app.services.search.index_admin import recreate_index_for_dimension
     from app.services.search.ml_model_service import get_ml_model_service
+    from app.services.search.pipelines import ensure_neural_ingest_pipeline
+    from app.services.search.pipelines import reset_neural_pipeline_state
     from app.services.search.settings_service import save_search_embedding_model
 
     model_info = OPENSEARCH_EMBEDDING_MODELS[model_name]

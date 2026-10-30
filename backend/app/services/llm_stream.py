@@ -402,7 +402,7 @@ def get_stream_parser(provider: str):
     """Return the line parser for ``provider``.
 
     Args:
-        provider: Provider value from :class:`app.services.llm_service.LLMProvider`.
+        provider: Provider value from :class:`app.services.llm_types.LLMProvider`.
 
     Returns:
         A callable taking decoded lines and yielding :class:`LLMStreamEvent`.

@@ -30,7 +30,7 @@ import pytest
 from opensearchpy.exceptions import TransportError
 
 BACKEND = Path(__file__).resolve().parents[2]
-MAIN_PY = BACKEND / "app" / "main.py"
+MAINTENANCE_PY = BACKEND / "app" / "startup" / "maintenance.py"
 
 ANN_METHOD = {
     "engine": "lucene",
@@ -444,7 +444,7 @@ def test_the_startup_maintenance_dispatch_is_elected(monkeypatch):
     """
     import asyncio
 
-    from app import main as app_main
+    from app.startup import maintenance as startup_maintenance
     from app.tasks import search_maintenance_task as smt
 
     dispatched: list[str] = []
@@ -459,11 +459,11 @@ def test_the_startup_maintenance_dispatch_is_elected(monkeypatch):
     monkeypatch.setattr(asyncio, "sleep", _no_delay)
 
     monkeypatch.setattr("app.utils.boot_once.run_once_per_boot", lambda _step: False)
-    asyncio.run(app_main._run_search_maintenance())
+    asyncio.run(startup_maintenance._run_search_maintenance())
     assert dispatched == [], "a replica that lost the election must not dispatch"
 
     monkeypatch.setattr("app.utils.boot_once.run_once_per_boot", lambda _step: True)
-    asyncio.run(app_main._run_search_maintenance())
+    asyncio.run(startup_maintenance._run_search_maintenance())
     assert len(dispatched) == 1, "the election winner must dispatch"
 
 
@@ -502,7 +502,7 @@ def test_the_maintenance_lock_key_is_cleared_on_startup():
     """
     from app.tasks.search_maintenance_task import MAINTENANCE_LOCK_KEY
 
-    source = MAIN_PY.read_text()
+    source = MAINTENANCE_PY.read_text()
     assert f'"{MAINTENANCE_LOCK_KEY}"' in source
     assert '"search_maintenance_lock"' not in source, "the old key name must be gone"
 

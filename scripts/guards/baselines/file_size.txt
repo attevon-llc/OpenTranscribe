@@ -25,7 +25,6 @@ backend/app/auth/token_service.py	1116	oversize: split by concern planned
 backend/app/core/auth_settings.py	859	oversize: split by concern planned
 backend/app/core/celery.py	1415	oversize: split by concern planned
 backend/app/core/config.py	1594	oversize: split by concern planned
-backend/app/main.py	1336	oversize: split by concern planned
 backend/app/schemas/auth_config.py	701	oversize: split by concern planned
 backend/app/services/CLAUDE.md	1044	oversize: split by concern planned
 backend/app/services/asr/factory.py	891	oversize: split by concern planned

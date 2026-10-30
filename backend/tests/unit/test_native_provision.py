@@ -465,7 +465,7 @@ class TestModelsDir:
 
 
 class TestZeroArgProductionForm:
-    """Exercises the exact call shape ``main._provision_native_diarizer`` makes.
+    """Exercises the exact call shape ``warmups._provision_native_diarizer`` makes.
 
     ``ensure_native_models()`` with no ``directory`` is what every real deployment runs;
     every other test in this module supplies an explicit ``tmp_path``-derived directory,
@@ -496,7 +496,7 @@ class TestZeroArgProductionForm:
     ) -> None:
         """Pins the wiring ``rg _provision_native_diarizer backend/tests/`` found NOTHING for.
 
-        ``app.main._provision_native_diarizer`` must call the zero-argument production
+        ``app.startup.warmups._provision_native_diarizer`` must call the zero-argument production
         form -- passing an explicit directory here would silently stop honouring
         ``DIAR_MODELS_DIR``/the container's real mount, and nothing else in this module
         would notice because every other test calls ``ensure_native_models`` directly.
@@ -509,7 +509,7 @@ class TestZeroArgProductionForm:
         behaviour. ``_provision_native_diarizer`` itself discards the return value (it
         only logs on failure), so the real result is captured via ``side_effect``.
         """
-        import app.main as main
+        import app.startup.warmups as warmups
         from app.transcription.native_provision import ProvisionResult
         from app.transcription.native_provision import ensure_native_models as real_fn
 
@@ -527,7 +527,7 @@ class TestZeroArgProductionForm:
             "app.transcription.native_provision.ensure_native_models",
             side_effect=_record,
         ) as mocked:
-            main._provision_native_diarizer()
+            warmups._provision_native_diarizer()
 
         mocked.assert_called_once_with()
         # If _provision_native_diarizer's try/except ever swallowed a TypeError from a

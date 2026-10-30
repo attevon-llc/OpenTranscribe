@@ -67,7 +67,7 @@ def is_relaxed_environment(environment: str) -> bool:
 # credentials, backup secrets — would become undecryptable.
 #
 # ``ENCRYPTION_ALGORITHM_V3`` is therefore validated against this set at boot
-# (``app.main._validate_production_secrets``) rather than dispatched on at runtime: a
+# (``app.core.startup_validation._validate_production_secrets``) rather than dispatched on at runtime: a
 # FIPS deployment configured for an algorithm this build does not implement refuses to
 # start instead of silently encrypting with a different one than its compliance
 # documentation claims.

@@ -8,7 +8,7 @@ storage, using ``compute_from_minio()`` (ranged reads, ~3×sample-window bytes
 per file — fast even for very large files).
 
 It is dispatched automatically on first startup after the upgrade by
-``_run_imohash_recompute()`` in ``main.py`` (gated by the
+``_run_imohash_recompute()`` in ``startup/maintenance.py`` (gated by the
 ``imohash_package_recompute_complete`` system-settings flag, same pattern as the
 thumbnail / embedding-normalization migrations) and is also exposed as an admin
 "Recompute File Fingerprints" button. It self-reschedules batch-by-batch using a

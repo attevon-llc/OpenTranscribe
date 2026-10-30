@@ -31,7 +31,7 @@ noqa::backend/app/core/enums.py	1	suppression: reason to be added
 noqa::backend/app/core/task_replay.py	4	suppression: reason to be added
 noqa::backend/app/db/base.py	1	suppression: reason to be added
 noqa::backend/app/db/migrations.py	1	suppression: reason to be added
-noqa::backend/app/main.py	11	suppression: reason to be added
+noqa::backend/app/main.py	10	suppression: reason to be added
 noqa::backend/app/middleware/csrf.py	1	suppression: reason to be added
 noqa::backend/app/models/media.py	1	suppression: reason to be added
 noqa::backend/app/schemas/auth_config.py	1	suppression: reason to be added

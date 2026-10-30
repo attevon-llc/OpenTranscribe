@@ -30,7 +30,9 @@ from typing import Any
 
 import pytest
 
-MAIN_PY = Path(__file__).resolve().parents[3] / "backend" / "app" / "main.py"
+MAINTENANCE_PY = (
+    Path(__file__).resolve().parents[3] / "backend" / "app" / "startup" / "maintenance.py"
+)
 
 
 class _FakeRedis:
@@ -214,12 +216,12 @@ def test_a_tiny_index_is_exempt_from_the_ratio(monkeypatch) -> None:
 def test_the_api_startup_sweep_leaves_reindex_coordination_alone() -> None:
     """The API process must not delete keys a running Celery worker owns.
 
-    `app/main.py` runs in a container that restarts independently of the workers.
+    `app/startup/maintenance.py` runs in the API container that restarts independently of the workers.
     Asserted against the source because the function is a lifespan side effect
     over a live Redis, and the property worth protecting is which *patterns* it
     names.
     """
-    source = MAIN_PY.read_text(encoding="utf-8")
+    source = MAINTENANCE_PY.read_text(encoding="utf-8")
     for pattern in ('"reindex_lock:*"', '"reindex_state:*"', '"reindex_uuids:*"'):
         assert f"        {pattern},\n" not in source, (
             f"{pattern} is back in the startup sweep. An API restart during a reindex "

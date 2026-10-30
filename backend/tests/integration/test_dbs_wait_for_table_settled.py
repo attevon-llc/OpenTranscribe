@@ -5,7 +5,7 @@ Same failure class as #617's Layer 1 (closed for the `speaker` table by
 ``dbs_wait_for_speaker_attributes``): the app has async post-completion writers into
 ``media_file`` (e.g. redaction detection's ``redaction_status``/``redaction_model_version``/
 ``redaction_coverage`` when redaction is enabled) that are not individually tracked, and a
-startup-timer task (``app/main.py::_run_one_time_embedding_normalization``, fires ~60s after
+startup-timer task (``app/startup/maintenance.py::_run_one_time_embedding_normalization``, fires ~60s after
 backend startup) that writes into ``system_settings``. Both can straddle phase 06b's
 snapshot/backup points and produce a false digest mismatch (``F-4``) or a false backup-content
 diff.

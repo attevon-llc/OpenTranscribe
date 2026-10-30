@@ -1,7 +1,7 @@
 """Characterization tests for ``app/tasks/speaker_embedding_migration.py``.
 
 This task runs exactly once per backend process, 60 s after FastAPI startup, via
-``app/main.py::_run_one_time_embedding_normalization`` (L442-513). It is invoked
+``app/startup/maintenance.py::_run_one_time_embedding_normalization`` (L442-513). It is invoked
 **synchronously** (``normalize_speaker_embeddings_task.apply(throw=False)`` at L469,
 not ``.delay()``) and gates on a ``SystemSettings`` row keyed
 ``embedding_normalization_done``. Because the whole point is a one-time migration,

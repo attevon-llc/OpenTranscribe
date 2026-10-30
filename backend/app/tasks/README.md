@@ -79,7 +79,7 @@ Other stage tasks, selected by the plan:
 - `cloud_asr.py`: the cloud ASR provider pipeline (`cloud-asr` queue)
 - `rediarize_task.py`: the post stage that detects speakers on an already-saved transcript, and the manual "re-detect speakers" action
 
-Enrichment (speaker embeddings, indexing, summarization, topics, facts, redaction) is dispatched asynchronously from postprocess and does not hold the GPU. `transcription.enrich_and_dispatch` (in `postprocess.py`) fans it out.
+Enrichment (speaker embeddings, indexing, summarization, topics, facts, redaction) is dispatched asynchronously from postprocess and does not hold the GPU. `transcription.enrich_and_dispatch` (in `enrich.py`) fans it out.
 
 ### Modules in `transcription/`
 | Module | Role |
@@ -87,6 +87,7 @@ Enrichment (speaker embeddings, indexing, summarization, topics, facts, redactio
 | `preprocess.py` | Stage 1: download from MinIO, extract audio with FFmpeg, probe metadata |
 | `core.py` | Stage 2 (GPU): transcription with the engine in `app/transcription/` |
 | `postprocess.py` | Stage 3: results, voiceprints, indexing, notifications, downstream dispatch |
+| `enrich.py` | Fire-and-forget fan-out after the transcript commit: indexing, redaction, speaker attributes/clustering, one plan |
 | `dispatch.py` | Plan resolution and Celery chain orchestration |
 | `finalize.py`, `downstream.py` | Critical-path persistence (segments, speakers, DB) and post-transcription dispatch |
 | `cpu_task.py`, `diarize_task.py`, `cloud_asr.py` | Alternative stage 2 implementations |

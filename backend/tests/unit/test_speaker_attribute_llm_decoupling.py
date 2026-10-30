@@ -51,7 +51,7 @@ def queued(db_session, monkeypatch):
 def test_postprocess_queues_llm_name_suggestions_when_attribute_detection_is_off(
     db_session, normal_user, queued
 ):
-    from app.tasks.transcription.postprocess import _dispatch_speaker_attributes
+    from app.tasks.transcription.enrich import _dispatch_speaker_attributes
 
     _pref(db_session, normal_user, "speaker_attribute_detection_enabled", "false")
     file_uuid = str(uuid_mod.uuid4())
@@ -65,7 +65,7 @@ def test_postprocess_leaves_the_llm_hand_off_to_the_attribute_task_when_detectio
     db_session, normal_user, queued
 ):
     """The attribute task chains the LLM step itself; queuing it here too would double it."""
-    from app.tasks.transcription.postprocess import _dispatch_speaker_attributes
+    from app.tasks.transcription.enrich import _dispatch_speaker_attributes
 
     file_uuid = str(uuid_mod.uuid4())
 

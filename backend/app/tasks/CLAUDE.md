@@ -132,7 +132,7 @@ indexing → WebSocket notification.
   CPU-only enrichment pool, **not** because it calls a provider: unlike every other task on
   that queue it must NOT return early when no LLM is configured — the no-LLM deployment is
   exactly who it exists for (#403 D6). Dispatched fire-and-forget from
-  `transcription/postprocess.enrich_and_dispatch`; logic lives in
+  `transcription/enrich.enrich_and_dispatch`; logic lives in
   `services/ingest_artifacts/` (its own CLAUDE.md).
 - `local_model_download.py` — `asr.download_local_model` (**download** queue, #1246): downloads one
   catalog Whisper model into the shared Hugging Face cache for the Settings model library. The

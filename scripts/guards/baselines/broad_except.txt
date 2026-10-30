@@ -282,10 +282,11 @@ backend/app/tasks/transcription/diarize_task.py	2	ratchet: may only go down
 backend/app/tasks/transcription/dispatch.py	7	ratchet: may only go down
 backend/app/tasks/transcription/downstream.py	5	ratchet: may only go down
 backend/app/tasks/transcription/embeddings.py	4	ratchet: may only go down
+backend/app/tasks/transcription/enrich.py	5	ratchet: may only go down
 backend/app/tasks/transcription/finalize.py	1	ratchet: may only go down
 backend/app/tasks/transcription/metadata_extractor.py	1	ratchet: may only go down
 backend/app/tasks/transcription/notifications.py	8	ratchet: may only go down
-backend/app/tasks/transcription/postprocess.py	15	ratchet: may only go down
+backend/app/tasks/transcription/postprocess.py	10	ratchet: may only go down
 backend/app/tasks/transcription/preprocess.py	7	ratchet: may only go down
 backend/app/tasks/transcription/run_ownership.py	3	ratchet: may only go down
 backend/app/tasks/transcription/speaker_processor.py	2	ratchet: may only go down

@@ -1,4 +1,4 @@
-"""Tests for transcription postprocess: the background enrichment fan-out."""
+"""Tests for transcription postprocess: the background enrichment fan-out (`tasks/transcription/enrich.py`)."""
 
 from contextlib import contextmanager
 from unittest.mock import MagicMock
@@ -17,7 +17,7 @@ _POSTPROCESS = "app.tasks.transcription.postprocess"
 def fanout(monkeypatch):
     """enrich_and_dispatch with every dispatcher recorded and the plan captured."""
     from app.services import post_processing_status as pps
-    from app.tasks.transcription import postprocess
+    from app.tasks.transcription import enrich
 
     calls: dict[str, tuple] = {}
     plans: list[dict] = []
@@ -29,19 +29,17 @@ def fanout(monkeypatch):
 
         return _fn
 
+    monkeypatch.setattr(enrich, "_index_transcript", record("index", PostProcessingState.QUEUED))
     monkeypatch.setattr(
-        postprocess, "_index_transcript", record("index", PostProcessingState.QUEUED)
+        enrich, "_dispatch_redaction", record("redaction", PostProcessingState.SKIPPED)
     )
     monkeypatch.setattr(
-        postprocess, "_dispatch_redaction", record("redaction", PostProcessingState.SKIPPED)
-    )
-    monkeypatch.setattr(
-        postprocess,
+        enrich,
         "_dispatch_speaker_attributes",
         record("attrs", {PostProcessingTask.SPEAKER_ATTRIBUTES: PostProcessingState.QUEUED}),
     )
     monkeypatch.setattr(
-        postprocess,
+        enrich,
         "_dispatch_speaker_clustering",
         record("cluster", PostProcessingState.QUEUED),
     )
@@ -53,25 +51,25 @@ def fanout(monkeypatch):
         "app.tasks.ingest_artifacts_task.dispatch_file_facts", record("facts", True)
     )
     monkeypatch.setattr(
-        postprocess.post_processing_status,
+        enrich.post_processing_status,
         "resolve_file",
         lambda file_id: pps.FileRef(id=file_id, uuid="u", owner_id=1),
     )
     monkeypatch.setattr(
-        postprocess.post_processing_status,
+        enrich.post_processing_status,
         "report_plan",
         lambda ref, decisions, run_at: plans.append(dict(decisions)),
     )
-    return postprocess, calls, plans
+    return enrich, calls, plans
 
 
 class TestEnrichAndDispatch:
     """Tests for enrich_and_dispatch() Celery task."""
 
     def test_calls_all_downstream_tasks_with_the_file_params(self, fanout):
-        postprocess, calls, plans = fanout
+        enrich, calls, plans = fanout
 
-        postprocess.enrich_and_dispatch(file_id=42, file_uuid="abc-def-123", user_id=7)
+        enrich.enrich_and_dispatch(file_id=42, file_uuid="abc-def-123", user_id=7)
 
         assert calls["index"] == ((42, "abc-def-123", 7), {"pipeline_task_id": None})
         assert calls["summarize"] == ((42, "abc-def-123"), {"tasks_to_run": None})
@@ -81,10 +79,10 @@ class TestEnrichAndDispatch:
         assert len(plans) == 1
 
     def test_passes_downstream_tasks_through(self, fanout):
-        postprocess, calls, _ = fanout
+        enrich, calls, _ = fanout
         downstream = ["summarization"]
 
-        postprocess.enrich_and_dispatch(
+        enrich.enrich_and_dispatch(
             file_id=1, file_uuid="uuid-1", user_id=1, downstream_tasks=downstream
         )
 
@@ -94,23 +92,23 @@ class TestEnrichAndDispatch:
 
     def test_propagates_pipeline_task_id_to_indexing(self, fanout):
         """pipeline_task_id is forwarded into _index_transcript for benchmark markers."""
-        postprocess, calls, _ = fanout
+        enrich, calls, _ = fanout
 
-        postprocess.enrich_and_dispatch(
+        enrich.enrich_and_dispatch(
             file_id=1, file_uuid="uuid-1", user_id=1, pipeline_task_id="task-abc"
         )
 
         assert calls["index"] == ((1, "uuid-1", 1), {"pipeline_task_id": "task-abc"})
 
     def test_summarization_failure_doesnt_block_others(self, fanout, monkeypatch):
-        postprocess, calls, plans = fanout
+        enrich, calls, plans = fanout
 
         def broken(*a, **k):
             raise RuntimeError("LLM unavailable")
 
         monkeypatch.setattr("app.tasks.transcription.core.trigger_automatic_summarization", broken)
 
-        postprocess.enrich_and_dispatch(file_id=1, file_uuid="uuid-1", user_id=1)
+        enrich.enrich_and_dispatch(file_id=1, file_uuid="uuid-1", user_id=1)
 
         assert {"index", "attrs", "cluster", "facts"} <= set(calls)
         # The summary step decided nothing, so nothing waits for it.
@@ -120,7 +118,7 @@ class TestEnrichAndDispatch:
     def test_an_indexing_dispatch_failure_is_planned_failed_and_does_not_block(self, monkeypatch):
         """The REAL _index_transcript: a broker error becomes FAILED, never an exception."""
         from app.services import post_processing_status as pps
-        from app.tasks.transcription import postprocess
+        from app.tasks.transcription import enrich
 
         def broken(*a, **k):
             raise ConnectionError("broker down")
@@ -128,7 +126,7 @@ class TestEnrichAndDispatch:
         monkeypatch.setattr(
             "app.tasks.search_indexing_task.index_transcript_search_task.delay", broken
         )
-        assert postprocess._index_transcript(1, "uuid-1", 1) is PostProcessingState.FAILED
+        assert enrich._index_transcript(1, "uuid-1", 1) is PostProcessingState.FAILED
         assert pps.outcome_of({"status": "failed"}) is PostProcessingState.FAILED
 
 

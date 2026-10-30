@@ -164,7 +164,7 @@ def trigger_automatic_summarization(
             )
 
         # Speaker LLM identification: always chained from detect_speaker_attributes_task
-        # (dispatched by _dispatch_speaker_attributes in postprocess). Gender detection
+        # (dispatched by _dispatch_speaker_attributes in enrich). Gender detection
         # runs first, then chains to LLM speaker ID to ensure gender/age context is
         # available. No direct dispatch needed here — would cause double dispatch.
 

@@ -368,6 +368,7 @@ _NOT_REPLAYED_ON_PURPOSE = {
 _PIPELINE_DISPATCH_MODULES = (
     "app/tasks/transcription/preprocess.py",
     "app/tasks/transcription/postprocess.py",
+    "app/tasks/transcription/enrich.py",
     # The speaker-detection post stage hands off to the voiceprint stage (issue #1225).
     "app/tasks/rediarize_task.py",
     "app/tasks/transcription/downstream.py",

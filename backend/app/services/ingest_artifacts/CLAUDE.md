@@ -41,7 +41,7 @@ directory, you have misread the stage.
   imports every name in it rather than restating any of them.
 
 Task: `app/tasks/ingest_artifacts_task.py` (`artifacts.generate_file_facts`, **nlp** queue),
-dispatched fire-and-forget from `transcription/postprocess.enrich_and_dispatch`.
+dispatched fire-and-forget from `transcription/enrich.enrich_and_dispatch`.
 Model + migration: `app/models/file_facts.py`, `alembic/versions/v390_add_file_facts.py`.
 
 ## The measured number, and why it is not the one in the plan

@@ -6,7 +6,7 @@ already owns post-transcription enrichment, and because putting it on `cpu` woul
 it behind the pipeline-critical preprocess/postprocess stages it must not delay. It loads
 no model and holds no GPU.
 
-Dispatched fire-and-forget from ``transcription/postprocess.enrich_and_dispatch``, in
+Dispatched fire-and-forget from ``transcription/enrich.enrich_and_dispatch``, in
 parallel with search indexing, so it is off the critical path: the file is already
 COMPLETED and visible to the user before this runs.
 

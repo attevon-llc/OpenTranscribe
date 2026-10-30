@@ -185,7 +185,7 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   input, which turned any masking bug into a silent leak. `build_speaker_segments` masks *before*
   truncating to 200 chars so the window can't slice a mask open.
 - **Redaction is OPT-OUT (`DEFAULT_REDACTION_ENABLED = False`) and detection is gated on it.**
-  `tasks/transcription/postprocess.py::_dispatch_redaction` skips the scan when the owner has it
+  `tasks/transcription/enrich.py::_dispatch_redaction` skips the scan when the owner has it
   off. Never-scanned files are dispatched lazily on first read, so an existing transcript with no
   spans is expected rather than a bug. (`redaction_task.py`'s docstring claimed the opposite until
   #296 — it now documents the gate.)

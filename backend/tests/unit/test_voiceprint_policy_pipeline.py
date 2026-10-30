@@ -485,7 +485,7 @@ def test_speaker_clustering_is_dispatched_only_when_voiceprints_are_allowed(
     privacy_world, seams, normal_user, monkeypatch, scope
 ):
     from app.core.enums import PostProcessingState
-    from app.tasks.transcription import postprocess
+    from app.tasks.transcription import enrich
 
     media_file = _file_in_scope(privacy_world, normal_user, scope)
     queued: list[tuple] = []
@@ -494,7 +494,7 @@ def test_speaker_clustering_is_dispatched_only_when_voiceprints_are_allowed(
         lambda *a, **k: queued.append(a),
     )
 
-    state = postprocess._dispatch_speaker_clustering(
+    state = enrich._dispatch_speaker_clustering(
         str(media_file.uuid), normal_user.id, None, file_id=media_file.id
     )
 

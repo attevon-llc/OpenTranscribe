@@ -139,7 +139,6 @@ _GPU_PREFERRED_QUEUE = gpu_preferred_queue()
 # an error at dispatch time instead of silently creating a phantom queue.
 CELERY_QUEUES = tuple(Queue(q) for q in CeleryQueues.ALL)
 
-# Initialize Celery
 # kombu refuses to connect over `rediss://` unless an SSL context is supplied — it does
 # NOT fall back to a default. config.py builds a rediss:// URL whenever REDIS_USE_TLS is
 # set, so without this every worker dies at startup on a TLS Redis (issue #284 A1.17).
@@ -209,6 +208,7 @@ celery_app = Celery(
         "app.tasks.transcription.core",
         "app.tasks.transcription.preprocess",
         "app.tasks.transcription.postprocess",
+        "app.tasks.transcription.enrich",
         "app.tasks.transcription.dispatch",
         "app.tasks.transcription.cancellation",
         "app.tasks.waveform",

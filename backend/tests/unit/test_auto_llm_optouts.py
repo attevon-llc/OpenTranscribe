@@ -146,7 +146,7 @@ def test_batch_resolver_keeps_users_apart(db_session, normal_user, other_user):
 def test_postprocess_queues_llm_names_with_the_switch_on_and_detection_off(
     db_session, normal_user, queued
 ):
-    from app.tasks.transcription.postprocess import _dispatch_speaker_attributes
+    from app.tasks.transcription.enrich import _dispatch_speaker_attributes
 
     _user_pref(db_session, normal_user, "speaker_attribute_detection_enabled", "false")
     fid = str(uuid_mod.uuid4())
@@ -157,7 +157,7 @@ def test_postprocess_queues_llm_names_with_the_switch_on_and_detection_off(
 def test_postprocess_queues_nothing_llm_with_the_switch_off_and_detection_off(
     db_session, normal_user, queued
 ):
-    from app.tasks.transcription.postprocess import _dispatch_speaker_attributes
+    from app.tasks.transcription.enrich import _dispatch_speaker_attributes
 
     _user_pref(db_session, normal_user, "speaker_attribute_detection_enabled", "false")
     _user_pref(db_session, normal_user, SPEAKER_KEY, "false")
@@ -167,7 +167,7 @@ def test_postprocess_queues_nothing_llm_with_the_switch_off_and_detection_off(
 
 def test_switch_off_keeps_attribute_detection_running(db_session, normal_user, queued):
     """Gender/age detection is a separate feature; only the LLM hand-off is opted out."""
-    from app.tasks.transcription.postprocess import _dispatch_speaker_attributes
+    from app.tasks.transcription.enrich import _dispatch_speaker_attributes
 
     _user_pref(db_session, normal_user, SPEAKER_KEY, "false")
     fid = str(uuid_mod.uuid4())
@@ -188,7 +188,7 @@ def test_the_attribute_task_hand_off_honours_the_switch(db_session, normal_user,
 
 
 def test_an_explicit_speaker_llm_stage_ignores_the_switch(db_session, normal_user, queued):
-    from app.tasks.transcription.postprocess import _dispatch_speaker_attributes
+    from app.tasks.transcription.enrich import _dispatch_speaker_attributes
 
     _user_pref(db_session, normal_user, SPEAKER_KEY, "false")
     fid = str(uuid_mod.uuid4())

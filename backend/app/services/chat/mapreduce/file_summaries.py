@@ -74,7 +74,7 @@ class FileSummary:
 class DigestScopeHits(list):
     """The map's hits, PLUS the coverage of the map itself.
 
-    A ``list`` subclass rather than a ``(hits, coverage)`` tuple: ``service.py``'s call
+    A ``list`` subclass rather than a ``(hits, coverage)`` tuple: ``summary_tier.py``'s call
     site (``map_hits = scope_digest_hits(...)``, then ``if map_hits:`` and
     ``mask_digests(session_scope, map_hits, ...)``) is outside this change's file set and
     already treats the return value as a plain list. A tuple would silently break that

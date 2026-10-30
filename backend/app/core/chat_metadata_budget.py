@@ -9,7 +9,7 @@ schema-level cap on a JSONB column: a plan over a pathological scope, or a
 resolution dict carrying one entry per candidate speaker, can grow without
 limit. :func:`cap_msg_metadata` is the one place that enforces a ceiling.
 
-**Caller.** ``services/chat/service.py``, immediately before the metadata
+**Caller.** ``services/chat/persistence.py`` (``_persist_reply``), immediately before the metadata
 dict is attached to the message row and committed — not wired in from this
 module (that file is out of scope here); this is the utility the caller is
 expected to reach for rather than inventing a second cap.

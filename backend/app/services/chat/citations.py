@@ -236,7 +236,7 @@ def build_overview_citations(
 
     Redaction and staleness are **already resolved by the time this runs** —
     not re-checked here. ``summaries`` is masked by the caller (``mask_digests``,
-    called before ``build_file_summaries`` in ``service.py``) via the same
+    called before ``build_file_summaries`` in ``summary_tier.py``) via the same
     provenance-fallback path a digest hit takes (``scope_digest_hits``'s own
     docstring: an out-of-range ``digest_section`` cannot match a real section,
     so masking falls through to its fail-closed inline path for a summary hit

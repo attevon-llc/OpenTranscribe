@@ -275,20 +275,24 @@ def test_persisted_content_is_the_masked_one():
     """
     import inspect
 
+    from app.services.chat import persistence as chat_persistence
     from app.services.chat import service as chat_service
 
-    source = inspect.getsource(chat_service)
-    assert "_redact_delta(answer_redactor" in source, (
+    # The stream accumulates the redacted text (`service.py`); the persist step stores
+    # that accumulation (`persistence.py`). Each fact is checked where it lives.
+    stream_source = inspect.getsource(chat_service)
+    persist_source = inspect.getsource(chat_persistence)
+    assert "_redact_delta(answer_redactor" in stream_source, (
         "the answer stream no longer passes through OutputRedactor before being accumulated; "
         "chat export now needs to mask `content` too (issue #863)"
     )
-    assert "_redact_delta(reasoning_redactor" in source, (
+    assert "_redact_delta(reasoning_redactor" in stream_source, (
         "the reasoning stream no longer passes through OutputRedactor before being "
         "accumulated; chat export now needs to mask `reasoning_content` too (issue #863)"
     )
-    assert "content=turn.answer" in source, (
+    assert "content=turn.answer" in persist_source, (
         "the persisted message no longer stores the redacted answer accumulation"
     )
-    assert "reasoning_content=turn.reasoning" in source, (
+    assert "reasoning_content=turn.reasoning" in persist_source, (
         "the persisted message no longer stores the redacted reasoning accumulation"
     )

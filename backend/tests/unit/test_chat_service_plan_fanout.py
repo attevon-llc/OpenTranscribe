@@ -15,9 +15,9 @@ from unittest.mock import patch
 
 import pytest
 
+from app.services.chat import fanout as chat_fanout
 from app.services.chat import legs
 from app.services.chat import planner
-from app.services.chat import service as chat_service
 from app.services.chat.trace import ListTraceRecorder
 from app.services.chat.trace import Outcome
 from app.services.chat.trace import QueryStage
@@ -85,7 +85,7 @@ def test_every_chunk_leg_reuses_the_exact_same_file_scope():
             return_value=SimpleNamespace(matched="Dana", ambiguous_with=(), reason=""),
         ),
     ):
-        result, counted, recurrence_result = chat_service._run_plan_fanout(
+        result, counted, recurrence_result = chat_fanout._run_plan_fanout(
             plan=plan,
             decision=_FakeRoute(),
             effective_query="the question",
@@ -136,7 +136,7 @@ def test_a_plan_never_adds_a_counted_leg_the_router_did_not_also_want():
         ),
         patch("app.services.opensearch_service.get_opensearch_client", return_value=object()),
     ):
-        chat_service._run_plan_fanout(
+        chat_fanout._run_plan_fanout(
             plan=plan,
             decision=_FakeRoute(wants_aggregate=False),
             effective_query="q",
@@ -174,7 +174,7 @@ def test_unvalidated_plan_speakers_never_reach_a_leg():
             return_value=SimpleNamespace(entries=(), declined=False),
         ),
     ):
-        chat_service._run_plan_fanout(
+        chat_fanout._run_plan_fanout(
             plan=plan,
             decision=_FakeRoute(),
             effective_query="q",
@@ -207,7 +207,7 @@ def test_final_chunks_are_reduced_to_a_third_when_a_counted_answer_is_present():
         ),
         patch("app.services.opensearch_service.get_opensearch_client", return_value=object()),
     ):
-        result, counted, _recurrence = chat_service._run_plan_fanout(
+        result, counted, _recurrence = chat_fanout._run_plan_fanout(
             plan=plan,
             decision=_FakeRoute(wants_aggregate=True),
             effective_query="q",
@@ -247,7 +247,7 @@ def test_a_fanout_produces_a_planned_parent_with_child_leg_stages_in_the_trace()
         ),
         patch("app.services.opensearch_service.get_opensearch_client", return_value=object()),
     ):
-        chat_service._run_plan_fanout(
+        chat_fanout._run_plan_fanout(
             plan=plan,
             decision=_FakeRoute(wants_aggregate=True),
             effective_query="q",

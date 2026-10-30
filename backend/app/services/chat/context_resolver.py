@@ -14,7 +14,7 @@ function in this module entirely — an empty scope was never a wide "no
 predicate" pass through here, it is a request that never reaches it. Quarantine
 is not an OpenSearch filter field, so an unscoped turn used to retrieve a
 quarantined file's chunks and digest sections unfiltered; that gap is closed in
-``service.py``'s ``_drop_quarantined_hits`` (phase 3.5 of ``_prepare_context``),
+``evidence.py``'s ``_drop_quarantined_hits`` (phase 3.5 of ``_prepare_context``),
 not in this module. Sharing is not similarly exposed on the unscoped path — the
 index's ``accessible_user_ids`` term (``hybrid_search_service._build_filters``)
 enforces it there — only quarantine, which the index carries no field for at
@@ -67,7 +67,7 @@ def _visible_files_query(db: Session, ctx: RequestContext):
     # exception, unlike the review surfaces (issue #262g originally carved one
     # out; a later adversarial review removed it). Chat is a retrieval surface,
     # not a review one (see this module's docstring and `_resolve_explicit_files`
-    # below), and `service.py`'s phase-3.5 `_drop_quarantined_hits` already drops
+    # below), and `evidence.py`'s phase-3.5 `_drop_quarantined_hits` already drops
     # a quarantined file's hits for an admin's unscoped turn unconditionally. An
     # admin-only bypass HERE — reachable only through the collection/tag axes and
     # `count_scope_files`'s "All transcripts" estimate — would disagree with that

@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.chat.service import ChatTurn
-from app.services.chat.service import _finalize_turn
+from app.services.chat.persistence import _finalize_turn
+from app.services.chat.turn import ChatTurn
 
 ANSWER = "The team chose three buttons [1]."
 REASONING = "Let me check excerpt [1] before I answer that."

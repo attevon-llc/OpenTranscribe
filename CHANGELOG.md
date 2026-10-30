@@ -1162,6 +1162,11 @@ off by default.
 
 ### Fixed
 
+- **The lite image builds for arm64 again, and a failed image build now fails the release build.**
+  `requirements-lite.txt` pinned a `+cpu` torchcodec the PyTorch CPU index does not publish for
+  aarch64, and the build script reported success anyway because it swallowed the `docker buildx`
+  failure, so only the scan stage noticed the missing image.
+
 - **Turning voiceprints off now hides a voice-made name everywhere it was printed or indexed
   (#1280).** The search index, the speaker summary text in it, the facts and digest, the
   summarization prompt, exports and captions, the chat "who said" lookup, the gallery and
@@ -1769,6 +1774,9 @@ off by default.
 
 ### Security
 
+- **Alpine images take current security fixes.** The frontend and docs `apk upgrade` layer was
+  cached from the first build and shipped `brotli-libs` 1.2.0-r0 (CVE-2026-111497); it now has a
+  daily `APK_SECURITY_REFRESH` cache key, like the Debian images.
 - **nltk 3.10.4 (GHSA-j456-xh4h-cpf2).** Pinned in every requirements file. The advisory concerns
   `WekaClassifier`, which this app never imports; the bump clears the release scan gate. 3.10.4
   also reads a group- or world-writable (or foreign-owned) `nltk_data` tree as an absent corpus,

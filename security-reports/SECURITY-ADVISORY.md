@@ -1,6 +1,6 @@
 # Security Advisory - OpenTranscribe
 
-**Last Updated**: 2026-10-28
+**Last Updated**: 2026-10-29
 **Applies to**: OpenTranscribe v0.6.0 (per-image scan counts below are the v0.5.1 measurement until the v0.6.0 release scan re-measures them; see the note in each section)
 **Base Images**: `python:3.13-slim-trixie` (Debian 13), `nginx:1.31.2-alpine3.23` (frontend and docs)
 
@@ -36,6 +36,14 @@ tables further down still show the v0.5.1 measurement until that run replaces th
 - **Application-level changes** (not image findings) are in the changelog under Security: stricter
   upload content-type checks, tenant isolation with audited support access, CSP/CORS and
   cross-origin headers, and third-party telemetry off by default.
+
+- **Alpine package refresh.** Frontend and docs now take `APK_SECURITY_REFRESH` the same way. Their
+  `apk upgrade` layer had been cached from the first build and kept `brotli-libs` 1.2.0-r0
+  (CVE-2026-111497, fixed in 1.2.1-r0); the release scan caught it and a rebuild clears it.
+- **v0.6.0 release scan (2026-10-29), all seven architecture legs scanned.** The only CRITICAL
+  left is CVE-2026-6653 `libxml2` on `backend-amd64`, `lite-amd64` and `lite-arm64`: Debian trixie
+  ships no patched package, so it is accepted risk (below) and the scan was passed with a recorded
+  `--force-scan` override naming this entry. The `lite-arm64` leg is built on the arm64 builder.
 
 The libxml2 and Debian OS-level findings below are unchanged in nature and remain tracked in
 issue [#775](https://github.com/attevon-llc/OpenTranscribe/issues/775).

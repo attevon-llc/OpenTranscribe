@@ -52,6 +52,8 @@ from app.core.queues import CeleryQueues
 from app.core.queues import CPUPriority  # noqa: F401 - referenced for parity/documentation
 from app.core.queues import DownloadPriority
 from app.core.queues import UtilityPriority
+from app.services import backup_config
+from app.services import backup_cron
 from app.services import backup_service as bs
 from app.services import media_mirror_service as mm
 from app.tasks import backup_tasks
@@ -91,7 +93,7 @@ def _never_acquire(_key, timeout=0, blocking_timeout=0):
 # check_backup_schedule
 # =============================================================================
 def test_check_backup_schedule_disabled_dispatches_nothing(use_test_session):
-    bs.update_settings(use_test_session, enabled=False)
+    backup_config.update_settings(use_test_session, enabled=False)
 
     with mock.patch.object(backup_tasks.run_backup, "apply_async") as dispatch:
         result = backup_tasks.check_backup_schedule()
@@ -101,29 +103,29 @@ def test_check_backup_schedule_disabled_dispatches_nothing(use_test_session):
 
 
 def test_check_backup_schedule_not_due_dispatches_nothing_and_does_not_stamp(use_test_session):
-    bs.update_settings(use_test_session, enabled=True, schedule="0 3 * * *")
+    backup_config.update_settings(use_test_session, enabled=True, schedule="0 3 * * *")
     # "Does not stamp" means the value is UNCHANGED, not that it is None. `backup.last_run_at`
     # is a SystemSettings row in the shared dev DB that the running celery-beat commits
     # whenever a scheduled backup fires, so asserting `is None` only held on a database where
     # beat had never run — it went red the first time the dev stack claimed a backup window.
-    before = bs.get_settings(use_test_session)["last_run_at"]
+    before = backup_config.get_settings(use_test_session)["last_run_at"]
 
     with (
-        mock.patch.object(bs, "is_due", return_value=False),
+        mock.patch.object(backup_cron, "is_due", return_value=False),
         mock.patch.object(backup_tasks.run_backup, "apply_async") as dispatch,
     ):
         result = backup_tasks.check_backup_schedule()
 
     assert result == {"status": "not_due", "schedule": "0 3 * * *"}
     dispatch.assert_not_called()
-    assert bs.get_settings(use_test_session)["last_run_at"] == before
+    assert backup_config.get_settings(use_test_session)["last_run_at"] == before
 
 
 def test_check_backup_schedule_due_stamps_last_run_and_dispatches(use_test_session):
-    bs.update_settings(use_test_session, enabled=True, schedule="0 3 * * *")
+    backup_config.update_settings(use_test_session, enabled=True, schedule="0 3 * * *")
 
     with (
-        mock.patch.object(bs, "is_due", return_value=True),
+        mock.patch.object(backup_cron, "is_due", return_value=True),
         mock.patch.object(backup_tasks.run_backup, "apply_async") as dispatch,
     ):
         result = backup_tasks.check_backup_schedule()
@@ -131,7 +133,7 @@ def test_check_backup_schedule_due_stamps_last_run_and_dispatches(use_test_sessi
     assert result == {"status": "dispatched", "schedule": "0 3 * * *"}
     dispatch.assert_called_once_with(queue="utility", priority=UtilityPriority.ROUTINE)
     # Real DB state: the window was claimed BEFORE dispatch, not merely logged.
-    cfg = bs.get_settings(use_test_session)
+    cfg = backup_config.get_settings(use_test_session)
     assert cfg["last_run_at"] is not None
     stamped = datetime.fromisoformat(cfg["last_run_at"])
     assert datetime.now(UTC) - stamped < timedelta(seconds=10)
@@ -143,7 +145,7 @@ def test_check_backup_schedule_claims_the_window_even_though_dispatch_is_outside
     """The stamp-then-dispatch ordering is the actual overlap guard: it must be
     visible to the NEXT beat tick's read even though ``apply_async`` runs after
     the session that wrote it has already closed."""
-    bs.update_settings(use_test_session, enabled=True, schedule="* * * * *")
+    backup_config.update_settings(use_test_session, enabled=True, schedule="* * * * *")
 
     with mock.patch.object(backup_tasks.run_backup, "apply_async"):
         backup_tasks.check_backup_schedule()
@@ -288,7 +290,7 @@ def test_check_mirror_schedule_not_due_dispatches_nothing(use_test_session):
     before = mm.get_settings(use_test_session)["last_run_at"]
 
     with (
-        mock.patch.object(bs, "is_due", return_value=False),
+        mock.patch.object(backup_cron, "is_due", return_value=False),
         mock.patch.object(backup_tasks.run_media_mirror, "apply_async") as dispatch,
     ):
         result = backup_tasks.check_mirror_schedule()
@@ -302,7 +304,7 @@ def test_check_mirror_schedule_due_stamps_and_dispatches_on_download_queue(use_t
     mm.update_settings(use_test_session, enabled=True, schedule="0 4 * * *")
 
     with (
-        mock.patch.object(bs, "is_due", return_value=True),
+        mock.patch.object(backup_cron, "is_due", return_value=True),
         mock.patch.object(backup_tasks.run_media_mirror, "apply_async") as dispatch,
     ):
         result = backup_tasks.check_mirror_schedule()
@@ -321,7 +323,7 @@ def test_check_mirror_schedule_due_stamps_and_dispatches_on_download_queue(use_t
 def test_mirror_schedule_is_a_separate_namespace_from_backup_schedule(use_test_session):
     """Regression guard: the two due-checks must never share state — enabling
     one must not make the other appear due, and vice versa."""
-    bs.update_settings(use_test_session, enabled=True, schedule="0 3 * * *")
+    backup_config.update_settings(use_test_session, enabled=True, schedule="0 3 * * *")
     mm.update_settings(use_test_session, enabled=False)
 
     with mock.patch.object(backup_tasks.run_media_mirror, "apply_async") as dispatch:

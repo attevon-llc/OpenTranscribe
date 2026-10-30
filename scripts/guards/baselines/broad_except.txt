@@ -60,6 +60,7 @@ backend/app/core/task_replay.py	7	ratchet: may only go down
 backend/app/core/worker_metrics.py	9	ratchet: may only go down
 backend/app/db/migrations.py	2	ratchet: may only go down
 backend/app/main.py	11	ratchet: may only go down
+backend/app/services/backup_s3.py	4	ratchet: may only go down
 backend/app/startup/maintenance.py	8	ratchet: may only go down
 backend/app/startup/warmups.py	7	ratchet: may only go down
 backend/app/scripts/batch_speaker_matching.py	1	ratchet: may only go down
@@ -83,7 +84,6 @@ backend/app/services/asr/speechmatics_provider.py	1	ratchet: may only go down
 backend/app/services/audio_segment_utils.py	1	ratchet: may only go down
 backend/app/services/auto_label_service.py	2	ratchet: may only go down
 backend/app/services/backup_alerts.py	2	ratchet: may only go down
-backend/app/services/backup_service.py	4	ratchet: may only go down
 backend/app/services/bedrock_settings.py	1	ratchet: may only go down
 backend/app/services/cache_management_service.py	2	ratchet: may only go down
 backend/app/services/chat/fanout.py	2	ratchet: may only go down

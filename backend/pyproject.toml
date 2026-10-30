@@ -175,7 +175,7 @@ ignore_imports = [
   "app.auth.password_reset -> app.services.email_service",  # upward import, module level: removal planned (layering)
   "app.auth.proxy.provisioning -> app.services.idp_group_mapping_service",  # upward import, function level: removal planned (layering)
   "app.core.auth_settings -> app.services.auth_config_service",  # upward import, function level: removal planned (layering)
-  "app.core.backup_metrics -> app.services.backup_service",  # upward import, function level: removal planned (layering)
+  "app.core.backup_metrics -> app.services.backup_config",  # upward import, function level: removal planned (layering)
   "app.core.backup_metrics -> app.services.media_mirror_service",  # upward import, function level: removal planned (layering)
   "app.core.backup_metrics -> app.services.search.index_retry",  # upward import, function level: removal planned (layering)
   "app.core.backup_metrics -> app.services.system_settings_service",  # upward import, function level: removal planned (layering)

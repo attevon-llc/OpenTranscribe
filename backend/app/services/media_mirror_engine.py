@@ -256,7 +256,7 @@ def execute_mirror(
 # =============================================================================
 def _build_destination(cfg: dict[str, Any], db: Session | None) -> MirrorDestination:
     """Build the configured destination; raises ValueError when it isn't usable."""
-    from app.services import backup_service
+    from app.services import backup_config
     from app.services import media_mirror_service as mm
 
     if cfg["destination_type"] == mm.DEST_S3:
@@ -265,7 +265,7 @@ def _build_destination(cfg: dict[str, Any], db: Session | None) -> MirrorDestina
             raise ValueError("Media mirror S3 destination has no bucket configured")
         return S3Destination(mm.build_s3_client(cfg, db), bucket, cfg.get("s3_prefix") or "")
     destination = cfg["destination"]
-    if not backup_service.destination_status(destination)["writable"]:
+    if not backup_config.destination_status(destination)["writable"]:
         raise ValueError(
             f"Media mirror destination {destination!r} is not a writable mount — mount a "
             "host path via docker-compose.backup.yml (BACKUP_MIRROR_HOST_PATH)."

@@ -20,7 +20,9 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core import constants as C  # noqa: N812
-from app.services import backup_service
+from app.services import backup_config
+from app.services import backup_cron
+from app.services import backup_s3
 from app.services import system_settings_service as sss
 from app.services.scheduled_job_settings import bool_value
 from app.services.scheduled_job_settings import int_value
@@ -51,8 +53,8 @@ KEY_RUNS_SUCCESS = "backup.mirror_runs_success_total"
 KEY_RUNS_FAILURE = "backup.mirror_runs_failure_total"
 KEY_LAST_SUCCESS_AT = "backup.mirror_last_success_at"
 
-DEST_LOCAL = backup_service.DEST_LOCAL
-DEST_S3 = backup_service.DEST_S3
+DEST_LOCAL = backup_config.DEST_LOCAL
+DEST_S3 = backup_config.DEST_S3
 
 # Redis lock identity (runs must never overlap; a full first mirror can take hours).
 MIRROR_LOCK_KEY = "media_mirror_run"
@@ -129,7 +131,7 @@ def update_settings(
     if enabled is not None:
         sss.set_setting(db, KEY_ENABLED, enabled, "Media mirror master toggle")
     if schedule is not None:
-        if not backup_service.is_valid_cron(schedule):
+        if not backup_cron.is_valid_cron(schedule):
             raise ValueError(f"Invalid cron schedule: {schedule!r}")
         sss.set_setting(db, KEY_SCHEDULE, schedule, "Media mirror cron schedule (5-field, UTC)")
     if destination_type is not None:
@@ -196,7 +198,7 @@ def _s3_cfg(cfg: dict[str, Any]) -> dict[str, Any]:
 
 def build_s3_client(cfg: dict[str, Any], db: Session | None = None, secret: str | None = None):
     """Boto3 client for the mirror destination bucket (reuses the backup builder)."""
-    return backup_service._build_s3_client(
+    return backup_s3._build_s3_client(
         _s3_cfg(cfg), secret if secret is not None else get_s3_secret_key(db)
     )
 

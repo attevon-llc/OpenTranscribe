@@ -56,8 +56,9 @@ noqa::backend/app/services/asr/pyannote_provider.py	2	suppression: reason to be 
 noqa::backend/app/services/asr/speechmatics_provider.py	1	suppression: reason to be added
 noqa::backend/app/services/audio_segment_utils.py	2	suppression: reason to be added
 noqa::backend/app/services/auth_config_service.py	1	suppression: reason to be added
+noqa::backend/app/services/backup_config.py	3	suppression: reason to be added
 noqa::backend/app/services/backup_recovery.py	1	suppression: reason to be added
-noqa::backend/app/services/backup_service.py	5	suppression: reason to be added
+noqa::backend/app/services/backup_service.py	2	suppression: reason to be added
 noqa::backend/app/services/chat/limits.py	4	suppression: reason to be added
 noqa::backend/app/services/chat/mapreduce/reducers.py	2	suppression: reason to be added
 noqa::backend/app/services/chat/persistence.py	2	suppression: reason to be added

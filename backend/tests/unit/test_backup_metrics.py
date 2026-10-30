@@ -16,6 +16,7 @@ import pytest
 from prometheus_client import REGISTRY
 
 from app.core.backup_metrics import update_backup_metrics
+from app.services import backup_config
 from app.services import backup_service as bs
 from app.services import system_settings_service as sss
 
@@ -35,7 +36,7 @@ def _sample(name: str, labels: dict | None = None) -> float:
 
 def test_last_success_timestamp_gauge(db_session):
     ts = datetime(2026, 7, 1, 3, 0, tzinfo=UTC)
-    sss.set_setting(db_session, bs.KEY_LAST_SUCCESS_AT, ts.isoformat(), "test")
+    sss.set_setting(db_session, backup_config.KEY_LAST_SUCCESS_AT, ts.isoformat(), "test")
 
     update_backup_metrics(db_session)
 
@@ -43,11 +44,13 @@ def test_last_success_timestamp_gauge(db_session):
 
 
 def test_last_status_gauge_tracks_last_result(db_session):
-    sss.set_setting(db_session, bs.KEY_LAST_RESULT, json.dumps({"ok": True}), "test")
+    sss.set_setting(db_session, backup_config.KEY_LAST_RESULT, json.dumps({"ok": True}), "test")
     update_backup_metrics(db_session)
     assert _sample("backup_last_status") == 1.0
 
-    sss.set_setting(db_session, bs.KEY_LAST_RESULT, json.dumps({"ok": False, "error": "x"}), "test")
+    sss.set_setting(
+        db_session, backup_config.KEY_LAST_RESULT, json.dumps({"ok": False, "error": "x"}), "test"
+    )
     update_backup_metrics(db_session)
     assert _sample("backup_last_status") == 0.0
 
@@ -56,8 +59,8 @@ def test_run_counters_sync_up_to_db_values(db_session):
     base_success = _sample("backup_runs_total", {"result": "success"})
     base_failure = _sample("backup_runs_total", {"result": "failure"})
 
-    sss.set_setting(db_session, bs.KEY_RUNS_SUCCESS, int(base_success) + 3, "test")
-    sss.set_setting(db_session, bs.KEY_RUNS_FAILURE, int(base_failure) + 2, "test")
+    sss.set_setting(db_session, backup_config.KEY_RUNS_SUCCESS, int(base_success) + 3, "test")
+    sss.set_setting(db_session, backup_config.KEY_RUNS_FAILURE, int(base_failure) + 2, "test")
     update_backup_metrics(db_session)
 
     assert _sample("backup_runs_total", {"result": "success"}) == int(base_success) + 3
@@ -68,7 +71,7 @@ def test_run_counters_stay_monotonic_when_db_lower(db_session):
     # Simulate a DB reset: persisted count below the live counter must be ignored
     # (Counters can never go backwards within a process).
     current = _sample("backup_runs_total", {"result": "success"})
-    sss.set_setting(db_session, bs.KEY_RUNS_SUCCESS, 0, "test")
+    sss.set_setting(db_session, backup_config.KEY_RUNS_SUCCESS, 0, "test")
 
     update_backup_metrics(db_session)
 
@@ -77,9 +80,9 @@ def test_run_counters_stay_monotonic_when_db_lower(db_session):
 
 def test_refresh_survives_bad_persisted_values(db_session):
     before = _sample("backup_last_status")
-    sss.set_setting(db_session, bs.KEY_LAST_RESULT, "not-json", "test")
-    sss.set_setting(db_session, bs.KEY_LAST_SUCCESS_AT, "not-a-date", "test")
-    sss.set_setting(db_session, bs.KEY_RUNS_SUCCESS, "NaNsense", "test")
+    sss.set_setting(db_session, backup_config.KEY_LAST_RESULT, "not-json", "test")
+    sss.set_setting(db_session, backup_config.KEY_LAST_SUCCESS_AT, "not-a-date", "test")
+    sss.set_setting(db_session, backup_config.KEY_RUNS_SUCCESS, "NaNsense", "test")
 
     update_backup_metrics(db_session)  # must not raise
 
@@ -95,14 +98,14 @@ def test_perform_backup_failure_lands_in_metrics(db_session):
     )
     base_failure = _sample("backup_runs_total", {"result": "failure"})
 
-    bs.update_settings(db_session, destination="/nonexistent/backups/zzz")
+    backup_config.update_settings(db_session, destination="/nonexistent/backups/zzz")
     # The registry is process-global and _sync_run_counters only ever RAISES the
     # counter up to the DB cumulative count. Earlier tests in this worker (e.g.
     # test_run_counters_sync_up_to_db_values) advance the live counter while their
     # DB writes roll back with the savepoint — so a fresh DB count of 1 could
     # never surface. Seed the persisted count at the live counter so this run's
     # +1 is observable regardless of what ran before in the process.
-    sss.set_setting(db_session, bs.KEY_RUNS_FAILURE, int(base_failure), "test")
+    sss.set_setting(db_session, backup_config.KEY_RUNS_FAILURE, int(base_failure), "test")
     result = bs.perform_backup(db_session)  # no_destination → ok=False
     assert result["ok"] is False
 

@@ -13,7 +13,7 @@ from unittest import mock
 import pytest
 
 from app.services import backup_alerts
-from app.services import backup_service as bs
+from app.services import backup_config
 from app.services import system_settings_service as sss
 from tests.helpers import does_not_raise
 
@@ -136,7 +136,7 @@ def test_keys_notice_sent_once(db_session, admin_user):
     # Second run: flag is set, no repeat notice.
     assert sender.call_count == first_count
     assert "encryption keys" in sender.call_args.kwargs["message"]
-    assert sss.get_setting_bool(db_session, bs.KEY_RECOVERY_NOTICE_SENT) is True
+    assert sss.get_setting_bool(db_session, backup_config.KEY_RECOVERY_NOTICE_SENT) is True
 
 
 def test_keys_notice_not_sent_when_keys_included(db_session):
@@ -145,4 +145,4 @@ def test_keys_notice_not_sent_when_keys_included(db_session):
     with mock.patch("app.services.notification_service.send_task_notification") as sender:
         backup_alerts.notify_backup_result(db_session, result)
     sender.assert_not_called()
-    assert sss.get_setting_bool(db_session, bs.KEY_RECOVERY_NOTICE_SENT) is False
+    assert sss.get_setting_bool(db_session, backup_config.KEY_RECOVERY_NOTICE_SENT) is False

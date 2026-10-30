@@ -36,7 +36,7 @@ from fastapi import status
 
 from app.core import constants as C  # noqa: N812
 from app.models.system_settings import SystemSettings
-from app.services import backup_service as bs
+from app.services import backup_config
 from app.services import system_settings_service as sss
 from app.utils.encryption import decrypt_api_key
 
@@ -137,7 +137,7 @@ def test_put_stores_the_s3_secret_encrypted_and_never_returns_it(
     assert body["s3_secret_key_set"] is True
     assert body["s3_access_key_id"] == "AKIAEXAMPLE"
 
-    stored = sss.get_setting(db_session, bs.KEY_S3_SECRET_KEY)
+    stored = sss.get_setting(db_session, backup_config.KEY_S3_SECRET_KEY)
     assert stored is not None
     assert stored != secret
     assert decrypt_api_key(stored) == secret
@@ -164,7 +164,7 @@ def test_put_invalid_cron_is_a_400_not_a_500(
     """
     response = client.put(BASE, headers=super_admin_token_headers, json={"schedule": "not a cron"})
     assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert sss.get_setting(db_session, bs.KEY_SCHEDULE) is None
+    assert sss.get_setting(db_session, backup_config.KEY_SCHEDULE) is None
 
 
 def test_put_unknown_destination_type_is_a_400(
@@ -196,14 +196,16 @@ def test_status_reports_due_when_enabled_and_not_due_when_disabled(
     The disabled half is the control — without it an implementation that always
     returns True would pass.
     """
-    bs.update_settings(db_session, enabled=True, schedule="* * * * *")
-    bs.update_settings_last_run(db_session, (datetime.now(UTC) - timedelta(minutes=5)).isoformat())
+    backup_config.update_settings(db_session, enabled=True, schedule="* * * * *")
+    backup_config.update_settings_last_run(
+        db_session, (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
+    )
     db_session.commit()
     enabled = client.get(f"{BASE}/status", headers=super_admin_token_headers)
     assert enabled.status_code == status.HTTP_200_OK
     assert enabled.json()["next_due"] is True
 
-    bs.update_settings(db_session, enabled=False)
+    backup_config.update_settings(db_session, enabled=False)
     db_session.commit()
     disabled = client.get(f"{BASE}/status", headers=super_admin_token_headers)
     assert disabled.json()["next_due"] is False
@@ -218,8 +220,8 @@ def test_status_treats_an_unparseable_stored_cron_as_not_due(
     endpoint is what an operator opens to *diagnose* backups, so it failing with a
     500 removes the only view of the problem.
     """
-    sss.set_setting(db_session, bs.KEY_ENABLED, True, "test")
-    sss.set_setting(db_session, bs.KEY_SCHEDULE, "not a cron", "test")
+    sss.set_setting(db_session, backup_config.KEY_ENABLED, True, "test")
+    sss.set_setting(db_session, backup_config.KEY_SCHEDULE, "not a cron", "test")
     db_session.commit()
     response = client.get(f"{BASE}/status", headers=super_admin_token_headers)
     assert response.status_code == status.HTTP_200_OK
@@ -241,9 +243,9 @@ def test_status_omits_the_opensearch_probe_when_snapshots_are_off(
     nowhere else and are not "derived data"), so a test that inferred "off" from the
     default would silently stop exercising the off path.
     """
-    from app.services import backup_service as bs
+    from app.services import backup_config
 
-    bs.update_settings(db_session, include_opensearch=False)
+    backup_config.update_settings(db_session, include_opensearch=False)
 
     response = client.get(f"{BASE}/status", headers=super_admin_token_headers)
     assert response.status_code == status.HTTP_200_OK
@@ -268,7 +270,7 @@ def test_list_returns_backup_files_newest_first_with_the_encrypted_flag(
     (tmp_path / "opentranscribe-20260101-030000.dump").write_bytes(b"older")
     (tmp_path / "opentranscribe-20260102-030000.dump.gpg").write_bytes(b"newer-encrypted")
     (tmp_path / "unrelated.txt").write_bytes(b"ignored")
-    bs.update_settings(db_session, destination=str(tmp_path))
+    backup_config.update_settings(db_session, destination=str(tmp_path))
     db_session.commit()
 
     response = client.get(f"{BASE}/list", headers=super_admin_token_headers)
@@ -294,7 +296,7 @@ def test_list_on_a_missing_destination_is_an_empty_200(
     a 500 instead of the mount-status banner built for exactly this case.
     """
     missing = tmp_path / "never-mounted"
-    bs.update_settings(db_session, destination=str(missing))
+    backup_config.update_settings(db_session, destination=str(missing))
     db_session.commit()
 
     response = client.get(f"{BASE}/list", headers=super_admin_token_headers)

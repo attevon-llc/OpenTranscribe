@@ -97,10 +97,10 @@ def test_partial_update_leaves_other_fields(db_session):
 
 def test_mirror_settings_are_separate_from_backup_settings(db_session):
     # The mirror destination is deliberately independent of the DB-dump destination.
-    from app.services import backup_service as bs
+    from app.services import backup_config
 
     mm.update_settings(db_session, destination="/mnt/mirror-only", destination_type="local")
-    assert bs.get_settings(db_session)["destination"] != "/mnt/mirror-only"
+    assert backup_config.get_settings(db_session)["destination"] != "/mnt/mirror-only"
 
 
 def test_s3_secret_is_encrypted_and_never_echoed(db_session):

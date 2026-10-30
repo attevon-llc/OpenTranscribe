@@ -35,7 +35,6 @@ backend/app/services/llm_service.py	1127	oversize: split by concern planned
 backend/app/services/media_download_service.py	859	oversize: split by concern planned
 backend/app/services/minio_service.py	824	oversize: split by concern planned
 backend/app/services/privacy/purge_voiceprints.py	711	oversize: split by concern planned
-backend/app/services/profile_embedding_service.py	702	oversize: split by concern planned
 backend/app/services/search/CLAUDE.md	910	oversize: split by concern planned
 backend/app/services/speaker_cleanup.py	1026	oversize: split by concern planned
 backend/app/services/speaker_embedding_service.py	716	oversize: split by concern planned
@@ -68,7 +67,7 @@ backend/tests/api/test_owner_listing_tenancy.py	762	oversize: split by concern p
 backend/tests/api/test_privacy_purge.py	1660	oversize: split by concern planned
 backend/tests/api/test_rename_propagation_dispatch.py	971	oversize: split by concern planned
 backend/tests/api/test_scim.py	758	oversize: split by concern planned
-backend/tests/api/test_speaker_tenancy.py	766	oversize: split by concern planned
+backend/tests/api/test_speaker_tenancy.py	762	oversize: split by concern planned
 backend/tests/conftest.py	795	oversize: split by concern planned
 backend/tests/e2e/conftest.py	1359	oversize: split by concern planned
 backend/tests/e2e/test_chat.py	855	oversize: split by concern planned

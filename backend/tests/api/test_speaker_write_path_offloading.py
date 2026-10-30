@@ -75,10 +75,6 @@ def no_opensearch():
             "app.services.profile_embedding_service.ProfileEmbeddingService.update_profile_embedding"
         ) as embed_mock,
         patch(
-            "app.services.profile_embedding_service.ProfileEmbeddingService."
-            "remove_speaker_from_profile_embedding"
-        ) as remove_mock,
-        patch(
             "app.services.analytics_service.AnalyticsService.refresh_analytics"
         ) as analytics_mock,
         patch(
@@ -92,7 +88,6 @@ def no_opensearch():
             "merge_speaker_embeddings": merge_mock,
             "update_speaker_profile": profile_mock,
             "update_profile_embedding": embed_mock,
-            "remove_speaker_from_profile_embedding": remove_mock,
             "refresh_analytics": analytics_mock,
             "clear_derived_cache": cache_mock,
         }
@@ -233,7 +228,6 @@ class TestMergeOffloading:
             "get_speaker_embedding",
             "add_speaker_embedding",
             "merge_speaker_embeddings",
-            "remove_speaker_from_profile_embedding",
             "refresh_analytics",
             "clear_derived_cache",
         ):

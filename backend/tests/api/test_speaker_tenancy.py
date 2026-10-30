@@ -541,12 +541,8 @@ def test_auto_profile_does_not_link_a_same_named_profile_of_another_tenant(world
     """The speaker gets its own tenant's "Jane Roe" instead (names are per tenant)."""
     from app.api.endpoints import speaker_update
     from app.services import opensearch_service
-    from app.services import profile_embedding_service as pes
 
     w = world
-    monkeypatch.setattr(
-        pes.ProfileEmbeddingService, "add_speaker_to_profile_embedding", lambda *a, **k: True
-    )
     monkeypatch.setattr(opensearch_service, "update_speaker_profile", lambda **_k: True)
     personal = _mk_profile(w.db, w.alice, None, name="Jane Roe")
     assert speaker_update.auto_create_or_assign_profile(w.a_speaker, "Jane Roe", w.db) is True

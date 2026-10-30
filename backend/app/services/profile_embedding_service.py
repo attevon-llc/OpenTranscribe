@@ -440,52 +440,6 @@ class ProfileEmbeddingService:
             return False
 
     @staticmethod
-    def add_speaker_to_profile_embedding(db: Session, speaker_id: int, profile_id: int) -> bool:
-        """
-        Add a speaker's embedding to the profile's consolidated embedding.
-
-        Performs a full recalculation by averaging all speakers assigned to the
-        profile, ensuring the stored embedding always represents the true centroid.
-
-        Args:
-            db: Database session
-            speaker_id: ID of the speaker being added
-            profile_id: ID of the profile to update
-
-        Returns:
-            True if successful, False otherwise
-        """
-        logger.info(f"Adding speaker {speaker_id} to profile {profile_id}, recalculating average")
-        return ProfileEmbeddingService.update_profile_embedding(db, profile_id)
-
-    @staticmethod
-    def remove_speaker_from_profile_embedding(
-        db: Session, speaker_id: int, profile_id: int
-    ) -> bool:
-        """
-        Remove a speaker's contribution from the profile's consolidated embedding.
-        This triggers a full recalculation of the profile embedding.
-
-        Args:
-            db: Database session
-            speaker_id: ID of the speaker to remove
-            profile_id: ID of the profile to update
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            logger.info(f"Removing speaker {speaker_id} from profile {profile_id} embedding")
-            # For removal, we always do a full recalculation to ensure accuracy
-            return ProfileEmbeddingService.update_profile_embedding(db, profile_id)
-
-        except Exception as e:
-            logger.error(
-                f"Error removing speaker {speaker_id} from profile {profile_id} embedding: {e}"
-            )
-            return False
-
-    @staticmethod
     def _group_speakers_by_profile(speakers: list[Speaker]) -> dict[int, list[Speaker]]:
         """Group speakers by their profile ID."""
         speakers_by_profile: dict[int, list[Speaker]] = {}

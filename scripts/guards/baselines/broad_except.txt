@@ -154,7 +154,7 @@ backend/app/services/pipeline_timing_service.py	1	ratchet: may only go down
 backend/app/services/platform_access.py	1	ratchet: may only go down
 backend/app/services/post_processing_status.py	7	ratchet: may only go down
 backend/app/services/privacy/purge.py	2	ratchet: may only go down
-backend/app/services/profile_embedding_service.py	11	ratchet: may only go down
+backend/app/services/profile_embedding_service.py	10	ratchet: may only go down
 backend/app/services/progress_tracker.py	4	ratchet: may only go down
 backend/app/services/protected_media_plugins/mediacms.py	3	ratchet: may only go down
 backend/app/services/protected_media_providers.py	3	ratchet: may only go down

@@ -286,7 +286,7 @@ def _enforce_proxy_identity_consistency(user: User, request: Request | None, db:
     if request is None or str(getattr(user, "auth_type", "")) != AUTH_TYPE_PROXY:
         return
 
-    from app.core.auth_settings import get_process_auth_settings
+    from app.core.process_auth_settings import get_process_auth_settings
 
     # Process-level, not a per-request DB read: this runs on every authenticated
     # request, and the layered cache is the same one the password policy and the

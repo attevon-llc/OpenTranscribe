@@ -98,7 +98,7 @@ def audited(monkeypatch) -> list[dict]:
 
 
 def _publish(**values: Any) -> None:
-    from app.core.auth_settings import publish_process_auth_setting
+    from app.core.process_auth_settings import publish_process_auth_setting
 
     for key, value in values.items():
         publish_process_auth_setting(key, value)

@@ -49,6 +49,7 @@ _APP_ROOT = Path(__file__).resolve().parents[2] / "app"
 #: stored, validated, audited and served back — and changes nothing.
 _CONFIG_PLANE = {
     _APP_ROOT / "core" / "auth_settings.py",
+    _APP_ROOT / "core" / "process_auth_settings.py",
     _APP_ROOT / "services" / "auth_config_service.py",
     _APP_ROOT / "schemas" / "auth_config.py",
     _APP_ROOT / "models" / "auth_config.py",

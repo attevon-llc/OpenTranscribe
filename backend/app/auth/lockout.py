@@ -26,8 +26,8 @@ from typing import TypedDict
 
 from app.auth.degradation import record_degradation
 from app.auth.utils import mask_identifier
-from app.core.auth_settings import get_process_auth_settings
 from app.core.config import settings
+from app.core.process_auth_settings import get_process_auth_settings
 
 
 class LockoutInfo(TypedDict):

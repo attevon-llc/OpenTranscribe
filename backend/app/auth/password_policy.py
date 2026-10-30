@@ -25,9 +25,9 @@ from datetime import datetime
 from datetime import timedelta
 
 from app.auth import password_blocklist
-from app.core.auth_settings import get_process_auth_settings
 from app.core.config import settings
 from app.core.env import is_truthy
+from app.core.process_auth_settings import get_process_auth_settings
 
 logger = logging.getLogger(__name__)
 

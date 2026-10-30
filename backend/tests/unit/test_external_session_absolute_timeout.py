@@ -230,6 +230,8 @@ class TestTheLimitComesFromTheLayeredAuthConfig:
         class _Stub:
             session_absolute_timeout_minutes = 123
 
-        monkeypatch.setattr("app.core.auth_settings.get_process_auth_settings", lambda: _Stub())
+        monkeypatch.setattr(
+            "app.core.process_auth_settings.get_process_auth_settings", lambda: _Stub()
+        )
 
         assert external_session._absolute_timeout_minutes() == 123

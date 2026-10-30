@@ -40,8 +40,8 @@ from app.api.endpoints.auth.dependencies import get_current_active_user
 from app.api.endpoints.auth.dependencies import get_current_admin_user
 from app.auth import password_policy as policy_module
 from app.auth.audit_events import AuditEventType
-from app.core.auth_settings import get_process_auth_settings
 from app.core.config import settings
+from app.core.process_auth_settings import get_process_auth_settings
 from app.models.user import User
 from tests.helpers import fake_request
 
@@ -169,7 +169,7 @@ def _publish_policy(**values) -> None:
     deployment's policy up in a test; the autouse ``_clear_process_auth_cache``
     fixture in ``conftest`` tears it down again.
     """
-    from app.core.auth_settings import publish_process_auth_setting
+    from app.core.process_auth_settings import publish_process_auth_setting
 
     for key, value in values.items():
         publish_process_auth_setting(key, value)

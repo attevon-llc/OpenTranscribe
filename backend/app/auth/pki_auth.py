@@ -41,9 +41,9 @@ from app.auth.roles import ELEVATED_ROLES
 from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import role_implies_superuser
-from app.core.auth_settings import get_process_auth_settings
 from app.core.auth_types import AUTH_TYPE_PKI
 from app.core.config import settings
+from app.core.process_auth_settings import get_process_auth_settings
 
 logger = logging.getLogger(__name__)
 

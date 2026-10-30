@@ -873,7 +873,7 @@ R7 used to fail for a reason that was a **product gap, not a harness artefact**:
 recorded `upload_time` and nothing else, so "meetings in March 2025" filtered on the date a file
 was *ingested*. All 432 corpus files shared one upload date. Every user with a back-catalogue had
 that problem. `v391_add_recorded_date_provenance` added `recorded_date` **and its source**, and
-`services/chat/aggregation_service._files_in_period` now resolves the period against it in
+`services/chat/aggregation_queries._files_in_period` now resolves the period against it in
 Postgres.
 
 #### What the 4/4 proves, and what it does not

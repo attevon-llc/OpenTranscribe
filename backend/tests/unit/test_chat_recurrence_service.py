@@ -1,4 +1,4 @@
-"""The I/O half of cross-meeting recurrence (`aggregation_service.py`).
+"""The I/O half of cross-meeting recurrence (`recurrence_service.py`).
 
 Real Postgres (`db_session`), real permission plumbing
 (`_accessible_scoped_files`/`PermissionService`), and the redaction config
@@ -16,8 +16,8 @@ from unittest.mock import patch
 import pytest
 
 from app.services.chat import recurrence
-from app.services.chat.aggregation_service import answer_recurrence
-from app.services.chat.aggregation_service import gather_recurrence_source_items
+from app.services.chat.recurrence_service import answer_recurrence
+from app.services.chat.recurrence_service import gather_recurrence_source_items
 from app.services.chat.router import route
 
 pytestmark = pytest.mark.unit
@@ -309,6 +309,52 @@ def test_masking_is_applied_to_every_item_when_the_policy_requires_it(db_session
     action_item = next(i for i in items if i.leaf == recurrence.LEAF_ACTION_ITEM)
     assert "555-1234" not in action_item.text
     assert action_item.text == "Call [PHONE] about the budget"
+
+
+def _gather_with_local_provider(db_session, normal_user, *, locked: bool):
+    """One action item through ``gather_recurrence_source_items(unmask_for_local=True)``.
+
+    Returns ``(item_text, mask_segment_was_called)`` under a policy that would otherwise mask.
+    """
+    import dataclasses
+
+    file1 = _make_file(db_session, normal_user, title="A")
+    _add_fresh_summary(
+        db_session, file1, action_items=[{"item": "Call 555-1234 about the budget", "owner": "Bob"}]
+    )
+    cfg = dataclasses.replace(
+        _cfg(enabled=True, redact_before_llm=True), redact_before_llm_locked=locked
+    )
+    with (
+        patch("app.services.redaction.config.resolve_effective_config", return_value=cfg),
+        patch(
+            "app.services.redaction.service.RedactionService.detect_segment_spans",
+            return_value=([], None),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.mask_segment",
+            return_value=("Call [PHONE] about the budget", []),
+        ) as mask_segment,
+    ):
+        items, _coverage = gather_recurrence_source_items(
+            _sf(db_session), normal_user.id, None, [str(file1.uuid)], unmask_for_local=True
+        )
+    action_item = next(i for i in items if i.leaf == recurrence.LEAF_ACTION_ITEM)
+    return action_item.text, mask_segment.called
+
+
+def test_a_local_provider_receives_unmasked_items_when_the_admin_has_not_locked_masking(
+    db_session, normal_user
+):
+    text, masked = _gather_with_local_provider(db_session, normal_user, locked=False)
+    assert not masked
+    assert text == "Call 555-1234 about the budget"
+
+
+def test_the_admin_force_floor_beats_the_local_provider_exemption(db_session, normal_user):
+    text, masked = _gather_with_local_provider(db_session, normal_user, locked=True)
+    assert masked
+    assert text == "Call [PHONE] about the budget"
 
 
 def test_a_masking_failure_drops_the_whole_file_and_is_counted(db_session, normal_user):

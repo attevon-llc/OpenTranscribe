@@ -265,7 +265,7 @@ def _build_summaries(
         meta["map_files_no_content"] = files_no_content
 
     # Single-speaker focus only — same simplification
-    # `aggregation_service._run_speaker_stats` already applies
+    # `aggregation_speakers._run_speaker_stats` already applies
     # (`route.speakers[0] if len(route.speakers) == 1 else None`): a map over
     # SEVERAL speakers still serves their combined content correctly (OR
     # semantics in `scope_speaker_digest_hits`), it just does not get the

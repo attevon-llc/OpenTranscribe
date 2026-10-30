@@ -46,8 +46,8 @@ def _drop_quarantined_hits(db: Session, hits: list[ChunkHit]) -> list[ChunkHit]:
     ``result.digests`` — the RANKED tiers. The counted/aggregation tier
     (``aggregation_service.answer_aggregation``) runs a whole phase EARLIER, at
     phase 2, and is a separate code path this function never touches:
-    ``aggregation_service._accessible_scoped_files`` and
-    ``aggregation_service._quarantined_among`` are the enforcement points for
+    ``aggregation_queries._accessible_scoped_files`` and
+    ``aggregation_queries._quarantined_among`` are the enforcement points for
     that tier, on the Postgres and OpenSearch shapes respectively. The
     map-reduce overview's bounded-scope leg (``mapreduce.scope_digest_hits``)
     is a third, independent enforcement point for the same reason — it re-reads

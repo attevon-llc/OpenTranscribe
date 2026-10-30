@@ -16,7 +16,7 @@ real call or false-positive on prose.
 
 **Extended (Finding #9, the quarantine-gap review) to
 ``_accessible_scoped_files`` call sites too.** That helper is
-``aggregation_service.py``'s single Postgres-side chokepoint — it wraps
+``aggregation_queries.py``'s single Postgres-side chokepoint — it wraps
 ``get_accessible_file_ids_subquery`` AND now also excludes quarantined files
 (the fix for Finding #1) — so a caller writing
 ``_accessible_scoped_files(db, user_id, None, file_uuids)``, or threading the

@@ -32,7 +32,6 @@ backend/app/services/auth_config_service.py	959	oversize: split by concern plann
 backend/app/services/auto_label_service.py	712	oversize: split by concern planned
 backend/app/services/backup_service.py	1045	oversize: split by concern planned
 backend/app/services/chat/CLAUDE.md	958	oversize: split by concern planned
-backend/app/services/chat/aggregation_service.py	1117	oversize: split by concern planned
 backend/app/services/chat/prompting.py	884	oversize: split by concern planned
 backend/app/services/chat/redactor.py	1099	oversize: split by concern planned
 backend/app/services/chat/service.py	1503	oversize: split by concern planned

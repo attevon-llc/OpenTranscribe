@@ -83,7 +83,7 @@ TIER_CHUNK = "chunk"
 TIER_DIGEST = "digest"
 TIER_AGGREGATE = "aggregate"
 #: The scope-wide, no-ranking recurrence detector
-#: (``aggregation_service.answer_recurrence``) — reads ``summary_data`` and
+#: (``recurrence_service.answer_recurrence``) — reads ``summary_data`` and
 #: ``file_facts.keyphrases`` across a bounded scope, the same "bounded scope,
 #: Postgres, no ranking" shape ``TIER_AGGREGATE`` already uses.
 TIER_RECURRENCE = "recurrence"
@@ -375,7 +375,7 @@ class Route:
     #: The active speaker scope this turn was asked under, exactly as passed to
     #: :func:`route`. Carried here — not just consumed for
     #: :func:`_apply_structure`'s digest-removal check — so a Postgres-backed
-    #: aggregation shape (``aggregation_service._run_speaker_stats``), which
+    #: aggregation shape (``aggregation_speakers._run_speaker_stats``), which
     #: never sees ``service.py``'s original ``speakers`` argument, can still
     #: narrow a per-speaker answer to the one name already in scope with no new
     #: parameter threaded through ``answer_aggregation``.

@@ -27,7 +27,7 @@ from datetime import timedelta
 
 import pytest
 
-from app.api.endpoints import admin as admin_module
+from app.api.endpoints import admin_identity
 from app.auth.audit import AuditOutcome
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.core.auth_types import AUTH_TYPE_LDAP
@@ -307,7 +307,7 @@ class TestLinkIdentityConvertsAuthType:
     ):
         captured: list[dict] = []
         monkeypatch.setattr(
-            admin_module.audit_logger, "log", lambda **kwargs: captured.append(kwargs)
+            admin_identity.audit_logger, "log", lambda **kwargs: captured.append(kwargs)
         )
 
         response = client.put(
@@ -335,7 +335,7 @@ class TestLinkIdentityConvertsAuthType:
         target = _make_second_super_admin(db_session)
         captured: list[dict] = []
         monkeypatch.setattr(
-            admin_module.audit_logger, "log", lambda **kwargs: captured.append(kwargs)
+            admin_identity.audit_logger, "log", lambda **kwargs: captured.append(kwargs)
         )
 
         response = client.put(

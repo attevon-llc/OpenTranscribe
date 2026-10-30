@@ -394,7 +394,7 @@ def test_erasing_an_organization_removes_its_tags(org_world, monkeypatch):
 
 
 def test_deleting_a_member_keeps_the_orgs_tags_and_drops_their_personal_ones(org_world):
-    from app.api.endpoints.admin import _delete_user_owned_records
+    from app.services.user_deletion_service import _delete_user_owned_records
 
     w = org_world
     org_tag = Tag(name=_unique("Shared Word"), user_id=w.bob.id, organization_id=w.org_a.id)

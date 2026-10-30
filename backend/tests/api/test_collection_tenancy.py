@@ -498,7 +498,7 @@ def test_chat_scope_resolves_a_colleagues_org_collection(org_world):
 
 
 def test_deleting_a_member_keeps_the_orgs_collections_and_drops_personal_ones(org_world):
-    from app.api.endpoints.admin import _delete_user_owned_records
+    from app.services.user_deletion_service import _delete_user_owned_records
 
     w = org_world
     org_coll = _mk_collection(w.db, _unique("Team"), w.bob, w.org_a.id)

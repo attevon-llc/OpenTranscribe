@@ -35,6 +35,12 @@ from pathlib import Path
 import pytest
 
 import app.api.endpoints.admin as admin
+import app.api.endpoints.admin_accounts as admin_accounts
+import app.api.endpoints.admin_audit_logs as admin_audit_logs
+import app.api.endpoints.admin_identity as admin_identity
+import app.api.endpoints.admin_maintenance as admin_maintenance
+import app.api.endpoints.admin_quarantine as admin_quarantine
+import app.api.endpoints.admin_settings as admin_settings
 import app.api.endpoints.auth.methods as auth_methods
 import app.api.endpoints.auth.oidc as auth_oidc
 import app.api.endpoints.auth.pki as auth_pki
@@ -77,6 +83,12 @@ HARDENED_MODULES = [
     url_processing,
     # Issue #320
     admin,
+    admin_accounts,
+    admin_audit_logs,
+    admin_identity,
+    admin_maintenance,
+    admin_quarantine,
+    admin_settings,
     auth_config,
     auth_oidc,
     auth_methods,
@@ -183,10 +195,10 @@ HARDENED_HANDLERS = [
     (tasks_endpoints, "recover_all_stuck_tasks"),
     (tasks_endpoints, "retry_file_processing"),
     # Issue #320 — heavy aggregate queries, blocking OpenSearch, blocking HTTP probes
-    (admin, "admin_search_users"),
-    (admin, "get_account_status_report"),
-    (admin, "preview_retention_deletion"),
-    (admin, "repair_profile_embeddings"),
+    (admin_identity, "admin_search_users"),
+    (admin_audit_logs, "get_account_status_report"),
+    (admin_settings, "preview_retention_deletion"),
+    (admin_maintenance, "repair_profile_embeddings"),
     (auth_config, "get_all_configs"),
     (auth_config, "update_config_category"),
     # NOTE: `oidc_login` used to be here. It became `async def` for OIDC

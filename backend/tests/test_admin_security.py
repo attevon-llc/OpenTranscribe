@@ -668,7 +668,7 @@ class TestAuditLogging:
         # Verify audit logger was called
         mock_audit.log.assert_called()
 
-    @patch("app.api.endpoints.admin.audit_logger")
+    @patch("app.api.endpoints.admin_accounts.audit_logger")
     def test_account_lock_is_audited(self, mock_audit, client, db_session, admin_token_headers):
         """Test that account lock actions are audit logged."""
         target_user = User(
@@ -692,7 +692,7 @@ class TestAuditLogging:
         assert response.status_code == 200
         mock_audit.log.assert_called()
 
-    @patch("app.api.endpoints.admin.audit_logger")
+    @patch("app.api.endpoints.admin_accounts.audit_logger")
     def test_session_termination_is_audited(
         self, mock_audit, client, db_session, admin_token_headers
     ):

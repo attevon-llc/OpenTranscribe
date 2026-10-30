@@ -368,7 +368,7 @@ def canonical_identifier(submitted: str, account_email: str | None) -> str:
     what NIST AC-7 counts: attempts *against an account*, not against a spelling.
 
     Why the email and not the UUID: the admin unlock endpoint
-    (``api/endpoints/admin.py``) clears the lockout with ``unlock_account(user.email)``
+    (``api/endpoints/admin_accounts.py``) clears the lockout with ``unlock_account(user.email)``
     and the periodic/inspection helpers surface identifiers to operators. Email keeps
     one key space for writers and readers; a UUID key would silently orphan every
     admin unlock.

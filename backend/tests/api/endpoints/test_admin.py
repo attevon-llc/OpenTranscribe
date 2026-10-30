@@ -191,10 +191,10 @@ def test_admin_users_delete_writes_an_audit_record(
     ``AuditEventType`` member is emitted *somewhere*, and ``ADMIN_USER_DELETE`` already
     had its emitter in ``users.py``. The gap was per-endpoint, not per-member.
     """
-    from app.api.endpoints import admin as admin_module
+    from app.auth import audit as audit_module
 
     events: list[dict] = []
-    monkeypatch.setattr(admin_module.audit_logger, "log", lambda **kw: events.append(kw))
+    monkeypatch.setattr(audit_module.audit_logger, "log", lambda **kw: events.append(kw))
 
     target_uuid = str(normal_user.uuid)
     target_email = str(normal_user.email)

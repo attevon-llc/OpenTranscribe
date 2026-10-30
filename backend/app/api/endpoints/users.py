@@ -814,13 +814,13 @@ def delete_user(
     # Capture what the audit record needs before the row is gone.
     deleted_snapshot = DeletedUser.of(user)
 
-    # Use the comprehensive cleanup from the admin endpoint to avoid orphaned records.
-    from app.api.endpoints.admin import _assert_no_held_files
-    from app.api.endpoints.admin import _delete_user_media_files
-    from app.api.endpoints.admin import _delete_user_owned_records
-    from app.api.endpoints.admin import _delete_user_speakers
+    # Use the comprehensive cleanup shared with the admin endpoint to avoid orphaned records.
     from app.services.file_cleanup_service import load_account_purge_plans
     from app.services.file_cleanup_service import purge_account_external_copies
+    from app.services.user_deletion_service import _assert_no_held_files
+    from app.services.user_deletion_service import _delete_user_media_files
+    from app.services.user_deletion_service import _delete_user_owned_records
+    from app.services.user_deletion_service import _delete_user_speakers
 
     user_id = user.id
 

@@ -65,7 +65,10 @@ orm_call_in_api::backend/app/api/endpoints/files/url_processing.py	3	layering: r
 orm_call_in_api::backend/app/api/endpoints/files/waveform.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/groups.py	8	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/legal.py	2	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/llm_settings.py	25	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/llm_config_helpers.py	5	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/llm_connection_tests.py	4	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/llm_model_discovery.py	1	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/llm_settings.py	15	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/media_collections.py	43	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/org_admin.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/org_admin_holds.py	8	layering: removal planned

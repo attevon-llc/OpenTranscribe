@@ -447,7 +447,7 @@ def test_owner_never_lists_own_item_as_shared(client, world, surface):
 def test_llm_test_connection_never_lends_a_shared_configs_key(client, world, monkeypatch):
     """``POST /llm-settings/test`` takes the caller's ``base_url``; a shared config's
     stored key must not ride along, even inside the owner's organization."""
-    from app.api.endpoints import llm_settings
+    from app.api.endpoints import llm_connection_tests
     from app.utils.encryption import encrypt_api_key
 
     cfg_uuid = _share_llm(world.db, world.users["a1"])
@@ -468,8 +468,8 @@ def test_llm_test_connection_never_lends_a_shared_configs_key(client, world, mon
         def close(self):
             pass
 
-    monkeypatch.setattr(llm_settings, "LLMService", _Svc)
-    monkeypatch.setattr(llm_settings, "_assert_safe_llm_endpoint", lambda *a, **k: None)
+    monkeypatch.setattr(llm_connection_tests, "LLMService", _Svc)
+    monkeypatch.setattr(llm_connection_tests, "_assert_safe_llm_endpoint", lambda *a, **k: None)
     body = {
         "provider": "openai",
         "model_name": "gpt-4o-mini",
@@ -484,7 +484,7 @@ def test_llm_test_connection_never_lends_a_shared_configs_key(client, world, mon
 
 
 def test_model_discovery_never_lends_a_shared_configs_key(world):
-    from app.api.endpoints.llm_settings import _get_stored_api_key
+    from app.api.endpoints.llm_model_discovery import _get_stored_api_key
     from app.utils.encryption import encrypt_api_key
 
     cfg_uuid = _share_llm(world.db, world.users["a1"])

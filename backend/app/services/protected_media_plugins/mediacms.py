@@ -45,7 +45,7 @@ def _pin_media_url(url: str, *, purpose: str) -> PinnedTarget:
     discard leaves a second, unchecked DNS resolution for a hostname whose records change
     between the check and the connect. Pinning closes both — the checked IP is what gets
     dialled, not the hostname — and mirrors ``llm_service.py``'s
-    ``_endpoint_session``/``llm_settings.py``'s ``_pin_llm_endpoint``, the two other places
+    ``_endpoint_session``/``llm_endpoint_safety.py``'s ``_pin_llm_endpoint``, the two other places
     in this codebase that fetch a user-configured endpoint inline.
 
     Callers MUST send the returned target's ``url`` through

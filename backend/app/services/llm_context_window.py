@@ -100,7 +100,7 @@ def discovery_key(provider: str, base_url: str | None, model: str) -> str:
 
 
 def _pin_or_refuse(url: str, purpose: str) -> ContextWindowProbeResult | PinnedTarget:
-    """Validate+pin *url*, matching ``llm_settings.py``'s ``_pin_llm_endpoint``.
+    """Validate+pin *url*, matching ``llm_endpoint_safety.py``'s ``_pin_llm_endpoint``.
 
     Both discovery probes take a user-controlled ``base_url`` and fetch it server-side
     with no user content — the exact SSRF shape ``_assert_safe_llm_endpoint``/

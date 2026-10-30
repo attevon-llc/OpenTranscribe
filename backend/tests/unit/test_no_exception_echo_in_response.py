@@ -769,17 +769,17 @@ _RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
         "re-surfaces e.detail of an HTTPException WE raised ourselves two lines "
         "above (the 422 'Transcript is not ready yet'), not a caught library error",
     ),
-    "api/endpoints/llm_settings.py::get_ollama_models": (
+    "api/endpoints/llm_model_discovery.py::get_ollama_models": (
         1,
         "narrow aiohttp.ClientError against a caller-SUPPLIED base_url; the dial "
         "result IS the product this endpoint exists to report",
     ),
-    "api/endpoints/llm_settings.py::get_openai_compatible_models": (
+    "api/endpoints/llm_model_discovery.py::get_openai_compatible_models": (
         1,
         "same: narrow aiohttp.ClientError against a caller-supplied base_url, the "
         "dial result IS the product",
     ),
-    "api/endpoints/llm_settings.py::get_anthropic_models": (
+    "api/endpoints/llm_model_discovery.py::get_anthropic_models": (
         1,
         "same: narrow aiohttp.ClientError, the dial result IS the product",
     ),

@@ -44,6 +44,10 @@ import app.api.endpoints.embedding_migration as embedding_migration
 import app.api.endpoints.files as files_endpoints
 import app.api.endpoints.files.subtitles as subtitles
 import app.api.endpoints.files.url_processing as url_processing
+import app.api.endpoints.llm_connection_tests as llm_connection_tests
+import app.api.endpoints.llm_local_endpoints as llm_local_endpoints
+import app.api.endpoints.llm_model_discovery as llm_model_discovery
+import app.api.endpoints.llm_provider_catalog as llm_provider_catalog
 import app.api.endpoints.llm_settings as llm_settings
 import app.api.endpoints.llm_status as llm_status
 import app.api.endpoints.media_collections as media_collections
@@ -92,6 +96,10 @@ HARDENED_MODULES = [
     combined_speaker_migration,
     embedding_migration,
     files_endpoints,
+    llm_connection_tests,
+    llm_local_endpoints,
+    llm_model_discovery,
+    llm_provider_catalog,
     llm_settings,
     llm_status,
     speaker_attribute_migration,
@@ -219,9 +227,9 @@ HARDENED_HANDLERS = [
     (embedding_migration, "get_migration_status"),
     (embedding_migration, "start_migration"),
     (files_endpoints, "download_stream"),
-    (llm_settings, "test_llm_connection"),
-    (llm_settings, "test_active_configuration"),
-    (llm_settings, "test_specific_configuration"),
+    (llm_connection_tests, "test_llm_connection"),
+    (llm_connection_tests, "test_active_configuration"),
+    (llm_connection_tests, "test_specific_configuration"),
     (llm_status, "test_llm_connection"),
     (speaker_attribute_migration, "get_attribute_migration_status"),
     (subtitles, "get_subtitles"),

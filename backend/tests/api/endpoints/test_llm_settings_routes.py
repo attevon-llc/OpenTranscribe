@@ -30,6 +30,7 @@ from fastapi import status
 
 _BASE = "/api/llm-settings"
 _MOD = "app.api.endpoints.llm_settings"
+_CONN_MOD = "app.api.endpoints.llm_connection_tests"
 _LOOPBACK = "http://127.0.0.1:11434"
 _BLOCKED_DETAIL = (
     "The provided URL could not be used. It must be a publicly reachable http(s) address."
@@ -267,7 +268,7 @@ def test_the_escape_hatch_is_honored_consistently_across_create_test_and_update(
     created = _create_config(client, user_token_headers, "AllowedEverywhere", base_url=_LOOPBACK)
     assert created["base_url"] == _LOOPBACK
 
-    with patch(f"{_MOD}.LLMService.validate_connection", return_value=(True, "reachable")):
+    with patch(f"{_CONN_MOD}.LLMService.validate_connection", return_value=(True, "reachable")):
         tested = client.post(
             f"{_BASE}/test",
             json=_config_payload("Ignored", base_url=_LOOPBACK),
@@ -479,7 +480,7 @@ def test_delete_all_clears_the_active_configuration_pointer(client, user_token_h
     """The first config created becomes active; after the wipe ``/test-current`` must
     report no active configuration rather than a dangling id."""
     _create_config(client, user_token_headers, "SoleActive")
-    with patch(f"{_MOD}.LLMService.validate_connection", return_value=(True, "reachable")):
+    with patch(f"{_CONN_MOD}.LLMService.validate_connection", return_value=(True, "reachable")):
         before = client.post(f"{_BASE}/test-current", headers=user_token_headers)
     assert before.status_code == status.HTTP_200_OK
 
@@ -521,7 +522,7 @@ def test_test_config_on_another_users_private_config_is_403(
 
 def test_test_config_success_persists_the_result_on_the_row(client, user_token_headers):
     created = _create_config(client, user_token_headers, "PersistOk")
-    with patch(f"{_MOD}.LLMService.validate_connection", return_value=(True, "reachable")):
+    with patch(f"{_CONN_MOD}.LLMService.validate_connection", return_value=(True, "reachable")):
         resp = client.post(f"{_BASE}/test-config/{created['uuid']}", headers=user_token_headers)
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json()["success"] is True
@@ -536,7 +537,7 @@ def test_test_config_success_persists_the_result_on_the_row(client, user_token_h
 
 def test_test_config_failure_persists_the_failed_status(client, user_token_headers):
     created = _create_config(client, user_token_headers, "PersistFail")
-    with patch(f"{_MOD}.LLMService.validate_connection", return_value=(False, "refused")):
+    with patch(f"{_CONN_MOD}.LLMService.validate_connection", return_value=(False, "refused")):
         resp = client.post(f"{_BASE}/test-config/{created['uuid']}", headers=user_token_headers)
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json()["success"] is False
@@ -549,7 +550,7 @@ def test_test_config_failure_persists_the_failed_status(client, user_token_heade
 
 def test_test_current_tests_the_active_config_and_records_it(client, user_token_headers):
     created = _create_config(client, user_token_headers, "ActiveOne")
-    with patch(f"{_MOD}.LLMService.validate_connection", return_value=(True, "reachable")):
+    with patch(f"{_CONN_MOD}.LLMService.validate_connection", return_value=(True, "reachable")):
         resp = client.post(f"{_BASE}/test-current", headers=user_token_headers)
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json()["status"] == "success"

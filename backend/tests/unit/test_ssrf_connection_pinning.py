@@ -11,7 +11,7 @@ validate-then-re-resolve:
 A hostname whose DNS alternates between a public address and 127.0.0.1 / 169.254.169.254
 passes on answer #1 and is dialled on answer #2, defeating the check without beating it.
 `auth/oidc/discovery.py` runs that pair at **login time for every user** and TTL-caches the
-result; `api/endpoints/llm_settings.py`'s model-discovery handlers run it on a `base_url`
+result; `api/endpoints/llm_model_discovery.py`'s model-discovery handlers run it on a `base_url`
 supplied as a query parameter by any authenticated user.
 
 The tests here are built around a **resolver stub that answers differently on each call** —

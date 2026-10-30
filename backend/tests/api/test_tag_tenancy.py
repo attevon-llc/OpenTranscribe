@@ -22,11 +22,11 @@ from contextlib import contextmanager
 
 import pytest
 
-from app.models.media import FileTag
 from app.models.media import MediaFile
-from app.models.media import Tag
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
+from app.models.tag import FileTag
+from app.models.tag import Tag
 from app.models.topic import TopicSuggestion
 from app.models.user import User
 

@@ -5,7 +5,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 from app.services.asr.base import normalize_speaker_label as _canonical_normalize_speaker_label
 
 logger = logging.getLogger(__name__)

@@ -29,9 +29,9 @@ from unittest.mock import patch
 import pytest
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerCluster
-from app.models.media import SpeakerClusterMember
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCluster
+from app.models.speaker import SpeakerClusterMember
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 

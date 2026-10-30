@@ -19,10 +19,10 @@ from typing import Any
 import numpy as np
 import pytest
 
-from app.models.media import Speaker
-from app.models.media import SpeakerCannotLink
-from app.models.media import SpeakerCluster
-from app.models.media import SpeakerClusterMember
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCannotLink
+from app.models.speaker import SpeakerCluster
+from app.models.speaker import SpeakerClusterMember
 from app.services.speaker_clustering_service import SpeakerClusteringService
 from tests.fixtures.speaker_cleanup_seams import make_file
 from tests.fixtures.speaker_cleanup_seams import make_profile

@@ -48,7 +48,7 @@ _PROFILE_ID_PREFIX = "profile_"
 
 def _db_speaker_uuids() -> set[str]:
     from app.db.session_utils import session_scope
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     with session_scope() as db:
         return {str(u) for (u,) in db.query(Speaker.uuid).all()}
@@ -56,7 +56,7 @@ def _db_speaker_uuids() -> set[str]:
 
 def _db_profile_uuids() -> set[str]:
     from app.db.session_utils import session_scope
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import SpeakerProfile
 
     with session_scope() as db:
         return {str(u) for (u,) in db.query(SpeakerProfile.uuid).all()}

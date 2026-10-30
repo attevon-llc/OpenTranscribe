@@ -161,7 +161,7 @@ def _current_speaker_name(speaker_id: int) -> str | None:
     """
     try:
         from app.db.session_utils import session_scope
-        from app.models.media import Speaker
+        from app.models.speaker import Speaker
         from app.utils.speaker_labels import canonical_speaker_label_for_row
 
         with session_scope() as db:

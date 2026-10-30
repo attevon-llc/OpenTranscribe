@@ -18,15 +18,15 @@ import pytest
 from fixtures.summary_plane import sync_summary_plane
 
 from app.core.config import settings
-from app.models.media import Collection
-from app.models.media import CollectionMember
-from app.models.media import FileTag
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import Tag
 from app.models.media import TranscriptSegment
 from app.models.prompt import UserSetting
 from app.models.sharing import CollectionShare
+from app.models.speaker import Speaker
+from app.models.tag import FileTag
+from app.models.tag import Tag
 from app.services.search.hybrid_search_service import HybridSearchService
 from app.services.search.search_types import SearchHit
 from app.services.search.search_types import SearchResponse

@@ -22,11 +22,11 @@ from sqlalchemy import event
 from sqlalchemy import text
 
 from app.api.endpoints.files.prepare_upload import add_tags_to_file
-from app.models.media import Collection
-from app.models.media import CollectionMember
-from app.models.media import FileTag
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.media import MediaFile
-from app.models.media import Tag
+from app.models.tag import FileTag
+from app.models.tag import Tag
 from app.models.topic import TopicSuggestion
 from app.services.auto_label_service import AutoLabelService
 from app.services.tag_service import MAX_TAG_NAME_LENGTH

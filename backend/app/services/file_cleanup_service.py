@@ -870,7 +870,7 @@ def _speaker_impact_of_file(db: Session, file: MediaFile) -> "SpeakerImpact":
     averaged them in. Read by ``speaker_cleanup.capture_speaker_impact``, the same capture
     every per-speaker removal path uses; column-only, so no ORM instance escapes the plan.
     """
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
     from app.services.speaker_cleanup import capture_speaker_impact
 
     speaker_ids = [
@@ -987,8 +987,8 @@ def load_account_purge_plans(db: Session, user_id: int) -> AccountPurgePlan:
         An :class:`AccountPurgePlan` naming every object this account's cascade must
         remove from object storage and OpenSearch.
     """
-    from app.models.media import Speaker
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import Speaker
+    from app.models.speaker import SpeakerProfile
 
     file_rows = (
         db.query(
@@ -1032,7 +1032,7 @@ def load_account_purge_plans(db: Session, user_id: int) -> AccountPurgePlan:
     )
     profile_uuids = [str(row[0]) for row in profile_uuid_rows]
 
-    from app.models.media import SpeakerCluster
+    from app.models.speaker import SpeakerCluster
 
     cluster_rows = db.query(SpeakerCluster.uuid).filter(SpeakerCluster.user_id == user_id).all()
     cluster_uuids = [str(row[0]) for row in cluster_rows]

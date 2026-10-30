@@ -21,9 +21,9 @@ from app.db.base import Base
 from app.utils.uuid7 import uuid7
 
 if TYPE_CHECKING:
+    from app.models.collection import Collection
     from app.models.group import UserGroup
-    from app.models.media import Collection
-    from app.models.media import Tag
+    from app.models.tag import Tag
     from app.models.user import User
 
 

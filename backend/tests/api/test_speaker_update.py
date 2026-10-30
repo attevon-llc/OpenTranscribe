@@ -35,9 +35,9 @@ from app.api.endpoints.speaker_update import calculate_cosine_similarity
 from app.api.endpoints.speaker_update import store_speaker_match
 from app.api.endpoints.speaker_update import trigger_retroactive_matching
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerMatch
-from app.models.media import SpeakerProfile
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerMatch
+from app.models.speaker import SpeakerProfile
 
 
 def _make_file(db_session, owner) -> MediaFile:

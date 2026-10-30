@@ -55,7 +55,7 @@ def _make_file(db, user, *, title="Recording"):
 def _add_speaker(db, media_file, owner, *, name, display_name=None):
     """Create a speaker the way diarization does — ``display_name`` is NULL
     until a human types one (``tasks/transcription/speaker_processor.py``)."""
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     speaker = Speaker(
         uuid=uuid_pkg.uuid4(),

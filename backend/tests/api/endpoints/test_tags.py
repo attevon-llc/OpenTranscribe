@@ -18,12 +18,12 @@ import uuid
 import pytest
 from fastapi import status
 
-from app.models.media import Collection
-from app.models.media import CollectionMember
-from app.models.media import FileTag
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.media import MediaFile
-from app.models.media import Tag
 from app.models.sharing import CollectionShare
+from app.models.tag import FileTag
+from app.models.tag import Tag
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -689,7 +689,7 @@ def _auto_tag(db_session, name: str, user_id: int):
     account and mutable only by an admin, which is not what this fixture means.
     """
     from app.core.constants import TAG_SOURCE_AUTO_AI
-    from app.models.media import Tag
+    from app.models.tag import Tag
     from app.services.tag_service import normalize_tag_name
 
     tag = Tag(
@@ -723,7 +723,7 @@ def _file_for(db_session, owner):
 
 def _raw_tag(db_session, name: str, *, normalized=..., source="manual"):
     """Insert a tag row directly — the API has no path that writes a collision."""
-    from app.models.media import Tag
+    from app.models.tag import Tag
     from app.services.tag_service import normalize_tag_name
 
     stored = normalize_tag_name(name) if normalized is ... else normalized
@@ -742,7 +742,7 @@ def test_unused_listing_agrees_with_the_usage_count(
     ``/tags/unused`` counted usage globally, so this tag reported ``0`` in one
     place and was missing from the other.
     """
-    from app.models.media import FileTag
+    from app.models.tag import FileTag
 
     tag = _create_tag(client, user_token_headers, f"foreign-{uuid.uuid4().hex[:8]}")
     hidden_file = _file_for(db_session, other_user)
@@ -765,7 +765,7 @@ def test_unused_listing_agrees_with_the_usage_count(
 
 
 def _raw_tag_row(db_session, tag_uuid: str):
-    from app.models.media import Tag
+    from app.models.tag import Tag
 
     return db_session.query(Tag).filter(Tag.uuid == tag_uuid).one()
 
@@ -774,7 +774,7 @@ def test_unused_filter_drops_a_tag_the_caller_uses(
     client, user_token_headers, db_session, normal_user
 ):
     """The filter narrows — a tag on the caller's own file must not come back."""
-    from app.models.media import FileTag
+    from app.models.tag import FileTag
 
     tag = _create_tag(client, user_token_headers, f"inuse-{uuid.uuid4().hex[:8]}")
     media_file = _file_for(db_session, normal_user)

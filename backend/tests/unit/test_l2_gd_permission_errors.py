@@ -23,8 +23,8 @@ from fastapi import HTTPException
 
 from app.core.enums import FileStatus
 from app.core.exceptions import DomainError
-from app.models.media import Collection
-from app.models.media import CollectionMember
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.models.organization import Organization

@@ -216,8 +216,8 @@ def seed_complete_file(  # noqa: C901 — one linear recipe; splitting it hides 
     from app.core.config import settings
     from app.models.media import FileStatus
     from app.models.media import MediaFile
-    from app.models.media import Speaker
     from app.models.media import TranscriptSegment
+    from app.models.speaker import Speaker
     from app.services.opensearch_service import add_speaker_embedding
     from app.services.opensearch_service import store_cluster_embedding
     from app.services.opensearch_service import store_profile_embedding

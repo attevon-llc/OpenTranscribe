@@ -19,11 +19,11 @@ from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
 from app.models.media import Analytics
 from app.models.media import FileStatus
-from app.models.media import FileTag
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import Tag
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
+from app.models.tag import FileTag
+from app.models.tag import Tag
 from app.models.user import User
 from app.schemas.media import MediaFileDetail
 from app.schemas.media import MediaFileUpdate

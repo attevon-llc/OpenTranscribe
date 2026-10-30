@@ -22,8 +22,8 @@ from fastapi import status
 
 from app.models.media import FileStatus
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.prompt import UserSetting
+from app.models.speaker import Speaker
 from app.models.system_settings import SystemSettings
 from app.services.auto_llm_settings import resolve_auto_llm_flags
 from app.services.auto_llm_settings import resolve_auto_llm_flags_for_users

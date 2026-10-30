@@ -315,7 +315,7 @@ def cleared_suggestion_values(where: Any = None) -> dict[str, Any]:
     """
     from sqlalchemy import case
 
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     columns = {
         "suggested_name": Speaker.suggested_name,

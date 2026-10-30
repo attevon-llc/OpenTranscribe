@@ -370,10 +370,10 @@ def test_scope_resolution_has_no_admin_bypass_on_any_axis(db_session, admin_user
     above already covers for the unscoped case."""
     import uuid as uuid_pkg
 
-    from app.models.media import Collection
-    from app.models.media import CollectionMember
-    from app.models.media import FileTag
-    from app.models.media import Tag
+    from app.models.collection import Collection
+    from app.models.collection import CollectionMember
+    from app.models.tag import FileTag
+    from app.models.tag import Tag
     from app.schemas.chat import ChatScope
     from app.services.chat.context_resolver import resolve_scope_file_uuids
     from app.services.request_context import RequestContext

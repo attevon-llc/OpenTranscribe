@@ -20,9 +20,9 @@ from typing import Any
 import numpy as np
 import pytest
 
-from app.models.media import Speaker
-from app.models.media import SpeakerClusterMember
-from app.models.media import SpeakerProfileBlacklist
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerClusterMember
+from app.models.speaker import SpeakerProfileBlacklist
 from tests.fixtures.speaker_cleanup_seams import cosine
 from tests.fixtures.speaker_cleanup_seams import make_cluster
 from tests.fixtures.speaker_cleanup_seams import make_file

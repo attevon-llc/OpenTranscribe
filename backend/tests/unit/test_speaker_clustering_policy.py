@@ -13,8 +13,8 @@ from typing import Any
 
 import pytest
 
-from app.models.media import Speaker
-from app.models.media import SpeakerCluster
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCluster
 from app.services.speaker_clustering_service import SpeakerClusteringService
 from tests.fixtures.privacy_switches import file_in
 from tests.fixtures.privacy_switches import make_org

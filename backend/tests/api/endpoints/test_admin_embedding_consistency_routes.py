@@ -41,8 +41,8 @@ from fastapi import status
 from sqlalchemy import text
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 
 #: Mirrors conftest's stack detection: False on the dev host, True on a bare CI
 #: runner. Only the live ``counts`` cross-check needs it — the arithmetic is pinned

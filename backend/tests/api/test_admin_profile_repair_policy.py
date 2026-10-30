@@ -13,7 +13,7 @@ import uuid as uuid_pkg
 
 import pytest
 
-from app.models.media import SpeakerProfile
+from app.models.speaker import SpeakerProfile
 from app.services.profile_embedding_service import ProfileEmbeddingService
 from tests.fixtures.privacy_switches import make_org
 from tests.fixtures.privacy_switches import set_instance_switch

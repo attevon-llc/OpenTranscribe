@@ -16,7 +16,7 @@ from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.db.base import get_db
 from app.models.media import MediaFile
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 from app.models.user import User
 from app.services.permission_service import org_scope_pred
 from app.services.platform_bypass import PlatformBypass

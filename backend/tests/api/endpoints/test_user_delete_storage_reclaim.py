@@ -32,8 +32,8 @@ from minio.error import S3Error
 from app.auth.audit import AuditOutcome
 from app.core.config import settings
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 from app.models.user import User
 from app.services.minio_service import minio_client
 

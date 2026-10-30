@@ -55,8 +55,8 @@ def _get_pg_speaker_uuids_with_segments() -> dict[str, int]:
     from sqlalchemy import exists
     from sqlalchemy import select
 
-    from app.models.media import Speaker
     from app.models.media import TranscriptSegment
+    from app.models.speaker import Speaker
 
     with session_scope() as db:
         has_segments = exists(
@@ -118,8 +118,8 @@ def _filter_unrepairable_speakers(missing_uuids: set[str]) -> set[str]:
     if not missing_uuids:
         return set()
 
-    from app.models.media import Speaker
     from app.models.media import TranscriptSegment
+    from app.models.speaker import Speaker
 
     unrepairable: set[str] = set()
 
@@ -236,7 +236,7 @@ def get_embedding_consistency_status() -> dict[str, Any]:
 
 def _get_all_pg_speaker_uuids() -> set[str]:
     """Return all Speaker UUIDs in PostgreSQL (with or without segments)."""
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     with session_scope() as db:
         rows = db.query(Speaker.uuid).all()

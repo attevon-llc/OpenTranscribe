@@ -26,7 +26,7 @@ from app.core.tenancy import OrgScope
 from app.db.base import get_db
 from app.models.media import FileStatus
 from app.models.media import MediaFile
-from app.models.media import Tag
+from app.models.tag import Tag
 from app.models.user import User
 from app.services import system_settings_service
 from app.services.delete_permissions import DELETE_FORBIDDEN_DETAIL

@@ -130,8 +130,8 @@ def prepare_file(
         file_uuid: UUID of the media file.
         include_profile: If True, include speaker profile UUIDs in extra.
     """
-    from app.models.media import Speaker
     from app.models.media import TranscriptSegment
+    from app.models.speaker import Speaker
     from app.services.uuid_helpers import get_file_by_uuid
 
     with session_scope() as db:

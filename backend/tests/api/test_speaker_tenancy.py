@@ -25,17 +25,17 @@ from typing import Any
 
 import pytest
 
-from app.models.media import Collection
-from app.models.media import CollectionMember
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerCluster
-from app.models.media import SpeakerClusterMember
-from app.models.media import SpeakerCollection
-from app.models.media import SpeakerProfile
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.models.sharing import CollectionShare
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCluster
+from app.models.speaker import SpeakerClusterMember
+from app.models.speaker import SpeakerCollection
+from app.models.speaker import SpeakerProfile
 from app.models.user import User
 
 # These routes now run the shared speaker cleanup (#1214), which reports a store it cannot reach

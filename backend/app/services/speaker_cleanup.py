@@ -87,8 +87,8 @@ from app.utils.speaker_identity_source import record_human_identity
 from app.utils.speaker_identity_source import record_machine_identity
 
 if TYPE_CHECKING:
-    from app.models.media import Speaker
-    from app.models.media import SpeakerCluster
+    from app.models.speaker import Speaker
+    from app.models.speaker import SpeakerCluster
     from app.services.speaker_rename_tracker import SpeakerRenameTracker
 
 logger = logging.getLogger(__name__)
@@ -178,9 +178,9 @@ def clusters_holding_speakers(db: Session, speaker_ids: Iterable[int]) -> set[st
     """
     from sqlalchemy import or_
 
-    from app.models.media import Speaker
-    from app.models.media import SpeakerCluster
-    from app.models.media import SpeakerClusterMember
+    from app.models.speaker import Speaker
+    from app.models.speaker import SpeakerCluster
+    from app.models.speaker import SpeakerClusterMember
 
     ids = sorted({int(i) for i in speaker_ids})
     if not ids:
@@ -221,7 +221,7 @@ def capture_speaker_impact(
     Returns:
         The :class:`SpeakerImpact` to hand to :func:`reconcile_speaker_impact`.
     """
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     ids = sorted({int(i) for i in speaker_ids})
     impact = SpeakerImpact()
@@ -326,8 +326,8 @@ def _refresh_clusters(db: Session, impact: SpeakerImpact, fail: _Fail) -> None:
         return
     from sqlalchemy import func
 
-    from app.models.media import SpeakerCluster
-    from app.models.media import SpeakerClusterMember
+    from app.models.speaker import SpeakerCluster
+    from app.models.speaker import SpeakerClusterMember
     from app.services import file_cleanup_service as fcs
     from app.services.clustering.centroids import CentroidRecomputeError
     from app.services.speaker_clustering_service import SpeakerClusteringService
@@ -377,7 +377,7 @@ def _refresh_profiles(db: Session, impact: SpeakerImpact, fail: _Fail) -> None:
     """Recompute each profile's embedding from its members; erase what cannot be rebuilt."""
     if not impact.profile_ids:
         return
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import SpeakerProfile
     from app.services import file_cleanup_service as fcs
     from app.services.profile_embedding_service import ProfileEmbeddingRecomputeError
     from app.services.profile_embedding_service import ProfileEmbeddingService
@@ -464,8 +464,8 @@ def _resync_speaker_docs(db: Session, speaker_ids: set[int]) -> None:
     """
     if not speaker_ids:
         return
-    from app.models.media import Speaker
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import Speaker
+    from app.models.speaker import SpeakerProfile
     from app.services.opensearch_service import update_speaker_display_name
     from app.services.opensearch_service import update_speaker_profile
 
@@ -511,7 +511,7 @@ REASON_REJECTED = "rejected_by_user"
 
 def blacklisted_profile_ids(db: Session, speaker_ids: Iterable[int]) -> dict[int, set[int]]:
     """For each speaker, the profiles it was unassigned from (``speaker_profile_blacklist``)."""
-    from app.models.media import SpeakerProfileBlacklist
+    from app.models.speaker import SpeakerProfileBlacklist
 
     ids = sorted({int(i) for i in speaker_ids})
     out: dict[int, set[int]] = {i: set() for i in ids}
@@ -535,7 +535,7 @@ def cannot_link_partners(db: Session, speaker_ids: Iterable[int]) -> dict[int, s
     """
     from sqlalchemy import or_
 
-    from app.models.media import SpeakerCannotLink
+    from app.models.speaker import SpeakerCannotLink
 
     ids = sorted({int(i) for i in speaker_ids})
     out: dict[int, set[int]] = {i: set() for i in ids}
@@ -566,8 +566,8 @@ def blocked_profile_names(db: Session, speaker_ids: Iterable[int]) -> dict[int, 
     a voice-match suggestion copied from another speaker's label): the profiles it was
     unassigned from, and the profiles its cannot-link partners are linked to.
     """
-    from app.models.media import Speaker
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import Speaker
+    from app.models.speaker import SpeakerProfile
 
     ids = sorted({int(i) for i in speaker_ids})
     out: dict[int, set[str]] = {i: set() for i in ids}
@@ -611,7 +611,7 @@ def speaker_blocked_from_profile(db: Session, speaker_id: int, profile_id: int |
     """
     if profile_id is None:
         return False
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     sid = int(speaker_id)
     if int(profile_id) in blacklisted_profile_ids(db, [sid])[sid]:
@@ -637,8 +637,8 @@ def speaker_blocked_from_cluster(db: Session, speaker_id: int, cluster: SpeakerC
     """
     from sqlalchemy import or_
 
-    from app.models.media import Speaker
-    from app.models.media import SpeakerClusterMember
+    from app.models.speaker import Speaker
+    from app.models.speaker import SpeakerClusterMember
 
     if cluster.promoted_to_profile_id is not None and speaker_blocked_from_profile(
         db, speaker_id, int(cluster.promoted_to_profile_id)
@@ -670,7 +670,7 @@ def has_other_identity(db: Session, speaker: Speaker, profile_id: int) -> bool:
     that is not this profile's. A voice similarity never outranks an identity the speaker
     already has, so no automatic path takes such a speaker over (issue #1233).
     """
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import SpeakerProfile
     from app.utils.speaker_labels import is_assigned_speaker_name
 
     if speaker.profile_id is not None:
@@ -697,8 +697,8 @@ def _release_members_of_other_profiles(db: Session, cluster: SpeakerCluster) -> 
     """
     from sqlalchemy import or_
 
-    from app.models.media import Speaker
-    from app.models.media import SpeakerClusterMember
+    from app.models.speaker import Speaker
+    from app.models.speaker import SpeakerClusterMember
 
     member_of = (
         db.query(SpeakerClusterMember.speaker_id)
@@ -737,8 +737,8 @@ def blocking_profile_ids_named(db: Session, speaker_id: int, name: str) -> set[i
     The id-level twin of :func:`blocked_profile_names`, for an explicit override that
     must lift exactly what blocked the name it is applying.
     """
-    from app.models.media import Speaker
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import Speaker
+    from app.models.speaker import SpeakerProfile
 
     sid = int(speaker_id)
     candidates = set(blacklisted_profile_ids(db, [sid])[sid])
@@ -777,8 +777,8 @@ def record_unassignment(
     and a profile blacklist row when ``profile_id`` is set. Adds to the session; the
     caller commits with its own change.
     """
-    from app.models.media import SpeakerCannotLink
-    from app.models.media import SpeakerProfileBlacklist
+    from app.models.speaker import SpeakerCannotLink
+    from app.models.speaker import SpeakerProfileBlacklist
 
     removed = sorted({int(i) for i in speaker_ids})
     others = sorted({int(i) for i in against_speaker_ids} - set(removed))
@@ -821,9 +821,9 @@ def lift_profile_blacklist(db: Session, speaker_id: int, profile_id: int) -> Non
     from sqlalchemy import and_
     from sqlalchemy import or_
 
-    from app.models.media import Speaker
-    from app.models.media import SpeakerCannotLink
-    from app.models.media import SpeakerProfileBlacklist
+    from app.models.speaker import Speaker
+    from app.models.speaker import SpeakerCannotLink
+    from app.models.speaker import SpeakerProfileBlacklist
 
     sid, pid = int(speaker_id), int(profile_id)
     db.query(SpeakerProfileBlacklist).filter(
@@ -856,7 +856,7 @@ def carry_blacklist(db: Session, source_id: int, target_id: int) -> None:
     target nothing forbids from becoming Bob. A profile the target is already linked to
     is not copied: the user merged into it, which is the explicit statement.
     """
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     src, tgt = int(source_id), int(target_id)
     target_profile = db.query(Speaker.profile_id).filter(Speaker.id == tgt).scalar()
@@ -886,7 +886,7 @@ def unlink_from_profile(
     told through ``tracker``, which the caller flushes after its commit. A speaker linked
     to a different profile is not touched.
     """
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import SpeakerProfile
     from app.utils.speaker_labels import canonical_speaker_label_for_row
 
     name = db.query(SpeakerProfile.name).filter(SpeakerProfile.id == int(profile_id)).scalar()
@@ -935,7 +935,7 @@ def join_cluster_identity(
         The profiles whose membership changed (the new one and any it left), for the
         caller's :class:`SpeakerImpact`; empty when nothing changed.
     """
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import SpeakerProfile
     from app.utils.speaker_labels import canonical_speaker_label_for_row
 
     profile_id = cluster.promoted_to_profile_id
@@ -991,7 +991,7 @@ def detach_from_cluster(
     ``tracker`` and hands the returned impact to :func:`reconcile_speaker_impact`, which
     rebuilds the centroid and the profile embedding (an emptied cluster is deleted).
     """
-    from app.models.media import SpeakerClusterMember
+    from app.models.speaker import SpeakerClusterMember
 
     remove_ids = sorted({int(s.id) for s in speakers})
     remaining = [

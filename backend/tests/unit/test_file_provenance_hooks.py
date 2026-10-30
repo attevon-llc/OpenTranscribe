@@ -31,8 +31,8 @@ import pytest
 from sqlalchemy import text
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.models.user import User
 from app.services.llm_types import LLMConfig
 from app.services.llm_types import LLMProvider

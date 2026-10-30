@@ -44,7 +44,7 @@ from typing import Any
 
 from app.models.media import FileStatus
 from app.models.media import MediaFile
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 from app.schemas.media import MediaFile as MediaFileSchema
 from app.schemas.media import TranscriptSegment
 from app.services.error_categorization_service import ErrorCategorizationService

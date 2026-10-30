@@ -16,7 +16,7 @@ Pinned real behavior of ``verify_speaker_identification`` / ``_reject_speaker_su
 import uuid as uuid_mod
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 
 
 def _make_speaker(db_session, user, *, quarantined: bool = False) -> Speaker:

@@ -39,7 +39,7 @@ def get_attribute_migration_status(
 
         from app.models.media import FileStatus
         from app.models.media import MediaFile
-        from app.models.media import Speaker as SpeakerModel
+        from app.models.speaker import Speaker as SpeakerModel
 
         # Single query: count total files with speakers AND pending files
         # (replaces full ORM hydration that loaded megabytes of JSONB data)

@@ -21,10 +21,10 @@ import pytest
 from app.core.config import settings
 from app.core.enums import FileStatus
 from app.models.media import MediaFile
-from app.models.media import SpeakerProfile
 from app.models.media import Task
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
+from app.models.speaker import SpeakerProfile
 from app.services.platform_access import reset_tenancy_mode_cache
 
 

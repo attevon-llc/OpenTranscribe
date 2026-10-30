@@ -210,7 +210,7 @@ def get_prompts(
     )
 
     # Get collections that use each prompt as default (for current user only)
-    from app.models.media import Collection
+    from app.models.collection import Collection
 
     prompt_ids = [p.id for p in prompts]
     collection_map: dict[int, list[schemas.LinkedCollection]] = {}

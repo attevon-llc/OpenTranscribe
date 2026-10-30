@@ -45,7 +45,7 @@ def _stamp(db, module, speaker_ids: list[int]) -> None:
 
 
 def _match(db, a, b, confidence: float) -> None:
-    from app.models.media import SpeakerMatch
+    from app.models.speaker import SpeakerMatch
 
     low, high = sorted((int(a.id), int(b.id)))
     db.add(SpeakerMatch(speaker1_id=low, speaker2_id=high, confidence=confidence))

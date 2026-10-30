@@ -27,8 +27,8 @@ import numpy as np
 import pytest
 
 from app.core import constants
-from app.models.media import Speaker
 from app.models.prompt import UserSetting
+from app.models.speaker import Speaker
 from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.speaker_clustering_service import SpeakerClusteringService

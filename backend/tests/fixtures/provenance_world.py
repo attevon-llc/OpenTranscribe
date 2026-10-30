@@ -20,8 +20,8 @@ import uuid as uuid_pkg
 from dataclasses import dataclass
 from typing import Any
 
-from app.models.media import SpeakerProfile
 from app.models.media import TranscriptSegment
+from app.models.speaker import SpeakerProfile
 from tests.fixtures.speaker_cleanup_seams import make_file
 from tests.fixtures.speaker_cleanup_seams import make_speaker
 

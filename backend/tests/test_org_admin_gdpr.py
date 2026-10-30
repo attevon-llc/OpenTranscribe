@@ -34,13 +34,13 @@ from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
 
 from app.api.deps_context import require_org_admin
 from app.auth.audit import AuditOutcome
-from app.models.media import Collection
+from app.models.collection import Collection
 from app.models.media import Comment
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 from app.models.user import User
 from app.services.request_context import RequestContext
 
@@ -1113,7 +1113,7 @@ class TestPartialErasureIsReportedAsPartial:
 
         The profile row must still be deleted: best-effort is right, silent is not.
         """
-        from app.models.media import SpeakerProfile
+        from app.models.speaker import SpeakerProfile
         from app.services.gdpr_erasure_service import erase_user
 
         user = _mk_user(db_session, "profile_fail")

@@ -25,8 +25,8 @@ from app.api.error_handlers import ErrorHandler
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.core.exceptions import DomainError
 from app.db.base import get_db
-from app.models.media import FileTag
-from app.models.media import Tag
+from app.models.tag import FileTag
+from app.models.tag import Tag
 from app.models.user import User
 from app.schemas.media import Tag as TagSchema
 from app.schemas.media import TagBase

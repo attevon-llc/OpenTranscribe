@@ -93,7 +93,7 @@ def test_tag_created_at_was_adopted_not_dropped(db_session):
     server default. Dropping a populated timestamptz to satisfy a drift
     comparison would have been the wrong direction; the model now declares it.
     """
-    from app.models.media import Tag
+    from app.models.tag import Tag
 
     conn = db_session.connection()
     columns = {c["name"] for c in inspect(conn).get_columns("tag")}

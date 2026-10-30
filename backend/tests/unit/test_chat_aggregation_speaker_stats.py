@@ -95,8 +95,8 @@ def _make_file(db, user, *, title="Recording", organization_id=None):
 
 
 def _share_with(db, owner, recipient, media_file, *, permission="viewer") -> None:
-    from app.models.media import Collection
-    from app.models.media import CollectionMember
+    from app.models.collection import Collection
+    from app.models.collection import CollectionMember
     from app.models.sharing import CollectionShare
 
     collection = Collection(

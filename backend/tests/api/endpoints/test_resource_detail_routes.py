@@ -22,10 +22,10 @@ import uuid as uuid_pkg
 import pytest
 from fastapi import status
 
-from app.models.media import FileTag
-from app.models.media import Speaker
-from app.models.media import Tag
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
+from app.models.tag import FileTag
+from app.models.tag import Tag
 from tests.user_owned_rows import make_media_file
 
 FILES = "/api/files"

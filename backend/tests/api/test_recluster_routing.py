@@ -22,7 +22,7 @@ from fastapi import status
 from app.core import queues
 from app.core.config import settings
 from app.models.media import MediaFile
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 
 URL = "/api/speaker-clusters/recluster"
 

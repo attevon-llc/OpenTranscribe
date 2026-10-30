@@ -32,10 +32,10 @@ import numpy as np
 import pytest
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerCluster
-from app.models.media import SpeakerClusterMember
-from app.models.media import SpeakerProfile
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCluster
+from app.models.speaker import SpeakerClusterMember
+from app.models.speaker import SpeakerProfile
 
 # These routes now run the shared speaker cleanup (#1214), which reports a store it cannot reach
 # as a failure. CI has no OpenSearch, so stand the stores in with the recorders; the live

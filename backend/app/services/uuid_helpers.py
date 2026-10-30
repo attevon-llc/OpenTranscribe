@@ -22,12 +22,12 @@ from app.core.exceptions import ResourceNotFoundError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
-from app.models.media import Collection
+from app.models.collection import Collection
 from app.models.media import Comment
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
 from app.models.prompt import SummaryPrompt
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 from app.models.user import User
 from app.models.user_llm_settings import UserLLMSettings
 from app.services.platform_bypass import PlatformBypass

@@ -23,12 +23,12 @@ import uuid as uuid_pkg
 
 import pytest
 
-from app.models.media import Collection
-from app.models.media import CollectionMember
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
 from app.models.sharing import CollectionShare
+from app.models.speaker import Speaker
 from app.services.chat.retrieval import retrieve_context
 from app.services.chat.settings import ChatSettings
 

@@ -16,8 +16,8 @@ import pytest
 import yaml
 
 from app.models.media import Comment
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.models.user import User
 from app.services.transcript_export_markdown import MarkdownMeta
 from app.services.transcript_export_service import build_export_content

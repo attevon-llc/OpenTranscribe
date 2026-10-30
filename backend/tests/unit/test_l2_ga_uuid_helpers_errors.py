@@ -20,12 +20,12 @@ from app.core import chat_defaults
 from app.core.exceptions import AccessDeniedError
 from app.core.exceptions import InvalidInputError
 from app.core.exceptions import ResourceNotFoundError
-from app.models.media import Collection
+from app.models.collection import Collection
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
 from app.models.organization import Organization
 from app.models.sharing import CollectionShare
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 from app.models.user import User
 from app.schemas.chat import ChatScope
 from app.services.chat.context_resolver import count_scope_files
@@ -257,7 +257,7 @@ def test_file_permission_viewer_share_cannot_edit_is_403(world):
     db = world["db"]
     media = _file(db, world["owner"])
     collection = _collection(db, world["owner"])
-    from app.models.media import CollectionMember
+    from app.models.collection import CollectionMember
 
     db.add(CollectionMember(collection_id=collection.id, media_file_id=media.id))
     db.add(
@@ -385,7 +385,7 @@ def test_speaker_access_viewer_cannot_edit_is_403(world):
     media = _file(db, world["owner"])
     speaker = _speaker(db, world["owner"], media)
     collection = _collection(db, world["owner"])
-    from app.models.media import CollectionMember
+    from app.models.collection import CollectionMember
 
     db.add(CollectionMember(collection_id=collection.id, media_file_id=media.id))
     db.add(

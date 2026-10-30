@@ -18,8 +18,8 @@ import numpy as np
 import pytest
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.utils.transcript_comparison import _build_speaker_mapping
 from app.utils.transcript_comparison import _empty_comparison
 from app.utils.transcript_comparison import compare_transcripts

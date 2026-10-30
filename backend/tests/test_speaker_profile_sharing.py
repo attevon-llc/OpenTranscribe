@@ -14,14 +14,14 @@ import uuid as uuid_mod
 import pytest
 from sqlalchemy.orm import Session
 
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.group import UserGroup
 from app.models.group import UserGroupMember
-from app.models.media import Collection
-from app.models.media import CollectionMember
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
 from app.models.sharing import CollectionShare
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 from app.models.user import User
 from app.services.permission_service import PermissionService
 

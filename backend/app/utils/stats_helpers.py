@@ -18,9 +18,9 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import Task
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.models.user import User
 from app.utils.task_utils import TASK_STATUS_COMPLETED
 from app.utils.task_utils import TASK_STATUS_FAILED

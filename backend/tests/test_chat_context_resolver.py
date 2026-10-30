@@ -18,12 +18,12 @@ import pytest
 
 from app.core import chat_defaults
 from app.core.exceptions import InvalidInputError
-from app.models.media import Collection
-from app.models.media import CollectionMember
-from app.models.media import FileTag
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.media import MediaFile
-from app.models.media import Tag
 from app.models.sharing import CollectionShare
+from app.models.tag import FileTag
+from app.models.tag import Tag
 from app.schemas.chat import ChatScope
 from app.services.chat.context_resolver import count_scope_files
 from app.services.chat.context_resolver import resolve_scope_file_uuids

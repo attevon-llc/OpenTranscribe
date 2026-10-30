@@ -18,8 +18,8 @@ from unittest.mock import patch
 import pytest
 
 from app.core.enums import FileStatus
-from app.models.media import Collection
-from app.models.media import CollectionMember
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.media import MediaFile
 from app.models.organization import Organization
 from app.models.sharing import CollectionShare

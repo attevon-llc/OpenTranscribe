@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
 from app.models.media import MediaFile
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 from app.services.privacy import policy as privacy_policy
 from app.services.privacy.redact_view import PrivacyView
 from app.services.speaker_embedding_service import SpeakerEmbeddingService

@@ -18,13 +18,13 @@ import uuid as uuid_pkg
 import pytest
 
 from app.core.tenancy import UNSCOPED
-from app.models.media import Collection
-from app.models.media import CollectionMember
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.models.sharing import CollectionShare
+from app.models.speaker import Speaker
 from app.models.user import User
 from app.services.permission_service import PermissionService
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
@@ -675,7 +675,7 @@ class TestProfileOrgStamping:
     def test_create_profile_api_stamps_request_org(self, client, two_orgs):
         from app.api.deps_context import get_current_context
         from app.main import app
-        from app.models.media import SpeakerProfile
+        from app.models.speaker import SpeakerProfile
         from app.services.request_context import RequestContext
 
         w = two_orgs
@@ -698,7 +698,7 @@ class TestProfileOrgStamping:
         assert row.organization_id == w.org_a.id
 
     def test_create_profile_api_personal_scope_unstamped(self, client, two_orgs):
-        from app.models.media import SpeakerProfile
+        from app.models.speaker import SpeakerProfile
 
         w = two_orgs
         headers = _login(client, w.user_a)  # personal scope
@@ -713,7 +713,7 @@ class TestProfileOrgStamping:
     def test_speakers_helper_creates_profile_with_speaker_org(self, two_orgs):
         """speakers.py create-new-profile paths inherit the SPEAKER's tenant."""
         from app.api.endpoints.speakers_profile_workflow import _handle_create_new_profile_action
-        from app.models.media import SpeakerProfile
+        from app.models.speaker import SpeakerProfile
 
         w = two_orgs
         _handle_create_new_profile_action(w.speaker_a, "Org Speaker", w.user_a, w.db)

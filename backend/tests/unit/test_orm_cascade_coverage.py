@@ -46,24 +46,24 @@ import pytest
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.exc import IntegrityError
 
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.custom_vocabulary import CustomVocabulary
 from app.models.file_facts import FileFacts
 from app.models.group import UserGroup
 from app.models.group import UserGroupMember
 from app.models.media import Analytics
-from app.models.media import Collection
-from app.models.media import CollectionMember
 from app.models.media import Comment
-from app.models.media import FileTag
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import Tag
 from app.models.media import Task
 from app.models.media import TranscriptSegment
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.models.password_history import PasswordHistory
 from app.models.refresh_token import RefreshToken
+from app.models.speaker import Speaker
+from app.models.tag import FileTag
+from app.models.tag import Tag
 from app.models.topic import TopicSuggestion
 from app.models.user_asr_settings import UserASRSettings
 from app.models.user_diarization_settings import UserDiarizationSettings

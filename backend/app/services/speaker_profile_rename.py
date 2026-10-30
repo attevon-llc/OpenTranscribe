@@ -35,7 +35,7 @@ from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
 from app.models.media import MediaFile
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 from app.services.permission_service import file_ids_in_scope
 from app.services.privacy.redact_view import PrivacyView
 from app.utils.speaker_identity_source import hides_link

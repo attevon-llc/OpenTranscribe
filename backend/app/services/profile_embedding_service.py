@@ -20,8 +20,8 @@ import numpy as np
 from sqlalchemy.orm import Session
 
 from app.core.embedding_models import get_speaker_index
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 from app.services.opensearch_service import get_speaker_embedding
 from app.services.opensearch_service.profiles import SPEAKER_PROFILE_MATCH_THRESHOLD
 from app.services.permission_service import file_ids_in_scope
@@ -626,7 +626,7 @@ class ProfileEmbeddingService:
         """
         try:
             # Get profile object to extract UUID
-            from app.models.media import SpeakerProfile
+            from app.models.speaker import SpeakerProfile
 
             profile = db.query(SpeakerProfile).filter(SpeakerProfile.id == profile_id).first()
             if not profile:

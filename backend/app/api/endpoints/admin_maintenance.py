@@ -309,7 +309,7 @@ def repair_profile_embeddings(
     instead of the true centroid of all assigned speakers.
     """
     ctx.bypass.require_deployment_scope("Repairing profile embeddings")
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import SpeakerProfile
     from app.services.profile_embedding_service import ProfileEmbeddingService
 
     profiles = db.query(SpeakerProfile).all()

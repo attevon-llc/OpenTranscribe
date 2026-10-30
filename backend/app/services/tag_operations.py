@@ -53,8 +53,8 @@ from app.core.constants import TAG_SOURCE_AI_ACCEPTED
 from app.core.constants import TAG_SOURCE_AUTO_AI
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.core.exceptions import OpenTranscribeError
-from app.models.media import FileTag
-from app.models.media import Tag
+from app.models.tag import FileTag
+from app.models.tag import Tag
 from app.models.watch_source import WatchSource
 from app.services.tag_service import InvalidTagNameError
 from app.services.tag_service import accessible_file_ids_subquery

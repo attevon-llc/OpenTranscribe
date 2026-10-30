@@ -565,7 +565,7 @@ def test_a_segment_timed_post_stage_gives_the_segment_its_dominant_speaker(
     segments = _segments(db_session, media)
     assert len(segments) == 1
     assert (segments[0].start_time, segments[0].end_time) == (0.0, 4.0)
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     speaker = db_session.query(Speaker).filter(Speaker.id == segments[0].speaker_id).one()
     assert speaker.name == "SPEAKER_00"

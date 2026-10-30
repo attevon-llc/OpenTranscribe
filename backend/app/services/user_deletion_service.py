@@ -5,20 +5,20 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictError
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.media import Analytics
-from app.models.media import Collection
-from app.models.media import CollectionMember
 from app.models.media import Comment
-from app.models.media import FileTag
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerCollection
-from app.models.media import SpeakerCollectionMember
-from app.models.media import SpeakerProfile
-from app.models.media import Tag
 from app.models.media import Task as TaskModel
 from app.models.media import TranscriptSegment
 from app.models.prompt import SummaryPrompt
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCollection
+from app.models.speaker import SpeakerCollectionMember
+from app.models.speaker import SpeakerProfile
+from app.models.tag import FileTag
+from app.models.tag import Tag
 
 # No basicConfig here — this module is imported via the API router before
 # configure_logging() runs; a default root handler would double every log line.

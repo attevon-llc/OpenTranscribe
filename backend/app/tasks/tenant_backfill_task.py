@@ -123,8 +123,8 @@ class SpeakerScopeMaps:
 def _build_speaker_scope_maps(db: Any) -> SpeakerScopeMaps:
     """Read the speaker-plane tenant-scope mappings from the DB."""
     from app.models.media import MediaFile
-    from app.models.media import SpeakerProfile
     from app.models.organization import OrganizationMembership
+    from app.models.speaker import SpeakerProfile
 
     scope = SpeakerScopeMaps()
 
@@ -179,9 +179,9 @@ def _resolve_cluster_scopes(db: Any, scope: SpeakerScopeMaps, member_ids: set[in
     dissolves them into per-scope clusters).
     """
     from app.models.media import MediaFile
-    from app.models.media import Speaker
-    from app.models.media import SpeakerCluster
-    from app.models.media import SpeakerClusterMember
+    from app.models.speaker import Speaker
+    from app.models.speaker import SpeakerCluster
+    from app.models.speaker import SpeakerClusterMember
 
     all_clusters = (
         db.query(SpeakerCluster.id, SpeakerCluster.uuid)
@@ -422,7 +422,7 @@ def _stamp_cluster_rows(db: Any, scope: SpeakerScopeMaps) -> int:
     clusters are in the personal lists, so they are reset to NULL (or kept
     NULL) — never stamped.
     """
-    from app.models.media import SpeakerCluster
+    from app.models.speaker import SpeakerCluster
 
     changed = 0
     for org_id, cluster_ids in scope.org_to_cluster_ids.items():

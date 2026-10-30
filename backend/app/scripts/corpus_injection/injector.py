@@ -47,8 +47,8 @@ from sqlalchemy.orm import Session
 
 from app.core.enums import FileStatus
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.scripts.corpus_injection import ids
 from app.scripts.corpus_injection import rows as rowbuild
 from app.scripts.corpus_injection.model import InjectionRecord

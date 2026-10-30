@@ -143,7 +143,7 @@ OpenTranscribe uses Alembic migrations as the sole authority for database schema
 - Pydantic schemas in `app/schemas/` handle API validation
 
 ### Where the tables live
-Table definitions are grouped by domain in `app/models/`; `app/models/README.md` has the inventory. Core media tables (`media_file`, `transcript_segment`, `speaker`, `speaker_profile`, `tag`, `collection`, `task`, ...) are in `models/media.py`. Per-user configuration lives in `user_setting` (key/value), `user_llm_settings` (encrypted provider keys), `summary_prompt`, and the `user_asr_settings` / `user_diarization_settings` tables; deployment-wide configuration is in `system_settings`. AI summaries are stored as JSON in `media_file.summary_data`.
+Table definitions are grouped by domain in `app/models/`; `app/models/README.md` has the inventory. Core media tables (`media_file`, `transcript_segment`, `speaker`, `speaker_profile`, `tag`, `collection`, `task`, ...) are in `models/media.py`, `models/speaker.py`, `models/tag.py` and `models/collection.py`. Per-user configuration lives in `user_setting` (key/value), `user_llm_settings` (encrypted provider keys), `summary_prompt`, and the `user_asr_settings` / `user_diarization_settings` tables; deployment-wide configuration is in `system_settings`. AI summaries are stored as JSON in `media_file.summary_data`.
 
 ### Development Workflow
 1. **Schema Changes**: Create a new Alembic migration in `backend/alembic/versions/`

@@ -20,10 +20,10 @@ from fastapi import HTTPException
 from app.core.exceptions import AccessDeniedError
 from app.core.tenancy import UNSCOPED
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
 from app.models.media import TranscriptSegment
 from app.models.organization import Organization
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 from app.models.user import User
 from app.schemas.transcript import SegmentSpeakerUpdate
 from app.services.platform_access import TenancyMode

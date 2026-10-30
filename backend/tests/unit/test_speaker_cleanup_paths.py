@@ -12,8 +12,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from app.models.media import SpeakerCluster
-from app.models.media import SpeakerProfile
+from app.models.speaker import SpeakerCluster
+from app.models.speaker import SpeakerProfile
 from app.services import file_cleanup_service as fcs
 from tests.fixtures.speaker_cleanup_seams import VOICE_A
 from tests.fixtures.speaker_cleanup_seams import VOICE_B

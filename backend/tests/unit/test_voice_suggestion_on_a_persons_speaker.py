@@ -30,8 +30,8 @@ import numpy as np
 import pytest
 
 from app.core import constants
-from app.models.media import Speaker
 from app.models.prompt import UserSetting
+from app.models.speaker import Speaker
 from app.services.privacy import purge
 from app.services.privacy.purge_residual import measure_voiceprint_residual
 from app.services.privacy.purge_voiceprints import VoiceprintTargets

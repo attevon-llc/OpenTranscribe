@@ -46,8 +46,8 @@ def _make_user(db):
 def _make_file_with_two_speakers(db, user):
     from app.core.enums import FileStatus
     from app.models.media import MediaFile
-    from app.models.media import Speaker
     from app.models.media import TranscriptSegment
+    from app.models.speaker import Speaker
 
     media_file = MediaFile(
         user_id=user.id,

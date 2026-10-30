@@ -279,8 +279,8 @@ def test_a_share_recipients_own_policy_governs_not_the_owners(
     """
     import uuid as uuid_pkg
 
-    from app.models.media import Collection
-    from app.models.media import CollectionMember
+    from app.models.collection import Collection
+    from app.models.collection import CollectionMember
     from app.models.sharing import CollectionShare
 
     # Sharing is collection-scoped, not per-file, so reach the reader the way the

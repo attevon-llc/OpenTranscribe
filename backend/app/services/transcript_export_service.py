@@ -31,8 +31,8 @@ if TYPE_CHECKING:
     from app.services.redaction.config import EffectiveRedactionConfig
 
 from app.models.media import Comment
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.services.transcript_export_markdown import MarkdownMeta
 from app.services.transcript_export_markdown import build_markdown
 from app.services.transcript_export_text import build_csv

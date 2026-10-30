@@ -454,7 +454,7 @@ def update_file_access_index(file_ids: list[int]) -> dict[str, Any]:
     """
     from app.core.config import settings
     from app.db.session_utils import session_scope
-    from app.models.media import CollectionMember
+    from app.models.collection import CollectionMember
     from app.services.opensearch_service import get_opensearch_client
     from app.services.permission_service import PermissionService
 
@@ -582,8 +582,8 @@ def update_file_tags_index(file_ids: list[int]) -> dict[str, Any]:
     """
     from app.core.config import settings
     from app.db.session_utils import session_scope
-    from app.models.media import FileTag
-    from app.models.media import Tag
+    from app.models.tag import FileTag
+    from app.models.tag import Tag
     from app.services.opensearch_service import get_opensearch_client
 
     if not file_ids:

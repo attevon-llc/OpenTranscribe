@@ -76,11 +76,11 @@ def measure_voiceprint_residual(
     errors: list[dict[str, Any]],
 ) -> Residual:
     """Measure the voiceprint stores of ``scope`` after a pass."""
-    from app.models.media import Speaker
-    from app.models.media import SpeakerCluster
-    from app.models.media import SpeakerClusterMember
-    from app.models.media import SpeakerMatch
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import Speaker
+    from app.models.speaker import SpeakerCluster
+    from app.models.speaker import SpeakerClusterMember
+    from app.models.speaker import SpeakerMatch
+    from app.models.speaker import SpeakerProfile
     from app.services.gdpr_erasure_service import count_speaker_docs_by_ids
     from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
 
@@ -196,7 +196,7 @@ def measure_gender_residual(
     scope: PurgeScope, *, session_factory: Callable[[], Session]
 ) -> Residual:
     """Speakers in scope still carrying an inferred (unconfirmed) gender."""
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     db = session_factory()
     try:

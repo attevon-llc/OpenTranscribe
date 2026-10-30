@@ -12,7 +12,7 @@ import numpy as np
 
 from app.core import queues
 from app.models.media import MediaFile
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 from app.services.clustering.recluster_groups import Groups
 
 if TYPE_CHECKING:

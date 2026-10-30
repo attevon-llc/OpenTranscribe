@@ -21,9 +21,9 @@ import pytest
 from sqlalchemy import inspect
 from sqlalchemy import text
 
-from app.models.media import FileTag
 from app.models.media import MediaFile
-from app.models.media import Tag
+from app.models.tag import FileTag
+from app.models.tag import Tag
 from app.models.user import User
 
 REVISION = "v374_add_tag_user_id"

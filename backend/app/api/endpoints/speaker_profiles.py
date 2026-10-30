@@ -21,10 +21,10 @@ from app.core.constants import MAX_AVATAR_SIZE
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerCollection
-from app.models.media import SpeakerCollectionMember
-from app.models.media import SpeakerProfile
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCollection
+from app.models.speaker import SpeakerCollectionMember
+from app.models.speaker import SpeakerProfile
 from app.models.user import User
 from app.services.opensearch_service import update_speaker_collections
 from app.services.permission_service import PermissionService
@@ -569,7 +569,7 @@ def _get_embedding_suggestions(
     suggestions: list[dict[str, Any]] = []
 
     # Get speaker object to extract UUID
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
     if not speaker:
@@ -820,7 +820,7 @@ def delete_speaker_profile(
     promoted cluster is deleted with its centroid instead of being left listed with
     nobody in it (issue #1214). A display name the user set to something else survives.
     """
-    from app.models.media import SpeakerCluster
+    from app.models.speaker import SpeakerCluster
     from app.services.speaker_cleanup import SpeakerCleanupIncompleteError
     from app.services.speaker_cleanup import capture_speaker_impact
     from app.services.speaker_cleanup import raise_if_incomplete

@@ -23,9 +23,9 @@ from types import EllipsisType
 
 from app.core.constants import TAG_SOURCE_AUTO_AI
 from app.core.constants import TAG_SOURCE_MANUAL
-from app.models.media import FileTag
 from app.models.media import MediaFile
-from app.models.media import Tag
+from app.models.tag import FileTag
+from app.models.tag import Tag
 from app.services.tag_collisions import accessible_usage_counts
 from app.services.tag_collisions import find_tag_collisions
 from app.services.tag_collisions import list_tags_filtered

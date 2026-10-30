@@ -19,9 +19,9 @@ import pytest
 from fastapi import status
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
 from app.models.prompt import UserSetting
+from app.models.speaker import Speaker
 
 LONG_TURN = (
     "So what we found over the last quarter is that the retention numbers, which everyone "

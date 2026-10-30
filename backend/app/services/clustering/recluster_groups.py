@@ -13,9 +13,9 @@ from uuid import uuid4
 
 import numpy as np
 
-from app.models.media import Speaker
-from app.models.media import SpeakerCannotLink
-from app.models.media import SpeakerCluster
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCannotLink
+from app.models.speaker import SpeakerCluster
 from app.services.clustering.thresholds import GENDER_OUTLIER_EVICT_THRESHOLD
 
 if TYPE_CHECKING:

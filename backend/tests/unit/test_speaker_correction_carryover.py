@@ -22,10 +22,10 @@ from typing import Any
 import numpy as np
 import pytest
 
-from app.models.media import Speaker
-from app.models.media import SpeakerCannotLink
-from app.models.media import SpeakerProfileBlacklist
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCannotLink
+from app.models.speaker import SpeakerProfileBlacklist
 from tests.fixtures.speaker_cleanup_seams import make_cluster
 from tests.fixtures.speaker_cleanup_seams import make_file
 from tests.fixtures.speaker_cleanup_seams import make_profile
@@ -182,7 +182,7 @@ def test_a_rerun_of_the_file_does_not_bring_back_what_the_user_unassigned(
     # Control: the other voice of the file carries no correction and IS matched.
     other = db_session.get(Speaker, new["SPEAKER_01"].id)
     assert other.profile_id == bob.id
-    from app.models.media import SpeakerCorrectionCarryover
+    from app.models.speaker import SpeakerCorrectionCarryover
 
     assert db_session.query(SpeakerCorrectionCarryover).count() == 0, "carried rows linger"
 

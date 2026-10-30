@@ -264,8 +264,8 @@ def test_a_share_recipient_may_export_the_summary_they_can_read(
     """A share recipient with read access may export the summary they can already see —
     matches ``get_file_by_uuid_with_permission``'s default (no ``min_permission``), same as
     ``GET .../summary`` itself."""
-    from app.models.media import Collection
-    from app.models.media import CollectionMember
+    from app.models.collection import Collection
+    from app.models.collection import CollectionMember
     from app.models.sharing import CollectionShare
 
     media_file = _make_file(db_session, other_user, {"bluf": "Shared recording summary."})

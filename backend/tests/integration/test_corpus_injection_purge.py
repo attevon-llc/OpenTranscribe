@@ -25,8 +25,8 @@ from sqlalchemy import func
 from sqlalchemy import select
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.scripts.corpus_injection.__main__ import main as _injector_main
 from app.scripts.corpus_injection.adapters.synthetic import SyntheticAdapter
 from app.scripts.corpus_injection.injector import inject_meeting

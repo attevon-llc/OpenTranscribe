@@ -18,10 +18,10 @@ import pytest
 
 from app.models.media import FileStatus
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerCluster
-from app.models.media import SpeakerClusterMember
-from app.models.media import SpeakerProfile
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCluster
+from app.models.speaker import SpeakerClusterMember
+from app.models.speaker import SpeakerProfile
 from app.services import file_cleanup_service as fcs
 
 VOICE_A = [1.0, 0.0, 0.0, 0.0]

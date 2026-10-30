@@ -21,7 +21,7 @@ from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import set_committed_value
 
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)

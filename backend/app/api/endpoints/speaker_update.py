@@ -22,9 +22,9 @@ from app.api.endpoints.speaker_match_notify import (
     send_bulk_update_notification as _send_bulk_update_notification,
 )
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerMatch
-from app.models.media import SpeakerProfile
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerMatch
+from app.models.speaker import SpeakerProfile
 from app.services.embedding_mode_service import voiceprint_model_id
 from app.services.opensearch_service import get_speaker_embedding
 from app.services.permission_service import file_ids_in_scope

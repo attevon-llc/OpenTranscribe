@@ -25,11 +25,11 @@ from app.core import constants
 from app.core.enums import PostProcessingState
 from app.core.enums import PostProcessingTask
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
 from app.models.organization import Organization
 from app.models.organization_policy import OrganizationPolicy
 from app.models.prompt import UserSetting
+from app.models.speaker import Speaker
 from app.models.system_settings import SystemSettings
 from app.services import migration_admin_notify
 from app.services import post_processing_status

@@ -19,8 +19,8 @@ import uuid
 from fastapi import status
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 
 
 def _make_file_speaker_segment(

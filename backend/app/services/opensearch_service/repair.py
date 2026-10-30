@@ -192,7 +192,7 @@ def rebuild_speaker_index(db: "Any", allow_empty_rebuild: bool = False) -> dict[
             "speakers_indexed": 0,
         }
 
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     speaker_index = get_speaker_index()
     v4_index = f"{speaker_index}_v4"

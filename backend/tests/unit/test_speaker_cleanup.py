@@ -15,9 +15,9 @@ import uuid as uuid_pkg
 
 import pytest
 
-from app.models.media import SpeakerCluster
-from app.models.media import SpeakerClusterMember
-from app.models.media import SpeakerProfile
+from app.models.speaker import SpeakerCluster
+from app.models.speaker import SpeakerClusterMember
+from app.models.speaker import SpeakerProfile
 from app.services import speaker_cleanup as sc
 from tests.fixtures.speaker_cleanup_seams import VOICE_A
 from tests.fixtures.speaker_cleanup_seams import VOICE_B

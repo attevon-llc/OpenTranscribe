@@ -71,8 +71,8 @@ from app.api.endpoints import speakers_debug as spk_debug
 from app.api.endpoints import speakers_merge as spk_merge
 from app.api.endpoints import speakers_profile_workflow as spk_workflow
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 from app.services import smart_speaker_suggestion_service as smart
 from app.tasks import speaker_merge_task as smt
 from app.tasks import speaker_update_task as spt

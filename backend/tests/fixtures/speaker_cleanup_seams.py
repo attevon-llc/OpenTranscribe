@@ -46,7 +46,7 @@ def make_file(db, user) -> Any:
 
 
 def make_speaker(db, user, media_file, name: str = "SPEAKER_00", **kw: Any) -> Any:
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     sp = Speaker(
         uuid=uuid_pkg.uuid4(), name=name, user_id=user.id, media_file_id=media_file.id, **kw
@@ -58,8 +58,8 @@ def make_speaker(db, user, media_file, name: str = "SPEAKER_00", **kw: Any) -> A
 
 def make_cluster(db, user, *speakers: Any, promoted_to: int | None = None, label="c") -> Any:
     """A committed cluster; both membership records (rows and ``cluster_id``) are set."""
-    from app.models.media import SpeakerCluster
-    from app.models.media import SpeakerClusterMember
+    from app.models.speaker import SpeakerCluster
+    from app.models.speaker import SpeakerClusterMember
 
     cl = SpeakerCluster(
         uuid=uuid_pkg.uuid4(),
@@ -78,7 +78,7 @@ def make_cluster(db, user, *speakers: Any, promoted_to: int | None = None, label
 
 
 def make_profile(db, user, name: str = "P") -> Any:
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import SpeakerProfile
 
     profile = SpeakerProfile(uuid=uuid_pkg.uuid4(), user_id=user.id, name=name)
     db.add(profile)

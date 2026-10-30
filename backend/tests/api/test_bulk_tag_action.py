@@ -36,12 +36,12 @@ from sqlalchemy import event
 from sqlalchemy import text
 
 from app.core.constants import TAG_SOURCE_MANUAL
-from app.models.media import Collection
-from app.models.media import CollectionMember
-from app.models.media import FileTag
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.media import MediaFile
-from app.models.media import Tag
 from app.models.sharing import CollectionShare
+from app.models.tag import FileTag
+from app.models.tag import Tag
 from app.services.tag_service import normalize_tag_name
 
 BULK_URL = "/api/files/management/bulk-action"

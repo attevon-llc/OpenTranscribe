@@ -13,8 +13,8 @@ import uuid as uuid_pkg
 
 from sqlalchemy import event
 
-from app.models.media import Collection
-from app.models.media import CollectionMember
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.media import MediaFile
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership

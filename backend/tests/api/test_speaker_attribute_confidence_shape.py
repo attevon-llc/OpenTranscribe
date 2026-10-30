@@ -23,8 +23,8 @@ import pytest
 from fastapi import status
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 
 HINTS = [
     {"name": "Zylofenix Quorra", "role": "host", "confidence": 0.8, "source": "title"},

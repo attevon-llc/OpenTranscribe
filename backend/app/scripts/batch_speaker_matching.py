@@ -16,8 +16,8 @@ import numpy as np
 
 from app.core.constants import SPEAKER_CONFIDENCE_MEDIUM
 from app.db.base import get_db
-from app.models.media import Speaker
-from app.models.media import SpeakerMatch
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerMatch
 from app.services.embedding_mode_service import voiceprint_model_id
 from app.services.opensearch_service import get_speaker_embedding
 from app.services.privacy.redact_view import PrivacyView

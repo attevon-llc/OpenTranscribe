@@ -32,9 +32,9 @@ from app.core.enums import CollectionVisibility
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.group import UserGroupMember
-from app.models.media import Collection
-from app.models.media import CollectionMember
 from app.models.media import MediaFile
 from app.models.organization import OrganizationMembership
 from app.models.sharing import CollectionShare

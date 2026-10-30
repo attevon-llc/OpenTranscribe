@@ -15,8 +15,8 @@ from app.core.celery import celery_app
 from app.core.queues import GPUPriority
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.services.file_provenance import record_stage
 from app.services.file_provenance import voiceprint_facts
 from app.services.privacy.gates import voiceprints_allowed

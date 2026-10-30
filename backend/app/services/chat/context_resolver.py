@@ -32,10 +32,10 @@ from sqlalchemy.orm import Session
 from app.core import chat_defaults
 from app.core.exceptions import DomainError
 from app.core.exceptions import InvalidInputError
-from app.models.media import CollectionMember
-from app.models.media import FileTag
+from app.models.collection import CollectionMember
 from app.models.media import MediaFile
-from app.models.media import Tag
+from app.models.tag import FileTag
+from app.models.tag import Tag
 from app.schemas.chat import ChatScope
 from app.services.request_context import RequestContext
 from app.services.uuid_helpers import get_file_by_uuid_with_permission

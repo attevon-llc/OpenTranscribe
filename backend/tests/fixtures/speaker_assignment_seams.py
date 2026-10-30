@@ -32,7 +32,7 @@ def speaker_assignment_seams(
     ``rec["doc_orgs"]`` (the tenant each voiceprint write stamped) and
     ``rec["deleted_centroids"]`` (re-cluster's wholesale centroid deletes).
     """
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     rec = speaker_os_seams
     rec["segment_counts"] = {}

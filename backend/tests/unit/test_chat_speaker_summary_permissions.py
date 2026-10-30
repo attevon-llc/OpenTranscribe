@@ -97,8 +97,8 @@ def _add_speaker_summary(db, media_file, *, speaker: str):
 
 
 def _share_with(db, owner, recipient, media_file) -> None:
-    from app.models.media import Collection
-    from app.models.media import CollectionMember
+    from app.models.collection import Collection
+    from app.models.collection import CollectionMember
     from app.models.sharing import CollectionShare
 
     collection = Collection(

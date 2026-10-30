@@ -405,7 +405,7 @@ def filter_shareable_profiles(
     consent hook denies. Hooks are asked once per (owner, organization), not per profile.
     Any error drops the non-owned profiles (fail closed).
     """
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import SpeakerProfile
 
     ids = list(dict.fromkeys(profile_ids))
     if not ids:

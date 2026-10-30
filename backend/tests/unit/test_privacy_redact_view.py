@@ -15,11 +15,11 @@ import pytest
 
 from app.core import constants
 from app.core.exceptions import DomainError
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
 from app.models.organization import Organization
 from app.models.organization_policy import OrganizationPolicy
 from app.models.prompt import UserSetting
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 from app.services.privacy import redact_view
 from app.services.privacy.consent import clear_voiceprint_consent_hooks
 from app.services.privacy.consent import register_voiceprint_consent_hook

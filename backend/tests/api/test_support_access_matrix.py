@@ -28,12 +28,12 @@ from unittest.mock import patch
 
 import pytest
 
-from app.models.media import Collection
-from app.models.media import CollectionMember
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.media import Comment
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
 from app.models.media import Task
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 from app.models.support_access import SupportAccessUse
 from app.models.watch_source import WatchSource
 

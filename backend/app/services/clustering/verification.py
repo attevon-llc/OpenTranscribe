@@ -13,9 +13,9 @@ from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerCluster
-from app.models.media import SpeakerProfile
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCluster
+from app.models.speaker import SpeakerProfile
 from app.services.permission_service import org_scope_pred
 from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.speaker_cleanup import SpeakerImpact

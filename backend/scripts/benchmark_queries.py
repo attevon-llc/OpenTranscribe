@@ -26,11 +26,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
-from app.models.media import FileTag
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import Tag
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
+from app.models.tag import FileTag
+from app.models.tag import Tag
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)

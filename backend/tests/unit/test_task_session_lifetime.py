@@ -59,9 +59,9 @@ from celery.exceptions import Retry
 from app.models.email_notification_config import EmailNotificationConfig
 from app.models.email_notification_config import WatchSourceEmail
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import Task as TaskModel
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.models.topic import TopicSuggestion
 from app.models.watch_source import WatchSource
 from app.tasks import media_download as mdl
@@ -1476,7 +1476,7 @@ def test_cleanup_expired_selection_returns_plain_data(db_session, normal_user, m
 def test_v4_profile_update_hits_opensearch_outside_the_session(
     db_session, normal_user, monkeypatch
 ):
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import SpeakerProfile
     from app.services import opensearch_service as oss
 
     tracker = _ScopeTracker(db_session)

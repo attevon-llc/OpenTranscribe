@@ -33,8 +33,8 @@ from fastapi import status
 
 from app.models.media import Analytics
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.utils.task_utils import reset_file_for_retry
 
 

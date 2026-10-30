@@ -35,8 +35,8 @@ from sqlalchemy import func
 from sqlalchemy import select
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.scripts.corpus_injection import ids
 from app.scripts.corpus_injection.injector import dispatch_indexing
 from app.scripts.corpus_injection.injector import inject_meeting

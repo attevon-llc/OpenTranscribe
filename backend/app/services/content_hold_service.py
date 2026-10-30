@@ -29,14 +29,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.audit import AuditEventType
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.content_hold import REASON_MAX_LENGTH
 from app.models.content_hold import REASON_MIN_LENGTH
 from app.models.content_hold import SCOPE_COLLECTION
 from app.models.content_hold import SCOPE_FILE
 from app.models.content_hold import ContentHold
 from app.models.content_hold import ContentHoldFile
-from app.models.media import Collection
-from app.models.media import CollectionMember
 from app.models.media import MediaFile
 from app.services.content_audit import AuditedResource
 from app.services.content_audit import record_content_event

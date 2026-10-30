@@ -10,9 +10,9 @@ import numpy as np
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerCollectionMember
-from app.models.media import SpeakerProfile
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCollectionMember
+from app.models.speaker import SpeakerProfile
 from app.services.permission_service import org_scope_pred
 from app.services.privacy.redact_view import PrivacyView
 from app.services.takedown_service import exclude_quarantined

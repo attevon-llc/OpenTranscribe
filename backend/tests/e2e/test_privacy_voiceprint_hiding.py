@@ -43,7 +43,7 @@ def voice_named_file(
 ) -> Iterator[dict[str, Any]]:
     """A transcript owned by ``second_user`` whose speakers carry voiceprint-written names."""
     from app.db.base import SessionLocal
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     suffix = uuid.uuid4().hex[:6]
     user_token = user_headers["Authorization"].split(" ", 1)[1]

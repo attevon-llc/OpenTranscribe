@@ -17,7 +17,7 @@ from sqlalchemy import inspect
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 
 REVISION = "v449_add_speaker_identity_source"
 PARENT = "v448_task_one_active_row_per_file_step"
@@ -58,7 +58,7 @@ def test_vendor_neutral():
 
 
 def test_the_migration_and_the_model_admit_exactly_the_documented_values():
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
     from app.utils.speaker_identity_source import IDENTITY_SOURCES
 
     def values(check_text: str) -> set[str]:
@@ -228,7 +228,7 @@ def _shape(
     ``carrier_created_at`` moves that first carrier in time. ``created_after_profile=False`` makes the speaker older than its profile (what a person
     typing a name produces); ``earlier_carrier=False`` leaves the profile with no other voice.
     """
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import SpeakerProfile
     from tests.fixtures.speaker_cleanup_seams import make_profile
 
     profile = (

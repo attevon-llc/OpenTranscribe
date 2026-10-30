@@ -32,8 +32,8 @@ def _make_query_db(speakers, segments):
     an order_by chain) — a flat ``.filter().all()`` side_effect list can't
     tell those two calls apart because order_by() returns a distinct mock.
     """
-    from app.models.media import Speaker
     from app.models.media import TranscriptSegment
+    from app.models.speaker import Speaker
 
     db = MagicMock()
 

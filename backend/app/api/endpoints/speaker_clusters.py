@@ -14,9 +14,9 @@ from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.core.exceptions import DomainError
 from app.db.base import get_db
-from app.models.media import Speaker
-from app.models.media import SpeakerCluster
-from app.models.media import SpeakerClusterMember
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCluster
+from app.models.speaker import SpeakerClusterMember
 from app.models.user import User
 from app.schemas.speaker_cluster import BatchVerifyRequest
 from app.schemas.speaker_cluster import ClusterPromoteRequest

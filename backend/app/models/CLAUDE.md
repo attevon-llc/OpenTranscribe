@@ -8,12 +8,15 @@ authority. See `backend/app/db/CLAUDE.md`.
 
 ## Key files
 
-- `media.py` (~1,360 lines — the deliberate exception to the ~300-line rule): `MediaFile`,
-  `TranscriptSegment`, `Speaker`/`SpeakerProfile`/`SpeakerCluster`/`SpeakerMatch`, `Collection`,
-  `Tag`, `Task`, `Analytics`, `Comment`. `SpeakerCannotLink`, `SpeakerProfileBlacklist` and
-  `SpeakerCorrectionCarryover` (`v438`, a correction held by its time spans across a re-run,
-  issue #1233) are defined here but **not re-exported** from `__init__.py` — import them from
-  `app.models.media`.
+- `media.py`: `MediaFile`, `TranscriptSegment`, `Comment`, `Task`, `Analytics`; it still re-exports
+  `FileStatus` (98 importers). Cross-module `Mapped["X"]` annotations need `TYPE_CHECKING` imports;
+  the relationship strings resolve through the mapper registry, so `__init__.py` must import every
+  model module.
+- `speaker.py`: `Speaker`, `SpeakerProfile`, `SpeakerCollection(Member)`, `SpeakerCluster(Member)`,
+  `SpeakerMatch`, `SpeakerCannotLink`, `SpeakerProfileBlacklist` and `SpeakerCorrectionCarryover`
+  (`v438`, a correction held by its time spans across a re-run, issue #1233). The last three are
+  **not re-exported** from `__init__.py` — import them from `app.models.speaker`.
+- `tag.py` (`Tag`, `FileTag`) and `collection.py` (`Collection`, `CollectionMember`).
 - `group.py` — `UserGroup`, `UserGroupMember`, and (since `v378`) `GroupMapping`.
   `MAPPING_SOURCES` / `MEMBERSHIP_SOURCES` are the CHECK bodies' single source of truth
   (`*_SQL` built from the tuples); `v382` widened both to add `proxy` and `scim`.

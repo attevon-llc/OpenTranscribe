@@ -18,8 +18,8 @@ import uuid as uuid_pkg
 from fastapi import status
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import Task as TaskModel
+from app.models.speaker import Speaker
 from app.models.watch_source import WatchSource
 from app.models.watch_source import WatchSourceFile
 

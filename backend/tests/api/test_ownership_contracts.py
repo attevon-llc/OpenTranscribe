@@ -22,16 +22,16 @@ Run: ``venv/bin/pytest tests/api/test_ownership_contracts.py -v -n0``
 
 import uuid as uuid_pkg
 
+from app.models.collection import Collection
 from app.models.custom_vocabulary import CustomVocabulary
 from app.models.group import UserGroup
-from app.models.media import Collection
 from app.models.media import Comment
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerCollection
-from app.models.media import SpeakerProfile
 from app.models.media import TranscriptSegment
 from app.models.prompt import SummaryPrompt
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCollection
+from app.models.speaker import SpeakerProfile
 from app.models.user_llm_settings import UserLLMSettings
 from app.models.watch_source import WatchSource
 

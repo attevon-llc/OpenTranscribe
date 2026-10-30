@@ -27,8 +27,8 @@ import uuid as uuid_pkg
 
 import pytest
 
-from app.models.media import Collection
-from app.models.media import CollectionMember
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.media import MediaFile
 from app.services.search.hybrid_search_service import HybridSearchService
 from app.services.search.search_types import SearchHit

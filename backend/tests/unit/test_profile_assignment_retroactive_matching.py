@@ -25,8 +25,8 @@ from unittest.mock import patch
 import pytest
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 
 
 @pytest.fixture(autouse=True)

@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import pytest
 
-from app.models.media import Speaker
-from app.models.media import SpeakerCannotLink
-from app.models.media import SpeakerCluster
-from app.models.media import SpeakerProfileBlacklist
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCannotLink
+from app.models.speaker import SpeakerCluster
+from app.models.speaker import SpeakerProfileBlacklist
 from tests.fixtures.speaker_cleanup_seams import VOICE_A
 from tests.fixtures.speaker_cleanup_seams import VOICE_B
 from tests.fixtures.speaker_cleanup_seams import VOICE_C

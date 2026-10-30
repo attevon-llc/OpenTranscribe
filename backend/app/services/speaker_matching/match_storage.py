@@ -10,8 +10,8 @@ from sqlalchemy import func
 from app.core.constants import SPEAKER_CONFIDENCE_MEDIUM
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
-from app.models.media import Speaker
-from app.models.media import SpeakerMatch
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerMatch
 from app.services.opensearch_service import find_matching_speaker
 from app.services.speaker_matching.thresholds import ConfidenceLevel
 from app.utils.cosine_space import raw_cosine_from_opensearch_score

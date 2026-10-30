@@ -395,8 +395,8 @@ def test_leak_a_personal_scope_answer_excludes_the_callers_org_stamped_file(
 
 
 def _share_with(db, owner, recipient, media_file) -> None:
-    from app.models.media import Collection
-    from app.models.media import CollectionMember
+    from app.models.collection import Collection
+    from app.models.collection import CollectionMember
     from app.models.sharing import CollectionShare
 
     collection = Collection(

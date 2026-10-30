@@ -16,10 +16,10 @@ from app.core.constants import FILE_TYPE_MIME_PREFIXES
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
-from app.models.media import FileTag
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import Tag
+from app.models.speaker import Speaker
+from app.models.tag import FileTag
+from app.models.tag import Tag
 from app.models.user import User
 from app.services.platform_bypass import PlatformBypass
 

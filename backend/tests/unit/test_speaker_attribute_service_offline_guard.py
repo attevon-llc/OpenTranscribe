@@ -1,7 +1,7 @@
 """Offline-guard behavior for SpeakerAttributeService.load_models.
 
 Fourth sibling site from the reranker-offline-guard investigation. This one
-already had a bound (`app/tasks/speaker_attribute_task.py::_load_models_with_
+already had a bound (`app/tasks/speaker_attribute_inference.py::_load_models_with_
 timeout`, issue #622), so the only gap was the missing `local_files_only`
 kwarg — relying on the `HF_HUB_OFFLINE` env var alone is unreliable here for
 the same import-order reason documented in `app/utils/hf_hub_offline.py`.

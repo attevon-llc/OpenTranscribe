@@ -94,10 +94,11 @@ def matching_service(db_session, monkeypatch):
     faked — only the calls that would reach a cluster.
     """
     from app.services import speaker_matching_service as sms
+    from app.services.speaker_matching import match_handling
 
     stored: list[dict] = []
 
-    monkeypatch.setattr(sms, "add_speaker_embedding", lambda **kw: None)
+    monkeypatch.setattr(match_handling, "add_speaker_embedding", lambda **kw: None)
     monkeypatch.setattr(
         "app.services.opensearch_service.get_profile_embedding",
         lambda _uuid: [1.0] + [0.0] * (EMBEDDING_DIMENSION - 1),

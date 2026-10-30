@@ -137,7 +137,7 @@ def _match_against_bob(db, user, speaker, bob, seams, monkeypatch) -> None:
         lambda u: seams["profiles"].get(str(u)),
     )
     monkeypatch.setattr(
-        "app.services.speaker_matching_service.add_speaker_embedding", lambda **kw: True
+        "app.services.speaker_matching.match_handling.add_speaker_embedding", lambda **kw: True
     )
     match = {"profile_id": bob.id, "suggested_name": BOB, "confidence": 0.9, "auto_accept": True}
     svc._handle_speaker_match(speaker, match, np.array(VC), user.id, speaker.media_file_id)
@@ -205,7 +205,7 @@ def test_a_rerun_voice_match_does_not_suggest_the_name_the_user_ruled_out(
         lambda *args, **kw: [{"speaker_id": a.id, "display_name": BOB, "confidence": 0.9}],
     )
     monkeypatch.setattr(
-        "app.services.speaker_matching_service.add_speaker_embedding", lambda **kw: True
+        "app.services.speaker_matching.match_handling.add_speaker_embedding", lambda **kw: True
     )
 
     for speaker in new.values():

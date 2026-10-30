@@ -33,7 +33,7 @@ from app.services.permission_service import org_scope_pred
 from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import derived_profile_genders
 from app.services.request_context import RequestContext
-from app.services.speaker_matching_service import ConfidenceLevel
+from app.services.speaker_matching.thresholds import ConfidenceLevel
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.services.speaker_profile_rename import apply_profile_name_to_speakers
 from app.services.uuid_helpers import _resource_in_tenant_scope

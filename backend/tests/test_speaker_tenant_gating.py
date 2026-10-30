@@ -190,14 +190,13 @@ class TestSpeakerMatchingOrgGate:
             calls["profile_knn"].append(kwargs.get("organization_id"))
             return []
 
-        monkeypatch.setattr(
-            "app.services.speaker_matching_service.find_matching_speaker",
-            fake_find_matching_speaker,
-        )
-        monkeypatch.setattr(
-            "app.services.speaker_matching_service.add_speaker_embedding",
-            fake_add_speaker_embedding,
-        )
+        fakes = {
+            "match_queries.find_matching_speaker": fake_find_matching_speaker,
+            "match_storage.find_matching_speaker": fake_find_matching_speaker,
+            "match_handling.add_speaker_embedding": fake_add_speaker_embedding,
+        }
+        for target, fake in fakes.items():
+            monkeypatch.setattr(f"app.services.speaker_matching.{target}", fake)
         from app.services.profile_embedding_service import ProfileEmbeddingService
 
         monkeypatch.setattr(

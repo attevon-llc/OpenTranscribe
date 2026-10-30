@@ -45,9 +45,10 @@ def knn(monkeypatch) -> dict[str, Any]:
         calls["profile"] += 1
         return []
 
-    monkeypatch.setattr(
-        "app.services.speaker_matching_service.find_matching_speaker", find_matching_speaker
-    )
+    for module in ("match_queries", "match_storage"):
+        monkeypatch.setattr(
+            f"app.services.speaker_matching.{module}.find_matching_speaker", find_matching_speaker
+        )
     monkeypatch.setattr(
         "app.services.profile_embedding_service.ProfileEmbeddingService.calculate_profile_similarity",
         staticmethod(calculate_profile_similarity),

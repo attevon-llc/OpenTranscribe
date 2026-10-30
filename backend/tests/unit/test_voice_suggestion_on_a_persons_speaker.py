@@ -171,7 +171,7 @@ def test_a_re_run_voice_match_records_no_suggestion_on_a_person_verified_speaker
         ],
     )
     monkeypatch.setattr(
-        "app.services.speaker_matching_service.add_speaker_embedding", lambda **kw: 1
+        "app.services.speaker_matching.match_handling.add_speaker_embedding", lambda **kw: 1
     )
 
     for speaker in (person, control):
@@ -200,7 +200,7 @@ def test_a_matched_speaker_gets_a_suggestion_only_if_nobody_vouched_or_the_match
     svc = SpeakerMatchingService(db_session, None)
 
     with (
-        patch("app.services.speaker_matching_service.add_speaker_embedding"),
+        patch("app.services.speaker_matching.match_handling.add_speaker_embedding"),
         patch.object(SpeakerMatchingService, "find_and_store_speaker_matches"),
         patch("app.services.speaker_rename_tracker.SpeakerRenameTracker.record"),
     ):

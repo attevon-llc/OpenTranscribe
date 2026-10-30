@@ -32,7 +32,7 @@ from app.models.prompt import UserSetting
 from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.speaker_clustering_service import SpeakerClusteringService
-from app.services.speaker_matching_service import MATCHING_ORIGIN_TASK
+from app.services.speaker_matching.thresholds import MATCHING_ORIGIN_TASK
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.services.speaker_provenance_view import ProvenanceViewer
 from app.services.speaker_provenance_view import attach_speaker_provenance
@@ -55,7 +55,6 @@ _MODEL = "pyannote/test-embedding"
 def _fixed_embedding_model():
     """The model id is read from the embedding service; pin it so the record is comparable."""
     with (
-        patch("app.services.speaker_matching_service.voiceprint_model_id", return_value=_MODEL),
         patch("app.services.embedding_mode_service.voiceprint_model_id", return_value=_MODEL),
     ):
         yield
@@ -603,8 +602,8 @@ def test_rejecting_a_suggestion_withdraws_its_detail(
 def _auto_accept(db, user, speaker, match: dict[str, Any]) -> None:
     service = SpeakerMatchingService(db, embedding_service=None)
     with (
-        patch("app.services.speaker_matching_service.add_speaker_embedding"),
-        patch("app.services.speaker_matching_service.update_speaker_profile", create=True),
+        patch("app.services.speaker_matching.match_handling.add_speaker_embedding"),
+        patch("app.services.speaker_matching.match_handling.update_speaker_profile", create=True),
         patch.object(SpeakerMatchingService, "find_and_store_speaker_matches"),
         patch.object(SpeakerMatchingService, "_propagate_profile_assignment"),
         patch.object(SpeakerMatchingService, "match_speaker_to_known_speakers", return_value=match),

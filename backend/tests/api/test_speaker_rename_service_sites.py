@@ -122,7 +122,7 @@ class TestMatchingServiceAutoAccept:
 
         service = SpeakerMatchingService(db_session, embedding_service=None)
         with (
-            patch("app.services.speaker_matching_service.add_speaker_embedding"),
+            patch("app.services.speaker_matching.match_handling.add_speaker_embedding"),
             patch.object(SpeakerMatchingService, "find_and_store_speaker_matches"),
         ):
             yield service

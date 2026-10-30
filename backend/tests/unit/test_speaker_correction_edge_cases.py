@@ -409,7 +409,7 @@ def test_a_voice_match_suggestion_skips_a_name_and_a_speaker_the_user_ruled_out(
         lambda *args, **kw: [{"speaker_id": a.id, "display_name": "bob", "confidence": 0.9}],
     )
     monkeypatch.setattr(
-        "app.services.speaker_matching_service.add_speaker_embedding", lambda **kw: True
+        "app.services.speaker_matching.match_handling.add_speaker_embedding", lambda **kw: True
     )
 
     for sp in (by_name, by_pair, control):

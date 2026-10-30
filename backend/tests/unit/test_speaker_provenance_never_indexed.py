@@ -56,6 +56,9 @@ _GUARDED_FILES = (
     "tasks/reindex_task.py",
     "tasks/rename_propagation_task.py",
     "tasks/embedding_migration_v4.py",
+    "tasks/embedding_migration_v4_finalize.py",
+    "tasks/embedding_migration_v4_scope.py",
+    "tasks/embedding_migration_v4_writer.py",
     "tasks/speaker_embedding_migration.py",
     "services/speaker_rename_tracker.py",
 )
@@ -97,6 +100,9 @@ def test_the_guard_covers_real_files():
     for known in (
         "services/clustering/verification.py",
         "tasks/embedding_migration_v4.py",
+        "tasks/embedding_migration_v4_finalize.py",
+        "tasks/embedding_migration_v4_scope.py",
+        "tasks/embedding_migration_v4_writer.py",
         "tasks/speaker_embedding_migration.py",
         "services/speaker_rename_tracker.py",
         "utils/prompt_manager.py",

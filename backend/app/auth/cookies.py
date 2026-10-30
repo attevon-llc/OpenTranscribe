@@ -41,7 +41,7 @@ _ALLOW_INSECURE = _HARDENED and settings.ALLOW_INSECURE_COOKIES
 _SECURE = _HARDENED and not _ALLOW_INSECURE
 
 # The operator-visible warning for _ALLOW_INSECURE lives in
-# `main.py:_validate_production_secrets`, not here — this module is imported
+# `core/startup_validation.py:_validate_production_secrets`, not here — this module is imported
 # (transitively, via the auth routers) before `configure_logging()` runs, so a
 # warning logged at import time here would be the one boot line NOT in JSON under
 # LOG_FORMAT=json, and a structured log collector could drop or mangle it.

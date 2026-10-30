@@ -555,7 +555,7 @@ ALLOWS_KINDS: dict[str, str] = {
     "api/endpoints/media_collections.py::get_collection_media": "collection",
     "api/endpoints/comments.py::_assert_comment_file_in_scope": "comment",
     "api/endpoints/comments.py::delete_comment": "comment",
-    "api/endpoints/watch_sources.py::_get_source_or_404": "watch_source",
+    "api/endpoints/watch_sources_access.py::_get_source_or_404": "watch_source",
     "api/endpoints/watch_sources.py::create_watch_source": "watch_source_owner",
     "api/endpoints/prompts.py::share_prompt": "prompt",
     "api/endpoints/files/crud.py::get_media_file_by_id": "media_file",

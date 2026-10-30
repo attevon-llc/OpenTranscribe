@@ -1,6 +1,6 @@
 """Functional characterization tests for the watch-sources endpoints.
 
-Covers ``watch_sources.py`` (``/api/watch-sources``): source CRUD with the
+Covers ``watch_sources*.py`` (``/api/watch-sources``): source CRUD with the
 write-only encrypted-credential contract (S3 secret / SMB password are accepted
 on write but NEVER echoed back), the ``has_*`` boolean flags, folder-browse
 validation, the connection-test error envelope (against an unreachable target —
@@ -429,6 +429,38 @@ def test_browse_not_configured_404(client, user_token_headers):
     assert response.json()["detail"] == "Local watch folder is not configured"
 
 
+def test_browse_stays_inside_the_watch_root(client, user_token_headers, monkeypatch, tmp_path):
+    """The picker lists real subdirectories and refuses every way out of the root.
+
+    ``..`` segments, a symlink pointing outside, and an absolute path are all 400, and a
+    symlinked directory is never listed as an entry.
+    """
+    from app.core.config import settings
+
+    root = tmp_path / "mount"
+    (root / "inbox" / "nested").mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (root / "escape").symlink_to(outside, target_is_directory=True)
+    monkeypatch.setattr(settings, "WATCH_FOLDER_PATH", str(root))
+
+    def browse(path: str):
+        return client.get(
+            "/api/watch-sources/browse", params={"path": path}, headers=user_token_headers
+        )
+
+    listed = browse("")
+    assert listed.status_code == status.HTTP_200_OK, listed.text
+    assert [d["path"] for d in listed.json()["directories"]] == ["inbox"]
+    nested = browse("inbox")
+    assert nested.status_code == status.HTTP_200_OK, nested.text
+    assert nested.json()["parent_path"] == ""
+    assert [d["path"] for d in nested.json()["directories"]] == ["inbox/nested"]
+    for escape in ("..", "inbox/../..", "escape", str(outside)):
+        refused = browse(escape)
+        assert refused.status_code == status.HTTP_400_BAD_REQUEST, (escape, refused.text)
+
+
 # ---------------------------------------------------------------------------
 # Multipart regex test (pure, no DB)
 # ---------------------------------------------------------------------------
@@ -512,7 +544,7 @@ def test_list_email_configs_admin_200(client, super_admin_token_headers):
 # ---------------------------------------------------------------------------
 # PUT /settings and PUT /email-configs/{uuid} — both are super_admin-only, not
 # just admin-only. `get_current_active_superuser` gates both routes (confirmed
-# from app/api/endpoints/watch_sources.py); a plain admin (is_superuser=False)
+# from app/api/endpoints/watch_sources_settings.py and _email_configs.py); a plain admin (is_superuser=False)
 # is refused exactly like an ordinary user.
 # ---------------------------------------------------------------------------
 

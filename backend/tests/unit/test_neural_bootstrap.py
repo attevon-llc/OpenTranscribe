@@ -1,6 +1,6 @@
 """Neural-search bootstrap self-heal (issue #625).
 
-The root cause: ``app.main._initialize_neural_search`` used to be a one-shot startup task
+The root cause: ``app.startup.warmups._initialize_neural_search`` used to be a one-shot startup task
 with no retry, and ``ml_model_registration._REGISTRATION_MAX_WAIT`` (300s) is a ceiling on OUR
 polling, not on OpenSearch's own async registration task — a model can finish
 ``REGISTERED, deployed=False`` minutes after the API process gave up, and nothing ever

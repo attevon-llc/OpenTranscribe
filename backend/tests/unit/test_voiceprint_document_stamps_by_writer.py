@@ -189,7 +189,7 @@ def test_the_profile_recalculation_stamps_the_profiles_organization(
 def test_the_migration_profile_backfill_stamps_the_organization_of_the_documents_it_averages(
     privacy_world, cluster, normal_user, monkeypatch, in_org
 ):
-    from app.tasks import embedding_migration_v4 as migration
+    from app.tasks import embedding_migration_v4_finalize as migration
 
     org_id = _org(privacy_world, in_org)
     profile = SpeakerProfile(

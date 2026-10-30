@@ -16,7 +16,7 @@ is ``v3:salt:nonce:ciphertext`` — it records no algorithm field — so decrypt
 exactly the algorithm encrypt used. Dispatching on a mutable setting would make every
 ciphertext written before an operator changed it undecryptable. The setting is instead
 validated at boot against ``core.config.IMPLEMENTED_ENCRYPTION_ALGORITHMS``
-(``app.main._validate_production_secrets``), which refuses to start a FIPS 140-3
+(``app.core.startup_validation._validate_production_secrets``), which refuses to start a FIPS 140-3
 deployment configured for an algorithm this module does not implement.
 """
 

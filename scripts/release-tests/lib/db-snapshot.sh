@@ -337,7 +337,7 @@ dbs_wait_for_media_file_settled() {
 
 # dbs_wait_for_system_settings_settled CONTAINER USER DB TIMEOUT
 #   Same technique, for system_settings. Specifically closes the
-#   embedding_normalization_done startup-timer race: app/main.py's
+#   embedding_normalization_done startup-timer race: app/startup/maintenance.py's
 #   _run_one_time_embedding_normalization fires exactly once, ~60s after backend startup,
 #   and inserts/updates this table — landing between phase_06b's two backup snapshots
 #   (the shipped pg_dump and the ./opentranscribe.sh backup wrapper, taken seconds apart)

@@ -138,7 +138,7 @@ class TestSkipLogicLive:
     """Test skip logic against live OpenSearch."""
 
     def test_get_already_migrated_file_ids(self):
-        from app.tasks.embedding_migration_v4 import _get_already_migrated_file_ids
+        from app.tasks.embedding_migration_v4_scope import _get_already_migrated_file_ids
 
         # Should return a set (may be empty if no v4 index exists yet)
         result = _get_already_migrated_file_ids()
@@ -149,7 +149,7 @@ class TestMigrationStatusLive:
     """Test migration status against live services."""
 
     def test_get_migration_status(self):
-        from app.tasks.embedding_migration_v4 import get_migration_status
+        from app.tasks.embedding_migration_v4_scope import get_migration_status
 
         status = get_migration_status()
         assert "current_mode" in status
@@ -210,7 +210,7 @@ class TestThroughputBenchmark:
         from app.services.speaker_analysis_models import EmbeddingModelAdapter
         from app.services.speaker_analysis_models import MultiModelRunner
         from app.services.speaker_embedding_service import get_cached_embedding_service
-        from app.tasks.embedding_migration_v4 import _embedding_result_writer
+        from app.tasks.embedding_migration_v4_writer import _embedding_result_writer
         from app.tasks.migration_pipeline import prepare_file
         from app.tasks.migration_pipeline import process_batch_pipelined
 

@@ -20,8 +20,8 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.services.hold_guard import LEGAL_HOLD_REFUSAL
 from app.services.hold_guard import hold_state
-from app.utils.task_utils import check_for_stuck_files
-from app.utils.task_utils import recover_stuck_file
+from app.utils.stuck_file_recovery import check_for_stuck_files
+from app.utils.stuck_file_recovery import recover_stuck_file
 
 if TYPE_CHECKING:
     from app.services.speaker_cleanup import SpeakerImpact
@@ -244,7 +244,7 @@ class FileCleanupService:
         results["eligible_for_deletion"] = len(eligible_files)
 
         if not dry_run:
-            from app.utils.task_utils import cancel_active_task
+            from app.utils.task_cancel import cancel_active_task
 
             for file in eligible_files:
                 try:

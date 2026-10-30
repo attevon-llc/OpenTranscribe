@@ -33,7 +33,7 @@ def main():  # noqa: C901
     from app.services.speaker_analysis_models import EmbeddingModelAdapter
     from app.services.speaker_analysis_models import MultiModelRunner
     from app.services.speaker_embedding_service import get_cached_embedding_service
-    from app.tasks.embedding_migration_v4 import _embedding_result_writer
+    from app.tasks.embedding_migration_v4_writer import _embedding_result_writer
     from app.tasks.migration_pipeline import DEFAULT_IO_WORKERS
     from app.tasks.migration_pipeline import prepare_file
     from app.tasks.migration_pipeline import process_batch_pipelined
@@ -81,7 +81,7 @@ def main():  # noqa: C901
     print(flush=True)
 
     # Stub out OpenSearch writes for benchmark
-    import app.tasks.embedding_migration_v4 as _mig_mod
+    import app.tasks.embedding_migration_v4_writer as _mig_mod
 
     _mig_mod._bulk_write_v4_embeddings = lambda docs: len(docs)  # type: ignore[assignment]
 

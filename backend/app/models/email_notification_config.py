@@ -8,7 +8,7 @@ success/error toggles.
 
 These rows are **deployment-wide super_admin infrastructure**, not user-owned:
 ``created_by`` records who added the row, and the whole CRUD surface in
-``api/endpoints/watch_sources.py`` is gated on ``get_current_active_superuser``.
+``api/endpoints/watch_sources_email_configs.py`` is gated on ``get_current_active_superuser``.
 
 One row may additionally be designated to carry **transactional auth mail**
 (password reset, invitation, address verification, security notice). That

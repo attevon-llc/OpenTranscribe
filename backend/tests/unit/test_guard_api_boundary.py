@@ -93,6 +93,7 @@ def test_http_layer_is_not_counted(tmp_path: Path) -> None:
         {
             "backend/app/api/endpoints/x.py": PROBE,
             "backend/app/middleware/m.py": PROBE,
+            "backend/app/startup/s.py": PROBE,
             "backend/app/main.py": PROBE,
         },
     )

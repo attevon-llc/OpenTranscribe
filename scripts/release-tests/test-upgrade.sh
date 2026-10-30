@@ -1195,7 +1195,7 @@ phase_06b_pre_upgrade_backup() {
     # issue #619: the SAME class of race as the speaker-table one above, for two more
     # tables. media_file has several async post-completion writers of its own (not
     # individually tracked, unlike the speaker predicates above), and this is also the
-    # window app/main.py's one-time embedding-normalization startup task (fires ~60s
+    # window app/startup/maintenance.py's one-time embedding-normalization startup task (fires ~60s
     # after backend startup, touching system_settings) can land in — straddling THIS
     # phase's two backup snapshots below produced the intermittent "opentranscribe.sh
     # backup produces the same content as the shipped pg_dump recipe" failure. Waiting

@@ -1,6 +1,6 @@
 """Idempotent neural-search bootstrap, with a cheap probe and a self-heal tick (#625).
 
-**The root cause.** ``app/main.py``'s old ``_initialize_neural_search`` fired exactly once
+**The root cause.** ``app/main.py``'s old ``_initialize_neural_search`` (now ``app/startup/warmups.py``) fired exactly once
 from ``lifespan`` via ``asyncio.create_task``, and every failure arm was a bare ``return``
 after a ``logger.warning``. Nothing ever re-entered it. ``ml_model_service``'s registration
 ceiling (``_REGISTRATION_MAX_WAIT``, 300s) is a poll ceiling on OpenSearch's own async
@@ -13,7 +13,7 @@ with NO chunks, not files with text-only chunks.
 
 **The fix is one idempotent function with two callers**, not two implementations:
 
-- ``app/main.py``'s startup fast path calls :func:`ensure_neural_search_bootstrap` once, same
+- ``app/startup/warmups.py``'s startup fast path calls :func:`ensure_neural_search_bootstrap` once, same
   as before, but is no longer the only attempt.
 - ``app/tasks/search_maintenance_task.neural_search_bootstrap_task`` calls the SAME function
   every 10 minutes via Celery beat. A healthy deployment pays only the cheap probe

@@ -101,7 +101,7 @@ The chunk plane in this package carries no voiceprint and is not gated.
   `all-MiniLM-L6-v2` (384d, 80 MB). Tiers in `core/embedding_models.py:OPENSEARCH_EMBEDDING_MODELS`
   (fast 384d / balanced 768d / best, English + multilingual). Offline pre-fetch:
   `DOWNLOAD_ALL_OPENSEARCH_MODELS=true bash scripts/download-models.sh models`.
-- Startup (`app/main.py`, `_initialize_neural_search`) sleeps 15 s, configures ML Commons cluster settings, scans
+- Startup (`app/startup/warmups.py`, `_initialize_neural_search`) sleeps 15 s, configures ML Commons cluster settings, scans
   the read-only `/ml-models/` mount, downloads the default model if internet is reachable, then
   `ensure_model_deployed` registers via `file://` and **falls back to remote HF** if that fails.
   Active model id persists as SystemSettings `search.opensearch_model_id`.
@@ -646,14 +646,14 @@ shape it was written for.
   value. That is the `search_index_maintenance`-dispatched run, which has no admin-facing run id;
   its behaviour is unchanged from before #691. Those automatic per-owner runs are deliberately
   **not** swept up by an admin's stop — the button cancels the run *you* started.
-- **`reindex_fanout:*` is NOT in `app/main.py`'s startup sweep**, unlike `reindex_cancel:*`. The
+- **`reindex_fanout:*` is NOT in `app/startup/maintenance.py`'s startup sweep**, unlike `reindex_cancel:*`. The
   API process restarts independently of the Celery workers still executing the fan-out, and
   deleting the record takes the only handle `stop` has on those coordinators with it. A 1-hour
   TTL bounds it instead.
 
 ## The bootstrap self-heals, and why it is a beat task (#625)
 
-**The old bootstrap was a one-shot startup task with no retry.** `app/main.py`'s
+**The old bootstrap was a one-shot startup task with no retry.** `app/startup/warmups.py`'s
 `_initialize_neural_search` fired exactly once from `lifespan` via `asyncio.create_task`, and
 every failure arm was a bare `return` after a `logger.warning`. Nothing ever re-entered it.
 
@@ -673,7 +673,7 @@ be inlined in `_initialize_neural_search`. It is a **sequencer**, not a state ma
 `ensure_model_deployed` and `ensure_neural_ingest_pipeline` are already fully
 idempotent/resumable, so this module reimplements none of that.
 
-- **Caller 1: the startup fast path.** `app/main.py::_initialize_neural_search` sleeps
+- **Caller 1: the startup fast path.** `app/startup/warmups.py::_initialize_neural_search` sleeps
   `NEURAL_BOOTSTRAP_STARTUP_DELAY_SECONDS` (15s), then calls the same function once via
   `run_in_threadpool`, elected with `run_once_per_boot("neural_search_bootstrap")` so N
   replicas booting together don't all race the same expensive OpenSearch calls. This is no

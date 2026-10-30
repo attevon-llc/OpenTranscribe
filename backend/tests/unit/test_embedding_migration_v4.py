@@ -16,24 +16,24 @@ class TestGetAlreadyMigratedFileIds:
 
     @patch(_OS_CLIENT_PATCH)
     def test_returns_empty_set_when_no_client(self, mock_get_client):
-        from app.tasks.embedding_migration_v4 import _get_already_migrated_file_ids
+        from app.tasks.embedding_migration_v4_scope import _get_already_migrated_file_ids
 
         mock_get_client.return_value = None
         assert _get_already_migrated_file_ids() == set()
 
     @patch(_OS_CLIENT_PATCH)
     def test_returns_empty_set_when_v4_index_missing(self, mock_get_client):
-        from app.tasks.embedding_migration_v4 import _get_already_migrated_file_ids
+        from app.tasks.embedding_migration_v4_scope import _get_already_migrated_file_ids
 
         mock_client = MagicMock()
         mock_client.indices.exists.return_value = False
         mock_get_client.return_value = mock_client
         assert _get_already_migrated_file_ids() == set()
 
-    @patch("app.tasks.embedding_migration_v4._count_embeddable_speakers_per_file")
+    @patch("app.tasks.embedding_migration_v4_scope._count_embeddable_speakers_per_file")
     @patch(_OS_CLIENT_PATCH)
     def test_returns_file_ids_from_aggregation(self, mock_get_client, mock_count):
-        from app.tasks.embedding_migration_v4 import _get_already_migrated_file_ids
+        from app.tasks.embedding_migration_v4_scope import _get_already_migrated_file_ids
 
         mock_client = MagicMock()
         mock_client.indices.exists.return_value = True
@@ -58,10 +58,10 @@ class TestGetAlreadyMigratedFileIds:
         result = _get_already_migrated_file_ids()
         assert result == {10, 25, 42}
 
-    @patch("app.tasks.embedding_migration_v4._count_embeddable_speakers_per_file")
+    @patch("app.tasks.embedding_migration_v4_scope._count_embeddable_speakers_per_file")
     @patch(_OS_CLIENT_PATCH)
     def test_excludes_partially_migrated_files(self, mock_get_client, mock_count):
-        from app.tasks.embedding_migration_v4 import _get_already_migrated_file_ids
+        from app.tasks.embedding_migration_v4_scope import _get_already_migrated_file_ids
 
         mock_client = MagicMock()
         mock_client.indices.exists.return_value = True
@@ -85,7 +85,7 @@ class TestGetAlreadyMigratedFileIds:
 
     @patch(_OS_CLIENT_PATCH)
     def test_returns_empty_on_search_error(self, mock_get_client):
-        from app.tasks.embedding_migration_v4 import _get_already_migrated_file_ids
+        from app.tasks.embedding_migration_v4_scope import _get_already_migrated_file_ids
 
         mock_client = MagicMock()
         mock_client.indices.exists.return_value = True
@@ -101,23 +101,25 @@ class TestBulkWriteV4Embeddings:
 
     @patch(_OS_CLIENT_PATCH)
     def test_empty_docs_returns_zero(self, mock_get_client):
-        from app.tasks.embedding_migration_v4 import _bulk_write_v4_embeddings
+        from app.tasks.embedding_migration_v4_writer import _bulk_write_v4_embeddings
 
         assert _bulk_write_v4_embeddings([]) == 0
         mock_get_client.assert_not_called()
 
     @patch(_OS_CLIENT_PATCH)
     def test_returns_zero_when_no_client(self, mock_get_client):
-        from app.tasks.embedding_migration_v4 import _bulk_write_v4_embeddings
+        from app.tasks.embedding_migration_v4_writer import _bulk_write_v4_embeddings
 
         mock_get_client.return_value = None
         result = _bulk_write_v4_embeddings([{"_id": "abc", "name": "test"}])
         assert result == 0
 
-    @patch("app.tasks.embedding_migration_v4.get_speaker_index_v4", return_value="speakers_v4")
+    @patch(
+        "app.tasks.embedding_migration_v4_writer.get_speaker_index_v4", return_value="speakers_v4"
+    )
     @patch(_OS_CLIENT_PATCH)
     def test_bulk_writes_documents(self, mock_get_client, mock_get_v4_index):
-        from app.tasks.embedding_migration_v4 import _bulk_write_v4_embeddings
+        from app.tasks.embedding_migration_v4_writer import _bulk_write_v4_embeddings
 
         mock_client = MagicMock()
         mock_client.bulk.return_value = {"errors": False, "items": []}
@@ -138,10 +140,12 @@ class TestBulkWriteV4Embeddings:
         assert bulk_body[0] == {"index": {"_index": "speakers_v4", "_id": "uuid-1"}}
         assert bulk_body[2] == {"index": {"_index": "speakers_v4", "_id": "uuid-2"}}
 
-    @patch("app.tasks.embedding_migration_v4.get_speaker_index_v4", return_value="speakers_v4")
+    @patch(
+        "app.tasks.embedding_migration_v4_writer.get_speaker_index_v4", return_value="speakers_v4"
+    )
     @patch(_OS_CLIENT_PATCH)
     def test_logs_bulk_errors(self, mock_get_client, mock_get_v4_index):
-        from app.tasks.embedding_migration_v4 import _bulk_write_v4_embeddings
+        from app.tasks.embedding_migration_v4_writer import _bulk_write_v4_embeddings
 
         mock_client = MagicMock()
         mock_client.bulk.return_value = {
@@ -230,7 +234,7 @@ class TestEmbeddingResultWriter:
         return SpeakerSnapshot(id=speaker_id, uuid=uuid, name=name, profile_id=profile_id)
 
     def test_returns_zero_when_no_embedding_results(self):
-        from app.tasks.embedding_migration_v4 import _embedding_result_writer
+        from app.tasks.embedding_migration_v4_writer import _embedding_result_writer
 
         speaker = self._make_speaker(1, "sp-1", "Alice")
         prepared = self._make_prepared([speaker])
@@ -240,7 +244,7 @@ class TestEmbeddingResultWriter:
         assert result == 0
 
     def test_returns_zero_when_embedding_results_empty(self):
-        from app.tasks.embedding_migration_v4 import _embedding_result_writer
+        from app.tasks.embedding_migration_v4_writer import _embedding_result_writer
 
         speaker = self._make_speaker(1, "sp-1", "Alice")
         prepared = self._make_prepared([speaker])
@@ -248,10 +252,10 @@ class TestEmbeddingResultWriter:
         result = _embedding_result_writer(prepared, {"embedding": []})
         assert result == 0
 
-    @patch("app.tasks.embedding_migration_v4._bulk_write_v4_embeddings")
+    @patch("app.tasks.embedding_migration_v4_writer._bulk_write_v4_embeddings")
     def test_aggregates_and_writes_single_speaker(self, mock_bulk):
         from app.services.speaker_analysis_models import SegmentResult
-        from app.tasks.embedding_migration_v4 import _embedding_result_writer
+        from app.tasks.embedding_migration_v4_writer import _embedding_result_writer
 
         mock_bulk.return_value = 1  # 1 doc written == 1 doc submitted (full success)
         speaker = self._make_speaker(1, "sp-uuid", "Alice")
@@ -282,10 +286,10 @@ class TestEmbeddingResultWriter:
         assert docs[0]["segment_count"] == 2
         assert len(docs[0]["embedding"]) == 256
 
-    @patch("app.tasks.embedding_migration_v4._bulk_write_v4_embeddings")
+    @patch("app.tasks.embedding_migration_v4_writer._bulk_write_v4_embeddings")
     def test_aggregates_multiple_speakers(self, mock_bulk):
         from app.services.speaker_analysis_models import SegmentResult
-        from app.tasks.embedding_migration_v4 import _embedding_result_writer
+        from app.tasks.embedding_migration_v4_writer import _embedding_result_writer
 
         mock_bulk.return_value = 2  # both docs written (full success)
         alice = self._make_speaker(1, "sp-alice", "Alice")
@@ -311,10 +315,10 @@ class TestEmbeddingResultWriter:
         speaker_ids = {d["speaker_id"] for d in docs}
         assert speaker_ids == {1, 2}
 
-    @patch("app.tasks.embedding_migration_v4._bulk_write_v4_embeddings")
+    @patch("app.tasks.embedding_migration_v4_writer._bulk_write_v4_embeddings")
     def test_skips_unknown_speaker_id(self, mock_bulk):
         from app.services.speaker_analysis_models import SegmentResult
-        from app.tasks.embedding_migration_v4 import _embedding_result_writer
+        from app.tasks.embedding_migration_v4_writer import _embedding_result_writer
 
         alice = self._make_speaker(1, "sp-alice", "Alice")
         prepared = self._make_prepared([alice])
@@ -330,10 +334,10 @@ class TestEmbeddingResultWriter:
         assert result == 0
         mock_bulk.assert_not_called()
 
-    @patch("app.tasks.embedding_migration_v4._bulk_write_v4_embeddings")
+    @patch("app.tasks.embedding_migration_v4_writer._bulk_write_v4_embeddings")
     def test_normalizes_aggregated_embedding(self, mock_bulk):
         from app.services.speaker_analysis_models import SegmentResult
-        from app.tasks.embedding_migration_v4 import _embedding_result_writer
+        from app.tasks.embedding_migration_v4_writer import _embedding_result_writer
 
         mock_bulk.return_value = 1  # full success
         speaker = self._make_speaker(1, "sp-1", "Alice")
@@ -360,19 +364,19 @@ class TestEmbeddingResultWriter:
 class TestGetMigrationStatus:
     """Tests for get_migration_status."""
 
-    @patch("app.tasks.embedding_migration_v4.EmbeddingModeService")
+    @patch("app.tasks.embedding_migration_v4_scope.EmbeddingModeService")
     @patch(_OS_CLIENT_PATCH)
     def test_returns_error_when_no_client(self, mock_get_client, mock_mode):
-        from app.tasks.embedding_migration_v4 import get_migration_status
+        from app.tasks.embedding_migration_v4_scope import get_migration_status
 
         mock_get_client.return_value = None
         result = get_migration_status()
         assert result["status"] == "error"
 
-    @patch("app.tasks.embedding_migration_v4.EmbeddingModeService")
+    @patch("app.tasks.embedding_migration_v4_scope.EmbeddingModeService")
     @patch(_OS_CLIENT_PATCH)
     def test_includes_transcription_paused_flag(self, mock_get_client, mock_mode):
-        from app.tasks.embedding_migration_v4 import get_migration_status
+        from app.tasks.embedding_migration_v4_scope import get_migration_status
 
         mock_client = MagicMock()
         mock_client.indices.exists.return_value = False
@@ -435,7 +439,7 @@ class TestCountProfileDocs:
     """Tests for _count_profile_docs — must never return 0 on ambiguity."""
 
     def test_returns_none_when_index_missing(self):
-        from app.tasks.embedding_migration_v4 import _count_profile_docs
+        from app.tasks.embedding_migration_v4_finalize import _count_profile_docs
 
         client = MagicMock()
         client.indices.exists.return_value = False
@@ -443,7 +447,7 @@ class TestCountProfileDocs:
         client.count.assert_not_called()
 
     def test_returns_none_on_count_error(self):
-        from app.tasks.embedding_migration_v4 import _count_profile_docs
+        from app.tasks.embedding_migration_v4_finalize import _count_profile_docs
 
         client = MagicMock()
         client.indices.exists.return_value = True
@@ -451,7 +455,7 @@ class TestCountProfileDocs:
         assert _count_profile_docs(client, "speakers_v3") is None
 
     def test_returns_count_and_filters_by_document_type(self):
-        from app.tasks.embedding_migration_v4 import _count_profile_docs
+        from app.tasks.embedding_migration_v4_finalize import _count_profile_docs
 
         client = MagicMock()
         client.indices.exists.return_value = True
@@ -476,7 +480,7 @@ class TestFinalizeV4MigrationProfileGuard:
     @patch(_OS_CLIENT_PATCH)
     def test_refuses_swap_on_profile_shortfall(self, mock_get_client, mock_active_index, mock_swap):
         """v3 has profile docs v4 lacks -> finalize must refuse, alias must not move."""
-        from app.tasks.embedding_migration_v4 import finalize_v4_migration_task
+        from app.tasks.embedding_migration_v4_finalize import finalize_v4_migration_task
 
         client = MagicMock()
         client.indices.exists.return_value = True
@@ -512,7 +516,7 @@ class TestFinalizeV4MigrationProfileGuard:
         self, mock_get_client, mock_active_index, mock_swap
     ):
         """Profile count query errors -> ambiguity must refuse, never proceed."""
-        from app.tasks.embedding_migration_v4 import finalize_v4_migration_task
+        from app.tasks.embedding_migration_v4_finalize import finalize_v4_migration_task
 
         client = MagicMock()
         client.indices.exists.return_value = True
@@ -546,7 +550,7 @@ class TestFinalizeV4MigrationProfileGuard:
         self, mock_get_client, mock_active_index, mock_swap
     ):
         """v4 profile count >= v3 profile count -> proceeds to swap."""
-        from app.tasks.embedding_migration_v4 import finalize_v4_migration_task
+        from app.tasks.embedding_migration_v4_finalize import finalize_v4_migration_task
 
         client = MagicMock()
         client.indices.exists.return_value = True
@@ -582,5 +586,6 @@ def _writers_run_under_an_allowing_privacy_policy(monkeypatch):
     reads as "deny". The gate has its own tests in ``test_embedding_migration_policy``.
     """
     monkeypatch.setattr(
-        "app.tasks.embedding_migration_v4._file_skipped_by_policy", lambda media_file_id: False
+        "app.tasks.embedding_migration_v4_writer._file_skipped_by_policy",
+        lambda media_file_id: False,
     )

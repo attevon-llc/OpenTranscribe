@@ -24,7 +24,7 @@ from app.schemas.media import MediaFile as MediaFileSchema
 from app.services.error_categorization_service import UserErrorReason
 from app.services.formatting_service import FormattingService
 from app.utils.error_classification import ErrorCategory
-from app.utils.task_utils import reset_file_for_retry
+from app.utils.file_retry import reset_file_for_retry
 
 
 def test_the_retry_vocabulary_is_not_a_wire_field():

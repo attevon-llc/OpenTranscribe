@@ -45,7 +45,7 @@ entry (:func:`consume_pending_cancel`) and once in the completion handler
 
 **If a coordinator dies without clearing**, three things bound the damage, in
 order: the leftover flag names a run that no longer exists, so no other run
-honours it (:func:`cancel_requested` compares); ``app/main.py``'s startup sweep
+honours it (:func:`cancel_requested` compares); ``app/startup/maintenance.py``'s startup sweep
 clears ``reindex_cancel:*`` on every API restart; and both keys carry
 ``reindex_lock``'s one-hour TTL. ``reindex_fanout:*`` is deliberately **not** in
 that sweep — the API process restarts independently of the Celery workers still

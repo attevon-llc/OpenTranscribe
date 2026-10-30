@@ -7,7 +7,8 @@ Three per-file counters, each of which may only go down (baseline key ``counter:
 * ``http_exception_raise``: ``raise HTTPException(...)`` outside the HTTP layer.
 * ``orm_call_in_api``: ``.query(``, ``.execute(``, ``select(``, ``text(`` calls inside ``app/api``.
 
-The HTTP layer is ``app/api``, ``app/middleware`` and ``app/main.py``. Every import and call is
+The HTTP layer is ``app/api``, ``app/middleware``, ``app/startup`` (the lifespan's startup jobs,
+split out of ``app/main.py``) and ``app/main.py``. Every import and call is
 counted, including those inside function bodies (a lazy import hides layering just as well as a
 top-level one). A file that does not parse fails the run: skipping it would read as a clean file.
 
@@ -27,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _baseline
 
 APP_DIR = 'backend/app'
-HTTP_LAYER_DIRS = ('backend/app/api/', 'backend/app/middleware/')
+HTTP_LAYER_DIRS = ('backend/app/api/', 'backend/app/middleware/', 'backend/app/startup/')
 HTTP_LAYER_FILES = ('backend/app/main.py',)
 API_DIR = 'backend/app/api/'
 FRAMEWORK_ROOTS = frozenset({'fastapi', 'starlette'})

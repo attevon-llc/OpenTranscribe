@@ -41,7 +41,7 @@ from app.models.speaker import Speaker
 from app.services import migration_admin_notify
 from app.services.speaker_analysis_models import SegmentResult
 from app.tasks import combined_speaker_analysis_task as cst
-from app.tasks import embedding_migration_v4 as emv4
+from app.tasks import embedding_migration_v4_writer as emv4
 from app.tasks import speaker_attribute_migration_task as sat
 from app.tasks.migration_pipeline import PreparedFile
 

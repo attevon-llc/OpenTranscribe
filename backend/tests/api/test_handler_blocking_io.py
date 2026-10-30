@@ -81,8 +81,8 @@ import app.api.endpoints.user_settings_recording as user_settings_recording
 import app.api.endpoints.user_settings_speaker_attributes as user_settings_speaker_attributes
 import app.api.endpoints.user_settings_transcription as user_settings_transcription
 import app.api.websockets as websockets
-import app.main as app_main
 import app.services.search.neural_bootstrap as neural_bootstrap
+import app.startup.maintenance as startup_maintenance
 import app.utils.file_hash as file_hash
 from app.services import thumbnail
 
@@ -303,7 +303,7 @@ BLOCKING_HELPERS = [
     (auth_config, "_test_ldap_connection"),
     # Issue #320 follow-ups — awaitless coroutines outside the endpoint layer.
     # Blocking object storage, dispatched from the lifespan via run_in_threadpool.
-    (app_main, "_setup_minio"),
+    (startup_maintenance, "_setup_minio"),
     # Blocking OpenSearch (model-id write + ingest-pipeline PUT). Moved from app.main into
     # neural_bootstrap.py by issue #625; still reached only via run_in_threadpool, now inside
     # ensure_neural_search_bootstrap.

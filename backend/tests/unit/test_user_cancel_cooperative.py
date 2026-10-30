@@ -633,7 +633,7 @@ class TestCancelActiveTask:
         had stopped — it is now written only by the worker that actually stood down.
         ``FileStatus.CANCELLING`` already existed in the enum, the API filter list,
         ``formatting_service`` and the frontend's status union; nothing had ever written it."""
-        from app.utils.task_utils import cancel_active_task
+        from app.utils.task_cancel import cancel_active_task
 
         media_file, task_id = _make_processing_file(db_session, normal_user)
 
@@ -644,7 +644,7 @@ class TestCancelActiveTask:
         assert media_file.cancellation_requested is True
 
     def test_it_arms_the_flag_the_running_task_polls(self, db_session, normal_user, fake_redis):
-        from app.utils.task_utils import cancel_active_task
+        from app.utils.task_cancel import cancel_active_task
 
         media_file, task_id = _make_processing_file(db_session, normal_user)
         cancel_active_task(db_session, media_file.id)
@@ -658,7 +658,7 @@ class TestCancelActiveTask:
         """``active_task_id`` used to be nulled here. It is the only handle the worker's
         confirmation and the reconciliation task have on this run; clearing it makes the two
         phases unable to find each other."""
-        from app.utils.task_utils import cancel_active_task
+        from app.utils.task_cancel import cancel_active_task
 
         media_file, task_id = _make_processing_file(db_session, normal_user)
         cancel_active_task(db_session, media_file.id)
@@ -670,7 +670,7 @@ class TestCancelActiveTask:
         """Redis down: no checkpoint can ever fire, so leaving the file ``CANCELLING`` would
         wedge it waiting for a stop nobody was told about. Fall back to the pre-#823
         behaviour — and say so in the log rather than reporting a clean cancellation."""
-        from app.utils.task_utils import cancel_active_task
+        from app.utils.task_cancel import cancel_active_task
 
         media_file, _task_id = _make_processing_file(db_session, normal_user)
 
@@ -687,7 +687,7 @@ class TestCancelActiveTask:
         ``task_id=``, so celery mints its own ids while ``active_task_id`` holds the separate
         application uuid4. The id being revoked had never belonged to a celery message."""
         from app.core.celery import celery_app
-        from app.utils.task_utils import cancel_active_task
+        from app.utils.task_cancel import cancel_active_task
 
         calls = []
         monkeypatch.setattr(celery_app.control, "revoke", lambda *a, **k: calls.append((a, k)))
@@ -713,11 +713,11 @@ class TestCancelActiveTask:
         """
         import logging
 
-        from app.utils.task_utils import cancel_active_task
+        from app.utils.task_cancel import cancel_active_task
 
         media_file, _ = _make_processing_file(db_session, normal_user)
 
-        with caplog.at_level(logging.ERROR, logger="app.utils.task_utils"):
+        with caplog.at_level(logging.ERROR, logger="app.utils.task_cancel"):
             with patch(_GET_REDIS, return_value=_ExplodingRedis()):
                 cancel_active_task(db_session, media_file.id)
 
@@ -730,7 +730,7 @@ class TestCancelActiveTask:
     def test_a_file_with_no_active_task_is_not_cancellable(
         self, db_session, normal_user, fake_redis
     ):
-        from app.utils.task_utils import cancel_active_task
+        from app.utils.task_cancel import cancel_active_task
 
         media_file, _ = _make_processing_file(db_session, normal_user)
         media_file.active_task_id = None

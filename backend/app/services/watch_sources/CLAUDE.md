@@ -74,7 +74,7 @@ Samba test share. Seed data: `bash scripts/setup-watch-source-test-data.sh ./wat
   `docker-compose.watch.yml` mounts the watch folder into **celery-beat** for it.
 - Import tail is `api/endpoints/files/upload.py::dispatch_upload_pipeline` — identical to manual
   upload. Gallery gets `file_created`; scans emit `watch_source_scan` over WS.
-- `models/`, `schemas/`, `api/endpoints/watch_sources.py`; migration `v366_add_watch_sources`
+- `models/`, `schemas/`, `api/endpoints/watch_sources*.py` (tenant gate: `watch_sources_access.py`); migration `v366_add_watch_sources`
   (4 tables). Frontend: `components/settings/{WatchSourcesSettings,WatchSourceModal,EmailConfigModal}.svelte`
   (stepper modal; `svelte-multiselect` for tags/collections), `lib/api/watchSourcesApi.ts`.
 - `services/watch_email_service.py` (SMTP / M365 Graph / Exchange) is **separate** from the

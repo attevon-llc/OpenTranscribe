@@ -161,7 +161,7 @@ indexing → WebSocket notification.
   — and `postprocess.finalize_transcription` recognises it and no-ops (cleaning up the temp
   audio). It never travels `_handle_transcription_failure`: a cancel is not a failure.
   - ⚠️ **Two-phase status, and `FileStatus.CANCELLING` is the honest middle.** The API
-    (`utils/task_utils.cancel_active_task`) arms the flag and writes `CANCELLING` — *we asked*;
+    (`utils/task_cancel.cancel_active_task`) arms the flag and writes `CANCELLING` — *we asked*;
     only `finish_cancelled` writes `CANCELLED` — *it actually stopped*, with `Task.completed_at`
     as the timestamp. It used to write `CANCELLED` optimistically while the GPU carried on.
     `CANCELLING` already existed in `core/enums.FileStatus`, the API filter list,

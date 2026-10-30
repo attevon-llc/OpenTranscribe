@@ -19,7 +19,7 @@ fi
 echo "1. Checking recovery code is in place..."
 
 # Check if search_indexing is in post_transcription_task_types
-if grep -q '"search_indexing"' backend/app/services/task_detection_service.py; then
+if grep -q '"search_indexing"' backend/app/services/task_detection_post_transcription.py; then
     echo "✓ Detection: search_indexing tracked in post-transcription tasks"
 else
     echo "✗ Detection: search_indexing NOT tracked"
@@ -27,7 +27,7 @@ else
 fi
 
 # Check if missing_search_indexing field exists
-if grep -q "missing_search_indexing" backend/app/services/task_detection_service.py; then
+if grep -q "missing_search_indexing" backend/app/services/task_detection_post_transcription.py; then
     echo "✓ Detection: missing_search_indexing field exists"
 else
     echo "✗ Detection: missing_search_indexing field missing"
@@ -35,7 +35,7 @@ else
 fi
 
 # Check if recovery dispatches search indexing tasks
-if grep -q "index_transcript_search_task.delay" backend/app/services/task_recovery_service.py; then
+if grep -q "index_transcript_search_task.delay" backend/app/services/task_recovery_post_transcription.py; then
     echo "✓ Recovery: Dispatches search indexing tasks"
 else
     echo "✗ Recovery: Does NOT dispatch search indexing tasks"

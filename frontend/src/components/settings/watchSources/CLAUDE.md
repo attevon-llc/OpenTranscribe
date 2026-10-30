@@ -57,4 +57,4 @@ plus the two modals that make the watch-source backend fully reachable: per-file
 ## How it connects
 
 Mounted by `../WatchSourcesSettings.svelte`, which `SettingsModal.svelte` routes to.
-Backend: `backend/app/api/endpoints/watch_sources.py`.
+Backend: `backend/app/api/endpoints/watch_sources*.py` (one module per concern; `watch_sources.py` wires them).

@@ -1,6 +1,6 @@
 """The neural-search self-heal must run somewhere that can actually reach ``/ml-models``.
 
-``app/main.py``'s startup bootstrap says, in as many words, that it is *"no longer the only
+``app/startup/warmups.py``'s startup bootstrap says, in as many words, that it is *"no longer the only
 attempt: a cold or slow OpenSearch boot that outlasts this one shot self-heals on the next
 beat tick instead of losing neural search permanently."*
 

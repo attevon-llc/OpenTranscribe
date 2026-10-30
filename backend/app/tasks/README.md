@@ -132,7 +132,7 @@ Enrichment (speaker embeddings, indexing, summarization, topics, facts, redactio
 - `cleanup.orphan_upload_sweeper`, `cleanup.scratch_janitor`: abandoned uploads and scratch volume (scheduled)
 - `cleanup_expired_files`: admin-configured file retention (scheduled hourly)
 
-`recovery.py` holds `system.reclaim_lost_tasks` and `system.reclaim_orphaned_deliveries` (scheduled) and the startup and periodic health recovery (`system.health_check`). The stuck-file logic lives in `services/file_cleanup_service.py` and `utils/task_utils.py`.
+`recovery.py` holds `system.reclaim_lost_tasks` and `system.reclaim_orphaned_deliveries` (scheduled) and the startup and periodic health recovery (`system.health_check`). The stuck-file logic lives in `services/file_cleanup_service.py` and `utils/stuck_file_recovery.py`.
 
 ### Periodic schedule
 `celery_app.conf.beat_schedule` in `app/core/celery.py` is the authoritative schedule (about 20 entries: health check every 10 minutes, lost-task reclaim every 2 minutes, search maintenance and sweeps, OpenSearch orphan cleanup, embedding consistency check, GPU stats, retention, scratch janitor, upload sweeper, watch-source scans, backup and mirror checks, directory sync check, chat retention, account-inactivity sweep, session-cap sweep, GDPR erasure reconcile). Read it there rather than from this list. The `celery-beat` service runs it.

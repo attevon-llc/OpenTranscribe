@@ -35,8 +35,8 @@ def _compute_ground_truth_status(db: Session) -> dict | None:
     """
     from app.models.media import FileStatus
     from app.models.media import MediaFile
-    from app.tasks.embedding_migration_v4 import _count_embeddable_speakers_per_file
-    from app.tasks.embedding_migration_v4 import _get_already_migrated_file_ids
+    from app.tasks.embedding_migration_v4_scope import _count_embeddable_speakers_per_file
+    from app.tasks.embedding_migration_v4_scope import _get_already_migrated_file_ids
 
     try:
         completed_ids = [
@@ -94,7 +94,7 @@ def get_migration_status(
     the index fields; ``mode_info``/``progress``/``stalled`` are always present
     (mode defaults to v4, progress to the not-running envelope).
     """
-    from app.tasks.embedding_migration_v4 import get_migration_status
+    from app.tasks.embedding_migration_v4_scope import get_migration_status
 
     try:
         status = get_migration_status()
@@ -406,7 +406,7 @@ def finalize_migration(
 
     Note: Check /progress endpoint to ensure all tasks are complete before calling.
     """
-    from app.tasks.embedding_migration_v4 import finalize_v4_migration_task
+    from app.tasks.embedding_migration_v4_finalize import finalize_v4_migration_task
 
     # Check if migration is still running
     progress = migration_progress.get_status()
@@ -503,8 +503,8 @@ def retry_failed_files(
     """
     from app.models.media import FileStatus
     from app.models.media import MediaFile
-    from app.tasks.embedding_migration_v4 import _get_already_migrated_file_ids
     from app.tasks.embedding_migration_v4 import extract_v4_embeddings_batch_task
+    from app.tasks.embedding_migration_v4_scope import _get_already_migrated_file_ids
 
     batch_size = 25
 
@@ -516,7 +516,7 @@ def retry_failed_files(
         }
 
     try:
-        from app.tasks.embedding_migration_v4 import _count_embeddable_speakers_per_file
+        from app.tasks.embedding_migration_v4_scope import _count_embeddable_speakers_per_file
 
         # Compute truly-missing files from ground truth (project only id + uuid)
         completed_rows = (

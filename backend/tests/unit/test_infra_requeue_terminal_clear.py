@@ -135,7 +135,7 @@ class TestCancelledFilesAreCleared:
     ):
         """``_finalize_unconfirmed_cancellation`` assigns ``status`` directly, bypassing every
         helper -- the reason the clear lives on the ORM write and not in a helper."""
-        from app.utils.task_utils import cancel_active_task
+        from app.utils.task_cancel import cancel_active_task
 
         media_file, _task_id = _requeued_run(db_session, normal_user)
 

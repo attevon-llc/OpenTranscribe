@@ -66,7 +66,7 @@ class TestDigestRegenerationDispatch:
         files in one pass. Without batching, that would fan out one
         ``regenerate_rename_digests`` task per file onto the CPU queue.
         """
-        from app.tasks.rename_propagation_task import _DIGEST_REGEN_BATCH_SIZE
+        from app.tasks.rename_digest_task import _DIGEST_REGEN_BATCH_SIZE
         from app.tasks.rename_propagation_task import dispatch_speaker_rename
 
         file_count = _DIGEST_REGEN_BATCH_SIZE * 2 + 3
@@ -135,7 +135,7 @@ class TestDigestRegenerationTaskWiring:
     def test_task_name_and_argument_shape_survive_the_json_broker_serializer(self):
         import json
 
-        from app.tasks.rename_propagation_task import regenerate_rename_digests
+        from app.tasks.rename_digest_task import regenerate_rename_digests
 
         assert regenerate_rename_digests.name == "regenerate_rename_digests"
         json.dumps(
@@ -148,7 +148,7 @@ class TestDigestRegenerationTaskWiring:
 
     def test_empty_file_list_is_a_no_op_and_never_calls_opensearch(self):
         """Guards the ``if not uuids: return`` short circuit at the top of the task."""
-        from app.tasks.rename_propagation_task import regenerate_rename_digests
+        from app.tasks.rename_digest_task import regenerate_rename_digests
 
         with patch("app.services.search.indexing_service.TranscriptIndexingService") as svc:
             result = regenerate_rename_digests(file_uuids=[])

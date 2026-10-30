@@ -340,9 +340,9 @@ show_help() {
 #
 # Order: an explicit DIAR_NATIVE_MODELS_DIR wins; then the standard cache location
 # (${MODEL_CACHE_DIR}/diar-native, a sibling of huggingface/ and torch/, and where a
-# self-hosted export lands); then the pre-convention sibling-repo export, which is
-# where this workstation's models still are and which has no entry in .env. Dropping
-# that last probe silently moved existing dev checkouts onto the PyAnnote fallback.
+# self-hosted export lands); then an optional pre-convention export directory named by
+# DIAR_NATIVE_LEGACY_MODELS_DIR (unset by default; a developer's machine-specific path).
+# Dropping that probe silently moved existing dev checkouts onto the PyAnnote fallback.
 #
 # This probe is dev-only on purpose: opentr.sh is deliberately not shipped
 # (test_opentr_sh_is_not_shipped_and_the_shipped_script_covers_it), and
@@ -354,7 +354,7 @@ resolve_diar_native_models_dir() {
   fi
 
   local standard="${MODEL_CACHE_DIR:-./models}/diar-native"
-  local legacy="/mnt/nvm/repos/diar-native/models_folded"
+  local legacy="${DIAR_NATIVE_LEGACY_MODELS_DIR:-}"
 
   # `-d` alone is not enough: Docker auto-creates an empty directory at a bind-mount
   # source that doesn't exist yet, so a standard path that was never populated (or was
@@ -365,7 +365,7 @@ resolve_diar_native_models_dir() {
   # `[ -d ... ] && [ -n "$(ls -A ...)" ]` non-emptiness check.
   if [ -d "$standard" ] && [ -n "$(ls -A "$standard" 2>/dev/null)" ]; then
     export DIAR_NATIVE_MODELS_DIR="$standard"
-  elif [ -d "$legacy" ]; then
+  elif [ -n "$legacy" ] && [ -d "$legacy" ]; then
     export DIAR_NATIVE_MODELS_DIR="$legacy"
     # Announced, not silent: this path is a property of one machine, not of the repo,
     # so it must never become invisible drift that only that machine benefits from.
@@ -956,6 +956,82 @@ add_diar_native_overlay() {
     else
       echo "⚠️  --with-diar-native specified but docker-compose.diar-native.yml not found"
     fi
+  fi
+}
+
+# Flag -> overlay table for the plain "append -f <file>" --with-* overlays: the ONE place a
+# flag's compose file is named, read by start_app (add_flag_overlay) and by the --fresh aux
+# recording (overlay_file_for), so the two cannot drift. Columns: flag|file|banner (the key of
+# overlay_banner's case). Not here: pki and diar-native (computed overlays) and watch/backup/
+# scratch-tmpfs (host-dir side effects; fact-checked as exempt by test_opentr_fresh_aux_isolation).
+OVERLAY_TABLE=(
+  "WITH_KEYCLOAK_TEST_FLAG|docker-compose.keycloak.yml|keycloak"
+  "WITH_AUTHENTIK_TEST_FLAG|docker-compose.authentik.yml|authentik"
+  "WITH_LDAP_TEST_FLAG|docker-compose.ldap-test.yml|ldap"
+  "WITH_MOCK_LLM_FLAG|docker-compose.mock-llm.yml|mock_llm"
+  "WITH_MOCK_ASR_FLAG|docker-compose.mock-asr.yml|mock_asr"
+  "WITH_SMB_TEST_FLAG|docker-compose.smb-test.yml|smb"
+  "WITH_MONITORING_FLAG|docker-compose.monitoring.yml|monitoring"
+  "WITH_LLM_TEST_FLAG|docker-compose.llm-test.yml|llm_test"
+)
+
+# Usage: overlay_field <flag-var> <2|3>  -> the table's file (2) or banner key (3)
+overlay_field() {
+  local row
+  for row in "${OVERLAY_TABLE[@]}"; do
+    [ "${row%%|*}" = "$1" ] && { echo "$row" | cut -d'|' -f"$2"; return; }
+  done
+}
+overlay_file_for() { overlay_field "$1" 2; }
+
+overlay_banner() {
+  case "$1" in
+    mock_llm)
+      echo "🤖 Adding mock LLM provider (docker-compose.mock-llm.yml)"
+      echo "   From containers: http://mock-llm:5199/v1   From host: http://localhost:${MOCK_LLM_PORT:-5199}/v1"
+      echo "   Models: mock-gpt (normal) mock-echo mock-empty mock-error mock-slow" ;;
+    mock_asr)
+      echo "🤖 Adding mock cloud ASR provider (docker-compose.mock-asr.yml)"
+      echo "   From containers: http://mock-asr:5198   From host: http://localhost:${MOCK_ASR_PORT:-5198}"
+      echo "   Scenarios: ok (default) error malformed upload-reject" ;;
+    llm_test)
+      echo "🧠 Adding real LLM test provider (docker-compose.llm-test.yml)"
+      echo "   vLLM — from containers: http://llm-test-vllm:8000/v1   from host: http://localhost:${LLM_TEST_PORT:-5195}/v1"
+      echo "   Model: ${LLM_TEST_SERVED_NAME:-gemma-4-e4b}   GPU: ${LLM_TEST_GPU_DEVICE_ID:-2}"
+      echo "   Ollama alternative (not auto-started): docker compose ... --profile ollama up -d llm-test-ollama" ;;
+    ldap)
+      echo "🔐 Adding LDAP test container (docker-compose.ldap-test.yml)"
+      echo "   LDAP server: localhost:${LDAP_TEST_PORT:-3890}  (from containers: ldap://lldap-test:3890)"
+      echo "   Web UI: http://localhost:${LDAP_TEST_UI_PORT:-17170}" ;;
+    keycloak)
+      echo "🔐 Adding Keycloak test container (docker-compose.keycloak.yml)"
+      echo "   Keycloak URL: http://localhost:${KEYCLOAK_PORT:-8180}"
+      echo "   Admin credentials: admin / admin" ;;
+    authentik)
+      echo "🔐 Adding Authentik test container (docker-compose.authentik.yml)"
+      echo "   Authentik URL: http://localhost:${AUTHENTIK_PORT:-9022}"
+      echo "   Bootstrap credentials: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@example.com} / ${AUTHENTIK_BOOTSTRAP_PASSWORD:-admin_password}" ;;
+    smb)
+      echo "🗄️  Adding SMB test container (docker-compose.smb-test.yml)"
+      echo "   SMB share: smb://localhost:${SMB_TEST_PORT:-4450}/media  (testuser / testpass)" ;;
+    monitoring)
+      echo "📈 Adding Monitoring overlay (docker-compose.monitoring.yml)"
+      echo "   Prometheus: http://localhost:${PROMETHEUS_PORT:-5186}"
+      echo "   Grafana:    http://localhost:${GRAFANA_PORT:-5185}  (admin / \$GRAFANA_PASSWORD, default admin)" ;;
+  esac
+}
+
+# Append a table overlay to $COMPOSE_FILES when its flag is set. Call order at the call
+# site IS the compose chain order. Usage: add_flag_overlay <flag-var>
+add_flag_overlay() {
+  [ -n "${!1:-}" ] || return 0
+  local file
+  file="$(overlay_file_for "$1")"
+  if [ -f "$file" ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f $file"
+    overlay_banner "$(overlay_field "$1" 3)"
+  else
+    echo "⚠️  --with-$(echo "${1#WITH_}" | sed 's/_FLAG$//' | tr 'A-Z_' 'a-z-') specified but $file not found"
   fi
 }
 
@@ -2345,26 +2421,26 @@ start_app() {
     local _aux_files=()
     if [ -n "$WITH_KEYCLOAK_TEST_FLAG" ]; then
       _port_vars+=("${FRESH_KEYCLOAK_PORT_VARS[@]}")
-      _aux_files+=("docker-compose.keycloak.yml")
+      _aux_files+=("$(overlay_file_for WITH_KEYCLOAK_TEST_FLAG)")
     fi
     if [ -n "$WITH_AUTHENTIK_TEST_FLAG" ]; then
       _port_vars+=("${FRESH_AUTHENTIK_PORT_VARS[@]}")
-      _aux_files+=("docker-compose.authentik.yml")
+      _aux_files+=("$(overlay_file_for WITH_AUTHENTIK_TEST_FLAG)")
     fi
     if [ -n "$WITH_LDAP_TEST_FLAG" ]; then
       _port_vars+=("${FRESH_LDAP_PORT_VARS[@]}")
       _aux_services+=("${FRESH_LDAP_SERVICES[@]}")
-      _aux_files+=("docker-compose.ldap-test.yml")
+      _aux_files+=("$(overlay_file_for WITH_LDAP_TEST_FLAG)")
     fi
     if [ -n "$WITH_MOCK_LLM_FLAG" ]; then
       _port_vars+=("${FRESH_MOCK_LLM_PORT_VARS[@]}")
       _aux_services+=("${FRESH_MOCK_LLM_SERVICES[@]}")
-      _aux_files+=("docker-compose.mock-llm.yml")
+      _aux_files+=("$(overlay_file_for WITH_MOCK_LLM_FLAG)")
     fi
     if [ -n "$WITH_MOCK_ASR_FLAG" ]; then
       _port_vars+=("${FRESH_MOCK_ASR_PORT_VARS[@]}")
       _aux_services+=("${FRESH_MOCK_ASR_SERVICES[@]}")
-      _aux_files+=("docker-compose.mock-asr.yml")
+      _aux_files+=("$(overlay_file_for WITH_MOCK_ASR_FLAG)")
     fi
     # diar-native is handled separately, below, AFTER DIAR_NATIVE_MODELS_DIR is forced to
     # this deployment's isolated export path — see that comment for why (issue: the
@@ -2372,17 +2448,17 @@ start_app() {
     if [ -n "$WITH_SMB_TEST_FLAG" ]; then
       _port_vars+=("${FRESH_SMB_PORT_VARS[@]}")
       _aux_services+=("${FRESH_SMB_SERVICES[@]}")
-      _aux_files+=("docker-compose.smb-test.yml")
+      _aux_files+=("$(overlay_file_for WITH_SMB_TEST_FLAG)")
     fi
     if [ -n "$WITH_MONITORING_FLAG" ]; then
       _port_vars+=("${FRESH_MONITORING_PORT_VARS[@]}")
       _aux_services+=("${FRESH_MONITORING_SERVICES[@]}")
-      _aux_files+=("docker-compose.monitoring.yml")
+      _aux_files+=("$(overlay_file_for WITH_MONITORING_FLAG)")
     fi
     if [ -n "$WITH_LLM_TEST_FLAG" ]; then
       _port_vars+=("${FRESH_LLM_TEST_PORT_VARS[@]}")
       _aux_services+=("${FRESH_LLM_TEST_SERVICES[@]}")
-      _aux_files+=("docker-compose.llm-test.yml")
+      _aux_files+=("$(overlay_file_for WITH_LLM_TEST_FLAG)")
     fi
     if [ -n "$WITH_PKI_FLAG" ]; then
       _port_vars+=("${FRESH_PKI_PORT_VARS[@]}")
@@ -3506,29 +3582,9 @@ reset_and_init() {
   # are handled inside add_pki_overlay -> scripts/pki/generate-test-env.sh)
   add_pki_overlay
 
-  # Add mock LLM provider if requested
-  if [ -n "$WITH_MOCK_LLM_FLAG" ]; then
-    if [ -f "docker-compose.mock-llm.yml" ]; then
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.mock-llm.yml"
-      echo "🤖 Adding mock LLM provider (docker-compose.mock-llm.yml)"
-      echo "   From containers: http://mock-llm:5199/v1   From host: http://localhost:${MOCK_LLM_PORT:-5199}/v1"
-      echo "   Models: mock-gpt (normal) mock-echo mock-empty mock-error mock-slow"
-    else
-      echo "⚠️  --with-mock-llm specified but docker-compose.mock-llm.yml not found"
-    fi
-  fi
+  add_flag_overlay WITH_MOCK_LLM_FLAG
 
-  # Add mock cloud ASR provider if requested
-  if [ -n "$WITH_MOCK_ASR_FLAG" ]; then
-    if [ -f "docker-compose.mock-asr.yml" ]; then
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.mock-asr.yml"
-      echo "🤖 Adding mock cloud ASR provider (docker-compose.mock-asr.yml)"
-      echo "   From containers: http://mock-asr:5198   From host: http://localhost:${MOCK_ASR_PORT:-5198}"
-      echo "   Scenarios: ok (default) error malformed upload-reject"
-    else
-      echo "⚠️  --with-mock-asr specified but docker-compose.mock-asr.yml not found"
-    fi
-  fi
+  add_flag_overlay WITH_MOCK_ASR_FLAG
 
   # Add the opt-in tmpfs override for the pipeline_scratch handoff volume if requested
   # (issue #661 E5). No isolation dispatch needed: the overlay declares neither `ports:`
@@ -3549,54 +3605,13 @@ reset_and_init() {
   # drop celery-worker's DIAR_NATIVE_URL / shared pipeline_scratch diar/ handoff namespace — see add_diar_native_overlay.
   add_diar_native_overlay start
 
-  # Add real GPU-backed LLM test provider if requested
-  if [ -n "$WITH_LLM_TEST_FLAG" ]; then
-    if [ -f "docker-compose.llm-test.yml" ]; then
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.llm-test.yml"
-      echo "🧠 Adding real LLM test provider (docker-compose.llm-test.yml)"
-      echo "   vLLM — from containers: http://llm-test-vllm:8000/v1   from host: http://localhost:${LLM_TEST_PORT:-5195}/v1"
-      echo "   Model: ${LLM_TEST_SERVED_NAME:-gemma-4-e4b}   GPU: ${LLM_TEST_GPU_DEVICE_ID:-2}"
-      echo "   Ollama alternative (not auto-started): docker compose ... --profile ollama up -d llm-test-ollama"
-    else
-      echo "⚠️  --with-llm-test specified but docker-compose.llm-test.yml not found"
-    fi
-  fi
+  add_flag_overlay WITH_LLM_TEST_FLAG
 
-  # Add LDAP test container if requested
-  if [ -n "$WITH_LDAP_TEST_FLAG" ]; then
-    if [ -f "docker-compose.ldap-test.yml" ]; then
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.ldap-test.yml"
-      echo "🔐 Adding LDAP test container (docker-compose.ldap-test.yml)"
-      echo "   LDAP server: localhost:${LDAP_TEST_PORT:-3890}  (from containers: ldap://lldap-test:3890)"
-      echo "   Web UI: http://localhost:${LDAP_TEST_UI_PORT:-17170}"
-    else
-      echo "⚠️  --with-ldap-test specified but docker-compose.ldap-test.yml not found"
-    fi
-  fi
+  add_flag_overlay WITH_LDAP_TEST_FLAG
 
-  # Add Keycloak test container if requested
-  if [ -n "$WITH_KEYCLOAK_TEST_FLAG" ]; then
-    if [ -f "docker-compose.keycloak.yml" ]; then
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.keycloak.yml"
-      echo "🔐 Adding Keycloak test container (docker-compose.keycloak.yml)"
-      echo "   Keycloak URL: http://localhost:${KEYCLOAK_PORT:-8180}"
-      echo "   Admin credentials: admin / admin"
-    else
-      echo "⚠️  --with-keycloak-test specified but docker-compose.keycloak.yml not found"
-    fi
-  fi
+  add_flag_overlay WITH_KEYCLOAK_TEST_FLAG
 
-  # Add Authentik test container if requested
-  if [ -n "$WITH_AUTHENTIK_TEST_FLAG" ]; then
-    if [ -f "docker-compose.authentik.yml" ]; then
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.authentik.yml"
-      echo "🔐 Adding Authentik test container (docker-compose.authentik.yml)"
-      echo "   Authentik URL: http://localhost:${AUTHENTIK_PORT:-9022}"
-      echo "   Bootstrap credentials: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@example.com} / ${AUTHENTIK_BOOTSTRAP_PASSWORD:-admin_password}"
-    else
-      echo "⚠️  --with-authentik-test specified but docker-compose.authentik.yml not found"
-    fi
-  fi
+  add_flag_overlay WITH_AUTHENTIK_TEST_FLAG
 
   # Add Watch Sources overlay if requested (mounts the host watch folder)
   if [ -n "$WITH_WATCH_FLAG" ]; then
@@ -3616,28 +3631,9 @@ reset_and_init() {
     fi
   fi
 
-  # Add SMB test container if requested (Samba share for watch-source testing)
-  if [ -n "$WITH_SMB_TEST_FLAG" ]; then
-    if [ -f "docker-compose.smb-test.yml" ]; then
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.smb-test.yml"
-      echo "🗄️  Adding SMB test container (docker-compose.smb-test.yml)"
-      echo "   SMB share: smb://localhost:${SMB_TEST_PORT:-4450}/media  (testuser / testpass)"
-    else
-      echo "⚠️  --with-smb-test specified but docker-compose.smb-test.yml not found"
-    fi
-  fi
+  add_flag_overlay WITH_SMB_TEST_FLAG
 
-  # Add Monitoring overlay if requested (Prometheus + Grafana for the /metrics endpoint)
-  if [ -n "$WITH_MONITORING_FLAG" ]; then
-    if [ -f "docker-compose.monitoring.yml" ]; then
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.monitoring.yml"
-      echo "📈 Adding Monitoring overlay (docker-compose.monitoring.yml)"
-      echo "   Prometheus: http://localhost:${PROMETHEUS_PORT:-5186}"
-      echo "   Grafana:    http://localhost:${GRAFANA_PORT:-5185}  (admin / \$GRAFANA_PASSWORD, default admin)"
-    else
-      echo "⚠️  --with-monitoring specified but docker-compose.monitoring.yml not found"
-    fi
-  fi
+  add_flag_overlay WITH_MONITORING_FLAG
 
   # Add Backup overlay if requested (mounts BACKUP_HOST_PATH for scheduled backups
   # and BACKUP_MIRROR_HOST_PATH for the incremental media mirror, issue #242)

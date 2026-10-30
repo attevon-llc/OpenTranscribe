@@ -547,12 +547,17 @@ else
     # Resolve host port + password from the compose project's own containers and hand them to
     # THIS phase only: exporting them to the unit phase flips ~10 memory-path tests to the Redis
     # path and fails them (measured 2026-10-28: 63 failures instead of 54).
+    # --- BEGIN integration-env ---
     REDIS_ENV=()
-    if [ -z "${REDIS_HOST:-}" ] && command -v docker >/dev/null 2>&1; then
-        _proj="${COMPOSE_PROJECT_NAME:-}"
-        _label=(--filter "label=com.docker.compose.service=backend")
-        [ -n "$_proj" ] && _label+=(--filter "label=com.docker.compose.project=$_proj")
+    INTEGRATION_ENV=()
+    _proj="${COMPOSE_PROJECT_NAME:-}"
+    _label=(--filter "label=com.docker.compose.service=backend")
+    [ -n "$_proj" ] && _label+=(--filter "label=com.docker.compose.project=$_proj")
+    _backend=""
+    if command -v docker >/dev/null 2>&1; then
         _backend="$(docker ps "${_label[@]}" --format '{{.Names}}' 2>/dev/null | head -1)"
+    fi
+    if [ -z "${REDIS_HOST:-}" ] && command -v docker >/dev/null 2>&1; then
         _redis_port="$(docker ps "${_label[@]/backend/redis}" --format '{{.Ports}}' 2>/dev/null \
             | grep -oE '(127\.0\.0\.1|0\.0\.0\.0):[0-9]+->6379' | head -1 | sed -E 's/.*:([0-9]+)->6379/\1/')"
         _redis_pw="$([ -n "$_backend" ] && docker exec "$_backend" printenv REDIS_PASSWORD 2>/dev/null)"
@@ -562,8 +567,46 @@ else
             echo -e "${YELLOW}⚠ could not resolve the stack's Redis host port; integration tests needing Redis will fail${NC}"
         fi
     fi
+    # The 4 hybrid completeness tests (test_search_completeness_opensearch.py) need a DEPLOYED
+    # 384-dimension text-embedding model and skip without OPENSEARCH_TEST_MODEL_ID. Nothing set
+    # it, so they skipped on every gate run since they landed. Resolve the id from the stack's own
+    # backend (the same source the app uses) and VERIFY it on the cluster: the test hardcodes 384
+    # in its throwaway index mapping, so a different dimension would fail the bulk, not skip.
+    # An operator-exported value always wins. A model that cannot be verified is reported by name
+    # and left unset, so the phase is NOT MEASURED (ceiling 0) rather than silently skipping.
+    if [ -z "${OPENSEARCH_TEST_MODEL_ID:-}" ]; then
+        _mid=""
+        _mid_why=""
+        if [ -z "$_backend" ]; then
+            _mid_why="no backend container to ask"
+        else
+            _mid_out="$(docker exec "$_backend" python -c 'from app.services.search.ml_model_service import get_ml_model_service as g; print("MODELID:" + (g().get_active_model_id() or ""))' 2>/dev/null)" || _mid_out=""
+            while IFS= read -r _mid_line; do
+                case "$_mid_line" in MODELID:*) _mid="${_mid_line#MODELID:}" ;; esac
+            done <<<"$_mid_out"
+            [ -n "$_mid" ] || _mid_why="the stack reports no active embedding model"
+        fi
+        if [ -n "$_mid" ]; then
+            _mjson="$(curl -sS --max-time 15 "http://localhost:${OPENSEARCH_PORT:-5180}/_plugins/_ml/models/$_mid" 2>/dev/null)" || _mjson=""
+            _mcheck="$(printf '%s' "$_mjson" | python3 -c 'import json,sys
+try:
+    d = json.load(sys.stdin)
+    print("%s %s" % (d.get("model_state"), (d.get("model_config") or {}).get("embedding_dimension")))
+except Exception:
+    print("unreadable unreadable")' 2>/dev/null)" || _mcheck="unreadable unreadable"
+            if [ "$_mcheck" = "DEPLOYED 384" ]; then
+                INTEGRATION_ENV=(env "OPENSEARCH_TEST_MODEL_ID=$_mid")
+            else
+                _mid_why="model $_mid is not usable (state/dimension: ${_mcheck}; needs DEPLOYED 384)"
+            fi
+        fi
+        if [ -n "$_mid_why" ]; then
+            echo -e "${YELLOW}⚠ OPENSEARCH_TEST_MODEL_ID not provisioned: ${_mid_why}; the hybrid completeness tests will skip${NC}"
+        fi
+    fi
+    # --- END integration-env ---
     run_phase_watching_skips "Integration-marked tests" "$INTEGRATION_SKIP_CEILING" \
-        "${REDIS_ENV[@]}" "${EXPORT_ENV[@]}" "$VENV_PY" -m pytest tests/integration/ tests/test_selective_reprocess.py tests/eval/ \
+        "${REDIS_ENV[@]}" "${INTEGRATION_ENV[@]}" "${EXPORT_ENV[@]}" "$VENV_PY" -m pytest tests/integration/ tests/test_selective_reprocess.py tests/eval/ \
         -o addopts="" -m "$INTEGRATION_SELECTION" -q --tb=short --strict-markers \
         --timeout="${INTEGRATION_TEST_TIMEOUT:-900}" \
         "${SKIP_REASONS[@]}" "${DURATIONS[@]}" --junitxml="$GATE_ARTIFACT_DIR/integration.xml"

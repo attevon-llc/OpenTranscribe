@@ -26,7 +26,7 @@ Each stage is its own module so the two security-critical ones (`redactor.py`,
 | `retrieval.py` | Cache → retrieve → rerank → diversity sample; returns `RetrievalResult` with diagnostics |
 | `router.py` | Rules-only intent + tiers (#403 Stage 4). Loads nothing, calls nothing |
 | `aggregation.py` | Counted answers, pure half: shapes, subject extraction, filters |
-| `aggregation_service.py` | Counted answers, I/O half: OpenSearch aggs + Postgres |
+| `aggregation_service.py` + siblings | Counted answers, I/O half. `aggregation_service` = `answer_aggregation` (dispatch, date scope); `aggregation_queries` = scoped I/O primitives and the **tenant/quarantine chokepoints** `_accessible_scoped_files` (Postgres) / `_quarantined_among` (OpenSearch shapes); `aggregation_speakers` = facet + talk-time stats; `recurrence_service` = recurrence I/O twin of pure `recurrence.py` (masks per file, fails closed) |
 | `mapreduce/` | `tree_summarize` over the digest plane; two reducers, one no-LLM. A **package**, not a single module (split from a 1242-line `mapreduce.py` — see its own `__init__.py` docstring for the seam table); every pre-split name is still re-exported from `app.services.chat.mapreduce` |
 | `reranker.py` | Lazy CPU cross-encoder singleton; `None` when the model cache is absent |
 | `reranker_warmup.py` | Loads that singleton on a daemon thread at API startup (#1269) — see below |

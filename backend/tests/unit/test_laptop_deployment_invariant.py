@@ -29,9 +29,14 @@ import inspect
 import re
 from pathlib import Path
 
+import pytest
+
 from app.services.chat import aggregation as aggregation_module
+from app.services.chat import aggregation_queries as aggregation_queries_module
 from app.services.chat import aggregation_service as aggregation_service_module
+from app.services.chat import aggregation_speakers as aggregation_speakers_module
 from app.services.chat import recurrence as recurrence_module
+from app.services.chat import recurrence_service as recurrence_service_module
 from app.services.chat import reranker as reranker_module
 from app.services.chat import speaker_resolver as speaker_resolver_module
 
@@ -116,11 +121,23 @@ def test_aggregation_pure_tier_has_no_llm_or_model_import():
     assert forbidden == set(), f"aggregation.py imports: {sorted(forbidden)}"
 
 
-def test_aggregation_service_io_tier_has_no_llm_or_model_import():
-    """``chat/aggregation_service.py`` is the I/O half -- it talks to OpenSearch (aggs) and
-    Postgres, both already-required infra, but never an LLM or a loaded model."""
-    forbidden = _forbidden_imports(inspect.getsource(aggregation_service_module))
-    assert forbidden == set(), f"aggregation_service.py imports: {sorted(forbidden)}"
+@pytest.mark.parametrize(
+    "module",
+    [
+        aggregation_service_module,
+        aggregation_queries_module,
+        aggregation_speakers_module,
+        recurrence_service_module,
+    ],
+    ids=lambda m: m.__name__.rsplit(".", 1)[-1],
+)
+def test_aggregation_io_tier_has_no_llm_or_model_import(module):
+    """The aggregation I/O half (``aggregation_service.py`` and its siblings
+    ``aggregation_queries.py``, ``aggregation_speakers.py``, ``recurrence_service.py``) talks to
+    OpenSearch (aggs) and Postgres, both already-required infra, but never an LLM or a loaded
+    model."""
+    forbidden = _forbidden_imports(inspect.getsource(module))
+    assert forbidden == set(), f"{module.__name__} imports: {sorted(forbidden)}"
 
 
 # --------------------------------------------------------------------------------------- #

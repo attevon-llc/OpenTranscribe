@@ -30,7 +30,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from app.services.chat.aggregation_service import _occurrence_count
+from app.services.chat.aggregation_queries import _occurrence_count
 from app.services.chat.aggregation_service import answer_aggregation
 from app.services.chat.router import route
 from tests.unit.test_chat_aggregation import _file_agg

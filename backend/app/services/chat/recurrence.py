@@ -4,7 +4,7 @@ Pure logic only. Every function here takes plain data and returns plain data —
 no database session, no OpenSearch client, no LLM call. The I/O half (reading
 ``media_file.summary_data``/``file_facts.keyphrases`` for a bounded scope,
 resolving the redaction policy, and masking each item **per file**) lives in
-``aggregation_service.py``; this module never sees raw index or transcript
+``recurrence_service.py``; this module never sees raw index or transcript
 content, only the text its caller hands it.
 
 ## Sources, and why keyphrases are always included
@@ -89,8 +89,8 @@ logger = logging.getLogger(__name__)
 #: single number `aggregation.AggregationResult` could carry); it is an
 #: evidence block alongside ``<overview>``, so it does not join the five
 #: numeric aggregation shapes' machinery in ``aggregation.py``/
-#: ``aggregation_service.answer_aggregation``. See ``recurrence_service`` in
-#: ``aggregation_service.py`` for where this label is actually used.
+#: ``aggregation_service.answer_aggregation``. See ``recurrence_service.py`` for where
+#: this label is actually used.
 SHAPE_RECURRENCE = "recurrence"
 
 #: Leaf kinds this module knows how to normalize. ``keyphrase`` is the D6
@@ -208,7 +208,7 @@ def token_set(text: str, language: str | None) -> frozenset[str]:
 class SourceItem:
     """One already-masked item, ready for grouping.
 
-    Constructed by the caller (``aggregation_service.py``) AFTER
+    Constructed by the caller (``recurrence_service.py``) AFTER
     :func:`normalize_leaf` extracted the text/owner and the I/O-side masker
     applied the redaction policy — this module never sees raw content.
     """
@@ -273,7 +273,7 @@ class RecurrenceResult:
     #: inferring it from timing.
     comparisons: int = 0
     #: I/O-side diagnostics this PURE module cannot compute itself — set by
-    #: the caller (``aggregation_service.answer_recurrence``) via
+    #: the caller (``recurrence_service.answer_recurrence``) via
     #: ``dataclasses.replace`` after :func:`detect_recurring_items` returns.
     #: Keys used today: ``masking_failed_files`` (a file dropped whole because
     #: its policy could not be resolved/applied — issue #402's fail-closed

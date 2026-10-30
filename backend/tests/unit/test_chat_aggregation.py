@@ -31,7 +31,7 @@ from app.services.chat.aggregation import buckets
 from app.services.chat.aggregation import choose_shape
 from app.services.chat.aggregation import extract_subject
 from app.services.chat.aggregation import subject_clause
-from app.services.chat.aggregation_service import _temporal_bounds
+from app.services.chat.aggregation_queries import _temporal_bounds
 from app.services.chat.aggregation_service import answer_aggregation
 from app.services.chat.router import TemporalHint
 from app.services.chat.router import route

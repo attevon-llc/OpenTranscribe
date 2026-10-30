@@ -115,7 +115,7 @@ def build_file_summaries(
         masked_text: ``id(hit) -> masked content``. Passed in rather than read off
             the hit so this module cannot be handed unmasked text by accident.
         speaker_focus: A single active focus speaker's canonical name —
-            same convention `aggregation_service._run_speaker_stats` uses
+            same convention `aggregation_speakers._run_speaker_stats` uses
             (``route.speakers[0] if len(route.speakers) == 1 else None``).
             When set, each summary's `speaker_stats`/`speaker_in_roster` are
             populated from this file's own `facts["speakers"]`/`facts["roster"]`
@@ -253,7 +253,7 @@ def scope_digest_hits(
     the ranked digest leg (``retrieve_digests``) is dropped at phase 3.5 and,
     without this filter, the MAP leg here would serve the same file's digest
     sections regardless. Filtering by predicate rather than a second post-fetch
-    matches ``_accessible_scoped_files``'s approach in ``aggregation_service.py``.
+    matches ``_accessible_scoped_files``'s approach in ``aggregation_queries.py``.
 
     ⚠️ **Outer join, not inner.** A file completed before ``file_facts`` (v390)
     existed — or one the periodic backfill (``tasks/search_maintenance_task``)

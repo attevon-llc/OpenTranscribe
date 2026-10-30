@@ -26,7 +26,7 @@ from typing import Any
 
 import pytest
 
-from app.services.chat.aggregation_service import _files_in_period
+from app.services.chat.aggregation_queries import _files_in_period
 from app.services.chat.aggregation_service import answer_aggregation
 from app.services.chat.router import route
 

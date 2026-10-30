@@ -99,7 +99,7 @@ more often).
   connection test hits only the vendor's free `GET /v1/test`.
 - `local_provider.py` — delegates to `ModelManager.get_diarizer()`, which is **native-first**:
   the diar-native sidecar with automatic in-process PyAnnote failover, not PyAnnote directly. It
-  runs through `engine.stages._run_diarize` (honouring `DiarizeConfig.sidecar_wav_path`) and
+  runs through `engine.diarization_overlap._run_diarize` (honouring `DiarizeConfig.sidecar_wav_path`) and
   stuffs native objects (`native_embeddings`, `overlap_info`, `diarize_df`) into
   `DiarizeResult.metadata`, so `DiarizeResult` is **not** a pure DTO. `provider_name` /
   `model_name` come from the diarizer's `last_provider` / `last_model`: the engine that

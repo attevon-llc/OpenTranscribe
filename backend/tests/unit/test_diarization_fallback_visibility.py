@@ -28,7 +28,7 @@ from app.transcription.diar_sidecar_status import DiarSidecarUnavailableError
 from app.transcription.diarization_runs import record_diarization_run
 from app.transcription.diarization_runs import run_outcome
 from app.transcription.diarizer_native import NativeSpeakerDiarizer
-from app.transcription.engine.stages import _run_diarize
+from app.transcription.engine.diarization_overlap import _run_diarize
 from app.transcription.model_manager import ModelManager
 
 pytestmark = [pytest.mark.unit, pytest.mark.xdist_group("diar_native_state")]
@@ -354,7 +354,7 @@ def test_a_dropped_sidecar_cannot_fail_a_job_whose_acoustic_recheck_is_non_fatal
     """Diarization finished; in strict mode the re-check's own get_diarizer() then raises."""
     from types import SimpleNamespace
 
-    from app.transcription.engine import stages as stages_mod
+    from app.transcription.engine import gpu_stages as stages_mod
 
     manager = MagicMock(name="manager")
     manager.get_diarizer.side_effect = DiarSidecarUnavailableError("gone", reason="unreachable")

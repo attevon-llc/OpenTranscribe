@@ -61,7 +61,7 @@ backend/app/transcription/diar_sidecar_status.py	4	env: single reader planned
 backend/app/transcription/diarizer_native.py	4	env: single reader planned
 backend/app/transcription/engine/config.py	7	env: single reader planned
 backend/app/transcription/engine/engine.py	2	env: single reader planned
-backend/app/transcription/engine/stages.py	1	env: single reader planned
+backend/app/transcription/engine/diarization_overlap.py	1	env: single reader planned
 backend/app/transcription/native_provision.py	6	env: single reader planned
 backend/app/transcription/transcriber.py	1	env: single reader planned
 backend/app/transcription/vram_budget.py	2	env: single reader planned

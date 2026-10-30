@@ -307,7 +307,9 @@ backend/app/transcription/diar_sidecar_status.py	4	ratchet: may only go down
 backend/app/transcription/diarizer_native.py	2	ratchet: may only go down
 backend/app/transcription/engine/audio_loader.py	3	ratchet: may only go down
 backend/app/transcription/engine/metrics.py	7	ratchet: may only go down
-backend/app/transcription/engine/stages.py	8	ratchet: may only go down
+backend/app/transcription/engine/diarization_overlap.py	2	ratchet: may only go down
+backend/app/transcription/engine/gpu_stages.py	5	ratchet: may only go down
+backend/app/transcription/engine/split_stages.py	1	ratchet: may only go down
 backend/app/transcription/model_manager.py	2	ratchet: may only go down
 backend/app/transcription/transcriber.py	2	ratchet: may only go down
 backend/app/transcription/vram_budget.py	1	ratchet: may only go down

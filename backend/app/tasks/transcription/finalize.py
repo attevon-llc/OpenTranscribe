@@ -223,7 +223,7 @@ def _process_and_save_critical(
     whisper_model = settings.WHISPER_MODEL
     diarization_disabled = result.get("diarization_disabled", False)
     # The engine that ACTUALLY served diarization (issue #706), resolved after any in-process
-    # fallback — engine/stages.py sets these on JobResult/RawInferenceResult from the diarizer
+    # fallback — the engine stages set these on JobResult/RawInferenceResult from the diarizer
     # instance's own last_provider/last_model, never from tc.diarizer_backend (the CONFIGURED
     # value). The cloud-ASR path sets them too, from the DiarizeResult (cloud_asr.py).
     #

@@ -83,8 +83,8 @@ class Engine:
         Returns:
             JobResult with segments, language, overlap_info, embeddings.
         """
+        from app.transcription.engine.gpu_stages import _GpuStage
         from app.transcription.engine.progress import adapt_legacy
-        from app.transcription.engine.stages import _GpuStage
 
         engine_callback = adapt_legacy(progress_callback)
         stage = _GpuStage()
@@ -129,8 +129,8 @@ class Engine:
             RawInferenceResult with raw segments and serialized diarization records.
         """
         from app.transcription.engine.config import EngineConfig
+        from app.transcription.engine.gpu_stages import _GpuRawStage
         from app.transcription.engine.progress import adapt_legacy
-        from app.transcription.engine.stages import _GpuRawStage
 
         stage = _GpuRawStage()
         stage_config = EngineConfig.from_snapshot(pre.config_snapshot)
@@ -156,7 +156,7 @@ class Engine:
         """
         from app.transcription.engine.config import EngineConfig
         from app.transcription.engine.progress import adapt_legacy
-        from app.transcription.engine.stages import _TranscribeOnlyStage
+        from app.transcription.engine.split_stages import _TranscribeOnlyStage
 
         stage = _TranscribeOnlyStage()
         stage_config = EngineConfig.from_snapshot(pre.config_snapshot)
@@ -179,7 +179,7 @@ class Engine:
         """
         from app.transcription.engine.config import EngineConfig
         from app.transcription.engine.progress import adapt_legacy
-        from app.transcription.engine.stages import _DiarizerOnlyStage
+        from app.transcription.engine.split_stages import _DiarizerOnlyStage
 
         stage = _DiarizerOnlyStage()
         stage_config = EngineConfig.from_snapshot(transcript.config_snapshot)

@@ -212,7 +212,7 @@ class TestDiarizeGpuTaskRetryWiring:
 # Adversarial-audit finding: the two test classes above drive `transcribe_gpu_task` and
 # `diarize_gpu_task` correctly, injecting `DiarSidecarUnavailableError` straight into the
 # task body and asserting the retry ladder fires. But nothing pins whether a REAL sidecar
-# failure can ever reach that point. `_run_diarize` (app/transcription/engine/stages.py) calls
+# failure can ever reach that point. `_run_diarize` (app/transcription/engine/diarization_overlap.py) calls
 # `diarizer.diarize(..., allow_local_fallback=True)` by default on the synchronous path, and
 # `NativeSpeakerDiarizer._refuse_or_fallback_impl` only re-raises `DiarSidecarUnavailableError`
 # when BOTH `allow_local_fallback` is False (the overlapped-diarization thread only) AND/OR

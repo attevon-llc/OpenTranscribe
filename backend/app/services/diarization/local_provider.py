@@ -80,7 +80,7 @@ class LocalDiarizationProvider(DiarizationProvider):
         """
         from app.transcription.audio import load_audio
         from app.transcription.config import TranscriptionConfig
-        from app.transcription.engine.stages import _run_diarize
+        from app.transcription.engine.diarization_overlap import _run_diarize
         from app.transcription.model_manager import ModelManager
 
         if progress_callback:

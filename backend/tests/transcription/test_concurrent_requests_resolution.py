@@ -9,7 +9,7 @@ Note (#369): the expected concurrency values asserted here follow directly from 
 VRAM-budget constants in `TranscriptionConfig._auto_concurrent`
 (`backend/app/transcription/config.py`, formula `(total_vram_mb - 7000) // 4000` at
 line ~402) and the `16_000` MB co-residency threshold in
-`_make_room_for_local_diarizer` (`backend/app/transcription/engine/stages.py`, line
+`_make_room_for_local_diarizer` (`backend/app/transcription/engine/diarization_overlap.py`, line
 ~67). Issue #369's whole-stack measurements contradict those constants: real
 co-resident VRAM usage was measured at ~4.0 GB, well under what the `7000`/`4000`
 budget assumes. If those constants are corrected to match measured behavior, the

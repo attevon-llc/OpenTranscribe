@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 #: checkpoint, out of scope, deliberately not consulted by anything". It is now the flag the
 #: whole graceful-abort mechanism turns on: :func:`raise_if_shutting_down` (every GPU stage
 #: boundary plus the decode loop) and :func:`shutdown_requested` (the bounded diarization join in
-#: ``transcription/engine/stages.py``) both read it. Nothing in *this module* consults it, which
+#: ``transcription/engine/diarization_overlap.py``) both read it. Nothing in *this module* consults it, which
 #: is a different and still-true statement: releasing models here would free VRAM underneath a
 #: live CUDA kernel, which is exactly what :func:`mark_shutting_down` must not do.
 _SHUTDOWN = threading.Event()
@@ -73,7 +73,7 @@ def mark_shutting_down() -> None:
 def shutdown_requested() -> bool:
     """Whether a shutdown signal has been received.
 
-    Read-only. The caller is ``transcription/engine/stages._shutdown_join_timeout`` (issue
+    Read-only. The caller is ``transcription/engine/diarization_overlap._shutdown_join_timeout`` (issue
     #809), which uses it to decide whether to BOUND the join on an overlapped-diarization
     thread — unbounded, that join can outlast docker's stop_grace_period by 60x and the worker
     is SIGKILLed mid-CUDA regardless of any checkpoint. Prefer :func:`raise_if_shutting_down`

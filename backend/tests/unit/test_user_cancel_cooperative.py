@@ -42,6 +42,7 @@ exists.
 from __future__ import annotations
 
 import ast
+import importlib
 import threading
 import uuid as uuid_module
 from contextlib import contextmanager
@@ -434,10 +435,9 @@ class TestTheEngineStagesStandDown:
     def test_the_stage_refuses_before_warming_a_model(
         self, fake_redis, engine_collaborators, stage_name, checkpoint
     ):
-        import app.transcription.engine.stages as stages_mod
-
         request_cancel("run-gpu", "uuid-gpu")
-        stage = getattr(stages_mod, stage_name)()
+        module = "gpu_stages" if stage_name.startswith("_Gpu") else "split_stages"
+        stage = getattr(importlib.import_module(f"app.transcription.engine.{module}"), stage_name)()
 
         with cancellation_scope("run-gpu", "uuid-gpu"):
             with pytest.raises(TranscriptionCancelledError) as exc:
@@ -453,7 +453,7 @@ class TestTheEngineStagesStandDown:
     ):
         """The control. Without it every test above would also pass against a stage that stood
         down unconditionally — which would break every transcription on the host."""
-        from app.transcription.engine.stages import _DiarizerOnlyStage
+        from app.transcription.engine.split_stages import _DiarizerOnlyStage
 
         engine_collaborators["load_from_shared_volume"].return_value = None
 

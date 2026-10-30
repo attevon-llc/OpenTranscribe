@@ -122,7 +122,7 @@ returns `None`, and the caller keeps the original max-overlap label.
 
 ### Wiring in the GPU engine stage
 
-**Module:** `backend/app/transcription/engine/stages.py` (`_GpuStage._run_diarization`).
+**Module:** `backend/app/transcription/engine/gpu_stages.py` (`_GpuStage._run_diarization`).
 
 After `assign_speakers()`, while `audio` and `native_embeddings` are still in memory:
 

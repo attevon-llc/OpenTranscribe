@@ -189,7 +189,7 @@ class TestSpeakerDiarizerIdentity:
     def test_last_provider_is_always_pyannote(self):
         """Read off a real INSTANCE the same way the real consumer does.
 
-        ``engine/stages.py::_collect_diarization`` resolves provenance as
+        ``engine/diarization_overlap.py::_collect_diarization`` resolves provenance as
         ``provider, model = diarizer.last_provider, diarizer.last_model`` on an actual
         ``SpeakerDiarizer`` instance. Comparing the class body's string literal to
         itself (``SpeakerDiarizer.last_provider == "pyannote"``) tests that someone

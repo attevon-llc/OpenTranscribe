@@ -35,7 +35,7 @@ from app.transcription.config import TranscriptionConfig
 from app.transcription.diarize_result import DiarizeResult
 from app.transcription.diarizer import SpeakerDiarizer
 from app.transcription.diarizer_native import NativeSpeakerDiarizer
-from app.transcription.engine import stages as stages_mod
+from app.transcription.engine import diarization_overlap as stages_mod
 from app.transcription.engine.backends import VALID_DIARIZER_BACKENDS
 from app.transcription.model_manager import ModelManager
 

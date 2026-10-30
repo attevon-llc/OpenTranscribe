@@ -21,7 +21,7 @@ from app.transcription.diarize_result import DiarizeResult
 from app.transcription.engine.config import EngineConfig
 from app.transcription.engine.job import RawInferenceResult
 from app.transcription.engine.job import RawTranscriptResult
-from app.transcription.engine.stages import _DiarizerOnlyStage
+from app.transcription.engine.split_stages import _DiarizerOnlyStage
 from app.transcription.engine.stages import _FinalizeStage
 from tests.unit._plan_contexts import plan_context
 

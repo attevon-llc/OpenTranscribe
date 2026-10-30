@@ -391,7 +391,7 @@ def _finish_failed_or_aborted(
        from MinIO and re-run ffmpeg for work that is already on the shared volume -- and
        ``preprocess`` has already returned, so nothing will rewrite it.
     2. ``_AsyncDiarization``'s thread may still be READING it. The stage's bounded join
-       (``engine/stages.py``, ``_SHUTDOWN_JOIN_BUDGET_S``) can abandon that thread mid-request
+       (``engine/diarization_overlap.py``, ``_SHUTDOWN_JOIN_BUDGET_S``) can abandon that thread mid-request
        during a shutdown, so unlinking the WAV here could pull the file out from under a live
        reader. The two changes are interlocked and must not be split.
 

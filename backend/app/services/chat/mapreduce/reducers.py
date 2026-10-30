@@ -44,7 +44,7 @@ def _corpus_header(summaries: list[FileSummary], files_in_scope: int = 0) -> lis
     """The facts that are true of the whole scope, and are exact.
 
     The roster and keyphrase list are sanitized with
-    ``prompting._sanitize_body_text`` — NOT ``_sanitize_attribute`` — because
+    ``prompt_sanitize._sanitize_body_text`` — NOT ``_sanitize_attribute`` — because
     speaker display names are OWNER-controlled on a shared recording: the
     person who named "Dana" is not necessarily the person chatting, so an
     unescaped ``</overview><synthesis>`` in a display name would be cross-user
@@ -53,7 +53,7 @@ def _corpus_header(summaries: list[FileSummary], files_in_scope: int = 0) -> lis
     concatenation-only" section for why this is the body-safe sanitizer and
     not the attribute one.
     """
-    from app.services.chat.prompting import _sanitize_body_text
+    from app.services.chat.prompt_sanitize import _sanitize_body_text
 
     dates = sorted(s.recorded_at for s in summaries if s.recorded_at)
     total_seconds = sum(float(s.duration or 0.0) for s in summaries)
@@ -110,7 +110,7 @@ def _speaker_focus_header(
     the whole answer just being short with no explanation. ``files_in_scope``
     is accepted (unused) for signature symmetry with :func:`_corpus_header`.
     """
-    from app.services.chat.prompting import _sanitize_body_text
+    from app.services.chat.prompt_sanitize import _sanitize_body_text
 
     safe_name = _sanitize_body_text(speaker_focus)
     lines = [f"focus speaker: {safe_name}"]
@@ -150,7 +150,7 @@ def _speaker_focus_header(
 
 def _empty_speaker_focus_overview(reducer_name: str, speaker_focus: str) -> Overview:
     """Never a silent zero: no file in scope matched the focus speaker at all."""
-    from app.services.chat.prompting import _sanitize_body_text
+    from app.services.chat.prompt_sanitize import _sanitize_body_text
 
     safe_name = _sanitize_body_text(speaker_focus)
     block = (
@@ -186,8 +186,8 @@ class CodeComposer:
             if speaker_focus:
                 return _empty_speaker_focus_overview(self.name, speaker_focus)
             return Overview(reducer=self.name)
-        from app.services.chat.prompting import _sanitize_attribute
-        from app.services.chat.prompting import _sanitize_body_text
+        from app.services.chat.prompt_sanitize import _sanitize_attribute
+        from app.services.chat.prompt_sanitize import _sanitize_body_text
 
         lines = (
             list(_speaker_focus_header(speaker_focus, summaries, files_in_scope))
@@ -334,7 +334,7 @@ class BatchReducer:
         )
 
     def _plain(self, batch: list[FileSummary]) -> str:
-        from app.services.chat.prompting import _sanitize_attribute
+        from app.services.chat.prompt_sanitize import _sanitize_attribute
 
         out = []
         for summary in batch:

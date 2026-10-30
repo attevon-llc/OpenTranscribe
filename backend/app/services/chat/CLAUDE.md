@@ -35,7 +35,7 @@ Each stage is its own module so the two security-critical ones (`redactor.py`,
 | `retrieval_cache.py` | Redis exact-query cache, keyed by user+org+query+scope+settings-rev |
 | `redactor.py` + siblings | **Re-masks retrieved chunks before the LLM** (the *egress* control). `redactor` = the masking half (`mask_chunks`, `mask_digests`, `_gather`, `_mask_inline`, `_egress_style`); `redactor_chunk_plans` / `redactor_digest_plans` = phase A, the Postgres gather that returns plain-data plans (the strictest-wins `_effective_cfg_for_owner` lives in the former) |
 | `output_redactor.py` | **Re-masks what the MODEL WRITES, sentence by sentence** (the *display* control) |
-| `prompting.py` | Layered system prompt + delimited excerpts, concatenation only |
+| `prompting.py` + siblings | Layered system prompt, concatenation only; `prompt_blocks` = delimited excerpts and counted/recurrence/synthesis blocks; `prompt_sanitize` = the injection boundary (`_sanitize_body_text`/`_sanitize_attribute`) |
 | `citations.py` | Structured citations; `[n]` markers only SELECT, never construct |
 | `service.py` | SSE orchestration and `_prepare_context`'s phase wiring; the phases live in the siblings its docstring maps: `turn.py`, `prompt_budget.py`, `planning_steps.py`, `fanout.py`, **`masking.py` (whether excerpts are masked before the LLM)**, `evidence.py` (quarantine drop, fail-closed filter), `summary_tier.py`, `streaming.py`, `persistence.py` |
 | `limits.py` | Per-user hourly + concurrency caps, cancel flags (fail open) |
@@ -447,7 +447,7 @@ the excerpt budget** rather than out of what is left after it:
 | `<counted>` | `aggregation_service.answer_aggregation` | It *is* the answer to "how many"; excerpts are examples beside it |
 | `<overview>` | `mapreduce.build_overview` | It covers every recording in scope; excerpts cover a handful |
 | `<recurrence>` | `recurrence.detect_recurring_items` | Items that recurred across TWO OR MORE recordings; excerpts show only one at a time |
-| `<synthesis>` | `fanout._maybe_run_enrichment` → `prompting.format_synthesis_block` | A machine-drafted reconciliation of evidence, not itself evidence |
+| `<synthesis>` | `fanout._maybe_run_enrichment` → `prompt_blocks.format_synthesis_block` | A machine-drafted reconciliation of evidence, not itself evidence |
 
 Base rules exist for each, because rule 3 ("answer from the excerpts") fights all of them: rule
 **10** says report a `<counted>` number exactly and never recount from the excerpts; rule **12**
@@ -673,8 +673,8 @@ rule: `_visible_files_query` excludes a quarantined file for every caller, admin
 ## Prompt assembly is concatenation-only
 
 Never `str.format` / `Template` / f-string over chunk content or user text. A
-transcript containing `{evil}` would raise or interpolate. `prompting.py`
-concatenates, defuses `<excerpt` / `</excerpt` sequences in chunk text, and puts
+transcript containing `{evil}` would raise or interpolate. `prompting.py` and
+`prompt_blocks.py` (sanitisers: `prompt_sanitize.py`) concatenate, defuse `<excerpt` / `</excerpt` sequences in chunk text, and puts
 an immutable base rule above every user-supplied layer stating that excerpt
 content is data and never instructions.
 

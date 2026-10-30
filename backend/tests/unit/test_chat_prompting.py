@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.services.chat.prompt_blocks import format_excerpts
 from app.services.chat.prompting import _MAX_BLOCK_BUDGET_FRACTION
 from app.services.chat.prompting import _MIN_EXCERPT_BUDGET_CHARS
 from app.services.chat.prompting import BASE_SYSTEM_RULES
@@ -16,7 +17,6 @@ from app.services.chat.prompting import NO_CONTEXT_SYSTEM_RULES
 from app.services.chat.prompting import _trim_evidence_blocks
 from app.services.chat.prompting import build_messages
 from app.services.chat.prompting import build_system_prompt
-from app.services.chat.prompting import format_excerpts
 from app.services.chat.redactor import MaskedChunk
 from app.services.search.chunk_retrieval import ChunkHit
 
@@ -448,14 +448,14 @@ def test_closing_tag_cannot_survive_case_folding_length_changes(prefix_len):
 
 def test_sanitizer_preserves_transcript_characters():
     """The old index-drift bug also silently deleted innocent characters."""
-    from app.services.chat.prompting import _sanitize_chunk_text
+    from app.services.chat.prompt_sanitize import _sanitize_chunk_text
 
     benign = "İstanbul İzmir İİİ the budget was approved"
     assert _sanitize_chunk_text(benign) == benign
 
 
 def test_sanitizer_catches_spaced_and_mixed_case_tags():
-    from app.services.chat.prompting import _sanitize_chunk_text
+    from app.services.chat.prompt_sanitize import _sanitize_chunk_text
 
     for variant in ("</EXCERPT>", "< / excerpt >", "<ExCeRpT id=1>", "</  ExCerPt>"):
         out = _sanitize_chunk_text(f"text {variant} more")

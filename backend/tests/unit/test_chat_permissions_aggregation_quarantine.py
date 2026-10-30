@@ -12,7 +12,7 @@ by asking an aggregate question instead of an ordinary one:
   file's segments.
 * ``_files_matching`` (SHAPE_COUNT_FILES / SHAPE_LIST_FILES, OpenSearch)
   returned the quarantined file's uuid AND TITLE, which
-  ``prompting.format_counted_block`` renders into the ``<counted>`` block —
+  ``prompt_blocks.format_counted_block`` renders into the ``<counted>`` block —
   and base rule 10 tells the model to report it exactly.
 * ``_speaker_tally`` / ``_run_speaker_facet`` (SHAPE_SPEAKER_FACET, OpenSearch)
   counted the quarantined file's session toward its speakers' tallies.

@@ -1,4 +1,4 @@
-"""The `<recurrence>` evidence block (`prompting.format_recurrence_block`)
+"""The `<recurrence>` evidence block (`prompt_blocks.format_recurrence_block`)
 and the two new base rules (13: honesty about open/completed status; 14: the
 focus-speaker header)."""
 
@@ -7,9 +7,9 @@ from __future__ import annotations
 import pytest
 
 from app.services.chat import recurrence
+from app.services.chat.prompt_blocks import format_recurrence_block
 from app.services.chat.prompting import BASE_SYSTEM_RULES
 from app.services.chat.prompting import build_messages
-from app.services.chat.prompting import format_recurrence_block
 
 pytestmark = pytest.mark.unit
 

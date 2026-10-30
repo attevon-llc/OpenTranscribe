@@ -81,9 +81,9 @@ from app.services.chat.planning_steps import _initial_stage
 from app.services.chat.planning_steps import _maybe_rewrite
 from app.services.chat.planning_steps import _resolve_plan
 from app.services.chat.planning_steps import _resolve_speaker_focus
+from app.services.chat.prompt_blocks import format_counted_block
 from app.services.chat.prompt_budget import _assemble_prompt
 from app.services.chat.prompt_budget import _emit_prompt_trace
-from app.services.chat.prompting import format_counted_block
 from app.services.chat.redactor import MaskedChunk
 from app.services.chat.redactor import mask_chunks
 from app.services.chat.retrieval import RetrievalResult

@@ -38,7 +38,7 @@ from app.services.chat.mapreduce import DigestScopeHits
 from app.services.chat.mapreduce import FileSummary
 from app.services.chat.mapreduce import Overview
 from app.services.chat.planner import Plan
-from app.services.chat.prompting import format_synthesis_block
+from app.services.chat.prompt_blocks import format_synthesis_block
 from app.services.chat.query_rewriter import RewriteResult
 from app.services.chat.redactor import MaskedChunk
 from app.services.chat.retrieval import RetrievalResult
@@ -509,7 +509,7 @@ def _patch_fanout(monkeypatch, legs_seen: list[dict[str, Any]]) -> None:
 
     monkeypatch.setattr("app.services.chat.legs.run_legs", _run_legs)
     monkeypatch.setattr(
-        "app.services.chat.prompting.format_recurrence_block",
+        "app.services.chat.prompt_blocks.format_recurrence_block",
         lambda result: f"<recurrence>{len(result.groups)}</recurrence>",
     )
 

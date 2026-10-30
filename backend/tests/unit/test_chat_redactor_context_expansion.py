@@ -15,7 +15,7 @@ Three more properties this module is not allowed to get wrong:
   failing closed — a PII span in the neighbouring material must be masked,
   not just the original short fragment's own text;
 * expansion is bounded, so it cannot silently crowd another file's evidence
-  out of ``prompting.format_excerpts``'s hard budget ceiling.
+  out of ``prompt_blocks.format_excerpts``'s hard budget ceiling.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.services.chat.prompting import format_excerpts
+from app.services.chat.prompt_blocks import format_excerpts
 from app.services.chat.redactor import MaskedChunk
 from app.services.chat.redactor import mask_chunks
 from app.services.search.chunk_retrieval import ChunkHit

@@ -29,7 +29,7 @@ from unittest.mock import patch
 import pytest
 
 from app.core import redaction_defaults
-from app.services.chat import prompting
+from app.services.chat import prompt_blocks
 from app.services.chat.redactor import _mask_from_spans
 from app.services.chat.redactor import mask_chunks
 from app.services.chat.redactor import mask_digests
@@ -325,7 +325,7 @@ def test_the_secret_never_reaches_the_provider_over_the_wire(mock_llm_url):
     with patch("app.services.redaction.config.resolve_effective_config", return_value=_cfg("blur")):
         masked = mask_chunks(_factory(db), [_chunk_hit()], user_id=1)
 
-    excerpt_block, used_ids = prompting.format_excerpts(masked, budget_chars=4000)
+    excerpt_block, used_ids = prompt_blocks.format_excerpts(masked, budget_chars=4000)
     assert used_ids, "the excerpt must have made it into the prompt at all"
     assert SECRET not in excerpt_block, "sanity: the prompt built locally must not carry the secret"
 

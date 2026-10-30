@@ -437,9 +437,9 @@ def verify_token(token: str, expected_type: str | None = TOKEN_TYPE_ACCESS) -> d
         # fallback" about every request tells an operator nothing about when the
         # window can close, which is the one question it exists to answer.
         if is_fips_140_3 and token_algorithm and token_algorithm != current_algorithm:
-            from app.auth.audit import AuditEventType
-            from app.auth.audit import AuditOutcome
             from app.auth.audit import audit_logger
+            from app.auth.audit_events import AuditEventType
+            from app.auth.audit_events import AuditOutcome
 
             audit_logger.log(
                 event_type=AuditEventType.AUTH_TOKEN_VERIFY,

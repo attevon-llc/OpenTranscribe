@@ -20,10 +20,10 @@ import uuid as uuid_pkg
 import pytest
 from fastapi import status
 
-from app.auth.audit import TENANT_SCOPE_ORG
-from app.auth.audit import TENANT_SCOPE_PERSONAL
-from app.auth.audit import AuditEventType
 from app.auth.audit import audit_logger
+from app.auth.audit_events import TENANT_SCOPE_ORG
+from app.auth.audit_events import TENANT_SCOPE_PERSONAL
+from app.auth.audit_events import AuditEventType
 from app.core.constants import AUDIT_CONTENT_ACCESS_SETTING_KEY
 from app.models.chat import ROLE_ASSISTANT
 from app.models.chat import ROLE_USER

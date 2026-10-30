@@ -20,7 +20,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from app.auth.audit import AuditOutcome
+from app.auth.audit_events import AuditOutcome
 from app.core import constants
 from app.core.env import parse_bool
 from app.models.organization_policy import OrganizationPolicy

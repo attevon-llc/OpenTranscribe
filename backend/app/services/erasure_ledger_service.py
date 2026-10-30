@@ -70,9 +70,9 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.models.erasure import ErasureLedgerEntry
 
 logger = logging.getLogger(__name__)

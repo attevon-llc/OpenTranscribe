@@ -16,10 +16,10 @@ from types import SimpleNamespace
 import pytest
 
 from app.auth import audit as audit_module
-from app.auth.audit import AuditEventType
 from app.auth.audit import AuditLogger
-from app.auth.audit import AuditOutcome
-from app.auth.audit import build_org_scope_clause
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
+from app.auth.audit_query import build_org_scope_clause
 from app.models.media import MediaFile
 from app.models.user import User
 

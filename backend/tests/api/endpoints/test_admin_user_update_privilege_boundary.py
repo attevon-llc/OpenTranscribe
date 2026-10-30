@@ -317,7 +317,7 @@ def test_11_a_denied_email_change_is_audited_naming_actor_and_subject(
     client, admin_token_headers, admin_user, normal_user, db_session, monkeypatch
 ):
     from app.api.endpoints import users as users_module
-    from app.auth.audit import AuditOutcome
+    from app.auth.audit_events import AuditOutcome
 
     captured: list[dict] = []
     monkeypatch.setattr(users_module.audit_logger, "log", lambda **kwargs: captured.append(kwargs))

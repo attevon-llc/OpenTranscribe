@@ -20,7 +20,7 @@ from datetime import timedelta
 
 import pytest
 
-from app.auth.audit import AuditEventType
+from app.auth.audit_events import AuditEventType
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.core.config import settings
 from app.models.user import User

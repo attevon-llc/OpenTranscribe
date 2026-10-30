@@ -245,9 +245,9 @@ def _audit_message(
 ) -> None:
     """Record the exchange on the compliance trail — metadata only, never content."""
     try:
-        from app.auth.audit import AuditEventType
-        from app.auth.audit import AuditOutcome
         from app.auth.audit import audit_logger
+        from app.auth.audit_events import AuditEventType
+        from app.auth.audit_events import AuditOutcome
 
         audit_logger.log(
             event_type=AuditEventType.CHAT_MESSAGE_SEND,

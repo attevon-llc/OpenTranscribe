@@ -6,8 +6,8 @@ caller as actor and the account the write targeted as subject (issue #443).
 """
 
 from app.auth import refusal_audit
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.models.user import User
 
 

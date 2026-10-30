@@ -33,9 +33,9 @@ from sqlalchemy.orm import Session
 from app.api.endpoints.auth.dependencies import _get_client_info
 from app.api.endpoints.auth.login import _check_mfa_requirement
 from app.api.endpoints.auth.login import record_successful_login
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.lockout import check_and_record_attempt
 from app.auth.rate_limit import get_auth_rate_limit

@@ -29,7 +29,7 @@ import pytest
 from fastapi import status
 from minio.error import S3Error
 
-from app.auth.audit import AuditOutcome
+from app.auth.audit_events import AuditOutcome
 from app.core.config import settings
 from app.models.media import MediaFile
 from app.models.speaker import Speaker

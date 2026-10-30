@@ -26,9 +26,9 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints.chat.common import resolve_llm_config_id
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.db.base import get_db
 from app.models.chat import ChatConversation
 from app.models.chat import ChatProject

@@ -24,10 +24,10 @@ from app import models
 from app import schemas
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.auth.audit import request_org_id
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.db.base import get_db
 from app.middleware.audit import get_request_context
 from app.services.platform_access import TenancyMode

@@ -27,7 +27,7 @@ import pytest
 from app.api.endpoints import transcript_segments
 from app.api.endpoints.files import crud
 from app.api.endpoints.tags import sharing
-from app.auth.audit import AuditEventType
+from app.auth.audit_events import AuditEventType
 from app.schemas.media import TranscriptSegmentUpdate
 from app.schemas.transcript import SegmentSpeakerUpdate
 from app.services import content_audit

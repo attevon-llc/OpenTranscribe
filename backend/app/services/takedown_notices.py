@@ -12,9 +12,9 @@ deployment's abuse contact (the operator did not make that decision).
 
 import logging
 
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.core.enums import TakedownOrigin
 from app.models.media import MediaFile
 from app.services.takedown_authority import TakedownActor

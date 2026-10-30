@@ -28,7 +28,7 @@ from datetime import timedelta
 import pytest
 
 from app.api.endpoints import admin_identity
-from app.auth.audit import AuditOutcome
+from app.auth.audit_events import AuditOutcome
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.core.auth_types import AUTH_TYPE_LDAP
 from app.core.auth_types import AUTH_TYPE_LOCAL

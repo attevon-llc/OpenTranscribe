@@ -343,7 +343,7 @@ def test_the_task_audits_counters_only(
     bucket, existing_file, orphan_ids, old_clock, real_redis_restored, monkeypatch
 ):
     from app.auth import audit as audit_module
-    from app.auth.audit import AuditEventType
+    from app.auth.audit_events import AuditEventType
     from app.tasks import storage_orphan_sweep_task as sweeper
 
     for fid in orphan_ids:

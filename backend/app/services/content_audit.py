@@ -32,11 +32,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from typing import Any
 
-from app.auth.audit import TENANT_SCOPE_ORG
-from app.auth.audit import TENANT_SCOPE_PERSONAL
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import TENANT_SCOPE_ORG
+from app.auth.audit_events import TENANT_SCOPE_PERSONAL
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.core.capabilities import capability_enabled
 from app.core.constants import AUDIT_CONTENT_ACCESS_DEFAULT
 from app.core.constants import AUDIT_CONTENT_ACCESS_SETTING_KEY

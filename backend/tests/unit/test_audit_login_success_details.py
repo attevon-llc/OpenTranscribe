@@ -6,9 +6,9 @@ This pins the merge behaviour of the new optional ``details`` param without
 touching the many existing call sites that pass only ``auth_method``.
 """
 
-from app.auth.audit import AuditEventType
 from app.auth.audit import AuditLogger
-from app.auth.audit import AuditOutcome
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 
 
 def _capture_log_calls(monkeypatch, logger: AuditLogger) -> list[dict]:

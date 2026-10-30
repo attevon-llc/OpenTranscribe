@@ -76,9 +76,9 @@ def can_delete_file(
 
 def _audit_denied(user: User, file: MediaFile, reason: str) -> None:
     try:
-        from app.auth.audit import AuditEventType
-        from app.auth.audit import AuditOutcome
         from app.auth.audit import audit_logger
+        from app.auth.audit_events import AuditEventType
+        from app.auth.audit_events import AuditOutcome
 
         audit_logger.log(
             AuditEventType.FILE_DELETE_DENIED,

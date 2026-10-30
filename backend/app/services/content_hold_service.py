@@ -28,7 +28,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth.audit import AuditEventType
+from app.auth.audit_events import AuditEventType
 from app.models.collection import Collection
 from app.models.collection import CollectionMember
 from app.models.content_hold import REASON_MAX_LENGTH

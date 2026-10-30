@@ -17,9 +17,9 @@ from sqlalchemy.orm import Session
 from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_admin_user
 from app.api.endpoints.auth.dependencies import _get_client_info
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.auth.lockout import current_store_kind as lockout_current_store_kind
 from app.auth.lockout import list_locked_accounts as lockout_list_locked_accounts
 from app.auth.lockout import normalize_identifier as lockout_normalize_identifier

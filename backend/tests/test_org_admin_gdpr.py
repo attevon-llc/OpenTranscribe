@@ -33,7 +33,7 @@ from fastapi import HTTPException
 from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
 
 from app.api.deps_context import require_org_admin
-from app.auth.audit import AuditOutcome
+from app.auth.audit_events import AuditOutcome
 from app.models.collection import Collection
 from app.models.media import Comment
 from app.models.media import MediaFile
@@ -399,13 +399,12 @@ class TestOrgAuditScope:
 
     def test_empty_scope_returns_nothing(self):
         """A scope of zero member-ids returns no events (not everything)."""
-        from app.auth.audit import query_audit_logs
+        from app.auth.audit_query import query_audit_logs
 
-        with patch("app.auth.audit.settings") as s:
+        with patch("app.auth.audit_query.settings") as s:
             s.AUDIT_LOG_TO_OPENSEARCH = True
             result = query_audit_logs(scope_user_ids=[])
-        assert result["logs"] == []
-        assert result["total"] == 0
+        assert result == {"logs": [], "total": 0, "offset": 0, "limit": 100}
 
 
 # --------------------------------------------------------------------------- #
@@ -428,9 +427,9 @@ class TestAuditOrgAttribution:
         import json
         from unittest.mock import MagicMock
 
-        from app.auth.audit import AuditEventType
-        from app.auth.audit import AuditOutcome
         from app.auth.audit import audit_logger
+        from app.auth.audit_events import AuditEventType
+        from app.auth.audit_events import AuditOutcome
 
         fake_logger = MagicMock()
         with (
@@ -458,9 +457,9 @@ class TestAuditOrgAttribution:
         import json
         from unittest.mock import MagicMock
 
-        from app.auth.audit import AuditEventType
-        from app.auth.audit import AuditOutcome
         from app.auth.audit import audit_logger
+        from app.auth.audit_events import AuditEventType
+        from app.auth.audit_events import AuditOutcome
 
         fake_logger = MagicMock()
         with (
@@ -484,7 +483,7 @@ class TestAuditOrgAttribution:
         NULL) OR legacy un-stamped events attributed via member ids. An event
         stamped with a DIFFERENT org matches neither branch, and neither does one
         that carries ``tenant_scope`` but no org (a personal-scope resource)."""
-        from app.auth.audit import build_org_scope_clause
+        from app.auth.audit_query import build_org_scope_clause
 
         clause = build_org_scope_clause(42, [1, 2])
         assert clause == {
@@ -544,13 +543,13 @@ class TestAuditOrgAttribution:
     def test_query_audit_logs_builds_org_scope_body(self):
         """query_audit_logs(scope_org_id=...) embeds the org-scope clause in
         the OpenSearch bool query."""
-        from app.auth.audit import build_org_scope_clause
-        from app.auth.audit import query_audit_logs
+        from app.auth.audit_query import build_org_scope_clause
+        from app.auth.audit_query import query_audit_logs
 
         fake = _FakeAuditOS()
         with (
-            patch("app.auth.audit.settings") as s,
-            patch("app.auth.audit._build_audit_opensearch_client", return_value=fake),
+            patch("app.auth.audit_query.settings") as s,
+            patch("app.auth.audit_query._build_audit_opensearch_client", return_value=fake),
         ):
             s.AUDIT_LOG_TO_OPENSEARCH = True
             result = query_audit_logs(scope_user_ids=[1, 2], scope_org_id=42)
@@ -566,12 +565,12 @@ class TestAuditOrgAttribution:
     def test_org_scope_with_empty_member_set_still_queries(self):
         """With an org id, an empty member set must NOT short-circuit — the
         org's STAMPED events (e.g. failed logins, user_id NULL) stay visible."""
-        from app.auth.audit import query_audit_logs
+        from app.auth.audit_query import query_audit_logs
 
         fake = _FakeAuditOS()
         with (
-            patch("app.auth.audit.settings") as s,
-            patch("app.auth.audit._build_audit_opensearch_client", return_value=fake),
+            patch("app.auth.audit_query.settings") as s,
+            patch("app.auth.audit_query._build_audit_opensearch_client", return_value=fake),
         ):
             s.AUDIT_LOG_TO_OPENSEARCH = True
             query_audit_logs(scope_user_ids=[], scope_org_id=42)
@@ -583,12 +582,12 @@ class TestAuditOrgAttribution:
     def test_member_only_scope_unchanged(self):
         """Without an org id the pre-existing member-terms scoping is intact
         (super-admin/global callers are unaffected)."""
-        from app.auth.audit import query_audit_logs
+        from app.auth.audit_query import query_audit_logs
 
         fake = _FakeAuditOS()
         with (
-            patch("app.auth.audit.settings") as s,
-            patch("app.auth.audit._build_audit_opensearch_client", return_value=fake),
+            patch("app.auth.audit_query.settings") as s,
+            patch("app.auth.audit_query._build_audit_opensearch_client", return_value=fake),
         ):
             s.AUDIT_LOG_TO_OPENSEARCH = True
             query_audit_logs(scope_user_ids=[1, 2])

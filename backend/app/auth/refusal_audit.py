@@ -3,9 +3,9 @@
 Lives beside, not inside, ``auth/audit.py`` (already over the file-size cap).
 """
 
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.models.user import User
 
 

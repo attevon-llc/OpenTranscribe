@@ -96,7 +96,7 @@ def get_audit_logs(
     Note: This endpoint queries OpenSearch if audit logging to OpenSearch is
     enabled. If OpenSearch is not available, returns an error message.
     """
-    from app.auth.audit import query_audit_logs
+    from app.auth.audit_query import query_audit_logs
 
     return query_audit_logs(
         start_date=start_date,
@@ -125,11 +125,11 @@ def export_audit_logs(
     are one implementation. Capped at ``AUDIT_EXPORT_MAX_ROWS`` newest events;
     ``X-Export-Truncated`` says when that cut something off. The export is itself audited.
     """
-    from app.auth.audit import AuditEventType
-    from app.auth.audit import AuditOutcome
     from app.auth.audit import audit_logger
-    from app.auth.audit import query_audit_logs
+    from app.auth.audit_events import AuditEventType
+    from app.auth.audit_events import AuditOutcome
     from app.auth.audit_export import audit_export_response
+    from app.auth.audit_query import query_audit_logs
     from app.core.constants import AUDIT_EXPORT_MAX_ROWS
     from app.middleware.audit import get_request_context
 

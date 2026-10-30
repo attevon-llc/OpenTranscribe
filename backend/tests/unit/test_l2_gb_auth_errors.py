@@ -32,9 +32,9 @@ from app.api.endpoints.auth import saml as saml_module
 from app.auth import account_linking
 from app.auth import email_verification
 from app.auth import external_sync
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.auth.cookies import ACCESS_COOKIE
 from app.auth.oidc.admission import assert_oidc_admission_permitted
 from app.auth.oidc.config import OIDCConfig

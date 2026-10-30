@@ -49,9 +49,9 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.auth.ldap_auth import DIRECTORY_ABSENT
 from app.auth.ldap_auth import DIRECTORY_DISABLED
 from app.auth.ldap_auth import DIRECTORY_NOT_ENTITLED

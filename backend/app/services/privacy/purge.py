@@ -62,9 +62,9 @@ from sqlalchemy import or_
 from sqlalchemy import select
 from sqlalchemy import update
 
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.services.privacy.purge_residual import GENDER_RESIDUAL_KEYS
 from app.services.privacy.purge_residual import VOICEPRINT_RESIDUAL_KEYS
 from app.services.privacy.purge_residual import Residual

@@ -33,8 +33,8 @@ from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth.dependencies import _get_client_info
-from app.auth.audit import AuditEventType
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
 from app.auth.email_verification import email_verification_required
 from app.core.constants import AUTH_EMAIL_CONFIG_SETTING_KEY
 from app.db.base import get_db

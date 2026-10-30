@@ -17,9 +17,9 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.api.endpoints.auth import get_current_admin_user
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.core.chat_flag_registry import DESCRIPTIONS as _DESCRIPTIONS
 from app.db.base import get_db
 from app.schemas.chat import ChatAdminSettings

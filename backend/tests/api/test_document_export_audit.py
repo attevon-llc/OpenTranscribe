@@ -10,9 +10,9 @@ from __future__ import annotations
 import pytest
 from fixtures.redaction_export_world import make_redactable_file
 
-from app.auth.audit import TENANT_SCOPE_PERSONAL
-from app.auth.audit import AuditEventType
 from app.auth.audit import audit_logger
+from app.auth.audit_events import TENANT_SCOPE_PERSONAL
+from app.auth.audit_events import AuditEventType
 from app.core.constants import AUDIT_CONTENT_ACCESS_SETTING_KEY
 from app.services import content_audit
 from app.services.system_settings_service import set_setting

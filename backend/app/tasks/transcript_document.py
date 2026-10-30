@@ -41,7 +41,7 @@ def _record_export(file_id: int, user_id: int | None, fmt: str) -> None:
     is a distinct copy leaving the system. The worker has no request, so no client address is
     attached; the event is dropped while content auditing is off, and it never raises.
     """
-    from app.auth.audit import AuditEventType
+    from app.auth.audit_events import AuditEventType
     from app.models.media import MediaFile
     from app.models.user import User
     from app.services.content_audit import record_file_event

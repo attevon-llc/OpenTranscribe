@@ -23,9 +23,9 @@ from app.api.endpoints.auth.dependencies import _get_client_info
 from app.api.endpoints.auth.dependencies import get_current_active_user
 from app.api.endpoints.auth.dependencies import get_current_user
 from app.api.endpoints.auth.dependencies import oauth2_scheme
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.mfa import MFAService
 from app.auth.oidc import OIDCConfig

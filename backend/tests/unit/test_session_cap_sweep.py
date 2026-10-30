@@ -20,7 +20,7 @@ from datetime import timedelta
 import pytest
 from sqlalchemy.orm import Session
 
-from app.auth.audit import AuditEventType
+from app.auth.audit_events import AuditEventType
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.services import session_cap_service

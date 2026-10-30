@@ -28,8 +28,9 @@ from sqlalchemy.orm import Session
 from app.api.endpoints.auth import login as login_module
 from app.api.endpoints.auth import registration as registration_module
 from app.auth import audit as audit_module
+from app.auth import audit_events
 from app.auth import password_reset as pr_module
-from app.auth.audit import AuditEventType
+from app.auth.audit_events import AuditEventType
 from app.core import request_context
 from app.middleware import audit as middleware_audit
 
@@ -60,11 +61,11 @@ class TestRequestIdIsOneContextVar:
                 sink.info.side_effect = lambda msg: emitted.append(msg)
                 audit_module.audit_logger.log(
                     event_type=AuditEventType.AUTH_LOGIN_SUCCESS,
-                    outcome=audit_module.AuditOutcome.SUCCESS,
+                    outcome=audit_events.AuditOutcome.SUCCESS,
                 )
                 audit_module.audit_logger.log(
                     event_type=AuditEventType.AUTH_SESSION_CREATED,
-                    outcome=audit_module.AuditOutcome.SUCCESS,
+                    outcome=audit_events.AuditOutcome.SUCCESS,
                 )
         finally:
             middleware_audit.set_request_id("")

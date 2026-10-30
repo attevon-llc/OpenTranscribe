@@ -49,8 +49,8 @@ from app.api.endpoints.auth.dependencies import get_current_active_user
 from app.auth.approval import APPROVAL_APPROVED
 from app.auth.approval import APPROVAL_PENDING
 from app.auth.approval import APPROVAL_REJECTED
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.core.config import settings
 
 USER_UUID = "019ec90a-1b2c-7def-8000-0000000000cc"

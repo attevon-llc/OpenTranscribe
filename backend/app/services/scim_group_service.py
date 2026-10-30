@@ -18,7 +18,7 @@ import logging
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.auth.audit import AuditEventType
+from app.auth.audit_events import AuditEventType
 from app.models.group import MEMBERSHIP_SOURCE_SCIM
 from app.models.group import UserGroup
 from app.models.group import UserGroupMember

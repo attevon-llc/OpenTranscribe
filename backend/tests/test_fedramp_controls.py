@@ -269,8 +269,8 @@ class TestLoginBannerAcknowledgmentAC8:
         self, client, db_session, normal_user, user_token_headers
     ):
         """Test that banner acknowledgment is logged in audit trail."""
-        from app.auth.audit import AuditEventType
         from app.auth.audit import audit_logger
+        from app.auth.audit_events import AuditEventType
 
         with patch.object(audit_logger, "log") as mock_log:
             response = client.post(
@@ -302,7 +302,7 @@ class TestLoginBannerAcknowledgmentAC8:
 
     def test_banner_event_type_defined(self):
         """Test that banner acknowledgment event type is defined."""
-        from app.auth.audit import AuditEventType
+        from app.auth.audit_events import AuditEventType
 
         assert hasattr(AuditEventType, "AUTH_BANNER_ACKNOWLEDGED")
 
@@ -448,9 +448,9 @@ class TestAuditFallbackOnOpenSearchFailureAU9:
 
     def test_audit_logger_writes_to_fallback_on_opensearch_failure(self, tmp_path):
         """Test that audit logger writes to fallback file when OpenSearch fails."""
-        from app.auth.audit import AuditEventType
         from app.auth.audit import AuditLogger
-        from app.auth.audit import AuditOutcome
+        from app.auth.audit_events import AuditEventType
+        from app.auth.audit_events import AuditOutcome
         from app.core.config import settings
 
         # Create temp file for fallback
@@ -492,9 +492,9 @@ class TestAuditFallbackOnOpenSearchFailureAU9:
 
     def test_audit_fallback_writes_valid_jsonl_format(self, tmp_path):
         """Test that fallback logs are written in valid JSON Lines format."""
-        from app.auth.audit import AuditEventType
         from app.auth.audit import AuditLogger
-        from app.auth.audit import AuditOutcome
+        from app.auth.audit_events import AuditEventType
+        from app.auth.audit_events import AuditOutcome
         from app.core.config import settings
 
         temp_path = str(tmp_path / "audit-fallback.jsonl")
@@ -564,9 +564,9 @@ class TestAuditFallbackOnOpenSearchFailureAU9:
 
     def test_audit_opensearch_unavailable_triggers_fallback(self, tmp_path):
         """Test that None OpenSearch client triggers fallback logging."""
-        from app.auth.audit import AuditEventType
         from app.auth.audit import AuditLogger
-        from app.auth.audit import AuditOutcome
+        from app.auth.audit_events import AuditEventType
+        from app.auth.audit_events import AuditOutcome
         from app.core.config import settings
 
         temp_path = str(tmp_path / "audit-fallback.jsonl")
@@ -598,9 +598,9 @@ class TestAuditFallbackOnOpenSearchFailureAU9:
 
     def test_audit_fallback_disabled_no_file_written(self, tmp_path):
         """Test that no fallback file is written when fallback is disabled."""
-        from app.auth.audit import AuditEventType
         from app.auth.audit import AuditLogger
-        from app.auth.audit import AuditOutcome
+        from app.auth.audit_events import AuditEventType
+        from app.auth.audit_events import AuditOutcome
         from app.core.config import settings
 
         temp_path = str(tmp_path / "audit-fallback.jsonl")
@@ -739,25 +739,25 @@ class TestAuditEventTypes:
 
     def test_session_limit_exceeded_event_type_exists(self):
         """Test that session limit exceeded event type is defined."""
-        from app.auth.audit import AuditEventType
+        from app.auth.audit_events import AuditEventType
 
         assert hasattr(AuditEventType, "AUTH_SESSION_LIMIT_EXCEEDED")
 
     def test_session_expired_event_type_exists(self):
         """Test that session expired event type is defined."""
-        from app.auth.audit import AuditEventType
+        from app.auth.audit_events import AuditEventType
 
         assert hasattr(AuditEventType, "AUTH_SESSION_EXPIRED")
 
     def test_session_terminated_event_type_exists(self):
         """Test that session terminated event type is defined."""
-        from app.auth.audit import AuditEventType
+        from app.auth.audit_events import AuditEventType
 
         assert hasattr(AuditEventType, "AUTH_SESSION_TERMINATED")
 
     def test_all_required_audit_event_types_defined(self):
         """Test that all FedRAMP-required audit event types are defined."""
-        from app.auth.audit import AuditEventType
+        from app.auth.audit_events import AuditEventType
 
         required_events = [
             # Authentication events (AU-2)
@@ -821,9 +821,9 @@ class TestAuditLoggerFallbackBehavior:
 
     def test_audit_log_includes_required_fields(self, tmp_path):
         """Test that audit log entries include all required FedRAMP fields."""
-        from app.auth.audit import AuditEventType
         from app.auth.audit import AuditLogger
-        from app.auth.audit import AuditOutcome
+        from app.auth.audit_events import AuditEventType
+        from app.auth.audit_events import AuditOutcome
         from app.core.config import settings
 
         temp_path = str(tmp_path / "audit-fallback.jsonl")

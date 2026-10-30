@@ -38,9 +38,9 @@ from app.api.endpoints.auth.dependencies import _get_client_info
 from app.auth.approval import APPROVAL_APPROVED
 from app.auth.approval import APPROVAL_PENDING
 from app.auth.approval import APPROVAL_REJECTED
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.approval import ApprovalDecisionRequest

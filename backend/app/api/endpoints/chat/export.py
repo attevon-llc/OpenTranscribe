@@ -33,7 +33,7 @@ from app.api.deps_context import get_current_context
 from app.api.endpoints.chat.common import get_owned_conversation
 from app.api.endpoints.chat.export_redaction import mask_citations
 from app.api.endpoints.chat.export_redaction import resolve_export_policy
-from app.auth.audit import AuditEventType
+from app.auth.audit_events import AuditEventType
 from app.db.base import get_db
 from app.models.chat import ROLE_USER
 from app.models.chat import STATUS_SUPERSEDED

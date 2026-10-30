@@ -6,8 +6,8 @@ from unittest.mock import patch
 import pytest
 from fastapi import status
 
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.core.version import APP_VERSION
 from tests.user_owned_rows import seed_owned_rows
 

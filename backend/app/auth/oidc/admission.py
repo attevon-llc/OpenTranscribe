@@ -48,9 +48,9 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.core.auth_types import AUTH_TYPE_OIDC
 from app.core.exceptions import AuthenticationError
 

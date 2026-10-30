@@ -24,9 +24,9 @@ from app.api.endpoints.auth.mfa_tokens import _is_mfa_required
 from app.api.endpoints.auth.mfa_tokens import _user_can_setup_mfa
 from app.api.endpoints.auth.mfa_tokens import _verify_mfa_code
 from app.api.endpoints.auth.mfa_tokens import mfa_token_ttl_seconds
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.auth.mfa import MFAService
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter

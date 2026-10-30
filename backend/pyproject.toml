@@ -195,6 +195,7 @@ ignore_imports = [
   "app.core.celery_metrics -> app.models.media",  # upward import, function level: removal planned (layering)
   "app.core.infra_requeue_reset -> app.models.media",  # upward import, function level: removal planned (layering)
   "app.core.security -> app.auth.audit",  # upward import, function level: removal planned (layering)
+  "app.core.security -> app.auth.audit_events",  # upward import, function level: removal planned (layering)
   "app.core.security -> app.auth.utils",  # upward import, module level: removal planned (layering)
   "app.core.security -> app.models.user",  # upward import, module level: removal planned (layering)
   "app.core.settings_cache -> app.services.system_settings_service",  # upward import, function level: removal planned (layering)

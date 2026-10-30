@@ -29,9 +29,9 @@ from joserfc.jwk import OctKey
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.auth.bulk_revocation import PendingBulkRevocation
 from app.auth.degradation import record_degradation
 from app.auth.revocation_fallback import is_revoked_from_database

@@ -16,9 +16,9 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from app.api.endpoints.auth import saml as saml_module
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.auth.cookies import REFRESH_COOKIE
 from app.auth.saml.config import SAMLConfig
 from app.auth.token_service import RevocationError

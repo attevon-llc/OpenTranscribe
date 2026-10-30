@@ -27,9 +27,9 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from app.auth.audit import AuditEventType
-from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
+from app.auth.audit_events import AuditOutcome
 from app.auth.header_trust import header_assertion_permitted
 from app.auth.header_trust import immediate_peer_ip
 from app.auth.header_trust import shared_secret_matches

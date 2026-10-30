@@ -11,8 +11,8 @@ from __future__ import annotations
 import csv
 import io
 
-from app.auth.audit import AuditEventType
 from app.auth.audit import audit_logger
+from app.auth.audit_events import AuditEventType
 from app.auth.audit_export import EXPORT_COLUMNS
 from app.core.config import settings
 
@@ -26,7 +26,7 @@ def _stub(monkeypatch, logs, total):
         calls.append(kwargs)
         return {"logs": logs, "total": total, "offset": 0, "limit": kwargs["limit"]}
 
-    monkeypatch.setattr("app.auth.audit.query_audit_logs", _fake)
+    monkeypatch.setattr("app.auth.audit_query.query_audit_logs", _fake)
     monkeypatch.setattr(settings, "AUDIT_LOG_TO_OPENSEARCH", True)
     return calls
 

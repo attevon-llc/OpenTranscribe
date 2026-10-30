@@ -43,7 +43,7 @@ def _db_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _clear_probe_cache():
-    from app.transcription.diarizer_native import reset_readiness_cache
+    from app.transcription.diar_sidecar_status import reset_readiness_cache
 
     reset_readiness_cache()
     yield
@@ -59,7 +59,7 @@ def test_admin_and_system_stats_agree_on_a_bad_config_value(
     # Sidecar unreachable, so "native"'s fail-safe default also exercises the
     # effective/fallback fields identically on both endpoints.
     monkeypatch.setattr(
-        "app.transcription.diarizer_native._DEFAULT_URL",
+        "app.transcription.diar_sidecar_status._DEFAULT_URL",
         f"http://127.0.0.1:{_free_port()}",
     )
 
@@ -120,7 +120,7 @@ def test_admin_and_system_stats_agree_when_native_is_configured_and_reachable(
     _db_unavailable(monkeypatch)
 
     with _sidecar() as url:
-        monkeypatch.setattr("app.transcription.diarizer_native._DEFAULT_URL", url)
+        monkeypatch.setattr("app.transcription.diar_sidecar_status._DEFAULT_URL", url)
 
         admin_resp = client.get("/api/admin/stats", headers=admin_token_headers)
         system_resp = client.get("/api/system/stats", headers=user_token_headers)

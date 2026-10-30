@@ -95,7 +95,7 @@ def _overlap_diarization_enabled(tc) -> bool:
     escape hatch for debugging, and the control used to prove the two orders produce
     identical output).
 
-    ``sidecar_ready()`` carries its own short TTL cache (``diarizer_native.py``, issue #661
+    ``sidecar_ready()`` carries its own short TTL cache (``diar_sidecar_status.py``, issue #661
     probe-cost fix) rather than one here — it is the single home for that cache because
     ``ModelManager._diarizer_current`` calls the same function per task, and one cache keyed
     on base_url serves both call sites. The cheap config/env checks here still run first so
@@ -108,7 +108,7 @@ def _overlap_diarization_enabled(tc) -> bool:
     if os.environ.get("DIAR_OVERLAP", "1").lower() in ("0", "false", "no"):
         return False
 
-    from app.transcription.diarizer_native import sidecar_ready
+    from app.transcription.diar_sidecar_status import sidecar_ready
 
     return sidecar_ready()
 
@@ -385,7 +385,7 @@ class _AsyncDiarization:
         ``RuntimeError`` (``... from exc``) rather than raising it directly — so this checks
         ``__cause__`` too, not just the outer exception's own type.
         """
-        from app.transcription.diarizer_native import DiarSidecarUnavailableError
+        from app.transcription.diar_sidecar_status import DiarSidecarUnavailableError
 
         return isinstance(self._error, DiarSidecarUnavailableError) or isinstance(
             getattr(self._error, "__cause__", None), DiarSidecarUnavailableError

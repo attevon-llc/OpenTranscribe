@@ -22,10 +22,11 @@ import numpy as np
 import pytest
 from prometheus_client import REGISTRY
 
+import app.transcription.diar_sidecar_status as diar_sidecar_status
 import app.transcription.diarizer_native as diarizer_native
+from app.transcription.diar_sidecar_status import DiarSidecarUnavailableError
 from app.transcription.diarization_runs import record_diarization_run
 from app.transcription.diarization_runs import run_outcome
-from app.transcription.diarizer_native import DiarSidecarUnavailableError
 from app.transcription.diarizer_native import NativeSpeakerDiarizer
 from app.transcription.engine.stages import _run_diarize
 from app.transcription.model_manager import ModelManager
@@ -200,8 +201,8 @@ def _manager() -> ModelManager:
 
 
 def test_default_mode_falls_back_and_remembers_why(native_cannot_load, caplog):
-    native_cannot_load.setattr(diarizer_native, "diarizer_require_sidecar", lambda: False)
-    native_cannot_load.setattr(diarizer_native, "sidecar_healthy", lambda *a, **k: False)
+    native_cannot_load.setattr(diar_sidecar_status, "diarizer_require_sidecar", lambda: False)
+    native_cannot_load.setattr(diar_sidecar_status, "sidecar_healthy", lambda *a, **k: False)
 
     with caplog.at_level(logging.WARNING):
         built = _manager()._build_diarizer(_cfg())
@@ -212,8 +213,8 @@ def test_default_mode_falls_back_and_remembers_why(native_cannot_load, caplog):
 
 
 def test_a_sidecar_that_answers_but_cannot_serve_is_reported_as_not_ready(native_cannot_load):
-    native_cannot_load.setattr(diarizer_native, "diarizer_require_sidecar", lambda: False)
-    native_cannot_load.setattr(diarizer_native, "sidecar_healthy", lambda *a, **k: True)
+    native_cannot_load.setattr(diar_sidecar_status, "diarizer_require_sidecar", lambda: False)
+    native_cannot_load.setattr(diar_sidecar_status, "sidecar_healthy", lambda *a, **k: True)
 
     built = _manager()._build_diarizer(_cfg())
 
@@ -221,8 +222,8 @@ def test_a_sidecar_that_answers_but_cannot_serve_is_reported_as_not_ready(native
 
 
 def test_strict_mode_refuses_to_build_the_fallback(native_cannot_load):
-    native_cannot_load.setattr(diarizer_native, "diarizer_require_sidecar", lambda: True)
-    native_cannot_load.setattr(diarizer_native, "sidecar_healthy", lambda *a, **k: False)
+    native_cannot_load.setattr(diar_sidecar_status, "diarizer_require_sidecar", lambda: True)
+    native_cannot_load.setattr(diar_sidecar_status, "sidecar_healthy", lambda *a, **k: False)
 
     with pytest.raises(DiarSidecarUnavailableError, match="refused") as excinfo:
         _manager()._build_diarizer(_cfg())
@@ -234,7 +235,7 @@ def test_strict_mode_refuses_to_build_the_fallback(native_cannot_load):
 def test_strict_mode_does_not_touch_a_pinned_pyannote(monkeypatch: pytest.MonkeyPatch):
     _CountingPyAnnote.built = []
     monkeypatch.setattr("app.transcription.model_manager.SpeakerDiarizer", _CountingPyAnnote)
-    monkeypatch.setattr(diarizer_native, "diarizer_require_sidecar", lambda: True)
+    monkeypatch.setattr(diar_sidecar_status, "diarizer_require_sidecar", lambda: True)
     config = _cfg()
     config.diarizer_backend = "pyannote"
 
@@ -268,9 +269,9 @@ def _cached_engine() -> Any:
 def test_a_cached_fallback_engine_is_dropped_in_strict_mode(
     monkeypatch: pytest.MonkeyPatch, strict: bool, ready: bool, keep_cached_pyannote: bool
 ):
-    monkeypatch.setattr(diarizer_native, "sidecar_ready", lambda *a, **k: ready)
-    monkeypatch.setattr(diarizer_native, "sidecar_healthy", lambda *a, **k: ready)
-    monkeypatch.setattr(diarizer_native, "diarizer_require_sidecar", lambda: strict)
+    monkeypatch.setattr(diar_sidecar_status, "sidecar_ready", lambda *a, **k: ready)
+    monkeypatch.setattr(diar_sidecar_status, "sidecar_healthy", lambda *a, **k: ready)
+    monkeypatch.setattr(diar_sidecar_status, "diarizer_require_sidecar", lambda: strict)
 
     current = ModelManager._diarizer_current(_cached_engine(), _cfg())
 
@@ -283,8 +284,8 @@ def test_a_cached_fallback_engine_is_dropped_in_strict_mode(
 def test_worker_start_logs_one_error_when_the_sidecar_is_down(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ):
-    monkeypatch.setattr(diarizer_native, "sidecar_ready", lambda *a, **k: False)
-    monkeypatch.setattr(diarizer_native, "diarizer_require_sidecar", lambda: False)
+    monkeypatch.setattr(diar_sidecar_status, "sidecar_ready", lambda *a, **k: False)
+    monkeypatch.setattr(diar_sidecar_status, "diarizer_require_sidecar", lambda: False)
     manager = _manager()
     monkeypatch.setattr(manager, "get_transcriber", lambda config: None)
     get_diarizer = MagicMock(name="get_diarizer")
@@ -302,8 +303,8 @@ def test_worker_start_logs_one_error_when_the_sidecar_is_down(
 def test_worker_start_error_says_tasks_will_fail_in_strict_mode(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ):
-    monkeypatch.setattr(diarizer_native, "sidecar_ready", lambda *a, **k: False)
-    monkeypatch.setattr(diarizer_native, "diarizer_require_sidecar", lambda: True)
+    monkeypatch.setattr(diar_sidecar_status, "sidecar_ready", lambda *a, **k: False)
+    monkeypatch.setattr(diar_sidecar_status, "diarizer_require_sidecar", lambda: True)
     manager = _manager()
     monkeypatch.setattr(manager, "get_transcriber", lambda config: None)
 
@@ -319,9 +320,9 @@ def _status(monkeypatch: pytest.MonkeyPatch, *, strict: bool, ready: bool) -> di
     monkeypatch.setattr(
         TranscriptionConfig, "_resolve_diarizer_backend", staticmethod(lambda: "native")
     )
-    monkeypatch.setattr(diarizer_native, "sidecar_ready", lambda *a, **k: ready)
-    monkeypatch.setattr(diarizer_native, "diarizer_require_sidecar", lambda: strict)
-    return diarizer_native.describe_diarizer_status()
+    monkeypatch.setattr(diar_sidecar_status, "sidecar_ready", lambda *a, **k: ready)
+    monkeypatch.setattr(diar_sidecar_status, "diarizer_require_sidecar", lambda: strict)
+    return diar_sidecar_status.describe_diarizer_status()
 
 
 def test_status_reports_the_fallback_when_not_strict(monkeypatch: pytest.MonkeyPatch):
@@ -408,9 +409,9 @@ def test_a_cached_fallback_engine_keeps_its_reason_while_native_is_still_selecte
     """Control: with native selected and the sidecar still down, the reason is still true."""
     from app.transcription.diarizer import SpeakerDiarizer
 
-    monkeypatch.setattr(diarizer_native, "sidecar_ready", lambda *a, **k: False)
-    monkeypatch.setattr(diarizer_native, "sidecar_healthy", lambda *a, **k: False)
-    monkeypatch.setattr(diarizer_native, "diarizer_require_sidecar", lambda: False)
+    monkeypatch.setattr(diar_sidecar_status, "sidecar_ready", lambda *a, **k: False)
+    monkeypatch.setattr(diar_sidecar_status, "sidecar_healthy", lambda *a, **k: False)
+    monkeypatch.setattr(diar_sidecar_status, "diarizer_require_sidecar", lambda: False)
     engine = SpeakerDiarizer(_cfg())
     engine.last_fallback_reason = "unreachable"
 

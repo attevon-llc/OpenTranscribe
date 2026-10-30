@@ -259,7 +259,7 @@ ignore_imports = [
   "app.utils.stats_helpers -> app.models.speaker",  # upward import, module level: removal planned (layering)
   "app.utils.stats_helpers -> app.models.user",  # upward import, module level: removal planned (layering)
   "app.utils.stats_helpers -> app.services.search.settings_service",  # upward import, function level: removal planned (layering)
-  "app.utils.stats_helpers -> app.transcription.diarizer_native",  # upward import, function level: removal planned (layering)
+  "app.utils.stats_helpers -> app.transcription.diar_sidecar_status",  # upward import, function level: removal planned (layering)
   "app.utils.summary_settings -> app.models.prompt",  # upward import, function level: removal planned (layering)
   "app.utils.summary_settings -> app.services.system_settings_service",  # upward import, function level: removal planned (layering)
   "app.utils.task_utils -> app.models.media",  # upward import, module level: removal planned (layering)

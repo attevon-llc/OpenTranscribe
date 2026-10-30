@@ -118,7 +118,8 @@ noqa::backend/app/tasks/watch_source_tasks.py	3	suppression: reason to be added
 noqa::backend/app/tasks/youtube_processing.py	1	suppression: reason to be added
 noqa::backend/app/transcription/config.py	2	suppression: reason to be added
 noqa::backend/app/transcription/cuda_health.py	1	suppression: reason to be added
-noqa::backend/app/transcription/diarizer_native.py	5	suppression: reason to be added
+noqa::backend/app/transcription/diar_sidecar_status.py	4	suppression: reason to be added
+noqa::backend/app/transcription/diarizer_native.py	1	suppression: reason to be added
 noqa::backend/app/transcription/native_provision.py	1	suppression: reason to be added
 noqa::backend/app/transcription/transcriber.py	1	suppression: reason to be added
 noqa::backend/app/utils/error_classification.py	1	suppression: reason to be added

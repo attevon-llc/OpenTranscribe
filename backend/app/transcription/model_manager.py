@@ -132,9 +132,9 @@ class ModelManager:
     @staticmethod
     def _native_unavailable_reason() -> str:
         """Why the native engine cannot serve right now: ``unreachable`` or ``sidecar_not_ready``."""
+        from app.transcription.diar_sidecar_status import sidecar_healthy
         from app.transcription.diarization_runs import REASON_NOT_READY
         from app.transcription.diarization_runs import REASON_UNREACHABLE
-        from app.transcription.diarizer_native import sidecar_healthy
 
         return REASON_NOT_READY if sidecar_healthy() else REASON_UNREACHABLE
 
@@ -146,8 +146,8 @@ class ModelManager:
         ``DiarSidecarUnavailableError`` handling applies, rather than the job quietly running
         on the slower in-process engine.
         """
-        from app.transcription.diarizer_native import DiarSidecarUnavailableError
-        from app.transcription.diarizer_native import diarizer_require_sidecar
+        from app.transcription.diar_sidecar_status import DiarSidecarUnavailableError
+        from app.transcription.diar_sidecar_status import diarizer_require_sidecar
 
         if not diarizer_require_sidecar():
             return
@@ -178,7 +178,7 @@ class ModelManager:
                 diarizer.last_fallback_reason = None
             return not native_cached
 
-        from app.transcription.diarizer_native import sidecar_ready
+        from app.transcription.diar_sidecar_status import sidecar_ready
 
         # Readiness, not liveness. /healthz answers 200 even when the models are absent or
         # known-bad, so probing it here kept selecting the native engine for a sidecar that
@@ -191,7 +191,7 @@ class ModelManager:
             # Built while the sidecar was down (or before strict mode was switched on). In
             # strict mode that engine must not keep serving, so rebuild: the rebuild uses the
             # sidecar if it is back and raises DiarSidecarUnavailableError if it is not.
-            from app.transcription.diarizer_native import diarizer_require_sidecar
+            from app.transcription.diar_sidecar_status import diarizer_require_sidecar
 
             if diarizer_require_sidecar():
                 return False
@@ -199,7 +199,7 @@ class ModelManager:
             # "Gone" and "up but cannot serve" are different operator problems with
             # different fixes, so they get different messages. The extra probe only runs
             # on the failure path, which is approximately never in normal operation.
-            from app.transcription.diarizer_native import sidecar_healthy
+            from app.transcription.diar_sidecar_status import sidecar_healthy
 
             if sidecar_healthy():
                 logger.warning(
@@ -228,10 +228,10 @@ class ModelManager:
         logger.info("Preloading models for concurrent GPU worker...")
         self.get_transcriber(config)
         if config.diarizer_backend.lower() == "native":
-            from app.transcription.diarizer_native import sidecar_ready
+            from app.transcription.diar_sidecar_status import sidecar_ready
 
             if not sidecar_ready():
-                from app.transcription.diarizer_native import diarizer_require_sidecar
+                from app.transcription.diar_sidecar_status import diarizer_require_sidecar
 
                 # Once, at worker start, whatever the mode: this is the line an operator
                 # reads to learn a worker came up without its preferred engine (issue #1184).

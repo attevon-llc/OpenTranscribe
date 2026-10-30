@@ -113,7 +113,7 @@ backend/app/tasks/transcription/hooks.py::function::clear_hooks	1	residual after
 backend/app/tasks/transcription/hooks.py::function::register_before_dispatch	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/tasks/transcription/hooks.py::function::register_transcription_complete	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/transcription/cuda_health.py::function::reset_for_tests	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/transcription/diarizer_native.py::function::reset_readiness_cache	1	residual after the dead-code pass; delete or whitelist when touched
+backend/app/transcription/diar_sidecar_status.py::function::reset_readiness_cache	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/transcription/engine/backends/__init__.py::function::get_transcriber_backend	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/transcription/engine/backends/diarizers/native_backend.py::class::NativeBackend	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/transcription/engine/backends/diarizers/native_backend.py::method::warmup	1	residual after the dead-code pass; delete or whitelist when touched

@@ -27,7 +27,7 @@ valid*, so the same call re-exports it. ``verify-models`` cannot shortcut that â
 marker-less directory it exits 10 (``UNVERIFIABLE``) rather than attesting.
 
 **This never aborts startup.** A failure here means the sidecar's ``/readyz`` returns
-503 and ``diarizer_native.sidecar_ready()`` routes to PyAnnote, which is a supported
+503 and ``diar_sidecar_status.sidecar_ready()`` routes to PyAnnote, which is a supported
 configuration. Refusing to boot over it would turn a degraded diarizer into an outage.
 The loud refusal belongs in the installer's upgrade preflight, where the operator can
 still act, not here (issue #670).

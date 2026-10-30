@@ -435,7 +435,7 @@ def _clear_sidecar_readiness_cache():
     """Isolate the diar-native readiness/liveness TTL caches between tests.
 
     Same hazard as ``_clear_process_auth_cache`` above, for the same reason: ``_ready_cache``
-    and ``_status_cache`` in ``app.transcription.diarizer_native`` are module-level dicts with
+    and ``_status_cache`` in ``app.transcription.diar_sidecar_status`` are module-level dicts with
     a multi-second TTL, so a verdict cached by one test is visible to every later test in the
     same xdist worker. ``reset_readiness_cache()`` already existed but was called only by the
     handful of tests that flip a server's state mid-test — everything else inherited whatever
@@ -451,7 +451,7 @@ def _clear_sidecar_readiness_cache():
     Clearing costs two dict `.clear()` calls per test. Leaving it uncleared costs a failure
     that reproduces only under a particular test ordering, which is the most expensive kind.
     """
-    from app.transcription.diarizer_native import reset_readiness_cache
+    from app.transcription.diar_sidecar_status import reset_readiness_cache
 
     reset_readiness_cache()
     yield

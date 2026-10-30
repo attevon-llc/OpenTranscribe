@@ -5,7 +5,7 @@ That failover works, which is exactly why it went unnoticed: a deployment could 
 the slower engine with every setting still reading "native". Every run is therefore recorded
 here, and an UNPLANNED fallback is logged at WARNING on every run, with its reason.
 
-``engine.diarizer_require_sidecar`` (see ``diarizer_native.diarizer_require_sidecar``) is the
+``engine.diarizer_require_sidecar`` (see ``diar_sidecar_status.diarizer_require_sidecar``) is the
 strict mode: it refuses the fallback altogether. This module only reports; it never decides.
 """
 

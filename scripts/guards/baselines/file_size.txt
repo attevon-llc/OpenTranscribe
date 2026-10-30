@@ -70,7 +70,6 @@ backend/app/tasks/transcription/core.py	711	oversize: split by concern planned
 backend/app/tasks/transcription/dispatch.py	737	oversize: split by concern planned
 backend/app/tasks/transcription/postprocess.py	802	oversize: split by concern planned
 backend/app/tasks/youtube_processing.py	916	oversize: split by concern planned
-backend/app/transcription/diarizer_native.py	1147	oversize: split by concern planned
 backend/app/transcription/engine/stages.py	1300	oversize: split by concern planned
 backend/app/utils/task_utils.py	1125	oversize: split by concern planned
 backend/tests/CLAUDE.md	946	oversize: split by concern planned
@@ -130,7 +129,7 @@ backend/tests/unit/test_cleanup_test_data_safety.py	750	oversize: split by conce
 backend/tests/unit/test_compose_file_selection.py	822	oversize: split by concern planned
 backend/tests/unit/test_cooperative_abort.py	927	oversize: split by concern planned
 backend/tests/unit/test_dependencies_survivor_mutants.py	1096	oversize: split by concern planned
-backend/tests/unit/test_diar_native_handoff.py	884	oversize: split by concern planned
+backend/tests/unit/test_diar_native_handoff.py	883	oversize: split by concern planned
 backend/tests/unit/test_diarizer_engine_selection.py	787	oversize: split by concern planned
 backend/tests/unit/test_dispatch.py	860	oversize: split by concern planned
 backend/tests/unit/test_e2e_data_hygiene.py	1295	oversize: split by concern planned

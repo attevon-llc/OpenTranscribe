@@ -33,9 +33,9 @@ from collections.abc import Iterator
 
 import pytest
 
-from app.transcription.diarizer_native import _ENGINE_DESCRIPTIONS
-from app.transcription.diarizer_native import describe_diarizer_status
-from app.transcription.diarizer_native import reset_readiness_cache
+from app.transcription.diar_sidecar_status import _ENGINE_DESCRIPTIONS
+from app.transcription.diar_sidecar_status import describe_diarizer_status
+from app.transcription.diar_sidecar_status import reset_readiness_cache
 
 #: All diar-native tests that stand up a real HTTP server, or drive diarizer_native's
 #: module-level state, run on ONE xdist worker.
@@ -123,7 +123,7 @@ class TestConfiguredAndReachable:
         monkeypatch.setenv("ENGINE_DIARIZER_BACKEND", "native")
         _db_unavailable(monkeypatch)
         with _sidecar(readyz=200) as url:
-            monkeypatch.setattr("app.transcription.diarizer_native._DEFAULT_URL", url)
+            monkeypatch.setattr("app.transcription.diar_sidecar_status._DEFAULT_URL", url)
             status = describe_diarizer_status()
 
         assert status["configured"] == "native"
@@ -145,7 +145,7 @@ class TestConfiguredAndReachable:
             probed.append(True)
             return True
 
-        monkeypatch.setattr("app.transcription.diarizer_native.sidecar_ready", _fake_ready)
+        monkeypatch.setattr("app.transcription.diar_sidecar_status.sidecar_ready", _fake_ready)
 
         status = describe_diarizer_status()
 
@@ -166,7 +166,7 @@ class TestConfiguredNativeButUnreachable:
         monkeypatch.setenv("ENGINE_DIARIZER_BACKEND", "native")
         _db_unavailable(monkeypatch)
         monkeypatch.setattr(
-            "app.transcription.diarizer_native._DEFAULT_URL",
+            "app.transcription.diar_sidecar_status._DEFAULT_URL",
             f"http://127.0.0.1:{_free_port()}",
         )
 
@@ -187,7 +187,7 @@ class TestConfiguredNativeButUnreachable:
         monkeypatch.setenv("ENGINE_DIARIZER_BACKEND", "native")
         _db_unavailable(monkeypatch)
         with _sidecar(readyz=503) as url:
-            monkeypatch.setattr("app.transcription.diarizer_native._DEFAULT_URL", url)
+            monkeypatch.setattr("app.transcription.diar_sidecar_status._DEFAULT_URL", url)
             status = describe_diarizer_status()
 
         assert status["configured"] == "native"
@@ -209,7 +209,7 @@ class TestUnknownConfiguredValue:
         monkeypatch.setenv("ENGINE_DIARIZER_BACKEND", "typo-backend")
         _db_unavailable(monkeypatch)
         monkeypatch.setattr(
-            "app.transcription.diarizer_native._DEFAULT_URL",
+            "app.transcription.diar_sidecar_status._DEFAULT_URL",
             f"http://127.0.0.1:{_free_port()}",
         )
         caplog.set_level(logging.WARNING)

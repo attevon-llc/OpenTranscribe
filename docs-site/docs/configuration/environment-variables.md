@@ -189,8 +189,8 @@ DIAR_NATIVE_LAZY_SESSIONS=1
 | Variable | Read by | Takes effect after |
 |---|---|---|
 | `ENGINE_DIARIZER_BACKEND` | `TranscriptionConfig._resolve_diarizer_backend()`, resolved fresh on every diarization call | nothing to restart — live immediately, and a DB `engine.diarizer_backend` setting overrides it anyway |
-| `ENGINE_DIARIZER_REQUIRE_SIDECAR` | `diarizer_native.diarizer_require_sidecar()`, re-read on every diarization call | nothing to restart; the DB `engine.diarizer_require_sidecar` setting overrides it |
-| `DIAR_NATIVE_URL`, `DIAR_NATIVE_SHARED_DIR`, `DIAR_NATIVE_TIMEOUT_S`, `DIAR_NATIVE_GENDER` | module-level constants in `diarizer_native.py`, read once when the **celery worker** process imports it | restarting/recreating the celery worker container(s) |
+| `ENGINE_DIARIZER_REQUIRE_SIDECAR` | `diar_sidecar_status.diarizer_require_sidecar()`, re-read on every diarization call | nothing to restart; the DB `engine.diarizer_require_sidecar` setting overrides it |
+| `DIAR_NATIVE_URL`, `DIAR_NATIVE_SHARED_DIR`, `DIAR_NATIVE_TIMEOUT_S`, `DIAR_NATIVE_GENDER` | module-level constants in `diarizer_native.py` (`DIAR_NATIVE_URL`: `diar_sidecar_status.py`), read once when the **celery worker** process imports it | restarting/recreating the celery worker container(s) |
 | `DIAR_NATIVE_MODE`, `DIAR_NATIVE_MAX_INFLIGHT`, `DIAR_NATIVE_LAZY_SESSIONS`, `DIAR_NATIVE_GPU`, `DIAR_NATIVE_LOG_LEVEL`, `DIAR_NATIVE_LOG_FORMAT` | the `diar-server` Rust binary, at its own process start | recreating the `diar-native` container only |
 | `DIAR_NATIVE_MODELS_DIR` | the compose bind-mount source for both `backend` and `diar-native`, and `native_provision.ensure_native_models` | recreating **both** the `backend` and `diar-native` containers |
 | `DIAR_NATIVE_AUTO_PROVISION`, `DIAR_NATIVE_MODEL_SET`, `DIAR_NATIVE_PROVISION_TIMEOUT_S` | `native_provision.py`, read once from the **backend's** FastAPI lifespan at startup | restarting the backend |

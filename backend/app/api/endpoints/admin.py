@@ -158,8 +158,8 @@ async def get_admin_stats(
 
         # Get AI model configuration
         from app.core.config import settings
-        from app.transcription.diarizer_native import describe_diarizer_status
-        from app.transcription.diarizer_native import sidecar_diagnostics
+        from app.transcription.diar_sidecar_status import describe_diarizer_status
+        from app.transcription.diar_sidecar_status import sidecar_diagnostics
 
         # Single resolver, shared with /system/stats (app/utils/stats_helpers.py) — issue
         # #672's second half. This used to be a hand-rolled, UNVALIDATED copy of the

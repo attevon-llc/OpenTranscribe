@@ -28,9 +28,9 @@ import pytest
 import yaml
 from fastapi import status
 
-from app.api.endpoints.llm_settings import _LOCAL_ENDPOINT_TABLE
-from app.api.endpoints.llm_settings import _get_provider_defaults
-from app.api.endpoints.llm_settings import get_local_endpoints
+from app.api.endpoints.llm_local_endpoints import _LOCAL_ENDPOINT_TABLE
+from app.api.endpoints.llm_local_endpoints import get_local_endpoints
+from app.api.endpoints.llm_provider_catalog import _get_provider_defaults
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 _BASE = "/api/llm-settings"

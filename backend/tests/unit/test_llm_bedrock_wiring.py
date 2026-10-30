@@ -230,7 +230,7 @@ def test_validate_connection_does_not_require_an_api_key_for_bedrock():
 
 
 def test_provider_defaults_include_bedrock_with_no_api_key_or_custom_url():
-    from app.api.endpoints.llm_settings import _get_provider_defaults
+    from app.api.endpoints.llm_provider_catalog import _get_provider_defaults
 
     defaults = {d.provider: d for d in _get_provider_defaults()}
 

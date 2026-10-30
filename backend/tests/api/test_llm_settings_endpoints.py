@@ -21,6 +21,7 @@ from fastapi import status
 
 _BASE = "/api/llm-settings"
 _MOD = "app.api.endpoints.llm_settings"
+_CONN_MOD = "app.api.endpoints.llm_connection_tests"
 
 
 def _create_payload(name="Gap Cfg", **over):
@@ -238,7 +239,7 @@ def test_test_connection_invalid_provider_is_422(client, user_token_headers):
 
 
 def test_test_connection_success_envelope(client, user_token_headers):
-    with patch(f"{_MOD}.LLMService.validate_connection", return_value=(True, "ok")):
+    with patch(f"{_CONN_MOD}.LLMService.validate_connection", return_value=(True, "ok")):
         resp = client.post(
             f"{_BASE}/test",
             json={"provider": "openai", "model_name": "gpt-4o-mini", "api_key": "sk-x"},
@@ -252,7 +253,7 @@ def test_test_connection_success_envelope(client, user_token_headers):
 
 
 def test_test_connection_failure_envelope(client, user_token_headers):
-    with patch(f"{_MOD}.LLMService.validate_connection", return_value=(False, "nope")):
+    with patch(f"{_CONN_MOD}.LLMService.validate_connection", return_value=(False, "nope")):
         resp = client.post(
             f"{_BASE}/test",
             json={"provider": "openai", "model_name": "gpt-4o-mini", "api_key": "sk-x"},

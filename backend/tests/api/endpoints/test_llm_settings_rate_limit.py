@@ -6,7 +6,7 @@ caller-supplied `base_url`, gated only on `get_current_active_user` (no admin ga
 router that had **no rate limit at all** — an authenticated user could drive unbounded
 outbound requests from the backend container. The SSRF *target* (private IP / DNS
 rebinding / redirect) was already hardened before this issue
-(`_assert_safe_llm_endpoint` / `_pin_llm_endpoint` in `app.api.endpoints.llm_settings`,
+(`_assert_safe_llm_endpoint` / `_pin_llm_endpoint` in `app.api.endpoints.llm_endpoint_safety`,
 backed by `app.utils.url_validation`'s DNS-pinning); what this closes is the *volume*
 bound. See the issue for the full history.
 

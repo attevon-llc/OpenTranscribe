@@ -10,7 +10,6 @@ noqa::backend/app/api/endpoints/auth/proxy.py	1	suppression: reason to be added
 noqa::backend/app/api/endpoints/chat/common.py	1	suppression: reason to be added
 noqa::backend/app/api/endpoints/custom_vocabulary.py	2	suppression: reason to be added
 noqa::backend/app/api/endpoints/files/crud.py	4	suppression: reason to be added
-noqa::backend/app/api/endpoints/llm_settings.py	2	suppression: reason to be added
 noqa::backend/app/api/endpoints/prompts.py	4	suppression: reason to be added
 noqa::backend/app/api/endpoints/redaction_settings.py	1	suppression: reason to be added
 noqa::backend/app/api/endpoints/speakers.py	1	suppression: reason to be added

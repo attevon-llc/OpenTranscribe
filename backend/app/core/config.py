@@ -405,7 +405,7 @@ class Settings(BaseSettings):
     # the general API limit: a connection test is a human-scale action, and this router has
     # no admin gate, so an uncapped limit here is an amplification/resource-exhaustion surface
     # even though the target itself is DNS-pinned against private IPs (see
-    # `_assert_safe_llm_endpoint`/`_pin_llm_endpoint` in `app/api/endpoints/llm_settings.py`).
+    # `_assert_safe_llm_endpoint`/`_pin_llm_endpoint` in `app/api/endpoints/llm_endpoint_safety.py`).
     RATE_LIMIT_LLM_OUTBOUND_PER_MINUTE: int = 10
     # Rate limit for GET /users/search (the sharing/group-member-add autocomplete). The
     # binding legitimate flow is adding members to a group: the picker clears its query

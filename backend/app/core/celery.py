@@ -251,6 +251,7 @@ celery_app = Celery(
         "app.tasks.thumbnail",
         "app.tasks.thumbnail_migration",
         "app.tasks.embedding_migration_v4",
+        "app.tasks.embedding_migration_v4_finalize",
         "app.tasks.imohash_recompute",
         "app.tasks.watch_source_tasks",
         "app.tasks.speaker_embedding_migration",

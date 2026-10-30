@@ -141,7 +141,7 @@ _DIRECT_SEND_ALLOWLIST: dict[str, tuple[int, str]] = {
         1,
         "admin consistency-repair corpus-wide status, no single MediaFile identity",
     ),
-    "tasks/embedding_migration_v4.py::finalize_v4_migration_task": (
+    "tasks/embedding_migration_v4_finalize.py::finalize_v4_migration_task": (
         2,
         "admin migration finalization status, no single MediaFile identity",
     ),

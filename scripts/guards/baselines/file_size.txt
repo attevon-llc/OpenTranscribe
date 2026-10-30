@@ -24,7 +24,7 @@ backend/app/auth/password_policy.py	888	oversize: split by concern planned
 backend/app/auth/pki_auth.py	1815	oversize: split by concern planned
 backend/app/auth/token_service.py	1116	oversize: split by concern planned
 backend/app/core/auth_settings.py	859	oversize: split by concern planned
-backend/app/core/celery.py	1414	oversize: split by concern planned
+backend/app/core/celery.py	1415	oversize: split by concern planned
 backend/app/core/config.py	1594	oversize: split by concern planned
 backend/app/main.py	1336	oversize: split by concern planned
 backend/app/schemas/auth_config.py	701	oversize: split by concern planned
@@ -59,7 +59,6 @@ backend/app/services/task_recovery_service.py	1201	oversize: split by concern pl
 backend/app/services/topic_extraction_service.py	771	oversize: split by concern planned
 backend/app/services/video_processing_service.py	1111	oversize: split by concern planned
 backend/app/tasks/CLAUDE.md	508	oversize: split by concern planned
-backend/app/tasks/embedding_migration_v4.py	1256	oversize: split by concern planned
 backend/app/tasks/rediarize_task.py	707	oversize: split by concern planned
 backend/app/tasks/reindex_task.py	1277	oversize: split by concern planned
 backend/app/tasks/rename_propagation_task.py	836	oversize: split by concern planned

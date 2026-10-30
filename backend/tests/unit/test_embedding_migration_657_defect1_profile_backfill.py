@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.tasks import embedding_migration_v4 as mig
+from app.tasks import embedding_migration_v4_finalize as mig
 
 
 @pytest.mark.unit

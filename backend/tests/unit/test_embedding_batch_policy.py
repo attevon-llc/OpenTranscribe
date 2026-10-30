@@ -23,7 +23,9 @@ import pytest
 
 from app.models.speaker import SpeakerProfile
 from app.tasks import embedding_consistency_repair as repair
-from app.tasks import embedding_migration_v4 as mig
+from app.tasks import embedding_migration_v4_finalize as mig_finalize
+from app.tasks import embedding_migration_v4_scope as mig_scope
+from app.tasks import embedding_migration_v4_writer as mig_writer
 from app.tasks import speaker_embedding_migration as normalize
 from tests.fixtures.privacy_switches import file_in
 from tests.fixtures.privacy_switches import make_org
@@ -42,7 +44,7 @@ def _bridge(db_session):
 @pytest.fixture
 def bridged(monkeypatch, db_session):
     scope = _bridge(db_session)
-    for module in (repair, mig, normalize):
+    for module in (repair, mig_scope, mig_finalize, normalize):
         # `raising=False`: a tree without the gate has no `session_scope` here, and the
         # red-check of these tests must fail on the ASSERTION (a document was written), not
         # on this fixture.
@@ -142,11 +144,11 @@ def test_the_v4_migration_writes_a_files_documents_only_when_allowed(
     bulk: list[int] = []
     skipped: list[int] = []
     monkeypatch.setattr(
-        mig, "_bulk_write_v4_embeddings", lambda docs: note(bulk, len(docs), len(docs))
+        mig_writer, "_bulk_write_v4_embeddings", lambda docs: note(bulk, len(docs), len(docs))
     )
-    monkeypatch.setattr(mig, "_count_skipped_by_policy", lambda: skipped.append(1))
+    monkeypatch.setattr(mig_scope, "_count_skipped_by_policy", lambda: skipped.append(1))
 
-    written = mig._embedding_result_writer(
+    written = mig_writer._embedding_result_writer(
         _prepared(normal_user, media_file, speaker), _results(speaker)
     )
 
@@ -189,7 +191,7 @@ def test_the_v4_profile_backfill_writes_a_profile_only_when_its_scope_is_allowed
         lambda **kwargs: note(stored, kwargs["profile_uuid"], True),
     )
 
-    written = mig.migrate_profile_documents_to_v4(client, "speakers_v4")
+    written = mig_finalize.migrate_profile_documents_to_v4(client, "speakers_v4")
 
     assert written == (1 if allowed else 0)
     assert stored == ([str(profile.uuid)] if allowed else [])
@@ -205,14 +207,14 @@ def test_the_scopes_off_by_policy_are_found_from_files_and_profiles(bridged, nor
     bridged.add(profile)
     bridged.flush()
 
-    off = mig._scopes_off_by_policy()
+    off = mig_scope._scopes_off_by_policy()
 
     assert (normal_user.id, off_org.id) in off
     assert (normal_user.id, on_org.id) not in off
 
 
 def test_the_exclusion_clauses_name_each_off_organization_once():
-    clauses = mig._off_scope_exclusion([(1, 7), (2, 7), (3, None)])
+    clauses = mig_scope._off_scope_exclusion([(1, 7), (2, 7), (3, None)])
 
     assert len(clauses) == 2
     by_users = {tuple(c["bool"]["filter"][0]["terms"]["user_id"]): c for c in clauses}
@@ -257,12 +259,12 @@ def _finalize(skipped_files: int, off_scopes: list[tuple[int, int | None]]):
     }
     with (
         patch.multiple("app.services.opensearch_service", **service_attrs),
-        patch.multiple(mig, **attrs),
-        patch.object(mig.EmbeddingModeService, "clear_cache"),
-        patch.object(mig.migration_progress, "clear_status"),
+        patch.multiple(mig_finalize, **attrs),
+        patch.object(mig_finalize.EmbeddingModeService, "clear_cache"),
+        patch.object(mig_finalize.migration_progress, "clear_status"),
         patch("app.services.migration_lock_service.migration_lock.deactivate"),
     ):
-        result = mig.finalize_v4_migration_task.run(user_id=1)
+        result = mig_finalize.finalize_v4_migration_task.run(user_id=1)
     return result, count_bodies, profile_calls
 
 
@@ -303,17 +305,17 @@ def test_finalize_refuses_to_swap_when_the_policy_cannot_be_read():
             swap_speaker_alias=lambda target: note(swaps, target, {"status": "success"}),
         ),
         patch.multiple(
-            mig,
+            mig_finalize,
             get_speaker_index_v4=lambda: "speakers_v4",
             get_speaker_index=lambda: "speakers",
             _scopes_off_by_policy=unreadable,
             send_ws_event=lambda *a, **k: None,
         ),
-        patch.object(mig.EmbeddingModeService, "clear_cache"),
-        patch.object(mig.migration_progress, "clear_status"),
+        patch.object(mig_finalize.EmbeddingModeService, "clear_cache"),
+        patch.object(mig_finalize.migration_progress, "clear_status"),
         patch("app.services.migration_lock_service.migration_lock.deactivate"),
     ):
-        result = mig.finalize_v4_migration_task.run(user_id=1)
+        result = mig_finalize.finalize_v4_migration_task.run(user_id=1)
 
     assert result["status"] == "error"
     assert swaps == []

@@ -56,7 +56,7 @@ def _combined_result_writer(
 
     # Write embeddings to OpenSearch
     try:
-        from app.tasks.embedding_migration_v4 import _embedding_result_writer
+        from app.tasks.embedding_migration_v4_writer import _embedding_result_writer
 
         emb_count = _embedding_result_writer(prepared, results_by_model)
         count += emb_count

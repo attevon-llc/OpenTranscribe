@@ -229,7 +229,10 @@ backend/app/tasks/auto_labeling.py	1	ratchet: may only go down
 backend/app/tasks/cleanup.py	6	ratchet: may only go down
 backend/app/tasks/combined_speaker_analysis_task.py	4	ratchet: may only go down
 backend/app/tasks/embedding_consistency_repair.py	2	ratchet: may only go down
-backend/app/tasks/embedding_migration_v4.py	15	ratchet: may only go down
+backend/app/tasks/embedding_migration_v4.py	3	ratchet: may only go down
+backend/app/tasks/embedding_migration_v4_finalize.py	5	ratchet: may only go down
+backend/app/tasks/embedding_migration_v4_scope.py	6	ratchet: may only go down
+backend/app/tasks/embedding_migration_v4_writer.py	1	ratchet: may only go down
 backend/app/tasks/erasure_reconciliation.py	3	ratchet: may only go down
 backend/app/tasks/imohash_recompute.py	2	ratchet: may only go down
 backend/app/tasks/ingest_artifacts_task.py	1	ratchet: may only go down

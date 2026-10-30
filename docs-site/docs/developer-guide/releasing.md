@@ -119,7 +119,7 @@ rather than silently ignored.
 | `build` | Local images with the version build-args — **pushes nothing** | no |
 | `scan` | Trivy/Grype against the **locally built** images | no |
 | `rehearse` | Fresh-install, upgrade and lite-mode scenarios; **needs the live stack stopped** (it can stop and restore it for you, with approval) | no |
-| `tag` | Annotated tag + push; cuts (or confirms) `release/<major>.<minor>` from the tag | **yes** |
+| `tag` | Refuses unless the ledger's `test`/`build`/`scan`/`rehearse` steps are `done` or `overridden` **at HEAD** (`artifacts-match-tagged-commit`, every stale stage named; `--force-tag "reason"` overrides). Then annotated tag + push; cuts (or confirms) `release/<major>.<minor>` from the tag | **yes** |
 | `publish` | Multi-arch push of `:vX.Y.Z` only | **yes** |
 | `smoke` | Install from Docker Hub; verify each image's capability (CUDA vs CPU) and architecture; **needs the live stack stopped** | no |
 | `promote` | Move `:latest` **by digest** — refuses to move it backwards on a backport | **yes** |
@@ -283,7 +283,11 @@ The scenarios run under the installer's stock container names and ports
 cannot run alongside a live deployment. `./scripts/release.sh rehearse` will stop
 the stack (`./opentr.sh stop`, data preserved) and restart it afterwards, but only
 with approval: `--yes`, `RELEASE_AUTO_STOP_STACK=true`, or an interactive `y`. With
-none of those and no tty it refuses with exit 3 and prints the command. The
+none of those and no tty it refuses with exit 3 and prints the command. Any other
+stack holding the stock ports, including an `otfresh-*` fresh stack, is also exit 3
+(`live-stack-stopped`), naming the owning project and its exact stop command
+(`./opentr.sh stop --fresh <name>`); `rehearse` does not auto-stop those, and
+`preflight` warns about them. The
 individual scenario scripts never stop anything: `lib/guardrails.sh` refuses to start
 if any `opentranscribe-*` container exists or any of those ports is bound. It
 also refuses any path under the live data directories and requires an

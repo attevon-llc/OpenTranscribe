@@ -365,6 +365,13 @@ stages:
         description: The version is not already tagged
         severity: blocking
 
+      - id: artifacts-match-tagged-commit
+        description: >-
+          The ledger's test, build, scan and rehearse steps each have status done or
+          overridden and a recorded sha equal to HEAD — built = scanned = rehearsed =
+          tagged. Every stale stage is named. Overridable only via --force-tag with a reason.
+        severity: blocking
+
       - id: version-consistency-pre-tag
         description: check-version-consistency.py --mode pre-tag passes (ci checks plus a blocking CHANGELOG section)
         severity: blocking

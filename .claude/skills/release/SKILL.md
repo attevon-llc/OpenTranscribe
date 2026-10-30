@@ -107,6 +107,13 @@ decision (an accepted CVE with no reachable path), never to make a red run green
   exercise what a real user gets. Without approval both refuse (exit 3). `rehearse`
   alone can stop the stack and restart it afterwards when given `--yes`,
   `RELEASE_AUTO_STOP_STACK=true`, or an interactive `y`; `smoke` never stops it.
+  A stack that owns the stock ports under any other project (an `otfresh-*` test stack)
+  is also exit 3, naming the project and the stop command (`./opentr.sh stop --fresh
+  <name>`); `preflight` warns. `scripts/lib/stock-port-owners.sh` is the one definition.
+- **`tag` refuses stale evidence.** `artifacts-match-tagged-commit` needs `test`,
+  `build`, `scan` and `rehearse` each `done`/`overridden` in the ledger with a recorded
+  sha equal to HEAD; every stale stage is named. Any commit after a stage (including
+  committing scan reports) makes it stale: re-run it, or `--force-tag "reason"`.
 - **The branch under test must be pushed.** `rehearse` downloads the manifest files
   from `TO_BRANCH` (default: the current branch) and exits 3 if it is not on origin.
 - **`test` is the opposite:** it needs the dev stack UP (it probes Postgres on 5176).

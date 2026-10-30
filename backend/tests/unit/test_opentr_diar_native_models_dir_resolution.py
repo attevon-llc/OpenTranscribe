@@ -35,8 +35,6 @@ pytestmark = pytest.mark.skipif(
     not OPENTR.exists(), reason="opentr.sh not present in this checkout"
 )
 
-_LEGACY_PATH_LITERAL = "/mnt/nvm/repos/diar-native/models_folded"
-
 
 def _function_body(text: str, name: str) -> str:
     """Source of one top-level ``name() { ... }`` block, closing brace included."""
@@ -48,18 +46,22 @@ def _function_body(text: str, name: str) -> str:
 def _resolve(tmp_path: Path, *, env: dict[str, str]) -> str:
     """Run the REAL `resolve_diar_native_models_dir` body via subprocess bash.
 
-    The hardcoded legacy literal is substituted for a controllable temp directory
-    so the "legacy path populated" branch can be exercised without depending on
-    (or touching) this workstation's real diar-native export. `MODEL_CACHE_DIR` is
+    DIAR_NATIVE_LEGACY_MODELS_DIR points at a controllable temp directory so the
+    "legacy path populated" branch can be exercised without depending on (or
+    touching) any real diar-native export. `MODEL_CACHE_DIR` is
     always set to an absolute path so the resolved value is directly comparable —
     the function's own `./models` fallback is relative-to-cwd by design, not a bug.
     """
     fake_legacy = tmp_path / "fake-legacy"
     body = _function_body(OPENTR.read_text(encoding="utf-8"), "resolve_diar_native_models_dir")
-    assert _LEGACY_PATH_LITERAL in body, "legacy path literal moved -- update this test"
-    body = body.replace(_LEGACY_PATH_LITERAL, str(fake_legacy))
+    assert "/mnt/" not in body, "a machine-specific path crept back into the resolver"
 
-    full_env = {"MODEL_CACHE_DIR": str(tmp_path / "models"), **env, "PATH": "/usr/bin:/bin"}
+    full_env = {
+        "MODEL_CACHE_DIR": str(tmp_path / "models"),
+        "DIAR_NATIVE_LEGACY_MODELS_DIR": str(fake_legacy),
+        **env,
+        "PATH": "/usr/bin:/bin",
+    }
     script = f'{body}\nresolve_diar_native_models_dir\necho "$DIAR_NATIVE_MODELS_DIR"\n'
     result = subprocess.run(
         ["bash", "-c", script],
@@ -120,3 +122,15 @@ def test_an_explicit_env_var_always_wins_regardless_of_directory_contents(tmp_pa
     )
 
     assert resolved == str(explicit)
+
+
+def test_an_unset_legacy_variable_means_no_legacy_probe(tmp_path: Path):
+    """No developer path is baked in: with the variable empty, a populated directory
+    elsewhere is never consulted and the standard path is returned."""
+    legacy = tmp_path / "fake-legacy"
+    legacy.mkdir(parents=True)
+    (legacy / "segmentation-3.0.onnx").write_bytes(b"onnx")
+
+    resolved = _resolve(tmp_path, env={"HOME": str(tmp_path), "DIAR_NATIVE_LEGACY_MODELS_DIR": ""})
+
+    assert resolved == str(tmp_path / "models" / "diar-native")

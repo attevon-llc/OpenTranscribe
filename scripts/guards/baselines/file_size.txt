@@ -212,7 +212,7 @@ frontend/src/stores/auth.ts	1247	oversize: split by concern planned
 frontend/src/stores/chat.ts	834	oversize: split by concern planned
 frontend/src/stores/websocket.test.ts	881	oversize: split by concern planned
 frontend/src/stores/websocket.ts	1508	oversize: split by concern planned
-opentr.sh	4897	oversize: split by concern planned
+opentr.sh	4893	oversize: split by concern planned
 opentranscribe.sh	2593	oversize: split by concern planned
 scripts/CLAUDE.md	1179	oversize: split by concern planned
 scripts/audit-route-coverage.py	849	oversize: split by concern planned

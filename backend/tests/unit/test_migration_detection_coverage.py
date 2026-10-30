@@ -89,22 +89,27 @@ def _chain_revisions() -> list[str]:
 def _arm_revisions() -> set[str]:
     """Every revision id ``_detect_schema_version()`` can return.
 
-    Read by AST rather than by calling the function: the return value depends on a live
-    schema, and what this module is about is the *set of arms that exist*.
+    Read without calling the function: the return value depends on a live schema, and what
+    this module is about is the *set of arms that exist*. The arms are data, the ``LADDER``
+    table in ``app/db/schema_detect/ladder.py``; the ``v010_baseline`` fallback is a literal
+    ``return`` in ``_detect_schema_version``, read by AST.
     """
+    from app.db.schema_detect.ladder import LADDER
+
     tree = ast.parse(_MIGRATIONS_PATH.read_text())
     fn = next(
         node
         for node in ast.walk(tree)
         if isinstance(node, ast.FunctionDef) and node.name == "_detect_schema_version"
     )
-    return {
+    fallbacks = {
         node.value.value
         for node in ast.walk(fn)
         if isinstance(node, ast.Return)
         and isinstance(node.value, ast.Constant)
         and isinstance(node.value.value, str)
     }
+    return {revision for _, revision in LADDER} | fallbacks
 
 
 def _upgrade_source(revision: str) -> str:
@@ -184,7 +189,7 @@ def test_the_arm_extraction_finds_the_ladder():
     """Guard the guard: an extraction that matched nothing would exempt everything.
 
     Every test above compares against ``_arm_revisions()``. If a refactor renamed
-    ``_detect_schema_version`` or moved the returns behind a lookup table, the set would
+    ``_detect_schema_version``, dropped its fallback ``return`` or emptied ``LADDER``, the set would
     quietly go empty and ``test_every_revision_has_a_detection_arm_or_an_exemption`` would
     report only the 8 exemptions' worth of silence — a clean run for a dead check.
     """

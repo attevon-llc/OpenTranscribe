@@ -58,7 +58,7 @@ All schema changes must use Alembic migrations:
 1. Create migration in `backend/alembic/versions/`
 2. Use idempotent SQL (`IF NOT EXISTS`) for safety
 3. Update SQLAlchemy models in `backend/app/models/`
-4. Add a detection guard for the new revision in `_detect_schema_version()` in `backend/app/db/migrations.py`
+4. Add a detection guard for the new revision in `_detect_schema_version()`'s ladder (`backend/app/db/schema_detect/`)
 5. Test the full chain from scratch on a throwaway stack (`./opentr.sh start dev --fresh <name>`) and
    a rebuild-and-restart over an existing database. Avoid `./opentr.sh reset dev` unless you intend to delete
    the dev data.

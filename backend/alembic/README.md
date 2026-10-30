@@ -54,7 +54,7 @@ All schema changes must use Alembic migrations:
    - Do not use `alembic revision --autogenerate` output as-is (hash id, non-idempotent)
 3. Update SQLAlchemy models in `backend/app/models/` to match
 4. Update Pydantic schemas in `backend/app/schemas/` if needed
-5. Add a detection guard for the new revision in `_detect_schema_version()` in `backend/app/db/migrations.py`
+5. Add a detection guard for the new revision in `_detect_schema_version()`'s ladder (`backend/app/db/schema_detect/`)
 6. Test with `./opentr.sh reset dev` (drops DB, runs full chain from v010) and by restarting over an existing database
 
 The full procedure and the traps (number collisions between parallel branches, detection arms) are in `app/db/CLAUDE.md` and `alembic/CLAUDE.md`.

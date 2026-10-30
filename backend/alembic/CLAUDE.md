@@ -90,9 +90,9 @@ the one in the next section, which rots.
 
 ## How it connects
 
-- Every new revision **must** get a detection arm in `_detect_schema_version()`
-  (`app/db/migrations.py`), inserted at the TOP of the newest-first ladder and keyed on a marker
-  column/table/constraint unique to the revision. Skip it and untracked DBs are mis-stamped to
+- Every new revision **must** get a detection arm in `_detect_schema_version()`'s ladder
+  (`app/db/schema_detect/`: a probe in the newest era module and an arm at the TOP of its
+  `ARMS`), keyed on a marker column/table/constraint unique to the revision. Skip it and untracked DBs are mis-stamped to
   the previous version and never get your DDL.
 - Pair the revision with a consistency test modelled on
   `tests/unit/test_v37{7,8}_migration_consistency.py`: asserts `down_revision`, that the

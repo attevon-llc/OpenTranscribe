@@ -238,7 +238,7 @@ All schema changes use **Alembic migrations** exclusively:
 - The database is bootstrapped entirely through Alembic (`database/init_db.sql` is a legacy reference and is not used)
 - Migrations run automatically on backend startup
 - Idempotent SQL (`IF NOT EXISTS`) for safety
-- Detection of the schema version of an existing, untracked database lives in `app/db/migrations.py` (`_detect_schema_version()`)
+- Detection of the schema version of an existing, untracked database lives in `app/db/migrations.py` (`_detect_schema_version()`), over the per-era probes and ladder in `app/db/schema_detect/`
 
 ## Architecture Design Decisions
 

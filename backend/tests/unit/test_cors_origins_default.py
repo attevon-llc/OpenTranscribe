@@ -76,11 +76,11 @@ def test_blank_env_value_means_unset(monkeypatch):
 
 def test_startup_logs_the_effective_origin_list(monkeypatch, caplog):
     """The default now depends on ENVIRONMENT, so the resolved list is stated at boot."""
-    from app.main import _validate_production_secrets
+    from app.core.startup_validation import _validate_production_secrets
 
     monkeypatch.setattr(settings, "ENVIRONMENT", "development")
     monkeypatch.setattr(settings, "CORS_ORIGINS", ["https://app.example.com"])
-    with caplog.at_level(logging.INFO, logger="app.main"):
+    with caplog.at_level(logging.INFO, logger="app.core.startup_validation"):
         _validate_production_secrets()
     lines = [r.getMessage() for r in caplog.records if "CORS allowed origins" in r.getMessage()]
     assert lines == [
@@ -89,11 +89,11 @@ def test_startup_logs_the_effective_origin_list(monkeypatch, caplog):
 
 
 def test_startup_log_names_an_empty_list_explicitly(monkeypatch, caplog):
-    from app.main import _validate_production_secrets
+    from app.core.startup_validation import _validate_production_secrets
 
     monkeypatch.setattr(settings, "ENVIRONMENT", "development")
     monkeypatch.setattr(settings, "CORS_ORIGINS", [])
-    with caplog.at_level(logging.INFO, logger="app.main"):
+    with caplog.at_level(logging.INFO, logger="app.core.startup_validation"):
         _validate_production_secrets()
     lines = [r.getMessage() for r in caplog.records if "CORS allowed origins" in r.getMessage()]
     assert lines == ["CORS allowed origins: none (same-origin requests need no entry)"]

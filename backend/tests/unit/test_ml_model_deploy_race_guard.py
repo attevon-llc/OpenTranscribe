@@ -2,7 +2,7 @@
 
 Root cause, found live in a v0.5.0 fresh-install rehearsal: issue #625 gave the neural-search
 bootstrap TWO independent callers -- the one-shot startup path
-(``app.main._initialize_neural_search``) and a beat self-heal every 10 minutes
+(``app.startup.warmups._initialize_neural_search``) and a beat self-heal every 10 minutes
 (``app.tasks.search_maintenance_task.neural_search_bootstrap_task``). ``find_model_by_name``
 matches a model the instant OpenSearch ML Commons creates its meta document (state
 ``REGISTERING``), long before it is deployable. ``ensure_model_deployed`` used to see

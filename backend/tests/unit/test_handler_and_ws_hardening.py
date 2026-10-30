@@ -313,8 +313,8 @@ def test_testing_shortcuts_are_inert_when_hardened(monkeypatch):
 
 def test_hardened_refuses_wildcard_cors_with_credentials(monkeypatch):
     from app.core.config import settings
+    from app.core.startup_validation import _validate_production_secrets
     from app.core.startup_validation import service_credential_settings
-    from app.main import _validate_production_secrets
 
     monkeypatch.setattr(settings, "ENVIRONMENT", "production")
     monkeypatch.setattr(settings, "JWT_SECRET_KEY", "a-real-and-sufficiently-long-secret")
@@ -333,7 +333,7 @@ def test_hardened_refuses_wildcard_cors_with_credentials(monkeypatch):
 def test_development_tolerates_testing_flag_and_wildcard(monkeypatch):
     """The test suite itself sets TESTING=true — dev must not refuse to boot."""
     from app.core.config import settings
-    from app.main import _validate_production_secrets
+    from app.core.startup_validation import _validate_production_secrets
 
     monkeypatch.setattr(settings, "ENVIRONMENT", "development")
     monkeypatch.setattr(settings, "CORS_ORIGINS", ["*"])

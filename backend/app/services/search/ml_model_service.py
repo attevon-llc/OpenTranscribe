@@ -56,7 +56,7 @@ _DEPLOYMENT_MAX_WAIT = 120  # 2 minutes max wait for deployment
 #: created to FAILED in ~6 seconds, so no poll duration could have saved it.
 #:
 #: The race exists because #625 gave neural-search bootstrap TWO independent
-#: callers -- the one-shot startup path (``app.main._initialize_neural_search``)
+#: callers -- the one-shot startup path (``app.startup.warmups._initialize_neural_search``)
 #: and the beat self-heal (``app.tasks.search_maintenance_task.neural_search_bootstrap_task``,
 #: every 10 minutes) -- and `find_model_by_name` matches a model the instant ML
 #: Commons creates its meta document (state REGISTERING), long before it is

@@ -183,7 +183,7 @@ def test_hardened_honors_explicit_initial_admin(monkeypatch):
 
 def test_hardened_refuses_default_jwt_secret(monkeypatch):
     from app.core.config import settings
-    from app.main import _validate_production_secrets
+    from app.core.startup_validation import _validate_production_secrets
 
     monkeypatch.setattr(settings, "ENVIRONMENT", "production")
     monkeypatch.setattr(settings, "JWT_SECRET_KEY", "this_should_be_changed_in_production")
@@ -195,7 +195,7 @@ def test_hardened_refuses_default_jwt_secret(monkeypatch):
 def test_hardened_refuses_placeholder_jwt_secret(monkeypatch):
     """Catches a hand-copied .env.example rather than a generated one."""
     from app.core.config import settings
-    from app.main import _validate_production_secrets
+    from app.core.startup_validation import _validate_production_secrets
 
     monkeypatch.setattr(settings, "ENVIRONMENT", "production")
     monkeypatch.setattr(settings, "JWT_SECRET_KEY", "CHANGE_ME_auto_generated_on_install")
@@ -207,7 +207,7 @@ def test_hardened_refuses_placeholder_jwt_secret(monkeypatch):
 def test_unset_environment_still_refuses_default_secret(monkeypatch):
     """The exact regression: no ENVIRONMENT set must NOT mean 'skip the checks'."""
     from app.core.config import settings
-    from app.main import _validate_production_secrets
+    from app.core.startup_validation import _validate_production_secrets
 
     monkeypatch.setattr(settings, "ENVIRONMENT", "")
     monkeypatch.setattr(settings, "JWT_SECRET_KEY", "this_should_be_changed_in_production")
@@ -219,7 +219,7 @@ def test_unset_environment_still_refuses_default_secret(monkeypatch):
 def test_development_boots_with_defaults(monkeypatch):
     """Self-host and the test suite must still start without configuring anything."""
     from app.core.config import settings
-    from app.main import _validate_production_secrets
+    from app.core.startup_validation import _validate_production_secrets
 
     monkeypatch.setattr(settings, "ENVIRONMENT", "development")
     monkeypatch.setattr(settings, "JWT_SECRET_KEY", "this_should_be_changed_in_production")

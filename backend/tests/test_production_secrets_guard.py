@@ -9,8 +9,8 @@ production with publicly-known JWT/encryption keys.
 import pytest
 
 from app.core.config import settings
+from app.core.startup_validation import _validate_production_secrets
 from app.core.startup_validation import service_credential_settings
-from app.main import _validate_production_secrets
 from tests.helpers import does_not_raise
 
 STRONG_JWT = "a" * 128
@@ -207,7 +207,7 @@ def test_allow_insecure_cookies_warns_in_production(production_settings, caplog)
     finding on the original cookie fix.
     """
     production_settings.setattr(settings, "ALLOW_INSECURE_COOKIES", True)
-    with caplog.at_level("WARNING", logger="app.main"):
+    with caplog.at_level("WARNING", logger="app.core.startup_validation"):
         _validate_production_secrets()
 
     assert any("ALLOW_INSECURE_COOKIES" in record.message for record in caplog.records)
@@ -215,7 +215,7 @@ def test_allow_insecure_cookies_warns_in_production(production_settings, caplog)
 
 def test_no_allow_insecure_cookies_warning_when_the_flag_is_off(production_settings, caplog):
     production_settings.setattr(settings, "ALLOW_INSECURE_COOKIES", False)
-    with caplog.at_level("WARNING", logger="app.main"):
+    with caplog.at_level("WARNING", logger="app.core.startup_validation"):
         _validate_production_secrets()
 
     assert not any("ALLOW_INSECURE_COOKIES" in record.message for record in caplog.records)

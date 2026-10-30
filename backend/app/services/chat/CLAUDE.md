@@ -48,7 +48,7 @@ Each stage is its own module so the two security-critical ones (`redactor.py`,
 `get_reranker()` is lazy, so the first chat in each fresh API process paid the cold load
 inside retrieval. Measured in the dev backend container, fresh process, host load average
 59-90 on 48 cores: **9.9-12.3 s** for the first `get_reranker()` (6 runs); the cloud report
-was ~15 s. `main.lifespan` → `_start_reranker_warmup()` → `reranker_warmup.start_reranker_warmup()`
+was ~15 s. `main.lifespan` → `startup.warmups._start_reranker_warmup()` → `reranker_warmup.start_reranker_warmup()`
 now does that load on a daemon thread: the lifespan pays `Thread.start()` (**0.4-4 ms**, 3
 runs), and once the thread finishes the first `get_reranker()` is **0.000 s**.
 

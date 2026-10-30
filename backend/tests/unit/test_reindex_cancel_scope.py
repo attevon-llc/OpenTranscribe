@@ -326,7 +326,7 @@ def test_an_uncancelled_coordinator_runs(fake_redis):
 
 
 def test_the_two_key_shapes_match_what_the_startup_sweep_expects(fake_redis):
-    """``app/main.py`` sweeps ``reindex_cancel:*`` on API restart, deliberately.
+    """``app/startup/maintenance.py`` sweeps ``reindex_cancel:*`` on API restart, deliberately.
 
     A cancel request is meaningless after a restart and clearing one can only
     cause a reindex to run, never to delete. ``reindex_fanout:*`` is deliberately

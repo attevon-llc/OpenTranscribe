@@ -59,7 +59,9 @@ backend/app/core/task_liveness.py	11	ratchet: may only go down
 backend/app/core/task_replay.py	7	ratchet: may only go down
 backend/app/core/worker_metrics.py	9	ratchet: may only go down
 backend/app/db/migrations.py	2	ratchet: may only go down
-backend/app/main.py	26	ratchet: may only go down
+backend/app/main.py	11	ratchet: may only go down
+backend/app/startup/maintenance.py	8	ratchet: may only go down
+backend/app/startup/warmups.py	7	ratchet: may only go down
 backend/app/scripts/batch_speaker_matching.py	1	ratchet: may only go down
 backend/app/scripts/probe_torch_thread_scope.py	1	ratchet: may only go down
 backend/app/scripts/reingest_minio.py	2	ratchet: may only go down

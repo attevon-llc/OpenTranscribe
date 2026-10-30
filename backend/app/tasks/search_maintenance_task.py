@@ -199,7 +199,7 @@ def neural_search_bootstrap_task() -> dict[str, Any]:
     """Self-heal neural search every 10 minutes (issue #625).
 
     Runs the same idempotent ``neural_bootstrap.ensure_neural_search_bootstrap`` the startup
-    fast path in ``app.main`` runs once. A healthy deployment pays only the cheap probe on
+    fast path in ``app.startup.warmups`` runs once. A healthy deployment pays only the cheap probe on
     every tick; a degraded one retries with exponential backoff (capped at
     ``NEURAL_BOOTSTRAP_MAX_BACKOFF_SECONDS``) and never gives up — see
     ``backend/app/services/search/CLAUDE.md``'s "The bootstrap self-heals" section for why

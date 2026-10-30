@@ -21,9 +21,9 @@ from fixtures.tenant_rows import make_tag
 from app.core.config import settings
 from app.models.group import UserGroup
 from app.models.group import UserGroupMember
-from app.models.media import Tag
 from app.models.organization import OrganizationMembership
 from app.models.sharing import TagShare
+from app.models.tag import Tag
 from app.services.platform_access import reset_tenancy_mode_cache
 
 

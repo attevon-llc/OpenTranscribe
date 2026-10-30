@@ -743,7 +743,7 @@ def test_check_file_access_honours_an_explicit_tenant(world, relation, stamped, 
 
 
 def test_check_collection_access_honours_an_explicit_tenant(world):
-    from app.models.media import Collection
+    from app.models.collection import Collection
     from app.services.permission_service import PermissionService
 
     w = world

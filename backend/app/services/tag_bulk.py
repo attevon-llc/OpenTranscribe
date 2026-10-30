@@ -44,9 +44,9 @@ from sqlalchemy.orm import Session
 
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.core.exceptions import AccessDeniedError
-from app.models.media import FileTag
 from app.models.media import MediaFile
-from app.models.media import Tag
+from app.models.tag import FileTag
+from app.models.tag import Tag
 from app.services.permission_service import PermissionService
 from app.services.platform_bypass import PlatformBypass
 from app.services.tag_service import InvalidTagNameError

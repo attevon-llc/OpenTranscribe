@@ -12,8 +12,8 @@ import uuid as uuid_pkg
 
 import pytest
 
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 from tests.fixtures.privacy_switches import set_instance_switch
 from tests.fixtures.speaker_cleanup_seams import make_cluster
 from tests.fixtures.speaker_cleanup_seams import make_file

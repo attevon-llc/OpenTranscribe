@@ -4,8 +4,8 @@ import logging
 from typing import TYPE_CHECKING
 
 from app.core.constants import SPEAKER_CONFIDENCE_HIGH
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 from app.services import embedding_mode_service
 from app.services.speaker_matching.thresholds import MATCHING_ORIGIN_TASK
 from app.utils.speaker_identity_detail import ORIGIN_PROFILE_PROPAGATION

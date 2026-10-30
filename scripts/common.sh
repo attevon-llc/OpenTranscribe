@@ -1039,7 +1039,7 @@ pg_restore_restart_decision() {
 # Speaker voiceprints exist in exactly ONE place: the OpenSearch `speakers_v*` indices.
 # PostgreSQL stores no embedding vectors at all — `SpeakerProfile` carries only
 # `embedding_count` + `last_embedding_update`, and `Speaker`/`SpeakerCluster` have no
-# vector column (backend/app/models/media.py) — so a bare `pg_dump` leaves a deployment
+# vector column (backend/app/models/speaker.py) — so a bare `pg_dump` leaves a deployment
 # with NO recoverable copy of its biometric data. Voiceprints are not derived data:
 # re-deriving one needs the source media (which may be gone) plus a GPU re-embed run.
 #

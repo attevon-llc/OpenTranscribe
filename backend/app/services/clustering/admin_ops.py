@@ -6,9 +6,9 @@ from uuid import uuid4
 
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
-from app.models.media import Speaker
-from app.models.media import SpeakerCluster
-from app.models.media import SpeakerClusterMember
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCluster
+from app.models.speaker import SpeakerClusterMember
 from app.services.permission_service import file_ids_in_scope
 from app.services.speaker_cleanup import SpeakerImpact
 from app.services.speaker_cleanup import detach_from_cluster

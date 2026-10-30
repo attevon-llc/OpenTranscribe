@@ -57,7 +57,7 @@ from app.core.constants import FUZZY_MATCH_THRESHOLD
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import MediaFile
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import hidden_suggestion_clause
 from app.services.privacy.redact_view import machine_identity_clauses

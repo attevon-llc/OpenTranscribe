@@ -27,8 +27,8 @@ def search_corpus_user():
     from app.core.security import get_password_hash
     from app.db.base import SessionLocal
     from app.models.media import MediaFile
-    from app.models.media import Speaker
     from app.models.media import TranscriptSegment
+    from app.models.speaker import Speaker
     from app.models.user import User
 
     email = f"searchqual-{uuid.uuid4().hex[:8]}@example.invalid"

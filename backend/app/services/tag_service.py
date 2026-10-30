@@ -55,9 +55,9 @@ from app.core.constants import TAG_SOURCE_MANUAL
 from app.core.exceptions import OpenTranscribeError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
-from app.models.media import FileTag
 from app.models.media import MediaFile
-from app.models.media import Tag
+from app.models.tag import FileTag
+from app.models.tag import Tag
 
 logger = logging.getLogger(__name__)
 

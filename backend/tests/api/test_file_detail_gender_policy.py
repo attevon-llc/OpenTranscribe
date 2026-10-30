@@ -13,8 +13,8 @@ from __future__ import annotations
 import pytest
 from fastapi import status
 
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from tests.fixtures.privacy_switches import set_instance_switch
 from tests.fixtures.speaker_cleanup_seams import make_file
 from tests.fixtures.speaker_cleanup_seams import make_speaker

@@ -29,8 +29,8 @@ from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import Comment
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.models.user import User
 from app.services.content_audit import record_file_event
 from app.services.platform_bypass import PlatformBypass

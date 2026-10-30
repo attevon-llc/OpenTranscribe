@@ -3,7 +3,7 @@
 
 Issue #658: speaker voiceprints exist in exactly ONE place. PostgreSQL stores no
 embedding vectors at all — ``SpeakerProfile`` carries only ``embedding_count`` and
-``last_embedding_update`` (``backend/app/models/media.py``), and ``Speaker`` /
+``last_embedding_update`` (``backend/app/models/speaker.py``), and ``Speaker`` /
 ``SpeakerCluster`` have no vector column — so the ``speakers_v*`` indices are the
 sole copy of the deployment's biometric data. ``./opentr.sh backup`` was a bare
 ``pg_dump``, which means a stock deployment had **no recoverable copy of it**.

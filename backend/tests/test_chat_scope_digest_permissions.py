@@ -21,9 +21,9 @@ from __future__ import annotations
 
 import uuid as uuid_pkg
 
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.file_facts import FileFacts
-from app.models.media import Collection
-from app.models.media import CollectionMember
 from app.models.media import MediaFile
 from app.models.sharing import CollectionShare
 from app.schemas.chat import ChatScope

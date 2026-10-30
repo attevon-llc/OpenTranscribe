@@ -23,21 +23,21 @@ from app.db.base import Base
 from app.utils.uuid7 import uuid7
 
 if TYPE_CHECKING:
+    from app.models.collection import Collection
     from app.models.custom_vocabulary import CustomVocabulary
     from app.models.group import UserGroup
     from app.models.group import UserGroupMember
-    from app.models.media import Collection
     from app.models.media import Comment
     from app.models.media import MediaFile
-    from app.models.media import Speaker
-    from app.models.media import SpeakerCollection
-    from app.models.media import SpeakerProfile
     from app.models.organization import OrganizationMembership
     from app.models.password_history import PasswordHistory
     from app.models.prompt import SummaryPrompt
     from app.models.prompt import UserSetting
     from app.models.refresh_token import RefreshToken
     from app.models.sharing import CollectionShare
+    from app.models.speaker import Speaker
+    from app.models.speaker import SpeakerCollection
+    from app.models.speaker import SpeakerProfile
     from app.models.topic import TopicSuggestion
     from app.models.user_asr_settings import UserASRSettings
     from app.models.user_diarization_settings import UserDiarizationSettings

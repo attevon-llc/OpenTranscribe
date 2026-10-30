@@ -120,8 +120,8 @@ def _extract_file_metadata(db: Any, media_file: Any) -> dict[str, Any] | None:
         Dict with segments, title, speakers, tags, and other metadata,
         or None if the file has no segments.
     """
-    from app.models.media import Speaker
     from app.models.media import TranscriptSegment
+    from app.models.speaker import Speaker
     from app.services.permission_service import PermissionService
     from app.services.privacy.gates import voiceprints_allowed
     from app.utils.speaker_identity_source import visible_profile_id

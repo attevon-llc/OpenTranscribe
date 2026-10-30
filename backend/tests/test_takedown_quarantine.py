@@ -304,8 +304,8 @@ class TestCollectionCountsExcludeQuarantined:
     would leak the takedown."""
 
     def _mk_collection_with_files(self, db, owner, *, quarantine_one: bool):
-        from app.models.media import Collection
-        from app.models.media import CollectionMember
+        from app.models.collection import Collection
+        from app.models.collection import CollectionMember
 
         coll = Collection(
             uuid=uuid_pkg.uuid4(),

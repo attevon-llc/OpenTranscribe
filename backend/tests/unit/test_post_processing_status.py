@@ -565,7 +565,7 @@ def test_attribute_detection_declares_the_llm_step_before_its_own_outcome(
     from datetime import UTC
     from datetime import datetime
 
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
     from app.tasks import speaker_attribute_task as sat
 
     owner = _mk_user(bridged)

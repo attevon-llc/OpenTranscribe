@@ -7,9 +7,9 @@ from typing import NamedTuple
 from uuid import uuid4
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerCluster
-from app.models.media import SpeakerProfile
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCluster
+from app.models.speaker import SpeakerProfile
 from app.services.clustering.thresholds import CLUSTER_ASSIGNMENT_THRESHOLD
 from app.services.speaker_cleanup import blacklisted_profile_ids
 from app.services.speaker_cleanup import identity_conflicts_with_cluster

@@ -6,9 +6,9 @@ from typing import TYPE_CHECKING
 import numpy as np
 from sqlalchemy.orm import joinedload
 
-from app.models.media import Speaker
-from app.models.media import SpeakerCluster
-from app.models.media import SpeakerClusterMember
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCluster
+from app.models.speaker import SpeakerClusterMember
 
 if TYPE_CHECKING:
     from app.services.speaker_clustering_service import SpeakerClusteringService

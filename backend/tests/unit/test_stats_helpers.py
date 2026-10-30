@@ -64,9 +64,9 @@ from sqlalchemy import text
 
 from app.core.queues import CeleryQueues
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import Task
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.models.user import User
 from app.utils.stats_helpers import format_bytes
 from app.utils.stats_helpers import get_file_stats

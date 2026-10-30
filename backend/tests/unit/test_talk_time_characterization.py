@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.services.analytics_service import AnalyticsService
 from app.utils.transcript_builders import compute_speaker_stats
 

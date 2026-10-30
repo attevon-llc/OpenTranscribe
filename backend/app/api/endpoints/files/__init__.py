@@ -48,7 +48,7 @@ from app.core.exceptions import DomainError
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
 from app.models.media import MediaFile
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 from app.models.user import User
 from app.schemas.media import MediaFile as MediaFileSchema
 from app.schemas.media import MediaFileDetail

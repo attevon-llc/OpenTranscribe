@@ -222,7 +222,7 @@ def sync_speaker_profiles_to_opensearch(db) -> dict:
     Returns:
         Dict with counts: updated, skipped, errors.
     """
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized, skipping profile sync")

@@ -11,12 +11,12 @@ import uuid
 
 from app.core.enums import FileStatus
 from app.core.tenancy import UNSCOPED
-from app.models.media import FileTag
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import Tag
 from app.models.media import TranscriptSegment
 from app.models.organization import Organization
+from app.models.speaker import Speaker
+from app.models.tag import FileTag
+from app.models.tag import Tag
 from app.utils import db_helpers
 
 

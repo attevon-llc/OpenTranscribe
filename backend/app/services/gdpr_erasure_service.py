@@ -88,20 +88,20 @@ from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.models.chat import ChatConversation
+from app.models.collection import Collection
 from app.models.custom_vocabulary import CustomVocabulary
 from app.models.erasure import ErasureLedgerEntry
-from app.models.media import Collection
 from app.models.media import Comment
-from app.models.media import FileTag
 from app.models.media import MediaFile
-from app.models.media import SpeakerCollection
-from app.models.media import SpeakerProfile
-from app.models.media import Tag
 from app.models.media import Task
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.models.prompt import SummaryPrompt
 from app.models.prompt import UserSetting
+from app.models.speaker import SpeakerCollection
+from app.models.speaker import SpeakerProfile
+from app.models.tag import FileTag
+from app.models.tag import Tag
 from app.models.user import User
 from app.models.watch_source import WatchSource
 from app.services import erasure_ledger_service as ledger

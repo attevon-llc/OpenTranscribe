@@ -23,8 +23,8 @@ from sqlalchemy.orm import Session
 
 from app.models.media import Comment
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.models.user import User
 from app.services.redaction.export_policy import export_masking_is_pending
 from app.services.redaction.export_policy import resolve_export_reveal

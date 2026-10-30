@@ -117,7 +117,7 @@ def _call_update_task(db, speaker, old, new):
 def test_a_speaker_moved_out_of_a_profile_leaves_no_copy_of_its_voice_behind_whatever_the_switch(
     db_session, normal_user, speaker_os_seams, privacy_world, monkeypatch, allowed, move
 ):
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
     from tests.fixtures.speaker_cleanup_seams import VOICE_A
     from tests.fixtures.speaker_cleanup_seams import VOICE_B
     from tests.fixtures.speaker_cleanup_seams import cosine

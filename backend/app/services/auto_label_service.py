@@ -19,12 +19,12 @@ from app.core.constants import DEFAULT_AUTO_LABEL_CONFIDENCE_THRESHOLD
 from app.core.constants import FUZZY_MATCH_THRESHOLD
 from app.core.constants import TAG_SOURCE_AUTO_AI
 from app.core.constants import TAG_SOURCE_BULK_GROUP
-from app.models.media import Collection
-from app.models.media import CollectionMember
-from app.models.media import FileTag
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.media import MediaFile
-from app.models.media import Tag
 from app.models.prompt import UserSetting
+from app.models.tag import FileTag
+from app.models.tag import Tag
 from app.models.topic import TopicSuggestion
 from app.services.auto_llm_settings import TOPIC_USER_KEY
 from app.services.auto_llm_settings import resolve_auto_llm_flags

@@ -6,7 +6,7 @@ from typing import Any
 
 from sqlalchemy import func
 
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 from app.services import embedding_mode_service
 from app.services.speaker_matching.thresholds import MATCHING_ORIGIN_TASK
 from app.services.speaker_matching.thresholds import ConfidenceLevel

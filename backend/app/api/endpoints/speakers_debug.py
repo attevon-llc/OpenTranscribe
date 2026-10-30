@@ -17,8 +17,8 @@ from app.api.error_handlers import ErrorHandler
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 from app.models.user import User
 from app.services.permission_service import file_ids_in_scope
 from app.services.privacy.redact_view import PrivacyView

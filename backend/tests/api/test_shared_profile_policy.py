@@ -16,10 +16,10 @@ from typing import Any
 
 import pytest
 
-from app.models.media import Collection
-from app.models.media import CollectionMember
-from app.models.media import SpeakerProfile
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.sharing import CollectionShare
+from app.models.speaker import SpeakerProfile
 from app.services.permission_service import PermissionService
 from app.services.privacy.consent import VoiceprintConsentRequest
 from app.services.privacy.consent import clear_voiceprint_consent_hooks

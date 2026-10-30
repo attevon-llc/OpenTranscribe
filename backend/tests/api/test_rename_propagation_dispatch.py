@@ -18,8 +18,8 @@ from unittest.mock import patch
 import pytest
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 
 _DELAY = "app.tasks.rename_propagation_task.propagate_speaker_rename.delay"
 _TITLE_DELAY = "app.tasks.rename_propagation_task.propagate_title_rename.delay"

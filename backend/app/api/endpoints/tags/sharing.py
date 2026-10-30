@@ -25,8 +25,8 @@ from app.auth.audit import audit_logger
 from app.auth.audit import request_org_id
 from app.db.base import get_db
 from app.middleware.audit import get_request_context
-from app.models.media import Tag
 from app.models.sharing import TagShare
+from app.models.tag import Tag
 from app.models.user import User
 from app.schemas.media import TagShareCreate
 from app.schemas.media import TagShareTarget

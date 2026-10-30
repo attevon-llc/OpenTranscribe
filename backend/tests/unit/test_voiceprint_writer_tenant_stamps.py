@@ -188,8 +188,8 @@ def test_the_index_rebuild_carries_each_documents_organization_through(
     db_session, normal_user, monkeypatch
 ):
     from app.models.media import MediaFile
-    from app.models.media import Speaker
-    from app.models.media import SpeakerCluster
+    from app.models.speaker import Speaker
+    from app.models.speaker import SpeakerCluster
     from app.services.opensearch_service import repair
 
     cl = SpeakerCluster(uuid=uuid_pkg.uuid4(), user_id=normal_user.id, label="r", member_count=1)

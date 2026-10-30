@@ -114,7 +114,7 @@ def _chunks(values: Iterable[int]) -> Iterable[list[int]]:
 
 
 def _scope_speaker_ids(scope: PurgeScope) -> Any:
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     return select(Speaker.id).where(*scope.speaker_filters())
 
@@ -156,7 +156,7 @@ def not_in_scope(scope: PurgeScope, speaker_id_column: Any) -> Any:
     from sqlalchemy.orm import aliased
 
     from app.models.media import MediaFile
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     inner = aliased(Speaker)
     return ~exists(
@@ -184,7 +184,7 @@ def _revert_machine_identities(
         ``provenance_cleared`` counts rows that actually held an identity time, person or
         detail; ``suggestion_details_cleared`` rows that held a suggestion detail.
     """
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
     from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
 
     embedding_sources = sorted(EMBEDDING_SUGGESTION_SOURCES)
@@ -295,9 +295,9 @@ def _remove_from_promoted_clusters(
         that lost a member as ``(id, uuid, member_count_now, promoted_profile_id)``; the empty
         ones are already deleted.
     """
-    from app.models.media import Speaker
-    from app.models.media import SpeakerCluster
-    from app.models.media import SpeakerClusterMember
+    from app.models.speaker import Speaker
+    from app.models.speaker import SpeakerCluster
+    from app.models.speaker import SpeakerClusterMember
 
     promoted = select(SpeakerCluster.id).where(SpeakerCluster.promoted_to_profile_id.isnot(None))
     touched_ids: set[int] = set()
@@ -365,9 +365,9 @@ def _purge_clusters(
     deleted with its centroid. A cluster that also holds speakers of another scope loses only the
     in-scope members; its centroid is rebuilt from the rest.
     """
-    from app.models.media import Speaker
-    from app.models.media import SpeakerCluster
-    from app.models.media import SpeakerClusterMember
+    from app.models.speaker import Speaker
+    from app.models.speaker import SpeakerCluster
+    from app.models.speaker import SpeakerClusterMember
 
     in_scope = _scope_speaker_ids(scope)
     unpromoted = SpeakerCluster.promoted_to_profile_id.is_(None)
@@ -482,9 +482,9 @@ def purge_voiceprints_postgres(db: Session, scope: PurgeScope) -> PostgresPurge:
         label need refreshing (see :func:`app.services.privacy.purge.refresh_cleared_speakers`),
         and the ids the OpenSearch half and the verification need.
     """
-    from app.models.media import Speaker
-    from app.models.media import SpeakerMatch
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import Speaker
+    from app.models.speaker import SpeakerMatch
+    from app.models.speaker import SpeakerProfile
     from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
 
     counts: dict[str, int] = {
@@ -533,7 +533,7 @@ def purge_voiceprints_postgres(db: Session, scope: PurgeScope) -> PostgresPurge:
 
     removed, touched = _remove_from_promoted_clusters(db, machine_ids)
     counts["promoted_cluster_members_removed"] = removed
-    from app.models.media import SpeakerCluster
+    from app.models.speaker import SpeakerCluster
 
     owned_profiles = set(scope_profile_ids)
     emptied = [t for t in touched if t[2] == 0]
@@ -645,7 +645,7 @@ def rebuild_trimmed_clusters(db: Session, targets: VoiceprintTargets) -> list[di
     Returns:
         ``{"stage", "error"}`` per centroid that may still carry the purged voices.
     """
-    from app.models.media import SpeakerCluster
+    from app.models.speaker import SpeakerCluster
     from app.services.speaker_cleanup import SpeakerImpact
     from app.services.speaker_cleanup import reconcile_speaker_impact
 

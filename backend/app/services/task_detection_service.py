@@ -760,7 +760,7 @@ class TaskDetectionService:
             List of IncompletePostTranscriptionFile with missing flags set
         """
         from app.models.media import Analytics
-        from app.models.media import Speaker
+        from app.models.speaker import Speaker
         from app.models.topic import TopicSuggestion
 
         now = datetime.now(UTC)

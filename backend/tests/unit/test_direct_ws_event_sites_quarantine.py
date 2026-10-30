@@ -112,8 +112,8 @@ class TestSpeakerAttributeTaskWiring:
     def test_detect_speaker_attributes_speaker_updated_uses_file_uuid(
         self, bridge_session, monkeypatch
     ):
-        from app.models.media import Speaker
         from app.models.media import TranscriptSegment
+        from app.models.speaker import Speaker
         from app.tasks import speaker_attribute_task as sat
 
         db = bridge_session
@@ -345,7 +345,7 @@ class TestSpeakerMergeDisplayNameLeak:
         owner = _mk_user(db)
         file = _mk_file(db, owner=owner, quarantined=True)
 
-        from app.models.media import Speaker
+        from app.models.speaker import Speaker
 
         target = Speaker(
             uuid=str(uuid_pkg.uuid4()),
@@ -403,7 +403,7 @@ class TestSpeakerMergeDisplayNameLeak:
         owner = _mk_user(db)
         file = _mk_file(db, owner=owner, quarantined=False)
 
-        from app.models.media import Speaker
+        from app.models.speaker import Speaker
 
         target = Speaker(
             uuid=str(uuid_pkg.uuid4()),
@@ -465,7 +465,7 @@ class TestSpeakerUpdateDisplayNameLeak:
         owner = _mk_user(db)
         file = _mk_file(db, owner=owner, quarantined=True)
 
-        from app.models.media import Speaker
+        from app.models.speaker import Speaker
 
         speaker = Speaker(
             uuid=str(uuid_pkg.uuid4()),
@@ -536,7 +536,7 @@ class TestSpeakerUpdateDisplayNameLeak:
         owner = _mk_user(db)
         file = _mk_file(db, owner=owner, quarantined=False)
 
-        from app.models.media import Speaker
+        from app.models.speaker import Speaker
 
         speaker = Speaker(
             uuid=str(uuid_pkg.uuid4()),

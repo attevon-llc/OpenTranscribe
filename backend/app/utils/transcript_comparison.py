@@ -13,8 +13,8 @@ from datetime import datetime
 
 import numpy as np
 
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 
 logger = logging.getLogger(__name__)
 

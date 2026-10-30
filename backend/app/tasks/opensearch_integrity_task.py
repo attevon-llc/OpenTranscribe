@@ -87,7 +87,7 @@ def _get_all_speaker_uuids_from_db() -> set[str]:
     cleanup.
     """
     from app.db.session_utils import session_scope
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     with session_scope() as db:
         rows = db.query(Speaker.uuid).all()
@@ -128,7 +128,7 @@ def _file_ids_present(keys: Iterable[Any]) -> set[str]:
 
 
 def _speaker_uuids_present(keys: Iterable[Any]) -> set[str]:
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     return _present_in_db(Speaker.uuid, keys)
 
@@ -659,7 +659,7 @@ def get_index_overview() -> dict[str, Any]:
         from app.db.session_utils import session_scope
         from app.models.media import FileStatus
         from app.models.media import MediaFile
-        from app.models.media import Speaker
+        from app.models.speaker import Speaker
 
         with session_scope() as db:
             pg_stats["completed_files"] = (

@@ -17,8 +17,8 @@ from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerCluster
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCluster
 from app.services.clustering import admin_ops
 from app.services.clustering import assignment
 from app.services.clustering import centroids

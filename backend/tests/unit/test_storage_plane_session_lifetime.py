@@ -53,7 +53,7 @@ import app.api.endpoints.files as files_api
 from app.api.endpoints.files import complete_upload as cu
 from app.models.media import FileStatus
 from app.models.media import MediaFile
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 from app.services import cache_management_service as cms
 from app.services import file_cleanup_service as fcs
 from app.services import media_download_service as mds

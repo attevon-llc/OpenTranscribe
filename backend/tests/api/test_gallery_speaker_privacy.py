@@ -14,8 +14,8 @@ import uuid as uuid_pkg
 import pytest
 from fastapi import status
 
-from app.models.media import Collection
-from app.models.media import CollectionMember
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.services.privacy import policy
 from tests.fixtures.privacy_switches import set_instance_switch
 from tests.fixtures.provenance_world import ALICE

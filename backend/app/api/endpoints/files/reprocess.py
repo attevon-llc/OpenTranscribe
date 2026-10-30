@@ -29,7 +29,7 @@ def _capture_file_speakers(db: Session, media_file_id: int) -> SpeakerImpact:
 
     The re-run indexes the file again itself, so no reindex is requested here.
     """
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     speaker_ids = [
         int(row[0]) for row in db.query(Speaker.id).filter(Speaker.media_file_id == media_file_id)
@@ -100,8 +100,8 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
 
         # Clear existing transcript segments
         from app.models.media import Analytics
-        from app.models.media import Speaker
         from app.models.media import TranscriptSegment
+        from app.models.speaker import Speaker
         from app.services.speaker_correction_carryover import stash_file_corrections
 
         # The user's corrections of these speakers are kept by the audio they judged,
@@ -203,8 +203,8 @@ def start_reprocessing_task(
 def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) -> None:
     """Clear data only for selected pipeline stages."""
     from app.models.media import Analytics
-    from app.models.media import Speaker
     from app.models.media import TranscriptSegment
+    from app.models.speaker import Speaker
     from app.services.speaker_rename_tracker import SpeakerRenameTracker
     from app.utils.speaker_labels import canonical_speaker_label_for_row
 

@@ -173,8 +173,8 @@ def _count_embeddable_speakers_per_file(file_ids: list[int]) -> dict[int, int]:
     from sqlalchemy import distinct
     from sqlalchemy import func as sa_func
 
-    from app.models.media import Speaker
     from app.models.media import TranscriptSegment
+    from app.models.speaker import Speaker
 
     if not file_ids:
         return {}
@@ -319,7 +319,7 @@ def _file_skipped_by_policy(media_file_id: int) -> bool:
 
 def _scopes_off_by_policy() -> list[tuple[int, int | None]]:
     """Every (owner, organization) scope that owns files or profiles and has voiceprints off."""
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import SpeakerProfile
 
     with session_scope() as db:
         pairs: set[tuple[int, int | None]] = set()
@@ -994,7 +994,7 @@ def migrate_profile_documents_to_v4(client, v4_index: str) -> int:
     if not profiles:
         return 0
 
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import SpeakerProfile
     from app.services.opensearch_service import store_profile_embedding_v4
 
     profile_ids = [e["profile_id"] for e in profiles.values() if e.get("profile_id")]

@@ -16,7 +16,7 @@ stand-in is preferred over ~30 casts here).
 # mypy: disable-error-code="arg-type"
 from __future__ import annotations
 
-from app.models.media import CollectionMember
+from app.models.collection import CollectionMember
 from app.models.sharing import CollectionShare
 from app.services import group_file_index_service as svc
 

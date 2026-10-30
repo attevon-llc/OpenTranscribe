@@ -10,9 +10,9 @@ from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
-from app.models.media import FileTag
 from app.models.media import MediaFile
-from app.models.media import Tag
+from app.models.tag import FileTag
+from app.models.tag import Tag
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

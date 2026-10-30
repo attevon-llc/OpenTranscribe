@@ -9,9 +9,9 @@ from sqlalchemy.orm import Session
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 from app.models.user import User
 from app.services.permission_service import PermissionService
 from app.services.permission_service import file_ids_in_scope

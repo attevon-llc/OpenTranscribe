@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from app.core.constants import SPEAKER_CONFIDENCE_MEDIUM
 from app.core.embedding_models import get_speaker_index
 from app.models.media import MediaFile
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 
 logger = logging.getLogger(__name__)
 

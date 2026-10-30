@@ -1051,8 +1051,8 @@ def reset_file_for_retry(db: Session, file_id: int, reset_retry_count: bool = Fa
 
             # Clear existing transcript data for clean retry
             from app.models.media import Analytics
-            from app.models.media import Speaker
             from app.models.media import TranscriptSegment
+            from app.models.speaker import Speaker
 
             # The user's corrections of the speakers deleted below are kept by the audio
             # they judged, read while the segments still name them (issue #1233).

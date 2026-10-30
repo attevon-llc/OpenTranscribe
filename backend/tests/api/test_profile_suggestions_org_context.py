@@ -21,9 +21,9 @@ import pytest
 from fastapi import status
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
 from app.models.organization import Organization
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 
 SUGGESTED = "Quorra Vexlin"
 

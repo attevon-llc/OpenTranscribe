@@ -20,13 +20,13 @@ from app.core.exceptions import AccessDeniedError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.group import UserGroupMember
-from app.models.media import Collection
-from app.models.media import CollectionMember
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
 from app.models.sharing import CollectionShare
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 
 logger = logging.getLogger(__name__)
 

@@ -19,7 +19,7 @@ from app.api.endpoints.speakers_list import list_speakers
 from app.api.endpoints.speakers_profile_workflow import _get_media_file_uuid
 from app.api.endpoints.speakers_profile_workflow import _handle_profile_action
 from app.db.base import get_db
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 from app.models.user import User
 from app.schemas.media import Speaker as SpeakerSchema
 from app.schemas.media import SpeakerUpdate

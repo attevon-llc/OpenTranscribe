@@ -121,7 +121,7 @@ def test_rediarize_blocked_by_access_hook(client, user_token_headers, normal_use
     user-triggered rediarize with 402 BEFORE any data is cleared."""
     from decimal import Decimal
 
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
     from app.tasks.transcription.hooks import QuotaExceededError
     from app.tasks.transcription.hooks import clear_hooks
     from app.tasks.transcription.hooks import register_before_dispatch

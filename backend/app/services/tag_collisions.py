@@ -54,9 +54,9 @@ from sqlalchemy.orm import Session
 from app.core.constants import FUZZY_MATCH_THRESHOLD
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
-from app.models.media import FileTag
 from app.models.media import MediaFile
-from app.models.media import Tag
+from app.models.tag import FileTag
+from app.models.tag import Tag
 from app.services.tag_service import OWNERSHIP_MINE
 from app.services.tag_service import OWNERSHIP_SHARED_WITH_ME
 from app.services.tag_service import OWNERSHIP_SYSTEM

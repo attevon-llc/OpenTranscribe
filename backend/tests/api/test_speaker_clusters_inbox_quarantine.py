@@ -16,7 +16,7 @@ import uuid
 from fastapi import status
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 
 
 def _make_unverified_speaker(db_session, owner, **file_overrides) -> tuple[MediaFile, Speaker]:

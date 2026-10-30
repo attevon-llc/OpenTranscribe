@@ -33,8 +33,8 @@ from sqlalchemy import select
 
 from app.models.media import FileStatus
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.services.system_settings_service import get_setting
 from app.services.system_settings_service import get_setting_int
 from app.services.system_settings_service import set_setting

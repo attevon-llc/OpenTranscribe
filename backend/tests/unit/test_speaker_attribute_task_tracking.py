@@ -30,9 +30,9 @@ from contextlib import contextmanager
 import pytest
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import Task
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.tasks import speaker_attribute_task as sat
 
 

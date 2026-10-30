@@ -25,7 +25,7 @@ import pytest
 from fastapi import status
 
 from app.core import constants
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 from app.models.system_settings import SystemSettings
 from tests.fixtures.speaker_cleanup_seams import make_cluster
 from tests.fixtures.speaker_cleanup_seams import make_file

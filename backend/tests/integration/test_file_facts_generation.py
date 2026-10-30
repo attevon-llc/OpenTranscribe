@@ -21,8 +21,8 @@ import pytest
 
 from app.models.file_facts import FileFacts
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.models.user import User
 from app.services.ingest_artifacts.service import GENERATOR_VERSION
 from app.services.ingest_artifacts.service import generate_file_artifacts

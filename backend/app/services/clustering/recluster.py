@@ -7,9 +7,9 @@ from typing import Any
 import numpy as np
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerCluster
-from app.models.media import SpeakerClusterMember
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCluster
+from app.models.speaker import SpeakerClusterMember
 from app.services.clustering.recluster_groups import Groups
 from app.services.clustering.recluster_groups import create_similarity_clusters
 from app.services.clustering.recluster_groups import evict_cannot_linked

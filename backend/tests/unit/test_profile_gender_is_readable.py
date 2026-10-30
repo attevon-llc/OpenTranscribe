@@ -58,7 +58,7 @@ def _make_file(db, user, *, title="Recording"):
 
 
 def _make_profile(db, user, *, predicted_gender=None):
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import SpeakerProfile
 
     profile = SpeakerProfile(
         uuid=uuid_pkg.uuid4(),
@@ -72,7 +72,7 @@ def _make_profile(db, user, *, predicted_gender=None):
 
 
 def _make_speaker(db, user, media, profile, *, gender, name="SPEAKER_00"):
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     speaker = Speaker(
         uuid=uuid_pkg.uuid4(),

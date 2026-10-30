@@ -24,8 +24,8 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.services.captions.model import CaptionSegment
 from app.services.privacy.redact_view import PrivacyView
 from app.utils.speaker_labels import canonical_speaker_label_for_row

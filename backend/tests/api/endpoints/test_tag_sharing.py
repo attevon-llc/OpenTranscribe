@@ -20,8 +20,8 @@ from fastapi import status
 
 from app.models.group import UserGroup
 from app.models.group import UserGroupMember
-from app.models.media import Tag
 from app.models.sharing import TagShare
+from app.models.tag import Tag
 
 
 def _make_tag(db_session, owner, *, name: str | None = None) -> Tag:

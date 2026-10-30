@@ -9,8 +9,8 @@ from typing import Any
 import numpy as np
 
 from app.core.constants import SPEAKER_CONFIDENCE_MEDIUM
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 from app.services import embedding_mode_service
 from app.services.opensearch_service import add_speaker_embedding
 from app.services.speaker_matching.thresholds import MATCHING_ORIGIN_TASK

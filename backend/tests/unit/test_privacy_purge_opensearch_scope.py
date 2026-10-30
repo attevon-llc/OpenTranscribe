@@ -21,9 +21,9 @@ import pytest
 from app.core.capabilities import COMMUNITY_CAPABILITIES
 from app.core.capabilities import reset_capability_resolver
 from app.core.capabilities import set_capability_resolver
-from app.models.media import Speaker
-from app.models.media import SpeakerCluster
-from app.models.media import SpeakerClusterMember
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCluster
+from app.models.speaker import SpeakerClusterMember
 from app.services.privacy import purge
 from app.services.privacy.policy import clear_write_backstop_cache
 from tests.fixtures.fake_speaker_index import FakeOpenSearch
@@ -403,7 +403,7 @@ def test_not_in_scope_selects_exactly_the_members_outside_the_scope(gov, index, 
 
 def _promoted_cluster_of_one_machine_named_member(gov, owner, member_owner):
     """A promoted cluster ``owner`` has, whose only member is ``member_owner``'s voiceprint-named speaker."""
-    from app.models.media import SpeakerCluster as Cluster
+    from app.models.speaker import SpeakerCluster as Cluster
 
     speaker = make_speaker(
         gov.db,

@@ -18,10 +18,10 @@ from sqlalchemy import text
 
 from app.core import constants
 from app.models.media import MediaFile
-from app.models.media import SpeakerProfile
 from app.models.organization import Organization
 from app.models.organization_policy import OrganizationPolicy
 from app.models.prompt import UserSetting
+from app.models.speaker import SpeakerProfile
 from app.models.system_settings import SystemSettings
 from app.services.privacy import policy
 from app.services.privacy.consent import VoiceprintConsentRequest

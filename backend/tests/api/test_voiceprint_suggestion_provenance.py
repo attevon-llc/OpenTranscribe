@@ -16,9 +16,9 @@ from typing import cast
 import pytest
 
 from app.core import constants
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
 from app.models.prompt import UserSetting
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 from app.services.privacy import purge
 from app.services.privacy.purge_residual import measure_voiceprint_residual
 from app.services.privacy.purge_voiceprints import VoiceprintTargets

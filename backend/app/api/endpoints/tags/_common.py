@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.constants import TAG_SOURCE_MANUAL
-from app.models.media import Tag
+from app.models.tag import Tag
 from app.schemas.media import TagMutationResult
 from app.schemas.media import TagShareTarget
 from app.services.tag_operations import TagNotFoundError

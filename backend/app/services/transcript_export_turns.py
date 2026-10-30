@@ -19,8 +19,8 @@ if TYPE_CHECKING:
     from app.services.redaction.config import EffectiveRedactionConfig
 
 from app.models.media import Comment
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)

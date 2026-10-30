@@ -16,7 +16,7 @@ import pytest
 
 from app.models.media import FileStatus
 from app.models.media import MediaFile
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 from app.tasks.transcription.speaker_processor import create_or_get_speaker
 from app.tasks.transcription.speaker_processor import create_speaker_mapping
 from app.tasks.transcription.speaker_processor import extract_unique_speakers

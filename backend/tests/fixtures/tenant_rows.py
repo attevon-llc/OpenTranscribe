@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from app.models.media import Tag
+from app.models.tag import Tag
 from app.models.watch_source import WatchSource
 from app.services.tag_service import normalize_tag_name
 

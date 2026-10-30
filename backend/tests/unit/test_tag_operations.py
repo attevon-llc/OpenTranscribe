@@ -24,9 +24,9 @@ from sqlalchemy import event
 from app.core.constants import TAG_SOURCE_AI_ACCEPTED
 from app.core.constants import TAG_SOURCE_AUTO_AI
 from app.core.constants import TAG_SOURCE_MANUAL
-from app.models.media import FileTag
 from app.models.media import MediaFile
-from app.models.media import Tag
+from app.models.tag import FileTag
+from app.models.tag import Tag
 from app.models.watch_source import WatchSource
 from app.services.tag_operations import TagNotFoundError
 from app.services.tag_operations import delete_tags

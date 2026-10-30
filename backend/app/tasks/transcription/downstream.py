@@ -101,8 +101,8 @@ def _get_collection_prompt_uuid(file_id: int) -> str | None:
     """Look up the default summary prompt UUID from the file's first collection (by added_at)."""
     try:
         from app.db.session_utils import session_scope
-        from app.models.media import Collection
-        from app.models.media import CollectionMember
+        from app.models.collection import Collection
+        from app.models.collection import CollectionMember
         from app.models.prompt import SummaryPrompt
 
         with session_scope() as db:

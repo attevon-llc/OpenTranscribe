@@ -19,8 +19,8 @@ from app.api.error_handlers import ErrorHandler
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 from app.models.user import User
 from app.services.request_context import RequestContext
 from app.services.speaker_cleanup import SpeakerCleanupIncompleteError
@@ -223,8 +223,8 @@ def _clusters_promoted_to_holding(db: Session, profile_id: int, speaker_id: int)
     """The clusters promoted to ``profile_id`` that count this speaker as a member."""
     from sqlalchemy import or_
 
-    from app.models.media import SpeakerCluster
-    from app.models.media import SpeakerClusterMember
+    from app.models.speaker import SpeakerCluster
+    from app.models.speaker import SpeakerClusterMember
 
     member_of = (
         db.query(SpeakerClusterMember.cluster_id)

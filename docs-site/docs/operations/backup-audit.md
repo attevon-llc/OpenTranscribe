@@ -124,7 +124,7 @@ reindex tasks. A snapshot only saves reindex time.
 **Speaker indices (`speakers_v3` / `speakers_v4`) — the sole copy of the deployment's
 biometric data.** PostgreSQL stores **no embedding vectors at all**: `SpeakerProfile`
 carries only `embedding_count` and `last_embedding_update`, and neither `Speaker` nor
-`SpeakerCluster` has a vector column (`backend/app/models/media.py`). Re-deriving a
+`SpeakerCluster` has a vector column (`backend/app/models/speaker.py`). Re-deriving a
 voiceprint needs the **source media** (which may have been deleted) plus a **GPU re-embed
 run** — it is not a reindex. Until #658, `backup` was a bare `pg_dump` and the in-app
 snapshot defaulted OFF, so a stock deployment had no recoverable copy.

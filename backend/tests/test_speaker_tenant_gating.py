@@ -24,10 +24,10 @@ import numpy as np
 import pytest
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 from app.models.user import User
 
 
@@ -92,8 +92,8 @@ def _mk_speaker(db, *, user: User, media_file: MediaFile) -> Speaker:
 
 def _mk_cluster(db, *, user: User, speakers: list[Speaker], org_id: int | None = None):
     """Create a cluster with the given member speakers (legacy-style rows)."""
-    from app.models.media import SpeakerCluster
-    from app.models.media import SpeakerClusterMember
+    from app.models.speaker import SpeakerCluster
+    from app.models.speaker import SpeakerClusterMember
 
     cluster = SpeakerCluster(
         uuid=uuid_pkg.uuid4(),
@@ -533,7 +533,7 @@ class TestClusteringOrgGate:
         """Identical voices on an org file and a personal file must NOT merge:
         the Phase-2 AHC graph is partitioned per tenant scope, and each
         resulting cluster is stamped with its partition's org."""
-        from app.models.media import SpeakerCluster
+        from app.models.speaker import SpeakerCluster
         from app.services.speaker_clustering_service import SpeakerClusteringService
 
         db = world.db
@@ -566,7 +566,7 @@ class TestClusteringOrgGate:
         """Community invariance: with org NULL everywhere there is exactly one
         partition and the grouping matches the pre-tenant behavior (one
         cluster, no org stamp anywhere)."""
-        from app.models.media import SpeakerCluster
+        from app.models.speaker import SpeakerCluster
         from app.services.speaker_clustering_service import SpeakerClusteringService
 
         db = world.db

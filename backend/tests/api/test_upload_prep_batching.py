@@ -18,11 +18,11 @@ from sqlalchemy import event
 
 from app.api.endpoints.files.prepare_upload import add_file_to_collections
 from app.api.endpoints.files.prepare_upload import add_tags_to_file
-from app.models.media import Collection
-from app.models.media import CollectionMember
-from app.models.media import FileTag
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.media import MediaFile
-from app.models.media import Tag
+from app.models.tag import FileTag
+from app.models.tag import Tag
 
 
 @contextmanager

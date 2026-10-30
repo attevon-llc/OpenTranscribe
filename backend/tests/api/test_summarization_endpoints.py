@@ -31,8 +31,8 @@ from unittest.mock import patch
 from fastapi import status
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 
 
 def _make_file(db_session, owner, *, with_transcript: bool = False) -> MediaFile:

@@ -16,7 +16,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.tags._common import _visible_to
 from app.api.endpoints.tags._common import router
 from app.db.base import get_db
-from app.models.media import Tag
+from app.models.tag import Tag
 from app.models.user import User
 from app.schemas.media import TagCollisionCluster as TagCollisionClusterSchema
 from app.schemas.media import TagFileList

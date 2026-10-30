@@ -12,10 +12,10 @@ from __future__ import annotations
 
 import uuid as uuid_pkg
 
-from app.models.media import Speaker
-from app.models.media import SpeakerCluster
-from app.models.media import SpeakerProfile
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCluster
+from app.models.speaker import SpeakerProfile
 from tests.fixtures.speaker_cleanup_seams import VOICE_A
 from tests.fixtures.speaker_cleanup_seams import VOICE_B
 from tests.fixtures.speaker_cleanup_seams import VOICE_C

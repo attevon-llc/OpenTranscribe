@@ -47,7 +47,7 @@ from typing import cast
 
 from app.core.enums import FileStatus
 from app.models.media import MediaFile
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 from app.services import migration_admin_notify
 from app.services.speaker_analysis_models import MultiModelRunner
 from app.services.speaker_analysis_models import SegmentResult

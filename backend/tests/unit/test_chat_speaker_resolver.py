@@ -335,8 +335,8 @@ def _make_file(db, user, *, title="Recording", organization_id=None, quarantined
 
 
 def _share_with(db, owner, recipient, media_file, *, permission="viewer") -> None:
-    from app.models.media import Collection
-    from app.models.media import CollectionMember
+    from app.models.collection import Collection
+    from app.models.collection import CollectionMember
     from app.models.sharing import CollectionShare
 
     collection = Collection(
@@ -358,7 +358,7 @@ def _share_with(db, owner, recipient, media_file, *, permission="viewer") -> Non
 
 
 def _add_speaker(db, media_file, owner, *, display_name, name="SPEAKER_00"):
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     speaker = Speaker(
         uuid=uuid_pkg.uuid4(),
@@ -423,7 +423,7 @@ def test_a_speaker_resolves_even_when_the_account_owns_hundreds_of_others(db_ses
     reads the account's total distinct count at all, so it resolves
     regardless of how many other speakers exist.
     """
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     media = _make_file(db_session, normal_user)
     db_session.add_all(
@@ -533,7 +533,7 @@ def test_candidate_roster_scopes_to_the_files_passed_in_file_uuids(db_session, n
 
 
 def test_roster_reports_profile_id_and_file_count(db_session, normal_user):
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import SpeakerProfile
 
     profile = SpeakerProfile(uuid=uuid_pkg.uuid4(), user_id=normal_user.id, name="Priya")
     db_session.add(profile)

@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.models.media import Collection
-from app.models.media import CollectionMember
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.topic import TopicSuggestion
 
 

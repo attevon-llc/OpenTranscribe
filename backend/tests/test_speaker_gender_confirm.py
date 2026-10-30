@@ -10,7 +10,7 @@ import uuid as uuid_mod
 from unittest.mock import patch
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 
 
 def _make_speaker(

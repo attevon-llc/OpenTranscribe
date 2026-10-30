@@ -22,8 +22,8 @@ from opensearchpy.exceptions import NotFoundError
 
 from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V4
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 from app.services.opensearch_service import speaker_metadata
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"

@@ -18,8 +18,8 @@ from typing import Any
 import pytest
 from sqlalchemy.orm import Session
 
-from app.models.media import Collection
-from app.models.media import CollectionMember
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.media import MediaFile
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership

@@ -625,8 +625,8 @@ def test_explicit_prompt_on_summarize_scoped(world, viewer, tenant, owner, expec
 def test_tag_grant_stays_in_the_tags_tenant(client, world, viewer, tenant, owner, expected):
     """A tag granted straight to a user (legacy rows included) is listed only in the
     tag's own tenant."""
-    from app.models.media import Tag
     from app.models.sharing import TagShare
+    from app.models.tag import Tag
 
     owner_user = world.users[owner]
     owner_org = world.org_a.id if owner == "a1" else None

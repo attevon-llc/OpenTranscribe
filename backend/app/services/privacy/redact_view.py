@@ -49,7 +49,7 @@ if TYPE_CHECKING:
     from sqlalchemy import ColumnElement
     from sqlalchemy.orm import Session
 
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
 logger = logging.getLogger(__name__)
 
@@ -356,7 +356,7 @@ def machine_identity_clauses(
     """
     from sqlalchemy import and_
 
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     in_off_file = _in_off_file(
         view,
@@ -384,7 +384,7 @@ def hidden_suggestion_clause(
     from sqlalchemy import and_
     from sqlalchemy import false
 
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
     from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
 
     embedding = Speaker.suggestion_source.in_(sorted(EMBEDDING_SUGGESTION_SOURCES))
@@ -411,7 +411,7 @@ def _in_off_file(
     from sqlalchemy import select
 
     from app.models.media import MediaFile
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     view = view if isinstance(view, PrivacyView) else PrivacyView(view)
     scopes = view._db.execute(
@@ -450,7 +450,7 @@ def visible_display_name_expr(name_hidden: ColumnElement[bool]) -> ColumnElement
     """``speaker.display_name``, or NULL where ``name_hidden`` (see :func:`machine_identity_clauses`)."""
     from sqlalchemy import case
 
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     return case((name_hidden, None), else_=Speaker.display_name)
 
@@ -459,7 +459,7 @@ def visible_profile_id_expr(link_hidden: ColumnElement[bool]) -> ColumnElement[A
     """``speaker.profile_id``, or NULL where ``link_hidden`` (see :func:`machine_identity_clauses`)."""
     from sqlalchemy import case
 
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     return case((link_hidden, None), else_=Speaker.profile_id)
 
@@ -473,7 +473,7 @@ def derived_profile_genders(db: Session, profiles: Iterable[Any]) -> dict[int, s
     """
     from sqlalchemy import func
 
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     rows = list(profiles)
     if not rows:

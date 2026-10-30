@@ -152,8 +152,8 @@ def _load_v4_profile_batch(
     """
     import numpy as np
 
-    from app.models.media import Speaker
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import Speaker
+    from app.models.speaker import SpeakerProfile
 
     batch: list[dict] = []
     with session_scope() as db:
@@ -298,7 +298,7 @@ def _store_native_centroids_in_v4_staging(
 
     Fire-and-forget: failures logged but don't affect main pipeline.
     """
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
     from app.services.opensearch_service import bulk_add_speaker_embeddings_v4
     from app.services.opensearch_service import ensure_v4_index_exists
 

@@ -21,7 +21,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from app.models.media import SpeakerProfile
+from app.models.speaker import SpeakerProfile
 from app.tasks import embedding_consistency_repair as repair
 from app.tasks import embedding_migration_v4 as mig
 from app.tasks import speaker_embedding_migration as normalize

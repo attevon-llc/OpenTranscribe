@@ -21,8 +21,8 @@ logging.basicConfig(level=logging.WARNING)
 
 def _word_stream(db, file_id: int) -> list[dict]:
     """Reconstruct the ordered word stream with each word's segment speaker."""
-    from app.models.media import Speaker
     from app.models.media import TranscriptSegment
+    from app.models.speaker import Speaker
 
     segments = (
         db.query(TranscriptSegment)

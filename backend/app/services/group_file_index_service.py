@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.models.media import CollectionMember
+from app.models.collection import CollectionMember
 from app.models.sharing import CollectionShare
 from app.tasks.search_indexing_task import update_file_access_index
 

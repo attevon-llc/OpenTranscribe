@@ -45,7 +45,7 @@ def _get_files_needing_attribute_detection(db) -> list:
 
     from app.models.media import FileStatus
     from app.models.media import MediaFile
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     return list(
         db.query(MediaFile)
@@ -66,7 +66,7 @@ def _get_all_files_with_speakers(db) -> list:
 
     from app.models.media import FileStatus
     from app.models.media import MediaFile
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     return list(
         db.query(MediaFile)
@@ -88,7 +88,7 @@ def _reset_all_speaker_attributes(db, exclude_file_ids: frozenset[int] = frozens
 
     Returns the number of speakers reset.
     """
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     query = db.query(Speaker).filter(Speaker.attributes_predicted_at.isnot(None))
     if exclude_file_ids:
@@ -167,7 +167,7 @@ def _gender_result_writer(
     """
     from datetime import datetime
 
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
     from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags_for_file
 
     # The final authority, read at the write: a run planned before a layer was switched off

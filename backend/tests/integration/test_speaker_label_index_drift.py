@@ -59,7 +59,7 @@ from typing import Any
 import pytest
 from sqlalchemy.orm import Session
 
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"

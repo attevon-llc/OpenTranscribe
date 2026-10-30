@@ -17,8 +17,8 @@ from unittest.mock import patch
 import pytest
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerCluster
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCluster
 from app.services.opensearch_service import repair
 
 _SPEAKER_INDEX = "speakers"

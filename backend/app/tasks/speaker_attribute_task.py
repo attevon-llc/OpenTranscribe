@@ -513,7 +513,7 @@ def _attributes_already_predicted(file_uuid: str) -> bool:
     gets a full pass rather than being left inconsistent.
     """
     from app.models.media import MediaFile
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     try:
         with session_scope() as db:
@@ -534,8 +534,8 @@ def _load_detection_inputs(file_uuid: str) -> dict | None:
     audio/model phase with no session (and therefore no transaction) open.
     Returns None when the media file does not exist.
     """
-    from app.models.media import Speaker
     from app.models.media import TranscriptSegment
+    from app.models.speaker import Speaker
     from app.services.uuid_helpers import get_file_by_uuid
 
     with session_scope() as db:
@@ -632,7 +632,7 @@ def _detect_speaker_attributes(file_uuid: str, user_id: int, task_id: str):
     queues behind it, it pins the vacuum horizon on the largest table in the
     product, and it consumes a pool connection for as long as it lives.
     """
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
     from app.services.minio_service import minio_client
     from app.services.speaker_attribute_service import get_cached_attribute_service
     from app.services.speaker_attribute_service import max_clip_seconds

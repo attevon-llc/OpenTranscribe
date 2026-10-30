@@ -44,8 +44,8 @@ def _make_file(db, user, *, title="Recording", quarantined=False):
 
 
 def _share_with(db, owner, recipient, media_file, *, permission="viewer") -> None:
-    from app.models.media import Collection
-    from app.models.media import CollectionMember
+    from app.models.collection import Collection
+    from app.models.collection import CollectionMember
     from app.models.sharing import CollectionShare
 
     collection = Collection(
@@ -67,7 +67,7 @@ def _share_with(db, owner, recipient, media_file, *, permission="viewer") -> Non
 
 
 def _add_speaker(db, media_file, owner, *, display_name, name="SPEAKER_00", profile_id=None):
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     speaker = Speaker(
         uuid=uuid_pkg.uuid4(),
@@ -154,7 +154,7 @@ def test_limit_bounds_the_page_size(client, db_session, normal_user, user_token_
 def test_is_profile_true_restricts_to_profile_linked_speakers(
     client, db_session, normal_user, user_token_headers
 ):
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import SpeakerProfile
 
     profile = SpeakerProfile(uuid=uuid_pkg.uuid4(), user_id=normal_user.id, name="Priya")
     db_session.add(profile)
@@ -184,7 +184,7 @@ def test_is_profile_true_restricts_to_profile_linked_speakers(
 def test_is_profile_false_restricts_to_unlinked_speakers(
     client, db_session, normal_user, user_token_headers
 ):
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import SpeakerProfile
 
     profile = SpeakerProfile(uuid=uuid_pkg.uuid4(), user_id=normal_user.id, name="Priya")
     db_session.add(profile)
@@ -214,7 +214,7 @@ def test_is_profile_false_restricts_to_unlinked_speakers(
 def test_profile_id_filters_to_a_specific_profile(
     client, db_session, normal_user, user_token_headers
 ):
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import SpeakerProfile
 
     wanted = SpeakerProfile(uuid=uuid_pkg.uuid4(), user_id=normal_user.id, name="Priya")
     other = SpeakerProfile(uuid=uuid_pkg.uuid4(), user_id=normal_user.id, name="Quinn")
@@ -253,7 +253,7 @@ def test_profile_id_filters_to_a_specific_profile(
 def test_profile_id_belonging_to_another_user_resolves_to_empty(
     client, db_session, normal_user, other_user, user_token_headers
 ):
-    from app.models.media import SpeakerProfile
+    from app.models.speaker import SpeakerProfile
 
     someone_elses = SpeakerProfile(uuid=uuid_pkg.uuid4(), user_id=other_user.id, name="Not yours")
     db_session.add(someone_elses)

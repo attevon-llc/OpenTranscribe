@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.enums import FileStatus
 from app.core.exceptions import AccessDeniedError
-from app.models.media import Collection
+from app.models.collection import Collection
 from app.models.media import MediaFile
 from app.models.organization import Organization
 from app.services.platform_access import TenancyMode

@@ -25,8 +25,8 @@ from sqlalchemy import text
 
 from app.api.endpoints.files.crud import get_media_file_detail
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.models.user import User
 from tests.conftest import TestingSessionLocal
 from tests.conftest import engine

@@ -20,9 +20,9 @@ from datetime import timedelta
 import pytest
 
 from app.core.config import settings
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.erasure import ErasureLedgerEntry
-from app.models.media import Collection
-from app.models.media import CollectionMember
 from app.models.media import TranscriptSegment
 from app.models.sharing import CollectionShare
 from app.models.support_access import SupportAccessUse

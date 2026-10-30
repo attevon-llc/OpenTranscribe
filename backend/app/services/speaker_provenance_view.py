@@ -42,7 +42,7 @@ from app.utils.speaker_identity_source import hides_provenance
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
     from app.services.request_context import RequestContext
 
 logger = logging.getLogger(__name__)

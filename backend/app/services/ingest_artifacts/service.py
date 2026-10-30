@@ -104,7 +104,7 @@ def hidden_speaker_names(db: Session, file_id: int) -> dict[str, str]:
     INDEXED. A name another speaker of the file visibly carries is left alone: masking it would
     hide a person's word. Unreadable policy = off (``voiceprints_allowed`` fails closed).
     """
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
     from app.services.privacy.redact_view import hides_voiceprint_suggestion
     from app.utils.speaker_identity_source import hides_name
     from app.utils.speaker_labels import is_assigned_speaker_name

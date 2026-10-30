@@ -18,7 +18,7 @@ import pytest
 
 from app.models.media import FileStatus
 from app.models.media import MediaFile
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 from app.models.user import User
 from app.schemas.media import MediaFile as MediaFileSchema
 from app.services.error_categorization_service import ErrorCategorizationService

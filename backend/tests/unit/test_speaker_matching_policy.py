@@ -16,8 +16,8 @@ from typing import Any
 import numpy as np
 import pytest
 
-from app.models.media import SpeakerMatch
-from app.models.media import SpeakerProfile
+from app.models.speaker import SpeakerMatch
+from app.models.speaker import SpeakerProfile
 from app.services.profile_embedding_service import ProfileEmbeddingRecomputeError
 from app.services.profile_embedding_service import ProfileEmbeddingService
 from app.services.speaker_matching_service import SpeakerMatchingService

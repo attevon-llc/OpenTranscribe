@@ -25,9 +25,9 @@ from unittest.mock import patch
 import pytest
 from fastapi import status
 
-from app.models.media import FileTag
 from app.models.media import MediaFile
-from app.models.media import Tag
+from app.models.tag import FileTag
+from app.models.tag import Tag
 
 
 def _make_file(db_session, owner, *, file_status: str = "completed", **overrides) -> MediaFile:

@@ -27,7 +27,7 @@ from app.api.endpoints.speakers_list_filters import _sort_speakers
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import MediaFile
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 from app.models.user import User
 from app.schemas.media import split_attribute_confidence
 from app.services.permission_service import file_ids_in_scope

@@ -14,9 +14,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
 from app.models.prompt import UserSetting
+from app.models.speaker import Speaker
 from app.services import system_settings_service
 from app.services.speaker_attribute_settings import resolve_speaker_attribute_flags
 from app.tasks import speaker_attribute_task as sat

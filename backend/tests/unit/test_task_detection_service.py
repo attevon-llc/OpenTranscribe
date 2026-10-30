@@ -582,7 +582,7 @@ def test_rejecting_every_suggestion_on_a_file_does_not_re_offer_speaker_id(
     from unittest.mock import patch
 
     from app.api.endpoints.speakers_suggestions import _reject_speaker_suggestion
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     media_file = _file(
         db_session,
@@ -626,7 +626,7 @@ def test_skipping_every_llm_suggestion_does_not_re_offer_speaker_id(
     """
     from unittest.mock import patch
 
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
     from app.services.speaker_clustering_service import SpeakerClusteringService
 
     media_file = _file(
@@ -678,7 +678,7 @@ def test_a_completed_speaker_identification_task_survives_a_voice_match_clobber(
     """
     from unittest.mock import patch
 
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     media_file = _file(
         db_session,
@@ -722,7 +722,7 @@ def test_legacy_suggestion_source_alone_still_works_with_no_task_row(
     """
     from unittest.mock import patch
 
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     media_file = _file(
         db_session,
@@ -755,7 +755,7 @@ def test_negative_control_neither_leg_present_reports_missing(service, db_sessio
     """
     from unittest.mock import patch
 
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     media_file = _file(
         db_session,
@@ -788,7 +788,7 @@ def test_skip_action_still_stamps_provenance_when_none_existed(service, db_sessi
     LLM-identified) should still get "user_skipped" recorded on skip -- only an
     EXISTING real value ("llm_analysis" etc.) must be protected from being overwritten.
     """
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
     from app.services.speaker_clustering_service import SpeakerClusteringService
 
     media_file = _file(db_session, normal_user, status=FileStatus.COMPLETED)

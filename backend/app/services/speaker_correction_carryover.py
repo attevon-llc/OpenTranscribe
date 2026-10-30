@@ -108,10 +108,10 @@ def stash_file_corrections(db: Session, media_file_id: int) -> int:
     """
     from sqlalchemy import or_
 
-    from app.models.media import Speaker
-    from app.models.media import SpeakerCannotLink
-    from app.models.media import SpeakerCorrectionCarryover
-    from app.models.media import SpeakerProfileBlacklist
+    from app.models.speaker import Speaker
+    from app.models.speaker import SpeakerCannotLink
+    from app.models.speaker import SpeakerCorrectionCarryover
+    from app.models.speaker import SpeakerProfileBlacklist
 
     file_speakers = {
         int(r[0]) for r in db.query(Speaker.id).filter(Speaker.media_file_id == media_file_id)
@@ -187,8 +187,8 @@ def reapply_file_corrections(db: Session, media_file_id: int) -> int:
     Returns:
         The number of (speaker, correction) pairs recorded.
     """
-    from app.models.media import Speaker
-    from app.models.media import SpeakerCorrectionCarryover
+    from app.models.speaker import Speaker
+    from app.models.speaker import SpeakerCorrectionCarryover
     from app.services.speaker_cleanup import REASON_UNASSIGNED
     from app.services.speaker_cleanup import record_unassignment
 

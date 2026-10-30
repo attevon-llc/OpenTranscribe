@@ -70,7 +70,7 @@ Nothing here was invented; every key exists in the pipeline or the ORM.
   holds for every segment, matching the frozen real inference in
   `../boundary/karpathy_10m.rawinfer.json`.
 - **`speakers[]`** mirrors the `Speaker` rows `speaker_processor.create_or_get_speaker` inserts
-  (the `Speaker` model in `app/models/media.py`): `name` is the raw diarization label, plus `display_name`,
+  (the `Speaker` model in `app/models/speaker.py`): `name` is the raw diarization label, plus `display_name`,
   `suggested_name`, `suggestion_source`, `verified`, `confidence`. The two speakers are
   deliberately different: `SPEAKER_00` is verified with a `display_name`, `SPEAKER_01` is
   unverified with only an AI suggestion — so speaker-status and label-resolution paths both have

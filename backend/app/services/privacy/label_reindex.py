@@ -53,8 +53,8 @@ from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.models.media import FileStatus
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.models.system_settings import SystemSettings
 from app.utils.speaker_identity_source import MACHINE_IDENTITY_SOURCES
 from app.utils.speaker_labels import DEFAULT_SUGGESTION_CONFIDENCE_THRESHOLD

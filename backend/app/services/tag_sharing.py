@@ -20,8 +20,8 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import OpenTranscribeError
 from app.models.group import UserGroup
 from app.models.group import UserGroupMember
-from app.models.media import Tag
 from app.models.sharing import TagShare
+from app.models.tag import Tag
 from app.models.user import User
 from app.services.platform_access import TenancyMode
 from app.services.platform_access import tenancy_mode

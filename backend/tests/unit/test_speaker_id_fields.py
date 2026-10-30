@@ -200,9 +200,9 @@ def _make_user(db_session):
 
 def test_reindex_extract_file_metadata_carries_speaker_id_and_profile_id(db_session):
     from app.models.media import MediaFile
-    from app.models.media import Speaker
-    from app.models.media import SpeakerProfile
     from app.models.media import TranscriptSegment
+    from app.models.speaker import Speaker
+    from app.models.speaker import SpeakerProfile
 
     user = _make_user(db_session)
     fuuid = uuid_pkg.uuid4()

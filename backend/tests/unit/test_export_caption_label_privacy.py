@@ -29,8 +29,8 @@ def _reset_ceiling():
 
 
 def _export(world, db, fmt: str) -> str:
-    from app.models.media import Speaker
     from app.models.media import TranscriptSegment
+    from app.models.speaker import Speaker
 
     segments = (
         db.query(TranscriptSegment)

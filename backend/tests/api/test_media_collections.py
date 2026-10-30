@@ -18,10 +18,10 @@ import uuid
 
 from fastapi import status
 
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.group import UserGroup
 from app.models.group import UserGroupMember
-from app.models.media import Collection
-from app.models.media import CollectionMember
 from app.models.media import MediaFile
 from app.models.sharing import CollectionShare
 

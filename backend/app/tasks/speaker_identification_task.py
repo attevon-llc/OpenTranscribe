@@ -28,9 +28,9 @@ from app.core.enums import PostProcessingTask
 from app.core.languages import DEFAULT_LLM_OUTPUT_LANGUAGE
 from app.core.queues import NLPPriority
 from app.db.session_utils import session_scope
-from app.models.media import Speaker
-from app.models.media import SpeakerProfile
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerProfile
 from app.services.file_provenance import llm_facts
 from app.services.file_provenance import record_stage
 from app.services.llm_service import LLMService

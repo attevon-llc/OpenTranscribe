@@ -14,9 +14,9 @@ import uuid
 
 from fastapi import status
 
-from app.models.media import FileTag
 from app.models.media import MediaFile
-from app.models.media import Tag
+from app.models.tag import FileTag
+from app.models.tag import Tag
 
 
 def _make_tagged_file(db_session, owner, tag, **file_overrides) -> MediaFile:

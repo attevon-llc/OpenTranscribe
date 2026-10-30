@@ -12,8 +12,8 @@ import zipfile
 import pytest
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.subtitle_service import SubtitleService
 

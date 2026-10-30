@@ -21,9 +21,9 @@ from app.core.constants import TAG_SOURCE_MANUAL
 from app.core.exceptions import DomainError
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
-from app.models.media import CollectionMember
-from app.models.media import FileTag
+from app.models.collection import CollectionMember
 from app.models.media import MediaFile
+from app.models.tag import FileTag
 from app.models.upload_batch import UploadBatch
 from app.models.user import User
 from app.schemas.media import PrepareUploadRequest

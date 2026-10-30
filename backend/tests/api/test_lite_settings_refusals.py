@@ -382,7 +382,7 @@ def transcribed_file(db_session, normal_user, monkeypatch):
 
     from app.models.media import FileStatus
     from app.models.media import MediaFile
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
     from app.utils import task_utils
 
     monkeypatch.setattr(task_utils, "transcript_is_regenerable", lambda db, media_file: True)
@@ -409,7 +409,7 @@ def transcribed_file(db_session, normal_user, monkeypatch):
 
 
 def _speaker_count(db_session, media) -> int:
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     db_session.expire_all()
     return int(db_session.query(Speaker).filter(Speaker.media_file_id == media.id).count())

@@ -33,8 +33,8 @@ from typing import Any
 import pytest
 
 from app.models.media import MediaFile
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.models.user import User
 from app.services.ingest_artifacts import index_mapping as digest_mapping
 

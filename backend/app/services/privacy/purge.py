@@ -164,7 +164,7 @@ class PurgeScope:
         in the personal workspace.
         """
         from app.models.media import MediaFile
-        from app.models.media import Speaker
+        from app.models.speaker import Speaker
 
         file_ids = select(MediaFile.id).where(*self.sql_filters(MediaFile))
         return [Speaker.media_file_id.in_(file_ids)]
@@ -206,7 +206,7 @@ def _rowcount(db: Session, statement: Any) -> int:
 
 def purge_inferred_gender_postgres(db: Session, scope: PurgeScope) -> dict[str, int]:
     """The relational half of an inferred-gender purge. Commits."""
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
 
     def drop(key: str) -> Any:
         return sql_cast(literal(key), Text)
@@ -259,7 +259,7 @@ def refresh_cleared_speakers(
         ``{"statuses_refreshed", "reindex_queue_failed"}``.
     """
     from app.models.media import MediaFile
-    from app.models.media import Speaker
+    from app.models.speaker import Speaker
     from app.services.speaker_status_service import SpeakerStatusService
 
     refreshed = 0

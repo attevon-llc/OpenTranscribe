@@ -20,8 +20,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 
 #: How a scope is switched off; "allowed" is the control.
 SCOPES = ["allowed", "user", "organization", "instance"]

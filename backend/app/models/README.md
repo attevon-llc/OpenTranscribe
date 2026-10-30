@@ -26,11 +26,14 @@ Tenancy: user-owned tables (files, tags, collections, speaker profiles, ...) car
 
 ## Model Files
 
-Every model must be exported from `__init__.py`, the canonical import surface (a few speaker helper tables in `media.py` are imported from `app.models.media` instead).
+Every model must be exported from `__init__.py`, the canonical import surface (a few speaker helper tables in `speaker.py` are imported from `app.models.speaker` instead).
 
 ### Core Models
 - `user.py` - `User`: identity, role, auth type and external-identity columns, password/lockout/approval state
-- `media.py` - the large core module: `MediaFile`, `TranscriptSegment`, `Speaker`, `SpeakerProfile`, `SpeakerCollection(Member)`, `SpeakerCluster(Member)`, `SpeakerMatch`, `SpeakerCannotLink`, `SpeakerProfileBlacklist`, `SpeakerCorrectionCarryover`, `Comment`, `Tag`, `FileTag`, `Task`, `Analytics`, `Collection`, `CollectionMember`
+- `media.py` - `MediaFile`, `TranscriptSegment`, `Comment`, `Task`, `Analytics`
+- `speaker.py` - `Speaker`, `SpeakerProfile`, `SpeakerCollection(Member)`, `SpeakerCluster(Member)`, `SpeakerMatch`, `SpeakerCannotLink`, `SpeakerProfileBlacklist`, `SpeakerCorrectionCarryover`
+- `tag.py` - `Tag`, `FileTag`
+- `collection.py` - `Collection`, `CollectionMember`
 - `upload_batch.py` - `UploadBatch`: multi-file import tracking
 - `topic.py` - `TopicSuggestion`: LLM-suggested tags and collections
 - `file_facts.py` - `FileFacts`: deterministic ingest artifacts (facts, digest, keyphrases), a 1:1 sidecar of `media_file`

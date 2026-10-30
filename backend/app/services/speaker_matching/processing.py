@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy as np
 
-from app.models.media import Speaker
+from app.models.speaker import Speaker
 
 if TYPE_CHECKING:
     from app.services.speaker_matching_service import SpeakerMatchingService

@@ -26,15 +26,15 @@ from unittest.mock import patch
 
 import pytest
 
+from app.models.collection import Collection
 from app.models.group import UserGroup
 from app.models.group import UserGroupMember
-from app.models.media import Collection
 from app.models.media import MediaFile
-from app.models.media import Tag
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.models.sharing import CollectionShare
 from app.models.sharing import TagShare
+from app.models.tag import Tag
 from app.models.user import User
 from app.models.watch_source import WatchSource
 from app.models.watch_source import WatchSourceFile

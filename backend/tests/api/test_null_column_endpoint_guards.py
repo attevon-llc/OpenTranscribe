@@ -33,14 +33,14 @@ from datetime import timedelta
 from fastapi import status
 from sqlalchemy import update
 
+from app.models.collection import Collection
 from app.models.group import UserGroup
 from app.models.group import UserGroupMember
-from app.models.media import Collection
 from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import SpeakerCollection
-from app.models.media import SpeakerProfile
 from app.models.sharing import CollectionShare
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCollection
+from app.models.speaker import SpeakerProfile
 from app.models.topic import TopicSuggestion
 
 #: The sentinel the endpoints substitute for a NULL timestamp on a required

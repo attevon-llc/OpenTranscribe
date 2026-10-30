@@ -49,10 +49,10 @@ from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARE_UPDATED
 from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARED
 from app.db.base import get_db
 from app.middleware.audit import get_request_context
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.group import UserGroup
 from app.models.group import UserGroupMember
-from app.models.media import Collection
-from app.models.media import CollectionMember
 from app.models.media import MediaFile
 from app.models.organization import OrganizationMembership
 from app.models.prompt import SummaryPrompt
@@ -484,7 +484,7 @@ def list_collections_on_files(
     Registered before ``/{collection_uuid}`` so the literal path is not
     swallowed.
     """
-    from app.models.media import CollectionMember
+    from app.models.collection import CollectionMember
     from app.models.media import MediaFile
 
     file_ids = [

@@ -510,7 +510,7 @@ class _FakeDiarizeDF:
 
 class TestDiarizerOnlyStagePersistsResolvedProvenance:
     """Issue #706, defect 1 (P0): Stage 2b of the GPU-split path (``_DiarizerOnlyStage``,
-    ``stages.py:991``) must read ``diarizer.last_provider``/``last_model`` off the diarizer
+    ``split_stages.py``) must read ``diarizer.last_provider``/``last_model`` off the diarizer
     instance it actually ran, not silently drop them.
 
     Proven by using a diarizer double whose ``last_provider``/``last_model`` are set to values
@@ -520,7 +520,7 @@ class TestDiarizerOnlyStagePersistsResolvedProvenance:
     """
 
     def test_run_threads_the_diarizer_s_resolved_provenance_into_the_result(self):
-        from app.transcription.engine import stages as stages_mod
+        from app.transcription.engine import split_stages as stages_mod
 
         class _FakeDiarizer:
             last_provider = "SENTINEL-PROVIDER-706"
@@ -565,7 +565,7 @@ class TestDiarizerOnlyStagePersistsResolvedProvenance:
 
 
 class TestAsyncDiarizationServedByReflectsTheRunningDiarizer:
-    """Issue #706, defect 2: ``_AsyncDiarization.served_by`` (``stages.py:273``) must
+    """Issue #706, defect 2: ``_AsyncDiarization.served_by`` (``diarization_overlap.py``) must
     read ``self._diarizer.last_provider``/``last_model`` — the instance that actually ran on
     the overlap thread — not a hardcoded or stale pair.
 
@@ -577,7 +577,7 @@ class TestAsyncDiarizationServedByReflectsTheRunningDiarizer:
     """
 
     def test_served_by_reports_the_diarizer_s_post_call_state(self):
-        from app.transcription.engine.stages import _AsyncDiarization
+        from app.transcription.engine.diarization_overlap import _AsyncDiarization
 
         class _FakeDiarizer:
             def __init__(self):

@@ -55,7 +55,7 @@ class _StubEngineConfig:
 
 def test_gpu_raw_stage_joins_async_diarization_before_returning_on_empty_transcript():
     """RED before the fix: run() returned immediately while the diarize thread was blocked."""
-    from app.transcription.engine import stages as stages_mod
+    from app.transcription.engine import gpu_stages as stages_mod
 
     release_event = threading.Event()
     diarize_thread_finished = threading.Event()

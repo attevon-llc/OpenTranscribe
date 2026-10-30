@@ -125,7 +125,7 @@ class TestWavHandoff:
     def test_without_a_pre_existing_wav_one_is_written_and_the_job_still_succeeds(
         self, tmp_path, monkeypatch
     ):
-        """The single-process run() path (stages.py's _GpuStage) has no shared-volume WAV at
+        """The single-process run() path (gpu_stages.py's _GpuStage) has no shared-volume WAV at
         all — diarize(audio) with no wav_path must keep writing (and cleaning up) its own
         copy exactly as before #661.
         """
@@ -396,7 +396,7 @@ class TestSidecarFailureClassification:
             # allow_local_fallback=False (the overlap thread) always wraps in a plain
             # RuntimeError regardless of classification — see that flag's docstring — so the
             # classified exception is the wrapper's __cause__, exactly what
-            # _AsyncDiarization.failed_unavailable (engine/stages.py) inspects.
+            # _AsyncDiarization.failed_unavailable (engine/diarization_overlap.py) inspects.
             with pytest.raises(RuntimeError) as excinfo:
                 diarizer.diarize(audio, wav_path=str(pre_wav), allow_local_fallback=False)
 

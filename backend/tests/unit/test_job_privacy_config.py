@@ -26,7 +26,7 @@ from app.transcription import diarizer_native
 from app.transcription.config import TranscriptionConfig
 from app.transcription.diarizer_native import NativeSpeakerDiarizer
 from app.transcription.engine.config import EngineConfig
-from app.transcription.engine.stages import _run_diarize
+from app.transcription.engine.diarization_overlap import _run_diarize
 from tests.unit._plan_contexts import plan_context
 
 # ------------------------------------------------------------------ the policy read
@@ -467,7 +467,7 @@ def test_the_local_provider_builds_the_jobs_config_from_the_files_answers(
         )
         return empty, {}, {}
 
-    monkeypatch.setattr("app.transcription.engine.stages._run_diarize", _run)
+    monkeypatch.setattr("app.transcription.engine.diarization_overlap._run_diarize", _run)
     config = DiarizeConfig(return_centroids=return_centroids, request_gender=request_gender)
 
     LocalDiarizationProvider().diarize(str(tmp_path / "a.wav"), config)

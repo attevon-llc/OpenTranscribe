@@ -271,10 +271,12 @@ def test_forwarding_callbacks_default_to_their_own_stage():
 
 
 def test_every_engine_emit_names_a_canonical_stage():
-    stages_py = _APP / "transcription/engine/stages.py"
-    tree = ast.parse(stages_py.read_text())
+    stage_modules = [
+        _APP / "transcription/engine" / name
+        for name in ("stages.py", "gpu_stages.py", "split_stages.py", "diarization_overlap.py")
+    ]
     found: list[tuple[str, str]] = []
-    for node in ast.walk(tree):
+    for node in (n for path in stage_modules for n in ast.walk(ast.parse(path.read_text()))):
         if (
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Name)

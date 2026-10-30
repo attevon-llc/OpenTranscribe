@@ -640,7 +640,7 @@ class TestTheBoundedDiarizationJoin:
         ``__init__``: that constructor calls ``manager.get_diarizer()`` and starts a diarization
         against real audio, which would make this a GPU test.
         """
-        from app.transcription.engine import stages
+        from app.transcription.engine import diarization_overlap as stages
 
         ad = stages._AsyncDiarization.__new__(stages._AsyncDiarization)
         ad._diarizer = diarizer
@@ -755,7 +755,7 @@ class TestTheBoundedDiarizationJoin:
         """Outside a shutdown the bound must not apply: abandoning a live diarization thread
         would reintroduce the issue #661 phase 1.1 hazard (the thread still references a WAV
         the caller is about to unlink) for no benefit, since there is no deadline to race."""
-        from app.transcription.engine import stages
+        from app.transcription.engine import diarization_overlap as stages
 
         assert not ws._SHUTDOWN.is_set(), (
             "precondition: the autouse fixture hands us a healthy worker"
@@ -784,7 +784,7 @@ class TestTheJoinBudgetArithmetic:
         return int(matches.pop())
 
     def test_the_join_budget_and_the_release_watchdog_both_fit_in_the_grace_period(self):
-        from app.transcription.engine import stages
+        from app.transcription.engine import diarization_overlap as stages
 
         grace = self._compose_grace_seconds()
         release_budget = ws._BUDGET_S
@@ -802,7 +802,7 @@ class TestTheJoinBudgetArithmetic:
         """The join is only one step. The abort still has to unwind out of the stage, reach the
         task layer, raise Reject, and let celery drain the pool — so the join may claim at most
         half of what is left after the release watchdog."""
-        from app.transcription.engine import stages
+        from app.transcription.engine import diarization_overlap as stages
 
         headroom = self._compose_grace_seconds() - ws._BUDGET_S
 
@@ -853,7 +853,7 @@ class TestStageBoundaryCheckpoints:
         return config
 
     def test_gpu_stage_stands_down_before_loading_the_model(self, engine_collaborators):
-        from app.transcription.engine.stages import _GpuStage
+        from app.transcription.engine.gpu_stages import _GpuStage
 
         ws.mark_shutting_down()
         with pytest.raises(ws.TranscriptionAbortedError) as exc:
@@ -864,7 +864,7 @@ class TestStageBoundaryCheckpoints:
         engine_collaborators["manager"].get_diarizer.assert_not_called()
 
     def test_gpu_raw_stage_stands_down_before_loading_the_model(self, engine_collaborators):
-        from app.transcription.engine.stages import _GpuRawStage
+        from app.transcription.engine.gpu_stages import _GpuRawStage
 
         ws.mark_shutting_down()
         with pytest.raises(ws.TranscriptionAbortedError) as exc:
@@ -881,7 +881,7 @@ class TestStageBoundaryCheckpoints:
         )
 
     def test_transcribe_only_stage_stands_down_before_loading_the_model(self, engine_collaborators):
-        from app.transcription.engine.stages import _TranscribeOnlyStage
+        from app.transcription.engine.split_stages import _TranscribeOnlyStage
 
         ws.mark_shutting_down()
         with pytest.raises(ws.TranscriptionAbortedError) as exc:
@@ -895,7 +895,7 @@ class TestStageBoundaryCheckpoints:
     ):
         """⚠️ This checkpoint is only safe because diarize_gpu_task can requeue the abort —
         see TestEveryAcksLateTaskHandlesTheAbort. It was sequenced after that fix on purpose."""
-        from app.transcription.engine.stages import _DiarizerOnlyStage
+        from app.transcription.engine.split_stages import _DiarizerOnlyStage
 
         ws.mark_shutting_down()
         with pytest.raises(ws.TranscriptionAbortedError) as exc:
@@ -912,7 +912,7 @@ class TestStageBoundaryCheckpoints:
         Asserted at the boundary each checkpoint guards: with the flag clear, ``run()`` must get
         PAST it — here, far enough to load audio — rather than raising TranscriptionAbortedError.
         """
-        from app.transcription.engine.stages import _DiarizerOnlyStage
+        from app.transcription.engine.split_stages import _DiarizerOnlyStage
 
         assert not ws._SHUTDOWN.is_set(), "precondition: a healthy worker"
         engine_collaborators["load_from_shared_volume"].return_value = None

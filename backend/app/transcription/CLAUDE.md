@@ -138,7 +138,7 @@ an empty `/models` and crash-looping on exit 8. A failure here is never fatal �
 > policy before the fallback is removed).
 >
 > **It is no longer silent (#1184).** Every run is counted in `diarization_runs_total{backend,reason}`
-> (`transcription/diarization_runs.py`, called from `engine/stages._run_diarize`, the one call
+> (`transcription/diarization_runs.py`, called from `engine/diarization_overlap._run_diarize`, the one call
 > site the sequential path, the overlapped thread and rediarize share): `native/served`,
 > `pyannote/pinned` (chosen), or `pyannote/<reason>` for an unplanned fallback with `reason` one
 > of `unreachable`, `timeout`, `backpressure`, `sidecar_not_ready`, `error`. A fallback run logs a
@@ -247,7 +247,7 @@ DB-backed and live in the super-admin UI → Settings → Speaker Identification
 - **Acoustic backchannel re-check** (default OFF, experimental, GPU): re-embeds short
   disputed/overlap words and reassigns by voiceprint cosine — relabels existing words only,
   never invents speech. Code: `acoustic_recheck` (`boundary_resolver.py`) driven through
-  `manager.get_diarizer(tc).embed_window`, wired in `engine/stages.py`; carried on `EngineConfig`
+  `manager.get_diarizer(tc).embed_window`, wired in `engine/gpu_stages.py` and `engine/split_stages.py`; carried on `EngineConfig`
   to keep the engine DB-free. Keys: `boundary_acoustic_recheck_enabled`,
   `boundary_acoustic_cosine_margin` (0.05), `boundary_acoustic_max_word_dur` (1.0). Because it
   goes through `get_diarizer`, it inherits whichever engine is live — the sidecar's
@@ -272,7 +272,7 @@ Docs: `docs-site/docs/features/boundary-correction.md`,
 - `EngineConfig` is deliberately **DB-free** — settings are resolved and passed in, not read
   from the DB inside the engine. Keep it that way so the engine stays unit-testable.
 - **Overlapped diarization requires a REACHABLE sidecar**, not merely a configured one.
-  `engine/stages._overlap_diarization_enabled` gates on `diar_sidecar_status.sidecar_ready()`
+  `engine/diarization_overlap._overlap_diarization_enabled` gates on `diar_sidecar_status.sidecar_ready()`
   (`DIAR_OVERLAP=0` still forces the sequential order). This matters because when overlap is on,
   `_collect_diarization` skips `_make_room_for_local_diarizer` — the only `release_transcriber()`
   call site **on the combined-stage path** — so keying it off configuration alone left Whisper
@@ -280,14 +280,14 @@ Docs: `docs-site/docs/features/boundary-correction.md`,
   TTL-cached in `diar_sidecar_status.py`; the cache is deliberately short so an admin toggle and a
   recovered sidecar are still picked up without a worker restart.
   ⚠️ This bullet said **"the only `release_transcriber()` call site"** until it was checked
-  (2026-09-10): there are **two** in `engine/stages.py` — `_make_room_for_local_diarizer`, and
-  `_TranscribeOnlyStage.run`, which releases unconditionally before handing off to the
+  (2026-09-10): there are **two** — `_make_room_for_local_diarizer` (`engine/diarization_overlap.py`), and
+  `_TranscribeOnlyStage.run` (`engine/split_stages.py`), which releases unconditionally before handing off to the
   gpu-diarize worker. The gpu-split path therefore frees the transcriber whether or not overlap
   is on, so #665's co-residency reasoning applies to `_GpuStage`/`_GpuRawStage` only. Re-derive
   with `rg 'release_transcriber' backend/app` rather than trusting the count here.
 - **⚠️ There is ONE stand-down checkpoint and it answers TWO triggers** (#809 + #823).
   `core/task_cancellation.stand_down_if_requested(where)` is what the seven boundaries in
-  `engine/stages.py` and `transcriber.py`'s decode loop call. It consults, in this order:
+  `engine/gpu_stages.py`, `engine/split_stages.py` and `transcriber.py`'s decode loop call. It consults, in this order:
   1. **A user cancel of THIS file** (#823) → `TranscriptionCancelledError` → the task layer's
      `tasks/transcription/cancellation.finish_cancelled` → file `CANCELLED`, message **acked**,
      **no requeue**. Signal: a Redis key `transcription_cancel:{task_id}` set by the API,

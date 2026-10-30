@@ -34,7 +34,7 @@ _DEFAULT_URL = os.environ.get("DIAR_NATIVE_URL", "http://diar-native:8701")
 # whenever the sidecar is unreachable, and the readiness gate is consulted several times per
 # job: ModelManager._diarizer_current asks readiness then liveness (to tell "unreachable" from
 # "up but unprovisioned"), load_model() asks liveness again, and #665 added
-# engine/stages._overlap_diarization_enabled. Unmitigated that is four serial timeouts.
+# engine/diarization_overlap._overlap_diarization_enabled. Unmitigated that is four serial timeouts.
 #
 # The window is kept short because TranscriptionConfig._resolve_diarizer_backend documents a
 # no-pinning contract — an admin toggling engine.diarizer_backend, and a sidecar recovering

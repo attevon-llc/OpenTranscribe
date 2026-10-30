@@ -23,7 +23,7 @@ blocks the user's own next job.
 for *worker shutdown* for the identical reason (a threads pool cannot be preempted), and #823
 routes user-cancel through the same checkpoints rather than building a second abort mechanism.
 :func:`stand_down_if_requested` is that single checkpoint — it consults both triggers, and
-``app/transcription/engine/stages.py`` plus ``transcriber.py`` call it where they used to call
+``app/transcription/engine/{gpu,split}_stages.py`` plus ``transcriber.py`` call it where they used to call
 ``raise_if_shutting_down`` directly.
 
 Three things differ from #809, all deliberate:

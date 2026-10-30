@@ -474,9 +474,9 @@ class NativeSpeakerDiarizer:
                 NATIVE-ONLY, deliberately not on ``SpeakerDiarizer.diarize``: the two engines
                 are a duck-typed drop-in for each other, and callers that only hold ``Any``
                 (``ModelManager.get_diarizer``'s return) must isinstance-check before ever
-                passing this — see ``engine/stages.py``'s ``_run_diarize``.
+                passing this — see ``engine/diarization_overlap.py``'s ``_run_diarize``.
             allow_local_fallback: When False, a sidecar failure raises instead of loading the
-                in-process PyAnnote fallback here. Set False by ``engine/stages.py``'s
+                in-process PyAnnote fallback here. Set False by ``engine/diarization_overlap.py``'s
                 ``_AsyncDiarization`` — the overlapped-diarization thread that runs
                 concurrently with transcription on the main thread (issue #665). Loading
                 PyAnnote from THAT thread would put it on the GPU while Whisper may still be

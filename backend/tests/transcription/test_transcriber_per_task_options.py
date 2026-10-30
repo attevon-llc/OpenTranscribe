@@ -257,7 +257,8 @@ class _StubEngineConfig:
 
 @pytest.mark.parametrize("stage_name", ["_GpuRawStage", "_TranscribeOnlyStage", "_GpuStage"])
 def test_engine_stages_pass_the_task_config_to_the_decode(stage_name):
-    from app.transcription.engine import stages as stages_mod
+    from app.transcription.engine import gpu_stages
+    from app.transcription.engine import split_stages
     from app.transcription.engine.job import JobSpec
 
     tc = _task(source_language="es", translate_to_english=True, enable_diarization=False)
@@ -280,7 +281,8 @@ def test_engine_stages_pass_the_task_config_to_the_decode(stage_name):
         patch("app.transcription.audio.load_audio", return_value=_audio()),
         patch("app.utils.hardware_detection.detect_hardware", return_value=MagicMock()),
     ):
-        stage = getattr(stages_mod, stage_name)()
+        stage_module = split_stages if stage_name == "_TranscribeOnlyStage" else gpu_stages
+        stage = getattr(stage_module, stage_name)()
         config = cast("EngineConfig", _StubEngineConfig(tc))
         if stage_name == "_GpuStage":
             stage.run(JobSpec(audio_path="/scratch/x.wav", task_id="task-1117"), config)

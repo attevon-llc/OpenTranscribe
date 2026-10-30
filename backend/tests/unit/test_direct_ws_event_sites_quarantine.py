@@ -217,7 +217,7 @@ class TestFileCreatedSites:
     def test_youtube_file_created_is_suppressed_for_a_quarantined_file(
         self, bridge_session, monkeypatch
     ):
-        from app.tasks import youtube_processing as yt
+        from app.tasks import media_playlist_processing as yt
 
         db = bridge_session
         owner = _mk_user(db)
@@ -234,7 +234,7 @@ class TestFileCreatedSites:
         assert sent == []
 
     def test_youtube_file_created_is_delivered_for_a_clean_file(self, bridge_session, monkeypatch):
-        from app.tasks import youtube_processing as yt
+        from app.tasks import media_playlist_processing as yt
 
         db = bridge_session
         owner = _mk_user(db)

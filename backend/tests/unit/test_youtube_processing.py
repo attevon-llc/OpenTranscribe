@@ -1,4 +1,6 @@
-"""Tests for ``app/tasks/youtube_processing.py`` — YouTube URL/playlist download tasks.
+"""Tests for ``app/tasks/youtube_processing.py`` and ``media_playlist_processing.py``.
+
+YouTube URL/playlist download tasks.
 
 This module owns the two entry points that turn a pasted URL into a downloading
 ``MediaFile``: ``process_youtube_url_task`` (single video) and
@@ -49,9 +51,10 @@ from app.core.constants import DEFAULT_VIDEO_QUALITY
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.prompt import UserSetting
+from app.tasks import media_playlist_processing
 from app.tasks import youtube_processing
-from app.tasks.youtube_processing import _dispatch_playlist_video_task
-from app.tasks.youtube_processing import _handle_playlist_result
+from app.tasks.media_playlist_processing import _dispatch_playlist_video_task
+from app.tasks.media_playlist_processing import _handle_playlist_result
 from app.tasks.youtube_processing import _resolve_download_quality
 from app.tasks.youtube_processing import process_youtube_url_task
 
@@ -418,7 +421,7 @@ def dispatch_recorder(monkeypatch):
 def test_a_none_source_url_is_stringified_and_dispatched_as_the_literal_word_none(
     db_session, normal_user, dispatch_recorder
 ):
-    """CHARACTERIZATION — DEFECT: youtube_processing.py L609.
+    """CHARACTERIZATION — DEFECT: media_playlist_processing.py `_dispatch_playlist_video_task`.
 
     ``video_url = str(media_file.source_url)`` has no guard for ``None``. The
     downstream Celery task therefore receives the four-character string ``"None"``
@@ -455,7 +458,9 @@ def test_handle_playlist_result_dispatches_every_video_with_no_source_url_filter
     identified directly on ``_dispatch_playlist_video_task`` also reaches the playlist path
     that is its only production caller.
     """
-    monkeypatch.setattr(youtube_processing, "send_ws_event_for_file", lambda *_a, **_kw: None)
+    monkeypatch.setattr(
+        media_playlist_processing, "send_ws_event_for_file", lambda *_a, **_kw: None
+    )
     monkeypatch.setattr(notification_service, "send_ws_event", lambda *_a, **_kw: None)
 
     good = _make_media_file(db_session, normal_user, source_url="https://youtu.be/good")
@@ -533,7 +538,9 @@ def _yield(db):
 def test_every_video_of_a_playlist_is_stamped_with_the_requested_options(
     monkeypatch, db_session, normal_user, dispatch_recorder
 ):
-    monkeypatch.setattr(youtube_processing, "send_ws_event_for_file", lambda *_a, **_kw: None)
+    monkeypatch.setattr(
+        media_playlist_processing, "send_ws_event_for_file", lambda *_a, **_kw: None
+    )
     monkeypatch.setattr(notification_service, "send_ws_event", lambda *_a, **_kw: None)
     first = _make_media_file(db_session, normal_user, source_url="https://youtu.be/one")
     second = _make_media_file(db_session, normal_user, source_url="https://youtu.be/two")

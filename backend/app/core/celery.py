@@ -220,6 +220,7 @@ celery_app = Celery(
         "app.tasks.utility",
         "app.tasks.recovery",
         "app.tasks.youtube_processing",
+        "app.tasks.media_playlist_processing",
         "app.tasks.media_download",
         "app.tasks.transcript_document",
         "app.tasks.local_model_download",
@@ -271,7 +272,6 @@ celery_app = Celery(
     ],
 )
 
-# Configure Celery
 celery_app.conf.update(
     broker_use_ssl=_redis_ssl_options,
     redis_backend_use_ssl=_redis_ssl_options,

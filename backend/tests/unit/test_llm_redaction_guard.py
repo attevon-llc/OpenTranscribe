@@ -20,7 +20,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 from app.services.redaction.llm_guard import RedactionNotReadyError
 from app.services.redaction.llm_guard import defer_for_redaction
 from app.services.redaction.llm_guard import resolve_llm_masking
@@ -75,7 +75,7 @@ def test_masking_error_withholds_text_instead_of_returning_it_raw():
         out = mask_segment_text(_segment(), _cfg())
 
     assert SECRET not in out
-    assert out == C.REDACTION_LLM_FAILSAFE_TEXT
+    assert out == redaction_defaults.REDACTION_LLM_FAILSAFE_TEXT
 
 
 def test_no_config_returns_text_unchanged():
@@ -118,7 +118,7 @@ def test_builders_never_emit_raw_text_when_masking_fails(builder):
         out = builder([_segment()], _cfg())
 
     assert SECRET not in out
-    assert C.REDACTION_LLM_FAILSAFE_TEXT in out
+    assert redaction_defaults.REDACTION_LLM_FAILSAFE_TEXT in out
 
 
 def test_build_speaker_segments_masks_at_all():
@@ -174,12 +174,19 @@ def test_redaction_disabled_returns_none():
 def test_done_status_returns_the_config():
     cfg = _cfg()
     with patch("app.services.redaction.llm_guard.resolve_effective_config", return_value=cfg):
-        got = resolve_llm_masking(MagicMock(), _media_file(status=C.REDACTION_STATUS_DONE))
+        got = resolve_llm_masking(
+            MagicMock(), _media_file(status=redaction_defaults.REDACTION_STATUS_DONE)
+        )
     assert got is cfg
 
 
 @pytest.mark.parametrize(
-    "status", [None, C.REDACTION_STATUS_PENDING, C.REDACTION_STATUS_PROCESSING]
+    "status",
+    [
+        None,
+        redaction_defaults.REDACTION_STATUS_PENDING,
+        redaction_defaults.REDACTION_STATUS_PROCESSING,
+    ],
 )
 def test_detection_still_running_defers_rather_than_sending(status):
     """The dominant leak path.
@@ -200,7 +207,9 @@ def test_failed_detection_is_not_retryable():
     """Waiting cannot fix a failed scan, so fail loudly instead of looping."""
     with patch("app.services.redaction.llm_guard.resolve_effective_config", return_value=_cfg()):
         with pytest.raises(RedactionNotReadyError) as err:
-            resolve_llm_masking(MagicMock(), _media_file(status=C.REDACTION_STATUS_FAILED))
+            resolve_llm_masking(
+                MagicMock(), _media_file(status=redaction_defaults.REDACTION_STATUS_FAILED)
+            )
 
     assert err.value.retryable is False
 
@@ -212,7 +221,9 @@ def test_unresolvable_policy_propagates_rather_than_defaulting_to_none():
         side_effect=RuntimeError("db down"),
     ):
         with pytest.raises(RuntimeError):
-            resolve_llm_masking(MagicMock(), _media_file(status=C.REDACTION_STATUS_DONE))
+            resolve_llm_masking(
+                MagicMock(), _media_file(status=redaction_defaults.REDACTION_STATUS_DONE)
+            )
 
 
 # --------------------------------------------------------------------------
@@ -246,7 +257,7 @@ def test_non_retryable_error_is_reraised_without_deferring():
 
 def test_deferrals_are_bounded():
     """An unbounded wait would queue-spin forever if detection never lands."""
-    task = _task(retries=C.REDACTION_LLM_MAX_DEFERRALS)
+    task = _task(retries=redaction_defaults.REDACTION_LLM_MAX_DEFERRALS)
     with pytest.raises(RedactionNotReadyError):
         defer_for_redaction(task, RedactionNotReadyError("wait", retryable=True))
 
@@ -267,7 +278,10 @@ def test_null_status_marks_detection_as_never_started():
     assert err.value.file_id == 5
 
 
-@pytest.mark.parametrize("status", [C.REDACTION_STATUS_PENDING, C.REDACTION_STATUS_PROCESSING])
+@pytest.mark.parametrize(
+    "status",
+    [redaction_defaults.REDACTION_STATUS_PENDING, redaction_defaults.REDACTION_STATUS_PROCESSING],
+)
 def test_in_flight_detection_is_not_marked_never_started(status):
     """Something is already scanning — re-dispatching would duplicate the work."""
     with patch("app.services.redaction.llm_guard.resolve_effective_config", return_value=_cfg()):

@@ -24,7 +24,7 @@ import logging
 from typing import Any
 from typing import cast
 
-from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
+from app.core.embedding_models import OPENSEARCH_EMBEDDING_MODELS
 from app.core.exceptions import SearchIndexError
 from app.services.search.reindex_cancel import record_fanout
 

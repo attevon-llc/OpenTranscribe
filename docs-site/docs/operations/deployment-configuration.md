@@ -206,7 +206,7 @@ GPU_DIARIZE_DEVICE_ID=1
 ./opentranscribe.sh start
 ```
 
-`ENGINE_GPU_SPLIT=true` is the one switch: `app/core/constants.py`'s
+`ENGINE_GPU_SPLIT=true` is the one switch: `app/core/queues.py`'s
 `gpu_split_enabled()` reads it to route dispatch onto the `gpu-transcribe` /
 `gpu-diarize` queues, and `opentranscribe.sh`'s `gpu_split_active()` reads the
 identical value to decide whether to add `docker-compose.gpu-split.yml` to the

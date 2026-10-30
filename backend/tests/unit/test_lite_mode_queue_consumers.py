@@ -28,8 +28,8 @@ import pytest
 import yaml
 
 from app.core.celery import GPU_PREFERRED_TASKS
-from app.core.constants import CeleryQueues
-from app.core.constants import gpu_preferred_queue
+from app.core.queues import CeleryQueues
+from app.core.queues import gpu_preferred_queue
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _BASE_COMPOSE = _REPO_ROOT / "docker-compose.yml"

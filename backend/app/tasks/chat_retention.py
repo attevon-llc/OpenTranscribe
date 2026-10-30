@@ -16,7 +16,7 @@ from datetime import datetime
 from datetime import timedelta
 
 from app.core.celery import celery_app
-from app.core.constants import UtilityPriority
+from app.core.queues import UtilityPriority
 
 logger = logging.getLogger(__name__)
 

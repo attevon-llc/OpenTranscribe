@@ -11,8 +11,8 @@ import logging
 
 from app.core.celery import celery_app
 from app.core.config import settings
-from app.core.constants import CPUPriority
 from app.core.env import env_bool
+from app.core.queues import CPUPriority
 from app.core.redis import get_redis
 from app.utils.stats_helpers import format_bytes
 

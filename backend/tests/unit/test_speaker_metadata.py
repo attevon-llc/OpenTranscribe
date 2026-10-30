@@ -20,7 +20,7 @@ from types import SimpleNamespace
 import pytest
 from opensearchpy.exceptions import NotFoundError
 
-from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V4
+from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V4
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import SpeakerProfile
@@ -75,10 +75,10 @@ def indices(monkeypatch):
     transcript ``speakers`` term match) completely unverified.
     """
     from app.core.config import settings
-    from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V3
-    from app.core.constants import get_speaker_index
-    from app.core.constants import get_speaker_index_v3
-    from app.core.constants import get_speaker_index_v4
+    from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V3
+    from app.core.embedding_models import get_speaker_index
+    from app.core.embedding_models import get_speaker_index_v3
+    from app.core.embedding_models import get_speaker_index_v4
     from app.services.opensearch_service import client as _client
     from app.services.opensearch_service.indices import _ensure_versioned_speaker_index
 

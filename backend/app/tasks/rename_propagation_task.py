@@ -76,7 +76,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from app.core.celery import celery_app
-from app.core.constants import CPUPriority
+from app.core.queues import CPUPriority
 
 logger = logging.getLogger(__name__)
 

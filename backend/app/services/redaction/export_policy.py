@@ -50,7 +50,7 @@ import dataclasses
 import hashlib
 import json
 
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 from app.services.redaction.config import EffectiveRedactionConfig
 
 
@@ -83,7 +83,10 @@ def export_masking_is_pending(cfg: EffectiveRedactionConfig | None, status: str 
     """
     if cfg is None or not cfg.enabled:
         return False
-    return status not in (C.REDACTION_STATUS_DONE, C.REDACTION_STATUS_FAILED)
+    return status not in (
+        redaction_defaults.REDACTION_STATUS_DONE,
+        redaction_defaults.REDACTION_STATUS_FAILED,
+    )
 
 
 def export_policy_fingerprint(cfg: EffectiveRedactionConfig | None) -> str:

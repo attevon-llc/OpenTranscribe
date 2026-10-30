@@ -48,10 +48,10 @@ from unittest import mock
 import pytest
 import redis
 
-from app.core.constants import CeleryQueues
-from app.core.constants import CPUPriority  # noqa: F401 - referenced for parity/documentation
-from app.core.constants import DownloadPriority
-from app.core.constants import UtilityPriority
+from app.core.queues import CeleryQueues
+from app.core.queues import CPUPriority  # noqa: F401 - referenced for parity/documentation
+from app.core.queues import DownloadPriority
+from app.core.queues import UtilityPriority
 from app.services import backup_service as bs
 from app.services import media_mirror_service as mm
 from app.tasks import backup_tasks

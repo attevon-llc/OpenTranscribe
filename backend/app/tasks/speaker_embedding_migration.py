@@ -15,8 +15,8 @@ from typing import Any
 import numpy as np
 
 from app.core.celery import celery_app
-from app.core.constants import CPUPriority
-from app.core.constants import get_speaker_index
+from app.core.embedding_models import get_speaker_index
+from app.core.queues import CPUPriority
 from app.db.session_utils import session_scope
 from app.services.opensearch_service import get_opensearch_client
 from app.services.privacy import policy as privacy_policy

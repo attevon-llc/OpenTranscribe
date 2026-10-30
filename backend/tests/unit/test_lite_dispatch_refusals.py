@@ -22,8 +22,8 @@ from contextlib import contextmanager
 import pytest
 
 from app.core.config import settings
-from app.core.constants import CeleryQueues
 from app.core.exceptions import PipelinePlanRefusedError
+from app.core.queues import CeleryQueues
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task

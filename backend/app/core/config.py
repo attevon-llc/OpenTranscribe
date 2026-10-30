@@ -13,7 +13,7 @@ from pydantic_settings import BaseSettings
 from pydantic_settings import NoDecode
 from pydantic_settings import SettingsConfigDict
 
-from app.core.constants import DEFAULT_CHAT_RERANKER_TORCH_THREADS
+from app.core.chat_defaults import DEFAULT_CHAT_RERANKER_TORCH_THREADS
 from app.core.legacy_auth_env import oidc_bool_env
 from app.core.legacy_auth_env import oidc_env
 from app.core.legacy_auth_env import oidc_int_env

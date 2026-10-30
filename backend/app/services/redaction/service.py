@@ -12,7 +12,7 @@ import logging
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 from app.core.config import settings
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
@@ -220,7 +220,7 @@ class RedactionService:
         if media is None:
             return {"status": "skipped", "reason": "file_not_found"}
 
-        media.redaction_status = C.REDACTION_STATUS_PROCESSING  # type: ignore[assignment]
+        media.redaction_status = redaction_defaults.REDACTION_STATUS_PROCESSING  # type: ignore[assignment]
         db.commit()
 
         det_cfg = detection_config_for_all()
@@ -379,7 +379,7 @@ class RedactionService:
                 # and dropping them would be strictly worse — but the status makes
                 # clear the result is partial.
                 failed = hard_failures
-                media.redaction_status = C.REDACTION_STATUS_FAILED  # type: ignore[assignment]
+                media.redaction_status = redaction_defaults.REDACTION_STATUS_FAILED  # type: ignore[assignment]
                 db.commit()
                 logger.error(
                     "Redaction detection for file %s completed with failed detectors %s; "
@@ -404,13 +404,13 @@ class RedactionService:
             # different question from whether it examined one segment.
             if run_llm and not llm_failures:
                 ran.append("llm")
-            media.redaction_status = C.REDACTION_STATUS_DONE  # type: ignore[assignment]
-            media.redaction_model_version = C.REDACTION_MODEL_VERSION  # type: ignore[assignment]
+            media.redaction_status = redaction_defaults.REDACTION_STATUS_DONE  # type: ignore[assignment]
+            media.redaction_model_version = redaction_defaults.REDACTION_MODEL_VERSION  # type: ignore[assignment]
             media.redaction_coverage = ran  # type: ignore[assignment]
             db.commit()
         except Exception as exc:  # noqa: BLE001
             db.rollback()
-            media.redaction_status = C.REDACTION_STATUS_FAILED  # type: ignore[assignment]
+            media.redaction_status = redaction_defaults.REDACTION_STATUS_FAILED  # type: ignore[assignment]
             db.commit()
             logger.error("Redaction detection failed for file %s: %s", file_id, exc)
             return {"status": "failed", "error": str(exc)}
@@ -542,8 +542,11 @@ class RedactionService:
             transcript edit into a 500.
         """
         status = getattr(media_file, "redaction_status", None)
-        already_queued = status in (C.REDACTION_STATUS_PENDING, C.REDACTION_STATUS_PROCESSING)
-        media_file.redaction_status = C.REDACTION_STATUS_PENDING  # type: ignore[assignment]
+        already_queued = status in (
+            redaction_defaults.REDACTION_STATUS_PENDING,
+            redaction_defaults.REDACTION_STATUS_PROCESSING,
+        )
+        media_file.redaction_status = redaction_defaults.REDACTION_STATUS_PENDING  # type: ignore[assignment]
         try:
             db.commit()
         except Exception:  # noqa: BLE001
@@ -593,7 +596,7 @@ class RedactionService:
             # write (PROCESSING) was committed before this point.
             try:
                 db.rollback()
-                media.redaction_status = C.REDACTION_STATUS_PENDING  # type: ignore[assignment]
+                media.redaction_status = redaction_defaults.REDACTION_STATUS_PENDING  # type: ignore[assignment]
                 db.commit()
                 logger.warning(
                     "Redaction policy unreadable for file %s; scan left pending", file_id

@@ -20,9 +20,9 @@ from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import NOTIFICATION_TYPE_DATA_INTEGRITY_COMPLETE
 from app.core.constants import NOTIFICATION_TYPE_DATA_INTEGRITY_PROGRESS
-from app.core.constants import CPUPriority
-from app.core.constants import get_speaker_index
-from app.core.constants import get_speaker_index_v4
+from app.core.embedding_models import get_speaker_index
+from app.core.embedding_models import get_speaker_index_v4
+from app.core.queues import CPUPriority
 from app.core.redis import get_redis
 from app.utils.websocket_notify import send_ws_event
 

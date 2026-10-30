@@ -11,7 +11,7 @@ function, so the query itself is what's under test.
 
 from __future__ import annotations
 
-from app.core.constants import DEFAULT_LLM_OUTPUT_LANGUAGE
+from app.core.languages import DEFAULT_LLM_OUTPUT_LANGUAGE
 from app.models.prompt import UserSetting
 from app.utils.user_settings_helpers import get_user_llm_output_language
 from tests.user_owned_rows import make_user

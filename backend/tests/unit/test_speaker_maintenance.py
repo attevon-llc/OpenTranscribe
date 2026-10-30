@@ -27,8 +27,8 @@ from unittest.mock import patch
 import pytest
 from opensearchpy.exceptions import NotFoundError
 
-from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V3
-from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V4
+from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V3
+from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V4
 from app.models.media import MediaFile
 from app.services.opensearch_service import speaker_maintenance
 
@@ -60,9 +60,9 @@ def _embedding(dimension: int, offset: float = 0.0) -> list[float]:
 def speaker_indices(monkeypatch):
     """Throwaway v3/v4 speaker indices with the alias pointing at v4 (fresh-install shape)."""
     from app.core.config import settings
-    from app.core.constants import get_speaker_index
-    from app.core.constants import get_speaker_index_v3
-    from app.core.constants import get_speaker_index_v4
+    from app.core.embedding_models import get_speaker_index
+    from app.core.embedding_models import get_speaker_index_v3
+    from app.core.embedding_models import get_speaker_index_v4
     from app.services.opensearch_service import client as _client
     from app.services.opensearch_service.indices import _ensure_versioned_speaker_index
 
@@ -96,9 +96,9 @@ def speaker_indices_alias_v3(monkeypatch):
     indices, which the default (alias -> v4) fixture above cannot exercise.
     """
     from app.core.config import settings
-    from app.core.constants import get_speaker_index
-    from app.core.constants import get_speaker_index_v3
-    from app.core.constants import get_speaker_index_v4
+    from app.core.embedding_models import get_speaker_index
+    from app.core.embedding_models import get_speaker_index_v3
+    from app.core.embedding_models import get_speaker_index_v4
     from app.services.opensearch_service import client as _client
     from app.services.opensearch_service.indices import _ensure_versioned_speaker_index
 

@@ -172,7 +172,7 @@ def capture_queue_depth(
         import json
 
         from app.core.celery_metrics import queue_snapshot
-        from app.core.constants import CeleryQueues
+        from app.core.queues import CeleryQueues
 
         queue_names = list(queues) if queues else list(CeleryQueues.ALL)
 

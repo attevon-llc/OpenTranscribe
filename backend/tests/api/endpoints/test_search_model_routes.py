@@ -37,7 +37,7 @@ from unittest.mock import patch
 import pytest
 from fastapi import status
 
-from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
+from app.core.embedding_models import OPENSEARCH_EMBEDDING_MODELS
 
 _BASE = "/api/search"
 _KNOWN_MODEL = next(iter(OPENSEARCH_EMBEDDING_MODELS))

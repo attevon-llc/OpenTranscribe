@@ -7,9 +7,9 @@ from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_CLUSTERING_COMPLETE
 from app.core.constants import NOTIFICATION_TYPE_CLUSTERING_FILE_COMPLETE
 from app.core.constants import NOTIFICATION_TYPE_CLUSTERING_PROGRESS
-from app.core.constants import CPUPriority
-from app.core.constants import GPUPriority
 from app.core.enums import PostProcessingTask
+from app.core.queues import CPUPriority
+from app.core.queues import GPUPriority
 from app.db.session_utils import session_scope
 from app.services.post_processing_status import tracks_post_processing
 from app.services.privacy.policy import voiceprints_allowed_for_file

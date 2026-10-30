@@ -3,7 +3,7 @@ whenever the scratch-volume WAV is available; and it must still fall back to a c
 container-local temp WAV when scratch is unavailable.
 
 ⚠️ Adversarial-audit finding: these tests used to pass on the host only by accident.
-``resolve_engine_shared_volume_path`` (app/core/constants.py) falls back to the coded default
+``resolve_engine_shared_volume_path`` (app/core/scratch_paths.py) falls back to the coded default
 ``ENGINE_SHARED_VOLUME_DEFAULT = "/scratch/opentranscribe/engine"`` whenever that directory
 exists — and it exists INSIDE the container (the image pre-creates it) but not on a bare host.
 So a host pytest run got lucky: the default didn't exist, the resolver honoured the test's
@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import os
 
-from app.core import constants as engine_constants
+from app.core import scratch_paths
 from app.tasks.transcription.preprocess import stage_engine_shared_volume_wav
 from app.utils import scratch_volume
 
@@ -38,7 +38,7 @@ def test_link_produces_one_inode_when_scratch_available(tmp_path, monkeypatch):
     # container and points at the live shared volume) — point it at a tmp path guaranteed
     # absent, so this test's destination is deterministic regardless of the host layout.
     monkeypatch.setattr(
-        engine_constants, "ENGINE_SHARED_VOLUME_DEFAULT", str(tmp_path / "no-such-default")
+        scratch_paths, "ENGINE_SHARED_VOLUME_DEFAULT", str(tmp_path / "no-such-default")
     )
 
     file_uuid = "22222222-2222-2222-2222-222222222222"
@@ -62,7 +62,7 @@ def test_falls_back_to_copy_when_scratch_unavailable(tmp_path, monkeypatch):
     monkeypatch.setattr(scratch_volume, "_scratch_is_shared", lambda: False)
     monkeypatch.setenv("ENGINE_SHARED_VOLUME_PATH", str(engine_dir))
     monkeypatch.setattr(
-        engine_constants, "ENGINE_SHARED_VOLUME_DEFAULT", str(tmp_path / "no-such-default")
+        scratch_paths, "ENGINE_SHARED_VOLUME_DEFAULT", str(tmp_path / "no-such-default")
     )
 
     file_uuid = "33333333-3333-3333-3333-333333333333"

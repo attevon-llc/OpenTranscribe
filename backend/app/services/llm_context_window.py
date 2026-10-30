@@ -40,9 +40,9 @@ from typing import TYPE_CHECKING
 import requests
 from sqlalchemy.orm import Session
 
-from app.core.constants import LLM_CONTEXT_WINDOW_KEY_PREFIX
-from app.core.constants import LLM_CONTEXT_WINDOW_PROBE_TIMEOUT_S
 from app.core.enums import ContextWindowStatus
+from app.core.llm_defaults import LLM_CONTEXT_WINDOW_KEY_PREFIX
+from app.core.llm_defaults import LLM_CONTEXT_WINDOW_PROBE_TIMEOUT_S
 from app.services.llm_types import LLMConfig
 from app.services.llm_types import LLMProvider
 

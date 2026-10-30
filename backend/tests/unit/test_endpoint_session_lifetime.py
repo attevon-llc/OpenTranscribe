@@ -50,7 +50,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.core.constants import get_speaker_index
+from app.core.embedding_models import get_speaker_index
 from app.models.media import MediaFile
 from app.models.system_settings import SystemSettings
 from app.models.user import User

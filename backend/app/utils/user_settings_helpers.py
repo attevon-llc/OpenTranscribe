@@ -4,7 +4,7 @@ import logging
 
 from sqlalchemy.orm import Session
 
-from app.core.constants import DEFAULT_LLM_OUTPUT_LANGUAGE
+from app.core.languages import DEFAULT_LLM_OUTPUT_LANGUAGE
 from app.models.prompt import UserSetting
 
 logger = logging.getLogger(__name__)

@@ -18,7 +18,7 @@ from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import DEFAULT_AUDIO_QUALITY
 from app.core.constants import DEFAULT_VIDEO_QUALITY
-from app.core.constants import DownloadPriority
+from app.core.queues import DownloadPriority
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus

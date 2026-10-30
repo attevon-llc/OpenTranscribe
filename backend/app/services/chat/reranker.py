@@ -31,7 +31,7 @@ import threading
 import time
 from typing import Any
 
-from app.core import constants as C  # noqa: N812
+from app.core import chat_defaults
 from app.services.chat import reranker_threads
 
 logger = logging.getLogger(__name__)
@@ -96,7 +96,7 @@ def _is_mostly_non_english(hits: list) -> bool:
 
 
 def get_reranker(
-    model_name: str = C.CHAT_RERANKER_MODEL, *, start_cooldown_on_failure: bool = True
+    model_name: str = chat_defaults.CHAT_RERANKER_MODEL, *, start_cooldown_on_failure: bool = True
 ) -> Any:
     """Return the lazily-loaded CrossEncoder for ``model_name``, or None when unavailable.
 
@@ -220,11 +220,15 @@ def rerank(
         logger.info(
             "Skipping chat reranking: the candidate pool is predominantly non-English "
             "and %s is an English MS MARCO model. Keeping retrieval order.",
-            C.CHAT_RERANKER_MODEL,
+            chat_defaults.CHAT_RERANKER_MODEL,
         )
         return hits
 
-    model_name = C.CHAT_RERANKER_MODEL_MULTILINGUAL if non_english_head else C.CHAT_RERANKER_MODEL
+    model_name = (
+        chat_defaults.CHAT_RERANKER_MODEL_MULTILINGUAL
+        if non_english_head
+        else chat_defaults.CHAT_RERANKER_MODEL
+    )
     model = get_reranker(model_name)
     if model is None:
         return hits

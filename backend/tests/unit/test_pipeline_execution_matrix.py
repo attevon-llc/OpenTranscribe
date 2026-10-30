@@ -30,8 +30,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from app.core.constants import CeleryQueues
 from app.core.enums import FileStatus
+from app.core.queues import CeleryQueues
 from app.models.media import MediaFile
 from app.models.media import Task
 from app.models.media import TranscriptSegment

@@ -81,9 +81,9 @@ def retry_on_asr_rate_limit(task, exc, file_uuid: str) -> NoReturn:
     ``max_retries=1`` are tuned for a GPU-path connection blip, far too short for a vendor
     throttle, and ``autoretry_for`` cannot honor ``Retry-After``.
     """
-    from app.core.constants import CLOUD_ASR_MAX_RETRIES
-    from app.core.constants import CLOUD_ASR_RETRY_BASE
-    from app.core.constants import CLOUD_ASR_RETRY_MAX
+    from app.core.queues import CLOUD_ASR_MAX_RETRIES
+    from app.core.queues import CLOUD_ASR_RETRY_BASE
+    from app.core.queues import CLOUD_ASR_RETRY_MAX
 
     countdown = exc.retry_after or min(
         CLOUD_ASR_RETRY_BASE * 2**task.request.retries, CLOUD_ASR_RETRY_MAX

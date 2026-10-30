@@ -3,7 +3,7 @@ import logging
 import os
 
 from app.core.celery import celery_app
-from app.core.constants import UtilityPriority
+from app.core.queues import UtilityPriority
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.services.uuid_helpers import get_by_uuid_optional

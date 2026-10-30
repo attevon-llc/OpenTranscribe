@@ -44,7 +44,7 @@ import logging
 import re
 import time
 
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.redaction.config import blocking_detector_failures
 
@@ -138,7 +138,7 @@ class OutputRedactor:
             cfg = EffectiveRedactionConfig(
                 enabled=True,
                 enabled_categories={"pii", "toxicity", "profanity", "custom"},
-                pii_entities=set(C.REDACTION_PII_ENTITIES),
+                pii_entities=set(redaction_defaults.REDACTION_PII_ENTITIES),
             )
         self._cfg = cfg
         # Nothing to mask → a pure pass-through that costs the stream nothing.
@@ -193,7 +193,7 @@ class OutputRedactor:
         except Exception:  # noqa: BLE001 — fail closed, never emit the raw span
             self.withheld_spans += 1
             logger.exception("Chat output masking failed; withholding a generated span")
-            return C.REDACTION_LLM_FAILSAFE_TEXT
+            return redaction_defaults.REDACTION_LLM_FAILSAFE_TEXT
         finally:
             self.mask_ms += int((time.monotonic() - started) * 1000)
         self.masked_spans += 1

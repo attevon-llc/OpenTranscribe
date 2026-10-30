@@ -2,8 +2,8 @@
 
 import logging
 
-from app.core.constants import OPENSEARCH_DEFAULT_MODEL
-from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
+from app.core.embedding_models import OPENSEARCH_DEFAULT_MODEL
+from app.core.embedding_models import OPENSEARCH_EMBEDDING_MODELS
 
 logger = logging.getLogger(__name__)
 

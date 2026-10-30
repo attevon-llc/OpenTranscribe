@@ -741,7 +741,7 @@ deprecated alias for `anthropic`).
   edit mode reuses the stored key when the request omits `api_key`.
 - Summarization: BLUF, speaker analysis with talk time, action items, decisions, follow-ups,
   multi-section stitching for long transcripts (`_chunk_transcript_intelligently` →
-  `_summarize_section` → `_combine_sections`). Output languages: `core/constants.py:
+  `_summarize_section` → `_combine_sections`). Output languages: `core/languages.py:
   LLM_OUTPUT_LANGUAGES` (12: en es fr de it pt **nl** ru zh ja ko ar — no Hindi).
 - **Never log prompt or model-output text at INFO or above (issue #1022).** Output is derived
   from the transcript, so it would copy transcript content into log aggregation. On a parse
@@ -795,7 +795,7 @@ the activated arm legitimately returns `content: null` with 1,656 characters of 
 |---|---|
 | Probe, verdict rule, storage helpers | `services/llm_reasoning.py` |
 | Verdict enum (3 layers read it) | `core/enums.ReasoningOffSwitch` |
-| Instrument settings (prompt, tolerance, floor, timeouts) | `core/constants.py`, `LLM_REASONING_*` |
+| Instrument settings (prompt, tolerance, floor, timeouts) | `core/llm_defaults.py`, `LLM_REASONING_*` |
 | Recorded verdict | `SystemSettings`, key `llm.reasoning.off_switch.<fp>` |
 | Run it | `POST /llm-settings/config/{uuid}/reasoning-probe` |
 | Read it | `GET /llm-settings/config/{uuid}/reasoning`, and `reasoning_off_switch` on the configurations list |

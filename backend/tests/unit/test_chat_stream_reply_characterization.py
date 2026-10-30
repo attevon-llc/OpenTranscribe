@@ -256,7 +256,7 @@ async def test_a_context_turn_streams_exactly_this(monkeypatch):
 @pytest.mark.asyncio
 async def test_a_model_that_never_starts_times_out(monkeypatch):
     record = _harness(monkeypatch, prepare=lambda: pytest.fail("no context turn"))
-    monkeypatch.setattr("app.core.constants.DEFAULT_CHAT_FIRST_TOKEN_TIMEOUT_S", -1)
+    monkeypatch.setattr("app.core.chat_defaults.DEFAULT_CHAT_FIRST_TOKEN_TIMEOUT_S", -1)
     llm = _FakeLLM(
         [
             LLMStreamEvent(type="usage", prompt_tokens=3, completion_tokens=0),

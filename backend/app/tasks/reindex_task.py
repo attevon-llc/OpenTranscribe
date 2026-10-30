@@ -10,7 +10,7 @@ from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import NOTIFICATION_TYPE_REINDEX_COMPLETE
 from app.core.constants import NOTIFICATION_TYPE_REINDEX_PROGRESS
-from app.core.constants import CPUPriority
+from app.core.queues import CPUPriority
 from app.core.redis import get_redis
 from app.db.session_utils import session_scope
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
@@ -94,7 +94,7 @@ def _handle_model_switch(model_id: str) -> dict[str, Any] | None:
 
     Only handles OpenSearch neural models.
     """
-    from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
+    from app.core.embedding_models import OPENSEARCH_EMBEDDING_MODELS
     from app.services.search.index_admin import recreate_index_for_dimension
 
     if model_id in OPENSEARCH_EMBEDDING_MODELS:

@@ -19,7 +19,7 @@ these models unsafe:
 
 So each model is registered, deployed, and then asked to actually work:
 
-* the returned vector has the dimension ``core/constants.py`` declares;
+* the returned vector has the dimension ``core/embedding_models.py`` declares;
 * text in several scripts (Latin / CJK / Arabic / Cyrillic) all embed;
 * a **cross-lingual** check — the same sentence in English and Spanish should land
   close together for a multilingual model and measurably further apart for an
@@ -63,7 +63,7 @@ PARALLEL_TEXT = {
 #: on every pair. This is the control the comparison is read against.
 UNRELATED_TEXT = 'Rain fell steadily on the tin roof throughout the night.'
 
-#: Declared in app/core/constants.py. Duplicated deliberately: this script must be
+#: Declared in app/core/embedding_models.py. Duplicated deliberately: this script must be
 #: runnable against a cluster without importing the app, and a mismatch between the
 #: two is itself a finding.
 EXPECTED_DIMENSIONS = {

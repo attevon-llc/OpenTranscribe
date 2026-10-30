@@ -80,7 +80,7 @@ SHAPES = (
     SHAPE_SPEAKER_STATS,
 )
 
-#: Bucket ceiling. Deliberately above :data:`app.core.constants.CHAT_MAX_SCOPE_FILES`
+#: Bucket ceiling. Deliberately above :data:`app.core.chat_defaults.CHAT_MAX_SCOPE_FILES`
 #: (500) so a full-scope aggregation can never be truncated by this number — and
 #: :func:`_buckets` refuses rather than reporting a head-of-list if it ever is.
 MAX_BUCKETS = 10_000

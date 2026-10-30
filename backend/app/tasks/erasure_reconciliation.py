@@ -52,7 +52,7 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 from app.core.celery import celery_app
-from app.core.constants import UtilityPriority
+from app.core.queues import UtilityPriority
 
 if TYPE_CHECKING:  # heavy model import kept out of the worker's import path
     from app.models.media import MediaFile

@@ -56,8 +56,8 @@ from app.auth.ldap_auth import DIRECTORY_ABSENT
 from app.auth.ldap_auth import DIRECTORY_PRESENT
 from app.auth.ldap_auth import LdapDirectoryUnavailableError
 from app.auth.ldap_auth import LdapProbe
-from app.core.constants import CeleryQueues
-from app.core.constants import CPUPriority
+from app.core.queues import CeleryQueues
+from app.core.queues import CPUPriority
 from app.services import directory_sync_service as svc
 from app.tasks import directory_sync_task as task_mod
 

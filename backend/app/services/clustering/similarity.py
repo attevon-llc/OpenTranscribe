@@ -10,7 +10,7 @@ from typing import NamedTuple
 
 import numpy as np
 
-from app.core import constants
+from app.core import queues
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.services.clustering.recluster_groups import Groups
@@ -67,7 +67,7 @@ def compute_similarity_groups(
     # that persists in prefork worker children. For small speaker
     # counts, CPU is fast enough and avoids the context overhead.
     # The threshold is shared with the dispatch router (issue #1083).
-    use_gpu = torch.cuda.is_available() and n >= constants.SPEAKER_CLUSTERING_GPU_MIN_SPEAKERS
+    use_gpu = torch.cuda.is_available() and n >= queues.SPEAKER_CLUSTERING_GPU_MIN_SPEAKERS
     device = torch.device("cuda:0" if use_gpu else "cpu")
     dtype = torch.float16 if use_gpu else torch.float32
     logger.info(

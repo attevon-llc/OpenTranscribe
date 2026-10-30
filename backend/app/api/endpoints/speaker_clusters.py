@@ -111,7 +111,7 @@ def trigger_recluster(
     """
     require_voiceprints(db, user_id=current_user.id, organization_id=ctx.org_id)
     try:
-        from app.core import constants
+        from app.core import queues
         from app.tasks import speaker_clustering
 
         threshold = data.threshold if data and data.threshold is not None else None
@@ -120,7 +120,7 @@ def trigger_recluster(
         # shared threshold the clustering math runs on CPU wherever it lands, so a
         # `gpu` publish would only wait for (or cold-start) a GPU worker.
         largest = SpeakerClusteringService(db).largest_recluster_partition(user_id)
-        queue = constants.speaker_clustering_queue(largest)
+        queue = queues.speaker_clustering_queue(largest)
         task = speaker_clustering.recluster_all_speakers.apply_async(
             args=[user_id, threshold], queue=queue
         )
@@ -139,7 +139,7 @@ def trigger_recluster(
                 total_steps=0,
                 message=(
                     "Queued — waiting for GPU..."
-                    if queue == constants.CeleryQueues.GPU
+                    if queue == queues.CeleryQueues.GPU
                     else "Queued..."
                 ),
                 progress=0.0,

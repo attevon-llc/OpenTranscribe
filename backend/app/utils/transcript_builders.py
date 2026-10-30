@@ -8,7 +8,7 @@ summarization, and other transcript-processing tasks.
 import logging
 from typing import Any
 
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 from app.utils.speaker_labels import canonical_speaker_label
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 from app.utils.speaker_stats import tally_by_speaker
@@ -52,7 +52,7 @@ def mask_segment_text(segment, redaction_cfg=None) -> str:
             "Redaction masking failed for a segment; withholding its text rather than "
             "sending unmasked content to an external provider"
         )
-        return C.REDACTION_LLM_FAILSAFE_TEXT
+        return redaction_defaults.REDACTION_LLM_FAILSAFE_TEXT
 
 
 def get_speaker_name(segment, *, voiceprint_names: bool | None = None) -> str:

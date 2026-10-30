@@ -8,7 +8,7 @@ the key silently pointed the engine at a container-local scratch dir the sidecar
 
 from __future__ import annotations
 
-from app.core.constants import ENGINE_SHARED_VOLUME_DEFAULT
+from app.core.scratch_paths import ENGINE_SHARED_VOLUME_DEFAULT
 from app.transcription.engine.config import EngineConfig
 
 

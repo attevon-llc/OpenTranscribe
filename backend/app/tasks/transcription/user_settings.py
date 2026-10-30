@@ -21,7 +21,7 @@ def _get_user_language_settings(db, user_id: int) -> dict:
         Dict with source_language and translate_to_english keys
     """
     from app import models
-    from app.core.constants import DEFAULT_SOURCE_LANGUAGE
+    from app.core.languages import DEFAULT_SOURCE_LANGUAGE
 
     user_settings = (
         db.query(models.UserSetting)

@@ -15,10 +15,10 @@ import time
 
 from app.core import stage_timing
 from app.core.celery import celery_app
-from app.core.constants import CPUPriority
-from app.core.constants import engine_shared_volume_enabled
-from app.core.constants import resolve_engine_shared_volume_path
 from app.core.enums import TranscriptionStage
+from app.core.queues import CPUPriority
+from app.core.scratch_paths import engine_shared_volume_enabled
+from app.core.scratch_paths import resolve_engine_shared_volume_path
 from app.core.task_liveness import run_heartbeat
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope

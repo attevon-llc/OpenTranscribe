@@ -109,7 +109,7 @@ def cpu_service(monkeypatch):
 
 
 def _expected_dim() -> int:
-    from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V4
+    from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V4
 
     return int(PYANNOTE_EMBEDDING_DIMENSION_V4)
 

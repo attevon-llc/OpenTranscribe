@@ -23,7 +23,7 @@ from dataclasses import field
 
 from sqlalchemy.orm import Session
 
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 from app.core.env import parse_bool
 from app.core.tenant_limits import RedactionFloor as TenantRedactionFloor
 from app.core.tenant_limits import resolve_redaction_floor
@@ -89,17 +89,17 @@ class EffectiveRedactionConfig:
     enabled_categories: set[str] = field(default_factory=set)
     locked_categories: set[str] = field(default_factory=set)  # admin-forced, non-disableable
     pii_entities: set[str] = field(default_factory=set)
-    style: str = C.DEFAULT_REDACTION_STYLE
+    style: str = redaction_defaults.DEFAULT_REDACTION_STYLE
     custom_words: list[str] = field(default_factory=list)
     allowlist: list[str] = field(default_factory=list)
-    toxicity_threshold: float = C.DEFAULT_REDACTION_TOXICITY_THRESHOLD
-    redact_before_llm: bool = C.DEFAULT_REDACTION_REDACT_BEFORE_LLM
+    toxicity_threshold: float = redaction_defaults.DEFAULT_REDACTION_TOXICITY_THRESHOLD
+    redact_before_llm: bool = redaction_defaults.DEFAULT_REDACTION_REDACT_BEFORE_LLM
     # Admin force floor (`redaction.force_redact_before_llm`). When set, the
     # per-provider local-model exemption (`llm_guard.is_local_provider`) must be
     # ignored and masking applied regardless of where the model runs — the
     # admin is mandating masked text for every provider, not only external ones.
     redact_before_llm_locked: bool = False
-    export_redacted: bool = C.DEFAULT_REDACTION_DEFAULT_EXPORT_REDACTED
+    export_redacted: bool = redaction_defaults.DEFAULT_REDACTION_DEFAULT_EXPORT_REDACTED
     export_locked: bool = False  # admin mandates censored exports
 
     @property
@@ -192,7 +192,8 @@ def _load_admin_policy(db: Session) -> dict:
         "forced_pii_entities": set(_parse_list(g("redaction.force_pii_entities"), [])),
         "forced_custom_words": _parse_list(g("redaction.force_custom_words"), []),
         "force_toxicity_threshold": _parse_float(
-            g("redaction.force_toxicity_threshold"), C.DEFAULT_REDACTION_TOXICITY_THRESHOLD
+            g("redaction.force_toxicity_threshold"),
+            redaction_defaults.DEFAULT_REDACTION_TOXICITY_THRESHOLD,
         ),
         "force_export_redacted": parse_bool(g("redaction.force_export_redacted"), False),
         "force_redact_before_llm": parse_bool(g("redaction.force_redact_before_llm"), False),
@@ -263,15 +264,23 @@ def resolve_effective_config(
         _load_admin_policy(db), resolve_redaction_floor(db, organization_id)
     )
 
-    user_enabled = parse_bool(prefs.get("redaction_enabled"), C.DEFAULT_REDACTION_ENABLED)
+    user_enabled = parse_bool(
+        prefs.get("redaction_enabled"), redaction_defaults.DEFAULT_REDACTION_ENABLED
+    )
     user_detectors = set(
-        _parse_list(prefs.get("redaction_detectors"), C.DEFAULT_REDACTION_DETECTORS)
+        _parse_list(
+            prefs.get("redaction_detectors"), redaction_defaults.DEFAULT_REDACTION_DETECTORS
+        )
     )
     user_categories = set(
-        _parse_list(prefs.get("redaction_categories"), C.DEFAULT_REDACTION_CATEGORIES)
+        _parse_list(
+            prefs.get("redaction_categories"), redaction_defaults.DEFAULT_REDACTION_CATEGORIES
+        )
     )
     user_pii = set(
-        _parse_list(prefs.get("redaction_pii_entities"), C.DEFAULT_REDACTION_PII_ENTITIES)
+        _parse_list(
+            prefs.get("redaction_pii_entities"), redaction_defaults.DEFAULT_REDACTION_PII_ENTITIES
+        )
     )
 
     forced_categories: set[str] = admin["forced_categories"]
@@ -293,7 +302,8 @@ def resolve_effective_config(
         detectors = set()
 
     toxicity_threshold = _parse_float(
-        prefs.get("redaction_toxicity_threshold"), C.DEFAULT_REDACTION_TOXICITY_THRESHOLD
+        prefs.get("redaction_toxicity_threshold"),
+        redaction_defaults.DEFAULT_REDACTION_TOXICITY_THRESHOLD,
     )
     if "toxicity" in forced_categories:
         toxicity_threshold = min(toxicity_threshold, admin["force_toxicity_threshold"])
@@ -304,19 +314,20 @@ def resolve_effective_config(
         enabled_categories=enabled_categories,
         locked_categories=forced_categories,
         pii_entities=user_pii | admin["forced_pii_entities"],
-        style=prefs.get("redaction_style") or C.DEFAULT_REDACTION_STYLE,
+        style=prefs.get("redaction_style") or redaction_defaults.DEFAULT_REDACTION_STYLE,
         custom_words=_parse_list(prefs.get("redaction_custom_words"), [])
         + admin["forced_custom_words"],
         allowlist=_parse_list(prefs.get("redaction_allowlist"), []),
         toxicity_threshold=toxicity_threshold,
         redact_before_llm=parse_bool(
-            prefs.get("redaction_redact_before_llm"), C.DEFAULT_REDACTION_REDACT_BEFORE_LLM
+            prefs.get("redaction_redact_before_llm"),
+            redaction_defaults.DEFAULT_REDACTION_REDACT_BEFORE_LLM,
         )
         or admin["force_redact_before_llm"],
         redact_before_llm_locked=admin["force_redact_before_llm"],
         export_redacted=parse_bool(
             prefs.get("redaction_default_export_redacted"),
-            C.DEFAULT_REDACTION_DEFAULT_EXPORT_REDACTED,
+            redaction_defaults.DEFAULT_REDACTION_DEFAULT_EXPORT_REDACTED,
         )
         or admin["force_export_redacted"],
         export_locked=admin["force_export_redacted"],
@@ -366,8 +377,8 @@ def most_restrictive_config() -> EffectiveRedactionConfig:
         detectors={"pii", "profanity", "toxicity"},
         enabled_categories={"pii", "toxicity", "profanity", "custom"},
         locked_categories=set(),
-        pii_entities=set(C.REDACTION_PII_ENTITIES),
-        style=C.DEFAULT_REDACTION_STYLE,
+        pii_entities=set(redaction_defaults.REDACTION_PII_ENTITIES),
+        style=redaction_defaults.DEFAULT_REDACTION_STYLE,
         custom_words=[],
         allowlist=[],
         toxicity_threshold=0.0,
@@ -462,12 +473,20 @@ def union_effective_config(
         list(getattr(a, "allowlist", None) or []), list(getattr(b, "allowlist", None) or [])
     )
     style = _stricter_style(
-        str(getattr(a, "style", None) or C.DEFAULT_REDACTION_STYLE),
-        str(getattr(b, "style", None) or C.DEFAULT_REDACTION_STYLE),
+        str(getattr(a, "style", None) or redaction_defaults.DEFAULT_REDACTION_STYLE),
+        str(getattr(b, "style", None) or redaction_defaults.DEFAULT_REDACTION_STYLE),
     )
     toxicity_threshold = min(
-        float(getattr(a, "toxicity_threshold", C.DEFAULT_REDACTION_TOXICITY_THRESHOLD)),
-        float(getattr(b, "toxicity_threshold", C.DEFAULT_REDACTION_TOXICITY_THRESHOLD)),
+        float(
+            getattr(
+                a, "toxicity_threshold", redaction_defaults.DEFAULT_REDACTION_TOXICITY_THRESHOLD
+            )
+        ),
+        float(
+            getattr(
+                b, "toxicity_threshold", redaction_defaults.DEFAULT_REDACTION_TOXICITY_THRESHOLD
+            )
+        ),
     )
     redact_before_llm = bool(getattr(a, "redact_before_llm", False)) or bool(
         getattr(b, "redact_before_llm", False)
@@ -635,15 +654,15 @@ def detector_language_support(language: str | None) -> tuple[set[str], dict[str,
         return set(_DETECTOR_CATEGORIES), {}
     supported: set[str] = {"llm"}
     skipped: dict[str, str] = {}
-    if lang in C.REDACTION_PROFANITY_LANGUAGES:
+    if lang in redaction_defaults.REDACTION_PROFANITY_LANGUAGES:
         supported.add("profanity")
     else:
         skipped["profanity"] = lang
-    if lang in C.REDACTION_PII_LANGUAGES:
+    if lang in redaction_defaults.REDACTION_PII_LANGUAGES:
         supported.add("pii")
     else:
         skipped["pii"] = lang
-    if lang in C.REDACTION_TOXICITY_LANGUAGES:
+    if lang in redaction_defaults.REDACTION_TOXICITY_LANGUAGES:
         supported.add("toxicity")
     else:
         skipped["toxicity"] = lang
@@ -655,7 +674,7 @@ def detection_config_for_all() -> dict:
     caches ALL categories, independent of any user/admin setting (toggling is read-time).
     """
     return {
-        "pii_entities": list(C.REDACTION_PII_ENTITIES),
-        "pii_confidence": C.DEFAULT_REDACTION_PII_CONFIDENCE,
+        "pii_entities": list(redaction_defaults.REDACTION_PII_ENTITIES),
+        "pii_confidence": redaction_defaults.DEFAULT_REDACTION_PII_CONFIDENCE,
         "toxicity_threshold": 0.0,  # store all scores; threshold applied at read time
     }

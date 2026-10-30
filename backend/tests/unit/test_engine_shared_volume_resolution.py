@@ -24,8 +24,8 @@ import logging
 
 import pytest
 
-from app.core.constants import ENGINE_SHARED_VOLUME_DEFAULT
-from app.core.constants import resolve_engine_shared_volume_path
+from app.core.scratch_paths import ENGINE_SHARED_VOLUME_DEFAULT
+from app.core.scratch_paths import resolve_engine_shared_volume_path
 
 
 def test_unset_uses_the_coded_default(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -50,7 +50,7 @@ def test_a_stale_path_falls_back_to_the_default_that_does_exist(
     real_default = tmp_path / "scratch" / "engine"
     real_default.mkdir(parents=True)
     monkeypatch.setattr(
-        "app.core.constants.ENGINE_SHARED_VOLUME_DEFAULT", str(real_default), raising=True
+        "app.core.scratch_paths.ENGINE_SHARED_VOLUME_DEFAULT", str(real_default), raising=True
     )
     monkeypatch.setenv("ENGINE_SHARED_VOLUME_PATH", str(tmp_path / "tmp" / "transcription"))
 
@@ -75,7 +75,9 @@ def test_neither_existing_honours_the_operator_value(
     resolver quietly substituting a directory that is equally absent.
     """
     monkeypatch.setattr(
-        "app.core.constants.ENGINE_SHARED_VOLUME_DEFAULT", str(tmp_path / "absent"), raising=True
+        "app.core.scratch_paths.ENGINE_SHARED_VOLUME_DEFAULT",
+        str(tmp_path / "absent"),
+        raising=True,
     )
     configured = str(tmp_path / "also-absent")
     monkeypatch.setenv("ENGINE_SHARED_VOLUME_PATH", configured)
@@ -94,7 +96,7 @@ def test_every_reader_and_writer_goes_through_the_resolver() -> None:
     root = pathlib.Path(__file__).resolve().parents[2] / "app"
     # The known callers of resolve_engine_shared_volume_path() at the time this test was
     # written. A scan that silently walked the wrong root (or aborted early) would still
-    # report zero offenders — because "continue" on constants.py was the *only* branch ever
+    # report zero offenders — because "continue" on scratch_paths.py was the *only* branch ever
     # exercised on a green run — so the scan must prove it actually reached real files,
     # including these, not merely that it found no violations.
     known_readers = {
@@ -106,7 +108,7 @@ def test_every_reader_and_writer_goes_through_the_resolver() -> None:
     files_scanned = 0
     offenders = []
     for py in root.rglob("*.py"):
-        if py.name == "constants.py":
+        if py.name == "scratch_paths.py":
             continue  # the resolver itself legitimately reads it
         files_scanned += 1
         rel = str(py.relative_to(root))
@@ -151,12 +153,12 @@ def test_a_present_but_stale_configured_dir_falls_back_to_the_default(
     stale_but_present.mkdir(parents=True)  # already recreated by the writer's os.makedirs
 
     monkeypatch.setattr(
-        "app.core.constants.ENGINE_SHARED_VOLUME_DEFAULT", str(real_default), raising=True
+        "app.core.scratch_paths.ENGINE_SHARED_VOLUME_DEFAULT", str(real_default), raising=True
     )
     monkeypatch.setenv("ENGINE_SHARED_VOLUME_PATH", str(stale_but_present))
 
     devices = {str(real_default): 111, str(stale_but_present): 222}
-    monkeypatch.setattr("app.core.constants._stat_dev", lambda p: devices.get(p), raising=True)
+    monkeypatch.setattr("app.core.scratch_paths._stat_dev", lambda p: devices.get(p), raising=True)
 
     with caplog.at_level(logging.WARNING):
         resolved = resolve_engine_shared_volume_path()
@@ -182,10 +184,10 @@ def test_a_present_configured_dir_on_the_real_mount_is_honoured(
     configured.mkdir()
 
     monkeypatch.setattr(
-        "app.core.constants.ENGINE_SHARED_VOLUME_DEFAULT", str(real_default), raising=True
+        "app.core.scratch_paths.ENGINE_SHARED_VOLUME_DEFAULT", str(real_default), raising=True
     )
     monkeypatch.setenv("ENGINE_SHARED_VOLUME_PATH", str(configured))
-    monkeypatch.setattr("app.core.constants._stat_dev", lambda p: 999, raising=True)
+    monkeypatch.setattr("app.core.scratch_paths._stat_dev", lambda p: 999, raising=True)
 
     with caplog.at_level(logging.WARNING):
         resolved = resolve_engine_shared_volume_path()

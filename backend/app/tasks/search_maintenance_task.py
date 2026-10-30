@@ -11,8 +11,8 @@ from typing import Any
 from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import NEURAL_BOOTSTRAP_LOCK_TIMEOUT_SECONDS
-from app.core.constants import CPUPriority
-from app.core.constants import UtilityPriority
+from app.core.queues import CPUPriority
+from app.core.queues import UtilityPriority
 from app.core.redis import get_redis
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 from app.utils.task_lock import with_task_lock

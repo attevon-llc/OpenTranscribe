@@ -24,7 +24,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.core.constants import SPEAKER_CONFIDENCE_MEDIUM
-from app.core.constants import get_speaker_index
+from app.core.embedding_models import get_speaker_index
 from app.models.media import MediaFile
 from app.models.media import Speaker
 

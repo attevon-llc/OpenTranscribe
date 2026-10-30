@@ -36,9 +36,9 @@ import shutil
 import time
 from pathlib import Path
 
-from app.core.constants import PIPELINE_SCRATCH_DEFAULT
-from app.core.constants import RESERVED_SCRATCH_NAMESPACES
-from app.core.constants import pipeline_scratch_shared
+from app.core.scratch_paths import PIPELINE_SCRATCH_DEFAULT
+from app.core.scratch_paths import RESERVED_SCRATCH_NAMESPACES
+from app.core.scratch_paths import pipeline_scratch_shared
 
 logger = logging.getLogger(__name__)
 

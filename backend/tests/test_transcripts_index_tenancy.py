@@ -46,9 +46,9 @@ def _repoint_speaker_indices(monkeypatch) -> list[str]:
     would create production-named ``speakers_v3``/``speakers_v4`` and a ``speakers`` alias.
     """
     from app.core.config import settings
-    from app.core.constants import get_speaker_index_v3
-    from app.core.constants import get_speaker_index_v3_backup
-    from app.core.constants import get_speaker_index_v4
+    from app.core.embedding_models import get_speaker_index_v3
+    from app.core.embedding_models import get_speaker_index_v3_backup
+    from app.core.embedding_models import get_speaker_index_v4
 
     monkeypatch.setattr(
         settings, "OPENSEARCH_SPEAKER_INDEX", f"test_tenancy_speakers_{uuid_pkg.uuid4().hex[:10]}"

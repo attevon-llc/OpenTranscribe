@@ -32,7 +32,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
+from app.core.embedding_models import OPENSEARCH_EMBEDDING_MODELS
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.services.search.embedding_provenance import EmbeddingProvenance

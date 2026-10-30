@@ -138,11 +138,13 @@ def test_every_alias_resolves_to_a_language_the_app_knows() -> None:
     pointing at a code that is not in ``WHISPER_LANGUAGES`` would make ``normalize_language``
     return a value no other reader recognises.
     """
-    from app.core import constants as C  # noqa: N812
+    from app.core import languages
     from app.utils.language import _ALIAS_CODES
 
     unknown = {
-        alias: code for alias, code in _ALIAS_CODES.items() if code not in C.WHISPER_LANGUAGES
+        alias: code
+        for alias, code in _ALIAS_CODES.items()
+        if code not in languages.WHISPER_LANGUAGES
     }
 
     assert _ALIAS_CODES, "the table is the point of the test"

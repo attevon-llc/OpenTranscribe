@@ -41,7 +41,7 @@ against a cosinesimil index today (`../similarity_service.py`, whose parameter i
 
 The transcript-chunk search plane: chunk → index → query. The **speaker/voiceprint** plane is
 separate and lives in the `../opensearch_service/` package (alias `speakers` → `speakers_v3`
-512d / `speakers_v4` 256d; see `core/constants.py:get_speaker_index*`).
+512d / `speakers_v4` 256d; see `core/embedding_models.py:get_speaker_index*`).
 
 **Every write to that speaker plane passes the privacy write backstop (#1280).** `speaker_write.add_speaker_embedding_v4` /
 `bulk_add_speaker_embeddings_v4` / `add_speaker_embedding`, `profiles.store_profile_embedding_v4` / `store_profile_embedding` and
@@ -98,7 +98,7 @@ The chunk plane in this package carries no voiceprint and is not gated.
 - Index `transcript_chunks` + alias `transcript_search`. Alias creation/teardown is duplicated
   in `ensure_chunks_index_exists` and `recreate_index_for_dimension` — keep both in sync.
 - Neural search on by default (`OPENSEARCH_NEURAL_SEARCH_ENABLED=true`); default model
-  `all-MiniLM-L6-v2` (384d, 80 MB). Tiers in `core/constants.py:OPENSEARCH_EMBEDDING_MODELS`
+  `all-MiniLM-L6-v2` (384d, 80 MB). Tiers in `core/embedding_models.py:OPENSEARCH_EMBEDDING_MODELS`
   (fast 384d / balanced 768d / best, English + multilingual). Offline pre-fetch:
   `DOWNLOAD_ALL_OPENSEARCH_MODELS=true bash scripts/download-models.sh models`.
 - Startup (`app/main.py`, `_initialize_neural_search`) sleeps 15 s, configures ML Commons cluster settings, scans

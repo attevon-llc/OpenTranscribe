@@ -19,8 +19,8 @@ from sqlalchemy.orm import Session
 
 from app.core.celery import celery_app
 from app.core.config import settings
-from app.core.constants import EmbeddingPriority
-from app.core.constants import UtilityPriority
+from app.core.queues import EmbeddingPriority
+from app.core.queues import UtilityPriority
 from app.utils.task_lock import with_task_lock
 
 logger = logging.getLogger(__name__)

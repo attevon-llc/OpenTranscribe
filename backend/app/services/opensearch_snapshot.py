@@ -114,7 +114,7 @@ def voiceprint_doc_count(client: Any) -> int | None:
         be read (never 0 for an unreachable cluster — "I could not ask" and "there are
         none" must not look the same).
     """
-    from app.core.constants import get_speaker_index
+    from app.core.embedding_models import get_speaker_index
 
     try:
         return int(client.count(index=f"{get_speaker_index()}*")["count"])

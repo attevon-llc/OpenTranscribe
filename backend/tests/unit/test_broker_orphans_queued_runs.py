@@ -19,7 +19,7 @@ from typing import Any
 from kombu.transport.redis import Channel
 
 from app.core import broker_orphans
-from app.core.constants import CeleryQueues
+from app.core.queues import CeleryQueues
 
 
 def _message(task: str, *, run_id: str | None) -> str:

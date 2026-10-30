@@ -15,9 +15,9 @@ from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_COMBINED_MIGRATION_COMPLETE
 from app.core.constants import NOTIFICATION_TYPE_COMBINED_MIGRATION_PROGRESS
 from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
-from app.core.constants import CPUPriority
-from app.core.constants import GPUPriority
 from app.core.pipeline_constants import FILES_PER_BATCH_TASK
+from app.core.queues import CPUPriority
+from app.core.queues import GPUPriority
 from app.core.redis import get_redis
 from app.db.session_utils import session_scope
 from app.services.migration_admin_notify import notify_migration_admin

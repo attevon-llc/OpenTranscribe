@@ -23,13 +23,13 @@ FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "redaction"
 @pytest.fixture(scope="module")
 def tox():
     pytest.importorskip("transformers")
-    from app.core import constants as C  # noqa: N812
+    from app.core import redaction_defaults
     from app.services.redaction.detectors import toxicity
 
     require_loaded(
         toxicity.preload(),
-        available=hf_weights_cached(C.REDACTION_TOXICITY_MODEL_EN),
-        what=f"Toxicity model {C.REDACTION_TOXICITY_MODEL_EN}",
+        available=hf_weights_cached(redaction_defaults.REDACTION_TOXICITY_MODEL_EN),
+        what=f"Toxicity model {redaction_defaults.REDACTION_TOXICITY_MODEL_EN}",
     )
     return toxicity
 

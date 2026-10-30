@@ -9,9 +9,9 @@ import logging
 import time
 from typing import Any
 
-from app.core.constants import get_speaker_index
-from app.core.constants import get_speaker_index_v3
-from app.core.constants import get_speaker_index_v4
+from app.core.embedding_models import get_speaker_index
+from app.core.embedding_models import get_speaker_index_v3
+from app.core.embedding_models import get_speaker_index_v4
 from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 from app.services.opensearch_service.client import OpenSearchUnavailableError
@@ -120,9 +120,9 @@ def migrate_to_alias_based_indices() -> dict[str, Any]:
 
 def _migrate_to_alias_based_indices() -> dict[str, Any]:
     """Body of :func:`migrate_to_alias_based_indices`; see it for semantics."""
-    from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V3
-    from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V4
-    from app.core.constants import get_speaker_index_v3_backup
+    from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V3
+    from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V4
+    from app.core.embedding_models import get_speaker_index_v3_backup
 
     assert _client.opensearch_client is not None  # noqa: S101 - checked by caller
 

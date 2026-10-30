@@ -24,10 +24,10 @@ import json
 
 import pytest
 
-from app.core.constants import LLM_REASONING_CAPABILITY_KEY_PREFIX
-from app.core.constants import LLM_REASONING_PROBE_MIN_CHARS
-from app.core.constants import LLM_REASONING_PROBE_TEMPERATURE
 from app.core.enums import ReasoningOffSwitch
+from app.core.llm_defaults import LLM_REASONING_CAPABILITY_KEY_PREFIX
+from app.core.llm_defaults import LLM_REASONING_PROBE_MIN_CHARS
+from app.core.llm_defaults import LLM_REASONING_PROBE_TEMPERATURE
 from app.services import llm_reasoning
 from app.services.llm_service import LLMService
 from app.services.llm_types import LLMConfig

@@ -417,14 +417,14 @@ def _real_cfg(categories, entities=None):
     The tests below run the real detector layer and the real masker, so the
     config has to carry every field both of them read.
     """
-    from app.core import constants as C  # noqa: N812
+    from app.core.redaction_defaults import REDACTION_PII_ENTITIES
     from app.services.redaction.config import EffectiveRedactionConfig
 
     return EffectiveRedactionConfig(
         enabled=True,
         redact_before_llm=True,
         enabled_categories=set(categories),
-        pii_entities=set(C.REDACTION_PII_ENTITIES if entities is None else entities),
+        pii_entities=set(REDACTION_PII_ENTITIES if entities is None else entities),
     )
 
 

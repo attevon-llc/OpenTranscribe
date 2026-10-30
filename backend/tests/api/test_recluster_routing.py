@@ -19,7 +19,7 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import status
 
-from app.core import constants
+from app.core import queues
 from app.core.config import settings
 from app.models.media import MediaFile
 from app.models.media import Speaker
@@ -72,20 +72,20 @@ def test_small_speaker_set_is_published_to_cpu(
     resp = client.post(URL, headers=user_token_headers, json={})
 
     assert resp.status_code == status.HTTP_200_OK, resp.json()
-    assert _published_queue(mock_recluster_task) == constants.CeleryQueues.CPU
+    assert _published_queue(mock_recluster_task) == queues.CeleryQueues.CPU
 
 
 def test_speaker_set_at_threshold_is_published_to_gpu(
     client, user_token_headers, db_session, normal_user, mock_recluster_task, monkeypatch
 ):
     monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "full")
-    monkeypatch.setattr(constants, "SPEAKER_CLUSTERING_GPU_MIN_SPEAKERS", 4, raising=False)
+    monkeypatch.setattr(queues, "SPEAKER_CLUSTERING_GPU_MIN_SPEAKERS", 4, raising=False)
     _add_unlabeled_speakers(db_session, normal_user, 4)
 
     resp = client.post(URL, headers=user_token_headers, json={})
 
     assert resp.status_code == status.HTTP_200_OK, resp.json()
-    assert _published_queue(mock_recluster_task) == constants.CeleryQueues.GPU
+    assert _published_queue(mock_recluster_task) == queues.CeleryQueues.GPU
 
 
 def test_threshold_is_per_tenant_partition_not_user_total(
@@ -98,7 +98,7 @@ def test_threshold_is_per_tenant_partition_not_user_total(
     from app.models.organization import Organization
 
     monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "full")
-    monkeypatch.setattr(constants, "SPEAKER_CLUSTERING_GPU_MIN_SPEAKERS", 4, raising=False)
+    monkeypatch.setattr(queues, "SPEAKER_CLUSTERING_GPU_MIN_SPEAKERS", 4, raising=False)
     org = Organization(name=f"recluster-routing-{uuid.uuid4().hex[:8]}")
     db_session.add(org)
     db_session.commit()
@@ -109,7 +109,7 @@ def test_threshold_is_per_tenant_partition_not_user_total(
     resp = client.post(URL, headers=user_token_headers, json={})
 
     assert resp.status_code == status.HTTP_200_OK, resp.json()
-    assert _published_queue(mock_recluster_task) == constants.CeleryQueues.CPU
+    assert _published_queue(mock_recluster_task) == queues.CeleryQueues.CPU
 
 
 def test_lite_mode_large_set_still_published_to_cpu(
@@ -117,13 +117,13 @@ def test_lite_mode_large_set_still_published_to_cpu(
 ):
     """Lite has no GPU consumer at all (issue #865): size never routes to ``gpu``."""
     monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "lite")
-    monkeypatch.setattr(constants, "SPEAKER_CLUSTERING_GPU_MIN_SPEAKERS", 4, raising=False)
+    monkeypatch.setattr(queues, "SPEAKER_CLUSTERING_GPU_MIN_SPEAKERS", 4, raising=False)
     _add_unlabeled_speakers(db_session, normal_user, 4)
 
     resp = client.post(URL, headers=user_token_headers, json={})
 
     assert resp.status_code == status.HTTP_200_OK, resp.json()
-    assert _published_queue(mock_recluster_task) == constants.CeleryQueues.CPU
+    assert _published_queue(mock_recluster_task) == queues.CeleryQueues.CPU
 
 
 def test_clustering_service_reads_the_shared_threshold(monkeypatch):
@@ -145,7 +145,7 @@ def test_clustering_service_reads_the_shared_threshold(monkeypatch):
     monkeypatch.setattr(torch.cuda, "empty_cache", lambda: None)
     monkeypatch.setattr(torch.cuda, "ipc_collect", lambda: None)
     monkeypatch.setattr(torch, "tensor", _capture_tensor)
-    monkeypatch.setattr(constants, "SPEAKER_CLUSTERING_GPU_MIN_SPEAKERS", 3, raising=False)
+    monkeypatch.setattr(queues, "SPEAKER_CLUSTERING_GPU_MIN_SPEAKERS", 3, raising=False)
 
     svc = SpeakerClusteringService.__new__(SpeakerClusteringService)
     rows = [[1.0, 0.0], [0.9, 0.1], [0.0, 1.0]]

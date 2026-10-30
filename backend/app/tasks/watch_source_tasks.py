@@ -27,7 +27,7 @@ from datetime import timedelta
 
 from app.core.celery import celery_app
 from app.core.config import settings
-from app.core.constants import CPUPriority
+from app.core.queues import CPUPriority
 from app.db.session_utils import session_scope
 from app.models.watch_source import WatchSource
 from app.models.watch_source import WatchSourceFile

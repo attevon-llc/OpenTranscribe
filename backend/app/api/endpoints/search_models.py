@@ -12,7 +12,7 @@ from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
 from app.core.config import settings
-from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
+from app.core.embedding_models import OPENSEARCH_EMBEDDING_MODELS
 from app.models.user import User
 from app.schemas.search import SetEmbeddingModelSchema
 from app.services.request_context import RequestContext

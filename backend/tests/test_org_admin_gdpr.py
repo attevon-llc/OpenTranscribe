@@ -228,10 +228,10 @@ def _speaker_indices() -> set[str]:
     subject had their biometric embeddings put back by the next
     ``ensure_indices_exist()``.
     """
-    from app.core.constants import get_speaker_index
-    from app.core.constants import get_speaker_index_v3
-    from app.core.constants import get_speaker_index_v3_backup
-    from app.core.constants import get_speaker_index_v4
+    from app.core.embedding_models import get_speaker_index
+    from app.core.embedding_models import get_speaker_index_v3
+    from app.core.embedding_models import get_speaker_index_v3_backup
+    from app.core.embedding_models import get_speaker_index_v4
 
     return {
         get_speaker_index(),

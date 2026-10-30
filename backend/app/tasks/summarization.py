@@ -36,9 +36,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 
 from app.core.celery import celery_app
-from app.core.constants import NLPPriority
 from app.core.enums import PostProcessingState
 from app.core.enums import PostProcessingTask
+from app.core.queues import NLPPriority
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment

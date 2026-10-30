@@ -82,7 +82,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 from app.services.chat import context_expansion
 from app.services.search.chunk_retrieval import ChunkHit
 
@@ -365,7 +365,7 @@ def _gather_chunk_segments(
         owner_cache,
         getattr(scan, "organization_id", None),
     )
-    if scan is None or scan.redaction_status != C.REDACTION_STATUS_DONE:
+    if scan is None or scan.redaction_status != redaction_defaults.REDACTION_STATUS_DONE:
         # Detection hasn't run (or didn't finish) — there are no spans to apply.
         return None, effective
 
@@ -642,7 +642,7 @@ def _gather_digest_plans(
             # strictest-wins union (task #40), never the requester alone.
             if (
                 scan is not None
-                and scan.redaction_status == C.REDACTION_STATUS_DONE
+                and scan.redaction_status == redaction_defaults.REDACTION_STATUS_DONE
                 and not uncovered_detectors(scan, effective)
             ):
                 sentences = _digest_sentences_from_row(digest_rows.get(digest.file_id), digest)

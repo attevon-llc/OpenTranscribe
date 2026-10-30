@@ -27,7 +27,7 @@ import redis
 from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_EMBEDDING_CONSISTENCY_COMPLETE
 from app.core.constants import NOTIFICATION_TYPE_EMBEDDING_CONSISTENCY_PROGRESS
-from app.core.constants import GPUPriority
+from app.core.queues import GPUPriority
 from app.core.redis import get_redis
 from app.db.session_utils import session_scope
 from app.services.privacy.policy import voiceprints_allowed_for_file
@@ -75,7 +75,7 @@ def _v3_result_writer(
     """
     import numpy as np
 
-    from app.core.constants import get_speaker_index_v3
+    from app.core.embedding_models import get_speaker_index_v3
     from app.services.opensearch_service import add_speaker_embedding
 
     embedding_results = results_by_model.get("embedding", [])

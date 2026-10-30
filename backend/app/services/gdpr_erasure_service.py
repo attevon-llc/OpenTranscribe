@@ -208,10 +208,10 @@ def delete_speaker_docs_by_query(
 
     deleted = 0
     try:
-        from app.core.constants import get_speaker_index
-        from app.core.constants import get_speaker_index_v3
-        from app.core.constants import get_speaker_index_v3_backup
-        from app.core.constants import get_speaker_index_v4
+        from app.core.embedding_models import get_speaker_index
+        from app.core.embedding_models import get_speaker_index_v3
+        from app.core.embedding_models import get_speaker_index_v3_backup
+        from app.core.embedding_models import get_speaker_index_v4
         from app.services.opensearch_service import opensearch_client
 
         if opensearch_client is None:
@@ -259,10 +259,10 @@ _DOC_ID_BATCH = 1000
 
 def _speaker_index_names(client: Any) -> list[str]:
     """The speaker indices that exist (v3, v4, alias, legacy backup), without duplicates."""
-    from app.core.constants import get_speaker_index
-    from app.core.constants import get_speaker_index_v3
-    from app.core.constants import get_speaker_index_v3_backup
-    from app.core.constants import get_speaker_index_v4
+    from app.core.embedding_models import get_speaker_index
+    from app.core.embedding_models import get_speaker_index_v3
+    from app.core.embedding_models import get_speaker_index_v3_backup
+    from app.core.embedding_models import get_speaker_index_v4
 
     wanted = [
         get_speaker_index(),

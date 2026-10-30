@@ -16,7 +16,7 @@ import uuid as uuid_pkg
 
 import pytest
 
-from app.core import constants as C  # noqa: N812
+from app.core import chat_defaults
 from app.core.exceptions import InvalidInputError
 from app.models.media import Collection
 from app.models.media import CollectionMember
@@ -415,7 +415,7 @@ def test_resolution_is_sorted_so_the_cache_key_is_stable(db_session, normal_user
 
 def test_oversized_scope_is_rejected_with_400(db_session, normal_user, monkeypatch):
     """Rejected loudly rather than silently truncated — the user chose those files."""
-    monkeypatch.setattr(C, "CHAT_MAX_SCOPE_FILES", 2)
+    monkeypatch.setattr(chat_defaults, "CHAT_MAX_SCOPE_FILES", 2)
 
     files = [_make_file(db_session, normal_user, title=f"R{i}") for i in range(3)]
     scope = ChatScope(file_uuids=[str(f.uuid) for f in files])
@@ -450,7 +450,7 @@ def test_count_reports_past_the_cap_instead_of_raising(db_session, normal_user, 
 
     Raising here would silence the warning at exactly the size it is for.
     """
-    monkeypatch.setattr(C, "CHAT_MAX_SCOPE_FILES", 2)
+    monkeypatch.setattr(chat_defaults, "CHAT_MAX_SCOPE_FILES", 2)
 
     files = [_make_file(db_session, normal_user, title=f"R{i}") for i in range(3)]
     scope = ChatScope(file_uuids=[str(f.uuid) for f in files])

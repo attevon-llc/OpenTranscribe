@@ -33,7 +33,7 @@ from collections.abc import MutableMapping
 from datetime import datetime
 from typing import Any
 
-from app.core.constants import CeleryQueues
+from app.core.queues import CeleryQueues
 
 PUBLISHED_AT_HEADER = "x-ot-published-at"
 

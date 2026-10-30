@@ -680,7 +680,7 @@ OWNED_MEDIA_PREFIX = "e2e-owned-"
 TERMINAL_FAILURE_STATUSES = frozenset({"error", "cancelled"})
 
 #: `MediaFile.redaction_status` values meaning the scan is still running — see
-#: `app/core/constants.py` REDACTION_STATUS_*. `None` (never dispatched — e.g. redaction
+#: `app/core/redaction_defaults.py` REDACTION_STATUS_*. `None` (never dispatched — e.g. redaction
 #: disabled for this reader) and "done"/"failed" are both terminal for this wait: either
 #: way, nothing further is going to change before the next request.
 _REDACTION_IN_PROGRESS_STATUSES = frozenset({"pending", "processing"})

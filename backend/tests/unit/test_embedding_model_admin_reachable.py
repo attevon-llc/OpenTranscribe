@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
+from app.core.embedding_models import OPENSEARCH_EMBEDDING_MODELS
 
 _ADMIN_VERBS = ("register", "deploy", "undeploy")
 

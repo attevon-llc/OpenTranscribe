@@ -122,9 +122,9 @@ def _facts_db(sentences, *, status="completed", segment_batches=None):
     per-sentence loop and the fail-closed branches, and says nothing about the
     query. The query is covered by the live ``--answerer product`` run.
     """
-    from app.core import constants as C  # noqa: N812
+    from app.core import redaction_defaults
 
-    resolved_status = C.REDACTION_STATUS_DONE if status == "completed" else status
+    resolved_status = redaction_defaults.REDACTION_STATUS_DONE if status == "completed" else status
     batches = list(segment_batches or [])
 
     db = MagicMock()
@@ -187,12 +187,12 @@ def test_the_chunk_path_over_discloses_a_digest():
     segments = {n: _segment(n, text) for n, text in enumerate(FULL_SPAN, start=1)}
     db = MagicMock()
     status_q = MagicMock()
-    from app.core import constants as C  # noqa: N812
+    from app.core import redaction_defaults
 
-    status_q.filter.return_value.scalar.return_value = C.REDACTION_STATUS_DONE
+    status_q.filter.return_value.scalar.return_value = redaction_defaults.REDACTION_STATUS_DONE
     status_q.filter.return_value.first.return_value = SimpleNamespace(
         id=1,
-        redaction_status=C.REDACTION_STATUS_DONE,
+        redaction_status=redaction_defaults.REDACTION_STATUS_DONE,
         redaction_coverage=None,  # pre-v391 row: trusted, so the coverage gate stays open
         language="en",
         user_id=1,  # self-owned (task #40) — matches the mask_chunks(user_id=1) call below

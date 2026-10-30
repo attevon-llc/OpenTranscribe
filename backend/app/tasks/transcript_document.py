@@ -20,7 +20,7 @@ from datetime import datetime
 
 from app.core.celery import celery_app
 from app.core.constants import DOCUMENT_EXPORT_SOFT_TIME_LIMIT_S
-from app.core.constants import DownloadPriority
+from app.core.queues import DownloadPriority
 from app.db.session_utils import session_scope
 from app.schemas.transcript_export import TranscriptDocumentExportRequest
 from app.services.download_events import DOCUMENT_EXPORT_ERRORS

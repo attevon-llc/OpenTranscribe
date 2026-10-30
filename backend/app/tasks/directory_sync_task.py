@@ -24,8 +24,8 @@ from datetime import UTC
 from datetime import datetime
 
 from app.core.celery import celery_app
-from app.core.constants import CeleryQueues
-from app.core.constants import CPUPriority
+from app.core.queues import CeleryQueues
+from app.core.queues import CPUPriority
 from app.db.session_utils import session_scope
 from app.services import directory_sync_service
 from app.utils.task_lock import task_lock_manager

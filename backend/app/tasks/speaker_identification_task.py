@@ -24,9 +24,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.celery import celery_app
-from app.core.constants import DEFAULT_LLM_OUTPUT_LANGUAGE
-from app.core.constants import NLPPriority
 from app.core.enums import PostProcessingTask
+from app.core.languages import DEFAULT_LLM_OUTPUT_LANGUAGE
+from app.core.queues import NLPPriority
 from app.db.session_utils import session_scope
 from app.models.media import Speaker
 from app.models.media import SpeakerProfile

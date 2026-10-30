@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V4
+from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V4
 from app.services.opensearch_service import clusters
 
 V4 = [0.01] * PYANNOTE_EMBEDDING_DIMENSION_V4

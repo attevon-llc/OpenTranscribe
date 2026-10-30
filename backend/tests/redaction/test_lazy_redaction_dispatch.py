@@ -34,7 +34,7 @@ import uuid as uuid_pkg
 
 import pytest
 
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 
 
 def _set_prefs(db_session, user, **prefs: str) -> None:
@@ -141,9 +141,9 @@ def test_a_null_status_is_withheld_exactly_like_pending(db_session, redacting_us
     assert export_masking_is_pending(cfg, None) is True, (
         "an unexamined transcript must not reach an export surface"
     )
-    assert export_masking_is_pending(cfg, C.REDACTION_STATUS_PENDING) is True
-    assert export_masking_is_pending(cfg, C.REDACTION_STATUS_DONE) is False
-    assert export_masking_is_pending(cfg, C.REDACTION_STATUS_FAILED) is False
+    assert export_masking_is_pending(cfg, redaction_defaults.REDACTION_STATUS_PENDING) is True
+    assert export_masking_is_pending(cfg, redaction_defaults.REDACTION_STATUS_DONE) is False
+    assert export_masking_is_pending(cfg, redaction_defaults.REDACTION_STATUS_FAILED) is False
 
 
 def test_reading_an_unscanned_transcript_queues_the_scan_that_makes_it_readable(
@@ -154,7 +154,7 @@ def test_reading_an_unscanned_transcript_queues_the_scan_that_makes_it_readable(
 
     assert [call["file_id"] for call in broker.published] == [unscanned_file.id]
     db_session.refresh(unscanned_file)
-    assert unscanned_file.redaction_status == C.REDACTION_STATUS_PENDING, (
+    assert unscanned_file.redaction_status == redaction_defaults.REDACTION_STATUS_PENDING, (
         "the status is claimed up front so a second concurrent reader does not queue a second scan"
     )
 
@@ -254,7 +254,7 @@ def test_reading_an_errored_file_with_a_transcript_queues_the_scan_and_keeps_it_
     assert [call["file_id"] for call in broker.published] == [unscanned_file.id]
     db_session.refresh(unscanned_file)
     assert unscanned_file.status == FileStatus.ERROR
-    assert unscanned_file.redaction_status == C.REDACTION_STATUS_PENDING
+    assert unscanned_file.redaction_status == redaction_defaults.REDACTION_STATUS_PENDING
 
 
 def test_reading_a_cancelled_file_queues_no_scan(

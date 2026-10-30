@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 
 from app.core.celery import celery_app
-from app.core.constants import UtilityPriority
+from app.core.queues import UtilityPriority
 from app.db.session_utils import session_scope
 from app.services import session_cap_service
 from app.utils.task_lock import task_lock_manager

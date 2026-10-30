@@ -632,7 +632,7 @@ def download_opensearch_neural_models():
     """
     print_header('Downloading OpenSearch Neural Search Models')
 
-    # Complete registry of available models - matches OPENSEARCH_EMBEDDING_MODELS in constants.py
+    # Complete registry of available models - matches OPENSEARCH_EMBEDDING_MODELS in core/embedding_models.py
     all_available_models = {
         # Fast tier - 384 dimensions
         'all-MiniLM-L6-v2': {

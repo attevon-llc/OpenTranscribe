@@ -322,7 +322,7 @@ indexing → WebSocket notification.
   `user_id` at run time and re-checks quarantine and scan state), then renders with no session
   open, because a long PDF takes about a minute. Result delivery rides the existing bulk-export SSE
   channel; the object lands under `bulk/` (1-day lifecycle).
-- Queues (`core/constants.py:CeleryQueues`): `gpu`, `cpu`, `download`, `nlp`, `embedding`,
+- Queues (`core/queues.py:CeleryQueues`): `gpu`, `cpu`, `download`, `nlp`, `embedding`,
   `utility`, `redaction`, plus dynamic `cloud-asr`, `cpu-transcribe`, `gpu-transcribe`,
   `gpu-diarize`. **`task_create_missing_queues=False`** — a queue-name typo raises at
   dispatch instead of creating a phantom queue. **Every registered task needs a
@@ -338,7 +338,7 @@ indexing → WebSocket notification.
   answered 200 (issue #865, and issue #584 for one earlier instance of the same shape).
   The eight speaker/diarization tasks that PREFER a GPU but are correct without one are
   listed once as `celery.py:GPU_PREFERRED_TASKS` and routed through
-  `constants.gpu_preferred_queue()`, which resolves to `cpu` when `DEPLOYMENT_MODE=lite`
+  `queues.gpu_preferred_queue()`, which resolves to `cpu` when `DEPLOYMENT_MODE=lite`
   (the lite overlay sets that on **every** service, and routing is decided by the
   publisher). The reroute costs only speed — `requirements-lite.txt` deliberately keeps
   `torch+cpu`/`torchaudio`/`pyannote.audio`/`onnxruntime`.

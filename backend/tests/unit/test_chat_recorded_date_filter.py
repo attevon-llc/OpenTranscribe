@@ -240,9 +240,9 @@ def test_too_many_matches_decline_rather_than_returning_a_truncated_list(
     "what happens past the cap", not the cap's value, and a 501-row fixture would make
     this the slowest test in the suite for no extra assurance.
     """
-    import app.core.constants as constants
+    from app.core import chat_defaults
 
-    monkeypatch.setattr(constants, "CHAT_MAX_SCOPE_FILES", 2)
+    monkeypatch.setattr(chat_defaults, "CHAT_MAX_SCOPE_FILES", 2)
     for _ in range(3):
         _add_file(
             db_session, owner, recorded=dt.datetime(2025, 3, 10, tzinfo=dt.UTC), source="filename"
@@ -253,9 +253,9 @@ def test_too_many_matches_decline_rather_than_returning_a_truncated_list(
 
 def test_at_the_cap_it_still_answers(db_session, owner, monkeypatch):
     """The control for the decline above — an off-by-one here silently loses answers."""
-    import app.core.constants as constants
+    from app.core import chat_defaults
 
-    monkeypatch.setattr(constants, "CHAT_MAX_SCOPE_FILES", 2)
+    monkeypatch.setattr(chat_defaults, "CHAT_MAX_SCOPE_FILES", 2)
     for _ in range(2):
         _add_file(
             db_session, owner, recorded=dt.datetime(2025, 3, 10, tzinfo=dt.UTC), source="filename"

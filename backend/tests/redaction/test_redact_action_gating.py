@@ -16,7 +16,7 @@ import uuid as uuid_pkg
 import pytest
 from fastapi import HTTPException
 
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 
 
 @pytest.fixture(autouse=True)
@@ -63,7 +63,7 @@ def _completed_file(db_session, owner):
         content_type="audio/wav",
         language="en",
         status=FileStatus.COMPLETED,
-        redaction_status=C.REDACTION_STATUS_DONE,
+        redaction_status=redaction_defaults.REDACTION_STATUS_DONE,
     )
     db_session.add(media)
     db_session.flush()
@@ -119,7 +119,7 @@ def test_bulk_redact_is_refused_with_409_when_redaction_is_off(db_session, norma
     assert "not enabled" in str(exc.value.detail).lower()
     assert broker == [], "a scan was queued for a viewer whose policy masks nothing"
     db_session.refresh(media)
-    assert media.redaction_status == C.REDACTION_STATUS_DONE
+    assert media.redaction_status == redaction_defaults.REDACTION_STATUS_DONE
 
 
 def test_bulk_redact_still_runs_when_redaction_is_on(db_session, normal_user, broker):

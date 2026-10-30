@@ -10,7 +10,7 @@ one to count the in-scope files that have no recorded date, and one for the
 occurrence count. It was one until the date filter moved off the index; see
 :func:`_files_in_period` for why that move was correctness and not preference.
 The scope itself is capped at
-:data:`app.core.constants.CHAT_MAX_SCOPE_FILES` upstream, and that cap is reused
+:data:`app.core.chat_defaults.CHAT_MAX_SCOPE_FILES` upstream, and that cap is reused
 here rather than a second one being invented. Two exceptions to the "three
 statements" ceiling, both the speaker facet's content-scope choice and
 ``SHAPE_SPEAKER_STATS``'s enable check each cost one more short single-row
@@ -43,7 +43,7 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING
 from typing import Any
 
-from app.core import constants as C  # noqa: N812
+from app.core import chat_defaults
 from app.core.enums import RecordedDateSource
 from app.services.chat import recurrence
 from app.services.chat.aggregation import MAX_BUCKETS
@@ -226,7 +226,7 @@ def _files_in_period(
     Returns:
         ``(uuids, source_tally, undated)``, or ``None`` to **decline** — no
         session, or more matches than
-        :data:`~app.core.constants.CHAT_MAX_SCOPE_FILES`. Declining past the cap
+        :data:`~app.core.chat_defaults.CHAT_MAX_SCOPE_FILES`. Declining past the cap
         is the same rule every other shape here follows: a truncated answer is a
         wrong answer that looks like a right one, and the cap is the one the
         scope already uses rather than a second invented number.
@@ -236,7 +236,7 @@ def _files_in_period(
     from sqlalchemy import func
     from sqlalchemy import select
 
-    from app.core.constants import CHAT_MAX_SCOPE_FILES
+    from app.core.chat_defaults import CHAT_MAX_SCOPE_FILES
     from app.models.media import MediaFile
 
     start, end = bounds
@@ -549,7 +549,7 @@ def answer_aggregation(
             if not _flag_enabled(
                 session_factory,
                 _SETTING_SPEAKER_STATS_ENABLED,
-                C.DEFAULT_CHAT_AGGREGATE_SPEAKER_STATS_ENABLED,
+                chat_defaults.DEFAULT_CHAT_AGGREGATE_SPEAKER_STATS_ENABLED,
             ):
                 # Flag off: fall back to whatever `choose_shape` would have
                 # returned with the `who-talked-most` signal removed — the
@@ -634,7 +634,7 @@ def _run_speaker_facet(
     content_scoped = _flag_enabled(
         session_factory,
         _SETTING_SPEAKER_FACET_CONTENT_SCOPE,
-        C.DEFAULT_CHAT_AGGREGATE_SPEAKER_FACET_CONTENT_SCOPE,
+        chat_defaults.DEFAULT_CHAT_AGGREGATE_SPEAKER_FACET_CONTENT_SCOPE,
     )
     fields = _MENTION_FIELDS if content_scoped else _TITLE_FIELDS
     clause = subject_clause(subject, question, fields)

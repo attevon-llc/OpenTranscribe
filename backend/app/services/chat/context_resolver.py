@@ -29,7 +29,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core import constants as C  # noqa: N812
+from app.core import chat_defaults
 from app.core.exceptions import DomainError
 from app.core.exceptions import InvalidInputError
 from app.models.media import CollectionMember
@@ -227,7 +227,7 @@ def resolve_scope_file_uuids(
 
     Raises:
         InvalidInputError: 400 when the scope resolves to more files than
-            :data:`app.core.constants.CHAT_MAX_SCOPE_FILES`.
+            :data:`app.core.chat_defaults.CHAT_MAX_SCOPE_FILES`.
     """
     if scope.is_empty:
         return None
@@ -242,10 +242,10 @@ def resolve_scope_file_uuids(
     resolved |= _resolve_collections(db, ctx, scope.collection_uuids)
     resolved |= _resolve_tags(db, ctx, scope.tag_names)
 
-    if len(resolved) > C.CHAT_MAX_SCOPE_FILES:
+    if len(resolved) > chat_defaults.CHAT_MAX_SCOPE_FILES:
         raise InvalidInputError(
             f"Selection resolves to {len(resolved)} files; "
-            f"the maximum is {C.CHAT_MAX_SCOPE_FILES}. Narrow the selection."
+            f"the maximum is {chat_defaults.CHAT_MAX_SCOPE_FILES}. Narrow the selection."
         )
 
     logger.info(
@@ -291,5 +291,5 @@ def count_scope_files(db: Session, ctx: RequestContext, scope: ChatScope) -> int
     except DomainError as exc:
         if exc.status_code != 400:
             raise
-        return C.CHAT_MAX_SCOPE_FILES + 1
+        return chat_defaults.CHAT_MAX_SCOPE_FILES + 1
     return len(resolved) if resolved is not None else 0

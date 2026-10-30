@@ -31,7 +31,7 @@ import uuid as uuid_pkg
 
 import pytest
 
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 from app.services.redaction.detectors import pii_presidio
 from app.services.redaction.detectors import toxicity as tox
 from app.services.redaction.llm_guard import RedactionNotReadyError
@@ -259,7 +259,7 @@ def test_an_unavailable_pii_detector_is_recorded_on_the_file(
     result = RedactionService.detect_and_store(db_session, media.id)
 
     db_session.refresh(media)
-    assert media.redaction_status == C.REDACTION_STATUS_DONE
+    assert media.redaction_status == redaction_defaults.REDACTION_STATUS_DONE
     assert media.redaction_coverage == ["profanity", "toxicity"], media.redaction_coverage
     assert "pii" in result["skipped_detectors"]
 
@@ -315,7 +315,7 @@ def test_a_file_scanned_before_the_coverage_column_existed_is_trusted(
     is the remedy, and re-scanning writes the column.
     """
     media, segment = _seed_unscanned_file(db_session, pii_masking_user)
-    media.redaction_status = C.REDACTION_STATUS_DONE
+    media.redaction_status = redaction_defaults.REDACTION_STATUS_DONE
     media.redaction_coverage = None
     db_session.flush()
 
@@ -380,7 +380,7 @@ def test_a_toxicity_model_that_throws_marks_the_scan_failed(
     db_session.refresh(media)
     assert result["status"] == "failed", result
     assert result["detectors"] == ["toxicity"]
-    assert media.redaction_status == C.REDACTION_STATUS_FAILED
+    assert media.redaction_status == redaction_defaults.REDACTION_STATUS_FAILED
 
 
 def test_a_box_without_toxicity_weights_still_answers_every_llm_feature(
@@ -450,7 +450,7 @@ def test_a_segment_edit_without_toxicity_weights_does_not_queue_a_rescan(
 
     assert result.text == "a different sentence entirely"
     db_session.refresh(media)
-    assert media.redaction_status == C.REDACTION_STATUS_DONE, (
+    assert media.redaction_status == redaction_defaults.REDACTION_STATUS_DONE, (
         "a detector that masks nothing must not mark the file stale"
     )
     assert queued_rescans == []
@@ -479,7 +479,7 @@ def test_unreadable_owner_policy_returns_the_scan_to_pending(
         RedactionService.detect_and_store(production_txn_view, media.id)
 
     db_session.refresh(media)
-    assert media.redaction_status == C.REDACTION_STATUS_PENDING
+    assert media.redaction_status == redaction_defaults.REDACTION_STATUS_PENDING
     assert media.redaction_coverage is None
 
 
@@ -512,4 +512,4 @@ def test_a_failed_sql_statement_in_the_policy_read_still_returns_the_scan_to_pen
     production_txn_view.expire_all()
     db_session.expire_all()
     db_session.refresh(media)
-    assert media.redaction_status == C.REDACTION_STATUS_PENDING
+    assert media.redaction_status == redaction_defaults.REDACTION_STATUS_PENDING

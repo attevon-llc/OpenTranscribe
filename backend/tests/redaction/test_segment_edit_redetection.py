@@ -26,7 +26,7 @@ import uuid as uuid_pkg
 
 import pytest
 
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 from app.schemas.media import TranscriptSegmentUpdate
 from app.services.redaction.detectors import pii_presidio
 
@@ -138,8 +138,8 @@ def _seed_scanned_file(db_session, user):
         content_type="audio/wav",
         language="en",
         status=FileStatus.COMPLETED,
-        redaction_status=C.REDACTION_STATUS_DONE,
-        redaction_model_version=C.REDACTION_MODEL_VERSION,
+        redaction_status=redaction_defaults.REDACTION_STATUS_DONE,
+        redaction_model_version=redaction_defaults.REDACTION_MODEL_VERSION,
     )
     db_session.add(media)
     db_session.flush()
@@ -195,7 +195,7 @@ def test_a_working_detector_still_caches_spans_for_the_edited_text(
     assert [s["entity_type"] for s in spans] == ["PHONE"]
     covered = EDITED_TEXT[spans[0]["char_start"] : spans[0]["char_end"]]
     assert covered == PHONE, "the persisted span must address the edited text, not the old one"
-    assert media.redaction_status == C.REDACTION_STATUS_DONE
+    assert media.redaction_status == redaction_defaults.REDACTION_STATUS_DONE
     assert queued_rescans == [], "a successful scan needs no repair"
 
 
@@ -219,7 +219,7 @@ def test_an_unavailable_pii_detector_is_not_persisted_as_a_clean_segment(
 
     assert result.text == EDITED_TEXT, "a detector outage must not block a transcript edit"
     db_session.refresh(media)
-    assert media.redaction_status == C.REDACTION_STATUS_PENDING, (
+    assert media.redaction_status == redaction_defaults.REDACTION_STATUS_PENDING, (
         "an unexamined segment cached under status=done is a permanent leak"
     )
     assert queued_rescans == [{"file_id": media.id, "user_id": pii_masking_user.id}], (
@@ -243,7 +243,7 @@ def test_a_detector_that_ran_and_raised_is_also_not_cached_as_clean(
     _edit(db_session, media, segment, pii_masking_user)
 
     db_session.refresh(media)
-    assert media.redaction_status == C.REDACTION_STATUS_PENDING
+    assert media.redaction_status == redaction_defaults.REDACTION_STATUS_PENDING
     assert len(queued_rescans) == 1
 
 
@@ -269,7 +269,7 @@ def test_re_detection_failing_outright_is_also_not_cached_as_clean(
 
     assert result.text == EDITED_TEXT
     db_session.refresh(media)
-    assert media.redaction_status == C.REDACTION_STATUS_PENDING
+    assert media.redaction_status == redaction_defaults.REDACTION_STATUS_PENDING
     assert len(queued_rescans) == 1
 
 
@@ -369,14 +369,14 @@ def test_the_queued_rescan_drains_to_a_terminal_status_and_cannot_re_queue(
     media, segment = _seed_scanned_file(db_session, pii_masking_user)
     _edit(db_session, media, segment, pii_masking_user)
     db_session.refresh(media)
-    assert media.redaction_status == C.REDACTION_STATUS_PENDING
+    assert media.redaction_status == redaction_defaults.REDACTION_STATUS_PENDING
 
     # What the queued task does, running the real detect_and_store.
     result = RedactionService.detect_and_store(db_session, media.id)
 
     db_session.refresh(media)
     assert result["status"] == "done"
-    assert media.redaction_status == C.REDACTION_STATUS_DONE, (
+    assert media.redaction_status == redaction_defaults.REDACTION_STATUS_DONE, (
         "the repair scan must reach a terminal status; re-writing pending is the loop"
     )
     assert "pii" in result["skipped_detectors"]
@@ -404,7 +404,7 @@ def test_a_broken_detector_drains_to_failed_rather_than_looping(
 
     db_session.refresh(media)
     assert result["status"] == "failed"
-    assert media.redaction_status == C.REDACTION_STATUS_FAILED
+    assert media.redaction_status == redaction_defaults.REDACTION_STATUS_FAILED
     assert len(queued_rescans) == 1
 
 
@@ -434,7 +434,7 @@ def test_editing_again_while_a_rescan_is_pending_does_not_queue_a_second_one(
     _edit(db_session, media, second, pii_masking_user, text=f"reach me on {PHONE} instead")
 
     db_session.refresh(media)
-    assert media.redaction_status == C.REDACTION_STATUS_PENDING
+    assert media.redaction_status == redaction_defaults.REDACTION_STATUS_PENDING
     assert len(queued_rescans) == 1, "the second edit rode the scan the first one queued"
 
 
@@ -459,7 +459,7 @@ def test_a_deployment_that_never_enabled_pii_is_completely_unaffected(
 
     assert result.text == EDITED_TEXT
     db_session.refresh(media)
-    assert media.redaction_status == C.REDACTION_STATUS_DONE, (
+    assert media.redaction_status == redaction_defaults.REDACTION_STATUS_DONE, (
         "a category this user never enabled must not withhold their transcript"
     )
     assert queued_rescans == []
@@ -481,5 +481,5 @@ def test_the_owners_policy_decides_not_the_editors(
     _edit(db_session, media, segment, admin_user)
 
     db_session.refresh(media)
-    assert media.redaction_status == C.REDACTION_STATUS_PENDING
+    assert media.redaction_status == redaction_defaults.REDACTION_STATUS_PENDING
     assert queued_rescans == [{"file_id": media.id, "user_id": pii_masking_user.id}]

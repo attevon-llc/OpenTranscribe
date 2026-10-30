@@ -221,7 +221,7 @@ def find_unlabeled_speaker_matches(
     logger.info(f"Finding unlabeled matches for speaker {exclude_speaker_id}, user {user_id}")
 
     try:
-        from app.core.constants import get_speaker_index
+        from app.core.embedding_models import get_speaker_index
         from app.services.opensearch_service import _speaker_org_filter_clauses
         from app.services.opensearch_service import opensearch_client
 

@@ -10,7 +10,7 @@ import time
 from typing import Any
 
 from app.core import stage_timing
-from app.core.constants import get_speaker_index_v4
+from app.core.embedding_models import get_speaker_index_v4
 from app.db.session_utils import session_scope
 from app.services.file_provenance import record_inline_voiceprints
 from app.services.privacy.gates import voiceprints_allowed

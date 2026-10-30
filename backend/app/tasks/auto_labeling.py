@@ -15,9 +15,9 @@ import time
 
 from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_AUTO_LABEL_STATUS
-from app.core.constants import NLPPriority
 from app.core.enums import PostProcessingState
 from app.core.enums import PostProcessingTask
+from app.core.queues import NLPPriority
 from app.db.session_utils import session_scope
 from app.services import post_processing_status
 from app.services.notification_service import send_file_cache_invalidation

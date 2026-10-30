@@ -28,8 +28,8 @@ from app import models
 # Deployment configuration is the super_admin tier: this router
 # holds the backup destination and its stored S3 secret.
 from app.api.endpoints.auth import get_current_active_superuser
-from app.core.constants import CeleryQueues
-from app.core.constants import UtilityPriority
+from app.core.queues import CeleryQueues
+from app.core.queues import UtilityPriority
 from app.db.base import get_db
 from app.services import backup_service
 

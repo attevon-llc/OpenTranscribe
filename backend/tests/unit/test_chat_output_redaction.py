@@ -22,7 +22,8 @@ from typing import Any
 
 import pytest
 
-from app.core import constants as C  # noqa: N812
+from app.core import chat_defaults
+from app.core import redaction_defaults
 from app.services.chat import service as chat_service
 from app.services.chat.output_redactor import OutputRedactor
 from app.services.chat.redactor import MaskedChunk
@@ -41,7 +42,7 @@ def _cfg(**over) -> EffectiveRedactionConfig:
     base: dict[str, Any] = {
         "enabled": True,
         "enabled_categories": {"pii", "profanity", "custom"},
-        "pii_entities": set(C.REDACTION_PII_ENTITIES),
+        "pii_entities": set(redaction_defaults.REDACTION_PII_ENTITIES),
         "style": "label",
     }
     base.update(over)
@@ -211,7 +212,7 @@ def test_an_undetectable_span_is_withheld_rather_than_emitted(stub_detector):
     masked = r.mask("The number he gave was 123-45-6789. ")
 
     assert "123-45-6789" not in masked
-    assert masked == C.REDACTION_LLM_FAILSAFE_TEXT
+    assert masked == redaction_defaults.REDACTION_LLM_FAILSAFE_TEXT
     assert r.withheld_spans == 1
     assert r.masked_spans == 0
 
@@ -422,7 +423,7 @@ async def test_buffering_does_not_trip_the_first_token_watchdog(monkeypatch, stu
     model and be killed as a timeout.
     """
     stub_detector(_StubDetector())
-    monkeypatch.setattr(C, "DEFAULT_CHAT_FIRST_TOKEN_TIMEOUT_S", 0.25)
+    monkeypatch.setattr(chat_defaults, "DEFAULT_CHAT_FIRST_TOKEN_TIMEOUT_S", 0.25)
     frames, turn, _llm = await _run_turn(
         monkeypatch,
         deltas=["a fragment ", "with no ", "terminator at all"],

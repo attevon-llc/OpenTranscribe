@@ -39,7 +39,7 @@ import uuid as uuid_pkg
 
 import pytest
 
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 from app.scripts.corpus_injection.injector import dispatch_redaction
 from app.scripts.corpus_injection.injector import inject_meeting
 from app.scripts.corpus_injection.model import MeetingDoc
@@ -192,7 +192,7 @@ def test_the_injector_never_fabricates_a_terminal_redaction_status(
     # that are equally wrong and equally invisible.
     assert media.redaction_status is None, (
         f"injection must leave the status NULL — the honest 'no scan has run' — but "
-        f"it is {media.redaction_status!r}. {C.REDACTION_STATUS_DONE!r} in particular "
+        f"it is {media.redaction_status!r}. {redaction_defaults.REDACTION_STATUS_DONE!r} in particular "
         "would assert a scan that never happened."
     )
     assert media.redaction_coverage is None, (

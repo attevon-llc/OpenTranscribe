@@ -7,11 +7,11 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import TYPE_CHECKING
 
-from app.core.constants import ENGINE_SHARED_VOLUME_DEFAULT
-from app.core.constants import gpu_split_enabled
-from app.core.constants import resolve_engine_shared_volume_path
 from app.core.env import env_bool
 from app.core.env import is_truthy
+from app.core.queues import gpu_split_enabled
+from app.core.scratch_paths import ENGINE_SHARED_VOLUME_DEFAULT
+from app.core.scratch_paths import resolve_engine_shared_volume_path
 
 if TYPE_CHECKING:
     from app.transcription.config import TranscriptionConfig

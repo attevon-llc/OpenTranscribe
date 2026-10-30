@@ -11,7 +11,7 @@ from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import selectinload
 
 from app.api.error_handlers import ErrorHandler
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 from app.core.env import env_bool
 from app.core.exceptions import DomainError
 from app.core.tenancy import UNSCOPED
@@ -663,7 +663,7 @@ def _withdraw_redaction_claim(db: Session, db_file: MediaFile, previous_status: 
             db.query(MediaFile)
             .filter(
                 MediaFile.id == db_file.id,
-                MediaFile.redaction_status == C.REDACTION_STATUS_PENDING,
+                MediaFile.redaction_status == redaction_defaults.REDACTION_STATUS_PENDING,
             )
             .update({MediaFile.redaction_status: previous_status}, synchronize_session=False)
         )
@@ -733,7 +733,7 @@ def claim_and_dispatch_redaction_scan(
     """
     previous_status = db_file.redaction_status
     try:
-        db_file.redaction_status = C.REDACTION_STATUS_PENDING  # type: ignore[assignment]
+        db_file.redaction_status = redaction_defaults.REDACTION_STATUS_PENDING  # type: ignore[assignment]
         db.commit()
     except Exception as e:  # noqa: BLE001
         db.rollback()

@@ -15,8 +15,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V3
-from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V4
+from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V3
+from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V4
 from app.services.opensearch_service import clusters
 from app.services.opensearch_service import profiles
 from app.services.opensearch_service import speaker_write

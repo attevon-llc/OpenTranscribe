@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
 
-from app.core import constants
+from app.core import llm_defaults
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -150,7 +150,7 @@ def resolve_region(connection: BedrockConnection | None = None) -> str:
 
 def resolve_default_model() -> str:
     """Model id for the environment-configured (no per-user configuration) fallback."""
-    return str(settings.BEDROCK_MODEL_NAME or "").strip() or constants.DEFAULT_BEDROCK_MODEL_ID
+    return str(settings.BEDROCK_MODEL_NAME or "").strip() or llm_defaults.DEFAULT_BEDROCK_MODEL_ID
 
 
 def client_kwargs(

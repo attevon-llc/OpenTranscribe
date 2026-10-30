@@ -265,7 +265,7 @@ check_environment() {
 #      transcription-temp volume this path named. `os.makedirs` recreates it INSIDE the
 #      writer's own container, so the write "succeeds" and the reader finds nothing; every
 #      job silently drops to the MinIO round-trip fallback. `resolve_engine_shared_volume_path()`
-#      (backend/app/core/constants.py) already self-heals this at runtime by preferring the
+#      (backend/app/core/scratch_paths.py) already self-heals this at runtime by preferring the
 #      coded default when the configured path doesn't exist — that saves the install. This
 #      warning is complementary, not a duplicate: it tells the OPERATOR their .env is drifting,
 #      which the silent runtime fallback deliberately does not.
@@ -719,7 +719,7 @@ pin_diar_native_image_for_lite() {
 # Whether this deployment should run GPU split — celery-worker-gpu-transcribe /
 # celery-worker-gpu-diarize on separate host GPUs (issue #708).
 #
-# Gated on the SAME variable app/core/constants.py's gpu_split_enabled() reads to route
+# Gated on the SAME variable app/core/queues.py's gpu_split_enabled() reads to route
 # dispatch onto those two queues. One operator-facing switch for both halves: set
 # ENGINE_GPU_SPLIT=true in .env and the app routes to the split queues AND this script
 # loads the overlay that gives those queues a consumer at all. Before this function

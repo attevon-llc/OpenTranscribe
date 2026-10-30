@@ -38,7 +38,7 @@ from typing import Any
 from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import NOTIFICATION_TYPE_DATA_INTEGRITY_COMPLETE
-from app.core.constants import CPUPriority
+from app.core.queues import CPUPriority
 from app.core.redis import get_redis
 from app.tasks.opensearch_integrity_task import _exceeds_delete_ratio
 from app.tasks.opensearch_integrity_task import _file_ids_present

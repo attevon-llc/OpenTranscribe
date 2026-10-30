@@ -38,7 +38,7 @@ report full coverage anyway. The actual decline-to-run happens in
 deliberately separate from `detector_language_support`'s return value so the two concerns —
 "may a detector run" and "is a detector excused from coverage" — cannot be conflated again.
 
-The recognised vocabulary is the app's own — ``constants.WHISPER_LANGUAGES``, which is
+The recognised vocabulary is the app's own — ``languages.WHISPER_LANGUAGES``, which is
 cross-checked against ``faster_whisper``'s code list at import — plus the ISO 639-2 three-letter
 forms (both the terminological ``/T`` and bibliographic ``/B`` spellings, which differ for about
 twenty languages) and the English names in that same table. A code outside it normalizes to
@@ -49,7 +49,7 @@ the shape of a *legitimate* skip and is subtracted from every coverage report.
 
 from __future__ import annotations
 
-from app.core import constants as C  # noqa: N812
+from app.core import languages
 
 #: ISO 639-2 (and the handful of superseded ISO 639-1 spellings) onto the codes this app
 #: stores. Both the ``/T`` and ``/B`` forms are listed where they differ, because providers
@@ -190,8 +190,10 @@ def _build_vocabulary() -> dict[str, str]:
     language added for transcription is understood here on the same commit. ``auto`` is
     excluded deliberately: it is the "not detected yet" sentinel, not a language.
     """
-    codes = {code: code for code in C.WHISPER_LANGUAGES if code != "auto"}
-    names = {name.lower(): code for code, name in C.WHISPER_LANGUAGES.items() if code in codes}
+    codes = {code: code for code in languages.WHISPER_LANGUAGES if code != "auto"}
+    names = {
+        name.lower(): code for code, name in languages.WHISPER_LANGUAGES.items() if code in codes
+    }
     return {**codes, **names, **_ALIAS_CODES}
 
 
@@ -214,7 +216,7 @@ def normalize_language(raw: str | None, *, default: str | None = None) -> str | 
             see the module docstring.
 
     Returns:
-        A lowercase code from :data:`~app.core.constants.WHISPER_LANGUAGES`, else ``default``.
+        A lowercase code from :data:`~app.core.languages.WHISPER_LANGUAGES`, else ``default``.
     """
     if raw is None:
         return default

@@ -23,11 +23,11 @@ from celery import chain
 from celery import group
 
 from app.core.celery import celery_app
-from app.core.constants import CeleryQueues
-from app.core.constants import CPUPriority
-from app.core.constants import GPUPriority
-from app.core.constants import gpu_split_enabled
 from app.core.exceptions import PipelinePlanRefusedError
+from app.core.queues import CeleryQueues
+from app.core.queues import CPUPriority
+from app.core.queues import GPUPriority
+from app.core.queues import gpu_split_enabled
 from app.core.task_liveness import mark_queued
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus

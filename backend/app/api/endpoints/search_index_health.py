@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_admin_user
 from app.core.config import settings
-from app.core.constants import get_speaker_index
-from app.core.constants import get_speaker_index_v4
+from app.core.embedding_models import get_speaker_index
+from app.core.embedding_models import get_speaker_index_v4
 from app.db.base import get_db
 from app.models.user import User
 from app.services.request_context import RequestContext

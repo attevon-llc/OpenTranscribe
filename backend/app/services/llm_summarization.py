@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any
 
-from app.core.constants import LLM_OUTPUT_LANGUAGES
+from app.core.languages import LLM_OUTPUT_LANGUAGES
 from app.services.llm_chunking import LLMChunkingMixin
 from app.services.llm_json_extract import LLMJsonExtractMixin
 from app.services.llm_types import LLMResponse

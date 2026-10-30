@@ -38,7 +38,7 @@ _WARNING_KEY = "settings.contentRedaction.piiEntitiesWarning"
 
 def test_organization_is_masked_by_default() -> None:
     """The fix: a name mislabelled ORGANIZATION must not survive the default policy."""
-    from app.core.constants import DEFAULT_REDACTION_PII_ENTITIES
+    from app.core.redaction_defaults import DEFAULT_REDACTION_PII_ENTITIES
 
     assert "ORGANIZATION" in DEFAULT_REDACTION_PII_ENTITIES, (
         "ORGANIZATION is excluded from the default PII entities, so a person's name that "
@@ -54,8 +54,8 @@ def test_the_default_covers_every_supported_entity() -> None:
     how one entity came to be excluded with the reason recorded only in a comment. If a
     future entity should be off by default, that needs its own measured argument.
     """
-    from app.core.constants import DEFAULT_REDACTION_PII_ENTITIES
-    from app.core.constants import REDACTION_PII_ENTITIES
+    from app.core.redaction_defaults import DEFAULT_REDACTION_PII_ENTITIES
+    from app.core.redaction_defaults import REDACTION_PII_ENTITIES
 
     missing = sorted(set(REDACTION_PII_ENTITIES) - set(DEFAULT_REDACTION_PII_ENTITIES))
     assert not missing, f"these supported PII entities are not masked by default: {missing}"
@@ -68,12 +68,12 @@ def test_pii_masking_remains_opt_in() -> None:
     turned PII masking on — `pii` is deliberately not a default masking category. If
     that ever changes, the trade in #499 needs re-arguing, so this fails loudly.
     """
-    from app.core.constants import DEFAULT_REDACTION_CATEGORIES
+    from app.core.redaction_defaults import DEFAULT_REDACTION_CATEGORIES
 
     assert "pii" not in DEFAULT_REDACTION_CATEGORIES, (
         "PII became a default masking category. ORGANIZATION is in the default entity "
         "list on the assumption that PII masking is opt-in, which bounded the cost of "
-        "masking company names — re-read the argument in constants.py before shipping this"
+        "masking company names — re-read the argument in core/redaction_defaults.py before shipping this"
     )
 
 
@@ -85,7 +85,7 @@ def test_the_confidence_threshold_is_not_being_used_as_the_lever() -> None:
     below 0.85 so that it filters nothing from this model, which is the honest state.
     Raising it toward 0.85 would silently drop real PII.
     """
-    from app.core.constants import DEFAULT_REDACTION_PII_CONFIDENCE
+    from app.core.redaction_defaults import DEFAULT_REDACTION_PII_CONFIDENCE
 
     assert DEFAULT_REDACTION_PII_CONFIDENCE < 0.85, (
         f"pii_confidence is {DEFAULT_REDACTION_PII_CONFIDENCE}, at or above the flat 0.85 "

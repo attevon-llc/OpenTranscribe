@@ -3,7 +3,7 @@
 import json
 import logging
 
-from app.core.constants import LLM_OUTPUT_LANGUAGES
+from app.core.languages import LLM_OUTPUT_LANGUAGES
 from app.services.llm_json_extract import LLMJsonExtractMixin
 from app.services.llm_types import LLMResponse
 from app.utils.llm_log_safety import describe_llm_text

@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from app.core import constants as C  # noqa: N812
+from app.core import redaction_defaults
 from app.services.redaction.config import blocking_detector_failures
 from app.services.redaction.config import detector_language_support
 
@@ -112,7 +112,9 @@ def uncovered_detectors(media_file, cfg: EffectiveRedactionConfig) -> set[str]:
     # needed: `cfg.detectors` and `cfg.enabled_categories` are separate user settings and
     # a policy that masks `pii` while its detector list omits `pii` must not read as
     # covered.
-    relied_on = (set(cfg.detectors) | set(C.DEFAULT_REDACTION_DETECTORS)) & supported
+    relied_on = (
+        set(cfg.detectors) | set(redaction_defaults.DEFAULT_REDACTION_DETECTORS)
+    ) & supported
     return blocking_detector_failures(relied_on - set(covered), cfg.enabled_categories)
 
 

@@ -62,7 +62,7 @@ def _use_model(monkeypatch: pytest.MonkeyPatch, language_type: str) -> None:
         raising=False,
     )
     monkeypatch.setattr(
-        "app.core.constants.OPENSEARCH_EMBEDDING_MODELS",
+        "app.core.embedding_models.OPENSEARCH_EMBEDDING_MODELS",
         {"stub-model": {"language_type": language_type, "languages": ["multilingual"]}},
         raising=False,
     )
@@ -322,7 +322,7 @@ def test_multilingual_enabled_true_reranks_a_non_english_pool_with_the_multiling
 ) -> None:
     """The opt-in arm: a Spanish-majority pool is reranked, not skipped, and with
     the MULTILINGUAL model id — never the English MS MARCO one."""
-    from app.core import constants as C  # noqa: N812
+    from app.core import chat_defaults
     from app.services.chat import reranker
 
     requested_models: list[str] = []
@@ -340,7 +340,7 @@ def test_multilingual_enabled_true_reranks_a_non_english_pool_with_the_multiling
 
     result = reranker.rerank("presupuesto", hits, multilingual_enabled=True)
 
-    assert requested_models == [C.CHAT_RERANKER_MODEL_MULTILINGUAL]
+    assert requested_models == [chat_defaults.CHAT_RERANKER_MODEL_MULTILINGUAL]
     assert [h.score for h in result] == [0.9, 0.1], "the Spanish pool was not reordered"
 
 
@@ -350,7 +350,7 @@ def test_multilingual_enabled_true_still_uses_the_english_model_on_an_english_po
     """The opt-in flag only changes what happens for a non-English pool — an
     English-majority pool must keep using the English model either way, not the
     multilingual one, when the setting is on."""
-    from app.core import constants as C  # noqa: N812
+    from app.core import chat_defaults
     from app.services.chat import reranker
 
     requested_models: list[str] = []
@@ -368,7 +368,7 @@ def test_multilingual_enabled_true_still_uses_the_english_model_on_an_english_po
 
     reranker.rerank("budget", hits, multilingual_enabled=True)
 
-    assert requested_models == [C.CHAT_RERANKER_MODEL]
+    assert requested_models == [chat_defaults.CHAT_RERANKER_MODEL]
 
 
 def test_the_language_reaches_the_hit_from_the_index() -> None:

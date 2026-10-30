@@ -18,12 +18,12 @@ import numpy as np
 
 from app.core import stage_timing
 from app.core.celery import celery_app
-from app.core.constants import CeleryQueues
-from app.core.constants import CPUPriority
-from app.core.constants import UtilityPriority
 from app.core.enums import PostProcessingState
 from app.core.enums import PostProcessingTask
 from app.core.enums import TranscriptionStage
+from app.core.queues import CeleryQueues
+from app.core.queues import CPUPriority
+from app.core.queues import UtilityPriority
 from app.core.task_liveness import clear_infra_requeues
 from app.core.task_liveness import clear_run_markers
 from app.core.task_liveness import run_heartbeat

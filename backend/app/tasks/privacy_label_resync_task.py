@@ -15,7 +15,7 @@ import logging
 from typing import Any
 
 from app.core.celery import celery_app
-from app.core.constants import CPUPriority
+from app.core.queues import CPUPriority
 from app.db.session_utils import session_scope
 from app.services.privacy.label_reindex import run_label_resync
 

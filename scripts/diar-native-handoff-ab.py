@@ -79,11 +79,11 @@ def main() -> int:
     sys.path.insert(0, '/app')
 
     # resolve_engine_shared_volume_path() rather than a config attribute: it is the single
-    # reader of ENGINE_SHARED_VOLUME_PATH (app/core/constants.py) and the exact value
+    # reader of ENGINE_SHARED_VOLUME_PATH (app/core/scratch_paths.py) and the exact value
     # diarizer_native._ENGINE_SHARED_DIR is built from, so the WAV is guaranteed to be written
     # where _path_is_on_shared_volume looks. Reading it from anywhere else reintroduces the
     # two-sources-of-truth bug the resolver exists to remove.
-    from app.core.constants import resolve_engine_shared_volume_path
+    from app.core.scratch_paths import resolve_engine_shared_volume_path
     from app.transcription.config import TranscriptionConfig
     from app.transcription.diarizer_native import (
         NativeSpeakerDiarizer,

@@ -1,6 +1,6 @@
 """``SEARCH_SEMANTIC_HIGH_CONFIDENCE`` has exactly one value, read from ``settings``.
 
-As of issue #698, only ONE call site in ``hybrid_search_service`` may decide
+As of issue #698, only ONE call site in the search service may decide
 ``SearchHit.semantic_confidence`` from this threshold: ``_process_collapsed_results``, and only
 on the fused hybrid-RRF path (``is_fused_rrf=True``). ``SEARCH_SEMANTIC_HIGH_CONFIDENCE`` was
 tuned against RRF scores (~0.016 at rank 1); comparing it against a raw ``cosinesimil`` score
@@ -35,7 +35,10 @@ from app.services.search.hybrid_search_service import HybridSearchService
 SETTING_NAME = "SEARCH_SEMANTIC_HIGH_CONFIDENCE"
 
 APP_DIR = pathlib.Path(__file__).resolve().parents[2] / "app"
-SERVICE_PATH = APP_DIR / "services" / "search" / "hybrid_search_service.py"
+#: The whole search package, not one file: the service is split across sibling modules
+#: (``result_processing`` holds the reader, ``two_phase_search`` the Phase 2 builder that
+#: must never read the setting), so a read moved into any of them is still caught.
+SEARCH_DIR = APP_DIR / "services" / "search"
 
 # The one function permitted to read the setting (#698: `_build_search_hit_from_bucket`'s
 # Phase 2 scores are raw BM25, not RRF, so it must never read this threshold at all).
@@ -132,11 +135,11 @@ def test_both_confidence_call_sites_read_the_setting_directly():
     Catches a site being deleted (losing the classification) as well as a third one appearing
     without this guard being updated.
     """
-    reads = _attribute_reads(SERVICE_PATH)
+    reads = [read for path in sorted(SEARCH_DIR.glob("*.py")) for read in _attribute_reads(path)]
     functions = {func for func, _ in reads}
 
     assert functions == EXPECTED_READER_FUNCTIONS, (
-        f"{SETTING_NAME} attribute reads in {SERVICE_PATH.name} live in {sorted(functions)}, "
+        f"{SETTING_NAME} attribute reads in {SEARCH_DIR.name}/ live in {sorted(functions)}, "
         f"expected {sorted(EXPECTED_READER_FUNCTIONS)}. Reads found at: {reads}"
     )
     assert len(reads) == len(EXPECTED_READER_FUNCTIONS), (

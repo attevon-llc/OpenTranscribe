@@ -37,6 +37,9 @@ set); its consumer is ``formatting_service``, which turns it into a UI flag. The
 a provider round-trip and has no business on a search request. A user whose only
 enabled category is ``toxicity`` therefore gets unmasked snippets — correctly,
 because there is nothing on this path that could produce a toxicity span to mask.
+
+:func:`_redact_snippets` applies a user's policy to a whole search page and owns the
+fail-closed disposition (:data:`WITHHELD_SNIPPET`); ``HybridSearchService`` binds it.
 """
 
 from __future__ import annotations
@@ -48,6 +51,8 @@ import re
 
 from app.services.redaction.config import MASKABLE_CATEGORIES
 from app.services.redaction.config import EffectiveRedactionConfig
+from app.services.search.search_cache import _resolve_redaction_config_for_cache
+from app.services.search.search_types import SearchResponse
 
 logger = logging.getLogger(__name__)
 
@@ -230,3 +235,119 @@ def _detect(
         raise SnippetMaskingUnavailableError(
             f"detectors unavailable for enabled categories: {sorted(blocking)}"
         )
+
+
+class _NotGiven:
+    """Sentinel type for `_redact_snippets`'s `cfg` param, distinct from a real
+
+    (already-resolved) `None`: `None` means "resolution was attempted and
+    failed" (fail closed), while this type means "the caller did not resolve it
+    at all, do it here" — the original self-resolving contract, kept for any
+    caller of `_redact_snippets` other than `search()`'s own cache-key flow. A
+    dedicated class (rather than a bare `object()`) so the parameter's type
+    hint can name it explicitly instead of widening to `Any`.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "<NOT_GIVEN>"
+
+
+_NOT_GIVEN = _NotGiven()
+
+
+#: What a snippet becomes when its policy cannot be applied. Withholding the
+#: preview is a fail-closed choice: an unmasked one is a policy bypass, and the
+#: result itself (title, timestamps, ranking) is unaffected.
+WITHHELD_SNIPPET = "[redacted — masking unavailable]"
+
+
+def _withhold_snippets(occurrences: list) -> None:
+    """Replace every snippet with the withheld placeholder."""
+    for occ in occurrences:
+        occ.snippet = WITHHELD_SNIPPET
+
+
+def _redact_snippets(
+    result: SearchResponse,
+    user_id: int,
+    cfg: EffectiveRedactionConfig | None | _NotGiven = _NOT_GIVEN,
+    organization_id: int | None = None,
+) -> None:
+    """Mask this page's snippets under the requesting user's redaction policy.
+
+    Snippets come out of the ``transcript_chunks`` index, which stores
+    transcript text **UNREDACTED**, so they carry whatever the recording
+    carried — including PII. This used to mask ``profanity`` and ``custom``
+    only, on the stated grounds that "this path never carries PII spans";
+    that was false in the way that matters, and a user whose policy masks
+    **only** ``pii`` therefore had every snippet rendered verbatim, on a
+    surface that spans collection and group shares (issue #86).
+
+    The masking itself lives in ``snippet_redaction`` — ``<mark>`` handling,
+    batching and the detector gate are all its problem. This method owns two
+    decisions:
+
+    - **Where the session ends.** ``cfg`` is resolved by the CALLER
+      (``search()``, via ``_resolve_redaction_config_for_cache`` — it needs
+      the same value to build the cache key, so resolving it a second time
+      here would both duplicate a DB round trip and open a window for the
+      two resolutions to disagree). That session already closed before this
+      method runs, so a ~1 s Presidio pass never holds ``ACCESS SHARE`` open
+      — the defect ``scripts/audit-session-lifetime.py`` exists to catch.
+    - **Failing CLOSED, once.** Neither an unresolvable config (``cfg is
+      None``) nor an unavailable detector may render an unmasked preview, so
+      both withhold the page's snippet text. Results, counts and ranking are
+      unaffected. Which detector failures count is
+      ``redaction.config.blocking_detector_failures``, not a second rule
+      written here: a broken Presidio must not cost their snippets to a user
+      who never asked for PII masking.
+
+    Args:
+        result: The response whose snippets get masked in place.
+        user_id: The requesting user (kept for the log line's subject; the
+            actual policy is ``cfg`, already resolved for this user).
+        cfg: The pre-resolved effective config, or ``None`` when it could
+            not be resolved at all. Omitting the argument entirely
+            (``_NOT_GIVEN``, the default) resolves it here instead — kept
+            for callers outside ``search()``'s own cache-key flow, so this
+            method's original resolve-it-yourself contract still holds for
+            anyone driving it directly.
+        organization_id: Only consulted on that same self-resolve fallback
+            path (#988) — ``search()`` passes its own already-resolved
+            ``cfg`` instead and never reaches this branch.
+    """
+    if isinstance(cfg, _NotGiven):
+        cfg = _resolve_redaction_config_for_cache(user_id, organization_id=organization_id)
+
+    occurrences = [
+        occ
+        for hit in getattr(result, "results", []) or []
+        for occ in getattr(hit, "occurrences", []) or []
+        if getattr(occ, "snippet", None)
+    ]
+
+    if cfg is None:
+        if occurrences:
+            logger.warning(
+                "Snippet redaction config unavailable for user %s; withholding snippet text",
+                user_id,
+            )
+            _withhold_snippets(occurrences)
+        return
+
+    if not occurrences:
+        return
+    if not cfg.enabled or not (set(cfg.enabled_categories) & MASKABLE_CATEGORIES):
+        return
+
+    try:
+        masked = mask_snippets([occ.snippet for occ in occurrences], cfg)
+    except Exception:  # noqa: BLE001 — never break search on redaction failure
+        logger.exception("Snippet masking failed; withholding snippet text")
+        _withhold_snippets(occurrences)
+        return
+
+    for occ, text in zip(occurrences, masked, strict=True):
+        occ.snippet = text

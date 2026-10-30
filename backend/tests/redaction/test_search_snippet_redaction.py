@@ -36,11 +36,11 @@ import pytest
 
 from app.models.prompt import UserSetting
 from app.services.redaction.spans import RedactionSpan
-from app.services.search.hybrid_search_service import WITHHELD_SNIPPET
 from app.services.search.hybrid_search_service import HybridSearchService
-from app.services.search.hybrid_search_service import SearchHit
-from app.services.search.hybrid_search_service import SearchOccurrence
-from app.services.search.hybrid_search_service import SearchResponse
+from app.services.search.search_types import SearchHit
+from app.services.search.search_types import SearchOccurrence
+from app.services.search.search_types import SearchResponse
+from app.services.search.snippet_redaction import WITHHELD_SNIPPET
 
 EMAIL = "john.smith@example.com"
 PROFANITY = "damn"

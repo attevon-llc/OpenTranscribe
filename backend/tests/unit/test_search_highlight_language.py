@@ -28,9 +28,10 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.search.hybrid_search_service import QueryHighlightContext
-from app.services.search.hybrid_search_service import _get_word_stem
-from app.services.search.hybrid_search_service import snowball_language_for
+from app.services.search.highlighting import QueryHighlightContext
+from app.services.search.highlighting import _apply_semantic_highlights
+from app.services.search.highlighting import _get_word_stem
+from app.services.search.highlighting import snowball_language_for
 
 
 @pytest.mark.parametrize(
@@ -106,8 +107,6 @@ def test_a_mixed_language_page_gets_one_context_per_language(english_first: bool
     """
     from types import SimpleNamespace
 
-    from app.services.search.hybrid_search_service import HybridSearchService
-
     def _hit(language: str, snippet: str):
         occ = SimpleNamespace(snippet=snippet, has_keyword_match=False)
         return SimpleNamespace(language=language, occurrences=[occ])
@@ -116,9 +115,7 @@ def test_a_mixed_language_page_gets_one_context_per_language(english_first: bool
     english = _hit("en", "we discussed the budget")
     page = [english, spanish] if english_first else [spanish, english]
 
-    HybridSearchService._apply_semantic_highlights(
-        HybridSearchService.__new__(HybridSearchService), page, "hablando"
-    )
+    _apply_semantic_highlights(page, "hablando")
 
     assert "<mark" in spanish.occurrences[0].snippet, (
         "the Spanish hit was not highlighted: 'hablando' stems to itself under the English "

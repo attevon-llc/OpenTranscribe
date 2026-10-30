@@ -14,7 +14,7 @@ from __future__ import annotations
 import uuid as uuid_pkg
 
 from app.services.search.hybrid_search_service import HybridSearchService
-from app.services.search.hybrid_search_service import SearchResponse
+from app.services.search.search_types import SearchResponse
 
 SEARCH_PATH = "/api/search"
 

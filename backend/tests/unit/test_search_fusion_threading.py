@@ -4,8 +4,8 @@ A search pipeline is attached **per request**, via the ``search_pipeline`` query
 parameter, at four sites:
 
 ===============================================  ==================================
-``hybrid_search_service._search_with_two_phase``  phase 1 of a non-relevance sort
-``hybrid_search_service._search_with_collapse``   the main hybrid search body
+``two_phase_search._search_with_two_phase``       phase 1 of a non-relevance sort
+``collapsed_search._search_with_collapse``        the main hybrid search body
 ``chunk_retrieval.retrieve_chunks``               RAG chat, chunk plane
 ``chunk_retrieval.retrieve_digests``              RAG chat, digest plane (Stage 4)
 ===============================================  ==================================
@@ -29,6 +29,8 @@ import pytest
 
 from app.services.search import chunk_retrieval
 from app.services.search import hybrid_search_service as hss
+from app.services.search import search_cache
+from app.services.search import search_infra
 from app.services.search.fusion import NORMALIZATION
 from app.services.search.fusion import RRF
 from app.services.search.fusion import FusionConfig
@@ -63,11 +65,11 @@ class _Recorder:
 @pytest.fixture(autouse=True)
 def _clean_pipeline_state():
     """No verified-pipeline id survives into or out of a test in this module."""
-    hss.reset_infrastructure_state()
-    hss._search_cache.clear()
+    search_infra.reset_infrastructure_state()
+    search_cache._search_cache.clear()
     yield
-    hss.reset_infrastructure_state()
-    hss._search_cache.clear()
+    search_infra.reset_infrastructure_state()
+    search_cache._search_cache.clear()
 
 
 @pytest.fixture
@@ -86,7 +88,7 @@ def recorder(monkeypatch) -> _Recorder:
     )
     # ensure_search_pipeline_exists talks to the cluster; the id derivation under
     # test does not, so the cluster call is the seam and the id is the assertion.
-    monkeypatch.setattr(hss, "ensure_search_pipeline_exists", lambda fusion=None: True)
+    monkeypatch.setattr(search_infra, "ensure_search_pipeline_exists", lambda fusion=None: True)
     return rec
 
 
@@ -223,7 +225,7 @@ def _record_ensure_calls(monkeypatch) -> list[str]:
         seen.append(fusion.slug())
         return True
 
-    monkeypatch.setattr(hss, "ensure_search_pipeline_exists", _ensure)
+    monkeypatch.setattr(search_infra, "ensure_search_pipeline_exists", _ensure)
     return seen
 
 
@@ -236,8 +238,8 @@ class TestVerifiedPipelineCache:
         """
         seen = _record_ensure_calls(monkeypatch)
 
-        hss.ensure_fusion_pipeline(FusionConfig(strategy=RRF))
-        hss.ensure_fusion_pipeline(_NORM)
+        search_infra.ensure_fusion_pipeline(FusionConfig(strategy=RRF))
+        search_infra.ensure_fusion_pipeline(_NORM)
 
         assert seen == ["rrf-30", _NORM.slug()]
 
@@ -245,7 +247,7 @@ class TestVerifiedPipelineCache:
         seen = _record_ensure_calls(monkeypatch)
 
         for _ in range(3):
-            hss.ensure_fusion_pipeline(_NORM)
+            search_infra.ensure_fusion_pipeline(_NORM)
 
         assert seen == [_NORM.slug()]
 
@@ -253,26 +255,26 @@ class TestVerifiedPipelineCache:
         """A stale id survives a config change and the next request trusts it."""
         seen = _record_ensure_calls(monkeypatch)
 
-        hss.ensure_fusion_pipeline(FusionConfig(strategy=RRF))
-        hss.ensure_fusion_pipeline(_NORM)
+        search_infra.ensure_fusion_pipeline(FusionConfig(strategy=RRF))
+        search_infra.ensure_fusion_pipeline(_NORM)
         assert len(seen) == 2
-        assert hss._verified_pipelines
+        assert search_infra._verified_pipelines
 
-        hss.reset_infrastructure_state()
+        search_infra.reset_infrastructure_state()
 
-        assert hss._verified_pipelines == set()
-        hss.ensure_fusion_pipeline(FusionConfig(strategy=RRF))
-        hss.ensure_fusion_pipeline(_NORM)
+        assert search_infra._verified_pipelines == set()
+        search_infra.ensure_fusion_pipeline(FusionConfig(strategy=RRF))
+        search_infra.ensure_fusion_pipeline(_NORM)
         assert seen == ["rrf-30", _NORM.slug(), "rrf-30", _NORM.slug()]
 
     def test_reset_infrastructure_state_also_clears_the_index_flag(self, monkeypatch):
         """The index check shares the reset; #363 must not have dropped it."""
-        monkeypatch.setattr(hss, "ensure_chunks_index_exists", lambda: True)
-        monkeypatch.setattr(hss, "ensure_search_pipeline_exists", lambda fusion=None: True)
+        monkeypatch.setattr(search_infra, "ensure_chunks_index_exists", lambda: True)
+        monkeypatch.setattr(search_infra, "ensure_search_pipeline_exists", lambda fusion=None: True)
 
-        hss._ensure_infrastructure()
-        assert hss._index_verified is True
+        search_infra._ensure_infrastructure()
+        assert search_infra._index_verified is True
 
-        hss.reset_infrastructure_state()
+        search_infra.reset_infrastructure_state()
 
-        assert hss._index_verified is False
+        assert search_infra._index_verified is False

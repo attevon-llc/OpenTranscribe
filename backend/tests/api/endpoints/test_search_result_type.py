@@ -28,8 +28,8 @@ from app.models.media import TranscriptSegment
 from app.models.prompt import UserSetting
 from app.models.sharing import CollectionShare
 from app.services.search.hybrid_search_service import HybridSearchService
-from app.services.search.hybrid_search_service import SearchHit
-from app.services.search.hybrid_search_service import SearchResponse
+from app.services.search.search_types import SearchHit
+from app.services.search.search_types import SearchResponse
 
 SEARCH_PATH = "/api/search"
 

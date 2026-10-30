@@ -31,8 +31,8 @@ from app.models.media import Collection
 from app.models.media import CollectionMember
 from app.models.media import MediaFile
 from app.services.search.hybrid_search_service import HybridSearchService
-from app.services.search.hybrid_search_service import SearchHit
-from app.services.search.hybrid_search_service import SearchResponse
+from app.services.search.search_types import SearchHit
+from app.services.search.search_types import SearchResponse
 
 requires_opensearch = pytest.mark.skipif(
     os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true",
@@ -317,7 +317,7 @@ class TestQuarantinedHitsAreDropped:
         self, client, user_token_headers, normal_user, db_session, monkeypatch
     ):
         """Regression: ``HybridSearchService.search()`` hands back a process-local
-        cache hit BY REFERENCE (``hybrid_search_service._get_cached_response``).
+        cache hit BY REFERENCE (``search_cache._get_cached_response``).
         If the takedown gate mutates that shared object in place instead of
         returning a copy, a file released after the first request stays hidden
         from every later request against the same cache entry — the object's

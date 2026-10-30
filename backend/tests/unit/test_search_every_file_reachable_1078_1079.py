@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 
 from app.services.search import hybrid_search_service as hss
+from app.services.search.search_types import SearchResponse
 
 pytestmark = [pytest.mark.unit]
 
@@ -130,7 +131,7 @@ def fake(monkeypatch) -> _FakeOpenSearch:
     return client
 
 
-def _search(page: int, sort_by: str = "relevance", neural: bool = False) -> hss.SearchResponse:
+def _search(page: int, sort_by: str = "relevance", neural: bool = False) -> SearchResponse:
     return hss.HybridSearchService()._search_with_collapse(
         query="budget",
         search_query="budget",
@@ -148,7 +149,7 @@ def _search(page: int, sort_by: str = "relevance", neural: bool = False) -> hss.
     )
 
 
-def _all_pages(**kw) -> list[hss.SearchResponse]:
+def _all_pages(**kw) -> list[SearchResponse]:
     first = _search(1, **kw)
     return [first] + [_search(n, **kw) for n in range(2, first.total_pages + 1)]
 

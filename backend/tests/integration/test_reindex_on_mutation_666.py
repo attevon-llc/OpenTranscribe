@@ -55,7 +55,7 @@ def throwaway_indices(monkeypatch):
     from app.core.config import settings
     from app.services.opensearch_service import get_opensearch_client
     from app.services.search import indexing_service as svc
-    from app.services.search.hybrid_search_service import reset_infrastructure_state
+    from app.services.search.search_infra import reset_infrastructure_state
 
     client = get_opensearch_client()
     assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"

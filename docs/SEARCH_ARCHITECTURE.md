@@ -230,7 +230,7 @@ Transcript segments can optionally store word-level timestamps from faster-whisp
 
 | File | Purpose |
 |---|---|
-| `backend/app/services/search/hybrid_search_service.py` | Search query construction, RRF combination, result grouping |
+| `backend/app/services/search/hybrid_search_service.py` (+ `collapsed_search.py`, `split_bm25.py`, `two_phase_search.py`, `summary_plane_search.py`, `suggestions.py`, `filters.py`, `query_building.py`, `collapse_bodies.py`, `result_processing.py`, `highlighting.py`, `search_cache.py`, `search_infra.py`, `quarantine_exclusion.py`, `search_types.py`) | Search query construction, RRF combination, result grouping |
 | `backend/app/services/search/indexing_service.py` | Index mapping, analyzer definitions, bulk indexing |
 | `backend/app/services/search/chunking_service.py` | Speaker-turn chunking strategy |
 | `backend/app/api/endpoints/search.py` (+ `search_helpers.py`, `search_reindex.py`, `search_index_health.py`, `search_models.py`) | Search API endpoints |

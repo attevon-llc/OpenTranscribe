@@ -80,7 +80,8 @@ The chunk plane in this package carries no voiceprint and is not gated.
   `TranscriptIndexingService`.
 - `fusion.py` — **what a fusion strategy IS**: `FusionConfig`, the derived pipeline id, the
   pipeline body, and drift detection. See "Fusion is selectable per request" below.
-- `hybrid_search_service.py` — `HybridSearchService.search`, the only query path.
+- `hybrid_search_service.py` — `HybridSearchService.search`, the only query path; the planes and
+  request pieces it binds are sibling modules (its module docstring lists them).
 - `snippet_redaction.py` — read-time masking of the snippets on a search page. See
   "Snippets are masked, and the tags make that non-obvious" below.
 - `ml_model_service.py` — ML Commons register/deploy. `model_downloader.py`,
@@ -222,8 +223,7 @@ of the app lets the caller open.
 
 ## Gotchas
 
-- **Do NOT add `aggs` to the collapsed hybrid body** (`hybrid_search_service.py:2498`, the "Do NOT add
-  `aggs` here" comment; line numbers rot, so grep that string):
+- **Do NOT add `aggs` to the collapsed hybrid body** (grep "Do NOT add" in `collapse_bodies.py`):
   OpenSearch 3.4 throws `ArrayIndexOutOfBoundsException` in `score-ranker-processor` when
   cardinality aggs meet hybrid + collapse + RRF. `total_files` is derived from collapsed results.
 - RRF + collapse **strips inner-hit highlights** — hence `_detect_keyword_match_fallback` and
@@ -258,11 +258,11 @@ of the app lets the caller open.
 - `recreate_index_for_dimension` **deletes the index**. Switching embedding model = full reindex —
   and "full" means *every user's* transcripts; see the section below for why that is not what it
   used to mean.
-- Availability, index, and pipeline checks are cached in module globals behind `_state_lock`.
-  After recreating an index call `reset_infrastructure_state()` / `reset_neural_search_state()`,
-  or the worker keeps trusting stale state (neural-failure TTL is only 30 s, success 120 s).
-  **`reset_infrastructure_state()` clears a SET of verified pipeline ids**, not a flag — see
-  below.
+- Availability (`hybrid_search_service`) and index/pipeline (`search_infra`) checks are cached in
+  module globals, each behind its module's `_state_lock`. After recreating an index call
+  `reset_infrastructure_state()` / `reset_neural_search_state()`, or the worker keeps trusting
+  stale state (neural-failure TTL is only 30 s, success 120 s).
+  **`reset_infrastructure_state()` clears a SET of verified pipeline ids**, not a flag — see below.
 - `SEARCH_RRF_RANK_CONSTANT` defaults to **30** — grep the symbol in `core/config.py`; a line
   number cited here has already rotted once. A mismatch against the live **search** pipeline
   triggers automatic recreation on startup (`ensure_search_pipeline_exists`). Since #401 the
@@ -317,7 +317,7 @@ of the app lets the caller open.
     yet. That is a coordination problem, not a visibility one.
 - **Chunk docs snapshot `speaker` / `speakers` / `title`; renames must be propagated**
   (issue #405). Chat's speaker axis resolves the display name from **Postgres** and filters the
-  index with an exact `terms` match on `speaker` (`hybrid_search_service._build_filters`), so an
+  index with an exact `terms` match on `speaker` (`filters._build_filters`), so an
   un-propagated rename makes every pre-rename chunk unreachable under the only name the user can
   ask about — and the model answers from the remainder. `app/tasks/rename_propagation_task.py`
   owns both rewrites (`propagate_speaker_rename` / `propagate_title_rename`, cpu queue) and
@@ -334,7 +334,7 @@ be A/B'd against one live index with **no reindex and no global state swap** —
 #363's A/B is built on. Adding a pipeline is safe; changing a *mapping* is not.
 
 `fusion.py` owns what a strategy is; `indexing_service.ensure_search_pipeline_exists(cfg)` owns
-its lifecycle in the cluster; `hybrid_search_service.ensure_fusion_pipeline(cfg)` owns the
+its lifecycle in the cluster; `search_infra.ensure_fusion_pipeline(cfg)` owns the
 per-process cache and returns the id to attach.
 
 | strategy | processor | knobs |
@@ -353,8 +353,8 @@ per-process cache and returns the id to attach.
   becomes a migration. `SEARCH_FUSION_STRATEGY` selects the *default request-time strategy*,
   nothing about the name.
 - **Four attach sites, all threaded** (#363's review comment named the first three; the fourth
-  arrived with Stage 4): `hybrid_search_service._search_with_two_phase` (phase 1),
-  `hybrid_search_service._search_with_collapse` (main hybrid), `chunk_retrieval.retrieve_chunks`,
+  arrived with Stage 4): `two_phase_search._search_with_two_phase` (phase 1),
+  `collapsed_search._search_with_collapse` (main hybrid), `chunk_retrieval.retrieve_chunks`,
   `chunk_retrieval.retrieve_digests`. The id is passed *down* rather than re-read from
   `settings` at each site, so an arm cannot lose its strategy on the way to the wire.
 - **`_verified_pipelines` is a set, and it is why `reset_infrastructure_state` matters.** A

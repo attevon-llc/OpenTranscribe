@@ -19,9 +19,6 @@ backend/app/services/llm_stream.py::parse_anthropic_sse	16	complexity: decomposi
 backend/app/services/opensearch_service/repair.py::rebuild_speaker_index	31	complexity: decomposition planned
 backend/app/services/opensearch_service/speaker_read.py::iter_speaker_embeddings	17	complexity: decomposition planned
 backend/app/services/profile_embedding_service.py::ProfileEmbeddingService.update_profile_embedding	16	complexity: decomposition planned
-backend/app/services/speaker_clustering_service.py::SpeakerClusteringService.batch_recluster	93	complexity: decomposition planned
-backend/app/services/speaker_clustering_service.py::SpeakerClusteringService.batch_verify_speakers	20	complexity: decomposition planned
-backend/app/services/speaker_clustering_service.py::SpeakerClusteringService.merge_clusters	16	complexity: decomposition planned
 backend/app/tasks/embedding_consistency_repair.py::speaker_embedding_consistency_repair_batch_task	16	complexity: decomposition planned
 backend/app/tasks/recovery.py::periodic_health_check_task	16	complexity: decomposition planned
 backend/app/tasks/recovery_tasks.py::media_duration_backfill	16	complexity: decomposition planned

@@ -130,7 +130,7 @@ services:
     restart: unless-stopped
 
   llm-test-ollama:
-    image: ollama/ollama:${LLM_TEST_OLLAMA_TAG:-latest}
+    image: ollama/ollama:${LLM_TEST_OLLAMA_TAG:-0.40.13}
     container_name: ${LLM_TEST_OLLAMA_CONTAINER_NAME:-opentranscribe-llm-test-ollama}
     profiles: ["ollama"]  # opt-in only; not started by --with-llm-test alone (see header)
     environment:

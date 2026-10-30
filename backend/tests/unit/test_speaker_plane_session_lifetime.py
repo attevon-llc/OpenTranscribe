@@ -495,7 +495,6 @@ def test_clear_video_cache_opens_its_own_short_session(db_session, normal_user, 
     storage client is constructed before any scope exists. The session-taking
     ``clear_cache_for_media_file`` it used to call has been deleted.
     """
-    from app.services import minio_service as minio_mod
     from app.services import video_processing_service as vps
 
     tracker = _ScopeTracker(db_session)
@@ -517,7 +516,7 @@ def test_clear_video_cache_opens_its_own_short_session(db_session, normal_user, 
             recorded["file_id"] = file_id
             recorded["filename"] = filename
 
-    monkeypatch.setattr(minio_mod, "MinIOService", _FakeMinIO)
+    monkeypatch.setattr("app.services.minio_bucket_admin.MinIOService", _FakeMinIO)
     monkeypatch.setattr(vps, "VideoProcessingService", _FakeVideoService)
 
     spk_workflow._clear_video_cache_for_speaker(media_file.id)
@@ -533,7 +532,6 @@ def test_clear_video_cache_opens_its_own_short_session(db_session, normal_user, 
 
 def test_clear_speaker_video_cache_uses_one_session_per_file(db_session, normal_user, monkeypatch):
     """The merge path purges each file in its OWN transaction, not one across both."""
-    from app.services import minio_service as minio_mod
     from app.services import video_processing_service as vps
 
     tracker = _ScopeTracker(db_session)
@@ -551,7 +549,7 @@ def test_clear_speaker_video_cache_uses_one_session_per_file(db_session, normal_
             tracker.observe("clear_cache")
             purged.append(file_id)
 
-    monkeypatch.setattr(minio_mod, "MinIOService", lambda: object())
+    monkeypatch.setattr("app.services.minio_bucket_admin.MinIOService", lambda: object())
     monkeypatch.setattr(vps, "VideoProcessingService", _FakeVideoService)
 
     spk_merge._clear_speaker_video_cache({first.id, second.id})

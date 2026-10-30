@@ -110,7 +110,7 @@ There is no `transcription_service.py` (deleted in issue #450; it was imported b
 A synchronous client on purpose (Celery tasks, no asyncio conflicts). `create_from_user_settings(user_id)` resolves a user's configuration and falls back to `create_from_system_settings()`; both can return `None` when no provider is configured, and callers must handle that. `LLMService.is_configured_for_user(db, user_id)` is the one answer to "is an LLM configured". Summaries use the BLUF format (action items, decisions, speaker analysis) with multi-section stitching for long transcripts, in the 12 output languages of `LLM_OUTPUT_LANGUAGES` (`core/constants.py`). Speaker-identification suggestions are never auto-applied. Details: `services/CLAUDE.md`.
 
 ### MinIO / object storage (`minio_service.py`)
-Module-level functions (not a class) for upload, download, delete, presigned URLs and object tagging, plus a small `MinIOService` class for bucket-oriented operations. Media playback and downloads use presigned URLs: clients get them from `GET /files/{uuid}/stream-url` (playback) or `POST /files/{uuid}/prepare-download`, and the browser reads directly from storage (HTTP range requests included), not through an API byte proxy.
+Module-level functions (not a class) for upload, download, delete, presigned URLs and object tagging, plus a small `MinIOService` class (`minio_bucket_admin.py`) for bucket-oriented operations. Media playback and downloads use presigned URLs: clients get them from `GET /files/{uuid}/stream-url` (playback) or `POST /files/{uuid}/prepare-download`, and the browser reads directly from storage (HTTP range requests included), not through an API byte proxy.
 
 ```python
 from app.services import minio_service

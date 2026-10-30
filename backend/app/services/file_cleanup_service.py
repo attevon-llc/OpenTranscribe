@@ -705,7 +705,7 @@ def delete_file_storage_artifacts(file_id: int, artifacts: dict[str, Any]) -> bo
     filename = artifacts.get("filename")
     if filename:
         try:
-            from app.services.minio_service import MinIOService
+            from app.services.minio_bucket_admin import MinIOService
             from app.services.video_processing_service import VideoProcessingService
 
             VideoProcessingService(MinIOService()).clear_derived_cache(int(file_id), str(filename))

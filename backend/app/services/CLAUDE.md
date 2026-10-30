@@ -607,7 +607,7 @@ Backend selection lives in one predicate, `SpeakerEmbeddingService._native_backe
 
 ## Object storage: `storage_backend.py` + `minio_service.py`
 
-`minio_service` is the API (upload/download/presign/lifecycle, ~60 call sites plus the
+`minio_service` is the API (upload/download/presign/lifecycle; the `MinIOService` class wrapper lives in `minio_bucket_admin.py` and reads `minio_service.minio_client` as a module attribute so patches of `minio_client` reach it, ~60 call sites plus the
 `minio_client` singleton). `storage_backend` is the *policy* layer underneath it and owns
 every difference between the two backends (issue #284 A1.11/A1.12):
 

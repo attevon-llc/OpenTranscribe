@@ -471,7 +471,6 @@ def test_deleting_the_file_deletes_its_rendition(
 ):
     """The canonical purge (single delete, bulk, retention, GDPR) takes the copy too."""
     from app.services import file_cleanup_service as fcs
-    from app.services import minio_service
     from app.services import video_processing_service
     from app.tasks.playback_rendition import create_playback_rendition_task
 
@@ -486,7 +485,7 @@ def test_deleting_the_file_deletes_its_rendition(
 
     monkeypatch.setattr(fcs, "_cleanup_opensearch_for_file", lambda target, file_uuid: [])
     monkeypatch.setattr(fcs, "_refresh_surviving_centroids", lambda db, owner_id, plan: [])
-    monkeypatch.setattr(minio_service, "MinIOService", lambda: None)
+    monkeypatch.setattr("app.services.minio_bucket_admin.MinIOService", lambda: None)
     monkeypatch.setattr(video_processing_service, "VideoProcessingService", _NoDerivedCache)
     row = _row(db_session, normal_user, "a.aiff", store, media)
     create_playback_rendition_task.run(file_uuid=str(row.uuid))

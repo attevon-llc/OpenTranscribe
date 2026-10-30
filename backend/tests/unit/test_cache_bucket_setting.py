@@ -28,7 +28,7 @@ from app.core.config import DEFAULT_CACHE_BUCKET_NAME
 from app.core.config import settings
 from app.core.constants import STORAGE_QUARANTINE_TAG_KEY
 from app.services import storage_presign_identity as pid
-from app.services.minio_service import MinIOService
+from app.services.minio_bucket_admin import MinIOService
 from app.services.video_processing_service import VideoProcessingService
 
 #: Deliberately unlike the shipped default, so a test can only pass by reading the setting.

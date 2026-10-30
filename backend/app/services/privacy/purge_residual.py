@@ -81,7 +81,7 @@ def measure_voiceprint_residual(
     from app.models.speaker import SpeakerClusterMember
     from app.models.speaker import SpeakerMatch
     from app.models.speaker import SpeakerProfile
-    from app.services.gdpr_erasure_service import count_speaker_docs_by_ids
+    from app.services.gdpr_voiceprint_erasure import count_speaker_docs_by_ids
     from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
 
     result = Residual()

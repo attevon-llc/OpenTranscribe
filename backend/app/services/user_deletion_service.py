@@ -84,7 +84,7 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
     MediaFile rows since some of these tables have FK references to media_file.
 
     **This list is hand-maintained and its twin is
-    ``services/gdpr_erasure_service._delete_owner_scoped_rows``.** Nothing in the
+    ``services/gdpr_erasure_steps._delete_owner_scoped_rows``.** Nothing in the
     application compares the two, and neither is derived from the schema, so a new
     table with a plain ``user_id`` FK breaks account deletion with no code change
     here. ``tests/unit/test_user_deletion_fk_coverage.py`` derives every NO-ACTION

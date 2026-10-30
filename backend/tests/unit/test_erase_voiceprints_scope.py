@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.gdpr_erasure_service import _erase_speaker_voiceprints
+from app.services.gdpr_voiceprint_erasure import _erase_speaker_voiceprints
 from tests.fixtures.fake_speaker_index import FakeOpenSearch
 
 

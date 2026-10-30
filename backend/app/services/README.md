@@ -82,7 +82,7 @@ Most services are plain modules of functions that take a `Session`; a few are cl
 | `takedown_*.py` | Abuse/DMCA quarantine, takedown notice records and owner notifications |
 | `content_audit.py`, `org_audit_view.py` | Content-access and governance audit events and the organization audit view |
 | `support_access_*.py` | Support-access grants |
-| `gdpr_erasure_service.py`, `erasure_ledger_service.py` | GDPR Art. 17 erasure and its ledger |
+| `gdpr_erasure_service.py`, `gdpr_erasure_steps.py`, `gdpr_voiceprint_erasure.py`, `erasure_ledger_service.py` | GDPR Art. 17 erasure and its ledger |
 | `account_lifecycle_service.py`, `session_cap_service.py` | FedRAMP account-expiry and concurrent-session controls |
 | `tenant_stamp_backfill.py` | Stamp legacy rows with a tenant |
 

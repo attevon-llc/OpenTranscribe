@@ -52,7 +52,7 @@ over, because the rewrite replaces the whole document and a document without the
 process (`PRIVACY_WRITE_BACKSTOP_TTL_SECONDS`), a resolver or storage error denies and is not cached. A NEW function that writes a
 speaker, profile or cluster embedding document must call it too; do not rely on the caller having checked, because the callers
 are Celery tasks that may have been planned before a switch flipped. Deleting these documents is the purge
-(`services/privacy/purge.py`, via `gdpr_erasure_service._erase_speaker_voiceprints`), never a side effect of switching a layer off.
+(`services/privacy/purge.py`, via `gdpr_voiceprint_erasure._erase_speaker_voiceprints`), never a side effect of switching a layer off.
 The chunk plane in this package carries no voiceprint and is not gated.
 
 ## Key files

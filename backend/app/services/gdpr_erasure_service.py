@@ -76,17 +76,22 @@ Community-edition invariance
 self-host/community edition ``organization_id`` is NULL everywhere, so the
 org path never triggers. ``erase_user`` works in both editions (the speaker
 ``delete_by_query`` simply matches the user's personal docs).
+
+Layout
+------
+The per-store steps live in ``gdpr_erasure_steps`` (relational rows, object storage, the
+outcome rule) and ``gdpr_voiceprint_erasure`` (the OpenSearch speaker indices). They are
+imported here by name and called through this module's globals, which is where tests patch
+them; the ORDER of the steps is defined only by the ``erase_*`` functions below.
 """
 
 import logging
-from collections.abc import Iterable
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
-from app.auth.audit_events import AuditOutcome
 from app.models.chat import ChatConversation
 from app.models.collection import Collection
 from app.models.custom_vocabulary import CustomVocabulary
@@ -100,12 +105,17 @@ from app.models.prompt import SummaryPrompt
 from app.models.prompt import UserSetting
 from app.models.speaker import SpeakerCollection
 from app.models.speaker import SpeakerProfile
-from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.models.user import User
 from app.models.watch_source import WatchSource
 from app.services import erasure_ledger_service as ledger
-from app.services.file_cleanup_service import purge_media_file
+from app.services.gdpr_erasure_steps import _actor_kind
+from app.services.gdpr_erasure_steps import _delete_owner_scoped_rows
+from app.services.gdpr_erasure_steps import _delete_profiles
+from app.services.gdpr_erasure_steps import _erase_avatar_objects
+from app.services.gdpr_erasure_steps import _purge_files
+from app.services.gdpr_erasure_steps import _resolve_outcome
+from app.services.gdpr_voiceprint_erasure import _erase_speaker_voiceprints
 
 logger = logging.getLogger(__name__)
 
@@ -113,431 +123,6 @@ logger = logging.getLogger(__name__)
 # from the ledger service, which stamps every entry's `sla_due_at` with it — two
 # independent copies of the deadline is how the reported SLA and the measured one drift.
 ERASURE_SLA_DAYS = ledger.ERASURE_SLA_DAYS
-
-
-def _erase_speaker_voiceprints(
-    *,
-    user_id: int | None = None,
-    organization_id: int | None = None,
-    personal_only: bool = False,
-    errors: list[dict[str, Any]] | None = None,
-) -> int:
-    """Delete speaker/profile embedding docs (biometric data) from OpenSearch.
-
-    Scopes by ``user_id`` and/or ``organization_id`` (both given = the
-    intersection, i.e. one member's docs within one org) and runs a
-    ``delete_by_query`` across the v3 + v4 + alias speaker indices **and the
-    legacy ``speakers_v3_backup``**. The backup index is not optional
-    housekeeping: ``opensearch_service/indices._restore_v3_from_backup``
-    reindexes it into ``speakers_v3`` whenever v3 is found empty, so on a small
-    deployment erasing its last subject, the next ``ensure_indices_exist()``
-    put their biometric embeddings straight back. Legacy installs only — the
-    index does not exist on a fresh one, and ``indices.exists`` skips it.
-    Best-effort: a down/absent OpenSearch never blocks the relational +
-    storage erasure (those are the legally-binding deletions; this catches
-    orphaned biometric docs).
-
-    Args:
-        user_id: Scope the deletion to one user.
-        organization_id: Scope the deletion to one organization.
-        personal_only: Also require that the doc carries no organization, i.e. only
-            personal-workspace docs (the privacy purge's "personal" scope). Without a
-            ``user_id`` this is every user's personal docs. Contradicts
-            ``organization_id``: giving both deletes nothing.
-        errors: The caller's ``summary["errors"]`` list. Failures are appended
-            here so the erasure is audited as PARTIAL rather than SUCCESS —
-            biometric data surviving an Art. 17 request must not be recorded as
-            a completed erasure.
-
-    Returns the number of voiceprint documents deleted (0 if OpenSearch is
-    unavailable).
-    """
-    if user_id is None and organization_id is None and not personal_only:
-        return 0
-    if personal_only and organization_id is not None:
-        return 0
-
-    terms: list[dict[str, Any]] = []
-    if user_id is not None:
-        terms.append({"term": {"user_id": user_id}})
-    if organization_id is not None:
-        terms.append({"term": {"organization_id": organization_id}})
-    body: dict[str, Any] = {"query": {"bool": {"filter": terms}}}
-    if personal_only:
-        body["query"]["bool"]["must_not"] = [{"exists": {"field": "organization_id"}}]
-
-    label = (
-        "org " + str(organization_id)
-        if organization_id
-        else ("user " + str(user_id) if user_id else "personal scope")
-    )
-    return delete_speaker_docs_by_query(
-        body, errors=errors, user_id=user_id, organization_id=organization_id, label=label
-    )
-
-
-def delete_speaker_docs_by_query(
-    body: dict[str, Any],
-    *,
-    errors: list[dict[str, Any]] | None = None,
-    user_id: int | None = None,
-    organization_id: int | None = None,
-    label: str = "",
-) -> int:
-    """Run ``delete_by_query(body)`` over every speaker index (v3, v4, alias, legacy backup).
-
-    The one place the index set is enumerated. ``_erase_speaker_voiceprints`` builds the scope
-    from a user and/or organization; the privacy purge (``services/privacy/purge.py``) also
-    needs "everything", which is why the query is a parameter. Failures go to ``errors`` (see
-    ``_erase_speaker_voiceprints``); this never raises.
-
-    Returns:
-        The number of documents deleted (0 if OpenSearch is unavailable).
-    """
-
-    def _record(reason: str) -> None:
-        if errors is not None:
-            errors.append(
-                {
-                    "stage": "voiceprints",
-                    "user_id": user_id,
-                    "org_id": organization_id,
-                    "error": reason,
-                }
-            )
-
-    deleted = 0
-    try:
-        from app.core.embedding_models import get_speaker_index
-        from app.core.embedding_models import get_speaker_index_v3
-        from app.core.embedding_models import get_speaker_index_v3_backup
-        from app.core.embedding_models import get_speaker_index_v4
-        from app.services.opensearch_service import opensearch_client
-
-        if opensearch_client is None:
-            logger.warning("OpenSearch unavailable — skipping voiceprint erasure (orphan docs)")
-            _record("OpenSearch client unavailable")
-            return 0
-
-        indices = {
-            get_speaker_index(),
-            get_speaker_index_v3(),
-            get_speaker_index_v4(),
-            get_speaker_index_v3_backup(),
-        }
-        for idx in indices:
-            try:
-                if not opensearch_client.indices.exists(index=idx):
-                    continue
-                resp = opensearch_client.delete_by_query(
-                    index=idx,
-                    body=body,
-                    refresh=True,
-                    conflicts="proceed",
-                )
-                deleted += int(resp.get("deleted", 0))
-                # delete_by_query reports per-document failures in the BODY
-                # rather than raising, so a partial sweep of biometric docs
-                # would otherwise look identical to a complete one.
-                failures = (resp or {}).get("failures") or []
-                if failures:
-                    _record(f"index {idx}: {len(failures)} document(s) failed to delete")
-            except Exception as idx_err:  # noqa: BLE001 — best-effort per index
-                logger.warning(f"Voiceprint erasure failed on index {idx}: {idx_err}")
-                _record(f"index {idx}: {idx_err}")
-    except Exception as e:  # noqa: BLE001 — OpenSearch optional
-        logger.warning(f"Voiceprint erasure skipped (OpenSearch error): {e}")
-        _record(str(e))
-
-    if deleted:
-        logger.info(f"Erased {deleted} voiceprint doc(s) for {label or 'a scope'}")
-    return deleted
-
-
-_DOC_ID_BATCH = 1000
-
-
-def _speaker_index_names(client: Any) -> list[str]:
-    """The speaker indices that exist (v3, v4, alias, legacy backup), without duplicates."""
-    from app.core.embedding_models import get_speaker_index
-    from app.core.embedding_models import get_speaker_index_v3
-    from app.core.embedding_models import get_speaker_index_v3_backup
-    from app.core.embedding_models import get_speaker_index_v4
-
-    wanted = [
-        get_speaker_index(),
-        get_speaker_index_v3(),
-        get_speaker_index_v4(),
-        get_speaker_index_v3_backup(),
-    ]
-    return [idx for idx in dict.fromkeys(wanted) if client.indices.exists(index=idx)]
-
-
-def delete_speaker_docs_by_ids(
-    doc_ids: Iterable[str],
-    *,
-    also: dict[str, Any] | None = None,
-    errors: list[dict[str, Any]] | None = None,
-    label: str = "",
-) -> int:
-    """Delete speaker-index documents by ``_id`` across every speaker index.
-
-    The privacy purge selects voiceprint documents by the ids Postgres says belong to its scope
-    (speaker uuids, ``profile_<uuid>``, ``cluster_<uuid>``), never by the documents' own tenant
-    stamp: a document written before the tenant backfill carries no stamp, and a stamp-based
-    delete misses it in an organization purge and can reach it from a member's personal one.
-    Failures go to ``errors`` and this never raises.
-
-    Args:
-        doc_ids: The ``_id`` values to delete.
-        also: A query clause for documents to delete IN ADDITION to the ids (an organization
-            purge passes the organization's positive stamp, which reaches documents Postgres
-            has no row for). Run after the ids, so a document matching both counts once.
-        errors: The caller's error list.
-        label: For the log line.
-
-    Returns:
-        What OpenSearch reports as deleted (0 if it is unavailable), never the number of ids
-        asked for.
-    """
-    ids = list(dict.fromkeys(str(i) for i in doc_ids))
-    deleted = 0
-    for start in range(0, len(ids), _DOC_ID_BATCH):
-        batch = ids[start : start + _DOC_ID_BATCH]
-        deleted += delete_speaker_docs_by_query(
-            {"query": {"ids": {"values": batch}}}, errors=errors, label=label
-        )
-    if also is not None:
-        deleted += delete_speaker_docs_by_query({"query": also}, errors=errors, label=label)
-    return deleted
-
-
-def count_speaker_docs_by_ids(
-    doc_ids: Iterable[str],
-    *,
-    also: dict[str, Any] | None = None,
-    errors: list[dict[str, Any]] | None = None,
-) -> int | None:
-    """How many of these ids still exist as speaker-index documents, after a refresh.
-
-    The residual check of a purge. The indices are listed in ONE request so an alias and the
-    index behind it count a document once. ``None`` means it could not be measured (recorded in
-    ``errors``): an unmeasurable store must never read as an empty one.
-
-    ``also`` is the clause :func:`delete_speaker_docs_by_ids` was given: documents matching it
-    are counted too, once (an id that also matches it is not counted twice).
-    """
-    ids = list(dict.fromkeys(str(i) for i in doc_ids))
-    if not ids and also is None:
-        return 0
-    try:
-        from app.services.opensearch_service import opensearch_client
-
-        if opensearch_client is None:
-            raise RuntimeError("OpenSearch client unavailable")
-        indices = _speaker_index_names(opensearch_client)
-        if not indices:
-            return 0
-        target = ",".join(indices)
-        opensearch_client.indices.refresh(index=target)
-        found = 0
-        if also is not None:
-            found += int(
-                opensearch_client.count(index=target, body={"query": also}).get("count", 0)
-            )
-        for start in range(0, len(ids), _DOC_ID_BATCH):
-            batch = ids[start : start + _DOC_ID_BATCH]
-            by_id: dict[str, Any] = {"ids": {"values": batch}}
-            query = {"bool": {"filter": [by_id], "must_not": [also]}} if also else by_id
-            found += int(
-                opensearch_client.count(index=target, body={"query": query}).get("count", 0)
-            )
-        return found
-    except Exception as exc:  # noqa: BLE001 - reported, and the caller treats it as unmeasured
-        logger.warning(f"Voiceprint residual count failed: {exc}")
-        if errors is not None:
-            errors.append({"stage": "residual_count", "error": str(exc)})
-        return None
-
-
-def _erase_profile_embedding(profile_uuid: str, errors: list[dict[str, Any]]) -> None:
-    """Remove one speaker profile's embedding doc, recording a failure. Never raises.
-
-    This used to be ``contextlib.suppress(Exception)`` at all three call sites, which is
-    the same defect already fixed for the transcript document: a biometric embedding
-    that could not be deleted made the erasure report SUCCESS, and the DB row naming
-    which document to retry was destroyed in the same pass. Best-effort is right;
-    silent is not.
-    """
-    try:
-        from app.services.opensearch_service import remove_profile_embedding
-
-        remove_profile_embedding(profile_uuid)
-    except Exception as e:  # noqa: BLE001 — record, never abort the relational delete
-        logger.warning(f"Profile embedding removal failed for {profile_uuid}: {e}")
-        errors.append({"stage": "profile_embedding", "profile_uuid": profile_uuid, "error": str(e)})
-
-
-def _delete_profiles(
-    db: Session, profiles: list[SpeakerProfile], summary: dict[str, Any]
-) -> list[str]:
-    """Delete speaker profiles (embedding first) and return their avatar object keys.
-
-    The avatar is an uploaded photo of the person the profile names — personal data in
-    object storage that no row cascade reaches. Its key is read here, while the row
-    still exists, and handed back so the caller can delete the objects with
-    :func:`_erase_avatar_objects` AFTER its transaction commits (the three-phase
-    session rule: no object-storage round trips inside an open transaction). Every
-    erasure scope used to delete the rows and leave the photos in the bucket.
-    """
-    avatar_paths: list[str] = []
-    for profile in profiles:
-        _erase_profile_embedding(str(profile.uuid), summary["errors"])
-        if profile.avatar_path:
-            avatar_paths.append(str(profile.avatar_path))
-        db.delete(profile)
-        summary["speaker_profiles_deleted"] += 1
-    return avatar_paths
-
-
-def _erase_avatar_objects(avatar_paths: list[str], errors: list[dict[str, Any]]) -> None:
-    """Delete profile avatar objects. **Takes no session**; call after the commit.
-
-    A failure is recorded (so the erasure audits PARTIAL), never raised. The entry
-    names the failure class only: ``summary`` is an API response body, and a storage
-    key or driver message is not an authored fact (#914).
-    """
-    from app.services.minio_service import delete_file
-
-    for path in avatar_paths:
-        try:
-            delete_file(path)
-        except Exception as e:  # noqa: BLE001 — record, don't raise; one avatar never blocks the rest
-            errors.append(
-                {"stage": "avatar", "error": f"avatar delete failed ({type(e).__name__})"}
-            )
-
-
-def _purge_files(db: Session, files: list[MediaFile], summary: dict[str, Any]) -> None:
-    """Run the canonical per-file destroy for every file, accumulating counters.
-
-    Files under an active legal hold (the platform's, or an organization's:
-    ``hold_guard.hold_states``) are SKIPPED, not destroyed: GDPR
-    Art. 17(3)(e) exempts data retained for legal claims, and the takedown
-    flow's evidence-preservation guarantee rests on the DB state (S3
-    object-lock is best-effort only). Skips are reported in the summary so
-    the erasure is auditable as partial, and the deferral is recorded in the
-    **erasure ledger** (``models/erasure``) so a later hold release re-runs the
-    idempotent erasure to finish the job. That last clause used to be a claim this
-    docstring made and nothing implemented — ``takedown_service.release_file``
-    cleared the hold and never called back, so the deferral was permanent
-    (issue #442). ``tasks/erasure_reconciliation`` is what makes it true.
-
-    ``purge_media_file``'s ``residual_errors`` are surfaced for the same reason:
-    a deleted DB row with the transcript, its RAG chunks or the media object
-    still in place is a partial erasure, and reading ``deleted: True`` alone
-    reported it as a complete one.
-    """
-    from app.services.hold_guard import hold_states
-
-    held = hold_states(db, [int(f.id) for f in files])
-    for media_file in files:
-        if int(media_file.id) in held:
-            summary["legal_holds_skipped"] += 1
-            summary["errors"].append(
-                {
-                    "file_uuid": str(media_file.uuid),
-                    "error": "skipped: active legal hold (GDPR Art. 17(3)(e))",
-                }
-            )
-            continue
-        result = purge_media_file(db, media_file)
-        summary["errors"].extend(result.get("residual_errors") or [])
-        if result.get("deleted"):
-            summary["media_files_deleted"] += 1
-        else:
-            summary["errors"].append(
-                {"file_uuid": result.get("file_uuid"), "error": result.get("error")}
-            )
-
-
-def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]) -> list[str]:
-    """Delete a single user's profile/collection rows that survive file cleanup.
-
-    Returns the deleted profiles' avatar object keys, for :func:`_erase_avatar_objects`
-    to remove once this function's commit has closed the transaction.
-
-    ``purge_media_file`` deliberately preserves ``SpeakerProfile`` (and never
-    touches empty ``Collection`` shells), so erasure must remove them
-    explicitly. Their profile embeddings are cleared from OpenSearch first.
-
-    Tags owned by the subject go too (v374): tag names are user-authored free
-    text, i.e. personal data, and ``tag.user_id`` is a plain FK that would block
-    the user-row delete. Their ``file_tag`` rows are detached first — one may
-    hang off another user's file — while system tags (``user_id IS NULL``) are
-    shared vocabulary and are left alone.
-
-    ``Comment`` and ``Task`` are here for the same reason as ``Tag`` and not for
-    the reason you would guess. ``purge_media_file`` deletes each of the subject's
-    files as an ORM *instance*, so ``MediaFile``'s ``delete-orphan`` cascade takes
-    the comments and tasks **on those files** with it. What it cannot reach is a
-    row the subject created on somebody *else's* file: commenting is collaborative
-    (a viewer on a shared file may comment), and both ``comment.user_id`` and
-    ``task.user_id`` are NOT NULL with ``ON DELETE NO ACTION``. One such comment
-    made the whole erasure fail at ``db.delete(user)`` — recorded as an error in
-    the summary, i.e. an Art. 17 request that silently did not complete.
-
-    **This list is hand-maintained and its twin is
-    ``services/user_deletion_service._delete_user_owned_records``.** The two are independent
-    and nothing in the application compares them;
-    ``tests/unit/test_user_deletion_fk_coverage.py`` derives the FKs from the live
-    schema and requires both paths to account for each one.
-    """
-    profiles = db.query(SpeakerProfile).filter(SpeakerProfile.user_id == user_id).all()
-    avatar_paths = _delete_profiles(db, profiles, summary)
-
-    # Organization collections are the tenant's and hold colleagues' files (v422):
-    # they survive, de-attributed. Personal collections go with the account.
-    db.query(Collection).filter(
-        Collection.user_id == user_id, Collection.organization_id.is_not(None)
-    ).update({Collection.user_id: None}, synchronize_session=False)
-
-    for model, key in (
-        (SpeakerCollection, "speaker_collections_deleted"),
-        (Collection, "collections_deleted"),
-        # Chat threads quote transcript content back to the user, so they must
-        # be erased even when a legal hold retains the user row and its files.
-        (ChatConversation, "chat_conversations_deleted"),
-    ):
-        rows = db.query(model).filter(model.user_id == user_id).all()
-        for row in rows:
-            db.delete(row)
-            summary[key] += 1
-
-    # Organization tags are the tenant's vocabulary and sit on colleagues' files
-    # (v420): they survive, de-attributed. Personal tags go with the account.
-    db.query(Tag).filter(Tag.user_id == user_id, Tag.organization_id.is_not(None)).update(
-        {Tag.user_id: None}, synchronize_session=False
-    )
-    tag_ids = [t.id for t in db.query(Tag.id).filter(Tag.user_id == user_id).all()]
-    if tag_ids:
-        db.query(FileTag).filter(FileTag.tag_id.in_(tag_ids)).delete(synchronize_session=False)
-        db.query(Tag).filter(Tag.user_id == user_id).delete(synchronize_session=False)
-        summary["tags_deleted"] = len(tag_ids)
-
-    # Whatever the subject wrote on OTHER people's files. The rows on their own
-    # files are already gone via purge_media_file's ORM cascade; these are the
-    # ones no per-file pass can see, and both FKs are NOT NULL / NO ACTION, so
-    # leaving them turns `db.delete(user)` into a foreign-key violation.
-    summary["comments_deleted"] = (
-        db.query(Comment).filter(Comment.user_id == user_id).delete(synchronize_session=False)
-    )
-    summary["tasks_deleted"] = (
-        db.query(Task).filter(Task.user_id == user_id).delete(synchronize_session=False)
-    )
-
-    db.commit()
-    return avatar_paths
 
 
 def _new_summary(subject: str, subject_id: int) -> dict[str, Any]:
@@ -570,40 +155,6 @@ def _new_summary(subject: str, subject_id: int) -> dict[str, Any]:
         # outlives the request, which is what Art. 30 demonstrability needs.
         "ledger_uuid": None,
     }
-
-
-def _actor_kind(actor_user_id: int | None, *, staff_role: str) -> str:
-    """Classify the caller for the ledger without recording who they are.
-
-    ``None`` means the cloud ``user.deleted`` / ``organization.deleted`` webhook, i.e.
-    the data subject deleted their own IdP account. Anything else is staff, and which
-    kind is decided by the endpoint that called us (the two entry points are
-    super-admin and org-admin scoped respectively).
-    """
-    return staff_role if actor_user_id is not None else "data_subject"
-
-
-def _resolve_outcome(summary: dict[str, Any]) -> AuditOutcome:
-    """Set ``summary["complete"]`` and pick the audit outcome from the errors.
-
-    The single place that decides whether an Art. 17 erasure completed. An
-    erasure that could not destroy every copy of the subject's data — a legal
-    hold, an unreachable object store, an OpenSearch outage that left the
-    transcript or its RAG chunks indexed — is PARTIAL, never SUCCESS. The
-    endpoints return this summary verbatim, so ``complete`` is also the
-    machine-readable answer for a caller scripting against the API (which gets
-    HTTP 200 either way).
-
-    Args:
-        summary: The erasure summary, whose ``errors`` list has been fully
-            populated by this point.
-
-    Returns:
-        ``AuditOutcome.SUCCESS`` when nothing survived, ``PARTIAL`` otherwise.
-    """
-    complete = not summary["errors"]
-    summary["complete"] = complete
-    return AuditOutcome.SUCCESS if complete else AuditOutcome.PARTIAL
 
 
 def erase_user(

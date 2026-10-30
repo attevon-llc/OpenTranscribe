@@ -41,6 +41,15 @@ DATA_REVISIONS = {
 }
 
 
+#: Columns a data-only revision's own ``DETECT_SQL`` reads that a database can lack while it
+#: still has the tables (v439 reads ``speaker.suggestion_source``, added by v091 long after
+#: ``speaker`` was created). Postgres raises ``UndefinedColumn`` there, so the fake does too.
+#: v434 and v436 read only columns created with their tables (v270, v355, baseline).
+DATA_COLUMNS = {
+    "v439_infer_legacy_voiceprint_suggestion_source": {("speaker", "suggestion_source")},
+}
+
+
 def _norm(sql: str) -> str:
     return " ".join(sql.split())
 
@@ -66,6 +75,10 @@ class UnknownProbeError(AssertionError):
     """The ladder asked something this fake does not model."""
 
 
+class MissingColumnError(AssertionError):
+    """The ladder queried a column the schema does not have (Postgres would raise)."""
+
+
 class MissingTableError(AssertionError):
     """The ladder queried a table the schema does not have (Postgres would raise)."""
 
@@ -82,6 +95,9 @@ class FakeSchema:
         if sql in _DATA_SQL:
             revision = _DATA_SQL[sql]
             self.require(DATA_REVISIONS[revision])
+            for table, column in sorted(DATA_COLUMNS.get(revision, ())):
+                if ("column", table, column) not in self.markers:
+                    raise MissingColumnError(f"column {table}.{column} does not exist")
             return ("data", revision) in self.markers
         if _LEGACY_UUID in sql:
             return ("legacy_varchar_uuid",) in self.markers

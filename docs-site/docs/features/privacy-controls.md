@@ -557,7 +557,7 @@ voiceprints" and "Deleted inferred gender data".
 |---|---|
 | `admin.settings.change` | An instance switch changed (setting name, old and new value) |
 | `org.policy.change` | An organization policy `PATCH` (field names only; stamped with the organization) |
-| `privacy.voiceprints.purge`, `privacy.gender.purge` | One event per target for each phase of a purge: requested, each pass completed, aborted or failed. The completed passes carry the scope, the exact counts per store and the residual check (see [Read a purge back from the audit log](#purging-stored-data)). Counts and ids only; stamped with the organization when there is one |
+| `privacy.voiceprints.purge`, `privacy.gender.purge` | One event per target for each phase of a purge: requested, each pass completed, aborted or failed. The completed passes carry the `purge_scope`, the exact counts per store and the residual check (see [Read a purge back from the audit log](#purging-stored-data)). Counts and ids only; stamped with the organization when there is one |
 | `privacy.labels.resync` | A voiceprint switch changed and the speaker labels in the search index are being rebuilt. Written when the rebuild is requested and again when it finishes. `details` hold the switch, its previous and new value, the scope, and the counts of files selected, queued, already pending and failed. An unfinished rebuild is marked incomplete and retried by the periodic search maintenance. Never names a person or a file |
 
 ## Data inventory

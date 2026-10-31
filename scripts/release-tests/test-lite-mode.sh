@@ -383,7 +383,11 @@ phase_03_pin_and_layer_overlays() {
     model_cache_dir=$(awk -F= '/^MODEL_CACHE_DIR=/{print $2; exit}' "$target/.env")
     [[ -z "$model_cache_dir" || "$model_cache_dir" == "./models" ]] && model_cache_dir="$target/models"
     [[ "$model_cache_dir" != /* ]] && model_cache_dir="$target/${model_cache_dir#./}"
-    mkdir -p "$model_cache_dir"/{sentence-transformers,opensearch-ml,diar-native}
+    # Every directory compose bind-mounts, not just the three seeded below. This scenario hand-builds
+    # its `docker compose up` instead of going through `opentranscribe.sh start` (which pre-creates
+    # and chowns them), so any missing one was created ROOT-owned by dockerd and the CPU worker's
+    # speaker-attribute task died with PermissionError on ~/.cache/huggingface (v0.6.0 rehearsal).
+    mkdir -p "$model_cache_dir"/{huggingface,torch,nltk_data,password-blocklist,sentence-transformers,opensearch-ml,diar-native}
 
     local shared_cache="/mnt/nvm/opentranscribe-test-runs/.shared-model-cache"
     if [[ -d "$shared_cache" && -f "$shared_cache/.seeded-from-live" ]]; then

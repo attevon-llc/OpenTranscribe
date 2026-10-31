@@ -15,7 +15,12 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[3]
-SCRIPTS = ("opentranscribe.sh", "scripts/common.sh", "setup-opentranscribe.sh")
+SCRIPTS = (
+    "opentranscribe.sh",
+    "scripts/common.sh",
+    "setup-opentranscribe.sh",
+    "scripts/release-tests/test-lite-mode.sh",
+)
 
 
 def _mounted_cache_dirs() -> set[str]:

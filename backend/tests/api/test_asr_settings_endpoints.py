@@ -131,7 +131,7 @@ def test_the_key_reveal_route_is_removed_for_every_kind_of_config(client, user_t
 def test_test_saved_config_decrypt_failure_500(client, user_token_headers):
     """test-config decrypt failure → 'Failed to decrypt stored API key'."""
     created = _create_cloud_config(client, user_token_headers, name="DecryptStored").json()
-    with patch(f"{_ENC}.decrypt_api_key", return_value=None):
+    with patch("app.api.endpoints.asr_connection_tests.decrypt_api_key", return_value=None):
         resp = client.post(f"{_BASE}/test-config/{created['uuid']}", headers=user_token_headers)
     assert resp.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
     assert resp.json()["detail"] == "Failed to decrypt stored API key"

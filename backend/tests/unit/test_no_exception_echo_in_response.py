@@ -753,11 +753,11 @@ _RAISE_ALLOWLIST: dict[str, tuple[int, str]] = {
 
 #: (expected_count, written reason) per ``"<path>::<function>"`` key, return-path.
 _RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
-    "api/endpoints/asr_settings.py::test_asr_connection": (
+    "api/endpoints/asr_connection_tests.py::test_asr_connection": (
         1,
         "already calls _sanitize_message(str(exc), api_key) before returning it",
     ),
-    "api/endpoints/asr_settings.py::test_saved_asr_config": (
+    "api/endpoints/asr_connection_tests.py::test_saved_asr_config": (
         1,
         "same as test_asr_connection beside it: already calls "
         "_sanitize_message(str(exc), api_key) before storing/returning it. Only "
@@ -796,7 +796,7 @@ _RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
 #: §2b — dial results. All nine ASR ``validate_connection`` implementations plus
 #: the two ``test_s3_connection`` helpers report the outcome of a connection
 #: attempt the caller (an admin testing THEIR OWN configured provider, via
-#: asr_settings.py / backup_settings.py / media_mirror_settings.py) explicitly
+#: asr_connection_tests.py / backup_settings.py / media_mirror_settings.py) explicitly
 #: asked for — the dial result IS the product these endpoints exist to report,
 #: the same precedent already set for the LLM/ASR test-connection routes in
 #: ``_RETURN_ALLOWLIST`` above. Every ASR provider routes its message through
@@ -945,7 +945,7 @@ _SERVICE_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
 #: §4c — internal-only. The container never reaches an HTTP response body; every
 #: entry names the real consumer(s), traced by hand to a terminating read.
 _CONTAINER_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
-    "api/endpoints/asr_settings.py::test_saved_asr_config": (
+    "api/endpoints/asr_connection_tests.py::test_saved_asr_config": (
         1,
         "dial result, and the SAME finding _RETURN_ALLOWLIST already carries for this "
         "function -- scanner 4 re-surfaces it through the `config.test_message = "

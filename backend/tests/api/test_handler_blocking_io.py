@@ -69,6 +69,9 @@ import app.api.endpoints.tags.discovery as tags_discovery
 import app.api.endpoints.tags.operations as tags_operations
 import app.api.endpoints.tags.sharing as tags_sharing
 import app.api.endpoints.tasks as tasks_endpoints
+import app.api.endpoints.tasks_file_repair as tasks_file_repair
+import app.api.endpoints.tasks_recovery as tasks_recovery
+import app.api.endpoints.tasks_system_health as tasks_system_health
 import app.api.endpoints.topics as topics
 import app.api.endpoints.user_files as user_files
 import app.api.endpoints.user_settings as user_settings
@@ -92,6 +95,9 @@ HARDENED_MODULES = [
     media_collections,
     topics,
     tasks_endpoints,
+    tasks_system_health,
+    tasks_recovery,
+    tasks_file_repair,
     url_processing,
     # Issue #320
     admin,
@@ -215,9 +221,9 @@ HARDENED_HANDLERS = [
     (topics, "batch_extract_topics"),
     (topics, "get_topic_suggestions"),
     (topics, "extract_topics"),
-    (tasks_endpoints, "task_system_health"),
-    (tasks_endpoints, "recover_all_stuck_tasks"),
-    (tasks_endpoints, "retry_file_processing"),
+    (tasks_system_health, "task_system_health"),
+    (tasks_recovery, "recover_all_stuck_tasks"),
+    (tasks_file_repair, "retry_file_processing"),
     # Issue #320 — heavy aggregate queries, blocking OpenSearch, blocking HTTP probes
     (admin_identity, "admin_search_users"),
     (admin_audit_logs, "get_account_status_report"),

@@ -31,7 +31,8 @@ import pytest
 from fastapi import status
 from kombu.exceptions import OperationalError as BrokerOperationalError
 
-import app.api.endpoints.tasks as tasks_endpoints
+import app.api.endpoints.tasks_file_repair as tasks_file_repair
+import app.api.endpoints.tasks_recovery as tasks_recovery
 import app.tasks.transcription.dispatch as dispatch_module
 from app.core.config import settings
 from app.models.media import FileStatus
@@ -211,7 +212,7 @@ def test_recover_task_reports_that_dispatch_failed_without_echoing_the_error(
     media_file = _make_media_file(db_session, normal_user, file_status="processing")
     task = _stuck_transcription_task(db_session, normal_user, media_file)
 
-    with caplog.at_level("ERROR", logger="app.api.endpoints.tasks"):
+    with caplog.at_level("ERROR", logger="app.api.endpoints.tasks_recovery"):
         response = client.post(f"{RECOVER_TASK}/{task.id}", headers=admin_token_headers)
 
     assert response.status_code == status.HTTP_200_OK
@@ -291,9 +292,9 @@ def test_none_of_the_three_routes_schedule_a_background_task_any_more():
     from fastapi import BackgroundTasks
 
     handlers: list[Callable[..., object]] = [
-        tasks_endpoints.recover_all_stuck_tasks,
-        tasks_endpoints.recover_task,
-        tasks_endpoints.retry_file_processing,
+        tasks_recovery.recover_all_stuck_tasks,
+        tasks_recovery.recover_task,
+        tasks_file_repair.retry_file_processing,
     ]
     for handler in handlers:
         annotations = [p.annotation for p in inspect.signature(handler).parameters.values()]

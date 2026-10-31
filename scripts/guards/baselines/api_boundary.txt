@@ -113,7 +113,10 @@ orm_call_in_api::backend/app/api/endpoints/support_access.py	1	layering: removal
 orm_call_in_api::backend/app/api/endpoints/tags/crud.py	4	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/tags/discovery.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/tags/sharing.py	3	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/tasks.py	9	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/tasks.py	5	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/tasks_file_repair.py	1	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/tasks_recovery.py	1	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/tasks_system_health.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/topics.py	6	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/transcript_segments.py	5	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/usage.py	2	layering: removal planned

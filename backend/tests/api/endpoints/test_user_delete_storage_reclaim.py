@@ -5,7 +5,7 @@ that never touches object storage — every deleted account's recordings, thumbn
 derived-cache renders and speaker-profile avatars survived in MinIO forever, and the
 retention sweep can never find them because the row that named them is gone.
 
-The fix: ``file_cleanup_service.load_account_purge_plans`` reads the storage plan
+The fix: ``account_purge.load_account_purge_plans`` reads the storage plan
 before the bulk delete, and ``purge_account_external_copies`` destroys the objects
 after the transaction commits, with no transaction open (mirroring ``purge_media_file``'s
 own phase split).
@@ -514,6 +514,7 @@ def test_a_speaker_embedding_removal_failure_is_reported_as_partial(
     silently_pass``'s docstring for why those legs are noisy without a stub).
     """
     import app.services.file_cleanup_service as fcs
+    import app.services.opensearch_erasure as ose
     import app.services.opensearch_service as os_mod
     from app.services import account_security_service as acct_module
 
@@ -525,7 +526,7 @@ def test_a_speaker_embedding_removal_failure_is_reported_as_partial(
 
     monkeypatch.setattr(os_mod, "remove_speaker_embedding", _boom)
     monkeypatch.setattr(fcs, "_cleanup_opensearch_for_file", lambda target, file_uuid: [])
-    monkeypatch.setattr(fcs, "_count_surviving", lambda index, query: 0)
+    monkeypatch.setattr(ose, "_count_surviving", lambda index, query: 0)
     # The storage leg must SUCCEED for this test to measure what its docstring claims.
     # Left real, the result depends on whether object storage happens to be reachable:
     # locally the dev stack answers and only "speakers" fails, but CI has no MinIO, so

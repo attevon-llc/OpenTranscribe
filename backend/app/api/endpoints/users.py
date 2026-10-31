@@ -815,8 +815,8 @@ def delete_user(
     deleted_snapshot = DeletedUser.of(user)
 
     # Use the comprehensive cleanup shared with the admin endpoint to avoid orphaned records.
-    from app.services.file_cleanup_service import load_account_purge_plans
-    from app.services.file_cleanup_service import purge_account_external_copies
+    from app.services.account_purge import load_account_purge_plans
+    from app.services.account_purge import purge_account_external_copies
     from app.services.user_deletion_service import _assert_no_held_files
     from app.services.user_deletion_service import _delete_user_media_files
     from app.services.user_deletion_service import _delete_user_owned_records

@@ -34,7 +34,7 @@ def _delete_user_speakers(db: Session, user_id: int) -> None:
     ``users.delete_user``) — holding locks, including ``ACCESS SHARE`` on
     ``media_file`` taken moments later, for as long as OpenSearch took to answer. The
     caller now reads every speaker UUID via
-    ``file_cleanup_service.load_account_purge_plans`` **before** this function runs
+    ``account_purge.load_account_purge_plans`` **before** this function runs
     and removes the embeddings via ``purge_account_external_copies`` **after** its own
     transaction commits, with no session held — the same phase split
     ``_delete_user_owned_records`` already uses for ``SpeakerProfile`` avatars.
@@ -104,7 +104,7 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
     function bulk-deletes the ``speaker_profile`` rows below, so by the time it could
     act there is nothing left to read a path off of — the same shape as
     ``_delete_user_media_files`` and object storage. The caller reads every avatar path
-    via ``file_cleanup_service.load_account_purge_plans`` **before** this function runs
+    via ``account_purge.load_account_purge_plans`` **before** this function runs
     and destroys the objects via ``purge_account_external_copies`` after the
     transaction commits.
 
@@ -307,7 +307,7 @@ def _delete_user_media_files(db: Session, user_id: int) -> None:
     **Object storage is deliberately NOT touched here** (issue #695). The bulk delete
     below is exactly why: it never loads a ``MediaFile`` instance, so there is nothing
     to read a ``storage_path`` off of by the time this function could act on one. The
-    caller reads the storage plan with ``file_cleanup_service.load_account_purge_plans``
+    caller reads the storage plan with ``account_purge.load_account_purge_plans``
     **before** calling this function, and destroys the objects with
     ``purge_account_external_copies`` **after** its own transaction commits — see
     ``delete_admin_user``'s docstring for the phase split and why.

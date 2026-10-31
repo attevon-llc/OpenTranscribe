@@ -145,7 +145,7 @@ def test_erased_voiceprints_are_not_reported_as_survivors(speaker_indices):
     through the alias — the exact log lines from the managed cluster — while the
     documents were in fact deleted (the second assertion held either way).
     """
-    from app.services.file_cleanup_service import _erase_speaker_docs
+    from app.services.opensearch_erasure import _erase_speaker_docs
 
     ns = speaker_indices
     uuids = [str(uuid_pkg.uuid4()) for _ in range(3)]
@@ -166,7 +166,7 @@ def test_a_voiceprint_that_really_survives_is_still_reported(speaker_indices):
 
     The refusal is real — a write block on the index — not a patched-out delete.
     """
-    from app.services.file_cleanup_service import _erase_speaker_docs
+    from app.services.opensearch_erasure import _erase_speaker_docs
 
     ns = speaker_indices
     u = str(uuid_pkg.uuid4())
@@ -190,7 +190,7 @@ def test_the_legacy_v3_backup_copy_is_erased_too(speaker_indices):
     The GDPR account/org paths already sweep it; the per-file purge did not, so a
     recording's voiceprint could come back after its file was deleted.
     """
-    from app.services.file_cleanup_service import _erase_speaker_docs
+    from app.services.opensearch_erasure import _erase_speaker_docs
 
     ns = speaker_indices
     u = str(uuid_pkg.uuid4())

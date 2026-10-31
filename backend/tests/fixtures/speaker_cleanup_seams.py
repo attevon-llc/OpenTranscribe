@@ -102,7 +102,7 @@ def speaker_os_seams(monkeypatch) -> dict[str, Any]:
     ``erase_error`` makes every erasure report a failure through the cleanup's own
     ``fail`` callback, the way the real survivor counts do.
     """
-    from app.services import file_cleanup_service as fcs
+    from app.services import opensearch_erasure as ose
 
     rec: dict[str, Any] = {
         "voiceprints": {},
@@ -148,9 +148,9 @@ def speaker_os_seams(monkeypatch) -> dict[str, Any]:
 
         return erase
 
-    monkeypatch.setattr(fcs, "_erase_speaker_docs", eraser("speakers", "voiceprints"))
-    monkeypatch.setattr(fcs, "_erase_cluster_docs", eraser("clusters", "clusters"))
-    monkeypatch.setattr(fcs, "_erase_profile_docs", eraser("profiles", "profiles"))
+    monkeypatch.setattr(ose, "_erase_speaker_docs", eraser("speakers", "voiceprints"))
+    monkeypatch.setattr(ose, "_erase_cluster_docs", eraser("clusters", "clusters"))
+    monkeypatch.setattr(ose, "_erase_profile_docs", eraser("profiles", "profiles"))
 
     from app.services.search.reindex_dispatch import ReindexDispatch
 

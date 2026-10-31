@@ -32,7 +32,7 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   (`opensearch_summary_service.py` is **gone** — the `transcript_summaries` index it owned
   is retired, #67. A summary's SOURCE OF TRUTH is `media_file.summary_data` and nowhere
   else; the only code that still names the retired index purges legacy documents, in
-  `file_cleanup_service.py` and `tasks/opensearch_integrity_task.py`. Since #963 a summary is
+  `opensearch_erasure.py` and `tasks/opensearch_integrity_task.py`. Since #963 a summary is
   ALSO indexed as a derived, rebuildable `doc_type: "summary"` plane inside `transcript_chunks`
   — never a second store of record; see `search/CLAUDE.md`'s "Index v6" section.)
 - **Speakers** — `speaker_*_service.py`, `profile_embedding_service.py`,

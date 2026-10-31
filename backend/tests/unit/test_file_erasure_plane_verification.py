@@ -1,6 +1,6 @@
 """A GDPR erasure is verified across **both** planes of the chunks index (#403).
 
-``file_cleanup_service._erase_transcript_chunks`` deletes a file's documents from
+``opensearch_erasure._erase_transcript_chunks`` deletes a file's documents from
 ``transcript_chunks`` and then counts what survived, because
 ``delete_transcript_chunks`` returns ``0`` for "no chunks", "index absent" and "the
 delete failed" alike — the count is the only evidence the erasure is complete.
@@ -159,7 +159,7 @@ def cluster(monkeypatch):
 
 def _erase() -> list[tuple[str, str]]:
     """Run the erasure step under test, collecting whatever it could not prove gone."""
-    from app.services.file_cleanup_service import _erase_transcript_chunks
+    from app.services.opensearch_erasure import _erase_transcript_chunks
 
     residual: list[tuple[str, str]] = []
     _erase_transcript_chunks(FILE_UUID, lambda stage, err: residual.append((stage, str(err))))

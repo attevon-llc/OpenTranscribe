@@ -288,15 +288,15 @@ def reconcile_speaker_impact(db: Session, impact: SpeakerImpact) -> list[dict[st
         (``stage`` is one of the ``STAGE_*`` names). Empty means every aggregate was
         rebuilt or verifiably erased. Each residual is also logged at ERROR.
     """
-    from app.services import file_cleanup_service as fcs
+    from app.services import opensearch_erasure as ose
 
     residual: list[dict[str, Any]] = []
 
     def _fail(stage: str, err: object) -> None:
         residual.append({"stage": stage, "error": str(err)})
 
-    fcs._erase_speaker_docs(sorted(impact.erase_speaker_uuids), _fail)
-    fcs._erase_profile_docs(sorted(impact.erase_profile_uuids), _fail)
+    ose._erase_speaker_docs(sorted(impact.erase_speaker_uuids), _fail)
+    ose._erase_profile_docs(sorted(impact.erase_profile_uuids), _fail)
     _refresh_clusters(db, impact, _fail)
     _refresh_profiles(db, impact, _fail)
     _reindex_files(db, impact, _fail)
@@ -328,7 +328,7 @@ def _refresh_clusters(db: Session, impact: SpeakerImpact, fail: _Fail) -> None:
 
     from app.models.speaker import SpeakerCluster
     from app.models.speaker import SpeakerClusterMember
-    from app.services import file_cleanup_service as fcs
+    from app.services import opensearch_erasure as ose
     from app.services.clustering.centroids import CentroidRecomputeError
     from app.services.speaker_clustering_service import SpeakerClusteringService
 
@@ -370,7 +370,7 @@ def _refresh_clusters(db: Session, impact: SpeakerImpact, fail: _Fail) -> None:
         fail(STAGE_CLUSTERS, "could not refresh cluster centroids")
         return
 
-    fcs._erase_cluster_docs(to_erase, fail)
+    ose._erase_cluster_docs(to_erase, fail)
 
 
 def _refresh_profiles(db: Session, impact: SpeakerImpact, fail: _Fail) -> None:
@@ -378,7 +378,7 @@ def _refresh_profiles(db: Session, impact: SpeakerImpact, fail: _Fail) -> None:
     if not impact.profile_ids:
         return
     from app.models.speaker import SpeakerProfile
-    from app.services import file_cleanup_service as fcs
+    from app.services import opensearch_erasure as ose
     from app.services.profile_embedding_service import ProfileEmbeddingRecomputeError
     from app.services.profile_embedding_service import ProfileEmbeddingService
 
@@ -405,7 +405,7 @@ def _refresh_profiles(db: Session, impact: SpeakerImpact, fail: _Fail) -> None:
             logger.exception(f"Could not refresh profile {profile_id} after a speaker change")
             fail(STAGE_PROFILES, "could not refresh a profile embedding")
 
-    fcs._erase_profile_docs(to_erase, fail)
+    ose._erase_profile_docs(to_erase, fail)
 
 
 def _reindex_files(db: Session, impact: SpeakerImpact, fail: _Fail) -> None:

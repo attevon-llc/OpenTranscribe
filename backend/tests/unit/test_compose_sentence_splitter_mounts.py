@@ -143,7 +143,7 @@ def _imported_modules(tree: ast.Module, module_key: str) -> set[str]:
 def _splitter_dependent_functions() -> set[tuple[str, str]]:
     """``(module_key, function_name)`` pairs that reach :data:`SPLITTER_FUNCTION`.
 
-    Function-level, not module-level: `file_cleanup_service` calls
+    Function-level, not module-level: `opensearch_erasure` calls
     `delete_transcript_chunks` on the same class that owns
     `index_transcript_chunks`, and a module-granular walk therefore concludes
     that deleting a file chunks a transcript. Edges resolve a call only into a
@@ -256,10 +256,11 @@ def test_the_call_graph_walk_finds_the_known_callers() -> None:
         f"The call-graph walk no longer reaches a chunking task in {sorted(missing)}. "
         f"Either the task stopped chunking (update EXPECTED_TASK_MODULES) or the walk broke."
     )
-    assert "app/services/file_cleanup_service.py" not in tainted, (
-        "Deleting a file's chunks does not chunk anything — the walk has gone "
-        "module-granular again and now taints every caller of the indexing service."
-    )
+    for deleter in ("app/services/opensearch_erasure.py", "app/services/file_cleanup_service.py"):
+        assert deleter not in tainted, (
+            "Deleting a file's chunks does not chunk anything — the walk has gone "
+            "module-granular again and now taints every caller of the indexing service."
+        )
 
 
 def test_every_queue_that_chunks_has_a_worker_with_punkt() -> None:

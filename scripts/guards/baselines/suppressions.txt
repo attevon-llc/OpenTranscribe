@@ -74,7 +74,7 @@ noqa::backend/app/services/chat/trace.py	2	suppression: reason to be added
 noqa::backend/app/services/content_audit.py	3	suppression: reason to be added
 noqa::backend/app/services/directory_sync_service.py	1	suppression: reason to be added
 noqa::backend/app/services/erasure_ledger_service.py	4	suppression: reason to be added
-noqa::backend/app/services/file_cleanup_service.py	3	suppression: reason to be added
+noqa::backend/app/services/file_cleanup_service.py	1	suppression: reason to be added
 noqa::backend/app/services/gdpr_erasure_service.py	1	suppression: reason to be added
 noqa::backend/app/services/ingest_artifacts/textrank.py	1	suppression: reason to be added
 noqa::backend/app/services/llm_bedrock.py	1	suppression: reason to be added
@@ -82,6 +82,7 @@ noqa::backend/app/services/llm_service.py	1	suppression: reason to be added
 noqa::backend/app/services/local_models/supervisor.py	1	suppression: reason to be added
 noqa::backend/app/services/media_mirror_service.py	2	suppression: reason to be added
 noqa::backend/app/services/multipart_upload.py	5	suppression: reason to be added
+noqa::backend/app/services/opensearch_erasure.py	2	suppression: reason to be added
 noqa::backend/app/services/playback_rendition.py	2	suppression: reason to be added
 noqa::backend/app/services/post_processing_status.py	3	suppression: reason to be added
 noqa::backend/app/services/protected_media_plugins/mediacms.py	2	suppression: reason to be added

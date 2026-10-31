@@ -73,6 +73,7 @@ backend/app/scripts/batch_speaker_matching.py	1	ratchet: may only go down
 backend/app/scripts/probe_torch_thread_scope.py	1	ratchet: may only go down
 backend/app/scripts/reingest_minio.py	2	ratchet: may only go down
 backend/app/scripts/whisper_batch_diag.py	1	ratchet: may only go down
+backend/app/services/account_purge.py	3	ratchet: may only go down
 backend/app/services/account_security_service.py	2	ratchet: may only go down
 backend/app/services/ai_insights_companion.py	2	ratchet: may only go down
 backend/app/services/analytics_service.py	3	ratchet: may only go down
@@ -116,7 +117,8 @@ backend/app/services/download_events.py	3	ratchet: may only go down
 backend/app/services/email_service.py	1	ratchet: may only go down
 backend/app/services/embedding_mode_service.py	5	ratchet: may only go down
 backend/app/services/erasure_ledger_service.py	9	ratchet: may only go down
-backend/app/services/file_cleanup_service.py	19	ratchet: may only go down
+backend/app/services/file_cleanup_cycle.py	3	ratchet: may only go down
+backend/app/services/file_cleanup_service.py	4	ratchet: may only go down
 backend/app/services/gdpr_erasure_steps.py	1	ratchet: may only go down
 backend/app/services/gdpr_voiceprint_erasure.py	4	ratchet: may only go down
 backend/app/services/huggingface_token.py	2	ratchet: may only go down
@@ -144,6 +146,7 @@ backend/app/services/minio_service.py	5	ratchet: may only go down
 backend/app/services/multipart_upload.py	5	ratchet: may only go down
 backend/app/services/native_embedding_client.py	1	ratchet: may only go down
 backend/app/services/notification_service.py	1	ratchet: may only go down
+backend/app/services/opensearch_erasure.py	9	ratchet: may only go down
 backend/app/services/opensearch_service/client.py	2	ratchet: may only go down
 backend/app/services/opensearch_service/clusters.py	5	ratchet: may only go down
 backend/app/services/opensearch_service/indices.py	1	ratchet: may only go down

@@ -14,6 +14,7 @@ import pytest
 
 from app.core.enums import FileStatus
 from app.models.media import MediaFile
+from app.services import file_cleanup_cycle
 from app.services import file_cleanup_service as svc
 
 pytestmark = pytest.mark.xdist_group("force_cleanup_orphaned")
@@ -60,7 +61,9 @@ def test_eligible_orphan_is_really_deleted(db_session, isolated_orphan):
     ``UUID("123")`` raised for every file: each one landed in ``deletion_errors``
     while ``run_deep_cleanup`` logged the pass as a success with 0 deletions.
     """
-    results = svc.cleanup_service.force_cleanup_orphaned_files(db_session, dry_run=False)
+    results = file_cleanup_cycle.cleanup_service.force_cleanup_orphaned_files(
+        db_session, dry_run=False
+    )
 
     assert results["successfully_deleted"] == 1
     assert results["deletion_errors"] == []
@@ -73,7 +76,9 @@ def test_dry_run_deletes_nothing(db_session, isolated_orphan):
     Without this, "successfully_deleted == 1" above could be satisfied by a
     function that deletes unconditionally.
     """
-    results = svc.cleanup_service.force_cleanup_orphaned_files(db_session, dry_run=True)
+    results = file_cleanup_cycle.cleanup_service.force_cleanup_orphaned_files(
+        db_session, dry_run=True
+    )
 
     assert results["successfully_deleted"] == 0
     assert results["files_processed"][0]["status"] == "would_delete"

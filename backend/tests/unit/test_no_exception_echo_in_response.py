@@ -986,7 +986,7 @@ _CONTAINER_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
         "_purge_external_copies, folded into `residual` (:467), and residual's only "
         "consumers are purge_account_external_copies' -- see that entry below",
     ),
-    "services/file_cleanup_service.py::purge_account_external_copies": (
+    "services/account_purge.py::purge_account_external_copies": (
         2,
         "internal-only: the two call sites are admin.py:1022 and users.py:872, and "
         "BOTH pass it only to audit_user_deleted(..., residual_errors), which "
@@ -995,14 +995,14 @@ _CONTAINER_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
         "its own docstring at :297-300). The HTTP responses carry "
         "len(residual_errors) (admin.py:1034) and None (users.py:877)",
     ),
-    "services/file_cleanup_service.py::force_cleanup_orphaned_files": (
+    "services/file_cleanup_cycle.py::force_cleanup_orphaned_files": (
         2,
         "internal-only: one call site, tasks/cleanup.py:88 inside the "
         "`cleanup.deep_cleanup` Celery task, which logs the errors (:98) and returns "
         "them as the TASK result -- never read back (see "
         "test_a_celery_result_is_never_read_into_a_response)",
     ),
-    "services/file_cleanup_service.py::run_cleanup_cycle": (
+    "services/file_cleanup_cycle.py::run_cleanup_cycle": (
         2,
         "internal-only: one call site, tasks/cleanup.py:49 inside the "
         "`cleanup.periodic` Celery task; same log-and-return-as-task-result shape as "

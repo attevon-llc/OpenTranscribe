@@ -502,7 +502,7 @@ def test_deleting_the_file_deletes_its_rendition(
 
 
 def test_account_purge_plan_names_the_rendition(normal_user, db_session):
-    from app.services import file_cleanup_service as fcs
+    from app.services import account_purge
 
     db_session.add(
         MediaFile(
@@ -516,7 +516,7 @@ def test_account_purge_plan_names_the_rendition(normal_user, db_session):
     )
     db_session.commit()
 
-    plan = fcs.load_account_purge_plans(db_session, normal_user.id)
+    plan = account_purge.load_account_purge_plans(db_session, normal_user.id)
 
     assert [f["playback_path"] for f in plan.files] == [
         f"user_{normal_user.id}/f/a.aiff.playback.m4a"

@@ -2530,7 +2530,10 @@ main() {
     configure_https_settings
     download_ai_models
     validate_setup
-    pull_docker_images
+    # A failed pull is documented as "will use cached versions" (pull_docker_images returns 1 after
+    # saying so), but under `set -e` the bare call aborted the whole install instead -- a registry
+    # that denies one image (MinIO's quay.io repo, 2026-10-31) killed setup even with a warm cache.
+    pull_docker_images || true
     display_summary
     prompt_start
 }

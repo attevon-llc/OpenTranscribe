@@ -78,7 +78,7 @@ value falls back to. They were dead code while the write path accepted a bare `d
 - **No config key may appear in two categories.** `auth_config.config_key` is globally UNIQUE,
   so a key claimed by two tabs lands in whichever wrote it first and then goes missing from the
   other tab's GET. `tests/unit/test_auth_config_validation.py` pins both invariants.
-- `CROSS_FIELD_KEYS` + `_check_cross_field_rules` reject combinations that are individually
+- `CROSS_FIELD_KEYS` + `_check_cross_field_rules` (both in `auth_config_validation.py`) reject combinations that are individually
   valid but jointly incoherent (`allow_registration` while `local_enabled` is off;
   `pki_verify_revocation` with no `pki_ca_cert_path`). The caller merges the payload over the
   *current effective* values first, so the rejected state cannot be assembled one save at a time.

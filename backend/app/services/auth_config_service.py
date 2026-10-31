@@ -23,9 +23,9 @@ from app.core.process_auth_settings import prime_process_auth_settings
 from app.models.auth_config import AuthConfig
 from app.models.auth_config import AuthConfigAudit
 from app.schemas.auth_config import CATEGORY_SCHEMAS
-from app.schemas.auth_config import CROSS_FIELD_KEYS
-from app.schemas.auth_config import coded_default
-from app.schemas.auth_config import validate_category_config
+from app.schemas.auth_config_validation import CROSS_FIELD_KEYS
+from app.schemas.auth_config_validation import coded_default
+from app.schemas.auth_config_validation import validate_category_config
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
 

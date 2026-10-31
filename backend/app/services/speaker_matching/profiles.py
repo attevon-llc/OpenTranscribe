@@ -112,7 +112,7 @@ def assign_speaker_to_profile(
     # The user assigned this profile to this one speaker by hand: that overrides an
     # earlier unassignment from it (issue #1233). The profile embeddings it moves
     # between are rebuilt by the update task the endpoint queues.
-    from app.services.speaker_cleanup import lift_profile_blacklist
+    from app.services.speaker_identity_rules import lift_profile_blacklist
 
     lift_profile_blacklist(self.db, int(speaker_id), int(profile_id))
     speaker.profile_id = profile_id  # type: ignore[assignment]

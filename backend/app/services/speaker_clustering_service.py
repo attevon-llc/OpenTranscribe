@@ -32,8 +32,8 @@ from app.services.permission_service import org_scope_pred
 from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import organizations_with_voiceprints_off
 from app.services.speaker_cleanup import SpeakerImpact
-from app.services.speaker_cleanup import join_cluster_identity
 from app.services.speaker_cleanup import reconcile_speaker_impact
+from app.services.speaker_identity_moves import join_cluster_identity
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 
 logger = logging.getLogger(__name__)

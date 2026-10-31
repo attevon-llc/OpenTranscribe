@@ -177,11 +177,11 @@ class TestSpeakerConstraintModels:
 
 
 class TestIsBlockedFromCluster:
-    """Test ``speaker_cleanup.speaker_blocked_from_cluster``."""
+    """Test ``speaker_identity_rules.speaker_blocked_from_cluster``."""
 
     def test_not_blocked_by_default(self, db_session, cluster_with_members):
         """Speaker is not blocked when no constraints exist."""
-        from app.services.speaker_cleanup import speaker_blocked_from_cluster
+        from app.services.speaker_identity_rules import speaker_blocked_from_cluster
 
         data = cluster_with_members
 
@@ -199,7 +199,7 @@ class TestIsBlockedFromCluster:
 
     def test_blocked_by_cannot_link(self, db_session, cluster_with_members):
         """Speaker is blocked when cannot-link exists with a cluster member."""
-        from app.services.speaker_cleanup import speaker_blocked_from_cluster
+        from app.services.speaker_identity_rules import speaker_blocked_from_cluster
 
         data = cluster_with_members
 
@@ -224,7 +224,7 @@ class TestIsBlockedFromCluster:
 
     def test_blocked_by_profile_blacklist(self, db_session, promoted_cluster):
         """Speaker is blocked when profile-blacklisted."""
-        from app.services.speaker_cleanup import speaker_blocked_from_cluster
+        from app.services.speaker_identity_rules import speaker_blocked_from_cluster
 
         data = promoted_cluster
 

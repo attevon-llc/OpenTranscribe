@@ -21,9 +21,9 @@ from app.schemas.speaker import Speaker as SpeakerSchema
 from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.request_context import RequestContext
 from app.services.speaker_cleanup import capture_speaker_impact
-from app.services.speaker_cleanup import carry_blacklist
 from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact
+from app.services.speaker_identity_rules import carry_blacklist
 from app.services.speaker_provenance_view import attach_speaker_provenance
 from app.services.speaker_status_service import SpeakerStatusService
 from app.services.uuid_helpers import require_speaker_access

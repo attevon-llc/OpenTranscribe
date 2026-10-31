@@ -21,8 +21,8 @@ from app.models.speaker import SpeakerMatch
 from app.services.embedding_mode_service import voiceprint_model_id
 from app.services.opensearch_service import get_speaker_embedding
 from app.services.privacy.redact_view import PrivacyView
-from app.services.speaker_cleanup import blocked_profile_names
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
+from app.services.speaker_identity_rules import blocked_profile_names
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.utils.speaker_identity_detail import ORIGIN_VOICE_MATCH

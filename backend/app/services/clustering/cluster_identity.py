@@ -12,9 +12,9 @@ from app.models.speaker import SpeakerClusterMember
 from app.models.speaker import SpeakerProfile
 from app.services.permission_service import file_ids_in_scope
 from app.services.speaker_cleanup import SpeakerImpact
-from app.services.speaker_cleanup import detach_from_cluster
 from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact
+from app.services.speaker_identity_moves import detach_from_cluster
 from app.utils.speaker_identity_detail import ORIGIN_CLUSTER_PROMOTED
 from app.utils.speaker_identity_source import record_human_identity
 from app.utils.speaker_labels import canonical_speaker_label_for_row
@@ -180,7 +180,7 @@ def unassign_speakers(
 ) -> dict:
     """Unassign speakers from a cluster: that section is no longer that person.
 
-    ``speaker_cleanup.detach_from_cluster`` applies the rule (issue #1233): the
+    ``speaker_identity_moves.detach_from_cluster`` applies the rule (issue #1233): the
     speakers leave the cluster and the cluster's promoted profile (a name that came
     from the profile is cleared, a name the user typed stays) and, with
     ``blacklist``, are recorded as cannot-link against every remaining member and as

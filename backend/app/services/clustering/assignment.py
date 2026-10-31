@@ -12,8 +12,8 @@ from app.services.clustering.thresholds import CLUSTER_ASSIGNMENT_THRESHOLD
 from app.services.clustering.thresholds import GENDER_CROSS_THRESHOLD
 from app.services.speaker_cleanup import SpeakerImpact
 from app.services.speaker_cleanup import clusters_holding_speakers
-from app.services.speaker_cleanup import identity_conflicts_with_cluster
-from app.services.speaker_cleanup import speaker_blocked_from_cluster
+from app.services.speaker_identity_rules import identity_conflicts_with_cluster
+from app.services.speaker_identity_rules import speaker_blocked_from_cluster
 
 if TYPE_CHECKING:
     from app.services.speaker_clustering_service import SpeakerClusteringService

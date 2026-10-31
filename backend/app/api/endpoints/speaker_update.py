@@ -121,7 +121,7 @@ def auto_create_or_assign_profile(
         if existing_profile:
             # The user typed this name on this one speaker: that overrides an earlier
             # unassignment from the same profile (issue #1233).
-            from app.services.speaker_cleanup import lift_profile_blacklist
+            from app.services.speaker_identity_rules import lift_profile_blacklist
 
             lift_profile_blacklist(db, int(speaker.id), int(existing_profile.id))
             # Assign speaker to existing profile
@@ -518,9 +518,9 @@ def _blocked_candidate_ids(
     auto-applied nor suggested — so a matching pass never silently re-labels a section
     the user said is someone else.
     """
-    from app.services.speaker_cleanup import blacklisted_profile_ids
-    from app.services.speaker_cleanup import blocked_profile_names
-    from app.services.speaker_cleanup import cannot_link_partners
+    from app.services.speaker_identity_rules import blacklisted_profile_ids
+    from app.services.speaker_identity_rules import blocked_profile_names
+    from app.services.speaker_identity_rules import cannot_link_partners
 
     if not candidate_ids:
         return set()

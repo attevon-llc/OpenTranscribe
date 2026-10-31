@@ -740,7 +740,7 @@ def get_speaker_profile_suggestions(
             _get_llm_suggestions(db, speaker, current_user, accessible_profile_ids=accessible_ids)
         )
         # Never offer an identity the user unassigned this speaker from (#1233).
-        from app.services.speaker_cleanup import blocked_profile_names
+        from app.services.speaker_identity_rules import blocked_profile_names
 
         refused = blocked_profile_names(db, [int(speaker_id)])[int(speaker_id)]
         suggestions = [
@@ -811,7 +811,7 @@ def delete_speaker_profile(
 
     A linked speaker carries the profile's name as its display name (the invariant
     ``services/speaker_profile_rename`` documents), so unlinking alone left every member
-    still labelled as the deleted identity. ``speaker_cleanup.unlink_from_profile`` — the
+    still labelled as the deleted identity. ``speaker_identity_moves.unlink_from_profile`` — the
     same rule a cluster unassign applies (#1233) — clears a display name or suggestion
     that IS the profile's name (the label falls back to the diarizer label, and the chunk
     plane is told), and a cluster named after the profile loses that label.
@@ -825,7 +825,7 @@ def delete_speaker_profile(
     from app.services.speaker_cleanup import capture_speaker_impact
     from app.services.speaker_cleanup import raise_if_incomplete
     from app.services.speaker_cleanup import reconcile_speaker_impact
-    from app.services.speaker_cleanup import unlink_from_profile
+    from app.services.speaker_identity_moves import unlink_from_profile
     from app.services.speaker_rename_tracker import SpeakerRenameTracker
 
     tracker = SpeakerRenameTracker()

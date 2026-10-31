@@ -508,7 +508,7 @@ def test_merging_two_speakers_leaves_the_survivors_record_alone(
 
 
 def test_unlinking_the_profile_a_voiceprint_named_forgets_the_whole_record(db_session, normal_user):
-    from app.services.speaker_cleanup import unlink_from_profile
+    from app.services.speaker_identity_moves import unlink_from_profile
     from app.services.speaker_rename_tracker import SpeakerRenameTracker
 
     profile = make_profile(db_session, normal_user, "Alice")
@@ -547,7 +547,7 @@ def test_a_cluster_split_is_an_unassignment_that_clears_the_profiles_record(
     db_session, normal_user
 ):
     """``split_cluster`` unlinks the moved group from the promoted profile."""
-    from app.services.speaker_cleanup import detach_from_cluster
+    from app.services.speaker_identity_moves import detach_from_cluster
     from app.services.speaker_rename_tracker import SpeakerRenameTracker
 
     profile = make_profile(db_session, normal_user, "Alice")

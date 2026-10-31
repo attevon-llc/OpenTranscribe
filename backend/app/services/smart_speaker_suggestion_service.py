@@ -340,7 +340,7 @@ class SmartSpeakerSuggestionService:
         the same rule retroactive matching applies (issue #1233). A short read, no
         OpenSearch: call it from the read phase, after the batch's round trips.
         """
-        from app.services.speaker_cleanup import blocked_profile_names
+        from app.services.speaker_identity_rules import blocked_profile_names
 
         refused = blocked_profile_names(db, list(suggestions_by_speaker))
         return {

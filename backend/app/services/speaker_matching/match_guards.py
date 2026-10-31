@@ -43,8 +43,8 @@ def linked_speaker_count(self: "SpeakerMatchingService", profile_id: int) -> int
 
 def refusals(self: "SpeakerMatchingService", speaker_id: int) -> tuple[set[str], set[int]]:
     """The names and the speakers a user's correction rules out for this speaker."""
-    from app.services.speaker_cleanup import blocked_profile_names
-    from app.services.speaker_cleanup import cannot_link_partners
+    from app.services.speaker_identity_rules import blocked_profile_names
+    from app.services.speaker_identity_rules import cannot_link_partners
 
     return (
         blocked_profile_names(self.db, [speaker_id])[speaker_id],
@@ -56,8 +56,8 @@ def match_is_blocked(
     self: "SpeakerMatchingService", speaker: Speaker, match: dict[str, Any]
 ) -> bool:
     """Whether a correction forbids giving this speaker the matched identity."""
-    from app.services.speaker_cleanup import blocked_profile_names
-    from app.services.speaker_cleanup import speaker_blocked_from_profile
+    from app.services.speaker_identity_rules import blocked_profile_names
+    from app.services.speaker_identity_rules import speaker_blocked_from_profile
 
     profile_id = match.get("profile_id")
     if profile_id is not None and speaker_blocked_from_profile(

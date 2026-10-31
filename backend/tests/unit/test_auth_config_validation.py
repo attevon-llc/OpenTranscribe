@@ -38,9 +38,9 @@ from fastapi import HTTPException
 
 from app.api.endpoints import auth_config as endpoint
 from app.schemas.auth_config import CATEGORY_SCHEMAS
-from app.schemas.auth_config import MAX_CONFIG_KEY_LENGTH
-from app.schemas.auth_config import coded_default
-from app.schemas.auth_config import validate_category_config
+from app.schemas.auth_config_validation import MAX_CONFIG_KEY_LENGTH
+from app.schemas.auth_config_validation import coded_default
+from app.schemas.auth_config_validation import validate_category_config
 from app.services.auth_config_service import MAX_AUDIT_LOG_LIMIT
 from app.services.auth_config_service import AuthConfigService
 

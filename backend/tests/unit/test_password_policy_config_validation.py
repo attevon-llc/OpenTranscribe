@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.schemas.auth_config import validate_category_config
+from app.schemas.auth_config_validation import validate_category_config
 
 
 def _validate(payload: dict, current: dict | None = None) -> dict:
@@ -103,7 +103,7 @@ class TestScreeningSwitches:
 
     def test_online_check_is_a_bool_and_off_by_default(self):
         assert _validate({"password_hibp_enabled": True}) == {"password_hibp_enabled": True}
-        from app.schemas.auth_config import coded_default
+        from app.schemas.auth_config_validation import coded_default
 
         assert coded_default("password_hibp_enabled") is False
         assert coded_default("password_policy_profile") == "hardened"

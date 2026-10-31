@@ -47,7 +47,7 @@ Most services are plain modules of functions that take a `Session`; a few are cl
 | `media_download_service.py`, `youtube_rate_limiter.py`, `protected_media_providers.py` | yt-dlp URL ingestion and rate limiting |
 | `media_mirror_engine.py`, `media_mirror_service.py` | Incremental media mirror (MinIO to a configured S3 destination) |
 | `playback_rendition.py` | Browser-playable AAC/M4A renditions for formats browsers cannot decode |
-| `subtitle_service.py`, `video_processing_service.py`, `transcript_export_*.py`, `summary_export_service.py` | Subtitle files, burned-in subtitles, transcript and summary export |
+| `subtitle_service.py`, `video_processing_service.py`, `video_processing_host.py`, `video_subtitle_burn.py`, `audio_extraction.py`, `transcript_export_*.py`, `summary_export_service.py` | Subtitle files, burned-in subtitles, transcript and summary export |
 | `file_cleanup_service.py`, `file_cleanup_cycle.py`, `opensearch_erasure.py`, `account_purge.py`, `file_provenance.py`, `file_provenance_view.py`, `imohash_service.py`, `cache_management_service.py` | File purge, stuck-file recovery, OpenSearch erasure, account purge, per-file processing provenance, fingerprinting, derived-asset caches |
 | `audio_segment_utils.py`, `voiceprint_extractor.py`, `voiceprint_orphan_sweep.py` | Audio helpers and voiceprint extraction/sweeps |
 

@@ -339,17 +339,18 @@ class TestBurnedInSubtitles:
 
     def _service(self):
         from app.services import video_processing_service as vps
+        from app.services import video_subtitle_burn as burn
 
-        return vps, vps.VideoProcessingService.__new__(vps.VideoProcessingService)
+        return burn, vps.VideoProcessingService.__new__(vps.VideoProcessingService)
 
     def _render(self, db_session, monkeypatch, reader, media_file) -> str:
-        vps, service = self._service()
+        burn, service = self._service()
 
         @contextlib.contextmanager
         def _scope():
             yield db_session
 
-        monkeypatch.setattr(vps, "session_scope", _scope)
+        monkeypatch.setattr(burn, "session_scope", _scope)
         written: dict[str, str] = {}
 
         class _Path:
@@ -379,7 +380,7 @@ class TestBurnedInSubtitles:
     def test_a_render_is_refused_while_the_scan_is_unfinished(
         self, db_session, sample_user, monkeypatch
     ):
-        vps, service = self._service()
+        burn, service = self._service()
         _enable_redaction(db_session, sample_user)
         unscanned = _make_file(db_session, sample_user, redaction_status="pending")
 
@@ -387,7 +388,7 @@ class TestBurnedInSubtitles:
         def _scope():
             yield db_session
 
-        monkeypatch.setattr(vps, "session_scope", _scope)
+        monkeypatch.setattr(burn, "session_scope", _scope)
 
         with pytest.raises(ExportRedactionNotReadyError):
             service._resolve_export_policy(int(unscanned.id), int(sample_user.id))

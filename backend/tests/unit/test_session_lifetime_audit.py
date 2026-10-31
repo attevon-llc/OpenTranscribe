@@ -179,6 +179,8 @@ def test_the_six_fixed_tasks_are_clean(auditor):
         "tasks/cleanup.py",
         "tasks/transcription/embeddings.py",
         "services/video_processing_service.py",
+        "services/video_subtitle_burn.py",
+        "services/audio_extraction.py",
     ]
     offenders: list[str] = []
     for rel in fixed:

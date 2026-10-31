@@ -876,7 +876,7 @@ def test_video_service_reads_use_their_own_short_sessions(db_session, normal_use
     media_file, _ = _make_transcribed_file(db_session, normal_user, speakers=1)
 
     monkeypatch.setattr(vps, "session_scope", tracker.scope)
-
+    monkeypatch.setattr("app.services.video_subtitle_burn.session_scope", tracker.scope)
     filename = vps.VideoProcessingService._media_filename(int(media_file.id))
 
     assert filename == "meeting.mp4"
@@ -891,7 +891,7 @@ def test_video_service_reads_use_their_own_short_sessions(db_session, normal_use
             written["depth_during_render"] = tracker.depth
             return "1\n00:00:00,000 --> 00:00:04,000\nhello there\n"
 
-    monkeypatch.setattr(vps, "SubtitleService", _FakeSubtitles)
+    monkeypatch.setattr("app.services.video_subtitle_burn.SubtitleService", _FakeSubtitles)
 
     class _RecordingPath:
         """Reports the open-scope depth at the moment the SRT is written."""

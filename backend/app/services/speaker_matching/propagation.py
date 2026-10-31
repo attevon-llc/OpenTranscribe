@@ -156,9 +156,9 @@ def propagate_profile_assignment(
 
         from app.services.speaker_cleanup import SpeakerImpact
         from app.services.speaker_cleanup import clusters_holding_speakers
-        from app.services.speaker_cleanup import has_other_identity
         from app.services.speaker_cleanup import reconcile_speaker_impact
-        from app.services.speaker_cleanup import speaker_blocked_from_profile
+        from app.services.speaker_identity_rules import has_other_identity
+        from app.services.speaker_identity_rules import speaker_blocked_from_profile
 
         updated_speakers = []
         for speaker in candidate_speakers:

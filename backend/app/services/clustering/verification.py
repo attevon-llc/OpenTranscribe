@@ -19,13 +19,13 @@ from app.models.speaker import SpeakerProfile
 from app.services.permission_service import org_scope_pred
 from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.speaker_cleanup import SpeakerImpact
-from app.services.speaker_cleanup import blocked_profile_names
-from app.services.speaker_cleanup import blocking_profile_ids_named
 from app.services.speaker_cleanup import clusters_holding_speakers
-from app.services.speaker_cleanup import lift_profile_blacklist
 from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact
-from app.services.speaker_cleanup import speaker_blocked_from_profile
+from app.services.speaker_identity_rules import blocked_profile_names
+from app.services.speaker_identity_rules import blocking_profile_ids_named
+from app.services.speaker_identity_rules import lift_profile_blacklist
+from app.services.speaker_identity_rules import speaker_blocked_from_profile
 from app.services.takedown_service import exclude_quarantined
 from app.utils.speaker_identity_detail import ORIGIN_ACCEPTED_SUGGESTION
 from app.utils.speaker_identity_detail import ORIGIN_BATCH_ASSIGN

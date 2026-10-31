@@ -387,7 +387,7 @@ def test_a_voice_match_suggestion_skips_a_name_and_a_speaker_the_user_ruled_out(
     db_session, normal_user, speaker_os_seams, monkeypatch
 ):
     """The no-profile-match branch: a >=0.75 voice-match suggestion moves the label."""
-    from app.services.speaker_cleanup import record_unassignment
+    from app.services.speaker_identity_rules import record_unassignment
     from app.services.speaker_matching_service import SpeakerMatchingService
 
     group = _bob_cluster(db_session, normal_user, speaker_os_seams)

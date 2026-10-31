@@ -11,10 +11,10 @@ from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCluster
 from app.models.speaker import SpeakerProfile
 from app.services.clustering.thresholds import CLUSTER_ASSIGNMENT_THRESHOLD
-from app.services.speaker_cleanup import blacklisted_profile_ids
-from app.services.speaker_cleanup import identity_conflicts_with_cluster
-from app.services.speaker_cleanup import speaker_blocked_from_cluster
-from app.services.speaker_cleanup import unlink_from_profile
+from app.services.speaker_identity_moves import unlink_from_profile
+from app.services.speaker_identity_rules import blacklisted_profile_ids
+from app.services.speaker_identity_rules import identity_conflicts_with_cluster
+from app.services.speaker_identity_rules import speaker_blocked_from_cluster
 
 if TYPE_CHECKING:
     from app.services.speaker_clustering_service import SpeakerClusteringService

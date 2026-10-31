@@ -319,7 +319,7 @@ mean of the members'), and the transcript index planes carry its label. Deleting
 row, or moving it out of a cluster or profile, changes none of those by itself — and the
 `ON DELETE CASCADE` on `speaker_cluster_member` erases the only record of which centroids
 averaged it in. #1211 fixed this for the file purge alone; every per-speaker path kept the
-removed voice inside some aggregate.
+removed voice inside some aggregate. Split by concern: `speaker_cleanup.py` (capture + reconcile), `speaker_identity_rules.py` (blacklist / cannot-link checks, `record_unassignment`), `speaker_identity_moves.py` (`unlink_from_profile`, `join_cluster_identity`, `detach_from_cluster`).
 
 Every path now does the same two calls around its own write:
 
@@ -385,7 +385,7 @@ The rules it applies are the product's existing ones, written once:
 
 ### Unassigning: the section is no longer that person (issue #1233)
 
-The owner's rule, implemented once, in `speaker_cleanup.detach_from_cluster`:
+The owner's rule, implemented once, in `speaker_identity_moves.detach_from_cluster`:
 
 | Unassigning a speaker from a cluster… | |
 |---|---|
@@ -435,7 +435,7 @@ explicit actions lift it; `override_unassignment` with more than one speaker is 
 |---|---|
 | A bulk action REPORTS what a correction skipped: `batch_verify_speakers` and `merge_clusters` return `blocked_speaker_uuids`, and the SPA shows it (Inbox error toast, merge warning toast `speakers.merge.someLeftBehind`) instead of a success | `speaker_clustering_service`, `routes/speakers/+page.svelte` |
 | Batch `name` honours a correction like `accept` (it used to bypass it) | `batch_verify_speakers` |
-| **An automatic path never overwrites an identity a speaker already has**: `has_other_identity` = linked to another profile, or named (typed, or an accepted suggestion) something other than the profile. `find_or_create_cluster`, Re-cluster Phase 2.5 and profile propagation skip such a speaker; `merge_clusters` leaves it in the source and reports it (except members of the SOURCE's own profile — merging two named clusters says the names are one person) | `speaker_cleanup.has_other_identity` / `identity_conflicts_with_cluster` |
+| **An automatic path never overwrites an identity a speaker already has**: `has_other_identity` = linked to another profile, or named (typed, or an accepted suggestion) something other than the profile. `find_or_create_cluster`, Re-cluster Phase 2.5 and profile propagation skip such a speaker; `merge_clusters` leaves it in the source and reports it (except members of the SOURCE's own profile — merging two named clusters says the names are one person) | `speaker_identity_rules.has_other_identity` / `identity_conflicts_with_cluster` |
 | **Decision 5: a speaker linked to another profile is no longer in the old profile's cluster.** `reconcile_speaker_impact` releases, from every promoted cluster it refreshes, members linked to a different profile — so renaming, assigning, accepting, batch-assigning or retroactively matching a member away takes it out (no blacklist: the new link already says who it is) | `speaker_cleanup._release_members_of_other_profiles` |
 | **Rejecting an identification is an unassignment**: `verify?action=reject` leaves the linked profile's clusters through `detach_from_cluster` (blacklist both halves) and records a profile blacklist (`rejected_by_user`) for the linked profile and the profile its suggestion named | `speakers._reject_speaker_suggestion` |
 | **A moved segment leaves the old speaker's voiceprint**: the reassignment task removes the segment's embedding from the source by the exact inverse of the weighted add the target gets, and both rewritten documents keep the file's tenant (they were rewritten without `organization_id`, i.e. as personal) | `speaker_embedding_task._remove_segment_from_voiceprint` |

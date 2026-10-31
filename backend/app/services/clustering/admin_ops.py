@@ -11,12 +11,12 @@ from app.models.speaker import SpeakerCluster
 from app.models.speaker import SpeakerClusterMember
 from app.services.permission_service import file_ids_in_scope
 from app.services.speaker_cleanup import SpeakerImpact
-from app.services.speaker_cleanup import detach_from_cluster
-from app.services.speaker_cleanup import identity_conflicts_with_cluster
-from app.services.speaker_cleanup import join_cluster_identity
 from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact
-from app.services.speaker_cleanup import speaker_blocked_from_cluster
+from app.services.speaker_identity_moves import detach_from_cluster
+from app.services.speaker_identity_moves import join_cluster_identity
+from app.services.speaker_identity_rules import identity_conflicts_with_cluster
+from app.services.speaker_identity_rules import speaker_blocked_from_cluster
 
 if TYPE_CHECKING:
     from app.services.speaker_clustering_service import SpeakerClusteringService
@@ -204,7 +204,7 @@ def split_cluster(
 
     A split says the moved speakers are someone other than the members that stay, so
     it is an unassignment (issue #1233): they leave the source through
-    ``speaker_cleanup.detach_from_cluster`` — unlinked from a promoted source's
+    ``speaker_identity_moves.detach_from_cluster`` — unlinked from a promoted source's
     profile, and recorded as cannot-link against the members that stay and as
     blacklisted from that profile — then form the new, unpromoted cluster together.
 

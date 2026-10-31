@@ -377,8 +377,8 @@ def test_the_scan_sees_the_known_writers():
     _, writers = _scan()
     for known in (
         "services/speaker_matching/match_handling.py::_apply_auto_accept",
-        "services/speaker_cleanup.py::join_cluster_identity",
-        "services/speaker_cleanup.py::unlink_from_profile",
+        "services/speaker_identity_moves.py::join_cluster_identity",
+        "services/speaker_identity_moves.py::unlink_from_profile",
         "api/endpoints/speakers_suggestions.py::_accept_speaker_profile_match",
         "api/endpoints/speaker_update.py::_apply_high_confidence_match",
         # the writers of a recommendation

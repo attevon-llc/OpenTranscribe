@@ -17,7 +17,7 @@ What the user judged was the AUDIO, so the correction is carried by it:
    (``tasks/transcription/storage.save_transcript_segments``, the one chokepoint both the
    transcription and the re-diarization write paths go through, and which runs before the
    voiceprint stage matches anything), gives each correction to every new speaker that
-   SPOKE MOSTLY INSIDE those spans, through ``speaker_cleanup.record_unassignment``, and
+   SPOKE MOSTLY INSIDE those spans, through ``speaker_identity_rules.record_unassignment``, and
    deletes the rows.
 
 "Mostly" is :data:`INHERIT_SHARE` of the new speaker's own speech. The correction says
@@ -189,8 +189,8 @@ def reapply_file_corrections(db: Session, media_file_id: int) -> int:
     """
     from app.models.speaker import Speaker
     from app.models.speaker import SpeakerCorrectionCarryover
-    from app.services.speaker_cleanup import REASON_UNASSIGNED
-    from app.services.speaker_cleanup import record_unassignment
+    from app.services.speaker_identity_rules import REASON_UNASSIGNED
+    from app.services.speaker_identity_rules import record_unassignment
 
     rows = (
         db.query(SpeakerCorrectionCarryover)

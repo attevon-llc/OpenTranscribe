@@ -25,10 +25,10 @@ from app.models.user import User
 from app.services.request_context import RequestContext
 from app.services.speaker_cleanup import SpeakerCleanupIncompleteError
 from app.services.speaker_cleanup import capture_speaker_impact
-from app.services.speaker_cleanup import detach_from_cluster
-from app.services.speaker_cleanup import lift_profile_blacklist
 from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact
+from app.services.speaker_identity_moves import detach_from_cluster
+from app.services.speaker_identity_rules import lift_profile_blacklist
 from app.services.uuid_helpers import require_profile_in_scope
 from app.services.uuid_helpers import require_speaker_access
 from app.utils.db_helpers import org_stamp_is
@@ -299,9 +299,9 @@ def _reject_speaker_suggestion(speaker: Speaker, speaker_id: int, db: Session) -
     ``recently_attempted`` cooldown rather than actually prevented (audit
     follow-up to issue #603).
     """
-    from app.services.speaker_cleanup import REASON_REJECTED
-    from app.services.speaker_cleanup import record_unassignment
-    from app.services.speaker_cleanup import unlink_from_profile
+    from app.services.speaker_identity_moves import unlink_from_profile
+    from app.services.speaker_identity_rules import REASON_REJECTED
+    from app.services.speaker_identity_rules import record_unassignment
     from app.services.speaker_rename_tracker import SpeakerRenameTracker
 
     old_profile_id = int(speaker.profile_id) if speaker.profile_id else None

@@ -495,7 +495,7 @@ def test_clearing_a_name_settles_what_is_left(
 
 def test_unlinking_a_machine_link_restores_what_the_name_was(db_session, normal_user):
     """``unlink_from_profile`` (profile delete, reject, unassign) applies ``after_unlink``."""
-    from app.services.speaker_cleanup import unlink_from_profile
+    from app.services.speaker_identity_moves import unlink_from_profile
     from app.services.speaker_rename_tracker import SpeakerRenameTracker
 
     profile = make_profile(db_session, normal_user, "Alice")

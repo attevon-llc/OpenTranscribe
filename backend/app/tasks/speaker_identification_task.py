@@ -311,7 +311,7 @@ def _store_speaker_predictions(
     explicit commit, so the label is reconciled if the rule above ever changes
     what a write moves.
     """
-    from app.services.speaker_cleanup import blocked_profile_names
+    from app.services.speaker_identity_rules import blocked_profile_names
     from app.services.speaker_rename_tracker import SpeakerRenameTracker
     from app.utils.speaker_labels import canonical_speaker_label_for_row
     from app.utils.speaker_labels import is_embedding_suggestion_source

@@ -339,7 +339,7 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   `blocked_speaker_uuids`); single-speaker explicit routes (`/speaker-profiles/speakers/{uuid}/assign-profile`,
   `/speakers/{uuid}/verify?action=accept`, a typed display name, and `/batch-verify` with
   `override_unassignment: true` for exactly ONE speaker — 422 for more) LIFT it via
-  `speaker_cleanup.lift_profile_blacklist`. A 200 from `/batch-verify` can still carry
+  `speaker_identity_rules.lift_profile_blacklist`. A 200 from `/batch-verify` can still carry
   `failed_count > 0`: a client must never read it as success. `POST /speakers/{uuid}/merge/{target}` carries
   the source's rows to the target (`carry_blacklist`) before the CASCADE drops them. Use the
   `speaker_cleanup` helpers; a second blacklist check is how the old one-direction cannot-link

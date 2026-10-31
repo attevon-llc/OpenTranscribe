@@ -31,9 +31,11 @@ orm_call_in_api::backend/app/api/endpoints/admin_settings.py	2	layering: removal
 orm_call_in_api::backend/app/api/endpoints/admin_approvals.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/admin_group_mappings.py	4	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/admin_timing.py	3	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/asr_config_state.py	7	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/asr_local_model.py	3	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/asr_provider_catalog.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/asr_provider_policy.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/asr_settings.py	19	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/asr_settings.py	10	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/auth/authenticators.py	3	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/auth/dependencies.py	3	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/auth/invitations.py	1	layering: removal planned

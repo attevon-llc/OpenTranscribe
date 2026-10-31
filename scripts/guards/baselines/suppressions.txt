@@ -2,7 +2,8 @@ noqa::backend/alembic/versions/v070_pki_security.py	1	suppression: reason to be 
 noqa::backend/alembic/versions/v120_add_remaining_fk_indexes.py	1	suppression: reason to be added
 noqa::backend/alembic/versions/v270_add_asr_provider_support.py	1	suppression: reason to be added
 noqa::backend/alembic/versions/v377_harden_user_auth_invariants.py	1	suppression: reason to be added
-noqa::backend/app/api/endpoints/asr_settings.py	3	suppression: reason to be added
+noqa::backend/app/api/endpoints/asr_provider_catalog.py	1	suppression: reason to be added
+noqa::backend/app/api/endpoints/asr_settings.py	2	suppression: reason to be added
 noqa::backend/app/api/endpoints/auth/dependencies.py	1	suppression: reason to be added
 noqa::backend/app/api/endpoints/auth/mfa_tokens.py	1	suppression: reason to be added
 noqa::backend/app/api/endpoints/auth/proxy.py	1	suppression: reason to be added

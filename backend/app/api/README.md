@@ -33,7 +33,8 @@ api/
 │   │                      #   group mappings, storage integrity, takedown notices, timing, content-access audit
 │   ├── org_admin*.py      # Organization admin: audit logs, legal holds, takedown/quarantine, GDPR erase
 │   ├── support_access.py  # Support-access grants
-│   ├── asr_settings.py, asr_local_model.py, asr_provider_policy.py, local_models.py   # ASR config, local model, provider policy, model library
+│   ├── asr_settings.py, asr_provider_catalog.py, asr_connection_tests.py, asr_config_state.py,
+│   │   asr_local_model.py, asr_provider_policy.py, local_models.py   # ASR config, catalog/status, connection tests, config state helpers, local model, provider policy, model library
 │   ├── llm_settings.py, llm_status.py, bedrock_settings.py                            # LLM configuration and status
 │   ├── engine_settings.py, diarization_settings.py, pipeline_settings.py              # Engine/diarizer/pipeline settings
 │   ├── user_settings.py, redaction_settings.py, custom_vocabulary.py                  # Per-user preferences

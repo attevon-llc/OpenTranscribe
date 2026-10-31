@@ -2,13 +2,12 @@
 API endpoints for user ASR (Automatic Speech Recognition) settings management.
 
 Follows the same pattern as llm_settings.py for consistency. Pinning the local Whisper model
-lives in ``asr_local_model`` (a different capability gate).
+lives in ``asr_local_model`` (a different capability gate). The provider catalog/status and
+the connection tests live in ``asr_provider_catalog`` and ``asr_connection_tests``; they are
+spliced in around the configuration CRUD below so the route table keeps its order.
 """
 
-import contextlib
 import logging
-import re
-import time
 from datetime import UTC
 from datetime import datetime
 from typing import Any
@@ -18,184 +17,42 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
-from fastapi import Response
 from sqlalchemy.orm import Session
 
 from app import models
 from app import schemas
 from app.api.deps_context import get_current_context
+from app.api.endpoints import asr_connection_tests
+from app.api.endpoints import asr_provider_catalog
+from app.api.endpoints.asr_config_state import _clear_active_asr_setting
+from app.api.endpoints.asr_config_state import _clear_asr_shared_active_references
+from app.api.endpoints.asr_config_state import _config_to_dict
+from app.api.endpoints.asr_config_state import _get_active_asr_config_id
+from app.api.endpoints.asr_config_state import _get_config_or_404
+from app.api.endpoints.asr_config_state import _reset_diarizer_references
+from app.api.endpoints.asr_config_state import _set_active_asr_configuration
+from app.api.endpoints.asr_config_state import _validate_region
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.pipeline_settings import plan_issues_out
-from app.auth.rate_limit import get_api_rate_limit
-from app.auth.rate_limit import limiter
-from app.core.config import settings
 from app.db.base import get_db
-from app.schemas.asr_settings import ASRModelCapabilities
 from app.schemas.pipeline import ASRSwitchResult
 from app.services import asr_provider_policy
 from app.services.asr_switch_plan import SwitchOutcome
 from app.services.asr_switch_plan import assess_asr_switch
 from app.services.pipeline_plan_inputs import plan_for_user
 from app.services.request_context import RequestContext
-from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
 from app.utils.encryption import test_encryption
 from app.utils.lite_mode import refuse_on_lite
 from app.utils.tenant_sharing import owner_in_tenant
-from app.utils.tenant_sharing import shared_visible_in_tenant
 
-router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Sensitive-data sanitization for error messages
-# ---------------------------------------------------------------------------
-
-# Matches Bearer tokens and high-entropy strings with common API-key prefixes,
-# as well as generic base64-ish blobs of 32+ chars that could be a raw key.
-_KEY_PATTERN = re.compile(
-    r"(Bearer\s+)\S+|(sk-|dg_|aai_)\S+",
-    re.IGNORECASE,
-)
-
-
-def _sanitize_message(message: str, *secrets: str | None) -> str:
-    """Remove known secrets and API-key-shaped tokens from an error message.
-
-    Performs two passes:
-    1. Exact replacement of each provided *secret* value.
-    2. Regex-based scrubbing of Bearer tokens and common API-key prefixes.
-    """
-    if not message:
-        return message
-    result = message
-    for secret in secrets:
-        if secret:
-            result = result.replace(secret, "***")
-    result = _KEY_PATTERN.sub(
-        lambda m: m.group(1) + "***" if m.group(1) else m.group(2) + "***", result
-    )
-    return result
-
-
-# ---------------------------------------------------------------------------
-# Input validation helpers
-# ---------------------------------------------------------------------------
-
-# Valid ASR providers as accepted by the factory.
-_VALID_PROVIDERS = frozenset(
-    {
-        "local",
-        "deepgram",
-        "assemblyai",
-        "openai",
-        "google",
-        "azure",
-        "aws",
-        "speechmatics",
-        "gladia",
-        "pyannote",
-    }
-)
-
-# Cloud-based providers (excludes "local").
-_CLOUD_PROVIDERS = {
-    "deepgram",
-    "assemblyai",
-    "openai",
-    "google",
-    "azure",
-    "aws",
-    "speechmatics",
-    "gladia",
-    "pyannote",
-}
-
-# Azure and AWS region allowlists — imported from schemas (single source of truth).
-_VALID_AZURE_REGIONS = schemas.asr_settings.VALID_AZURE_REGIONS
-_VALID_AWS_REGIONS = schemas.asr_settings.VALID_AWS_REGIONS
-
-
-def _validate_region(provider: str | None, region: str | None) -> None:
-    """Raise HTTP 400 if *region* is not on the allowlist for providers that require one."""
-    if not region:
-        return
-    if provider == "azure" and region not in _VALID_AZURE_REGIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown Azure region '{region}'",
-        )
-    if provider == "aws" and region not in _VALID_AWS_REGIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown AWS region '{region}'",
-        )
-
-
-# ---------------------------------------------------------------------------
-# Lazy imports to avoid circular dependencies at module load time
-# ---------------------------------------------------------------------------
-
-
-def _get_provider_catalog() -> dict:
-    """Return the ASR provider catalog, or empty dict if not yet available."""
-    try:
-        from app.services.asr.catalog import ASR_PROVIDER_CATALOG  # type: ignore[import]
-
-        return ASR_PROVIDER_CATALOG
-    except ImportError:
-        logger.debug("ASR provider catalog not yet available (services/asr not yet created)")
-        return {}
-
-
-def _create_asr_provider(
-    provider: str,
-    api_key: str | None,
-    model: str | None,
-    base_url: str | None,
-    region: str | None,
-    access_key_id: str | None = None,
-):
-    """Create an ASR provider instance via the factory."""
-    from app.services.asr.factory import ASRProviderFactory  # type: ignore[import]
-
-    return ASRProviderFactory.create_from_config(
-        provider=provider,
-        api_key=api_key,
-        model=model,
-        base_url=base_url,
-        region=region,
-        access_key_id=access_key_id,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
-def _set_active_asr_configuration(db: Session, user_id: int, config_id: int) -> None:
-    """Persist the active ASR configuration ID in UserSetting."""
-    existing = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == user_id,
-            models.UserSetting.setting_key == "active_asr_config_id",
-        )
-        .first()
-    )
-    if existing:
-        existing.setting_value = str(config_id)  # type: ignore[assignment]
-        db.add(existing)
-    else:
-        db.add(
-            models.UserSetting(
-                user_id=user_id,
-                setting_key="active_asr_config_id",
-                setting_value=str(config_id),
-            )
-        )
-    db.commit()
+# Registration order is the pre-split route table's order exactly. Routes are spliced rather
+# than ``include_router``-ed because FastAPI refuses to nest a router whose path is empty
+# (``POST ""``) under an empty prefix.
+router = APIRouter()
+router.routes.extend(asr_provider_catalog.router.routes)
 
 
 def _refuse_if_introduced(outcome: SwitchOutcome) -> None:
@@ -232,287 +89,6 @@ def _refuse_if_switching_off_strands_holders(
     holders = [int(row[0]) for row in query.all()]
     for holder_id in holders:
         _refuse_if_introduced(assess_asr_switch(db, holder_id, None, request=request))
-
-
-def _get_active_asr_config_id(db: Session, user_id: int) -> int | None:
-    """Return the stored active ASR config integer ID, or None."""
-    setting = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == user_id,
-            models.UserSetting.setting_key == "active_asr_config_id",
-        )
-        .first()
-    )
-    if setting and setting.setting_value:
-        with contextlib.suppress(ValueError, TypeError):
-            return int(setting.setting_value)
-    return None
-
-
-def _clear_active_asr_setting(db: Session, user_id: int) -> None:
-    """Delete the active_asr_config_id UserSetting row if it exists."""
-    setting = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == user_id,
-            models.UserSetting.setting_key == "active_asr_config_id",
-        )
-        .first()
-    )
-    if setting:
-        db.delete(setting)
-        db.commit()
-
-
-def _config_to_dict(config: Any, *, owner=None, is_own: bool = True) -> dict:
-    """Serialize a UserASRSettings record to a safe public dict (no raw API key)."""
-    return {
-        "id": config.id,
-        "uuid": str(config.uuid),
-        "user_id": config.user_id,
-        "name": config.name,
-        "provider": config.provider,
-        "model_name": config.model_name,
-        "base_url": config.base_url,
-        "region": config.region,
-        "is_active": config.is_active,
-        "has_api_key": bool(config.api_key),
-        "has_access_key_id": bool(getattr(config, "access_key_id", None)),
-        "last_tested": config.last_tested.isoformat() if config.last_tested else None,
-        "test_status": config.test_status,
-        "test_message": config.test_message,
-        "is_shared": config.is_shared,
-        "shared_at": config.shared_at.isoformat() if config.shared_at else None,
-        "owner_name": owner.full_name if owner else None,
-        "owner_role": owner.role if owner else None,
-        "is_own": is_own,
-        "created_at": config.created_at.isoformat() if config.created_at else None,
-        "updated_at": config.updated_at.isoformat() if config.updated_at else None,
-    }
-
-
-def _get_config_or_404(
-    db: Session, config_uuid: UUID, user_id: int, *, shared_in: RequestContext | None = None
-) -> Any:
-    """Fetch UserASRSettings by UUID+user or raise 404.
-
-    With ``shared_in``, a config shared within that request's active tenant also
-    qualifies; another tenant's shared config answers like a missing one.
-    """
-    from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
-
-    filters = [UserASRSettings.uuid == config_uuid]
-    if shared_in is not None:
-        filters.append(
-            shared_visible_in_tenant(
-                UserASRSettings.user_id, UserASRSettings.is_shared, user_id, shared_in.org_id
-            )
-        )
-    else:
-        filters.append(UserASRSettings.user_id == user_id)
-    config = db.query(UserASRSettings).filter(*filters).first()
-    if not config:
-        raise HTTPException(status_code=404, detail="ASR configuration not found")
-    return config
-
-
-def _clear_asr_shared_active_references(
-    db: Session, config_id: int, *, exclude_user_id: int | None = None
-):
-    """Remove UserSetting rows pointing to a deleted/unshared ASR config."""
-    q = db.query(models.UserSetting).filter(
-        models.UserSetting.setting_key == "active_asr_config_id",
-        models.UserSetting.setting_value == str(config_id),
-    )
-    if exclude_user_id is not None:
-        q = q.filter(models.UserSetting.user_id != exclude_user_id)
-    q.delete(synchronize_session=False)
-
-
-def _reset_diarizer_references(db: Session, config_uuids: list[str], user_id: int) -> bool:
-    """Reset every ``asr_config`` speaker source that names a deleted configuration (E5).
-
-    The pointer is removed for every user who held it (the owner and anyone it was shared
-    with, like the active-config references above), and a source still set to
-    ``asr_config`` reverts to the default, which is the transcription provider's own speaker
-    detection. Without this a deleted diarizer leaves a blocking ``diarizer_config_missing``
-    in each holder's plan. Returns whether the CALLER's source was reverted.
-    """
-    from app.services.pipeline_plan_inputs import DIARIZER_CONFIG_KEY
-    from app.services.pipeline_plan_inputs import SOURCE_KEY
-
-    if not config_uuids:
-        return False
-    pointers = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.setting_key == DIARIZER_CONFIG_KEY,
-            models.UserSetting.setting_value.in_(config_uuids),
-        )
-        .all()
-    )
-    holders = {int(row.user_id) for row in pointers}
-    for row in pointers:
-        db.delete(row)
-    if not holders:
-        return False
-    sources = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id.in_(holders),
-            models.UserSetting.setting_key == SOURCE_KEY,
-            models.UserSetting.setting_value == "asr_config",
-        )
-        .all()
-    )
-    reverted = {int(row.user_id) for row in sources}
-    for row in sources:
-        db.delete(row)
-    if reverted:
-        logger.info(
-            "Deleted ASR config was a speaker detector: reset %d user(s) to the default",
-            len(reverted),
-        )
-    return user_id in reverted
-
-
-# ---------------------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------------------
-
-
-@router.get("/providers")
-def get_providers(
-    current_user: models.User = Depends(get_current_active_user),
-    db: Session = Depends(get_db),
-) -> Any:
-    """Return the ASR provider catalog with models, pricing, and capabilities.
-
-    For the local provider, each model entry includes a ``downloaded`` boolean
-    indicating whether the model weights are already present on disk. A plain user
-    sees only the cloud providers the administrator enabled; an admin sees all, each
-    with ``allowed_for_users`` (``services/asr_provider_policy``).
-    """
-    catalog = _get_provider_catalog()
-    providers = asr_provider_policy.visible_providers(
-        list(catalog.values()), current_user.role, asr_provider_policy.load_policy(db)
-    )
-
-    # Annotate local models with download availability
-    try:
-        from app.services.asr.model_discovery import get_downloaded_model_names
-
-        downloaded = get_downloaded_model_names()
-        for p in providers:
-            if p.get("id") == "local":
-                for m in p.get("models", []):
-                    m["downloaded"] = m["id"] in downloaded
-                break
-    except Exception:
-        logger.debug("Model discovery unavailable, skipping download annotations")
-
-    return {"providers": providers}
-
-
-@router.get("/local-models")
-def get_local_models(
-    current_user: models.User = Depends(get_current_active_user),
-) -> Any:
-    """Return locally downloaded Whisper models discovered from the cache directory."""
-    from app.services.asr.model_discovery import discover_local_models
-
-    return {"models": discover_local_models()}
-
-
-@router.get("/status")
-def get_asr_status(
-    db: Session = Depends(get_db),
-    ctx: RequestContext = Depends(get_current_context),
-) -> Any:
-    """Get ASR configuration status summary for the current user."""
-    current_user = ctx.user
-    from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
-
-    # Single query: fetch all configs + active_config_id setting in 2 queries total.
-    # Resolve active_config from the already-fetched list (no 3rd DB round-trip).
-    active_config_id = _get_active_asr_config_id(db, current_user.id)
-
-    configs = db.query(UserASRSettings).filter(UserASRSettings.user_id == current_user.id).all()
-    has_settings = len(configs) > 0
-
-    active_config = None
-    if active_config_id:
-        # Try own configs first, then shared
-        active_config = next((c for c in configs if c.id == active_config_id), None)
-        if not active_config:
-            active_config = (
-                db.query(UserASRSettings)
-                .filter(
-                    UserASRSettings.id == active_config_id,
-                    UserASRSettings.is_shared == True,  # noqa: E712
-                    owner_in_tenant(UserASRSettings.user_id, ctx.org_id),
-                )
-                .first()
-            )
-            if active_config:
-                has_settings = True
-        if active_config is not None and not active_config.is_active:
-            # Switched off by its owner: jobs fall back to the deployment default.
-            active_config = None
-
-    deployment_mode = settings.DEPLOYMENT_MODE.lower()
-    asr_provider = settings.ASR_PROVIDER.lower()
-    using_local_default = active_config is None and asr_provider == "local"
-
-    active_provider: str | None = None
-    active_model: str | None = None
-    active_config_uuid_str: str | None = None
-    is_cloud_provider = False
-
-    if active_config:
-        active_provider = str(getattr(active_config, "provider", "") or "")
-        active_model = str(getattr(active_config, "model_name", "") or "")
-        active_config_uuid_str = str(getattr(active_config, "uuid", "") or "")
-        is_cloud_provider = active_provider.lower() in _CLOUD_PROVIDERS
-    elif not using_local_default:
-        # Env-level provider (not local)
-        active_provider = asr_provider
-        is_cloud_provider = asr_provider in _CLOUD_PROVIDERS
-
-    from app.services.asr.factory import ASRProviderFactory
-
-    # Inline capability lookup using already-resolved active_config
-    # (avoids 2 duplicate DB queries that get_active_model_capabilities would make)
-    if active_config:
-        provider_id = str(active_config.provider or "local")
-        model_id = str(active_config.model_name or "")
-        caps = ASRProviderFactory.get_model_capabilities(provider_id, model_id)
-        model_capabilities = {"provider": provider_id, "model_id": model_id, **caps}
-    elif asr_provider != "local":
-        caps = ASRProviderFactory.get_model_capabilities(asr_provider, "")
-        model_capabilities = {"provider": asr_provider, "model_id": "", **caps}
-    else:
-        whisper_model = settings.WHISPER_MODEL
-        caps = ASRProviderFactory.get_model_capabilities("local", whisper_model)
-        model_capabilities = {"provider": "local", "model_id": whisper_model, **caps}
-
-    return {
-        "has_settings": has_settings,
-        "active_config": _config_to_dict(active_config) if active_config else None,
-        "using_local_default": using_local_default,
-        "deployment_mode": deployment_mode,
-        "asr_configured": bool(active_config) or not using_local_default,
-        "active_provider": active_provider,
-        "active_model": active_model,
-        "active_config_uuid": active_config_uuid_str,
-        "is_cloud_provider": is_cloud_provider,
-        # Validated through the typed schema so a catalog entry missing a capability
-        # field fails here rather than reaching the SPA as an absent key.
-        "active_model_capabilities": ASRModelCapabilities.model_validate(
-            model_capabilities
-        ).model_dump(),
-    }
 
 
 @router.get("")
@@ -1013,101 +589,4 @@ def delete_all_asr_configs(
     )
 
 
-@router.post("/test")
-@limiter.limit(get_api_rate_limit())
-def test_asr_connection(
-    request: Request,
-    settings_in: schemas.ASRConnectionTestRequest,
-    response: Response = None,  # type: ignore[assignment]  # required by slowapi
-    current_user: models.User = Depends(get_current_active_user),
-) -> Any:
-    """Test an ad-hoc ASR connection without saving configuration."""
-    provider_name = settings_in.provider.value
-    api_key = settings_in.api_key
-    base_url = settings_in.base_url
-    region = settings_in.region
-    model_name = settings_in.model_name
-    access_key_id = getattr(settings_in, "access_key_id", None)
-
-    start_time = time.time()
-    try:
-        provider = _create_asr_provider(
-            provider=provider_name,
-            api_key=api_key,
-            model=model_name,
-            base_url=base_url,
-            region=region,
-            access_key_id=access_key_id,
-        )
-        success, message, response_time_ms = provider.validate_connection()
-    except Exception as exc:
-        response_time_ms = (time.time() - start_time) * 1000
-        sanitized = _sanitize_message(str(exc), api_key)
-        logger.warning(
-            "ASR ad-hoc test failed for provider '%s': %s",
-            provider_name,
-            sanitized,
-        )
-        return {
-            "success": False,
-            "message": sanitized,
-            "response_time_ms": int(response_time_ms),
-        }
-
-    return {
-        "success": success,
-        "message": message,
-        "response_time_ms": int(response_time_ms),
-    }
-
-
-@router.post("/test-config/{config_uuid}")
-@limiter.limit(get_api_rate_limit())
-def test_saved_asr_config(
-    request: Request,
-    config_uuid: UUID,
-    response: Response = None,  # type: ignore[assignment]  # required by slowapi
-    db: Session = Depends(get_db),
-    ctx: RequestContext = Depends(get_current_context),
-) -> Any:
-    """Test a saved ASR configuration and persist the result (test_status, test_message, last_tested)."""
-    current_user = ctx.user
-    config = _get_config_or_404(db, config_uuid, current_user.id, shared_in=ctx)
-
-    # Decrypt the stored key only for error sanitization below — provider construction
-    # (and its own decryption) goes through the shared factory helper so this path and
-    # the transcription-job path cannot drift apart (issue #300).
-    api_key = None
-    if config.api_key:
-        api_key = decrypt_api_key(str(config.api_key))
-        if api_key is None:
-            logger.error("Failed to decrypt API key for ASR config %s", config_uuid)
-            raise HTTPException(status_code=500, detail="Failed to decrypt stored API key")
-
-    start_time = time.time()
-    try:
-        from app.services.asr.factory import ASRProviderFactory
-
-        provider = ASRProviderFactory.create_from_db_config(config)
-        success, message, response_time_ms = provider.validate_connection()
-    except Exception as exc:
-        success = False
-        # Sanitize before storing or returning — provider exceptions may echo back the key
-        message = _sanitize_message(str(exc), api_key)
-        response_time_ms = (time.time() - start_time) * 1000
-        logger.warning("ASR saved-config test failed for config %s: %s", config_uuid, message)
-
-    # Persist test result only if the current user owns the config
-    if config.user_id == current_user.id:
-        config.test_status = "success" if success else "failed"  # type: ignore[assignment]
-        config.test_message = _sanitize_message(message, api_key)  # type: ignore[assignment]
-        config.last_tested = datetime.now(UTC)  # type: ignore[assignment]
-        db.add(config)
-        db.commit()
-
-    return {
-        "success": success,
-        "message": message,
-        "response_time_ms": int(response_time_ms),
-        "config_uuid": str(config.uuid),
-    }
+router.routes.extend(asr_connection_tests.router.routes)

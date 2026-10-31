@@ -50,11 +50,11 @@ _DECIDED = (
 #: G5 is the load-bearing half of this list: these are the paths that keep a
 #: digest's permissions and tenancy correct, and filtering them is the leak.
 _ALLOWED: dict[str, str] = {
-    "tasks/search_indexing_task.py::update_file_access_index": (
+    "tasks/search_file_field_tasks.py::update_file_access_index": (
         "G5: the ACL rewrite keys on file_id and MUST reach digest documents. "
         "A digest excluded here keeps the ACL it was last stamped with."
     ),
-    "tasks/search_indexing_task.py::update_file_tags_index": (
+    "tasks/search_file_field_tasks.py::update_file_tags_index": (
         "G5, same shape: tags are denormalised onto every document of the file, "
         "digests included, or a tag-scoped chat query silently skips them."
     ),
@@ -142,7 +142,7 @@ def test_the_sweep_finds_the_readers_it_is_meant_to_check() -> None:
         "services/search/suggestions.py::get_available_filters",
         "services/search/suggestions.py::get_suggestions",
         "tasks/reindex_completion.py::_cleanup_orphaned_chunks",
-        "tasks/search_indexing_task.py::update_file_access_index",
+        "tasks/search_file_field_tasks.py::update_file_access_index",
     ):
         assert expected in keys, f"the sweep no longer reaches {expected} — it is broken"
 

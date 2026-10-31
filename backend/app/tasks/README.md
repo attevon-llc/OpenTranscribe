@@ -39,6 +39,7 @@ tasks/
 │   └── speaker_tasks.py                     # Re-export shim; keeps legacy task names alive (no logic here)
 ├── Search
 │   ├── search_indexing_task.py              # Index a completed transcript (retries over a horizon)
+│   ├── search_file_field_tasks.py           # Partial index rewrites: ACL, tags, summary plane
 │   ├── search_index_sweep_task.py           # Beat sweep re-dispatching files missing from search
 │   ├── search_maintenance_task.py, search_reembed_task.py, reindex_task.py, opensearch_integrity_task.py, tenant_backfill_task.py
 ├── LLM enrichment

@@ -141,7 +141,9 @@ def test_retry_reset_erases_the_voiceprints_it_deletes(
     from app.utils import file_retry
 
     monkeypatch.setattr(file_retry, "transcript_is_regenerable", lambda db, mf: True)
-    monkeypatch.setattr("app.tasks.search_indexing_task.index_file_summary.delay", lambda *a: None)
+    monkeypatch.setattr(
+        "app.tasks.search_file_field_tasks.index_file_summary.delay", lambda *a: None
+    )
     _fa, fb, _sa, sb, cluster = make_pair(db_session, normal_user, speaker_os_seams)
     victim = str(sb.uuid)
 
@@ -157,7 +159,9 @@ def test_reprocess_clear_erases_voiceprints_and_rebuilds_clusters(
 ):
     from app.api.endpoints.files import reprocess
 
-    monkeypatch.setattr("app.tasks.search_indexing_task.index_file_summary.delay", lambda *a: None)
+    monkeypatch.setattr(
+        "app.tasks.search_file_field_tasks.index_file_summary.delay", lambda *a: None
+    )
     _fa, fb, _sa, sb, cluster = make_pair(db_session, normal_user, speaker_os_seams)
     victim = str(sb.uuid)
 

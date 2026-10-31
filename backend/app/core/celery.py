@@ -240,6 +240,7 @@ celery_app = Celery(
         "app.tasks.tenant_backfill_task",
         "app.tasks.storage_orphan_sweep_task",
         "app.tasks.search_indexing_task",
+        "app.tasks.search_file_field_tasks",
         "app.tasks.search_index_sweep_task",
         "app.tasks.search_reembed_task",
         "app.tasks.rename_propagation_task",

@@ -301,7 +301,7 @@ def _summary_search_payload(
     (`corpus_cache._invalidate_chat_retrieval_cache`, from
     `index_transcript_chunks` and rename propagation), quarantine, release, and
     — as of the share-revocation cache-invalidation fix — an ACL rewrite via
-    `tasks.search_indexing_task.update_file_access_index` (the single call site
+    `tasks.search_file_field_tasks.update_file_access_index` (the single call site
     every collection-share grant/revocation and group-membership change
     dispatches through). A **summary regeneration** (`tasks/summarization.py`,
     which rewrites the very `media_file.summary_data` this leg reads) still

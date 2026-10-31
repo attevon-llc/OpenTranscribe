@@ -276,7 +276,7 @@ def reset_file_for_retry(db: Session, file_id: int, reset_retry_count: bool = Fa
             # Prune the OpenSearch summary plane to match the cleared column
             # (issue #963) — a transcription retry may never reach a fresh
             # summary generation, so nothing else is guaranteed to.
-            from app.tasks.search_indexing_task import index_file_summary
+            from app.tasks.search_file_field_tasks import index_file_summary
 
             index_file_summary.delay(int(file_id))
 

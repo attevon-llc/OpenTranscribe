@@ -392,7 +392,7 @@ def test_search_refresh_is_one_task_carrying_every_changed_file(
     changed_two = _make_file(db_session, normal_user)
 
     delay = MagicMock()
-    with patch("app.tasks.search_indexing_task.update_file_tags_index.delay", delay):
+    with patch("app.tasks.search_file_field_tasks.update_file_tags_index.delay", delay):
         response = _bulk(
             client,
             user_token_headers,

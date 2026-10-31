@@ -30,7 +30,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.tasks import search_indexing_task
+from app.tasks import search_file_field_tasks
 
 pytestmark = pytest.mark.unit
 
@@ -77,7 +77,7 @@ class TestBumpFiresExactlyOnceOnSuccess:
         client = _stub_opensearch_client()
         monkeypatch.setattr("app.services.opensearch_service.get_opensearch_client", lambda: client)
 
-        result = search_indexing_task.update_file_access_index([294085])
+        result = search_file_field_tasks.update_file_access_index([294085])
 
         assert result["status"] == "success"
         bump_mock.assert_called_once_with()
@@ -99,7 +99,7 @@ class TestBumpFiresOnErrorToo:
         )
         monkeypatch.setattr("app.services.opensearch_service.get_opensearch_client", lambda: client)
 
-        result = search_indexing_task.update_file_access_index([294085])
+        result = search_file_field_tasks.update_file_access_index([294085])
 
         assert result["errors"] == 1
         bump_mock.assert_called_once_with()
@@ -119,7 +119,7 @@ class TestBumpDoesNotFireOnEarlyReturns:
         bump_mock = MagicMock()
         monkeypatch.setattr("app.services.chat.retrieval_cache.bump_corpus_version", bump_mock)
 
-        result = search_indexing_task.update_file_access_index([])
+        result = search_file_field_tasks.update_file_access_index([])
 
         assert result == {"status": "skipped", "reason": "no_file_ids"}
         bump_mock.assert_not_called()
@@ -129,7 +129,7 @@ class TestBumpDoesNotFireOnEarlyReturns:
         monkeypatch.setattr("app.services.chat.retrieval_cache.bump_corpus_version", bump_mock)
         monkeypatch.setattr("app.services.opensearch_service.get_opensearch_client", lambda: None)
 
-        result = search_indexing_task.update_file_access_index([294085])
+        result = search_file_field_tasks.update_file_access_index([294085])
 
         assert result == {"status": "skipped", "reason": "no_opensearch"}
         bump_mock.assert_not_called()

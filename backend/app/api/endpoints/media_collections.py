@@ -96,7 +96,7 @@ from app.services.uuid_helpers import get_collection_by_uuid_with_permission
 from app.services.uuid_helpers import get_collection_by_uuid_with_sharing
 from app.services.uuid_helpers import require_resource_owner
 from app.services.uuid_helpers import validate_uuids
-from app.tasks.search_indexing_task import update_file_access_index
+from app.tasks.search_file_field_tasks import update_file_access_index
 from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)

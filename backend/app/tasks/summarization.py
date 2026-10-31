@@ -427,7 +427,7 @@ def _load_summarization_inputs(
             # before reaching `_persist_summary` — the happy path re-runs this
             # anyway (harmless, deterministic ids overwrite) once the new
             # summary is persisted (issue #963).
-            from app.tasks.search_indexing_task import index_file_summary
+            from app.tasks.search_file_field_tasks import index_file_summary
 
             index_file_summary.delay(file_id)
 
@@ -753,7 +753,7 @@ def summarize_transcript_task(
         # committed — never from inside it, and never with the dict passed
         # along: `_index_summary_plane` re-reads `summary_data` from Postgres
         # itself, which is the whole anti-regression for #67.
-        from app.tasks.search_indexing_task import index_file_summary
+        from app.tasks.search_file_field_tasks import index_file_summary
 
         index_file_summary.delay(file_id)
         # Declared before this task reports done, so the summary's index is never an

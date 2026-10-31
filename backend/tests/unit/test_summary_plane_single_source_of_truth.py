@@ -118,7 +118,7 @@ def test_index_summary_plane_has_no_summary_data_parameter() -> None:
 
 def test_index_file_summary_task_never_receives_a_summary_payload() -> None:
     """The Celery dispatch mirrors T-G2: it carries a file id, nothing more."""
-    from app.tasks.search_indexing_task import index_file_summary
+    from app.tasks.search_file_field_tasks import index_file_summary
 
     sig = inspect.signature(index_file_summary.run)
     forbidden = {"summary_data", "summary", "summary_payload", "summary_json"}

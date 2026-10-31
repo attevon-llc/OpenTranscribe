@@ -264,7 +264,8 @@ backend/app/tasks/reindex_run_state.py	1	ratchet: may only go down
 backend/app/tasks/reindex_task.py	4	ratchet: may only go down
 backend/app/tasks/rename_digest_task.py	2	ratchet: may only go down
 backend/app/tasks/rename_propagation_task.py	8	ratchet: may only go down
-backend/app/tasks/search_indexing_task.py	8	ratchet: may only go down
+backend/app/tasks/search_file_field_tasks.py	4	ratchet: may only go down
+backend/app/tasks/search_indexing_task.py	4	ratchet: may only go down
 backend/app/tasks/search_maintenance_task.py	3	ratchet: may only go down
 backend/app/tasks/search_reembed_task.py	1	ratchet: may only go down
 backend/app/tasks/speaker_attribute_inference.py	1	ratchet: may only go down

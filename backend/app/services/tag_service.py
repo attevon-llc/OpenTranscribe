@@ -738,7 +738,7 @@ def on_tags_changed(
 
     if affected:
         try:
-            from app.tasks.search_indexing_task import update_file_tags_index
+            from app.tasks.search_file_field_tasks import update_file_tags_index
 
             update_file_tags_index.delay(affected)
         except Exception as e:

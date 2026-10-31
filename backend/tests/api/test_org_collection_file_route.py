@@ -164,7 +164,7 @@ class _RecordingOpenSearch:
 
 def test_the_access_rewrite_refreshes_collection_ids(gov, org_files, bridged_session, monkeypatch):
     """Adding a file to a collection must reach the chunks' ``collection_ids``, the arm's key."""
-    from app.tasks.search_indexing_task import update_file_access_index
+    from app.tasks.search_file_field_tasks import update_file_access_index
 
     fake = _RecordingOpenSearch()
     monkeypatch.setattr("app.services.opensearch_service.get_opensearch_client", lambda: fake)

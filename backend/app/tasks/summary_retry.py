@@ -60,7 +60,7 @@ def reset_summary_for_retry(db: Session, file_uuid: str) -> bool:
         # own success (`tasks/summarization.py`); this call is what covers a
         # reset that is never followed by one (no LLM configured, dispatch
         # failure).
-        from app.tasks.search_indexing_task import index_file_summary
+        from app.tasks.search_file_field_tasks import index_file_summary
 
         index_file_summary.delay(int(file_id))
 
@@ -151,7 +151,7 @@ async def retry_summary_if_available(db: Session, file_uuid: str) -> bool:
             media_file.summary_status = previous_summary_status  # type: ignore[assignment]
             db.commit()
 
-            from app.tasks.search_indexing_task import index_file_summary
+            from app.tasks.search_file_field_tasks import index_file_summary
 
             index_file_summary.delay(int(file_id))
         except Exception as restore_exc:

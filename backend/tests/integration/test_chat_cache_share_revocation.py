@@ -210,7 +210,7 @@ def _index_owner_only(media_file, owner, db_session, chunk_index):
 
 def _grant_and_run_index_update(media_file, owner, guest, db_session):
     """Real collection-share grant, then the real ``update_file_access_index`` call."""
-    from app.tasks.search_indexing_task import update_file_access_index
+    from app.tasks.search_file_field_tasks import update_file_access_index
 
     collection = Collection(name=f"revoke-repro-{uuid_pkg.uuid4().hex[:8]}", user_id=owner.id)
     db_session.add(collection)
@@ -233,7 +233,7 @@ def _grant_and_run_index_update(media_file, owner, guest, db_session):
 
 
 def _revoke_and_run_index_update(share_id, media_file, db_session):
-    from app.tasks.search_indexing_task import update_file_access_index
+    from app.tasks.search_file_field_tasks import update_file_access_index
 
     db_session.query(CollectionShare).filter(CollectionShare.id == share_id).delete()
     db_session.commit()

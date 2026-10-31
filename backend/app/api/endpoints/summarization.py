@@ -641,7 +641,7 @@ def delete_summary(
 
     # Prune the OpenSearch summary plane to match the now-cleared column
     # (issue #963) — after commit, never from inside the transaction above.
-    from app.tasks.search_indexing_task import index_file_summary
+    from app.tasks.search_file_field_tasks import index_file_summary
 
     index_file_summary.delay(file_id)
 

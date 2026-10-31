@@ -98,14 +98,14 @@ def _clear(db, media, how: str, monkeypatch) -> None:
 
         monkeypatch.setattr(file_retry, "transcript_is_regenerable", lambda *a, **k: True)
         monkeypatch.setattr(
-            "app.tasks.search_indexing_task.index_file_summary.delay", lambda *a, **k: None
+            "app.tasks.search_file_field_tasks.index_file_summary.delay", lambda *a, **k: None
         )
         assert file_retry.reset_file_for_retry(db, int(media.id)) is True
         return
     from app.api.endpoints.files.reprocess import clear_selective_data
 
     monkeypatch.setattr(
-        "app.tasks.search_indexing_task.index_file_summary.delay", lambda *a, **k: None
+        "app.tasks.search_file_field_tasks.index_file_summary.delay", lambda *a, **k: None
     )
     clear_selective_data(db, db.get(type(media), media.id), [how])
 

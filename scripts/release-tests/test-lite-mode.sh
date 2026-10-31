@@ -221,9 +221,12 @@ ensure_secrets_file() {
     export HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN:-unused-lite-mode}"
 }
 
+# Names are DERIVED from docker-compose.yml's container_name: set (gr_colliding_container_names), not a
+# `^opentranscribe-` prefix: the unrelated `opentranscribe-homepage` site (own project, port 8300) matched the
+# prefix and refused all three v0.6.0 rehearsal scenarios, and the stopped-container sweep would have `docker rm`'d it.
 ensure_live_deployment_stopped() {
     local running
-    running=$(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-' || true)
+    running=$(gr_colliding_container_names "" || true)
     if [[ -n "$running" ]]; then
         gr_die "live deployment is still running:
 $running
@@ -232,7 +235,7 @@ Stop it first with: ./opentr.sh stop
 (this preserves all data — postgres bind mount, NAS minio, named volumes)"
     fi
     local stopped
-    stopped=$(docker ps -a --format '{{.Names}}' --filter 'name=^opentranscribe-' || true)
+    stopped=$(gr_colliding_container_names "-a" || true)
     if [[ -n "$stopped" ]]; then
         gr_warn "removing stopped (already-down) live containers to free names: $stopped"
         docker rm $stopped >/dev/null

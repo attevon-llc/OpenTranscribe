@@ -102,14 +102,14 @@ class TestClaimGpuSplitDiarizeDispatch:
 class TestGpuDiarizeConsumerPresent:
     """``_gpu_diarize_consumer_present`` / ``_resolve_gpu_diarize_queue`` — issue #705's
     consumer-liveness guard for the diarize leg, mirroring
-    ``dispatch.py::_gpu_transcribe_consumer_present`` for the transcribe leg."""
+    ``queue_consumers._gpu_transcribe_consumer_present`` for the transcribe leg."""
 
     def _reset_cache(self):
         """The TTL cache is module-level; force a fresh probe for each test."""
-        from app.tasks.transcription import core
+        from app.tasks.transcription import queue_consumers
 
-        core._gpu_diarize_consumer_cache["checked_at"] = 0.0
-        core._gpu_diarize_consumer_cache["present"] = False
+        queue_consumers._gpu_diarize_consumer_cache["checked_at"] = 0.0
+        queue_consumers._gpu_diarize_consumer_cache["present"] = False
 
     def test_consumer_present_routes_to_gpu_diarize(self, monkeypatch):
         self._reset_cache()
@@ -121,7 +121,7 @@ class TestGpuDiarizeConsumerPresent:
                 return {"worker1@host": [{"name": CeleryQueues.GPU_DIARIZE}]}
 
         monkeypatch.setattr(
-            "app.tasks.transcription.core.celery_app.control.inspect",
+            "app.tasks.transcription.queue_consumers.celery_app.control.inspect",
             lambda timeout=2.0: _FakeInspect(),
         )
 
@@ -141,7 +141,7 @@ class TestGpuDiarizeConsumerPresent:
                 return {"worker1@host": [{"name": "some-other-queue"}]}
 
         monkeypatch.setattr(
-            "app.tasks.transcription.core.celery_app.control.inspect",
+            "app.tasks.transcription.queue_consumers.celery_app.control.inspect",
             lambda timeout=2.0: _FakeInspect(),
         )
 
@@ -161,7 +161,7 @@ class TestGpuDiarizeConsumerPresent:
             raise ConnectionError("broker unreachable")
 
         monkeypatch.setattr(
-            "app.tasks.transcription.core.celery_app.control.inspect",
+            "app.tasks.transcription.queue_consumers.celery_app.control.inspect",
             _boom,
         )
 
@@ -171,7 +171,7 @@ class TestGpuDiarizeConsumerPresent:
         """The TTL cache must not re-probe on every call — only once per window."""
         self._reset_cache()
         from app.core.queues import CeleryQueues
-        from app.tasks.transcription.core import _gpu_diarize_consumer_present
+        from app.tasks.transcription.queue_consumers import _gpu_diarize_consumer_present
 
         call_count = {"n": 0}
 
@@ -181,7 +181,7 @@ class TestGpuDiarizeConsumerPresent:
                 return {"worker1@host": [{"name": CeleryQueues.GPU_DIARIZE}]}
 
         monkeypatch.setattr(
-            "app.tasks.transcription.core.celery_app.control.inspect",
+            "app.tasks.transcription.queue_consumers.celery_app.control.inspect",
             lambda timeout=2.0: _FakeInspect(),
         )
 

@@ -38,8 +38,6 @@ backend/app/tasks/rediarize_task.py	707	oversize: split by concern planned
 backend/app/tasks/speaker_embedding_task.py	788	oversize: split by concern planned
 backend/app/tasks/speaker_identification_task.py	720	oversize: split by concern planned
 backend/app/tasks/summarization.py	804	oversize: split by concern planned
-backend/app/tasks/transcription/core.py	711	oversize: split by concern planned
-backend/app/tasks/transcription/dispatch.py	737	oversize: split by concern planned
 backend/tests/CLAUDE.md	946	oversize: split by concern planned
 backend/tests/api/endpoints/test_auth_comprehensive.py	757	oversize: split by concern planned
 backend/tests/api/endpoints/test_search_admin_routes.py	1103	oversize: split by concern planned
@@ -99,7 +97,7 @@ backend/tests/unit/test_cooperative_abort.py	927	oversize: split by concern plan
 backend/tests/unit/test_dependencies_survivor_mutants.py	1096	oversize: split by concern planned
 backend/tests/unit/test_diar_native_handoff.py	883	oversize: split by concern planned
 backend/tests/unit/test_diarizer_engine_selection.py	787	oversize: split by concern planned
-backend/tests/unit/test_dispatch.py	860	oversize: split by concern planned
+backend/tests/unit/test_dispatch.py	857	oversize: split by concern planned
 backend/tests/unit/test_e2e_data_hygiene.py	1295	oversize: split by concern planned
 backend/tests/unit/test_gladia_provider.py	817	oversize: split by concern planned
 backend/tests/unit/test_install_upgrade_scripts.py	1687	oversize: split by concern planned

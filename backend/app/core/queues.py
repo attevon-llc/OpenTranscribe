@@ -85,7 +85,7 @@ def gpu_preferred_queue(deployment_mode: str | None = None) -> str:
     so rerouting it would replace a clear refusal with a different failure.
 
     ⚠️ Deliberately **not** a live consumer probe. ``inspect().active_queues()``
-    (as in ``tasks/transcription/dispatch.py``) costs a broker broadcast of up to
+    (as in ``tasks/transcription/queue_consumers.py``) costs a broker broadcast of up to
     2 s, and that file's own docstring justifies it only because it sits behind a
     rare operator opt-in — whereas these tasks dispatch from interactive request
     handlers like ``PUT /segments/{uuid}/speaker``. More importantly the two

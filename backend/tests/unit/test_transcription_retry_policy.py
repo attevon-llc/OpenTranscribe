@@ -450,11 +450,11 @@ def test_a_retry_is_dispatched_ahead_of_new_submissions(
 def test_the_pipeline_errback_leaves_a_replaced_run_alone(
     db_session, normal_user, fake_redis, monkeypatch
 ):
-    from app.tasks.transcription import dispatch as dispatch_module
+    from app.tasks.transcription import pipeline_error
     from app.tasks.transcription import run_ownership
 
     monkeypatch.setattr(run_ownership, "session_scope", lambda: _bridged_scope(db_session))
-    monkeypatch.setattr(dispatch_module, "session_scope", lambda: _bridged_scope(db_session))
+    monkeypatch.setattr(pipeline_error, "session_scope", lambda: _bridged_scope(db_session))
     media_file = _file(db_session, normal_user)
     old = _run(db_session, normal_user, media_file)
     old.status = "failed"
@@ -474,7 +474,7 @@ def test_the_pipeline_errback_leaves_a_replaced_run_alone(
         "app.services.minio_service.cleanup_temp_audio", lambda uuid_: cleaned.append(uuid_)
     )
 
-    dispatch_module.on_pipeline_error(str(media_file.uuid), old.id)
+    pipeline_error.on_pipeline_error(str(media_file.uuid), old.id)
 
     stored = _reload(db_session, MediaFile, media_file.id)
     assert stored.status == FileStatus.PROCESSING

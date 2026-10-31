@@ -7,6 +7,8 @@ Pipeline tasks (3-stage Celery chain for maximum GPU utilization):
 - postprocess.py: CPU task — speaker embeddings, finalize, enrichment hand-off
 - enrich.py: background fan-out — search indexing, redaction, speaker attributes/clustering
 - dispatch.py: Chain orchestration and batch dispatch
+- pipeline_error.py: link_error safety net for failed chains
+- queue_consumers.py: live-consumer probes for the gpu-split queues
 
 Shared utilities:
 - audio_processor.py: Audio file processing and conversion

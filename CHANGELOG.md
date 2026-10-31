@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.6.0] - 2026-10-28
+## [0.6.0] - 2026-10-31
 
 ### Overview
 
@@ -1176,6 +1176,18 @@ off by default.
 
 ### Fixed
 
+- **The installer no longer aborts when one image fails to pull.** `setup-opentranscribe.sh` printed
+  "will use cached versions" and then exited, because the failed `docker compose pull` tripped `set -e`.
+  It now carries on, and a host with a warm image cache installs normally.
+- **Upgrades no longer fail on a host that runs an unrelated `opentranscribe-*` container.**
+  `opentranscribe.sh`'s teardown check took the compose project from the first container whose name
+  started with `opentranscribe-`, so an unrelated site on the same host made a routine `down` report
+  "Teardown failed and 1 container(s) remain". It now counts only this project's containers.
+- **The purge audit event is searchable again.** Its `details.scope` was an object, which OpenSearch
+  rejected where other events had indexed `scope` as text, so the event fell to the fallback file. The
+  field is now `details.purge_scope`.
+- **A fresh install no longer leaves the `password-blocklist` model directory root-owned**; the installers
+  now create it with the other model-cache directories.
 - **The lite image builds for arm64 again, and a failed image build now fails the release build.**
   `requirements-lite.txt` pinned a `+cpu` torchcodec the PyTorch CPU index does not publish for
   aarch64, and the build script reported success anyway because it swallowed the `docker buildx`

@@ -872,7 +872,12 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
     if error_file_uuid=$(ac_upload_file "$TEST_SAMPLE_WAV"); then
         local error_status
         error_status=$(
-            local deadline=$(( $(date +%s) + 120 ))
+            # A provider error is classified TRANSIENT, so the app retries it (default 3 attempts,
+            # exponential backoff with jitter, services/transcription_retry.py) before the file
+            # goes to ERROR. Measured in the v0.6.0 rehearsal: failures at +0s, +24s, +52s, +111s
+            # and the terminal error at +122s, so the old 120 s budget lost by seconds and only
+            # passed when the jitter happened to be short. 300 s covers the budget with margin.
+            local deadline=$(( $(date +%s) + 300 ))
             local s="unknown"
             while (( $(date +%s) < deadline )); do
                 s=$(ac_curl "$API_BASE/files/$error_file_uuid" 2>/dev/null \

@@ -124,6 +124,11 @@ decision (an accepted CVE with no reachable path), never to make a red run green
 - **The branch under test must be pushed.** `rehearse` downloads the manifest files
   from `TO_BRANCH` (default: the current branch) and exits 3 if it is not on origin.
 - **`test` is the opposite:** it needs the dev stack UP (it probes Postgres on 5176).
+- **Run `test` on a quiet host.** Timeouts in the e2e and unit phases are load-induced above about
+  load 20-30; check `uptime` and pause other heavy jobs first (the v0.6.0 gate lost days to this).
+- **`rehearse` uses the images `build` made.** A backend fix needs a rebuild before the rehearsal can
+  see it; scripts and compose files come from the pushed branch. For a final cut run
+  build -> scan -> test -> rehearse once, on the last commit, with nothing committed in between.
 
 ## Related
 

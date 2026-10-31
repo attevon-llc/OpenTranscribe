@@ -136,7 +136,7 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
         # (issue #963) — a full transcription reprocess clears summary_data
         # unconditionally above and the new transcript may never gain a
         # fresh summary before this file is searched again.
-        from app.tasks.search_indexing_task import index_file_summary
+        from app.tasks.search_file_field_tasks import index_file_summary
 
         index_file_summary.delay(int(media_file.id))
 
@@ -292,7 +292,7 @@ def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) 
         if "summarization" in stages:
             # Prune the OpenSearch summary plane to match the now-cleared
             # column (issue #963).
-            from app.tasks.search_indexing_task import index_file_summary
+            from app.tasks.search_file_field_tasks import index_file_summary
 
             index_file_summary.delay(int(media_file.id))
 

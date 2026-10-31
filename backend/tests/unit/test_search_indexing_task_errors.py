@@ -80,7 +80,7 @@ class TestUpdateFileAccessIndexCountsUnresolvableFiles:
     def test_a_nonexistent_media_file_id_is_counted_as_an_error_not_skipped(
         self, db_session, monkeypatch
     ):
-        from app.tasks import search_indexing_task
+        from app.tasks import search_file_field_tasks
 
         owner = _new_user(db_session)
         real_file = _new_media_file(db_session, owner.id)
@@ -92,7 +92,7 @@ class TestUpdateFileAccessIndexCountsUnresolvableFiles:
         stub = _StubOpenSearchClient()
         monkeypatch.setattr("app.services.opensearch_service.get_opensearch_client", lambda: stub)
 
-        result = search_indexing_task.update_file_access_index([missing_id, real_file.id])
+        result = search_file_field_tasks.update_file_access_index([missing_id, real_file.id])
 
         assert result["status"] == "success"
         assert result["errors"] == 1
@@ -106,7 +106,7 @@ class TestUpdateFileAccessIndexCountsUnresolvableFiles:
         """The contract from the docstring: the key is only present when non-empty —
         a caller checking ``"missing_file_ids" in result`` must see it absent on a
         clean run, not an empty list."""
-        from app.tasks import search_indexing_task
+        from app.tasks import search_file_field_tasks
 
         owner = _new_user(db_session)
         real_file = _new_media_file(db_session, owner.id)
@@ -114,7 +114,7 @@ class TestUpdateFileAccessIndexCountsUnresolvableFiles:
         stub = _StubOpenSearchClient()
         monkeypatch.setattr("app.services.opensearch_service.get_opensearch_client", lambda: stub)
 
-        result = search_indexing_task.update_file_access_index([real_file.id])
+        result = search_file_field_tasks.update_file_access_index([real_file.id])
 
         assert result["errors"] == 0
         assert "missing_file_ids" not in result

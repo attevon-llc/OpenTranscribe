@@ -6,7 +6,7 @@ used inline (``_reindex_group_shared_files``), so a directory-driven membership 
 does, instead of duplicating the query three times.
 
 **Why this must run after the membership commit, never before or mid-transaction:**
-:func:`~app.tasks.search_indexing_task.update_file_access_index` reads
+:func:`~app.tasks.search_file_field_tasks.update_file_access_index` reads
 ``UserGroupMember`` rows to recompute ``accessible_user_ids`` on the affected OpenSearch
 documents. If it were dispatched before the triggering commit, the Celery worker could
 run before the new membership rows are visible and would rewrite the index from the
@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.models.collection import CollectionMember
 from app.models.sharing import CollectionShare
-from app.tasks.search_indexing_task import update_file_access_index
+from app.tasks.search_file_field_tasks import update_file_access_index
 
 
 def get_group_shared_file_ids(db: Session, group_id: int) -> list[int]:

@@ -105,7 +105,7 @@ def sync_summary_plane(media_file) -> None:
     """Rebuild ``media_file``'s summary plane from Postgres and make it searchable."""
     from app.core.config import settings
     from app.services.opensearch_service import get_opensearch_client
-    from app.tasks.search_indexing_task import index_file_summary
+    from app.tasks.search_file_field_tasks import index_file_summary
 
     result = index_file_summary(media_file.id)
     assert result["status"] == "success", f"summary plane write failed: {result!r}"

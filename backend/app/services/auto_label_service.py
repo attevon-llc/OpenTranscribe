@@ -327,7 +327,7 @@ class AutoLabelService:
         if not joined_collections:
             return
         if media_file.organization_id is not None:
-            from app.tasks.search_indexing_task import update_file_access_index
+            from app.tasks.search_file_field_tasks import update_file_access_index
 
             update_file_access_index.delay([int(media_file.id)])
         for collection in joined_collections:

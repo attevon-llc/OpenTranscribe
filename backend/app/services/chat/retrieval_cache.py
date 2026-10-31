@@ -76,7 +76,7 @@ def bump_corpus_version() -> None:
     """Invalidate every cached retrieval, because indexed content changed.
 
     Called from the chunk indexing and deletion paths, and from
-    ``tasks.search_indexing_task.update_file_access_index`` — the ACL rewrite a
+    ``tasks.search_file_field_tasks.update_file_access_index`` — the ACL rewrite a
     collection share grant/revocation or group-membership change triggers —
     unconditionally, after its ``update_by_query`` loop completes (including
     when it reports errors: a bump is never incorrect, only occasionally

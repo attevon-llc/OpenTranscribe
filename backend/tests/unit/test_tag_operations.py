@@ -384,10 +384,10 @@ class _RecordingTask:
 
 @pytest.fixture
 def recorded_reindex(monkeypatch):
-    from app.tasks import search_indexing_task
+    from app.tasks import search_file_field_tasks
 
     recorder = _RecordingTask()
-    monkeypatch.setattr(search_indexing_task, "update_file_tags_index", recorder)
+    monkeypatch.setattr(search_file_field_tasks, "update_file_tags_index", recorder)
     return recorder
 
 

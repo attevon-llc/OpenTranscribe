@@ -41,6 +41,7 @@ _STAGE_MODULES = (
     "app.services.transcription_retry",
     "app.tasks.transcription.cancellation",
     "app.tasks.transcription.dispatch",
+    "app.tasks.transcription.pipeline_error",
     "app.tasks.transcription.run_ownership",
     "app.tasks.transcription.preprocess",
     "app.tasks.transcription.core",
@@ -342,7 +343,7 @@ class TestThePipelineErrorHandler:
         self, db_session, normal_user, fake_redis, notices
     ):
         """An exception that escaped a stage's own handler still reaches ``link_error``."""
-        from app.tasks.transcription.dispatch import on_pipeline_error
+        from app.tasks.transcription.pipeline_error import on_pipeline_error
 
         media_file, task_id = _run(db_session, normal_user)
         _cancel(db_session, media_file, task_id)
@@ -354,7 +355,7 @@ class TestThePipelineErrorHandler:
     def test_it_never_overwrites_a_cancelled_file_with_error(
         self, db_session, normal_user, fake_redis, notices
     ):
-        from app.tasks.transcription.dispatch import on_pipeline_error
+        from app.tasks.transcription.pipeline_error import on_pipeline_error
 
         media_file, task_id = _run(db_session, normal_user)
         media_file.status = FileStatus.CANCELLED

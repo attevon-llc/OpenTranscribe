@@ -356,7 +356,7 @@ indexing → WebSocket notification.
   from the compose files and fails on any new route into a dead queue; an exemption
   there requires a written reason.
   This is deliberately NOT the live `inspect().active_queues()` probe that
-  `transcription/dispatch.py` uses — that costs a broker broadcast on interactive
+  `transcription/queue_consumers.py` uses — that costs a broker broadcast on interactive
   request paths, and a full deployment whose GPU worker is momentarily down is an
   outage where queueing is the *correct* behaviour, not a case for silent CPU
   downgrade.

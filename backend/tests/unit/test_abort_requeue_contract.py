@@ -48,7 +48,7 @@ def _raises_a_real_error():
 
 @_guard_app.task(name="guard.errback")
 def _errback(*args, **kwargs):
-    """Stands in for ``dispatch.on_pipeline_error`` — the link_error that marks a file ERROR."""
+    """Stands in for ``pipeline_error.on_pipeline_error``, the link_error that marks a file ERROR."""
     return None
 
 
@@ -73,14 +73,14 @@ def _errback_calls_for(task) -> int:
 
 @pytest.mark.unit
 class TestRejectDoesNotFireErrbacks:
-    """Contract 1. ``dispatch.py`` attaches ``on_pipeline_error`` as ``link_error`` to every
+    """Contract 1. ``dispatch.py`` attaches ``pipeline_error.on_pipeline_error`` as ``link_error`` to every
     pipeline chain, and that callback marks the file ERROR and notifies the user. A graceful
     shutdown must not trip it."""
 
     def test_a_reject_does_not_dispatch_the_link_error_callback(self):
         assert _errback_calls_for(_rejects_with_requeue) == 0, (
             "celery dispatched the link_error callback for a Reject. In this app that callback "
-            "is dispatch.on_pipeline_error, which marks the file ERROR and sends the user a "
+            "is pipeline_error.on_pipeline_error, which marks the file ERROR and sends the user a "
             "failure notification — so every graceful `./opentr.sh stop` would now present as "
             "the crash #809 exists to eliminate. Check celery's trace.py: the `except Reject` "
             "arm must stay separate from on_error/handle_failure."

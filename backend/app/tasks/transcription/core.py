@@ -62,6 +62,7 @@ from .notifications import send_progress_notification
 from .pipelines import _run_engine_pipeline
 from .pipelines import _run_transcribe_only_stage
 from .pipelines import _run_transcription_pipeline
+from .queue_consumers import _gpu_diarize_consumer_present
 from .run_ownership import superseded_or_none as _superseded_or_none
 from .user_settings import _get_user_transcription_settings
 
@@ -83,59 +84,6 @@ __all__ = [
     "transcribe_gpu_task",
     "trigger_automatic_summarization",
 ]
-
-
-# TTL cache for "is anything actually consuming gpu-diarize" — same rationale as
-# dispatch.py's _GPU_TRANSCRIBE_CONSUMER_CACHE_TTL_S: only consulted when a gpu-split
-# run has already produced a transcribe-only result, so this never adds a broker
-# round-trip to the non-split default path. Module-level and lock-free: a benign race
-# just means two dispatches in the same few-hundred-ms window might independently
-# re-probe — never incorrect.
-_GPU_DIARIZE_CONSUMER_CACHE_TTL_S = 15.0
-_gpu_diarize_consumer_cache: dict[str, float | bool] = {"checked_at": 0.0, "present": False}
-
-
-def _gpu_diarize_consumer_present() -> bool:
-    """Whether a live Celery worker is actually bound to CeleryQueues.GPU_DIARIZE.
-
-    Mirrors ``dispatch.py::_gpu_transcribe_consumer_present`` for the diarize leg
-    (issue #705): ``ENGINE_GPU_SPLIT`` reaches every container via ``.env``
-    regardless of whether ``celery-worker-gpu-diarize`` (the gpu-split Compose
-    profile) was actually started, so routing on the env var alone reproduces the
-    dead-queue hazard issue #703 fixed for the transcribe leg. This is the
-    corroborating check for the diarize leg.
-
-    Uses a live ``inspect().active_queues()`` broadcast, NOT Flower's cached
-    ``/api/workers`` endpoint — that endpoint is a boot-time snapshot with known
-    staleness (backend/app/tasks/CLAUDE.md, issue #609).
-
-    Fails CLOSED toward the safe direction, same as the transcribe-leg check: any
-    error, timeout, or empty reply is treated as "no consumer" so the caller falls
-    back to the always-staffed 'gpu' queue rather than risk publishing into a queue
-    nothing drains.
-    """
-    now = time.monotonic()
-    if now - float(_gpu_diarize_consumer_cache["checked_at"]) < _GPU_DIARIZE_CONSUMER_CACHE_TTL_S:
-        return bool(_gpu_diarize_consumer_cache["present"])
-
-    present = False
-    try:
-        active = celery_app.control.inspect(timeout=2.0).active_queues()
-        if active:
-            for queues in active.values():
-                if any(q.get("name") == CeleryQueues.GPU_DIARIZE for q in queues or []):
-                    present = True
-                    break
-    except Exception as e:
-        logger.warning(
-            f"Failed to verify a live '{CeleryQueues.GPU_DIARIZE}' consumer "
-            f"(falling back to '{CeleryQueues.GPU}'): {e}"
-        )
-        present = False
-
-    _gpu_diarize_consumer_cache["checked_at"] = now
-    _gpu_diarize_consumer_cache["present"] = present
-    return present
 
 
 def _resolve_gpu_diarize_queue() -> str:

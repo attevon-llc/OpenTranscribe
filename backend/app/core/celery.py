@@ -210,6 +210,7 @@ celery_app = Celery(
         "app.tasks.transcription.postprocess",
         "app.tasks.transcription.enrich",
         "app.tasks.transcription.dispatch",
+        "app.tasks.transcription.pipeline_error",
         "app.tasks.transcription.cancellation",
         "app.tasks.waveform",
         "app.tasks.waveform_generation",
@@ -592,7 +593,6 @@ celery_app.conf.update(
         "recovery.youtube_metadata_backfill": {"queue": CeleryQueues.CPU},
         "recovery.media_duration_backfill": {"queue": CeleryQueues.CPU},
     },
-    # Configure beat schedule for periodic tasks
     beat_schedule={
         "periodic-health-check": {
             "task": "system.health_check",

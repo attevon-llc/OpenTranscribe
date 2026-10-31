@@ -11,9 +11,9 @@ the row afterwards, which is the thing the handler is for.
 
 Only genuinely out-of-process seams are patched, once, in the ``dispatch_seams`` fixture:
 
-* ``session_scope`` — the handler opens its OWN session, which under the savepoint harness
-  cannot see the uncommitted fixture rows. Pointing it at ``db_session`` is what makes real
-  rows observable at all; it is not a stand-in for any behaviour under test.
+* ``session_scope`` (in ``dispatch`` and ``pipeline_error``) — each opens its OWN session, which
+  under the savepoint harness cannot see the uncommitted fixture rows. Pointing it at
+  ``db_session`` makes real rows observable; it is not a stand-in for behaviour under test.
 * ``cleanup_temp_audio`` (MinIO), ``send_error_notification`` (Redis/WebSocket) and
   ``get_redis`` — network calls. Their *arguments* are part of the contract, so the mocks are
   exposed for assertion, always alongside an assertion on real state.
@@ -50,6 +50,8 @@ from app.models.user_asr_settings import UserASRSettings
 from app.services.pipeline_plan import ISSUE_MESSAGES
 
 _DISPATCH = "app.tasks.transcription.dispatch"
+_INSPECT = "app.tasks.transcription.queue_consumers.celery_app.control.inspect"
+_PE_SESSION_SCOPE = "app.tasks.transcription.pipeline_error.session_scope"
 _SESSION_SCOPE = f"{_DISPATCH}.session_scope"
 _GROUP = f"{_DISPATCH}.group"
 
@@ -57,7 +59,7 @@ _GROUP = f"{_DISPATCH}.group"
 _CLEANUP_TEMP = "app.services.minio_service.cleanup_temp_audio"
 _SEND_ERROR = "app.tasks.transcription.notifications.send_error_notification"
 _GET_REDIS = "app.core.redis.get_redis"
-_LOG_OOM = f"{_DISPATCH}._log_oom_diagnostics"
+_LOG_OOM = "app.tasks.transcription.pipeline_error._log_oom_diagnostics"
 
 _BATCH_ID = "batch-under-test"
 _GENERIC_ERROR = "Transcription pipeline failed unexpectedly"
@@ -67,26 +69,26 @@ class TestGetPipelineErrorMessage:
     """Tests for _get_pipeline_error_message()."""
 
     def test_oom_returns_gpu_message(self):
-        from app.tasks.transcription.dispatch import _get_pipeline_error_message
+        from app.tasks.transcription.pipeline_error import _get_pipeline_error_message
 
         result = _get_pipeline_error_message("CUDA out of memory", is_oom=True)
         assert "GPU ran out of memory" in result
 
     def test_non_oom_returns_generic_message(self):
-        from app.tasks.transcription.dispatch import _get_pipeline_error_message
+        from app.tasks.transcription.pipeline_error import _get_pipeline_error_message
 
         result = _get_pipeline_error_message("some traceback", is_oom=False)
         assert result == _GENERIC_ERROR
 
     def test_oom_flag_takes_precedence(self):
-        from app.tasks.transcription.dispatch import _get_pipeline_error_message
+        from app.tasks.transcription.pipeline_error import _get_pipeline_error_message
 
         # Even with empty error message, is_oom flag drives the output
         result = _get_pipeline_error_message("", is_oom=True)
         assert "GPU ran out of memory" in result
 
     def test_oom_text_without_flag_returns_generic(self):
-        from app.tasks.transcription.dispatch import _get_pipeline_error_message
+        from app.tasks.transcription.pipeline_error import _get_pipeline_error_message
 
         # Error text mentions OOM but flag is False — flag is what matters
         result = _get_pipeline_error_message("CUDA out of memory", is_oom=False)
@@ -322,8 +324,8 @@ class TestGpuTranscribeConsumerPresent:
 
     @staticmethod
     def _check() -> bool:
-        from app.tasks.transcription.dispatch import _gpu_transcribe_consumer_cache
-        from app.tasks.transcription.dispatch import _gpu_transcribe_consumer_present
+        from app.tasks.transcription.queue_consumers import _gpu_transcribe_consumer_cache
+        from app.tasks.transcription.queue_consumers import _gpu_transcribe_consumer_present
 
         # Force a fresh probe — the module-level TTL cache would otherwise make later
         # tests in the same process see an earlier test's cached verdict.
@@ -334,9 +336,7 @@ class TestGpuTranscribeConsumerPresent:
         fake_inspect = SimpleNamespace(
             active_queues=lambda: {"gpu-transcribe@host": [{"name": "gpu-transcribe"}]}
         )
-        monkeypatch.setattr(
-            f"{_DISPATCH}.celery_app.control.inspect", lambda timeout=None: fake_inspect
-        )
+        monkeypatch.setattr(_INSPECT, lambda timeout=None: fake_inspect)
 
         assert self._check() is True
 
@@ -344,9 +344,7 @@ class TestGpuTranscribeConsumerPresent:
         """The dead-queue case as celery itself would report it: workers respond, but
         none of them names 'gpu-transcribe' among their active queues."""
         fake_inspect = SimpleNamespace(active_queues=lambda: {"gpu@host": [{"name": "gpu"}]})
-        monkeypatch.setattr(
-            f"{_DISPATCH}.celery_app.control.inspect", lambda timeout=None: fake_inspect
-        )
+        monkeypatch.setattr(_INSPECT, lambda timeout=None: fake_inspect)
 
         assert self._check() is False
 
@@ -354,9 +352,7 @@ class TestGpuTranscribeConsumerPresent:
         """No workers reachable at all (e.g. broker hiccup) must never be read as
         'consumer present' — that is the unsafe direction."""
         fake_inspect = SimpleNamespace(active_queues=lambda: None)
-        monkeypatch.setattr(
-            f"{_DISPATCH}.celery_app.control.inspect", lambda timeout=None: fake_inspect
-        )
+        monkeypatch.setattr(_INSPECT, lambda timeout=None: fake_inspect)
 
         assert self._check() is False
 
@@ -364,7 +360,7 @@ class TestGpuTranscribeConsumerPresent:
         def _boom(timeout=None):
             raise RuntimeError("broker unreachable")
 
-        monkeypatch.setattr(f"{_DISPATCH}.celery_app.control.inspect", _boom)
+        monkeypatch.setattr(_INSPECT, _boom)
 
         assert self._check() is False
 
@@ -380,6 +376,7 @@ def dispatch_seams(db_session):
     """Patch the out-of-process seams and expose their mocks. See the module docstring."""
     with (
         patch(_SESSION_SCOPE, lambda: _yield_session(db_session)),
+        patch(_PE_SESSION_SCOPE, lambda: _yield_session(db_session)),
         patch(_CLEANUP_TEMP) as cleanup_temp,
         patch(_SEND_ERROR) as send_error,
         patch(_GROUP) as group,
@@ -448,7 +445,7 @@ class TestOnPipelineError:
 
     @staticmethod
     def _run(media_file: MediaFile, task_id: str) -> None:
-        from app.tasks.transcription.dispatch import on_pipeline_error
+        from app.tasks.transcription.pipeline_error import on_pipeline_error
 
         on_pipeline_error(str(media_file.uuid), task_id)
 
@@ -590,7 +587,7 @@ class TestOnPipelineError:
         def _broken_scope():
             raise RuntimeError("DB down")
 
-        with patch(_SESSION_SCOPE, _broken_scope):
+        with patch(_PE_SESSION_SCOPE, _broken_scope):
             self._run(media_file, task.id)
 
         db_session.refresh(media_file)

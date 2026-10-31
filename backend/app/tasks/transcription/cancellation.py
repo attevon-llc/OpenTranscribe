@@ -163,7 +163,7 @@ def finalize_cancelled_run(task_id: str, file_id: int, file_uuid: str, user_id: 
 
     Shared by the two ways a cancelled run can end (issue #1163): the cooperative checkpoint
     firing (:func:`finish_cancelled`), and the stage raising something else after the cancel
-    was armed (``transcription_retry.finish_failed_run``, ``dispatch.on_pipeline_error``,
+    was armed (``transcription_retry.finish_failed_run``, ``pipeline_error.on_pipeline_error``,
     ``postprocess``'s failure branch). A run whose cancel was requested is a cancellation no
     matter which exception ended it: a storage fetch torn down mid-read or a model error must
     not be reported to the user as a failure of their file, nor counted as one.

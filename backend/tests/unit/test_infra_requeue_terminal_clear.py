@@ -52,7 +52,7 @@ def own_sessions(db_session):
     scope = lambda: _yield_session(db_session)  # noqa: E731
     with (
         patch("app.tasks.transcription.cancellation.session_scope", scope),
-        patch("app.tasks.transcription.dispatch.session_scope", scope),
+        patch("app.tasks.transcription.pipeline_error.session_scope", scope),
         patch("app.tasks.transcription.run_ownership.session_scope", scope),
         patch("app.tasks.transcription.notifications.send_notification_via_redis"),
         patch("app.tasks.transcription.notifications.send_error_notification"),
@@ -152,7 +152,7 @@ class TestFailedFilesAreCleared:
         self, db_session, normal_user, fake_redis, own_sessions
     ):
         """``on_pipeline_error`` -- "Transcription pipeline failed unexpectedly"."""
-        from app.tasks.transcription.dispatch import on_pipeline_error
+        from app.tasks.transcription.pipeline_error import on_pipeline_error
 
         media_file, task_id = _requeued_run(db_session, normal_user)
 

@@ -121,7 +121,7 @@ The chunk plane in this package carries no voiceprint and is not gated.
 ## How it connects
 
 Written by `app/tasks/search_indexing_task.py` and `app/tasks/reindex_task.py`; chunks deleted
-by `file_cleanup_service.delete_transcript_chunks`. Queried from `app/api/endpoints/search.py`.
+by `opensearch_erasure._erase_transcript_chunks`. Queried from `app/api/endpoints/search.py`.
 Snippets are masked at read time by `snippet_redaction.mask_snippets`, called from
 `_redact_snippets` — see below.
 

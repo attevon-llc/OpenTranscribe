@@ -48,7 +48,7 @@ Most services are plain modules of functions that take a `Session`; a few are cl
 | `media_mirror_engine.py`, `media_mirror_service.py` | Incremental media mirror (MinIO to a configured S3 destination) |
 | `playback_rendition.py` | Browser-playable AAC/M4A renditions for formats browsers cannot decode |
 | `subtitle_service.py`, `video_processing_service.py`, `transcript_export_*.py`, `summary_export_service.py` | Subtitle files, burned-in subtitles, transcript and summary export |
-| `file_cleanup_service.py`, `file_provenance.py`, `file_provenance_view.py`, `imohash_service.py`, `cache_management_service.py` | Stuck-file recovery and purge, per-file processing provenance, fingerprinting, derived-asset caches |
+| `file_cleanup_service.py`, `file_cleanup_cycle.py`, `opensearch_erasure.py`, `account_purge.py`, `file_provenance.py`, `file_provenance_view.py`, `imohash_service.py`, `cache_management_service.py` | File purge, stuck-file recovery, OpenSearch erasure, account purge, per-file processing provenance, fingerprinting, derived-asset caches |
 | `audio_segment_utils.py`, `voiceprint_extractor.py`, `voiceprint_orphan_sweep.py` | Audio helpers and voiceprint extraction/sweeps |
 
 ### Pipeline, tasks and progress
@@ -125,8 +125,8 @@ minio_service.delete_file(object_name)
 
 `storage_backend.py` owns the differences between bundled MinIO and native AWS S3 (`STORAGE_BACKEND`), and `storage_presign_identity.py` provides the least-privilege identity that signs browser-facing GET URLs. Every presigned URL expiry is clamped by `clamp_presigned_expiry`.
 
-### File cleanup service (`file_cleanup_service.py`)
-`FileCleanupService` detects files stuck in processing or pending states and recovers them (`run_cleanup_cycle`, `force_cleanup_orphaned_files(db, dry_run=...)`, `get_cleanup_statistics`), with recovery-attempt limits that mark a file `ORPHANED` and force-delete eligible. It uses `check_for_stuck_files()` and `recover_stuck_file()` from `utils/stuck_file_recovery.py`. The module also holds the full file purge path (`purge_media_file`).
+### File cleanup service (`file_cleanup_service.py`, `file_cleanup_cycle.py`, `opensearch_erasure.py`, `account_purge.py`)
+`file_cleanup_service.py` holds the full file purge path (`purge_media_file`): the legal-hold refusal, then the plain-data plan, the object-storage and OpenSearch destroy with no transaction open, the row delete and chat-citation scrub, and the speaker-aggregate refresh. `opensearch_erasure.py` holds the per-store OpenSearch erasers, each verified by a survivor count; `account_purge.py` the account-scoped destroy run after an account's rows commit (`load_account_purge_plans`, `purge_account_external_copies`). `FileCleanupService` (`file_cleanup_cycle.py`) detects files stuck in processing or pending states and recovers them (`run_cleanup_cycle`, `force_cleanup_orphaned_files(db, dry_run=...)`, `get_cleanup_statistics`), with recovery-attempt limits that mark a file `ORPHANED` and force-delete eligible. It uses `check_for_stuck_files()` and `recover_stuck_file()` from `utils/stuck_file_recovery.py`.
 
 ### Analytics service (`analytics_service.py`)
 `AnalyticsService` (static methods `compute_analytics`, `save_analytics`, `refresh_analytics`, `compute_and_save_analytics`) computes per-file analytics: speaker talk time, interruptions, turn-taking, question frequency, speaking pace and silence ratio. `POST /files/{uuid}/analytics/refresh` triggers a recompute.

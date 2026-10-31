@@ -30,7 +30,7 @@ Who still uses this index — it is very much alive:
   ``tasks/search_indexing_task``) and retitled from ``files/crud``;
 * read directly by ``api/endpoints/files/filtering.py`` (the gallery's
   transcript-content filter), ``opensearch_service/speaker_metadata.py``, the
-  integrity task and ``file_cleanup_service``.
+  integrity task and ``opensearch_erasure``.
 
 **Semantic retrieval is `transcript_chunks`**, through
 ``services/search/hybrid_search_service.py``. The vestigial ``embedding`` field in

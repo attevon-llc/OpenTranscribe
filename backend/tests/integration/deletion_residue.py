@@ -559,8 +559,8 @@ def _delete_throwaway_user(engine: Any, user_id: int) -> None:
     from sqlalchemy.orm import Session
 
     from app.models.user import User
-    from app.services.file_cleanup_service import load_account_purge_plans
-    from app.services.file_cleanup_service import purge_account_external_copies
+    from app.services.account_purge import load_account_purge_plans
+    from app.services.account_purge import purge_account_external_copies
     from app.services.user_deletion_service import _delete_user_media_files
     from app.services.user_deletion_service import _delete_user_owned_records
     from app.services.user_deletion_service import _delete_user_speakers

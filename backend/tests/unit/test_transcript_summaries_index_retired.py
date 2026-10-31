@@ -44,7 +44,7 @@ _BACKEND_APP = Path(__file__).resolve().parents[2] / "app"
 #: for display.
 _LEGACY_PURGE_ALLOWLIST = {
     "core/config.py",  # the setting the purge paths resolve the name through
-    "services/file_cleanup_service.py",  # per-file delete + GDPR erasure sweep
+    "services/opensearch_erasure.py",  # per-file delete + GDPR erasure sweep
     "tasks/opensearch_integrity_task.py",  # orphan sweep + operator index census
 }
 

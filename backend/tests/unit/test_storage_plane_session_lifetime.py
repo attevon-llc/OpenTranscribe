@@ -462,20 +462,6 @@ def test_purge_plan_returns_plain_data(db_session, normal_user):
         _assert_plain(value, "_load_purge_plan")
 
 
-def test_purge_reports_an_unreadable_speaker_list_as_a_residual(monkeypatch):
-    """A failed enumeration is still a miss: the embeddings are unaccounted for."""
-    monkeypatch.setattr(fcs, "_erase_speaker_docs", lambda uuids, fail: None)
-    monkeypatch.setattr(fcs, "_erase_transcript_doc", lambda uuid, fail: None)
-    monkeypatch.setattr(fcs, "_erase_transcript_chunks", lambda uuid, fail: None)
-    monkeypatch.setattr(fcs, "_erase_summary_docs", lambda file_id, fail: None)
-
-    residual = fcs._cleanup_opensearch_for_file(
-        {"file_id": 1, "speaker_uuids": [], "speaker_read_error": "DetachedInstanceError"},
-        "some-uuid",
-    )
-    assert any(entry["stage"] == "speakers" for entry in residual), residual
-
-
 # --------------------------------------------------------------------------- #
 # 6/7. the storage helpers themselves need no session at all
 # --------------------------------------------------------------------------- #

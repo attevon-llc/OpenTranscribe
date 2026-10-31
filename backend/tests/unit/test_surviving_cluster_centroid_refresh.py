@@ -23,6 +23,7 @@ from app.models.speaker import SpeakerCluster
 from app.models.speaker import SpeakerClusterMember
 from app.models.speaker import SpeakerProfile
 from app.services import file_cleanup_service as fcs
+from app.services import opensearch_erasure as ose
 
 VOICE_A = [1.0, 0.0, 0.0, 0.0]
 VOICE_B = [0.0, 1.0, 0.0, 0.0]
@@ -93,7 +94,7 @@ def os_seams(monkeypatch):
         if rec.get("erase_error"):
             fail("clusters", rec["erase_error"])
 
-    monkeypatch.setattr(fcs, "_erase_cluster_docs", fake_erase)
+    monkeypatch.setattr(ose, "_erase_cluster_docs", fake_erase)
     return rec
 
 

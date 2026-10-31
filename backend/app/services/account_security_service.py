@@ -290,7 +290,7 @@ def audit_user_deleted(
         client_ip: Requesting client's IP.
         user_agent: Requesting client's user agent.
         residual_errors: Per-object failures from
-            ``file_cleanup_service.purge_account_external_copies`` (issue #695) — object
+            ``account_purge.purge_account_external_copies`` (issue #695) — object
             storage or OpenSearch documents that may still exist after the account's rows
             were removed. Non-empty flips the outcome to ``PARTIAL`` so an incomplete
             storage reclaim cannot audit as a clean success. ``details`` carries only

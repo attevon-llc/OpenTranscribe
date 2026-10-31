@@ -358,8 +358,8 @@ def delete_admin_user(
     Raises:
         HTTPException: If user not found or deletion not allowed
     """
-    from app.services.file_cleanup_service import load_account_purge_plans
-    from app.services.file_cleanup_service import purge_account_external_copies
+    from app.services.account_purge import load_account_purge_plans
+    from app.services.account_purge import purge_account_external_copies
     from app.services.uuid_helpers import get_user_by_uuid
 
     logger.info(f"Admin deleting user with UUID: {user_uuid}")

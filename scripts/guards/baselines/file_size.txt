@@ -25,7 +25,6 @@ backend/app/services/auth_config_service.py	959	oversize: split by concern plann
 backend/app/services/auto_label_service.py	712	oversize: split by concern planned
 backend/app/services/chat/CLAUDE.md	958	oversize: split by concern planned
 backend/app/services/chat/service.py	1503	oversize: split by concern planned
-backend/app/services/file_cleanup_service.py	1240	oversize: split by concern planned
 backend/app/services/llm_service.py	1127	oversize: split by concern planned
 backend/app/services/media_download_service.py	859	oversize: split by concern planned
 backend/app/services/privacy/purge_voiceprints.py	711	oversize: split by concern planned
@@ -128,7 +127,7 @@ backend/tests/unit/test_speaker_plane_session_lifetime.py	920	oversize: split by
 backend/tests/unit/test_speaker_provenance_writes.py	1126	oversize: split by concern planned
 backend/tests/unit/test_ssrf_connection_pinning.py	829	oversize: split by concern planned
 backend/tests/unit/test_stats_helpers.py	1019	oversize: split by concern planned
-backend/tests/unit/test_storage_plane_session_lifetime.py	718	oversize: split by concern planned
+backend/tests/unit/test_storage_plane_session_lifetime.py	704	oversize: split by concern planned
 backend/tests/unit/test_tag_service.py	984	oversize: split by concern planned
 backend/tests/unit/test_task_detection_service.py	815	oversize: split by concern planned
 backend/tests/unit/test_task_session_lifetime.py	1880	oversize: split by concern planned

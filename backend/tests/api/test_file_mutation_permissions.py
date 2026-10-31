@@ -293,7 +293,7 @@ def _find_min_permission_editor_sites() -> list[Site]:
 # by the module and the endpoint function the call sits in. The 10 in
 # ``files/{crud,management,__init__,waveform}.py`` are the ones issue #588 part 2 added;
 # the rest (``files/reprocess.py``, ``files/summary_status.py``, ``media_collections.py``,
-# ``summarization.py``, ``tasks.py``, ``topics.py``, ``user_files.py``) came from part 1
+# ``summarization.py``, ``tasks_file_repair.py``, ``topics.py``, ``user_files.py``) came from part 1
 # and are listed here so the guard's inventory matches the codebase exactly.
 #
 # ⚠️ EDIT THIS TABLE ONLY WHEN AN ENDPOINT GAINS OR LOSES A CALL SITE. Moving code around
@@ -333,8 +333,8 @@ MUTATING_ENDPOINTS: list[SiteKey] = [
     ("summarization.py", "delete_summary"),
     # Distinct from files/management.py's and user_files.py's same-named endpoints —
     # the module is half the key, so the three never collapse into one row.
-    ("tasks.py", "retry_file_processing"),
-    ("tasks.py", "fix_inconsistent_file"),  # admin-only, resolved through the tenant gate (#1122)
+    ("tasks_file_repair.py", "retry_file_processing"),
+    ("tasks_file_repair.py", "fix_inconsistent_file"),  # admin-only, tenant gate (#1122)
     ("topics.py", "batch_extract_topics"),
     ("topics.py", "auto_label_single_file"),
     ("topics.py", "extract_topics"),

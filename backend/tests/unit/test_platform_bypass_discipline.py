@@ -223,7 +223,7 @@ ALLOWLIST: dict[str, str] = {
         "Q: quarantine exclusion inside files already accessible to the caller; argument is "
         "ctx.bypass.user_is_admin"
     ),
-    "api/endpoints/tasks.py::retry_file_processing": (
+    "api/endpoints/tasks_file_repair.py::retry_file_processing": (
         "P: admins skip the retry ceiling, evaluated after the chokepoint passed with "
         "ctx.bypass and min_permission=editor"
     ),

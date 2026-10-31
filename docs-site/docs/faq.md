@@ -97,6 +97,23 @@ The PyAnnote speaker diarization models are "gated" - they require accepting a u
 
 **Without a token:** Transcription works, but your server cannot load its speaker detection models, so speaker detection on this server fails with a message about the missing model access. Speaker detection by a cloud provider (pyannote.ai, or a transcription provider that returns speakers) does not need the token.
 
+### Why did the object store change in 0.6.0? Is my data safe?
+
+The bundled S3 object store (the `minio` service) now runs Silo, a maintained fork of MinIO. MinIO
+removed its public images, its community repository is archived, and its last community release
+line carries published HIGH-severity advisories with no community fix. Silo keeps MinIO's
+settings, routes and on-disk format, so your data volume, `.env` and bucket names are unchanged
+and nothing is copied. Back up the database and snapshot your media volume
+before upgrading, because a downgrade back to MinIO is not guaranteed safe. See
+[Object storage](./operations/object-storage.md) and
+[Upgrading to 0.6.0](./operations/upgrading-to-0-6-0.md#object-store-minio-to-silo).
+
+### Can I keep using MinIO?
+
+Not the bundled image: it cannot be pulled any more, and the last community release has
+unpatched advisories. You can point OpenTranscribe at your own S3-compatible store with
+`STORAGE_BACKEND=s3` instead. See [Object storage](./operations/object-storage.md#using-your-own-s3).
+
 ### Can I run OpenTranscribe offline?
 
 Yes! After initial setup and model downloads, OpenTranscribe works completely offline. Use the offline Docker Compose configuration:

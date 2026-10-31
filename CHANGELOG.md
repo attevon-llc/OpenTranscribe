@@ -193,6 +193,13 @@ off by default.
 - **`update` and `update-full` recommend a backup before upgrading.** They print the backup
   command and the newest backup in `./backups` before the stack is taken down, since the
   upgrade migrates the database and migrations are one-way.
+- **The bundled object store is now Silo, not MinIO.** The `minio` service runs
+  `docker.io/pgsty/silo` (a maintained fork of MinIO), pinned by digest, on the same data volume.
+  The service name, `MINIO_*` settings, ports and bucket names are unchanged and `.env` needs no
+  edit, but the image changes: offline and air-gapped installs must save and load the new
+  reference. Snapshot the media volume and back up the database first. Downgrading to MinIO on a
+  volume Silo has used is not guaranteed safe, so rollback means restoring the snapshot.
+  See **Operations > Object storage** and **Upgrading to 0.6.0 > Object store: MinIO to Silo**.
 
 ### Added
 
@@ -769,6 +776,13 @@ off by default.
 - **`dev-<git-sha>` image versions** are accepted by the build script and never move `:latest`.
 
 ### Changed
+
+- **Bundled object store: MinIO to Silo.** MinIO removed its Docker Hub images, `quay.io` now
+  refuses anonymous pulls and the community repository is archived, so `docker-compose.yml`
+  pins `docker.io/pgsty/silo:RELEASE.2026-10-26T00-00-00Z` by digest (multi-arch, anonymous pull).
+  It keeps the `MINIO_*` variables, the `/minio/*` routes and MinIO's on-disk format.
+  The offline docs and the backup guide reference the new image and client. NOTICE now
+  attributes MinIO and Silo.
 
 - **Transitive dependencies are now pinned to the versions the release image was built and tested
   with.** 50 packages (the OpenTelemetry family, pyannote-core/metrics/pipeline, thinc/spacy
@@ -1773,6 +1787,11 @@ off by default.
   code and fails unless every line is rejected (0 of 3 caught before, 3 of 3 after).
 
 ### Security
+
+- **The bundled object store moves off a build with published, unpatched HIGH advisories.** The
+  last community MinIO release line has HIGH-severity advisories whose fixes exist only in the
+  commercial line and in forks. Silo's release notes describe fixes for them. See MinIO's
+  advisory pages at https://github.com/minio/minio/security/advisories.
 
 - **Alpine images take current security fixes.** The frontend and docs `apk upgrade` layer was
   cached from the first build and shipped `brotli-libs` 1.2.0-r0 (CVE-2026-111497); it now has a

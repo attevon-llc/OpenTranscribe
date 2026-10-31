@@ -451,19 +451,19 @@ the manual `mc` approaches below remain useful for one-off copies and
 non-standard destinations.
 :::
 
-MinIO stores all uploaded media files. Back up using the MinIO Client (`mc`):
+The bundled object store (the `minio` service, which runs Silo from 0.6.0) holds all uploaded
+media files. Back up using its bundled client (`mc`, an alias for `mcli`):
 
 ```bash
-# Install mc (if not already available)
-docker run --rm -it --entrypoint /bin/sh quay.io/minio/mc
-
-# Or use mc from within the MinIO container
+# Use mc from within the object store container (no install needed)
 docker compose exec minio mc alias set local http://localhost:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD
 
 # Mirror all buckets to a local directory
 docker compose exec minio mc mirror local/ /backup-destination/
 
-# Or from the host with mc installed
+# Or run the client from the same image, on the compose network
+#   docker run --rm -it --network <project>_default --entrypoint /bin/sh <image ref from the minio service>
+# Or from the host with a separately installed mc
 mc alias set opentranscribe http://localhost:5178 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD
 mc mirror opentranscribe/ ./backups/minio/
 ```

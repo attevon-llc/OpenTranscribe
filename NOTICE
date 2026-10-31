@@ -64,6 +64,25 @@ Third-party software attribution (Apache-2.0)
 - diar-native — the Rust sidecar itself (the harness around `speakrs` and the ONNX/PLDA
   model export tooling) is also licensed under the Apache License, Version 2.0.
 
+Object storage (AGPL-3.0)
+-------------------------
+
+The bundled S3 object store (the `minio` service in `docker-compose.yml`) runs the container image
+`docker.io/pgsty/silo`, pinned by digest in that file.
+
+- Silo — https://github.com/pgsty/silo — AGPL-3.0-or-later. A maintained fork of MinIO by PGSTY.
+- MinIO — https://github.com/minio/minio — GNU Affero General Public License v3.0. Silo is derived
+  from it, and the image also carries MinIO's client (`mc`/`mcli`). Copyright MinIO, Inc. and
+  contributors.
+
+Corresponding Source: the source for the Silo release in use is the tag matching the image tag
+in `docker-compose.yml` (for example `RELEASE.2026-10-26T00-00-00Z`) at
+https://github.com/pgsty/silo. The licence texts and credits are inside the image under
+`/licenses`. OpenTranscribe does not modify this software, and OpenTranscribe's offline
+installation package may include the image as an unmodified `docker save` archive. If that
+upstream source becomes unavailable, contact the OpenTranscribe maintainers for a copy.
+Decision record: docs-site/docs/developer-guide/object-store-decision.md.
+
 Third-party software attribution (permissive: MIT / BSD-2-Clause / BSD-3-Clause)
 ---------------------------------------------------------------------
 

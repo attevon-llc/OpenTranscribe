@@ -85,6 +85,15 @@ sudo lsof -i :5173
 FRONTEND_PORT=5274  # Different port (see the *_PORT variables in .env.example)
 ```
 
+### `docker pull quay.io/minio/minio` Fails
+
+This is expected. MinIO removed its Docker Hub images and now refuses anonymous pulls on
+`quay.io` too. From 0.6.0 the `minio` service runs Silo (`docker.io/pgsty/silo`, pinned by
+digest), which pulls anonymously. Update your compose file (`./opentranscribe.sh update`) rather
+than pulling the old image by hand. If a pull of the new image fails, check that the host can
+reach Docker Hub. For air-gapped hosts see
+[Offline Installation](./offline-installation.md). Background: [Object storage](../operations/object-storage.md).
+
 ## GPU Issues
 
 ### GPU Not Detected

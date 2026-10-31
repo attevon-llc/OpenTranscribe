@@ -595,7 +595,7 @@ sudo rm -rf /opt/opentranscribe
 docker rmi davidamacey/opentranscribe-backend:latest
 docker rmi davidamacey/opentranscribe-frontend:latest
 docker rmi postgres:17.5-alpine redis:8.2.2-alpine3.22
-docker rmi quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+docker rmi docker.io/pgsty/silo:RELEASE.2026-10-26T00-00-00Z@sha256:7bb2aff6b89efe1cb1303c10fc21d579447434ed06649ac9ec05a5e2dbf30ad7
 docker rmi opensearchproject/opensearch:3.4.0
 ```
 

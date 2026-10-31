@@ -75,6 +75,7 @@ backend/app/scripts/reingest_minio.py	2	ratchet: may only go down
 backend/app/scripts/whisper_batch_diag.py	1	ratchet: may only go down
 backend/app/services/account_purge.py	3	ratchet: may only go down
 backend/app/services/account_security_service.py	2	ratchet: may only go down
+backend/app/services/audio_extraction.py	1	ratchet: may only go down
 backend/app/services/ai_insights_companion.py	2	ratchet: may only go down
 backend/app/services/analytics_service.py	3	ratchet: may only go down
 backend/app/services/asr/assemblyai_provider.py	1	ratchet: may only go down
@@ -230,7 +231,7 @@ backend/app/services/task_recovery_stuck.py	6	ratchet: may only go down
 backend/app/services/task_row_supersede.py	1	ratchet: may only go down
 backend/app/services/topic_extraction_service.py	6	ratchet: may only go down
 backend/app/services/transcription_retry.py	3	ratchet: may only go down
-backend/app/services/video_processing_service.py	9	ratchet: may only go down
+backend/app/services/video_processing_service.py	8	ratchet: may only go down
 backend/app/services/voiceprint_orphan_sweep.py	1	ratchet: may only go down
 backend/app/services/watch_email_service.py	1	ratchet: may only go down
 backend/app/services/watch_sources/fs_events/dispatcher.py	1	ratchet: may only go down

@@ -17,8 +17,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`complete`, `reason`, `enforcement`, `missing_permissions`, `exposure_seconds`, per-object
   outcomes), the audit event is recorded with outcome `partial`, the log is an ERROR naming the
   missing actions, and the admin UI shows a warning (all 12 locales).
-- On S3, startup now probes whether the app identity can read and write object tags and logs an
-  ERROR naming any missing action; an unreadable bucket policy names `s3:GetBucketPolicy`.
+- On S3, startup now probes whether the app identity can read and write object tags and list
+  and delete in the cache bucket, and logs an ERROR naming each missing action and its bucket; an
+  unreadable bucket policy names `s3:GetBucketPolicy`. The probe uses a per-boot key and the
+  bounded no-retry client, never blocks startup, and can be turned off with
+  `STORAGE_TAG_PROBE_ENABLED=false`.
+- A takedown now deletes the file's copies in the cache bucket (download renders under
+  `derived/`, and bulk ZIP and DOCX/PDF exports, found through per-file markers) and reports
+  them; a copy it cannot list or delete makes the revocation incomplete
+  (`copy_removal_failed`). An export or render finishing during a takedown is deleted after its
+  upload.
+- The S3 bucket-policy check is conservative: a Deny narrowed by an extra condition, a `Not*`
+  element, a named principal or a prefix resource reads as `enforcement_unverified` instead of
+  enforced. The `{"AWS": ["*"]}` principal, `s3:Get*` and a `*` resource are recognised.
+- A quarantine and a release that race now leave storage matching whichever committed last,
+  and each tag write reads the tag set back so a concurrent overwrite is reported, not counted
+  as applied. A playback rendition that finishes during a takedown is tagged through the same
+  path, and a refused tag is an ERROR.
+- Organization-admin quarantine and release responses carry only `action`, `complete`,
+  `exposure_seconds` and a generic `reason`; storage permissions and the enforcer stay on the
+  platform route and in the audit event.
 
 ### Fixed
 
@@ -26,6 +44,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   playback-rendition tag was ignored) or when nothing enforced the tag (no MinIO presign
   identity, no S3 bucket-policy Deny). It is now true only when every object is tagged and the
   tag is enforced; `presign_tag_cleared` likewise covers every object.
+- Two files with the same filename shared one extracted-audio object in the cache bucket, so a
+  download could serve another file's audio. The cache key now starts with the file id.
+- A MinIO presign identity cached as working is re-checked by presigning with it when the
+  provisioning probe fails, so a stale per-process cache cannot report revocation as enforced.
+- The startup quarantine-tag backfill resolves enforcement once and logs one summary line
+  instead of one line per file.
+- The quarantine dialog shows a success only for files whose links were revoked, and only the
+  warning for the rest.
 
 ### Documentation
 

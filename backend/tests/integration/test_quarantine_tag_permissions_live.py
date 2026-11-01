@@ -1,6 +1,6 @@
 """A real storage identity without ``s3:PutObjectTagging`` is reported, not shrugged off.
 
-Live counterpart of ``unit/test_media_revocation.py``: instead of a fake raising
+Live counterpart of ``unit/test_media_revocation.py`` and ``unit/test_media_revocation_probe.py``: instead of a fake raising
 ``AccessDenied``, this provisions a REAL MinIO service account whose inline policy grants
 everything the app needs to store media and read tags but NOT ``s3:PutObjectTagging`` (the
 IAM role the cloud team ran on staging), and points the production code at it.
@@ -131,23 +131,22 @@ def test_a_real_access_denied_on_put_object_tagging_names_the_action(bucket, lim
 
 
 def test_the_startup_probe_finds_the_missing_permission_and_cleans_up(bucket, limited_client):
-    from minio.error import S3Error
+    from app.services import media_revocation_probe as probe_mod
 
-    from app.services import media_revocation
-
-    probe = media_revocation.report_native_s3_tagging_posture(limited_client)
+    probe = probe_mod.probe_takedown_permissions(limited_client, bucket, None)
 
     assert probe.verified is False
-    assert probe.missing_permissions == (PUT_TAGS,)
+    assert probe.missing_permissions == (f"{PUT_TAGS} on {bucket}",)
     assert probe.error is None
-    with pytest.raises(S3Error) as gone:
-        _root().stat_object(bucket, media_revocation.TAG_PROBE_OBJECT_KEY)
-    assert gone.value.code == "NoSuchKey"
+    leftovers = list(_root().list_objects(bucket, prefix=probe_mod.PROBE_PREFIX, recursive=True))
+    assert leftovers == []
 
 
 def test_the_startup_probe_verifies_a_capable_identity(bucket):
-    from app.services import media_revocation
+    from app.services import media_revocation_probe as probe_mod
 
-    probe = media_revocation.probe_object_tagging(_root(), bucket)
+    probe = probe_mod.probe_takedown_permissions(_root(), bucket, None)
 
-    assert probe == media_revocation.TaggingProbe(True)
+    assert probe == probe_mod.TaggingProbe(True)
+    leftovers = list(_root().list_objects(bucket, prefix=probe_mod.PROBE_PREFIX, recursive=True))
+    assert leftovers == []

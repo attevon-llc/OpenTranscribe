@@ -444,9 +444,17 @@ needs for media:
 | `s3:PutObjectTagging` | `arn:aws:s3:::<your-media-bucket>/*` | Setting `ot-quarantine=true` on quarantine and clearing it on release, on the original, thumbnail and playback copy |
 | `s3:GetBucketPolicy` | `arn:aws:s3:::<your-media-bucket>` | Confirming the Deny above is attached, at startup and on every quarantine |
 | `s3:PutObjectLegalHold` | `arn:aws:s3:::<your-media-bucket>/*` | Optional. The storage legal hold placed with a takedown, only on a bucket created with Object Lock |
+| `s3:ListBucket` | `arn:aws:s3:::<your-cache-bucket>` | Finding a file's download renders and exports in the cache bucket |
+| `s3:DeleteObject` | `arn:aws:s3:::<your-cache-bucket>/*` | Deleting those copies on quarantine (they are rebuilt on demand after a release) |
 
 `s3:DeleteObjectTagging` is not needed: releasing a file writes the remaining tag set with
 `s3:PutObjectTagging`.
+
+The Deny counts as enforcing only when it is unconditional apart from the one tag condition:
+`Deny` of `s3:GetObject` (or `s3:Get*`, `s3:*`), to `"*"` or `{"AWS": "*"}`, on `<bucket>/*`,
+with exactly `StringEquals s3:ExistingObjectTag/ot-quarantine = "true"`. Anything narrower (an
+extra condition, a `Not*` element, a named principal, a prefix resource) is reported as
+`enforcement_unverified`, never as enforced.
 
 As statements to add to the identity's policy:
 
@@ -474,10 +482,14 @@ At startup on `STORAGE_BACKEND=s3` the backend checks both halves and never refu
 
 - It reads the bucket policy and logs one WARNING if the Deny is missing or the policy cannot be
   read (naming `s3:GetBucketPolicy` when that is the reason), or INFO if revocation is enforced.
-- It writes a small probe object (`_opentranscribe/probes/quarantine-tag-probe`), sets and clears
-  the quarantine tag on it and deletes it. A refused tag call is an ERROR that names the missing
-  actions; INFO says the identity can tag. The probe uses the `s3:PutObject` and `s3:DeleteObject`
-  permissions the app already has.
+- It writes a small probe object with a per-boot key (`_opentranscribe/probes/<uuid>`), sets and
+  clears the quarantine tag on it and deletes it, then lists and deletes a probe in the cache
+  bucket. A refused call is an ERROR naming each missing action and its bucket; INFO says the
+  identity can do all of it. The probe uses a short-timeout client with no retries.
+- Caveats: the probe proves permissions under `_opentranscribe/probes/` only, so an IAM policy
+  scoped to other prefixes can pass it and still refuse real objects. On a versioned bucket each
+  boot leaves a delete marker there (expire it with a lifecycle rule), and an Object Lock default
+  retention can make the probe delete fail. Set `STORAGE_TAG_PROBE_ENABLED=false` to skip it.
 
 #### What a quarantine reports
 
@@ -485,11 +497,14 @@ A quarantine always takes the file down in the database, so every list, page, se
 URL hides it straight away, even when storage refuses the tag. Whether links that were **already
 issued** stop working is reported, never assumed:
 
-- The API response (`POST /api/admin/files/{uuid}/quarantine`, and the organization and release
-  routes) carries `presign_revoked` (or `presign_tag_cleared` on release) and a `media_revocation`
-  object: `complete`, a `reason` (`tag_write_failed`, `enforcement_missing`,
-  `enforcement_unverified`, `tag_clear_failed`), `enforcement` (`bucket_policy`, `none`,
-  `unknown`), `missing_permissions`, `exposure_seconds` and one entry per object.
+- The API response (`POST /api/admin/files/{uuid}/quarantine` and the release route) carries
+  `presign_revoked` (or `presign_tag_cleared` on release) and a `media_revocation` object:
+  `complete`, a `reason` (`tag_write_failed`, `enforcement_missing`, `enforcement_unverified`,
+  `tag_clear_failed`, `copy_removal_failed`), `enforcement` (`bucket_policy`, `none`, `unknown`),
+  `missing_permissions`, `exposure_seconds` and one entry per object, including each download
+  render or export deleted from the cache bucket.
+- The organization-admin routes return only `action`, `complete`, `exposure_seconds` and a
+  generic `reason` (`revocation_incomplete` or `restore_incomplete`), still with status 200.
 - The audit event records the same, with outcome `partial` instead of `success`.
 - The backend logs an ERROR naming the missing actions, and the admin UI shows a warning instead
   of a plain success.

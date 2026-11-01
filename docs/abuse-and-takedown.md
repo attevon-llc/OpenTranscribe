@@ -107,8 +107,10 @@ download, and thumbnail all return *not found* (404). The original media and
 transcript are **never deleted** by a takedown — hiding is a read-time transform,
 so the row survives for the audit and appeal trail. Admins retain visibility to
 review and release. An export already in flight is re-checked when the worker
-runs, not only when it was requested, so a takedown applied mid-render still
-takes effect. Enforced by `takedown_service.exclude_quarantined` (list/search
+runs and again after its upload, and a finished export or download render that
+holds the file is deleted from the cache bucket by the takedown itself (see
+[Presigned URL revocation](#presigned-url-revocation-issue-907-fixed)); a copy
+that cannot be deleted is reported as an incomplete revocation. Enforced by `takedown_service.exclude_quarantined` (list/search
 pre-filters) and `takedown_service.is_hidden_for`, applied centrally in
 `utils/uuid_helpers.get_file_by_uuid_with_permission` and explicitly on the
 thumbnail route; pinned by `backend/tests/test_takedown_quarantine.py` and the
@@ -318,6 +320,21 @@ request, not at signing time, so:
   `media_revocation.revoke_media` → `minio_service.write_object_quarantine_tag`, on the primary
   object, the thumbnail and the playback rendition). A URL minted **before** the takedown 403s
   the instant the tag lands — same URL, same signature, no re-mint needed.
+- **Copies in the cache bucket are deleted, not tagged.** A download render
+  (`derived/{file_id}_...`: extracted audio, burned-in-subtitle video) and every bulk ZIP or
+  DOCX/PDF export holding the file (found through `bulk/by-file/{file_id}/` marker objects, written
+  before the export is uploaded) are removed by `media_revocation_cache.remove_cache_copies`.
+  Deleting them means a release has nothing to restore (they are rebuilt on demand) and needs no
+  Deny on the cache bucket. An export or render that finishes during a takedown is re-checked
+  after its upload and deleted (`remove_if_quarantined`). A copy that cannot be listed or deleted
+  makes the revocation **incomplete** (`reason: copy_removal_failed`).
+- **The last committed state wins.** `media_revocation.settle_file` applies the database state,
+  re-reads it, and re-applies until the two agree (bounded), so a quarantine and a release that
+  race leave storage matching whichever committed last. Every tag write reads the tag set back
+  and retries once, so a concurrent writer that replaced the whole set (S3 tag writes are not
+  conditional) is detected (`ConcurrentTagWrite`) instead of reported as applied. A playback
+  rendition that finishes during a takedown is tagged by the same path (`settle_object_tag`), and
+  an ERROR names a refused write.
 - **Releasing a file untags it** (`takedown_service.release_file`), which restores the SAME
   pre-existing URL to 200. Because a still-tagged object also 403s a *brand-new* presigned URL,
   the untag is retried up to 3 times with a short backoff before the release logs an ERROR (not
@@ -367,6 +384,16 @@ request, not at signing time, so:
   | `s3:PutObjectTagging` | `arn:aws:s3:::<your-media-bucket>/*` | setting the tag on quarantine AND clearing it on release (the remaining set is written back; `s3:DeleteObjectTagging` is never called) |
   | `s3:GetBucketPolicy` | `arn:aws:s3:::<your-media-bucket>` | the startup posture check and the per-quarantine `enforcement` check |
   | `s3:PutObjectLegalHold` | `arn:aws:s3:::<your-media-bucket>/*` | optional: the best-effort object legal hold, Object Lock buckets only |
+  | `s3:ListBucket` | `arn:aws:s3:::<your-cache-bucket>` | finding a file's derived renders and exports |
+  | `s3:DeleteObject` | `arn:aws:s3:::<your-cache-bucket>/*` | deleting them on takedown |
+
+  **What counts as enforcing.** The policy is read conservatively: only an unconditional
+  `Deny` of `s3:GetObject` (or `s3:Get*`, `s3:*`, `*`) to every principal (`"*"` or
+  `{"AWS": "*"}`/`["*"]`) on the whole bucket (`<bucket>/*` or `*`), conditioned on exactly
+  `StringEquals s3:ExistingObjectTag/ot-quarantine = true`, verifies. A statement that is
+  narrower in any way (an extra condition key or operator, `NotPrincipal`/`NotAction`/
+  `NotResource`, a named principal, a prefix resource) reads as `unknown`, so the report says
+  `enforcement_unverified` rather than claiming the Deny is in place.
 
   Without the two tagging actions every takedown on S3 leaves issued URLs working even with the
   Deny attached. That was observed on a staging deployment: before this was reported loudly,
@@ -378,10 +405,16 @@ request, not at signing time, so:
   `storage_presign_identity.report_native_s3_revocation_posture` reads the media bucket's
   policy and logs **one WARNING** if this Deny is missing or the policy can't be read (naming
   `s3:GetBucketPolicy` when it was refused), INFO if it is present; and
-  `media_revocation.report_native_s3_tagging_posture` writes a probe object
-  (`_opentranscribe/probes/quarantine-tag-probe`, with the `s3:PutObject`/`s3:DeleteObject` the
-  app already needs), sets and clears the quarantine tag on it and deletes it, logging an
-  **ERROR naming the exact missing actions** if a tag call is refused. Without the Deny, the
+  `media_revocation_probe.report_native_s3_tagging_posture` writes a probe object with a key
+  unique to this boot (`_opentranscribe/probes/<uuid>`, with the `s3:PutObject`/
+  `s3:DeleteObject` the app already needs) on the bounded, no-retry probe client, sets and
+  clears the quarantine tag on it and deletes it, then does the same list/delete round trip in
+  the cache bucket, logging an **ERROR naming each missing action and its bucket**. It never
+  blocks startup. Caveats: it proves the permissions under `_opentranscribe/probes/` only, so an
+  IAM policy scoped to other prefixes can pass the probe and still refuse a real object; on a
+  versioned bucket each boot leaves a delete marker and a noncurrent version under that prefix
+  (add a lifecycle rule for it); an Object Lock default retention can make the probe delete
+  fail. Set `STORAGE_TAG_PROBE_ENABLED=false` to skip the probe entirely. Without the Deny, the
   mitigation is the presigned-URL TTL: an already-minted URL for a quarantined file stays valid
   for up to `MEDIA_URL_EXPIRE_SECONDS` (6 h default, capped by `PRESIGNED_URL_MAX_SECONDS`) —
   lower it to shorten that window, at the cost of long recordings needing a fresh URL
@@ -408,13 +441,18 @@ request, not at signing time, so:
   exports), so refusing or rolling back the takedown because storage refused a tag would leave
   the file *more* exposed. The file is always quarantined; what happened to its already-issued
   URLs is reported in three places (`backend/app/services/media_revocation.py`):
-  - **The response.** Quarantine and release (platform and organization routes) return
+  - **The response.** Quarantine and release on the platform routes return
     `presign_revoked` / `presign_tag_cleared` plus `media_revocation`: `complete`, `reason`
     (`tag_write_failed`, `enforcement_missing` — no presign identity on MinIO or no Deny on
-    S3, `enforcement_unverified` — the bucket policy could not be read, `tag_clear_failed`),
+    S3, `enforcement_unverified` — the bucket policy could not be read or is narrower than the
+    one above, `tag_clear_failed`, `copy_removal_failed`),
     `enforcement` (`presign_identity` | `bucket_policy` | `none` | `unknown`),
     `missing_permissions`, `exposure_seconds` and one entry per object (original, thumbnail,
-    playback rendition). `presign_revoked` is true only when every object was tagged AND
+    playback rendition, and each removed `derived` / `bulk_export` copy, outcome `removed`).
+    The **organization** routes still answer 200 but return only `action`, `complete`,
+    `exposure_seconds` and a generic `reason` (`revocation_incomplete` | `restore_incomplete`):
+    a tenant learns that links were not revoked, never the operator's storage permissions or
+    enforcer, which stay in the audit event. `presign_revoked` is true only when every object was tagged AND
     something enforces the tag; it used to report the primary object's tag write alone, so a
     failed thumbnail tag or a deployment with nothing enforcing the tag read as revoked.
   - **The audit event** carries the same decision fields under `media_revocation` and is

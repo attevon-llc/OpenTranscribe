@@ -1,4 +1,4 @@
-import type { MediaRevocation } from '$lib/api/admin';
+import type { MediaRevocation, OrgMediaRevocation } from '$lib/api/admin';
 
 /**
  * True when a quarantine/release response says the file's already-issued media URLs were NOT
@@ -9,7 +9,7 @@ import type { MediaRevocation } from '$lib/api/admin';
  * complete, which is what it reported before.
  */
 export function mediaRevocationIncomplete(result: {
-  media_revocation?: MediaRevocation | null;
+  media_revocation?: MediaRevocation | OrgMediaRevocation | null;
 }): boolean {
   return result.media_revocation?.complete === false;
 }

@@ -120,6 +120,9 @@ def storage(monkeypatch):
     monkeypatch.setattr(
         "app.services.storage_presign_identity.presign_identity_available", lambda: True
     )
+    monkeypatch.setattr(
+        "app.services.media_revocation_cache.remove_cache_copies", lambda _file_id: []
+    )
     monkeypatch.setattr("app.services.minio_service.set_object_legal_hold", hold)
     monkeypatch.setattr("app.services.chat.retrieval_cache.bump_corpus_version", bump)
     return MagicMock(tag=tag, hold=hold, bump=bump)
@@ -372,8 +375,14 @@ class TestOrganizationTakedown:
         body = response.json()
         assert body["is_quarantined"] is True
         assert body["presign_revoked"] is False
-        assert body["media_revocation"]["reason"] == "tag_write_failed"
-        assert body["media_revocation"]["missing_permissions"] == ["s3:PutObjectTagging"]
+        # A tenant learns THAT the links were not revoked, never the operator's storage
+        # permissions or enforcer (those are on the platform route and in the audit).
+        assert body["media_revocation"] == {
+            "action": "revoke",
+            "complete": False,
+            "reason": "revocation_incomplete",
+            "exposure_seconds": body["media_revocation"]["exposure_seconds"],
+        }
 
         monkeypatch.setattr("app.services.media_revocation.UNTAG_BACKOFF_SECONDS", 0)
         response = _release(w.client, w.admin_a_headers, w.file.uuid)
@@ -382,7 +391,8 @@ class TestOrganizationTakedown:
         assert body["is_quarantined"] is False
         assert body["presign_tag_cleared"] is False
         assert body["presign_revoked"] is None
-        assert body["media_revocation"]["reason"] == "tag_clear_failed"
+        assert body["media_revocation"]["reason"] == "restore_incomplete"
+        assert "missing_permissions" not in body["media_revocation"]
 
     def test_releasing_a_file_that_is_not_held_is_a_conflict(self, world):
         w = world

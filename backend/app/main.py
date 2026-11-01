@@ -310,6 +310,7 @@ def _backfill_quarantine_tags() -> None:
     """
     from app.db.base import SessionLocal
     from app.models.media import MediaFile
+    from app.services.media_revocation import resolve_enforcement
     from app.services.media_revocation import revoke_media
 
     db = SessionLocal()
@@ -317,13 +318,24 @@ def _backfill_quarantine_tags() -> None:
         rows = db.query(MediaFile).filter(MediaFile.is_quarantined.is_(True)).all()
         if not rows:
             return
-        # `revoke_media` logs an ERROR per file it could not revoke, naming the missing
-        # storage permissions; this line is the summary.
-        complete = sum(1 for row in rows if revoke_media(row).complete)
-        log = logger.info if complete == len(rows) else logger.error
-        log(
-            f"Quarantine-tag backfill: presigned media URLs revoked for {complete}/{len(rows)} "
-            f"already-quarantined file(s)"
+        # Resolved ONCE per boot, and one summary line instead of an ERROR per row.
+        enforcement = resolve_enforcement()
+        reports = [revoke_media(row, enforcement=enforcement, log=False) for row in rows]
+        incomplete = [r for r in reports if not r.complete]
+        if not incomplete:
+            logger.info(
+                f"Quarantine-tag backfill: presigned media URLs revoked for all {len(rows)} "
+                f"already-quarantined file(s)"
+            )
+            return
+        reasons = sorted({str(r.reason) for r in incomplete})
+        missing = sorted({p for r in incomplete for p in r.missing_permissions})
+        logger.error(
+            f"Quarantine-tag backfill: presigned media URLs NOT revoked for "
+            f"{len(incomplete)}/{len(rows)} already-quarantined file(s) "
+            f"(reasons: {', '.join(reasons)}; enforcement={enforcement[0]}"
+            + (f"; the storage identity is missing {', '.join(missing)}" if missing else "")
+            + "). See docs/abuse-and-takedown.md."
         )
     finally:
         db.close()
@@ -396,9 +408,9 @@ def _setup_minio():
             storage_presign_identity.report_native_s3_revocation_posture(minio_client)
             # The bucket-policy Deny only enforces a tag that landed: check, at boot rather
             # than at the first takedown, that this identity can write one.
-            from app.services.media_revocation import report_native_s3_tagging_posture
+            from app.services.media_revocation_probe import report_native_s3_tagging_posture
 
-            report_native_s3_tagging_posture(minio_client)
+            report_native_s3_tagging_posture()
         elif settings.STORAGE_PRESIGN_IDENTITY_ENABLED:
             logger.error(
                 "Presign identity NOT provisioned — presigned media URLs will be signed "

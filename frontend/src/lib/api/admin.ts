@@ -140,7 +140,8 @@ export interface QuarantinedFilesList {
  * What a quarantine/release did to the file's already-issued media URLs. The takedown itself
  * always lands; `complete: false` means an issued URL may still work after a quarantine (or
  * still 403 after a release). `reason` is a stable code (`tag_write_failed`,
- * `enforcement_missing`, `enforcement_unverified`, `tag_clear_failed`).
+ * `enforcement_missing`, `enforcement_unverified`, `tag_clear_failed`, `copy_removal_failed`).
+ * Cache-bucket copies (`derived`, `bulk_export`) are deleted, not tagged (outcome `removed`).
  */
 export interface MediaRevocation {
   action: 'revoke' | 'restore';
@@ -150,11 +151,22 @@ export interface MediaRevocation {
   missing_permissions: string[];
   exposure_seconds: number | null;
   objects: {
-    role: 'original' | 'thumbnail' | 'playback';
-    outcome: 'applied' | 'absent' | 'failed';
+    role: 'original' | 'thumbnail' | 'playback' | 'derived' | 'bulk_export';
+    outcome: 'applied' | 'absent' | 'removed' | 'failed';
     error_code: string | null;
     failed_action: string | null;
   }[];
+}
+
+/**
+ * The organization-admin view of a revocation: whether it worked, never the operator's storage
+ * permissions or enforcer (those stay on the platform route and in the audit log).
+ */
+export interface OrgMediaRevocation {
+  action: 'revoke' | 'restore';
+  complete: boolean;
+  reason: 'revocation_incomplete' | 'restore_incomplete' | null;
+  exposure_seconds: number | null;
 }
 
 export interface QuarantineActionResult {

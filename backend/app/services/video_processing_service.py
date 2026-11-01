@@ -859,21 +859,27 @@ class VideoProcessingService:
             original_filename.rsplit(".", 1)[0] if "." in original_filename else original_filename
         )
 
-    def audio_cache_key(self, original_filename: str, audio_format: str) -> str:
+    def audio_cache_key(self, file_id: int, original_filename: str, audio_format: str) -> str:
         """Deterministic cache key for an extracted audio file.
 
         ``mp3``/``wav`` carry their extension; ``original`` uses an extension-less key
         because the real extension depends on the (later-probed) source codec — it is
         recovered from the cached object's stored content type.
+
+        ``file_id`` leads, exactly as in :meth:`generate_cache_key`. The key used to be the
+        filename alone, so two files named ``meeting.mp4`` (two users, two tenants) shared one
+        extracted-audio object and each was served the other's audio. It is also what makes
+        ``derived/{file_id}_`` the complete set of a file's derived objects, which a takedown
+        relies on to remove them (``media_revocation_cache``).
         """
         base = self._audio_base(original_filename)
         if audio_format == "original":
-            return f"{self.DERIVED_CACHE_PREFIX}{base}_audio_original"
+            return f"{self.DERIVED_CACHE_PREFIX}{file_id}_{base}_audio_original"
         ext = "mp3" if audio_format == "mp3" else "wav"
-        return f"{self.DERIVED_CACHE_PREFIX}{base}_audio_{audio_format}.{ext}"
+        return f"{self.DERIVED_CACHE_PREFIX}{file_id}_{base}_audio_{audio_format}.{ext}"
 
     def peek_cached_audio(
-        self, original_filename: str, audio_format: str
+        self, file_id: int, original_filename: str, audio_format: str
     ) -> tuple[str, str, str] | None:
         """Return ``(cache_key, ext, content_type)`` if already cached, else None.
 
@@ -883,7 +889,7 @@ class VideoProcessingService:
         normalized = audio_format.lower()
         if normalized not in ("mp3", "wav", "original"):
             normalized = "mp3"
-        cache_key = self.audio_cache_key(original_filename, normalized)
+        cache_key = self.audio_cache_key(file_id, original_filename, normalized)
         if not self.is_video_cached(cache_key):
             return None
         if normalized in _AUDIO_ENCODE_PRESETS:
@@ -940,12 +946,12 @@ class VideoProcessingService:
             normalized = "mp3"
 
         # Fast path: already cached (no download, no ffmpeg).
-        cached = self.peek_cached_audio(original_filename, normalized)
+        cached = self.peek_cached_audio(file_id, original_filename, normalized)
         if cached:
             logger.info(f"Using cached audio for file {file_id} ({cached[0]})")
             return cached
 
-        cache_key = self.audio_cache_key(original_filename, normalized)
+        cache_key = self.audio_cache_key(file_id, original_filename, normalized)
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
@@ -1023,9 +1029,9 @@ class VideoProcessingService:
             self.generate_cache_key(
                 file_id, filename, include_speakers=False, redaction_fingerprint=""
             ),
-            self.audio_cache_key(filename, "mp3"),
-            self.audio_cache_key(filename, "wav"),
-            self.audio_cache_key(filename, "original"),
+            self.audio_cache_key(file_id, filename, "mp3"),
+            self.audio_cache_key(file_id, filename, "wav"),
+            self.audio_cache_key(file_id, filename, "original"),
         ]
 
     def _masked_video_cache_keys(self, file_id: int, filename: str) -> list[str]:

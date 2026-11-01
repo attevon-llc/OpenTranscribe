@@ -857,7 +857,7 @@ def _resolve_ready_download(
         return None
 
     audio_format = mode.split("_", 1)[1]
-    cached = service.peek_cached_audio(filename, audio_format)
+    cached = service.peek_cached_audio(int(db_file.id), filename, audio_format)
     if cached:
         cache_key, ext, content_type = cached
         dl_name = f"{base_name}.{ext}"

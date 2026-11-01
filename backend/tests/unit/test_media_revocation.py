@@ -290,58 +290,6 @@ class TestRestoreMedia:
         assert store.quarantined(file.storage_path) is False
 
 
-class TestStartupTaggingProbe:
-    def test_missing_put_object_tagging_is_an_error_naming_it(self, caplog):
-        store = FakeTaggingStore(deny=[PUT_TAGS])
-
-        with caplog.at_level("INFO", logger="app.services.media_revocation"):
-            probe = media_revocation.report_native_s3_tagging_posture(store)
-
-        assert probe.verified is False
-        assert probe.missing_permissions == (PUT_TAGS,)
-        assert media_revocation.TAG_PROBE_OBJECT_KEY not in store.objects
-        errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
-        assert len(errors) == 1
-        assert PUT_TAGS in errors[0]
-        assert GET_TAGS not in errors[0]
-        assert f"arn:aws:s3:::{BUCKET}/*" in errors[0]
-
-    def test_both_tagging_actions_missing_are_both_named(self):
-        probe = media_revocation.probe_object_tagging(
-            FakeTaggingStore(deny=[GET_TAGS, PUT_TAGS]), BUCKET
-        )
-
-        assert probe.missing_permissions == (GET_TAGS, PUT_TAGS)
-
-    def test_a_capable_identity_verifies_and_leaves_nothing_behind(self, caplog):
-        store = FakeTaggingStore()
-
-        with caplog.at_level("INFO", logger="app.services.media_revocation"):
-            probe = media_revocation.report_native_s3_tagging_posture(store)
-
-        assert probe == media_revocation.TaggingProbe(True)
-        assert store.objects == {} and store.tags == {}
-        assert [a for a, _ in store.calls] == [
-            "s3:PutObject",
-            GET_TAGS,
-            PUT_TAGS,
-            PUT_TAGS,
-            "s3:DeleteObject",
-        ]
-        assert [r for r in caplog.records if r.levelno >= 30] == []
-
-    def test_an_unwritable_probe_object_is_inconclusive_not_an_error(self, caplog):
-        store = FakeTaggingStore(deny=["s3:PutObject"])
-
-        with caplog.at_level("INFO", logger="app.services.media_revocation"):
-            probe = media_revocation.report_native_s3_tagging_posture(store)
-
-        assert probe.verified is False
-        assert probe.missing_permissions == ()
-        assert probe.error is not None and "AccessDenied" in probe.error
-        assert [r.levelname for r in caplog.records if r.levelno >= 30] == ["WARNING"]
-
-
 def test_unreadable_bucket_policy_warning_names_get_bucket_policy(caplog):
     store = FakeTaggingStore(deny=[GET_POLICY])
 

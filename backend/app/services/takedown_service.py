@@ -45,8 +45,7 @@ from app.models.media import MediaFile
 from app.models.takedown import TakedownNotice
 from app.services.hold_guard import is_held
 from app.services.media_revocation import MediaRevocationReport
-from app.services.media_revocation import restore_media
-from app.services.media_revocation import revoke_media
+from app.services.media_revocation import settle_file
 from app.services.takedown_authority import TakedownActor
 from app.services.takedown_authority import TakedownRefusedError
 from app.services.takedown_authority import assert_may_quarantine
@@ -136,6 +135,17 @@ def stamp_completion_time(file: MediaFile, when: datetime) -> None:
     """
     if file.completed_at is None or not (file.is_quarantined or is_held(file)):
         file.completed_at = when
+
+
+def _quarantined_reader(db: Session, file: MediaFile) -> Callable[[], bool]:
+    """Read the file's committed ``is_quarantined`` afresh (READ COMMITTED: each call sees
+    the latest commit), for ``media_revocation.settle_file`` to converge on."""
+    file_id = int(file.id)
+
+    def _read() -> bool:
+        return bool(db.query(MediaFile.is_quarantined).filter(MediaFile.id == file_id).scalar())
+
+    return _read
 
 
 def _revocation_outcome(report: MediaRevocationReport) -> AuditOutcome:
@@ -333,7 +343,7 @@ def quarantine_file(
     # is a regenerable copy), independent of `legal_hold`. A failure does not undo the
     # takedown (`media_revocation`'s module docstring has that decision); it is reported on
     # the response, in the audit event and as an ERROR, never as a clean success.
-    revocation = revoke_media(file)
+    revocation = settle_file(file, _quarantined_reader(db, file))
 
     # Non-persisted (not DB columns — see the TYPE_CHECKING-only declaration on MediaFile):
     # the quarantine endpoints read these off the returned object.
@@ -473,7 +483,7 @@ def release_file(
     # Presigned-URL untag (issue #907), retried — see this function's docstring for why a
     # failure here is worse than the legal-hold sibling's. Independent of
     # `clear_legal_hold`, mirroring quarantine_file's tag-on being independent of `legal_hold`.
-    restoration = restore_media(file)
+    restoration = settle_file(file, _quarantined_reader(db, file))
 
     # Non-persisted (not DB columns — see the TYPE_CHECKING-only declaration on MediaFile):
     # the release endpoints read these off the returned object.

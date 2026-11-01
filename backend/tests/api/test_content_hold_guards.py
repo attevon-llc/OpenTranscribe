@@ -407,6 +407,7 @@ def test_releasing_the_platforms_hold_does_not_lift_the_object_lock_an_org_hold_
             "app.services.storage_presign_identity.presign_identity_available",
             return_value=True,
         ),
+        patch("app.services.media_revocation_cache.remove_cache_copies", return_value=[]),
         patch("app.services.minio_service.set_object_legal_hold", side_effect=_record_lock),
     ):
         quarantine_file(

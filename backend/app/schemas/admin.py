@@ -395,9 +395,12 @@ class QuarantinedFilesList(BaseModel):
 class MediaRevocationObject(BaseModel):
     """The quarantine-tag write for one of the file's objects."""
 
-    role: Literal["original", "thumbnail", "playback"]
-    # `absent`: the object does not exist, so no URL can serve it (not a failure).
-    outcome: Literal["applied", "absent", "failed"]
+    # `derived` (extracted audio, burned-in video) and `bulk_export` (subtitle ZIP, DOCX/PDF)
+    # are cache-bucket copies, deleted on quarantine rather than tagged.
+    role: Literal["original", "thumbnail", "playback", "derived", "bulk_export"]
+    # `removed`: a cache copy was deleted. `absent`: the object does not exist, so no URL can
+    # serve it (not a failure).
+    outcome: Literal["applied", "removed", "absent", "failed"]
     # Storage error code of a failure, e.g. `AccessDenied`.
     error_code: str | None = None
     # Storage action that failed, e.g. `s3:PutObjectTagging`.
@@ -414,9 +417,11 @@ class MediaRevocation(BaseModel):
 
     action: Literal["revoke", "restore"]
     complete: bool
-    # Why it is incomplete: `tag_write_failed`, `enforcement_missing` (nothing makes the tag
+    # Why it is incomplete: `tag_write_failed`, `copy_removal_failed` (a cache copy could not
+    # be listed or deleted), `enforcement_missing` (nothing makes the tag
     # stop a URL: no MinIO presign identity, or no S3 bucket-policy Deny),
-    # `enforcement_unverified` (the bucket policy could not be read), `tag_clear_failed`
+    # `enforcement_unverified` (the bucket policy could not be read, or carries a Deny this
+    # code cannot prove covers the app's URLs), `tag_clear_failed`
     # (release). None when complete. Stable codes; new ones may be added.
     reason: str | None = None
     # What enforces the tag (revoke only): `presign_identity`, `bucket_policy`, `none`,
@@ -468,6 +473,45 @@ class QuarantineActionResponse(BaseModel):
             presign_tag_cleared=report.complete if report.action == "restore" else None,
             media_revocation=MediaRevocation.model_validate(report.to_wire()),
             takedown_origin=file.takedown_origin,
+        )
+
+
+class OrgMediaRevocation(BaseModel):
+    """What an organization admin is told about the media URLs.
+
+    No storage permissions, enforcer or per-object error: those describe the operator's
+    infrastructure, which a tenant must not see. The operator gets them on the platform route,
+    in the audit event and in the log.
+    """
+
+    action: Literal["revoke", "restore"]
+    complete: bool
+    # `revocation_incomplete` | `restore_incomplete` | None.
+    reason: str | None = None
+    exposure_seconds: int | None = None
+
+
+class OrgQuarantineActionResponse(BaseModel):
+    """Result of an organization admin's quarantine/release action."""
+
+    uuid: str
+    is_quarantined: bool
+    legal_hold: bool
+    status: str
+    presign_revoked: bool | None = None
+    presign_tag_cleared: bool | None = None
+    media_revocation: OrgMediaRevocation | None = None
+    takedown_origin: str | None = None
+
+    @classmethod
+    def from_action(cls, file: "MediaFile") -> "OrgQuarantineActionResponse":
+        """The platform shape with the infrastructure detail removed."""
+        full = QuarantineActionResponse.from_action(file)
+        return cls(
+            **full.model_dump(exclude={"media_revocation"}),
+            media_revocation=OrgMediaRevocation.model_validate(
+                file.media_revocation.to_tenant_wire()
+            ),
         )
 
 

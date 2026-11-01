@@ -131,8 +131,9 @@
 
     submitting = false;
 
-    if (succeededUuids.length > 0) {
-      toastStore.success($t('gallery.quarantine.succeeded', { count: succeededUuids.length }));
+    const cleanCount = succeededUuids.length - unrevokedCount;
+    if (cleanCount > 0) {
+      toastStore.success($t('gallery.quarantine.succeeded', { count: cleanCount }));
     }
     if (unrevokedCount > 0) {
       toastStore.warning($t('gallery.quarantine.revocationIncomplete', { count: unrevokedCount }));

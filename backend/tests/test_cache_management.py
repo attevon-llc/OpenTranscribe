@@ -112,9 +112,17 @@ class TestDerivedCachePrefix:
 
     def test_audio_cache_keys_are_prefixed(self):
         svc = self._svc()
-        assert svc.audio_cache_key("meeting.mp4", "mp3") == "derived/meeting_audio_mp3.mp3"
-        assert svc.audio_cache_key("meeting.mp4", "wav") == "derived/meeting_audio_wav.wav"
-        assert svc.audio_cache_key("meeting.mp4", "original") == "derived/meeting_audio_original"
+        assert svc.audio_cache_key(7, "meeting.mp4", "mp3") == "derived/7_meeting_audio_mp3.mp3"
+        assert svc.audio_cache_key(7, "meeting.mp4", "wav") == "derived/7_meeting_audio_wav.wav"
+        assert (
+            svc.audio_cache_key(7, "meeting.mp4", "original") == "derived/7_meeting_audio_original"
+        )
+
+    def test_two_files_with_one_filename_never_share_extracted_audio(self):
+        svc = self._svc()
+        assert svc.audio_cache_key(7, "meeting.mp4", "mp3") != svc.audio_cache_key(
+            8, "meeting.mp4", "mp3"
+        )
 
 
 class TestRetentionResolution:
@@ -231,7 +239,7 @@ class TestClearCacheOnDelete:
         assert all(k.startswith("derived/") for k in deleted)
         assert f"derived/{fid}_talk_with_speakers.mp4" in deleted
         assert f"derived/{fid}_talk_no_speakers.mp4" in deleted
-        assert "derived/talk_audio_mp3.mp3" in deleted
+        assert f"derived/{fid}_talk_audio_mp3.mp3" in deleted
         # ...plus every masked render, or a deleted file leaves a video of its
         # transcript behind in object storage.
         assert f"derived/{fid}_talk_with_speakers_rdeadbeef1234.mp4" in deleted
@@ -242,8 +250,8 @@ class TestClearCacheOnDelete:
         assert f"derived/{fid}9_talk_with_speakers_rcafebabe9999.mp4" not in deleted, (
             "the sweep must not reach into a file whose ID shares a numeric prefix"
         )
-        assert "derived/talk_audio_wav.wav" in deleted
-        assert "derived/talk_audio_original" in deleted
+        assert f"derived/{fid}_talk_audio_wav.wav" in deleted
+        assert f"derived/{fid}_talk_audio_original" in deleted
 
 
 class TestCanonicalDestroy:

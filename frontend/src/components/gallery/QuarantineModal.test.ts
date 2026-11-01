@@ -159,7 +159,9 @@ describe('QuarantineModal', () => {
     const warning = vi.mocked(toastStore.warning).mock.calls[0][0];
     expect(warning).toContain('1 file(s) quarantined, but');
     expect(warning).toContain('could not be revoked');
-    expect(toastStore.success).toHaveBeenCalledWith('2 file(s) quarantined');
+    // Only the cleanly revoked file is reported as a success.
+    expect(toastStore.success).toHaveBeenCalledTimes(1);
+    expect(toastStore.success).toHaveBeenCalledWith('1 file(s) quarantined');
   });
 
   it('the legal-hold checkbox is checked on mount', () => {

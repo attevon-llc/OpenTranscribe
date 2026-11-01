@@ -43,20 +43,29 @@ def _load(file_uuid: str) -> tuple[int, str, str | None] | None:
 def _record(file_id: int, object_name: str) -> bool:
     """Point the row at the stored rendition. False if the row was deleted meanwhile.
 
-    A takedown that landed while the encode ran has already tagged the original; the
-    new object is tagged here too, or a presigned URL for it would outlive the takedown.
+    A takedown that ran while the encode did could not tag an object that did not exist yet,
+    so the new object takes the file's CURRENT state here. The state is read again after the
+    commit, not inside it: a takedown holding the row lock commits after this row's read, and a
+    value read before the commit would miss it. ``settle_object_tag`` keeps re-reading and
+    correcting until storage and the database agree, and logs an ERROR (naming the missing
+    permission) if the tag cannot be written.
     """
     with session_scope() as db:
         media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
         if media_file is None:
             return False
         media_file.playback_path = object_name
-        quarantined = bool(media_file.is_quarantined)
         db.commit()
-    if quarantined:
-        from app.services.minio_service import set_object_quarantine_tag
 
-        set_object_quarantine_tag(object_name, True)
+    def _quarantined() -> bool:
+        with session_scope() as read_db:
+            return bool(
+                read_db.query(MediaFile.is_quarantined).filter(MediaFile.id == file_id).scalar()
+            )
+
+    from app.services.media_revocation import settle_object_tag
+
+    settle_object_tag("playback", object_name, _quarantined, file_label=f"file {file_id}")
     return True
 
 

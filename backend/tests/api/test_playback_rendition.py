@@ -144,15 +144,11 @@ class FakeStore:
     def delete_file(self, object_name: str) -> None:
         self.objects.pop(object_name, None)
 
-    def set_object_quarantine_tag(self, object_name, quarantined, **_kw) -> bool:
-        self.tags.append((object_name, quarantined))
-        return object_name in self.objects
-
     def write_object_quarantine_tag(self, object_name, quarantined, **_kw):
         from app.services.minio_service import QuarantineTagWrite
 
-        present = self.set_object_quarantine_tag(object_name, quarantined)
-        return QuarantineTagWrite("applied" if present else "absent")
+        self.tags.append((object_name, quarantined))
+        return QuarantineTagWrite("applied" if object_name in self.objects else "absent")
 
 
 @pytest.fixture
@@ -164,12 +160,14 @@ def store(monkeypatch) -> FakeStore:
         "download_file_to_path",
         "upload_file",
         "delete_file",
-        "set_object_quarantine_tag",
         "write_object_quarantine_tag",
     ):
         monkeypatch.setattr(minio_service, name, getattr(fake, name))
     monkeypatch.setattr(
         "app.services.storage_presign_identity.presign_identity_available", lambda: True
+    )
+    monkeypatch.setattr(
+        "app.services.media_revocation_cache.remove_cache_copies", lambda _file_id: []
     )
     return fake
 

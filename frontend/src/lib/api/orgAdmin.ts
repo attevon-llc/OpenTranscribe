@@ -1,5 +1,5 @@
 import axiosInstance from '$lib/axios';
-import type { AuditLogEntry, MediaRevocation } from '$lib/api/admin';
+import type { AuditLogEntry, OrgMediaRevocation } from '$lib/api/admin';
 import type {
   InstancePrivacyPolicy,
   PrivacyDecision,
@@ -54,7 +54,7 @@ export interface OrgTakedownActionResult {
   takedown_origin: TakedownOrigin | null;
   presign_revoked?: boolean | null;
   presign_tag_cleared?: boolean | null;
-  media_revocation?: MediaRevocation | null;
+  media_revocation?: OrgMediaRevocation | null;
 }
 
 /** The filters shared by the organization audit list and its export. Empty values are omitted. */

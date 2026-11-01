@@ -11245,6 +11245,7 @@
           "outcome": {
             "enum": [
               "applied",
+              "removed",
               "absent",
               "failed"
             ],
@@ -11255,7 +11256,9 @@
             "enum": [
               "original",
               "thumbnail",
-              "playback"
+              "playback",
+              "derived",
+              "bulk_export"
             ],
             "title": "Role",
             "type": "string"
@@ -12025,6 +12028,51 @@
         "title": "OrgEffectivePrivacy",
         "type": "object"
       },
+      "OrgMediaRevocation": {
+        "description": "What an organization admin is told about the media URLs.\n\nNo storage permissions, enforcer or per-object error: those describe the operator's\ninfrastructure, which a tenant must not see. The operator gets them on the platform route,\nin the audit event and in the log.",
+        "properties": {
+          "action": {
+            "enum": [
+              "revoke",
+              "restore"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "exposure_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exposure Seconds"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "action",
+          "complete"
+        ],
+        "title": "OrgMediaRevocation",
+        "type": "object"
+      },
       "OrgPolicy": {
         "description": "``GET|PATCH /org-admin/policy``: the caller's own organization, never another.",
         "properties": {
@@ -12117,6 +12165,78 @@
           }
         },
         "title": "OrgPolicyUpdate",
+        "type": "object"
+      },
+      "OrgQuarantineActionResponse": {
+        "description": "Result of an organization admin's quarantine/release action.",
+        "properties": {
+          "is_quarantined": {
+            "title": "Is Quarantined",
+            "type": "boolean"
+          },
+          "legal_hold": {
+            "title": "Legal Hold",
+            "type": "boolean"
+          },
+          "media_revocation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrgMediaRevocation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "presign_revoked": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Presign Revoked"
+          },
+          "presign_tag_cleared": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Presign Tag Cleared"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "takedown_origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Takedown Origin"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "is_quarantined",
+          "legal_hold",
+          "status"
+        ],
+        "title": "OrgQuarantineActionResponse",
         "type": "object"
       },
       "OrgQuarantineRequest": {
@@ -40770,7 +40890,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/QuarantineActionResponse"
+                  "$ref": "#/components/schemas/OrgQuarantineActionResponse"
                 }
               }
             },
@@ -40835,7 +40955,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/QuarantineActionResponse"
+                  "$ref": "#/components/schemas/OrgQuarantineActionResponse"
                 }
               }
             },

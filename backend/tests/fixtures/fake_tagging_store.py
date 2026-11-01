@@ -115,6 +115,15 @@ class FakeTaggingStore:
         self.objects.pop(object_name, None)
         self.tags.pop(object_name, None)
 
+    def list_objects(self, bucket_name: str, prefix: str = "", recursive: bool = False, **_kw):
+        """Keys under ``prefix`` (buckets are not modelled: test keys never collide)."""
+        from types import SimpleNamespace
+
+        self._gate("s3:ListBucket", prefix)
+        return [
+            SimpleNamespace(object_name=k) for k in sorted(self.objects) if k.startswith(prefix)
+        ]
+
     def get_bucket_policy(self, bucket_name: str) -> str:
         self._gate("s3:GetBucketPolicy", bucket_name)
         if self.bucket_policy is None:

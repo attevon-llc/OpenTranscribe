@@ -123,7 +123,7 @@ class TestOrgContextPromptTypeToggle:
         """When no context text is stored, return empty string."""
         mock_db.query.return_value.filter.return_value.first.return_value = None
 
-        from app.tasks.summarization import _get_organization_context
+        from app.tasks.summarization_inputs import _get_organization_context
 
         result = _get_organization_context(mock_db, user_id=1)
         assert result == ""
@@ -133,7 +133,7 @@ class TestOrgContextPromptTypeToggle:
         setting = self._make_setting("org_context_text", "")
         mock_db.query.return_value.filter.return_value.first.return_value = setting
 
-        from app.tasks.summarization import _get_organization_context
+        from app.tasks.summarization_inputs import _get_organization_context
 
         result = _get_organization_context(mock_db, user_id=1)
         assert result == ""
@@ -155,7 +155,7 @@ class TestOrgContextPromptTypeToggle:
             toggle_setting,
         ]
 
-        from app.tasks.summarization import _get_organization_context
+        from app.tasks.summarization_inputs import _get_organization_context
 
         result = _get_organization_context(mock_db, user_id=1)
         assert result == context_text
@@ -173,7 +173,7 @@ class TestOrgContextPromptTypeToggle:
             toggle_setting,
         ]
 
-        from app.tasks.summarization import _get_organization_context
+        from app.tasks.summarization_inputs import _get_organization_context
 
         result = _get_organization_context(mock_db, user_id=1)
         assert result == ""
@@ -194,7 +194,7 @@ class TestOrgContextPromptTypeToggle:
             toggle_setting,
         ]
 
-        from app.tasks.summarization import _get_organization_context
+        from app.tasks.summarization_inputs import _get_organization_context
 
         result = _get_organization_context(mock_db, user_id=1)
         assert result == context_text
@@ -214,7 +214,7 @@ class TestOrgContextPromptTypeToggle:
             None,
         ]
 
-        from app.tasks.summarization import _get_organization_context
+        from app.tasks.summarization_inputs import _get_organization_context
 
         result = _get_organization_context(mock_db, user_id=1)
         assert result == ""
@@ -235,7 +235,7 @@ class TestOrgContextPromptTypeToggle:
             None,
         ]
 
-        from app.tasks.summarization import _get_organization_context
+        from app.tasks.summarization_inputs import _get_organization_context
 
         result = _get_organization_context(mock_db, user_id=1)
         assert result == context_text

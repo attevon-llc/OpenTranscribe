@@ -45,6 +45,7 @@ _GUARDED_FILES = (
     "utils/transcript_builders.py",
     "utils/prompt_manager.py",
     "tasks/summarization.py",
+    "tasks/summarization_inputs.py",
     "tasks/topic_extraction.py",
     "tasks/speaker_identification_task.py",
     # index documents and the writers that rebuild them

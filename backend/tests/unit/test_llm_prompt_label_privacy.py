@@ -34,17 +34,17 @@ def _reset_ceiling():
 
 @pytest.fixture
 def summarization_inputs(monkeypatch, db_session):
-    from app.tasks import summarization
+    from app.tasks import summarization_inputs
 
     @contextlib.contextmanager
     def scope():
         yield db_session
 
-    monkeypatch.setattr(summarization, "session_scope", scope)
-    monkeypatch.setattr(summarization, "resolve_llm_masking", lambda db, media_file: None)
+    monkeypatch.setattr(summarization_inputs, "session_scope", scope)
+    monkeypatch.setattr(summarization_inputs, "resolve_llm_masking", lambda db, media_file: None)
 
     def load(world) -> dict:
-        return summarization._load_summarization_inputs(
+        return summarization_inputs._load_summarization_inputs(
             str(world.file.uuid), str(uuid_pkg.uuid4()), force_regenerate=False
         )
 

@@ -173,6 +173,7 @@ def test_the_six_fixed_tasks_are_clean(auditor):
     app_root = Path(__file__).resolve().parents[2] / "app"
     fixed = [
         "tasks/summarization.py",
+        "tasks/summarization_inputs.py",
         "tasks/speaker_identification_task.py",
         "tasks/watch_source_tasks.py",
         "tasks/media_download.py",

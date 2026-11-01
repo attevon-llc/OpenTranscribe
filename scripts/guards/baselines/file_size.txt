@@ -32,7 +32,6 @@ backend/app/tasks/CLAUDE.md	508	oversize: split by concern planned
 backend/app/tasks/rediarize_task.py	707	oversize: split by concern planned
 backend/app/tasks/speaker_embedding_task.py	788	oversize: split by concern planned
 backend/app/tasks/speaker_identification_task.py	720	oversize: split by concern planned
-backend/app/tasks/summarization.py	804	oversize: split by concern planned
 backend/tests/CLAUDE.md	946	oversize: split by concern planned
 backend/tests/api/endpoints/test_auth_comprehensive.py	757	oversize: split by concern planned
 backend/tests/api/endpoints/test_search_admin_routes.py	1103	oversize: split by concern planned

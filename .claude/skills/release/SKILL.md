@@ -90,6 +90,15 @@ A gate can be overridden with `--force-<stage>`, which requires a reason and
 records it plus the operator in `.release/<version>/steps/`. Use it for a real
 decision (an accepted CVE with no reachable path), never to make a red run green.
 
+**`rehearse` starts with Scenario D, the model downloader from an empty cache**
+(`scripts/release-tests/test-cold-model-download.sh`, criteria `cold-cache-*`). v0.6.0
+shipped a `download-models.py` whose pyannote group failed for every user, CPU and GPU,
+while A-C passed: they install unattended (which skips the download) and seed a warm cache.
+D runs each `--only` group CPU-only in the built image and needs `HUGGINGFACE_TOKEN` and the
+`build` stage's image; without either it is not-measured (exit 3), not a pass. A red
+`cold-cache-model-download` names the failing group; read `groups/<group>.log` under its
+TEST_ROOT. Never `--force-rehearse` past it: it is the bug a fresh install hits first.
+
 ## What you own
 
 - **CHANGELOG**: `bump` promotes `[Unreleased]` to `[X.Y.Z] - <date>` and opens a

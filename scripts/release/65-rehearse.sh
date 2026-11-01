@@ -1,6 +1,7 @@
 #!/bin/bash
-# The three release scenarios: fresh install, upgrade from the previous release,
-# and the lite (CPU-only, cloud-ASR) deployment.
+# The four release scenarios: D the model downloader from a cold cache, then A fresh
+# install, B upgrade from the previous release, and C the lite (CPU-only, cloud-ASR)
+# deployment. D runs first because A seeds its model cache from D's output.
 #
 # This is the stage that proves the release, and the only one that needs the live
 # stack STOPPED — the scenarios run under the installer's stock container names
@@ -23,6 +24,10 @@
 #
 # It publishes nothing: test-lite-mode.sh builds the lite image locally and pins
 # pull_policy: never, so it needs no Docker Hub artifact and creates none.
+#
+# Scenario D (test-cold-model-download.sh) needs no stopped stack and binds nothing; it is
+# here because a fresh install is the moment a real user runs the downloader, and every
+# other scenario skips it (unattended install + seeded cache). See that script's header.
 #
 # Exit: 0 all scenarios passed · 1 a scenario failed · 3 live stack still running ·
 #       4 operator declined a scenario's confirmation prompt (nothing ran —
@@ -217,6 +222,13 @@ fi
 record live-stack-stopped pass
 
 fresh_rc=0; upgrade_rc=0; lite_rc=0
+# Scenario D (cold-cache model download). Its criteria are read from the evidence it writes
+# under COLD_CACHE_ROOT, via the same oracle the scenario uses, so this stage and the
+# scenario's own REPORT.md cannot disagree. Unset COLD_CACHE_ROOT (a --patch waiver) leaves
+# every D criterion not-measured, never a pass.
+cold_rc=0
+COLD_CACHE_ROOT="${COLD_CACHE_ROOT:-}"
+COLD_CACHE_ORACLE="$REPO_ROOT/scripts/release-tests/lib/cold-model-download.py"
 # Scenario C's teardown status. Separate from lite_rc on purpose — whether the lite
 # deployment works is a fact about the RELEASE; whether this host then released its ports
 # is a fact about the HOST. It still reaches the exit-code aggregation below, because
@@ -337,6 +349,28 @@ else
     export TO_BRANCH
     echo -e "${BLUE}Rehearsing the deployment files from branch: ${TO_BRANCH}${NC}" >&2
 
+    # Scenario D FIRST, because Scenario A installs from what it produced.
+    #
+    # v0.6.0 shipped a downloader whose pyannote group exits 1 from an empty cache on every
+    # host, and all three scenarios passed: A and C install with OPENTRANSCRIBE_UNATTENDED=1,
+    # which makes setup-opentranscribe.sh skip the model download outright, and then seed a
+    # warm shared cache. D runs scripts/download-models.py per group, CPU-only, against an
+    # empty cache, in the image under test. When every group succeeded, OT_COLD_CACHE_SEED
+    # hands that cache to A, so A's transcription runs on weights the SHIPPED downloader
+    # fetched rather than on whatever the dev stack had accumulated. When D failed, A falls
+    # back to the shared cache and still measures the install on its own: one finding, not two.
+    # --- BEGIN cold-cache-scenario ---
+    echo -e "${BLUE}Scenario D — cold-cache model download (CPU, empty cache, the image under test)${NC}" >&2
+    COLD_CACHE_ROOT="${COLD_CACHE_ROOT:-/mnt/nvm/opentranscribe-test-runs/ot-reltest-coldcache-$(date +%Y%m%d-%H%M%S)}"
+    TEST_ROOT="$COLD_CACHE_ROOT" "${COLD_CACHE_SCENARIO:-./scripts/release-tests/test-cold-model-download.sh}" --yes \
+        || cold_rc=$?
+    cold_download="$(python3 "$COLD_CACHE_ORACLE" outcome --root "$COLD_CACHE_ROOT" --criterion download)"
+    if [[ "${cold_download%%$'\t'*}" == "pass" ]]; then
+        export OT_COLD_CACHE_SEED="$COLD_CACHE_ROOT/cache"
+        echo -e "${GREEN}Scenario A will seed its model cache from Scenario D's cold download${NC}" >&2
+    fi
+    # --- END cold-cache-scenario ---
+
     echo -e "${BLUE}Scenario A — fresh install${NC}" >&2
     ./scripts/release-tests/test-fresh-install.sh --yes || fresh_rc=$?
 
@@ -417,6 +451,48 @@ record lite-mode "$(scenario_outcome "$lite_rc" "$PATCH_SKIP_REASON")" \
     "${PATCH_SKIP_REASON:-test-lite-mode.sh rc=$lite_rc}" \
     "read the REPORT.md under its TEST_ROOT" "${PATCH_SKIP_REASON:+waived}"
 
+# Scenario D, one criterion per question so a red one names what broke. Each reads the
+# scenario's evidence through the oracle; a missing file is not-measured, never a pass.
+# --- BEGIN cold-cache-record ---
+cold_outcome() {
+    local criterion="$1" line
+    if [[ -n "$PATCH_SKIP_REASON" ]]; then
+        printf 'not-measured\t%s\n' "$PATCH_SKIP_REASON"
+        return
+    fi
+    if [[ -z "$COLD_CACHE_ROOT" ]]; then
+        printf 'not-measured\tScenario D did not run\n'
+        return
+    fi
+    if ! line="$(python3 "$COLD_CACHE_ORACLE" outcome --root "$COLD_CACHE_ROOT" --criterion "$criterion")"; then
+        printf 'not-measured\tthe cold-cache oracle could not read %s\n' "$COLD_CACHE_ROOT"
+        return
+    fi
+    printf '%s\n' "$line"
+}
+cold_fix="read $COLD_CACHE_ROOT/REPORT.md and groups/<group>.log"
+# The stage's exit code must agree with what is recorded. D's own exit status normally does,
+# but the evidence is the authority: a scenario that exited 0 having written no TSV (or a
+# failing one) must not leave this stage at 0 beside a blocking criterion it failed.
+cold_derived=0
+cold_tally() {
+    case "${1%%$'\t'*}" in
+        fail)         cold_derived=1 ;;
+        not-measured) (( cold_derived == 1 )) || cold_derived=3 ;;
+    esac
+}
+cold_line="$(cold_outcome download)"; cold_tally "$cold_line"
+record cold-cache-model-download "${cold_line%%$'\t'*}" "${cold_line#*$'\t'}" "$cold_fix" "${PATCH_SKIP_REASON:+waived}"
+cold_line="$(cold_outcome weights)"; cold_tally "$cold_line"
+record cold-cache-weights-present "${cold_line%%$'\t'*}" "${cold_line#*$'\t'}" "$cold_fix" "${PATCH_SKIP_REASON:+waived}"
+cold_line="$(cold_outcome nltk-hardlink)"; cold_tally "$cold_line"
+record cold-cache-nltk-hardlinks-fail-loudly "${cold_line%%$'\t'*}" "${cold_line#*$'\t'}" "$cold_fix" "${PATCH_SKIP_REASON:+waived}"
+# A --patch waiver is recorded waived (a warning), exactly like A-C, and moves no exit code.
+if [[ -z "$PATCH_SKIP_REASON" && $cold_rc -eq 0 ]]; then
+    cold_rc=$cold_derived
+fi
+# --- END cold-cache-record ---
+
 # Both halves of the contract: every declared criterion was recorded above.
 criteria_assert_all_checked
 
@@ -429,14 +505,14 @@ criteria_assert_all_checked
 # rehearsal had run and failed, when none had run at all. `record` above reports; it
 # deliberately does not decide the exit code, so declaring criteria did not change 0/1/3/4.
 rc=0
-if [[ $fresh_rc -eq 4 || $upgrade_rc -eq 4 || $lite_rc -eq 4 || $lite_teardown_rc -eq 4 ]]; then
+if [[ $fresh_rc -eq 4 || $upgrade_rc -eq 4 || $lite_rc -eq 4 || $lite_teardown_rc -eq 4 || $cold_rc -eq 4 ]]; then
     rc=4
-elif [[ $fresh_rc -eq 3 || $upgrade_rc -eq 3 || $lite_rc -eq 3 || $lite_teardown_rc -eq 3 ]]; then
+elif [[ $fresh_rc -eq 3 || $upgrade_rc -eq 3 || $lite_rc -eq 3 || $lite_teardown_rc -eq 3 || $cold_rc -eq 3 ]]; then
     rc=3
-elif [[ $fresh_rc -ne 0 || $upgrade_rc -ne 0 || $lite_rc -ne 0 || $lite_teardown_rc -ne 0 ]]; then
+elif [[ $fresh_rc -ne 0 || $upgrade_rc -ne 0 || $lite_rc -ne 0 || $lite_teardown_rc -ne 0 || $cold_rc -ne 0 ]]; then
     rc=1
 fi
-[[ $rc -eq 0 ]] && echo -e "${GREEN}all three scenarios passed${NC}" >&2
+[[ $rc -eq 0 ]] && echo -e "${GREEN}all four scenarios passed${NC}" >&2
 
 if [[ "$JSON_OUT" == "true" ]]; then
     printf '{"stage":"rehearse","version":"%s","status":"%s","criteria":[%s],"next":%s}\n' \

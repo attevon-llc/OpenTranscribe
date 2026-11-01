@@ -463,6 +463,23 @@ this file is for.
   against mocked cloud ASR + mocked LLM), with `lib/guardrails.sh` as the
   safety firewall and `lib/{compose-patch,api-client,assertions,versions,model-cache}.sh`.
 
+  ⚠️ **Scenario D, `test-cold-model-download.sh`, is the ONLY thing that runs
+  `download-models.py` from an empty cache, and `rehearse` runs it first.** v0.6.0 shipped a
+  pyannote group that exits 1 for every user (CPU and GPU: synthetic warm-up audio, VAD finds no
+  speech, transformers 5.10.4 indexes an empty batch) while A-C passed, because they install with
+  `OPENTRANSCRIBE_UNATTENDED=1` (the installer then skips `download_ai_models`) and seed a warm
+  cache. D runs every `DOWNLOAD_GROUPS` group (derived by AST, `lib/cold-model-download.py groups`)
+  in its own container, CPU-only, against the image under test with this checkout's script
+  mounted; `lib/cold-model-download.py verify` checks the weights independently (the downloader
+  calls `partial`/`skipped` success), and a `cp -al` nltk leg requires a loud failure or a
+  loadable corpus. A passing D exports `OT_COLD_CACHE_SEED` and Scenario A seeds from it. Needs
+  `HUGGINGFACE_TOKEN` (env, or `OT_RELEASE_TEST_SECRETS`/`.env.test-secrets` — a worktree has no
+  copy of that gitignored file, so point `OT_RELEASE_TEST_SECRETS` at the main checkout's);
+  without it, or with `DOWNLOADER_IMAGE=`/`OT_RELEASE_TEST_ALLOW_STALE_IMAGE=`, it can fail but
+  never pass. It replaced `scripts/test-model-download.sh` (`:latest`, `--gpus all`, wired into
+  nothing), which was deleted. Tests: `backend/tests/unit/test_release_cold_model_download.py`.
+  Do not "speed it up" by seeding the cache: an empty cache is the whole measurement.
+
   **Where the rehearsal's wall clock actually goes, and why it is near its floor.** Measured on
   a green run: **~30 min total — fresh ~2 min, upgrade ~24 min, lite ~3 min.** So the upgrade
   scenario is ~80%, and it is two hops (`ver_upgrade_sources` derives `{v0.4.1, v0.3.3}` for a
@@ -1192,7 +1209,6 @@ an empty string too, so discarding rc turns "could not check" into "CPU-only con
   hard isolation with 6173+/6273+ ports until #303 — it never worked that way.)
 - `run_benchmark.py` — `docker compose down -v` on `-p otbench`, plus a legacy cleanup pass aimed at the
   **`transcribe-app` dev project** (suppress with `--no-cleanup-legacy`).
-- `test-model-download.sh` — `rm -rf ./test-model-cache`, **relative to cwd**.
 - `frontend-check.sh` on failure shells out to the `claude` CLI and then `git add`s every modified file
   under `frontend/` — pass `--no-claude` if you don't want your index touched.
 - Everything else writes to the **live dev stack**: benchmarks upload files and never delete them;

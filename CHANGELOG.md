@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Release rehearsal Scenario D: the model downloader from an empty cache.** v0.6.0's
+  `scripts/download-models.py` fails its `pyannote` group for every user from a cold cache, on CPU
+  and GPU alike (`list index out of range`), and no release gate noticed: the rehearsal installs
+  unattended, which skips the download, and seeds a warm model cache. `./scripts/release.sh
+  rehearse` now runs `scripts/release-tests/test-cold-model-download.sh` first: every download group
+  in its own container, CPU-only, against the image being released, with three blocking criteria
+  (`cold-cache-model-download`, `cold-cache-weights-present`,
+  `cold-cache-nltk-hardlinks-fail-loudly`). When it passes, the fresh-install scenario uses its
+  output as the model cache. A patch release that touches `download-models.*` no longer waives the
+  rehearsal.
+
+### Removed
+
+- `scripts/test-model-download.sh`, superseded by the scenario above (it ran `:latest` with
+  `--gpus all` and was not wired into any gate).
+
 ## [0.6.0] - 2026-10-31
 
 ### Overview

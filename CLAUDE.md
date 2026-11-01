@@ -212,7 +212,10 @@ preflight → bump → verify → test → build → scan → rehearse
   ledger — not a pass.
 - **Ledger** lives in `.release/<version>/steps/` (gitignored). Rehearsal history
   reads as current until you `reset`, so reset before a real run.
-- `rehearse` runs **three** scenarios (fresh install, upgrade, lite) and **requires the live
+- `rehearse` runs **four** scenarios: **D** the model downloader from an empty cache, CPU-only,
+  in the built image (the only gate that runs `download-models.py`; v0.6.0 shipped a pyannote
+  group that failed for every user while A-C passed, `scripts/CLAUDE.md`), then fresh install,
+  upgrade, lite. It **requires the live
   stack stopped**: without approval it refuses (exit 3) and prints the command; with `--yes` or
   `RELEASE_AUTO_STOP_STACK=true` it runs `./opentr.sh stop`, rehearses, and restarts dev from a
   trap. It also needs the release branch pushed to origin. `smoke` needs the stack stopped too,

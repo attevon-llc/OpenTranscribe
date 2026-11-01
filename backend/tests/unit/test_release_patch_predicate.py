@@ -195,6 +195,7 @@ _TRIGGER_SAMPLE_PATHS: dict[str, str] = {
     "setup-opentranscribe.sh": "setup-opentranscribe.sh",
     "opentranscribe.sh": "opentranscribe.sh",
     "release-manifest.txt": "release-manifest.txt",
+    "download-models": "scripts/download-models.py",
 }
 
 

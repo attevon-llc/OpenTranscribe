@@ -124,6 +124,12 @@ declare -a PATCH_REHEARSAL_TRIGGERS=(
     # days; nothing else in this trigger set would have caught that class of
     # regression.
     'release-manifest.txt'
+    # scripts/download-models.{py,sh}: shipped through the manifest and run by
+    # the installer, NOT baked into the image, so a downloader-only patch has
+    # no Dockerfile or requirements diff. Rehearsal Scenario D is the only
+    # thing that executes it; v0.6.0's pyannote group failed for every user
+    # with all of A-C green.
+    'download-models'
 )
 
 # patch_rehearsal_waivable TO -> 0 + a reason on stdout when the rehearsal MAY

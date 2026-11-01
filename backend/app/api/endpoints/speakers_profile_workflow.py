@@ -97,7 +97,7 @@ def _handle_speaker_labeling_workflow(
         dict with 'auto_applied_count' and 'suggested_count' keys
     """
     # Auto-create profile if needed and assign speaker to it
-    from app.api.endpoints.speaker_update import auto_create_or_assign_profile
+    from app.api.endpoints.speaker_profile_assignment import auto_create_or_assign_profile
 
     speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
     if not speaker:

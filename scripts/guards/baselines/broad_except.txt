@@ -33,7 +33,6 @@ backend/app/api/endpoints/speaker_attribute_migration.py	3	ratchet: may only go 
 backend/app/api/endpoints/speaker_clusters.py	2	ratchet: may only go down
 backend/app/api/endpoints/speaker_profiles.py	3	ratchet: may only go down
 backend/app/api/endpoints/speaker_profiles_attributes.py	2	ratchet: may only go down
-backend/app/api/endpoints/speaker_update.py	2	ratchet: may only go down
 backend/app/api/endpoints/speakers.py	2	ratchet: may only go down
 backend/app/api/endpoints/speakers_merge.py	2	ratchet: may only go down
 backend/app/api/endpoints/speakers_suggestions.py	1	ratchet: may only go down
@@ -380,3 +379,4 @@ scripts/vram-probe-diarization-cpu.py	1	ratchet: may only go down
 scripts/vram-probe-diarization-mps.py	2	ratchet: may only go down
 scripts/vram-probe-diarization.py	8	ratchet: may only go down
 scripts/whole-stack-vram-probe.py	3	ratchet: may only go down
+backend/app/api/endpoints/speaker_profile_assignment.py	2	ratchet: may only go down

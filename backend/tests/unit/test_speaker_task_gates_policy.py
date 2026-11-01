@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from app.api.endpoints import speaker_profile_assignment
 from app.api.endpoints import speaker_update
 from app.tasks import speaker_clustering
 from app.tasks import speaker_merge_task
@@ -70,7 +71,7 @@ def test_a_label_folds_the_voice_into_the_new_profile_only_when_allowed(
         lambda db, impact: note(rebuilt, impact, []),
     )
 
-    speaker_update._update_profile_embedding(db_session, speaker.id, None, 1)
+    speaker_profile_assignment._update_profile_embedding(db_session, speaker.id, None, 1)
 
     # The reconcile runs either way (a removal must never be skipped); only the profile the
     # voice would JOIN is left out while voiceprints are off.
@@ -108,7 +109,7 @@ def _call_speakers_endpoint(db, speaker, old, new):
 
 
 def _call_update_task(db, speaker, old, new):
-    speaker_update._update_profile_embedding(db, speaker.id, old.id, new.id)
+    speaker_profile_assignment._update_profile_embedding(db, speaker.id, old.id, new.id)
     return []
 
 

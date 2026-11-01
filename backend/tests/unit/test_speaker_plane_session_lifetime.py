@@ -85,12 +85,12 @@ _AUDITOR = Path(__file__).resolve().parents[3] / "scripts" / "audit-session-life
 #: ``ProfileEmbeddingService.calculate_profile_similarity``, whose ``db`` parameter was
 #: DEAD — nothing in the body read it — so the fix was to delete the parameter, not to
 #: restructure anything. Closing it made this test fail, which forced the allowlist line
-#: to be deleted in the same change. Exactly what the set is for: add a scope here only
-#: while it genuinely cannot be fixed, and let closing it break the test.
+#: to be deleted in the same change. Add a scope here only while it cannot be fixed.
 _KNOWN_RESIDUAL_SCOPES: set[str] = set()
 
 _SPEAKER_PLANE_FILES = (
     "api/endpoints/speakers*.py",
+    "api/endpoints/speaker_profile_assignment.py",
     "api/endpoints/speaker_update.py",
     "tasks/speaker_update_task.py",
     "tasks/speaker_merge_task.py",

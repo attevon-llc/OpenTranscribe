@@ -539,13 +539,13 @@ def test_profile_gender_confirm_rewrites_only_the_callers_speakers(client, db_se
 
 def test_auto_profile_does_not_link_a_same_named_profile_of_another_tenant(world, monkeypatch):
     """The speaker gets its own tenant's "Jane Roe" instead (names are per tenant)."""
-    from app.api.endpoints import speaker_update
+    from app.api.endpoints.speaker_profile_assignment import auto_create_or_assign_profile
     from app.services import opensearch_service
 
     w = world
     monkeypatch.setattr(opensearch_service, "update_speaker_profile", lambda **_k: True)
     personal = _mk_profile(w.db, w.alice, None, name="Jane Roe")
-    assert speaker_update.auto_create_or_assign_profile(w.a_speaker, "Jane Roe", w.db) is True
+    assert auto_create_or_assign_profile(w.a_speaker, "Jane Roe", w.db) is True
     w.db.flush()
     linked = w.db.get(SpeakerProfile, w.a_speaker.profile_id)
     assert linked is not None and linked.id != personal.id
@@ -553,7 +553,7 @@ def test_auto_profile_does_not_link_a_same_named_profile_of_another_tenant(world
 
     # A second org-A speaker of that name joins the org-A profile, not a third one.
     again = _mk_speaker(w.db, _mk_file(w.db, w.alice, w.org_a.id))
-    assert speaker_update.auto_create_or_assign_profile(again, "Jane Roe", w.db) is True
+    assert auto_create_or_assign_profile(again, "Jane Roe", w.db) is True
     w.db.flush()
     assert again.profile_id == linked.id
 

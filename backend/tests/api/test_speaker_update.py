@@ -29,8 +29,8 @@ import uuid
 import numpy as np
 import pytest
 
+from app.api.endpoints.speaker_profile_assignment import auto_create_or_assign_profile
 from app.api.endpoints.speaker_update import _get_profile_uuid
-from app.api.endpoints.speaker_update import auto_create_or_assign_profile
 from app.api.endpoints.speaker_update import calculate_cosine_similarity
 from app.api.endpoints.speaker_update import store_speaker_match
 from app.api.endpoints.speaker_update import trigger_retroactive_matching
@@ -356,6 +356,7 @@ def test_labeling_workflow_stops_when_profile_assignment_fails(
     """A failed profile step must not proceed to commit and retroactive matching."""
     from sqlalchemy.exc import OperationalError
 
+    from app.api.endpoints import speaker_profile_assignment
     from app.api.endpoints import speaker_update
     from app.api.endpoints import speakers_profile_workflow
 
@@ -370,9 +371,38 @@ def test_labeling_workflow_stops_when_profile_assignment_fails(
         ran["matching"] = True
         return {"auto_applied_count": 0, "suggested_count": 0}
 
-    monkeypatch.setattr(speaker_update, "auto_create_or_assign_profile", _boom)
+    monkeypatch.setattr(speaker_profile_assignment, "auto_create_or_assign_profile", _boom)
     monkeypatch.setattr(speaker_update, "trigger_retroactive_matching", _matching)
 
     with pytest.raises(OperationalError):
         speakers_profile_workflow._handle_speaker_labeling_workflow(db_session, spk.id, "Dana Lee")
     assert ran["matching"] is False
+
+
+# ---------------------------------------------------------------------------
+# _load_candidates: retroactive matching only ever scores the labeler's own speakers
+# ---------------------------------------------------------------------------
+
+
+def test_load_candidates_excludes_self_and_other_users(db_session, normal_user, other_user):
+    from app.api.endpoints import speaker_update
+
+    mf = _make_file(db_session, normal_user)
+    trigger_speaker = _make_speaker(db_session, normal_user, mf, name="T")
+    mine = _make_speaker(db_session, normal_user, mf, name="MINE")
+    theirs = _make_speaker(
+        db_session, other_user, _make_file(db_session, other_user), name="THEIRS"
+    )
+    trigger = {
+        "id": trigger_speaker.id,
+        "user_id": normal_user.id,
+        "organization_id": None,
+        "display_name": "Zed",
+        "profile_id": None,
+    }
+
+    ids = {c["id"] for c in speaker_update._load_candidates(db_session, trigger)}
+
+    assert mine.id in ids
+    assert trigger_speaker.id not in ids
+    assert theirs.id not in ids

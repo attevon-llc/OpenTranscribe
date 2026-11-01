@@ -232,8 +232,8 @@ def test_no_allowlisted_call_site_is_stale():
 #: Queries that read `display_name` without `identity_source`, each with the reason the name
 #: never reaches a surface the switch governs.
 QUERY_ALLOWED: dict[str, str] = {
-    "api/endpoints/speaker_update.py::trigger_retroactive_matching": (
-        "a voiceprint stage: it runs only while the gate allows voiceprints, and the name is "
+    "api/endpoints/speaker_update.py::_load_candidates": (
+        "a voiceprint stage (called only after trigger_retroactive_matching passed the privacy gate), and the name is "
         "only compared against the trigger's, never printed"
     ),
     "api/endpoints/speakers_profile_workflow.py::_load_profile_speaker_names": (

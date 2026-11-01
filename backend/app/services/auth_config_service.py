@@ -317,6 +317,10 @@ class AuthConfigService:
             # Re-derived on every write, not just on create: rows written before
             # the flag was populated would otherwise stay False forever.
             config.requires_restart = requires_restart  # type: ignore[assignment]
+            # Same for the sensitivity flag: a row created before its key joined
+            # SENSITIVE_KEYS kept False while its new value was encrypted, so reads
+            # returned the ciphertext as if it were the credential.
+            config.is_sensitive = is_sensitive
             # Heal a stale category. `config_key` is globally UNIQUE and this branch
             # never rewrote `category`, so a key that used to be listed under two
             # categories stayed pinned to whichever tab wrote it first — and then

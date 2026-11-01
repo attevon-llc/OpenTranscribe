@@ -227,7 +227,7 @@ class TestGovDNDisplayName:
     """
 
     def _parse(self, dn: str) -> str:
-        from app.auth.pki_auth import extract_display_name_from_gov_dn
+        from app.auth.pki_certificate import extract_display_name_from_gov_dn
 
         return extract_display_name_from_gov_dn(dn)
 

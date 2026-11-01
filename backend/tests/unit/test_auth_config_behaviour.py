@@ -402,7 +402,7 @@ def test_pki_ca_cert_path_is_the_file_the_issuer_is_loaded_from(
     db_session, super_admin_user, tmp_path
 ):
     """An unset path yields no issuer; a saved path is the file actually opened."""
-    from app.auth.pki_auth import _load_issuer_certificate
+    from app.auth.pki_revocation import _load_issuer_certificate
 
     save(db_session, super_admin_user, "pki", {"pki_enabled": True, "pki_ca_cert_path": ""})
     assert _load_issuer_certificate() is None, "an unset CA path still produced an issuer"
@@ -429,7 +429,7 @@ def test_pki_ca_cert_path_is_the_file_the_issuer_is_loaded_from(
 
 def test_pki_ocsp_timeout_seconds_reaches_the_http_client(db_session, super_admin_user):
     """The saved timeout must be the one the OCSP request is made with."""
-    import app.auth.pki_auth as pki_auth
+    import app.auth.pki_ocsp as pki_ocsp
 
     save(db_session, super_admin_user, "pki", {"pki_enabled": True})
 
@@ -446,16 +446,16 @@ def test_pki_ocsp_timeout_seconds_reaches_the_http_client(db_session, super_admi
             return False
 
         def post(self, *args, **kwargs):
-            raise pki_auth.httpx.RequestError("no responder in a unit test")
+            raise pki_ocsp.httpx.RequestError("no responder in a unit test")
 
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(pki_auth.httpx, "Client", _RecordingClient)
+        mp.setattr(pki_ocsp.httpx, "Client", _RecordingClient)
 
         save(db_session, super_admin_user, "pki", {"pki_ocsp_timeout_seconds": 7})
-        pki_auth._send_ocsp_request("http://ocsp.example.test", b"req")
+        pki_ocsp._send_ocsp_request("http://ocsp.example.test", b"req")
 
         save(db_session, super_admin_user, "pki", {"pki_ocsp_timeout_seconds": 23})
-        pki_auth._send_ocsp_request("http://ocsp.example.test", b"req")
+        pki_ocsp._send_ocsp_request("http://ocsp.example.test", b"req")
 
     assert timeouts == [7, 23], f"the saved OCSP timeout never reached httpx; saw {timeouts}"
 
@@ -488,7 +488,7 @@ def test_pki_crl_cache_seconds_sets_the_cached_entry_ttl(db_session, super_admin
     """The saved TTL must be the expiry actually written into the CRL cache."""
     import time as _time
 
-    import app.auth.pki_auth as pki_auth
+    import app.auth.pki_revocation as pki_revocation
 
     save(db_session, super_admin_user, "pki", {"pki_enabled": True})
 
@@ -500,17 +500,17 @@ def test_pki_crl_cache_seconds_sets_the_cached_entry_ttl(db_session, super_admin
 
     def cached_ttl(seconds: int) -> float:
         save(db_session, super_admin_user, "pki", {"pki_crl_cache_seconds": seconds})
-        pki_auth._crl_cache.pop(url, None)
+        pki_revocation._crl_cache.pop(url, None)
         before = _time.time()
-        pki_auth._set_crl_cache(url, sentinel_crl)
-        _, expiry = pki_auth._crl_cache[url]
+        pki_revocation._set_crl_cache(url, sentinel_crl)
+        _, expiry = pki_revocation._crl_cache[url]
         return expiry - before
 
     try:
         short = cached_ttl(60)
         long = cached_ttl(3600)
     finally:
-        pki_auth._crl_cache.pop(url, None)
+        pki_revocation._crl_cache.pop(url, None)
 
     assert 59 <= short <= 62, f"a 60s TTL produced {short}s"
     assert 3599 <= long <= 3602, f"a 3600s TTL produced {long}s"

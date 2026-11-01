@@ -51,7 +51,10 @@ backend/app/auth/mfa.py	3	ratchet: may only go down
 backend/app/auth/oidc/claims.py	1	ratchet: may only go down
 backend/app/auth/oidc/flow.py	1	ratchet: may only go down
 backend/app/auth/password_history.py	1	ratchet: may only go down
-backend/app/auth/pki_auth.py	9	ratchet: may only go down
+backend/app/auth/pki_auth.py	1	ratchet: may only go down
+backend/app/auth/pki_certificate.py	1	ratchet: may only go down
+backend/app/auth/pki_ocsp.py	3	ratchet: may only go down
+backend/app/auth/pki_revocation.py	4	ratchet: may only go down
 backend/app/auth/rate_limit.py	2	ratchet: may only go down
 backend/app/auth/refresh_tokens.py	1	ratchet: may only go down
 backend/app/auth/session.py	1	ratchet: may only go down

@@ -20,7 +20,7 @@ noqa::backend/app/auth/audit_events.py	8	suppression: reason to be added
 noqa::backend/app/auth/audit_query.py	1	suppression: reason to be added
 noqa::backend/app/auth/oidc/provisioning.py	1	suppression: reason to be added
 noqa::backend/app/auth/password_blocklist.py	1	suppression: reason to be added
-noqa::backend/app/auth/pki_auth.py	1	suppression: reason to be added
+noqa::backend/app/auth/pki_ocsp.py	1	suppression: reason to be added
 noqa::backend/app/auth/proxy/assertion.py	1	suppression: reason to be added
 noqa::backend/app/auth/proxy/config.py	1	suppression: reason to be added
 noqa::backend/app/auth/saml/provisioning.py	1	suppression: reason to be added

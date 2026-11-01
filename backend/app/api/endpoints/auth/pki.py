@@ -19,7 +19,7 @@ from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.lockout import check_and_record_attempt
 from app.auth.pki_auth import extract_dn_from_headers
 from app.auth.pki_auth import pki_authenticate
-from app.auth.pki_auth import sync_pki_user_to_db
+from app.auth.pki_provisioning import sync_pki_user_to_db
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
 from app.auth.token_service import token_service

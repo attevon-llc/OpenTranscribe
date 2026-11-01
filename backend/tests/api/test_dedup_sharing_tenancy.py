@@ -487,7 +487,7 @@ def _group_share(db, collection: Collection, group: UserGroup, sharer: User) -> 
 
 
 def test_org_collection_share_notifies_only_org_members(world):
-    from app.api.endpoints.media_collections import _get_share_target_user_ids
+    from app.api.endpoints.media_collections_shares import _get_share_target_user_ids
 
     w = world
     group = _mk_group(w.db, w.alice, [w.bob, w.carol])
@@ -504,7 +504,7 @@ def test_org_collection_share_notifies_only_org_members(world):
 
 
 def test_personal_collection_share_notifies_every_group_member(world):
-    from app.api.endpoints.media_collections import _get_share_target_user_ids
+    from app.api.endpoints.media_collections_shares import _get_share_target_user_ids
 
     w = world
     group = _mk_group(w.db, w.carol, [w.dave, w.bob])
@@ -530,8 +530,8 @@ def test_revoke_of_org_collection_share_notifies_only_org_members(client, world)
     share = _group_share(w.db, collection, group, w.alice)
 
     with (
-        patch("app.api.endpoints.media_collections.send_ws_event") as send,
-        patch("app.api.endpoints.media_collections.update_file_access_index"),
+        patch("app.api.endpoints.media_collections_shares.send_ws_event") as send,
+        patch("app.api.endpoints.media_collections_shares.update_file_access_index"),
         _acting_as(w.alice, w.org_a.id, "org:admin"),
     ):
         response = client.delete(f"/api/collections/{collection.uuid}/shares/{share.uuid}")

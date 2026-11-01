@@ -552,7 +552,7 @@ ALLOWS_KINDS: dict[str, str] = {
     "services/delete_permissions.py::can_delete_file": "media_file",
     "services/tag_bulk.py::_require_editor": "media_file",
     "api/endpoints/transcript_segments.py::_get_new_speaker_id": "speaker",
-    "api/endpoints/media_collections.py::get_collection_media": "collection",
+    "api/endpoints/media_collections_membership.py::get_collection_media": "collection",
     "api/endpoints/comments.py::_assert_comment_file_in_scope": "comment",
     "api/endpoints/comments.py::delete_comment": "comment",
     "api/endpoints/watch_sources_access.py::_get_source_or_404": "watch_source",

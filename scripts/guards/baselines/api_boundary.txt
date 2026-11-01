@@ -83,7 +83,11 @@ orm_call_in_api::backend/app/api/endpoints/llm_config_helpers.py	5	layering: rem
 orm_call_in_api::backend/app/api/endpoints/llm_connection_tests.py	4	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/llm_model_discovery.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/llm_settings.py	15	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/media_collections.py	43	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/media_collections.py	4	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/media_collections_access.py	1	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/media_collections_listing.py	16	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/media_collections_membership.py	7	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/media_collections_shares.py	15	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/org_admin.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/org_admin_holds.py	8	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/org_admin_takedown.py	3	layering: removal planned

@@ -57,6 +57,9 @@ import app.api.endpoints.llm_provider_catalog as llm_provider_catalog
 import app.api.endpoints.llm_settings as llm_settings
 import app.api.endpoints.llm_status as llm_status
 import app.api.endpoints.media_collections as media_collections
+import app.api.endpoints.media_collections_listing as media_collections_listing
+import app.api.endpoints.media_collections_membership as media_collections_membership
+import app.api.endpoints.media_collections_shares as media_collections_shares
 import app.api.endpoints.speaker_attribute_migration as speaker_attribute_migration
 import app.api.endpoints.summarization as summarization
 import app.api.endpoints.system as system_endpoints
@@ -93,6 +96,9 @@ from app.services import thumbnail
 HARDENED_MODULES = [
     # Phase 2 (A2.4 / A2.5)
     media_collections,
+    media_collections_listing,
+    media_collections_membership,
+    media_collections_shares,
     topics,
     tasks_endpoints,
     tasks_system_health,
@@ -214,10 +220,10 @@ HARDENED_HANDLERS = [
     (url_processing, "process_media_url"),
     (url_processing, "get_youtube_download_quota"),
     # A2.5 — sync SQLAlchemy in async handlers
-    (media_collections, "list_collections"),
-    (media_collections, "get_collection_media"),
-    (media_collections, "list_shared_collections"),
-    (media_collections, "create_collection_share"),
+    (media_collections_listing, "list_collections"),
+    (media_collections_membership, "get_collection_media"),
+    (media_collections_listing, "list_shared_collections"),
+    (media_collections_shares, "create_collection_share"),
     (topics, "batch_extract_topics"),
     (topics, "get_topic_suggestions"),
     (topics, "extract_topics"),

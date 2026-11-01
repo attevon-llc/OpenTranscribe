@@ -45,7 +45,7 @@ from app.models.topic import TopicSuggestion
 
 #: The sentinel the endpoints substitute for a NULL timestamp on a required
 #: response field. Deliberately not "now": see ``UNKNOWN_TIMESTAMP`` in
-#: ``endpoints/groups.py`` and ``endpoints/media_collections.py``.
+#: ``endpoints/groups.py`` and ``endpoints/media_collections_access.py``.
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
@@ -355,14 +355,14 @@ def test_update_group_survives_a_null_created_at(
 
 
 # =============================================================================
-# media_collections.py — CollectionShare.created_at / Collection.created_at
+# media_collections_{shares,listing}.py — CollectionShare.created_at / Collection.created_at
 # =============================================================================
 def test_list_collection_shares_survives_a_null_created_at(
     client, user_token_headers, normal_user, other_user, db_session
 ):
     """``GET /collections/{uuid}/shares`` must list a share with a NULL ``created_at``.
 
-    Site: ``media_collections.py`` ``_build_share_response`` — ``assert
+    Site: ``media_collections_shares.py`` ``_build_share_response`` — ``assert
     share.created_at is not None  # server_default=now()``. ``Share.created_at``
     is a required ``datetime``, so the guard substitutes the epoch sentinel rather
     than forwarding None into Pydantic (which would fail validation and 500 in a
@@ -397,7 +397,7 @@ def test_shared_with_me_survives_a_null_share_created_at(
 ):
     """``GET /collections/shared-with-me`` must list a share with a NULL ``created_at``.
 
-    Site: ``media_collections.py`` ``list_shared_collections`` — ``assert
+    Site: ``media_collections_listing.py`` ``list_shared_collections`` — ``assert
     shared_at is not None  # both created_at columns have server_default=now()``.
     Both source columns (``collection_share.created_at`` and
     ``collection.created_at``) are nullable, so neither leg of the fallback

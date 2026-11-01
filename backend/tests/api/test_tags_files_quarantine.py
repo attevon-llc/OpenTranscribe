@@ -1,6 +1,6 @@
 """``GET /api/tags/{tag_uuid}/files`` must drop quarantined files (#817).
 
-``tag_service._visible_to`` already excludes a quarantined file's id from the
+``tag_scope.visible_to`` already excludes a quarantined file's id from the
 "attached to an accessible file" arm when deciding whether the TAG itself is
 visible — but the file-*listing* half, ``tag_collisions.files_for_tag``, was
 never given the matching exclusion. So a takedown left the quarantined file's

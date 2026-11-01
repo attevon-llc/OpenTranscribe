@@ -32,13 +32,13 @@ from app.services.collection_visibility import usable_collections
 from app.services.content_audit import AuditedResource
 from app.services.content_audit import record_content_event
 from app.services.permission_service import PermissionService
+from app.services.tag_scope import owned_or_system
+from app.services.tag_scope import tenant_first
 from app.services.tag_service import names_are_similar
 from app.services.tag_service import normalize_tag_name
 from app.services.tag_service import on_tags_changed
-from app.services.tag_service import owned_or_system
 from app.services.tag_service import resolve_or_create_tag
 from app.services.tag_service import suggest_similar_tag
-from app.services.tag_service import tenant_first
 
 logger = logging.getLogger(__name__)
 

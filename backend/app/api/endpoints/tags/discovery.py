@@ -27,7 +27,7 @@ from app.services.request_context import RequestContext
 from app.services.tag_collisions import files_for_tag
 from app.services.tag_collisions import find_tag_collisions
 from app.services.tag_collisions import tags_on_files
-from app.services.tag_service import tag_ownership
+from app.services.tag_scope import tag_ownership
 from app.services.uuid_helpers import get_by_uuid
 
 

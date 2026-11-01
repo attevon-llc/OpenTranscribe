@@ -423,7 +423,7 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   must register before the `/{tag_uuid}` routes. Do NOT re-export third-party names through
   `_common` — ruff prunes them as unused there and the backend stops booting.
 - **The tag plane has THREE scopes, and mixing them up is the bug** (`v374_add_tag_user_id`).
-  All three live in `services/tag_service.py` so nothing re-derives them:
+  The first two live in `services/tag_scope.py` so nothing re-derives them:
   | Scope | Rule | Used by |
   |---|---|---|
   | `visible_to()` | system **or** owned **or** explicitly shared (`v386`) **or** attached to an accessible file | `GET /tags` (the list) |

@@ -14,11 +14,11 @@ from app.schemas.tag import TagMutationResult
 from app.schemas.tag import TagShareTarget
 from app.services.tag_operations import TagNotFoundError
 from app.services.tag_operations import TagTenantMismatchError
+from app.services.tag_scope import is_system_tag
+from app.services.tag_scope import tag_in_tenant
+from app.services.tag_scope import visible_to
 from app.services.tag_service import InvalidTagNameError
-from app.services.tag_service import is_system_tag
 from app.services.tag_service import resolve_or_create_tag
-from app.services.tag_service import tag_in_tenant
-from app.services.tag_service import visible_to
 from app.services.uuid_helpers import get_by_uuid
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 def _visible_to(db: Session, user_id: int, organization_id: int | None) -> ColumnElement[bool]:
     """Predicate for the tags ``user_id`` may see in the request's tenant.
 
-    Delegates to ``tag_service.visible_to`` — the single definition, bounded to
+    Delegates to ``tag_scope.visible_to`` — the single definition, bounded to
     the tenant on every arm (issue #1050). This used to be a second, hand-kept
     copy that lacked the share arm; two answers to "can I see this tag" is the
     drift that copy invited.

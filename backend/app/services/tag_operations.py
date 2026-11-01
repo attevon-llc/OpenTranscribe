@@ -56,15 +56,16 @@ from app.core.exceptions import OpenTranscribeError
 from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.models.watch_source import WatchSource
+from app.services.tag_scope import accessible_file_ids_subquery
+from app.services.tag_scope import is_system_tag
+from app.services.tag_scope import system_tag
+from app.services.tag_scope import tenant_key
 from app.services.tag_service import InvalidTagNameError
-from app.services.tag_service import accessible_file_ids_subquery
 from app.services.tag_service import clean_tag_name
-from app.services.tag_service import is_system_tag
 from app.services.tag_service import lookup_existing_tag
 from app.services.tag_service import normalize_tag_name
 from app.services.tag_service import on_tags_changed
 from app.services.tag_service import stored_normalized_name
-from app.services.tag_service import system_tag
 
 logger = logging.getLogger(__name__)
 
@@ -76,15 +77,6 @@ class TagTenantMismatchError(OpenTranscribeError):
     B's word, visible to A. Only folding *into* the system vocabulary (which is
     already in every tenant) or within one tenant is allowed.
     """
-
-
-def tenant_key(tag: Tag) -> tuple:
-    """The tenant a tag belongs to: system, one organization, or one user's personal space."""
-    if is_system_tag(tag):
-        return ("system",)
-    if tag.organization_id is not None:
-        return ("org", int(tag.organization_id))
-    return ("user", tag.user_id)
 
 
 class TagNotFoundError(OpenTranscribeError):

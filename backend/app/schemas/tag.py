@@ -61,7 +61,7 @@ class Tag(TagBase, UUIDBaseSchema):
         theirs or the system's by construction and can never be
         ``shared_with_me``. Every surface where the third value **is** reachable
         — the list, the collision clusters, the file-detail payload — computes it
-        explicitly with ``tag_service.tag_ownership(tag, user_id)`` and passes it
+        explicitly with ``tag_scope.tag_ownership(tag, user_id)`` and passes it
         in, which this then leaves alone.
 
         Runs **before** ``UUIDBaseSchema.prepare_uuid_response`` (a subclass's

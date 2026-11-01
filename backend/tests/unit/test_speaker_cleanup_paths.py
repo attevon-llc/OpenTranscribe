@@ -157,7 +157,7 @@ def test_retry_reset_erases_the_voiceprints_it_deletes(
 def test_reprocess_clear_erases_voiceprints_and_rebuilds_clusters(
     db_session, normal_user, speaker_os_seams, monkeypatch, stages
 ):
-    from app.api.endpoints.files import reprocess
+    from app.api.endpoints.files import reprocess_clear
 
     monkeypatch.setattr(
         "app.tasks.search_file_field_tasks.index_file_summary.delay", lambda *a: None
@@ -165,7 +165,7 @@ def test_reprocess_clear_erases_voiceprints_and_rebuilds_clusters(
     _fa, fb, _sa, sb, cluster = make_pair(db_session, normal_user, speaker_os_seams)
     victim = str(sb.uuid)
 
-    reprocess.clear_selective_data(db_session, fb, stages)
+    reprocess_clear.clear_selective_data(db_session, fb, stages)
 
     assert speaker_os_seams["erased_speakers"] == [victim]
     assert cosine(speaker_os_seams["clusters"][str(cluster.uuid)], VOICE_A) >= MATCH

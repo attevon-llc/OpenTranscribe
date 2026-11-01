@@ -805,7 +805,7 @@ class TestReprocessSpeakerLLMStageClear:
     def test_clearing_suggestions_queues_propagation_for_every_moved_speaker(
         self, db_session, normal_user, quiet_opensearch
     ):
-        from app.api.endpoints.files.reprocess import clear_selective_data
+        from app.api.endpoints.files.reprocess_clear import clear_selective_data
 
         media_file = _make_media_file(db_session, normal_user, "reprocess-speaker-llm")
         moved = _make_speaker(

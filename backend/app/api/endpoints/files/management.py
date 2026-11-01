@@ -793,8 +793,8 @@ def _handle_reprocess_action(
 
     if stages:
         # Selective reprocessing
-        from app.api.endpoints.files.reprocess import clear_selective_data
-        from app.api.endpoints.files.reprocess import dispatch_selective_tasks
+        from app.api.endpoints.files.reprocess_clear import clear_selective_data
+        from app.api.endpoints.files.reprocess_dispatch import dispatch_selective_tasks
 
         if "transcription" in stages:
             success = reset_file_for_retry(db, file_id, False)

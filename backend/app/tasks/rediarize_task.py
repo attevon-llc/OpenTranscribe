@@ -471,7 +471,7 @@ def _dispatch_downstream(
     user_id: int | None = None,
 ) -> None:
     """Dispatch downstream tasks by stage name after rediarization completes."""
-    from app.api.endpoints.files.reprocess import dispatch_task_by_name
+    from app.api.endpoints.files.reprocess_dispatch import dispatch_task_by_name
 
     for stage in downstream_tasks:
         try:

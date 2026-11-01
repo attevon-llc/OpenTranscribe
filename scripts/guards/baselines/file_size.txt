@@ -1,7 +1,7 @@
 CLAUDE.md	728	oversize: split by concern planned
 backend/app/api/CLAUDE.md	595	oversize: split by concern planned
 backend/app/api/endpoints/auth/login.py	732	oversize: split by concern planned
-backend/app/api/endpoints/auth_config.py	766	oversize: split by concern planned
+backend/app/api/endpoints/auth_config.py	765	oversize: split by concern planned
 backend/app/api/endpoints/files/management.py	1380	oversize: split by concern planned
 backend/app/api/endpoints/files/reprocess.py	772	oversize: split by concern planned
 backend/app/api/endpoints/files/url_processing.py	862	oversize: split by concern planned
@@ -13,7 +13,6 @@ backend/app/auth/pki_auth.py	1815	oversize: split by concern planned
 backend/app/core/celery.py	1416	oversize: split by concern planned
 backend/app/core/config.py	1594	oversize: split by concern planned
 backend/app/services/CLAUDE.md	1044	oversize: split by concern planned
-backend/app/services/auth_config_service.py	959	oversize: split by concern planned
 backend/app/services/auto_label_service.py	712	oversize: split by concern planned
 backend/app/services/chat/CLAUDE.md	958	oversize: split by concern planned
 backend/app/services/chat/service.py	1503	oversize: split by concern planned
@@ -62,7 +61,7 @@ backend/tests/integration/test_scheduled_backup_restore_roundtrip.py	706	oversiz
 backend/tests/test_admin_security.py	749	oversize: split by concern planned
 backend/tests/test_asr_settings.py	1053	oversize: split by concern planned
 backend/tests/test_auth_config_integration.py	842	oversize: split by concern planned
-backend/tests/test_auth_config_service.py	750	oversize: split by concern planned
+backend/tests/test_auth_config_service.py	748	oversize: split by concern planned
 backend/tests/test_chat_endpoints.py	1009	oversize: split by concern planned
 backend/tests/test_fedramp_controls.py	863	oversize: split by concern planned
 backend/tests/test_fips_140_3.py	1216	oversize: split by concern planned
@@ -72,7 +71,7 @@ backend/tests/test_pki_auth.py	2028	oversize: split by concern planned
 backend/tests/test_speaker_profile_sharing.py	728	oversize: split by concern planned
 backend/tests/test_speaker_tenant_gating.py	840	oversize: split by concern planned
 backend/tests/test_tenant_isolation.py	771	oversize: split by concern planned
-backend/tests/unit/test_auth_config_validation.py	704	oversize: split by concern planned
+backend/tests/unit/test_auth_config_validation.py	703	oversize: split by concern planned
 backend/tests/unit/test_backup_service.py	805	oversize: split by concern planned
 backend/tests/unit/test_chat_digest_masking.py	740	oversize: split by concern planned
 backend/tests/unit/test_chat_prompting.py	803	oversize: split by concern planned

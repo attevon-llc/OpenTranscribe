@@ -68,7 +68,7 @@ Request/response shaping and validation only; logic lives in `app/services`. 42 
 
 The per-category models at the bottom of `auth_config.py` are the **allow-list, type contract
 and bounds** that `PUT /admin/auth-config/{category}` validates against, the source of
-`AuthConfigService.CONFIG_CATEGORIES`, and the source of the coded default a malformed stored
+`auth_config_keys.CONFIG_CATEGORIES`, and the source of the coded default a malformed stored
 value falls back to. They were dead code while the write path accepted a bare `dict[str, Any]`.
 
 - `_CategoryConfig` sets `extra="forbid"`, which is what turns a typo'd key

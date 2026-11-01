@@ -174,9 +174,10 @@ def test_allow_registration_env_var_is_mapped_for_migration():
 
     Its absence is the reason the admin toggle could never take effect.
     """
+    from app.services import auth_config_keys
     from app.services.auth_config_service import AuthConfigService
 
-    assert AuthConfigService.ENV_TO_CONFIG_MAPPING["ALLOW_OPEN_REGISTRATION"] == (
+    assert auth_config_keys.ENV_TO_CONFIG_MAPPING["ALLOW_OPEN_REGISTRATION"] == (
         "allow_registration"
     )
     assert AuthConfigService.env_var_for("allow_registration") == "ALLOW_OPEN_REGISTRATION"

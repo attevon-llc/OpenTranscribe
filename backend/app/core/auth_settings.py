@@ -385,7 +385,7 @@ class DynamicAuthSettings:
 
     # Revocation-checking properties (issue #498).
     #
-    # These five keys were already declared in ``AuthConfigService.CONFIG_CATEGORIES``
+    # These five keys were already declared in ``auth_config_keys.CONFIG_CATEGORIES``
     # and writable from the Settings UI, but ``auth/pki_auth.py`` read
     # ``settings.PKI_*`` straight from ``.env`` — so saving them changed nothing.
     # Turning revocation checking off in the UI, or widening the OCSP timeout,

@@ -20,6 +20,7 @@ import pytest
 
 from app.models.auth_config import AuthConfig
 from app.models.auth_config import AuthConfigAudit
+from app.services import auth_config_keys
 from app.services.auth_config_service import AuthConfigService
 
 # Run all tests in this module in the same xdist worker to avoid deadlocks
@@ -241,7 +242,6 @@ class TestBulkUpdateCategory:
 
         assert len(results) == len(config)
 
-        # Verify each value round-trips correctly
         assert AuthConfigService.get_config(db_session, "ldap_server") == "ldap.test.example.com"
         assert AuthConfigService.get_config(db_session, "ldap_port") == "636"
         assert AuthConfigService.get_config(db_session, "ldap_enabled") == "true"
@@ -555,7 +555,7 @@ class TestLdapConfigFromDb:
             defaults.update(overrides)
 
         for key, (value, dtype) in defaults.items():
-            is_sensitive = key in AuthConfigService.SENSITIVE_KEYS
+            is_sensitive = key in auth_config_keys.SENSITIVE_KEYS
             existing = db_session.query(AuthConfig).filter(AuthConfig.config_key == key).first()
             if existing:
                 existing.config_value = value
@@ -720,7 +720,7 @@ class TestOIDCConfigFromDb:
             defaults.update(overrides)
 
         for key, (value, dtype) in defaults.items():
-            is_sensitive = key in AuthConfigService.SENSITIVE_KEYS
+            is_sensitive = key in auth_config_keys.SENSITIVE_KEYS
             existing = db_session.query(AuthConfig).filter(AuthConfig.config_key == key).first()
             if existing:
                 existing.config_value = value

@@ -4,7 +4,7 @@ The per-category models near the bottom of this file are not documentation: they
 are the **allow-list, type contract, and bounds** that ``PUT /admin/auth-config/
 {category}`` validates against (``validate_category_config``, in
 ``auth_config_validation.py``), the source of
-``AuthConfigService.CONFIG_CATEGORIES``, and the source of the coded default a
+``auth_config_keys.CONFIG_CATEGORIES``, and the source of the coded default a
 malformed stored value falls back to. They used to be dead code while the write
 path accepted a bare ``dict[str, Any]`` and stored every key verbatim.
 
@@ -120,7 +120,7 @@ class LocalAuthConfig(_CategoryConfig):
     code ever read. The panel stopped sending them and the API kept accepting
     them, so a save still returned 200. They are deleted rather than bridged:
     two writable spellings of one control is how the two disagree.
-    ``AuthConfigService.RETIRED_KEYS`` keeps any row an older panel wrote from
+    ``auth_config_keys.RETIRED_KEYS`` keeps any row an older panel wrote from
     being served back.
     """
 
@@ -393,7 +393,7 @@ class SessionConfig(_CategoryConfig):
     ``api/endpoints/auth/login.py`` — and take effect without a restart.
     """
 
-    #: Restart-required (``AuthConfigService.RESTART_REQUIRED_KEYS``):
+    #: Restart-required (``auth_config_keys.RESTART_REQUIRED_KEYS``):
     #: ``auth/cookies.py`` computes cookie max-age from these two at import time,
     #: so a live change would leave cookie and token lifetimes disagreeing.
     jwt_access_token_expire_minutes: int = Field(default=60, ge=1, le=1440)
@@ -435,7 +435,7 @@ class LockoutConfig(_CategoryConfig):
 
 
 #: Category -> model. Iteration order is the admin UI's tab order and is what
-#: ``AuthConfigService.CONFIG_CATEGORIES`` and the endpoint's category allow-list
+#: ``auth_config_keys.CONFIG_CATEGORIES`` and the endpoint's category allow-list
 #: are both built from, so there is exactly one place to add a category.
 CATEGORY_SCHEMAS: dict[str, type[_CategoryConfig]] = {
     "local": LocalAuthConfig,

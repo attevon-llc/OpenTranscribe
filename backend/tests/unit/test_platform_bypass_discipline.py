@@ -149,7 +149,7 @@ ALLOWLIST: dict[str, str] = {
         "Q: is_hidden_for(is_admin=False) keeps a taken-down file's comments 404; it never "
         "grants anything"
     ),
-    "api/endpoints/files/__init__.py::get_thumbnail": (
+    "api/endpoints/files/media_delivery.py::get_thumbnail": (
         "Q: is_hidden_for runs before the public-file branch and before an org is resolved; "
         "tenant access itself is decided by bypass.allows"
     ),

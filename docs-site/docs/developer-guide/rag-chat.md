@@ -106,7 +106,7 @@ to the socket, so `loop.call_soon_threadsafe` hands them across.
 Redis pub/sub would add a network hop and a lost-wakeup race to cross a boundary
 that does not exist — retrieval happens in the same process and the same request
 as the SSE generator. If a stage ever moves to Celery, copy `download_stream`
-(`endpoints/files/__init__.py`) or `bulk_export_stream`
+(`endpoints/files/media_delivery.py`) or `bulk_export_stream`
 (`endpoints/files/subtitles.py`), both of which subscribe properly.
 
 ⚠️ **`drain_available` yields to the loop before reading the queue, and that is

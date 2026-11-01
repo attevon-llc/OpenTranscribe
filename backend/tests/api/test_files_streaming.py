@@ -3,7 +3,7 @@
 Covers the thumbnail streaming endpoint (``files/streaming.py`` via
 ``GET /api/files/{uuid}/thumbnail``), the presigned ``/stream-url`` and
 ``/prepare-download`` routes, and the SSE ``download-stream`` contract wired in
-``files/__init__.py``.
+``files/media_delivery.py``.
 
 These pin the CURRENT observable behavior (status code + ``detail`` + key
 headers) so later refactors can't change the API by accident. Rows are created

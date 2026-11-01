@@ -764,7 +764,7 @@ _RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
         "surfaced as its own finding once the 4b taint-through-assignment fix "
         "landed (message is assigned in the except handler, read after it closes)",
     ),
-    "api/endpoints/files/__init__.py::_ready_frame": (
+    "api/endpoints/files/media_delivery.py::_ready_frame": (
         1,
         "re-surfaces e.detail of an HTTPException WE raised ourselves two lines "
         "above (the 422 'Transcript is not ready yet'), not a caught library error",
@@ -957,7 +957,7 @@ _CONTAINER_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
         1,
         "our own HTTPException detail: the surviving tainted branch is `except "
         "HTTPException as e: message=str(e.detail)`, the same re-surfacing of a detail "
-        "WE raised that _RETURN_ALLOWLIST allows for files/__init__.py::_ready_frame. "
+        "WE raised that _RETURN_ALLOWLIST allows for files/media_delivery.py::_ready_frame. "
         "That those details are ours is not an assertion here but a mechanical "
         "consequence of scanner 1: it scans the whole app/ tree for a tainted "
         "HTTPException detail and has zero unallowlisted findings, so no reachable "

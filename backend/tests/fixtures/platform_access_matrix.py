@@ -560,7 +560,7 @@ ALLOWS_KINDS: dict[str, str] = {
     "api/endpoints/prompts_sharing.py::share_prompt": "prompt",
     "api/endpoints/files/crud.py::get_media_file_by_id": "media_file",
     "api/endpoints/files/detail_response.py::get_media_file_detail": "media_file",
-    "api/endpoints/files/__init__.py::get_thumbnail": "thumbnail",
+    "api/endpoints/files/media_delivery.py::get_thumbnail": "thumbnail",
     "services/speaker_provenance_view.py::_can_see_actor": "media_file",
 }
 
@@ -590,7 +590,7 @@ SITE_FORMS: dict[str, dict[str, str]] = {
         "api/deps_context.py::resolve_request_bypass": (
             "resolve_active_grant: own grant, active, live target, grantee still an admin"
         ),
-        "api/endpoints/files/__init__.py::get_thumbnail": (
+        "api/endpoints/files/media_delivery.py::get_thumbnail": (
             "optional-auth route; calls the same resolve_request_bypass the context uses"
         ),
         "api/deps_context.py::get_current_context": (

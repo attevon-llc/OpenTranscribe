@@ -45,7 +45,7 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
   `endpoints/chat/export_redaction.py`. `tests/unit/test_export_plane_resolves_a_policy.py`
   walks the live route table so the next export route cannot be missed the way this one was.
 - `endpoints/files/` — the oversized files router split into a package (`upload`, `crud`,
-  `filtering`, `streaming`, `subtitles`, `reprocess`, `url_processing`, `waveform`, …).
+  `filtering`, `listing`, `single_file`, `media_delivery`, `streaming`, `subtitles`, `reprocess`, `url_processing`, `waveform`, …).
   `management.py` exports a second router mounted at the same `/files` prefix.
 
 ## Conventions / patterns
@@ -562,7 +562,7 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   variant is `export_policy_fingerprint(cfg)`, empty for every audio mode and for any policy
   that masks nothing, so those keys/guards/events are byte-identical to before. It is
   **routing only**: the worker re-resolves the real policy at run time and never trusts it.
-- **Both SSE streams go check → subscribe → re-check.** `download_stream` (`files/__init__.py`)
+- **Both SSE streams go check → subscribe → re-check.** `download_stream` (`files/media_delivery.py`)
   and `bulk_export_stream` (`files/subtitles.py`) read their readiness signal, subscribe to the
   pub/sub channel, then read it **again**. A single check-then-subscribe loses a worker
   completion published in the gap and the stream waits on `get_message` forever (#284 A1.22,

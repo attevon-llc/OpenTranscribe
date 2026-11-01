@@ -252,6 +252,7 @@ def _ownership_page(
     ctx: RequestContext,
     org_pred: ColumnElement[bool],
     *,
+    include_quarantined: bool,
     skip: int,
     limit: int,
 ) -> tuple[list[int], dict[int, int], dict[int, str], dict[int, UserBrief | None]]:
@@ -260,9 +261,6 @@ def _ownership_page(
     Every id set is the caller's accessible collections, narrowed by ``org_pred`` (the
     request's tenant gate, ``_tenant_pred``).
     """
-    # Member counts hide quarantined files for non-admins (issue #262g).
-    include_quarantined = ctx.bypass.user_is_admin
-
     if ownership == "mine":
         accessible_perms = dict(PermissionService.get_accessible_collection_ids(db, user_id))
         collection_ids = [
@@ -370,8 +368,18 @@ def list_collections(
     # edition: ctx.org_id is None and rows are org-less, so this is a no-op.
     org_pred = _tenant_pred(ctx)
 
+    # Member counts hide quarantined files for non-admins (issue #262g).
+    include_quarantined = ctx.bypass.user_is_admin
+
     collection_ids, counts_dict, perm_dict, shared_by_dict = _ownership_page(
-        db, ownership, user_id, ctx, org_pred, skip=skip, limit=limit
+        db,
+        ownership,
+        user_id,
+        ctx,
+        org_pred,
+        include_quarantined=include_quarantined,
+        skip=skip,
+        limit=limit,
     )
 
     if not collection_ids:

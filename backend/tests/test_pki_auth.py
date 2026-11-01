@@ -241,7 +241,7 @@ class TestCertificateParsing:
 
     def test_parse_valid_certificate(self, valid_certificate_pem):
         """Test parsing a valid certificate extracts all fields correctly."""
-        from app.auth.pki_auth import parse_certificate
+        from app.auth.pki_certificate import parse_certificate
 
         cert_info = parse_certificate(valid_certificate_pem)
 
@@ -258,7 +258,7 @@ class TestCertificateParsing:
 
     def test_parse_certificate_without_email(self, dod_cac_certificate_pem):
         """Test parsing certificate without email address."""
-        from app.auth.pki_auth import parse_certificate
+        from app.auth.pki_certificate import parse_certificate
 
         cert_info = parse_certificate(dod_cac_certificate_pem)
 
@@ -269,7 +269,7 @@ class TestCertificateParsing:
 
     def test_parse_invalid_certificate(self):
         """Test parsing invalid certificate data returns None."""
-        from app.auth.pki_auth import parse_certificate
+        from app.auth.pki_certificate import parse_certificate
 
         cert_info = parse_certificate("not a valid certificate")
         assert cert_info is None
@@ -281,14 +281,14 @@ class TestCertificateParsing:
 
     def test_parse_empty_certificate(self):
         """Test parsing empty string returns None."""
-        from app.auth.pki_auth import parse_certificate
+        from app.auth.pki_certificate import parse_certificate
 
         cert_info = parse_certificate("")
         assert cert_info is None
 
     def test_certificate_fingerprint_format(self, valid_certificate_pem):
         """Test certificate fingerprint is in correct format (colon-separated hex)."""
-        from app.auth.pki_auth import parse_certificate
+        from app.auth.pki_certificate import parse_certificate
 
         cert_info = parse_certificate(valid_certificate_pem)
 
@@ -300,7 +300,7 @@ class TestCertificateParsing:
 
     def test_certificate_serial_hex_format(self, valid_certificate_pem):
         """Test certificate serial number is in hex format."""
-        from app.auth.pki_auth import parse_certificate
+        from app.auth.pki_certificate import parse_certificate
 
         cert_info = parse_certificate(valid_certificate_pem)
 
@@ -310,7 +310,7 @@ class TestCertificateParsing:
 
     def test_certificate_validity_dates_iso_format(self, valid_certificate_pem):
         """Test certificate validity dates are in ISO format."""
-        from app.auth.pki_auth import parse_certificate
+        from app.auth.pki_certificate import parse_certificate
 
         cert_info = parse_certificate(valid_certificate_pem)
 
@@ -333,7 +333,7 @@ class TestGovDNParsing:
 
     def test_dod_cac_dn_parsing(self):
         """Test DoD CAC format: LAST.FIRST.MIDDLE.EDIPI."""
-        from app.auth.pki_auth import extract_display_name_from_gov_dn
+        from app.auth.pki_certificate import extract_display_name_from_gov_dn
 
         # Standard DoD CAC format
         dn = "CN=SMITH.JOHN.WILLIAM.1234567890,O=U.S. Government,OU=DoD,C=US"
@@ -342,7 +342,7 @@ class TestGovDNParsing:
 
     def test_dod_cac_no_middle_name(self):
         """Test DoD CAC format without middle name."""
-        from app.auth.pki_auth import extract_display_name_from_gov_dn
+        from app.auth.pki_certificate import extract_display_name_from_gov_dn
 
         dn = "CN=SMITH.JOHN..1234567890,O=U.S. Government,OU=DoD,C=US"
         display_name = extract_display_name_from_gov_dn(dn)
@@ -352,7 +352,7 @@ class TestGovDNParsing:
 
     def test_piv_dn_parsing(self):
         """Test PIV format: LAST.FIRST.M."""
-        from app.auth.pki_auth import extract_display_name_from_gov_dn
+        from app.auth.pki_certificate import extract_display_name_from_gov_dn
 
         dn = "CN=JONES.JANE.M,O=U.S. Government,OU=Federal Agency,C=US"
         display_name = extract_display_name_from_gov_dn(dn)
@@ -360,7 +360,7 @@ class TestGovDNParsing:
 
     def test_piv_dn_no_middle_initial(self):
         """Test PIV format without middle initial."""
-        from app.auth.pki_auth import extract_display_name_from_gov_dn
+        from app.auth.pki_certificate import extract_display_name_from_gov_dn
 
         dn = "CN=DOE.JOHN,O=U.S. Government,C=US"
         display_name = extract_display_name_from_gov_dn(dn)
@@ -368,7 +368,7 @@ class TestGovDNParsing:
 
     def test_non_gov_dn_unchanged(self):
         """Test non-government DN is returned unchanged."""
-        from app.auth.pki_auth import extract_display_name_from_gov_dn
+        from app.auth.pki_certificate import extract_display_name_from_gov_dn
 
         dn = "CN=Regular User,O=Company Inc,C=US"
         display_name = extract_display_name_from_gov_dn(dn)
@@ -376,7 +376,7 @@ class TestGovDNParsing:
 
     def test_missing_cn_returns_full_dn(self):
         """Test DN without CN returns the full DN."""
-        from app.auth.pki_auth import extract_display_name_from_gov_dn
+        from app.auth.pki_certificate import extract_display_name_from_gov_dn
 
         dn = "O=Organization,C=US"
         display_name = extract_display_name_from_gov_dn(dn)
@@ -384,7 +384,7 @@ class TestGovDNParsing:
 
     def test_case_insensitive_matching(self):
         """Test DN parsing is case-insensitive."""
-        from app.auth.pki_auth import extract_display_name_from_gov_dn
+        from app.auth.pki_certificate import extract_display_name_from_gov_dn
 
         # Lowercase variant
         dn = "cn=smith.john.william.1234567890,o=U.S. Government,ou=DoD,c=US"
@@ -402,7 +402,7 @@ class TestDNNormalization:
 
     def test_normalize_dn_case(self):
         """Test DN normalization lowercases attributes."""
-        from app.auth.pki_auth import _normalize_dn
+        from app.auth.pki_certificate import _normalize_dn
 
         dn1 = "CN=John Doe,O=Company,C=US"
         dn2 = "cn=john doe,o=company,c=us"
@@ -411,7 +411,7 @@ class TestDNNormalization:
 
     def test_normalize_dn_whitespace(self):
         """Test DN normalization handles whitespace."""
-        from app.auth.pki_auth import _normalize_dn
+        from app.auth.pki_certificate import _normalize_dn
 
         dn1 = "CN=John Doe, O=Company, C=US"
         dn2 = "CN=John Doe,O=Company,C=US"
@@ -420,7 +420,7 @@ class TestDNNormalization:
 
     def test_normalize_empty_dn(self):
         """Test normalizing empty DN."""
-        from app.auth.pki_auth import _normalize_dn
+        from app.auth.pki_certificate import _normalize_dn
 
         assert _normalize_dn("") == ""
         assert _normalize_dn(None) == ""
@@ -435,7 +435,7 @@ class TestAdminDNChecking:
 
     def test_admin_dn_match(self):
         """Test matching admin DN by directly testing the _is_pki_admin logic."""
-        from app.auth.pki_auth import _normalize_dn
+        from app.auth.pki_certificate import _normalize_dn
 
         # Test the normalization and matching logic directly
         admin_dns = "CN=Admin User,O=Company,C=US"
@@ -451,7 +451,7 @@ class TestAdminDNChecking:
 
     def test_admin_dn_case_insensitive(self):
         """Test admin DN matching is case-insensitive."""
-        from app.auth.pki_auth import _normalize_dn
+        from app.auth.pki_certificate import _normalize_dn
 
         # Test normalization makes matching case-insensitive
         admin_dn = "CN=Admin User,O=Company,C=US"
@@ -461,7 +461,7 @@ class TestAdminDNChecking:
 
     def test_admin_dn_multiple(self):
         """Test multiple admin DNs normalization."""
-        from app.auth.pki_auth import _normalize_dn
+        from app.auth.pki_certificate import _normalize_dn
 
         # Multiple DNs in PKI_ADMIN_DNS are comma-separated
         # But commas are also used within DNs, so the actual format needs careful handling
@@ -474,7 +474,7 @@ class TestAdminDNChecking:
 
     def test_non_admin_dn(self):
         """Test non-admin DN doesn't match."""
-        from app.auth.pki_auth import _normalize_dn
+        from app.auth.pki_certificate import _normalize_dn
 
         admin_dn = "CN=Admin User,O=Company,C=US"
         regular_dn = "CN=Regular User,O=Company,C=US"
@@ -715,8 +715,8 @@ class TestOCSPChecking:
 
     def test_ocsp_cache_hit(self):
         """Test OCSP cache returns cached result."""
-        from app.auth.pki_auth import _get_ocsp_cache
-        from app.auth.pki_auth import _set_ocsp_cache
+        from app.auth.pki_ocsp import _get_ocsp_cache
+        from app.auth.pki_ocsp import _set_ocsp_cache
 
         serial = "12345"
         _set_ocsp_cache(serial, False, ttl_seconds=300)
@@ -726,15 +726,15 @@ class TestOCSPChecking:
 
     def test_ocsp_cache_miss(self):
         """Test OCSP cache returns None on miss."""
-        from app.auth.pki_auth import _get_ocsp_cache
+        from app.auth.pki_ocsp import _get_ocsp_cache
 
         result = _get_ocsp_cache("nonexistent-serial")
         assert result is None
 
     def test_ocsp_cache_expired(self):
         """Test OCSP cache returns None for expired entry."""
-        from app.auth.pki_auth import _get_ocsp_cache
-        from app.auth.pki_auth import _set_ocsp_cache
+        from app.auth.pki_ocsp import _get_ocsp_cache
+        from app.auth.pki_ocsp import _set_ocsp_cache
 
         serial = "expired-serial"
         _set_ocsp_cache(serial, False, ttl_seconds=-1)  # Already expired
@@ -744,8 +744,8 @@ class TestOCSPChecking:
 
     def test_ocsp_cache_revoked(self):
         """Test OCSP cache stores revoked status."""
-        from app.auth.pki_auth import _get_ocsp_cache
-        from app.auth.pki_auth import _set_ocsp_cache
+        from app.auth.pki_ocsp import _get_ocsp_cache
+        from app.auth.pki_ocsp import _set_ocsp_cache
 
         serial = "revoked-serial"
         _set_ocsp_cache(serial, True, ttl_seconds=300)
@@ -755,7 +755,7 @@ class TestOCSPChecking:
 
     def test_get_ocsp_url_extraction(self, valid_certificate_pem):
         """Test OCSP URL extraction from certificate (may be None for self-signed)."""
-        from app.auth.pki_auth import _get_ocsp_url
+        from app.auth.pki_ocsp import _get_ocsp_url
 
         cert = x509.load_pem_x509_certificate(valid_certificate_pem.encode(), default_backend())
 
@@ -765,9 +765,9 @@ class TestOCSPChecking:
 
     def test_ocsp_request_timeout(self):
         """Test OCSP request handles timeout."""
-        from app.auth.pki_auth import _send_ocsp_request
+        from app.auth.pki_ocsp import _send_ocsp_request
 
-        with patch("app.auth.pki_auth.httpx.Client") as mock_client:
+        with patch("app.auth.pki_ocsp.httpx.Client") as mock_client:
             import httpx
 
             mock_client.return_value.__enter__.return_value.post.side_effect = (
@@ -779,9 +779,9 @@ class TestOCSPChecking:
 
     def test_ocsp_request_error(self):
         """Test OCSP request handles network error."""
-        from app.auth.pki_auth import _send_ocsp_request
+        from app.auth.pki_ocsp import _send_ocsp_request
 
-        with patch("app.auth.pki_auth.httpx.Client") as mock_client:
+        with patch("app.auth.pki_ocsp.httpx.Client") as mock_client:
             import httpx
 
             mock_client.return_value.__enter__.return_value.post.side_effect = httpx.RequestError(
@@ -798,8 +798,8 @@ class TestCRLChecking:
 
     def test_crl_cache_hit(self):
         """Test CRL cache returns cached CRL."""
-        from app.auth.pki_auth import _get_crl_cache
-        from app.auth.pki_auth import _set_crl_cache
+        from app.auth.pki_revocation import _get_crl_cache
+        from app.auth.pki_revocation import _set_crl_cache
 
         # Create a mock CRL
         mock_crl = MagicMock(spec=x509.CertificateRevocationList)
@@ -812,14 +812,14 @@ class TestCRLChecking:
 
     def test_crl_cache_miss(self):
         """Test CRL cache returns None on miss."""
-        from app.auth.pki_auth import _get_crl_cache
+        from app.auth.pki_revocation import _get_crl_cache
 
         result = _get_crl_cache("http://nonexistent.example.com/crl.der")
         assert result is None
 
     def test_get_crl_urls_extraction(self, valid_certificate_pem):
         """Test CRL URL extraction from certificate (may be None for self-signed)."""
-        from app.auth.pki_auth import _get_crl_urls
+        from app.auth.pki_revocation import _get_crl_urls
 
         cert = x509.load_pem_x509_certificate(valid_certificate_pem.encode(), default_backend())
 
@@ -829,9 +829,9 @@ class TestCRLChecking:
 
     def test_crl_download_timeout(self):
         """Test CRL download handles timeout."""
-        from app.auth.pki_auth import _download_crl
+        from app.auth.pki_revocation import _download_crl
 
-        with patch("app.auth.pki_auth.httpx.Client") as mock_client:
+        with patch("app.auth.pki_revocation.httpx.Client") as mock_client:
             import httpx
 
             mock_client.return_value.__enter__.return_value.get.side_effect = (
@@ -843,9 +843,9 @@ class TestCRLChecking:
 
     def test_crl_download_error(self):
         """Test CRL download handles network error."""
-        from app.auth.pki_auth import _download_crl
+        from app.auth.pki_revocation import _download_crl
 
-        with patch("app.auth.pki_auth.httpx.Client") as mock_client:
+        with patch("app.auth.pki_revocation.httpx.Client") as mock_client:
             import httpx
 
             mock_client.return_value.__enter__.return_value.get.side_effect = httpx.RequestError(
@@ -891,15 +891,15 @@ class TestRevocationChecking:
 
     def test_check_revocation_soft_fail(self, valid_certificate_pem):
         """Test revocation check soft-fail when OCSP/CRL unavailable."""
-        from app.auth.pki_auth import _check_revocation
+        from app.auth.pki_revocation import _check_revocation
 
         cert = x509.load_pem_x509_certificate(valid_certificate_pem.encode(), default_backend())
 
         set_pki(pki_ca_cert_path="", pki_revocation_soft_fail=True)
 
         # Mock OCSP and CRL to return None (unavailable)
-        with patch("app.auth.pki_auth._check_ocsp", return_value=None):
-            with patch("app.auth.pki_auth._check_crl", return_value=None):
+        with patch("app.auth.pki_revocation._check_ocsp", return_value=None):
+            with patch("app.auth.pki_revocation._check_crl", return_value=None):
                 is_revoked, reason = _check_revocation(cert)
 
                 assert not is_revoked
@@ -907,15 +907,15 @@ class TestRevocationChecking:
 
     def test_check_revocation_hard_fail(self, valid_certificate_pem):
         """Test revocation check hard-fail when OCSP/CRL unavailable."""
-        from app.auth.pki_auth import _check_revocation
+        from app.auth.pki_revocation import _check_revocation
 
         cert = x509.load_pem_x509_certificate(valid_certificate_pem.encode(), default_backend())
 
         set_pki(pki_ca_cert_path="", pki_revocation_soft_fail=False)
 
         # Mock OCSP and CRL to return None (unavailable)
-        with patch("app.auth.pki_auth._check_ocsp", return_value=None):
-            with patch("app.auth.pki_auth._check_crl", return_value=None):
+        with patch("app.auth.pki_revocation._check_ocsp", return_value=None):
+            with patch("app.auth.pki_revocation._check_crl", return_value=None):
                 is_revoked, reason = _check_revocation(cert)
 
                 assert is_revoked
@@ -1103,7 +1103,7 @@ class TestPKIAuthentication:
 
     def test_pki_admin_promotion(self, valid_certificate_pem, mock_trusted_request):
         """Test PKI admin detection is based on normalized DN matching."""
-        from app.auth.pki_auth import _normalize_dn
+        from app.auth.pki_certificate import _normalize_dn
 
         # Test that admin DN detection works via normalization
         admin_dn = "CN=Admin User,O=Test Organization,C=US"
@@ -1126,7 +1126,7 @@ class TestDNComponentParsing:
 
     def test_parse_dn_components_standard(self):
         """Test parsing standard DN components."""
-        from app.auth.pki_auth import _parse_dn_components
+        from app.auth.pki_certificate import _parse_dn_components
 
         cn, email = _parse_dn_components("CN=John Doe,EMAILADDRESS=john@example.com,O=Org,C=US")
 
@@ -1135,7 +1135,7 @@ class TestDNComponentParsing:
 
     def test_parse_dn_components_short_email(self):
         """Test parsing DN with E= for email."""
-        from app.auth.pki_auth import _parse_dn_components
+        from app.auth.pki_certificate import _parse_dn_components
 
         cn, email = _parse_dn_components("CN=Jane Doe,E=jane@example.com,O=Org,C=US")
 
@@ -1144,7 +1144,7 @@ class TestDNComponentParsing:
 
     def test_parse_dn_components_no_email(self):
         """Test parsing DN without email."""
-        from app.auth.pki_auth import _parse_dn_components
+        from app.auth.pki_certificate import _parse_dn_components
 
         cn, email = _parse_dn_components("CN=No Email User,O=Org,C=US")
 
@@ -1153,7 +1153,7 @@ class TestDNComponentParsing:
 
     def test_parse_dn_components_no_cn(self):
         """Test parsing DN without CN."""
-        from app.auth.pki_auth import _parse_dn_components
+        from app.auth.pki_certificate import _parse_dn_components
 
         cn, email = _parse_dn_components("O=Org,C=US")
 
@@ -1162,7 +1162,7 @@ class TestDNComponentParsing:
 
     def test_parse_dn_components_with_spaces(self):
         """Test parsing DN with spaces around separators."""
-        from app.auth.pki_auth import _parse_dn_components
+        from app.auth.pki_certificate import _parse_dn_components
 
         cn, email = _parse_dn_components("CN=John Doe, O=Org, C=US")
 

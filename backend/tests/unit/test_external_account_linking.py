@@ -25,6 +25,8 @@ import pytest
 from app.auth import account_linking
 from app.auth import ldap_auth
 from app.auth import pki_auth
+from app.auth import pki_certificate
+from app.auth import pki_provisioning
 from app.core.exceptions import AuthenticationError
 
 
@@ -169,7 +171,7 @@ class TestPkiSyncRefusesEmailMatch:
     def test_email_matched_local_account_is_not_converted(self):
         db = _FakeSession(_FakeUser())
         pki_data = cast(
-            "pki_auth.PKIUserData",
+            "pki_certificate.PKIUserData",
             {
                 "subject_dn": "CN=Attacker,OU=X",
                 "common_name": "Attacker",
@@ -186,11 +188,11 @@ class TestPkiSyncRefusesEmailMatch:
         )
 
         with (
-            patch.object(pki_auth, "_create_pki_user") as create,
-            patch.object(pki_auth, "_convert_local_user_to_pki") as convert,
+            patch.object(pki_provisioning, "_create_pki_user") as create,
+            patch.object(pki_provisioning, "_convert_local_user_to_pki") as convert,
         ):
             with pytest.raises(AuthenticationError) as exc:
-                pki_auth.sync_pki_user_to_db(db, pki_data)
+                pki_provisioning.sync_pki_user_to_db(db, pki_data)
 
         assert exc.value.status_code == 401
         assert not convert.called

@@ -38,7 +38,7 @@ import pytest
 
 import app.auth.ldap_auth as ldap_auth
 import app.auth.oidc.provisioning as oidc_provisioning
-import app.auth.pki_auth as pki_auth
+import app.auth.pki_provisioning as pki_provisioning
 import app.initial_data as initial_data
 from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_SUPER_ADMIN
@@ -187,7 +187,7 @@ def _convert_oidc(db, user, is_admin: bool):
 
 
 def _convert_pki(db, user, is_admin: bool):
-    return pki_auth._convert_local_user_to_pki(db, user, _pki_data(is_admin))
+    return pki_provisioning._convert_local_user_to_pki(db, user, _pki_data(is_admin))
 
 
 #: ``(provider label, conversion adapter)`` for every local -> external IdP conversion.
@@ -266,7 +266,7 @@ class TestLocalUserConversionKeepsInvariant:
 # ---------------------------------------------------------------------------
 
 #: Modules that write ``User.is_superuser`` and must use the shared derivation.
-DERIVATION_MODULES = [ldap_auth, oidc_provisioning, pki_auth, initial_data]
+DERIVATION_MODULES = [ldap_auth, oidc_provisioning, pki_provisioning, initial_data]
 
 DERIVATION_HELPER = "role_implies_superuser"
 

@@ -1,7 +1,7 @@
 backend/app/api/endpoints/chat/citation_takedown.py::function::drop_quarantined_citations	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/auth/lockout_admin.py::function::cleanup_expired_lockouts	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/auth/oidc/discovery.py::function::clear_discovery_caches	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/auth/pki_auth.py::function::extract_display_name_from_gov_dn	1	residual after the dead-code pass; delete or whitelist when touched
+backend/app/auth/pki_certificate.py::function::extract_display_name_from_gov_dn	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/auth/provider_registry.py::function::register_verifier	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/auth/provider_registry.py::function::unregister_verifier	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/auth/session.py::method::delete_state	1	residual after the dead-code pass; delete or whitelist when touched

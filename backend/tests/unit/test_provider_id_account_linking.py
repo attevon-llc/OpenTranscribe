@@ -32,7 +32,8 @@ import pytest
 from app.auth import account_linking
 from app.auth import external_sync
 from app.auth import ldap_auth
-from app.auth import pki_auth
+from app.auth import pki_certificate
+from app.auth import pki_provisioning
 from app.auth.oidc import provisioning as oidc_provisioning
 from app.auth.provider_registry import ExternalIdentity
 from app.auth.saml import provisioning as saml_provisioning
@@ -268,9 +269,9 @@ class TestLdapSyncProviderIdGuard:
         assert not update.called
 
 
-def _pki_data(email: str) -> pki_auth.PKIUserData:
+def _pki_data(email: str) -> pki_certificate.PKIUserData:
     return cast(
-        "pki_auth.PKIUserData",
+        "pki_certificate.PKIUserData",
         {
             "subject_dn": "CN=Existing",
             "common_name": "Existing",
@@ -293,9 +294,9 @@ class TestPkiSyncProviderIdGuard:
         user = _FakeUser(email="victim@example.com", auth_type="pki")
         db = _FakeProviderIdSession(user)
 
-        with patch.object(pki_auth, "_update_pki_user") as update:
+        with patch.object(pki_provisioning, "_update_pki_user") as update:
             with pytest.raises(AuthenticationError) as exc:
-                pki_auth.sync_pki_user_to_db(db, _pki_data("attacker@example.com"))
+                pki_provisioning.sync_pki_user_to_db(db, _pki_data("attacker@example.com"))
 
         assert exc.value.status_code == 401
         assert not update.called
@@ -304,8 +305,8 @@ class TestPkiSyncProviderIdGuard:
         user = _FakeUser(email="victim@example.com", auth_type="pki")
         db = _FakeProviderIdSession(user)
 
-        with patch.object(pki_auth, "_update_pki_user", return_value=user) as update:
-            result = pki_auth.sync_pki_user_to_db(db, _pki_data("victim@example.com"))
+        with patch.object(pki_provisioning, "_update_pki_user", return_value=user) as update:
+            result = pki_provisioning.sync_pki_user_to_db(db, _pki_data("victim@example.com"))
 
         assert update.called
         assert result is user
@@ -314,9 +315,9 @@ class TestPkiSyncProviderIdGuard:
         user = _FakeUser(email="victim@example.com", role="super_admin", auth_type="pki")
         db = _FakeProviderIdSession(user)
 
-        with patch.object(pki_auth, "_update_pki_user") as update:
+        with patch.object(pki_provisioning, "_update_pki_user") as update:
             with pytest.raises(AuthenticationError) as exc:
-                pki_auth.sync_pki_user_to_db(db, _pki_data("victim@example.com"))
+                pki_provisioning.sync_pki_user_to_db(db, _pki_data("victim@example.com"))
 
         assert exc.value.status_code == 401
         assert not update.called

@@ -1,7 +1,7 @@
 ---
 sidebar_position: 7
 title: Releasing
-description: How an OpenTranscribe release is cut, gated, and published — the staged orchestrator, the criteria file, and the three rehearsal scenarios.
+description: How an OpenTranscribe release is cut, gated, and published — the staged orchestrator, the criteria file, and the four rehearsal scenarios.
 ---
 
 # Releasing
@@ -118,7 +118,7 @@ rather than silently ignored.
 | `test` | `run-dev-tests.sh --backend-only --e2e-smoke --export-capability` (the integration gate plus the smoke E2E subset); **needs the dev stack up** | no |
 | `build` | Local images with the version build-args — **pushes nothing** | no |
 | `scan` | Trivy/Grype against the **locally built** images | no |
-| `rehearse` | Fresh-install, upgrade and lite-mode scenarios; **needs the live stack stopped** (it can stop and restore it for you, with approval) | no |
+| `rehearse` | Cold-cache model download, then fresh-install, upgrade and lite-mode scenarios; **needs the live stack stopped** (it can stop and restore it for you, with approval) | no |
 | `tag` | Refuses unless the ledger's `test`/`build`/`scan`/`rehearse` steps are `done` or `overridden` **at HEAD** (`artifacts-match-tagged-commit`, every stale stage named; `--force-tag "reason"` overrides). Then annotated tag + push; cuts (or confirms) `release/<major>.<minor>` from the tag | **yes** |
 | `publish` | Pushes the **already-built** legs (`docker push`, no rebuild, no re-scan) and assembles the `:vX.Y.Z` indexes; `:vX.Y.Z` only | **yes** |
 | `smoke` | Install from Docker Hub; verify each image's capability (CUDA vs CPU) and architecture; **needs the live stack stopped** | no |
@@ -200,7 +200,7 @@ target:
   trigger set — an Alembic migration, a `Dockerfile`, a dependency-lock file, a
   `docker-compose*.yml`, or either installer script. Touching any of them means
   the rehearsal runs in full, exactly as without `--patch`. Touching none of
-  them means `rehearse`'s three scenarios are WAIVED, recorded in the ledger as
+  them means `rehearse`'s four scenarios are WAIVED, recorded in the ledger as
   `status=done detail=patch-rehearsal-waived: <reason>` — a stable, greppable
   prefix distinguishable from `--skip` (`status=skipped`) and
   `--force-rehearse` (`status=overridden`). An empty diff against the base tag
@@ -233,18 +233,83 @@ accepted CVE with no reachable path — never to turn a red run green.
 
 ## The rehearsal scenarios
 
-Three scenarios run in order under `rehearse`: **A** fresh install, **B** upgrade from the
-previous published release(s), and **C** the lite (CPU-only, mocked cloud ASR and LLM) deployment
+Four scenarios run in order under `rehearse`: **D** the model downloader from a cold cache
+(`test-cold-model-download.sh`), then **A** fresh install, **B** upgrade from the previous
+published release(s), and **C** the lite (CPU-only, mocked cloud ASR and LLM) deployment
 (`test-lite-mode.sh`). A and B rehearse the same `./opentranscribe.sh` path a real operator
 runs; see [Upgrading](../operations/upgrading.md) for the operator-facing failure-recovery
 guidance this rehearsal is meant to keep accurate.
 
 ```bash
-./opentr.sh stop            # required — see below
+./scripts/release-tests/test-cold-model-download.sh   # D: no stack needed, binds nothing
+./opentr.sh stop            # required for A-C — see below
 ./scripts/release-tests/test-fresh-install.sh
 ./scripts/release-tests/test-upgrade.sh
 ./scripts/release-tests/test-lite-mode.sh
 ```
+
+### Scenario D: the downloader from an empty cache
+
+v0.6.0 shipped a `scripts/download-models.py` whose `pyannote` group exits 1 from an empty cache
+on every host, CPU and GPU alike: its warm-up transcribes synthetic sine-wave audio, VAD finds no
+speech, and transformers 5.10.4 indexes an empty batch (`IndexError: list index out of range`).
+A, B and C all passed, for two independent reasons. They install with
+`OPENTRANSCRIBE_UNATTENDED=1`, and `setup-opentranscribe.sh`'s `download_ai_models` returns at
+its first line under that flag; and each then seeds its model cache from a warm shared copy, so
+even the app's lazy download never runs. The one command an interactive installer runs straight
+after install had never executed under any gate.
+
+Scenario D runs it the way an installed user gets it: the image under test
+(`davidamacey/opentranscribe-backend:<VERSION>`, provenance checked exactly as Scenario A checks
+it) with this checkout's `scripts/download-models.py` mounted, the same mounts as
+`download-models.sh` (a unit test keeps them equal), **CPU-only** (no `--gpus`,
+`NVIDIA_VISIBLE_DEVICES=void`, and the container must report `torch.cuda.is_available() ==
+False`), against one empty cache. Each `--only` group runs in its own container so a failure
+names its group; the group list is read from the script's own `DOWNLOAD_GROUPS`, never listed.
+
+| Criterion | Passes when |
+|---|---|
+| `cold-cache-model-download` | every group exits 0 |
+| `cold-cache-weights-present` | an independent check of the cache finds each group's weights (the downloader reports `partial` and `skipped` as success, so exit codes alone are not enough) |
+| `cold-cache-nltk-hardlinks-fail-loudly` | the nltk group, run on a `cp -al` copy of what it produced, either fails naming nltk's pathsec refusal or exits 0 leaving a corpus nltk opens |
+
+A subset run (`OT_COLD_CACHE_GROUPS`), a missing `HUGGINGFACE_TOKEN`, or an image not shown to
+be the code under test (`DOWNLOADER_IMAGE=` or `OT_RELEASE_TEST_ALLOW_STALE_IMAGE=`) is
+**not-measured**, never a pass. A failure on such an image is still reported as a failure,
+which is how a historical image is re-examined:
+
+```bash
+DOWNLOADER_IMAGE=davidamacey/opentranscribe-backend:v0.6.0 \
+  ./scripts/release-tests/test-cold-model-download.sh     # exits 1: pyannote(rc=1)
+```
+
+Further guarantees:
+
+- **The root must be empty.** A reused `TEST_ROOT` (or a caller's `COLD_CACHE_ROOT`) is refused
+  as not-measured, so warm weights or an old `groups/<group>.row` can never stand in for a cold run.
+- **Every container is bounded:** `OT_COLD_CACHE_GROUP_TIMEOUT_S` (default 1800 s per group),
+  `OT_COLD_CACHE_PROBE_TIMEOUT_S` (300 s) and `OT_COLD_CACHE_DEADLINE_S` (5400 s for the run).
+  A deadline records rc 124 (fail) or leaves the group missing (not-measured), stops the
+  container with `docker stop`, and never produces a pass.
+- **A group that exits 0 but prints downloader error lines fails** (the redaction group's
+  `partial`). Weights are checked per repo against the files its loader opens (pyannote's
+  segmentation, embedding and PLDA files, every shard a `*.index.json` lists), each under the one
+  cache root the app reads it from.
+- **The script's provenance is recorded** (`git hash-object`), and an uncommitted
+  `download-models.py` is unverified.
+- **D runs before the live stack is stopped** (after the stop is approved), so its ~10 minutes
+  are not downtime. Its multi-GB cache is removed once Scenario A has seeded (and from the exit
+  trap), using the image under test by image ID; `REPORT.md` and the TSVs are kept.
+- **CPU only.** A downloader regression that appears only on a GPU is not covered.
+
+When D passes all three criteria, `rehearse` exports `OT_COLD_CACHE_SEED` and Scenario A seeds its model
+cache from D's output instead of the warm shared cache, so A transcribes on weights the shipped
+downloader fetched. When D fails, A falls back to the shared cache and still measures the install
+on its own. `WHISPER_MODEL` and `OPENSEARCH_MODELS` default to the same values in both, which is
+what makes the hand-over complete. Lite (C) is not seeded from D: no lite install runs
+`download-models.py` (its diar-native export comes from the lite image's own `diar-server`).
+Evidence lands in `TEST_ROOT` (`groups.tsv`, `artifacts.tsv`, `hardlink.tsv`, `groups/<group>.log`,
+`REPORT.md`); read it through `scripts/release-tests/lib/cold-model-download.py outcome`.
 
 Scenarios A and C install by **downloading** the `release-manifest.txt` files from the branch
 under test (`TO_BRANCH`, defaulting to the current branch). `rehearse` therefore refuses (exit
@@ -310,7 +375,7 @@ otherwise non-interactive invocation there is no tty to read from, and the promp
 fails with `No such device or address` rather than hanging. Pass `--yes` to skip
 it (both scripts also accept `--cleanup`, `--force`, and `test-upgrade.sh` also
 takes `--no-rollback`/`--only-rollback` — see each script's own `--help`).
-`scripts/release/65-rehearse.sh` already passes `--yes` on all three scenarios when
+`scripts/release/65-rehearse.sh` already passes `--yes` on every scenario when
 driven through `./scripts/release.sh rehearse`.
 :::
 
@@ -511,7 +576,7 @@ Cutting a release is not the place to discover a regression. Run the
 | `scripts/release.sh` | The orchestrator — arg parsing, ledger, dispatch |
 | `scripts/release/NN-<stage>.sh` | One file per stage; each runnable on its own |
 | `scripts/release/release-criteria.yaml` | Gate definitions, read by the script **and** CI |
-| `scripts/release-tests/` | The three rehearsal scenarios + `lib/guardrails.sh` |
+| `scripts/release-tests/` | The four rehearsal scenarios + `lib/guardrails.sh` |
 | `scripts/release-tests/selftest-cleanup.sh` | Numbered cases over the harness's own destructive paths; prints a pass/fail tally — **run after any `guardrails.sh` change** |
 | `.claude/skills/release/SKILL.md` | The agent-facing interface |
 | `docs/RELEASE_PROCESS.md` | Historical pointer — superseded by this page |

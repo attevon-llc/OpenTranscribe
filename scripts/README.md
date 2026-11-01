@@ -918,7 +918,6 @@ detail, rationale and destructive-operation notes are in [scripts/CLAUDE.md](CLA
 | `cleanup-test-users.py` | Removes orphaned test users. Dry-run by default; `--execute-unambiguous` or `--execute` deletes. Prints its `Target:` first; check it. |
 | `cleanup-test-data.py` | Signature-scoped sweep of orphaned test media, collections, tags, watch sources, speaker profiles, conversations and test stores. Dry-run by default; `--execute-unambiguous` (Tier A) / `--execute` (Tier A + B), `--planes`, `--min-age-minutes`. |
 | `cleanup-test-leftovers.sh` | Unattended wrapper around the Tier A sweep; also `./opentr.sh test-cleanup`. Requires `--project` or `--fresh`. |
-| `test-model-download.sh` | `rm -rf ./test-model-cache` relative to the current directory. |
 | `test-all-auth.sh`, `test-fedramp.sh`, `test-ldap-auth.sh`, `run-auth-e2e.sh` | Auth test drivers against the live stack. `test-all-auth.sh` and `test-fedramp.sh` register users and never clean up (use `cleanup-test-users.py`); `run-auth-e2e.sh` changes admin auth config (restored on an exit trap) and stops the frontend container. |
 | `uninstall-offline-package.sh` | `down -v`, `docker rmi`, `rm -rf /opt/opentranscribe` (prompted). |
 | `release-tests/*` | Release rehearsals; they delete Docker volumes and require the live stack stopped. Owned by `release-tests/README.md`. |

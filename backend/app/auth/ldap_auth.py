@@ -253,9 +253,10 @@ def _is_ldap_admin(
             return True
 
     # Check admin_groups
-    if cfg.admin_groups:
-        admin_groups = _parse_group_list(cfg.admin_groups)
-
+    # A value of only separators/whitespace parses to no groups; an empty list
+    # means "no requirement" to the membership helper, so it must not grant admin.
+    admin_groups = _parse_group_list(cfg.admin_groups) if cfg.admin_groups else []
+    if admin_groups:
         if _is_member_of_groups(user_groups, admin_groups):
             logger.debug(f"User {username} is admin via LDAP admin_groups (direct)")
             return True

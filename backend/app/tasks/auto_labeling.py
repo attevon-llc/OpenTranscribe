@@ -53,11 +53,12 @@ def group_batch_files_task(batch_id: int, user_id: int):
     with session_scope() as db:
         try:
             from app.services.auto_label_service import AutoLabelService
+            from app.services.auto_label_settings import get_user_auto_label_settings
 
             service = AutoLabelService(db)
 
             # Check user settings
-            user_settings = service.get_user_auto_label_settings(user_id)
+            user_settings = get_user_auto_label_settings(db, user_id)
             if not user_settings.get("enabled") or not user_settings.get("bulk_grouping_enabled"):
                 logger.info(f"Batch grouping disabled for user {user_id}, skipping")
                 return {"status": "skipped", "reason": "disabled"}
@@ -180,10 +181,9 @@ def retroactive_auto_label_task(
 
     try:
         with session_scope() as db:
-            from app.services.auto_label_service import AutoLabelService
+            from app.services.auto_label_settings import get_user_auto_label_settings
 
-            service = AutoLabelService(db)
-            user_settings = service.get_user_auto_label_settings(user_id)
+            user_settings = get_user_auto_label_settings(db, user_id)
             threshold = user_settings.get("confidence_threshold", 0.75)
 
             suggestion_ids = pending_suggestion_ids(
@@ -290,9 +290,10 @@ def auto_label_batch_task(
         from app.models.media import MediaFile
         from app.models.topic import TopicSuggestion
         from app.services.auto_label_service import AutoLabelService
+        from app.services.auto_label_settings import get_user_auto_label_settings
 
         service = AutoLabelService(db)
-        user_settings = service.get_user_auto_label_settings(user_id)
+        user_settings = get_user_auto_label_settings(db, user_id)
         apply_tags = user_settings.get("tags_enabled", True)
         apply_collections = user_settings.get("collections_enabled", True)
 

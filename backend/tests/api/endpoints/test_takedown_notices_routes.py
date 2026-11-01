@@ -46,7 +46,7 @@ def _no_side_effects(monkeypatch):
         "app.services.storage_presign_identity.presign_identity_available", lambda: True
     )
     monkeypatch.setattr(
-        "app.services.media_revocation_cache.remove_cache_copies", lambda _file_id: []
+        "app.services.media_revocation_cache.remove_cache_copies", lambda *_a, **_k: []
     )
     monkeypatch.setattr("app.services.minio_service.set_object_legal_hold", MagicMock())
 

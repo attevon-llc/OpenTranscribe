@@ -168,6 +168,12 @@ TEST_BUCKET_SPECS: list[ArtifactSpec] = [
         TIER_A,
         'integration/test_quarantine_tag_permissions_live.py',
     ),
+    _spec(
+        'legacy-audio-reclaim',
+        rf'e2e-legacy-audio-{_H12}',
+        TIER_A,
+        'integration/test_legacy_audio_cache_reclaim_live.py',
+    ),
 ]
 
 

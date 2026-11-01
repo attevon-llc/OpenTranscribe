@@ -38,13 +38,16 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 from typing import Literal
+from typing import Protocol
 
 from app.core.config import settings
+from app.core.constants import TAKEDOWN_SETTLE_DEADLINE_SECONDS
 from app.services import storage_backend
 from app.services import storage_presign_identity
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from app.models.media import MediaFile
+    from minio import Minio
+
     from app.services.minio_service import QuarantineTagWrite
 
 logger = logging.getLogger(__name__)
@@ -59,6 +62,8 @@ REASON_COPY_REMOVAL_FAILED = "copy_removal_failed"
 REASON_ENFORCEMENT_MISSING = "enforcement_missing"
 REASON_ENFORCEMENT_UNVERIFIED = "enforcement_unverified"
 REASON_TAG_CLEAR_FAILED = "tag_clear_failed"
+#: The database changed again after the last state :func:`settle_file` could apply.
+REASON_STATE_CHANGED = "state_changed"
 
 #: Roles that are tagged (and restored on release); the others are deleted.
 TAGGED_ROLES: frozenset[str] = frozenset({"original", "thumbnail", "playback"})
@@ -73,6 +78,56 @@ UNTAG_BACKOFF_SECONDS = 0.5
 #: How many times :func:`settle_file` re-reads the database and re-applies. Each round is
 #: one quarantine or release committing in the middle of this one's writes.
 SETTLE_ROUNDS = 4
+
+
+class MediaRef(Protocol):
+    """What revocation reads of a file: a ``MediaFile`` row or a :class:`MediaSnapshot`."""
+
+    @property
+    def id(self) -> int: ...
+
+    @property
+    def uuid(self) -> object: ...
+
+    @property
+    def storage_path(self) -> str | None: ...
+
+    @property
+    def thumbnail_path(self) -> str | None: ...
+
+    @property
+    def playback_path(self) -> str | None: ...
+
+    @property
+    def filename(self) -> str | None: ...
+
+
+@dataclasses.dataclass(frozen=True)
+class MediaSnapshot:
+    """The file's identity and object paths, copied out of the ORM row.
+
+    Lets a caller end its database transaction before the storage round trips: reading an
+    expired attribute of the row would open a new one in the middle of them.
+    """
+
+    id: int
+    uuid: str
+    storage_path: str | None
+    thumbnail_path: str | None
+    playback_path: str | None
+    filename: str | None
+
+    @classmethod
+    def of(cls, file: MediaRef) -> MediaSnapshot:
+        """Copy what revocation needs out of ``file``."""
+        return cls(
+            id=int(file.id),
+            uuid=str(file.uuid),
+            storage_path=str(file.storage_path) if file.storage_path else None,
+            thumbnail_path=str(file.thumbnail_path) if file.thumbnail_path else None,
+            playback_path=str(file.playback_path) if file.playback_path else None,
+            filename=str(file.filename) if file.filename else None,
+        )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -92,12 +147,15 @@ class MediaRevocationReport:
         objects: One entry per object the file has.
         enforcement: What makes the tag stop a URL on this deployment (``revoke`` only).
         policy_read_denied: The enforcement check was refused ``s3:GetBucketPolicy``.
+        superseded: The database state changed after the last state that could be applied
+            (:func:`settle_file` ran out of rounds or time), so storage may match neither.
     """
 
     action: Literal["revoke", "restore"]
     objects: tuple[ObjectTagResult, ...]
     enforcement: Enforcement | None = None
     policy_read_denied: bool = False
+    superseded: bool = False
 
     @property
     def failed_roles(self) -> list[str]:
@@ -120,6 +178,8 @@ class MediaRevocationReport:
     @property
     def reason(self) -> str | None:
         """Why the action is incomplete (a ``REASON_*`` code), or None when it is complete."""
+        if self.superseded:
+            return REASON_STATE_CHANGED
         failed = set(self.failed_roles)
         if self.action == "restore":
             return REASON_TAG_CLEAR_FAILED if failed else None
@@ -173,18 +233,33 @@ class MediaRevocationReport:
         Those describe the operator's infrastructure, not the tenant's file; the operator gets
         them on the platform route, the audit event and the log.
         """
-        reason = None
-        if not self.complete:
-            reason = "revocation_incomplete" if self.action == "revoke" else "restore_incomplete"
         return {
             "action": self.action,
             "complete": self.complete,
-            "reason": reason,
+            "reason": self.tenant_reason(),
             "exposure_seconds": self.exposure_seconds,
         }
 
-    def to_audit(self) -> dict:
-        """The audit-event form: the decision fields, never object keys."""
+    def tenant_reason(self) -> str | None:
+        """The generic reason an organization admin may see (no storage detail)."""
+        if self.complete:
+            return None
+        return "revocation_incomplete" if self.action == "revoke" else "restore_incomplete"
+
+    def to_audit(self, *, tenant_visible: bool) -> dict:
+        """The audit-event form: the decision fields, never object keys.
+
+        Args:
+            tenant_visible: The event is stamped with an organization, so that organization's
+                admins read it (``GET /org-admin/audit-logs`` and its export). Then only the
+                tenant subset is recorded; the enforcer, the refused storage actions and the
+                failed objects describe the operator's infrastructure and stay in the server
+                log (:func:`_log_incomplete`) and on the platform route's response. Same keys
+                and value types as the platform form (a subset of its keys), so the audit
+                index mapping sees one type per field.
+        """
+        if tenant_visible:
+            return {"complete": self.complete, "reason": self.tenant_reason()}
         return {
             "complete": self.complete,
             "reason": self.reason,
@@ -194,7 +269,13 @@ class MediaRevocationReport:
         }
 
 
-def _media_objects(file: MediaFile) -> list[tuple[ObjectRole, str]]:
+def _client() -> Minio:
+    from app.services.minio_service import get_takedown_client
+
+    return get_takedown_client()
+
+
+def _media_objects(file: MediaRef) -> list[tuple[ObjectRole, str]]:
     """The file's media-bucket objects a browser-facing presigned URL can be minted for."""
     objects: list[tuple[ObjectRole, str]] = []
     if file.storage_path:
@@ -230,10 +311,16 @@ def resolve_enforcement() -> tuple[Enforcement, bool]:
     return "none", False
 
 
-def _log_incomplete(file: MediaFile, report: MediaRevocationReport) -> None:
+def _log_incomplete(file: MediaRef, report: MediaRevocationReport) -> None:
     missing = report.missing_permissions
     perms = f"; the storage identity is missing {', '.join(missing)}" if missing else ""
-    if report.action == "revoke":
+    if report.superseded:
+        logger.error(
+            f"File {file.id} ({file.uuid}) changed quarantine state again while its media "
+            f"tags were being written ({report.action} was the last state applied); storage "
+            "may not match the database. The next quarantine or release re-applies it."
+        )
+    elif report.action == "revoke":
         logger.error(
             f"Quarantine of file {file.id} ({file.uuid}) did NOT revoke its presigned media "
             f"URLs ({report.reason}; enforcement={report.enforcement}; failed objects: "
@@ -251,7 +338,7 @@ def _log_incomplete(file: MediaFile, report: MediaRevocationReport) -> None:
 
 
 def revoke_media(
-    file: MediaFile,
+    file: MediaRef,
     *,
     enforcement: tuple[Enforcement, bool] | None = None,
     log: bool = True,
@@ -270,11 +357,12 @@ def revoke_media(
     from app.services.media_revocation_cache import remove_cache_copies
     from app.services.minio_service import write_object_quarantine_tag
 
+    client = _client()
     results = [
-        ObjectTagResult(role, write_object_quarantine_tag(key, True))
+        ObjectTagResult(role, write_object_quarantine_tag(key, True, client=client))
         for role, key in _media_objects(file)
     ]
-    results.extend(remove_cache_copies(int(file.id)))
+    results.extend(remove_cache_copies(int(file.id), filename=file.filename, client=client))
     report = MediaRevocationReport("revoke", tuple(results))
     # Resolved even when a write failed, so one response names every missing permission.
     if any(o.write.outcome != "absent" and o.role in TAGGED_ROLES for o in results):
@@ -285,27 +373,28 @@ def revoke_media(
     return report
 
 
-def _untag_with_retry(key: str) -> QuarantineTagWrite:
+def _untag_with_retry(key: str, client: Minio) -> QuarantineTagWrite:
     from app.services.minio_service import write_object_quarantine_tag
 
-    write = write_object_quarantine_tag(key, False)
+    write = write_object_quarantine_tag(key, False, client=client)
     for _ in range(1, UNTAG_RETRIES):
         if write.outcome != "failed":
             break
         time.sleep(UNTAG_BACKOFF_SECONDS)
-        write = write_object_quarantine_tag(key, False)
+        write = write_object_quarantine_tag(key, False, client=client)
     return write
 
 
-def restore_media(file: MediaFile, *, log: bool = True) -> MediaRevocationReport:
+def restore_media(file: MediaRef, *, log: bool = True) -> MediaRevocationReport:
     """Clear the quarantine tag on the file's media objects, retrying failures.
 
     Cache copies were deleted on quarantine and are rebuilt on demand, so nothing else is
     restored. Never raises; a tag still in place after every retry is logged at ERROR,
     because a still-tagged object 403s a BRAND NEW presigned URL too.
     """
+    client = _client()
     results = tuple(
-        ObjectTagResult(role, _untag_with_retry(key)) for role, key in _media_objects(file)
+        ObjectTagResult(role, _untag_with_retry(key, client)) for role, key in _media_objects(file)
     )
     report = MediaRevocationReport("restore", results)
     if log and not report.complete:
@@ -313,7 +402,7 @@ def restore_media(file: MediaFile, *, log: bool = True) -> MediaRevocationReport
     return report
 
 
-def settle_file(file: MediaFile, read_quarantined: Callable[[], bool]) -> MediaRevocationReport:
+def settle_file(file: MediaRef, read_quarantined: Callable[[], bool]) -> MediaRevocationReport:
     """Make storage match the file's CURRENT quarantine state, and keep it matching.
 
     Applies what the database holds (not what the caller just did), re-reads it after the
@@ -321,25 +410,37 @@ def settle_file(file: MediaFile, read_quarantined: Callable[[], bool]) -> MediaR
     whose untag is still retrying could finish after a second quarantine committed and leave
     a quarantined file's media playable.
 
+    Bounded twice: at most :data:`SETTLE_ROUNDS` applications, and no new round once
+    ``TAKEDOWN_SETTLE_DEADLINE_SECONDS`` have passed (each storage call is bounded by the
+    takedown client's own timeout). When either runs out, the state is read one last time; if
+    it differs from what was applied the report is ``superseded`` and therefore incomplete, so
+    it never says complete for the opposite of what the database holds.
+
     Args:
-        file: The file (only its id, uuid and object paths are read).
-        read_quarantined: Reads ``is_quarantined`` from the database, fresh.
+        file: The file, or a :class:`MediaSnapshot` (only its id, uuid and paths are read).
+        read_quarantined: Reads ``is_quarantined`` from the database, fresh, and must end its
+            transaction before returning: no connection may sit idle in a transaction across
+            the storage calls between reads.
 
     Returns:
         The report of the last state applied.
     """
+    deadline = time.monotonic() + TAKEDOWN_SETTLE_DEADLINE_SECONDS
     desired = read_quarantined()
     report = revoke_media(file, log=False) if desired else restore_media(file, log=False)
-    for _ in range(SETTLE_ROUNDS - 1):
-        now = read_quarantined()
-        if now == desired:
-            break
+    rounds = 1
+    now = read_quarantined()
+    while now != desired and rounds < SETTLE_ROUNDS and time.monotonic() < deadline:
         logger.info(
             f"File {file.id}'s quarantine state changed while its media tags were being "
             f"written; re-applying {'revoke' if now else 'restore'}."
         )
         desired = now
         report = revoke_media(file, log=False) if desired else restore_media(file, log=False)
+        rounds += 1
+        now = read_quarantined()
+    if now != desired:
+        report = dataclasses.replace(report, superseded=True)
     if not report.complete:
         _log_incomplete(file, report)
     return report
@@ -357,11 +458,12 @@ def settle_object_tag(
     """
     from app.services.minio_service import write_object_quarantine_tag
 
+    client = _client()
     desired = read_quarantined()
     result: QuarantineTagWrite | None = None
     for _ in range(SETTLE_ROUNDS):
         if desired or result is not None:
-            result = write_object_quarantine_tag(key, desired)
+            result = write_object_quarantine_tag(key, desired, client=client)
         now = read_quarantined()
         if now == desired:
             break

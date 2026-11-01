@@ -195,6 +195,10 @@ ALLOWLIST: dict[str, str] = {
         "Q: include_quarantined for a collection already authorized through the chokepoint; "
         "argument is ctx.bypass.user_is_admin"
     ),
+    "api/endpoints/watch_sources.py::list_source_files": (
+        "Q: is_hidden_for(is_admin=False) drops a taken-down file's uuid from the history of a "
+        "source already authorized through _get_source_or_404; it never widens access"
+    ),
     "api/endpoints/search.py::_source_counts": (
         "Q: quarantine visibility of per-source counts inside the caller's own tenant filter; "
         "argument is ctx.bypass.user_is_admin"

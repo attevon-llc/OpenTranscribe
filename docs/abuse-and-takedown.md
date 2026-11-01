@@ -327,12 +327,18 @@ request, not at signing time, so:
   Deleting them means a release has nothing to restore (they are rebuilt on demand) and needs no
   Deny on the cache bucket. An export or render that finishes during a takedown is re-checked
   after its upload and deleted (`remove_if_quarantined`). A copy that cannot be listed or deleted
-  makes the revocation **incomplete** (`reason: copy_removal_failed`).
+  makes the revocation **incomplete** (`reason: copy_removal_failed`). Extracted-audio keys
+  written before cache key hardening (`derived/{name}_audio_*`, no file id) are removed by name
+  with their file, and swept once at startup.
 - **The last committed state wins.** `media_revocation.settle_file` applies the database state,
   re-reads it, and re-applies until the two agree (bounded), so a quarantine and a release that
   race leave storage matching whichever committed last. Every tag write reads the tag set back
   and retries once, so a concurrent writer that replaced the whole set (S3 tag writes are not
-  conditional) is detected (`ConcurrentTagWrite`) instead of reported as applied. A playback
+  conditional) is detected (`ConcurrentTagWrite`) instead of reported as applied. The storage
+  calls run on a bounded client (`TAKEDOWN_STORAGE_TIMEOUT_SECONDS`, no transport retries) with
+  no database transaction open, and no new round starts after
+  `TAKEDOWN_SETTLE_DEADLINE_SECONDS`; if the database changed again after the last state that
+  could be applied, the result is incomplete with reason `state_changed`. A playback
   rendition that finishes during a takedown is tagged by the same path (`settle_object_tag`), and
   an ERROR names a refused write.
 - **Releasing a file untags it** (`takedown_service.release_file`), which restores the SAME
@@ -386,6 +392,7 @@ request, not at signing time, so:
   | `s3:PutObjectLegalHold` | `arn:aws:s3:::<your-media-bucket>/*` | optional: the best-effort object legal hold, Object Lock buckets only |
   | `s3:ListBucket` | `arn:aws:s3:::<your-cache-bucket>` | finding a file's derived renders and exports |
   | `s3:DeleteObject` | `arn:aws:s3:::<your-cache-bucket>/*` | deleting them on takedown |
+  | `s3:PutObject`, `s3:DeleteObject` | `arn:aws:s3:::<your-media-bucket>/_opentranscribe/probes/*` and `arn:aws:s3:::<your-cache-bucket>/_opentranscribe/probes/*` | the startup probe's throwaway object (the app already holds both for media); a refused media-bucket delete is logged as a leftover probe object, not as a missing takedown permission |
 
   **What counts as enforcing.** The policy is read conservatively: only an unconditional
   `Deny` of `s3:GetObject` (or `s3:Get*`, `s3:*`, `*`) to every principal (`"*"` or
@@ -455,8 +462,13 @@ request, not at signing time, so:
     enforcer, which stay in the audit event. `presign_revoked` is true only when every object was tagged AND
     something enforces the tag; it used to report the primary object's tag write alone, so a
     failed thumbnail tag or a deployment with nothing enforcing the tag read as revoked.
-  - **The audit event** carries the same decision fields under `media_revocation` and is
-    written with outcome `partial` (error code = the reason) instead of `success`.
+  - **The audit event** is written with outcome `partial` instead of `success`. For a file
+    with no organization (readable by platform admins only) it carries the decision fields
+    under `media_revocation` (`complete`, `reason`, `enforcement`, `missing_permissions`,
+    `failed_objects`) and the reason as its error code. For an organization's file, whose
+    events that organization's admins read through `GET /org-admin/audit-logs` and its export,
+    it carries only `complete` and the generic reason (`revocation_incomplete` |
+    `restore_incomplete`, also the error code); the storage detail is in the ERROR log line.
   - **The log** is an ERROR naming the missing storage actions; the admin UI shows a warning
     rather than a plain success.
 

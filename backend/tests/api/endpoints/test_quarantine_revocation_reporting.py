@@ -218,3 +218,56 @@ def test_a_release_whose_untag_is_refused_reports_the_file_still_blocked(
     (event,) = _events(audit, AuditEventType.ADMIN_FILE_RELEASE)
     assert event["outcome"] == AuditOutcome.PARTIAL
     assert event["error_code"] == "tag_clear_failed"
+
+
+def _record(timeline: list[str], label: str):
+    def _handler(*_args, **_kwargs) -> None:
+        timeline.append(label)
+
+    return _handler
+
+
+@pytest.mark.parametrize("action", ["quarantine", "release"])
+def test_no_storage_call_runs_inside_an_open_database_transaction(
+    client, admin_token_headers, owned_file, db_session, monkeypatch, audit, action
+):
+    """The request's connection must not sit idle in a transaction across storage calls."""
+    from sqlalchemy import event
+
+    monkeypatch.setattr("app.services.media_revocation.UNTAG_BACKOFF_SECONDS", 0)
+    store = _s3(monkeypatch, owned_file)
+    if action == "release":
+        assert _quarantine(client, admin_token_headers, owned_file).status_code == 200
+    timeline: list[str] = []
+    listeners = [
+        ("after_begin", _record(timeline, "begin")),
+        ("after_commit", _record(timeline, "end")),
+        ("after_rollback", _record(timeline, "end")),
+    ]
+    for name, handler in listeners:
+        event.listen(db_session, name, handler)
+    real_gate = store._gate
+
+    def _gate(storage_action, key):
+        timeline.append(f"s3:{storage_action}")
+        real_gate(storage_action, key)
+
+    monkeypatch.setattr(store, "_gate", _gate)
+    kwargs = {"json": QUARANTINE_BODY} if action == "quarantine" else {}
+    try:
+        response = client.post(
+            f"/api/admin/files/{owned_file.uuid}/{action}", headers=admin_token_headers, **kwargs
+        )
+    finally:
+        for name, handler in listeners:
+            event.remove(db_session, name, handler)
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    storage_calls = [i for i, e in enumerate(timeline) if e.startswith("s3:")]
+    assert storage_calls, timeline
+    open_during = [
+        timeline[i]
+        for i in storage_calls
+        if next((e for e in reversed(timeline[:i]) if not e.startswith("s3:")), "end") == "begin"
+    ]
+    assert open_during == [], timeline

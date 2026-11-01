@@ -316,6 +316,37 @@ class TestCanonicalDestroy:
         assert db_session.query(MediaFile).filter(MediaFile.id == fid).first() is None
 
 
+class TestLegacyAudioReclaimOnce:
+    """The startup wrapper sets its flag only after a complete pass."""
+
+    def _result(self, complete: bool):
+        return cache_management_service.LegacyAudioReclaim(10, 2, 2 if complete else 1, 0, complete)
+
+    def test_an_incomplete_pass_runs_again_and_a_complete_one_does_not(
+        self, db_session, monkeypatch
+    ):
+        from app.services import system_settings_service
+
+        key = cache_management_service.LEGACY_AUDIO_RECLAIM_KEY
+        passes = iter([self._result(False), self._result(True)])
+        calls: list[int] = []
+
+        def _reclaim():
+            calls.append(1)
+            return next(passes)
+
+        monkeypatch.setattr(cache_management_service, "reclaim_legacy_audio_cache", _reclaim)
+
+        first = cache_management_service.reclaim_legacy_audio_cache_once(db_session)
+        assert first is not None and first.complete is False
+        assert system_settings_service.get_setting_bool(db_session, key, False) is False
+        second = cache_management_service.reclaim_legacy_audio_cache_once(db_session)
+        assert second is not None and second.complete is True
+        assert system_settings_service.get_setting_bool(db_session, key, False) is True
+        assert cache_management_service.reclaim_legacy_audio_cache_once(db_session) is None
+        assert len(calls) == 2
+
+
 class TestLegacyReclaim:
     """Upgrade reclaim removes pre-prefix root-level derived objects only."""
 

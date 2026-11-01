@@ -230,12 +230,16 @@ class TestRevokeMedia:
                 }
             ],
         }
-        assert report.to_audit() == {
+        assert report.to_audit(tenant_visible=False) == {
             "complete": False,
             "reason": "tag_write_failed",
             "enforcement": "bucket_policy",
             "missing_permissions": [PUT_TAGS],
             "failed_objects": ["original"],
+        }
+        assert report.to_audit(tenant_visible=True) == {
+            "complete": False,
+            "reason": "revocation_incomplete",
         }
 
 

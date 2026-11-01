@@ -36,7 +36,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path, and a refused tag is an ERROR.
 - Organization-admin quarantine and release responses carry only `action`, `complete`,
   `exposure_seconds` and a generic `reason`; storage permissions and the enforcer stay on the
-  platform route and in the audit event.
+  platform route and in the server log.
+- The audit event of a quarantine or release of an organization's file records only
+  `complete` and a generic `reason` under `media_revocation` (and a generic error code), so the
+  organization's audit read and export carry no storage permissions, enforcer or failed
+  objects. Events on personal files, which only platform admins read, keep the full detail.
+- Quarantine and release no longer hold a database transaction open across their storage
+  calls, use a bounded storage client with no transport retries, and stop re-applying after
+  `TAKEDOWN_SETTLE_DEADLINE_SECONDS`; when the database changed again after the last state
+  that could be applied the result is reported incomplete (`state_changed`), never complete.
+- A watch source's import history no longer links a quarantined file.
 
 ### Fixed
 
@@ -44,8 +53,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   playback-rendition tag was ignored) or when nothing enforced the tag (no MinIO presign
   identity, no S3 bucket-policy Deny). It is now true only when every object is tagged and the
   tag is enforced; `presign_tag_cleared` likewise covers every object.
-- Two files with the same filename shared one extracted-audio object in the cache bucket, so a
-  download could serve another file's audio. The cache key now starts with the file id.
+- Cache key hardening: extracted-audio cache keys now start with the file id. Keys written
+  before this are removed when their file is deleted, erased or taken down, and swept once at
+  startup (`derived/` keys of the old audio shape only, every version on a versioned bucket, at
+  most 5,000 per start, rerun until a pass completes; counts are logged).
+- The startup storage probe no longer reports a refused delete of its own probe object in the
+  media bucket as a missing takedown permission (a takedown never deletes there); it is logged
+  as a leftover object instead.
 - A MinIO presign identity cached as working is re-checked by presigning with it when the
   provisioning probe fails, so a stale per-process cache cannot report revocation as enforced.
 - The startup quarantine-tag backfill resolves enforcement once and logs one summary line
@@ -56,7 +70,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Documentation
 
 - S3 permissions quarantine needs (`s3:GetObjectTagging`, `s3:PutObjectTagging`,
-  `s3:GetBucketPolicy`, optional `s3:PutObjectLegalHold`) and an operator recipe to verify an
+  `s3:GetBucketPolicy`, optional `s3:PutObjectLegalHold`, and the probe's `s3:PutObject` /
+  `s3:DeleteObject` on both buckets) and an operator recipe to verify an
   issued URL goes 206 → 403 → 206: Production Deployment, Object Storage, environment variables,
   upgrading to 0.6.0, `docs/abuse-and-takedown.md`.
 

@@ -310,35 +310,41 @@ def _backfill_quarantine_tags() -> None:
     """
     from app.db.base import SessionLocal
     from app.models.media import MediaFile
+    from app.services.media_revocation import MediaSnapshot
     from app.services.media_revocation import resolve_enforcement
     from app.services.media_revocation import revoke_media
 
+    # Read, snapshot and close BEFORE any storage call: no connection idles in a transaction
+    # across the tag writes.
     db = SessionLocal()
     try:
-        rows = db.query(MediaFile).filter(MediaFile.is_quarantined.is_(True)).all()
-        if not rows:
-            return
-        # Resolved ONCE per boot, and one summary line instead of an ERROR per row.
-        enforcement = resolve_enforcement()
-        reports = [revoke_media(row, enforcement=enforcement, log=False) for row in rows]
-        incomplete = [r for r in reports if not r.complete]
-        if not incomplete:
-            logger.info(
-                f"Quarantine-tag backfill: presigned media URLs revoked for all {len(rows)} "
-                f"already-quarantined file(s)"
-            )
-            return
-        reasons = sorted({str(r.reason) for r in incomplete})
-        missing = sorted({p for r in incomplete for p in r.missing_permissions})
-        logger.error(
-            f"Quarantine-tag backfill: presigned media URLs NOT revoked for "
-            f"{len(incomplete)}/{len(rows)} already-quarantined file(s) "
-            f"(reasons: {', '.join(reasons)}; enforcement={enforcement[0]}"
-            + (f"; the storage identity is missing {', '.join(missing)}" if missing else "")
-            + "). See docs/abuse-and-takedown.md."
-        )
+        rows = [
+            MediaSnapshot.of(row)
+            for row in db.query(MediaFile).filter(MediaFile.is_quarantined.is_(True)).all()
+        ]
     finally:
         db.close()
+    if not rows:
+        return
+    # Resolved ONCE per boot, and one summary line instead of an ERROR per row.
+    enforcement = resolve_enforcement()
+    reports = [revoke_media(row, enforcement=enforcement, log=False) for row in rows]
+    incomplete = [r for r in reports if not r.complete]
+    if not incomplete:
+        logger.info(
+            f"Quarantine-tag backfill: presigned media URLs revoked for all {len(rows)} "
+            f"already-quarantined file(s)"
+        )
+        return
+    reasons = sorted({str(r.reason) for r in incomplete})
+    missing = sorted({p for r in incomplete for p in r.missing_permissions})
+    logger.error(
+        f"Quarantine-tag backfill: presigned media URLs NOT revoked for "
+        f"{len(incomplete)}/{len(rows)} already-quarantined file(s) "
+        f"(reasons: {', '.join(reasons)}; enforcement={enforcement[0]}"
+        + (f"; the storage identity is missing {', '.join(missing)}" if missing else "")
+        + "). See docs/abuse-and-takedown.md."
+    )
 
 
 def _setup_minio():
@@ -1016,6 +1022,8 @@ async def lifespan(app: FastAPI):
                 )
                 if count:
                     logger.info(f"Upgrade reclaim: removed {count} legacy derived cache object(s)")
+
+            cache_management_service.reclaim_legacy_audio_cache_once(_db)
         finally:
             _db.close()
     except Exception as e:

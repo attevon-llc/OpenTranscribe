@@ -30,6 +30,8 @@ from typing import TYPE_CHECKING
 from app.core.config import settings
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    from minio import Minio
+
     from app.services.media_revocation import ObjectRole
     from app.services.media_revocation import ObjectTagResult
 
@@ -38,6 +40,20 @@ logger = logging.getLogger(__name__)
 DERIVED_PREFIX = "derived/"
 BULK_PREFIX = "bulk/"
 BULK_MARKER_PREFIX = "bulk/by-file/"
+
+
+#: Extracted-audio keys written before the file id led the key (cache key hardening):
+#: ``derived/{base}{suffix}``. Nothing reads them any more; delete paths still remove them,
+#: and ``cache_management_service.reclaim_legacy_audio_cache`` sweeps the rest once.
+LEGACY_AUDIO_SUFFIXES = ("_audio_mp3.mp3", "_audio_wav.wav", "_audio_original")
+
+
+def legacy_audio_keys(filename: str | None) -> list[str]:
+    """The pre-hardening extracted-audio keys a file named ``filename`` could own."""
+    if not filename:
+        return []
+    base = filename.rsplit(".", 1)[0] if "." in filename else filename
+    return [f"{DERIVED_PREFIX}{base}{suffix}" for suffix in LEGACY_AUDIO_SUFFIXES]
 
 
 def derived_prefix(file_id: int) -> str:
@@ -70,14 +86,13 @@ def record_bulk_export(storage, bucket: str, file_ids: Iterable[int], export_key
         )
 
 
-def _list(prefix: str) -> list[str]:
+def _list(prefix: str, client: Minio | None = None) -> list[str]:
     from app.services.minio_service import minio_client
 
+    storage = client or minio_client
     return [
         str(obj.object_name)
-        for obj in minio_client.list_objects(
-            settings.CACHE_BUCKET_NAME, prefix=prefix, recursive=True
-        )
+        for obj in storage.list_objects(settings.CACHE_BUCKET_NAME, prefix=prefix, recursive=True)
         if obj.object_name
     ]
 
@@ -96,32 +111,58 @@ def _listing_failure(role: ObjectRole, error: Exception) -> ObjectTagResult:
     )
 
 
-def remove_cache_copies(file_id: int) -> list[ObjectTagResult]:
-    """Delete every cache-bucket copy of ``file_id`` and report each one. Never raises."""
+def _legacy_audio_present(filename: str | None, client: Minio | None) -> list[str]:
+    keys = legacy_audio_keys(filename)
+    if not keys:
+        return []
+    # One listing of the shared stem, then exact names only: another file's legacy key that
+    # merely starts with this stem is not this file's.
+    stem = keys[0].removesuffix(LEGACY_AUDIO_SUFFIXES[0])
+    wanted = set(keys)
+    return [k for k in _list(f"{stem}_audio_", client) if k in wanted]
+
+
+def remove_cache_copies(
+    file_id: int, *, filename: str | None = None, client: Minio | None = None
+) -> list[ObjectTagResult]:
+    """Delete every cache-bucket copy of ``file_id`` and report each one. Never raises.
+
+    Args:
+        file_id: The file.
+        filename: Its original filename, to also remove pre-hardening extracted-audio keys
+            (:func:`legacy_audio_keys`) that do not carry the id.
+        client: Storage client (the bounded takedown client in production).
+    """
     from app.services.media_revocation import ObjectTagResult
     from app.services.minio_service import remove_object_reported
 
     bucket = settings.CACHE_BUCKET_NAME
     results: list[ObjectTagResult] = []
     try:
-        derived = _list(derived_prefix(file_id))
+        derived = _list(derived_prefix(file_id), client)
+        derived += [k for k in _legacy_audio_present(filename, client) if k not in derived]
     except Exception as e:  # noqa: BLE001 — reported as a failed object, never raised
         results.append(_listing_failure("derived", e))
         derived = []
     results.extend(
-        ObjectTagResult("derived", remove_object_reported(bucket, key)) for key in derived
+        ObjectTagResult("derived", remove_object_reported(bucket, key, client=client))
+        for key in derived
     )
 
     try:
-        markers = _list(bulk_marker_prefix(file_id))
+        markers = _list(bulk_marker_prefix(file_id), client)
     except Exception as e:  # noqa: BLE001 — reported as a failed object, never raised
         results.append(_listing_failure("bulk_export", e))
         markers = []
     for marker in markers:
         export_key = f"{BULK_PREFIX}{marker.removeprefix(bulk_marker_prefix(file_id))}"
-        results.append(ObjectTagResult("bulk_export", remove_object_reported(bucket, export_key)))
+        results.append(
+            ObjectTagResult(
+                "bulk_export", remove_object_reported(bucket, export_key, client=client)
+            )
+        )
         # The marker itself serves nothing; a leftover one only costs a later no-op delete.
-        remove_object_reported(bucket, marker)
+        remove_object_reported(bucket, marker, client=client)
     return results
 
 

@@ -45,6 +45,7 @@ from app.models.media import MediaFile
 from app.models.takedown import TakedownNotice
 from app.services.hold_guard import is_held
 from app.services.media_revocation import MediaRevocationReport
+from app.services.media_revocation import MediaSnapshot
 from app.services.media_revocation import settle_file
 from app.services.takedown_authority import TakedownActor
 from app.services.takedown_authority import TakedownRefusedError
@@ -137,15 +138,35 @@ def stamp_completion_time(file: MediaFile, when: datetime) -> None:
         file.completed_at = when
 
 
-def _quarantined_reader(db: Session, file: MediaFile) -> Callable[[], bool]:
+def _quarantined_reader(db: Session, file_id: int) -> Callable[[], bool]:
     """Read the file's committed ``is_quarantined`` afresh (READ COMMITTED: each call sees
-    the latest commit), for ``media_revocation.settle_file`` to converge on."""
-    file_id = int(file.id)
+    the latest commit), for ``media_revocation.settle_file`` to converge on.
+
+    Each read ends its transaction before returning: ``settle_file`` makes storage calls
+    between reads, and the request's connection must not sit idle in a transaction across
+    them (nothing is pending on the session at this point, so the commit writes nothing).
+    """
 
     def _read() -> bool:
-        return bool(db.query(MediaFile.is_quarantined).filter(MediaFile.id == file_id).scalar())
+        try:
+            return bool(db.query(MediaFile.is_quarantined).filter(MediaFile.id == file_id).scalar())
+        finally:
+            db.commit()
 
     return _read
+
+
+def _audit_revocation(
+    report: MediaRevocationReport, *, tenant_visible: bool
+) -> tuple[dict, str | None]:
+    """The ``media_revocation`` audit details and error code for one takedown or release.
+
+    An event on an organization's file is readable by that organization's admins, so it
+    carries only the tenant subset and a generic error code; storage detail stays in the
+    server log and on the platform route's response.
+    """
+    error_code = report.tenant_reason() if tenant_visible else report.reason
+    return report.to_audit(tenant_visible=tenant_visible), error_code
 
 
 def _revocation_outcome(report: MediaRevocationReport) -> AuditOutcome:
@@ -318,6 +339,12 @@ def quarantine_file(
 
     db.commit()
     db.refresh(file)
+    media = MediaSnapshot.of(file)
+    file_id = int(file.id)
+    tenant_visible = file.organization_id is not None
+    # End the transaction ``refresh`` opened: storage round trips follow, and they read the
+    # snapshot rather than the (now expired) row.
+    db.commit()
 
     # A takedown changes what the searchable/chat-retrievable corpus may serve —
     # exactly the event `bump_corpus_version` exists for (its own docstring names
@@ -330,11 +357,11 @@ def quarantine_file(
     bump_corpus_version()
 
     # Best-effort storage legal-hold (DB flag is the source of truth).
-    if legal_hold and file.storage_path:
+    if legal_hold and media.storage_path:
         try:
             from app.services.minio_service import set_object_legal_hold
 
-            set_object_legal_hold(str(file.storage_path), True)
+            set_object_legal_hold(media.storage_path, True)
         except Exception as e:  # noqa: BLE001 — advisory; never break the takedown
             logger.warning(f"Storage legal-hold enable failed for file {file.id}: {e}")
 
@@ -343,7 +370,10 @@ def quarantine_file(
     # is a regenerable copy), independent of `legal_hold`. A failure does not undo the
     # takedown (`media_revocation`'s module docstring has that decision); it is reported on
     # the response, in the audit event and as an ERROR, never as a clean success.
-    revocation = settle_file(file, _quarantined_reader(db, file))
+    revocation = settle_file(media, _quarantined_reader(db, file_id))
+    revocation_audit, revocation_error = _audit_revocation(
+        revocation, tenant_visible=tenant_visible
+    )
 
     # Non-persisted (not DB columns — see the TYPE_CHECKING-only declaration on MediaFile):
     # the quarantine endpoints read these off the returned object.
@@ -354,7 +384,7 @@ def quarantine_file(
         "reason": reason,
         "legal_hold": bool(legal_hold),
         "presign_revoked": revocation.complete,
-        "media_revocation": revocation.to_audit(),
+        "media_revocation": revocation_audit,
         "previous_origin": previous_origin.value if previous_origin else None,
         "notice_uuid": notice_uuid,
         "link_uuid": link_uuid,
@@ -370,7 +400,7 @@ def quarantine_file(
         user_agent=user_agent,
         extra=extra,
         outcome=_revocation_outcome(revocation),
-        error_code=revocation.reason,
+        error_code=revocation_error,
     )
     # The reason is recorded in the audit event and the notice record, not in the log.
     logger.info(f"File {file.id} ({file.uuid}) quarantined by {actor.role_label} {actor.user.id}")
@@ -463,6 +493,12 @@ def release_file(
 
     db.commit()
     db.refresh(file)
+    media = MediaSnapshot.of(file)
+    file_id = int(file.id)
+    tenant_visible = file.organization_id is not None
+    lift_object_lock = bool(clear_legal_hold and media.storage_path and not is_held(file))
+    # End the read transaction before the storage round trips below (see quarantine_file).
+    db.commit()
 
     # Release also changes what the corpus may serve (the file is servable
     # again) — same reasoning as the bump in `quarantine_file`. Never raises.
@@ -472,18 +508,21 @@ def release_file(
 
     # The object lock mirrors "held by ANYONE": releasing the platform's hold must not lift it
     # while an organization hold still covers the file (issue #1276).
-    if clear_legal_hold and file.storage_path and not is_held(file):
+    if lift_object_lock and media.storage_path:
         try:
             from app.services.minio_service import set_object_legal_hold
 
-            set_object_legal_hold(str(file.storage_path), False)
+            set_object_legal_hold(media.storage_path, False)
         except Exception as e:  # noqa: BLE001 — advisory; never break the release
             logger.warning(f"Storage legal-hold disable failed for file {file.id}: {e}")
 
     # Presigned-URL untag (issue #907), retried — see this function's docstring for why a
     # failure here is worse than the legal-hold sibling's. Independent of
     # `clear_legal_hold`, mirroring quarantine_file's tag-on being independent of `legal_hold`.
-    restoration = settle_file(file, _quarantined_reader(db, file))
+    restoration = settle_file(media, _quarantined_reader(db, file_id))
+    restoration_audit, restoration_error = _audit_revocation(
+        restoration, tenant_visible=tenant_visible
+    )
 
     # Non-persisted (not DB columns — see the TYPE_CHECKING-only declaration on MediaFile):
     # the release endpoints read these off the returned object.
@@ -493,7 +532,7 @@ def release_file(
     extra: dict = {
         "cleared_legal_hold": bool(clear_legal_hold),
         "presign_tag_cleared": restoration.complete,
-        "media_revocation": restoration.to_audit(),
+        "media_revocation": restoration_audit,
         "previous_origin": previous_origin.value if previous_origin else None,
     }
     if reason:
@@ -508,7 +547,7 @@ def release_file(
         user_agent=user_agent,
         extra=extra,
         outcome=_revocation_outcome(restoration),
-        error_code=restoration.reason,
+        error_code=restoration_error,
     )
     logger.info(
         f"File {file.id} ({file.uuid}) released from quarantine by "

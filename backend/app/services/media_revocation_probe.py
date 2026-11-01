@@ -9,7 +9,10 @@ when inconclusive, INFO when verified. It never blocks or fails startup.
 What it costs the operator, stated plainly (also in ``docs/abuse-and-takedown.md``):
 
 * One throwaway object per bucket per boot, under ``_opentranscribe/probes/``, with a unique
-  key so replicas starting together never collide; it is deleted again at once.
+  key so replicas starting together never collide; it is deleted again at once. Writing and
+  deleting it needs ``s3:PutObject`` and ``s3:DeleteObject`` on both buckets. A refused delete
+  in the media bucket is reported as a leftover object, not as a missing takedown permission:
+  a takedown never deletes there.
 * On a **versioned** bucket each boot leaves a noncurrent version and a delete marker behind
   (a lifecycle rule on ``_opentranscribe/`` cleans them up); under **Object Lock** default
   retention the probe object cannot be deleted until it expires.
@@ -53,13 +56,17 @@ class TaggingProbe:
 
     Attributes:
         verified: Every exercised call succeeded.
-        missing_permissions: ``"<action> on <bucket>"`` for each ``AccessDenied``.
+        missing_permissions: ``"<action> on <bucket>"`` for each ``AccessDenied`` on a call a
+            takedown makes.
         error: A non-permission failure that left the result inconclusive, else None.
+        leftover: A probe object that could not be deleted although the takedown does not
+            need that delete (the media bucket's ``s3:DeleteObject``), else None.
     """
 
     verified: bool
     missing_permissions: tuple[str, ...] = ()
     error: str | None = None
+    leftover: str | None = None
 
 
 def probe_key() -> str:
@@ -71,15 +78,25 @@ def _code(error: Exception) -> str:
     return str(getattr(error, "code", None) or type(error).__name__)
 
 
-def _run(client: Minio, bucket: str, key: str, steps) -> tuple[list[str], str | None]:
-    """Write ``key``, run ``steps`` ((action, call) pairs), delete ``key``."""
+def _run(
+    client: Minio, bucket: str, key: str, steps, *, delete_is_needed: bool
+) -> tuple[list[str], str | None, str | None]:
+    """Write ``key``, run ``steps`` ((action, call) pairs), delete ``key``.
+
+    ``delete_is_needed`` says whether a takedown itself deletes in ``bucket`` (the cache
+    bucket: yes; the media bucket: no, media objects are tagged). A refused delete is a missing
+    permission only then; otherwise it is reported as a leftover probe object.
+
+    Returns:
+        ``(missing, error, leftover)``.
+    """
     from minio.error import S3Error
 
     body = b"opentranscribe takedown probe"
     try:
         client.put_object(bucket, key, io.BytesIO(body), len(body))
     except Exception as e:  # noqa: BLE001 — a probe failure is reported, never raised at boot
-        return [], f"probe object write to '{bucket}' failed ({_code(e)})"
+        return [], f"probe object write to '{bucket}' failed ({_code(e)})", None
     missing: list[str] = []
     error: str | None = None
     for action, call in steps:
@@ -95,18 +112,21 @@ def _run(client: Minio, bucket: str, key: str, steps) -> tuple[list[str], str | 
         except Exception as e:  # noqa: BLE001 — reported, never raised at boot
             if error is None:
                 error = f"{action} on {bucket} failed ({_code(e)})"
+    leftover: str | None = None
     try:
         client.remove_object(bucket, key)
     except Exception as e:  # noqa: BLE001 — a leftover probe object is harmless; say so
-        if _code(e) == "AccessDenied":
+        if delete_is_needed and _code(e) == "AccessDenied":
             label = f"s3:DeleteObject on {bucket}"
             if label not in missing:
                 missing.append(label)
+        else:
+            leftover = f"{bucket}/{key}"
         logger.warning(
             f"Could not delete the takedown probe object '{key}' in '{bucket}' ({_code(e)}); "
             f"it is a {len(body)}-byte object, safe to delete by hand."
         )
-    return missing, error
+    return missing, error, leftover
 
 
 def probe_takedown_permissions(
@@ -118,7 +138,7 @@ def probe_takedown_permissions(
     tagged = Tags.new_object_tags()
     tagged[STORAGE_QUARANTINE_TAG_KEY] = storage_presign_identity.QUARANTINE_TAG_VALUE
     key = probe_key()
-    missing, error = _run(
+    missing, error, leftover = _run(
         client,
         media_bucket,
         key,
@@ -130,18 +150,20 @@ def probe_takedown_permissions(
                 lambda: client.set_object_tags(media_bucket, key, Tags.new_object_tags()),
             ),
         ),
+        delete_is_needed=False,
     )
     if cache_bucket and cache_bucket != media_bucket:
         cache_key = probe_key()
-        cache_missing, cache_error = _run(
+        cache_missing, cache_error, _ = _run(
             client,
             cache_bucket,
             cache_key,
             (("s3:ListBucket", lambda: list(client.list_objects(cache_bucket, prefix=cache_key))),),
+            delete_is_needed=True,
         )
         missing += [m for m in cache_missing if m not in missing]
         error = error or cache_error
-    return TaggingProbe(not missing and error is None, tuple(missing), error)
+    return TaggingProbe(not missing and error is None, tuple(missing), error, leftover)
 
 
 def report_native_s3_tagging_posture(client: Minio | None = None) -> TaggingProbe | None:

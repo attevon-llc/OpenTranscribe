@@ -446,6 +446,7 @@ needs for media:
 | `s3:PutObjectLegalHold` | `arn:aws:s3:::<your-media-bucket>/*` | Optional. The storage legal hold placed with a takedown, only on a bucket created with Object Lock |
 | `s3:ListBucket` | `arn:aws:s3:::<your-cache-bucket>` | Finding a file's download renders and exports in the cache bucket |
 | `s3:DeleteObject` | `arn:aws:s3:::<your-cache-bucket>/*` | Deleting those copies on quarantine (they are rebuilt on demand after a release) |
+| `s3:PutObject`, `s3:DeleteObject` | `_opentranscribe/probes/*` in both buckets | The startup probe's throwaway object. A refused delete in the media bucket is logged as a leftover object, not as a missing takedown permission |
 
 `s3:DeleteObjectTagging` is not needed: releasing a file writes the remaining tag set with
 `s3:PutObjectTagging`.
@@ -505,7 +506,10 @@ issued** stop working is reported, never assumed:
   render or export deleted from the cache bucket.
 - The organization-admin routes return only `action`, `complete`, `exposure_seconds` and a
   generic `reason` (`revocation_incomplete` or `restore_incomplete`), still with status 200.
-- The audit event records the same, with outcome `partial` instead of `success`.
+- The audit event has outcome `partial` instead of `success`. On a personal file it records the
+  same fields; on an organization's file, whose audit log that organization's admins can read
+  and export, it records only `complete` and the generic reason, and the storage detail is in
+  the backend log.
 - The backend logs an ERROR naming the missing actions, and the admin UI shows a warning instead
   of a plain success.
 

@@ -172,6 +172,43 @@ class TestOrdering:
         assert store.quarantined(file.storage_path) is True
         assert (report.action, report.complete) == ("revoke", True)
 
+    def test_running_out_of_rounds_never_reports_the_opposite_state_complete(self, monkeypatch):
+        file = _file()
+        _store(monkeypatch, file)
+        reads = iter([True, False, True, False, True])
+
+        report = media_revocation.settle_file(file, lambda: next(reads))
+
+        # Four states applied, the database changed a fifth time: storage may match neither.
+        assert report.action == "restore"
+        assert (report.complete, report.reason) == (False, media_revocation.REASON_STATE_CHANGED)
+        assert report.to_tenant_wire()["reason"] == "restore_incomplete"
+
+    def test_the_deadline_stops_new_rounds_and_reports_incomplete(self, monkeypatch):
+        file = _file()
+        store = _store(monkeypatch, file)
+        monkeypatch.setattr(media_revocation, "TAKEDOWN_SETTLE_DEADLINE_SECONDS", 0)
+        reads = iter([True, False])
+
+        report = media_revocation.settle_file(file, lambda: next(reads))
+
+        assert (report.action, report.complete) == ("revoke", False)
+        assert report.reason == media_revocation.REASON_STATE_CHANGED
+        assert [a for a, _ in store.calls].count("s3:PutObjectTagging") == 1
+
+    def test_storage_calls_use_the_bounded_takedown_client(self, monkeypatch):
+        from app.services import minio_service
+
+        file = _file()
+        bounded = _store(monkeypatch, file)
+        monkeypatch.setattr(minio_service, "minio_client", FakeTaggingStore(deny=[PUT_TAGS]))
+        monkeypatch.setattr(minio_service, "get_takedown_client", lambda: bounded)
+
+        report = media_revocation.revoke_media(file)
+
+        assert report.complete is True
+        assert bounded.quarantined(file.storage_path) is True
+
     def test_a_concurrent_writer_that_undoes_the_tag_is_caught_by_the_read_back(self, monkeypatch):
         from app.services.minio_service import write_object_quarantine_tag
 

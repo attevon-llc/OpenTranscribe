@@ -53,6 +53,37 @@ def test_a_cache_bucket_without_list_permission_is_named():
     assert probe.missing_permissions == (f"s3:ListBucket on {CACHE}",)
 
 
+def test_a_refused_media_bucket_delete_is_a_leftover_not_a_missing_takedown_permission(
+    monkeypatch,
+):
+    from fixtures.fake_tagging_store import s3_error
+
+    store = FakeTaggingStore()
+    real_remove = store.remove_object
+
+    def _refuse_media_deletes(bucket_name, object_name, **kw):
+        if bucket_name == MEDIA:
+            raise s3_error("AccessDenied", object_name)
+        return real_remove(bucket_name, object_name, **kw)
+
+    monkeypatch.setattr(store, "remove_object", _refuse_media_deletes)
+
+    probe = probe_mod.probe_takedown_permissions(store, MEDIA, CACHE)
+
+    assert probe.missing_permissions == ()
+    assert probe.verified is True
+    assert probe.leftover is not None and probe.leftover.startswith(f"{MEDIA}/")
+
+
+def test_a_refused_cache_bucket_delete_is_a_missing_takedown_permission():
+    probe = probe_mod.probe_takedown_permissions(
+        FakeTaggingStore(deny=["s3:DeleteObject"]), MEDIA, CACHE
+    )
+
+    assert probe.missing_permissions == (f"s3:DeleteObject on {CACHE}",)
+    assert probe.leftover is not None
+
+
 def test_a_capable_identity_verifies_and_leaves_nothing_behind(caplog):
     store = FakeTaggingStore()
 

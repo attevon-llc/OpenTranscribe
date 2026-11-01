@@ -50,6 +50,26 @@ def get_probe_client() -> Minio:
     return storage_backend.build_storage_client(http_client=http_client)
 
 
+@functools.lru_cache(maxsize=1)
+def get_takedown_client() -> Minio:
+    """The storage client for quarantine tags and cache-copy deletes: bounded, no retries.
+
+    Same backend and credentials as :data:`minio_client`, with
+    ``TAKEDOWN_STORAGE_TIMEOUT_SECONDS`` to connect and to read and no transport retries
+    (the untag on release retries on its own, with a backoff).
+    """
+    from app.core.constants import TAKEDOWN_STORAGE_TIMEOUT_SECONDS
+
+    bound = TAKEDOWN_STORAGE_TIMEOUT_SECONDS
+    http_client = urllib3.PoolManager(
+        timeout=urllib3.Timeout(connect=bound, read=bound),
+        retries=urllib3.Retry(total=0),
+        cert_reqs="CERT_REQUIRED",
+        ca_certs=os.environ.get("SSL_CERT_FILE") or certifi.where(),
+    )
+    return storage_backend.build_storage_client(http_client=http_client)
+
+
 def ensure_bucket_exists():
     """
     Ensure the media bucket exists, creating it if necessary

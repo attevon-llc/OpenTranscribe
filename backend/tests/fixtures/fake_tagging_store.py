@@ -155,6 +155,7 @@ def install(
     from app.services import storage_presign_identity
 
     monkeypatch.setattr(minio_service, "minio_client", store)
+    monkeypatch.setattr(minio_service, "get_takedown_client", lambda: store)
     monkeypatch.setattr(settings, "STORAGE_BACKEND", "s3" if native_s3 else "minio")
     monkeypatch.setattr(
         storage_presign_identity, "presign_identity_available", lambda: presign_identity

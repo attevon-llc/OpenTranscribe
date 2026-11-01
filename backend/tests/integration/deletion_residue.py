@@ -328,11 +328,77 @@ def minio_residue(sf: SeededFile, *, include_owner: bool) -> list[str]:
         needles.append(f"avatars/{sf.owner_id}/")
     findings = []
     for bucket in minio_client.list_buckets():
-        for obj in minio_client.list_objects(bucket.name, recursive=True):
+        # Every VERSION, not just the current listing: on a versioned bucket (which object-lock,
+        # the storage half of a legal hold, requires) a plain delete only adds a delete marker
+        # and the bytes survive as a noncurrent version. On an unversioned bucket the two
+        # listings are identical.
+        for obj in minio_client.list_objects(bucket.name, recursive=True, include_version=True):
             name = obj.object_name or ""
             if any(n in name for n in needles):
-                findings.append(f"minio: {bucket.name}/{name}")
+                version = getattr(obj, "version_id", None)
+                suffix = f" (version {version})" if version and version != "null" else ""
+                findings.append(f"minio: {bucket.name}/{name}{suffix}")
     return findings
+
+
+#: Configured stores a seeded file legitimately leaves empty, with the reason. Everything else
+#: :func:`configured_stores` derives must be populated by the seed before a delete, so a store
+#: added to the configuration is either covered by the residue scan or named here.
+CONFIGURED_STORE_EXEMPT: dict[str, str] = {
+    "bucket:AWS_TRANSCRIBE_BUCKET": "an external AWS bucket, not on the deployment's object store",
+    "index:OPENSEARCH_SUMMARY_INDEX": (
+        "retired by #67: nothing writes it; a summary is the summary plane of transcript_chunks, "
+        "which the seed populates, and legacy documents are purged by file_cleanup_service"
+    ),
+}
+
+
+def configured_stores() -> dict[str, str]:
+    """``{label: name}`` for every index and bucket the app's configuration names.
+
+    Derived from ``Settings``: every ``OPENSEARCH_*_INDEX`` and every ``*_BUCKET`` /
+    ``*_BUCKET_NAME`` field, plus the physical speaker index the voiceprints live in (the
+    ``speakers`` setting is an alias over a versioned index).
+    """
+    from app.core.config import settings
+    from app.services.opensearch_service.aliases import get_active_speaker_index
+
+    stores: dict[str, str] = {}
+    for field in type(settings).model_fields:
+        value = getattr(settings, field, None)
+        if field.startswith("OPENSEARCH_") and field.endswith("_INDEX"):
+            stores[f"index:{field}"] = str(value)
+        elif field.endswith(("_BUCKET", "_BUCKET_NAME")):
+            stores[f"bucket:{field}"] = str(value)
+    stores["index:OPENSEARCH_ACTIVE_SPEAKER_INDEX"] = get_active_speaker_index()
+    return stores
+
+
+def _physical_indices(name: str) -> set[str]:
+    """The concrete indices behind ``name`` (an alias resolves to its targets)."""
+    from app.services.opensearch_service import get_opensearch_client
+
+    client = get_opensearch_client()
+    assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
+    return set(client.indices.get(index=name, ignore_unavailable=True)) or {name}
+
+
+def unpopulated_configured_stores(findings: list[str]) -> list[str]:
+    """Configured stores the pre-delete scan found nothing in, minus the exemptions."""
+    missing = []
+    for label, name in configured_stores().items():
+        if label in CONFIGURED_STORE_EXEMPT:
+            continue
+        if label.startswith("index:"):
+            targets = _physical_indices(name)
+            hit = any(
+                f.startswith("opensearch:") and f.rsplit(" in ", 1)[-1] in targets for f in findings
+            )
+        else:
+            hit = any(f.startswith(f"minio: {name}/") for f in findings)
+        if not hit:
+            missing.append(f"{label}={name}")
+    return missing
 
 
 def redis_residue(sf: SeededFile) -> list[str]:

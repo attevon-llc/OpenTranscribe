@@ -5,6 +5,7 @@ This module provides JSON-structured audit logging with optional OpenSearch inte
 Supports logging of authentication events, security events, and administrative actions.
 """
 
+import ipaddress
 import json
 import logging
 import os
@@ -28,6 +29,15 @@ from app.core.request_context import request_id_var
 #: not the library's 10 s default multiplied by its retries (issue #997). A write
 #: that misses the deadline goes to the fallback file like any other failure.
 _AUDIT_WRITE_TIMEOUT_SECONDS = 2
+
+
+def _is_ip(value: str) -> bool:
+    """True when ``value`` is an address the ``ip`` field type accepts."""
+    try:
+        ipaddress.ip_address(str(value).strip())
+    except ValueError:
+        return False
+    return True
 
 
 def _audit_index_name() -> str:
@@ -500,6 +510,13 @@ class AuditLogger:
         if not settings.AUDIT_LOG_ENABLED:
             return
 
+        # ``source_ip`` is mapped as an ``ip``: a value that is not one ("unknown" from a proxy,
+        # a hostname, a test client's name) makes OpenSearch reject the WHOLE event, which then
+        # never reaches the searchable trail. Keep the raw value in ``details`` instead.
+        unparsed_source: str | None = None
+        if source_ip is not None and not _is_ip(source_ip):
+            unparsed_source, source_ip = str(source_ip)[:255], None
+
         event = {
             "timestamp": datetime.now(UTC).isoformat(),
             "request_id": request_id_var.get() or str(uuid.uuid4()),
@@ -513,7 +530,11 @@ class AuditLogger:
             "source_ip": source_ip,
             "user_agent": user_agent,
             "error_code": error_code,
-            "details": details or {},
+            "details": (
+                {**(details or {}), "source_unparsed": unparsed_source}
+                if unparsed_source is not None
+                else details or {}
+            ),
         }
 
         # Omitted rather than written as null when unset: `details` is a dynamic

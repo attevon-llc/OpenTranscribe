@@ -277,10 +277,11 @@ class DeletedUser:
 
     uuid: str
     email: str
+    id: int | None = None
 
     @classmethod
     def of(cls, user: User) -> DeletedUser:
-        return cls(uuid=str(user.uuid), email=str(user.email))
+        return cls(uuid=str(user.uuid), email=str(user.email), id=int(user.id))
 
 
 def audit_user_deleted(
@@ -328,6 +329,11 @@ def audit_user_deleted(
         username=str(actor.email),
         source_ip=client_ip,
         user_agent=user_agent,
+        # The subject, top-level and typed (#443/#828), like every other ADMIN_USER_DELETE
+        # emitter: "everything done TO this account" is a target_user_id filter, and an admin
+        # deletion carried the subject only in details, where no query can find it.
+        target_user_id=user.id,
+        target_username=user.email,
         details=details,
     )
 

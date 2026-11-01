@@ -51,6 +51,7 @@ from tests.integration.deletion_residue import opensearch_residue
 from tests.integration.deletion_residue import redis_client
 from tests.integration.deletion_residue import scan_residue
 from tests.integration.deletion_residue import teardown_seed
+from tests.integration.deletion_residue import unpopulated_configured_stores
 from tests.integration.deletion_seed import DELRES_PREFIX
 from tests.integration.deletion_seed import SeededChat
 from tests.integration.deletion_seed import SeededFile
@@ -255,6 +256,12 @@ def _assert_seed_reaches_every_store(engine, sf: SeededFile, *, include_owner: b
         )
     for idx in ("transcripts", "transcript_chunks"):
         assert any(idx in f for f in before), f"no {idx} documents seeded: {before}"
+    unseeded = unpopulated_configured_stores(before)
+    assert not unseeded, (
+        "the configuration names these stores but the seed put nothing in them, so the delete "
+        "is never shown to empty them; extend deletion_seed.seed_complete_file or add a reasoned "
+        f"entry to deletion_residue.CONFIGURED_STORE_EXEMPT: {unseeded}"
+    )
     return reached, edge_rows
 
 

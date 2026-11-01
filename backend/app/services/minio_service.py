@@ -221,10 +221,30 @@ def delete_file(object_name: str):
     Args:
         object_name: Object name in MinIO
     """
+    bucket = settings.MEDIA_BUCKET_NAME
     try:
-        minio_client.remove_object(bucket_name=settings.MEDIA_BUCKET_NAME, object_name=object_name)
+        minio_client.remove_object(bucket_name=bucket, object_name=object_name)
+        _remove_every_version(bucket, object_name)
     except S3Error as e:
         raise Exception(f"Error deleting file: {e}") from e
+
+
+def _remove_every_version(bucket: str, object_name: str) -> None:
+    """On a versioned bucket, delete every version of ``object_name`` and its delete markers.
+
+    A plain delete there only writes a delete marker: the bytes stay retrievable by version id,
+    so a deletion or an erasure that reported success would have removed nothing. Object lock,
+    the storage half of a legal hold, can only be enabled on a versioned bucket, so this is the
+    configuration the hold feature points operators at. An unversioned bucket costs one
+    versioning read. A version still under an object-lock legal hold refuses the delete and the
+    ``S3Error`` propagates, so the caller reports the artifact as not deleted.
+    """
+    status = getattr(minio_client.get_bucket_versioning(bucket), "status", None)
+    if status not in ("Enabled", "Suspended"):
+        return
+    for version in minio_client.list_objects(bucket, prefix=object_name, include_version=True):
+        if version.object_name == object_name:
+            minio_client.remove_object(bucket, object_name, version_id=version.version_id)
 
 
 def set_object_legal_hold(object_name: str, hold: bool) -> bool:

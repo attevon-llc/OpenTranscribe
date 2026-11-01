@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Deleting or erasing a file on a versioned bucket now removes every version of its media, not
+  only the current one. A plain delete there leaves the recording retrievable by version id, and
+  object lock (the storage half of a legal hold) only works on versioned buckets.
+- Organization legal-hold audit events (`content.hold.place` / `content.hold.release`) name the
+  held files (`details.file_uuids`, ids only, capped at 100). The hold's file links are deleted
+  with the file, so the audit trail was the only place left to say what a hold had covered, and it
+  did not say.
+- An audit event whose client address is not an IP (a proxy's `unknown`, a hostname) is no longer
+  rejected by OpenSearch's `ip` mapping and dropped from the searchable trail; the raw value is
+  kept as `details.source_unparsed`.
+- Deleting an account through `DELETE /api/admin/users/{uuid}` or `DELETE /api/users/{uuid}` now
+  records the deleted account as the event's typed `target_user_id`, like every other
+  `admin.user.delete` emitter, so filtering the audit log by the subject finds it.
+- Support-access use (`support_access.used`) and platform content access
+  (`platform_admin.content.access`) events carry `resource_type` / `resource_uuid` as typed
+  fields, so an administrator filtering the audit log by a file now sees staff access to it.
+
+### Added
+
+- A register of compliance-audited routes (`backend/tests/fixtures/compliance_audit_routes.py`)
+  with a fast structural test: a new quarantine, hold, export, purge, erasure, support-access,
+  takedown-notice or data-integrity route with no audit decision fails, and so does removing the
+  emitter a registered route reaches.
+- A live test that drives each registered action against a real OpenSearch audit index and reads
+  the row back through the admin and organization audit queries (actor, target, tenant).
+- The deletion residue gate scans every object VERSION and fails when a configured index or
+  bucket is never populated by its seed, so a new store cannot be silently left out.
+
 ## [0.6.0] - 2026-10-31
 
 ### Overview

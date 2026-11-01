@@ -126,7 +126,7 @@ def test_directory_sync_status_never_leaks_the_directory_url(
             f"(bind DN {BIND_DN_SENTINEL} rejected)"
         )
 
-    monkeypatch.setattr("app.auth.ldap_auth._bind_service_account", _raise_bind_failure)
+    monkeypatch.setattr("app.auth.ldap_probe._bind_service_account", _raise_bind_failure)
     monkeypatch.setattr(dss.LdapConfig, "from_db", classmethod(lambda cls, db: _sentinel_config()))
 
     cfg = dss.SweepConfig(dry_run=True, max_disables=5)

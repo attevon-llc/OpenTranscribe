@@ -265,11 +265,11 @@ def delete_group_mapping(
 
 def _ldap_claims_for(db: Session, username: str) -> tuple[list[str], bool]:
     """Ask the directory for one user's groups, reusing the auth bind and search."""
-    from app.auth.ldap_auth import DIRECTORY_ABSENT
     from app.auth.ldap_auth import LdapConfig
-    from app.auth.ldap_auth import LdapDirectoryUnavailableError
-    from app.auth.ldap_auth import ldap_directory_session
-    from app.auth.ldap_auth import probe_ldap_user
+    from app.auth.ldap_probe import DIRECTORY_ABSENT
+    from app.auth.ldap_probe import LdapDirectoryUnavailableError
+    from app.auth.ldap_probe import ldap_directory_session
+    from app.auth.ldap_probe import probe_ldap_user
 
     cfg = LdapConfig.from_db(db)
     if not cfg.enabled:

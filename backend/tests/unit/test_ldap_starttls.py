@@ -3,7 +3,7 @@
 ``use_tls`` was resolved from ``.env``/DB into ``LdapConfig`` but never consulted
 by the bind code (``_bind_service_account`` / ``_verify_user_credentials`` only
 branched on ``use_ssl``) — every StartTLS deployment bound in cleartext regardless
-of the setting. ``_connect_and_bind`` (``app/auth/ldap_auth.py``) is the fix: it
+of the setting. ``_connect_and_bind`` (``app/auth/ldap_directory.py``) is the fix: it
 negotiates StartTLS explicitly when ``use_tls`` is set and ``use_ssl`` is not, and
 FAILS CLOSED — refuses the bind entirely — if that negotiation does not succeed,
 rather than silently falling back to sending the password over the still-cleartext
@@ -11,7 +11,7 @@ connection.
 """
 
 from app.auth.ldap_auth import LdapConfig
-from app.auth.ldap_auth import _connect_and_bind
+from app.auth.ldap_directory import _connect_and_bind
 
 
 class FakeServer:
@@ -60,7 +60,7 @@ class TestConnectAndBindTls:
                 setattr(conn, k, v)
             return conn
 
-        monkeypatch.setattr("app.auth.ldap_auth.Connection", _factory)
+        monkeypatch.setattr("app.auth.ldap_directory.Connection", _factory)
 
     def test_use_tls_negotiates_starttls_before_bind(self, monkeypatch):
         self._patch(monkeypatch)
@@ -81,6 +81,16 @@ class TestConnectAndBindTls:
         created = FakeConnection.instances[0]
         assert created.start_tls_called is True
         assert created.bind_called is False, "must not bind after failed StartTLS negotiation"
+
+    def test_use_tls_fails_closed_when_the_connection_cannot_open(self, monkeypatch):
+        """No socket, no StartTLS: the bind must not be attempted on whatever ldap3
+        would open lazily (a cleartext connection) instead."""
+        self._patch(monkeypatch, open_result=False)
+        cfg = LdapConfig(enabled=True, server="ldap.example.com", use_ssl=False, use_tls=True)
+        assert _connect_and_bind(cfg, FakeServer(), "cn=svc", "pw") is None
+        created = FakeConnection.instances[0]
+        assert created.start_tls_called is False
+        assert created.bind_called is False
 
     def test_use_ssl_skips_starttls_negotiation(self, monkeypatch):
         """use_ssl already wraps the socket (ldaps://) via the Server object; no

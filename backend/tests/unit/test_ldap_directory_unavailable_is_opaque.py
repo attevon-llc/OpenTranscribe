@@ -3,7 +3,7 @@ exception -- not from ``str()``, not from any of its consumers.
 
 An ``ldap3`` ``LDAPException`` raised while binding the service account or
 searching the directory can quote the directory server's own URL and the
-service-account bind DN. ``auth/ldap_auth.py``'s four raise sites used to
+service-account bind DN. ``auth/ldap_probe.py``'s four raise sites used to
 interpolate that text (``f"LDAP bind failed: {type(e).__name__}: {e}"``)
 straight into ``LdapDirectoryUnavailableError``'s message, which then reached:
 an admin's 503 body (``POST /admin/group-mappings/test``), and a directory-sync
@@ -21,8 +21,8 @@ import pytest
 from ldap3.core.exceptions import LDAPBindError
 
 from app.auth.ldap_auth import LdapConfig
-from app.auth.ldap_auth import LdapDirectoryUnavailableError
-from app.auth.ldap_auth import ldap_directory_session
+from app.auth.ldap_probe import LdapDirectoryUnavailableError
+from app.auth.ldap_probe import ldap_directory_session
 
 #: The exact shape #914 named: a directory URL and a service-account bind DN.
 DIRECTORY_URL_SENTINEL = "ldaps://dc01.corp.internal:636"
@@ -49,7 +49,7 @@ def _raise_bind_failure(*_args, **_kwargs):
 
 def test_ldap_directory_session_never_echoes_the_raw_ldap3_message(monkeypatch, caplog):
     """Direct call: LdapDirectoryUnavailableError's own str() is opaque."""
-    monkeypatch.setattr("app.auth.ldap_auth._bind_service_account", _raise_bind_failure)
+    monkeypatch.setattr("app.auth.ldap_probe._bind_service_account", _raise_bind_failure)
 
     with caplog.at_level(logging.ERROR):
         with pytest.raises(LdapDirectoryUnavailableError) as excinfo:
@@ -74,8 +74,9 @@ def test_group_mapping_test_endpoint_never_leaks_the_directory_url(
     from the ALREADY-sanitized LdapDirectoryUnavailableError, so this proves the
     allowlist reason is still honest end to end."""
     from app.auth import ldap_auth
+    from app.auth import ldap_probe
 
-    monkeypatch.setattr(ldap_auth, "_bind_service_account", _raise_bind_failure)
+    monkeypatch.setattr(ldap_probe, "_bind_service_account", _raise_bind_failure)
     monkeypatch.setattr(
         ldap_auth.LdapConfig, "from_db", classmethod(lambda cls, db: _sentinel_config())
     )
@@ -106,7 +107,7 @@ def test_sweep_ldap_report_never_leaks_the_directory_url(db_session, monkeypatch
     """
     from app.services import directory_sync_service as dss
 
-    monkeypatch.setattr("app.auth.ldap_auth._bind_service_account", _raise_bind_failure)
+    monkeypatch.setattr("app.auth.ldap_probe._bind_service_account", _raise_bind_failure)
     monkeypatch.setattr(dss.LdapConfig, "from_db", classmethod(lambda cls, db: _sentinel_config()))
 
     cfg = dss.SweepConfig(dry_run=True, max_disables=5)

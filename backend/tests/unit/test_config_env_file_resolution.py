@@ -127,7 +127,7 @@ def test_ldap_search_filter_resolves_custom_filter_from_env_file(tmp_path, monke
     assert "(uid=" in resolved
     assert "{username_attr}" not in resolved
     # The remaining placeholder must be exactly `{username}` -- a KeyError here means
-    # ldap_auth.py's `.format(username=...)` call would blow up on a real bind attempt.
+    # ldap_directory.py's `.format(username=...)` call would blow up on a real bind attempt.
     resolved.format(username="alice")
 
 

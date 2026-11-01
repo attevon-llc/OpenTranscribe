@@ -221,7 +221,7 @@ def test_source_check_rejects_an_unknown_directory(db_session):
 def test_ldap_claim_uniqueness_is_case_insensitive(db_session):
     """Two rows differing only in case would both match one AD group.
 
-    DNs are case-insensitive and ``ldap_auth._is_member_of_groups`` already compares
+    DNs are case-insensitive and ``ldap_directory._is_member_of_groups`` already compares
     them lowercased, so the partial functional index is what keeps "one claim, one
     answer" true for LDAP.
     """

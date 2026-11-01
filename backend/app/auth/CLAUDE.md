@@ -60,11 +60,11 @@ minting an account for **every identity in a corporate tenant** on first login.
 
 | Control | Applies to | Empty/off means |
 |---|---|---|
-| `ldap_user_groups` → `ldap_auth._check_group_access` | LDAP | no group requirement |
+| `ldap_user_groups` → `ldap_directory._check_group_access` | LDAP | no group requirement |
 | `oidc_allowed_groups` / `oidc_blocked_groups` → `oidc/admission.py` | OIDC | admit everyone |
 | `require_account_approval` → `auth/approval.py` | self-registration **and** every JIT path | accounts are usable immediately. If the stored setting cannot be read (DB error), `approval_required` returns `None`: new accounts are created `pending` and a pending user gets 503 `auth_config_unavailable` until reads recover |
 
-- **Semicolons delimit both group lists**, matching `ldap_auth._parse_group_list`: a group value
+- **Semicolons delimit both group lists**, matching `ldap_directory._parse_group_list`: a group value
   brokered from a directory is a DN and contains commas. Matching is case-insensitive exact.
 - **An empty allow-list admits everyone.** Reading it as "admit nobody" would lock out every
   existing OIDC deployment on upgrade. Only a non-empty list restricts.

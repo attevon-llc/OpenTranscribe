@@ -13,7 +13,7 @@ Four rules shape everything here:
 
 1. **Fail closed on ambiguity, not on error.** "The directory says this user is gone"
    and "I could not ask the directory" are different answers. Only the first one acts;
-   the second aborts the pass (:class:`~app.auth.ldap_auth.LdapDirectoryUnavailableError`).
+   the second aborts the pass (:class:`~app.auth.ldap_probe.LdapDirectoryUnavailableError`).
 2. **``super_admin`` and ``local`` accounts are never touched** — the first is the
    documented local-only break-glass account, the second has no upstream identity.
 3. **Disable, never delete.** Deleting data because LDAP hiccupped is unrecoverable.
@@ -52,15 +52,15 @@ from sqlalchemy.orm import Session
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
-from app.auth.ldap_auth import DIRECTORY_ABSENT
-from app.auth.ldap_auth import DIRECTORY_DISABLED
-from app.auth.ldap_auth import DIRECTORY_NOT_ENTITLED
-from app.auth.ldap_auth import DIRECTORY_PRESENT
 from app.auth.ldap_auth import LdapConfig
-from app.auth.ldap_auth import LdapDirectoryUnavailableError
-from app.auth.ldap_auth import LdapProbe
-from app.auth.ldap_auth import ldap_directory_session
-from app.auth.ldap_auth import probe_ldap_user
+from app.auth.ldap_probe import DIRECTORY_ABSENT
+from app.auth.ldap_probe import DIRECTORY_DISABLED
+from app.auth.ldap_probe import DIRECTORY_NOT_ENTITLED
+from app.auth.ldap_probe import DIRECTORY_PRESENT
+from app.auth.ldap_probe import LdapDirectoryUnavailableError
+from app.auth.ldap_probe import LdapProbe
+from app.auth.ldap_probe import ldap_directory_session
+from app.auth.ldap_probe import probe_ldap_user
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.core import constants as C  # noqa: N812
 from app.core.auth_types import AUTH_TYPE_LDAP

@@ -9,11 +9,11 @@ Covers:
 """
 
 from app.auth.ldap_auth import LdapConfig
-from app.auth.ldap_auth import _escape_ldap_filter
 from app.auth.ldap_auth import _is_ldap_admin
-from app.auth.ldap_auth import _is_member_of_groups
 from app.auth.ldap_auth import _is_valid_email
-from app.auth.ldap_auth import _parse_group_list
+from app.auth.ldap_directory import _escape_ldap_filter
+from app.auth.ldap_directory import _is_member_of_groups
+from app.auth.ldap_directory import _parse_group_list
 
 
 class TestParseGroupList:

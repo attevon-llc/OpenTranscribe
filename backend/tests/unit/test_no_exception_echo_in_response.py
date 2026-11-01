@@ -920,7 +920,7 @@ _SERVICE_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
     "services/directory_sync_service.py::sweep_ldap": (
         1,
         "already-sanitized upstream: error = str(e) where e is "
-        "LdapDirectoryUnavailableError, scrubbed at the auth/ldap_auth.py raiser "
+        "LdapDirectoryUnavailableError, scrubbed at the auth/ldap_probe.py raiser "
         "(#914 STEP 5) to type(exc).__name__ only -- same 'narrow re-wrap of our "
         "OWN already-sanitized exception' shape as the raise-allowlist's "
         "model_switch.py::apply_embedding_model_switch entry above",

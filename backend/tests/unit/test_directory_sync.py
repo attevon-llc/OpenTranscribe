@@ -26,14 +26,14 @@ from __future__ import annotations
 
 import pytest
 
-from app.auth.ldap_auth import DIRECTORY_ABSENT
-from app.auth.ldap_auth import DIRECTORY_DISABLED
-from app.auth.ldap_auth import DIRECTORY_NOT_ENTITLED
-from app.auth.ldap_auth import DIRECTORY_PRESENT
 from app.auth.ldap_auth import LdapConfig
-from app.auth.ldap_auth import LdapDirectoryUnavailableError
-from app.auth.ldap_auth import LdapProbe
-from app.auth.ldap_auth import probe_ldap_user
+from app.auth.ldap_probe import DIRECTORY_ABSENT
+from app.auth.ldap_probe import DIRECTORY_DISABLED
+from app.auth.ldap_probe import DIRECTORY_NOT_ENTITLED
+from app.auth.ldap_probe import DIRECTORY_PRESENT
+from app.auth.ldap_probe import LdapDirectoryUnavailableError
+from app.auth.ldap_probe import LdapProbe
+from app.auth.ldap_probe import probe_ldap_user
 from app.core import constants as C  # noqa: N812
 from app.models.system_settings import SystemSettings
 from app.services import directory_sync_service as svc
@@ -384,30 +384,30 @@ CFG = LdapConfig(enabled=True, server="ldap.example.com", search_base="DC=exampl
 
 class TestProbeLdapUser:
     def test_missing_entry_is_absent(self, monkeypatch):
-        monkeypatch.setattr("app.auth.ldap_auth._search_ldap_user", lambda *a, **k: None)
+        monkeypatch.setattr("app.auth.ldap_probe._search_ldap_user", lambda *a, **k: None)
         assert probe_ldap_user(CFG, object(), "gone").status == DIRECTORY_ABSENT
 
     def test_ad_account_disable_bit_is_detected(self, monkeypatch):
         # 0x202 = NORMAL_ACCOUNT | ACCOUNTDISABLE — the usual offboarded-AD-user value.
         entry = FakeEntry({"userAccountControl": "514"})
-        monkeypatch.setattr("app.auth.ldap_auth._search_ldap_user", lambda *a, **k: entry)
+        monkeypatch.setattr("app.auth.ldap_probe._search_ldap_user", lambda *a, **k: entry)
         assert probe_ldap_user(CFG, object(), "u").status == DIRECTORY_DISABLED
 
     def test_enabled_account_is_present(self, monkeypatch):
         entry = FakeEntry({"userAccountControl": "512"})
-        monkeypatch.setattr("app.auth.ldap_auth._search_ldap_user", lambda *a, **k: entry)
-        monkeypatch.setattr("app.auth.ldap_auth._check_group_access", lambda *a, **k: True)
+        monkeypatch.setattr("app.auth.ldap_probe._search_ldap_user", lambda *a, **k: entry)
+        monkeypatch.setattr("app.auth.ldap_probe._check_group_access", lambda *a, **k: True)
         assert probe_ldap_user(CFG, object(), "u").status == DIRECTORY_PRESENT
 
     def test_server_without_useraccountcontrol_is_not_treated_as_disabled(self, monkeypatch):
         """A missing answer is not evidence. OpenLDAP/LLDAP never send this attribute."""
-        monkeypatch.setattr("app.auth.ldap_auth._search_ldap_user", lambda *a, **k: FakeEntry({}))
-        monkeypatch.setattr("app.auth.ldap_auth._check_group_access", lambda *a, **k: True)
+        monkeypatch.setattr("app.auth.ldap_probe._search_ldap_user", lambda *a, **k: FakeEntry({}))
+        monkeypatch.setattr("app.auth.ldap_probe._check_group_access", lambda *a, **k: True)
         assert probe_ldap_user(CFG, object(), "u").status == DIRECTORY_PRESENT
 
     def test_losing_required_group_membership_is_not_entitled(self, monkeypatch):
-        monkeypatch.setattr("app.auth.ldap_auth._search_ldap_user", lambda *a, **k: FakeEntry({}))
-        monkeypatch.setattr("app.auth.ldap_auth._check_group_access", lambda *a, **k: False)
+        monkeypatch.setattr("app.auth.ldap_probe._search_ldap_user", lambda *a, **k: FakeEntry({}))
+        monkeypatch.setattr("app.auth.ldap_probe._check_group_access", lambda *a, **k: False)
         assert probe_ldap_user(CFG, object(), "u").status == DIRECTORY_NOT_ENTITLED
 
     def test_search_failure_raises_unavailable_rather_than_absent(self, monkeypatch):
@@ -417,7 +417,7 @@ class TestProbeLdapUser:
         def _boom(*a, **k):
             raise LDAPException("connection reset")
 
-        monkeypatch.setattr("app.auth.ldap_auth._search_ldap_user", _boom)
+        monkeypatch.setattr("app.auth.ldap_probe._search_ldap_user", _boom)
         with pytest.raises(LdapDirectoryUnavailableError):
             probe_ldap_user(CFG, object(), "u")
 

@@ -10,9 +10,9 @@ identity provider authenticated them was never the same question as whether this
 deployment wanted them.
 
 LDAP has had the equivalent guard since it shipped (``ldap_user_groups`` ->
-``ldap_auth._check_group_access``), so this is the missing half of a rule the product
+``ldap_directory._check_group_access``), so this is the missing half of a rule the product
 already had, not a new policy. The vocabulary matches deliberately: semicolon
-delimiter (:func:`app.auth.ldap_auth._parse_group_list`), case-insensitive
+delimiter (:func:`app.auth.ldap_directory._parse_group_list`), case-insensitive
 whitespace-stripped exact match, empty allow-list means "no requirement".
 
 The rules
@@ -81,7 +81,7 @@ def parse_group_list(value: str | None) -> list[str]:
     Semicolons, not commas: an LDAP/AD distinguished name contains commas as
     component separators, and providers that broker such a directory emit the DN
     verbatim in the groups claim. Sharing the delimiter with
-    ``ldap_auth._parse_group_list`` means an operator configuring both methods
+    ``ldap_directory._parse_group_list`` means an operator configuring both methods
     writes one syntax, not two.
 
     Args:

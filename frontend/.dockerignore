@@ -118,4 +118,9 @@ temp/
 **/*.db
 **/*.sqlite
 **/*.sqlite3
+# `.env.*` includes .env.production, which Vite would read during `npm run build`. Nothing
+# here depends on one: no frontend/.env* is tracked, Dockerfile.prod passes build identity
+# as ARG GIT_SHA and sets no VITE_* variable, so the published build uses the code defaults
+# (e.g. community edition). An untracked .env.production on a build host would bake that
+# host's VITE_* values into a published image, which is the reason to exclude it.
 .env.*

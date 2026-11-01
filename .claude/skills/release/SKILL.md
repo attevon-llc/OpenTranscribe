@@ -38,7 +38,7 @@ test" assertion fails. That is the single most common way to waste an hour here.
 ./scripts/release.sh verify              # fast gate: consistency, matrix, docs build
 ./scripts/release.sh test                # the existing pre-merge gate (dev stack must be UP)
 ./scripts/release.sh build               # local images, nothing published
-./scripts/release.sh scan                # scans the LOCAL images
+./scripts/release.sh scan                # scans the LOCAL images + image-hygiene check per leg
 git push -u origin <branch>              # rehearse installs the branch's files from origin
 ./opentr.sh stop                         # rehearse and smoke need the live stack down
 ./scripts/release.sh rehearse            # fresh-install, upgrade and lite-mode scenarios

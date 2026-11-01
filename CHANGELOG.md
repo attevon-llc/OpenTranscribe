@@ -18,11 +18,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `:latest`, and hid downloader failures behind `grep || true`. It now runs only the `opensearch`
   group, uses the install's `OT_IMAGE_TAG`, and prints a warning with the exit status and the
   last output lines when the downloader fails.
+- `download-models.py --only opensearch` no longer requires `HUGGINGFACE_TOKEN`; the OpenSearch
+  models come from artifacts.opensearch.org, so `ensure_opensearch_models` failed on installs
+  without a token.
+- `backend/.dockerignore` excludes each denylisted name at any depth (for example
+  `app/.pytest_cache`), not only at the context root.
 
 ### Added
 
 - `scripts/check-image-hygiene.sh`: fails (exit 1) when a built image contains developer
-  artifacts, and exits 2 when an image could not be inspected.
+  artifacts, and exits 2 when an image could not be inspected. It reads the image with
+  `docker create` + `docker export` (nothing from the image runs, any architecture works), never
+  pulls or removes images, and also flags keys (`*.pem`, `*.key`, `*.p12`, `id_rsa*`,
+  `id_ed25519*`), editor/agent directories, `htmlcov`, `.mutmut-cache`, `*.bak`, `*.orig`,
+  `backups` and `*.log` at any depth under the payload root.
+- Release `scan` stage: new blocking criterion `images-carry-no-dev-artifacts` runs the check on
+  every per-leg local tag; an image it could not inspect records `not-measured`.
 
 ## [0.6.0] - 2026-10-31
 

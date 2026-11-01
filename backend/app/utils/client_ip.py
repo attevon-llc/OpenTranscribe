@@ -94,8 +94,17 @@ def resolve_client_ip(request: Request | None) -> str:
     if not forwarded:
         # A trusted proxy that forwards no chain — fall back to X-Real-IP, which is
         # only honoured here because the direct peer is already known-trusted.
-        real_ip = request.headers.get("X-Real-IP")
-        return real_ip.strip() if real_ip else direct_ip
+        # Validated like an X-Forwarded-For entry: a value that is not one address (a list,
+        # a hostname) would be recorded as the client and rejected by the audit index's
+        # ``ip`` field.
+        real_ip = (request.headers.get("X-Real-IP") or "").strip()
+        try:
+            ipaddress.ip_address(real_ip)
+        except ValueError:
+            if real_ip:
+                logger.warning("Malformed X-Real-IP %r", real_ip)
+            return direct_ip
+        return real_ip
 
     # Walk right-to-left, skipping hops we trust; the first untrusted entry is the
     # earliest address we can vouch for. Entries the client prepended sit further left

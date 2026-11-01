@@ -1071,19 +1071,17 @@ class VideoProcessingService:
         Args:
             file_id: Internal media file id.
             filename: The file's original filename.
+
+        Raises:
+            storage_versions.StorageDeleteIncompleteError: A cached copy survived (named). This
+                used to be logged at DEBUG and dropped, so an erasure that left a burned-in
+                video of the transcript in storage still audited as complete.
         """
         keys = self.derived_cache_keys(file_id, filename) + self._masked_video_cache_keys(
             file_id, filename
         )
-        for cache_key in keys:
-            try:
-                self.minio_service.delete_object(self.cache_bucket, cache_key)
-                logger.info(f"Cleared cache for {cache_key}")
-            except Exception as cache_error:
-                # Cache file might not exist, which is fine, but we should log for debugging
-                logger.debug(
-                    f"Cache file {cache_key} not found or could not be deleted: {cache_error}"
-                )
+        removed = self.minio_service.delete_objects(self.cache_bucket, keys)
+        logger.info(f"Cleared {removed} derived cache object(s) for file {file_id}")
 
     def check_ffmpeg_availability(self) -> bool:
         """Check if ffmpeg is available on the system."""

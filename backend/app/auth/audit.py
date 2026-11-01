@@ -378,7 +378,15 @@ class AuditLogger:
             # Forget the index: if it was deleted underneath us, the next write
             # re-creates it with the proper mapping instead of trusting the cache.
             self._known_indices.discard(index_name)
-            self._logger.warning(f"Failed to index audit event to OpenSearch: {e}")
+            # A 400 is the document itself being refused (a field type clash): it will never
+            # index, so the event is OUT of the searchable trail for good, not delayed. That is
+            # an ERROR an operator must see, not a transient WARNING.
+            rejected = getattr(e, "status_code", None) == 400
+            log = self._logger.error if rejected else self._logger.warning
+            log(
+                f"Failed to index audit event {event.get('event_type')} to OpenSearch"
+                f"{' (document rejected; it is only in the fallback file)' if rejected else ''}: {e}"
+            )
             # Use fallback logging if enabled
             if settings.AUDIT_LOG_FALLBACK_ENABLED:
                 self._logger.warning("Using fallback file logging for audit event")

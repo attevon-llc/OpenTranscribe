@@ -9,9 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Deleting or erasing a file on a versioned bucket now removes every version of its media, not
-  only the current one. A plain delete there leaves the recording retrievable by version id, and
-  object lock (the storage half of a legal hold) only works on versioned buckets.
+- Every delete path on a versioned bucket (file delete, GDPR erasure, the per-file and admin
+  derived-cache purges, the legacy cache reclaim and the storage orphan sweep) now removes every
+  version and delete marker, through one helper (`services/storage_versions.py`). A plain delete
+  there left the recording, burned-in video and extracted audio retrievable by version id, and
+  object lock (the storage half of a legal hold) only works on versioned buckets. A version that
+  survives (legal hold, retention) now fails the delete and is named; the per-file cache purge
+  used to log such failures at DEBUG and report the erasure complete. Versioning is read once per
+  bucket and cached; a missing read permission never fails a completed delete. New IAM actions:
+  `s3:GetBucketVersioning`, `s3:ListBucketVersions`, `s3:DeleteObjectVersion` (see Object storage
+  in the docs).
+- A file purge no longer deletes an object key another media file still references (a URL
+  import's per-video thumbnail, shared when the same video is imported twice).
+- A malformed `X-Real-IP` from a trusted proxy is no longer recorded as the client address.
+- An audit event OpenSearch rejects outright is now logged at ERROR, not WARNING: it is out of
+  the searchable trail for good.
 - Organization legal-hold audit events (`content.hold.place` / `content.hold.release`) name the
   held files (`details.file_uuids`, ids only, capped at 100). The hold's file links are deleted
   with the file, so the audit trail was the only place left to say what a hold had covered, and it
@@ -31,7 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A register of compliance-audited routes (`backend/tests/fixtures/compliance_audit_routes.py`)
   with a fast structural test: a new quarantine, hold, export, purge, erasure, support-access,
   takedown-notice or data-integrity route with no audit decision fails, and so does removing the
-  emitter a registered route reaches.
+  emitter a registered route reaches. A route pinned to another suite must have that suite name
+  both the route and the event; three entries had pointed at suites that mentioned neither and
+  are now driven live.
+- `test_audit_field_type_clashes.py`: fails when two audit emitters write one field with types a
+  shared monthly index cannot hold (the failure that once dropped every privacy-purge event).
 - A live test that drives each registered action against a real OpenSearch audit index and reads
   the row back through the admin and organization audit queries (actor, target, tenant).
 - The deletion residue gate scans every object VERSION and fails when a configured index or

@@ -89,10 +89,63 @@ def test_register_entries_are_live_routes_and_name_real_evidence():
     for key, entry in AUDITED_ROUTES.items():
         evidence = [e for e in (entry.live, entry.pinned_by, entry.backlog) if e is not None]
         assert len(evidence) == 1, f"{key}: exactly one of live / pinned_by / backlog"
-        if entry.pinned_by is not None:
-            assert (TESTS / entry.pinned_by).is_file(), f"{key}: {entry.pinned_by} does not exist"
+        for pinned in entry.pinned_files:
+            assert (TESTS / pinned).is_file(), f"{key}: {pinned} does not exist"
     members = set(AuditEventType.__members__)
     assert members >= COMPLIANCE_EVENTS, sorted(COMPLIANCE_EVENTS - members)
+
+
+def _route_marker(path: str) -> str:
+    """The last literal segment of a route, e.g. ``/erase-organization`` (suites build URLs with
+    f-strings, so the parameterised middle is never spelled out)."""
+    literal = [seg for seg in path.split("/") if seg and not seg.startswith("{")]
+    return "/" + literal[-1]
+
+
+def pinned_evidence_gaps(path: str, events: tuple[str, ...], source: str) -> list[str]:
+    """What a ``pinned_by`` suite fails to show for one route; empty means it is evidence.
+
+    A suite counts only when it names the route AND every event it is pinned for, by member
+    (``AuditEventType.X``) or by value (``"x.y"``). A file merely existing is not evidence:
+    three entries once pointed at suites that never mentioned their event.
+    """
+    gaps = []
+    literal = [seg for seg in path.split("/") if seg and not seg.startswith("{") and seg != "api"]
+    missing = [seg for seg in literal if f"/{seg}" not in source]
+    if missing:
+        gaps.append(f"never names the route ({_route_marker(path)}; missing {missing})")
+    for member in events:
+        value = AuditEventType[member].value
+        if f"AuditEventType.{member}" not in source and f'"{value}"' not in source:
+            gaps.append(f"never names {member} / {value!r}")
+    return gaps
+
+
+@pytest.mark.parametrize(
+    "key",
+    sorted(k for k, v in AUDITED_ROUTES.items() if v.pinned_by),
+    ids=lambda k: f"{k[0]} {k[1]}",
+)
+def test_a_pinned_suite_names_its_route_and_event(key):
+    entry = AUDITED_ROUTES[key]
+    assert entry.pinned_files, key
+    source = "\n".join((TESTS / f).read_text(encoding="utf-8") for f in entry.pinned_files)
+    gaps = pinned_evidence_gaps(key[1], entry.events, source)
+    assert not gaps, f"{key}: {entry.pinned_by} is not evidence: {gaps}"
+
+
+def test_the_evidence_check_rejects_a_suite_that_names_neither():
+    """Guard the guard: an unrelated suite must not count as evidence for any route."""
+    unrelated = "def test_x(client):\n    assert client.get('/api/health').status_code == 200\n"
+    gaps = pinned_evidence_gaps(
+        "/api/admin/data-integrity", ("ADMIN_DATA_INTEGRITY_PURGE",), unrelated
+    )
+    assert len(gaps) == 2, gaps
+    real = 'client.post("/api/admin/data-integrity")\nAuditEventType.ADMIN_DATA_INTEGRITY_PURGE\n'
+    assert (
+        pinned_evidence_gaps("/api/admin/data-integrity", ("ADMIN_DATA_INTEGRITY_PURGE",), real)
+        == []
+    )
 
 
 def test_every_compliance_event_is_written_somewhere_declared():

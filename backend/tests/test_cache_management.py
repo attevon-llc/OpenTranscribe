@@ -193,12 +193,13 @@ class TestClearCacheOnDelete:
         db_session.refresh(file)
 
         deleted: list[str] = []
+
+        def _record_delete(bucket: str, keys: list[str]) -> int:
+            deleted.extend(keys)
+            return len(keys)
+
         svc = VideoProcessingService(MinIOService())
-        monkeypatch.setattr(
-            svc.minio_service,
-            "delete_object",
-            lambda bucket, key: deleted.append(key),
-        )
+        monkeypatch.setattr(svc.minio_service, "delete_objects", _record_delete)
 
         # Policy-specific renders (#85) cannot be named by a pure function -- one file
         # owns one video per redaction policy that ever rendered it -- so the sweep

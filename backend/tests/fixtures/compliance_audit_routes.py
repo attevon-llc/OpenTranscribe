@@ -73,15 +73,28 @@ class Audited:
     """A route that must write ``events``; ``live`` names its case in the integration test."""
 
     events: tuple[str, ...]
-    live: str | None = None
-    #: When ``live`` is None: the suite that pins the emit site (with a recorder) instead.
-    pinned_by: str | None = None
+    #: The live case id(s) in the integration test; several when one route writes several events.
+    live: str | tuple[str, ...] | None = None
+    #: When ``live`` is None: the suite(s) that pin the emit site instead. The unit test checks
+    #: that together they NAME the route and every event; a file merely existing is not evidence.
+    pinned_by: str | tuple[str, ...] | None = None
     #: Neither driven live nor pinned anywhere yet: deferred work, printed on every run.
     backlog: str | None = None
 
+    @property
+    def live_cases(self) -> tuple[str, ...]:
+        return (self.live,) if isinstance(self.live, str) else (self.live or ())
+
+    @property
+    def pinned_files(self) -> tuple[str, ...]:
+        return (self.pinned_by,) if isinstance(self.pinned_by, str) else (self.pinned_by or ())
+
 
 A = Audited
-_NO_DRIVER = "no test drives this route's hold refusal and reads the event"
+_NO_DRIVER = (
+    "no test drives this route's hold refusal and reads the event: force-delete needs a platform "
+    "admin acting through a write grant, and member removal a collection-scoped hold"
+)
 AUDITED_ROUTES: dict[tuple[str, str], Audited] = {
     # Takedown and its platform legal hold. The quarantine/release payload is being reshaped on
     # another branch; the live case asserts actor + target + event name only.
@@ -128,41 +141,41 @@ AUDITED_ROUTES: dict[tuple[str, str], Audited] = {
         ("SUPPORT_ACCESS_APPROVED",), "grant-approve"
     ),
     ("POST", "/api/org-admin/support-access/{grant_uuid}/deny"): A(
-        ("SUPPORT_ACCESS_DENIED",), pinned_by="api/test_support_access_lifecycle.py"
+        ("SUPPORT_ACCESS_DENIED",), "grant-deny"
     ),
     ("POST", "/api/users/me/support-access/{grant_uuid}/approve"): A(
-        ("SUPPORT_ACCESS_APPROVED",), pinned_by="api/test_support_access_lifecycle.py"
+        ("SUPPORT_ACCESS_APPROVED",), "personal-approve"
     ),
     ("POST", "/api/users/me/support-access/{grant_uuid}/deny"): A(
-        ("SUPPORT_ACCESS_DENIED",), pinned_by="api/test_support_access_lifecycle.py"
+        ("SUPPORT_ACCESS_DENIED",), "personal-deny"
     ),
     ("POST", "/api/support-access/grants/{grant_uuid}/revoke"): A(
         ("SUPPORT_ACCESS_REVOKED",), "grant-revoke"
     ),
     ("POST", "/api/support-access/grants/break-glass"): A(
-        ("SUPPORT_ACCESS_BREAK_GLASS",), pinned_by="api/test_support_access_lifecycle.py"
+        ("SUPPORT_ACCESS_BREAK_GLASS",), "break-glass"
     ),
     # Erasure.
     ("POST", "/api/admin/gdpr/erase-user/{user_uuid}"): A(("ADMIN_USER_DELETE",), "gdpr-erase"),
     ("POST", "/api/org-admin/gdpr/erase-user/{user_uuid}"): A(
         ("ADMIN_USER_DELETE",), "org-member-erase"
     ),
-    ("POST", "/api/org-admin/gdpr/erase-organization"): A(
-        ("ADMIN_USER_DELETE",), pinned_by="api/endpoints/test_org_admin_endpoints.py"
-    ),
+    ("POST", "/api/org-admin/gdpr/erase-organization"): A(("ADMIN_USER_DELETE",), "org-erase"),
     ("DELETE", "/api/admin/users/{user_uuid}"): A(("ADMIN_USER_DELETE",), "admin-user-delete"),
-    ("DELETE", "/api/users/{user_uuid}"): A(
-        ("ADMIN_USER_DELETE",), pinned_by="api/endpoints/test_last_super_admin_guard.py"
-    ),
+    ("DELETE", "/api/users/{user_uuid}"): A(("ADMIN_USER_DELETE",), "users-delete"),
     ("DELETE", "/api/files/{file_uuid}"): A(
-        ("FILE_DELETE_DENIED", "CONTENT_HOLD_REFUSED"), pinned_by="api/test_org_admin_holds.py"
+        ("FILE_DELETE_DENIED", "CONTENT_HOLD_REFUSED"),
+        ("file-delete-denied", "hold-refused-delete"),
     ),
-    # Destroy paths that refuse a held file or collection (``content.hold.refused``). Only the
-    # single DELETE above has a test that drives the refusal; these reach the same emitter.
+    # Destroy paths that refuse a held file or collection (``content.hold.refused``).
     ("DELETE", "/api/files/{file_uuid}/force"): A(("CONTENT_HOLD_REFUSED",), backlog=_NO_DRIVER),
-    ("POST", "/api/files/management/bulk-action"): A(("CONTENT_HOLD_REFUSED",), backlog=_NO_DRIVER),
-    ("POST", "/api/files/{file_uuid}/reprocess"): A(("CONTENT_HOLD_REFUSED",), backlog=_NO_DRIVER),
-    ("POST", "/api/files/{file_uuid}/retry"): A(("CONTENT_HOLD_REFUSED",), backlog=_NO_DRIVER),
+    ("POST", "/api/files/management/bulk-action"): A(
+        ("CONTENT_HOLD_REFUSED",), "hold-refused-bulk"
+    ),
+    ("POST", "/api/files/{file_uuid}/reprocess"): A(
+        ("CONTENT_HOLD_REFUSED",), "hold-refused-reprocess"
+    ),
+    ("POST", "/api/files/{file_uuid}/retry"): A(("CONTENT_HOLD_REFUSED",), "hold-refused-retry"),
     ("DELETE", "/api/collections/{collection_uuid}"): A(
         ("CONTENT_HOLD_REFUSED",), pinned_by="api/test_org_admin_holds.py"
     ),
@@ -170,30 +183,28 @@ AUDITED_ROUTES: dict[tuple[str, str], Audited] = {
         ("CONTENT_HOLD_REFUSED",), backlog=_NO_DRIVER
     ),
     # Resolves the grant itself instead of through get_current_context.
-    ("GET", "/api/files/{file_uuid}/thumbnail"): A(
-        ("SUPPORT_ACCESS_USED",), pinned_by="api/test_support_access_matrix.py"
-    ),
+    ("GET", "/api/files/{file_uuid}/thumbnail"): A(("SUPPORT_ACCESS_USED",), "thumbnail-use"),
     # Audit-log exports.
     ("GET", "/api/admin/audit-logs/export"): A(("AUDIT_EXPORT",), "audit-export"),
     ("GET", "/api/org-admin/audit-logs/export"): A(
-        ("AUDIT_EXPORT",), pinned_by="api/test_admin_audit_export.py"
+        ("AUDIT_EXPORT",), pinned_by="api/test_org_audit_view.py"
     ),
     # Takedown notice records.
     ("POST", "/api/admin/takedown-notices"): A(
         ("ADMIN_TAKEDOWN_NOTICE_CREATE",), pinned_by="api/endpoints/test_takedown_notices_routes.py"
     ),
     ("PATCH", "/api/admin/takedown-notices/{notice_uuid}/files/{file_uuid}"): A(
-        ("ADMIN_TAKEDOWN_NOTICE_UPDATE",), pinned_by="api/endpoints/test_takedown_notices_routes.py"
+        ("ADMIN_TAKEDOWN_NOTICE_UPDATE",), "notice-update"
     ),
     ("POST", "/api/admin/takedown-notices/{notice_uuid}/notify"): A(
-        ("ADMIN_TAKEDOWN_NOTICE_NOTIFY",), pinned_by="api/endpoints/test_takedown_notices_routes.py"
+        ("ADMIN_TAKEDOWN_NOTICE_NOTIFY",), "notice-notify"
     ),
     ("GET", "/api/admin/takedown-notices/export"): A(
-        ("ADMIN_TAKEDOWN_NOTICE_EXPORT",), pinned_by="api/endpoints/test_takedown_notices_routes.py"
+        ("ADMIN_TAKEDOWN_NOTICE_EXPORT",), "notice-export"
     ),
     # Orphan purges.
     ("POST", "/api/admin/data-integrity"): A(
-        ("ADMIN_DATA_INTEGRITY_PURGE",), pinned_by="api/test_deployment_ops_gating.py"
+        ("ADMIN_DATA_INTEGRITY_PURGE",), "data-integrity-purge"
     ),
     ("POST", "/api/admin/data-integrity/storage"): A(
         ("ADMIN_DATA_INTEGRITY_STORAGE_PURGE",),

@@ -215,36 +215,22 @@ def get_file_url(object_name: str, expires: int = 0, content_type: str | None = 
 
 
 def delete_file(object_name: str):
-    """
-    Delete a file from MinIO
+    """Delete a media object completely: every version of it on a versioned bucket.
 
     Args:
-        object_name: Object name in MinIO
+        object_name: Object name in the media bucket.
+
+    Raises:
+        Exception: Some version survived (a legal hold or retention, a refused call); the
+            message names what remains.
     """
-    bucket = settings.MEDIA_BUCKET_NAME
+    from app.services.storage_versions import StorageDeleteIncompleteError
+    from app.services.storage_versions import remove_completely
+
     try:
-        minio_client.remove_object(bucket_name=bucket, object_name=object_name)
-        _remove_every_version(bucket, object_name)
-    except S3Error as e:
+        remove_completely(minio_client, settings.MEDIA_BUCKET_NAME, names=[object_name])
+    except (S3Error, StorageDeleteIncompleteError) as e:
         raise Exception(f"Error deleting file: {e}") from e
-
-
-def _remove_every_version(bucket: str, object_name: str) -> None:
-    """On a versioned bucket, delete every version of ``object_name`` and its delete markers.
-
-    A plain delete there only writes a delete marker: the bytes stay retrievable by version id,
-    so a deletion or an erasure that reported success would have removed nothing. Object lock,
-    the storage half of a legal hold, can only be enabled on a versioned bucket, so this is the
-    configuration the hold feature points operators at. An unversioned bucket costs one
-    versioning read. A version still under an object-lock legal hold refuses the delete and the
-    ``S3Error`` propagates, so the caller reports the artifact as not deleted.
-    """
-    status = getattr(minio_client.get_bucket_versioning(bucket), "status", None)
-    if status not in ("Enabled", "Suspended"):
-        return
-    for version in minio_client.list_objects(bucket, prefix=object_name, include_version=True):
-        if version.object_name == object_name:
-            minio_client.remove_object(bucket, object_name, version_id=version.version_id)
 
 
 def set_object_legal_hold(object_name: str, hold: bool) -> bool:
@@ -835,23 +821,23 @@ class MinIOService:
         return count, total
 
     def delete_prefix(self, bucket_name: str, prefix: str) -> int:
-        """Delete every object under a prefix. Returns the number deleted. Best-effort."""
-        from minio.deleteobjects import DeleteObject
+        """Delete every object under a prefix, every version of each. Returns the count removed.
 
-        deleted = 0
-        try:
-            names = [
-                obj.object_name
-                for obj in self.client.list_objects(bucket_name, prefix=prefix, recursive=True)
-            ]
-            if not names:
-                return 0
-            errors = self.client.remove_objects(bucket_name, (DeleteObject(n) for n in names))
-            failed = 0
-            for err in errors:
-                failed += 1
-                logger.warning(f"Failed to delete {err.name}: {err.code} {err.message}")
-            deleted = len(names) - failed
-        except Exception as e:
-            logger.warning(f"Could not delete prefix {bucket_name}/{prefix}: {e}")
-        return deleted
+        Raises:
+            storage_versions.StorageDeleteIncompleteError: Something under the prefix survived
+                (named in the error). It used to log and return a smaller count, so a purge of
+                burned-in video and extracted audio read as done with the bytes still stored.
+        """
+        from app.services.storage_versions import remove_completely
+
+        return remove_completely(self.client, bucket_name, prefix=prefix)
+
+    def delete_objects(self, bucket_name: str, names: list[str]) -> int:
+        """Delete the named objects, every version of each. Absent keys are not an error.
+
+        Raises:
+            storage_versions.StorageDeleteIncompleteError: A named object survived.
+        """
+        from app.services.storage_versions import remove_completely
+
+        return remove_completely(self.client, bucket_name, names=names)

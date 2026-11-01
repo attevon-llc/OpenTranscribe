@@ -64,11 +64,18 @@ ALL_ON = {
     "audit.content_access": True,
     "exports.documents": True,
 }
-#: What this module allows one OpenSearch call, write or index create. The audit writer's own
-#: 2 s deadline is a latency budget for a REQUEST; this test proves the row is written and
-#: readable, not how fast. Measured 2026-11-01 on a loaded host (load average 40-80): creating
-#: one empty index took 29 s while the cluster manager worked through queued put-mapping tasks.
+#: What this module allows the calls AROUND the write: creating, refreshing and deleting the
+#: throwaway index. Measured 2026-11-01 on a loaded host (load average 40-80): creating one empty
+#: index took 29 s while the cluster manager worked through queued put-mapping tasks. The audit
+#: WRITE keeps the production 2 s deadline (``_AUDIT_WRITE_TIMEOUT_SECONDS``): it is the thing
+#: under test, and a write that misses it lands in the fallback file in production too.
 OPENSEARCH_CALL_SECONDS = 180
+#: The write deadline the test runs the writer with: the production value unless an operator
+#: on an overloaded host says otherwise. Measured 2026-11-01 at load average 45: 38 of ~40
+#: writes missed the 2 s deadline (ConnectionTimeout, read timeout=2) and every case failed
+#: for the host, not the code. Raising it here never hides a type clash or a missing emitter:
+#: those are a 400 or no call at all, and the negative control still has to find nothing.
+WRITE_TIMEOUT_OVERRIDE = os.environ.get("OT_TEST_AUDIT_WRITE_TIMEOUT_SECONDS")
 HOLD_REASON = "Litigation matter 2026-77 (compliance audit test)"
 
 
@@ -77,20 +84,15 @@ HOLD_REASON = "Litigation matter 2026-77 (compliance audit test)"
 
 @pytest.fixture(scope="module")
 def audit_index() -> Iterator[str]:
-    from app.auth.audit import _AUDIT_PROPERTIES
-    from app.services.opensearch_service import get_opensearch_client
+    from opensearchpy import OpenSearch
 
-    client = get_opensearch_client()
-    assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
+    from app.auth.audit import AuditLogger
+    from app.core.opensearch_auth import opensearch_connection_kwargs
+
+    client = OpenSearch(**opensearch_connection_kwargs(timeout=OPENSEARCH_CALL_SECONDS))
     name = f"test_compliance_audit_{uuid_pkg.uuid4().hex[:12]}"
-    client.indices.create(
-        index=name,
-        body={
-            "mappings": {"properties": _AUDIT_PROPERTIES},
-            "settings": {"number_of_shards": 1, "number_of_replicas": 0},
-        },
-        request_timeout=OPENSEARCH_CALL_SECONDS,
-    )
+    # The production creation path (mapping, settings, typed fields), not a copy of it.
+    AuditLogger()._ensure_index(client, name)
     try:
         yield name
     finally:
@@ -113,8 +115,10 @@ def audited(audit_index, monkeypatch, db_session):
     monkeypatch.setattr(settings, "AUDIT_LOG_TO_OPENSEARCH", True)
     monkeypatch.setattr(settings, "AUDIT_LOG_FALLBACK_ENABLED", False)
     monkeypatch.setattr(audit, "_audit_index_name", lambda: audit_index)
-    monkeypatch.setattr(audit, "_AUDIT_WRITE_TIMEOUT_SECONDS", OPENSEARCH_CALL_SECONDS)
-    monkeypatch.setattr(audit.audit_logger, "_known_indices", set())
+    # The fixture already ran the production ``_ensure_index``; the writer need not repeat it.
+    monkeypatch.setattr(audit.audit_logger, "_known_indices", {audit_index})
+    if WRITE_TIMEOUT_OVERRIDE:
+        monkeypatch.setattr(audit, "_AUDIT_WRITE_TIMEOUT_SECONDS", int(WRITE_TIMEOUT_OVERRIDE))
     monkeypatch.setattr(content_audit, "capability_enabled", lambda key, request=None: True)
     set_capability_resolver(lambda _r: {**COMMUNITY_CAPABILITIES, **ALL_ON})
     set_setting(db_session, AUDIT_CONTENT_ACCESS_SETTING_KEY, True)
@@ -375,7 +379,238 @@ def case_audit_export(w, h) -> Expect:
     return Expect(AuditEventType.AUDIT_EXPORT, w.super_admin.id, (("details.format", "json"),))
 
 
+def case_users_delete(w, h) -> Expect:
+    victim = make_user(w.db, role="user", label="udel")
+    _ok(w.client.delete(f"/api/users/{victim.uuid}", headers=w.super_headers), 204)
+    target = (("target_user_id", victim.id),)
+    return Expect(AuditEventType.ADMIN_USER_DELETE, w.super_admin.id, target)
+
+
+def case_org_erase(w, h) -> Expect:
+    _ok(
+        w.client.post(
+            "/api/org-admin/gdpr/erase-organization?confirm=true", headers=w.org_admin_headers
+        )
+    )
+    target = (("details.action", "gdpr_erasure_organization"),)
+    return Expect(AuditEventType.ADMIN_USER_DELETE, w.org_admin.id, target, w.org.id)
+
+
+def _personal_grant(w) -> str:
+    return str(w.request(subject_user_uuid=str(w.owner.uuid))["uuid"])
+
+
+def case_grant_deny(w, h) -> Expect:
+    grant = w.request()
+    _ok(
+        w.client.post(
+            f"/api/org-admin/support-access/{grant['uuid']}/deny",
+            headers=w.org_admin_headers,
+            json={},
+        )
+    )
+    target = (("details.grant_uuid", str(grant["uuid"])),)
+    return Expect(AuditEventType.SUPPORT_ACCESS_DENIED, w.org_admin.id, target, w.org.id)
+
+
+def case_personal_approve(w, h) -> Expect:
+    grant_uuid = _personal_grant(w)
+    _ok(
+        w.client.post(
+            f"/api/users/me/support-access/{grant_uuid}/approve", headers=w.owner_headers, json={}
+        )
+    )
+    target = (("target_user_id", w.admin.id),)
+    return Expect(AuditEventType.SUPPORT_ACCESS_APPROVED, w.owner.id, target)
+
+
+def case_personal_deny(w, h) -> Expect:
+    grant_uuid = _personal_grant(w)
+    _ok(
+        w.client.post(
+            f"/api/users/me/support-access/{grant_uuid}/deny", headers=w.owner_headers, json={}
+        )
+    )
+    target = (("details.grant_uuid", grant_uuid),)
+    return Expect(AuditEventType.SUPPORT_ACCESS_DENIED, w.owner.id, target)
+
+
+def case_break_glass(w, h) -> Expect:
+    body = _ok(
+        w.client.post(
+            "/api/support-access/grants/break-glass",
+            headers=w.super_headers,
+            json={
+                "organization_uuid": str(w.org.uuid),
+                "access_level": "read",
+                "reason": "Customer outage, investigating production data",
+                "ticket_ref": "INC-1042",
+                "duration_minutes": 60,
+            },
+        ),
+        201,
+    )
+    target = (("details.grant_uuid", str(body["uuid"])),)
+    return Expect(AuditEventType.SUPPORT_ACCESS_BREAK_GLASS, w.super_admin.id, target, w.org.id)
+
+
+def case_thumbnail_use(w, h) -> Expect:
+    grant_uuid = w.active_grant()
+    response = w.client.get(f"/api/files/{w.file.uuid}/thumbnail", headers=w.with_grant(grant_uuid))
+    # The seeded file has no thumbnail object, so the read ends in 404 AFTER the grant was
+    # used and recorded; what is asserted is the use row, not the image.
+    assert response.status_code == 404, response.text
+    target = (("resource_uuid", str(w.file.uuid)),)
+    return Expect(AuditEventType.SUPPORT_ACCESS_USED, w.admin.id, target, w.org.id)
+
+
+def case_data_integrity_purge(w, h) -> Expect:
+    _ok(w.client.post("/api/admin/data-integrity?force=true&confirm=true", headers=w.super_headers))
+    target = (("details.action", "forced_orphan_purge_requested"),)
+    return Expect(AuditEventType.ADMIN_DATA_INTEGRITY_PURGE, w.super_admin.id, target)
+
+
+NOTICE = {
+    "notice_type": "dmca",
+    "requester_reference": "CASE-42",
+    "basis": "17 USC 512(c) notice, complete",
+}
+
+
+def _notice_with_link(w) -> tuple[str, Any]:
+    from datetime import UTC
+    from datetime import datetime
+    from datetime import timedelta
+
+    f = _detached(w.db, w.personal_file)
+    notice = _ok(
+        w.client.post(
+            "/api/admin/takedown-notices",
+            headers=w.admin_headers,
+            json={**NOTICE, "received_at": (datetime.now(UTC) - timedelta(days=2)).isoformat()},
+        ),
+        201,
+    )
+    _ok(
+        w.client.post(
+            f"/api/admin/files/{f.uuid}/quarantine",
+            headers=w.admin_headers,
+            json={"reason": "notice", "notice_uuid": notice["uuid"]},
+        )
+    )
+    return str(notice["uuid"]), f
+
+
+def case_notice_update(w, h) -> Expect:
+    notice_uuid, f = _notice_with_link(w)
+    _ok(
+        w.client.patch(
+            f"/api/admin/takedown-notices/{notice_uuid}/files/{f.uuid}",
+            headers=w.admin_headers,
+            json={"status": "upheld"},
+        )
+    )
+    target = (("details.notice_uuid", notice_uuid),)
+    return Expect(AuditEventType.ADMIN_TAKEDOWN_NOTICE_UPDATE, w.admin.id, target)
+
+
+def case_notice_notify(w, h) -> Expect:
+    notice_uuid, _f = _notice_with_link(w)
+    _ok(
+        w.client.post(
+            f"/api/admin/takedown-notices/{notice_uuid}/notify", headers=w.admin_headers, json={}
+        )
+    )
+    target = (("details.notice_uuid", notice_uuid),)
+    return Expect(AuditEventType.ADMIN_TAKEDOWN_NOTICE_NOTIFY, w.admin.id, target)
+
+
+def case_notice_export(w, h) -> Expect:
+    _notice_with_link(w)
+    _ok(w.client.get("/api/admin/takedown-notices/export", headers=w.admin_headers))
+    target = (("details.format", "csv"), ("details.format", "json"))
+    return Expect(AuditEventType.ADMIN_TAKEDOWN_NOTICE_EXPORT, w.admin.id, target)
+
+
+def _held_org_file(w) -> Any:
+    """``w.file`` under an organization hold, its owner acting in the organization."""
+    w.roles[w.owner.id] = (w.org.id, "org:member")
+    _place_hold(w)
+    return w.file
+
+
+def _refused(w, response) -> Expect:
+    assert response.status_code == 409, response.text
+    target = (("resource_uuid", str(w.file.uuid)),)
+    return Expect(AuditEventType.CONTENT_HOLD_REFUSED, w.owner.id, target, w.org.id)
+
+
+def case_hold_refused_delete(w, h) -> Expect:
+    f = _held_org_file(w)
+    return _refused(w, w.client.delete(f"/api/files/{f.uuid}", headers=w.owner_headers))
+
+
+def case_hold_refused_reprocess(w, h) -> Expect:
+    f = _held_org_file(w)
+    return _refused(
+        w, w.client.post(f"/api/files/{f.uuid}/reprocess", headers=w.owner_headers, json={})
+    )
+
+
+def case_hold_refused_retry(w, h) -> Expect:
+    f = _held_org_file(w)
+    # Retry answers 400 for a completed file before it asks about holds; a failed one reaches it.
+    f.status = "error"
+    w.db.commit()
+    return _refused(w, w.client.post(f"/api/files/{f.uuid}/retry", headers=w.owner_headers))
+
+
+def case_hold_refused_bulk(w, h) -> Expect:
+    f = _held_org_file(w)
+    response = w.client.post(
+        "/api/files/management/bulk-action",
+        headers=w.owner_headers,
+        json={"action": "delete", "file_uuids": [str(f.uuid)]},
+    )
+    assert response.status_code == 200, response.text
+    target = (("resource_uuid", str(f.uuid)),)
+    return Expect(AuditEventType.CONTENT_HOLD_REFUSED, w.owner.id, target, w.org.id)
+
+
+def case_file_delete_denied(w, h) -> Expect:
+    stranger = make_user(w.db, role="user", label="deny")
+    w.db.add(
+        OrganizationMembership(organization_id=w.org.id, user_id=stranger.id, role="org:member")
+    )
+    w.db.commit()
+    w.roles[stranger.id] = (w.org.id, "org:member")
+    from tests.fixtures.support_world import login_headers
+
+    response = w.client.delete(
+        f"/api/files/{w.file.uuid}", headers=login_headers(w.client, stranger)
+    )
+    assert response.status_code in (403, 404), response.text
+    target = (("resource_uuid", str(w.file.uuid)), ("details.file_uuid", str(w.file.uuid)))
+    return Expect(AuditEventType.FILE_DELETE_DENIED, stranger.id, target)
+
+
 CASES: dict[str, Callable[[Any, Any], Expect]] = {
+    "users-delete": case_users_delete,
+    "org-erase": case_org_erase,
+    "grant-deny": case_grant_deny,
+    "personal-approve": case_personal_approve,
+    "personal-deny": case_personal_deny,
+    "break-glass": case_break_glass,
+    "thumbnail-use": case_thumbnail_use,
+    "data-integrity-purge": case_data_integrity_purge,
+    "notice-update": case_notice_update,
+    "notice-notify": case_notice_notify,
+    "notice-export": case_notice_export,
+    "hold-refused-delete": case_hold_refused_delete,
+    "hold-refused-reprocess": case_hold_refused_reprocess,
+    "hold-refused-retry": case_hold_refused_retry,
+    "hold-refused-bulk": case_hold_refused_bulk,
+    "file-delete-denied": case_file_delete_denied,
     "quarantine": case_quarantine,
     "release": case_release,
     "org-quarantine": case_org_quarantine,
@@ -410,7 +645,7 @@ def organizations_capability_on():
 
 
 def test_every_live_register_entry_has_a_case():
-    live = {entry.live for entry in AUDITED_ROUTES.values() if entry.live}
+    live = {case for entry in AUDITED_ROUTES.values() for case in entry.live_cases}
     assert live == set(CASES), {"missing": live - set(CASES), "unregistered": set(CASES) - live}
 
 
@@ -444,7 +679,12 @@ def test_action_writes_a_readable_audit_row(case, support_world, audited, docume
         )
 
 
-def test_the_reader_does_not_see_events_it_was_not_given(audited, support_world):
-    """Negative control: an action that was never performed has no row."""
-    rows = _read(audited, event_type=AuditEventType.ADMIN_FILE_QUARANTINE.value, user_id=-1)
-    assert rows == []
+def test_without_its_emitter_the_action_leaves_no_row(audited, support_world, monkeypatch):
+    """Negative control: the same quarantine with its emitter removed must find NOTHING.
+
+    Proves a passing case is satisfied by the row its own action wrote, not by another case's
+    row in the shared index or by anything else the request does.
+    """
+    monkeypatch.setattr("app.services.takedown_service.audit_takedown", lambda *a, **k: None)
+    expect = case_quarantine(support_world, Helpers(document_export=None))
+    assert _read(audited, event_type=expect.event.value, user_id=expect.actor_id) == []

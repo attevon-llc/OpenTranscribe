@@ -96,3 +96,104 @@ def test_deleting_a_files_media_removes_every_version(versioned_media_bucket):
     assert delete_file_storage_artifacts(sf.file_id, {"storage_path": key}) is True
 
     assert minio_residue(sf, include_owner=False) == []
+
+
+def _put_versions(bucket: str, key: str, versions: int = 2) -> None:
+    from app.services.minio_service import minio_client
+
+    for n in range(versions):
+        body = f"take {n}".encode()
+        minio_client.put_object(bucket, key, io.BytesIO(body), len(body), "video/mp4")
+
+
+def _all_versions(bucket: str, prefix: str = "") -> list[str]:
+    from app.services.minio_service import minio_client
+
+    return [
+        f"{o.object_name}@{o.version_id}"
+        for o in minio_client.list_objects(
+            bucket, prefix=prefix, recursive=True, include_version=True
+        )
+    ]
+
+
+def test_a_prefix_purge_removes_every_version(versioned_media_bucket):
+    """``delete_prefix`` (the admin derived-cache clear) on a versioned bucket."""
+    from app.services.minio_service import MinIOService
+
+    for key in ("derived/1_a_with_speakers.mp4", "derived/2_b_audio.mp3"):
+        _put_versions(versioned_media_bucket, key)
+    _put_versions(versioned_media_bucket, "keep/other.mp4", versions=1)
+
+    removed = MinIOService().delete_prefix(versioned_media_bucket, "derived/")
+
+    assert removed == 4
+    assert _all_versions(versioned_media_bucket, "derived/") == []
+    assert len(_all_versions(versioned_media_bucket, "keep/")) == 1, "outside the prefix kept"
+
+
+def test_a_files_derived_cache_is_removed_every_version(versioned_media_bucket):
+    """``clear_derived_cache`` (part of every file delete and erasure) on a versioned bucket."""
+    from app.services.minio_service import MinIOService
+    from app.services.video_processing_service import VideoProcessingService
+
+    service = VideoProcessingService(MinIOService())
+    service.cache_bucket = versioned_media_bucket
+    keys = service.derived_cache_keys(4242, "talk.wav")
+    assert keys, "no derived keys to seed"
+    for key in keys:
+        _put_versions(versioned_media_bucket, key)
+
+    service.clear_derived_cache(4242, "talk.wav")
+
+    assert _all_versions(versioned_media_bucket) == []
+
+
+def test_the_orphan_sweep_removes_every_version(versioned_media_bucket):
+    from app.services.minio_service import minio_client
+    from app.tasks.storage_orphan_sweep_task import _remove_group
+
+    names = ["user_1/file_999999901/a.wav", "user_1/file_999999901/thumbnail.webp"]
+    for key in names:
+        _put_versions(versioned_media_bucket, key)
+
+    assert _remove_group(minio_client, versioned_media_bucket, names) == 0
+    assert _all_versions(versioned_media_bucket) == []
+
+
+@pytest.fixture
+def locked_media_bucket(monkeypatch) -> Iterator[str]:
+    """A bucket with object lock (so versioned), as a legal-hold deployment configures it."""
+    from app.core.config import settings
+    from app.services.minio_service import minio_client
+
+    bucket = f"e2e-versioned-erasure-{uuid_pkg.uuid4().hex[:12]}"
+    minio_client.make_bucket(bucket, object_lock=True)
+    try:
+        monkeypatch.setattr(settings, "MEDIA_BUCKET_NAME", bucket)
+        yield bucket
+    finally:
+        for obj in minio_client.list_objects(bucket, recursive=True, include_version=True):
+            if not obj.is_delete_marker:
+                minio_client.disable_object_legal_hold(bucket, obj.object_name, obj.version_id)
+        _empty_and_remove(minio_client, bucket)
+
+
+def test_a_version_under_legal_hold_fails_the_delete_and_is_named(locked_media_bucket):
+    """Partial failure reports failure: the held version survives and the error names it."""
+    from app.services.file_cleanup_service import delete_file_storage_artifacts
+    from app.services.minio_service import delete_file
+    from app.services.minio_service import minio_client
+
+    key = "user_1/file_999999902/held.wav"
+    _put_versions(locked_media_bucket, key, versions=1)
+    held = minio_client.stat_object(locked_media_bucket, key).version_id
+    assert held, "object lock implies versioning; the seed has no version id"
+    minio_client.enable_object_legal_hold(locked_media_bucket, key, held)
+    _put_versions(locked_media_bucket, key, versions=1)  # a second, unheld version
+
+    with pytest.raises(Exception, match=held) as raised:
+        delete_file(key)
+    assert key in str(raised.value)
+    assert delete_file_storage_artifacts(999999902, {"storage_path": key}) is False
+    assert _all_versions(locked_media_bucket) == [f"{key}@{held}"], "only the held one survives"

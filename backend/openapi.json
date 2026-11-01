@@ -13283,6 +13283,108 @@
         "title": "PrivacyDecision",
         "type": "object"
       },
+      "ProcessingGateDocument": {
+        "description": "A document the active provider serves, offered as a requirement.",
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "title",
+          "version"
+        ],
+        "title": "ProcessingGateDocument",
+        "type": "object"
+      },
+      "ProcessingGateSettings": {
+        "description": "The gate's configuration. ``required_document_keys`` empty means the gate is off.",
+        "properties": {
+          "acceptance_scope": {
+            "enum": [
+              "user",
+              "organization",
+              "either"
+            ],
+            "title": "Acceptance Scope",
+            "type": "string"
+          },
+          "available_documents": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessingGateDocument"
+            },
+            "title": "Available Documents",
+            "type": "array"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "required_document_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Document Keys",
+            "type": "array"
+          }
+        },
+        "required": [
+          "required_document_keys",
+          "acceptance_scope",
+          "enabled",
+          "available_documents"
+        ],
+        "title": "ProcessingGateSettings",
+        "type": "object"
+      },
+      "ProcessingGateSettingsUpdate": {
+        "description": "Partial update. Every key must be served by the active document provider.",
+        "properties": {
+          "acceptance_scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "user",
+                  "organization",
+                  "either"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acceptance Scope"
+          },
+          "required_document_keys": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Document Keys"
+          }
+        },
+        "title": "ProcessingGateSettingsUpdate",
+        "type": "object"
+      },
       "ProcessingStepOut": {
         "description": "One step of how a file was processed, ready to render.",
         "properties": {
@@ -26604,6 +26706,78 @@
           }
         ],
         "summary": "Get Imohash Recompute Status",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/legal-processing-gate": {
+      "get": {
+        "description": "The gate's configuration (super_admin).",
+        "operationId": "get_processing_gate_settings_api_admin_legal_processing_gate_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcessingGateSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Processing Gate Settings",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "description": "Partial update (super_admin). Audited as admin.settings.change.",
+        "operationId": "put_processing_gate_settings_api_admin_legal_processing_gate_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProcessingGateSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcessingGateSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Put Processing Gate Settings",
         "tags": [
           "admin"
         ]

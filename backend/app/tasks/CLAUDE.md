@@ -71,6 +71,16 @@ indexing → WebSocket notification.
 - `transcription/hooks.py` — cloud-edition seam. Exceptions are swallowed; **hangs are not**
   (hooks run inside the completion path holding an open `session_scope`). Any outbound call
   in a hook needs a tight timeout.
+- **The legal processing gate runs FIRST in `dispatch._run_pre_dispatch_gate`** (before the
+  duration ceiling and before any before-dispatch hook): `app.legal.processing_gate` checks the
+  FILE OWNER's acceptance of the documents `legal.processing_required_document_keys` names. A
+  refusal marks the file ERROR with `error_category = legal_acceptance_required` (permanent:
+  `check_for_stuck_files` never re-selects it) and raises `LegalAcceptanceRequiredError` (a
+  `DispatchBlockedError`, dict `detail`). Tasks that start processing without going through
+  dispatch (AI steps, manual rediarize, URL imports, watch scans) call the gate in their own body
+  and return `skipped`. `tests/unit/test_processing_gate_coverage.py` derives the processing tasks
+  from `task_routes` (nlp/redaction/download queues, `GPU_PREFERRED_TASKS`, the call-time-routed
+  chain links): a new one fails until it calls the gate or is exempted with a reason.
 - `speaker_tasks.py` — a **re-export shim, NOT dead code**. Keeps legacy task-name routing
   alive; must stay in `celery_app`'s `include=` list.
 - `rename_propagation_task.py` — `propagate_speaker_rename` / `propagate_title_rename`

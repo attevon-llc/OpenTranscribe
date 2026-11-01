@@ -598,10 +598,18 @@ def identify_speakers_llm_task(self, file_uuid: str):
     Args:
         file_uuid: UUID of the MediaFile
     """
+    from app.legal.processing_gate import refusal_for_file
+    from app.legal.processing_gate import skipped_result
     from app.utils.task_utils import update_task_status
 
     task_id = self.request.id
     file_id = None
+
+    # The legal processing gate (backstop): LLM speaker identification processes the file.
+    refusal = refusal_for_file(file_uuid=file_uuid)
+    if refusal is not None:
+        logger.info(f"Speaker identification of {file_uuid} refused: {refusal.message}")
+        return skipped_result(refusal)
 
     try:
         # Phase 1 — read (DB session open, Postgres only).

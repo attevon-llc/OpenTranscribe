@@ -706,6 +706,15 @@ def summarize_transcript_task(
     file_id: int | None = None
     start_time = time.time()
 
+    from app.legal.processing_gate import refusal_for_file
+    from app.legal.processing_gate import skipped_result
+
+    # The legal processing gate (backstop): an LLM summary is processing of the owner's file.
+    refusal = refusal_for_file(file_uuid=file_uuid)
+    if refusal is not None:
+        logger.info(f"Summary of {file_uuid} refused: {refusal.message}")
+        return skipped_result(refusal)
+
     try:
         # Phase 1 — read (DB session open, Postgres only).
         inputs = _load_summarization_inputs(file_uuid, task_id, force_regenerate)

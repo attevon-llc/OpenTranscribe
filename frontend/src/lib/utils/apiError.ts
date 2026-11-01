@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
 import { isRequestCancelled } from '$lib/axios';
-import { HOLD_REFUSAL_KEYS, holdAuthorityKey } from '$lib/i18n/keyMaps';
+import { HOLD_REFUSAL_KEYS, LEGAL_REFUSAL_KEYS, holdAuthorityKey } from '$lib/i18n/keyMaps';
 import { readAccountLifecycle } from '$stores/auth';
 import { toastStore } from '$stores/toast';
 import { t } from '$stores/locale';
@@ -60,6 +60,14 @@ function holdRefusalMessage(detail: unknown): string | null {
  * then the fallback. The default fallback is resolved per call, so it follows the
  * active locale rather than the one that was active when this module was imported.
  */
+/** The translated sentence for a legal processing gate refusal (``detail.code``), else null. */
+export function legalRefusalMessage(detail: unknown): string | null {
+  const code = (detail as { code?: unknown } | null | undefined)?.code;
+  if (typeof code !== 'string') return null;
+  const key = LEGAL_REFUSAL_KEYS[code];
+  return key ? get(t)(key) : null;
+}
+
 export function getErrorMessage(
   error: unknown,
   fallback = get(t)('common.somethingWentWrong')
@@ -70,6 +78,9 @@ export function getErrorMessage(
   // server's own sentence is English, and every delete, remove and reprocess site reads this.
   const held = holdRefusalMessage(detail);
   if (held) return held;
+  // A legal processing gate refusal carries a stable code; the sentence is ours, translated.
+  const legal = legalRefusalMessage(detail);
+  if (legal) return legal;
   if (typeof detail === 'string' && detail.trim()) return detail;
   // FastAPI's default 422 shape is an ARRAY of validation-error objects
   // (`detail: [{msg: "field required", ...}, ...]`). Without this the chain fell

@@ -44,6 +44,7 @@ from app.auth.utils import mask_email_for_display
 from app.core.capabilities import require_capability
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
+from app.legal.processing_gate import require_processing_allowed
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.user import User
@@ -186,6 +187,12 @@ async def upload_media_file(
 ):
     """Upload a media file for transcription"""
     current_user = ctx.user
+    # The legal processing gate, before the upload is stored. The caller owns the file.
+    await run_in_threadpool(
+        lambda: require_processing_allowed(
+            db, owner_user_id=int(current_user.id), organization_id=ctx.org_id
+        )
+    )
     # Get optional headers from prepare step
     existing_file_uuid = request.headers.get("X-File-ID") if request else None
     file_hash = request.headers.get("X-File-Hash") if request else None

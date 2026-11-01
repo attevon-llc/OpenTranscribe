@@ -42,6 +42,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.prompts import require_usable_prompt_uuid
 from app.auth.audit import AuditEventType
 from app.db.base import get_db
+from app.legal.processing_gate import require_processing_allowed_for_file
 from app.models.media import MediaFile
 from app.models.user import User
 from app.schemas.summary import SpeakerIdentificationResponse
@@ -103,6 +104,7 @@ async def trigger_summarization(
         organization_id=ctx.org_id,
         min_permission="editor",
     )
+    require_processing_allowed_for_file(db, media_file)
     file_id = media_file.id
 
     # An explicit prompt must be one the caller may use (system, own, or shared within
@@ -540,6 +542,7 @@ async def identify_speakers(
         organization_id=ctx.org_id,
         min_permission="editor",
     )
+    require_processing_allowed_for_file(db, media_file)
     file_id = media_file.id
 
     # Check if file has speakers to identify

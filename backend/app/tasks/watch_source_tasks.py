@@ -29,6 +29,8 @@ from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import CPUPriority
 from app.db.session_utils import session_scope
+from app.legal.processing_gate import ProcessingRefusal
+from app.legal.processing_gate import check_processing_allowed
 from app.models.watch_source import WatchSource
 from app.models.watch_source import WatchSourceFile
 from app.services import watch_settings_service
@@ -149,6 +151,9 @@ def scan_single(self, source_id: int) -> dict:
 
         if plan is None:
             return {"skipped": True, "reason": "source missing or disabled"}
+        if "legal_refusal" in plan:
+            _log_legal_refusal_hourly(source_id, plan["legal_refusal"])
+            return {"skipped": True, "reason": plan["legal_refusal"].code}
 
         # Phase 2 — the scan. NO DB session is held across it; each DB touch
         # inside opens its own short scope.
@@ -184,6 +189,20 @@ def scan_single(self, source_id: int) -> dict:
     return summary
 
 
+def _log_legal_refusal_hourly(source_id: int, refusal: ProcessingRefusal) -> None:
+    """Warn about a refused source at most once an hour; every tick would flood the log."""
+    first = True
+    try:
+        from app.core.redis import get_redis
+
+        key = f"watch_source:legal_refusal_logged:{source_id}"
+        first = bool(get_redis().set(key, "1", nx=True, ex=3600))
+    except Exception as e:  # noqa: BLE001 - a log throttle only; the scan is skipped regardless
+        logger.debug("Watch source %s: refusal-log throttle unavailable: %s", source_id, e)
+    log = logger.warning if first else logger.debug
+    log("Watch source %s skipped by the legal processing gate: %s", source_id, refusal.message)
+
+
 def _load_scan_plan(source_id: int) -> dict | None:
     """Phase 1 — snapshot the scan's inputs and mark the source ``running``.
 
@@ -200,6 +219,13 @@ def _load_scan_plan(source_id: int) -> dict | None:
             return None
         if disable_if_owner_left_org(db, source):
             return None
+        # The legal processing gate for the source OWNER, before anything is listed or
+        # imported: a refused owner's files would only be created to fail.
+        refusal = check_processing_allowed(
+            db, owner_user_id=int(source.user_id), organization_id=source.organization_id
+        )
+        if refusal is not None:
+            return {"legal_refusal": refusal}
 
         source.last_scan_status = "running"
         plan = {

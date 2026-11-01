@@ -140,6 +140,12 @@ PLATFORM_OP_RULES: tuple[tuple[str, str, str], ...] = (
         "data, it reads none back)",
     ),
     (
+        r"^\w+ /api/admin/legal-processing-gate",
+        "settings",
+        "which legal documents a file owner must accept before processing; document keys and a "
+        "scope, never tenant content",
+    ),
+    (
         r"^GET /api/legal/acknowledgments",
         "settings",
         "the operator's legal acknowledgment record; deployment-level",

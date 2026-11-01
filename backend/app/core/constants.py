@@ -1868,3 +1868,18 @@ PRIVACY_USER_GENDER_DETECTION_KEY = "speaker_attribute_gender_detection_enabled"
 #: Entry gates read fresh; only the backstop caches, and the purge task's second pass runs
 #: later than this so a write that raced a switch-off is still caught.
 PRIVACY_WRITE_BACKSTOP_TTL_SECONDS = 10.0
+
+# --- Legal documents required before processing ------------------------------------------
+# ``app.legal.processing_gate``. Both are ``SystemSettings`` rows edited in the admin UI
+# (Settings -> Legal); the coded defaults below turn the gate OFF, the community default.
+#: Comma-separated document keys the owner of a file must have accepted (current text) before
+#: any processing of that file starts. Empty = gate off.
+LEGAL_PROCESSING_REQUIRED_KEYS_KEY = "legal.processing_required_document_keys"
+DEFAULT_LEGAL_PROCESSING_REQUIRED_KEYS = ""
+#: Whose acceptance satisfies the gate: ``"user"`` (the file owner's own), ``"organization"``
+#: (an org-scope acceptance for the file's organization) or ``"either"``.
+LEGAL_PROCESSING_ACCEPTANCE_SCOPE_KEY = "legal.processing_acceptance_scope"
+LEGAL_PROCESSING_ACCEPTANCE_SCOPES = ("user", "organization", "either")
+DEFAULT_LEGAL_PROCESSING_ACCEPTANCE_SCOPE = "either"
+#: How long a resolved gate configuration is trusted. Same window as the privacy backstop.
+LEGAL_PROCESSING_GATE_TTL_SECONDS = PRIVACY_WRITE_BACKSTOP_TTL_SECONDS

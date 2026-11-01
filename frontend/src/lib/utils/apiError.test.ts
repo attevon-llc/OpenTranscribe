@@ -96,6 +96,31 @@ describe('getErrorMessage', () => {
     });
   });
 
+  describe('a legal processing gate refusal', () => {
+    const refusal = (code: string) => ({
+      response: {
+        status: 403,
+        data: { detail: { code, documents: ['opentranscribe-terms-of-use'] } },
+      },
+    });
+
+    it('translates each stable code to its sentence', () => {
+      expect(getErrorMessage(refusal('legal_acceptance_required'))).toContain(
+        'accepts the required legal documents'
+      );
+      expect(getErrorMessage(refusal('legal_document_unavailable'))).toContain('not available');
+      expect(getErrorMessage(refusal('legal_gate_unavailable'))).toContain('could not be checked');
+    });
+
+    it('leaves an unrelated object code to the generic path', () => {
+      expect(
+        getErrorMessage({
+          response: { data: { detail: { code: 'policy_locked', message: 'locked' } } },
+        })
+      ).toBe('locked');
+    });
+  });
+
   it('falls back to response.data.message', () => {
     expect(getErrorMessage({ response: { data: { message: 'Bad request' } } })).toBe('Bad request');
   });

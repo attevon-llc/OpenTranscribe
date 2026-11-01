@@ -32,6 +32,9 @@ from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
+from app.legal.processing_gate import check_processing_allowed_for_file
+from app.legal.processing_gate import mark_file_refused
+from app.legal.processing_gate import refusal_error
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
@@ -214,6 +217,12 @@ def complete_upload(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="MediaFile has no storage_path (was /prepare called with use_presigned=true?)",
         )
+    # The legal processing gate, for the file owner. The bytes are already stored (the setting
+    # changed after /prepare), so the row is marked ERROR with the refusal code, not left pending.
+    refusal = check_processing_allowed_for_file(db, db_file)
+    if refusal is not None:
+        mark_file_refused(db, int(db_file.id), refusal)
+        raise refusal_error(refusal)
 
     # Reject an unservable model before the storage phase does any work. One recorded at
     # /prepare is re-checked (and dropped if the deployment has since locked model choice)

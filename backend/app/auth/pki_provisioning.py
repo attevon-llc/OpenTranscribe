@@ -5,6 +5,7 @@ email (gated by ``auth/account_linking.py``), and creates, updates, or converts 
 account, deriving the role from ``PKIUserData["is_admin"]``.
 """
 
+import hashlib
 import logging
 
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
@@ -15,6 +16,7 @@ from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import role_implies_superuser
 from app.core.auth_types import AUTH_TYPE_PKI
+from app.core.exceptions import AuthenticationError
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +33,8 @@ def _create_pki_user(db, pki_data: PKIUserData):
         Created User object
 
     Raises:
-        ValueError: If user cannot be created or found after race condition
+        AuthenticationError: 401, when the insert collides with an account that is not
+            linked to this certificate identity.
     """
     from sqlalchemy.exc import IntegrityError
 
@@ -41,11 +44,8 @@ def _create_pki_user(db, pki_data: PKIUserData):
     subject_dn = pki_data["subject_dn"]
     email = pki_data["email"]
 
-    # If no email in cert, use CN@pki.local as placeholder
     if not email:
-        # Replace spaces with dots for email format
-        cn_email_safe = pki_data["common_name"].replace(" ", ".").lower()
-        email = f"{cn_email_safe}@pki.local"
+        email = _placeholder_email(pki_data)
 
     logger.info(f"Creating new user from PKI: {subject_dn}")
 
@@ -94,17 +94,39 @@ def _create_pki_user(db, pki_data: PKIUserData):
         db.commit()
         return user
     except IntegrityError:
-        # Race condition: user was created by concurrent request
         db.rollback()
-        logger.info(
-            f"User with DN {subject_dn} was created by concurrent request, fetching existing user"
-        )
+        # Only a concurrent login of THIS certificate identity may be returned. Adopting
+        # whichever account holds the colliding email bypassed every link guard (an
+        # account takeover), so any other collision refuses the login.
         user = db.query(User).filter(User.pki_subject_dn == subject_dn).first()
-        if not user:
-            user = db.query(User).filter(User.email == email).first()
-        if not user:
-            raise ValueError(f"Failed to create or find PKI user: {subject_dn}") from None
+        if user is None or not _same_issuer(user, pki_data):
+            logger.warning(
+                f"SECURITY: PKI account creation for {subject_dn} collided with an account "
+                "not linked to this certificate identity; refusing the login"
+            )
+            raise AuthenticationError(
+                "Invalid or missing client certificate",
+                headers={"WWW-Authenticate": "Certificate"},
+            ) from None
+        logger.info(f"User with DN {subject_dn} was created by a concurrent request")
         return user
+
+
+def _placeholder_email(pki_data: PKIUserData) -> str:
+    """A unique ``@pki.local`` address for a certificate that carries no email.
+
+    Derived from the full subject DN and issuer, not the CN: two certificates sharing a CN
+    must never map to the same account address.
+    """
+    identity = f"{pki_data.get('issuer_dn') or ''}\n{pki_data['subject_dn']}"
+    return f"pki-{hashlib.sha256(identity.encode()).hexdigest()[:32]}@pki.local"
+
+
+def _same_issuer(user, pki_data: PKIUserData) -> bool:
+    """False only when both sides name an issuer and they differ."""
+    stored = getattr(user, "pki_issuer_dn", None)
+    presented = pki_data.get("issuer_dn")
+    return not (stored and presented and stored != presented)
 
 
 def _update_pki_user(db, user, pki_data: PKIUserData):
@@ -276,8 +298,8 @@ def sync_pki_user_to_db(db, pki_data: PKIUserData):
         User: The created or updated User object
 
     Raises:
-        ValueError: If user cannot be created or found after race condition
-        AuthenticationError: 401, when an email-matched link is refused. Deliberately the
+        AuthenticationError: 401, when an email-matched link is refused, or when creation
+            collides with an account not linked to this certificate identity. Deliberately the
             same response the PKI login endpoint returns for an invalid certificate,
             so a refusal is not an oracle for "this address exists".
     """

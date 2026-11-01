@@ -103,17 +103,17 @@ def test_the_env_config_map_only_uses_canonical_names():
     The whole point of the adapter is that there is exactly ONE place the retired
     spelling exists. If it leaked into the service's map too, the two would drift.
     """
-    from app.services.auth_config_service import AuthConfigService
+    from app.services import auth_config_keys
 
     vendor_noun = "key" + "cloak"
-    assert AuthConfigService.ENV_TO_CONFIG_MAPPING, "no env->config mappings to check"
-    for env_name, config_key in AuthConfigService.ENV_TO_CONFIG_MAPPING.items():
+    assert auth_config_keys.ENV_TO_CONFIG_MAPPING, "no env->config mappings to check"
+    for env_name, config_key in auth_config_keys.ENV_TO_CONFIG_MAPPING.items():
         assert vendor_noun not in env_name.lower()
         assert vendor_noun not in config_key.lower()
 
     assert CANONICAL_NAMES, "no canonical OIDC env names to check"
     for canonical in CANONICAL_NAMES:
-        assert canonical in AuthConfigService.ENV_TO_CONFIG_MAPPING, (
+        assert canonical in auth_config_keys.ENV_TO_CONFIG_MAPPING, (
             f"{canonical} has no config-key mapping, so its DB key can never be "
             "migrated out of the environment"
         )

@@ -54,7 +54,7 @@ EXTERNALLY_CONSUMED: set[str] = {
     "ALLOW_UNENCRYPTED_OBJECT_STORE",
     # ---------------------------------------------------------------------------
     # The next 14 ARE genuinely read in production, but only via
-    # AuthConfigService.ENV_TO_CONFIG_MAPPING (app/services/auth_config_service.py):
+    # auth_config_keys.ENV_TO_CONFIG_MAPPING (app/services/auth_config_keys.py):
     # `getattr(settings, AuthConfigService.env_var_for(key), None)` resolves the attribute
     # name from a MAPPING VALUE at runtime, not a literal string constant, so this
     # scanner's AST walk (which requires a literal string argument) cannot see the read.

@@ -33,6 +33,7 @@ from app.schemas.auth_config import AuthConfigAuditResponse
 from app.schemas.auth_config import AuthConfigResponse
 from app.schemas.auth_config import AuthConfigStatusResponse
 from app.schemas.auth_config import AuthMethodTestResponse
+from app.services import auth_config_keys
 from app.services.auth_config_service import MAX_AUDIT_LOG_LIMIT
 from app.services.auth_config_service import AuthConfigService
 
@@ -47,10 +48,8 @@ logger = logging.getLogger(__name__)
 get_current_super_admin_user = get_current_active_superuser
 
 
-#: The category allow-list, derived from the per-category schemas so it cannot
-#: drift. It used to be a literal list repeated in three route bodies, and the
-#: audit route — the one that leaks data when it is wrong — had no copy at all.
-VALID_CATEGORIES: tuple[str, ...] = tuple(AuthConfigService.CONFIG_CATEGORIES)
+#: The category allow-list, derived from the per-category schemas so it cannot drift.
+VALID_CATEGORIES: tuple[str, ...] = tuple(auth_config_keys.CONFIG_CATEGORIES)
 
 
 def _require_valid_category(category: str) -> None:
@@ -94,7 +93,7 @@ def _change_summary(results: dict[str, AuthConfig]) -> dict[str, Any]:
     sensitive_changed: list[str] = []
 
     for key, config in results.items():
-        if config.is_sensitive or key in AuthConfigService.SENSITIVE_KEYS:
+        if config.is_sensitive or key in auth_config_keys.SENSITIVE_KEYS:
             sensitive_changed.append(key)
         else:
             changes[key] = config.config_value

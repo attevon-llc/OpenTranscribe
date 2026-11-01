@@ -98,7 +98,7 @@ describe('SessionSettings — restart-required token lifetimes', () => {
   it('badges both JWT lifetimes rather than implying they apply immediately', () => {
     renderPanel();
 
-    // `AuthConfigService.RESTART_REQUIRED_KEYS` holds exactly these two keys —
+    // `auth_config_keys.RESTART_REQUIRED_KEYS` holds exactly these two keys —
     // app/auth/cookies.py sizes the session cookies from them at import time.
     expect(screen.getAllByText('settings.session.restartRequired')).toHaveLength(2);
     expect(screen.getByText('settings.session.restartRequiredHelp')).toBeInTheDocument();

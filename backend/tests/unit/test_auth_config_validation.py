@@ -41,13 +41,12 @@ from app.schemas.auth_config import CATEGORY_SCHEMAS
 from app.schemas.auth_config_validation import MAX_CONFIG_KEY_LENGTH
 from app.schemas.auth_config_validation import coded_default
 from app.schemas.auth_config_validation import validate_category_config
+from app.services import auth_config_keys
 from app.services.auth_config_service import MAX_AUDIT_LOG_LIMIT
 from app.services.auth_config_service import AuthConfigService
 
 
-# --------------------------------------------------------------------------- #
 # Fakes — these tests never touch a database.
-# --------------------------------------------------------------------------- #
 class _FakeQuery:
     """Records the pagination the service asked for and returns nothing."""
 
@@ -372,8 +371,8 @@ class TestAuditLogScoping:
 
     def test_every_category_has_keys_to_filter_on(self):
         """An empty key list is what used to disable the filter."""
-        assert AuthConfigService.CONFIG_CATEGORIES, "no config categories to check"
-        for category, keys in AuthConfigService.CONFIG_CATEGORIES.items():
+        assert auth_config_keys.CONFIG_CATEGORIES, "no config categories to check"
+        for category, keys in auth_config_keys.CONFIG_CATEGORIES.items():
             assert keys, f"category {category} has no keys"
 
     def test_limit_ceiling_is_declared_on_the_route(self):
@@ -404,7 +403,7 @@ class TestCategoriesAreDisjoint:
         seen: dict[str, str] = {}
         duplicates: dict[str, list[str]] = {}
 
-        for category, keys in AuthConfigService.CONFIG_CATEGORIES.items():
+        for category, keys in auth_config_keys.CONFIG_CATEGORIES.items():
             for key in keys:
                 if key in seen:
                     duplicates.setdefault(key, [seen[key]]).append(category)
@@ -430,8 +429,8 @@ class TestCategoriesAreDisjoint:
         ],
     )
     def test_shared_keys_moved_to_their_specific_category(self, key, category):
-        assert key in AuthConfigService.CONFIG_CATEGORIES[category]
-        assert key not in AuthConfigService.CONFIG_CATEGORIES["local"]
+        assert key in auth_config_keys.CONFIG_CATEGORIES[category]
+        assert key not in auth_config_keys.CONFIG_CATEGORIES["local"]
 
     def test_set_config_heals_a_stale_category_on_update(self):
         """An existing row written by the Local tab is corrected in place.
@@ -566,7 +565,7 @@ class TestSelfRegistrationRequiresLocalLogin:
 # --------------------------------------------------------------------------- #
 class TestSchemasDriveTheValidation:
     def test_every_category_has_a_schema(self):
-        assert set(CATEGORY_SCHEMAS) == set(AuthConfigService.CONFIG_CATEGORIES)
+        assert set(CATEGORY_SCHEMAS) == set(auth_config_keys.CONFIG_CATEGORIES)
         assert set(CATEGORY_SCHEMAS) == set(endpoint.VALID_CATEGORIES)
 
     def test_every_field_has_a_default(self):
@@ -588,7 +587,7 @@ class TestSchemasDriveTheValidation:
         assert CATEGORY_SCHEMAS, "no category schemas to check"
         for model in CATEGORY_SCHEMAS.values():
             for name, field in model.model_fields.items():
-                declared = AuthConfigService.DATA_TYPE_MAPPING.get(name)
+                declared = auth_config_keys.DATA_TYPE_MAPPING.get(name)
                 if declared is None:
                     continue
                 assert declared == expected.get(field.annotation, "string"), (

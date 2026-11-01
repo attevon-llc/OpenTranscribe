@@ -5,11 +5,11 @@ admin saved, got a success toast, and the running system was unchanged.
 
 The contract
 ------------
-For every key in ``AuthConfigService.CONFIG_CATEGORIES`` exactly one of:
+For every key in ``auth_config_keys.CONFIG_CATEGORIES`` exactly one of:
 
 1. a **reader outside the config plane** resolves it through the layered
    DB > .env > coded-default accessor (``DynamicAuthSettings``), or
-2. the key is in ``AuthConfigService.RESTART_REQUIRED_KEYS``, which the admin UI
+2. the key is in ``auth_config_keys.RESTART_REQUIRED_KEYS``, which the admin UI
    renders as a "requires restart" badge.
 
 A silent no-op is not an option; an honest badge is.
@@ -41,7 +41,7 @@ from typing import Any
 import pytest
 
 from app.core.auth_settings import DynamicAuthSettings
-from app.services.auth_config_service import AuthConfigService
+from app.services import auth_config_keys
 
 _APP_ROOT = Path(__file__).resolve().parents[2] / "app"
 
@@ -51,6 +51,7 @@ _CONFIG_PLANE = {
     _APP_ROOT / "core" / "auth_settings.py",
     _APP_ROOT / "core" / "process_auth_settings.py",
     _APP_ROOT / "services" / "auth_config_service.py",
+    _APP_ROOT / "services" / "auth_config_keys.py",
     _APP_ROOT / "schemas" / "auth_config.py",
     _APP_ROOT / "schemas" / "auth_config_validation.py",
     _APP_ROOT / "models" / "auth_config.py",
@@ -132,7 +133,7 @@ def _scan_readers() -> dict[str, set[str]]:
 
 _READERS = _scan_readers()
 
-_ALL_KEYS = sorted({key for keys in AuthConfigService.CONFIG_CATEGORIES.values() for key in keys})
+_ALL_KEYS = sorted({key for keys in auth_config_keys.CONFIG_CATEGORIES.values() for key in keys})
 
 #: Keys known to be inert, tracked as **strict** xfails rather than quietly
 #: excluded: the moment one is bridged this test XPASSes and fails, forcing the
@@ -165,7 +166,7 @@ def _case(key: str) -> Any:
 @pytest.mark.parametrize("key", [_case(key) for key in _ALL_KEYS])
 def test_settable_key_changes_behaviour_or_declares_a_restart(key: str) -> None:
     """A settable key must have a reader outside the config plane, or a badge."""
-    if key in AuthConfigService.RESTART_REQUIRED_KEYS:
+    if key in auth_config_keys.RESTART_REQUIRED_KEYS:
         assert key not in _READERS, (
             f"'{key}' is marked requires_restart but is read live outside the config "
             "plane. Either it is live (drop it from RESTART_REQUIRED_KEYS) or the "
@@ -177,20 +178,20 @@ def test_settable_key_changes_behaviour_or_declares_a_restart(key: str) -> None:
         f"Auth config key '{key}' is settable in the admin UI and nothing outside the "
         "configuration plane resolves it through DynamicAuthSettings. Saving it does "
         "nothing. Either bridge it to its consumer, or — if it is frozen at import or "
-        "decoration time — add it to AuthConfigService.RESTART_REQUIRED_KEYS so the UI "
+        "decoration time — add it to auth_config_keys.RESTART_REQUIRED_KEYS so the UI "
         "says so."
     )
 
 
 def test_restart_required_keys_are_real_keys() -> None:
     """A badge on a key nobody can set is a lie in the other direction."""
-    unknown = AuthConfigService.RESTART_REQUIRED_KEYS - set(_ALL_KEYS)
+    unknown = auth_config_keys.RESTART_REQUIRED_KEYS - set(_ALL_KEYS)
     assert not unknown, f"RESTART_REQUIRED_KEYS names keys no category declares: {unknown}"
 
 
 def test_retired_keys_are_no_longer_settable() -> None:
     """The deleted orphan aliases must not come back as writable keys."""
-    still_settable = AuthConfigService.RETIRED_KEYS & set(_ALL_KEYS)
+    still_settable = auth_config_keys.RETIRED_KEYS & set(_ALL_KEYS)
     assert not still_settable, (
         f"Retired alias key(s) reintroduced into a category schema: {still_settable}. "
         "Each duplicates a real key; two writable spellings of one control is how "

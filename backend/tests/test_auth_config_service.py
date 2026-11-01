@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 
 from app.models.auth_config import AuthConfig
 from app.models.auth_config import AuthConfigAudit
+from app.services import auth_config_keys
 from app.services.auth_config_service import AuthConfigService
 from tests.helpers import does_not_raise
 
@@ -336,9 +337,6 @@ class TestAuthConfigServiceBulkUpdate:
                 db=mock_db, category="ldap", config_dict=config, user_id=1
             )
 
-        # ldap_server should be processed, ldap_bind_password should be skipped
-        # Due to the skip, we expect fewer calls
-
     def test_bulk_update_encrypts_sensitive_keys(self, mock_db):
         """Test that sensitive keys are encrypted during bulk update.
 
@@ -477,7 +475,7 @@ class TestAuthConfigServiceSensitiveKeys:
 
     def test_sensitive_keys_defined(self):
         """Test that sensitive keys are properly defined."""
-        sensitive = AuthConfigService.SENSITIVE_KEYS
+        sensitive = auth_config_keys.SENSITIVE_KEYS
 
         assert "ldap_bind_password" in sensitive
         assert "oidc_client_secret" in sensitive
@@ -485,10 +483,10 @@ class TestAuthConfigServiceSensitiveKeys:
     def test_sensitive_key_identification(self):
         """Test identifying sensitive keys during operations."""
         # ldap_bind_password should be identified as sensitive
-        assert "ldap_bind_password" in AuthConfigService.SENSITIVE_KEYS
+        assert "ldap_bind_password" in auth_config_keys.SENSITIVE_KEYS
 
         # ldap_server should not be sensitive
-        assert "ldap_server" not in AuthConfigService.SENSITIVE_KEYS
+        assert "ldap_server" not in auth_config_keys.SENSITIVE_KEYS
 
 
 class TestAuthConfigAudit:
@@ -636,7 +634,7 @@ class TestAuthConfigServiceCategories:
 
     def test_config_categories_defined(self):
         """Test that all config categories are defined."""
-        categories = AuthConfigService.CONFIG_CATEGORIES
+        categories = auth_config_keys.CONFIG_CATEGORIES
 
         assert "ldap" in categories
         assert "oidc" in categories
@@ -724,7 +722,7 @@ class TestAuthConfigDataTypeMapping:
 
     def test_data_type_mapping_contains_common_keys(self):
         """Test that data type mapping contains expected keys."""
-        mapping = AuthConfigService.DATA_TYPE_MAPPING
+        mapping = auth_config_keys.DATA_TYPE_MAPPING
 
         # Boolean settings
         assert mapping["ldap_enabled"] == "bool"
@@ -740,7 +738,7 @@ class TestAuthConfigDataTypeMapping:
 
     def test_env_to_config_mapping(self):
         """Test environment to config key mapping."""
-        mapping = AuthConfigService.ENV_TO_CONFIG_MAPPING
+        mapping = auth_config_keys.ENV_TO_CONFIG_MAPPING
 
         assert mapping["LDAP_ENABLED"] == "ldap_enabled"
         assert mapping["OIDC_SERVER_URL"] == "oidc_server_url"

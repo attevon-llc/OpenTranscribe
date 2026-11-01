@@ -83,7 +83,7 @@
     <h3>{$t('settings.session.tokenLifetimes')}</h3>
 
     <!-- The two token lifetimes are the ONLY keys in this panel the API marks
-         `requires_restart: true` (AuthConfigService.RESTART_REQUIRED_KEYS):
+         `requires_restart: true` (auth_config_keys.RESTART_REQUIRED_KEYS):
          app/auth/cookies.py reads them at import time to size the session
          cookies, so a live change would desynchronise cookie and token expiry.
          Everything below is enforced against `refresh_token` rows per request

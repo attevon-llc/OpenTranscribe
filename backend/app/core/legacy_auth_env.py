@@ -10,7 +10,7 @@ This module is therefore an **input adapter**, not a second implementation. It
 translates one set of environment-variable *names* into the canonical ones before
 ``Settings`` is built, and then nothing downstream ever sees the old spelling:
 ``app/core/config.py`` declares only ``OIDC_*`` attributes, and
-``AuthConfigService.ENV_TO_CONFIG_MAPPING`` maps only ``OIDC_*`` env names onto
+``auth_config_keys.ENV_TO_CONFIG_MAPPING`` maps only ``OIDC_*`` env names onto
 ``oidc_*`` config keys. That distinction is what keeps the repo's "if you replace an
 implementation, delete the old one" rule honest, and
 ``tests/unit/test_oidc_naming_invariant.py`` enforces it: this file is one of exactly

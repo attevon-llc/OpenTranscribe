@@ -37,7 +37,7 @@ ALLOWED: dict[str, str] = {
         "environment-variable names keep working permanently; this module translates "
         "them onto the canonical OIDC_* spelling before Settings is built. It is an "
         "adapter over names, not a second implementation — nothing downstream, "
-        "including AuthConfigService.ENV_TO_CONFIG_MAPPING, sees the old spelling."
+        "including auth_config_keys.ENV_TO_CONFIG_MAPPING, sees the old spelling."
     ),
     "db/schema_detect/legacy.py": (
         "Historical schema fingerprints. The schema-detection ladder probes for columns "

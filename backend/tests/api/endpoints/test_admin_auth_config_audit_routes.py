@@ -25,7 +25,7 @@ from __future__ import annotations
 import pytest
 from fastapi import status
 
-from app.services.auth_config_service import AuthConfigService
+from app.services import auth_config_keys
 
 BASE = "/api/admin/auth-config"
 
@@ -45,8 +45,8 @@ def test_the_two_categories_used_here_really_are_disjoint():
     future refactor could move ``mfa_issuer_name`` into a shared base model and
     silently make the filter assertion below untestable.
     """
-    mfa_keys = set(AuthConfigService.CONFIG_CATEGORIES[CATEGORY])
-    other_keys = set(AuthConfigService.CONFIG_CATEGORIES[OTHER_CATEGORY])
+    mfa_keys = set(auth_config_keys.CONFIG_CATEGORIES[CATEGORY])
+    other_keys = set(auth_config_keys.CONFIG_CATEGORIES[OTHER_CATEGORY])
     assert CHANGED_KEY in mfa_keys
     assert mfa_keys & other_keys == set()
 

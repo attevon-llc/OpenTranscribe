@@ -337,7 +337,7 @@ someone else's product.
   canonical `OIDC_*` names by `core/legacy_auth_env.py` before `Settings` is built. The
   legacy spelling **wins** when both are set. That module is an *input adapter*, not a
   second implementation — nothing downstream, including
-  `AuthConfigService.ENV_TO_CONFIG_MAPPING`, ever sees the old name.
+  `auth_config_keys.ENV_TO_CONFIG_MAPPING`, ever sees the old name.
 - `tests/unit/test_oidc_naming_invariant.py` fails the build if the retired noun
   appears in any Python file under `backend/app/` outside a three-entry allow-list,
   each carrying a written reason: the env adapter, `db/migrations.py` (historical

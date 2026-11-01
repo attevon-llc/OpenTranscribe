@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from app.core.config import settings
 from app.schemas.auth_config import CATEGORY_SCHEMAS
+from app.services import auth_config_keys
 from app.services.auth_config_service import AuthConfigService
 
 #: Keys with no env-var backing at all — genuinely DB/admin-UI-only settings, not a
@@ -38,7 +39,7 @@ def test_every_category_schema_key_resolves_to_a_real_settings_attribute():
                 missing.append(f"{category}.{name} -> {env_var}")
     assert not missing, (
         "CATEGORY_SCHEMAS key(s) resolve to no Settings attribute via env_var_for(); "
-        "register them in AuthConfigService.ENV_TO_CONFIG_MAPPING or add them to "
+        "register them in auth_config_keys.ENV_TO_CONFIG_MAPPING or add them to "
         "_DB_ONLY_KEYS above with a reason:\n" + "\n".join(missing)
     )
 
@@ -61,7 +62,7 @@ def test_every_saml_key_is_explicitly_registered_not_coincidental():
 
     assert len(SAMLConfig.model_fields) >= 15, "SAMLConfig looks emptied out — check the import"
     for name in SAMLConfig.model_fields:
-        assert name in AuthConfigService.ENV_TO_CONFIG_MAPPING.values(), (
+        assert name in auth_config_keys.ENV_TO_CONFIG_MAPPING.values(), (
             f"saml.{name} is not explicitly registered in ENV_TO_CONFIG_MAPPING "
             "(it may still resolve by coincidence via config_key.upper())"
         )

@@ -164,7 +164,7 @@ should import `app.api` or `app.services` at module scope.
   boot guard can see `PROXY_ENABLED`/`PROXY_TRUSTED_PROXIES` before a DB session exists.
 - `legacy_auth_env.py` — **input adapter, not a second implementation.** It translates the
   historical `KEYCLOAK_*` environment names onto the canonical `OIDC_*` ones *before* `Settings`
-  is built, so nothing downstream (including `AuthConfigService.ENV_TO_CONFIG_MAPPING`) ever
+  is built, so nothing downstream (including `auth_config_keys.ENV_TO_CONFIG_MAPPING`) ever
   sees the old spelling. The legacy name **wins** when both are set. No removal is planned —
   renaming a user-owned `.env` is not something this project gets to do — but
   `deprecated_oidc_env_names()` drives one startup log line. This is one of only two files under

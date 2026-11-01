@@ -375,6 +375,10 @@ class MediaFile(Base):
         presign_revoked: bool
         presign_tag_cleared: bool
         media_revocation: MediaRevocationReport
+        # Response-only URLs `files/crud.set_file_urls` stamps for serialization (declared on
+        # `schemas.media.MediaFile`); same TYPE_CHECKING-only reasoning as above.
+        download_url: str | None
+        thumbnail_url: str | None
 
     # Declared here, not only in v391, because a constraint the database enforces and
     # Python never states is invisible until it fires at runtime — see

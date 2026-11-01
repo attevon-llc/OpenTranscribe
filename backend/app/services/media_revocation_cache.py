@@ -161,9 +161,47 @@ def remove_cache_copies(
                 "bulk_export", remove_object_reported(bucket, export_key, client=client)
             )
         )
+        drop_bulk_result(export_key)
         # The marker itself serves nothing; a leftover one only costs a later no-op delete.
         remove_object_reported(bucket, marker, client=client)
     return results
+
+
+#: Redis key of a finished bulk export's cached result (URL included), per job.
+BULK_RESULT_KEY = "bulk_export_result:{job}"
+
+
+def bulk_job_of(export_key: str) -> str:
+    """``bulk/<job>.<ext>`` -> ``<job>``."""
+    name = export_key.removeprefix(BULK_PREFIX)
+    return name.rsplit(".", 1)[0] if "." in name else name
+
+
+def drop_bulk_result(export_key: str) -> None:
+    """Forget the cached result (and its presigned URL) of the export at ``export_key``.
+
+    A takedown deletes the object; without this the stream's reconnect path would still
+    replay the stored URL for the rest of its TTL. Best-effort: the replay re-checks
+    quarantine itself (:func:`hidden_from_requester`), so a Redis failure is logged only.
+    """
+    try:
+        from app.core.redis import get_redis
+
+        get_redis().delete(BULK_RESULT_KEY.format(job=bulk_job_of(export_key)))
+    except Exception as e:  # noqa: BLE001 — the replay re-check is the guarantee
+        logger.warning(f"Could not drop the cached result of {export_key}: {type(e).__name__}")
+
+
+def hidden_from_requester(file_ids: Iterable[int], requester_id: int) -> bool:
+    """Whether any of ``file_ids`` is quarantined and ``requester_id`` is not a review admin."""
+    ids = list(file_ids)
+    if not any_quarantined(ids):
+        return False
+    from app.db.session_utils import session_scope
+    from app.services.takedown_predicates import is_review_admin
+
+    with session_scope() as db:
+        return not is_review_admin(db, requester_id)
 
 
 def any_quarantined(file_ids: Iterable[int]) -> bool:

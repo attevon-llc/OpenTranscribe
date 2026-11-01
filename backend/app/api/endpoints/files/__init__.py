@@ -1206,16 +1206,30 @@ def get_thumbnail(
     db_file = get_file_by_uuid(db, file_uuid)
     validate_file_exists(db_file)
 
-    # Abuse/DMCA takedown (issue #817). This route resolves with plain
-    # `get_file_by_uuid`, so it does NOT inherit the quarantine 404 that
-    # `get_file_by_uuid_with_permission` applies to the detail/stream/download
-    # surfaces — and the `is_public` short-circuit below skips the whole
-    # authorization block, so a taken-down public file was streaming its
-    # thumbnail to unauthenticated callers. The gate goes FIRST, before the
-    # public branch, and uses the same `is_admin` bypass as the permission
-    # helper so admins keep the review visibility they need to release a file.
-    # 404 (not 403) keeps a taken-down file indistinguishable from a missing one.
-    if is_hidden_for(db_file, is_admin=bool(current_user and current_user.is_admin)):
+    # Same order as `get_file_by_uuid_with_permission`: the platform bypass is asked about the
+    # loaded row's own tenant first; only what it reaches may see a taken-down file (review).
+    # Resolved for any signed-in caller, through the SAME resolver get_current_context uses, so
+    # a support-access grant header is honoured (or refused) by exactly the same rules here.
+    platform_allowed = False
+    org_id: int | None = None
+    if current_user is not None:
+        from app.api.deps_context import resolve_org_context
+        from app.api.deps_context import resolve_request_bypass
+
+        org_id, org_role = resolve_org_context(request, db, current_user)
+        org_id, _, bypass = resolve_request_bypass(request, db, current_user, org_id, org_role)
+        platform_allowed = bypass.allows(
+            org_id=db_file.organization_id,
+            owner_id=db_file.user_id,
+            need="read",
+            resource_type="media_file",
+            resource_uuid=str(db_file.uuid),
+        )
+
+    # Abuse/DMCA takedown (issue #817): before the public branch, which skips every other
+    # check. An admin the bypass did not reach (another tenant, multi mode, no grant) is not
+    # exempt. 404 (not 403) keeps a taken-down file indistinguishable from a missing one.
+    if not platform_allowed and is_hidden_for(db_file, is_admin=False):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="File not found",
@@ -1230,22 +1244,6 @@ def get_thumbnail(
                 detail="Authentication required. Use presigned thumbnail_url from file listing.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        from app.api.deps_context import resolve_org_context
-        from app.api.deps_context import resolve_request_bypass
-
-        # Resolve the caller's tenant scope (None = personal) WITHOUT editing
-        # get_optional_current_user (owned by step 1.5), then the bypass through the SAME
-        # resolver get_current_context uses, so a support-access grant header is honoured
-        # (or refused) by exactly the same rules here.
-        org_id, org_role = resolve_org_context(request, db, current_user)
-        org_id, _, bypass = resolve_request_bypass(request, db, current_user, org_id, org_role)
-        platform_allowed = bypass.allows(
-            org_id=db_file.organization_id,
-            owner_id=db_file.user_id,
-            need="read",
-            resource_type="media_file",
-            resource_uuid=str(db_file.uuid),
-        )
         if not platform_allowed and db_file.user_id != current_user.id:
             from app.services.permission_service import PermissionService
 

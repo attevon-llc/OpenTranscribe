@@ -155,7 +155,16 @@ def prepare_transcript_document_task(
         get_redis().setex(
             f"bulk_export_result:{job_id}",
             RESULT_TTL_S,
-            json.dumps({"url": url, "filename": filename, "exported": 1, "skipped": 0}),
+            json.dumps(
+                {
+                    "url": url,
+                    "filename": filename,
+                    "exported": 1,
+                    "skipped": 0,
+                    # Re-checked on every replay of this cached result (bulk-export-stream).
+                    "file_ids": [file_id],
+                }
+            ),
         )
         _record_export(file_id, user_id, parsed.format)
         publish_bulk_event(

@@ -84,6 +84,17 @@ class TestCacheCopies:
         assert other_files_render in store.objects
         assert "bulk/job2.pdf" in store.objects
 
+    def test_a_removed_export_also_drops_its_cached_result(self, monkeypatch):
+        file = _file(42)
+        _store(monkeypatch, file, extra=["bulk/job9.zip", "bulk/by-file/42/job9.zip"])
+        dropped: list[str] = []
+        monkeypatch.setattr(cache, "drop_bulk_result", dropped.append)
+
+        media_revocation.revoke_media(file)
+
+        assert dropped == ["bulk/job9.zip"]
+        assert cache.bulk_job_of("bulk/job9.zip") == "job9"
+
     def test_a_cache_copy_that_cannot_be_listed_makes_the_revocation_incomplete(self, monkeypatch):
         file = _file()
         _store(monkeypatch, file, deny=["s3:ListBucket"])

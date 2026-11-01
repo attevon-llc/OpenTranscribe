@@ -76,6 +76,7 @@ class FakeTaggingStore:
         self.deny_on = {key: set(actions) for key, actions in (deny_on or {}).items()}
         self.bucket_policy = bucket_policy
         self.calls: list[tuple[str, str]] = []
+        self.dropped_results: list[str] = []
 
     def _gate(self, action: str, key: str) -> None:
         self.calls.append((action, key))
@@ -156,6 +157,10 @@ def install(
 
     monkeypatch.setattr(minio_service, "minio_client", store)
     monkeypatch.setattr(minio_service, "get_takedown_client", lambda: store)
+    # A removed export's cached result lives in Redis; record instead of reaching a live one.
+    from app.services import media_revocation_cache
+
+    monkeypatch.setattr(media_revocation_cache, "drop_bulk_result", store.dropped_results.append)
     monkeypatch.setattr(settings, "STORAGE_BACKEND", "s3" if native_s3 else "minio")
     monkeypatch.setattr(
         storage_presign_identity, "presign_identity_available", lambda: presign_identity

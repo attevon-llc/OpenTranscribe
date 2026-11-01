@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Quarantine hardening for media URLs: list and detail responses no longer mint a thumbnail
+  or download URL for a quarantined file (the check lives in `set_file_urls`, with a guard
+  test against a second writer); the thumbnail route applies the same platform-bypass rule as
+  the other media routes, so an admin the bypass does not reach no longer sees a quarantined
+  public file of another tenant; a cached bulk or document export result is re-checked
+  against quarantine on replay, and a takedown drops that cached result.
+- Test isolation: a fixture that patched the OpenSearch client re-export left its fake on the
+  package for the rest of the worker, which made a tenancy test order-dependent; the pinned
+  entry is now removed after every test.
 - Quarantine no longer reports a clean success when storage refuses to revoke already-issued
   media URLs. On `STORAGE_BACKEND=s3` an app identity without `s3:PutObjectTagging` logged a
   single WARNING while the API answered 200, and issued URLs kept working for

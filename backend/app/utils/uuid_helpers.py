@@ -319,8 +319,11 @@ def get_file_by_uuid_with_permission(
     # Abuse/DMCA takedown: a quarantined file is invisible to non-admins on EVERY
     # read surface (detail, stream, download, thumbnail). 404 (not 403) so a
     # taken-down file is indistinguishable from a missing one — even the owner
-    # and public-share viewers are blocked.
-    if is_hidden_for(file, is_admin=bypass.user_is_admin):
+    # and public-share viewers are blocked. An admin's review visibility was already granted
+    # above, by ``bypass.allows`` on the row's own tenant; an admin it did not reach (multi
+    # mode, no grant) is not exempt here, or a PUBLIC quarantined file of another tenant would
+    # be served to them by the branch below. Same rule as the speaker chokepoint.
+    if is_hidden_for(file, is_admin=False):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="File not found",

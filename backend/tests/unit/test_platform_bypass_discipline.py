@@ -149,9 +149,13 @@ ALLOWLIST: dict[str, str] = {
         "Q: is_hidden_for(is_admin=False) keeps a taken-down file's comments 404; it never "
         "grants anything"
     ),
+    "api/endpoints/files/crud.py::set_file_urls": (
+        "Q: is_hidden_for(is_admin=bypass.user_is_admin) withholds URLs for a taken-down file; "
+        "the row was already authorized by the caller's chokepoint and this never widens access"
+    ),
     "api/endpoints/files/__init__.py::get_thumbnail": (
-        "Q: is_hidden_for runs before the public-file branch and before an org is resolved; "
-        "tenant access itself is decided by bypass.allows"
+        "Q: is_hidden_for(is_admin=False) runs before the public-file branch, after "
+        "bypass.allows on the loaded row; only what that reaches may see a taken-down file"
     ),
     "api/endpoints/files/crud.py::delete_media_file": (
         "P: is_admin only fills the cancel_and_delete/force_delete capability hints in the "

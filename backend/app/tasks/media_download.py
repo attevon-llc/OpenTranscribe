@@ -290,7 +290,14 @@ def prepare_bulk_subtitles_task(
             f"bulk_export_result:{job_id}",
             900,
             json.dumps(
-                {"url": url, "filename": filename, "exported": exported, "skipped": skipped}
+                {
+                    "url": url,
+                    "filename": filename,
+                    "exported": exported,
+                    "skipped": skipped,
+                    # Re-checked on every replay of this cached result (bulk-export-stream).
+                    "file_ids": exported_ids,
+                }
             ),
         )
         publish_bulk_event(

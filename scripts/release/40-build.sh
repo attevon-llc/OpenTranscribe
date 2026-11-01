@@ -2,8 +2,12 @@
 # Build the release candidate LOCALLY. Publishes nothing.
 #
 # The whole point of a separate build stage is that the artifact exists and can be
-# scanned and rehearsed before anything reaches Docker Hub — :latest is what every
+# scanned and rehearsed before anything reaches Docker Hub, and so that publish can then push
+# those very images rather than rebuild them — :latest is what every
 # existing user pulls, so it must not move before the scenarios pass.
+#
+# Records every leg's image ID in .release/<version>/legs.tsv: 80-publish.sh pushes exactly
+# these images (no rebuild) and refuses if one no longer matches.
 #
 # Asserts the build-arg contract afterwards: an image reporting version "unknown"
 # is a release-process failure, not a cosmetic one (issues #411).
@@ -72,17 +76,15 @@ while IFS=$'\t' read -r component _capability platforms; do
         [[ "$platform" != "$HOST_PLATFORM" ]] && use_remote=true
         # BUILD_CACHE_REGISTRY passed through (default remains OFF, set by
         # docker-build-push.sh's build_cache_args -- deliberately not defaulted to true
-        # here). This stage and 80-publish.sh's `docker-build-push.sh all` otherwise build
-        # the same amd64 legs from the same tree on two separate BuildKit builders (this one
-        # local, publish's the remote multi-arch one), so publish repeats this stage's work
-        # from scratch every release (issue #938). `build_cache_args` already scopes this
-        # correctly for BUILD_MODE=local when opted in -- read-only (`--cache-from`), never
-        # `--cache-to` (a registry cache WRITE, which local mode's "publishes nothing"
-        # contract forbids) -- and stores it as a `:buildcache-*` tag in the component's OWN
-        # repo, never touching `:vX.Y.Z`/`:latest`. It stays an unmeasured, explicit opt-in
-        # (`BUILD_CACHE_REGISTRY=true ./scripts/release.sh build ...`) until someone times a
-        # second build of an unchanged tree against a warm cache -- see
-        # test_build_registry_cache_optin.py's docstring for why that bar exists.
+        # here). `build_cache_args` scopes this correctly for BUILD_MODE=local when opted
+        # in -- read-only (`--cache-from`), never `--cache-to` (a registry cache WRITE,
+        # which local mode's "publishes nothing" contract forbids) -- and stores it as a
+        # `:buildcache-*` tag in the component's OWN repo, never touching `:vX.Y.Z`/`:latest`.
+        # It stays an unmeasured, explicit opt-in (`BUILD_CACHE_REGISTRY=true
+        # ./scripts/release.sh build ...`) -- see test_build_registry_cache_optin.py's
+        # docstring for why that bar exists. 80-publish.sh no longer builds (issue #938's
+        # "publish repeats this stage's work" is gone: it pushes these legs), so this is the
+        # only build in a release.
         if ! PLATFORMS="$platform" BUILD_MODE=local PUSH_LATEST=false \
              SKIP_SECURITY_SCAN=true VERSION="$VERSION" \
              USE_REMOTE_BUILDER="$use_remote" \
@@ -194,6 +196,66 @@ else
         "$bare_retagged bare tag(s) point at the ${host_arch} leg"
 fi
 # --- END bare-tag-host-arch ---
+
+# ── Record the image ID of every leg, so publish can push EXACTLY these bytes ────────
+#
+# 80-publish.sh no longer rebuilds: it pushes the leg tags this stage produced and assembles
+# the indexes from the pushed digests. "Exactly these bytes" is only checkable against
+# something written down NOW, so the local image ID (the config digest on a classic-store
+# daemon) and architecture of each leg go to .release/<version>/legs.tsv. Publish refuses
+# (exit 1, naming the leg) when a leg's ID no longer matches — a rebuild or re-tag between
+# build and publish would otherwise ship bytes that scan and rehearse never saw.
+#
+# The architecture is read back too: an arm64 leg `--load`ed from the remote builder is only
+# a name in the local daemon, and BuildKit does not reject a wrong-arch base (see
+# docker-build-push.sh's build_platforms note). The file is written only if EVERY leg
+# resolved, atomically, so a half-written file can never read as a complete one.
+#
+# --- BEGIN leg-image-ids ---
+# (extracted verbatim and driven against a fake docker by
+#  backend/tests/unit/test_publish_pushes_built_legs.py — keep the markers)
+LEGS_FILE="${OT_LEGS_FILE:-.release/${VERSION}/legs.tsv}"
+leg_rows=()
+leg_problems=()
+while IFS=$'\t' read -r component capability platforms; do
+    [[ "$component" == "blackwell" ]] && continue
+    leg_repo="${ALL_REPO_FOR_COMPONENT[${component}]:-}"
+    if [[ -z "$leg_repo" ]]; then
+        leg_problems+=("${component}: no repository in security-scan.sh list-repos")
+        continue
+    fi
+    IFS=',' read -r -a leg_plats <<< "$platforms"
+    for leg_platform in "${leg_plats[@]}"; do
+        [[ -n "$leg_platform" ]] || continue
+        leg_arch="${leg_platform#linux/}"
+        leg_tag="${leg_repo}:${VERSION}-${capability}-${leg_arch}"
+        leg_id="$(docker image inspect "$leg_tag" --format '{{.Id}}' 2>/dev/null)"
+        leg_actual_arch="$(docker image inspect "$leg_tag" --format '{{.Architecture}}' 2>/dev/null)"
+        if [[ -z "$leg_id" ]]; then
+            leg_problems+=("${leg_tag}: no local image ID")
+        elif [[ "$leg_actual_arch" != "$leg_arch" ]]; then
+            leg_problems+=("${leg_tag}: reports architecture '${leg_actual_arch:-<unreadable>}', expected ${leg_arch}")
+        else
+            leg_rows+=("${component}"$'\t'"${leg_repo}"$'\t'"${leg_platform}"$'\t'"${leg_tag}"$'\t'"${leg_id}")
+        fi
+    done
+done < <(./scripts/docker-build-push.sh list-platforms)
+
+if (( ${#leg_problems[@]} )); then
+    record leg-image-ids-recorded fail "${leg_problems[*]}" \
+        "./scripts/release.sh build $VERSION   # a declared leg is missing or is the wrong architecture"
+    echo -e "${RED}could not capture every leg's image ID: ${leg_problems[*]}${NC}" >&2
+    build_fail_out 1
+elif (( ${#leg_rows[@]} == 0 )); then
+    record leg-image-ids-recorded not-measured "no legs resolved, so nothing was recorded" \
+        "./scripts/docker-build-push.sh list-platforms"
+    build_fail_out 1
+else
+    mkdir -p "$(dirname "$LEGS_FILE")"
+    printf '%s\n' "${leg_rows[@]}" > "${LEGS_FILE}.tmp" && mv "${LEGS_FILE}.tmp" "$LEGS_FILE"
+    record leg-image-ids-recorded pass "${#leg_rows[@]} leg image ID(s) -> ${LEGS_FILE}"
+fi
+# --- END leg-image-ids ---
 
 # The image must be able to state what it is. This is the check that would have
 # caught the build-arg omission in the documented `docker build` commands.

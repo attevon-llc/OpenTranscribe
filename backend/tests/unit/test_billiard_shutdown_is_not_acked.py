@@ -30,7 +30,7 @@ _SCRIPT = textwrap.dedent(
     if __name__ == "__main__":
         pool = billiard.Pool(1)
         try:
-            outcome = pool.apply_async(job).get(timeout=45)
+            outcome = pool.apply_async(job).get(timeout=150)
             print("RESULT", repr(outcome))
         except WorkerLostError:
             print("LOST")
@@ -43,12 +43,14 @@ _SCRIPT = textwrap.dedent(
 )
 
 
+# The budgets are for a 48-way xdist run on a loaded host (release.sh test timed out at 90 s with
+# load ~60; the test takes ~12 s alone). A regression still fails fast: the pool returns RESULT.
 def test_the_shutdown_systemexit_is_reported_as_a_lost_worker_not_a_result():
     proc = subprocess.run(  # nosec B603 - fixed argv, no shell
         [sys.executable, "-I", "-c", _SCRIPT],
         capture_output=True,
         text=True,
-        timeout=90,
+        timeout=240,
         check=False,
     )
 

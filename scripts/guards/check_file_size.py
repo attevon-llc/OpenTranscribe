@@ -1,16 +1,26 @@
 #!/usr/bin/env python3
-"""Pre-commit guard: cap the line count of first-party files.
+"""Pre-commit guard: keep first-party files from growing past a readable size.
 
-Caps: 700 lines for ``.py .ts .js .mjs .sh``, 1000 for ``.svelte`` (template, script and
-style share one file), 400 for every ``CLAUDE.md`` (it is loaded into agent context).
+Size is a smoke alarm, not a design rule: a single-purpose file may stay long, and a
+mixed-concern file should be split whatever its length. The hard caps only stop the
+2,000-line files that nobody can read.
+
+Hard caps (a file over its cap must be in ``baselines/file_size.txt``):
+
+* ``.py .ts .js .mjs .sh``: 1000 lines; test files (``tests/`` trees, ``test_*``,
+  ``conftest.py``, ``*.test.*``, ``*.spec.*``): 1500 lines.
+* ``.svelte``: the ``<script>`` logic is capped at 600 lines (key ``path::script``) and the
+  whole file at 2000. Markup and CSS length is not a concern signal; long stylesheets are
+  solved by shared styles and components, not by splitting a component.
+* every ``CLAUDE.md``: 400 lines (it is loaded into agent context).
+
+Soft targets (about half the hard cap) are only reported, as a count and the largest few;
+they never fail.
 
 Scope: tracked files under ``backend/``, ``scripts/``, ``frontend/src/``,
 ``frontend/scripts/``, ``docs-site/src/`` and root ``*.sh``.
 
-A file over its cap must be in ``baselines/file_size.txt`` (``path<TAB>lines<TAB>reason``);
-the baseline can only shrink (see ``_baseline.py``). Files at 90% of their cap or more are
-listed as a warning and never fail: split them by concern in the change that touches them,
-never by collapsing lines.
+The baseline is ``path<TAB>lines<TAB>reason`` and can only shrink (see ``_baseline.py``).
 
 The hook runs over the whole tracked tree (``pass_filenames: false``).
 """
@@ -18,6 +28,7 @@ The hook runs over the whole tracked tree (``pass_filenames: false``).
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -35,16 +46,22 @@ SCOPE_DIRS = (
     'frontend/scripts/',
     'docs-site/src/',
 )
-CAPS = {
-    '.py': 700,
-    '.ts': 700,
-    '.js': 700,
-    '.mjs': 700,
-    '.sh': 700,
-    '.svelte': 1000,
-}
+CODE_SUFFIXES = ('.py', '.ts', '.js', '.mjs', '.sh')
+CODE_CAP = 1000
+TEST_CAP = 1500
+SVELTE_TOTAL_CAP = 2000
+SVELTE_SCRIPT_CAP = 600
+SCRIPT_KEY_SUFFIX = '::script'
 CLAUDE_MD_MAX = 400
-WARN_FRACTION = 0.9
+# Soft targets: reported, never failing.
+CODE_SOFT = 500
+TEST_SOFT = 1000
+SVELTE_SCRIPT_SOFT = 400
+SVELTE_TOTAL_SOFT = 1000
+CLAUDE_MD_SOFT = 300
+ADVISORY_SHOWN = 12
+
+_SCRIPT_BLOCK = re.compile(r'<script\b[^>]*>(.*?)</script>', re.DOTALL)
 
 # Each prefix is out of scope for the reason beside it.
 EXCLUDED_PREFIXES = (
@@ -70,48 +87,77 @@ def tracked_files(repo_root: Path) -> list[str]:
     return [p for p in out.split('\0') if p]
 
 
-def cap_for(path: str) -> int | None:
-    """The line cap that applies to ``path``, or ``None`` when the file is out of scope."""
+def is_test_path(path: str) -> bool:
+    """Whether ``path`` is a test file (tests get a larger cap: fixtures and cases are long)."""
+    name = path.rsplit('/', 1)[-1]
+    stem = name.rsplit('.', 1)[0]
+    return (
+        '/tests/' in f'/{path}'
+        or name == 'conftest.py'
+        or stem.startswith('test_')
+        or stem.endswith(('.test', '.spec', '_test'))
+    )
+
+
+def metrics_for(path: str, lines: int, script_lines: int | None) -> list[tuple[str, int, int, int]]:
+    """``(baseline key, measured, hard cap, soft target)`` for each limit that applies."""
     if path.rsplit('/', 1)[-1] == 'CLAUDE.md':
-        return CLAUDE_MD_MAX
+        return [(path, lines, CLAUDE_MD_MAX, CLAUDE_MD_SOFT)]
     if path.startswith(EXCLUDED_PREFIXES):
-        return None
+        return []
     if '/' in path and not path.startswith(SCOPE_DIRS):
-        return None
+        return []
     suffix = path[path.rfind('.') :] if '.' in path else ''
     if '/' not in path and suffix != '.sh':
-        return None
-    return CAPS.get(suffix)
+        return []
+    if suffix == '.svelte':
+        rows = [(path, lines, SVELTE_TOTAL_CAP, SVELTE_TOTAL_SOFT)]
+        if script_lines is not None:
+            rows.append(
+                (f'{path}{SCRIPT_KEY_SUFFIX}', script_lines, SVELTE_SCRIPT_CAP, SVELTE_SCRIPT_SOFT)
+            )
+        return rows
+    if suffix in CODE_SUFFIXES:
+        if is_test_path(path):
+            return [(path, lines, TEST_CAP, TEST_SOFT)]
+        return [(path, lines, CODE_CAP, CODE_SOFT)]
+    return []
 
 
-def line_count(path: Path) -> int | None:
-    """Line count, or ``None`` for a tracked file that is deleted in the working tree."""
+def measure(path: Path, want_script: bool) -> tuple[int, int | None] | None:
+    """``(line count, <script> lines or None)``, or ``None`` for a deleted tracked file."""
     try:
-        with path.open('rb') as fh:
-            return sum(1 for _ in fh)
+        data = path.read_bytes()
     except FileNotFoundError:
         return None
     except OSError as exc:
         msg = f'cannot read {path}: {exc}'
         raise _baseline.ScanError(msg) from exc
+    lines = data.count(b'\n') + (1 if data and not data.endswith(b'\n') else 0)
+    if not want_script:
+        return lines, None
+    text = data.decode('utf-8', errors='replace')
+    script = sum(len(m.group(1).strip('\n').splitlines()) for m in _SCRIPT_BLOCK.finditer(text))
+    return lines, script
 
 
 def scan(repo_root: Path, files: list[str] | None = None) -> tuple[dict[str, int], dict[str, int]]:
-    """Return ``(violations, warnings)``, each mapping a path to its line count."""
+    """Return ``(violations, advisories)``, each mapping a baseline key to its line count."""
     violations: dict[str, int] = {}
-    warnings: dict[str, int] = {}
+    advisories: dict[str, int] = {}
     for rel in files if files is not None else tracked_files(repo_root):
-        cap = cap_for(rel)
-        if cap is None:
+        probe = metrics_for(rel, 0, 0)
+        if not probe:
             continue
-        n = line_count(repo_root / rel)
-        if n is None:
+        got = measure(repo_root / rel, want_script=rel.endswith('.svelte'))
+        if got is None:
             continue
-        if n > cap:
-            violations[rel] = n
-        elif n >= cap * WARN_FRACTION:
-            warnings[rel] = n
-    return violations, warnings
+        for key, value, cap, soft in metrics_for(rel, got[0], got[1]):
+            if value > cap:
+                violations[key] = value
+            elif value >= soft:
+                advisories[key] = value
+    return violations, advisories
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -123,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        violations, warnings = scan(args.root)
+        violations, advisories = scan(args.root)
         if args.write_baseline:
             written: int = _baseline.run_write_baseline(args, args.baseline, violations)
             return written
@@ -138,17 +184,19 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(f'tightened {changed} baseline line(s)\n')
         errors = [e for e in errors if 'new violation' in e or 'grew past' in e]
 
-    if warnings:
+    if advisories:
+        largest = sorted(advisories.items(), key=lambda kv: -kv[1])[:ADVISORY_SHOWN]
         sys.stderr.write(
-            f'warning: {len(warnings)} file(s) are within 10% of their cap; '
-            'split them by concern when you touch them:\n'
+            f'note: {len(advisories)} file(s) are above the soft size target; split by concern '
+            f'only where a file mixes jobs. Largest {len(largest)}:\n'
         )
-        for rel, n in sorted(warnings.items()):
+        for rel, n in largest:
             sys.stderr.write(f'  {rel}: {n}\n')
     if errors:
         sys.stderr.write(
             'ERROR: file size ratchet failed '
-            f'(cap 700, .svelte 1000, CLAUDE.md {CLAUDE_MD_MAX}).\n'
+            f'(code {CODE_CAP}, tests {TEST_CAP}, .svelte script {SVELTE_SCRIPT_CAP} / total '
+            f'{SVELTE_TOTAL_CAP}, CLAUDE.md {CLAUDE_MD_MAX}).\n'
             'Split the file by concern; never collapse lines to fit.\n'
         )
         for e in errors:

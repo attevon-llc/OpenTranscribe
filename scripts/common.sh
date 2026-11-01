@@ -306,7 +306,7 @@ fix_model_cache_permissions() {
   # fresh-install rehearsal left a root:root empty models/diar-native and the sidecar
   # silently served nothing. The ownership loop below only repairs directories that
   # exist, so creating it is what lets the repair reach it.
-  mkdir -p "$MODEL_CACHE_DIR/huggingface" "$MODEL_CACHE_DIR/torch" "$MODEL_CACHE_DIR/nltk_data" "$MODEL_CACHE_DIR/sentence-transformers" "$MODEL_CACHE_DIR/opensearch-ml" "$MODEL_CACHE_DIR/diar-native" 2>/dev/null
+  mkdir -p "$MODEL_CACHE_DIR/huggingface" "$MODEL_CACHE_DIR/torch" "$MODEL_CACHE_DIR/nltk_data" "$MODEL_CACHE_DIR/sentence-transformers" "$MODEL_CACHE_DIR/opensearch-ml" "$MODEL_CACHE_DIR/diar-native" "$MODEL_CACHE_DIR/password-blocklist" 2>/dev/null
 
   # Check ownership of parent AND all subdirectories (subdirs may be root-owned
   # even if the parent is correctly owned by UID 1000)

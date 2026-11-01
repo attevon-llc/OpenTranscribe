@@ -1,21 +1,22 @@
 {
   "baseline": "__screenshots__/about-dark.png",
-  "captured_at": "2026-10-28T11:45:42Z",
-  "git_sha": "c02553eedcc9f92834d99272ee0a3301816c02ff",
-  "git_branch": "test/v060-e2e",
-  "git_dirty": true,
+  "captured_at": "2026-10-29T11:30:11Z",
+  "git_sha": "b5f56c0344ab2f828ea676d62d73a86db5bd1e4c",
+  "git_branch": "release/prep-0.6.0",
+  "git_dirty": false,
   "git_dirty_paths": 0,
-  "reason": "new surface (#1335): privacy controls journey baselines",
-  "captured_by": "UPDATE_SCREENSHOTS=1 pytest test_visual_regression.py -k <surface> (not the wrapper: it seeds a benchmark stack that transcribes on the GPU; these three are element captures of the control itself and read no library data)",
+  "reason": "v0.6.0 release re-capture after the privacy switch focus fix and the empty-file error copy; expected: no visible change",
+  "captured_by": "scripts/e2e/update-visual-baselines.sh",
   "stack": {
-    "compose_project": "otfresh-master",
-    "port_offset": 0,
+    "compose_project": "otfresh-visual",
+    "port_offset": 100,
     "gpu_device": null,
-    "seeded": false,
-    "mode": "dev (main checkout bind-mounted; fresh stack, plain-user data only)"
+    "seeded": true,
+    "mode": "dev (local source bind-mounted)"
   },
+  "corpus": {"seed_source": "test_audio", "files": [{"filename": "seed_t1_899s_40d403ee_DOGE_s_Findings__Elon_Musk_Protests__and_Medicare_Fraud.m4a", "size": 14721443}, {"filename": "seed_t1_531s_a536922c_Will_the_Gaza_Ceasefire_Hold_.mp4", "size": 18228379}, {"filename": "seed_t1_520s_fa049b47_The_AI_Arms_Race_with_China.mp4", "size": 24469909}], "library_total": 3},
   "change_from_previous": {
-    "status": "new baseline",
-    "differing_pixels": null
+    "status": "NEW",
+    "differing_pixels": ""
   }
 }

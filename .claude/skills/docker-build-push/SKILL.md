@@ -41,7 +41,9 @@ in the tag**:
 Legs are pushed individually and the index is assembled with `buildx imagetools create`, so the
 index provably contains exactly those legs — that is what `scripts/release/80-publish.sh` then
 verifies (leg has exactly one platform; index platform set matches exactly, missing **and** extra
-both fail; same-capability legs are equivalent within a size-ratio bound).
+both fail; same-capability legs are equivalent within a size-ratio bound). In a release,
+`80-publish.sh` does not call this script to build: it pushes the legs `BUILD_MODE=local` produced
+(image IDs recorded by `40-build.sh`) and assembles the index itself.
 
 ## Usage
 

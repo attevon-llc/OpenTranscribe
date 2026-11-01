@@ -87,6 +87,26 @@ SEED_MAX_MB="${SEED_MAX_MB:-200}"
 # The ONE place seed media is chosen. Both the real seeding run and `--manifest` go through
 # it, so what is expected and what is uploaded cannot drift apart.
 CANDIDATES=()
+# Name an upload by what its bytes are. The upload endpoint checks the real container against the
+# file extension, and the benchmark corpus holds an ".mp3" that is really an MP4/M4A (isobmff)
+# file, which it refuses with "File contents (isobmff) do not match the file extension".
+upload_name() {
+  local f="$1" n sniffed
+  n="$(basename "$f")"
+  case "$n" in
+    *.mp3)
+      if command -v file >/dev/null 2>&1; then
+        sniffed="$(file -b --mime-type -- "$f" 2>/dev/null || true)"
+        case "$sniffed" in
+          audio/x-m4a|audio/mp4) n="${n%.mp3}.m4a" ;;
+          video/mp4) n="${n%.mp3}.mp4" ;;
+        esac
+      fi
+      ;;
+  esac
+  printf '%s\n' "$n"
+}
+
 FILES=()
 SYNTHETIC_FALLBACK=0
 select_candidates() {
@@ -123,7 +143,7 @@ if [ "$MANIFEST_ONLY" -eq 1 ]; then
     echo "# source: ${SEED_MEDIA_DIR}"
   fi
   for f in ${FILES[@]+"${FILES[@]}"}; do
-    printf '%s\t%s\n' "$(basename "$f")" "$(stat -c %s "$f")"
+    printf '%s\t%s\n' "$(upload_name "$f")" "$(stat -c %s "$f")"
   done
   exit 0
 fi
@@ -189,10 +209,12 @@ while page <= total_pages:
     items = body["items"]
     total_pages = int(body["total_pages"])
     for f in items:
-        name = f["filename"]
-        title = f.get("title") or PurePosixPath(name).stem
+        # Identity is extension + byte size. Neither the stored filename (sanitized) nor the title
+        # (cleaned of trailing underscores, or replaced by the file embedded title tag) is the
+        # on-disk name, but the extension and the size are exactly what was uploaded.
+        suffix = PurePosixPath(f["filename"]).suffix.lower()
         size = f.get("file_size")
-        print(f"{title}{PurePosixPath(name).suffix}\t{size}")
+        print(f"{suffix}\t{size}")
     page += 1
 '
 }
@@ -204,16 +226,17 @@ if ! EXISTING="$(list_existing)"; then
   echo "🌱 seed: uploaded 0, already present 0, failed 0 of ${#FILES[@]} file(s)."
   exit 0
 fi
-EXISTING_NAMES="$(cut -f1 <<< "$EXISTING")"
 
 uploaded=0
 present=0
 failed=0
 for f in "${FILES[@]}"; do
-  name="$(basename "$f")"
+  name="$(upload_name "$f")"
   # A here-string, not `printf | grep -q`: under pipefail, grep exiting early SIGPIPEs the
   # printf and the pipeline's 141 reads as "not present" -- a duplicate upload.
-  if grep -Fxq -- "$name" <<< "$EXISTING_NAMES"; then
+  ext_lc="$(tr '[:upper:]' '[:lower:]' <<< ".${name##*.}")"
+  key="$(printf '%s\t%s' "$ext_lc" "$(stat -c %s "$f")")"
+  if grep -Fxq -- "$key" <<< "$EXISTING"; then
     present=$((present + 1))
     echo "   = ${name} (already present)"
     continue
@@ -233,7 +256,7 @@ for f in "${FILES[@]}"; do
   echo "📤 seed: uploading ${name} (${mime})..."
   if curl -fsS -X POST "${BACKEND_URL}/api/files" \
        -H "Authorization: Bearer ${TOKEN}" \
-       -F "file=@${f};type=${mime}" >/dev/null 2>&1; then
+       -F "file=@${f};type=${mime};filename=${name}" >/dev/null 2>&1; then
     uploaded=$((uploaded + 1))
     echo "   ✓ ${name}"
   else

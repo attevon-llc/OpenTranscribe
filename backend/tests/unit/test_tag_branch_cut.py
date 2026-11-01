@@ -57,6 +57,8 @@ stages:
         severity: blocking
       - id: tag-absent
         severity: blocking
+      - id: artifacts-match-tagged-commit
+        severity: blocking
       - id: version-consistency-pre-tag
         severity: blocking
       - id: changelog-section
@@ -118,13 +120,26 @@ def work(tmp_path: Path, origin: Path) -> Path:
     check_stub.chmod(0o755)
 
     (w / "CHANGELOG.md").write_text(_changelog("0.5.0"))
+    # The real repo gitignores the ledger; without this it would dirty the worktree.
+    (w / ".gitignore").write_text(".release/\n")
     _git(w, "add", "-A")
     _git(w, "commit", "-q", "-m", "initial")
     _git(w, "push", "-q", "origin", "HEAD:refs/heads/master")
     return w
 
 
+def _record_evidence_at_head(work: Path, version: str) -> None:
+    """Every evidence stage ran on HEAD: this file is about the branch cut, and the
+    same-commit invariant has its own suite (test_tag_artifacts_match_commit.py)."""
+    sha = _git(work, "rev-parse", "--short", "HEAD").stdout.strip()
+    steps = work / ".release" / version / "steps"
+    steps.mkdir(parents=True, exist_ok=True)
+    for stage in ("test", "build", "scan", "rehearse"):
+        (steps / stage).write_text(f"status=done\nsha={sha}\n", encoding="utf-8")
+
+
 def _run_tag(work: Path, version: str) -> subprocess.CompletedProcess:
+    _record_evidence_at_head(work, version)
     return subprocess.run(
         [str(work / "scripts" / "release" / "70-tag.sh"), version],
         cwd=work,

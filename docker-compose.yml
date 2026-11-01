@@ -48,18 +48,16 @@ services:
 
   minio:
     container_name: opentranscribe-minio
-    # ⚠️ quay.io, NOT docker.io. MinIO REMOVED `minio/minio` from Docker Hub — the Hub API
-    # returns `object not found` for the repository AND for this exact tag, while an
-    # anonymous pull token is still issued normally, so it is a removal and not a rate
-    # limit. `minio/mc` is gone the same way. Anyone without a warm image cache — i.e.
-    # every NEW user running the install one-liner — got `pull access denied` and a failed
-    # install. Caught by the v0.5.0 release rehearsal; nothing else in the pipeline looks.
-    #
-    # Same artifact, not a substitute: this tag on quay.io resolves to digest
-    # sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e, byte-identical
-    # to the docker.io copy already cached on the build host, as a 3-child multi-arch list.
-    # Verified by pulling both and comparing, not by assuming the registries agree.
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    # ⚠️ Silo, PGSTY's AGPL-3.0 community fork of MinIO -- NOT upstream MinIO. Upstream deleted
+    # `minio/minio` and `minio/mc` from Docker Hub, its quay.io repository now refuses anonymous
+    # pulls (probed 2026-10-31), the GitHub repo is archived, and the last community release line
+    # carries published HIGH advisories that were only ever fixed in the commercial product. A
+    # fresh install could not pull the old pin at all. Silo keeps the MINIO_* environment, the
+    # /minio/* routes (health, admin API), the `server /data` command and MinIO's on-disk format,
+    # so the service name, volume and .env are unchanged. Pinned by digest (multi-arch
+    # amd64+arm64, anonymous pull, ships curl and mc). Decision, alternatives and the revisit plan:
+    # docs-site/docs/developer-guide/object-store-decision.md.
+    image: docker.io/pgsty/silo:RELEASE.2026-10-26T00-00-00Z@sha256:7bb2aff6b89efe1cb1303c10fc21d579447434ed06649ac9ec05a5e2dbf30ad7
     restart: always
     env_file:
       - path: .env

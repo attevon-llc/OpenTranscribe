@@ -57,7 +57,7 @@ docker pull davidamacey/opentranscribe-frontend:latest
 docker pull davidamacey/opentranscribe-docs:latest
 docker pull postgres:17.5-alpine
 docker pull redis:8.2.2-alpine3.22
-docker pull quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+docker pull docker.io/pgsty/silo:RELEASE.2026-10-26T00-00-00Z@sha256:7bb2aff6b89efe1cb1303c10fc21d579447434ed06649ac9ec05a5e2dbf30ad7
 docker pull opensearchproject/opensearch:3.4.0
 
 # Save images to tarball
@@ -67,9 +67,18 @@ docker save -o opentranscribe-images.tar \
   davidamacey/opentranscribe-docs:latest \
   postgres:17.5-alpine \
   redis:8.2.2-alpine3.22 \
-  quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z \
+  docker.io/pgsty/silo:RELEASE.2026-10-26T00-00-00Z@sha256:7bb2aff6b89efe1cb1303c10fc21d579447434ed06649ac9ec05a5e2dbf30ad7 \
   opensearchproject/opensearch:3.4.0
 ```
+
+:::note[The object store image changed in 0.6.0]
+The bundled S3 store (the `minio` compose service) now runs Silo, a maintained fork of MinIO,
+pinned by digest. MinIO's own images can no longer be pulled. Always copy the reference from
+the `image:` line of the `minio` service in the `docker-compose.yml` you are deploying, because
+that is the one the stack will ask for. Loading it with `docker load` on the offline machine
+keeps the same name and digest, so no retagging is needed. See
+[Object storage](../operations/object-storage.md).
+:::
 
 ### Download AI Models
 

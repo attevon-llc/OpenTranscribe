@@ -42,6 +42,59 @@ search data as well.
 below can finish before anything gives up on the backend. See [Upgrading](./upgrading.md) for
 the general procedure, manual `docker compose` steps and skipping versions.
 
+## Object store: MinIO to Silo
+
+:::warning[Everyone upgrading is affected]
+The bundled S3 object store, the `minio` service, now runs **Silo** (a maintained fork of MinIO)
+instead of MinIO. MinIO's images can no longer be pulled, and its last community release line has
+published HIGH-severity advisories with no community fix. Your settings, ports, bucket names and
+data volume do not change. Read this section before you upgrade. Background:
+[Object storage](./object-storage.md).
+:::
+
+**What happens automatically.** `./opentranscribe.sh update` fetches the new compose file, pulls
+the Silo image (`docker.io/pgsty/silo`, pinned by digest) and recreates the `minio` service on the
+**same data volume**. No data is copied or converted, and your `.env` needs no change.
+
+**Before you upgrade**
+
+1. Back up the database (`./opentranscribe.sh backup`).
+2. Confirm your media backups. If you use the [Media Mirror](./backup-restore.md#media-mirror-in-app-incremental),
+   check that its last run succeeded.
+3. The media volume is reused in place. If you can, snapshot it first (a filesystem or LVM/ZFS
+   snapshot, or a copy of the NAS directory). This is the only reliable way back, see Rollback.
+
+**Verify after the upgrade**
+
+- `./opentranscribe.sh status` (or `docker compose ps`) shows `minio` healthy.
+- `docker compose exec minio silo --version` prints a Silo release.
+- Open an existing recording: it plays, and its download and export work.
+- Upload a new file and let it process. Try one larger than `MULTIPART_THRESHOLD_MB` (default 512)
+  if you can.
+- If you use quarantine, quarantine a test file and confirm an already-open media URL stops
+  working.
+
+**Troubleshooting**
+
+- *Image pull fails:* check that the host can reach `registry-1.docker.io`, and that the compose
+  file is the 0.6.0 one (`image:` should name `pgsty/silo`, not `quay.io/minio/minio`). Do not
+  point it back at a MinIO registry: those pulls are refused.
+- *`minio` stays unhealthy:* read `docker compose logs minio`. The health check is
+  `curl -f http://localhost:9000/minio/health/live` and the first start has a 60 second grace
+  period. A very large data volume can need longer.
+- *Permission errors on the data directory:* the container runs as the same user as before, so
+  this normally means the volume or NAS path changed ownership outside the upgrade. Restore the
+  previous ownership.
+- *Offline or air-gapped:* the image to save and load is now the Silo reference, see
+  [Offline installation](../installation/offline-installation.md).
+
+**Rollback.** Re-pinning the previous compose file and MinIO image does not make the data safe by
+itself. Silo's documentation does not promise that a volume it has used can be read by old MinIO,
+so a downgrade is not guaranteed safe. If you need to go back, stop the stack,
+restore the volume snapshot you took before upgrading, then follow [Rolling back](#rolling-back). The old MinIO
+image is only still available on hosts that have it cached, and it carries the unpatched
+advisories, so treat it as a short-term emergency measure.
+
 ## Database migrations
 
 Twenty-three migrations run automatically when the backend starts, from `v397` to `v449`. On a
@@ -261,7 +314,7 @@ Several more behaviors change, because they now honor the policy and the user's 
 
 **Check this afterwards:**
 
-1. As a super admin, open **Settings > Privacy & Redaction > Policy** and confirm the card
+1. As a super admin, open **Settings > Privacy & Redaction > Redaction Policy** and confirm the card
    "Speaker recognition and inferred attributes" shows both switches on, or the choice you intend.
    Turning one off hides data but deletes nothing.
 2. If you run organizations, an organization administrator can review **Privacy policy** in the
@@ -407,12 +460,19 @@ decide. An install without organizations has nothing to stamp and can skip both.
   repair existing files with `POST /api/admin/media-duration-backfill` (dry run by default).
 - **Formats browsers cannot play** (AIFF, WMA, AVI and similar) get a playable copy from now
   on. Files uploaded before 0.6.0 get one when they are reprocessed.
-- **Password policy:** nothing changes on upgrade. An install whose `.env` has no
-  `PASSWORD_POLICY_PROFILE` line keeps the `hardened` rules; see
+- **Password policy:** nothing changes on upgrade. There are now four levels (`basic`, `standard`,
+  `hardened`, `custom`; `nist` and `stig` remain aliases of `standard` and `hardened`). An install
+  whose `.env` has no `PASSWORD_POLICY_PROFILE` line keeps the `hardened` rules (12 characters,
+  complexity, 60-day rotation); only new installs from `.env.example` get `standard`. See
   [Password policy levels](../configuration/password-policy.md) to choose another level.
 - **Telemetry:** third-party telemetry and update checks that used to be on by default
   (pyannote metrics, Hugging Face, Deno, MinIO) are now off. The Privacy block in `.env.example`
   shows how to opt back in.
+- **Worker metrics are per worker.** Counters that a Celery task increments (for example
+  `search_indexing_failures_total`, `task_rows_superseded_total` and `celery_task_total`) are
+  served by the worker, not by the backend's `/metrics`. Set `WORKER_METRICS_PORT` (unset means
+  off) and add a Prometheus job per worker service; the bundled Prometheus does not scrape them.
+  See [Monitoring](./monitoring.md#per-task-worker-metrics).
 - **New optional `.env` settings** for task recovery, GPU memory admission, search indexing
   retries and worker metrics all have defaults. Compare your `.env` with the new `.env.example`
   after upgrading if you want to tune them.
@@ -423,7 +483,11 @@ decide. An install without organizations has nothing to stamp and can skip both.
    ```bash
    ./opentranscribe.sh logs backend | grep -i -E "alembic|migration|error"
    ```
-2. Confirm the version: `curl -s http://localhost:5174/api/version`.
+2. Confirm the version: `curl -s http://localhost:5174/api/version`. `GET /health` only says
+   the API process is serving (`{"status": "healthy", "version": ...}`); it does not check the
+   database. `GET /health/ready` probes PostgreSQL and Redis (a failure returns 503), reports
+   OpenSearch and MinIO without failing, and compares the database schema revision with the
+   image's head, so it is the check that shows migrations finished.
 3. Open **Settings > Processing pipeline** and check that it shows no blocking problem for
    your account.
 4. Upload a short file and check that it transcribes, gets speakers and becomes searchable.

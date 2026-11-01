@@ -252,6 +252,14 @@ def corpus():
             for n, t in enumerate(MARKER_CHUNKS)
         ]
         _bulk(client, name, docs)
+        # Settle to one segment before measuring. Measured on the otfresh stack with a model id
+        # set (vectors indexed): the `organization_id` page-equality cases failed in ~1 run in 3
+        # with chunk scores differing in the 4th decimal between a split execution and its
+        # single-request reference, on a corpus that had not changed; 8 consecutive runs passed
+        # once the index was merged to one segment first. Cause assumed to be background
+        # merges landing between the two executions, not proven.
+        client.indices.forcemerge(index=name, max_num_segments=1, request_timeout=600)
+        client.indices.refresh(index=name)
         yield client, name, rng
     finally:
         client.indices.delete(index=name, ignore_unavailable=True)

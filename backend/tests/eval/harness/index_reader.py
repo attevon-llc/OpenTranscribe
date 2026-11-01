@@ -16,6 +16,7 @@ import logging
 import time
 from typing import Any
 
+from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 from tests.eval.harness.qrels import ChunkDoc
 
 logger = logging.getLogger(__name__)
@@ -238,7 +239,11 @@ def fetch_chunks(client: Any, index: str, file_uuids: list[str]) -> dict[str, li
     while True:
         body: dict[str, Any] = {
             "size": _PAGE,
-            "query": {"bool": {"filter": [{"terms": {"file_uuid": file_uuids}}]}},
+            # Chunk plane only: digest documents (chunk_index -1, no speaker) live in the
+            # same index and are not transcript chunks, so the qrels join must not see them.
+            "query": {
+                "bool": {"filter": [{"terms": {"file_uuid": file_uuids}}, chunk_plane_clause()]}
+            },
             "sort": [{"file_uuid": "asc"}, {"chunk_index": "asc"}],
             "_source": ["file_uuid", "chunk_index", "speaker", "start_time", "end_time"],
             "track_total_hits": False,

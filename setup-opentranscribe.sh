@@ -1981,7 +1981,7 @@ download_ai_models() {
     # scripts/download-models.sh's own mkdir block for why it is included here anyway:
     # `bash scripts/download-models.sh models` below runs the diar-native download group
     # too, and its bind-mount source must exist and be owned correctly before that runs.
-    mkdir -p models/huggingface models/torch models/nltk_data models/sentence-transformers models/opensearch-ml models/diar-native
+    mkdir -p models/huggingface models/torch models/nltk_data models/sentence-transformers models/opensearch-ml models/diar-native models/password-blocklist
 
     # Set ownership to prevent permission issues in non-root containers
     # Container runs as UID 1000, so we need to ensure host directories are accessible
@@ -2002,7 +2002,7 @@ download_ai_models() {
     chmod -R 755 models
 
     # Verify directories are writable
-    if [ -w models/huggingface ] && [ -w models/torch ] && [ -w models/nltk_data ] && [ -w models/sentence-transformers ] && [ -w models/opensearch-ml ] && [ -w models/diar-native ]; then
+    if [ -w models/huggingface ] && [ -w models/torch ] && [ -w models/nltk_data ] && [ -w models/sentence-transformers ] && [ -w models/opensearch-ml ] && [ -w models/diar-native ] && [ -w models/password-blocklist ]; then
         echo "✓ Model cache directories created with proper permissions"
     else
         print_warning "Model directories exist but may not be writable"
@@ -2530,7 +2530,10 @@ main() {
     configure_https_settings
     download_ai_models
     validate_setup
-    pull_docker_images
+    # A failed pull is documented as "will use cached versions" (pull_docker_images returns 1 after
+    # saying so), but under `set -e` the bare call aborted the whole install instead -- a registry
+    # that denies one image (MinIO's quay.io repo, 2026-10-31) killed setup even with a warm cache.
+    pull_docker_images || true
     display_summary
     prompt_start
 }

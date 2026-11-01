@@ -133,3 +133,51 @@ overlay_container_name() {
     printf '%s\n' "${names%%$'\n'*}"
     return "$rc"
 }
+
+# assert_fresh_stack_isolated
+#   Exit 3 unless an `otfresh-<name>` project really is the isolated deployment its name claims.
+#   A no-op for every other project (the stock dev stack is MEANT to be tested).
+#
+# Two observed ways a "fresh" stack was silently attached to the LIVE data, both caught here:
+#   * a container of the project not named `<project>-*`: services recreated by a bare
+#     `opentr.sh start dev --with-X` come back under the stock names with the NAS overlay
+#     auto-loaded (2026-10-29, a release `test` run);
+#   * Postgres bind-mounting a host path instead of the project's named volume — the direct
+#     evidence that live data is mounted.
+# ⚠️ No `| head -1`: first line by parameter expansion, so pipefail cannot turn a match into 141.
+assert_fresh_stack_isolated() {
+    local project names n bad="" pg mounts
+    project="$(compose_project_name)"
+    case "$project" in
+        otfresh-?*) ;;
+        *) return 0 ;;
+    esac
+
+    names="$(docker ps -a --filter "label=com.docker.compose.project=${project}" \
+        --format '{{.Names}}' 2>/dev/null || true)"
+    while IFS= read -r n; do
+        [[ -z "$n" ]] && continue
+        [[ "$n" == "${project}-"* ]] || bad+="  container '${n}' is not named ${project}-*"$'\n'
+    done <<< "$names"
+
+    pg="$(docker ps --filter "label=com.docker.compose.project=${project}" \
+        --filter "label=com.docker.compose.service=postgres" \
+        --format '{{.Names}}' 2>/dev/null || true)"
+    pg="${pg%%$'\n'*}"
+    if [[ -n "$pg" ]]; then
+        mounts="$(docker inspect "$pg" \
+            --format '{{range .Mounts}}{{.Type}} {{.Destination}} {{.Source}}{{"\n"}}{{end}}' \
+            2>/dev/null || true)"
+        if [[ "$mounts" =~ (^|$'\n')bind\ /var/lib/postgresql/data ]]; then
+            bad+="  postgres '${pg}' bind-mounts a host path (live data), not the project's named volume"$'\n'
+        fi
+    fi
+
+    if [[ -n "$bad" ]]; then
+        echo "error: project '${project}' is not the isolated fresh stack its name claims:" >&2
+        printf '%s' "$bad" >&2
+        echo "Refusing to run tests against it: that is how live data gets touched." >&2
+        echo "Fix: ./opentr.sh stop --fresh ${project#otfresh-} && ./opentr.sh start dev --fresh ${project#otfresh-}" >&2
+        exit 3
+    fi
+}

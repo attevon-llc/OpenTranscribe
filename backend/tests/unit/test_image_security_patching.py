@@ -173,3 +173,30 @@ def test_the_detectors_can_actually_fire():
 
     assert _APK_UPGRADE.search("RUN apk upgrade --no-cache && apk del curl\n")
     assert _APK_UPGRADE.search("RUN apk add --no-cache curl\n") is None
+
+
+@pytest.mark.parametrize("rel", ALPINE_IMAGES, ids=lambda p: p.name)
+def test_the_alpine_upgrade_layer_cannot_be_frozen_by_the_build_cache(rel: Path):
+    """v0.6.0 shipped brotli-libs CVE-2026-111497 (fixed in 1.2.1-r0) because this layer
+    was cached by command string: `apk upgrade` ran once, on the first build, and never again.
+    """
+    code = _executable_lines(_read(rel))
+
+    arg = re.search(r"^\s*ARG\s+APK_SECURITY_REFRESH", code, re.MULTILINE)
+    upgrade = _APK_UPGRADE.search(code)
+    assert arg is not None, f"{rel} has no `ARG APK_SECURITY_REFRESH`; its apk layer stays cached"
+    assert upgrade is not None, f"{rel}: no executable apk upgrade found"
+    assert arg.start() < upgrade.start(), (
+        f"{rel} declares APK_SECURITY_REFRESH after the upgrade it is meant to invalidate"
+    )
+    assert "${APK_SECURITY_REFRESH}" in code, (
+        f"{rel} declares the ARG but the RUN never references it, so the layer's command "
+        "string does not change and Docker still reuses the cache"
+    )
+
+
+def test_the_build_script_passes_a_changing_apk_refresh_to_both_alpine_images():
+    source = (REPO_ROOT / "scripts" / "docker-build-push.sh").read_text(encoding="utf-8")
+
+    # frontend (via its identity args) and docs (inline): one occurrence each.
+    assert source.count("${OT_APK_SECURITY_REFRESH:-$(date -u +%Y-%m-%d)}") == 2

@@ -55,14 +55,17 @@ def _baseline(tmp_path: Path, *rows: tuple[str, int]) -> Path:
 @pytest.mark.parametrize(
     ("rel", "over"),
     [
-        ("backend/app/a.py", 701),
-        ("frontend/src/lib/a.ts", 701),
-        ("frontend/scripts/a.js", 701),
-        ("frontend/scripts/a.mjs", 701),
-        ("scripts/a.sh", 701),
-        ("top.sh", 701),
-        ("frontend/src/lib/a.svelte", 1001),
-        ("docs-site/src/a.ts", 701),
+        ("backend/app/a.py", 1001),
+        ("frontend/src/lib/a.ts", 1001),
+        ("frontend/scripts/a.js", 1001),
+        ("frontend/scripts/a.mjs", 1001),
+        ("scripts/a.sh", 1001),
+        ("top.sh", 1001),
+        ("frontend/src/lib/a.svelte", 2001),
+        ("docs-site/src/a.ts", 1001),
+        ("backend/tests/unit/test_a.py", 1501),
+        ("backend/tests/conftest.py", 1501),
+        ("frontend/src/lib/a.test.ts", 1501),
         ("scripts/sub/CLAUDE.md", 401),
         ("CLAUDE.md", 401),
     ],
@@ -76,10 +79,12 @@ def test_over_cap_file_fails(tmp_path: Path, rel: str, over: int) -> None:
 @pytest.mark.parametrize(
     ("rel", "at_cap"),
     [
-        ("backend/app/a.py", 700),
-        ("frontend/src/lib/a.svelte", 1000),
+        ("backend/app/a.py", 1000),
+        ("frontend/src/lib/a.svelte", 2000),
+        ("backend/tests/unit/test_a.py", 1500),
+        ("frontend/src/lib/a.test.ts", 1500),
         ("scripts/sub/CLAUDE.md", 400),
-        ("backend/app/long.svelte", 1000),
+        ("backend/app/long.svelte", 2000),
     ],
 )
 def test_file_at_cap_passes(tmp_path: Path, rel: str, at_cap: int) -> None:
@@ -88,19 +93,43 @@ def test_file_at_cap_passes(tmp_path: Path, rel: str, at_cap: int) -> None:
 
 
 @pytest.mark.unit
-def test_svelte_between_700_and_1000_is_not_a_violation(tmp_path: Path) -> None:
-    root = _make_repo(tmp_path, {"frontend/src/lib/a.svelte": 900})
+def test_svelte_markup_and_css_length_is_not_a_violation(tmp_path: Path) -> None:
+    root = _make_repo(tmp_path, {"frontend/src/lib/a.svelte": 1900})
     violations, _ = guard.scan(root)
     assert violations == {}
 
 
+def _write_svelte(root: Path, rel: str, script_lines: int, other_lines: int) -> None:
+    body = "<script>\n" + "let x = 1;\n" * script_lines + "</script>\n" + "<p>x</p>\n" * other_lines
+    target = root / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(body, encoding="utf-8")
+
+
 @pytest.mark.unit
-def test_warn_band_prints_and_never_fails(
+def test_svelte_script_logic_over_cap_fails_under_its_own_key(tmp_path: Path) -> None:
+    root = _make_repo(tmp_path, {"README.txt": 1})
+    _write_svelte(root, "frontend/src/lib/a.svelte", script_lines=601, other_lines=10)
+    violations, _ = guard.scan(root, ["frontend/src/lib/a.svelte"])
+    assert violations == {"frontend/src/lib/a.svelte::script": 601}
+
+
+@pytest.mark.unit
+def test_svelte_script_at_cap_with_long_markup_passes(tmp_path: Path) -> None:
+    root = _make_repo(tmp_path, {"README.txt": 1})
+    _write_svelte(root, "frontend/src/lib/a.svelte", script_lines=600, other_lines=1200)
+    violations, _ = guard.scan(root, ["frontend/src/lib/a.svelte"])
+    assert violations == {}
+
+
+@pytest.mark.unit
+def test_soft_target_is_reported_and_never_fails(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _make_repo(tmp_path, {"backend/app/a.py": 650, "scripts/CLAUDE.md": 370})
     assert _run(root, _baseline(tmp_path)) == 0
     err = capsys.readouterr().err
+    assert "above the soft size target" in err
     assert "backend/app/a.py: 650" in err
     assert "scripts/CLAUDE.md: 370" in err
 
@@ -114,31 +143,31 @@ def test_clean_tree_passes_silently(tmp_path: Path, capsys: pytest.CaptureFixtur
 
 @pytest.mark.unit
 def test_baselined_file_passes_and_growth_fails(tmp_path: Path) -> None:
-    root = _make_repo(tmp_path, {"backend/app/big.py": 800})
-    assert _run(root, _baseline(tmp_path, ("backend/app/big.py", 800))) == 0
-    assert _run(root, _baseline(tmp_path, ("backend/app/big.py", 799))) == 1
+    root = _make_repo(tmp_path, {"backend/app/big.py": 1200})
+    assert _run(root, _baseline(tmp_path, ("backend/app/big.py", 1200))) == 0
+    assert _run(root, _baseline(tmp_path, ("backend/app/big.py", 1199))) == 1
 
 
 @pytest.mark.unit
 def test_stale_baseline_entry_fails(tmp_path: Path) -> None:
     root = _make_repo(tmp_path, {"backend/app/small.py": 10})
-    baseline = _baseline(tmp_path, ("backend/app/small.py", 800))
+    baseline = _baseline(tmp_path, ("backend/app/small.py", 1200))
     assert _run(root, baseline) == 1
 
 
 @pytest.mark.unit
 def test_loosened_entry_fails_and_tighten_repairs_it(tmp_path: Path) -> None:
-    root = _make_repo(tmp_path, {"backend/app/big.py": 750})
-    baseline = _baseline(tmp_path, ("backend/app/big.py", 900))
+    root = _make_repo(tmp_path, {"backend/app/big.py": 1100})
+    baseline = _baseline(tmp_path, ("backend/app/big.py", 1300))
     assert _run(root, baseline) == 1
     assert _run(root, baseline, "--tighten") == 0
-    assert baseline.read_text("utf-8").split("\t")[1] == "750"
+    assert baseline.read_text("utf-8").split("\t")[1] == "1100"
     assert _run(root, baseline) == 0
 
 
 @pytest.mark.unit
 def test_tighten_never_adds_a_new_violation(tmp_path: Path) -> None:
-    root = _make_repo(tmp_path, {"backend/app/big.py": 750})
+    root = _make_repo(tmp_path, {"backend/app/big.py": 1100})
     baseline = _baseline(tmp_path)
     assert _run(root, baseline, "--tighten") == 1
     assert baseline.read_text("utf-8") == ""
@@ -193,12 +222,14 @@ def test_unreadable_file_fails_closed(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 def test_write_baseline_records_findings_and_round_trips(tmp_path: Path) -> None:
-    root = _make_repo(tmp_path, {"backend/app/big.py": 750})
+    root = _make_repo(tmp_path, {"backend/app/big.py": 1100})
     out = tmp_path / "written.txt"
     assert (
         _run(root, out, "--write-baseline", "--reason", "oversize: split by concern planned") == 0
     )
-    assert out.read_text("utf-8") == "backend/app/big.py\t750\toversize: split by concern planned\n"
+    assert (
+        out.read_text("utf-8") == "backend/app/big.py\t1100\toversize: split by concern planned\n"
+    )
     assert _run(root, out) == 0
 
 

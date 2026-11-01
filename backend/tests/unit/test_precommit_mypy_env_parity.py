@@ -78,7 +78,16 @@ _NAMESPACE_TOPLEVELS = {"google", "azure"}
 #: module is a real gap and fails closed. ``CI`` is set by GitHub Actions.
 _PARTIAL_INSTALL = bool(os.environ.get("CI"))
 
-_SKIPPED_DIRS = {"venv", ".venv", "node_modules", "__pycache__", ".mypy_cache", ".pytest_cache"}
+# "mutants" is mutmut's generated copy of the package (gitignored), not first-party code.
+_SKIPPED_DIRS = {
+    "venv",
+    ".venv",
+    "node_modules",
+    "__pycache__",
+    ".mypy_cache",
+    ".pytest_cache",
+    "mutants",
+}
 
 
 def _is_skipped_dir(directory: Path) -> bool:

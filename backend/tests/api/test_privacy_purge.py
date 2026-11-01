@@ -617,7 +617,7 @@ def test_every_purge_is_audited_with_counts_and_no_names(
         for e in by_type[event_type]:
             assert e["organization_id"] == gov.org.id
             assert e["user_id"] == gov.admin.id
-            assert e["details"]["scope"] == {
+            assert e["details"]["purge_scope"] == {
                 "kind": "organization",
                 "organization_id": gov.org.id,
                 "user_id": None,
@@ -1407,7 +1407,7 @@ def test_the_audit_record_carries_actor_scope_targets_counts_and_residual(
     details = voiceprints["details"]
     assert details["task_id"] == task_id
     assert details["targets"] == ["voiceprints", "inferred_gender"]
-    assert details["scope"] == {
+    assert details["purge_scope"] == {
         "kind": "organization",
         "organization_id": gov.org.id,
         "user_id": None,

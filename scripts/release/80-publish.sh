@@ -1,13 +1,15 @@
 #!/bin/bash
-# Multi-arch build and push of :vX.Y.Z ONLY. Never :latest.
+# Push of the ALREADY-BUILT :vX.Y.Z legs and assembly of the :vX.Y.Z indexes. Never :latest,
+# never a rebuild: the bytes pushed are the bytes 40-build.sh produced and 50-scan.sh /
+# 65-rehearse.sh validated (image IDs recorded at build, re-checked here before any push).
 #
 # :latest moves later, by digest copy (90-promote.sh), so :latest and :vX.Y.Z are
 # provably the same bytes rather than two builds that happen to share a tree.
 #
-# ARM64 goes to the remote builder: the backend image is ~13.8 GB and QEMU
-# emulation turns 20 minutes into 2-3 hours.
+# The arm64 legs were built on the remote builder and `--load`ed into the local daemon at
+# build time; they are pushed from there like any other local image.
 #
-# Exit: 0 published · 1 failed · 3 builder unreachable
+# Exit: 0 published · 1 failed · 3 builder unreachable or no build record
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -60,29 +62,226 @@ fi
 record remote-builder-available pass "$BUILDER"
 
 echo -e "${YELLOW}PUBLISHING ${VERSION} to Docker Hub (:${VERSION} only, not :latest)${NC}" >&2
-rc=0
-# BUILD_CACHE_REGISTRY passed through (default OFF) -- same knob as 40-build.sh, same
-# reason (issue #938): without it this rebuilds every amd64 leg 40-build.sh already
-# produced, from the same tree, on a different BuildKit builder. For backend/lite (the
-# capability-bearing, CUDA-heavy components this issue is about) the scope matches
-# exactly -- both stages build one architecture leg at a time through the same
-# build_one_leg()/build_cache_args() path, so a leg built locally and a leg published
-# from an unchanged tree hit the SAME `:buildcache-<arch>` ref. frontend/docs build as
-# one combined multi-platform push here rather than per-leg, so their cache scope
-# will not match 40-build.sh's per-leg local builds -- a cache MISS there, not an
-# error, and a smaller loss since those builds are far cheaper than backend's
-# multi-GB CUDA layers. Unmeasured, explicit opt-in
-# (`BUILD_CACHE_REGISTRY=true ./scripts/release.sh build ... publish ...`) -- see
-# test_build_registry_cache_optin.py's docstring for why that bar exists.
-USE_REMOTE_BUILDER=true BUILD_MODE=push PUSH_LATEST=false VERSION="$VERSION" \
-    BUILD_CACHE_REGISTRY="${BUILD_CACHE_REGISTRY:-false}" \
-    ./scripts/docker-build-push.sh all || rc=$?
-if [[ $rc -ne 0 ]]; then
-    record images-pushed fail "docker-build-push.sh all exited $rc"
-    echo -e "${RED}publish failed${NC}" >&2
-    publish_fail_out 1 '"read the build output above"'
+
+# Shared by the push verification below and by the manifest-structure checks after it.
+CHECKER="./scripts/lib/manifest_platform_check.py"
+MANIFEST_TMP="$(mktemp -d)"
+trap 'rm -rf "$MANIFEST_TMP"' EXIT
+
+# Fetch a ref's raw manifest JSON into $2. Returns 1 when nothing came back, so a
+# registry/auth failure is never mistaken for an empty-but-valid document.
+inspect_raw() {
+    local ref="$1" out="$2"
+    docker buildx imagetools inspect "$ref" --raw >"$out" 2>/dev/null
+    [[ -s "$out" ]]
+}
+
+# --- Push the BUILT legs; never rebuild -------------------------------------
+#
+# This stage used to run `docker-build-push.sh all` in push mode: a from-scratch rebuild of
+# every leg on a different BuildKit builder, then a re-scan. The bytes it pushed were
+# therefore NOT the bytes `build` produced and `scan`/`rehearse` validated (audit P1-3) -- only
+# `:latest` was provably equal to `:vX.Y.Z`. Now:
+#
+#   1. every declared leg must be in .release/<v>/legs.tsv (written by 40-build.sh) and its
+#      LOCAL image ID must still equal the recorded one -- checked for ALL legs BEFORE any push,
+#      so a mismatch publishes nothing;
+#   2. each leg tag is pushed with `docker push` (no build, no --no-cache);
+#   3. each repo:vX.Y.Z index is assembled with `imagetools create` from the digests those
+#      pushes REPORTED (repo@sha256:..., not tags, so a moved tag cannot swap a leg);
+#   4. the registry is read back: leg tag digest == pushed digest, the index lists that digest
+#      for the leg's platform, and the leg's config digest == the recorded local image ID.
+#
+# `:latest` is untouched here -- 90-promote.sh copies it by digest. No re-scan: scan covered
+# these exact images (step 1 proves it), and a rebuild-time scan scanned different bytes.
+#
+# What a push can and cannot preserve. On a classic-store daemon (overlay2, which is where
+# `--load` of the remote builder's arm64 leg lands) the manifest is REGENERATED at push
+# time, so the registry's manifest digest is NOT the digest BuildKit exported; layers may be
+# recompressed. What is invariant is the image config, and `docker image inspect .Id` IS the
+# config digest -- hence step 4's content check. A containerd-store daemon preserves the
+# manifest, where the manifest digest equals `.Id`; both are accepted.
+#
+# --- BEGIN push-built-legs ---
+# (extracted verbatim and driven against a fake docker by
+#  backend/tests/unit/test_publish_pushes_built_legs.py -- keep the markers)
+LEGS_FILE="${OT_LEGS_FILE:-.release/${VERSION}/legs.tsv}"
+if [[ ! -s "$LEGS_FILE" ]]; then
+    record built-legs-match-ledger not-measured "no build ledger at ${LEGS_FILE}" \
+        "./scripts/release.sh build ${VERSION}"
+    echo -e "${RED}no build ledger at ${LEGS_FILE} -- nothing to push. Run: ./scripts/release.sh build ${VERSION}${NC}" >&2
+    publish_fail_out 3 "\"./scripts/release.sh build ${VERSION}\""
 fi
-record images-pushed pass
+
+# Captured, not `< <(...)`: a failing list-platforms inside a process substitution would
+# just read EOF and iterate zero times.
+plat_rc=0
+plat_tsv="$(./scripts/docker-build-push.sh list-platforms)" || plat_rc=$?
+if (( plat_rc != 0 )) || [[ -z "$plat_tsv" ]]; then
+    record built-legs-match-ledger not-measured "list-platforms yielded nothing (rc=${plat_rc})" \
+        "./scripts/docker-build-push.sh list-platforms"
+    publish_fail_out 3 '"./scripts/docker-build-push.sh list-platforms"'
+fi
+
+declare -A ROW_TAG=() ROW_ID=() ROW_REPO=()
+while IFS=$'\t' read -r r_component r_repo r_platform r_tag r_id; do
+    [[ -n "$r_component" && -n "$r_id" ]] || continue
+    ROW_TAG["${r_component}|${r_platform}"]="$r_tag"
+    ROW_ID["${r_component}|${r_platform}"]="$r_id"
+    ROW_REPO["${r_component}|${r_platform}"]="$r_repo"
+done < "$LEGS_FILE"
+
+# Declared legs, in table order: component|capability|platform
+declared_legs=()
+while IFS=$'\t' read -r p_component p_capability p_platforms; do
+    [[ "$p_component" == "blackwell" ]] && continue
+    IFS=',' read -r -a p_plats <<< "$p_platforms"
+    for p_platform in "${p_plats[@]}"; do
+        if [[ -n "$p_platform" ]]; then
+            declared_legs+=("${p_component}|${p_capability}|${p_platform}")
+        fi
+    done
+done <<< "$plat_tsv"
+
+ledger_problems=()
+for leg in "${declared_legs[@]}"; do
+    IFS='|' read -r l_component l_capability l_platform <<< "$leg"
+    key="${l_component}|${l_platform}"
+    l_tag="${ROW_TAG[$key]:-}"
+    if [[ -z "$l_tag" ]]; then
+        ledger_problems+=("${l_component} ${l_platform}: not in the build record")
+        continue
+    fi
+    expected_tag="${ROW_REPO[$key]}:${VERSION}-${l_capability}-${l_platform#linux/}"
+    if [[ "$l_tag" != "$expected_tag" ]]; then
+        ledger_problems+=("${l_tag}: ledger names a tag other than ${expected_tag}")
+        continue
+    fi
+    l_now="$(docker image inspect "$l_tag" --format '{{.Id}}' 2>/dev/null)"
+    if [[ -z "$l_now" ]]; then
+        ledger_problems+=("${l_tag}: no longer present locally")
+    elif [[ "$l_now" != "${ROW_ID[$key]}" ]]; then
+        ledger_problems+=("${l_tag}: built as ${ROW_ID[$key]:0:19} but is now ${l_now:0:19}")
+    fi
+done
+if (( ${#declared_legs[@]} == 0 )); then
+    record built-legs-match-ledger not-measured "the platform table declares no legs" \
+        "./scripts/docker-build-push.sh list-platforms"
+    publish_fail_out 3 '"./scripts/docker-build-push.sh list-platforms"'
+elif (( ${#ledger_problems[@]} )); then
+    record built-legs-match-ledger fail "${ledger_problems[*]}" \
+        "./scripts/release.sh build ${VERSION} && scan && rehearse   # the validated image is gone or changed"
+    echo -e "${RED}refusing to push -- these legs are not what build recorded: ${ledger_problems[*]}${NC}" >&2
+    publish_fail_out 1 '"rebuild, then re-run scan and rehearse so the bytes pushed are the bytes validated"'
+fi
+record built-legs-match-ledger pass "${#declared_legs[@]} leg(s) match the build record"
+
+declare -A LEG_PUSHED=() COMP_SRCS=() COMP_REPO=()
+push_failed=()
+for leg in "${declared_legs[@]}"; do
+    IFS='|' read -r l_component l_capability l_platform <<< "$leg"
+    key="${l_component}|${l_platform}"
+    l_tag="${ROW_TAG[$key]}"
+    push_rc=0
+    push_out="$(docker push "$l_tag" 2>&1)" || push_rc=$?
+    echo "$push_out" >&2
+    pushed_digest="$(sed -n 's/.*digest: \(sha256:[0-9a-f]\{64\}\).*/\1/p' <<< "$push_out" | tail -n 1)"
+    if (( push_rc != 0 )) || [[ -z "$pushed_digest" ]]; then
+        push_failed+=("${l_tag} (rc=${push_rc}, digest='${pushed_digest:-<none reported>}')")
+        break
+    fi
+    LEG_PUSHED["$l_tag"]="$pushed_digest"
+    COMP_REPO["$l_component"]="${ROW_REPO[$key]}"
+    COMP_SRCS["$l_component"]+="${ROW_REPO[$key]}@${pushed_digest} "
+done
+if (( ${#push_failed[@]} )); then
+    record images-pushed fail "docker push failed: ${push_failed[*]}"
+    echo -e "${RED}publish failed: ${push_failed[*]}${NC}" >&2
+    publish_fail_out 1 '"read the push output above; legs pushed before the failure are only digests under their -<cap>-<arch> tags"'
+fi
+
+assemble_failed=()
+for a_component in "${!COMP_SRCS[@]}"; do
+    read -r -a a_srcs <<< "${COMP_SRCS[$a_component]}"
+    if ! docker buildx imagetools create --tag "${COMP_REPO[$a_component]}:${VERSION}" "${a_srcs[@]}"; then
+        assemble_failed+=("${COMP_REPO[$a_component]}:${VERSION}")
+    fi
+done
+if (( ${#assemble_failed[@]} )); then
+    record images-pushed fail "could not assemble index: ${assemble_failed[*]}"
+    echo -e "${RED}publish failed: could not assemble ${assemble_failed[*]}${NC}" >&2
+    publish_fail_out 1 '"read the imagetools output above"'
+fi
+record images-pushed pass "${#LEG_PUSHED[@]} leg(s) pushed unchanged; ${#COMP_SRCS[@]} index(es) assembled"
+
+# Read the registry back. Each leg is judged twice: did the REGISTRY end up holding what the
+# push reported (digest, in the tag and in the index), and is it still the image build recorded
+# (config digest). Both distinguish "checked and WRONG" from "could not inspect".
+reg_wrong=(); reg_unchecked=(); content_wrong=(); content_unchecked=()
+declare -A IDX_FILE=()
+for leg in "${declared_legs[@]}"; do
+    IFS='|' read -r l_component l_capability l_platform <<< "$leg"
+    key="${l_component}|${l_platform}"
+    l_tag="${ROW_TAG[$key]}"; l_repo="${ROW_REPO[$key]}"; l_pushed="${LEG_PUSHED[$l_tag]}"
+
+    reg_digest="$(docker buildx imagetools inspect "$l_tag" --format '{{println .Manifest.Digest}}' 2>/dev/null)"
+    if [[ -z "$reg_digest" ]]; then
+        reg_unchecked+=("${l_tag}: tag not inspectable")
+    elif [[ "$reg_digest" != "$l_pushed" ]]; then
+        reg_wrong+=("${l_tag}: registry ${reg_digest:0:19} != pushed ${l_pushed:0:19}")
+    fi
+
+    if [[ -z "${IDX_FILE[$l_component]:-}" ]]; then
+        IDX_FILE["$l_component"]="${MANIFEST_TMP}/${l_component}-pushed-index.json"
+        inspect_raw "${l_repo}:${VERSION}" "${IDX_FILE[$l_component]}" || : > "${IDX_FILE[$l_component]}"
+    fi
+    if [[ ! -s "${IDX_FILE[$l_component]}" ]]; then
+        reg_unchecked+=("${l_repo}:${VERSION}: index not inspectable")
+    else
+        idx_entry="$(python3 "$CHECKER" resolve-digest "${IDX_FILE[$l_component]}" "$l_platform")" || idx_entry=""
+        if [[ "$idx_entry" != "$l_pushed" ]]; then
+            reg_wrong+=("${l_repo}:${VERSION} lists '${idx_entry:0:19}' for ${l_platform}, pushed ${l_pushed:0:19}")
+        fi
+    fi
+
+    leg_manifest="${MANIFEST_TMP}/pushed-${l_component}-${l_platform#linux/}.json"
+    if ! inspect_raw "${l_repo}@${l_pushed}" "$leg_manifest"; then
+        content_unchecked+=("${l_tag}: manifest ${l_pushed:0:19} not inspectable")
+    else
+        reg_cfg="$(python3 "$CHECKER" config-digest "$leg_manifest")" || reg_cfg=""
+        if [[ -z "$reg_cfg" ]]; then
+            content_unchecked+=("${l_tag}: no config digest in the pushed manifest")
+        elif [[ "$reg_cfg" != "${ROW_ID[$key]}" && "$l_pushed" != "${ROW_ID[$key]}" ]]; then
+            content_wrong+=("${l_tag}: registry config ${reg_cfg:0:19} != built image ${ROW_ID[$key]:0:19}")
+        fi
+    fi
+done
+
+if (( ${#reg_wrong[@]} )); then
+    record registry-digest-matches-pushed fail "${reg_wrong[*]}"
+elif (( ${#reg_unchecked[@]} )); then
+    record registry-digest-matches-pushed not-measured "${reg_unchecked[*]}" \
+        "check Docker Hub auth and that the push completed"
+else
+    record registry-digest-matches-pushed pass "${#declared_legs[@]} leg(s) read back at the pushed digest"
+fi
+if (( ${#content_wrong[@]} )); then
+    record registry-leg-matches-built-image fail "${content_wrong[*]}"
+elif (( ${#content_unchecked[@]} )); then
+    record registry-leg-matches-built-image not-measured "${content_unchecked[*]}" \
+        "check Docker Hub auth and that the push completed"
+else
+    record registry-leg-matches-built-image pass "${#declared_legs[@]} leg(s) carry the built image's config"
+fi
+push_verify_rc=0
+if (( ${#reg_wrong[@]} + ${#reg_unchecked[@]} + ${#content_wrong[@]} + ${#content_unchecked[@]} )); then
+    push_verify_rc=1
+fi
+if (( push_verify_rc != 0 )); then
+    echo -e "${RED}the registry does not hold what was pushed/built: ${reg_wrong[*]} ${reg_unchecked[*]} ${content_wrong[*]} ${content_unchecked[*]}${NC}" >&2
+    publish_fail_out 1 '"inspect the legs named above; do not promote"'
+fi
+# --- END push-built-legs ---
 
 # --- Manifest-structure checks (issue #680) ---------------------------------
 #
@@ -111,18 +310,7 @@ record images-pushed pass
 # A checker exit of 3 means COULD NOT CHECK (malformed/absent/wrong-shape doc),
 # never "checked and fine" — reported separately from a mismatch below, for the
 # same reason security-scan.sh separates its exit 1 from its exit 2 (issue #681).
-CHECKER="./scripts/lib/manifest_platform_check.py"
 manifest_check_rc=0
-MANIFEST_TMP="$(mktemp -d)"
-trap 'rm -rf "$MANIFEST_TMP"' EXIT
-
-# Fetch a ref's raw manifest JSON into $2. Returns 1 when nothing came back, so a
-# registry/auth failure is never mistaken for an empty-but-valid document.
-inspect_raw() {
-    local ref="$1" out="$2"
-    docker buildx imagetools inspect "$ref" --raw >"$out" 2>/dev/null
-    [[ -s "$out" ]]
-}
 
 # Per-check-type tallies, so each of (a)/(b)/(c) can record its OWN criterion. Without them
 # all three would collapse into the single `manifest_check_rc`, and criteria[] could not say

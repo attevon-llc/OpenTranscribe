@@ -139,12 +139,33 @@ def test_an_index_with_unknown_age_or_count_is_refused() -> None:
         "test_speakers_maint_v3_0123456789_v4",
         "knn_probe_live_test_non_ann_0123456789",
         "delres-negctl-0123456789ab",
+        "test_priv_chunks_0123456789ab",
+        "test_priv_spk_0123456789ab",
+        "test_priv_spk_0123456789ab_v3",
+        "test_priv_spk_0123456789ab_v4",
+        "test_priv_spk_0123456789ab_v3_backup",
     ],
 )
 def test_real_fixture_index_names_are_registered(name: str) -> None:
     """One per family, including the leftover actually found on the isolated stack
     (``test_transcripts_tenancy_d7a44354be``)."""
     assert sweep.classify_index(name, 0, _OLD, _LATE).tier == sweep.TIER_A
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "name",
+    [
+        "transcript_chunks",
+        "speakers_v4",
+        "test_priv_chunks_notes",
+        "test_priv_chunks_0123456789ab_extra",
+        "test_priv_spk_0123456789ab_v5",
+        "test_priv_spk_short_v3",
+    ],
+)
+def test_production_and_near_miss_index_names_are_not_privacy_shapes(name: str) -> None:
+    assert sweep.classify_index(name, 0, _OLD, _LATE).tier is None
 
 
 @pytest.mark.unit

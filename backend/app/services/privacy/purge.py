@@ -456,7 +456,7 @@ def audit_purge(
 ) -> None:
     """One audit event per target, org-stamped, so an administrator can verify a purge from it.
 
-    ``details`` hold the task id, phase, the purge's targets, the scope (kind and ids), and, for
+    ``details`` hold the task id, phase, the purge's targets, the ``purge_scope`` (kind and ids), and, for
     a pass that ran, that target's exact counts per store plus the residual it measured and
     whether it was all zero. Counts and ids of the scope only; never a name.
     """
@@ -466,7 +466,11 @@ def audit_purge(
             "task_id": task_id,
             "phase": phase,
             "targets": wanted,
-            "scope": {
+            # NOT "scope": content holds and the org audit export index `details.scope` as a
+            # string, and OpenSearch rejects an object under a text-typed field (mapper_parsing_
+            # exception). The rejected purge event fell to the fallback file and was unsearchable,
+            # which the v0.6.0 rehearsal's audit check found.
+            "purge_scope": {
                 "kind": scope.kind,
                 "organization_id": scope.organization_id,
                 "user_id": scope.user_id,

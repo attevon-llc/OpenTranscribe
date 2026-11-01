@@ -73,6 +73,7 @@ RESOLVER_BLOCK_S = 0.2
 # Between the measured worst case with the resolver in the threadpool (0.14 s) and the
 # shortest longest-gap measured with it inline (1.8 s), see the module docstring.
 MAX_LOOP_STALL_S = 1.0
+STALL_ATTEMPTS = 3  # best-of: scheduler noise on a loaded host, not blocking, varies per attempt
 HEARTBEAT_INTERVAL_S = 0.01
 POOL_SIZE, POOL_OVERFLOW = 5, 15  # C = 20
 
@@ -204,20 +205,34 @@ async def test_slow_resolver_does_not_stall_the_event_loop(
     # What the lifespan does (ASGITransport does not run it).
     assert configure_api_threadpool() == LOOP_THREADS
     loop_thread = threading.get_ident()
-    stop = asyncio.Event()
-    gaps: list[float] = []
 
-    beat = asyncio.create_task(_heartbeat(stop, gaps))
-    responses = await _prepare_concurrently(real_pool_app, LOOP_PREPARES)
-    stop.set()
-    await beat
+    # The heartbeat gap measures how long the loop went without being scheduled, which a loaded
+    # host inflates with no fault of the code: a pass at 0.14 s idle read 1.65 s with the 48-core
+    # host at load 60. A resolver run inline stalls the loop on EVERY attempt, so the best of a few
+    # attempts keeps the bound a real test of blocking while discounting scheduler noise. The
+    # thread-identity assertions below are the load-independent discriminators.
+    best_stall = float("inf")
+    attempts = 0
+    for _ in range(STALL_ATTEMPTS):
+        attempts += 1
+        stop = asyncio.Event()
+        gaps: list[float] = []
+        beat = asyncio.create_task(_heartbeat(stop, gaps))
+        responses = await _prepare_concurrently(real_pool_app, LOOP_PREPARES)
+        stop.set()
+        await beat
+        _assert_all_prepared(responses, LOOP_PREPARES)
+        best_stall = min(best_stall, max(gaps))
+        if best_stall < MAX_LOOP_STALL_S:
+            break
 
-    _assert_all_prepared(responses, LOOP_PREPARES)
-    assert len(slow_resolver.threads) == LOOP_PREPARES  # the resolver really ran for every request
+    assert len(slow_resolver.threads) == LOOP_PREPARES * attempts  # it really ran for every request
     on_loop = [t for t in slow_resolver.threads if t == loop_thread]
     assert on_loop == [], f"{len(on_loop)} resolver calls ran on the event loop thread"
     assert slow_resolver.peak_running > 1, "the resolver calls were serialised, not run in threads"
-    assert max(gaps) < MAX_LOOP_STALL_S, f"event loop stalled for {max(gaps):.2f}s"
+    assert best_stall < MAX_LOOP_STALL_S, (
+        f"event loop stalled for {best_stall:.2f}s in the best of {attempts} attempts"
+    )
 
 
 @pytest.mark.asyncio

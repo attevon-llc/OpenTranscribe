@@ -232,6 +232,14 @@ indexing → WebSocket notification.
   submissions); the reaper and `requeue_after_abort` restore the exact stage to the HEAD of
   its priority list. A plain `Reject(requeue=True)` LPUSHes to the BACK — it is only the
   fallback when the message can't be found.
+- **A cold shutdown (`SystemExit` in the child) hands the stage back; it does not ack it.** billiard
+  >= 4.3.1 (pinned) reports the job lost, so Celery requeues it to the head of its queue and the
+  reaper leaves a run that is waiting on a queue list alone (`broker_orphans.read_queued_run_ids`).
+  billiard 4.3.0 acked it and dropped the message. `task_liveness.run_heartbeat` therefore marks a
+  run queued only on a normal return, `Retry` or `Reject(requeue=True)`, never on a teardown
+  exception. Detection of a dead worker's stage takes `BROKER_ORPHAN_STALE_SECONDS` (120) plus up
+  to one `BROKER_ORPHAN_SWEEP_INTERVAL_SECONDS` (60) sweep. Pinned by
+  `unit/test_billiard_shutdown_is_not_acked.py`.
 - `erasure_reconciliation.py` — `gdpr.erasure_reconcile`, **utility** queue, daily 04:40.
   Finishes GDPR Art. 17 erasures that a legal hold deferred, and re-erases subjects a
   backup restore brought back. `takedown_service.release_file` calls its

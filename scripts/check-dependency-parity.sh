@@ -24,7 +24,8 @@
 set -uo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VENV_PIP="${PROJECT_ROOT}/backend/venv/bin/pip"
+# OT_PARITY_VENV_PIP lets the unit test reach the exec step on a host with no backend/venv.
+VENV_PIP="${OT_PARITY_VENV_PIP:-${PROJECT_ROOT}/backend/venv/bin/pip}"
 
 # pip/setuptools/wheel are the BUILD tooling, not the application. The image upgrades
 # them as its first layer and a venv carries whatever `python -m venv` shipped, so they

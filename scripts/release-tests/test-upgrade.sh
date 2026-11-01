@@ -583,6 +583,9 @@ ensure_secrets_file() {
 
 # ─── Phase implementations ──────────────────────────────────────────────────
 
+# Names are DERIVED from docker-compose.yml's container_name: set (gr_colliding_container_names), not a
+# `^opentranscribe-` prefix: the unrelated `opentranscribe-homepage` site (own project, port 8300) matched the
+# prefix and refused all three v0.6.0 rehearsal scenarios, and the stopped-container sweep would have `docker rm`'d it.
 ensure_clean_test_state() {
     # Refuse if any live opentranscribe-* container is currently running.
     #
@@ -593,7 +596,7 @@ ensure_clean_test_state() {
     # below, but not for a real install whose directory is named something else). Also catch
     # it by compose project label so this stays correct if that pin ever changes.
     local running running_diar
-    running=$(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-' || true)
+    running=$(gr_colliding_container_names "" || true)
     running_diar=$(docker ps --format '{{.Names}}' \
         --filter 'label=com.docker.compose.project=opentranscribe' \
         --filter 'label=com.docker.compose.service=diar-native' || true)
@@ -606,7 +609,7 @@ Stop them with: ./opentr.sh stop  (preserves all data)"
     fi
     # Remove stopped opentranscribe-* containers (would collide on container_name)
     local stopped stopped_diar
-    stopped=$(docker ps -a --format '{{.Names}}' --filter 'name=^opentranscribe-' || true)
+    stopped=$(gr_colliding_container_names "-a" || true)
     stopped_diar=$(docker ps -a --format '{{.Names}}' \
         --filter 'label=com.docker.compose.project=opentranscribe' \
         --filter 'label=com.docker.compose.service=diar-native' || true)
@@ -1039,6 +1042,18 @@ for path, methods in sorted(spec.get("paths", {}).items()):
     # display_name per speaker (id|name), for phase 11b's "names survive the upgrade" check.
     # Recorded as a parenthesised marker when the FROM schema cannot answer.
     fc_snapshot_speaker_names "$out/speaker_display_names.txt"
+    # Row counts for phase 11b's "the upgrade ran over a POPULATED database and lost nothing". Taken
+    # before the v448 seed below so the seed never inflates the baseline; the post-upgrade file also
+    # carries the stamped-speaker count the v449 backfill record is compared with.
+    if [[ "$label" == "after" ]]; then
+        fc_snapshot_counts "$out/row_counts.txt" post || true
+        # v448 ran during this startup: capture what it did to the rows seeded BEFORE it.
+        fc_snapshot_v448_tasks "$out/v448_tasks.txt" || true
+    else
+        fc_snapshot_counts "$out/row_counts.txt" pre || true
+        # Give v448 real work: duplicate and superseded ACTIVE task rows the FROM schema accepts.
+        fc_seed_v448_tasks "$out/v448_seed.txt" || true
+    fi
 
     # MinIO ETag list (proves no object body mutation)
     local minio="opentranscribe-minio"
@@ -1980,7 +1995,10 @@ phase_11b_feature_checks() {
     # backup over whatever it leaves behind.
     fc_run_all upgrade \
         "$TEST_ROOT/snapshots/before/speaker_display_names.txt" \
-        "$TEST_ROOT/snapshots/after/speaker_display_names.txt"
+        "$TEST_ROOT/snapshots/after/speaker_display_names.txt" \
+        "$TEST_ROOT/snapshots/before/row_counts.txt" \
+        "$TEST_ROOT/snapshots/after/row_counts.txt" \
+        "$TEST_ROOT/snapshots/after/v448_tasks.txt"
 }
 
 phase_12_assert_rollback_precondition() {

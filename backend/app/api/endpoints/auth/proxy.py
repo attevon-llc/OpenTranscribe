@@ -27,8 +27,8 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.lifecycle_gates import _get_client_info
-from app.api.endpoints.auth.login import _check_mfa_requirement
-from app.api.endpoints.auth.login import record_successful_login
+from app.api.endpoints.auth.login_completion import _check_mfa_requirement
+from app.api.endpoints.auth.login_completion import record_successful_login
 from app.auth.audit import audit_logger
 from app.auth.cookies import set_auth_cookies
 from app.auth.direct_auth import create_access_token

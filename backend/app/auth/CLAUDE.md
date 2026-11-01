@@ -382,7 +382,7 @@ someone else's product.
   local hash via the ORM path. The write side is guarded too
   (`services/account_security_service.py`).
 - **PKI/OIDC users bypass MFA only when they used their native method.** If they fall
-  back to a local password, MFA still applies (`api/endpoints/auth/login.py`, the
+  back to a local password, MFA still applies (`api/endpoints/auth/login_completion.py`, the
   `actual_auth_method` check).
   `AUTH_TYPES_SUPPORT_LOCAL_FALLBACK = [pki, oidc]`; LDAP never has a local password.
 - **Changing a credential or a privilege must revoke sessions.** Go through

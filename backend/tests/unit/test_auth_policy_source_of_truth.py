@@ -32,6 +32,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import login as login_module
+from app.api.endpoints.auth import login_completion as completion
 from app.auth import password_reset as pr_module
 from app.core.auth_settings import DynamicAuthSettings
 from app.models.user import User
@@ -181,15 +182,15 @@ class TestPasswordExpiryReportsTheEnforcedMaxAge:
         captured: dict = {}
 
         with (
-            patch.object(login_module.settings, "PASSWORD_MAX_AGE_DAYS", 365),
-            patch.object(login_module, "is_password_expired", return_value=True),
-            patch.object(login_module, "get_days_until_expiration", return_value=-370),
-            patch.object(login_module, "local_password_allowed", return_value=(True, "")),
+            patch.object(completion.settings, "PASSWORD_MAX_AGE_DAYS", 365),
+            patch.object(completion, "is_password_expired", return_value=True),
+            patch.object(completion, "get_days_until_expiration", return_value=-370),
+            patch.object(completion, "local_password_allowed", return_value=(True, "")),
             patch.object(
-                login_module.audit_logger, "log", side_effect=lambda **kw: captured.update(kw)
+                completion.audit_logger, "log", side_effect=lambda **kw: captured.update(kw)
             ),
         ):
-            login_module._apply_password_expiry(
+            completion._apply_password_expiry(
                 cast(Session, _NoopSession()),
                 cast(User, user),
                 "local",

@@ -18,7 +18,7 @@ from app.api.endpoints.admin_system_metrics import get_gpu_usage
 from app.api.endpoints.admin_system_metrics import get_memory_usage
 from app.api.endpoints.admin_system_metrics import get_system_uptime
 from app.api.endpoints.auth import get_current_admin_user
-from app.api.endpoints.auth.dependencies import _get_client_info
+from app.api.endpoints.auth.lifecycle_gates import _get_client_info
 from app.auth.roles import ELEVATED_ROLES
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import ROLE_USER

@@ -20,7 +20,7 @@ path.
 Two changes, tested here:
 
 1. **The comparison is normalised** (``.strip().lower()``, exactly as
-   ``api/endpoints/auth/dependencies.py:_enforce_proxy_identity_consistency`` already compares
+   ``api/endpoints/auth/external_token.py:_enforce_proxy_identity_consistency`` already compares
    an asserted address to a stored one). An IdP that re-cases an address is not asserting a
    different person, and locking an account out over it is indefensible. This is a narrowing of
    the *false-positive* surface, not a weakening: two different people never differ only by

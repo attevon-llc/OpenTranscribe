@@ -34,7 +34,7 @@ from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_admin_user
-from app.api.endpoints.auth.dependencies import _get_client_info
+from app.api.endpoints.auth.lifecycle_gates import _get_client_info
 from app.auth.approval import APPROVAL_APPROVED
 from app.auth.approval import APPROVAL_PENDING
 from app.auth.approval import APPROVAL_REJECTED

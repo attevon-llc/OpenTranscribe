@@ -1,6 +1,5 @@
 CLAUDE.md	728	oversize: split by concern planned
 backend/app/api/CLAUDE.md	595	oversize: split by concern planned
-backend/app/api/endpoints/auth/dependencies.py	931	oversize: split by concern planned
 backend/app/api/endpoints/auth/login.py	732	oversize: split by concern planned
 backend/app/api/endpoints/auth_config.py	766	oversize: split by concern planned
 backend/app/api/endpoints/files/__init__.py	1480	oversize: split by concern planned
@@ -89,7 +88,6 @@ backend/tests/unit/test_chunking_service.py	891	oversize: split by concern plann
 backend/tests/unit/test_cleanup_test_data_safety.py	750	oversize: split by concern planned
 backend/tests/unit/test_compose_file_selection.py	822	oversize: split by concern planned
 backend/tests/unit/test_cooperative_abort.py	927	oversize: split by concern planned
-backend/tests/unit/test_dependencies_survivor_mutants.py	1096	oversize: split by concern planned
 backend/tests/unit/test_diar_native_handoff.py	883	oversize: split by concern planned
 backend/tests/unit/test_diarizer_engine_selection.py	787	oversize: split by concern planned
 backend/tests/unit/test_dispatch.py	857	oversize: split by concern planned

@@ -117,7 +117,7 @@ Full triage of the 95:
     ``expected_type and TOKEN_TYPE_ACCESS``, and both ``accepted_algorithms(token_
     purpose)``/``signing_algorithm(token_purpose)`` -> ``(None)``, can never change
     either function's return value (4 mutants: ``mutmut_9/10/12/14``). This is the
-    SAME fact ``tests/unit/test_dependencies_survivor_mutants.py`` independently
+    SAME fact ``tests/unit/auth_dependencies/test_dependencies_survivor_mutants.py`` independently
     measured for the identical functions -- re-derived here by reading, not
     re-assumed. A 5th (``mutmut_1``, ``token_algorithm = None`` -> ``""``) is
     equivalent for an unrelated reason: the only two places that variable is read

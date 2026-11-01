@@ -54,9 +54,10 @@ import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
 
-from app.api.endpoints.auth import dependencies as deps_module
-from app.api.endpoints.auth.dependencies import ERROR_CODE_PROXY_IDENTITY_MISMATCH
+from app.api.endpoints.auth import external_token as external_token_module
+from app.api.endpoints.auth import lifecycle_gates as gates_module
 from app.api.endpoints.auth.dependencies import get_current_active_user
+from app.api.endpoints.auth.external_token import ERROR_CODE_PROXY_IDENTITY_MISMATCH
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.core.config import settings
@@ -64,7 +65,7 @@ from app.core.security import get_password_hash
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 
-_enforce = deps_module._enforce_proxy_identity_consistency
+_enforce = external_token_module._enforce_proxy_identity_consistency
 
 #: The allowlist an operator would configure for a proxy on the container network.
 TRUSTED_CIDR = "10.0.0.0/8"
@@ -118,7 +119,7 @@ def audited(monkeypatch) -> list[dict]:
     so it captures EVERY emitter reached during the call, not only this module's.
     """
     events: list[dict] = []
-    monkeypatch.setattr(deps_module.audit_logger, "log", lambda **kw: events.append(kw))
+    monkeypatch.setattr(gates_module.audit_logger, "log", lambda **kw: events.append(kw))
     return events
 
 

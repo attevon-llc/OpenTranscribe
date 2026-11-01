@@ -420,6 +420,8 @@ only_mutate = [
     "app/auth/password_policy.py",
     "app/core/security.py",
     "app/api/endpoints/auth/dependencies.py",
+    "app/api/endpoints/auth/lifecycle_gates.py",
+    "app/api/endpoints/auth/external_token.py",
     "app/auth/lockout.py",
     "app/auth/lockout_store.py",
     "app/auth/lockout_admin.py",

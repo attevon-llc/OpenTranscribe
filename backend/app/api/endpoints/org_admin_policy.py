@@ -21,7 +21,7 @@ from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import require_org_admin
-from app.api.endpoints.auth.dependencies import _get_client_info
+from app.api.endpoints.auth.lifecycle_gates import _get_client_info
 from app.api.endpoints.org_admin import org_id_of
 from app.api.endpoints.privacy import queue_purge
 from app.auth.audit import audit_logger

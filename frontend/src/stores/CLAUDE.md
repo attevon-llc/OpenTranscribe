@@ -17,8 +17,8 @@ caches of API responses.
   `account_rejected` tear the session down (no remedy exists in-app);
   `password_change_required` and `banner_acknowledgment_required` keep it alive on purpose,
   because the endpoint that clears each gate needs it. Add a code here **and** to
-  `api/endpoints/auth/dependencies.py` — a client that string-matches an English message breaks
-  on rewording.
+  `api/endpoints/auth/lifecycle_gates.py` (`external_token.py` for `proxy_identity_mismatch`) —
+  a client that string-matches an English message breaks on rewording.
 - `websocket.ts` — real-time file/task status updates (large; split candidate).
 - `toast.ts` — `toastStore.success/error(...)` notifications.
 - `transcriptStore.ts` — transcript segments + processed cache (used by transcript views/analytics).

@@ -19,10 +19,10 @@ from joserfc.jwk import OctKey
 from joserfc.jwt import JWTClaimsRegistry
 from sqlalchemy.orm import Session
 
-from app.api.endpoints.auth.dependencies import _get_client_info
 from app.api.endpoints.auth.dependencies import get_current_active_user
 from app.api.endpoints.auth.dependencies import get_current_user
 from app.api.endpoints.auth.dependencies import oauth2_scheme
+from app.api.endpoints.auth.lifecycle_gates import _get_client_info
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome

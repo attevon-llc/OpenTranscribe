@@ -40,6 +40,7 @@ from fastapi import HTTPException
 from starlette.requests import Request
 
 from app.api.endpoints.auth import dependencies as deps_module
+from app.api.endpoints.auth import external_token as external_token_module
 from app.auth import external_sync
 from app.auth.provider_registry import ExternalIdentity
 from app.auth.provider_registry import has_verifiers
@@ -50,7 +51,7 @@ from app.core.exceptions import ExternalIdentityLinkRefusedError
 from app.core.security import get_password_hash
 from app.models.user import User
 
-_authenticate = deps_module._authenticate_external_token
+_authenticate = external_token_module._authenticate_external_token
 
 #: A core-permitted ``auth_type``. The registry and the JIT sync are
 #: vendor-neutral, but ``user.auth_type`` is CHECK-constrained to the built-in set

@@ -1,6 +1,6 @@
 """FedRAMP AC-2 account-inactivity expiration — the sweep half.
 
-`_enforce_account_expiry` (``api/endpoints/auth/dependencies.py``) enforces a
+`_enforce_account_expiry` (``api/endpoints/auth/lifecycle_gates.py``) enforces a
 DIFFERENT AC-2 mechanism: a fixed, admin-set `User.account_expires_at` date, checked
 at request time. This module is the other one — a periodic sweep that deactivates
 an account nobody has used in `settings.ACCOUNT_INACTIVE_DAYS` days, gated on

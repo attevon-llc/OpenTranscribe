@@ -646,7 +646,7 @@ _RAISE_ALLOWLIST: dict[str, tuple[int, str]] = {
         "our own LdapDirectoryUnavailableError message — superuser-only diagnostic "
         "describing the admin's own directory configuration, not a caller-triggered leak",
     ),
-    "api/endpoints/auth/dependencies.py::_authenticate_external_token": (
+    "api/endpoints/auth/external_token.py::_authenticate_external_token": (
         1,
         "our own ExternalIdentityLinkRefusedError message from sync_external_user_to_db "
         "(a refused link, e.g. unverified email match), not a raw library exception. "

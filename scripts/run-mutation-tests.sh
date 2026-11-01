@@ -118,7 +118,7 @@ declare -A MODULE_PATH=(
     [spans]="app/services/redaction/spans.py"
     [password_policy]="app/auth/password_policy.py"
     [security]="app/core/security.py"
-    [dependencies]="app/api/endpoints/auth/dependencies.py"
+    [dependencies]="app/api/endpoints/auth/dependencies.py" [lifecycle_gates]="app/api/endpoints/auth/lifecycle_gates.py" [external_token]="app/api/endpoints/auth/external_token.py"
     [lockout]="app/auth/lockout.py"
     [lockout_store]="app/auth/lockout_store.py"
     [lockout_admin]="app/auth/lockout_admin.py"
@@ -147,7 +147,7 @@ declare -A MODULE_TESTS=(
     # the module nor its helpers -- they drive it over HTTP and through the provider
     # registry -- so nothing static could derive them. The coverage pre-flight below
     # measures the property directly instead.
-    [dependencies]="tests/unit/test_route_privilege_tiers.py tests/unit/test_account_lifecycle.py tests/unit/test_account_approval.py tests/unit/test_mfa_enforcement.py tests/unit/test_flower_access.py tests/unit/test_banner_acknowledgment.py tests/unit/test_token_type_binding.py tests/unit/test_access_token_revocation_epoch.py tests/unit/test_credential_gate_fail_closed.py tests/api/test_proxy_auth_endpoint.py tests/test_cloud_seams.py tests/unit/test_proxy_identity_consistency.py tests/unit/test_lifecycle_denial_audit_records.py tests/unit/test_optional_current_user.py tests/unit/test_external_token_auth.py tests/unit/test_dependencies_survivor_mutants.py"
+    [dependencies]="tests/unit/test_route_privilege_tiers.py tests/unit/test_account_lifecycle.py tests/unit/test_account_approval.py tests/unit/test_mfa_enforcement.py tests/unit/test_flower_access.py tests/unit/test_banner_acknowledgment.py tests/unit/test_token_type_binding.py tests/unit/test_access_token_revocation_epoch.py tests/unit/test_credential_gate_fail_closed.py tests/api/test_proxy_auth_endpoint.py tests/test_cloud_seams.py tests/unit/test_proxy_identity_consistency.py tests/unit/test_lifecycle_denial_audit_records.py tests/unit/test_optional_current_user.py tests/unit/test_external_token_auth.py tests/unit/test_external_session_absolute_timeout.py tests/unit/auth_dependencies/test_dependencies_survivor_mutants.py tests/unit/auth_dependencies/test_dependencies_enforcement_mutants.py tests/unit/auth_dependencies/test_privileged_dependency_mutants.py"
     # Coverage pre-flight caught this list at 56% of the module on its first real run:
     # it omitted test_lockout_atomicity.py (named for the module it tests) and
     # test_auth_config_behaviour.py, both of which import app.auth.lockout directly, plus
@@ -164,7 +164,7 @@ declare -A MODULE_TESTS=(
     # code, not because the tests are weak -- is now checked mechanically by the
     # coverage pre-flight rather than remembered in a comment.
     [session]="tests/unit/test_session_lifetime.py tests/unit/test_auth_state_degradation.py tests/unit/test_oidc_state_single_use.py tests/unit/test_session_survivor_mutants.py"
-)
+); MODULE_TESTS[lifecycle_gates]="${MODULE_TESTS[dependencies]}"; MODULE_TESTS[external_token]="${MODULE_TESTS[dependencies]}"
 
 
 # Warn when a target's cached mutmut verdicts were produced by a DIFFERENT test list.
@@ -839,7 +839,7 @@ print(f"  timeout_constant: {cfg.get('timeout_constant', 'unset')}s")
 PY
     echo
     echo -e "${BLUE}Module aliases and the tests each one runs${NC}"
-    for key in spans password_policy security dependencies lockout lockout_store lockout_admin session; do
+    for key in spans password_policy security dependencies lifecycle_gates external_token lockout lockout_store lockout_admin session; do
         printf "  %-16s %s\n" "$key" "${MODULE_PATH[$key]}"
         printf "  %-16s   tests: %s\n" "" "${MODULE_TESTS[$key]}"
     done
@@ -980,7 +980,7 @@ fi
 # Run
 # ---------------------------------------------------------------------------
 if [[ "$MODULE" == ALL ]]; then
-    MODULES=(spans password_policy security dependencies lockout lockout_store lockout_admin session)
+    MODULES=(spans password_policy security dependencies lifecycle_gates external_token lockout lockout_store lockout_admin session)
     echo -e "${YELLOW}--all mutates every configured module. Expect HOURS.${NC}"
     echo -e "${YELLOW}Prefer one module at a time (--module spans).${NC}"
     echo

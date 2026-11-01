@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from app.api.endpoints.auth.authenticators import _authenticate_production_user
 from app.api.endpoints.auth.authenticators import _authenticate_testing_user
 from app.api.endpoints.auth.authenticators import _get_user_role
-from app.api.endpoints.auth.dependencies import _get_client_info
+from app.api.endpoints.auth.lifecycle_gates import _get_client_info
 from app.api.endpoints.auth.mfa_tokens import MFA_SCOPE_ENROLL
 from app.api.endpoints.auth.mfa_tokens import _create_mfa_token
 from app.api.endpoints.auth.mfa_tokens import _is_mfa_enabled

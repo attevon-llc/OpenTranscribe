@@ -48,6 +48,9 @@ import app.api.endpoints.auth_config as auth_config
 import app.api.endpoints.combined_speaker_migration as combined_speaker_migration
 import app.api.endpoints.embedding_migration as embedding_migration
 import app.api.endpoints.files as files_endpoints
+import app.api.endpoints.files.listing as files_listing
+import app.api.endpoints.files.media_delivery as files_media_delivery
+import app.api.endpoints.files.single_file as files_single_file
 import app.api.endpoints.files.subtitles as subtitles
 import app.api.endpoints.files.url_processing as url_processing
 import app.api.endpoints.llm_connection_tests as llm_connection_tests
@@ -120,6 +123,9 @@ HARDENED_MODULES = [
     combined_speaker_migration,
     embedding_migration,
     files_endpoints,
+    files_listing,
+    files_media_delivery,
+    files_single_file,
     llm_connection_tests,
     llm_local_endpoints,
     llm_model_discovery,
@@ -250,7 +256,7 @@ HARDENED_HANDLERS = [
     (combined_speaker_migration, "get_combined_migration_status"),
     (embedding_migration, "get_migration_status"),
     (embedding_migration, "start_migration"),
-    (files_endpoints, "download_stream"),
+    (files_media_delivery, "download_stream"),
     (llm_connection_tests, "test_llm_connection"),
     (llm_connection_tests, "test_active_configuration"),
     (llm_connection_tests, "test_specific_configuration"),
@@ -410,7 +416,7 @@ SSE_GENERATORS = [
     # is a synchronous Redis SETNX plus a Celery dispatch. Both go through
     # ``run_in_threadpool`` (passed as a bare name, never called inline).
     (
-        files_endpoints,
+        files_media_delivery,
         "download_stream",
         "event_stream",
         {"_ready_frame", "_ensure_prepare_enqueued"},
@@ -490,7 +496,7 @@ def _awaited_ready_frame_lines(tree: ast.AST) -> list[int]:
 
 # (module, handler, generator, locator for that stream's readiness checks)
 READINESS_STRADDLE = [
-    (files_endpoints, "download_stream", "event_stream", _threadpooled_ready_frame_lines),
+    (files_media_delivery, "download_stream", "event_stream", _threadpooled_ready_frame_lines),
     (subtitles, "bulk_export_stream", "event_stream", _awaited_ready_frame_lines),
 ]
 

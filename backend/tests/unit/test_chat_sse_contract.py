@@ -317,14 +317,14 @@ def test_the_backend_python_file_walk_reaches_beyond_the_original_two_files():
     """Regression guard for the actual bypass this closed: a hardcoded 2-file
     list left a THIRD file's `sse("error", ...)` call completely invisible,
     proven against two real, already-existing emitters that were never scanned
-    before this fix (`files/subtitles.py`, `files/__init__.py`)."""
+    before this fix (`files/subtitles.py`, `files/media_delivery.py`)."""
     paths = set(_iter_backend_python_files())
     assert _SERVICE_PY in paths
     assert _MESSAGES_PY in paths
     subtitles_py = _BACKEND_ROOT / "api" / "endpoints" / "files" / "subtitles.py"
-    files_init_py = _BACKEND_ROOT / "api" / "endpoints" / "files" / "__init__.py"
+    media_delivery_py = _BACKEND_ROOT / "api" / "endpoints" / "files" / "media_delivery.py"
     assert subtitles_py in paths, "the tree walk no longer reaches files/subtitles.py"
-    assert files_init_py in paths, "the tree walk no longer reaches files/__init__.py"
+    assert media_delivery_py in paths, "the tree walk no longer reaches files/media_delivery.py"
 
 
 # ---------------------------------------------------------------------------

@@ -317,7 +317,7 @@ INLINE_ROLE_ROUTES: dict[str, tuple[str, str]] = {
 #: an admin reveal unredacted text (``reveal-widener``), keyed ``rel::function``. A widener in a
 #: function that is not listed is ``UNCLASSIFIED``: a new widener is a new decision.
 SCOPE_WIDENER_SITES: dict[str, str] = {
-    "api/endpoints/files/__init__.py::list_media_files": (
+    "api/endpoints/files/listing.py::list_media_files": (
         "widens a list to every user's rows; the gallery list drops the owner filter but keeps the organization predicate"
     ),
     "api/endpoints/files/filtering.py::get_accessible_owners": (
@@ -384,7 +384,7 @@ REVEAL_WIDENER_SITES: dict[str, str] = {
 #: ``test_every_scope_widener_still_applies_its_tenant_predicate``. An empty tuple means the
 #: tenant gate is applied by the caller, and the site's reason says where.
 TENANT_MARKERS: dict[str, tuple[str, ...]] = {
-    "api/endpoints/files/__init__.py::list_media_files": ("org_pred",),
+    "api/endpoints/files/listing.py::list_media_files": ("org_pred",),
     "api/endpoints/files/filtering.py::get_accessible_owners": ("org_pred",),
     "api/endpoints/search_reindex.py::get_degraded_embeddings": ("org_scope_pred",),
     "api/endpoints/speaker_profiles.py::list_speaker_profiles": ("org_scope_pred",),

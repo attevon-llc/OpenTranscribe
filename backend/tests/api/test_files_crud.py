@@ -1,7 +1,7 @@
 """Characterization tests for the files CRUD endpoints.
 
 Covers ``files/crud.py`` plus the list/get/update/delete routes wired in
-``files/__init__.py``:
+``files/listing.py`` and ``files/single_file.py``:
 
 - ``GET  /api/files``                     (list, pagination, filters)
 - ``GET  /api/files/{uuid}``              (detail, incl. the #326 tag wire contract)

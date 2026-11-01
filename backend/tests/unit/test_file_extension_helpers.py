@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.api.endpoints.files import _audio_passthrough
+from app.api.endpoints.files.media_delivery import _audio_passthrough
 from app.models.media import MediaFile
 from app.services.storage_recovery_service import content_type_for
 from app.tasks.transcription.audio_processor import get_audio_file_extension

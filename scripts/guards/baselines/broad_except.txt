@@ -9,7 +9,8 @@ backend/app/api/endpoints/auth/sessions.py	2	ratchet: may only go down
 backend/app/api/endpoints/combined_speaker_migration.py	3	ratchet: may only go down
 backend/app/api/endpoints/embedding_migration.py	4	ratchet: may only go down
 backend/app/api/endpoints/engine_settings.py	3	ratchet: may only go down
-backend/app/api/endpoints/files/__init__.py	2	ratchet: may only go down
+backend/app/api/endpoints/files/__init__.py	1	ratchet: may only go down
+backend/app/api/endpoints/files/media_delivery.py	1	ratchet: may only go down
 backend/app/api/endpoints/files/complete_upload.py	4	ratchet: may only go down
 backend/app/api/endpoints/files/crud.py	3	ratchet: may only go down
 backend/app/api/endpoints/files/detail_response.py	1	ratchet: may only go down

@@ -306,7 +306,7 @@ window regardless of the takedown. **This is now fixed for the bundled MinIO bac
 ### The mechanism
 
 Browser-facing GET presigns — `GET /api/files/{uuid}/stream-url` (video/audio/thumbnail,
-`backend/app/api/endpoints/files/__init__.py`) and the download/preview equivalents
+`backend/app/api/endpoints/files/single_file.py`) and the download/preview equivalents
 (`minio_service.get_presigned_download_url`, `MinIOService.get_presigned_url`) — are signed by
 a dedicated, **non-root MinIO service-account identity** (`backend/app/services/
 storage_presign_identity.py`) instead of the root credential. That identity's inline policy

@@ -17,7 +17,7 @@ pub/sub, which predates knowing the pipeline's shape: retrieval runs in the same
 process and the same request as the SSE generator, so Redis would add a network
 hop and a lost-wakeup race to cross a boundary that does not exist. If a
 retrieval stage ever moves to Celery, the templates to copy are
-``endpoints/files/__init__.py``'s ``download_stream`` and
+``endpoints/files/media_delivery.py``'s ``download_stream`` and
 ``endpoints/files/subtitles.py``'s ``bulk_export_stream``, both of which
 subscribe properly with the check -> subscribe -> re-check ordering.
 

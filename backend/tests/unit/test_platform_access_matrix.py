@@ -116,7 +116,7 @@ def test_a_grant_is_only_ever_built_from_a_validated_header(derived):
     assert callers == {
         "api/deps_context.py::get_current_context",
         "api/deps_context.py::resolve_request_bypass",
-        "api/endpoints/files/__init__.py::get_thumbnail",
+        "api/endpoints/files/media_delivery.py::get_thumbnail",
     }, callers
 
 

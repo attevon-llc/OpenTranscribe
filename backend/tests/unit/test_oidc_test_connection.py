@@ -11,8 +11,8 @@ import asyncio
 
 import pytest
 
-from app.api.endpoints.auth_config import _roles_claim_advertised
-from app.api.endpoints.auth_config import _test_oidc_connection
+from app.api.endpoints.auth_config_connection_tests import _roles_claim_advertised
+from app.api.endpoints.auth_config_connection_tests import _test_oidc_connection
 
 
 class TestRolesClaimAdvertised:

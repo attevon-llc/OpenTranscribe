@@ -127,7 +127,7 @@ class UserUpdate(BaseModel):
     allow_local_fallback: bool | None = None
     #: FedRAMP AC-2 time-boxed account expiry — admin-tier (like /lock, /unlock),
     #: not super_admin-only. `None` clears it. Enforced on every request by
-    #: `api/endpoints/auth/dependencies.py`; write side is
+    #: `api/endpoints/auth/lifecycle_gates.py`; write side is
     #: `account_security_service.audit_expiration_change`.
     account_expires_at: datetime | None = None
 

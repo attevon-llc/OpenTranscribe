@@ -418,7 +418,7 @@ class DynamicAuthSettings:
     # Trusted-header (reverse-proxy) Settings Properties
     #
     # Read by ``auth/proxy/config.py:ProxyConfig.from_db`` (per login) and by the
-    # per-request consistency check in ``api/endpoints/auth/dependencies.py``, which
+    # per-request consistency check in ``api/endpoints/auth/external_token.py``, which
     # goes through the process-level layer because it holds no spare query budget.
     @property
     def proxy_enabled(self) -> bool:

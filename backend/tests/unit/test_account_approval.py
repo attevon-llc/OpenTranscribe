@@ -24,8 +24,8 @@ import uuid as uuid_pkg
 
 import pytest
 
-from app.api.endpoints.auth.dependencies import ERROR_CODE_ACCOUNT_PENDING_APPROVAL
-from app.api.endpoints.auth.dependencies import ERROR_CODE_ACCOUNT_REJECTED
+from app.api.endpoints.auth.lifecycle_gates import ERROR_CODE_ACCOUNT_PENDING_APPROVAL
+from app.api.endpoints.auth.lifecycle_gates import ERROR_CODE_ACCOUNT_REJECTED
 from app.auth.approval import APPROVAL_APPROVED
 from app.auth.approval import APPROVAL_PENDING
 from app.auth.approval import APPROVAL_REJECTED

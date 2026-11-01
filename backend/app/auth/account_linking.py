@@ -118,7 +118,7 @@ def emails_agree(asserted: str | None, stored: str | None) -> bool:
     every provider's profile refresh, so the stored value can never catch up).
 
     Deliberately the same comparison
-    ``api/endpoints/auth/dependencies._enforce_proxy_identity_consistency`` already
+    ``api/endpoints/auth/external_token._enforce_proxy_identity_consistency`` already
     makes for the same question; this is that rule named, not a second one. Two
     absent values do **not** agree — a caller with nothing to compare must take its
     own fail-open decision explicitly rather than inherit one from here.
@@ -240,7 +240,7 @@ def assert_provider_id_link_permitted(
        already used by the header-trust groups check elsewhere in this package.
 
     ⚠️ **The comparison is normalised** (``.strip().lower()``), matching
-    ``api/endpoints/auth/dependencies._enforce_proxy_identity_consistency``, which
+    ``api/endpoints/auth/external_token._enforce_proxy_identity_consistency``, which
     already compares an asserted address to a stored one that way. It was an exact
     byte compare, so an IdP re-casing an address asserted a *different person* as
     far as this function was concerned and locked the account out permanently

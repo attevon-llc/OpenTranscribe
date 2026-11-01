@@ -4,7 +4,7 @@ noqa::backend/alembic/versions/v270_add_asr_provider_support.py	1	suppression: r
 noqa::backend/alembic/versions/v377_harden_user_auth_invariants.py	1	suppression: reason to be added
 noqa::backend/app/api/endpoints/asr_provider_catalog.py	1	suppression: reason to be added
 noqa::backend/app/api/endpoints/asr_settings.py	2	suppression: reason to be added
-noqa::backend/app/api/endpoints/auth/dependencies.py	1	suppression: reason to be added
+noqa::backend/app/api/endpoints/auth/lifecycle_gates.py	1	suppression: reason to be added
 noqa::backend/app/api/endpoints/auth/mfa_tokens.py	1	suppression: reason to be added
 noqa::backend/app/api/endpoints/auth/proxy.py	1	suppression: reason to be added
 noqa::backend/app/api/endpoints/custom_vocabulary.py	2	suppression: reason to be added
@@ -196,7 +196,7 @@ noqa::backend/tests/unit/test_chat_trace_frames.py	1	suppression: reason to be a
 noqa::backend/tests/unit/test_cleanup_test_data_safety.py	4	suppression: reason to be added
 noqa::backend/tests/unit/test_cleanup_test_users_safety.py	1	suppression: reason to be added
 noqa::backend/tests/unit/test_corpus_injection_adapters.py	2	suppression: reason to be added
-noqa::backend/tests/unit/test_dependencies_survivor_mutants.py	1	suppression: reason to be added
+noqa::backend/tests/unit/auth_dependencies/test_dependencies_enforcement_mutants.py	1	suppression: reason to be added
 noqa::backend/tests/unit/test_diar_native_handoff.py	4	suppression: reason to be added
 noqa::backend/tests/unit/test_diar_native_readiness_gate.py	2	suppression: reason to be added
 noqa::backend/tests/unit/test_diar_sidecar_retry_policy.py	2	suppression: reason to be added

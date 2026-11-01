@@ -406,8 +406,8 @@ class TestFIPS140_3Encryption:
 class TestAccessTokenAlgorithmInvariant:
     """Every access-token ISSUER must sign with the algorithm the request path VERIFIES.
 
-    ``api/endpoints/auth/dependencies.py``'s ``get_current_user`` (:577) and
-    ``get_optional_current_user`` (:783) both decode with
+    ``api/endpoints/auth/dependencies.py``'s ``get_current_user`` (:117) and
+    ``get_optional_current_user`` (:257) both decode with
     ``algorithms=[settings.JWT_ALGORITHM]`` and nothing else. An issuer that selects a
     different algorithm — for any reason, FIPS included — mints tokens no authenticated
     request can verify. That is the invariant, and it is why the FIPS-aware
@@ -452,7 +452,7 @@ class TestAccessTokenAlgorithmInvariant:
             algorithm = jwt.get_unverified_header(token)["alg"]
             assert algorithm == settings.JWT_ALGORITHM, (
                 f"{name} signed with {algorithm} while the request path decodes with "
-                f"[{settings.JWT_ALGORITHM}] (dependencies.py:577,783) — every "
+                f"[{settings.JWT_ALGORITHM}] (dependencies.py:117,257) — every "
                 f"authenticated request with this token would 401"
             )
             # And prove it, rather than only comparing strings: decoding with exactly

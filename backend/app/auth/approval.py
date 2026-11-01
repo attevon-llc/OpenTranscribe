@@ -21,7 +21,7 @@ The three states
     trail and the email address both have to survive, or the same person simply
     signs up again and looks new.
 
-Enforcement lives in ``api/endpoints/auth/dependencies.py`` alongside the other
+Enforcement lives in ``api/endpoints/auth/lifecycle_gates.py`` alongside the other
 account-lifecycle gates (expiry, forced password change, banner acknowledgment),
 because that is the one dependency every user-facing route passes through and
 because those gates already own the machine-readable ``detail.code`` contract the
@@ -75,7 +75,7 @@ def approval_required(db) -> bool | None:
         ``None`` when the stored setting could not be read. ``None`` is a distinct
         answer, not ``False``: callers must treat "unreadable" as neither "off"
         nor "on" (see :func:`initial_approval_status` and the gate in
-        ``api/endpoints/auth/dependencies.py``).
+        ``api/endpoints/auth/lifecycle_gates.py``).
     """
     if db is None or not hasattr(db, "query"):
         from app.core.process_auth_settings import get_process_auth_settings

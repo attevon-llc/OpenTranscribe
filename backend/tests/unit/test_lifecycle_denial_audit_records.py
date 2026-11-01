@@ -39,13 +39,13 @@ from uuid import UUID
 import pytest
 from fastapi import HTTPException
 
-from app.api.endpoints.auth import dependencies as deps_module
-from app.api.endpoints.auth.dependencies import BANNER_EXEMPT_PATHS
-from app.api.endpoints.auth.dependencies import ERROR_CODE_ACCOUNT_EXPIRED
-from app.api.endpoints.auth.dependencies import ERROR_CODE_ACCOUNT_PENDING_APPROVAL
-from app.api.endpoints.auth.dependencies import ERROR_CODE_ACCOUNT_REJECTED
-from app.api.endpoints.auth.dependencies import PASSWORD_CHANGE_EXEMPT_PATHS
+from app.api.endpoints.auth import lifecycle_gates as gates_module
 from app.api.endpoints.auth.dependencies import get_current_active_user
+from app.api.endpoints.auth.lifecycle_gates import BANNER_EXEMPT_PATHS
+from app.api.endpoints.auth.lifecycle_gates import ERROR_CODE_ACCOUNT_EXPIRED
+from app.api.endpoints.auth.lifecycle_gates import ERROR_CODE_ACCOUNT_PENDING_APPROVAL
+from app.api.endpoints.auth.lifecycle_gates import ERROR_CODE_ACCOUNT_REJECTED
+from app.api.endpoints.auth.lifecycle_gates import PASSWORD_CHANGE_EXEMPT_PATHS
 from app.auth.approval import APPROVAL_APPROVED
 from app.auth.approval import APPROVAL_PENDING
 from app.auth.approval import APPROVAL_REJECTED
@@ -93,7 +93,7 @@ def _request(path: str = ORDINARY_PATH, *, matched_route: bool = True) -> Any:
 def audited(monkeypatch) -> list[dict]:
     """Capture every audit event the dependency gate emits."""
     events: list[dict] = []
-    monkeypatch.setattr(deps_module.audit_logger, "log", lambda **kw: events.append(kw))
+    monkeypatch.setattr(gates_module.audit_logger, "log", lambda **kw: events.append(kw))
     return events
 
 
@@ -210,7 +210,7 @@ class TestEveryLifecycleDenialIdentifiesTheAccountAndTheClient:
         splits every "attempts by source" bucket in two, for exactly the events
         that arrived without a request.
         """
-        assert deps_module._get_client_info(None) == ("unknown", "unknown")
+        assert gates_module._get_client_info(None) == ("unknown", "unknown")
 
         with pytest.raises(HTTPException) as exc:
             get_current_active_user(request=None, current_user=_user(must_change_password=True))
@@ -379,14 +379,14 @@ class TestTheExemptSetsMatchTheRouteTemplate:
     def test_the_root_path_is_left_alone(self, audited):
         """``"/"`` is one character; stripping it would leave the empty string, and
         the audit record would name no route at all."""
-        assert deps_module._route_path(_request("/")) == "/"
+        assert gates_module._route_path(_request("/")) == "/"
 
     def test_a_request_stand_in_with_no_path_resolves_to_the_empty_string(self):
         """Fails safe: an unknown path is in no exempt set, so the caller is refused."""
-        assert deps_module._route_path(SimpleNamespace()) == ""
+        assert gates_module._route_path(SimpleNamespace()) == ""
 
     def test_none_resolves_to_the_empty_string(self):
-        assert deps_module._route_path(None) == ""
+        assert gates_module._route_path(None) == ""
 
     def test_both_exempt_sets_are_stored_without_trailing_slashes(self):
         """The stripping above is only correct if the sets are normalised the same

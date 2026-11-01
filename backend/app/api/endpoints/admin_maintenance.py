@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_admin_user
-from app.api.endpoints.auth.dependencies import _get_client_info
+from app.api.endpoints.auth.lifecycle_gates import _get_client_info
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome

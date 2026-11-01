@@ -176,7 +176,7 @@ def _bcrypt_rounds() -> int:
 
     Two independent gates, matching the existing contract for ``TESTING`` documented at
     ``app/main.py:153-163`` and applied the same way at
-    ``app/api/endpoints/auth/dependencies.py:666``:
+    ``app/api/endpoints/auth/dependencies.py:101``:
 
     * ``TESTING`` must be truthy, and
     * ``settings.is_hardened`` must be False.

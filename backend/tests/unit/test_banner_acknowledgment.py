@@ -37,11 +37,11 @@ import pytest
 from fastapi import HTTPException
 from fastapi import Response
 
-from app.api.endpoints.auth import dependencies as deps_module
-from app.api.endpoints.auth.dependencies import BANNER_EXEMPT_PATHS
-from app.api.endpoints.auth.dependencies import ERROR_CODE_BANNER_ACKNOWLEDGMENT_REQUIRED
-from app.api.endpoints.auth.dependencies import ERROR_CODE_PASSWORD_CHANGE_REQUIRED
+from app.api.endpoints.auth import lifecycle_gates as gates_module
 from app.api.endpoints.auth.dependencies import get_current_active_user
+from app.api.endpoints.auth.lifecycle_gates import BANNER_EXEMPT_PATHS
+from app.api.endpoints.auth.lifecycle_gates import ERROR_CODE_BANNER_ACKNOWLEDGMENT_REQUIRED
+from app.api.endpoints.auth.lifecycle_gates import ERROR_CODE_PASSWORD_CHANGE_REQUIRED
 from app.core.config import settings
 
 USER_UUID = "019ec90a-1b2c-7def-8000-0000000000dd"
@@ -447,7 +447,7 @@ class TestTheStoredConfigurationIsFoundByKey:
         monkeypatch.setattr(settings, "LOGIN_BANNER_ENABLED", False)
         self._store(db_session, "login_banner_enabled", "true")
 
-        enabled, _ = deps_module._banner_requirement(db_session)
+        enabled, _ = gates_module._banner_requirement(db_session)
 
         assert enabled is True
 
@@ -460,6 +460,6 @@ class TestTheStoredConfigurationIsFoundByKey:
         edited_at = datetime(2026, 8, 13, 9, 30, tzinfo=UTC)
         self._store(db_session, "login_banner_text", "AUTHORIZED USE ONLY", updated_at=edited_at)
 
-        _, text_changed_at = deps_module._banner_requirement(db_session)
+        _, text_changed_at = gates_module._banner_requirement(db_session)
 
         assert text_changed_at == edited_at

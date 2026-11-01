@@ -38,6 +38,7 @@ from starlette.requests import Request
 
 from app.api import websockets as ws_module
 from app.api.endpoints.auth import dependencies as deps_module
+from app.api.endpoints.auth import external_token as external_token_module
 from app.auth import external_session
 from app.auth.provider_registry import ExternalIdentity
 from app.auth.provider_registry import register_verifier
@@ -107,7 +108,7 @@ def _register(**overrides: Any) -> ExternalIdentity:
 
 def _required(db_session) -> str | None:
     """External id of the user the required-auth path resolved, or None."""
-    user = deps_module._authenticate_external_token(_request(), TOKEN, db_session)
+    user = external_token_module._authenticate_external_token(_request(), TOKEN, db_session)
     return None if user is None else str(user.external_id)
 
 
@@ -124,7 +125,7 @@ class TestRequiredAuthPath:
         register_verifier(PROVIDER, _Verifier(_identity(auth_time=_stale())))
 
         with pytest.raises(HTTPException) as exc:
-            deps_module._authenticate_external_token(_request(), TOKEN, db_session)
+            external_token_module._authenticate_external_token(_request(), TOKEN, db_session)
 
         assert exc.value.status_code == 401
         assert isinstance(exc.value.detail, dict)
@@ -136,7 +137,7 @@ class TestRequiredAuthPath:
         register_verifier(PROVIDER, _Verifier(identity))
 
         with pytest.raises(HTTPException):
-            deps_module._authenticate_external_token(_request(), TOKEN, db_session)
+            external_token_module._authenticate_external_token(_request(), TOKEN, db_session)
 
         assert db_session.query(User).filter(User.external_id == identity.external_id).count() == 0
 
@@ -149,7 +150,7 @@ class TestRequiredAuthPath:
         register_verifier(PROVIDER, _Verifier(_identity(raw_claims={"auth_time": _stale()})))
 
         with pytest.raises(HTTPException) as exc:
-            deps_module._authenticate_external_token(_request(), TOKEN, db_session)
+            external_token_module._authenticate_external_token(_request(), TOKEN, db_session)
 
         assert exc.value.status_code == 401
 
@@ -159,6 +160,33 @@ class TestRequiredAuthPath:
         identity = _register(raw_claims={"iat": _stale()})
 
         assert _required(db_session) == identity.external_id
+
+
+class TestTheExpiryIsAudited:
+    def test_an_expired_external_session_writes_one_session_expired_failure(
+        self, db_session, monkeypatch
+    ):
+        """The 401 is not the only artefact: AU-2 wants the refusal recorded, and
+        nothing else on this path writes an audit event before it raises."""
+        from app.auth.audit_events import AuditEventType
+        from app.auth.audit_events import AuditOutcome
+
+        events: list[dict[str, Any]] = []
+        monkeypatch.setattr(
+            external_token_module.audit_logger, "log", lambda **kw: events.append(kw)
+        )
+        identity = _identity(auth_time=_stale())
+        register_verifier(PROVIDER, _Verifier(identity))
+
+        with pytest.raises(HTTPException):
+            external_token_module._authenticate_external_token(_request(), TOKEN, db_session)
+
+        assert len(events) == 1
+        event = events[0]
+        assert event["event_type"] == AuditEventType.AUTH_SESSION_EXPIRED
+        assert event["outcome"] == AuditOutcome.FAILURE
+        assert event["username"] == identity.email
+        assert event["details"] == {"provider": PROVIDER, "reason": "absolute_timeout"}
 
 
 class TestDegradesInsteadOfLockingEveryoneOut:
@@ -171,8 +199,8 @@ class TestDegradesInsteadOfLockingEveryoneOut:
         register_verifier(PROVIDER, _Verifier(_identity()))
 
         with caplog.at_level(logging.WARNING, logger=external_session.__name__):
-            deps_module._authenticate_external_token(_request(), TOKEN, db_session)
-            deps_module._authenticate_external_token(_request(), TOKEN, db_session)
+            external_token_module._authenticate_external_token(_request(), TOKEN, db_session)
+            external_token_module._authenticate_external_token(_request(), TOKEN, db_session)
 
         warnings = [r for r in caplog.records if "auth_time" in r.getMessage()]
         assert len(warnings) == 1

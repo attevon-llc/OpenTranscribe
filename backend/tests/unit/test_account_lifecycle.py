@@ -32,12 +32,12 @@ import pytest
 from fastapi import HTTPException
 from fastapi import Response
 
-from app.api.endpoints.auth import dependencies as deps_module
+from app.api.endpoints.auth import lifecycle_gates as gates_module
 from app.api.endpoints.auth import login as login_module
-from app.api.endpoints.auth.dependencies import ERROR_CODE_ACCOUNT_EXPIRED
-from app.api.endpoints.auth.dependencies import ERROR_CODE_PASSWORD_CHANGE_REQUIRED
 from app.api.endpoints.auth.dependencies import get_current_active_user
 from app.api.endpoints.auth.dependencies import get_current_admin_user
+from app.api.endpoints.auth.lifecycle_gates import ERROR_CODE_ACCOUNT_EXPIRED
+from app.api.endpoints.auth.lifecycle_gates import ERROR_CODE_PASSWORD_CHANGE_REQUIRED
 from app.auth import password_policy as policy_module
 from app.auth.audit_events import AuditEventType
 from app.core.config import settings
@@ -145,7 +145,7 @@ def _unwrap(func):
 def audited(monkeypatch) -> list[dict]:
     """Capture every audit event the dependency gate emits."""
     events: list[dict] = []
-    monkeypatch.setattr(deps_module.audit_logger, "log", lambda **kw: events.append(kw))
+    monkeypatch.setattr(gates_module.audit_logger, "log", lambda **kw: events.append(kw))
     return events
 
 

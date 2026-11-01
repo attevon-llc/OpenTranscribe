@@ -11,6 +11,11 @@ Layout:
 
 - :mod:`dependencies` — the DI functions and ``oauth2_scheme``. Route-free, so
   the ~30 importers never pull a router into their import graph.
+- :mod:`lifecycle_gates` — the account-lifecycle gates ``get_current_active_user``
+  chains through (approval, expiry, banner, forced password change) and
+  ``_get_client_info``.
+- :mod:`external_token` — the external-verifier seam and the trusted-proxy identity
+  check. Imports from ``lifecycle_gates`` only.
 - :mod:`authenticators` — per-``auth_type`` credential verification.
 - :mod:`login` — ``/token`` + ``/login`` and the authentication orchestration.
 - :mod:`registration` — ``/register``, ``/password-policy``, ``/password-reset/*``.
@@ -42,8 +47,6 @@ from app.api.endpoints.auth.authenticators import _build_user_data
 from app.api.endpoints.auth.authenticators import _check_user_active
 from app.api.endpoints.auth.authenticators import _ensure_user_uuid
 from app.api.endpoints.auth.authenticators import _get_user_role
-from app.api.endpoints.auth.dependencies import _authenticate_external_token
-from app.api.endpoints.auth.dependencies import _get_client_info
 from app.api.endpoints.auth.dependencies import get_current_active_superuser
 from app.api.endpoints.auth.dependencies import get_current_active_user
 from app.api.endpoints.auth.dependencies import get_current_admin_user
@@ -52,12 +55,14 @@ from app.api.endpoints.auth.dependencies import get_optional_current_user
 from app.api.endpoints.auth.dependencies import oauth2_scheme
 from app.api.endpoints.auth.email_verification import resend_verification_endpoint
 from app.api.endpoints.auth.email_verification import verify_email_endpoint
+from app.api.endpoints.auth.external_token import _authenticate_external_token
 from app.api.endpoints.auth.flower import flower_authz
 from app.api.endpoints.auth.invitations import accept_invitation_endpoint
 from app.api.endpoints.auth.invitations import create_invitation_endpoint
 from app.api.endpoints.auth.invitations import list_invitations
 from app.api.endpoints.auth.invitations import lookup_invitation_endpoint
 from app.api.endpoints.auth.invitations import revoke_invitation_endpoint
+from app.api.endpoints.auth.lifecycle_gates import _get_client_info
 from app.api.endpoints.auth.login import _check_mfa_requirement
 from app.api.endpoints.auth.login import _generate_login_tokens
 from app.api.endpoints.auth.login import _handle_lockout_check

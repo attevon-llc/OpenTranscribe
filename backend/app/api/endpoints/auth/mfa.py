@@ -11,8 +11,8 @@ from fastapi import status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from app.api.endpoints.auth.dependencies import _get_client_info
 from app.api.endpoints.auth.dependencies import get_current_active_user
+from app.api.endpoints.auth.lifecycle_gates import _get_client_info
 from app.api.endpoints.auth.mfa_enrollment import EnrollmentContext
 from app.api.endpoints.auth.mfa_enrollment import _complete_mfa_verification
 from app.api.endpoints.auth.mfa_enrollment import get_user_for_enrollment

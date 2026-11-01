@@ -626,8 +626,8 @@ cross-worker concurrency on it is this repo's known deadlock shape (the advisory
 **Scope: six security-critical modules only** (`[tool.mutmut] paths_to_mutate`) —
 `redaction/spans.py` (masking off-by-one leaks the character it should hide),
 `auth/password_policy.py` (five independent `require_*` predicates), `core/security.py`
-(JWT/bcrypt), `api/endpoints/auth/dependencies.py` (the privilege gates — an inverted role
-comparison is privilege escalation), `auth/lockout.py` (+ `lockout_store.py`, `lockout_admin.py`), `auth/session.py`. A whole-codebase run
+(JWT/bcrypt), `api/endpoints/auth/dependencies.py` (+ `lifecycle_gates.py`, `external_token.py`; the
+privilege gates — an inverted role comparison is privilege escalation), `auth/lockout.py` (+ `lockout_store.py`, `lockout_admin.py`), `auth/session.py`. A whole-codebase run
 is hours and is not the point.
 
 ```bash
@@ -676,7 +676,7 @@ one runs** (pre-commit stashes the whole tree, issue #434), and check
 
 **Runtime** (per module, serial): `spans` ~1-3 min · `password_policy` ~5-15 min · `security`
 ~10-30 min (each mutant pays a bcrypt round) · `dependencies` ~20-60 min (each mutant boots the
-test client) · `lockout` ~30-90 min · `session` ~15-45 min · `--all` is **hours**. Needs
+test client; `lifecycle_gates`/`external_token` share its test list) · `lockout` ~30-90 min · `session` ~15-45 min · `--all` is **hours**. Needs
 Postgres (5176) and, for lockout/session, Redis (5177). CPU-only — it never touches the GPU,
 but it will saturate every core, so don't start one beside a benchmark.
 

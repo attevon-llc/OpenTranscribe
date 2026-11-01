@@ -94,7 +94,7 @@ def probe(conn: Connection, tables: list[str], has_auth_config: bool) -> AuthIde
         # v381 guard (formerly v379): administrator approval of newly provisioned
         # accounts. TWO markers. The column alone is not the revision: without
         # ck_user_approval_status_valid an unrecognised value reads as neither pending
-        # nor rejected, so the gate in api/endpoints/auth/dependencies.py fails OPEN —
+        # nor rejected, so the gate in api/endpoints/auth/lifecycle_gates.py fails OPEN —
         # which is precisely the state a database must not be stamped as already having.
         has_user_approval_status=_check_exists(
             "SELECT EXISTS(SELECT 1 FROM information_schema.columns "

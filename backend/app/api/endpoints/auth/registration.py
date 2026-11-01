@@ -12,7 +12,7 @@ from fastapi import status
 from pydantic import BaseModel as PydanticBaseModel
 from sqlalchemy.orm import Session
 
-from app.api.endpoints.auth.dependencies import _get_client_info
+from app.api.endpoints.auth.lifecycle_gates import _get_client_info
 from app.api.endpoints.auth.local_auth_gate import is_break_glass_account
 from app.api.endpoints.auth.local_auth_gate import local_auth_enabled
 from app.auth.approval import initial_approval_status

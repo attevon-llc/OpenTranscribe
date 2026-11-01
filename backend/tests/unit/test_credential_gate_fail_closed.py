@@ -48,10 +48,10 @@ from uuid import UUID
 import pytest
 from fastapi import HTTPException
 
-from app.api.endpoints.auth import dependencies as deps_module
-from app.api.endpoints.auth.dependencies import ERROR_CODE_ACCOUNT_EXPIRED
+from app.api.endpoints.auth import lifecycle_gates as gates_module
 from app.api.endpoints.auth.dependencies import get_current_active_user
 from app.api.endpoints.auth.dependencies import get_current_user
+from app.api.endpoints.auth.lifecycle_gates import ERROR_CODE_ACCOUNT_EXPIRED
 from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.config import settings
 from tests.jwt_compat import jwt
@@ -246,7 +246,7 @@ class TestNaiveAccountExpiryDoesNotBreakEveryRequest:
     def test_a_naive_past_expiry_is_refused(self, monkeypatch):
         """The other side of the same coercion: it must still deny, not crash."""
         audited: list[dict] = []
-        monkeypatch.setattr(deps_module.audit_logger, "log", lambda **kw: audited.append(kw))
+        monkeypatch.setattr(gates_module.audit_logger, "log", lambda **kw: audited.append(kw))
         naive_past = (datetime.now(UTC) - timedelta(days=1)).replace(tzinfo=None)
 
         with pytest.raises(HTTPException) as exc:

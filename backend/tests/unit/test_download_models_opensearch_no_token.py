@@ -21,6 +21,24 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+@pytest.fixture(autouse=True)
+def _restore_torch_patches():
+    """Put back what importing the downloader patches process-wide.
+
+    Loading ``download-models.py`` replaces ``torch.load`` and, on a host without MPS,
+    ``torch.mps.empty_cache``. Left in place, ``test_download_models_cpu_only`` later captures the
+    already-guarded function as "the real one" and cannot see the original error.
+    """
+    torch = pytest.importorskip("torch")
+    saved_load = torch.load
+    saved_empty_cache = torch.mps.empty_cache
+    try:
+        yield
+    finally:
+        torch.load = saved_load
+        torch.mps.empty_cache = saved_empty_cache
+
+
 def _load():
     spec = importlib.util.spec_from_file_location("download_models_under_test", DOWNLOADER_PY)
     assert spec and spec.loader

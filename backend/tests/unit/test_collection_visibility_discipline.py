@@ -88,7 +88,7 @@ ALLOWLIST: dict[str, str] = {
         "W: account deletion removes the user's personal collections and de-attributes the "
         "organization ones; it deletes rows, it names no collection to anyone"
     ),
-    "api/endpoints/media_collections.py::_explicitly_shared_entries": (
+    "api/endpoints/media_collections_listing.py::_explicitly_shared_entries": (
         "A: the id set comes from PermissionService.get_accessible_collection_ids, which is "
         "collection_visibility's statement; this only narrows it to one tenant"
     ),
@@ -100,14 +100,18 @@ ALLOWLIST: dict[str, str] = {
         "A: reloads, with its members, the collection get_collection_by_uuid_with_permission "
         "already authorized for this caller"
     ),
-    "api/endpoints/media_collections.py::list_collections": (
+    "api/endpoints/media_collections_listing.py::list_collections": (
         "A: every id set it queries by is the caller's accessible ids from "
         "collection_visibility, intersected with the tenant"
     ),
-    "api/endpoints/media_collections.py::list_collections_on_files": (
+    "api/endpoints/media_collections_listing.py::_ownership_page": (
+        "A: list_collections' page of ids: the caller's accessible ids from "
+        "collection_visibility, intersected with the tenant"
+    ),
+    "api/endpoints/media_collections_listing.py::list_collections_on_files": (
         "A: restricted to visible_collection_ids in the same statement"
     ),
-    "api/endpoints/media_collections.py::list_shared_collections": (
+    "api/endpoints/media_collections_listing.py::list_shared_collections": (
         "A: queries only the ids _explicitly_shared_entries derived from the predicate"
     ),
     "api/endpoints/media_collections.py::update_collection": (

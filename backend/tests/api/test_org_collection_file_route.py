@@ -183,11 +183,11 @@ def test_collection_membership_changes_reindex_org_collections_without_shares(
     client, gov, monkeypatch, org, dispatches
 ):
     """An org collection is a read route even with no share row; a private personal one is not."""
-    from app.api.endpoints import media_collections
+    from app.api.endpoints import media_collections_membership as membership
 
     sent: list[list[int]] = []
     monkeypatch.setattr(
-        media_collections.update_file_access_index, "delay", lambda ids: sent.append(list(ids))
+        membership.update_file_access_index, "delay", lambda ids: sent.append(list(ids))
     )
     collection = gov.collection(gov.alice, org=gov.org if org else None)
     media_file = gov.file(gov.alice, org=gov.org if org else None)

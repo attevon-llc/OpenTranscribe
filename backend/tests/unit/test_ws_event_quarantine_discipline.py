@@ -90,11 +90,11 @@ _DIRECT_SEND_ALLOWLIST: dict[str, tuple[int, str]] = {
         1,
         "group-membership event; identifies a Group and a User, never a MediaFile",
     ),
-    "api/endpoints/media_collections.py::_notify_share_event": (
+    "api/endpoints/media_collections_shares.py::_notify_share_event": (
         1,
         "collection-share event; identifies a MediaCollection, never a MediaFile",
     ),
-    "api/endpoints/media_collections.py::delete_collection_share": (
+    "api/endpoints/media_collections_shares.py::delete_collection_share": (
         1,
         "collection-share event; identifies a MediaCollection, never a MediaFile",
     ),

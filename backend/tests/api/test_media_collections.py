@@ -493,7 +493,7 @@ def test_delete_share_wrong_collection_404(
 def test_create_share_emits_resource_share_audit_event(
     client, user_token_headers, normal_user, other_user, db_session, monkeypatch
 ):
-    from app.api.endpoints import media_collections as collections_module
+    from app.api.endpoints import media_collections_shares as collections_module
 
     events = []
     monkeypatch.setattr(collections_module.audit_logger, "log", lambda **kw: events.append(kw))
@@ -523,7 +523,7 @@ def test_create_share_with_self_400_does_not_emit_audit_event(
     client, user_token_headers, normal_user, db_session, monkeypatch
 ):
     """Control: a rejected share must not fire the event."""
-    from app.api.endpoints import media_collections as collections_module
+    from app.api.endpoints import media_collections_shares as collections_module
 
     events = []
     monkeypatch.setattr(collections_module.audit_logger, "log", lambda **kw: events.append(kw))
@@ -541,7 +541,7 @@ def test_create_share_with_self_400_does_not_emit_audit_event(
 def test_update_share_permission_emits_resource_share_audit_event(
     client, user_token_headers, normal_user, other_user, db_session, monkeypatch
 ):
-    from app.api.endpoints import media_collections as collections_module
+    from app.api.endpoints import media_collections_shares as collections_module
 
     events = []
     monkeypatch.setattr(collections_module.audit_logger, "log", lambda **kw: events.append(kw))
@@ -565,7 +565,7 @@ def test_update_share_permission_emits_resource_share_audit_event(
 def test_delete_share_emits_resource_unshare_audit_event(
     client, user_token_headers, normal_user, other_user, db_session, monkeypatch
 ):
-    from app.api.endpoints import media_collections as collections_module
+    from app.api.endpoints import media_collections_shares as collections_module
 
     events = []
     monkeypatch.setattr(collections_module.audit_logger, "log", lambda **kw: events.append(kw))

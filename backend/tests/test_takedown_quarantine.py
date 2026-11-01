@@ -331,7 +331,7 @@ class TestCollectionCountsExcludeQuarantined:
         return coll, visible, hidden
 
     def test_visible_media_counts_helper(self, world):
-        from app.api.endpoints.media_collections import _visible_media_counts
+        from app.api.endpoints.media_collections_listing import _visible_media_counts
 
         db, owner, _admin, _file = world
         coll, _visible, _hidden = self._mk_collection_with_files(db, owner, quarantine_one=True)
@@ -343,7 +343,7 @@ class TestCollectionCountsExcludeQuarantined:
 
     def test_visible_media_counts_empty_collection(self, world):
         """A collection with zero members simply has no row (callers .get 0)."""
-        from app.api.endpoints.media_collections import _visible_media_counts
+        from app.api.endpoints.media_collections_listing import _visible_media_counts
 
         db = world[0]
         assert _visible_media_counts(db, [], include_quarantined=False) == {}

@@ -107,6 +107,45 @@ def test_list_profiles_excludes_other_users_private(
     assert str(prof.uuid) not in {p["uuid"] for p in resp.json()}
 
 
+def test_list_profiles_reports_a_presigned_avatar_url(
+    client, user_token_headers, normal_user, db_session
+):
+    """A profile with an avatar gets a presigned URL minted with the 1 h default lifetime."""
+    from unittest.mock import patch
+
+    prof = _make_profile(db_session, normal_user, name="WithAvatar")
+    prof.avatar_path = f"avatars/{normal_user.id}/{prof.uuid}.png"  # type: ignore[assignment]
+    db_session.commit()
+
+    with patch(
+        "app.services.minio_service.get_file_url", return_value="https://signed.example/a.png"
+    ) as mock_url:
+        resp = client.get(f"{PREFIX}/profiles", headers=user_token_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    item = {p["uuid"]: p for p in resp.json()}[str(prof.uuid)]
+    assert item["avatar_url"] == "https://signed.example/a.png"
+    mock_url.assert_called_once_with(prof.avatar_path, expires=3600)
+
+
+def test_list_profiles_survives_an_avatar_url_failure(
+    client, user_token_headers, normal_user, db_session
+):
+    """One unsignable avatar reports a null URL; it must not fail the whole listing."""
+    from unittest.mock import patch
+
+    prof = _make_profile(db_session, normal_user, name="BrokenAvatar")
+    prof.avatar_path = f"avatars/{normal_user.id}/{prof.uuid}.png"  # type: ignore[assignment]
+    db_session.commit()
+
+    with patch("app.services.minio_service.get_file_url", side_effect=RuntimeError("minio down")):
+        resp = client.get(f"{PREFIX}/profiles", headers=user_token_headers)
+
+    assert resp.status_code == status.HTTP_200_OK
+    item = {p["uuid"]: p for p in resp.json()}[str(prof.uuid)]
+    assert item["avatar_url"] is None
+
+
 def test_create_profile_200_roundtrip(client, user_token_headers, normal_user, db_session):
     name = f"Created {uuid.uuid4().hex[:6]}"
     resp = client.post(
@@ -387,7 +426,7 @@ def test_assign_profile_opensearch_failure_still_returns_200_and_writes_durably(
     _mf, spk = _make_file_and_speaker(db_session, normal_user)
 
     with patch(
-        "app.api.endpoints.speaker_profiles.update_speaker_collections",
+        "app.api.endpoints.speaker_profiles_matching.update_speaker_collections",
         side_effect=RuntimeError("OpenSearch is down"),
     ):
         resp = client.post(
@@ -422,7 +461,7 @@ def test_assign_profile_opensearch_failure_response_does_not_claim_rollback(
     _mf, spk = _make_file_and_speaker(db_session, normal_user)
 
     with patch(
-        "app.api.endpoints.speaker_profiles.update_speaker_collections",
+        "app.api.endpoints.speaker_profiles_matching.update_speaker_collections",
         side_effect=RuntimeError("OpenSearch is down"),
     ):
         resp = client.post(
@@ -466,7 +505,7 @@ def test_assign_profile_pre_commit_failure_still_500s_and_writes_nothing(
     _mf, spk = _make_file_and_speaker(db_session, normal_user)
 
     with patch(
-        "app.api.endpoints.speaker_profiles.SpeakerMatchingService.assign_speaker_to_profile",
+        "app.api.endpoints.speaker_profiles_matching.SpeakerMatchingService.assign_speaker_to_profile",
         side_effect=RuntimeError("pre-commit failure"),
     ) as mock_assign:
         resp = client.post(

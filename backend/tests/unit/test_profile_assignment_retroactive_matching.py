@@ -162,17 +162,17 @@ class TestProfileAssignmentTriggersMatching:
         self, db_session, normal_user, file_with_speaker, profile
     ):
         """The endpoint never queued it at all, so the gate above was unreachable."""
-        from app.api.endpoints import speaker_profiles
+        from app.api.endpoints import speaker_profiles_matching
 
         _, speaker = file_with_speaker
         dispatched: list[dict] = []
 
         with patch.object(
-            speaker_profiles.process_speaker_update_background,
+            speaker_profiles_matching.process_speaker_update_background,
             "delay",
             side_effect=lambda **kw: dispatched.append(kw),
         ):
-            speaker_profiles._queue_retroactive_matching_after_assignment(
+            speaker_profiles_matching._queue_retroactive_matching_after_assignment(
                 speaker_uuid=str(speaker.uuid),
                 user_id=int(normal_user.id),
                 speaker_id=int(speaker.id),

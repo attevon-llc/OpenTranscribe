@@ -317,7 +317,7 @@ MUTATING_ENDPOINTS: list[SiteKey] = [
     ("files/summary_status.py", "retry_summary"),
     ("files/waveform.py", "generate_waveform_for_file"),
     # Speaker writes: a speaker is reached through its file (``require_speaker_access``).
-    ("speaker_profiles.py", "assign_speaker_to_profile"),
+    ("speaker_profiles_matching.py", "assign_speaker_to_profile"),
     ("speakers.py", "create_speaker"),
     ("speakers_suggestions.py", "verify_speaker_identification"),
     ("speakers_suggestions.py", "confirm_speaker_gender"),

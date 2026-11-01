@@ -10,7 +10,6 @@ backend/app/auth/password_policy.py	888	oversize: split by concern planned
 backend/app/core/celery.py	1416	oversize: split by concern planned
 backend/app/core/config.py	1594	oversize: split by concern planned
 backend/app/services/CLAUDE.md	1044	oversize: split by concern planned
-backend/app/services/auto_label_service.py	712	oversize: split by concern planned
 backend/app/services/chat/CLAUDE.md	958	oversize: split by concern planned
 backend/app/services/chat/service.py	1503	oversize: split by concern planned
 backend/app/services/llm_service.py	1127	oversize: split by concern planned
@@ -19,7 +18,7 @@ backend/app/services/privacy/purge_voiceprints.py	711	oversize: split by concern
 backend/app/services/search/CLAUDE.md	910	oversize: split by concern planned
 backend/app/services/speaker_embedding_service.py	716	oversize: split by concern planned
 backend/app/services/tag_operations.py	903	oversize: split by concern planned
-backend/app/services/topic_extraction_service.py	771	oversize: split by concern planned
+backend/app/services/topic_extraction_service.py	770	oversize: split by concern planned
 backend/app/tasks/CLAUDE.md	508	oversize: split by concern planned
 backend/app/tasks/rediarize_task.py	707	oversize: split by concern planned
 backend/app/tasks/speaker_identification_task.py	720	oversize: split by concern planned

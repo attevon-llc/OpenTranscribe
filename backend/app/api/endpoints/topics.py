@@ -252,9 +252,10 @@ def auto_label_single_file(
     )
 
     from app.services.auto_label_service import AutoLabelService
+    from app.services.auto_label_settings import get_user_auto_label_settings
 
     service = AutoLabelService(db)
-    user_settings = service.get_user_auto_label_settings(current_user.id)
+    user_settings = get_user_auto_label_settings(db, current_user.id)
 
     if not user_settings.get("enabled"):
         raise HTTPException(

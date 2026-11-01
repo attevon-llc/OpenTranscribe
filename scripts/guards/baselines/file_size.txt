@@ -25,8 +25,7 @@ backend/app/services/media_download_service.py	859	oversize: split by concern pl
 backend/app/services/privacy/purge_voiceprints.py	711	oversize: split by concern planned
 backend/app/services/search/CLAUDE.md	910	oversize: split by concern planned
 backend/app/services/speaker_embedding_service.py	716	oversize: split by concern planned
-backend/app/services/tag_operations.py	911	oversize: split by concern planned
-backend/app/services/tag_service.py	747	oversize: split by concern planned
+backend/app/services/tag_operations.py	903	oversize: split by concern planned
 backend/app/services/topic_extraction_service.py	771	oversize: split by concern planned
 backend/app/tasks/CLAUDE.md	508	oversize: split by concern planned
 backend/app/tasks/rediarize_task.py	707	oversize: split by concern planned

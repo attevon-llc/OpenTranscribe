@@ -97,10 +97,10 @@ authority. See `backend/app/db/CLAUDE.md`.
   tenant); **personal** = `organization_id IS NULL`, `user_id` = owner; **organization** =
   `organization_id` set, shared by every member, `user_id` = creator (attribution only, and
   NULL once that account is gone — so `user_id IS NULL` alone does **not** mean system; use
-  `tag_service.is_system_tag` / `system_tag()`). Uniqueness is one partial unique index per
+  `tag_scope.is_system_tag` / `system_tag()`). Uniqueness is one partial unique index per
   kind: `uq_tag_user_name` `(user_id, name)` personal, `uq_tag_org_name`
   `(organization_id, name)`, `uq_tag_system_name` `(name)`. Consequences: **never look a tag
-  up by name alone** — scope by tenant (`tag_service.owned_or_system(user_id,
+  up by name alone** — scope by tenant (`tag_scope.owned_or_system(user_id,
   organization_id)`, ordered `tenant_first()` so a tenant row beats the system row) or join
   through `FileTag`; a tag created in a background task goes in the **file's** tenant
   (`MediaFile.organization_id`), credited to the file owner; and a merge never crosses

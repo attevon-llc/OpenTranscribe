@@ -57,16 +57,16 @@ from app.core.tenancy import OrgScope
 from app.models.media import MediaFile
 from app.models.tag import FileTag
 from app.models.tag import Tag
-from app.services.tag_service import OWNERSHIP_MINE
-from app.services.tag_service import OWNERSHIP_SHARED_WITH_ME
-from app.services.tag_service import OWNERSHIP_SYSTEM
-from app.services.tag_service import TAG_OWNERSHIPS
-from app.services.tag_service import accessible_file_ids_subquery
+from app.services.tag_scope import OWNERSHIP_MINE
+from app.services.tag_scope import OWNERSHIP_SHARED_WITH_ME
+from app.services.tag_scope import OWNERSHIP_SYSTEM
+from app.services.tag_scope import TAG_OWNERSHIPS
+from app.services.tag_scope import accessible_file_ids_subquery
+from app.services.tag_scope import owned_or_system
+from app.services.tag_scope import system_tag
+from app.services.tag_scope import tag_ownership
+from app.services.tag_scope import visible_to
 from app.services.tag_service import normalize_tag_name
-from app.services.tag_service import owned_or_system
-from app.services.tag_service import system_tag
-from app.services.tag_service import tag_ownership
-from app.services.tag_service import visible_to
 from app.services.takedown_service import exclude_quarantined
 
 logger = logging.getLogger(__name__)
@@ -74,7 +74,7 @@ logger = logging.getLogger(__name__)
 #: Ownership scopes for the tag list. ``all`` is everything the caller can see;
 #: the other three are exactly the ``ownership`` values a row can carry, and
 #: partition ``all`` between them. Sharing the vocabulary with
-#: ``tag_service.TAG_OWNERSHIPS`` is the point: a scoped request returns rows
+#: ``tag_scope.TAG_OWNERSHIPS`` is the point: a scoped request returns rows
 #: whose ``ownership`` equals the scope asked for, which is a single testable
 #: invariant instead of two lists to keep in step by hand.
 SCOPE_ALL = "all"
@@ -385,7 +385,7 @@ def list_tags_filtered(
         unused: Keep only tags with no accessible file — the exact complement of
             ``usage_count > 0``, from the same count.
         colliding: Keep only tags sharing a normalized name with another tag.
-        scope: ``all`` (default) or one of :data:`~app.services.tag_service.
+        scope: ``all`` (default) or one of :data:`~app.services.tag_scope.
             TAG_OWNERSHIPS` — ``mine``, ``system``, ``shared_with_me``. Ownership
             is a different axis from the other three filters, which is why it is
             a separate parameter rather than a fourth boolean: "my unused tags"

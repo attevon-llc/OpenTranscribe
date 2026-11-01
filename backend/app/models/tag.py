@@ -42,7 +42,7 @@ class Tag(Base):
 
     Uniqueness is per tenant, so ``name`` alone can match several rows — never
     look a tag up by name without a tenant predicate
-    (``tag_service.owned_or_system``) or a join through ``file_tag``.
+    (``tag_scope.owned_or_system``) or a join through ``file_tag``.
     """
 
     __tablename__ = "tag"

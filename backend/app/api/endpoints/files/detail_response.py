@@ -35,7 +35,7 @@ from app.services.formatting_service import FormattingService
 from app.services.platform_bypass import PlatformBypass
 from app.services.speaker_provenance_view import ProvenanceViewer
 from app.services.speaker_status_service import SpeakerStatusService
-from app.services.tag_service import tag_ownership
+from app.services.tag_scope import tag_ownership
 
 from .crud import get_media_file_by_uuid
 from .redaction_gate import _redaction_pending

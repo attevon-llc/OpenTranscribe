@@ -41,6 +41,7 @@ app/
 │   └── websockets.py     # Real-time WebSocket handler (/api/ws)
 ├── auth/                  # Authentication & authorization (see auth/CLAUDE.md)
 │   ├── direct_auth.py, ldap_auth.py, pki_auth.py   # Local, LDAP/AD, PKI/X.509
+│   ├── ldap_directory.py, ldap_probe.py           # LDAP bind/search/groups, deprovisioning probes
 │   ├── oidc/, saml/, proxy/                       # OIDC, SAML, trusted-proxy identity
 │   ├── mfa.py, mfa_policy.py                      # TOTP MFA and who must use it
 │   ├── password_*.py, lockout*.py, rate_limit.py  # Password policy/history/reset, lockout, rate limits

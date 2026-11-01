@@ -568,6 +568,8 @@ WHERE email LIKE '%@domain.com';
 backend/app/auth/
 ├── direct_auth.py       # Direct DB authentication (bypasses ORM)
 ├── ldap_auth.py         # LDAP/Active Directory authentication
+├── ldap_directory.py    # LDAP bind, user search, group-membership checks
+├── ldap_probe.py        # Read-only directory probes (directory sync)
 ├── keycloak_auth.py     # OIDC/Keycloak integration
 ├── pki_auth.py          # PKI/X.509 certificate authentication
 ├── mfa.py               # TOTP multi-factor authentication (RFC 6238)
@@ -588,9 +590,11 @@ backend/app/api/endpoints/
 
 ### Key Functions
 
-**ldap_auth.py:**
+**ldap_directory.py:**
 - `_escape_ldap_filter()`: Prevents LDAP injection attacks
 - `_get_ldap_server()`: Creates configured LDAP server object
+
+**ldap_auth.py:**
 - `ldap_authenticate()`: Authenticates user against AD (supports username or email)
 - `sync_ldap_user_to_db()`: Creates/updates user from LDAP data
 

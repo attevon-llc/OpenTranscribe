@@ -99,7 +99,7 @@ def normalize_claim_value(source: str, value: str) -> str:
     """Fold a claim value into its comparison form.
 
     LDAP distinguished names are case-insensitive — the existing membership check
-    (``ldap_auth._is_member_of_groups``) already lowercases both sides, and
+    (``ldap_directory._is_member_of_groups``) already lowercases both sides, and
     ``uq_group_mapping_ldap_claim_ci`` keeps the table honest about it. OIDC role
     and group strings are opaque, case-sensitive identifiers, so they are compared
     verbatim; folding them would silently merge ``Legal`` and ``legal``.

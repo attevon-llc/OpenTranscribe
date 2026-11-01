@@ -52,10 +52,10 @@ from unittest import mock
 
 import pytest
 
-from app.auth.ldap_auth import DIRECTORY_ABSENT
-from app.auth.ldap_auth import DIRECTORY_PRESENT
-from app.auth.ldap_auth import LdapDirectoryUnavailableError
-from app.auth.ldap_auth import LdapProbe
+from app.auth.ldap_probe import DIRECTORY_ABSENT
+from app.auth.ldap_probe import DIRECTORY_PRESENT
+from app.auth.ldap_probe import LdapDirectoryUnavailableError
+from app.auth.ldap_probe import LdapProbe
 from app.core.queues import CeleryQueues
 from app.core.queues import CPUPriority
 from app.services import directory_sync_service as svc

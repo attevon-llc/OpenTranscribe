@@ -1,6 +1,6 @@
 """Regression test: an ambiguous LDAP search must not silently bind entries[0].
 
-``_search_ldap_user`` (``app/auth/ldap_auth.py``) searches by username and then, on
+``_search_ldap_user`` (``app/auth/ldap_directory.py``) searches by username and then, on
 a miss, by email. If either search returns MORE THAN ONE entry — an over-broad
 filter, or genuine directory duplicates — binding as ``entries[0]`` authenticates
 the caller as whichever account the directory happened to list first. That is an
@@ -10,7 +10,8 @@ ambiguous match is treated as "not found" and logged as an error.
 """
 
 from app.auth.ldap_auth import LdapConfig
-from app.auth.ldap_auth import _search_ldap_user
+from app.auth.ldap_directory import _search_ldap_user
+from tests.fixtures import ldap_directory_fake as scripted
 
 CFG = LdapConfig(
     enabled=True,
@@ -70,3 +71,16 @@ class TestSearchLdapUserAmbiguity:
         conn = FakeBindConn([first, second])
         result = _search_ldap_user(CFG, conn, "alice@example.com", "alice")
         assert result is None
+
+    def test_an_ambiguous_username_match_is_not_rescued_by_a_unique_email_match(self):
+        """The case above with a directory that answers each filter differently: the
+        username filter is ambiguous, the email filter would name exactly one account,
+        and the search must still refuse instead of trying the email path."""
+        d = scripted.FakeDirectory()
+        base = CFG.search_base
+        d.searches[(base, "(uid=alice)")] = [FakeEntry("CN=a1,DC=x"), FakeEntry("CN=a2,DC=x")]
+        d.searches[(base, "(mail=alice@example.com)")] = [FakeEntry("CN=a2,DC=x")]
+        conn = scripted.bound_service_connection(d)
+
+        assert _search_ldap_user(CFG, conn, "alice@example.com", "alice") is None
+        assert [s["filter"] for s in d.searches_made()] == ["(uid=alice)"]

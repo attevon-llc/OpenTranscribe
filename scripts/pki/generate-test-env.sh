@@ -348,7 +348,7 @@ fi
 # 3. Derive PKI_ADMIN_DNS from the cert(s) — never hardcode it. RFC2253 is the
 #    format nginx's $ssl_client_s_dn emits (nginx >= 1.11.6), which is what
 #    pki_auth._normalize_dn compares against. Multiple admin certs join with
-#    ';' — PKI_ADMIN_DNS is semicolon-delimited (backend/app/auth/ldap_auth.py
+#    ';' — PKI_ADMIN_DNS is semicolon-delimited (backend/app/auth/ldap_directory.py
 #    _parse_group_list), NOT comma-delimited: a DN itself contains commas.
 # ---------------------------------------------------------------------------
 admin_dns=()

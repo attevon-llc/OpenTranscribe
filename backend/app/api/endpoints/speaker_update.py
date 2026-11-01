@@ -420,18 +420,15 @@ def _load_candidates(db: Session, trigger: dict[str, Any]) -> list[dict[str, Any
     return [c for c in candidates if c["id"] not in blocked]
 
 
-def _persist_and_load_suggestions(
+def _persist_and_commit(
     db: Session,
     trigger: dict[str, Any],
     scored: list[dict[str, Any]],
     tracker: SpeakerRenameTracker,
-    speaker_id: int,
-) -> tuple[int, int, list[dict[str, Any]], Exception | None]:
-    """Phase 2: write the matches, commit, flush the tracker, then snapshot suggestions.
+) -> tuple[int, int, list[dict[str, Any]]]:
+    """Phase 2: write the matches, commit, then flush the rename tracker.
 
-    Returns ``(auto_applied_count, suggested_count, documents, suggestion_load_error)``;
-    a failed suggestion load is returned, not raised, so the caller can still push and
-    notify for what Postgres already committed.
+    Returns ``(auto_applied_count, suggested_count, documents)``.
     """
     auto_applied_count, suggested_count, documents = _persist_match_results(
         db, trigger, scored, tracker
@@ -442,17 +439,7 @@ def _persist_and_load_suggestions(
     # use for the same tracker (issue #605): a rolled-back match must never
     # reach the index, so this must run after the commit, not before it.
     tracker.flush(db)
-    # A failed suggestion load must not drop the index push of matches Postgres
-    # already committed above: push and notify first, then raise with the real counts.
-    suggestion_load_error: Exception | None = None
-    try:
-        documents.extend(_load_suggestion_speaker_documents(db, trigger))
-        db.commit()
-    except Exception as exc:
-        logger.exception(f"Suggestion-speaker sync load failed for speaker {speaker_id}")
-        db.rollback()
-        suggestion_load_error = exc
-    return auto_applied_count, suggested_count, documents, suggestion_load_error
+    return auto_applied_count, suggested_count, documents
 
 
 def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> dict[str, int]:
@@ -544,9 +531,19 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> dict[
 
         # Phase 2 — the writes, then commit so the suggestion snapshot below sees
         # them (autoflush is off) and the locks are released before the push.
-        auto_applied_count, suggested_count, documents, suggestion_load_error = (
-            _persist_and_load_suggestions(db, trigger, scored, tracker, speaker_id)
+        auto_applied_count, suggested_count, documents = _persist_and_commit(
+            db, trigger, scored, tracker
         )
+        # A failed suggestion load must not drop the index push of matches Postgres
+        # already committed above: push and notify first, then raise with the real counts.
+        suggestion_load_error: Exception | None = None
+        try:
+            documents.extend(_load_suggestion_speaker_documents(db, trigger))
+            db.commit()
+        except Exception as exc:
+            logger.exception(f"Suggestion-speaker sync load failed for speaker {speaker_id}")
+            db.rollback()
+            suggestion_load_error = exc
 
         # Phase 3 — index writes. NO transaction is open here.
         _push_speaker_documents(documents)

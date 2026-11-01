@@ -655,6 +655,14 @@ this file is for.
   because publishing a release can break the invariant with no commit at all. The hermetic half
   (no network, so it runs in the fast suite and CI) is
   `backend/tests/unit/test_install_upgrade_scripts.py`'s install-path section.
+- **Image hygiene** — `check-image-hygiene.sh <image>...` (exit 0 clean / 1 found / 2 could not
+  check). Reads the image via `docker create --pull never` + `docker export | tar -t` (never runs
+  it, removes only the container it created, never pulls or removes images) and matches the
+  `--list-patterns` denylist at any depth under `/app` or `/usr/share/nginx/html`. The release
+  `scan` stage runs it per leg tag (`images-carry-no-dev-artifacts`). Its denylist is also what
+  `backend/.dockerignore` must exclude with `**/` rules: `unit/test_image_hygiene.py` checks every
+  depth and fails on a redundant rule, and `integration/test_image_hygiene_real_docker.py`
+  cross-checks the ignore file against a real BuildKit context.
 - **Release gates** — `check-schema-drift.py` (model-vs-schema, report-first),
   `validate-deployments.sh` (~20 compose permutations in ~15 s),
   `release/check-version-consistency.py` (the six version sources + Alembic single head).

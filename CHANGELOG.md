@@ -22,6 +22,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checks each model's required files, runs before the live stack is stopped, and removes its
   cache afterwards.
 
+- `scripts/check-image-hygiene.sh`: fails (exit 1) when a built image contains developer
+  artifacts, and exits 2 when an image could not be inspected. It reads the image with
+  `docker create` + `docker export` (nothing from the image runs, any architecture works), never
+  pulls or removes images, and also flags keys (`*.pem`, `*.key`, `*.p12`, `id_rsa*`,
+  `id_ed25519*`), editor/agent directories, `htmlcov`, `.mutmut-cache`, `*.bak`, `*.orig`,
+  `backups` and `*.log` at any depth under the payload root.
+- Release `scan` stage: new blocking criterion `images-carry-no-dev-artifacts` runs the check on
+  every per-leg local tag; an image it could not inspect records `not-measured`.
+
 ### Removed
 
 - `scripts/test-model-download.sh`, superseded by the scenario above (it ran `:latest` with
@@ -49,6 +58,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failed all six NLTK packages. The downloader now gives each linked file in `nltk_data` its
   own copy first, and when it cannot (a read-only mount) fails once with the command that
   fixes it. See [Offline installation](https://docs.opentranscribe.app/docs/installation/offline-installation).
+
+- The v0.6.0 backend and lite images shipped the build machine's gitignored files:
+  `/app/mutants` (mutmut-mutated source), `test.db`, `celerybeat-schedule*` and
+  `.import_linter_cache`. `backend/.dockerignore` now excludes them, and the frontend and docs
+  ignore files exclude stray databases. The `test.db` held no rows. The published frontend and
+  docs images were clean.
+- `ensure_opensearch_models` fetched every model group into a throwaway container against
+  `:latest`, and hid downloader failures behind `grep || true`. It now runs only the `opensearch`
+  group, uses the install's `OT_IMAGE_TAG`, and prints a warning with the exit status and the
+  last output lines when the downloader fails.
+- `download-models.py --only opensearch` no longer requires `HUGGINGFACE_TOKEN`; the OpenSearch
+  models come from artifacts.opensearch.org, so `ensure_opensearch_models` failed on installs
+  without a token.
+- `backend/.dockerignore` excludes each denylisted name at any depth (for example
+  `app/.pytest_cache`), not only at the context root.
+
 
 ## [0.6.0] - 2026-10-31
 

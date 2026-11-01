@@ -223,6 +223,14 @@ stages:
         # out of the artifact is the only check that would have caught it.
         severity: blocking
 
+      - id: images-carry-no-dev-artifacts
+        description: scripts/check-image-hygiene.sh is clean on every per-leg local tag (no mutants/, test DBs, caches, keys, .env)
+        # v0.6.0's backend and lite images shipped /app/mutants, test.db,
+        # celerybeat-schedule* and .import_linter_cache from the build host,
+        # because `COPY . .` copies whatever is on disk. Could-not-inspect is
+        # not-measured, which blocks like a failure and is never read as clean.
+        severity: blocking
+
   # ─── The scenarios that prove a real user can install and upgrade. ──────
   rehearse:
     description: The three deployment scenarios, run under the installer's stock names and ports

@@ -117,7 +117,7 @@ rather than silently ignored.
 | `verify` | Fast gate: consistency, deployment matrix, manifest, structural tests, docs build, visual-baseline freshness | no |
 | `test` | `run-dev-tests.sh --backend-only --e2e-smoke --export-capability` (the integration gate plus the smoke E2E subset); **needs the dev stack up** | no |
 | `build` | Local images with the version build-args — **pushes nothing** | no |
-| `scan` | Trivy/Grype against the **locally built** images | no |
+| `scan` | Trivy/Grype against the **locally built** images, plus `scripts/check-image-hygiene.sh` on every per-leg tag (`images-carry-no-dev-artifacts`: a leaked `mutants/`, test DB, cache, key or `.env` fails; an image it cannot inspect is `not-measured`) | no |
 | `rehearse` | Cold-cache model download, then fresh-install, upgrade and lite-mode scenarios; **needs the live stack stopped** (it can stop and restore it for you, with approval) | no |
 | `tag` | Refuses unless the ledger's `test`/`build`/`scan`/`rehearse` steps are `done` or `overridden` **at HEAD** (`artifacts-match-tagged-commit`, every stale stage named; `--force-tag "reason"` overrides). Then annotated tag + push; cuts (or confirms) `release/<major>.<minor>` from the tag | **yes** |
 | `publish` | Pushes the **already-built** legs (`docker push`, no rebuild, no re-scan) and assembles the `:vX.Y.Z` indexes; `:vX.Y.Z` only | **yes** |

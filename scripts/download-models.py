@@ -1300,8 +1300,10 @@ DOWNLOAD_GROUPS = {
 
 #: Groups that need no Hugging Face credential. NLTK corpora come from NLTK's own
 #: CDN, so requiring the token would make the airgap prefetch this selector exists
-#: for fail on a deployment that has not configured one yet.
-GROUPS_WITHOUT_HF_TOKEN = frozenset({'nltk'})
+#: for fail on a deployment that has not configured one yet. The OpenSearch neural
+#: models come from artifacts.opensearch.org, and ensure_opensearch_models runs
+#: `--only opensearch` on installs that may have no token.
+GROUPS_WITHOUT_HF_TOKEN = frozenset({'nltk', 'opensearch'})
 
 
 def main():

@@ -63,11 +63,11 @@ from app.api.endpoints.auth.invitations import list_invitations
 from app.api.endpoints.auth.invitations import lookup_invitation_endpoint
 from app.api.endpoints.auth.invitations import revoke_invitation_endpoint
 from app.api.endpoints.auth.lifecycle_gates import _get_client_info
-from app.api.endpoints.auth.login import _check_mfa_requirement
-from app.api.endpoints.auth.login import _generate_login_tokens
 from app.api.endpoints.auth.login import _handle_lockout_check
 from app.api.endpoints.auth.login import _perform_authentication
 from app.api.endpoints.auth.login import login_for_access_token
+from app.api.endpoints.auth.login_completion import _check_mfa_requirement
+from app.api.endpoints.auth.login_completion import _generate_login_tokens
 from app.api.endpoints.auth.methods import acknowledge_banner
 from app.api.endpoints.auth.methods import get_auth_methods
 from app.api.endpoints.auth.methods import get_login_banner

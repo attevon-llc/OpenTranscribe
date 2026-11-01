@@ -34,6 +34,7 @@ from fastapi import Response
 
 from app.api.endpoints.auth import lifecycle_gates as gates_module
 from app.api.endpoints.auth import login as login_module
+from app.api.endpoints.auth import login_completion as completion
 from app.api.endpoints.auth.dependencies import get_current_active_user
 from app.api.endpoints.auth.dependencies import get_current_admin_user
 from app.api.endpoints.auth.lifecycle_gates import ERROR_CODE_ACCOUNT_EXPIRED
@@ -153,7 +154,7 @@ def audited(monkeypatch) -> list[dict]:
 def login_audited(monkeypatch) -> list[dict]:
     """Capture every audit event the login path emits."""
     events: list[dict] = []
-    monkeypatch.setattr(login_module.audit_logger, "log", lambda **kw: events.append(kw))
+    monkeypatch.setattr(completion.audit_logger, "log", lambda **kw: events.append(kw))
     return events
 
 
@@ -273,7 +274,7 @@ class TestPasswordExpiryAtLogin:
         # the max age it reports is the one enforcement used. These fakes have no real
         # Session, so the process-level resolver stands in — same DB > .env > default
         # rule, and it reads exactly what ``_publish_policy`` published.
-        login_module._apply_password_expiry(
+        completion._apply_password_expiry(
             db, user, method, audited_ip, "pytest", get_process_auth_settings()
         )
 
@@ -327,7 +328,7 @@ class TestPasswordExpiryAtLogin:
             auth_type=auth_type, password_changed_at=datetime.now(UTC) - timedelta(days=61)
         )
 
-        login_module._apply_password_expiry(
+        completion._apply_password_expiry(
             cast(Any, _FakeDB()),
             user,
             auth_type,
@@ -418,9 +419,9 @@ class TestExpiryRuleHasOneImplementation:
 class TestLastLoginIsStamped:
     @pytest.fixture
     def token_env(self, monkeypatch):
-        monkeypatch.setattr(login_module.audit_logger, "log_login_success", lambda **kw: None)
+        monkeypatch.setattr(completion.audit_logger, "log_login_success", lambda **kw: None)
         monkeypatch.setattr(
-            login_module.token_service,
+            completion.token_service,
             "create_refresh_token",
             lambda **kwargs: ("refresh-token", None),
         )
@@ -429,7 +430,7 @@ class TestLastLoginIsStamped:
         user = _user()
         db = _FakeDB()
 
-        login_module.record_successful_login(cast(Any, db), user)
+        completion.record_successful_login(cast(Any, db), user)
 
         assert user.last_login_at is not None
         assert db.commits == 1
@@ -438,7 +439,7 @@ class TestLastLoginIsStamped:
         user = _user()
         before = datetime.now(UTC)
 
-        login_module._generate_login_tokens(
+        completion._generate_login_tokens(
             fake_request(),
             cast(Any, _FakeDB()),
             user,
@@ -462,7 +463,7 @@ class TestLastLoginIsStamped:
                 raise RuntimeError("database went away")
 
         db = _BrokenDB()
-        response = login_module._generate_login_tokens(
+        response = completion._generate_login_tokens(
             fake_request(),
             cast(Any, _FakeDB()),
             _user(),
@@ -472,7 +473,7 @@ class TestLastLoginIsStamped:
             "10.0.0.1",
             auth_method="local",
         )
-        login_module.record_successful_login(cast(Any, db), _user())
+        completion.record_successful_login(cast(Any, db), _user())
 
         assert response.status_code == 200
         assert db.rollbacks == 1

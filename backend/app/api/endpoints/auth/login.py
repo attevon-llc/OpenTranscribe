@@ -4,7 +4,6 @@ import logging
 import os
 from datetime import UTC
 from datetime import datetime
-from datetime import timedelta
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -13,7 +12,6 @@ from fastapi import HTTPException
 from fastapi import Request
 from fastapi import Response
 from fastapi import status
-from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,37 +20,27 @@ from app.api.endpoints.auth.authenticators import _authenticate_production_user
 from app.api.endpoints.auth.authenticators import _authenticate_testing_user
 from app.api.endpoints.auth.authenticators import _get_user_role
 from app.api.endpoints.auth.lifecycle_gates import _get_client_info
-from app.api.endpoints.auth.mfa_tokens import MFA_SCOPE_ENROLL
-from app.api.endpoints.auth.mfa_tokens import _create_mfa_token
-from app.api.endpoints.auth.mfa_tokens import _is_mfa_enabled
-from app.api.endpoints.auth.mfa_tokens import _is_mfa_required
-from app.api.endpoints.auth.mfa_tokens import _user_can_setup_mfa
+from app.api.endpoints.auth.login_completion import _apply_password_expiry
+from app.api.endpoints.auth.login_completion import _check_mfa_requirement
+from app.api.endpoints.auth.login_completion import _generate_login_tokens
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
-from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.lockout import canonical_identifier
 from app.auth.lockout import check_and_record_attempt
 from app.auth.lockout_admin import get_lockout_info
-from app.auth.password_policy import get_days_until_expiration
-from app.auth.password_policy import is_password_expired
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.session_ceiling import enforce_session_ceiling
-from app.auth.token_service import token_service
-from app.auth.utils import local_password_allowed
 from app.core.auth_settings import DynamicAuthSettings
 from app.core.auth_settings import get_auth_settings
 from app.core.auth_types import AUTH_TYPE_LOCAL
-from app.core.auth_types import AUTH_TYPE_OIDC
-from app.core.auth_types import AUTH_TYPE_PKI
 from app.core.config import settings
 from app.core.constants import SESSION_CAP_EVICTION_BATCH_LIMIT
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.user import User
-from app.models.user_mfa import UserMFA
 from app.schemas.user import Token
 
 router = APIRouter()
@@ -241,257 +229,112 @@ def _handle_lockout_check(
     return False, None
 
 
-def record_successful_login(db: Session, user: User) -> None:
-    """Stamp ``last_login_at`` for a caller that has just been given a session.
-
-    **Every successful authentication path must call this** — local/LDAP login,
-    PKI, OIDC, and MFA completion. Nothing wrote the column, so the admin UI
-    reported ``null`` for every user forever and no inactive-account control
-    (FedRAMP AC-2(3), the usual 30/60/90-day disable) had any data to act on.
-
-    Stamped where a full session is issued rather than where the first factor
-    passes: an MFA challenge that is never answered is not a login.
-
-    Args:
-        db: Database session
-        user: The authenticated user row
-    """
-    try:
-        user.last_login_at = datetime.now(UTC)  # type: ignore[assignment]
-        db.commit()
-    except Exception:
-        # Bookkeeping must never cost the caller the session they just earned.
-        logger.exception("Could not stamp last_login_at for user_id=%s", getattr(user, "id", None))
-        db.rollback()
-
-
-def _apply_password_expiry(
+def _enforce_concurrent_session_limit(
     db: Session,
-    user: User,
-    auth_method: str,
+    user_db: User,
+    max_concurrent_sessions: int,
+    concurrent_session_policy: str,
     client_ip: str,
     user_agent: str,
-    auth_settings: DynamicAuthSettings,
 ) -> None:
-    """Flag an expired local password so the dependency gate forces a change.
-
-    ``password_policy.is_password_expired`` existed with zero call sites, so
-    ``PASSWORD_MAX_AGE_DAYS`` was reported by the admin account-status page and
-    enforced nowhere. Rather than invent a second mechanism, an expired password
-    sets ``must_change_password`` and flows into the same
-    ``get_current_active_user`` gate the admin force-change flag uses.
-
-    Only accounts that actually hold a local password are considered:
-    ``password_changed_at`` is meaningless for an LDAP/OIDC/PKI identity, and
-    treating it as expired would lock those users out of an app whose password
-    they cannot change here.
+    """Apply the AC-10 concurrent-session policy before a new session is issued.
 
     Args:
         db: Database session
-        user: The authenticated user row
-        auth_method: The method actually used for this login ("local", "ldap", …)
+        user_db: The authenticated user row
+        max_concurrent_sessions: The enforced cap (the caller only calls when > 0)
+        concurrent_session_policy: ``reject`` or ``terminate_oldest``
         client_ip: Client IP address, for the audit record
         user_agent: Client user agent, for the audit record
-        auth_settings: The request's resolved auth config (DB > .env > default). The
-            max-age reported to the caller must be the one that was applied; reading
-            ``settings.PASSWORD_MAX_AGE_DAYS`` from .env told the user their password
-            expired after N days while the enforced policy used a different N.
+
+    Raises:
+        HTTPException: 429 when the cap is reached under the ``reject`` policy.
     """
-    if auth_method != AUTH_TYPE_LOCAL:
-        # The credential just verified was not a local password.
-        return
+    from app.models.refresh_token import RefreshToken
 
-    allowed, reason = local_password_allowed(
-        str(user.auth_type) if user.auth_type else None,
-        bool(getattr(user, "allow_local_fallback", False)),
-    )
-    if not allowed:
-        logger.debug("Skipping password expiry for %s: %s", user.email, reason)
-        return
-
-    password_changed_at = getattr(user, "password_changed_at", None)
-    if password_changed_at is None:
-        # ``is_password_expired`` treats "no recorded change time" as expired, which is
-        # the right default for a policy primitive but the wrong one HERE: nothing on
-        # the account-creation paths (initial_data, users.py, registration.py) ever
-        # stamped the column, so almost every pre-existing local user carries NULL.
-        # Forcing all of them through a password change on their next login would be a
-        # self-inflicted outage, not a control. Say so loudly instead — same reasoning
-        # as the password-history degradation warning in password_policy.
-        logger.warning(
-            "Password age unknown for user_id=%s (password_changed_at is NULL); expiry "
-            "not enforced for this login. Backfill the column to enable IA-5(1).",
-            user.id,
+    # Use SELECT FOR UPDATE to prevent race conditions when checking/modifying sessions
+    # This acquires row-level locks on the user's active sessions
+    # Note: Cannot use with_for_update() on aggregate queries, so we query rows and count
+    sessions_stmt = (
+        select(RefreshToken)
+        .where(
+            RefreshToken.user_id == user_db.id,
+            RefreshToken.revoked_at.is_(None),
+            RefreshToken.expires_at > datetime.now(UTC),
         )
-        return
-
-    if not is_password_expired(password_changed_at):
-        return
-
-    if not user.must_change_password:
-        user.must_change_password = True  # type: ignore[assignment]
-        db.commit()
-
-    audit_logger.log(
-        event_type=AuditEventType.AUTH_PASSWORD_EXPIRED,
-        outcome=AuditOutcome.SUCCESS,
-        user_id=user.id,
-        username=str(user.email),
-        source_ip=client_ip,
-        user_agent=user_agent,
-        error_code="PASSWORD_EXPIRED",
-        details={
-            "max_age_days": auth_settings.password_max_age_days,
-            "days_until_expiration": get_days_until_expiration(password_changed_at),
-        },
+        .with_for_update()
     )
-    logger.info("Password expired for user %s; a change is now required", user.email)
+    active_session_rows = db.execute(sessions_stmt).scalars().all()
+    active_sessions = len(active_session_rows)
 
+    if active_sessions >= max_concurrent_sessions:
+        if concurrent_session_policy == "reject":
+            # AC-10 refusal is an event in its own right; it was previously
+            # invisible to the audit log, so a user repeatedly blocked at the
+            # session cap left no trace a reviewer could find.
+            audit_logger.log(
+                event_type=AuditEventType.AUTH_SESSION_LIMIT_EXCEEDED,
+                user_id=user_db.id,
+                username=str(user_db.email),
+                outcome=AuditOutcome.FAILURE,
+                source_ip=client_ip,
+                user_agent=user_agent,
+                error_code="CONCURRENT_SESSION_LIMIT",
+                details={
+                    "policy": "reject",
+                    "max_concurrent_sessions": max_concurrent_sessions,
+                    "active_sessions": active_sessions,
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=(
+                    f"Maximum {max_concurrent_sessions} concurrent sessions reached. "
+                    "Please logout from another device."
+                ),
+            )
+        elif concurrent_session_policy == "terminate_oldest" and active_session_rows:
+            # Delegate the actual eviction to the shared ceiling enforcer
+            # (issue #632) rather than revoking a single Python-computed
+            # `min()` row: "evict exactly one, mint exactly one" is a
+            # conservation law once active_sessions is already >= the cap, so
+            # it can never bring the count DOWN, only hold it steady — and
+            # with no gap lock, two concurrent logins can each see room for
+            # one more and both mint, netting +1. `enforce_session_ceiling`
+            # is a post-condition instead ("keep the newest N-1, so the
+            # session about to be minted lands at exactly N"), which is what
+            # actually converges regardless of arrival rate. The
+            # `with_for_update()` lock above is kept: `reject` still needs a
+            # stable count to refuse on.
+            evicted_jtis = enforce_session_ceiling(
+                db,
+                user_db.id,
+                max_concurrent_sessions - 1,
+                batch_limit=SESSION_CAP_EVICTION_BATCH_LIMIT,
+            )
+            db.commit()
 
-def _check_mfa_requirement(
-    db: Session,
-    user: User,
-    user_uuid_str: str,
-    user_role: str,
-    actual_auth_method: str = "",
-) -> JSONResponse | None:
-    """Check if MFA is required for user and return MFA response if needed.
-
-    Args:
-        db: Database session
-        user: User model object
-        user_uuid_str: User UUID string
-        user_role: User's role
-        actual_auth_method: How the user actually authenticated. When a PKI/OIDC
-            user authenticates via password fallback, actual_auth_method will be "local"
-            and MFA should still apply.
-
-    Returns:
-        JSONResponse with an MFA half-token if MFA verification or enrolment is
-        required, None if the caller may be issued a full session.
-    """
-    # Skip MFA check if MFA is disabled (check DB first, then .env)
-    if not _is_mfa_enabled(db):
-        return None
-
-    # Skip MFA for PKI and OIDC users ONLY if they authenticated via their native method.
-    # If they used local password fallback, MFA must still apply.
-    if user.auth_type in [AUTH_TYPE_PKI, AUTH_TYPE_OIDC] and actual_auth_method != AUTH_TYPE_LOCAL:
-        return None
-
-    user_mfa = db.query(UserMFA).filter(UserMFA.user_id == user.id).first()
-
-    if user_mfa and user_mfa.totp_enabled:
-        # User has MFA enabled - return MFA token instead of access token
-        mfa_token = _create_mfa_token(user_uuid_str, user_role)
-        logger.info(f"MFA verification required for user: {str(user.email)}")
-        return JSONResponse(
-            content={
-                "mfa_required": True,
-                "mfa_token": mfa_token,
-                "message": "MFA verification required",
-            }
-        )
-
-    if _is_mfa_required(db, user):
-        # Deployment requires MFA and this user has not enrolled. Enrolment used to be
-        # enforced only by the SPA, so any API/CLI client that ignored the hint received
-        # a full, unrestricted session on an MFA_REQUIRED deployment.
-        if not _user_can_setup_mfa(user) and actual_auth_method != AUTH_TYPE_LOCAL:
-            # An external IdP owns this user's second factor and there is no local TOTP
-            # to enrol in — same reasoning as the PKI/OIDC bypass above.
-            return None
-
-        # Same short-lived, single-use half-token as the verification branch, but scoped
-        # to enrolment: it carries the "mfa" type claim (so every access-token consumer
-        # rejects it) and only authorizes /mfa/setup + /mfa/verify-setup.
-        mfa_token = _create_mfa_token(user_uuid_str, user_role, scope=MFA_SCOPE_ENROLL)
-        logger.info(f"MFA enrollment required before access for user: {str(user.email)}")
-        return JSONResponse(
-            content={
-                "mfa_required": True,
-                "mfa_enrollment_required": True,
-                "mfa_token": mfa_token,
-                "message": "MFA enrollment is required before access is granted",
-            }
-        )
-
-    return None
-
-
-def _generate_login_tokens(
-    request: Request,
-    db: Session,
-    user: User,
-    user_uuid_str: str,
-    user_role: str,
-    user_agent: str,
-    client_ip: str,
-    auth_method: str = "",
-) -> JSONResponse:
-    """Generate access and refresh tokens for successful login.
-
-    Args:
-        request: FastAPI request object (its scheme decides the cookie Secure flag
-            under ALLOW_INSECURE_COOKIES — see `auth/cookies.py:_secure_for_request`)
-        db: Database session
-        user: User model object
-        user_uuid_str: User UUID string
-        user_role: User's role
-        user_agent: Client user agent
-        client_ip: Client IP address
-        auth_method: How the user actually authenticated ("local", "ldap", …)
-
-    Returns:
-        JSONResponse with access_token, refresh_token, and token metadata
-    """
-    # Generate the JWT access token with role information
-    access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
-    token_data = {"sub": user_uuid_str, "type": "access"}
-    if user_role:
-        token_data["role"] = user_role
-
-    access_token = direct_create_token(data=token_data, expires_delta=access_token_expires)
-
-    # Generate refresh token (FedRAMP AC-12)
-    refresh_token, _ = token_service.create_refresh_token(
-        db=db,
-        user_id=user.id,
-        user_uuid=user_uuid_str,
-        role=user_role,
-        user_agent=user_agent,
-        ip_address=client_ip,
-    )
-
-    # Stamp last_login_at now that a full session exists (FedRAMP AC-2(3)).
-    record_successful_login(db, user)
-
-    # Log successful login
-    audit_logger.log_login_success(
-        user_id=user.id,
-        username=str(user.email),
-        source_ip=client_ip,
-        user_agent=user_agent,
-        # The method actually used, not one inferred from LDAP_ENABLED + auth_type: a
-        # PKI/OIDC user falling back to a local password was audited as "ldap".
-        auth_method=auth_method or str(user.auth_type),
-    )
-
-    logger.info(f"Login successful for user: {str(user.email)}")
-    response = JSONResponse(
-        content={
-            "access_token": access_token,
-            "token_type": "bearer",
-            "refresh_token": refresh_token,
-            "expires_in": settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        }
-    )
-
-    # Set httpOnly cookies for browser-based authentication (C2 security hardening)
-    from app.auth.cookies import set_auth_cookies
-
-    set_auth_cookies(response, access_token, refresh_token, request)
-    return response
+            # AUTH_SESSION_LIMIT_EXCEEDED, not AUTH_SESSION_EXPIRED: this
+            # session did not time out, it was evicted to make room. The
+            # purpose-built event existed with zero emitters, so searching the
+            # audit log for AC-10 enforcement returned nothing while eviction
+            # noise was indistinguishable from ordinary session expiry.
+            audit_logger.log(
+                event_type=AuditEventType.AUTH_SESSION_LIMIT_EXCEEDED,
+                user_id=user_db.id,
+                username=str(user_db.email),
+                outcome=AuditOutcome.SUCCESS,
+                source_ip=client_ip,
+                user_agent=user_agent,
+                error_code="CONCURRENT_SESSION_LIMIT",
+                details={
+                    "reason": "concurrent_session_limit",
+                    "policy": "terminate_oldest",
+                    "max_concurrent_sessions": max_concurrent_sessions,
+                    "active_sessions": active_sessions,
+                    "sessions_revoked": len(evicted_jtis),
+                },
+            )
 
 
 @router.post("/token", response_model=Token)
@@ -615,91 +458,14 @@ def login_for_access_token(
         concurrent_session_policy = auth_settings.concurrent_session_policy
 
         if max_concurrent_sessions > 0:
-            from app.models.refresh_token import RefreshToken
-
-            # Use SELECT FOR UPDATE to prevent race conditions when checking/modifying sessions
-            # This acquires row-level locks on the user's active sessions
-            # Note: Cannot use with_for_update() on aggregate queries, so we query rows and count
-            sessions_stmt = (
-                select(RefreshToken)
-                .where(
-                    RefreshToken.user_id == user_db.id,
-                    RefreshToken.revoked_at.is_(None),
-                    RefreshToken.expires_at > datetime.now(UTC),
-                )
-                .with_for_update()
+            _enforce_concurrent_session_limit(
+                db,
+                user_db,
+                max_concurrent_sessions,
+                concurrent_session_policy,
+                client_ip,
+                user_agent,
             )
-            active_session_rows = db.execute(sessions_stmt).scalars().all()
-            active_sessions = len(active_session_rows)
-
-            if active_sessions >= max_concurrent_sessions:
-                if concurrent_session_policy == "reject":
-                    # AC-10 refusal is an event in its own right; it was previously
-                    # invisible to the audit log, so a user repeatedly blocked at the
-                    # session cap left no trace a reviewer could find.
-                    audit_logger.log(
-                        event_type=AuditEventType.AUTH_SESSION_LIMIT_EXCEEDED,
-                        user_id=user_db.id,
-                        username=str(user_db.email),
-                        outcome=AuditOutcome.FAILURE,
-                        source_ip=client_ip,
-                        user_agent=user_agent,
-                        error_code="CONCURRENT_SESSION_LIMIT",
-                        details={
-                            "policy": "reject",
-                            "max_concurrent_sessions": max_concurrent_sessions,
-                            "active_sessions": active_sessions,
-                        },
-                    )
-                    raise HTTPException(
-                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                        detail=(
-                            f"Maximum {max_concurrent_sessions} concurrent sessions reached. "
-                            "Please logout from another device."
-                        ),
-                    )
-                elif concurrent_session_policy == "terminate_oldest" and active_session_rows:
-                    # Delegate the actual eviction to the shared ceiling enforcer
-                    # (issue #632) rather than revoking a single Python-computed
-                    # `min()` row: "evict exactly one, mint exactly one" is a
-                    # conservation law once active_sessions is already >= the cap, so
-                    # it can never bring the count DOWN, only hold it steady — and
-                    # with no gap lock, two concurrent logins can each see room for
-                    # one more and both mint, netting +1. `enforce_session_ceiling`
-                    # is a post-condition instead ("keep the newest N-1, so the
-                    # session about to be minted lands at exactly N"), which is what
-                    # actually converges regardless of arrival rate. The
-                    # `with_for_update()` lock above is kept: `reject` still needs a
-                    # stable count to refuse on.
-                    evicted_jtis = enforce_session_ceiling(
-                        db,
-                        user_db.id,
-                        max_concurrent_sessions - 1,
-                        batch_limit=SESSION_CAP_EVICTION_BATCH_LIMIT,
-                    )
-                    db.commit()
-
-                    # AUTH_SESSION_LIMIT_EXCEEDED, not AUTH_SESSION_EXPIRED: this
-                    # session did not time out, it was evicted to make room. The
-                    # purpose-built event existed with zero emitters, so searching the
-                    # audit log for AC-10 enforcement returned nothing while eviction
-                    # noise was indistinguishable from ordinary session expiry.
-                    audit_logger.log(
-                        event_type=AuditEventType.AUTH_SESSION_LIMIT_EXCEEDED,
-                        user_id=user_db.id,
-                        username=str(user_db.email),
-                        outcome=AuditOutcome.SUCCESS,
-                        source_ip=client_ip,
-                        user_agent=user_agent,
-                        error_code="CONCURRENT_SESSION_LIMIT",
-                        details={
-                            "reason": "concurrent_session_limit",
-                            "policy": "terminate_oldest",
-                            "max_concurrent_sessions": max_concurrent_sessions,
-                            "active_sessions": active_sessions,
-                            "sessions_revoked": len(evicted_jtis),
-                        },
-                    )
 
         # Check if MFA is required for this user (FedRAMP IA-2)
         # Pass actual_auth_method so fallback logins still get MFA

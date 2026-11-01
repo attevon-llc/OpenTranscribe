@@ -40,7 +40,8 @@ orm_call_in_api::backend/app/api/endpoints/auth/authenticators.py	3	layering: re
 orm_call_in_api::backend/app/api/endpoints/auth/dependencies.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/auth/lifecycle_gates.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/auth/invitations.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/auth/login.py	6	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/auth/login.py	5	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/auth/login_completion.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/auth/mfa.py	4	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/auth/mfa_enrollment.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/auth/mfa_tokens.py	2	layering: removal planned

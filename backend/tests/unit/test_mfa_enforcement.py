@@ -34,6 +34,7 @@ from fastapi import HTTPException
 from fastapi import Response
 
 from app.api.endpoints.auth import login as login_module
+from app.api.endpoints.auth import login_completion as completion
 from app.api.endpoints.auth import mfa as mfa_module
 from app.api.endpoints.auth import mfa_enrollment as mfa_enrollment_module
 from app.api.endpoints.auth import mfa_tokens as mfa_tokens_module
@@ -156,8 +157,8 @@ def fake_redis(monkeypatch) -> _FakeRedis:
 @pytest.fixture
 def mfa_required(monkeypatch):
     """Deployment-wide MFA requirement, as the admin UI / .env would set it."""
-    monkeypatch.setattr(login_module, "_is_mfa_enabled", lambda db: True)
-    monkeypatch.setattr(login_module, "_is_mfa_required", lambda db, user=None: True)
+    monkeypatch.setattr(completion, "_is_mfa_enabled", lambda db: True)
+    monkeypatch.setattr(completion, "_is_mfa_required", lambda db, user=None: True)
 
 
 # ── MFA_REQUIRED is enforced at login, not just reported ─────────────────────────
@@ -167,7 +168,7 @@ class TestEnrollmentIsEnforcedAtLogin:
     def test_unenrolled_user_gets_no_access_token(self, mfa_required):
         db = _db({UserMFA: None})
 
-        response = login_module._check_mfa_requirement(db, _user(), USER_UUID, "user")
+        response = completion._check_mfa_requirement(db, _user(), USER_UUID, "user")
 
         assert response is not None, "an unenrolled user must not get a full session"
         body = _body(response)
@@ -179,7 +180,7 @@ class TestEnrollmentIsEnforcedAtLogin:
     def test_enrollment_challenge_carries_a_usable_half_token(self, mfa_required):
         db = _db({UserMFA: None})
 
-        body = _body(login_module._check_mfa_requirement(db, _user(), USER_UUID, "user"))
+        body = _body(completion._check_mfa_requirement(db, _user(), USER_UUID, "user"))
 
         payload = _decode(body["mfa_token"])
         assert payload["sub"] == USER_UUID
@@ -188,18 +189,18 @@ class TestEnrollmentIsEnforcedAtLogin:
     def test_enrolled_user_is_challenged_to_verify_not_enroll(self, mfa_required):
         db = _db({UserMFA: SimpleNamespace(totp_enabled=True)})
 
-        body = _body(login_module._check_mfa_requirement(db, _user(), USER_UUID, "user"))
+        body = _body(completion._check_mfa_requirement(db, _user(), USER_UUID, "user"))
 
         assert body["mfa_required"] is True
         assert "mfa_enrollment_required" not in body
 
     def test_unenrolled_user_passes_when_mfa_is_optional(self, monkeypatch):
         """MFA enabled but not required stays opt-in — the pre-existing behaviour."""
-        monkeypatch.setattr(login_module, "_is_mfa_enabled", lambda db: True)
-        monkeypatch.setattr(login_module, "_is_mfa_required", lambda db, user=None: False)
+        monkeypatch.setattr(completion, "_is_mfa_enabled", lambda db: True)
+        monkeypatch.setattr(completion, "_is_mfa_required", lambda db, user=None: False)
 
         assert (
-            login_module._check_mfa_requirement(_db({UserMFA: None}), _user(), USER_UUID, "user")
+            completion._check_mfa_requirement(_db({UserMFA: None}), _user(), USER_UUID, "user")
             is None
         )
 
@@ -208,7 +209,7 @@ class TestEnrollmentIsEnforcedAtLogin:
         db = _db({UserMFA: None})
 
         assert (
-            login_module._check_mfa_requirement(
+            completion._check_mfa_requirement(
                 db, _user(auth_type="pki"), USER_UUID, "user", actual_auth_method="pki"
             )
             is None
@@ -217,7 +218,7 @@ class TestEnrollmentIsEnforcedAtLogin:
     def test_pki_user_on_password_fallback_must_enroll(self, mfa_required):
         db = _db({UserMFA: None})
 
-        response = login_module._check_mfa_requirement(
+        response = completion._check_mfa_requirement(
             db, _user(auth_type="pki"), USER_UUID, "user", actual_auth_method="local"
         )
 
@@ -255,14 +256,14 @@ class TestEnrollmentIsEnforcedAtLogin:
 class TestEnrollmentTokenIsNotAnAccessToken:
     def test_token_carries_the_mfa_type_claim(self, mfa_required):
         body = _body(
-            login_module._check_mfa_requirement(_db({UserMFA: None}), _user(), USER_UUID, "user")
+            completion._check_mfa_requirement(_db({UserMFA: None}), _user(), USER_UUID, "user")
         )
 
         assert _decode(body["mfa_token"])["type"] == TOKEN_TYPE_MFA
 
     def test_token_is_rejected_by_get_current_user(self, mfa_required):
         body = _body(
-            login_module._check_mfa_requirement(_db({UserMFA: None}), _user(), USER_UUID, "user")
+            completion._check_mfa_requirement(_db({UserMFA: None}), _user(), USER_UUID, "user")
         )
         request: Any = SimpleNamespace(state=SimpleNamespace(), cookies={}, headers={})
 
@@ -288,14 +289,14 @@ class TestEnrollmentTokenScope:
 
     def test_login_mints_an_enroll_scoped_token(self, mfa_required):
         body = _body(
-            login_module._check_mfa_requirement(_db({UserMFA: None}), _user(), USER_UUID, "user")
+            completion._check_mfa_requirement(_db({UserMFA: None}), _user(), USER_UUID, "user")
         )
 
         assert _decode(body["mfa_token"])["mfa_scope"] == MFA_SCOPE_ENROLL
 
     def test_login_mints_a_verify_scoped_token_for_an_enrolled_user(self, mfa_required):
         body = _body(
-            login_module._check_mfa_requirement(
+            completion._check_mfa_requirement(
                 _db({UserMFA: SimpleNamespace(totp_enabled=True)}),
                 _user(),
                 USER_UUID,
@@ -467,7 +468,6 @@ class TestForcedEnrollmentFlow:
             response=Response(), request=cast(Any, None), enrollment=self._context(token, db), db=db
         )
 
-        # Still resolvable → still unspent.
         assert self._context(token, db).mfa_jti == _decode(token)["jti"]
 
     def _pending_enrollment(self):
@@ -848,15 +848,15 @@ class TestAuditRecordsRealAuthMethod:
         monkeypatch.setattr(settings, "LDAP_ENABLED", True)
         captured = {}
         monkeypatch.setattr(
-            login_module.audit_logger, "log_login_success", lambda **kw: captured.update(kw)
+            completion.audit_logger, "log_login_success", lambda **kw: captured.update(kw)
         )
         monkeypatch.setattr(
-            login_module.token_service,
+            completion.token_service,
             "create_refresh_token",
             lambda **kwargs: ("refresh-token", None),
         )
 
-        login_module._generate_login_tokens(
+        completion._generate_login_tokens(
             fake_request(),
             _db(),
             _user(auth_type="pki"),

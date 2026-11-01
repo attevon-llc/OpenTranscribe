@@ -110,9 +110,9 @@ def issue_session_response(
     # Every successful auth path stamps last_login_at. This function is the single
     # post-MFA session-issue point, so it covers /mfa/verify AND the forced
     # enrolment completion at /mfa/verify-setup. Imported here rather than at module
-    # scope: login.py imports this module's siblings, and a top-level import would
+    # scope: login_completion.py imports this module's siblings, and a top-level import would
     # close the cycle.
-    from app.api.endpoints.auth.login import record_successful_login
+    from app.api.endpoints.auth.login_completion import record_successful_login
 
     record_successful_login(db, user)
     return response

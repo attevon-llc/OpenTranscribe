@@ -431,7 +431,7 @@ def test_failed_duplicate_cleanup_only_touches_the_active_tenant(world):
 def test_url_duplicate_is_tenant_scoped(world, file_org, caller_org, duplicate):
     from fastapi import HTTPException
 
-    from app.api.endpoints.files.url_processing import _check_duplicate_video
+    from app.api.endpoints.files.url_video_import import _check_duplicate_video
 
     w = world
     url = f"https://www.youtube.com/watch?v={uuid_pkg.uuid4().hex[:11]}"

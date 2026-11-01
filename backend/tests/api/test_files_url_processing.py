@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from fastapi import status
 
-from app.api.endpoints.files.url_processing import normalize_media_url
+from app.api.endpoints.files.url_request import normalize_media_url
 
 # ---------------------------------------------------------------------------
 # normalize_media_url (pure helper, no I/O)

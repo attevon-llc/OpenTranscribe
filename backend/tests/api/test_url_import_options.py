@@ -12,6 +12,8 @@ import pytest
 from fastapi import status
 
 import app.api.endpoints.files.url_processing as url_processing
+import app.api.endpoints.files.url_request as url_request
+import app.api.endpoints.files.url_video_import as url_video_import
 from app.models.media import MediaFile
 
 URL = "https://vimeo.com/123456"
@@ -35,7 +37,7 @@ def url_seams(monkeypatch):
 
         return _delay
 
-    monkeypatch.setattr(url_processing.process_youtube_url_task, "delay", _record(task_calls))
+    monkeypatch.setattr(url_video_import.process_youtube_url_task, "delay", _record(task_calls))
     monkeypatch.setattr(
         url_processing.process_youtube_playlist_task, "delay", _record(playlist_calls)
     )
@@ -100,7 +102,7 @@ def test_a_playlist_carries_the_options_to_its_task(
     client, user_token_headers, url_seams, monkeypatch
 ):
     monkeypatch.setattr(
-        type(url_processing.MediaDownloadService()),
+        type(url_request.MediaDownloadService()),
         "is_playlist_url",
         lambda self, url: True,
         raising=False,

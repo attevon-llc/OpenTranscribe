@@ -254,7 +254,7 @@ class TestFileCreatedSites:
     def test_url_processing_file_created_is_suppressed_for_a_quarantined_file(
         self, bridge_session, monkeypatch
     ):
-        from app.api.endpoints.files import url_processing
+        from app.api.endpoints.files import url_video_import
 
         db = bridge_session
         owner = _mk_user(db)
@@ -266,14 +266,14 @@ class TestFileCreatedSites:
             _capturing_send_ws_event(sent),
         )
 
-        url_processing._notify_url_file_created(file, owner.id)
+        url_video_import._notify_url_file_created(file, owner.id)
 
         assert sent == []
 
     def test_url_processing_file_created_is_delivered_for_a_clean_file(
         self, bridge_session, monkeypatch
     ):
-        from app.api.endpoints.files import url_processing
+        from app.api.endpoints.files import url_video_import
 
         db = bridge_session
         owner = _mk_user(db)
@@ -285,7 +285,7 @@ class TestFileCreatedSites:
             _capturing_send_ws_event(sent),
         )
 
-        url_processing._notify_url_file_created(file, owner.id)
+        url_video_import._notify_url_file_created(file, owner.id)
 
         assert len(sent) == 1
         assert sent[0][1] == "file_created"

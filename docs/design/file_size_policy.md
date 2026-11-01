@@ -64,3 +64,27 @@ Re-measure with the snippet in the git history of this file (it imports
    logged in the review file.
 5. After a split, check cohesion again: re-merge a split that fragmented one idea, and make names
    imported across modules public (no leading underscore).
+
+## Planned: `scripts/guards/size_report.py` (measure, suggest, track; not built yet)
+
+Goal: make the limits evidence-based and turn "how much work is left" into a number the pre-commit
+hook and the final gate can show.
+
+* **Measure.** Read the same tracked files as `check_file_size.py` (reuse its `metrics_for` and
+  `measure`, no second definition of scope) and print per group (Python, TS/JS, shell, tests,
+  Svelte script, Svelte total, CLAUDE.md): files, median, p90, p95, max, count over soft and over hard.
+* **Suggest.** For each group propose a soft target near p95 and a hard cap near twice the soft
+  target (rounded to 50), and flag where the configured caps sit far from the data. Suggestions
+  are advice only; changing a cap is a reviewed edit to `check_file_size.py` plus its tests.
+* **Quantify the work.** Report a debt figure per group: files over hard, total lines above hard,
+  and total lines above soft in files that also mix concerns (a reviewer flag, not automatic).
+  This is the "amount of work" number: it falls as files are split or baselined with a cohesive reason.
+* **Track.** Write a small committed snapshot (`scripts/guards/baselines/size_stats.json`:
+  date, per-group stats, debt figures). Compare against it: the hook prints the delta and fails if
+  the debt figure grows, which restates the existing ratchet in terms of work remaining.
+* **Pre-commit.** Run as a report-only hook next to `guard-file-size` (warn on soft, fail only on
+  the ratchet). Deterministic, no network, a few hundred ms on the tracked tree.
+* **Tests.** Planted-tree cases for every group, a must-fire case for the growth failure and a
+  must-stay-clean case for a shrinking tree, and a self-test like the other guards.
+* **Later extension.** The same shape can report cyclomatic complexity and import fan-in per
+  module, so splits are chosen by measured pain and not by line count alone.

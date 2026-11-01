@@ -1479,7 +1479,7 @@
       <div class="content-section">
         <h3 class="section-title">{$t('settings.legal.title')}</h3>
         <LazySection load={sectionLoaders.legal} let:Component>
-          <Component {isAdmin} {isSuperAdmin} />
+          <Component {isAdmin} {isSuperAdmin} isOrgAdmin={$userStore?.org_role === 'org:admin'} />
         </LazySection>
       </div>
     {/if}

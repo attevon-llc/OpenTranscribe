@@ -6372,5 +6372,12 @@
   "privacy.purge.scopeMine": "تسجيلاتك الخاصة",
   "privacy.speakerNotice.voiceprintsOffTitle": "التعرّف على المتحدثين متوقف.",
   "privacy.speakerNotice.voiceprintsOffBody": "اقتراحات الأسماء المبنية على الصوت ومجموعات المتحدثين غير متاحة. يبقى المتحدثون الذين سمّيتهم وملفاتهم الشخصية.",
-  "privacy.speakerNotice.openSettings": "فتح الإعدادات"
+  "privacy.speakerNotice.openSettings": "فتح الإعدادات",
+  "legal.orgAcceptance.title": "قبول المؤسسة",
+  "legal.orgAcceptance.description": "بصفتك مسؤولًا عن المؤسسة، يمكنك قبول مستند نيابةً عن مؤسستك. يذكر السجل المؤسسة ويذكرك بصفتك الشخص الذي قَبِل.",
+  "legal.orgAcceptance.acceptForOrg": "القبول نيابةً عن المؤسسة",
+  "legal.orgAcceptance.acceptedOn": "تم القبول نيابةً عن المؤسسة في {{date}}",
+  "legal.orgAcceptance.failed": "تعذّر حفظ القبول. أعد تحميل الصفحة وحاول مرة أخرى.",
+  "legal.errors.orgAcceptanceForbidden": "لا يمكن القبول نيابةً عن هذه المؤسسة إلا لمسؤول عنها.",
+  "legal.retention.erasedRecord": "حساب محذوف (السجل محفوظ بأسماء مستعارة)"
 }

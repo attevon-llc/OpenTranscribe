@@ -6,6 +6,7 @@
   import { onMount } from 'svelte';
   import { t } from '$stores/locale';
   import LegalDocumentViewer from '$components/legal/LegalDocumentViewer.svelte';
+  import LegalOrgAcceptance from '$components/settings/LegalOrgAcceptance.svelte';
   import {
     OPERATOR_ACK_KEY,
     listLegalDocuments,
@@ -16,6 +17,8 @@
 
   export let isAdmin = false;
   export let isSuperAdmin = false;
+  /** The request acts in an organization as its admin (managed edition only). */
+  export let isOrgAdmin = false;
 
   let docs: LegalDocumentSummary[] = [];
   let acks: LegalAcknowledgment[] = [];
@@ -24,13 +27,17 @@
 
   $: operatorDoc = docs.find((d) => d.key === OPERATOR_ACK_KEY);
 
+  async function loadDocs() {
+    try {
+      docs = await listLegalDocuments();
+    } catch (err) {
+      console.error('Error loading legal documents:', err);
+    }
+  }
+
   onMount(() => {
     (async () => {
-      try {
-        docs = await listLegalDocuments();
-      } catch (err) {
-        console.error('Error loading legal documents:', err);
-      }
+      await loadDocs();
       if (isAdmin) {
         try {
           acks = await listLegalAcknowledgments();
@@ -78,6 +85,10 @@
   </div>
 {/if}
 
+{#if isOrgAdmin}
+  <LegalOrgAcceptance {docs} on:accepted={loadDocs} />
+{/if}
+
 {#if isAdmin}
   <h4 class="legal-subtitle">{$t('legal.settings.ackTitle')}</h4>
   {#if acks.length}
@@ -93,9 +104,17 @@
           </tr>
         </thead>
         <tbody>
-          {#each acks as ack (`${ack.user_email}|${ack.key}|${ack.version}|${ack.accepted_at}`)}
+          {#each acks as ack, i (`${i}|${ack.key}|${ack.version}|${ack.accepted_at}`)}
             <tr>
-              <td>{ack.user_email}</td>
+              <td>
+                {#if ack.user_email}
+                  {ack.user_email}
+                {:else}
+                  <span class="legal-erased" data-testid="legal-erased">
+                    {$t('legal.retention.erasedRecord')}
+                  </span>
+                {/if}
+              </td>
               <td>{ack.key}</td>
               <td>{ack.version}</td>
               <td title={ack.sha256}>{ack.sha256.slice(0, 12)}</td>
@@ -171,6 +190,11 @@
     border-inline-start-width: 4px;
     border-radius: 8px;
     background-color: var(--bg-secondary);
+  }
+
+  .legal-erased {
+    color: var(--text-secondary);
+    font-style: italic;
   }
 
   .legal-subtitle {

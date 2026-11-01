@@ -36,6 +36,31 @@ An acknowledgment is tied to the exact text. The app stores the document key, it
 SHA-256 hash of the text you saw. If the text changes in a later release, the new version needs a
 new acknowledgment. Acknowledging the same text twice changes nothing.
 
+## What an acceptance records
+
+Each acceptance stores:
+
+| Field | What it is |
+| --- | --- |
+| Document, version, SHA-256 | Exactly which text was accepted |
+| Accepted at | When |
+| IP address, user agent | The network address and client that submitted it |
+| Locale | The language the text was shown in (from the request, or the browser's `Accept-Language`) |
+| Scope | `user` (a person accepted for themselves) or `organization` (see below) |
+| Organization | The organization the request was acting in, if any, by id and by uuid |
+
+The audit event written for a new acceptance (`legal.acknowledged`) carries the organization, so
+it appears in that organization's audit log. Accepting the same text again writes nothing.
+
+## Accepting for an organization
+
+In the hosted edition an **organization administrator** can accept a document on behalf of the
+organization (Settings > Legal > Organization acceptance). The record names the organization and
+the administrator who accepted. One acceptance per organization per exact text is kept, and an
+administrator of several organizations can accept the same text for each. The Operator
+Acknowledgment cannot be accepted at organization scope. An organization administrator can list
+the acceptances recorded in their organization; platform administrators see every record.
+
 ## Where the text comes from
 
 The wording is maintained in one central legal repository. OpenTranscribe copies a pinned release

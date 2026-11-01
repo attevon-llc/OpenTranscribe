@@ -6372,5 +6372,12 @@
   "privacy.purge.scopeMine": "Ihre eigenen Aufnahmen",
   "privacy.speakerNotice.voiceprintsOffTitle": "Die Sprechererkennung ist ausgeschaltet.",
   "privacy.speakerNotice.voiceprintsOffBody": "Stimmbasierte Namensvorschläge und Sprechercluster sind nicht verfügbar. Ihre benannten Sprecher und Profile bleiben erhalten.",
-  "privacy.speakerNotice.openSettings": "Einstellungen öffnen"
+  "privacy.speakerNotice.openSettings": "Einstellungen öffnen",
+  "legal.orgAcceptance.title": "Annahme durch die Organisation",
+  "legal.orgAcceptance.description": "Als Administrator der Organisation können Sie ein Dokument im Namen Ihrer Organisation annehmen. Der Eintrag nennt die Organisation und Sie als die Person, die angenommen hat.",
+  "legal.orgAcceptance.acceptForOrg": "Für die Organisation annehmen",
+  "legal.orgAcceptance.acceptedOn": "Für die Organisation angenommen am {{date}}",
+  "legal.orgAcceptance.failed": "Die Annahme konnte nicht gespeichert werden. Laden Sie die Seite neu und versuchen Sie es erneut.",
+  "legal.errors.orgAcceptanceForbidden": "Nur ein Administrator dieser Organisation kann in ihrem Namen annehmen.",
+  "legal.retention.erasedRecord": "Gelöschtes Konto (Eintrag aufbewahrt, pseudonymisiert)"
 }

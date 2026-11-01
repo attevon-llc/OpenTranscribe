@@ -705,6 +705,15 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE conname = 'speaker_identity_source_user_id_fkey')"
     )
 
+    # v450: legal acceptance context + speaker_profile.last_interaction_at. Keyed on the CHECK the
+    # revision creates last, and on the profile column (same transaction, but both are cheap).
+    has_legal_acceptance_context = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_legal_acceptance_scope')"
+    ) and _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'speaker_profile' AND column_name = 'last_interaction_at')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -774,9 +783,8 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_legal_acceptance
         and has_takedown_origin
     )
-    # v449: same as v448 plus speaker.identity_source. The newest revision on this chain, so
-    # this is the top of the ladder.
-    if (
+    # Bound to a name: v450 onward are each v449's fingerprint plus one more probe.
+    matches_v449 = (
         matches_v442
         and has_takedown_notice
         and has_takedown_notification
@@ -785,7 +793,13 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_content_hold
         and has_task_active_unique
         and has_identity_source
-    ):
+    )
+    # v450: same as v449 plus the legal acceptance context. The newest revision on this chain,
+    # so this is the top of the ladder.
+    if matches_v449 and has_legal_acceptance_context:
+        return "v450_legal_acceptance_context_and_profile_interaction"
+    # v449: same as v448 plus speaker.identity_source.
+    if matches_v449:
         return "v449_add_speaker_identity_source"
     # v448: same as v447 plus the one-active-row-per-file-step guard.
     if (

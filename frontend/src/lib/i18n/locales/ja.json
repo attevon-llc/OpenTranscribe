@@ -6372,5 +6372,12 @@
   "privacy.purge.scopeMine": "自分の録音",
   "privacy.speakerNotice.voiceprintsOffTitle": "話者認識はオフになっています。",
   "privacy.speakerNotice.voiceprintsOffBody": "声に基づく名前の提案と話者クラスターは利用できません。名前を付けた話者とプロフィールは保持されます。",
-  "privacy.speakerNotice.openSettings": "設定を開く"
+  "privacy.speakerNotice.openSettings": "設定を開く",
+  "legal.orgAcceptance.title": "組織としての同意",
+  "legal.orgAcceptance.description": "組織の管理者として、組織を代表して文書に同意できます。記録には組織名と、同意した人としてあなたが記載されます。",
+  "legal.orgAcceptance.acceptForOrg": "組織として同意する",
+  "legal.orgAcceptance.acceptedOn": "{{date}} に組織として同意済み",
+  "legal.orgAcceptance.failed": "同意を保存できませんでした。ページを再読み込みして、もう一度お試しください。",
+  "legal.errors.orgAcceptanceForbidden": "この組織を代表して同意できるのは、組織の管理者だけです。",
+  "legal.retention.erasedRecord": "削除されたアカウント（記録は仮名化して保持）"
 }

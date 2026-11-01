@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Legal acceptance records now store the organization the request acted in, the user agent and
+  the locale the text was shown in. An organization administrator can accept a document on
+  behalf of the organization (API and Settings > Legal), and list the organization's records.
+
 ## [0.6.0] - 2026-10-31
 
 ### Overview

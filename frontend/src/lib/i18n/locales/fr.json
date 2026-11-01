@@ -6372,5 +6372,12 @@
   "privacy.purge.scopeMine": "vos propres enregistrements",
   "privacy.speakerNotice.voiceprintsOffTitle": "La reconnaissance des intervenants est désactivée.",
   "privacy.speakerNotice.voiceprintsOffBody": "Les suggestions de noms fondées sur la voix et les regroupements d'intervenants ne sont pas disponibles. Vos intervenants nommés et vos profils sont conservés.",
-  "privacy.speakerNotice.openSettings": "Ouvrir les paramètres"
+  "privacy.speakerNotice.openSettings": "Ouvrir les paramètres",
+  "legal.orgAcceptance.title": "Acceptation par l’organisation",
+  "legal.orgAcceptance.description": "En tant qu’administrateur de l’organisation, vous pouvez accepter un document au nom de votre organisation. L’enregistrement indique l’organisation et vous-même comme la personne qui a accepté.",
+  "legal.orgAcceptance.acceptForOrg": "Accepter pour l’organisation",
+  "legal.orgAcceptance.acceptedOn": "Accepté pour l’organisation le {{date}}",
+  "legal.orgAcceptance.failed": "L’acceptation n’a pas pu être enregistrée. Rechargez la page et réessayez.",
+  "legal.errors.orgAcceptanceForbidden": "Seul un administrateur de cette organisation peut accepter en son nom.",
+  "legal.retention.erasedRecord": "Compte supprimé (enregistrement conservé, pseudonymisé)"
 }

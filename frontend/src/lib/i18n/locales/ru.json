@@ -6372,5 +6372,12 @@
   "privacy.purge.scopeMine": "ваши собственные записи",
   "privacy.speakerNotice.voiceprintsOffTitle": "Распознавание говорящих отключено.",
   "privacy.speakerNotice.voiceprintsOffBody": "Предложения имён по голосу и кластеры говорящих недоступны. Именованные говорящие и профили сохраняются.",
-  "privacy.speakerNotice.openSettings": "Открыть настройки"
+  "privacy.speakerNotice.openSettings": "Открыть настройки",
+  "legal.orgAcceptance.title": "Принятие от имени организации",
+  "legal.orgAcceptance.description": "Как администратор организации вы можете принять документ от имени своей организации. В записи указываются организация и вы как принявшее лицо.",
+  "legal.orgAcceptance.acceptForOrg": "Принять от имени организации",
+  "legal.orgAcceptance.acceptedOn": "Принято от имени организации {{date}}",
+  "legal.orgAcceptance.failed": "Не удалось сохранить принятие. Перезагрузите страницу и повторите попытку.",
+  "legal.errors.orgAcceptanceForbidden": "Принимать от имени организации может только её администратор.",
+  "legal.retention.erasedRecord": "Удалённая учётная запись (запись сохранена, псевдонимизирована)"
 }

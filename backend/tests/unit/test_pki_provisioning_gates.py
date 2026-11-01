@@ -145,3 +145,84 @@ class TestSyncRouting:
         assert result is user
         assert guard.call_args.kwargs["source_identifier"] == DN
         assert guard.call_args.kwargs["provider"] == "pki"
+
+
+class _RaceDb(_Db):
+    """The insert loses a unique-constraint race; afterwards only ``by_email`` / ``by_dn`` exist."""
+
+    def __init__(self, *, by_dn=None, by_email=None):
+        super().__init__()
+        self.by_dn, self.by_email = by_dn, by_email
+        self.lost_race = False
+        self._crit = ""
+
+    def filter(self, *crit):
+        self._crit = " ".join(str(c) for c in crit)
+        return self
+
+    def first(self):
+        if not self.lost_race:
+            return None
+        return self.by_dn if "pki_subject_dn" in self._crit else self.by_email
+
+    def commit(self):
+        from sqlalchemy.exc import IntegrityError
+
+        self.lost_race = True
+        raise IntegrityError("insert", {}, Exception("duplicate key ix_user_email"))
+
+    def rollback(self):
+        pass
+
+
+def _dn_only(dn: str, issuer: str = "CN=CA") -> PKIUserData:
+    data = dict(_data(is_admin=False, email=""))
+    data.update(subject_dn=dn, issuer_dn=issuer, common_name="John Smith")
+    return cast(PKIUserData, data)
+
+
+class TestPlaceholderIdentity:
+    def _email(self, data: PKIUserData) -> str:
+        with patch("app.auth.approval.initial_approval_status", return_value="approved"):
+            return str(pki_provisioning._create_pki_user(_Db(), data).email)
+
+    def test_same_cn_in_different_orgs_gets_different_placeholders(self):
+        a = self._email(_dn_only("CN=John Smith,O=Legit,C=US"))
+        b = self._email(_dn_only("CN=John Smith,O=Attacker,C=US"))
+        assert a != b
+        assert a.endswith("@pki.local") and b.endswith("@pki.local")
+
+    def test_placeholder_is_not_the_bare_common_name(self):
+        assert self._email(_dn_only("CN=John Smith,O=Legit,C=US")) != "john.smith@pki.local"
+
+    def test_placeholder_depends_on_the_issuer_and_is_stable(self):
+        dn = "CN=John Smith,O=Legit,C=US"
+        assert self._email(_dn_only(dn, "CN=CA1")) != self._email(_dn_only(dn, "CN=CA2"))
+        assert self._email(_dn_only(dn)) == self._email(_dn_only(dn))
+
+
+class TestRaceFallbackFailsClosed:
+    def _sync(self, db, data):
+        with patch("app.auth.approval.initial_approval_status", return_value="approved"):
+            return pki_provisioning.sync_pki_user_to_db(db, data)
+
+    def test_email_collision_never_adopts_another_account(self):
+        from app.core.exceptions import AuthenticationError
+
+        victim = SimpleNamespace(email="x@pki.local", pki_subject_dn="CN=John Smith,O=Legit,C=US")
+        db = _RaceDb(by_email=victim)
+        with pytest.raises(AuthenticationError):
+            self._sync(db, _dn_only("CN=John Smith,O=Attacker,C=US"))
+
+    def test_concurrent_create_of_the_same_identity_is_returned(self):
+        dn = "CN=John Smith,O=Legit,C=US"
+        twin = SimpleNamespace(email="x@pki.local", pki_subject_dn=dn, pki_issuer_dn="CN=CA")
+        assert self._sync(_RaceDb(by_dn=twin), _dn_only(dn)) is twin
+
+    def test_same_dn_from_another_issuer_is_refused(self):
+        from app.core.exceptions import AuthenticationError
+
+        dn = "CN=John Smith,O=Legit,C=US"
+        twin = SimpleNamespace(email="x@pki.local", pki_subject_dn=dn, pki_issuer_dn="CN=Other CA")
+        with pytest.raises(AuthenticationError):
+            self._sync(_RaceDb(by_dn=twin), _dn_only(dn))

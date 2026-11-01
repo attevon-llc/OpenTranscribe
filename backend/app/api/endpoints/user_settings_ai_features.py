@@ -22,10 +22,9 @@ def get_auto_label_settings(
     current_user: models.User = Depends(get_current_active_user),
 ) -> dict:
     """Get user's auto-label settings."""
-    from app.services.auto_label_service import AutoLabelService
+    from app.services.auto_label_settings import get_user_auto_label_settings
 
-    service = AutoLabelService(db)
-    return service.get_user_auto_label_settings(current_user.id)
+    return get_user_auto_label_settings(db, current_user.id)
 
 
 @router.put("/auto-label")
@@ -35,14 +34,12 @@ def update_auto_label_settings(
     current_user: models.User = Depends(get_current_active_user),
 ) -> dict:
     """Update user's auto-label settings."""
-    from app.services.auto_label_service import AutoLabelService
+    from app.services.auto_label_settings import get_user_auto_label_settings
+    from app.services.auto_label_settings import save_user_auto_label_settings
 
-    service = AutoLabelService(db)
     # exclude_unset: a client that predates a field must not reset it to its default.
-    service.save_user_auto_label_settings(
-        current_user.id, settings_data.model_dump(exclude_unset=True)
-    )
-    return service.get_user_auto_label_settings(current_user.id)
+    save_user_auto_label_settings(db, current_user.id, settings_data.model_dump(exclude_unset=True))
+    return get_user_auto_label_settings(db, current_user.id)
 
 
 # =============================================================================

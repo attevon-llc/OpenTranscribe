@@ -162,18 +162,23 @@ def ocsp_response(
     responder_cert: x509.Certificate | None = None,
     embed: tuple[x509.Certificate, ...] = (),
     next_update: timedelta | None = timedelta(hours=1),
+    subject: x509.Certificate | None = None,
+    subject_issuer: x509.Certificate | None = None,
+    age: timedelta = timedelta(minutes=1),
 ) -> bytes:
     """A DER OCSP response about ``chain.leaf_cert``.
 
     Signed by ``signer_key`` (default: the CA key); ``responder_cert`` names the
     responder in the responder ID (default: the CA); ``embed`` is the certificate list
-    a delegated responder ships in the response.
+    a delegated responder ships in the response. ``subject`` / ``subject_issuer`` name a
+    different certificate in the response's CertID; ``age`` back-dates ``this_update``
+    (negative = in the future) and ``next_update`` is relative to it.
     """
     key = signer_key or chain.ca_key
-    this_update = _now() - timedelta(minutes=1)
+    this_update = _now() - age
     builder = ocsp.OCSPResponseBuilder().add_response(
-        cert=chain.leaf_cert,
-        issuer=chain.ca_cert,
+        cert=subject or chain.leaf_cert,
+        issuer=subject_issuer or chain.ca_cert,
         algorithm=hashes.SHA256(),
         cert_status=status,
         this_update=this_update,
@@ -191,13 +196,19 @@ def crl(
     issuer: x509.Certificate,
     key: PrivateKey,
     revoked_serials: tuple[int, ...] = (),
+    *,
+    last_update: timedelta = timedelta(minutes=-1),
+    next_update: timedelta = timedelta(days=1),
 ) -> bytes:
-    """A DER CRL from ``issuer``'s name, signed by ``key``, listing ``revoked_serials``."""
+    """A DER CRL from ``issuer``'s name, signed by ``key``, listing ``revoked_serials``.
+
+    ``last_update`` / ``next_update`` are offsets from now.
+    """
     builder = (
         x509.CertificateRevocationListBuilder()
         .issuer_name(issuer.subject)
-        .last_update(_now() - timedelta(minutes=1))
-        .next_update(_now() + timedelta(days=1))
+        .last_update(_now() + last_update)
+        .next_update(_now() + next_update)
     )
     for serial in revoked_serials:
         builder = builder.add_revoked_certificate(

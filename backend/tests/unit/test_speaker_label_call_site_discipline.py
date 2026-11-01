@@ -52,7 +52,7 @@ _ALLOWED: dict[str, str] = {
     # The tracker compares what the index holds with what the index will hold. Both labels are
     # the policy-aware ones (the row is an ORM instance with its own session), and the writer
     # sets `identity_source` BEFORE the "after" label is taken.
-    "api/endpoints/files/reprocess.py::clear_selective_data": "tracker before/after capture",
+    "api/endpoints/files/reprocess_clear.py::clear_selective_data": "tracker before/after capture",
     "api/endpoints/speaker_update.py::_apply_high_confidence_match": "tracker before/after capture",
     "api/endpoints/speaker_update.py::_persist_match_results": "tracker before/after capture",
     "api/endpoints/speakers_suggestions.py::_reject_speaker_suggestion": "tracker before/after capture",

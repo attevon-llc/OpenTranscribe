@@ -540,7 +540,7 @@ def test_lite_manual_re_detection_with_pyannote_ai_is_published_on_cloud_asr(
     """The post stage a lite re-detection publishes: pyannote.ai on cloud-asr, never cpu."""
     from contextlib import contextmanager
 
-    from app.api.endpoints.files import reprocess
+    from app.api.endpoints.files import reprocess_dispatch
     from app.core.queues import CeleryQueues
     from app.db import session_utils
     from app.tasks.rediarize_task import rediarize_task
@@ -557,7 +557,7 @@ def test_lite_manual_re_detection_with_pyannote_ai_is_published_on_cloud_asr(
     monkeypatch.setattr(rediarize_task, "apply_async", lambda *a, **k: sent.append(k))
     monkeypatch.setattr(session_utils, "session_scope", _bridged)
 
-    reprocess._dispatch_manual_rediarize(
+    reprocess_dispatch._dispatch_manual_rediarize(
         "11111111-2222-3333-4444-555555555555",
         normal_user.id,
         min_speakers=None,

@@ -735,11 +735,10 @@ IMPORTANT GUIDELINES:
             # Auto-apply high-confidence suggestions if enabled
             try:
                 from app.services.auto_label_service import AutoLabelService
+                from app.services.auto_label_settings import get_user_auto_label_settings
 
                 auto_label_service = AutoLabelService(session)
-                user_settings = auto_label_service.get_user_auto_label_settings(
-                    int(media_file.user_id)
-                )
+                user_settings = get_user_auto_label_settings(session, int(media_file.user_id))
 
                 if user_settings.get("enabled", True):
                     threshold = user_settings.get("confidence_threshold", 0.75)

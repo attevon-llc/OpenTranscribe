@@ -177,7 +177,7 @@ ALLOWLIST: dict[str, str] = {
         "P: only an admin may pass reset_retry_count and skip the retry ceiling, evaluated "
         "after the chokepoint passed with ctx.bypass"
     ),
-    "api/endpoints/files/reprocess.py::dispatch_task_by_name": (
+    "api/endpoints/files/reprocess_dispatch.py::dispatch_task_by_name": (
         "P: internal re-fetch of a file the caller's chokepoint already authorized "
         "(process_file_reprocess); not an HTTP entry point"
     ),

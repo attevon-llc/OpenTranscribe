@@ -50,6 +50,7 @@ import hashlib
 import hmac
 import logging
 from typing import TYPE_CHECKING
+from typing import Literal
 from typing import Protocol
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -397,6 +398,40 @@ class BucketPolicyReader(Protocol):
     def get_bucket_policy(self, bucket_name: str) -> str: ...
 
 
+#: The storage action the app identity needs to read the media bucket's policy.
+BUCKET_POLICY_READ_ACTION = "s3:GetBucketPolicy"
+
+
+def read_native_s3_revocation_policy(
+    client: BucketPolicyReader,
+) -> tuple[Literal["enforced", "missing", "unreadable"], str | None]:
+    """Read the media bucket's policy and say whether it carries the quarantine Deny.
+
+    The single reader behind both the startup posture log and the per-takedown
+    ``enforcement`` field (``media_revocation``), so the two can never disagree about what
+    counts as "revocation is enforced". Never raises.
+
+    Args:
+        client: The storage client (``minio_service.minio_client``).
+
+    Returns:
+        ``(state, error_code)``: ``enforced`` / ``missing`` with no code, or ``unreadable``
+        with the storage error code (``AccessDenied`` when the identity lacks
+        :data:`BUCKET_POLICY_READ_ACTION`).
+    """
+    bucket = settings.MEDIA_BUCKET_NAME
+    try:
+        policy_json: str | None = client.get_bucket_policy(bucket)
+    except Exception as e:  # noqa: BLE001 — no policy, or no permission to read it
+        code = getattr(e, "code", None) or type(e).__name__
+        if code != "NoSuchBucketPolicy":
+            return "unreadable", str(code)
+        policy_json = None
+    if bucket_policy_denies_quarantined_reads(policy_json, bucket):
+        return "enforced", None
+    return "missing", None
+
+
 def report_native_s3_revocation_posture(client: BucketPolicyReader) -> bool:
     """Log, once at startup, whether quarantine can revoke presigned URLs on native S3.
 
@@ -405,7 +440,11 @@ def report_native_s3_revocation_posture(client: BucketPolicyReader) -> bool:
     media bucket's policy and logs INFO if the quarantine Deny is present, otherwise a
     single WARNING naming the exposure window (``MEDIA_URL_EXPIRE_SECONDS``) — replacing a
     MinIO-worded ERROR that used to fire from every process on its first presign (#1005).
-    Never raises.
+    A policy the identity may not read is reported with the missing action by name
+    (:data:`BUCKET_POLICY_READ_ACTION`). Never raises.
+
+    Whether the identity can WRITE the quarantine tag at all is a separate check,
+    ``media_revocation.report_native_s3_tagging_posture``.
 
     Args:
         client: The storage client (``minio_service.minio_client``).
@@ -421,21 +460,21 @@ def report_native_s3_revocation_posture(client: BucketPolicyReader) -> bool:
         f"quarantine Deny bucket policy from docs/abuse-and-takedown.md to revoke such URLs "
         f"immediately, or lower MEDIA_URL_EXPIRE_SECONDS to shorten the window."
     )
-    try:
-        policy_json = client.get_bucket_policy(bucket)
-    except Exception as e:  # noqa: BLE001 — no policy, or no permission to read it
-        code = getattr(e, "code", None) or type(e).__name__
-        if code == "NoSuchBucketPolicy":
-            policy_json = None
-        else:
-            logger.warning(
-                f"STORAGE_BACKEND=s3: could not read the bucket policy of '{bucket}' ({code}) "
-                f"to confirm presigned-URL revocation on quarantine; assuming it is not "
-                f"enforced — {exposure}"
-            )
-            return False
+    state, code = read_native_s3_revocation_policy(client)
+    if state == "unreadable":
+        missing = (
+            f" — the app identity is missing {BUCKET_POLICY_READ_ACTION} on arn:aws:s3:::{bucket}"
+            if code == "AccessDenied"
+            else ""
+        )
+        logger.warning(
+            f"STORAGE_BACKEND=s3: could not read the bucket policy of '{bucket}' ({code}{missing}) "
+            f"to confirm presigned-URL revocation on quarantine; assuming it is not "
+            f"enforced — {exposure}"
+        )
+        return False
 
-    if bucket_policy_denies_quarantined_reads(policy_json, bucket):
+    if state == "enforced":
         logger.info(
             f"STORAGE_BACKEND=s3: bucket policy on '{bucket}' denies reads of quarantined "
             f"objects — quarantine revokes already-minted presigned media URLs."

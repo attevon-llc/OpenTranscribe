@@ -310,23 +310,20 @@ def _backfill_quarantine_tags() -> None:
     """
     from app.db.base import SessionLocal
     from app.models.media import MediaFile
-    from app.services.minio_service import set_object_quarantine_tag
+    from app.services.media_revocation import revoke_media
 
     db = SessionLocal()
     try:
         rows = db.query(MediaFile).filter(MediaFile.is_quarantined.is_(True)).all()
         if not rows:
             return
-        tagged = 0
-        for row in rows:
-            if row.storage_path and set_object_quarantine_tag(str(row.storage_path), True):
-                tagged += 1
-            if row.thumbnail_path:
-                set_object_quarantine_tag(str(row.thumbnail_path), True)
-            if row.playback_path:
-                set_object_quarantine_tag(str(row.playback_path), True)
-        logger.info(
-            f"Quarantine-tag backfill: tagged {tagged}/{len(rows)} already-quarantined file(s)"
+        # `revoke_media` logs an ERROR per file it could not revoke, naming the missing
+        # storage permissions; this line is the summary.
+        complete = sum(1 for row in rows if revoke_media(row).complete)
+        log = logger.info if complete == len(rows) else logger.error
+        log(
+            f"Quarantine-tag backfill: presigned media URLs revoked for {complete}/{len(rows)} "
+            f"already-quarantined file(s)"
         )
     finally:
         db.close()
@@ -397,6 +394,11 @@ def _setup_minio():
             logger.info("Presign identity ready — quarantine will revoke presigned media URLs")
         elif native_s3:
             storage_presign_identity.report_native_s3_revocation_posture(minio_client)
+            # The bucket-policy Deny only enforces a tag that landed: check, at boot rather
+            # than at the first takedown, that this identity can write one.
+            from app.services.media_revocation import report_native_s3_tagging_posture
+
+            report_native_s3_tagging_posture(minio_client)
         elif settings.STORAGE_PRESIGN_IDENTITY_ENABLED:
             logger.error(
                 "Presign identity NOT provisioned — presigned media URLs will be signed "

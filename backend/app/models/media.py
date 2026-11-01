@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from app.models.topic import TopicSuggestion
     from app.models.upload_batch import UploadBatch
     from app.models.user import User
+    from app.services.media_revocation import MediaRevocationReport
 
 
 class MediaFile(Base):
@@ -373,6 +374,7 @@ class MediaFile(Base):
         # unmapped ORM attribute name collision.
         presign_revoked: bool
         presign_tag_cleared: bool
+        media_revocation: MediaRevocationReport
 
     # Declared here, not only in v391, because a constraint the database enforces and
     # Python never states is invisible until it fires at runtime — see

@@ -1,9 +1,11 @@
+import dataclasses
 import datetime
 import functools
 import io
 import logging
 import os
 from typing import BinaryIO
+from typing import Literal
 
 import certifi
 import urllib3
@@ -263,6 +265,89 @@ def set_object_legal_hold(object_name: str, hold: bool) -> bool:
         return False
 
 
+#: The storage action each step of the quarantine tag read-modify-write needs. An
+#: ``AccessDenied`` is reported against the step that raised it, so an operator is told
+#: the exact IAM action the app identity is missing (on native S3 the role needs both).
+TAG_READ_ACTION = "s3:GetObjectTagging"
+TAG_WRITE_ACTION = "s3:PutObjectTagging"
+
+
+@dataclasses.dataclass(frozen=True)
+class QuarantineTagWrite:
+    """What happened when one object's quarantine tag was written.
+
+    Attributes:
+        outcome: ``applied`` (storage accepted the change), ``absent`` (the object does not
+            exist, so there is nothing a URL could serve) or ``failed`` (the tag on the object
+            is NOT what was asked for).
+        error_code: The storage error code of a failure (``AccessDenied``, ...), else None.
+        failed_action: The storage action that failed (:data:`TAG_READ_ACTION` or
+            :data:`TAG_WRITE_ACTION`), else None.
+    """
+
+    outcome: Literal["applied", "absent", "failed"]
+    error_code: str | None = None
+    failed_action: str | None = None
+
+    @property
+    def denied_action(self) -> str | None:
+        """The storage action refused for lack of permission, if that is why it failed."""
+        return self.failed_action if self.error_code == "AccessDenied" else None
+
+
+def write_object_quarantine_tag(
+    object_name: str,
+    quarantined: bool,
+    *,
+    bucket_name: str | None = None,
+    client: Minio | None = None,
+) -> QuarantineTagWrite:
+    """Set (or clear) the quarantine tag on one object and say exactly what happened.
+
+    The mechanism is described on :func:`set_object_quarantine_tag`. This variant exists
+    for the callers that must REPORT the outcome rather than shrug at it: a takedown whose
+    tag write was refused leaves every already-issued presigned URL working, and on native
+    S3 the usual cause is an app identity without ``s3:GetObjectTagging`` /
+    ``s3:PutObjectTagging``, so the failing action is part of the result.
+
+    Args:
+        object_name: Object key in the media bucket.
+        quarantined: True to set the tag (revoke), False to remove it (restore).
+        bucket_name: Bucket holding the object (defaults to the media bucket).
+        client: Storage client to write with (defaults to the shared ``minio_client``; the
+            live permission test passes a deliberately under-privileged identity).
+
+    Returns:
+        The outcome. Never raises.
+    """
+    from minio.commonconfig import Tags
+
+    storage = client or minio_client
+    bucket = bucket_name or settings.MEDIA_BUCKET_NAME
+    action = "set" if quarantined else "clear"
+    step = TAG_READ_ACTION
+    try:
+        existing = storage.get_object_tags(bucket, object_name)
+        new_tags = Tags.new_object_tags()
+        if existing:
+            for key, value in existing.items():
+                if key != STORAGE_QUARANTINE_TAG_KEY:
+                    new_tags[key] = value
+        if quarantined:
+            new_tags[STORAGE_QUARANTINE_TAG_KEY] = storage_presign_identity.QUARANTINE_TAG_VALUE
+        step = TAG_WRITE_ACTION
+        storage.set_object_tags(bucket, object_name, new_tags)
+        return QuarantineTagWrite("applied")
+    except S3Error as e:
+        if e.code == "NoSuchKey":
+            return QuarantineTagWrite("absent")
+        logger.warning(f"Quarantine tag {action} failed for {object_name} ({step}): {e}")
+        return QuarantineTagWrite("failed", error_code=e.code, failed_action=step)
+    except Exception as e:  # noqa: BLE001 — reported to the caller, never raised into a takedown
+        logger.warning(f"Quarantine tag {action} failed for {object_name} ({step}): {e}")
+        return QuarantineTagWrite("failed", error_code=type(e).__name__, failed_action=step)
+
+
 def set_object_quarantine_tag(
     object_name: str, quarantined: bool, *, bucket_name: str | None = None
 ) -> bool:
@@ -287,32 +372,14 @@ def set_object_quarantine_tag(
 
     Returns:
         True if the storage backend accepted the change, False if the object is missing or
-        any other S3 error occurred. Never raises — the caller treats this as best-effort,
-        matching ``set_object_legal_hold`` above.
+        any other S3 error occurred. Never raises. A caller that has to tell an operator
+        WHY (the takedown actions, the startup backfill) uses
+        :func:`write_object_quarantine_tag` instead.
     """
-    from minio.commonconfig import Tags
-
-    bucket = bucket_name or settings.MEDIA_BUCKET_NAME
-    action = "set" if quarantined else "clear"
-    try:
-        existing = minio_client.get_object_tags(bucket, object_name)
-        new_tags = Tags.new_object_tags()
-        if existing:
-            for key, value in existing.items():
-                if key != STORAGE_QUARANTINE_TAG_KEY:
-                    new_tags[key] = value
-        if quarantined:
-            new_tags[STORAGE_QUARANTINE_TAG_KEY] = storage_presign_identity.QUARANTINE_TAG_VALUE
-        minio_client.set_object_tags(bucket, object_name, new_tags)
-        return True
-    except S3Error as e:
-        if e.code == "NoSuchKey":
-            return False
-        logger.warning(f"Quarantine tag {action} failed for {object_name}: {e}")
-        return False
-    except Exception as e:  # noqa: BLE001 — advisory; never break takedown/release
-        logger.warning(f"Quarantine tag {action} failed for {object_name}: {e}")
-        return False
+    return (
+        write_object_quarantine_tag(object_name, quarantined, bucket_name=bucket_name).outcome
+        == "applied"
+    )
 
 
 TEMP_PREPROCESS_PREFIX = "temp/preprocess"

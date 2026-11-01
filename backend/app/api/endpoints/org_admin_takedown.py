@@ -263,14 +263,7 @@ def quarantine_org_file(
         )
     except TakedownRefusedError as refusal:
         raise _refusal_to_http(refusal) from None
-    return QuarantineActionResponse(
-        uuid=str(file.uuid),
-        is_quarantined=bool(file.is_quarantined),
-        legal_hold=bool(file.legal_hold),
-        status=str(file.status.value if hasattr(file.status, "value") else file.status),
-        presign_revoked=bool(getattr(file, "presign_revoked", False)),
-        takedown_origin=file.takedown_origin,
-    )
+    return QuarantineActionResponse.from_action(file)
 
 
 @router.post("/{file_uuid}/release", response_model=QuarantineActionResponse)
@@ -308,11 +301,4 @@ def release_org_file(
         )
     except TakedownRefusedError as refusal:
         raise _refusal_to_http(refusal) from None
-    return QuarantineActionResponse(
-        uuid=str(file.uuid),
-        is_quarantined=bool(file.is_quarantined),
-        legal_hold=bool(file.legal_hold),
-        status=str(file.status.value if hasattr(file.status, "value") else file.status),
-        presign_tag_cleared=bool(getattr(file, "presign_tag_cleared", True)),
-        takedown_origin=file.takedown_origin,
-    )
+    return QuarantineActionResponse.from_action(file)

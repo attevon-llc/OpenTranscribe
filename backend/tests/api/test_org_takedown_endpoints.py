@@ -111,10 +111,15 @@ def audit(monkeypatch):
 @pytest.fixture
 def storage(monkeypatch):
     """Record every storage and cache side effect a takedown has."""
-    tag = MagicMock(return_value=True)
+    from app.services.minio_service import QuarantineTagWrite
+
+    tag = MagicMock(return_value=QuarantineTagWrite("applied"))
     hold = MagicMock()
     bump = MagicMock()
-    monkeypatch.setattr("app.services.minio_service.set_object_quarantine_tag", tag)
+    monkeypatch.setattr("app.services.minio_service.write_object_quarantine_tag", tag)
+    monkeypatch.setattr(
+        "app.services.storage_presign_identity.presign_identity_available", lambda: True
+    )
     monkeypatch.setattr("app.services.minio_service.set_object_legal_hold", hold)
     monkeypatch.setattr("app.services.chat.retrieval_cache.bump_corpus_version", bump)
     return MagicMock(tag=tag, hold=hold, bump=bump)
@@ -345,6 +350,40 @@ class TestOrganizationTakedown:
         assert _state(w.db, w.file)[:4] == (False, False, None, None)
         assert w.client.get(f"/api/files/{w.file.uuid}", headers=w.owner_headers).status_code == 200
 
+    def test_a_refused_tag_write_is_reported_on_both_actions(self, world, monkeypatch):
+        """Same response shape as the platform route: degraded, never a clean success."""
+        from fixtures.fake_tagging_store import FakeTaggingStore
+        from fixtures.fake_tagging_store import install
+        from fixtures.fake_tagging_store import quarantine_deny_policy
+
+        w = world
+        install(
+            monkeypatch,
+            FakeTaggingStore(
+                objects=[w.file.storage_path],
+                deny=["s3:PutObjectTagging"],
+                bucket_policy=quarantine_deny_policy(settings.MEDIA_BUCKET_NAME),
+            ),
+            native_s3=True,
+        )
+
+        response = _quarantine(w.client, w.admin_a_headers, w.file.uuid)
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["is_quarantined"] is True
+        assert body["presign_revoked"] is False
+        assert body["media_revocation"]["reason"] == "tag_write_failed"
+        assert body["media_revocation"]["missing_permissions"] == ["s3:PutObjectTagging"]
+
+        monkeypatch.setattr("app.services.media_revocation.UNTAG_BACKOFF_SECONDS", 0)
+        response = _release(w.client, w.admin_a_headers, w.file.uuid)
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["is_quarantined"] is False
+        assert body["presign_tag_cleared"] is False
+        assert body["presign_revoked"] is None
+        assert body["media_revocation"]["reason"] == "tag_clear_failed"
+
     def test_releasing_a_file_that_is_not_held_is_a_conflict(self, world):
         w = world
         assert _release(w.client, w.admin_a_headers, w.file.uuid).status_code == 409
@@ -436,7 +475,7 @@ class TestPlatformWins:
         assert _state(w.db, w.file)[0] is False
 
     def test_the_operator_escalates_an_organization_takedown_and_the_organization_is_locked_out(
-        self, world, audit
+        self, world, audit, storage
     ):
         w = world
         _quarantine(w.client, w.admin_a_headers, w.file.uuid, "the org's reason")
@@ -526,7 +565,7 @@ class TestQueuePayload:
 # --------------------------------------------------------------------------- #
 class TestAudit:
     def test_each_action_writes_one_event_naming_actor_role_authority_and_tenant(
-        self, world, audit
+        self, world, audit, storage
     ):
         w = world
         _quarantine(w.client, w.admin_a_headers, w.file.uuid, "r1")
@@ -544,7 +583,7 @@ class TestAudit:
         assert q["details"]["reason"] == "r1"
         assert r["details"]["reason"] == "r2"
 
-    def test_a_platform_action_is_recorded_as_such(self, world, audit):
+    def test_a_platform_action_is_recorded_as_such(self, world, audit, storage):
         w = world
         _platform_quarantine(w.client, w.admin_headers, w.file.uuid)
         (event,) = _events(audit, AuditEventType.ADMIN_FILE_QUARANTINE, AuditOutcome.SUCCESS)

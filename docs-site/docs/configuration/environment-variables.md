@@ -849,7 +849,11 @@ construction, not the call sites.
 On S3, quarantining a file does not by itself revoke media URLs already issued for it: they stay
 valid for up to `MEDIA_URL_EXPIRE_SECONDS`. See
 [Production Deployment](../operations/production-deployment.md#native-aws-s3-backend-alternative-to-minio)
-for the bucket policy that enforces revocation and the TTL trade-off.
+for the bucket policy that enforces revocation and the TTL trade-off. Revocation also needs the
+app's identity to hold `s3:GetObjectTagging` and `s3:PutObjectTagging` on the media objects and
+`s3:GetBucketPolicy` on the bucket
+([permissions](../operations/production-deployment.md#permissions-quarantine-needs-on-s3));
+startup logs an ERROR naming any it lacks.
 
 ### Presigned URLs and large uploads (both backends)
 

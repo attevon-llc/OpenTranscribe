@@ -427,11 +427,101 @@ Two mitigations, which can be combined:
   Because the Deny applies to every principal, the backend itself also cannot read a quarantined
   file's media (reprocessing, download, export) until it is released.
 
-At startup the backend reads the media bucket's policy (grant the app `s3:GetBucketPolicy` on the
-bucket) and logs one WARNING if the Deny is missing or the policy can't be read, or an INFO line
-if revocation is enforced. See `docs/abuse-and-takedown.md` in the repository for the full
-takedown design.
+The bucket policy only enforces a tag that landed. The app's own identity must also be allowed to
+read and write object tags, or every takedown leaves issued URLs working (see the permissions
+below). See `docs/abuse-and-takedown.md` in the repository for the full takedown design.
 :::
+
+#### Permissions quarantine needs on S3
+
+Grant these to the identity OpenTranscribe signs with (the IAM role, or the static key when
+`S3_USE_IAM_ROLE=false`), in addition to the read, write, delete and list permissions it already
+needs for media:
+
+| Action | Resource | Used for |
+| --- | --- | --- |
+| `s3:GetObjectTagging` | `arn:aws:s3:::<your-media-bucket>/*` | Reading an object's tags before adding or removing `ot-quarantine` (tags are replaced as a whole set, so the others are kept) |
+| `s3:PutObjectTagging` | `arn:aws:s3:::<your-media-bucket>/*` | Setting `ot-quarantine=true` on quarantine and clearing it on release, on the original, thumbnail and playback copy |
+| `s3:GetBucketPolicy` | `arn:aws:s3:::<your-media-bucket>` | Confirming the Deny above is attached, at startup and on every quarantine |
+| `s3:PutObjectLegalHold` | `arn:aws:s3:::<your-media-bucket>/*` | Optional. The storage legal hold placed with a takedown, only on a bucket created with Object Lock |
+
+`s3:DeleteObjectTagging` is not needed: releasing a file writes the remaining tag set with
+`s3:PutObjectTagging`.
+
+As statements to add to the identity's policy:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "OpenTranscribeQuarantineTags",
+      "Effect": "Allow",
+      "Action": ["s3:GetObjectTagging", "s3:PutObjectTagging"],
+      "Resource": "arn:aws:s3:::<your-media-bucket>/*"
+    },
+    {
+      "Sid": "OpenTranscribeQuarantinePolicyCheck",
+      "Effect": "Allow",
+      "Action": "s3:GetBucketPolicy",
+      "Resource": "arn:aws:s3:::<your-media-bucket>"
+    }
+  ]
+}
+```
+
+At startup on `STORAGE_BACKEND=s3` the backend checks both halves and never refuses to start:
+
+- It reads the bucket policy and logs one WARNING if the Deny is missing or the policy cannot be
+  read (naming `s3:GetBucketPolicy` when that is the reason), or INFO if revocation is enforced.
+- It writes a small probe object (`_opentranscribe/probes/quarantine-tag-probe`), sets and clears
+  the quarantine tag on it and deletes it. A refused tag call is an ERROR that names the missing
+  actions; INFO says the identity can tag. The probe uses the `s3:PutObject` and `s3:DeleteObject`
+  permissions the app already has.
+
+#### What a quarantine reports
+
+A quarantine always takes the file down in the database, so every list, page, search and new
+URL hides it straight away, even when storage refuses the tag. Whether links that were **already
+issued** stop working is reported, never assumed:
+
+- The API response (`POST /api/admin/files/{uuid}/quarantine`, and the organization and release
+  routes) carries `presign_revoked` (or `presign_tag_cleared` on release) and a `media_revocation`
+  object: `complete`, a `reason` (`tag_write_failed`, `enforcement_missing`,
+  `enforcement_unverified`, `tag_clear_failed`), `enforcement` (`bucket_policy`, `none`,
+  `unknown`), `missing_permissions`, `exposure_seconds` and one entry per object.
+- The audit event records the same, with outcome `partial` instead of `success`.
+- The backend logs an ERROR naming the missing actions, and the admin UI shows a warning instead
+  of a plain success.
+
+#### Verify that an issued URL stops working
+
+With a test file you are allowed to take down, signed in as an administrator (`$COOKIES` holds
+the session cookie, `$CSRF` the CSRF token, `$HOST` your site):
+
+```bash
+# 1. Issue a media URL and fetch it the way the player does
+URL=$(curl -s -b "$COOKIES" "https://$HOST/api/files/$FILE/stream-url?media_type=video" | jq -r .url)
+curl -s -o /dev/null -w '%{http_code}\n' -H 'Range: bytes=0-1' "$URL"     # 206
+
+# 2. Quarantine the file; the response must say the URL was revoked
+curl -s -b "$COOKIES" -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' \
+  -d '{"reason":"revocation check","operator_action_reason":"operator verification"}' \
+  "https://$HOST/api/admin/files/$FILE/quarantine" | jq '.presign_revoked, .media_revocation'
+                                                                       # true, complete: true
+# 3. The SAME URL is now refused
+curl -s -o /dev/null -w '%{http_code}\n' -H 'Range: bytes=0-1' "$URL"     # 403
+
+# 4. Release it; the same URL works again
+curl -s -b "$COOKIES" -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' \
+  -d '{"clear_legal_hold":true}' "https://$HOST/api/admin/files/$FILE/release" \
+  | jq '.presign_tag_cleared'                                          # true
+curl -s -o /dev/null -w '%{http_code}\n' -H 'Range: bytes=0-1' "$URL"     # 206
+```
+
+If step 2 prints `false`, `media_revocation.reason` and `missing_permissions` say what to fix,
+and step 3 will still return 206 until you do. The quarantine creates a notice record and is
+audited like any other, so use a file and a reason you are happy to keep in the history.
 
 :::note[AWS S3's 5 GiB single-PUT ceiling]
 MinIO accepts a single-PUT object up to 5 TiB; AWS S3 rejects one above 5 GiB. On

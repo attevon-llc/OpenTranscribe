@@ -162,6 +162,12 @@ TEST_BUCKET_SPECS: list[ArtifactSpec] = [
         TIER_A,
         'integration/test_orphan_sweep_storage.py',
     ),
+    _spec(
+        'quarantine-iam',
+        rf'e2e-quarantine-iam-{_H12}',
+        TIER_A,
+        'integration/test_quarantine_tag_permissions_live.py',
+    ),
 ]
 
 

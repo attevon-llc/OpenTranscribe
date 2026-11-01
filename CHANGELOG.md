@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Quarantine no longer reports a clean success when storage refuses to revoke already-issued
+  media URLs. On `STORAGE_BACKEND=s3` an app identity without `s3:PutObjectTagging` logged a
+  single WARNING while the API answered 200, and issued URLs kept working for
+  `MEDIA_URL_EXPIRE_SECONDS`. The file is still quarantined in the database (that is what every
+  read surface gates on); quarantine and release responses now carry `media_revocation`
+  (`complete`, `reason`, `enforcement`, `missing_permissions`, `exposure_seconds`, per-object
+  outcomes), the audit event is recorded with outcome `partial`, the log is an ERROR naming the
+  missing actions, and the admin UI shows a warning (all 12 locales).
+- On S3, startup now probes whether the app identity can read and write object tags and logs an
+  ERROR naming any missing action; an unreadable bucket policy names `s3:GetBucketPolicy`.
+
+### Fixed
+
+- `presign_revoked` reported `true` when only the original's tag landed (a failed thumbnail or
+  playback-rendition tag was ignored) or when nothing enforced the tag (no MinIO presign
+  identity, no S3 bucket-policy Deny). It is now true only when every object is tagged and the
+  tag is enforced; `presign_tag_cleared` likewise covers every object.
+
+### Documentation
+
+- S3 permissions quarantine needs (`s3:GetObjectTagging`, `s3:PutObjectTagging`,
+  `s3:GetBucketPolicy`, optional `s3:PutObjectLegalHold`) and an operator recipe to verify an
+  issued URL goes 206 → 403 → 206: Production Deployment, Object Storage, environment variables,
+  upgrading to 0.6.0, `docs/abuse-and-takedown.md`.
+
 ## [0.6.0] - 2026-10-31
 
 ### Overview

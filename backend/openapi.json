@@ -11141,6 +11141,133 @@
         "title": "MediaMirrorSettingsUpdate",
         "type": "object"
       },
+      "MediaRevocation": {
+        "description": "What a quarantine/release did to the file's already-issued media URLs.\n\nThe database action always happens; this reports the storage plane, which can fail on\nits own (see ``services/media_revocation.py``). ``complete`` is false whenever an issued\nURL may still work after a quarantine, or may still 403 after a release.",
+        "properties": {
+          "action": {
+            "enum": [
+              "revoke",
+              "restore"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "enforcement": {
+            "anyOf": [
+              {
+                "enum": [
+                  "presign_identity",
+                  "bucket_policy",
+                  "none",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enforcement"
+          },
+          "exposure_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exposure Seconds"
+          },
+          "missing_permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Permissions",
+            "type": "array"
+          },
+          "objects": {
+            "items": {
+              "$ref": "#/components/schemas/MediaRevocationObject"
+            },
+            "title": "Objects",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "action",
+          "complete"
+        ],
+        "title": "MediaRevocation",
+        "type": "object"
+      },
+      "MediaRevocationObject": {
+        "description": "The quarantine-tag write for one of the file's objects.",
+        "properties": {
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "failed_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed Action"
+          },
+          "outcome": {
+            "enum": [
+              "applied",
+              "absent",
+              "failed"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "original",
+              "thumbnail",
+              "playback"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "outcome"
+        ],
+        "title": "MediaRevocationObject",
+        "type": "object"
+      },
       "MediaSource": {
         "description": "A single protected media source configuration.",
         "properties": {
@@ -14189,6 +14316,16 @@
           "legal_hold": {
             "title": "Legal Hold",
             "type": "boolean"
+          },
+          "media_revocation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MediaRevocation"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "presign_revoked": {
             "anyOf": [

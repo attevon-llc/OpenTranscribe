@@ -136,12 +136,36 @@ export interface QuarantinedFilesList {
   total: number;
 }
 
+/**
+ * What a quarantine/release did to the file's already-issued media URLs. The takedown itself
+ * always lands; `complete: false` means an issued URL may still work after a quarantine (or
+ * still 403 after a release). `reason` is a stable code (`tag_write_failed`,
+ * `enforcement_missing`, `enforcement_unverified`, `tag_clear_failed`).
+ */
+export interface MediaRevocation {
+  action: 'revoke' | 'restore';
+  complete: boolean;
+  reason: string | null;
+  enforcement: 'presign_identity' | 'bucket_policy' | 'none' | 'unknown' | null;
+  missing_permissions: string[];
+  exposure_seconds: number | null;
+  objects: {
+    role: 'original' | 'thumbnail' | 'playback';
+    outcome: 'applied' | 'absent' | 'failed';
+    error_code: string | null;
+    failed_action: string | null;
+  }[];
+}
+
 export interface QuarantineActionResult {
   uuid: string;
   is_quarantined: boolean;
   legal_hold: boolean;
   status: string;
   takedown_origin: 'platform' | 'organization' | null;
+  presign_revoked?: boolean | null;
+  presign_tag_cleared?: boolean | null;
+  media_revocation?: MediaRevocation | null;
 }
 
 export class AdminApi {

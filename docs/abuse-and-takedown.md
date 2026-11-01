@@ -315,9 +315,9 @@ storage_presign_identity.py`) instead of the root credential. That identity's in
 request, not at signing time, so:
 
 - **Quarantining a file tags it** (`takedown_service.quarantine_file` →
-  `minio_service.set_object_quarantine_tag`, both the primary object and the thumbnail). A URL
-  minted **before** the takedown 403s the instant the tag lands — same URL, same signature, no
-  re-mint needed.
+  `media_revocation.revoke_media` → `minio_service.write_object_quarantine_tag`, on the primary
+  object, the thumbnail and the playback rendition). A URL minted **before** the takedown 403s
+  the instant the tag lands — same URL, same signature, no re-mint needed.
 - **Releasing a file untags it** (`takedown_service.release_file`), which restores the SAME
   pre-existing URL to 200. Because a still-tagged object also 403s a *brand-new* presigned URL,
   the untag is retried up to 3 times with a short backoff before the release logs an ERROR (not
@@ -356,23 +356,71 @@ request, not at signing time, so:
   that one axis, at the cost of needing to be applied by hand rather than shipped automatically.
   It also means the backend itself cannot read a quarantined object until release.
 
-  At startup (`STORAGE_BACKEND=s3`) the backend reads the media bucket's policy
-  (`storage_presign_identity.report_native_s3_revocation_posture`, needs `s3:GetBucketPolicy`)
-  and logs **one WARNING** if this Deny is missing or the policy can't be read, INFO if it is
-  present. Without it, the mitigation is the presigned-URL TTL: an already-minted URL for a
-  quarantined file stays valid for up to `MEDIA_URL_EXPIRE_SECONDS` (6 h default, capped by
-  `PRESIGNED_URL_MAX_SECONDS`) — lower it to shorten that window, at the cost of long
-  recordings needing a fresh URL mid-playback. Presigning itself logs nothing on S3; the old
-  per-process "ROOT MinIO credential" ERROR was MinIO-specific and wrong there (issue #1005).
+  **The policy only enforces a tag that landed.** The identity OpenTranscribe signs with (the
+  IAM role, or the static key under `S3_USE_IAM_ROLE=false`) must also be allowed to read and
+  write the tag. Derived from the code (`write_object_quarantine_tag` is a read-modify-write
+  because S3 replaces an object's tag set wholesale):
+
+  | Action | Resource | Used by |
+  | --- | --- | --- |
+  | `s3:GetObjectTagging` | `arn:aws:s3:::<your-media-bucket>/*` | the read half of every tag/untag |
+  | `s3:PutObjectTagging` | `arn:aws:s3:::<your-media-bucket>/*` | setting the tag on quarantine AND clearing it on release (the remaining set is written back; `s3:DeleteObjectTagging` is never called) |
+  | `s3:GetBucketPolicy` | `arn:aws:s3:::<your-media-bucket>` | the startup posture check and the per-quarantine `enforcement` check |
+  | `s3:PutObjectLegalHold` | `arn:aws:s3:::<your-media-bucket>/*` | optional: the best-effort object legal hold, Object Lock buckets only |
+
+  Without the two tagging actions every takedown on S3 leaves issued URLs working even with the
+  Deny attached. That was observed on a staging deployment: before this was reported loudly,
+  the refusal was a single WARNING (`AccessDenied`) while the quarantine API answered a clean
+  200. With all three actions granted, an issued URL went 206 → 403 on quarantine and back to
+  206 on release.
+
+  At startup (`STORAGE_BACKEND=s3`) the backend checks both halves, non-fatally:
+  `storage_presign_identity.report_native_s3_revocation_posture` reads the media bucket's
+  policy and logs **one WARNING** if this Deny is missing or the policy can't be read (naming
+  `s3:GetBucketPolicy` when it was refused), INFO if it is present; and
+  `media_revocation.report_native_s3_tagging_posture` writes a probe object
+  (`_opentranscribe/probes/quarantine-tag-probe`, with the `s3:PutObject`/`s3:DeleteObject` the
+  app already needs), sets and clears the quarantine tag on it and deletes it, logging an
+  **ERROR naming the exact missing actions** if a tag call is refused. Without the Deny, the
+  mitigation is the presigned-URL TTL: an already-minted URL for a quarantined file stays valid
+  for up to `MEDIA_URL_EXPIRE_SECONDS` (6 h default, capped by `PRESIGNED_URL_MAX_SECONDS`) —
+  lower it to shorten that window, at the cost of long recordings needing a fresh URL
+  mid-playback. Presigning itself logs nothing on S3; the old per-process "ROOT MinIO
+  credential" ERROR was MinIO-specific and wrong there (issue #1005).
+
+  **Verifying it** (operator recipe, any backend): issue a media URL with
+  `GET /api/files/{uuid}/stream-url`, fetch it with `Range: bytes=0-1` (206), quarantine the
+  file through `POST /api/admin/files/{uuid}/quarantine` and check the response says
+  `presign_revoked: true` / `media_revocation.complete: true`, fetch the SAME URL again (403),
+  release it, fetch again (206). The full `curl` sequence is in the docs site's Production
+  Deployment page ("Verify that an issued URL stops working"). If the quarantine response says
+  `false`, `media_revocation.reason` and `missing_permissions` say what to fix.
 
 - **Fails open, visibly.** If the restricted identity cannot be provisioned (MinIO admin API
   unreachable, `STORAGE_PRESIGN_IDENTITY_ENABLED=false`, or a non-MinIO S3-compatible backend
   with no admin API), presigning silently falls back to the root client — today's pre-#907
   behavior, no regression, but inert. This is made visible: a provisioning *failure* on MinIO
   logs an ERROR at startup and once per process on first presign (disabling the feature is
-  reported once at startup at INFO, native S3 as above), and the takedown/release audit event
-  records whether the quarantine tag was applied (`presign_revoked` / `presign_tag_cleared` in
-  the event's `extra`).
+  reported once at startup at INFO, native S3 as above).
+
+- **A failed revocation is loud, and never blocks the takedown (decision).** The database
+  quarantine is what every read surface gates on (lists, detail, stream-url, search, chat,
+  exports), so refusing or rolling back the takedown because storage refused a tag would leave
+  the file *more* exposed. The file is always quarantined; what happened to its already-issued
+  URLs is reported in three places (`backend/app/services/media_revocation.py`):
+  - **The response.** Quarantine and release (platform and organization routes) return
+    `presign_revoked` / `presign_tag_cleared` plus `media_revocation`: `complete`, `reason`
+    (`tag_write_failed`, `enforcement_missing` — no presign identity on MinIO or no Deny on
+    S3, `enforcement_unverified` — the bucket policy could not be read, `tag_clear_failed`),
+    `enforcement` (`presign_identity` | `bucket_policy` | `none` | `unknown`),
+    `missing_permissions`, `exposure_seconds` and one entry per object (original, thumbnail,
+    playback rendition). `presign_revoked` is true only when every object was tagged AND
+    something enforces the tag; it used to report the primary object's tag write alone, so a
+    failed thumbnail tag or a deployment with nothing enforcing the tag read as revoked.
+  - **The audit event** carries the same decision fields under `media_revocation` and is
+    written with outcome `partial` (error code = the reason) instead of `success`.
+  - **The log** is an ERROR naming the missing storage actions; the admin UI shows a warning
+    rather than a plain success.
 
 - **Admin review sees the same 403.** Admins presign through the same restricted identity, so an
   admin reviewing a quarantined file's *media* also gets a 403 on its presigned URL — this is a

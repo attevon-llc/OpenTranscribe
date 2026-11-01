@@ -24,6 +24,7 @@
   import BaseModal from '$components/ui/BaseModal.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
   import { AdminApi } from '$lib/api/admin';
+  import { mediaRevocationIncomplete } from '$lib/takedownRevocation';
   import { TakedownNoticesApi } from '$lib/api/takedownNotices';
   import TakedownBasisPicker from '$components/takedown/TakedownBasisPicker.svelte';
   import { emptyBasis, isBasisValid, toNewNotice } from '$lib/takedownBasis';
@@ -106,12 +107,21 @@
 
     const succeededUuids: string[] = [];
     let failedCount = 0;
+    // Taken down, but storage refused to revoke links already handed out (the server says so
+    // in `media_revocation`); never counted as a clean success.
+    let unrevokedCount = 0;
 
     // Sequential, deliberately — see the module docstring.
     for (const file of files) {
       try {
-        await AdminApi.quarantineFile(file.uuid, reasonTrimmed, legalHold, takedownBasis);
+        const result = await AdminApi.quarantineFile(
+          file.uuid,
+          reasonTrimmed,
+          legalHold,
+          takedownBasis
+        );
         succeededUuids.push(file.uuid);
+        if (mediaRevocationIncomplete(result)) unrevokedCount += 1;
       } catch (err) {
         failedCount += 1;
         // eslint-disable-next-line no-console -- one failed file must not read as a failed batch
@@ -123,6 +133,9 @@
 
     if (succeededUuids.length > 0) {
       toastStore.success($t('gallery.quarantine.succeeded', { count: succeededUuids.length }));
+    }
+    if (unrevokedCount > 0) {
+      toastStore.warning($t('gallery.quarantine.revocationIncomplete', { count: unrevokedCount }));
     }
     if (failedCount > 0) {
       toastStore.error($t('gallery.quarantine.failed', { count: failedCount }));

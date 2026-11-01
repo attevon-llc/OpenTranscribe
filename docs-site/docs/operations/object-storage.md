@@ -96,7 +96,10 @@ S3_USE_IAM_ROLE=true      # AWS credential chain; set false and supply AWS_ACCES
 
 The default is `STORAGE_BACKEND=minio`. Two things differ on a non-bundled store: an
 already-issued media URL for a quarantined file stays valid until it expires (new URLs are never
-issued), and server-side encryption at rest is your provider's responsibility. Read
+issued) unless you attach the quarantine bucket policy and grant the app `s3:GetObjectTagging`,
+`s3:PutObjectTagging` and `s3:GetBucketPolicy` on the media bucket
+([permissions and a verification recipe](./production-deployment.md#permissions-quarantine-needs-on-s3)),
+and server-side encryption at rest is your provider's responsibility. Read
 [Production deployment](./production-deployment.md) and the
 [environment variable reference](../configuration/environment-variables.md#object-storage) before
 switching. Switching an existing install means copying its objects into the new store yourself.

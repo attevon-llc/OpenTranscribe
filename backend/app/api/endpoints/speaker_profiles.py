@@ -4,48 +4,144 @@ from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
-from fastapi import File
 from fastapi import HTTPException
 from fastapi import Query
-from fastapi import UploadFile
 from fastapi import status
 from sqlalchemy.orm import Session
-from starlette.concurrency import run_in_threadpool
 
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
-from app.api.deps_context import scope_to_context
+from app.api.endpoints import speaker_profiles_attributes
+from app.api.endpoints import speaker_profiles_collections
+from app.api.endpoints import speaker_profiles_matching
 from app.api.endpoints.auth import get_current_active_user
 from app.api.error_handlers import ErrorHandler
-from app.core.constants import MAX_AVATAR_SIZE
 from app.core.exceptions import DomainError
 from app.db.base import get_db
-from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCollection
 from app.models.speaker import SpeakerCollectionMember
 from app.models.speaker import SpeakerProfile
 from app.models.user import User
-from app.services.opensearch_service import update_speaker_collections
 from app.services.permission_service import PermissionService
-from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
+from app.services.platform_bypass import PlatformBypass
 from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import derived_profile_genders
 from app.services.request_context import RequestContext
-from app.services.speaker_matching.thresholds import ConfidenceLevel
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.services.speaker_profile_rename import apply_profile_name_to_speakers
 from app.services.uuid_helpers import _resource_in_tenant_scope
 from app.services.uuid_helpers import require_profile_in_scope
 from app.services.uuid_helpers import require_resource_owner
-from app.services.uuid_helpers import require_speaker_access
-from app.tasks.speaker_update_task import process_speaker_update_background
 from app.utils.db_helpers import org_stamp_is
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _owner_names_for_shared(
+    db: Session, profiles: list[SpeakerProfile], current_user_id: int
+) -> dict[int, str]:
+    """Display names of the other users who own any of ``profiles`` (shared-profile labels)."""
+    owner_user_ids = {int(p.user_id) for p in profiles if int(p.user_id) != current_user_id}
+    owner_names: dict[int, str] = {}
+    if owner_user_ids:
+        owners = db.query(User).filter(User.id.in_(owner_user_ids)).all()
+        for owner in owners:
+            owner_names[owner.id] = owner.full_name or owner.email or f"User {owner.id}"
+    return owner_names
+
+
+def _profile_media_instance_counts(
+    db: Session, profile_ids: list[int]
+) -> dict[int, tuple[int, int]]:
+    """Per-profile ``(media_count, instance_count)``, hiding voiceprint links the policy hides."""
+    from sqlalchemy import func as sa_func
+
+    # A link a voiceprint made is not counted while its file's voiceprints are off
+    # (#1280): the profile would otherwise report appearances the speaker pages hide.
+    # Decided per speaker by its FILE's scope; a person's own link is always counted.
+    from sqlalchemy import select
+
+    from app.services.privacy.redact_view import machine_identity_clauses
+
+    _name_hidden, link_hidden = machine_identity_clauses(
+        PrivacyView(db),
+        select(Speaker.media_file_id).where(Speaker.profile_id.in_(profile_ids)),
+    )
+
+    # Batch query: media count and instance count per profile (1 query)
+    count_rows = (
+        db.query(
+            Speaker.profile_id,
+            sa_func.count(sa_func.distinct(Speaker.media_file_id)).label("media_count"),
+            sa_func.count(Speaker.id).label("instance_count"),
+        )
+        .filter(Speaker.profile_id.in_(profile_ids), ~link_hidden)
+        .group_by(Speaker.profile_id)
+        .all()
+    )
+    counts_by_profile: dict[int, tuple[int, int]] = {
+        row.profile_id: (row.media_count, row.instance_count) for row in count_rows
+    }
+
+    return counts_by_profile
+
+
+def _profile_avatar_url(profile: SpeakerProfile, bypass: PlatformBypass) -> str | None:
+    """Presigned avatar URL for ``profile``, or ``None`` when absent or unavailable."""
+    from app.services.minio_service import get_file_url
+
+    avatar_url = None
+    if profile.avatar_path:
+        try:
+            avatar_url = get_file_url(profile.avatar_path, expires=bypass.presign_ttl(3600))
+        except Exception:
+            logger.warning(f"Failed to get avatar URL for profile {profile.uuid}")
+    return avatar_url
+
+
+def _profile_list_entry(
+    profile: SpeakerProfile,
+    *,
+    instance_count: int,
+    media_count: int,
+    predicted_gender: str | None,
+    avatar_url: str | None,
+    is_shared: bool,
+    owner_name: str | None,
+) -> dict[str, Any]:
+    """One row of the profile list response."""
+    return {
+        "uuid": str(profile.uuid),
+        "name": profile.name,
+        "description": profile.description,
+        "created_at": profile.created_at.isoformat() if profile.created_at else None,
+        "updated_at": profile.updated_at.isoformat() if profile.updated_at else None,
+        "instance_count": instance_count,
+        "media_count": media_count,
+        # A CONFIRMED gender wins over the derived majority (#543).
+        #
+        # `SpeakerProfile.predicted_gender` had exactly one writer
+        # (`confirm_profile_gender`) and ZERO readers, so confirming a
+        # gender persisted a column nothing ever looked at. On a profile
+        # WITH members it appeared to work only because that same call
+        # also bulk-sets every member, which moved the derived majority;
+        # on a member-less profile the write was invisible everywhere and
+        # the UI toggle could never light up.
+        #
+        # Behaviour-preserving for every profile that has ever been
+        # confirmed: the confirm writes both, so the column and the
+        # majority already agree (verified on live data). A profile that
+        # was never confirmed has NULL here and still reports the derived
+        # value — byte-identical to before.
+        "predicted_gender": predicted_gender,
+        "avatar_url": avatar_url,
+        "is_shared": is_shared,
+        "owner_name": owner_name,
+    }
 
 
 @router.get("/profiles", response_model=list[dict[str, Any]])
@@ -105,45 +201,10 @@ def list_speaker_profiles(
                 .all()
             }
 
-        # Pre-fetch owner names for shared profiles
-        owner_user_ids = {int(p.user_id) for p in profiles if int(p.user_id) != current_user.id}
-        owner_names: dict[int, str] = {}
-        if owner_user_ids:
-            owners = db.query(User).filter(User.id.in_(owner_user_ids)).all()
-            for owner in owners:
-                owner_names[owner.id] = owner.full_name or owner.email or f"User {owner.id}"
-
-        from sqlalchemy import func as sa_func
-
+        owner_names = _owner_names_for_shared(db, profiles, current_user.id)
         profile_ids = [p.id for p in profiles]
 
-        # A link a voiceprint made is not counted while its file's voiceprints are off
-        # (#1280): the profile would otherwise report appearances the speaker pages hide.
-        # Decided per speaker by its FILE's scope; a person's own link is always counted.
-        from sqlalchemy import select
-
-        from app.services.privacy.redact_view import PrivacyView
-        from app.services.privacy.redact_view import machine_identity_clauses
-
-        _name_hidden, link_hidden = machine_identity_clauses(
-            PrivacyView(db),
-            select(Speaker.media_file_id).where(Speaker.profile_id.in_(profile_ids)),
-        )
-
-        # Batch query: media count and instance count per profile (1 query)
-        count_rows = (
-            db.query(
-                Speaker.profile_id,
-                sa_func.count(sa_func.distinct(Speaker.media_file_id)).label("media_count"),
-                sa_func.count(Speaker.id).label("instance_count"),
-            )
-            .filter(Speaker.profile_id.in_(profile_ids), ~link_hidden)
-            .group_by(Speaker.profile_id)
-            .all()
-        )
-        counts_by_profile: dict[int, tuple[int, int]] = {
-            row.profile_id: (row.media_count, row.instance_count) for row in count_rows
-        }
+        counts_by_profile = _profile_media_instance_counts(db, profile_ids)
 
         # Most common gender per profile, as the privacy policy allows it (#1280): this is
         # the DERIVED gender, a majority vote over the member speakers. A profile whose
@@ -151,9 +212,6 @@ def list_speaker_profiles(
         # the fallback, not the answer: a gender the user explicitly CONFIRMED on the
         # profile wins (see `predicted_gender` below, issue #543).
         gender_by_profile = derived_profile_genders(db, profiles)
-
-        # Batch avatar URLs
-        from app.services.minio_service import get_file_url
 
         result = []
         for profile in profiles:
@@ -166,45 +224,18 @@ def list_speaker_profiles(
             is_shared = profile_id not in owned_ids
             media_count, instance_count = counts_by_profile.get(profile_id, (0, 0))
 
-            avatar_url = None
-            if profile.avatar_path:
-                try:
-                    avatar_url = get_file_url(
-                        profile.avatar_path, expires=ctx.bypass.presign_ttl(3600)
-                    )
-                except Exception:
-                    logger.warning(f"Failed to get avatar URL for profile {profile.uuid}")
+            avatar_url = _profile_avatar_url(profile, ctx.bypass)
 
             result.append(
-                {
-                    "uuid": str(profile.uuid),
-                    "name": profile.name,
-                    "description": profile.description,
-                    "created_at": profile.created_at.isoformat() if profile.created_at else None,
-                    "updated_at": profile.updated_at.isoformat() if profile.updated_at else None,
-                    "instance_count": instance_count,
-                    "media_count": media_count,
-                    # A CONFIRMED gender wins over the derived majority (#543).
-                    #
-                    # `SpeakerProfile.predicted_gender` had exactly one writer
-                    # (`confirm_profile_gender`) and ZERO readers, so confirming a
-                    # gender persisted a column nothing ever looked at. On a profile
-                    # WITH members it appeared to work only because that same call
-                    # also bulk-sets every member, which moved the derived majority;
-                    # on a member-less profile the write was invisible everywhere and
-                    # the UI toggle could never light up.
-                    #
-                    # Behaviour-preserving for every profile that has ever been
-                    # confirmed: the confirm writes both, so the column and the
-                    # majority already agree (verified on live data). A profile that
-                    # was never confirmed has NULL here and still reports the derived
-                    # value — byte-identical to before.
-                    "predicted_gender": profile.predicted_gender
-                    or gender_by_profile.get(profile_id),
-                    "avatar_url": avatar_url,
-                    "is_shared": is_shared,
-                    "owner_name": owner_names.get(int(profile.user_id)) if is_shared else None,
-                }
+                _profile_list_entry(
+                    profile,
+                    instance_count=instance_count,
+                    media_count=media_count,
+                    predicted_gender=profile.predicted_gender or gender_by_profile.get(profile_id),
+                    avatar_url=avatar_url,
+                    is_shared=is_shared,
+                    owner_name=owner_names.get(int(profile.user_id)) if is_shared else None,
+                )
             )
 
         return result
@@ -403,363 +434,7 @@ def update_speaker_profile(
         raise ErrorHandler.internal_error() from e
 
 
-def _queue_retroactive_matching_after_assignment(
-    *,
-    speaker_uuid: str,
-    user_id: int,
-    speaker_id: int,
-    old_profile_id: int | None,
-    new_profile_id: int,
-    media_file_id: int,
-) -> None:
-    """Re-score the library once a speaker has been attached to a profile.
-
-    A ``SpeakerProfile`` has no voiceprint until a speaker is attached, so this
-    assignment is the moment the profile first becomes matchable. This endpoint
-    queued nothing at all, so every other recording of that voice — including the
-    other clusters of it in the same file — stayed unmatched with an empty Inbox.
-
-    ``display_name_changed=False`` is load-bearing: it routes the task to the
-    profile-change branch (``_should_rescore_after_profile_change``) rather than
-    the labeling workflow, which would re-run profile auto-creation over an
-    assignment the user just made explicitly.
-
-    Fail-open: the assignment is already committed by the time this runs, so a
-    broker error must not report the assignment as failed.
-    """
-    try:
-        process_speaker_update_background.delay(
-            speaker_uuid=speaker_uuid,
-            user_id=user_id,
-            display_name="",
-            speaker_id=speaker_id,
-            old_profile_id=old_profile_id,
-            new_profile_id=new_profile_id,
-            was_auto_labeled=False,
-            display_name_changed=False,
-            media_file_id=media_file_id,
-        )
-    except Exception:
-        logger.exception(
-            "Speaker %s was assigned to profile %s (COMMITTED) but retroactive "
-            "matching could not be queued. Cross-recording suggestions for this "
-            "profile will be missing until another speaker update runs.",
-            speaker_id,
-            new_profile_id,
-        )
-
-
-@router.post("/speakers/{speaker_uuid}/assign-profile", response_model=dict[str, Any])
-def assign_speaker_to_profile(
-    speaker_uuid: str,
-    profile_uuid: str,
-    confidence: float | None = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-    ctx: RequestContext = Depends(get_current_context),
-):
-    """Assign a speaker instance to a profile (own or shared).
-
-    Linking feeds the speaker's voiceprint into the profile's consolidated
-    embedding, so it is a write on the speaker's file: editor or better, in the
-    active tenant. The profile must be reachable in the same tenant and belong to
-    the same tenant as the speaker's file.
-    """
-    try:
-        speaker = require_speaker_access(
-            db,
-            speaker_uuid,
-            current_user,
-            organization_id=ctx.org_id,
-            min_permission="editor",
-            forbidden_detail="Not authorized to access this speaker",
-            bypass=ctx.bypass,
-        )
-        speaker_id = speaker.id
-        # Read before the assignment writes over it — the task's re-score gate
-        # compares old against new to tell an attach from a no-op.
-        prior_profile_id = int(speaker.profile_id) if speaker.profile_id else None
-        media_file_id = int(speaker.media_file_id)
-
-        profile = require_profile_in_scope(
-            db, profile_uuid, current_user, organization_id=ctx.org_id, owner_only=False
-        )
-        if profile.organization_id != speaker.media_file.organization_id:
-            raise HTTPException(status_code=404, detail="Speaker profile not found")
-        profile_id = profile.id
-
-        # assign_speaker_to_profile is a DB write (updates the speaker row, commits, then
-        # flushes the rename tracker) — never construct SpeakerEmbeddingService here: it
-        # imports pyannote and loads the embedding model, which the API/CI image doesn't
-        # ship (→ 500 on every call) and which would load a full GPU model per request even
-        # where it does, despite assign_speaker_to_profile never touching
-        # self.embedding_service at all. Same pattern as get_speaker_occurrences below.
-        matching_service = SpeakerMatchingService(db, None)
-
-        # Assign speaker to profile
-        updated_speaker = matching_service.assign_speaker_to_profile(
-            int(speaker_id), int(profile_id), confidence, user_id=int(current_user.id)
-        )
-
-        # ─── POST-COMMIT REGION ───────────────────────────────────────────────
-        # assign_speaker_to_profile commits (72d34861: the rename tracker must only
-        # reach the chunk plane after the DB write is durable). From here on the
-        # except block's `db.rollback()`-adjacent handling below CANNOT undo the
-        # assignment, so nothing in this region may raise a 500 that tells the
-        # client it did not happen. update_speaker_collections is itself fail-open
-        # (it logs and returns on any OpenSearch error), so the only way to raise
-        # here is a DB read for an expired ORM attribute — which is exactly the
-        # case this guard covers (issue #620 item 8).
-        try:
-            speaker_uuid_str = str(speaker.uuid)
-            profile_uuid_str = str(profile.uuid)
-            response: dict[str, Any] = {
-                "speaker_id": speaker_uuid_str,
-                "profile_id": profile_uuid_str,
-                "profile_name": profile.name,
-                "confidence": confidence,
-                "verified": bool(updated_speaker.verified),
-                "status": "assigned",
-            }
-            # Update collections in OpenSearch
-            # For now, we'll use a default collection (could be expanded)
-            update_speaker_collections(speaker_uuid_str, int(profile_id), profile_uuid_str, [])
-            _queue_retroactive_matching_after_assignment(
-                speaker_uuid=speaker_uuid_str,
-                user_id=int(current_user.id),
-                speaker_id=int(speaker_id),
-                old_profile_id=prior_profile_id,
-                new_profile_id=int(profile_id),
-                media_file_id=int(media_file_id),
-            )
-        except Exception:
-            logger.exception(
-                "Speaker %s was assigned to profile %s and the write is COMMITTED, but "
-                "building the response / updating the OpenSearch speaker doc failed. "
-                "Reporting success: the durable state is correct; re-run a speaker "
-                "reindex if the search plane looks stale.",
-                speaker_id,
-                profile_id,
-            )
-            return {"status": "assigned", "profile_id": str(profile_uuid)}
-        return response
-
-    except (HTTPException, DomainError):
-        raise
-    except Exception as e:
-        logger.exception(f"Error assigning speaker to profile: {e}")
-        db.rollback()
-        raise ErrorHandler.internal_error() from e
-
-
-def _get_embedding_suggestions(
-    db: Session,
-    speaker_id: int,
-    current_user: User,
-    threshold: float,
-    accessible_profile_ids: set[int] | None = None,
-    organization_id: int | None = None,
-) -> list[dict[str, Any]]:
-    """Get profile suggestions based on voice embeddings (``organization_id``: tenant gate)."""
-    from app.core.constants import SPEAKER_CONFIDENCE_HIGH
-    from app.services.opensearch_service import get_speaker_embedding
-    from app.services.profile_embedding_service import ProfileEmbeddingService
-    from app.services.speaker_matching_service import SpeakerMatchingService
-
-    suggestions: list[dict[str, Any]] = []
-
-    # Get speaker object to extract UUID
-    from app.models.speaker import Speaker
-
-    speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
-    if not speaker:
-        return suggestions
-
-    # Privacy policy (#1280): voiceprints off for the file's owner or organization means no
-    # kNN at all (the LLM suggestions are transcript-derived and are added by the caller).
-    if not PrivacyView(db).voiceprints(int(speaker.media_file_id)).enabled:
-        return suggestions
-
-    speaker_embedding = get_speaker_embedding(str(speaker.uuid))
-    if speaker_embedding:
-        profile_matches = ProfileEmbeddingService.calculate_profile_similarity(
-            speaker_embedding,
-            current_user.id,
-            threshold=threshold,
-            accessible_profile_ids=accessible_profile_ids,
-            organization_id=organization_id,
-        )
-
-        for match in profile_matches:
-            confidence = match["similarity"]
-            matching_service = SpeakerMatchingService(db, None)  # type: ignore[arg-type]
-            confidence_level = matching_service.get_confidence_level(float(confidence))
-            auto_accept = confidence >= SPEAKER_CONFIDENCE_HIGH
-
-            # Generate reason based on confidence
-            if confidence >= 0.9:
-                reason = f"Very strong voice match (based on {match['embedding_count']} recordings)"
-            elif confidence >= 0.8:
-                reason = f"Strong voice match (based on {match['embedding_count']} recordings)"
-            elif confidence >= 0.7:
-                reason = f"Good voice match (based on {match['embedding_count']} recordings)"
-            else:
-                reason = f"Possible voice match (based on {match['embedding_count']} recordings)"
-
-            suggestions.append(
-                {
-                    "profile_id": match["profile_uuid"],  # Return UUID for external API
-                    "profile_name": match["profile_name"],
-                    "confidence": confidence,
-                    "confidence_level": confidence_level,
-                    "auto_accept": auto_accept,
-                    "reason": reason,
-                    "source": "voice_embedding",
-                    "embedding_count": match["embedding_count"],
-                    "last_update": match.get("last_update"),
-                }
-            )
-    else:
-        logger.warning(f"No embedding found for speaker {speaker_id}")
-
-    return suggestions
-
-
-def _get_llm_suggestions(
-    db: Session,
-    speaker: Speaker,
-    current_user: User,
-    accessible_profile_ids: set[int] | None = None,
-) -> list[dict[str, Any]]:
-    """Get profile suggestions based on LLM analysis."""
-    from app.services.speaker_matching_service import SpeakerMatchingService
-
-    suggestions: list[dict[str, Any]] = []
-    if (
-        speaker.suggested_name
-        and speaker.confidence
-        and speaker.suggestion_source == "llm_analysis"
-    ):
-        # Check if suggested_name matches any accessible profiles
-        profile_query = db.query(SpeakerProfile).filter(
-            SpeakerProfile.name.ilike(f"%{speaker.suggested_name}%"),
-        )
-        if accessible_profile_ids is not None:
-            profile_query = profile_query.filter(SpeakerProfile.id.in_(accessible_profile_ids))
-        else:
-            profile_query = profile_query.filter(SpeakerProfile.user_id == current_user.id)
-        suggested_profile = profile_query.first()
-
-        matching_service = SpeakerMatchingService(db, None)  # type: ignore[arg-type]
-        confidence_level = matching_service.get_confidence_level(float(speaker.confidence))
-
-        if suggested_profile:
-            # Add LLM suggestion for existing profile
-            suggestions.append(
-                {
-                    "profile_id": str(suggested_profile.uuid),
-                    "profile_name": str(suggested_profile.name),
-                    "confidence": float(speaker.confidence),
-                    "confidence_level": confidence_level,
-                    "auto_accept": bool(speaker.confidence >= 0.8),
-                    "reason": f"AI content analysis suggests this speaker is '{speaker.suggested_name}'",
-                    "source": "llm_analysis",
-                    "suggested_name": str(speaker.suggested_name),
-                }
-            )
-        else:
-            # Add LLM suggestion for new profile creation
-            suggestions.append(
-                {
-                    "profile_id": None,
-                    "profile_name": str(speaker.suggested_name),
-                    "confidence": float(speaker.confidence),
-                    "confidence_level": confidence_level,
-                    "auto_accept": False,
-                    "reason": f"AI content analysis suggests creating new profile for '{speaker.suggested_name}'",
-                    "source": "llm_analysis",
-                    "suggested_name": str(speaker.suggested_name),
-                    "create_new": True,
-                }
-            )
-
-    return suggestions
-
-
-@router.get("/speakers/{speaker_uuid}/suggestions", response_model=list[dict[str, Any]])
-def get_speaker_profile_suggestions(
-    speaker_uuid: str,
-    threshold: float = Query(ConfidenceLevel.MEDIUM, ge=0.0, le=1.0),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-    ctx: RequestContext = Depends(get_current_context),
-):
-    """Get profile suggestions for a speaker based on both embeddings and LLM analysis."""
-    try:
-        speaker = require_speaker_access(
-            db,
-            speaker_uuid,
-            current_user,
-            organization_id=ctx.org_id,
-            forbidden_detail="Not authorized to access this speaker",
-            bypass=ctx.bypass,
-        )
-        speaker_id = speaker.id
-
-        # Check if speaker already has a profile
-        if speaker.profile_id:
-            return []
-
-        # Get media file for audio processing
-        media_file = db.query(MediaFile).filter(MediaFile.id == speaker.media_file_id).first()
-        if not media_file:
-            return []
-
-        # Compute accessible profiles for cross-user matching
-        # The request's tenant scope (#1027): an org request sees its org's profiles, a
-        # personal one only org-less profiles — in SQL here and in the kNN below.
-        # Matching candidates, not visibility: a shared profile whose owner switched
-        # voiceprints off (or whose share consent is denied) is not matched against.
-        accessible_ids = PermissionService.get_matchable_profile_ids(
-            db, current_user.id, organization_id=ctx.org_id
-        )
-
-        # Get suggestions from different sources
-        suggestions: list[dict[str, Any]] = []
-        suggestions.extend(
-            _get_embedding_suggestions(
-                db,
-                int(speaker_id),
-                current_user,
-                threshold,
-                accessible_profile_ids=accessible_ids,
-                organization_id=ctx.org_id,
-            )
-        )
-        suggestions.extend(
-            _get_llm_suggestions(db, speaker, current_user, accessible_profile_ids=accessible_ids)
-        )
-        # Never offer an identity the user unassigned this speaker from (#1233).
-        from app.services.speaker_identity_rules import blocked_profile_names
-
-        refused = blocked_profile_names(db, [int(speaker_id)])[int(speaker_id)]
-        suggestions = [
-            s for s in suggestions if str(s.get("profile_name") or "").casefold() not in refused
-        ]
-
-        # Sort suggestions by confidence (highest first) and source priority
-        def sort_key(suggestion):
-            source_priority = 0 if suggestion["source"] == "voice_embedding" else 1
-            return (source_priority, -suggestion["confidence"])
-
-        suggestions.sort(key=sort_key)
-        return suggestions
-
-    except (HTTPException, DomainError):
-        raise
-    except Exception as e:
-        logger.exception(f"Error getting speaker suggestions: {e}")
-        raise ErrorHandler.internal_error() from e
+router.include_router(speaker_profiles_matching.router)
 
 
 @router.get("/profiles/{profile_uuid}/occurrences", response_model=list[dict[str, Any]])
@@ -881,281 +556,5 @@ def delete_speaker_profile(
         raise ErrorHandler.internal_error() from e
 
 
-ALLOWED_AVATAR_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
-
-
-@router.post("/profiles/{profile_uuid}/avatar", response_model=dict[str, Any])
-async def upload_profile_avatar(
-    profile_uuid: str,
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-    ctx: RequestContext = Depends(get_current_context),
-):
-    """Upload an avatar image for a speaker profile."""
-    try:
-        profile = require_profile_in_scope(
-            db, profile_uuid, current_user, organization_id=ctx.org_id
-        )
-
-        # Validate content type
-        if file.content_type not in ALLOWED_AVATAR_TYPES:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid file type. Allowed: {', '.join(ALLOWED_AVATAR_TYPES)}",
-            )
-
-        # Read and validate size
-        content = await file.read()
-        if len(content) > MAX_AVATAR_SIZE:
-            raise HTTPException(status_code=400, detail="File too large. Maximum size is 2MB.")
-
-        # Determine extension from content type
-        ext_map = {
-            "image/jpeg": "jpg",
-            "image/png": "png",
-            "image/gif": "gif",
-            "image/webp": "webp",
-        }
-        ext = ext_map.get(file.content_type, "jpg")
-
-        # Delete old avatar if exists
-        if profile.avatar_path:
-            try:
-                from app.services.minio_service import delete_file
-
-                await run_in_threadpool(delete_file, profile.avatar_path)
-            except Exception:
-                logger.warning(f"Failed to delete old avatar for profile {profile.uuid}")
-
-        # Upload to MinIO
-        import io
-
-        from app.services.minio_service import get_file_url
-        from app.services.minio_service import upload_file
-
-        object_name = f"avatars/{current_user.id}/{profile.uuid}.{ext}"
-        await run_in_threadpool(
-            upload_file, io.BytesIO(content), len(content), object_name, file.content_type
-        )
-
-        # Update profile
-        profile.avatar_path = object_name  # type: ignore[assignment]
-        db.commit()
-        db.refresh(profile)
-
-        avatar_url = await run_in_threadpool(get_file_url, object_name, expires=3600)
-        return {"uuid": str(profile.uuid), "avatar_url": avatar_url}
-
-    except (HTTPException, DomainError):
-        raise
-    except Exception as e:
-        logger.exception(f"Error uploading avatar: {e}")
-        db.rollback()
-        raise ErrorHandler.internal_error() from e
-
-
-@router.delete("/profiles/{profile_uuid}/avatar", status_code=status.HTTP_204_NO_CONTENT)
-def delete_profile_avatar(
-    profile_uuid: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-    ctx: RequestContext = Depends(get_current_context),
-):
-    """Remove a speaker profile's avatar."""
-    try:
-        profile = require_profile_in_scope(
-            db, profile_uuid, current_user, organization_id=ctx.org_id
-        )
-
-        if profile.avatar_path:
-            try:
-                from app.services.minio_service import delete_file
-
-                delete_file(profile.avatar_path)
-            except Exception:
-                logger.warning(f"Failed to delete avatar file for profile {profile.uuid}")
-
-            profile.avatar_path = None  # type: ignore[assignment]
-            db.commit()
-
-        return None
-
-    except (HTTPException, DomainError):
-        raise
-    except Exception as e:
-        logger.exception(f"Error deleting avatar: {e}")
-        db.rollback()
-        raise ErrorHandler.internal_error() from e
-
-
-@router.post("/profiles/{profile_uuid}/confirm-gender", response_model=dict[str, Any])
-def confirm_profile_gender(
-    profile_uuid: str,
-    gender: str = Query(..., description="Gender value: 'male' or 'female'"),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-    ctx: RequestContext = Depends(get_current_context),
-):
-    """Confirm the gender for a profile and the caller's own linked speakers.
-
-    Only the caller's speakers in the active tenant are rewritten: other users'
-    speakers linked to this profile (via a shared file) belong to them.
-    """
-    if gender not in ("male", "female"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Gender must be 'male' or 'female'",
-        )
-
-    profile = require_profile_in_scope(db, profile_uuid, current_user, organization_id=ctx.org_id)
-
-    # Update profile DB column for consistency
-    profile.predicted_gender = gender  # type: ignore[assignment]
-
-    # Bulk-update the caller's linked speakers in this tenant
-    updated_count = (
-        db.query(Speaker)
-        .filter(
-            Speaker.profile_id == profile.id,
-            Speaker.user_id == current_user.id,
-            Speaker.media_file_id.in_(file_ids_in_scope(ctx.org_id)),
-        )
-        .update(
-            {"predicted_gender": gender, "gender_confirmed_by_user": True},
-            synchronize_session="fetch",
-        )
-    )
-
-    db.commit()
-
-    return {
-        "profile_uuid": str(profile.uuid),
-        "predicted_gender": gender,
-        "updated_count": updated_count,
-    }
-
-
-@router.get("/collections", response_model=list[dict[str, Any]])
-def list_speaker_collections(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-    ctx: RequestContext = Depends(get_current_context),
-):
-    """List the caller's speaker collections in the active tenant."""
-    try:
-        # Speaker collections are owner-scoped: the caller's own, in this tenant.
-        collections = (
-            scope_to_context(db.query(SpeakerCollection), SpeakerCollection, ctx)
-            .filter(SpeakerCollection.user_id == current_user.id)
-            .all()
-        )
-
-        # Batch-fetch member counts (avoids N+1 per-collection queries)
-        from sqlalchemy import func as sa_func
-
-        collection_ids = [c.id for c in collections]
-        count_rows = (
-            db.query(
-                SpeakerCollectionMember.collection_id,
-                sa_func.count().label("cnt"),
-            )
-            .filter(SpeakerCollectionMember.collection_id.in_(collection_ids))
-            .group_by(SpeakerCollectionMember.collection_id)
-            .all()
-            if collection_ids
-            else []
-        )
-        member_counts = {r.collection_id: r.cnt for r in count_rows}
-
-        result = []
-        for collection in collections:
-            # Nullable timestamps on a persisted row (see the profiles listing above):
-            # reported as null rather than asserted, so one bad row cannot 500 the list.
-            result.append(
-                {
-                    "uuid": str(collection.uuid),
-                    "name": collection.name,
-                    "description": collection.description,
-                    "is_public": collection.is_public,
-                    "created_at": collection.created_at.isoformat()
-                    if collection.created_at
-                    else None,
-                    "updated_at": collection.updated_at.isoformat()
-                    if collection.updated_at
-                    else None,
-                    "member_count": member_counts.get(collection.id, 0),
-                }
-            )
-
-        return result
-
-    except (HTTPException, DomainError):
-        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
-        # anything it catches into a 500, which would report a deliberate 401/403/404/422
-        # raised inside this block as an internal server error (issue #431).
-        raise
-    except Exception as e:
-        logger.exception(f"Error listing speaker collections: {e}")
-        raise ErrorHandler.internal_error() from e
-
-
-@router.post(
-    "/collections",
-    response_model=dict[str, Any],
-    dependencies=[Depends(refuse_under_support_grant)],
-)
-def create_speaker_collection(
-    name: str,
-    description: str | None = None,
-    is_public: bool = False,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-    ctx: RequestContext = Depends(get_current_context),
-):
-    """Create a new speaker collection (stamped with the active tenant)."""
-    try:
-        # Check for name conflicts
-        existing = (
-            db.query(SpeakerCollection)
-            .filter(
-                SpeakerCollection.user_id == current_user.id,
-                SpeakerCollection.name == name,
-                org_stamp_is(SpeakerCollection.organization_id, ctx.org_id),
-            )
-            .first()
-        )
-
-        if existing:
-            raise HTTPException(status_code=400, detail="Collection with this name already exists")
-
-        collection = SpeakerCollection(
-            user_id=current_user.id,
-            name=name,
-            description=description,
-            is_public=is_public,
-            organization_id=ctx.org_id,
-        )
-
-        db.add(collection)
-        db.commit()
-        db.refresh(collection)
-
-        # created_at/updated_at populated by server_default after refresh
-        assert collection.created_at is not None
-        assert collection.updated_at is not None
-        return {
-            "uuid": str(collection.uuid),
-            "name": collection.name,
-            "description": collection.description,
-            "is_public": collection.is_public,
-            "created_at": collection.created_at.isoformat(),
-            "updated_at": collection.updated_at.isoformat(),
-        }
-
-    except (HTTPException, DomainError):
-        raise
-    except Exception as e:
-        logger.exception(f"Error creating speaker collection: {e}")
-        db.rollback()
-        raise ErrorHandler.internal_error() from e
+router.include_router(speaker_profiles_attributes.router)
+router.include_router(speaker_profiles_collections.router)

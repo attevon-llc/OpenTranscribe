@@ -40,7 +40,7 @@ api/
 │   ├── user_settings.py, redaction_settings.py, custom_vocabulary.py                  # Per-user preferences
 │   ├── backup_settings.py, media_mirror_settings.py, directory_sync_settings.py, auth_config.py, auth_email_delivery.py, first_run_wizard.py
 │   ├── search.py, embedding_migration.py, speaker_attribute_migration.py, combined_speaker_migration.py
-│   ├── speakers.py, speaker_profiles.py, speaker_clusters.py, speaker_update.py, transcript_segments.py
+│   ├── speakers.py, speaker_profiles.py (+ _matching/_attributes/_collections), speaker_clusters.py, speaker_update.py, transcript_segments.py
 │   ├── comments.py, media_collections*.py, groups.py, prompts.py, summarization.py, topics.py
 │   ├── tasks.py, user_files.py, users.py, usage.py, watch_sources*.py, legal.py, takedown_notices_user.py
 │   ├── system.py, version.py, metrics.py

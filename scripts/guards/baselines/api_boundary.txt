@@ -103,7 +103,10 @@ orm_call_in_api::backend/app/api/endpoints/search_helpers.py	1	layering: removal
 orm_call_in_api::backend/app/api/endpoints/search_reindex.py	3	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/speaker_attribute_migration.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/speaker_clusters.py	9	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/speaker_profiles.py	17	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/speaker_profiles.py	10	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/speaker_profiles_attributes.py	1	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/speaker_profiles_collections.py	3	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/speaker_profiles_matching.py	3	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/speaker_update.py	9	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/speakers_debug.py	6	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/speakers_list.py	2	layering: removal planned

@@ -25,6 +25,7 @@ from app.services.permission_service import org_scope_pred
 from app.services.privacy import policy as privacy_policy
 from app.services.privacy.redact_view import PrivacyView
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
+from app.services.speaker_profile_activity import touch_profile_interaction
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.services.takedown_service import exclude_quarantined
 from app.utils.speaker_identity_detail import ORIGIN_PROFILE_ASSIGNED
@@ -628,6 +629,7 @@ class SpeakerMatchingService:
         from app.services.speaker_cleanup import lift_profile_blacklist
 
         lift_profile_blacklist(self.db, int(speaker_id), int(profile_id))
+        touch_profile_interaction(self.db, [profile_id, speaker.profile_id], "human_link")
         speaker.profile_id = profile_id  # type: ignore[assignment]
         speaker.verified = True  # type: ignore[assignment]
         # before the tracker computes the "after" label
@@ -973,6 +975,7 @@ class SpeakerMatchingService:
             # Assign to profile if this match came from a profile
             if match.get("profile_id"):
                 speaker.profile_id = match["profile_id"]
+                touch_profile_interaction(self.db, int(match["profile_id"]), "auto_link")
             # A voiceprint wrote this identity, not a person (issue #1280): recorded before the
             # tracker computes the "after" label, which depends on it while voiceprints are off.
             record_machine_identity(
@@ -1455,6 +1458,7 @@ class SpeakerMatchingService:
 
                 similarity = match_by_id[int(speaker.id)]
                 speaker.profile_id = profile_id  # type: ignore[assignment]
+                touch_profile_interaction(self.db, profile_id, "auto_link")
                 speaker.verified = True  # type: ignore[assignment]
                 # the name was already there; only the link is new
                 record_machine_link(

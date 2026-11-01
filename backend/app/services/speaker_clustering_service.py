@@ -49,6 +49,7 @@ from app.services.speaker_cleanup import reconcile_speaker_impact
 from app.services.speaker_cleanup import speaker_blocked_from_cluster
 from app.services.speaker_cleanup import speaker_blocked_from_profile
 from app.services.speaker_cleanup import unlink_from_profile
+from app.services.speaker_profile_activity import touch_profile_interaction
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.services.takedown_service import exclude_quarantined
 from app.utils.speaker_identity_detail import ORIGIN_ACCEPTED_SUGGESTION
@@ -1668,6 +1669,9 @@ class SpeakerClusteringService:
             for member in members:
                 speaker = speakers_by_id.get(int(member.speaker_id))
                 if speaker:
+                    touch_profile_interaction(
+                        self.db, [int(profile.id), speaker.profile_id], "human_link"
+                    )
                     speaker.profile_id = profile.id  # type: ignore[assignment]
                     # Members span every file the cluster reaches into, each with
                     # its own indexed label — record before the overwrite (#432).
@@ -2159,6 +2163,9 @@ class SpeakerClusteringService:
                     assigned.add(int(speaker.id))
                     if speaker.profile_id:
                         touched.profile_ids.add(int(speaker.profile_id))
+                    touch_profile_interaction(
+                        self.db, [int(profile.id), speaker.profile_id], "human_link"
+                    )
                     speaker.profile_id = profile.id  # type: ignore[assignment]
                     self._rename_tracker.record(
                         int(speaker.media_file_id), indexed_as, str(profile.name)

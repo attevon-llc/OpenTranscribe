@@ -6,7 +6,9 @@ from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy.orm import Session
 
-from app.core.env import env_bool
+from app.api.endpoints.files.reprocess_clear import clear_selective_data
+from app.api.endpoints.files.reprocess_dispatch import dispatch_selective_tasks
+from app.api.endpoints.files.reprocess_dispatch import start_reprocessing_task
 from app.core.exceptions import ASRConfigurationError
 from app.core.exceptions import DomainError
 from app.core.tenancy import UNSCOPED
@@ -16,25 +18,8 @@ from app.models.media import MediaFile
 from app.models.user import User
 from app.services import system_settings_service
 from app.services.platform_bypass import PlatformBypass
-from app.services.speaker_cleanup import SpeakerImpact
-from app.services.speaker_cleanup import capture_speaker_impact
-from app.services.speaker_cleanup import reconcile_speaker_impact
-from app.utils.speaker_identity_source import clear_suggestion
 
 logger = logging.getLogger(__name__)
-
-
-def _capture_file_speakers(db: Session, media_file_id: int) -> SpeakerImpact:
-    """What deleting a file's speakers for a re-run leaves stale (issue #1214).
-
-    The re-run indexes the file again itself, so no reindex is requested here.
-    """
-    from app.models.speaker import Speaker
-
-    speaker_ids = [
-        int(row[0]) for row in db.query(Speaker.id).filter(Speaker.media_file_id == media_file_id)
-    ]
-    return capture_speaker_impact(db, speaker_ids, removed=True, reindex=False)
 
 
 #: Stages whose rework needs the ORIGINAL MEDIA, and which delete what they are
@@ -79,336 +64,6 @@ def _fire_gpu_rework_access_gate(media_file: MediaFile) -> None:
             # (empty) reservation without colliding with a pipeline run.
             task_id=str(uuid_pkg.uuid4()),
         )
-    )
-
-
-def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> None:
-    """
-    Clear existing transcription data for reprocessing.
-
-    Args:
-        db: Database session
-        media_file: MediaFile to clear data for
-    """
-    try:
-        # Clear transcript-related fields that exist on the MediaFile model
-        media_file.summary_data = None  # type: ignore[assignment]
-        media_file.summary_opensearch_id = None  # type: ignore[assignment]  # Clear OpenSearch summary ID for regeneration
-        media_file.summary_status = "pending"  # type: ignore[assignment]  # Reset summary status for regeneration
-        media_file.translated_text = None  # type: ignore[assignment]
-        media_file.waveform_data = None  # type: ignore[assignment]  # Clear waveform data for regeneration
-
-        # Clear existing transcript segments
-        from app.models.media import Analytics
-        from app.models.media import TranscriptSegment
-        from app.models.speaker import Speaker
-        from app.services.speaker_correction_carryover import stash_file_corrections
-
-        # The user's corrections of these speakers are kept by the audio they judged,
-        # read while the speakers and their segments still exist (issue #1233).
-        stash_file_corrections(db, int(media_file.id))
-        # Read before the deletes: their CASCADE forgets which clusters and profiles
-        # averaged the speakers in.
-        speaker_impact = _capture_file_speakers(db, int(media_file.id))
-
-        # Bulk, like the speaker delete below: with autoflush off, per-row ORM deletes
-        # were still pending when the speakers went, and the segments' foreign key
-        # refused the speaker delete for any file that had speakers.
-        db.query(TranscriptSegment).filter(TranscriptSegment.media_file_id == media_file.id).delete(
-            synchronize_session=False
-        )
-
-        # Clear any existing speaker data.
-        db.query(Speaker).filter(Speaker.media_file_id == media_file.id).delete(
-            synchronize_session=False
-        )
-
-        # Clear any existing analytics data
-        existing_analytics = (
-            db.query(Analytics).filter(Analytics.media_file_id == media_file.id).first()
-        )
-        if existing_analytics:
-            db.delete(existing_analytics)
-
-        db.commit()
-
-        # Prune the OpenSearch summary plane to match the now-cleared column
-        # (issue #963) — a full transcription reprocess clears summary_data
-        # unconditionally above and the new transcript may never gain a
-        # fresh summary before this file is searched again.
-        from app.tasks.search_file_field_tasks import index_file_summary
-
-        index_file_summary.delay(int(media_file.id))
-
-        logger.info(f"Cleared existing transcription data for file {media_file.id}")
-
-        # Voiceprints, clusters, profiles: the shared speaker cleanup (issue #1214). A
-        # residual is logged at ERROR there; the reprocess the user asked for goes ahead.
-        reconcile_speaker_impact(db, speaker_impact)
-
-    except Exception as e:
-        logger.exception(f"Error clearing transcription data for file {media_file.id}: {e}")
-        db.rollback()
-        raise
-
-
-def start_reprocessing_task(
-    file_uuid: str,
-    min_speakers: int | None = None,
-    max_speakers: int | None = None,
-    num_speakers: int | None = None,
-    downstream_tasks: list[str] | None = None,
-    whisper_model: str | None = None,
-    user_id: int | None = None,
-    db=None,
-    disable_diarization: bool | None = None,
-) -> None:
-    """
-    Start the background reprocessing task.
-
-    The transcription pipeline auto-resolves the correct queue based on the user's
-    active ASR provider (cloud-asr for cloud providers, gpu for local).
-
-    Args:
-        file_uuid: UUID of the media file to reprocess
-        min_speakers: Optional minimum number of speakers for diarization
-        max_speakers: Optional maximum number of speakers for diarization
-        num_speakers: Optional fixed number of speakers for diarization
-        downstream_tasks: Optional list of downstream pipeline stage names to run after transcription
-        whisper_model: Optional Whisper model override for this transcription
-        user_id: Unused (kept for backward compatibility)
-        db: Unused (kept for backward compatibility)
-    """
-
-    if not env_bool("SKIP_CELERY"):
-        # Dispatch 3-stage pipeline chain: CPU preprocess → GPU transcribe → CPU postprocess
-        # Queue routing is auto-resolved inside dispatch_transcription_pipeline
-        from app.tasks.transcription import dispatch_transcription_pipeline
-
-        dispatch_transcription_pipeline(
-            file_uuid=file_uuid,
-            min_speakers=min_speakers,
-            max_speakers=max_speakers,
-            num_speakers=num_speakers,
-            downstream_tasks=downstream_tasks,
-            # False must reach the pipeline as "not asked": the bool is mapped to
-            # diarization_source "provider" there, which would override the user's choice.
-            disable_diarization=True if disable_diarization else None,
-            whisper_model=whisper_model,
-        )
-    else:
-        logger.info("Skipping Celery task in test environment")
-
-
-def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) -> None:
-    """Clear data only for selected pipeline stages."""
-    from app.models.media import Analytics
-    from app.models.media import TranscriptSegment
-    from app.models.speaker import Speaker
-    from app.services.speaker_rename_tracker import SpeakerRenameTracker
-    from app.utils.speaker_labels import canonical_speaker_label_for_row
-
-    # Only the "speaker_llm" branch below writes to it — declared here so the
-    # `except` path can safely `discard()` regardless of which branch ran.
-    tracker = SpeakerRenameTracker()
-    rediarize_impact: SpeakerImpact | None = None
-
-    try:
-        if "transcription" in stages:
-            # Full transcription clear - use existing function
-            clear_existing_transcription_data(db, media_file)
-            return  # Already clears everything
-
-        if "rediarize" in stages:
-            from app.services.speaker_correction_carryover import stash_file_corrections
-
-            # The user's corrections of these speakers are kept by the audio they judged
-            # (issue #1233) — read FIRST, while the segments still name their speakers.
-            stash_file_corrections(db, int(media_file.id))
-            # Null out speaker_id on segments first to avoid FK constraint violations,
-            # then delete speakers. Transcript text/words are preserved.
-            db.query(TranscriptSegment).filter(
-                TranscriptSegment.media_file_id == media_file.id
-            ).update({TranscriptSegment.speaker_id: None}, synchronize_session=False)
-
-            rediarize_impact = _capture_file_speakers(db, int(media_file.id))
-            db.query(Speaker).filter(Speaker.media_file_id == media_file.id).delete(
-                synchronize_session=False
-            )
-            # Also clear analytics since speaker stats change
-            existing_analytics = (
-                db.query(Analytics).filter(Analytics.media_file_id == media_file.id).first()
-            )
-            if existing_analytics:
-                db.delete(existing_analytics)
-
-        if "analytics" in stages:
-            existing_analytics = (
-                db.query(Analytics).filter(Analytics.media_file_id == media_file.id).first()
-            )
-            if existing_analytics:
-                db.delete(existing_analytics)
-
-        if "speaker_llm" in stages:
-            # Reset suggested names on speakers. Nulling a confident suggestion
-            # moves the canonical label back to the raw diarizer name with no
-            # `display_name` write at all — one of five writers with zero
-            # chunk-plane dispatch until issue #605 (the chunk plane kept
-            # offering the cleared suggestion in the search facet and chat's
-            # speaker scope indefinitely). Per-speaker "after" values differ
-            # (each speaker's raw name), so this batches through the tracker
-            # rather than a single dispatch call.
-            existing_speakers = (
-                db.query(Speaker).filter(Speaker.media_file_id == media_file.id).all()
-            )
-            for speaker in existing_speakers:
-                before = canonical_speaker_label_for_row(speaker)
-                clear_suggestion(speaker)
-                tracker.record(int(media_file.id), before, canonical_speaker_label_for_row(speaker))
-
-        if "summarization" in stages:
-            media_file.summary_data = None
-            media_file.summary_opensearch_id = None
-            media_file.summary_status = "pending"
-
-        if "topic_extraction" in stages:
-            # Clear AI-generated topic suggestions
-            from app.models.topic import TopicSuggestion
-
-            existing_suggestions = (
-                db.query(TopicSuggestion)
-                .filter(TopicSuggestion.media_file_id == media_file.id)
-                .all()
-            )
-            for suggestion in existing_suggestions:
-                db.delete(suggestion)
-
-        db.commit()
-        tracker.flush(db)
-        if rediarize_impact is not None:
-            # After the commit, never before: a rolled-back clear must keep its voices.
-            reconcile_speaker_impact(db, rediarize_impact)
-
-        if "summarization" in stages:
-            # Prune the OpenSearch summary plane to match the now-cleared
-            # column (issue #963).
-            from app.tasks.search_file_field_tasks import index_file_summary
-
-            index_file_summary.delay(int(media_file.id))
-
-        logger.info(f"Cleared selective data for stages {stages} on file {media_file.id}")
-    except Exception as e:
-        logger.exception(f"Error clearing selective data for file {media_file.id}: {e}")
-        db.rollback()
-        tracker.discard()
-        raise
-
-
-def dispatch_task_by_name(
-    stage: str,
-    file_uuid: str,
-    file_id: int | None = None,
-    user_id: int | None = None,
-) -> None:
-    """Dispatch a single pipeline task by stage name.
-
-    Args:
-        stage: Pipeline stage name.
-        file_uuid: File UUID string.
-        file_id: Internal file ID (required for search_indexing).
-        user_id: Owner user ID (required for search_indexing).
-    """
-
-    if env_bool("SKIP_CELERY"):
-        logger.info("Skipping Celery task in test environment")
-        return
-
-    if stage == "search_indexing":
-        from app.tasks.search_indexing_task import index_transcript_search_task
-
-        # Resolve file_id and user_id from DB if not provided
-        if file_id is None or user_id is None:
-            from app.db.session_utils import session_scope
-            from app.services.uuid_helpers import get_file_by_uuid
-
-            with session_scope() as db:
-                media_file = get_file_by_uuid(db, file_uuid)
-                file_id = media_file.id
-                user_id = int(media_file.user_id)
-
-        index_transcript_search_task.delay(file_id=file_id, file_uuid=file_uuid, user_id=user_id)
-    elif stage == "analytics":
-        from app.tasks.analytics import analyze_transcript_task
-
-        analyze_transcript_task.delay(file_uuid=file_uuid)
-    elif stage == "speaker_llm":
-        from app.tasks.speaker_tasks import identify_speakers_llm_task
-
-        identify_speakers_llm_task.delay(file_uuid=file_uuid)
-    elif stage == "summarization":
-        from app.tasks.summarization import summarize_transcript_task
-
-        summarize_transcript_task.delay(file_uuid=file_uuid)
-    elif stage == "topic_extraction":
-        from app.tasks.topic_extraction import extract_topics_task
-
-        extract_topics_task.delay(file_uuid=file_uuid, force_regenerate=True)
-    elif stage == "speaker_clustering":
-        if user_id is None:
-            from app.db.session_utils import session_scope
-            from app.services.uuid_helpers import get_file_by_uuid
-
-            with session_scope() as db:
-                media_file = get_file_by_uuid(db, file_uuid)
-                user_id = int(media_file.user_id)
-
-        from app.tasks.speaker_clustering import cluster_speakers_for_file
-
-        cluster_speakers_for_file.delay(file_uuid, user_id)
-    else:
-        logger.warning(f"Unknown stage '{stage}' for dispatch")
-
-
-def _dispatch_manual_rediarize(
-    file_uuid: str,
-    owner_id: int,
-    *,
-    min_speakers: int | None,
-    max_speakers: int | None,
-    num_speakers: int | None,
-    downstream_tasks: list[str] | None,
-) -> None:
-    """Re-run speaker detection with the owner's CURRENT choice (plan decision Q9).
-
-    The post stage runs the plan's detector: pyannote.ai on ``cloud-asr``, otherwise this
-    server's engine on ``gpu_preferred_queue()`` (a transcription vendor's own speakers, or
-    "off", cannot be re-run after the fact, so they mean this server). A choice that cannot
-    run (no pyannote.ai key) fails the task with its fixed sentence rather than silently
-    running something else; this server's engine on lite is refused earlier, by
-    :func:`refuse_unrunnable_rerun`, and ``post_stage_queue`` refuses it again here.
-    """
-    from app.core.config import settings
-    from app.db.session_utils import session_scope
-    from app.services.pipeline_plan import post_stage_engine
-    from app.services.pipeline_plan import post_stage_queue
-    from app.services.pipeline_plan_inputs import plan_for_user
-    from app.tasks.rediarize_task import rediarize_task
-
-    # The file OWNER's choice and credential: the task detects speakers with them.
-    with session_scope() as db:
-        plan = plan_for_user(db, owner_id)
-    engine = post_stage_engine(plan.diarization.engine)
-    rediarize_task.apply_async(
-        args=[file_uuid],
-        kwargs={
-            "min_speakers": min_speakers,
-            "max_speakers": max_speakers,
-            "num_speakers": num_speakers,
-            "downstream_tasks": downstream_tasks,
-            "engine": engine,
-            "diarizer_config_uuid": plan.diarization.config_uuid,
-        },
-        queue=post_stage_queue(engine, str(settings.DEPLOYMENT_MODE)),
     )
 
 
@@ -470,68 +125,6 @@ def refuse_unrunnable_rerun(
         raise plan_refusal(code)
 
 
-def dispatch_selective_tasks(
-    file_uuid: str,
-    stages: list[str],
-    min_speakers: int | None = None,
-    max_speakers: int | None = None,
-    num_speakers: int | None = None,
-    file_id: int | None = None,
-    user_id: int | None = None,
-    whisper_model: str | None = None,
-    disable_diarization: bool = False,
-    owner_id: int | None = None,
-) -> None:
-    """Dispatch Celery tasks for selected pipeline stages.
-
-    Args:
-        file_uuid: File UUID string.
-        stages: List of pipeline stage names to dispatch.
-        min_speakers: Optional minimum speakers for diarization.
-        max_speakers: Optional maximum speakers for diarization.
-        num_speakers: Optional fixed speaker count for diarization.
-        file_id: Internal file ID (passed to tasks that need it).
-        user_id: Owner user ID (passed to tasks that need it).
-        whisper_model: Optional Whisper model override for transcription.
-        disable_diarization: Skip diarization; honoured by the transcription stage only.
-        owner_id: The file owner, whose speaker-detection choice a re-diarize runs with.
-    """
-
-    if env_bool("SKIP_CELERY"):
-        logger.info("Skipping Celery tasks in test environment")
-        return
-
-    if "transcription" in stages:
-        # Transcription subsumes rediarize
-        downstream = [s for s in stages if s not in ("transcription", "rediarize")]
-        start_reprocessing_task(
-            file_uuid,
-            min_speakers=min_speakers,
-            max_speakers=max_speakers,
-            num_speakers=num_speakers,
-            downstream_tasks=downstream if downstream else None,
-            whisper_model=whisper_model,
-            user_id=user_id,
-            disable_diarization=disable_diarization,
-        )
-    elif "rediarize" in stages:
-        other_stages = [s for s in stages if s != "rediarize"]
-        if owner_id is None:
-            raise ValueError("re-diarizing needs the file owner's id")
-        _dispatch_manual_rediarize(
-            file_uuid,
-            owner_id,
-            min_speakers=min_speakers,
-            max_speakers=max_speakers,
-            num_speakers=num_speakers,
-            downstream_tasks=other_stages if other_stages else None,
-        )
-    else:
-        # Pure downstream tasks - dispatch each directly
-        for stage in stages:
-            dispatch_task_by_name(stage, file_uuid, file_id=file_id, user_id=user_id)
-
-
 def refuse_reprocess_if_held(
     db: Session, file_id: int, *, actor: User | None = None, action: str = "reprocess"
 ) -> None:
@@ -565,6 +158,63 @@ def refuse_reprocess_if_held(
             status_code=status.HTTP_409_CONFLICT,
             detail=refusal_detail(state, reveal_uuids=False, message=REPROCESS_REFUSAL),
         )
+
+
+def _reset_file_for_reprocess(db: Session, file_id: int) -> None:
+    """Return the file to a re-runnable state, keeping its retry count."""
+    from app.utils.file_retry import reset_file_for_retry
+
+    if not reset_file_for_retry(db, file_id, reset_retry_count=False):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to reset file for reprocessing",
+        )
+
+
+def _reprocess_selected_stages(
+    db: Session,
+    file_uuid: str,
+    media_file: MediaFile,
+    stages: list[str],
+    min_speakers: int | None,
+    max_speakers: int | None,
+    num_speakers: int | None,
+    *,
+    whisper_model: str | None,
+    disable_diarization: bool,
+    user_id: int,
+) -> None:
+    """Clear and re-dispatch the selected stages, after every refusal has passed."""
+    file_id = media_file.id
+
+    # Only reset file status for transcription stage (full reprocess behavior)
+    if "transcription" in stages:
+        _reset_file_for_reprocess(db, int(file_id))
+
+    # Clear data for selected stages
+    clear_selective_data(db, media_file, stages)
+
+    # Refresh the file object
+    db.refresh(media_file)
+
+    # Dispatch tasks for selected stages
+    dispatch_selective_tasks(
+        file_uuid,
+        stages,
+        min_speakers,
+        max_speakers,
+        num_speakers,
+        file_id=file_id,
+        user_id=user_id,
+        whisper_model=whisper_model,
+        disable_diarization=disable_diarization,
+        owner_id=int(media_file.user_id),
+    )
+
+    logger.info(
+        f"Selective reprocessing tasks dispatched for file {file_uuid} "
+        f"(id: {file_id}, stages: {stages})"
+    )
 
 
 def process_file_reprocess(
@@ -605,7 +255,6 @@ def process_file_reprocess(
         HTTPException: If file not found or user doesn't have permission
     """
     from app.services.uuid_helpers import get_file_by_uuid_with_permission
-    from app.utils.file_retry import reset_file_for_retry
     from app.utils.file_retry import transcript_is_regenerable
     from app.utils.task_cancel import cancel_active_task
 
@@ -692,47 +341,21 @@ def process_file_reprocess(
             if "rediarize" in stages and "transcription" not in stages:
                 _fire_gpu_rework_access_gate(media_file)
 
-            # Only reset file status for transcription stage (full reprocess behavior)
-            if "transcription" in stages:
-                success = reset_file_for_retry(db, int(file_id), reset_retry_count=False)
-                if not success:
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail="Failed to reset file for reprocessing",
-                    )
-
-            # Clear data for selected stages
-            clear_selective_data(db, media_file, stages)
-
-            # Refresh the file object
-            db.refresh(media_file)
-
-            # Dispatch tasks for selected stages
-            dispatch_selective_tasks(
+            _reprocess_selected_stages(
+                db,
                 file_uuid,
+                media_file,
                 stages,
                 min_speakers,
                 max_speakers,
                 num_speakers,
-                file_id=file_id,
-                user_id=current_user.id,
                 whisper_model=whisper_model,
                 disable_diarization=disable_diarization,
-                owner_id=int(media_file.user_id),
-            )
-
-            logger.info(
-                f"Selective reprocessing tasks dispatched for file {file_uuid} "
-                f"(id: {file_id}, stages: {stages})"
+                user_id=current_user.id,
             )
         else:
             # Full reprocess (backward compatible)
-            success = reset_file_for_retry(db, int(file_id), reset_retry_count=False)
-            if not success:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to reset file for reprocessing",
-                )
+            _reset_file_for_reprocess(db, int(file_id))
 
             # Refresh the file object
             db.refresh(media_file)

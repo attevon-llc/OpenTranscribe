@@ -70,7 +70,7 @@ orm_call_in_api::backend/app/api/endpoints/files/management.py	5	layering: remov
 orm_call_in_api::backend/app/api/endpoints/files/multipart.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/files/prepare_upload.py	6	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/files/redaction_gate.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/files/reprocess.py	10	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/files/reprocess_clear.py	10	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/files/subtitles.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/files/transcript_document_export.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/files/transcript_export.py	3	layering: removal planned

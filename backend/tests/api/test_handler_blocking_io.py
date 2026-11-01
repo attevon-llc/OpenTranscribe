@@ -45,6 +45,7 @@ import app.api.endpoints.auth.methods as auth_methods
 import app.api.endpoints.auth.oidc as auth_oidc
 import app.api.endpoints.auth.pki as auth_pki
 import app.api.endpoints.auth_config as auth_config
+import app.api.endpoints.auth_config_connection_tests as auth_config_connection_tests
 import app.api.endpoints.combined_speaker_migration as combined_speaker_migration
 import app.api.endpoints.embedding_migration as embedding_migration
 import app.api.endpoints.files as files_endpoints
@@ -117,6 +118,7 @@ HARDENED_MODULES = [
     admin_quarantine,
     admin_settings,
     auth_config,
+    auth_config_connection_tests,
     auth_oidc,
     auth_methods,
     auth_pki,
@@ -318,7 +320,7 @@ BLOCKING_HELPERS = [
     # ldap3 binds block for up to the 10 s connect timeout; the caller hands this to
     # ``run_in_threadpool`` because ``test_auth_connection`` must stay a coroutine for
     # the genuinely-async OIDC branch (issue #320).
-    (auth_config, "_test_ldap_connection"),
+    (auth_config_connection_tests, "_test_ldap_connection"),
     # Issue #320 follow-ups — awaitless coroutines outside the endpoint layer.
     # Blocking object storage, dispatched from the lifespan via run_in_threadpool.
     (startup_maintenance, "_setup_minio"),

@@ -9,6 +9,9 @@ decide. Called from ``auth/pki_auth.py``'s ``_handle_revocation_check``.
 import logging
 import time
 from collections import OrderedDict
+from datetime import UTC
+from datetime import datetime
+from datetime import timedelta
 
 import httpx
 from cryptography import x509
@@ -22,6 +25,8 @@ from app.core.config import settings
 from app.core.process_auth_settings import get_process_auth_settings
 
 logger = logging.getLogger(__name__)
+
+_CRL_CLOCK_SKEW = timedelta(minutes=5)
 
 _crl_cache: OrderedDict[str, tuple[x509.CertificateRevocationList, float]] = (
     OrderedDict()
@@ -235,11 +240,31 @@ def _parse_and_verify_crl(
         if not _verify_crl_signature(crl, issuer_cert):
             logger.warning(f"CRL signature verification failed for {crl_url}")
             return None
+        if not _crl_is_current(crl, crl_url):
+            return None
 
         return crl
     except Exception as e:
         logger.warning(f"Failed to parse CRL from {crl_url}: {e}")
         return None
+
+
+def _crl_is_current(crl: x509.CertificateRevocationList, crl_url: str) -> bool:
+    """Whether ``now`` is inside the CRL's ``last_update``..``next_update`` window.
+
+    A CRL past ``next_update`` may omit revocations issued since, and RFC 5280 requires
+    ``next_update``, so a CRL without one is refused too. ``_CRL_CLOCK_SKEW`` absorbs
+    clock drift between this host and the CA.
+    """
+    now = datetime.now(UTC)
+    next_update = crl.next_update_utc
+    if crl.last_update_utc > now + _CRL_CLOCK_SKEW:
+        logger.warning(f"CRL from {crl_url} is not yet valid; refusing it")
+        return False
+    if next_update is None or next_update + _CRL_CLOCK_SKEW <= now:
+        logger.warning(f"CRL from {crl_url} is stale (next_update {next_update}); refusing it")
+        return False
+    return True
 
 
 def _get_or_download_crl(
@@ -258,7 +283,7 @@ def _get_or_download_crl(
     """
     # Check cache first
     cached_crl = _get_crl_cache(crl_url)
-    if cached_crl:
+    if cached_crl is not None and _crl_is_current(cached_crl, crl_url):
         logger.debug(f"CRL cache hit for {crl_url}")
         return cached_crl
 

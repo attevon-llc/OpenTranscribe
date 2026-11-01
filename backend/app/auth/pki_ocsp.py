@@ -10,6 +10,9 @@ import logging
 import threading
 import time
 from collections import OrderedDict
+from datetime import UTC
+from datetime import datetime
+from datetime import timedelta
 
 import httpx
 from cryptography import x509
@@ -24,6 +27,9 @@ from app.core.config import settings
 from app.core.process_auth_settings import get_process_auth_settings
 
 logger = logging.getLogger(__name__)
+
+_OCSP_CLOCK_SKEW = timedelta(minutes=5)
+_OCSP_MAX_AGE_WITHOUT_NEXT_UPDATE = timedelta(hours=1)
 
 
 # ===== Revocation Checking Cache =====
@@ -355,22 +361,65 @@ def _send_ocsp_request(ocsp_url: str, ocsp_request_data: bytes) -> bytes | None:
         return None
 
 
+def _cert_id_matches(
+    single: ocsp.OCSPSingleResponse,
+    cert: x509.Certificate,
+    issuer_cert: x509.Certificate,
+) -> bool:
+    """Whether a SingleResponse's CertID names ``cert`` as issued by ``issuer_cert``."""
+    if single.serial_number != cert.serial_number:
+        return False
+    # An unsupported CertID hash raises; the caller treats that as inconclusive.
+    expected = (
+        ocsp.OCSPRequestBuilder().add_certificate(cert, issuer_cert, single.hash_algorithm).build()
+    )
+    return (
+        single.issuer_name_hash == expected.issuer_name_hash
+        and single.issuer_key_hash == expected.issuer_key_hash
+    )
+
+
+def _good_cache_ttl(single: ocsp.OCSPSingleResponse, now: datetime) -> int | None:
+    """Seconds a GOOD answer may be cached, or None when it has expired.
+
+    It expires at ``next_update`` (tolerating ``_OCSP_CLOCK_SKEW``), or
+    ``_OCSP_MAX_AGE_WITHOUT_NEXT_UPDATE`` after ``this_update`` when the responder sets no
+    ``next_update``. It is never cached past that point.
+    """
+    next_update = single.next_update_utc
+    if next_update is not None:
+        if next_update + _OCSP_CLOCK_SKEW <= now:
+            return None
+        cache_until = next_update
+    else:
+        cache_until = single.this_update_utc + _OCSP_MAX_AGE_WITHOUT_NEXT_UPDATE
+        if cache_until <= now:
+            return None
+    remaining = int((cache_until - now).total_seconds())
+    return max(0, min(remaining, get_process_auth_settings().pki_crl_cache_seconds))
+
+
 def _parse_ocsp_response(
     ocsp_response_data: bytes,
     issuer_cert: x509.Certificate,
-    serial_str: str,
+    cert: x509.Certificate,
 ) -> bool | None:
     """
     Parse OCSP response and determine revocation status.
 
+    The answer counts only when its CertID names ``cert`` (serial, issuer name hash and
+    issuer key hash) and it is inside its validity window; anything else is
+    inconclusive, which the CRL fallback and ``pki_revocation_soft_fail`` decide.
+
     Args:
         ocsp_response_data: Raw OCSP response bytes
         issuer_cert: The issuer's certificate for signature verification
-        serial_str: Certificate serial number for logging and caching
+        cert: The certificate the request was made for
 
     Returns:
         True if revoked, False if valid, None if check failed
     """
+    serial_str = str(cert.serial_number)
     try:
         ocsp_response = ocsp.load_der_ocsp_response(ocsp_response_data)
 
@@ -382,24 +431,34 @@ def _parse_ocsp_response(
         if not _verify_ocsp_signature(ocsp_response, issuer_cert, serial_str):
             return None
 
-        cert_status = ocsp_response.certificate_status
+        single = next(
+            (r for r in ocsp_response.responses if _cert_id_matches(r, cert, issuer_cert)),
+            None,
+        )
+        if single is None:
+            logger.warning(f"OCSP response does not cover certificate serial {serial_str}")
+            return None
+
+        now = datetime.now(UTC)
+        if single.this_update_utc > now + _OCSP_CLOCK_SKEW:
+            logger.warning(f"OCSP response for serial {serial_str} is not yet valid")
+            return None
+
+        cert_status = single.certificate_status
 
         if cert_status == ocsp.OCSPCertStatus.REVOKED:
             logger.info(
                 f"Certificate {serial_str} is REVOKED "
-                f"(revocation time: {ocsp_response.revocation_time})"
+                f"(revocation time: {single.revocation_time_utc})"
             )
             _set_ocsp_cache(serial_str, True, get_process_auth_settings().pki_crl_cache_seconds)
             return True
 
         if cert_status == ocsp.OCSPCertStatus.GOOD:
-            # Calculate TTL from response or use default
-            ttl = 300  # 5 minutes default
-            if ocsp_response.next_update:
-                ttl_from_response = (
-                    ocsp_response.next_update - ocsp_response.this_update
-                ).total_seconds()
-                ttl = min(int(ttl_from_response), get_process_auth_settings().pki_crl_cache_seconds)
+            ttl = _good_cache_ttl(single, now)
+            if ttl is None:
+                logger.warning(f"OCSP GOOD for serial {serial_str} is stale; ignoring it")
+                return None
             _set_ocsp_cache(serial_str, False, ttl)
             logger.debug(f"Certificate {serial_str} is valid (OCSP GOOD)")
             return False
@@ -448,4 +507,4 @@ def _check_ocsp(cert: x509.Certificate, issuer_cert: x509.Certificate) -> bool |
         return None
 
     # Parse and return result
-    return _parse_ocsp_response(ocsp_response_data, issuer_cert, serial_str)
+    return _parse_ocsp_response(ocsp_response_data, issuer_cert, cert)

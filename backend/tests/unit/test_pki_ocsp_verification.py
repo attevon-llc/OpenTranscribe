@@ -48,7 +48,7 @@ def chain():
 
 
 def _parse(chain, der: bytes) -> bool | None:
-    return pki_ocsp._parse_ocsp_response(der, chain.ca_cert, str(chain.leaf_cert.serial_number))
+    return pki_ocsp._parse_ocsp_response(der, chain.ca_cert, chain.leaf_cert)
 
 
 def _cached(chain) -> bool | None:
@@ -121,7 +121,7 @@ class TestSignatureFailsClosed:
         der = ocsp_response(
             chain, GOOD, signer_key=chain.rogue_key, responder_cert=chain.rogue_cert
         )
-        result = pki_ocsp._parse_ocsp_response(der, ed_ca, str(chain.leaf_cert.serial_number))
+        result = pki_ocsp._parse_ocsp_response(der, ed_ca, chain.leaf_cert)
         assert result is None
 
     def test_ec_ca_signed_revoked_is_revoked(self):

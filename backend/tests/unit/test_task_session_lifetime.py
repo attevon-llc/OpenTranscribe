@@ -978,9 +978,9 @@ def summarization_env(db_session, monkeypatch):
 
     tracker = _ScopeTracker(db_session)
     recorded: dict = {}
-
     monkeypatch.setattr(summ, "session_scope", tracker.scope)
-    monkeypatch.setattr(summ, "resolve_llm_masking", lambda db, media_file: None)
+    monkeypatch.setattr("app.tasks.summarization_inputs.session_scope", tracker.scope)
+    monkeypatch.setattr("app.tasks.summarization_inputs.resolve_llm_masking", lambda *a: None)
     monkeypatch.setattr(
         summ,
         "send_summary_notification",

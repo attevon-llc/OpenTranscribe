@@ -295,7 +295,7 @@ def _org_context_use(client, owner_id: str) -> bool:
 def _org_context_worker(db, user: User, owner_id: str) -> bool:
     from unittest.mock import patch
 
-    from app.tasks.summarization import _get_organization_context
+    from app.tasks.summarization_inputs import _get_organization_context
 
     _set_setting(db, user, "org_context_use_shared_from", owner_id)
     owner = db.get(User, int(owner_id))

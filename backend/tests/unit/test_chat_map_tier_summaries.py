@@ -340,7 +340,7 @@ def test_summarization_fingerprint_matches_ingest_artifacts_for_identical_segmen
     interchangeable when fed the same segments — not merely that each
     produces SOME deterministic string."""
     from app.services.ingest_artifacts.service import source_fingerprint
-    from app.tasks.summarization import fingerprint_transcript_segments
+    from app.tasks.summarization_inputs import fingerprint_transcript_segments
 
     segments = _stub_segments()
     # Every stub segment in this fixture is built with a speaker_name (see
@@ -370,7 +370,7 @@ def test_summarization_fingerprint_matches_ingest_artifacts_for_identical_segmen
 def test_summarization_fingerprint_changes_when_a_segment_is_edited():
     """MUST-FIRE: a fingerprint that never changes can never mark a summary
     stale, which would defeat the whole staleness gate silently."""
-    from app.tasks.summarization import fingerprint_transcript_segments
+    from app.tasks.summarization_inputs import fingerprint_transcript_segments
 
     original = fingerprint_transcript_segments(_stub_segments(), voiceprint_names=True)
 
@@ -385,7 +385,7 @@ def test_summarization_fingerprint_changes_when_a_speaker_is_renamed():
     """A speaker rename must invalidate a summary's freshness too — matching
     ``ingest_artifacts.service.source_fingerprint``'s own documented contract
     (a rename invalidates the file_facts row by the identical mechanism)."""
-    from app.tasks.summarization import fingerprint_transcript_segments
+    from app.tasks.summarization_inputs import fingerprint_transcript_segments
 
     original = fingerprint_transcript_segments(_stub_segments(), voiceprint_names=True)
 

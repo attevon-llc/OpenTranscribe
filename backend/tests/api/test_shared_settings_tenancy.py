@@ -251,7 +251,7 @@ def _point_at(db, user: User, owner: User) -> None:
 @patch("app.utils.prompt_manager.get_user_active_prompt_info", return_value=("p", True))
 def test_summarization_ignores_cross_org_shared_context(_prompt, world):
     """A pre-existing pointer to another org's context must not be honoured."""
-    from app.tasks.summarization import _get_organization_context
+    from app.tasks.summarization_inputs import _get_organization_context
 
     _point_at(world.db, world.b1, world.a1)
     assert _get_organization_context(world.db, world.b1.id) != world.a1_ctx
@@ -259,7 +259,7 @@ def test_summarization_ignores_cross_org_shared_context(_prompt, world):
 
 @patch("app.utils.prompt_manager.get_user_active_prompt_info", return_value=("p", True))
 def test_summarization_uses_same_org_shared_context(_prompt, world):
-    from app.tasks.summarization import _get_organization_context
+    from app.tasks.summarization_inputs import _get_organization_context
 
     _point_at(world.db, world.a2, world.a1)
     assert _get_organization_context(world.db, world.a2.id) == world.a1_ctx

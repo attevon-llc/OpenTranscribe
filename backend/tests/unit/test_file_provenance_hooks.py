@@ -118,8 +118,10 @@ def rediarize_seams(monkeypatch, scope_of):
 def summary_seams(monkeypatch, scope_of):
     """The summary task's seams: session factory, notifications and the task row."""
     from app.tasks import summarization
+    from app.tasks import summarization_inputs
 
     monkeypatch.setattr(summarization, "session_scope", scope_of)
+    monkeypatch.setattr(summarization_inputs, "session_scope", scope_of)
     monkeypatch.setattr(summarization, "_llm_is_configured", lambda *a: True)
     monkeypatch.setattr(summarization, "send_summary_notification", lambda *a, **k: None)
     monkeypatch.setattr(summarization, "_send_completion_notification", lambda *a, **k: None)

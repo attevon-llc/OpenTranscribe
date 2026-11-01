@@ -234,7 +234,7 @@ def test_creating_a_profile_while_renaming_records_the_profile_as_the_origin(
 
 def test_the_background_profile_step_keeps_the_record_the_request_made(db_session, normal_user):
     """``auto_create_or_assign_profile`` runs after the request cleared the suggestion."""
-    from app.api.endpoints.speaker_update import auto_create_or_assign_profile
+    from app.api.endpoints.speaker_profile_assignment import auto_create_or_assign_profile
     from app.utils.speaker_identity_source import clear_suggestion
     from app.utils.speaker_identity_source import record_human_identity
 
@@ -245,7 +245,7 @@ def test_the_background_profile_step_keeps_the_record_the_request_made(db_sessio
     first = (speaker.identity_source_at, dict(speaker.identity_source_detail))
     db_session.commit()
 
-    with patch("app.api.endpoints.speaker_update._update_profile_embedding"):
+    with patch("app.api.endpoints.speaker_profile_assignment._update_profile_embedding"):
         assert auto_create_or_assign_profile(speaker, "Alice", db_session, user_id=normal_user.id)
     db_session.commit()
 

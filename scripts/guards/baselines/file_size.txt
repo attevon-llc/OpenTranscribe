@@ -4,7 +4,6 @@ backend/app/api/endpoints/auth/login.py	732	oversize: split by concern planned
 backend/app/api/endpoints/auth_config.py	765	oversize: split by concern planned
 backend/app/api/endpoints/files/management.py	1380	oversize: split by concern planned
 backend/app/api/endpoints/files/reprocess.py	772	oversize: split by concern planned
-backend/app/api/endpoints/speaker_update.py	752	oversize: split by concern planned
 backend/app/api/endpoints/users.py	853	oversize: split by concern planned
 backend/app/auth/CLAUDE.md	511	oversize: split by concern planned
 backend/app/auth/password_policy.py	888	oversize: split by concern planned

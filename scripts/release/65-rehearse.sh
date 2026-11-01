@@ -196,6 +196,24 @@ if [[ -n "$live_stack_names" ]]; then
     fi
     echo -e "${GREEN}live stack stopped${NC}" >&2
 fi
+
+# The label check above only knows the two stock compose projects. An `otfresh-*` fresh stack
+# (what the `test` stage runs on) holds the same ports under neither label, and used to pass
+# straight through to gr_check_ports_free's exit 1 — a scenario FAIL, not an unmet precondition.
+# Ask who actually owns the ports. Runs AFTER the auto-stop above so that path is unaffected.
+# --- BEGIN stock-port-owners-check ---
+# shellcheck source=scripts/lib/stock-port-owners.sh
+source "$REPO_ROOT/scripts/lib/stock-port-owners.sh"
+stock_port_state=0
+stock_port_check || stock_port_state=$?
+if [[ "$stock_port_state" -eq 1 ]]; then
+    record live-stack-stopped fail "$STOCK_PORT_SUMMARY" "$STOCK_PORT_FIX"
+    echo -e "${RED}${STOCK_PORT_SUMMARY}${NC}" >&2
+    echo -e "${YELLOW}  stop it with: ${STOCK_PORT_FIX}${NC}" >&2
+    echo -e "${YELLOW}  (the scenarios bind 5173-5180 under the installer's stock names)${NC}" >&2
+    exit 3
+fi
+# --- END stock-port-owners-check ---
 record live-stack-stopped pass
 
 fresh_rc=0; upgrade_rc=0; lite_rc=0

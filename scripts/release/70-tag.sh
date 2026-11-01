@@ -55,6 +55,55 @@ if git rev-parse "$VERSION" >/dev/null 2>&1; then
 fi
 record tag-absent pass
 
+# "Built = scanned = rehearsed = tagged" is only true if the stages that produce evidence ran on
+# the commit being tagged. The ledger records `sha=` per stage and nothing compared it: v0.6.0's
+# ledger had no two passing stages on one commit. Compare by RESOLVED commit, not by string —
+# the ledger stores a short sha. Name every stale stage so one run shows the whole job.
+# Overridable only through release.sh's `--force-tag "reason"` (recorded as `overridden`).
+# --- BEGIN artifacts-match-tagged-commit ---
+head_commit="$(git rev-parse HEAD)"
+stale_stages=()
+for evidence_stage in test build scan rehearse; do
+    ledger_file="$REPO_ROOT/.release/$VERSION/steps/$evidence_stage"
+    ledger_status=""; ledger_sha=""
+    if [[ -f "$ledger_file" ]]; then
+        while IFS='=' read -r ledger_key ledger_val; do
+            case "$ledger_key" in
+                status) ledger_status="$ledger_val" ;;
+                sha)    ledger_sha="$ledger_val" ;;
+            esac
+        done < "$ledger_file"
+    fi
+    if [[ -z "$ledger_status" ]]; then
+        stale_stages+=("$evidence_stage (no ledger entry)")
+    elif [[ "$ledger_status" != "done" && "$ledger_status" != "overridden" ]]; then
+        stale_stages+=("$evidence_stage (status=$ledger_status)")
+    else
+        ledger_commit=""
+        if [[ -n "$ledger_sha" ]]; then
+            ledger_commit="$(git rev-parse --verify --quiet "${ledger_sha}^{commit}" 2>/dev/null || true)"
+        fi
+        if [[ -z "$ledger_commit" ]]; then
+            stale_stages+=("$evidence_stage (recorded sha '${ledger_sha:-none}' does not resolve)")
+        elif [[ "$ledger_commit" != "$head_commit" ]]; then
+            stale_stages+=("$evidence_stage (ran at ${ledger_sha}, HEAD is ${head_commit:0:9})")
+        fi
+    fi
+done
+if [[ ${#stale_stages[@]} -gt 0 ]]; then
+    stale_detail=""
+    for stale_entry in "${stale_stages[@]}"; do
+        stale_detail+="${stale_detail:+; }${stale_entry}"
+    done
+    record artifacts-match-tagged-commit fail \
+        "stale evidence: ${stale_detail}" \
+        "re-run each named stage on HEAD ./scripts/release.sh <stage> $VERSION, or override: ./scripts/release.sh tag $VERSION --force-tag \"reason\""
+    echo -e "${RED}refusing to tag: these stages did not run on HEAD: ${stale_detail}${NC}" >&2
+    fail_out 1
+fi
+record artifacts-match-tagged-commit pass
+# --- END artifacts-match-tagged-commit ---
+
 if ! python3 scripts/release/check-version-consistency.py --mode pre-tag; then
     record version-consistency-pre-tag fail "check-version-consistency.py --mode pre-tag refused" \
         "python3 scripts/release/check-version-consistency.py --mode pre-tag"

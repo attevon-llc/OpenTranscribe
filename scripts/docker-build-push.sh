@@ -645,6 +645,7 @@ build_backend_identity_args() {
 # name the same commit.
 build_frontend_identity_args() {
     printf '%s\n' "--build-arg" "GIT_SHA=${COMMIT_SHA}"
+    printf '%s\n' "--build-arg" "APK_SECURITY_REFRESH=${OT_APK_SECURITY_REFRESH:-$(date -u +%Y-%m-%d)}"
 }
 
 # Announce what a build is about to do, and short-circuit under DRY_RUN.
@@ -704,7 +705,7 @@ build_one_leg() {
             ${CACHE_FLAG} \
             "$(build_output_flag)" \
             .
-    ) >&2
+    ) >&2 || return 1
 
     echo "${leg_tag}"
 }
@@ -759,10 +760,13 @@ build_backend() {
     mapfile -t identity_build_args < <(build_backend_identity_args)
 
     local legs=()
-    local arch
+    local arch leg_tag
     while IFS= read -r arch; do
         [ -n "${arch}" ] || continue
-        legs+=("$(build_one_leg "${component}" "${REPO_BACKEND}" "backend" "Dockerfile.prod" "${arch}" "${identity_build_args[@]}")")
+        # Assign first: `legs+=("$(...)")` exits 0 whatever the substitution did, so a failed
+        # docker build was reported "built" (the v0.6.0 lite arm64 leg).
+        leg_tag="$(build_one_leg "${component}" "${REPO_BACKEND}" "backend" "Dockerfile.prod" "${arch}" "${identity_build_args[@]}")" || return 1
+        legs+=("${leg_tag}")
     done < <(build_platform_list "${component}")
 
     assemble_capability_index "${REPO_BACKEND}" "${legs[@]}"
@@ -780,10 +784,13 @@ build_backend_lite() {
     mapfile -t identity_build_args < <(build_backend_identity_args)
 
     local legs=()
-    local arch
+    local arch leg_tag
     while IFS= read -r arch; do
         [ -n "${arch}" ] || continue
-        legs+=("$(build_one_leg "${component}" "${REPO_BACKEND_LITE}" "backend" "Dockerfile.lite" "${arch}" "${identity_build_args[@]}")")
+        # Assign first: `legs+=("$(...)")` exits 0 whatever the substitution did, so a failed
+        # docker build was reported "built" (the v0.6.0 lite arm64 leg).
+        leg_tag="$(build_one_leg "${component}" "${REPO_BACKEND_LITE}" "backend" "Dockerfile.lite" "${arch}" "${identity_build_args[@]}")" || return 1
+        legs+=("${leg_tag}")
     done < <(build_platform_list "${component}")
 
     assemble_capability_index "${REPO_BACKEND_LITE}" "${legs[@]}"
@@ -845,6 +852,7 @@ build_docs() {
         --file Dockerfile \
         --build-arg DOCS_BASE_URL=/docs/ \
         --build-arg OT_VERSION="${VERSION_FULL}" \
+        --build-arg APK_SECURITY_REFRESH="${OT_APK_SECURITY_REFRESH:-$(date -u +%Y-%m-%d)}" \
         "${identity_args[@]}" \
         "${tag_args[@]}" \
         "${cache_args[@]}" \

@@ -2,9 +2,9 @@
 
 WHY THE CACHE EXISTS
 
-`40-build.sh` builds every declared leg on the LOCAL builder and `80-publish.sh` rebuilds the
-same amd64 legs from the same tree on `opentranscribe-multiarch`. Two docker-container
-builders means two BuildKit caches, and before this change no `--cache-from`/`--cache-to`
+`40-build.sh` builds every declared leg on the LOCAL builder. (`80-publish.sh` used to rebuild
+the same legs on `opentranscribe-multiarch`; it now pushes the built legs and builds nothing,
+so the cache opt-in has a single caller.) Before this change no `--cache-from`/`--cache-to`
 appeared anywhere in `docker-build-push.sh` — `CACHE_FLAG` only ever held "" or `--no-cache`.
 
 WHY IT IS OFF BY DEFAULT, AND WHY THAT IS TESTED
@@ -30,7 +30,6 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PUSH_SH = REPO_ROOT / "scripts" / "docker-build-push.sh"
 BUILD_STAGE_SH = REPO_ROOT / "scripts" / "release" / "40-build.sh"
-PUBLISH_STAGE_SH = REPO_ROOT / "scripts" / "release" / "80-publish.sh"
 
 pytestmark = pytest.mark.skipif(
     not PUSH_SH.exists(), reason="scripts/docker-build-push.sh not present in this checkout"
@@ -131,7 +130,6 @@ def test_every_release_built_component_passes_cache_args_to_buildx() -> None:
     ("path", "invocation_marker"),
     [
         (BUILD_STAGE_SH, './scripts/docker-build-push.sh "$component"'),
-        (PUBLISH_STAGE_SH, "./scripts/docker-build-push.sh all"),
     ],
 )
 def test_the_release_pipeline_threads_the_cache_opt_in_through(

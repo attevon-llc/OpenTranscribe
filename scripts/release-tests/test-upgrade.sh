@@ -583,6 +583,9 @@ ensure_secrets_file() {
 
 # ─── Phase implementations ──────────────────────────────────────────────────
 
+# Names are DERIVED from docker-compose.yml's container_name: set (gr_colliding_container_names), not a
+# `^opentranscribe-` prefix: the unrelated `opentranscribe-homepage` site (own project, port 8300) matched the
+# prefix and refused all three v0.6.0 rehearsal scenarios, and the stopped-container sweep would have `docker rm`'d it.
 ensure_clean_test_state() {
     # Refuse if any live opentranscribe-* container is currently running.
     #
@@ -593,7 +596,7 @@ ensure_clean_test_state() {
     # below, but not for a real install whose directory is named something else). Also catch
     # it by compose project label so this stays correct if that pin ever changes.
     local running running_diar
-    running=$(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-' || true)
+    running=$(gr_colliding_container_names "" || true)
     running_diar=$(docker ps --format '{{.Names}}' \
         --filter 'label=com.docker.compose.project=opentranscribe' \
         --filter 'label=com.docker.compose.service=diar-native' || true)
@@ -606,7 +609,7 @@ Stop them with: ./opentr.sh stop  (preserves all data)"
     fi
     # Remove stopped opentranscribe-* containers (would collide on container_name)
     local stopped stopped_diar
-    stopped=$(docker ps -a --format '{{.Names}}' --filter 'name=^opentranscribe-' || true)
+    stopped=$(gr_colliding_container_names "-a" || true)
     stopped_diar=$(docker ps -a --format '{{.Names}}' \
         --filter 'label=com.docker.compose.project=opentranscribe' \
         --filter 'label=com.docker.compose.service=diar-native' || true)

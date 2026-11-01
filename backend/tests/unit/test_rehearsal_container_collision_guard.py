@@ -562,3 +562,30 @@ def test_a_real_dev_stack_still_gets_the_opentr_stop_remedy(tmp_path: Path):
     assert "./opentr.sh stop" in combined, (
         f"a running dev stack was not met with the remedy that actually clears it:\n{combined}"
     )
+
+
+SCENARIOS = ("test-fresh-install.sh", "test-lite-mode.sh", "test-upgrade.sh")
+
+
+@pytest.mark.parametrize("script", SCENARIOS)
+def test_scenario_guards_use_the_derived_names_not_a_prefix_filter(script):
+    """The three scenario scripts' own live-container guards must not match by name prefix.
+
+    ``--filter 'name=^opentranscribe-'`` matched the unrelated ``opentranscribe-homepage`` site
+    (its own project, port 8300) and refused all three v0.6.0 rehearsal scenarios at preflight;
+    its stopped-container sweep would also have ``docker rm``'d it. They must use
+    ``gr_colliding_container_names``. (The version-mismatch scan of a running stack in
+    ``test-upgrade.sh`` filters by image and is exempt.)
+    """
+    guard = (REPO_ROOT / "scripts" / "release-tests" / script).read_text()
+    offenders = [
+        line.strip()
+        for line in guard.splitlines()
+        if "name=^opentranscribe-'" in line
+        and "docker rm" not in line
+        and ("running=" in line or "stopped=" in line)
+    ]
+
+    assert offenders == [], offenders
+    assert 'gr_colliding_container_names ""' in guard
+    assert 'gr_colliding_container_names "-a"' in guard

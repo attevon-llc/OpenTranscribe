@@ -249,6 +249,8 @@ fi
 
 # shellcheck source=scripts/lib/dev-test-overlays.sh
 source "$REPO_ROOT/scripts/lib/dev-test-overlays.sh"
+# Refuse an `otfresh-*` project that is not really isolated (live data attached) before any phase.
+assert_fresh_stack_isolated
 
 # ONE exit trap for everything this run must undo (dev-test-overlays.sh's own `trap
 # teardown_overlays EXIT` is replaced here, and called from it): the end-of-run test-data

@@ -274,7 +274,8 @@ def sse_ready(text: str) -> Verdict:
                 code = payload.get('code') if isinstance(payload, dict) else None
                 return FAIL, f'export job failed (code={code!r})'
             url = payload.get('url') if isinstance(payload, dict) else None
-            if isinstance(url, str) and url.startswith('http'):
+            # A path-only URL is valid: the browser-facing base is the same-origin `/s3` proxy.
+            if isinstance(url, str) and url.startswith(('http', '/')):
                 return PASS, url
             return FAIL, 'ready frame carried no URL'
     return FAIL, 'the stream ended without a ready frame (job did not finish in time)'

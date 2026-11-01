@@ -14,7 +14,7 @@ phase                        tests    dispatcher                    ceiling
 Unit/API suite                13,622  ``run_phase``                 **none**
 Gated security, FIPS off         394  ``run_phase``                 **none**
 Gated security, FIPS on          394  ``run_phase``                 **none**
-Integration-marked               177  ``run_phase_watching_skips``  7
+Integration-marked               177  ``run_phase_watching_skips``  0
 GPU-marked                        20  ``run_phase_watching_skips``  12
 Model-vs-schema drift              3  ``run_phase``                 **none**
 ===========================  =======  ============================  ==========

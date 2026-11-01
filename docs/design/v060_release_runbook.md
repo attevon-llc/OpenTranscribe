@@ -153,7 +153,13 @@ Write the CHANGELOG prose and the blog post right AFTER `bump` (it promotes `[Un
 `[0.6.0] - <date>` and opens a fresh one) and BEFORE `verify` (which builds the docs site so a
 duplicate blog slug is caught). Build uses `BUILD_MODE=local ./scripts/docker-build-push.sh` via the
 stage, never a bare `docker build` (it would report version "unknown"). `tag` before `publish`;
-`promote` and `finish` last. `scan` scans the local images.
+`promote` and `finish` last. `scan` scans the local images. `build` records each leg's image ID in
+`.release/0.6.0/legs.tsv`; `publish` pushes exactly those local images (no rebuild, no re-scan; it
+refuses before any push if a leg's ID changed, so do not rebuild between `scan`/`rehearse` and
+`publish` without re-running them) and assembles the indexes from the pushed digests. Expect
+publish to take minutes of upload, not an hour of rebuild. The arm64 legs are pushed from the local
+daemon where the remote builder `--load`ed them; their registry manifest digest will differ from
+BuildKit's export (overlay2 regenerates it), which is expected and checked by config digest.
 Run `./scripts/release.sh reset 0.6.0` first (rehearsal history reads as current until reset; a
 preflight run on Oct 28 already wrote a ledger entry).
 `rehearse` refuses (exit 3) while the live stack is up. Exit codes: 0 pass, 1 gate failed, 2 misuse,
@@ -185,3 +191,22 @@ as overridden, never as a pass.
 - Translations were written by agents without native review (ar, ja, ko, zh especially).
 - Frontend vitest has 5s timeouts that fail under host load (47-58 on 48 cores); do not run gates
   while writers are active, and re-run in isolation before treating one as a defect.
+- **Lessons from the v0.6.0 gate (2026-10-29 to 10-31), so they are not re-learned:**
+  - `release.sh test` passes only on a quiet host. At load 70-170 (other sessions' pytest/vitest, a
+    Plex transcode) the e2e a11y fixtures and several unit timeouts fail; every phase passed when
+    load was under ~20. Pause other heavy jobs, then run it once.
+  - Any commit after a stage makes that stage's ledger evidence stale for `tag`. Land every fix
+    first, then run build -> scan -> test -> rehearse once on the final commit
+    (`~/ot-cleanup-work/run-final.sh` is the chain used for v0.6.0).
+  - `rehearse` runs the LOCALLY BUILT images, so a backend fix is invisible to it until the images
+    are rebuilt; the scenario scripts and compose files, by contrast, come from the pushed branch.
+  - The rehearsal needs 3 distinct media clips (two seeded on the FROM release, one for the
+    post-upgrade upload): `provision-test-media.sh` makes them from `test_videos/`, no human input.
+  - Rehearsal guards must match this project's containers by the names derived from
+    `docker-compose.yml` (`gr_colliding_container_names`), never `name=^opentranscribe-`: an
+    unrelated `opentranscribe-homepage` runs on this host.
+  - The object store is Silo (digest-pinned), not MinIO; see
+    `docs-site/docs/developer-guide/object-store-decision.md`. Re-verify the pin still pulls
+    anonymously before every release (`test_object_store_image_pin.py` is offline by design).
+  - The lite negative-path check waits 300 s: a mocked provider error is TRANSIENT, so the app
+    retries with backoff (about 120 s) before the file goes to ERROR.

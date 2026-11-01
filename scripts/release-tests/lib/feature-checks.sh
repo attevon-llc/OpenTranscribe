@@ -92,7 +92,11 @@ fc_stream() {
 
 # fc_fetch_url OUTFILE URL -- a presigned download. Deliberately sends NO bearer token.
 fc_fetch_url() {
-    FC_CODE="$(curl --silent --show-error --max-time 60 -o "$1" -w '%{http_code}' "$2" 2>/dev/null)" || true
+    local url="$2"
+    # The presigned URL is browser-facing: path-only (`/s3/...`) when storage is proxied through the
+    # frontend, so resolve it against the frontend origin the way a browser would.
+    [[ "$url" == /* ]] && url="${FC_WEB_BASE:-http://localhost:${TEST_FRONTEND_PORT:-5173}}${url}"
+    FC_CODE="$(curl --silent --show-error --max-time 60 -o "$1" -w '%{http_code}' "$url" 2>/dev/null)" || true
     FC_CODE="${FC_CODE:-000}"
     return 0
 }

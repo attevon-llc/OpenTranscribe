@@ -132,8 +132,10 @@ class TestTheLibraryMustBeExactlyTheSeed:
             result = run_gate(stub, manifest_for(SEED))
 
         assert result.returncode == 1, result.stdout
-        assert "different bytes than the seed file" in result.stderr
-        assert SEED[2][0] in result.stderr
+        # A seed file is identified by extension + byte size, so a replacement with other bytes is
+        # reported as the original missing and the replacement as not part of the seed.
+        assert "missing: " + SEED[2][0] in result.stderr
+        assert "not part of the seed: " in result.stderr
 
     def test_the_status_match_is_case_insensitive(self):
         with seeded_stub(status="Completed") as stub:

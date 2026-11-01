@@ -714,6 +714,12 @@ class TestUnsavedChangesGuard:
             detail_page.locator('[data-testid="nav-gallery"]').click()
 
             expect(detail_page.locator(".segment-textarea").first).to_be_visible(timeout=5000)
+            # The guard runs in SvelteKit's async beforeNavigate, so the dialog can land a beat
+            # after the click returns on a loaded host; wait for it rather than sampling once.
+            for _ in range(50):
+                if messages:
+                    break
+                detail_page.wait_for_timeout(100)
             assert messages, "navigating away mid-edit asked nothing"
             assert detail_page.url == before, (
                 f"declining the prompt still navigated: {before} -> {detail_page.url}"

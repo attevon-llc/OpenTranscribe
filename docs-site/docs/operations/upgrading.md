@@ -35,6 +35,59 @@ Before upgrading, complete these steps:
 Always back up your database before upgrading. Database migrations run automatically on startup and cannot be undone without a backup.
 :::
 
+## Object store: MinIO to Silo
+
+:::warning[Everyone upgrading is affected]
+The bundled S3 object store, the `minio` service, now runs **Silo** (a maintained fork of MinIO)
+instead of MinIO. MinIO's images can no longer be pulled, and its last community release line has
+published HIGH-severity advisories with no community fix. Your settings, ports, bucket names and
+data volume do not change. Read this section before you upgrade. Background:
+[Object storage](./object-storage.md).
+:::
+
+**What happens automatically.** `./opentranscribe.sh update` fetches the new compose file, pulls
+the Silo image (`docker.io/pgsty/silo`, pinned by digest) and recreates the `minio` service on the
+**same data volume**. No data is copied or converted, and your `.env` needs no change.
+
+**Before you upgrade**
+
+1. Back up the database (`./opentranscribe.sh backup`).
+2. Confirm your media backups. If you use the [Media Mirror](./backup-restore.md#media-mirror-in-app-incremental),
+   check that its last run succeeded.
+3. The media volume is reused in place. If you can, snapshot it first (a filesystem or LVM/ZFS
+   snapshot, or a copy of the NAS directory). This is the only reliable way back, see Rollback.
+
+**Verify after the upgrade**
+
+- `./opentranscribe.sh status` (or `docker compose ps`) shows `minio` healthy.
+- `docker compose exec minio silo --version` prints a Silo release.
+- Open an existing recording: it plays, and its download and export work.
+- Upload a new file and let it process. Try one larger than `MULTIPART_THRESHOLD_MB` (default 512)
+  if you can.
+- If you use quarantine, quarantine a test file and confirm an already-open media URL stops
+  working.
+
+**Troubleshooting**
+
+- *Image pull fails:* check that the host can reach `registry-1.docker.io`, and that the compose
+  file is the 0.6.0 one (`image:` should name `pgsty/silo`, not `quay.io/minio/minio`). Do not
+  point it back at a MinIO registry: those pulls are refused.
+- *`minio` stays unhealthy:* read `docker compose logs minio`. The health check is
+  `curl -f http://localhost:9000/minio/health/live` and the first start has a 60 second grace
+  period. A very large data volume can need longer.
+- *Permission errors on the data directory:* the container runs as the same user as before, so
+  this normally means the volume or NAS path changed ownership outside the upgrade. Restore the
+  previous ownership.
+- *Offline or air-gapped:* the image to save and load is now the Silo reference, see
+  [Offline installation](../installation/offline-installation.md).
+
+**Rollback.** Re-pinning the previous compose file and MinIO image does not make the data safe by
+itself. Silo's documentation does not promise that a volume it has used can be read by old MinIO,
+so a downgrade is not guaranteed safe. If you need to go back, stop the stack,
+restore the volume snapshot you took before upgrading, then follow [Rolling Back](#rolling-back). The old MinIO
+image is only still available on hosts that have it cached, and it carries the unpatched
+advisories, so treat it as a short-term emergency measure.
+
 ## Standard Upgrade Process
 
 ### Using opentranscribe.sh (Recommended)

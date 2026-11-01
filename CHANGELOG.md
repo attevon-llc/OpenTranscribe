@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-31
+
 ### Overview
 
 OpenTranscribe 0.6.0 is a refinement release: a refreshed interface, settings that say what
@@ -191,6 +193,13 @@ off by default.
 - **`update` and `update-full` recommend a backup before upgrading.** They print the backup
   command and the newest backup in `./backups` before the stack is taken down, since the
   upgrade migrates the database and migrations are one-way.
+- **The bundled object store is now Silo, not MinIO.** The `minio` service runs
+  `docker.io/pgsty/silo` (a maintained fork of MinIO), pinned by digest, on the same data volume.
+  The service name, `MINIO_*` settings, ports and bucket names are unchanged and `.env` needs no
+  edit, but the image changes: offline and air-gapped installs must save and load the new
+  reference. Snapshot the media volume and back up the database first. Downgrading to MinIO on a
+  volume Silo has used is not guaranteed safe, so rollback means restoring the snapshot.
+  See **Operations > Object storage** and **Upgrading to 0.6.0 > Object store: MinIO to Silo**.
 
 ### Added
 
@@ -768,6 +777,13 @@ off by default.
 
 ### Changed
 
+- **Bundled object store: MinIO to Silo.** MinIO removed its Docker Hub images, `quay.io` now
+  refuses anonymous pulls and the community repository is archived, so `docker-compose.yml`
+  pins `docker.io/pgsty/silo:RELEASE.2026-10-26T00-00-00Z` by digest (multi-arch, anonymous pull).
+  It keeps the `MINIO_*` variables, the `/minio/*` routes and MinIO's on-disk format.
+  The offline docs and the backup guide reference the new image and client. NOTICE now
+  attributes MinIO and Silo.
+
 - **Transitive dependencies are now pinned to the versions the release image was built and tested
   with.** 50 packages (the OpenTelemetry family, pyannote-core/metrics/pipeline, thinc/spacy
   support libraries, uvloop, tornado, pyjwt, ...) were unpinned, so every image build floated to
@@ -1159,6 +1175,23 @@ off by default.
   `CELERY_WORKER_SOFT_SHUTDOWN_ON_IDLE`. `CELERY_VISIBILITY_TIMEOUT` stays at 6 h on purpose.
 
 ### Fixed
+
+- **The installer no longer aborts when one image fails to pull.** `setup-opentranscribe.sh` printed
+  "will use cached versions" and then exited, because the failed `docker compose pull` tripped `set -e`.
+  It now carries on, and a host with a warm image cache installs normally.
+- **Upgrades no longer fail on a host that runs an unrelated `opentranscribe-*` container.**
+  `opentranscribe.sh`'s teardown check took the compose project from the first container whose name
+  started with `opentranscribe-`, so an unrelated site on the same host made a routine `down` report
+  "Teardown failed and 1 container(s) remain". It now counts only this project's containers.
+- **The purge audit event is searchable again.** Its `details.scope` was an object, which OpenSearch
+  rejected where other events had indexed `scope` as text, so the event fell to the fallback file. The
+  field is now `details.purge_scope`.
+- **A fresh install no longer leaves the `password-blocklist` model directory root-owned**; the installers
+  now create it with the other model-cache directories.
+- **The lite image builds for arm64 again, and a failed image build now fails the release build.**
+  `requirements-lite.txt` pinned a `+cpu` torchcodec the PyTorch CPU index does not publish for
+  aarch64, and the build script reported success anyway because it swallowed the `docker buildx`
+  failure, so only the scan stage noticed the missing image.
 
 - **Turning voiceprints off now hides a voice-made name everywhere it was printed or indexed
   (#1280).** The search index, the speaker summary text in it, the facts and digest, the
@@ -1767,6 +1800,14 @@ off by default.
 
 ### Security
 
+- **The bundled object store moves off a build with published, unpatched HIGH advisories.** The
+  last community MinIO release line has HIGH-severity advisories whose fixes exist only in the
+  commercial line and in forks. Silo's release notes describe fixes for them. See MinIO's
+  advisory pages at https://github.com/minio/minio/security/advisories.
+
+- **Alpine images take current security fixes.** The frontend and docs `apk upgrade` layer was
+  cached from the first build and shipped `brotli-libs` 1.2.0-r0 (CVE-2026-111497); it now has a
+  daily `APK_SECURITY_REFRESH` cache key, like the Debian images.
 - **nltk 3.10.4 (GHSA-j456-xh4h-cpf2).** Pinned in every requirements file. The advisory concerns
   `WekaClassifier`, which this app never imports; the bump clears the release scan gate. 3.10.4
   also reads a group- or world-writable (or foreign-owned) `nltk_data` tree as an absent corpus,

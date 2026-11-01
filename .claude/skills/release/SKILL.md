@@ -43,7 +43,7 @@ git push -u origin <branch>              # rehearse installs the branch's files 
 ./opentr.sh stop                         # rehearse and smoke need the live stack down
 ./scripts/release.sh rehearse            # fresh-install, upgrade and lite-mode scenarios
 ./scripts/release.sh tag --yes           # ← first step that leaves this machine
-./scripts/release.sh publish --yes       # :vX.Y.Z only, never :latest
+./scripts/release.sh publish --yes       # pushes the BUILT legs + assembles :vX.Y.Z; never :latest, never rebuilds
 ./scripts/release.sh smoke               # install from Hub; check capability and arch
 ./scripts/release.sh promote --yes       # move :latest by digest
 ./scripts/release.sh finish --yes        # GitHub release + assets
@@ -63,9 +63,16 @@ operator abort.
 
 ## Ordering rules that must not be reordered
 
-- **`build` → `scan` → `rehearse` → `publish`.** Validated bytes reach Docker Hub
-  only after the scenarios pass, because `:latest` is what every existing user
-  pulls.
+- **`build` → `scan` → `rehearse` → `publish`.** The bytes that reach Docker
+  Hub are the bytes `build` produced and `scan`/`rehearse` validated: `build`
+  records every leg's local image ID in `.release/<v>/legs.tsv`, and `publish`
+  refuses (exit 1, naming the leg, before any push) when a leg's ID no longer
+  matches, then pushes the local leg tags with `docker push` and assembles each
+  `vX.Y.Z` index from the pushed digests with `imagetools create`. It never
+  rebuilds and never re-scans. `:latest` moves only in `promote`, by digest.
+  Rebuilding after `scan`/`rehearse` therefore needs a fresh `scan`/`rehearse`
+  before `publish` (the ledger records the new IDs, so publish itself would
+  not catch a rebuild that was never re-validated).
 - **`tag` before `publish`** so CI validates the metadata while the 13.8 GB build
   runs. `tag` also cuts `release/<major>.<minor>` from the tag it just pushed (never
   from `master`) and, on a patch, asserts the tag is an ancestor of that branch.
@@ -107,9 +114,21 @@ decision (an accepted CVE with no reachable path), never to make a red run green
   exercise what a real user gets. Without approval both refuse (exit 3). `rehearse`
   alone can stop the stack and restart it afterwards when given `--yes`,
   `RELEASE_AUTO_STOP_STACK=true`, or an interactive `y`; `smoke` never stops it.
+  A stack that owns the stock ports under any other project (an `otfresh-*` test stack)
+  is also exit 3, naming the project and the stop command (`./opentr.sh stop --fresh
+  <name>`); `preflight` warns. `scripts/lib/stock-port-owners.sh` is the one definition.
+- **`tag` refuses stale evidence.** `artifacts-match-tagged-commit` needs `test`,
+  `build`, `scan` and `rehearse` each `done`/`overridden` in the ledger with a recorded
+  sha equal to HEAD; every stale stage is named. Any commit after a stage (including
+  committing scan reports) makes it stale: re-run it, or `--force-tag "reason"`.
 - **The branch under test must be pushed.** `rehearse` downloads the manifest files
   from `TO_BRANCH` (default: the current branch) and exits 3 if it is not on origin.
 - **`test` is the opposite:** it needs the dev stack UP (it probes Postgres on 5176).
+- **Run `test` on a quiet host.** Timeouts in the e2e and unit phases are load-induced above about
+  load 20-30; check `uptime` and pause other heavy jobs first (the v0.6.0 gate lost days to this).
+- **`rehearse` uses the images `build` made.** A backend fix needs a rebuild before the rehearsal can
+  see it; scripts and compose files come from the pushed branch. For a final cut run
+  build -> scan -> test -> rehearse once, on the last commit, with nothing committed in between.
 
 ## Related
 

@@ -300,6 +300,24 @@ def _delete_when_idle(api: Api, path: str, *, timeout: float = 30.0):
         time.sleep(0.5)
 
 
+def _bulk_delete_when_idle(api: Api, file_uuids: list[str], *, timeout: float = 30.0):
+    """Bulk-delete files, retrying while the same lazy redaction scan holds it.
+
+    The bulk route reports refusal per file inside a 200 body, so ``_delete_when_idle``'s status
+    check cannot see it. Only the exact ``FILE_NOT_SAFE_TO_DELETE`` refusal is retried.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        resp = api.post(
+            "/api/files/management/bulk-action",
+            json={"action": "delete", "file_uuids": file_uuids},
+        )
+        refused = resp.status_code == 200 and "FILE_NOT_SAFE_TO_DELETE" in resp.text
+        if not refused or time.monotonic() >= deadline:
+            return resp
+        time.sleep(0.5)
+
+
 # --------------------------------------------------------------------------- per-file routes
 
 
@@ -383,10 +401,7 @@ def test_bulk_delete_leaves_no_residue(api, engine, admin_id, created):
     chat = _chat(engine, created, admin_id, files)
     guards = [_assert_seed_reaches_every_store(engine, sf, include_owner=False) for sf in files]
 
-    resp = api.post(
-        "/api/files/management/bulk-action",
-        json={"action": "delete", "file_uuids": [sf.file_uuid for sf in files]},
-    )
+    resp = _bulk_delete_when_idle(api, [sf.file_uuid for sf in files])
     assert resp.status_code == 200, resp.text
     assert [r["success"] for r in resp.json()] == [True, True], resp.json()
 
@@ -466,10 +481,7 @@ def test_surviving_cluster_centroid_forgets_a_deleted_file(api, engine, admin_id
         resp = api.delete(f"/api/files/{a.file_uuid}/force")
         assert resp.status_code == 200, resp.text
     elif route == "bulk":
-        resp = api.post(
-            "/api/files/management/bulk-action",
-            json={"action": "delete", "file_uuids": [a.file_uuid]},
-        )
+        resp = _bulk_delete_when_idle(api, [a.file_uuid])
         assert resp.status_code == 200, resp.text
         assert [r["success"] for r in resp.json()] == [True], resp.json()
     else:

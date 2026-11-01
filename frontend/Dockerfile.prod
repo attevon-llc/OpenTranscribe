@@ -112,7 +112,12 @@ LABEL org.opencontainers.image.title="OpenTranscribe Frontend" \
 # version, and nothing here uses it — nginx depends only on libc/libcrypto/
 # libpcre2/libssl/libz, and the HEALTHCHECK below uses busybox wget. An
 # unfixable CVE in an unused package is removable rather than acceptable.
-RUN apk upgrade --no-cache && apk del curl
+# APK_SECURITY_REFRESH is a cache key (same idea as APT_SECURITY_REFRESH in backend/Dockerfile.prod):
+# without a changing ARG this layer is built once and reused, so the image keeps the Alpine
+# packages of the day it was first built (brotli-libs CVE-2026-111497 shipped that way in v0.6.0).
+ARG APK_SECURITY_REFRESH=unset
+RUN echo "apk security refresh: ${APK_SECURITY_REFRESH}" \
+    && apk upgrade --no-cache && apk del curl
 
 # Copy the built files from the build stage
 COPY --from=build /app/dist /usr/share/nginx/html

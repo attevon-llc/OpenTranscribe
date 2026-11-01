@@ -46,6 +46,7 @@ class StubBackend:
         self.library: list[dict[str, Any]] = []
         self.requests: list[tuple[str, str]] = []
         self.uploaded_names: list[str] = []
+        self.uploaded_types: dict[str, str] = {}
         self.upload_status = upload_status
         self.fail_listing = fail_listing
         self.reject_uploads = reject_uploads
@@ -68,7 +69,7 @@ class StubBackend:
         self.library.append(
             {
                 "filename": sanitize_filename(name),
-                "title": path.stem,
+                "title": path.stem.strip(" _."),  # the real backend stores the sanitized stem
                 "file_size": size,
                 "status": status,
             }
@@ -138,6 +139,10 @@ class StubBackend:
                     # ends its headers and the CRLF before the closing boundary.
                     payload = body.split(b"\r\n\r\n", 1)[1].rsplit(b"\r\n--", 1)[0]
                     stub.uploaded_names.append(original)
+                    declared = re.search(
+                        rb"Content-Type: ([^\r\n]+)", body.split(b"\r\n\r\n", 1)[0]
+                    )
+                    stub.uploaded_types[original] = declared.group(1).decode() if declared else ""
                     stub.add_file(original, size=len(payload), status=stub.upload_status)
                     self._send({"filename": sanitize_filename(original)})
                     return

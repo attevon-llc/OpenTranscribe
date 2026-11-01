@@ -57,7 +57,7 @@ Set TEST_MEDIA_DIR to a directory of your own small speech clips instead."
 log "source: $(basename "$SOURCE")"
 mkdir -p "$TEST_MEDIA_DIR"
 
-# Two clips from different offsets: the scenarios upload up to two files, and
+# Three clips from different offsets: the scenarios upload up to three files, and
 # distinct content makes a per-file transcript diff meaningful rather than
 # comparing a file against a copy of itself.
 #
@@ -96,6 +96,11 @@ make_clip() {
 
 make_clip "release-test-clip-a.mp3" 60  45
 make_clip "release-test-clip-b.mp3" 180 45
+# A THIRD clip: the upgrade scenario seeds two on the FROM release, then needs one it has not
+# seen for the post-upgrade upload. With only two, that phase SKIPPED, so no file was ever
+# processed by the new release and every feature check that reads "the newest completed file"
+# judged a legacy row (the v0.6.0 rehearsal: post-processing run_at null, no diarization engine).
+make_clip "release-test-clip-c.mp3" 300 45
 
 echo
 log "TEST_MEDIA_DIR=$TEST_MEDIA_DIR"

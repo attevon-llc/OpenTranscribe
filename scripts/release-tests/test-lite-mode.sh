@@ -221,9 +221,12 @@ ensure_secrets_file() {
     export HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN:-unused-lite-mode}"
 }
 
+# Names are DERIVED from docker-compose.yml's container_name: set (gr_colliding_container_names), not a
+# `^opentranscribe-` prefix: the unrelated `opentranscribe-homepage` site (own project, port 8300) matched the
+# prefix and refused all three v0.6.0 rehearsal scenarios, and the stopped-container sweep would have `docker rm`'d it.
 ensure_live_deployment_stopped() {
     local running
-    running=$(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-' || true)
+    running=$(gr_colliding_container_names "" || true)
     if [[ -n "$running" ]]; then
         gr_die "live deployment is still running:
 $running
@@ -232,7 +235,7 @@ Stop it first with: ./opentr.sh stop
 (this preserves all data — postgres bind mount, NAS minio, named volumes)"
     fi
     local stopped
-    stopped=$(docker ps -a --format '{{.Names}}' --filter 'name=^opentranscribe-' || true)
+    stopped=$(gr_colliding_container_names "-a" || true)
     if [[ -n "$stopped" ]]; then
         gr_warn "removing stopped (already-down) live containers to free names: $stopped"
         docker rm $stopped >/dev/null
@@ -380,7 +383,11 @@ phase_03_pin_and_layer_overlays() {
     model_cache_dir=$(awk -F= '/^MODEL_CACHE_DIR=/{print $2; exit}' "$target/.env")
     [[ -z "$model_cache_dir" || "$model_cache_dir" == "./models" ]] && model_cache_dir="$target/models"
     [[ "$model_cache_dir" != /* ]] && model_cache_dir="$target/${model_cache_dir#./}"
-    mkdir -p "$model_cache_dir"/{sentence-transformers,opensearch-ml,diar-native}
+    # Every directory compose bind-mounts, not just the three seeded below. This scenario hand-builds
+    # its `docker compose up` instead of going through `opentranscribe.sh start` (which pre-creates
+    # and chowns them), so any missing one was created ROOT-owned by dockerd and the CPU worker's
+    # speaker-attribute task died with PermissionError on ~/.cache/huggingface (v0.6.0 rehearsal).
+    mkdir -p "$model_cache_dir"/{huggingface,torch,nltk_data,password-blocklist,sentence-transformers,opensearch-ml,diar-native}
 
     local shared_cache="/mnt/nvm/opentranscribe-test-runs/.shared-model-cache"
     if [[ -d "$shared_cache" && -f "$shared_cache/.seeded-from-live" ]]; then
@@ -865,7 +872,12 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
     if error_file_uuid=$(ac_upload_file "$TEST_SAMPLE_WAV"); then
         local error_status
         error_status=$(
-            local deadline=$(( $(date +%s) + 120 ))
+            # A provider error is classified TRANSIENT, so the app retries it (default 3 attempts,
+            # exponential backoff with jitter, services/transcription_retry.py) before the file
+            # goes to ERROR. Measured in the v0.6.0 rehearsal: failures at +0s, +24s, +52s, +111s
+            # and the terminal error at +122s, so the old 120 s budget lost by seconds and only
+            # passed when the jitter happened to be short. 300 s covers the budget with margin.
+            local deadline=$(( $(date +%s) + 300 ))
             local s="unknown"
             while (( $(date +%s) < deadline )); do
                 s=$(ac_curl "$API_BASE/files/$error_file_uuid" 2>/dev/null \

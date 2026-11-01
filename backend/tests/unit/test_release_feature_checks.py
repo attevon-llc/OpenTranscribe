@@ -678,3 +678,19 @@ def test_every_probe_command_the_shell_sends_exists_in_the_probe_script() -> Non
     )
     assert {"labels", "drift", "seed-docs", "count-docs", "delete-doc", "gpu"} <= sent
     assert sent <= known, f"fc_probe sends command(s) os-probe.py does not know: {sent - known}"
+
+
+def test_sse_ready_accepts_a_path_only_presigned_url_but_not_a_missing_one():
+    """The browser-facing storage base can be the same-origin ``/s3`` proxy, so the URL is path-only.
+
+    The first live rehearsal (v0.6.0) failed both document exports with "ready frame carried no
+    URL" because the predicate demanded ``http``; a frame with no URL, or one that is not a
+    link at all, must still fail.
+    """
+    checks = _load()
+    ready = 'event: ready\ndata: {"url": "%s", "filename": "f.docx"}\n'
+
+    assert checks.sse_ready(ready % "/s3/cache/bulk/j.docx?X-Amz-Signature=abc")[0] == checks.PASS
+    assert checks.sse_ready(ready % "https://s3.example/b/k")[0] == checks.PASS
+    assert checks.sse_ready(ready % "")[0] == checks.FAIL
+    assert checks.sse_ready(ready % "j.docx")[0] == checks.FAIL

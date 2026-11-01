@@ -32,7 +32,21 @@ from app.core.security import get_password_hash
 from app.core.security import normalize_password
 from app.core.security import verify_password
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+
+def _find_repo_root() -> Path:
+    """The directory holding ``.env.example``.
+
+    Walked up rather than a fixed ``parents[3]``: the mutation harness runs these tests
+    from a copy under ``backend/mutants/``, one level deeper, where a fixed index lands
+    on ``backend/`` and the file is not there.
+    """
+    for parent in Path(__file__).resolve().parents:
+        if (parent / ".env.example").is_file():
+            return parent
+    raise FileNotFoundError(".env.example not found above " + __file__)
+
+
+REPO_ROOT = _find_repo_root()
 
 #: Unlisted, composition-free (all lowercase) passphrase; 24 characters.
 PASSPHRASE = "marble tractor quietly up"

@@ -214,6 +214,28 @@ def _make_stubs(tmp_path: Path) -> Path:
     return bin_dir
 
 
+_BASE_PORTS = range(5173, 5184)
+
+
+def _free_port_offset(start: int) -> str:
+    """The first ``--port-offset`` at or after ``start`` whose shifted ports nothing on this host holds.
+
+    The offsets used to be literals (4100/4200/4300). On a host that runs other projects one of them
+    lands on a bound port (4300 + 5181 = 9481 is another application's gateway here) and the
+    opentr.sh port-collision guard refuses the dry run, failing a test that is about image tags.
+    """
+    import socket
+
+    for offset in range(start, start + 4000, 100):
+        for base in _BASE_PORTS:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+                if probe.connect_ex(("127.0.0.1", base + offset)) == 0:
+                    break
+        else:
+            return str(offset)
+    raise AssertionError(f"no free --port-offset found from {start}")
+
+
 def _dry_run(tmp_path: Path, args: list[str], *, extra_env: dict[str, str] | None = None) -> str:
     checkout = _make_checkout(tmp_path)
     bin_dir = _make_stubs(tmp_path)
@@ -262,7 +284,16 @@ def test_fresh_dry_run_resolves_to_a_project_scoped_tag(tmp_path: Path):
     stack (or another test's fresh deployment) may hold the standard ports.
     """
     stdout = _dry_run(
-        tmp_path, ["start", "dev", "--fresh", "tagiso", "--port-offset", "4100", "--dry-run"]
+        tmp_path,
+        [
+            "start",
+            "dev",
+            "--fresh",
+            "tagiso",
+            "--port-offset",
+            _free_port_offset(4100),
+            "--dry-run",
+        ],
     )
     tag = _dry_run_tag(stdout)
     assert tag == "otfresh-tagiso", (
@@ -298,10 +329,12 @@ def test_non_fresh_dry_run_resets_a_stale_inherited_tag_from_a_prior_fresh_sessi
 def test_two_different_fresh_names_resolve_to_two_different_tags(tmp_path: Path):
     """Two independent fresh stacks must not collide with each other either."""
     stdout_a = _dry_run(
-        tmp_path / "a", ["start", "dev", "--fresh", "alpha", "--port-offset", "4200", "--dry-run"]
+        tmp_path / "a",
+        ["start", "dev", "--fresh", "alpha", "--port-offset", _free_port_offset(4200), "--dry-run"],
     )
     stdout_b = _dry_run(
-        tmp_path / "b", ["start", "dev", "--fresh", "bravo", "--port-offset", "4300", "--dry-run"]
+        tmp_path / "b",
+        ["start", "dev", "--fresh", "bravo", "--port-offset", _free_port_offset(4300), "--dry-run"],
     )
     tag_a = _dry_run_tag(stdout_a)
     tag_b = _dry_run_tag(stdout_b)

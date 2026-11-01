@@ -633,9 +633,42 @@ def test_upgrade_tolerates_the_stale_network_race():
     fn = source.split("compose_down_for_upgrade() {", 1)[1].split("\n}", 1)[0]
     assert "active endpoints" in source or "stale" in fn.lower()
     # Tolerating the race must NOT mean tolerating a real teardown failure.
-    assert "docker ps -aq" in fn, (
-        "must verify no containers remain before continuing past a failed down"
-    )
+    assert "ps -aq" in fn, "must verify no containers remain before continuing past a failed down"
+
+
+def test_teardown_check_ignores_an_unrelated_opentranscribe_named_container(tmp_path: Path):
+    """A failed ``down`` must be judged by THIS project's containers, not any ``opentranscribe-*``.
+
+    The v0.6.0 rehearsal host runs ``opentranscribe-homepage`` (its own compose project). The old
+    check took the project label off the first name-prefix match, so a ``down`` that merely lost the
+    network-endpoint race was reported as "Teardown failed and 1 container(s) remain" and aborted
+    the upgrade. Here ``down`` fails, the project owns nothing, and an unrelated container exists.
+    """
+    snippet = f"""
+YELLOW=''; GREEN=''; RED=''; BLUE=''; NC=''
+cd {tmp_path}
+ot_drain_gpu_workers() {{ :; }}
+recommend_pre_upgrade_backup() {{ :; }}
+docker() {{
+  if [ "$1" = compose ]; then
+    case " $* " in
+      *" down "*) return 1 ;;
+      *" ps "*) return 0 ;;
+    esac
+  fi
+  case " $* " in
+    *"name=^opentranscribe-"*) echo opentranscribe_homepage ;;
+    *"label=com.docker.compose.project=opentranscribe_homepage"*) echo abc123 ;;
+  esac
+  return 0
+}}
+{_extract_function(MANAGER, "compose_down_for_upgrade")}
+compose_down_for_upgrade "-f docker-compose.yml" && echo CONTINUED
+"""
+    out = _run_shell(snippet)
+
+    assert "Teardown failed" not in out, out
+    assert "CONTINUED" in out, out
 
 
 @pytest.mark.parametrize("has_backup", [True, False], ids=["with-backup", "no-backup"])

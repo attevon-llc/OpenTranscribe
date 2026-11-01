@@ -80,7 +80,12 @@ LABEL org.opencontainers.image.title="OpenTranscribe Documentation" \
 # nothing in this image needs it: nginx depends only on libc/libcrypto/libpcre2/
 # libssl/libz, and the HEALTHCHECK below uses busybox wget. An unfixable CVE in a
 # package you do not use is removable rather than acceptable.
-RUN apk upgrade --no-cache && apk del curl
+# APK_SECURITY_REFRESH is a cache key (same idea as APT_SECURITY_REFRESH in backend/Dockerfile.prod):
+# without a changing ARG this layer is built once and reused, so the image keeps the Alpine
+# packages of the day it was first built (brotli-libs CVE-2026-111497 shipped that way in v0.6.0).
+ARG APK_SECURITY_REFRESH=unset
+RUN echo "apk security refresh: ${APK_SECURITY_REFRESH}" \
+    && apk upgrade --no-cache && apk del curl
 
 COPY --from=build /app/build /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf

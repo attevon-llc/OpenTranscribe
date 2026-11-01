@@ -382,7 +382,7 @@ fix_model_cache_permissions() {
     # that exist, so creating this one is what lets the repair reach it.
     mkdir -p "$MODEL_CACHE_DIR/huggingface" "$MODEL_CACHE_DIR/torch" "$MODEL_CACHE_DIR/nltk_data" \
         "$MODEL_CACHE_DIR/sentence-transformers" "$MODEL_CACHE_DIR/opensearch-ml" \
-        "$MODEL_CACHE_DIR/diar-native" 2>/dev/null
+        "$MODEL_CACHE_DIR/diar-native" "$MODEL_CACHE_DIR/password-blocklist" 2>/dev/null
 
     # Check ownership of parent AND all subdirectories — a subdirectory can be
     # root-owned even when the parent is correctly owned by UID 1000 (e.g. dockerd
@@ -1429,21 +1429,16 @@ compose_down_for_upgrade() {
         return 0
     fi
 
-    # A `name=^opentranscribe-` filter alone misses `diar-native`: it is the only project
-    # service with no `container_name`, so compose gives it its DEFAULT name
-    # (`<project>-diar-native-<n>`), which does not start with `opentranscribe-` unless the
-    # compose project itself happens to be named that. Prefer counting by the compose
-    # project label instead (read off whatever project container is still around, so this
-    # still works after a partial teardown) — that covers every service including
-    # diar-native in one pass with no double-count risk. Fall back to the name regex only
-    # when no project label can be found (e.g. every container is already gone).
-    local project remaining
-    project=$(docker ps -a --filter "name=^opentranscribe-" --format '{{.Label "com.docker.compose.project"}}' | head -1)
-    if [ -n "$project" ]; then
-        remaining=$(docker ps -aq --filter "label=com.docker.compose.project=$project" | wc -l)
-    else
-        remaining=$(docker ps -aq --filter "name=^opentranscribe-" | wc -l)
-    fi
+    # Count what THIS compose project still owns, via the same -f chain `down` just used. Two
+    # earlier ways to find "the project" were both wrong: a `name=^opentranscribe-` filter misses
+    # `diar-native` (the one service with no container_name), and reading the project label off the
+    # first `opentranscribe-*` container picked up an unrelated `opentranscribe-homepage` site (its
+    # own project) and reported "Teardown failed and 1 container(s) remain" on every upgrade, which
+    # failed all three v0.6.0 upgrade rehearsal hops. `compose ps -a` is scoped to the project and
+    # still sees every service after a partial teardown.
+    local remaining
+    # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
+    remaining=$(docker compose $compose_files ps -aq 2>/dev/null | wc -l)
     if [ "$remaining" -ne 0 ]; then
         echo -e "${RED}❌ Teardown failed and $remaining container(s) remain${NC}"
         return 1

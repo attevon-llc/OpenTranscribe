@@ -14,10 +14,13 @@ really changed:
 * The control — the same pipeline twice — is bit-identical, so a difference
   between arms is the pipeline and not query nondeterminism.
 
-Read-only against the index: it issues searches and creates *search pipelines*,
-which are query-time cluster metadata. No document is written, and
-``indexing.total`` is asserted unchanged across the module for exactly that
-reason.
+The module OWNS its data (a gate test may not depend on the deployment's corpus): it
+creates a throwaway chunks index with the production mapping, seeds a deterministic
+corpus of ``_N_DOCS`` chunks for one synthetic user through an ingest pipeline that
+embeds them with the stack's own deployed model, points ``settings.OPENSEARCH_CHUNKS_INDEX``
+at it for the module, and deletes both afterwards. Searches then only read that index and
+create *search pipelines* (query-time cluster metadata), and ``indexing.total`` of the
+throwaway index is asserted unchanged across the measurement.
 
 Point it at an isolated stack, never the shared dev one::
 
@@ -28,6 +31,7 @@ Point it at an isolated stack, never the shared dev one::
 from __future__ import annotations
 
 import os
+import uuid
 from typing import Any
 
 import pytest
@@ -39,6 +43,8 @@ from app.services.search.fusion import NORMALIZATION
 from app.services.search.fusion import RRF
 from app.services.search.fusion import FusionConfig
 from app.services.search.fusion import search_pipeline_id
+from app.services.search.hybrid_search_service import HybridSearchService
+from app.services.search.indexing_service import _get_index_body_with_dimension
 from app.services.search.indexing_service import ensure_search_pipeline_exists
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
@@ -62,6 +68,72 @@ _NORM = FusionConfig(
     normalization_technique="min_max",
     combination_technique="arithmetic_mean",
 )
+
+#: The synthetic user every seeded chunk is accessible to. Far from any real id, and rowless:
+#: ``retrieve_chunks`` gates on ``accessible_user_ids`` in the index, not on a Postgres row.
+_USER_ID = 4363
+_N_FILES = 12
+_CHUNKS_PER_FILE = 5
+_N_DOCS = _N_FILES * _CHUNKS_PER_FILE
+
+#: Filler words. Their count varies per chunk so BM25 length normalisation spreads the scores;
+#: without a spread both fusion arms could order the pool identically by accident.
+_FILLER = ("agenda", "notes", "follow", "action", "owner", "review", "status", "update")
+
+
+def _seed_content(i: int) -> str:
+    """Deterministic chunk text: a third budget-only, a third schedule-only, a third both."""
+    filler = " ".join(_FILLER[(i + k) % len(_FILLER)] for k in range(4 + i % 5))
+    reps = 1 + i % 4
+    kind = i % 3
+    if kind == 0:
+        lead = " ".join(["budget"] * reps)
+    elif kind == 1:
+        lead = ("marketing launch schedule", "launch schedule", "marketing schedule")[(i // 3) % 3]
+    else:
+        lead = f"{' '.join(['budget'] * reps)} marketing launch schedule"
+    return f"{lead} {filler}"
+
+
+def _seed_docs() -> list[tuple[str, dict[str, Any]]]:
+    docs = []
+    for i in range(_N_DOCS):
+        f, n = divmod(i, _CHUNKS_PER_FILE)
+        text = _seed_content(i)
+        docs.append(
+            (
+                f"fusion-{f:02d}_{n}",
+                {
+                    "file_id": -(f + 1),
+                    "file_uuid": f"fusion-{f:02d}",
+                    "chunk_index": n,
+                    "doc_type": "chunk",
+                    "user_id": _USER_ID,
+                    "accessible_user_ids": [_USER_ID],
+                    "title": f"Fusion fixture {f}",
+                    "speaker": f"Speaker {n % 2}",
+                    "speakers": [f"Speaker {n % 2}"],
+                    "language": "en",
+                    "content": text,
+                    "embedding_text": text,
+                    "start_time": n * 30.0,
+                    "end_time": n * 30.0 + 30.0,
+                },
+            )
+        )
+    return docs
+
+
+def _resolve_model_id() -> str:
+    """The stack's deployed embedding model: the gate's export, else the app's own answer."""
+    model_id = (
+        os.environ.get("OPENSEARCH_TEST_MODEL_ID") or HybridSearchService()._get_neural_model_id()
+    )
+    # `assert`, not skip: the chat-path arm is only a fusion arm when the neural leg exists,
+    # so a stack with no model is a broken stack for this test, not a thin corpus.
+    assert model_id, "no deployed embedding model on this stack; the chat path cannot fuse"
+    return model_id
+
 
 #: Two lexically different legs, so the fusion step has something to do. BM25 on
 #: both legs deliberately: the processor fuses ranked lists and does not care what
@@ -104,6 +176,7 @@ def _indexing_total(client: Any) -> int:
 
 @pytest.fixture(scope="module")
 def client() -> Any:
+    """A client whose chunks index is a throwaway one this module seeded and will delete."""
     os_client = get_opensearch_client()
     # `assert`, not `pytest.fail`: it fails the test with the same message AND narrows
     # the Optional for the attribute access below. mypy does not treat this
@@ -112,9 +185,40 @@ def client() -> Any:
     assert os_client is not None, (
         "SKIP_OPENSEARCH said a cluster was reachable, but no client was built"
     )
-    if not os_client.indices.exists(index=settings.OPENSEARCH_CHUNKS_INDEX):
-        pytest.skip(f"{settings.OPENSEARCH_CHUNKS_INDEX} does not exist on this cluster")
-    return os_client
+    model_id = _resolve_model_id()
+    index = f"test_fusion_{uuid.uuid4().hex[:12]}"
+    pipeline = f"test-fusion-ingest-{uuid.uuid4().hex[:8]}"
+    os_client.ingest.put_pipeline(
+        id=pipeline,
+        body={
+            "processors": [
+                {
+                    "text_embedding": {
+                        "model_id": model_id,
+                        "field_map": {"embedding_text": "embedding"},
+                    }
+                }
+            ]
+        },
+    )
+    try:
+        os_client.indices.create(index=index, body=_get_index_body_with_dimension(384))
+        try:
+            actions: list[dict[str, Any]] = []
+            for doc_id, doc in _seed_docs():
+                actions += [{"index": {"_index": index, "_id": doc_id, "pipeline": pipeline}}, doc]
+            resp = os_client.bulk(body=actions, refresh=True, request_timeout=600)
+            assert not resp.get("errors"), "bulk seed reported errors"
+            with pytest.MonkeyPatch.context() as mp:
+                mp.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", index)
+                mp.setattr(settings, "OPENSEARCH_NEURAL_SEARCH_ENABLED", True)
+                mp.setattr(HybridSearchService, "_check_neural_search_available", lambda self: True)
+                mp.setattr(HybridSearchService, "_get_neural_model_id", lambda self: model_id)
+                yield os_client
+        finally:
+            os_client.indices.delete(index=index, ignore_unavailable=True)
+    finally:
+        os_client.ingest.delete_pipeline(id=pipeline, ignore=[404])
 
 
 @pytest.fixture(scope="module")
@@ -162,27 +266,17 @@ _MIN_HITS_FOR_RANKING = 10
 
 @pytest.fixture(scope="module")
 def corpus_supports_ranking(client) -> None:
-    """Skip the ranking assertions when this cluster's corpus cannot support them.
+    """Assert the seeded corpus can support the ranking assertions below.
 
-    ``_hybrid_body`` asks for a specific business vocabulary (``_LEG_A`` /
-    ``_LEG_B``) because the fusion processor needs two lexically different legs
-    with enough hits to actually rank. That vocabulary comes from the #403
-    evaluation corpora — meeting transcripts. A deployment whose index holds
-    something else (podcasts, lectures, interviews) legitimately matches almost
-    none of it, and the assertions below then fail for a reason that has nothing
-    to do with fusion. Measured on a dev index of 370 podcast chunks: ``budget``
-    matched **zero** documents, so every ranking test failed while the fusion
-    plumbing was entirely correct.
+    ``_hybrid_body`` asks for a specific vocabulary (``_LEG_A`` / ``_LEG_B``) because the
+    fusion processor needs two lexically different legs with enough hits to actually rank.
+    The module seeds that vocabulary itself, so a shortfall here means seeding broke. It
+    does NOT mean the deployment is thin, and it must fail rather than skip: this used to
+    skip on whatever the deployment held, and on a fresh stack every ranking test silently
+    vanished.
 
-    That is a corpus mismatch reported as a code regression, and it blocked a
-    release gate. The tests already say as much themselves ("the index answered
-    with almost nothing; nothing below holds") — this turns that observation
-    into a skip with a reason instead of a failure with a misleading one.
-
-    Deliberately NOT a blanket try/except, and deliberately keyed on the SAME
-    query the tests run: it skips only on a measured shortfall of matching
-    documents, so a fusion bug that returns nothing on a corpus that does hold
-    the vocabulary still fails loudly.
+    Keyed on the SAME query the tests run, so a fusion bug that returns nothing from a
+    corpus that does hold the vocabulary still fails in the tests themselves.
     """
     body = {
         "query": {
@@ -196,13 +290,10 @@ def corpus_supports_ranking(client) -> None:
         }
     }
     matching = int(client.count(index=settings.OPENSEARCH_CHUNKS_INDEX, body=body)["count"])
-    if matching < _MIN_HITS_FOR_RANKING:
-        pytest.skip(
-            f"this cluster's {settings.OPENSEARCH_CHUNKS_INDEX} matches {matching} document(s) "
-            f"for the test vocabulary ({_LEG_A!r} / {_LEG_B!r}), below the "
-            f"{_MIN_HITS_FOR_RANKING} the ranking assertions need. The fusion plumbing is not "
-            "under test here — the corpus is. Index a meeting-transcript corpus (#403) to run these."
-        )
+    assert matching >= _MIN_HITS_FOR_RANKING, (
+        f"the seeded index matches {matching} document(s) for {_LEG_A!r} / {_LEG_B!r}, below "
+        f"the {_MIN_HITS_FOR_RANKING} the ranking assertions need: the seed is broken"
+    )
 
 
 class TestTheSwitchChangesWhatComesBack:
@@ -267,12 +358,9 @@ class TestTheSwitchChangesWhatComesBack:
 def corpus_user_id(client) -> int:
     """The user who can access the MOST chunks matching the test vocabulary.
 
-    Discovered rather than configured: ``retrieve_chunks`` gates on
-    ``accessible_user_ids``, and hard-coding an id would silently retrieve
-    nothing on any stack but the one it was written against. Picked by a terms
-    aggregation filtered by ``_LEG_B``, not by whichever document ``match_all``
-    happens to return first: that document's owner may hold none of the vocabulary,
-    and the thin-corpus skip below would then hide a wrong pick as a thin corpus.
+    Still discovered by a terms aggregation filtered by ``_LEG_B`` rather than assumed,
+    and then asserted equal to the seeded user: if the aggregation and the seed ever
+    disagree, the scoping the chat path relies on is broken and that must fail loudly.
     """
     response = client.search(
         index=settings.OPENSEARCH_CHUNKS_INDEX,
@@ -283,20 +371,17 @@ def corpus_user_id(client) -> int:
         },
     )
     buckets = response.get("aggregations", {}).get("owners", {}).get("buckets", [])
-    if not buckets:
-        pytest.skip(
-            f"no user can access a chunk matching {_LEG_B!r}; the corpus has nothing to scope to"
-        )
+    assert buckets, f"no user can access a chunk matching {_LEG_B!r}: the seed is broken"
+    assert int(buckets[0]["key"]) == _USER_ID
     return int(buckets[0]["key"])
 
 
 @pytest.fixture(scope="module")
 def chat_corpus_supports_ranking(client, corpus_user_id) -> None:
-    """Skip the chat-path ranking assertions when the caller's accessible corpus is too thin.
+    """Assert the caller's accessible seeded corpus is big enough for the chat-path arms.
 
-    The same corpus-mismatch reasoning as :func:`corpus_supports_ranking`, but scoped the way
-    ``retrieve_chunks`` scopes (``accessible_user_ids``) and keyed on the lexical leg alone, so
-    a fusion bug that returns nothing from a corpus that does hold the vocabulary still fails.
+    The same reasoning as :func:`corpus_supports_ranking`, scoped the way ``retrieve_chunks``
+    scopes (``accessible_user_ids``) and keyed on the lexical leg alone.
     """
     body = {
         "query": {
@@ -307,13 +392,10 @@ def chat_corpus_supports_ranking(client, corpus_user_id) -> None:
         }
     }
     matching = int(client.count(index=settings.OPENSEARCH_CHUNKS_INDEX, body=body)["count"])
-    if matching < _MIN_HITS_FOR_RANKING:
-        pytest.skip(
-            f"user {corpus_user_id} can access {matching} chunk(s) matching {_LEG_B!r} in "
-            f"{settings.OPENSEARCH_CHUNKS_INDEX}, below the {_MIN_HITS_FOR_RANKING} the "
-            "ranking assertions need. The corpus is thin, not the fusion plumbing; index a "
-            "meeting-transcript corpus (#403) to run these."
-        )
+    assert matching >= _MIN_HITS_FOR_RANKING, (
+        f"user {corpus_user_id} can access {matching} chunk(s) matching {_LEG_B!r} in the "
+        f"seeded index, below the {_MIN_HITS_FOR_RANKING} the chat-path arms need"
+    )
 
 
 @pytest.mark.usefixtures("chat_corpus_supports_ranking")

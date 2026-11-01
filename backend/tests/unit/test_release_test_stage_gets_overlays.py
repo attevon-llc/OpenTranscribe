@@ -21,7 +21,9 @@ skip                                         count  verdict
 ``test_speaker_label_index_drift`` (audit)     1    should have been DESELECTED
 ===========================================  =====  ==============================
 
-so removing the 6 and the 1 lands on exactly 7 — at the ceiling, which passes.
+so removing the 6 and the 1 landed on exactly 7 — at the ceiling, which passed. (The ceiling is now
+0: the fusion and rag-eval tests seed their own data, so only the overlay skips remain possible, and
+those are the defect this module guards.)
 
 ⚠️ **Starting the overlays inside this stage would be worse than delegating.**
 ``opentr.sh start dev --with-X`` recreates the app services, and an overlay's compose file is

@@ -116,6 +116,36 @@ python3 scripts/download-models.py --only nltk
 Issue #491 tracked this gap.
 :::
 
+:::warning[Copy `nltk_data` as real files, never as hardlinks]
+
+NLTK 3.10 and later refuse to read any corpus file that has more than one hardlink
+(`Security Violation [pathsec.open]: refusing multiply-linked file`). That is a deliberate
+security control, so a cache seeded with `cp -al`, `rsync --link-dest` or a deduplicating copy
+breaks the NLTK corpora (the large Hugging Face and torch caches are fine to hardlink).
+`download-models.py` gives each linked file in `nltk_data` its own copy before it downloads, and
+`./opentr.sh start` does the same. If the directory is read-only and cannot be fixed in place, the
+NLTK step fails with the command to run on the host:
+
+```bash
+find ./models/nltk_data -type f -links +1 \
+  -exec sh -c 'cp -p "$1" "$1.dehl" && mv -f "$1.dehl" "$1"' _ {} \;
+```
+
+The file contents do not change, only the inode. Restart the backend and workers afterwards: two
+of the three NLTK users cache their result until the process restarts.
+:::
+
+### Which speaker models are fetched
+
+The PyAnnote step fetches every model the backend can load in-process, without running them:
+`pyannote/speaker-diarization-community-1` (diarization) and
+`pyannote/wespeaker-voxceleb-resnet34-LM` (voiceprints, used whenever the native sidecar is
+unavailable) are required. `pyannote/speaker-diarization-3.1` (a last-resort diarization
+fallback, plus the `pyannote/segmentation-3.0` repo it names) and `pyannote/embedding` (only
+for installs still on 512-dimension voiceprints) are fetched when your token has accepted
+their agreements on Hugging Face; if not, the download still succeeds and the summary lists
+them under `optional_unavailable`.
+
 ### Including the native diarizer (diar-native)
 
 The **native diarization engine** (`diar-native`, the default `local` diarizer as of v0.5.0 —

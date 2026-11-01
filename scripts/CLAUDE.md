@@ -444,8 +444,18 @@ this file is for.
   not in the shell wrapper); anything else, e.g. `distil-large-v3` or an arbitrary `org/repo`, is
   refused with `unknown_local_model`. A downloader image that predates the catalog fails the group
   with an instruction to use the image matching the script's release (`OT_IMAGE_TAG`); there is no
-  whisperx fallback. The `pyannote` group still loads `WHISPER_MODEL` through whisperx once, as its
-  diarization warm-up.
+  whisperx fallback. The `pyannote` group runs **no inference**: it `snapshot_download`s every
+  repo of `pyannote_repo_plan()` (derived from `diarizer.PYANNOTE_V4_MODEL`/`PYANNOTE_V3_FALLBACK` and
+  `EmbeddingModeService.get_embedding_model_name`; v3/3.1 are optional, reported when gated) plus
+  the repos a pipeline `config.yaml` names, then loads community-1 with `Pipeline.from_pretrained`,
+  the backend's own call. `tests/unit/test_download_models_pyannote_plan.py` (CI-runnable) fails on
+  a new in-process `from_pretrained` site. It used to transcribe synthetic sine waves through whisperx first; whisperx's VAD
+  found no speech and transformers 5.x raised `IndexError` on the empty batch, failing every CPU
+  run of v0.6.0. Nothing in `backend/app` imports whisperx (`Transcriber` is faster-whisper's
+  `BatchedInferencePipeline`, which returns no segments for silence; pinned by
+  `tests/integration/test_transcriber_no_speech_real_model.py`). The `nltk` group gives each
+  multiply-linked file in `nltk_data` its own inode before downloading (nltk >= 3.10 pathsec
+  refuses `st_nlink > 1`) and fails once, with the host fix, when it cannot.
 - **Fixtures** — `seed-fresh-deployment.sh`, `setup-watch-source-test-data.sh`, `test-watch-e2e.sh`.
   ⚠️ `seed-fresh-deployment.sh` is **idempotent per file** (#1238): it lists the deployment and
   uploads only absent files, matching on the stored `title` + extension (the stored `filename` is

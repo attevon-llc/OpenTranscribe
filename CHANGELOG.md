@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The model downloader's speaker-detection step no longer fails on every CPU run.**
+  `scripts/download-models.py` transcribed synthetic sine-wave audio through whisperx before
+  fetching the PyAnnote weights; whisperx found no speech in it and transformers 5.x raised
+  `IndexError: list index out of range` on the empty batch, so the step exited with "Failed to
+  download PyAnnote models: list index out of range". It now downloads
+  `pyannote/speaker-diarization-community-1` directly and loads it the way the backend does,
+  with no transcription or diarization run. The backend itself never used whisperx and returns
+  an empty transcript for audio with no speech.
+- **The model downloader now fetches every PyAnnote model the backend can load in-process,**
+  not only the community-1 diarization pipeline: the WeSpeaker speaker-embedding model (used
+  for voiceprints whenever the native diarization sidecar is unavailable), and, when your token
+  has accepted their agreements, the `speaker-diarization-3.1` fallback with the repos its
+  configuration names and the v3 `pyannote/embedding` model (512-dimension installs). Before
+  this, an offline deployment had none of them and those paths failed on first use. An optional
+  model the token cannot read is reported in the summary and does not fail the download.
+- **A hardlinked model cache no longer fails the whole NLTK download.** NLTK 3.10 refuses
+  multiply-linked files, so a cache seeded with `cp -al`, `rsync --link-dest` or a dedup copy
+  failed all six NLTK packages. The downloader now gives each linked file in `nltk_data` its
+  own copy first, and when it cannot (a read-only mount) fails once with the command that
+  fixes it. See [Offline installation](https://docs.opentranscribe.app/docs/installation/offline-installation).
+
 ## [0.6.0] - 2026-10-31
 
 ### Overview

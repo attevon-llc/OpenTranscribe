@@ -123,3 +123,24 @@ pyproject.toml
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Developer-machine artifacts that are gitignored but sit in backend/ on a build host.
+# `COPY . .` ships whatever is on disk, and v0.6.0 published all of these (mutmut's mutated
+# source, a SQLite test DB, celery beat state, the import-linter cache). Matching is done
+# against the context root, so `**/` is what makes a pattern apply at any depth.
+# scripts/check-image-hygiene.sh fails a build if any of them reaches an image.
+mutants/
+**/mutants/
+mutmut-stats.json
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/*.sqlite
+**/*.sqlite3
+**/celerybeat-schedule*
+.import_linter_cache/
+**/.import_linter_cache/
+
+# Dev-tree leftovers (also policed by scripts/check-image-hygiene.sh)
+.env.*
+node_modules/

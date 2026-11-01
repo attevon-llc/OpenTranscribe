@@ -113,3 +113,9 @@ temp/
 *.njsproj
 *.sln
 *.sw?
+
+# Dev artifacts that must never reach the build context (see scripts/check-image-hygiene.sh)
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+.env.*

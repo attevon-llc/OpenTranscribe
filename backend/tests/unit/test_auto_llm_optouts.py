@@ -260,7 +260,7 @@ def test_explicit_topic_stage_runs_even_with_the_switch_off(db_session, normal_u
 def test_reprocess_stage_dispatch_ignores_both_switches(
     db_session, normal_user, queued, monkeypatch
 ):
-    from app.api.endpoints.files.reprocess import dispatch_task_by_name
+    from app.api.endpoints.files.reprocess_dispatch import dispatch_task_by_name
 
     monkeypatch.setenv("SKIP_CELERY", "false")
     _user_pref(db_session, normal_user, TOPIC_KEY, "false")

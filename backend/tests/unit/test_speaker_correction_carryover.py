@@ -102,7 +102,7 @@ def _clear(db, media, how: str, monkeypatch) -> None:
         )
         assert file_retry.reset_file_for_retry(db, int(media.id)) is True
         return
-    from app.api.endpoints.files.reprocess import clear_selective_data
+    from app.api.endpoints.files.reprocess_clear import clear_selective_data
 
     monkeypatch.setattr(
         "app.tasks.search_file_field_tasks.index_file_summary.delay", lambda *a, **k: None

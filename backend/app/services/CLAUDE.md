@@ -335,7 +335,7 @@ update task), `transcript_segments.py` (orphan cleanup), `speaker_update.py` (au
 and retroactive matching), `speaker_profiles.py` (profile delete), `speaker_clusters.py`
 (cluster delete), `speaker_clustering_service` (unassign, split, merge, promote, batch
 assign, upload-time clustering, re-cluster), `speaker_matching_service` (profile
-propagation), `speaker_embedding_task` (segment-reassign voiceprint drift),
+propagation), `speaker_embedding_reassignment_task` (segment-reassign voiceprint drift),
 `files/reprocess.py` (transcription and rediarize clears), `file_retry.reset_file_for_retry`,
 `speaker_merge_task` (the target half) and `file_cleanup_service.purge_media_file`.
 
@@ -438,7 +438,7 @@ explicit actions lift it; `override_unassignment` with more than one speaker is 
 | **An automatic path never overwrites an identity a speaker already has**: `has_other_identity` = linked to another profile, or named (typed, or an accepted suggestion) something other than the profile. `find_or_create_cluster`, Re-cluster Phase 2.5 and profile propagation skip such a speaker; `merge_clusters` leaves it in the source and reports it (except members of the SOURCE's own profile — merging two named clusters says the names are one person) | `speaker_identity_rules.has_other_identity` / `identity_conflicts_with_cluster` |
 | **Decision 5: a speaker linked to another profile is no longer in the old profile's cluster.** `reconcile_speaker_impact` releases, from every promoted cluster it refreshes, members linked to a different profile — so renaming, assigning, accepting, batch-assigning or retroactively matching a member away takes it out (no blacklist: the new link already says who it is) | `speaker_cleanup._release_members_of_other_profiles` |
 | **Rejecting an identification is an unassignment**: `verify?action=reject` leaves the linked profile's clusters through `detach_from_cluster` (blacklist both halves) and records a profile blacklist (`rejected_by_user`) for the linked profile and the profile its suggestion named | `speakers._reject_speaker_suggestion` |
-| **A moved segment leaves the old speaker's voiceprint**: the reassignment task removes the segment's embedding from the source by the exact inverse of the weighted add the target gets, and both rewritten documents keep the file's tenant (they were rewritten without `organization_id`, i.e. as personal) | `speaker_embedding_task._remove_segment_from_voiceprint` |
+| **A moved segment leaves the old speaker's voiceprint**: the reassignment task removes the segment's embedding from the source by the exact inverse of the weighted add the target gets, and both rewritten documents keep the file's tenant (they were rewritten without `organization_id`, i.e. as personal) | `speaker_embedding_reassignment_task._remove_segment_from_voiceprint` |
 | **A correction survives a re-run of the file** (rediarize, re-transcribe, retry), which deletes the speakers and, by CASCADE, their corrections: stashed by the corrected speaker's time spans before the delete, re-applied when the re-run saves its segments to every new speaker whose speech is ≥ `INHERIT_SHARE` (0.5) inside them | `speaker_correction_carryover` (table `v438`) |
 | Suggestions never offer a refused identity (speaker list, profile suggestions endpoint), and the voice-match suggestion of `_handle_no_speaker_match` (a >=0.75 voiceprint one moves the canonical label) skips a refused name or cannot-link partner | `SmartSpeakerSuggestionService.without_refused`, `SpeakerMatchingService._refusals` |
 

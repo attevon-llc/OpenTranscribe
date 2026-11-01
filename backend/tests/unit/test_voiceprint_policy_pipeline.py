@@ -53,6 +53,7 @@ def _speakers(db, media_file, labels=("SPEAKER_00", "SPEAKER_01")) -> dict[str, 
 def seams(privacy_world, monkeypatch):
     """Recorders for everything a voiceprint stage reaches that is not Postgres or policy."""
     from app.tasks import rediarize_task
+    from app.tasks import speaker_embedding_reassignment_task
     from app.tasks import speaker_embedding_task
     from app.tasks.transcription import embeddings
     from app.tasks.transcription import postprocess
@@ -61,7 +62,13 @@ def seams(privacy_world, monkeypatch):
     def scope():
         yield privacy_world.db
 
-    for module in (embeddings, postprocess, speaker_embedding_task, rediarize_task):
+    for module in (
+        embeddings,
+        postprocess,
+        speaker_embedding_task,
+        speaker_embedding_reassignment_task,
+        rediarize_task,
+    ):
         monkeypatch.setattr(module, "session_scope", scope)
     for module in (embeddings, postprocess):
         monkeypatch.setattr(module, "update_task_status", lambda *a, **k: None)
@@ -422,7 +429,7 @@ def test_the_post_stage_asks_for_gender_only_when_gender_is_allowed(
 def test_a_segment_reassignment_leaves_voiceprints_alone_when_policy_forbids_them(
     privacy_world, seams, normal_user, scope
 ):
-    from app.tasks import speaker_embedding_task as mod
+    from app.tasks import speaker_embedding_reassignment_task as mod
 
     media_file = _file_in_scope(privacy_world, normal_user, scope)
     labels = _speakers(privacy_world.db, media_file)

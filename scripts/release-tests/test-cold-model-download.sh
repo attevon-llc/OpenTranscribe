@@ -58,7 +58,18 @@
 #      WHISPER_MODEL (default large-v3-turbo — Scenario A's install default, so A can seed from
 #      this cache), OPENSEARCH_MODELS (default all-MiniLM-L6-v2, also A's), TEST_ROOT,
 #      HUGGINGFACE_TOKEN (else read from OT_RELEASE_TEST_SECRETS / .env.test-secrets),
-#      OT_COLD_CACHE_GROUPS (comma list, iteration only: a subset run is never a pass).
+#      OT_COLD_CACHE_GROUPS (comma list, iteration only: a subset run is never a pass),
+#      OT_COLD_CACHE_GROUP_TIMEOUT_S (per group, default 1800), OT_COLD_CACHE_PROBE_TIMEOUT_S
+#      (probes and the hardlink leg, default 300), OT_COLD_CACHE_DEADLINE_S (whole run, default
+#      5400). A group that hits a deadline is a failure (rc 124) or, if never started, missing
+#      from groups.tsv (not-measured); a deadline can never produce a pass.
+#
+# CPU ONLY, deliberately. v0.6.0's failure was identical on GPU 1, and CPU is the deterministic
+# leg on a shared host, but a downloader regression that only appears on a GPU (float16 paths,
+# CUDA-only loaders) is NOT covered here.
+#
+#   --purge-cache   remove TEST_ROOT/cache (multi-GB, written as uid 1000) and keep the
+#                   evidence files. 65-rehearse.sh calls it after Scenario A has seeded.
 
 set -euo pipefail
 
@@ -81,12 +92,17 @@ ORACLE="$LIB_DIR/cold-model-download.py"
 DO_CLEANUP=0
 DO_LIST=0
 DO_DRY_RUN=0
+DO_PURGE=0
+GROUP_TIMEOUT_S="${OT_COLD_CACHE_GROUP_TIMEOUT_S:-1800}"
+PROBE_TIMEOUT_S="${OT_COLD_CACHE_PROBE_TIMEOUT_S:-300}"
+DEADLINE_S="${OT_COLD_CACHE_DEADLINE_S:-5400}"
 while (( $# > 0 )); do
     case "$1" in
         --yes)          ;;   # accepted for symmetry with A-C; nothing here needs confirming
         --cleanup)      DO_CLEANUP=1 ;;
         --list-groups)  DO_LIST=1 ;;
         --dry-run)      DO_DRY_RUN=1 ;;
+        --purge-cache)  DO_PURGE=1 ;;
         --help|-h)      sed -n '2,60p' "$0"; exit 0 ;;
         *)              echo "unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -107,24 +123,35 @@ if (( DO_LIST )); then
     exit $?
 fi
 
-# Removes only a TEST_ROOT this scenario recorded, under the path firewall. The cache is
-# written by the container's appuser (uid 1000), so a host user with another uid cannot rm it;
-# the busybox fallback removes it from inside a container instead.
-remove_test_root() {
-    local root="$1"
-    [[ -n "$root" && -d "$root" ]] || return 0
-    case "$(gr_realpath "$root")" in
+assert_own_root() {
+    case "$(gr_realpath "$1")" in
         /mnt/nvm/opentranscribe-test-runs/"${TEST_PROJECT_NAME}"-*|/tmp/ot-reltest-*) ;;
-        *) gr_die "refusing to remove '$root': not a ${TEST_PROJECT_NAME} test root" ;;
+        *) gr_die "refusing to remove under '$1': not a ${TEST_PROJECT_NAME} test root" ;;
     esac
-    rm -rf "$root" 2>/dev/null || docker run --rm -v "$root:/r" busybox rm -rf /r/cache /r/hardlink
-    rm -rf "$root"
-    gr_ok "removed $root"
+}
+
+# The cache is written by the container's appuser (uid 1000), so a host user with another uid
+# cannot rm it. The fallback removes it from inside a container — using the image under test,
+# addressed by its local image ID, so cleanup never pulls an unpinned helper image.
+purge_cache_dirs() {
+    local root="$1" image_id
+    [[ -n "$root" && -d "$root" ]] || return 0
+    assert_own_root "$root"
+    rm -rf "$root/cache" "$root/hardlink" 2>/dev/null && return 0
+    image_id="$(docker image inspect --format '{{.Id}}' "${DOWNLOADER_IMAGE:-}" 2>/dev/null || true)"
+    if [[ -z "$image_id" ]]; then
+        gr_warn "could not remove $root/cache as this user and no local image to remove it with"
+        return 1
+    fi
+    docker run --rm --no-healthcheck --entrypoint rm -v "$root:/r" "$image_id" -rf /r/cache /r/hardlink
 }
 
 if (( DO_CLEANUP )); then
     last="$(gr_last_test_root || true)"
-    remove_test_root "${last:-}"
+    if [[ -n "${last:-}" && -d "$last" ]]; then
+        purge_cache_dirs "$last" || true
+        rm -rf "$last" && gr_ok "removed $last"
+    fi
     exit 0
 fi
 
@@ -144,6 +171,12 @@ else
 fi
 mapfile -t GROUPS_TO_RUN < <(printf '%s\n' "$selected" | sed '/^$/d')
 
+if (( DO_PURGE )); then
+    # Keeps REPORT.md and the TSVs: they are the stage's evidence; only the weights go.
+    purge_cache_dirs "$TEST_ROOT" && gr_ok "removed the cold cache under $TEST_ROOT (evidence kept)"
+    exit $?
+fi
+
 if (( DO_DRY_RUN )); then
     echo "image:          $DOWNLOADER_IMAGE"
     echo "downloader:     $DOWNLOADER_PY"
@@ -154,6 +187,13 @@ if (( DO_DRY_RUN )); then
 fi
 
 gr_check_test_root
+# A reused root is not a cold cache: every group would find warm weights, and an old
+# groups/<g>.row would stand in for a group that never ran this time (a dead background
+# diar-native inheriting yesterday's rc=0). Refuse rather than measure something else.
+if [[ -n "$(ls -A "$TEST_ROOT" 2>/dev/null)" ]]; then
+    gr_warn "TEST_ROOT $TEST_ROOT is not empty — a cold-cache run needs a fresh root (NOT MEASURED)"
+    exit 3
+fi
 mkdir -p "$TEST_ROOT/groups" "$TEST_ROOT/cache"
 printf '%s\n' "$all_groups" > "$TEST_ROOT/groups-expected.txt"
 CACHE="$TEST_ROOT/cache"
@@ -173,9 +213,16 @@ if (( IMAGE_OVERRIDDEN || SCRIPT_OVERRIDDEN )) || [[ -n "${OT_RELEASE_TEST_ALLOW
     echo "UNVERIFIED (DOWNLOADER_IMAGE/DOWNLOADER_PY override or OT_RELEASE_TEST_ALLOW_STALE_IMAGE): $DOWNLOADER_IMAGE" \
         > "$TEST_ROOT/provenance.txt"
     gr_warn "image provenance UNVERIFIED — this run can report a failure but never a pass"
+elif ! git -C "$REPO_ROOT" diff --quiet HEAD -- scripts/download-models.py 2>/dev/null; then
+    # The working-tree copy is what gets mounted, so an uncommitted edit would be rehearsed and
+    # recorded as this commit's downloader.
+    echo "UNVERIFIED (scripts/download-models.py differs from HEAD): $DOWNLOADER_IMAGE" \
+        > "$TEST_ROOT/provenance.txt"
+    gr_warn "scripts/download-models.py has uncommitted changes — this run can fail but never pass"
 elif ( gr_assert_image_is_the_code_under_test "$DOWNLOADER_IMAGE" \
         "$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || true)" ); then
-    echo "verified $DOWNLOADER_IMAGE" > "$TEST_ROOT/provenance.txt"
+    printf 'verified %s\ndownloader-blob %s\n' "$DOWNLOADER_IMAGE" \
+        "$(git -C "$REPO_ROOT" hash-object "$DOWNLOADER_PY")" > "$TEST_ROOT/provenance.txt"
 else
     exit 3
 fi
@@ -197,20 +244,45 @@ export HUGGINGFACE_TOKEN WHISPER_MODEL OPENSEARCH_MODELS
 # NVIDIA_VISIBLE_DEVICES=void and CUDA_VISIBLE_DEVICES='' keep a host whose daemon defaults to
 # the nvidia runtime from handing the container every GPU — including cards this project must
 # never touch.
+#
+# Every call is bounded: `timeout` ends the docker CLI, and the container it started is then
+# stopped by name (docker stop, never a kill), so a hung HuggingFace download cannot hold
+# `rehearse` open forever with the live stack down. rc 124 = deadline reached.
+#
+# COMPUTE_TYPE defaults to float16 because that is exactly what scripts/download-models.sh
+# passes on a host with no GPU (`${COMPUTE_TYPE:-float16}`); the downloader picks the compute
+# type from the device it finds, so the variable only reaches the manifest.
 run_in_image() {
-    local name="$1"; shift
+    local name="$1" limit="$2" rc=0; shift 2
+    local cname="ot-reltest-coldcache-$$-$name"
     # --no-healthcheck: the image's HEALTHCHECK probes the API, which a one-shot downloader
     # never serves, so every container would read "unhealthy" in `docker ps`.
-    docker run --rm --no-healthcheck --name "ot-reltest-coldcache-$$-$name" --label "$TEST_LABEL" \
+    timeout --kill-after=30 "$limit" \
+        docker run --rm --no-healthcheck --name "$cname" --label "$TEST_LABEL" \
         -e NVIDIA_VISIBLE_DEVICES=void -e CUDA_VISIBLE_DEVICES= \
         -e HUGGINGFACE_TOKEN -e WHISPER_MODEL -e OPENSEARCH_MODELS \
         -e USE_GPU=false -e COMPUTE_TYPE="${COMPUTE_TYPE:-float16}" \
         -e DIARIZATION_MODEL="${DIARIZATION_MODEL:-pyannote/speaker-diarization-community-1}" \
         -e DOWNLOAD_ALL_OPENSEARCH_MODELS=false -e DOWNLOAD_REDACTION_MODELS=true \
-        "$@"
+        "$@" || rc=$?
+    if (( rc == 124 || rc == 137 )); then
+        echo "[cold-cache] $name exceeded ${limit}s — stopping its container" >&2
+        docker stop -t 10 "$cname" >/dev/null 2>&1 || true
+        rc=124
+    fi
+    return "$rc"
 }
 
-cuda_visible="$(run_in_image cuda-probe "$DOWNLOADER_IMAGE" \
+# Whatever ends this script — a deadline, set -e, Ctrl-C — stops the containers it started.
+stop_own_containers() {
+    local ids
+    ids="$(docker ps -q --filter "label=$TEST_LABEL" --filter "name=ot-reltest-coldcache-$$-" 2>/dev/null || true)"
+    [[ -n "$ids" ]] && printf '%s\n' "$ids" | xargs -r docker stop -t 10 >/dev/null 2>&1
+    rm -rf "$TEST_ROOT/hardlink" 2>/dev/null || true
+}
+trap stop_own_containers EXIT
+
+cuda_visible="$(run_in_image cuda-probe "$PROBE_TIMEOUT_S" "$DOWNLOADER_IMAGE" \
     python -c 'import torch; print(torch.cuda.is_available())' 2>/dev/null | tail -1 || true)"
 if [[ "$cuda_visible" != "False" ]]; then
     gr_warn "the container reports torch.cuda.is_available()='$cuda_visible', not False — this leg must be CPU-only"
@@ -235,10 +307,18 @@ CACHE_MOUNTS=(
 # that never writes its row (killed, or never started) is MISSING from groups.tsv, which the
 # oracle reports as not-measured — never as a pass.
 run_group() {
-    local group="$1" started=$SECONDS rc=0
-    run_in_image "$group" "${CACHE_MOUNTS[@]}" "$DOWNLOADER_IMAGE" \
+    local group="$1" started=$SECONDS rc=0 errors
+    if (( SECONDS >= DEADLINE_S )); then
+        gr_warn "group '$group' not started: the ${DEADLINE_S}s run deadline has passed (NOT MEASURED)"
+        return 0
+    fi
+    run_in_image "$group" "$GROUP_TIMEOUT_S" "${CACHE_MOUNTS[@]}" "$DOWNLOADER_IMAGE" \
         python /app/download-models.py --only "$group" > "$TEST_ROOT/groups/$group.log" 2>&1 || rc=$?
-    printf '%s\t%s\t%s\n' "$group" "$rc" "$(( SECONDS - started ))" > "$TEST_ROOT/groups/$group.row"
+    # The downloader's own error lines. It exits 0 on a 'partial' group; the oracle counts
+    # these so that is a failure, not a pass.
+    errors="$(grep -c '^❌' "$TEST_ROOT/groups/$group.log" || true)"
+    printf '%s\t%s\t%s\t%s\n' "$group" "$rc" "$(( SECONDS - started ))" "${errors:-0}" \
+        > "$TEST_ROOT/groups/$group.row"
     if (( rc == 0 )); then
         gr_ok "group '$group' exited 0 ($(( SECONDS - started ))s)"
     else
@@ -284,7 +364,7 @@ for group in "${GROUPS_TO_RUN[@]}"; do
 done
 
 # ─── 2. Independent artifact check ──────────────────────────────────────────
-whisper_repo="$(run_in_image catalog "$DOWNLOADER_IMAGE" python -c '
+whisper_repo="$(run_in_image catalog "$PROBE_TIMEOUT_S" "$DOWNLOADER_IMAGE" python -c '
 import os
 from app.core.local_whisper_catalog import canonical_id, get
 entry = get(canonical_id(os.environ["WHISPER_MODEL"]) or "")
@@ -306,33 +386,44 @@ hardlink_leg() {
         return
     fi
     mkdir -p "$TEST_ROOT/hardlink"
-    if ! cp -al "$src" "$dst" 2>/dev/null; then
+    # Link a private COPY, never $src: hardlinking the cold cache itself raised st_nlink on the
+    # tree Scenario A then seeds from, and a death between here and the rm below left it that
+    # way. The EXIT trap removes $TEST_ROOT/hardlink on every path.
+    if ! cp -a "$src" "$TEST_ROOT/hardlink/orig" 2>/dev/null \
+        || ! cp -al "$TEST_ROOT/hardlink/orig" "$dst" 2>/dev/null; then
         printf 'not-measured\tcp -al could not hardlink %s (protected_hardlinks?)\n' "$src"
         return
     fi
     local rc=0 log="$TEST_ROOT/groups/nltk-hardlinked.log"
-    run_in_image nltk-hardlinked -v "$dst:/home/appuser/.cache/nltk_data" \
+    run_in_image nltk-hardlinked "$PROBE_TIMEOUT_S" -v "$dst:/home/appuser/.cache/nltk_data" \
         -v "$DOWNLOADER_PY:/app/download-models.py:ro" "$DOWNLOADER_IMAGE" \
         python /app/download-models.py --only nltk > "$log" 2>&1 || rc=$?
     local linked=0
     while IFS= read -r -d '' _; do linked=$(( linked + 1 )); done \
         < <(find "$dst" -type f -links +1 -print0 2>/dev/null)
-    if (( rc != 0 )); then
-        if [[ "$(grep -c -E 'pathsec|multiply-linked' "$log" || true)" -gt 0 ]]; then
-            printf 'pass\texited %s and named the pathsec refusal (fails loudly, never silently)\n' "$rc"
+    if (( rc == 124 )); then
+        printf 'fail\tthe nltk group hung on a hardlinked cache (%ss deadline)\n' "$PROBE_TIMEOUT_S"
+    elif (( rc != 0 )); then
+        # A loud failure counts only when EVERY package failure is nltk's pathsec refusal of a
+        # multiply-linked file under nltk_data. Any other cause is a different bug.
+        local failures refusals
+        failures="$(grep -c 'Failed to download [a-z_]*:' "$log" || true)"
+        refusals="$(grep -c 'Failed to download [a-z_]*: Security Violation \[pathsec\.open\]: refusing multiply-linked file .*nltk_data' "$log" || true)"
+        if (( failures > 0 && failures == refusals )); then
+            printf 'pass\texited %s; all %s package failure(s) are the pathsec refusal (fails loudly)\n' "$rc" "$failures"
         else
-            printf 'fail\texited %s without naming the cause (%s)\n' "$rc" "$log"
+            printf 'fail\texited %s; %s of %s package failure(s) are the pathsec refusal (%s)\n' \
+                "$rc" "$refusals" "$failures" "$log"
         fi
     elif (( linked > 0 )); then
         printf 'fail\texited 0 but left %s multiply-linked file(s): nltk >= 3.10 refuses them at runtime\n' "$linked"
-    elif run_in_image nltk-load -v "$dst:/home/appuser/.cache/nltk_data" "$DOWNLOADER_IMAGE" \
+    elif run_in_image nltk-load "$PROBE_TIMEOUT_S" -v "$dst:/home/appuser/.cache/nltk_data" "$DOWNLOADER_IMAGE" \
             python -c 'import nltk; nltk.data.path.insert(0, "/home/appuser/.cache/nltk_data"); nltk.sent_tokenize("One. Two.")' \
             >> "$log" 2>&1; then
         printf 'pass\texited 0 and repaired the links; the corpus loads\n'
     else
         printf 'fail\texited 0 but the corpus does not load (%s)\n' "$log"
     fi
-    # The links also raised st_nlink on the COLD cache Scenario A is about to seed from.
     rm -rf "$TEST_ROOT/hardlink"
 }
 hardlink_leg > "$TEST_ROOT/hardlink.tsv"

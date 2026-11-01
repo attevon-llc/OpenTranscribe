@@ -36,22 +36,54 @@ from __future__ import annotations
 
 import argparse
 import ast
+import json
 import sys
 from pathlib import Path
 
-#: Model repos each group must leave in the HuggingFace hub cache. Every id here also appears
-#: in download-models.py AND in the backend code that loads it; the unit test enforces both, so
-#: the oracle cannot drift from either side without failing.
-HF_REPOS: dict[str, tuple[str, ...]] = {
-    'pyannote': ('pyannote/speaker-diarization-community-1',),
-    'reranker': ('cross-encoder/ms-marco-MiniLM-L-6-v2',),
-    'speaker-attributes': ('prithivMLmods/Common-Voice-Gender-Detection',),
+#: Model repos each group must leave, the cache root each one lives under, and the files whose
+#: presence is that repo's completeness signal. Every id here also appears in download-models.py
+#: AND in the backend code that loads it; the unit test enforces both.
+#:
+#: Roots are scoped per repo, never "any root": only CrossEncoder (the chat reranker) and
+#: SentenceTransformer write under the image's sentence-transformers cache home, and the backend
+#: reads them from there (measured on the v0.6.0 image: the reranker exists ONLY there).
+#:
+#: Required files are the files the loader opens, measured from a real cold cache (2026-11-01).
+#: A partial snapshot (pyannote's pipeline config without its segmentation/embedding/plda
+#: weights) fails. GLiNER's backbone (microsoft/deberta-v3-small) is deliberately NOT required:
+#: measured, GLiNER.from_pretrained loads and predicts with HF_HUB_OFFLINE=1 from a cache that
+#: lacks it. Repos with a *.index.json shard index additionally need every shard it lists.
+HUB = 'huggingface/hub'
+ST = 'sentence-transformers'
+ANY_WEIGHT = '<any weight>'
+HF_REPOS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
+    'pyannote': (
+        (
+            'pyannote/speaker-diarization-community-1',
+            HUB,
+            (
+                'config.yaml',
+                'segmentation/pytorch_model.bin',
+                'embedding/pytorch_model.bin',
+                'plda/plda.npz',
+                'plda/xvec_transform.npz',
+            ),
+        ),
+    ),
+    'reranker': (('cross-encoder/ms-marco-MiniLM-L-6-v2', ST, ('config.json', ANY_WEIGHT)),),
+    'speaker-attributes': (
+        ('prithivMLmods/Common-Voice-Gender-Detection', HUB, ('config.json', ANY_WEIGHT)),
+    ),
     'redaction': (
-        'knowledgator/gliner-pii-base-v1.0',
-        'unitary/toxic-bert',
-        'unitary/multilingual-toxic-xlm-roberta',
+        ('knowledgator/gliner-pii-base-v1.0', HUB, ('gliner_config.json', 'pytorch_model.bin')),
+        ('unitary/toxic-bert', HUB, ('config.json', ANY_WEIGHT)),
+        ('unitary/multilingual-toxic-xlm-roberta', HUB, ('config.json', ANY_WEIGHT)),
+    ),
+    'sentence-transformers': (
+        ('sentence-transformers/all-MiniLM-L6-v2', ST, ('config.json', ANY_WEIGHT)),
     ),
 }
+WHISPER_REQUIRED = ('config.json', 'model.bin')
 
 #: NLTK resources the app opens. Directory OR the zip nltk.download leaves beside it.
 NLTK_RESOURCES = (
@@ -62,15 +94,12 @@ NLTK_RESOURCES = (
     'chunkers/maxent_ne_chunker_tab',
 )
 
-SENTENCE_TRANSFORMERS_MODEL = 'all-MiniLM-L6-v2'
 DEFAULT_OPENSEARCH_MODELS = ('all-MiniLM-L6-v2',)
 WEIGHT_SUFFIXES = ('.safetensors', '.bin', '.onnx', '.pt', '.pth', '.ckpt', '.npy', '.zip')
 
 #: Every group this oracle knows how to check. The unit test asserts this EQUALS the
 #: downloader's DOWNLOAD_GROUPS, so a new group without an expectation fails the fast suite.
-KNOWN_GROUPS = frozenset(
-    {'whisperx', 'nltk', 'sentence-transformers', 'opensearch', 'diar-native', *HF_REPOS}
-)
+KNOWN_GROUPS = frozenset({'whisperx', 'nltk', 'opensearch', 'diar-native', *HF_REPOS})
 
 
 def downloader_groups(script: Path) -> list[str]:
@@ -102,25 +131,41 @@ def _weights_under(path: Path) -> list[Path]:
     ]
 
 
-def _hf_repo_check(cache: Path, repo_id: str) -> str | None:
-    """None when a hub-layout cache holds a non-empty weight file for repo_id, else the reason.
-
-    Two roots: huggingface/hub, and sentence-transformers/ — the image sets the
-    sentence-transformers cache home there, so CrossEncoder (the chat reranker) writes its
-    hub-layout repo under it, and the backend reads it from the same place (measured on the
-    v0.6.0 image: the reranker exists ONLY there).
-    """
-    name = 'models--' + repo_id.replace('/', '--')
-    roots = [cache / 'huggingface' / 'hub', cache / 'sentence-transformers']
-    repo_dirs = [root / name for root in roots if (root / name).is_dir()]
-    if not repo_dirs:
-        return f'{repo_id}: not in huggingface/hub or sentence-transformers/'
+def _hf_repo_check(cache: Path, repo_id: str, root: str, required: tuple[str, ...]) -> str | None:
+    """None when ONE snapshot of repo_id under `root` holds every required file, else the reason."""
+    repo_dir = cache / root / ('models--' + repo_id.replace('/', '--'))
+    if not repo_dir.is_dir():
+        return f'{repo_id}: not in {root}'
+    snap_root = repo_dir / 'snapshots'
+    snapshots = sorted(snap_root.glob('*')) if snap_root.is_dir() else []
+    best = ''
+    for snap in snapshots:
+        missing = [r for r in required if r != ANY_WEIGHT and not _non_empty(snap / r)]
+        if ANY_WEIGHT in required and not _weights_under(snap):
+            missing.append('a non-empty weight file')
+        missing += _missing_shards(snap)
+        if not missing:
+            return None
+        best = best or ', '.join(missing)
     # snapshots/ holds the real file NAMES as symlinks into blobs/; is_file()/stat() follow
-    # them, so a dangling link (an interrupted download) is not counted. model.bin is
-    # CTranslate2's weight file name, so the faster-whisper repos match too.
-    if not any(_weights_under(d / 'snapshots') for d in repo_dirs):
-        return f'{repo_id}: no non-empty weight file in its snapshot'
-    return None
+    # them, so a dangling link (an interrupted download) counts as missing.
+    return f'{repo_id}: incomplete snapshot, missing {best or "every file"}'
+
+
+def _non_empty(path: Path) -> bool:
+    return path.is_file() and path.stat().st_size > 0
+
+
+def _missing_shards(snap: Path) -> list[str]:
+    """Shards a *.index.json names that the snapshot lacks (a sharded download cut short)."""
+    missing: list[str] = []
+    for index in snap.glob('*.index.json'):
+        try:
+            weight_map = json.loads(index.read_text()).get('weight_map', {})
+        except (OSError, ValueError):
+            return [f'{index.name} (unreadable)']
+        missing += sorted({str(s) for s in weight_map.values() if not _non_empty(snap / s)})
+    return missing
 
 
 def _nltk_check(cache: Path) -> list[str]:
@@ -148,21 +193,14 @@ def check_group(
     if group == 'whisperx':
         if not whisper_repo:
             return ["whisper repo id not resolved from the image's catalog (could not check)"]
-        reason = _hf_repo_check(cache, whisper_repo)
+        reason = _hf_repo_check(cache, whisper_repo, HUB, WHISPER_REQUIRED)
         problems += [reason] if reason else []
     elif group in HF_REPOS:
-        problems += [r for r in (_hf_repo_check(cache, rid) for rid in HF_REPOS[group]) if r]
+        for repo_id, root, required in HF_REPOS[group]:
+            reason = _hf_repo_check(cache, repo_id, root, required)
+            problems += [reason] if reason else []
     elif group == 'nltk':
         problems += _nltk_check(cache)
-    elif group == 'sentence-transformers':
-        st_root = cache / 'sentence-transformers'
-        hits = [
-            p
-            for p in (st_root.iterdir() if st_root.is_dir() else [])
-            if SENTENCE_TRANSFORMERS_MODEL in p.name
-        ]
-        if not any(_weights_under(p) for p in hits):
-            problems.append(f'sentence-transformers/*{SENTENCE_TRANSFORMERS_MODEL}*: no weights')
     elif group == 'opensearch':
         for model in opensearch_models:
             model_dir = cache / 'opensearch-ml' / model
@@ -227,7 +265,16 @@ def _raw_outcome(root: Path, criterion: str) -> tuple[str, str]:
         return word, verdict[1] if len(verdict) > 1 else ''
 
     if criterion == 'download':
-        failed = [f'{r[0]}(rc={r[1] if len(r) > 1 else "?"})' for r in rows if r[1:2] != ['0']]
+        # Column 4 is the number of `❌` error lines the group printed. The downloader exits 0
+        # on a 'partial' group (redaction prints `❌ Failed ...` per model and carries on), so
+        # an exit status of 0 with errors logged is a failure here, not a pass.
+        failed = [
+            f'{r[0]}(rc={r[1] if len(r) > 1 else "?"}'
+            + (f', {r[3]} error line(s)' if len(r) > 3 and r[3] not in ('', '0') else '')
+            + ')'
+            for r in rows
+            if r[1:2] != ['0'] or (len(r) > 3 and r[3] not in ('', '0'))
+        ]
         if failed:
             return 'fail', 'groups failed from an empty cache: ' + ', '.join(failed)
     else:

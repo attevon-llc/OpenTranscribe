@@ -18,7 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`cold-cache-model-download`, `cold-cache-weights-present`,
   `cold-cache-nltk-hardlinks-fail-loudly`). When it passes, the fresh-install scenario uses its
   output as the model cache. A patch release that touches `download-models.*` no longer waives the
-  rehearsal.
+  rehearsal. The scenario refuses a reused cache root, bounds every download with a deadline,
+  checks each model's required files, runs before the live stack is stopped, and removes its
+  cache afterwards.
 
 ### Removed
 

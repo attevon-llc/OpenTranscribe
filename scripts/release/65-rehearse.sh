@@ -126,7 +126,16 @@ teardown_scenario_stack_on_interrupt() {
     fi
 }
 
+# D's cache is several GB, written as uid 1000. Removed (evidence kept) once Scenario A has
+# seeded from it, and from the EXIT trap on every other path.
+purge_cold_cache() {
+    [[ -n "$COLD_CACHE_ROOT" && -d "$COLD_CACHE_ROOT/cache" ]] || return 0
+    TEST_ROOT="$COLD_CACHE_ROOT" ./scripts/release-tests/test-cold-model-download.sh --purge-cache --yes >/dev/null 2>&1 \
+        || echo -e "${YELLOW}could not remove $COLD_CACHE_ROOT/cache — remove it by hand${NC}" >&2
+}
+
 restore_live_stack() {
+    purge_cold_cache
     # Runs before the dev-stack restart on purpose: the scenario stack binds the SAME stock
     # ports the dev stack wants, so starting dev first would race it.
     teardown_scenario_stack_on_interrupt
@@ -146,6 +155,15 @@ restore_live_stack() {
 # On EXIT so an aborted or failed scenario still puts the host back. INT/TERM too: a
 # Ctrl-C mid-rehearsal used to leave the operator's stack down with no hint why.
 trap restore_live_stack EXIT INT TERM
+
+# Scenario D (cold-cache model download). Its criteria are read from the evidence it writes
+# under COLD_CACHE_ROOT, via the same oracle the scenario uses, so this stage and the
+# scenario's own REPORT.md cannot disagree. An unset COLD_CACHE_ROOT (a --patch waiver) leaves
+# every D criterion not-measured, never a pass. A caller-supplied root is honoured but must be
+# EMPTY: the scenario refuses a reused root, because a warm cache is not a cold one.
+cold_rc=0
+COLD_CACHE_ROOT="${COLD_CACHE_ROOT:-}"
+COLD_CACHE_ORACLE="$REPO_ROOT/scripts/release-tests/lib/cold-model-download.py"
 
 if [[ -n "$live_stack_names" ]]; then
     # Automating the stop/restart dance, but NOT the decision. Taking someone's deployment
@@ -176,7 +194,31 @@ if [[ -n "$live_stack_names" ]]; then
         # unchecked, and reporting that as wiring drift would bury the real reason.
         exit 3
     fi
+fi
 
+# Scenario D runs HERE: after the stop was approved, before anything is stopped. It binds no
+# port and uses no stock container name, so its ~10 minutes are not downtime for the live
+# stack. Scenario A, later, installs from what it produced.
+# --- BEGIN cold-cache-scenario ---
+if [[ -z "$PATCH_SKIP_REASON" ]]; then
+    echo -e "${BLUE}Scenario D — cold-cache model download (CPU, empty cache, the image under test)${NC}" >&2
+    COLD_CACHE_ROOT="${COLD_CACHE_ROOT:-/mnt/nvm/opentranscribe-test-runs/ot-reltest-coldcache-$(date +%Y%m%d-%H%M%S)}"
+    TEST_ROOT="$COLD_CACHE_ROOT" ./scripts/release-tests/test-cold-model-download.sh --yes || cold_rc=$?
+    # Seed A only from a cache that passed EVERY D criterion: a run whose downloads exited 0
+    # but left weights missing, or whose nltk tree is suspect, would hand A the gap.
+    cold_all_pass=true
+    for cold_criterion in download weights nltk-hardlink; do
+        cold_seen="$(python3 "$COLD_CACHE_ORACLE" outcome --root "$COLD_CACHE_ROOT" --criterion "$cold_criterion" || true)"
+        [[ "${cold_seen%%$'\t'*}" == "pass" ]] || cold_all_pass=false
+    done
+    if [[ "$cold_all_pass" == "true" ]]; then
+        export OT_COLD_CACHE_SEED="$COLD_CACHE_ROOT/cache"
+        echo -e "${GREEN}Scenario A will seed its model cache from Scenario D's cold download${NC}" >&2
+    fi
+fi
+# --- END cold-cache-scenario ---
+
+if [[ -n "$live_stack_names" ]]; then
     echo -e "${BLUE}Stopping the live stack (data preserved), will restart afterwards...${NC}" >&2
     # ./opentr.sh stop, never docker kill/pkill: a SIGKILLed CUDA context does not always
     # release the device, and that has required a full machine restart here twice.
@@ -222,13 +264,6 @@ fi
 record live-stack-stopped pass
 
 fresh_rc=0; upgrade_rc=0; lite_rc=0
-# Scenario D (cold-cache model download). Its criteria are read from the evidence it writes
-# under COLD_CACHE_ROOT, via the same oracle the scenario uses, so this stage and the
-# scenario's own REPORT.md cannot disagree. Unset COLD_CACHE_ROOT (a --patch waiver) leaves
-# every D criterion not-measured, never a pass.
-cold_rc=0
-COLD_CACHE_ROOT="${COLD_CACHE_ROOT:-}"
-COLD_CACHE_ORACLE="$REPO_ROOT/scripts/release-tests/lib/cold-model-download.py"
 # Scenario C's teardown status. Separate from lite_rc on purpose — whether the lite
 # deployment works is a fact about the RELEASE; whether this host then released its ports
 # is a fact about the HOST. It still reaches the exit-code aggregation below, because
@@ -349,30 +384,11 @@ else
     export TO_BRANCH
     echo -e "${BLUE}Rehearsing the deployment files from branch: ${TO_BRANCH}${NC}" >&2
 
-    # Scenario D FIRST, because Scenario A installs from what it produced.
-    #
-    # v0.6.0 shipped a downloader whose pyannote group exits 1 from an empty cache on every
-    # host, and all three scenarios passed: A and C install with OPENTRANSCRIBE_UNATTENDED=1,
-    # which makes setup-opentranscribe.sh skip the model download outright, and then seed a
-    # warm shared cache. D runs scripts/download-models.py per group, CPU-only, against an
-    # empty cache, in the image under test. When every group succeeded, OT_COLD_CACHE_SEED
-    # hands that cache to A, so A's transcription runs on weights the SHIPPED downloader
-    # fetched rather than on whatever the dev stack had accumulated. When D failed, A falls
-    # back to the shared cache and still measures the install on its own: one finding, not two.
-    # --- BEGIN cold-cache-scenario ---
-    echo -e "${BLUE}Scenario D — cold-cache model download (CPU, empty cache, the image under test)${NC}" >&2
-    COLD_CACHE_ROOT="${COLD_CACHE_ROOT:-/mnt/nvm/opentranscribe-test-runs/ot-reltest-coldcache-$(date +%Y%m%d-%H%M%S)}"
-    TEST_ROOT="$COLD_CACHE_ROOT" "${COLD_CACHE_SCENARIO:-./scripts/release-tests/test-cold-model-download.sh}" --yes \
-        || cold_rc=$?
-    cold_download="$(python3 "$COLD_CACHE_ORACLE" outcome --root "$COLD_CACHE_ROOT" --criterion download)"
-    if [[ "${cold_download%%$'\t'*}" == "pass" ]]; then
-        export OT_COLD_CACHE_SEED="$COLD_CACHE_ROOT/cache"
-        echo -e "${GREEN}Scenario A will seed its model cache from Scenario D's cold download${NC}" >&2
-    fi
-    # --- END cold-cache-scenario ---
 
     echo -e "${BLUE}Scenario A — fresh install${NC}" >&2
     ./scripts/release-tests/test-fresh-install.sh --yes || fresh_rc=$?
+    # A has copied (hardlinked or real-copied) what it needed; D's evidence stays, its GB go.
+    purge_cold_cache
 
     teardown_scenario "Scenario A" ./scripts/release-tests/test-fresh-install.sh || upgrade_rc=$?
 

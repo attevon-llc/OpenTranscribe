@@ -478,7 +478,12 @@ this file is for.
   without it, or with `DOWNLOADER_IMAGE=`/`OT_RELEASE_TEST_ALLOW_STALE_IMAGE=`, it can fail but
   never pass. It replaced `scripts/test-model-download.sh` (`:latest`, `--gpus all`, wired into
   nothing), which was deleted. Tests: `backend/tests/unit/test_release_cold_model_download.py`.
-  Do not "speed it up" by seeding the cache: an empty cache is the whole measurement.
+  Do not "speed it up" by seeding the cache: an empty cache is the whole measurement. It
+  refuses a non-empty root, bounds every container (`OT_COLD_CACHE_{GROUP,PROBE}_TIMEOUT_S`,
+  `OT_COLD_CACHE_DEADLINE_S`; a deadline is rc 124 or missing, never a pass), hardlinks a COPY
+  of nltk_data (never the cache A seeds from), and `--purge-cache` removes the weights with the
+  image under test by ID. `rehearse` runs it BEFORE stopping the live stack and seeds A only when
+  all three D criteria pass. CPU-only: a GPU-only downloader regression is not covered.
 
   **Where the rehearsal's wall clock actually goes, and why it is near its floor.** Measured on
   a green run: **~30 min total — fresh ~2 min, upgrade ~24 min, lite ~3 min.** So the upgrade

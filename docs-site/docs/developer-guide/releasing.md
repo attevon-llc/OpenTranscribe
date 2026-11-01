@@ -283,7 +283,26 @@ DOWNLOADER_IMAGE=davidamacey/opentranscribe-backend:v0.6.0 \
   ./scripts/release-tests/test-cold-model-download.sh     # exits 1: pyannote(rc=1)
 ```
 
-When every group succeeds, `rehearse` exports `OT_COLD_CACHE_SEED` and Scenario A seeds its model
+Further guarantees:
+
+- **The root must be empty.** A reused `TEST_ROOT` (or a caller's `COLD_CACHE_ROOT`) is refused
+  as not-measured, so warm weights or an old `groups/<group>.row` can never stand in for a cold run.
+- **Every container is bounded:** `OT_COLD_CACHE_GROUP_TIMEOUT_S` (default 1800 s per group),
+  `OT_COLD_CACHE_PROBE_TIMEOUT_S` (300 s) and `OT_COLD_CACHE_DEADLINE_S` (5400 s for the run).
+  A deadline records rc 124 (fail) or leaves the group missing (not-measured), stops the
+  container with `docker stop`, and never produces a pass.
+- **A group that exits 0 but prints downloader error lines fails** (the redaction group's
+  `partial`). Weights are checked per repo against the files its loader opens (pyannote's
+  segmentation, embedding and PLDA files, every shard a `*.index.json` lists), each under the one
+  cache root the app reads it from.
+- **The script's provenance is recorded** (`git hash-object`), and an uncommitted
+  `download-models.py` is unverified.
+- **D runs before the live stack is stopped** (after the stop is approved), so its ~10 minutes
+  are not downtime. Its multi-GB cache is removed once Scenario A has seeded (and from the exit
+  trap), using the image under test by image ID; `REPORT.md` and the TSVs are kept.
+- **CPU only.** A downloader regression that appears only on a GPU is not covered.
+
+When D passes all three criteria, `rehearse` exports `OT_COLD_CACHE_SEED` and Scenario A seeds its model
 cache from D's output instead of the warm shared cache, so A transcribes on weights the shipped
 downloader fetched. When D fails, A falls back to the shared cache and still measures the install
 on its own. `WHISPER_MODEL` and `OPENSEARCH_MODELS` default to the same values in both, which is

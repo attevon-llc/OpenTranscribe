@@ -101,10 +101,32 @@ def test_pyannote_group_succeeds_when_the_audio_has_no_speech(
 ):
     result = downloader.download_pyannote_models()["pyannote"]
 
+    required, optional = downloader.pyannote_repo_plan()
     assert result["status"] == "downloaded", result
     assert result["model"] == COMMUNITY_1
-    assert hub["snapshot"] == [(COMMUNITY_1, "hf_test_token")]
+    assert hub["snapshot"] == [(repo, "hf_test_token") for repo in required + optional]
+    assert result["optional_unavailable"] == {}
     assert hub["load"] == [(COMMUNITY_1, "hf_test_token")], "must load via the backend's call"
+
+
+def test_an_unreachable_optional_repo_is_reported_not_fatal(downloader, hub, monkeypatch):
+    """The v3/3.1 repos are gated separately; a token without them still provisions v4."""
+    huggingface_hub = pytest.importorskip("huggingface_hub")
+    _, optional = downloader.pyannote_repo_plan()
+    recorded = huggingface_hub.snapshot_download
+
+    def _gated_optional(repo_id, token=None, **kwargs):
+        if repo_id in optional:
+            raise PermissionError(f"403 Forbidden: {repo_id}")
+        return recorded(repo_id, token=token, **kwargs)
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", _gated_optional)
+
+    result = downloader.download_pyannote_models()["pyannote"]
+
+    assert result["status"] == "downloaded"
+    assert sorted(result["optional_unavailable"]) == sorted(optional)
+    assert result["validation"] == {"all_present": False}
 
 
 def test_pipeline_the_token_cannot_read_is_a_gated_access_failure(downloader, hub, capsys):

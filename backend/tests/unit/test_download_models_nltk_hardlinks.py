@@ -151,3 +151,87 @@ def test_unrewritable_hardlinks_fail_once_with_the_remedy(downloader, hardlinked
     assert "multiply-linked" in result["error"], result
     assert "-links +1" in out, "the operator must be told the host command that fixes it"
     assert "Downloading NLTK package" not in out, "no package may be attempted on a bad cache"
+
+
+def test_a_preplanted_symlink_at_a_temp_name_is_never_written_through(downloader, tmp_path):
+    """The old fixed ``<file>.dehl`` temp name let a planted symlink redirect the copy."""
+    root = tmp_path / "nltk_data" / "corpora"
+    root.mkdir(parents=True)
+    victim = tmp_path / "outside-target.txt"
+    victim.write_text("must not change\n")
+    data = root / "stopwords.zip"
+    data.write_bytes(b"real corpus bytes")
+    os.link(data, tmp_path / "twin.zip")
+    (root / "stopwords.zip.dehl").symlink_to(victim)
+
+    rewritten, unfixable = downloader.break_nltk_hardlinks(str(tmp_path / "nltk_data"))
+
+    assert (rewritten, unfixable) == (1, [])
+    assert victim.read_text() == "must not change\n"
+    assert not data.is_symlink() and data.stat().st_nlink == 1
+    assert data.read_bytes() == b"real corpus bytes"
+    assert (root / "stopwords.zip.dehl").is_symlink(), "a planted file is left as it was"
+
+
+def test_a_symlink_in_the_cache_is_left_alone(downloader, tmp_path):
+    root = tmp_path / "nltk_data"
+    root.mkdir()
+    outside = tmp_path / "outside.zip"
+    outside.write_bytes(b"x")
+    os.link(outside, tmp_path / "outside-twin.zip")
+    (root / "link.zip").symlink_to(outside)
+
+    assert downloader.break_nltk_hardlinks(str(root)) == (0, [])
+    assert (root / "link.zip").is_symlink()
+    assert outside.stat().st_nlink == 2
+
+
+def test_concurrent_runs_leave_every_file_intact_and_unlinked(downloader, tmp_path):
+    import threading
+
+    root = tmp_path / "nltk_data"
+    twin = tmp_path / "twin"
+    for i in range(40):
+        f = root / f"d{i % 4}" / f"f{i}.txt"
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(f"content {i}\n".encode() * 200)
+        (twin / f.parent.name).mkdir(parents=True, exist_ok=True)
+        os.link(f, twin / f.parent.name / f.name)
+
+    errors: list[BaseException] = []
+    barrier = threading.Barrier(4)
+
+    def _run():
+        try:
+            barrier.wait(timeout=10)
+            downloader.break_nltk_hardlinks(str(root))
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=_run) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=60)
+
+    files = sorted(p for p in root.rglob("*") if p.is_file())
+    assert errors == []
+    assert len(files) == 40, f"temp files left behind: {[p.name for p in files][:5]}"
+    for i in range(40):
+        f = root / f"d{i % 4}" / f"f{i}.txt"
+        assert f.read_bytes() == f"content {i}\n".encode() * 200
+        assert f.stat().st_nlink == 1
+
+
+def test_an_image_without_nltk_offline_still_downloads(
+    downloader, hardlinked_cache, monkeypatch, capsys
+):
+    """Older images lack app.utils.nltk_offline; that must degrade with a message, not fail."""
+    import sys
+
+    monkeypatch.setitem(sys.modules, "app.utils.nltk_offline", None)
+
+    result = downloader.download_nltk_data()["nltk"]
+
+    assert result["status"] == "downloaded", result
+    assert "predates app.utils.nltk_offline" in capsys.readouterr().out

@@ -444,9 +444,12 @@ this file is for.
   not in the shell wrapper); anything else, e.g. `distil-large-v3` or an arbitrary `org/repo`, is
   refused with `unknown_local_model`. A downloader image that predates the catalog fails the group
   with an instruction to use the image matching the script's release (`OT_IMAGE_TAG`); there is no
-  whisperx fallback. The `pyannote` group runs **no inference**: it `snapshot_download`s
-  `speaker-diarization-community-1` and loads it with `Pipeline.from_pretrained`, the backend's
-  own call. It used to transcribe synthetic sine waves through whisperx first; whisperx's VAD
+  whisperx fallback. The `pyannote` group runs **no inference**: it `snapshot_download`s every
+  repo of `pyannote_repo_plan()` (derived from `diarizer.PYANNOTE_V4_MODEL`/`PYANNOTE_V3_FALLBACK` and
+  `EmbeddingModeService.get_embedding_model_name`; v3/3.1 are optional, reported when gated) plus
+  the repos a pipeline `config.yaml` names, then loads community-1 with `Pipeline.from_pretrained`,
+  the backend's own call. `tests/unit/test_download_models_pyannote_plan.py` (CI-runnable) fails on
+  a new in-process `from_pretrained` site. It used to transcribe synthetic sine waves through whisperx first; whisperx's VAD
   found no speech and transformers 5.x raised `IndexError` on the empty batch, failing every CPU
   run of v0.6.0. Nothing in `backend/app` imports whisperx (`Transcriber` is faster-whisper's
   `BatchedInferencePipeline`, which returns no segments for silence; pinned by

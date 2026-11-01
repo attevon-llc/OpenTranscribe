@@ -350,7 +350,7 @@ def test_classify_failure_is_the_read_edge_classification_plus_the_retry_code(re
 
 @pytest.mark.unit
 def test_duplicate_url_409_does_not_echo_the_stored_error():
-    from app.api.endpoints.files.url_processing import _raise_duplicate_error
+    from app.api.endpoints.files.url_video_import import _raise_duplicate_error
 
     existing = MediaFile()
     existing.status = FileStatus.ERROR

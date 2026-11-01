@@ -85,7 +85,7 @@ def _create_playlist_error_result(message: str) -> YouTubePlaylistProcessingResu
 
 
 def _notify_playlist_file_created(user_id: int, media_file: MediaFile) -> None:
-    """Send file_created notification (differs from url_processing's: arg order, payload keys).
+    """Send file_created notification (differs from url_video_import's: arg order, payload keys).
 
     Args:
         user_id: User ID to send notification to.
@@ -131,7 +131,7 @@ def _dispatch_playlist_video_task(
     audio_only: bool | None = None,
     audio_quality: str | None = None,
 ) -> bool:
-    """Dispatch one playlist video (countdown, returns bool; url_processing's raises instead).
+    """Dispatch one playlist video (countdown, returns bool; url_video_import's raises instead).
 
     Args:
         media_file: MediaFile instance to process.

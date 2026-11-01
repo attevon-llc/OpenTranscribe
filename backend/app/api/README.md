@@ -50,7 +50,7 @@ api/
 └── websockets.py          # Real-time WebSocket handler
 ```
 
-`endpoints/files/` modules: `prepare_upload`, `upload`, `multipart`, `complete_upload`, `cancel_upload` (upload flows), `crud`, `filtering`, `management` (recovery, force-delete, bulk ops), `listing` (gallery list, metadata filters, owners), `single_file` (detail, info, update, `/stream-url`), `media_delivery` (download prepare + SSE stream, thumbnail route), `streaming` (thumbnail streaming helper; playback uses presigned URLs from `/files/{uuid}/stream-url`), `url_processing` (yt-dlp), `reprocess`, `post_processing`, `segments`, `waveform`, `captions`, `subtitles`, `transcript_export`, `transcript_document_export` (DOCX/PDF), `summary_status`.
+`endpoints/files/` modules: `prepare_upload`, `upload`, `multipart`, `complete_upload`, `cancel_upload` (upload flows), `crud`, `filtering`, `management` (recovery, force-delete, bulk ops), `listing` (gallery list, metadata filters, owners), `single_file` (detail, info, update, `/stream-url`), `media_delivery` (download prepare + SSE stream, thumbnail route), `streaming` (thumbnail streaming helper; playback uses presigned URLs from `/files/{uuid}/stream-url`), `url_processing` (yt-dlp routes; `url_request` request models + URL gate, `url_video_import` single-video import helpers), `reprocess`, `post_processing`, `segments`, `waveform`, `captions`, `subtitles`, `transcript_export`, `transcript_document_export` (DOCX/PDF), `summary_status`.
 
 ## 🛠️ Endpoint Organization
 

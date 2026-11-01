@@ -6,7 +6,6 @@ Twitter/X, TikTok, and 1800+ other platforms supported by yt-dlp.
 """
 
 import logging
-import re
 from typing import Any
 
 from fastapi import APIRouter
@@ -14,248 +13,34 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
-from pydantic import BaseModel
-from pydantic import Field
-from pydantic import field_validator
-from pydantic import model_validator
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
+from app.api.endpoints.files.url_request import PlaylistProcessingResponse
+from app.api.endpoints.files.url_request import URLProcessingRequest
+from app.api.endpoints.files.url_request import URLProcessingResponse
+from app.api.endpoints.files.url_request import _validate_media_url
+from app.api.endpoints.files.url_video_import import _check_duplicate_video
+from app.api.endpoints.files.url_video_import import _create_media_file_record
+from app.api.endpoints.files.url_video_import import _dispatch_url_video_task
+from app.api.endpoints.files.url_video_import import _extract_video_info
+from app.api.endpoints.files.url_video_import import _notify_url_file_created
 from app.core.config import settings
-from app.core.constants import VALID_AUDIO_QUALITIES
-from app.core.constants import VALID_VIDEO_QUALITIES
 from app.core.exceptions import DomainError
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
-from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
-from app.schemas.media import MediaFile as MediaFileSchema
-from app.services.error_categorization_service import ErrorCategorizationService
-from app.services.formatting_service import FormattingService
-from app.services.media_download_service import MediaDownloadService
 from app.services.request_context import RequestContext
 from app.tasks.media_playlist_processing import process_youtube_playlist_task
 from app.tasks.transcription.requested_options import apply_requested_options
-from app.tasks.youtube_processing import process_youtube_url_task
-from app.utils.db_helpers import org_stamp_is
 from app.utils.whisper_model_choice import require_servable_whisper_model
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-# Request model for URL processing
-class URLProcessingRequest(BaseModel):
-    """Request model for processing media URLs (YouTube, Vimeo, Twitter, and many more)."""
-
-    url: str = Field(
-        description="Media URL from YouTube, Vimeo, Twitter/X, TikTok, and 1800+ other sites",
-        examples=[
-            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-            "https://youtube.com/playlist?list=PLClBBDzHMVijJfoN2EY_3OpmHfRIv4eGO",
-            "https://vimeo.com/123456789",
-            "https://twitter.com/user/status/123456789",
-        ],
-        min_length=1,
-    )
-
-    media_username: str | None = Field(
-        default=None,
-        description=(
-            "Optional username for protected media sources. "
-            "Used only for authenticated downloads of protected media URLs."
-        ),
-    )
-    media_password: str | None = Field(
-        default=None,
-        description=(
-            "Optional password for protected media sources "
-            "(never stored, only used for this request)"
-        ),
-    )
-    collection_ids: list[str] | None = Field(
-        default=None,
-        description="Collection UUIDs to add the file to after creation",
-    )
-    tag_names: list[str] | None = Field(
-        default=None,
-        description="Tag names to apply to the file after creation",
-    )
-    skip_summary: bool = Field(
-        default=False,
-        description="Skip AI summary generation for this download",
-    )
-
-    video_quality: str | None = Field(
-        default=None,
-        description="Video quality override for this download (e.g., 'best', '1080p', '720p')",
-    )
-    audio_only: bool | None = Field(
-        default=None,
-        description="Override to download only audio (no video) for this request",
-    )
-    audio_quality: str | None = Field(
-        default=None,
-        description="Audio bitrate override for this download (e.g., 'best', '320', '192', '128')",
-    )
-    min_speakers: int | None = Field(
-        default=None,
-        ge=1,
-        description="Minimum speakers for diarization. None = the user's saved range.",
-    )
-    max_speakers: int | None = Field(
-        default=None,
-        ge=1,
-        description="Maximum speakers for diarization. None = the user's saved range.",
-    )
-    num_speakers: int | None = Field(
-        default=None,
-        ge=1,
-        description="Fixed speaker count for diarization (overrides min/max when set).",
-    )
-    whisper_model: str | None = Field(
-        default=None,
-        description=(
-            "Whisper model for this import. None = the deployment's model. Accepts that "
-            "model or a lightweight CPU model (tiny, base); anything else is rejected with 422."
-        ),
-    )
-
-    @model_validator(mode="after")
-    def validate_min_max_speakers(self) -> "URLProcessingRequest":
-        """min_speakers must not exceed max_speakers."""
-        if (
-            self.min_speakers is not None
-            and self.max_speakers is not None
-            and self.min_speakers > self.max_speakers
-        ):
-            raise ValueError("min_speakers must be less than or equal to max_speakers")
-        return self
-
-    @field_validator("video_quality")
-    @classmethod
-    def validate_video_quality(cls, v: str | None) -> str | None:
-        """Validate video_quality against allowed options."""
-        if v is not None and v not in VALID_VIDEO_QUALITIES:
-            raise ValueError(f"video_quality must be one of: {VALID_VIDEO_QUALITIES}")
-        return v
-
-    @field_validator("audio_quality")
-    @classmethod
-    def validate_audio_quality(cls, v: str | None) -> str | None:
-        """Validate audio_quality against allowed options."""
-        if v is not None and v not in VALID_AUDIO_QUALITIES:
-            raise ValueError(f"audio_quality must be one of: {VALID_AUDIO_QUALITIES}")
-        return v
-
-
-# Response models for URL processing
-class PlaylistProcessingResponse(BaseModel):
-    """Response model for YouTube playlist processing requests."""
-
-    type: str = Field(
-        default="playlist", description="Response type indicator", examples=["playlist"]
-    )
-    status: str = Field(
-        default="processing",
-        description="Processing status",
-        examples=["processing", "completed", "error"],
-    )
-    message: str = Field(
-        description="Human-readable status message",
-        examples=["Playlist processing started. Videos will appear as they are extracted."],
-    )
-    url: str = Field(
-        description="Original playlist URL",
-        examples=["https://youtube.com/playlist?list=PLClBBDzHMVijJfoN2EY_3OpmHfRIv4eGO"],
-    )
-
-
-# Union type for endpoint response - can be either a MediaFile or PlaylistProcessingResponse
-URLProcessingResponse = MediaFileSchema | PlaylistProcessingResponse
-
-
-def normalize_media_url(url: str) -> str:
-    """Normalize media URL for duplicate detection.
-
-    For YouTube URLs, extracts the video ID or playlist ID and converts them
-    to a canonical format. For other platforms, returns the URL stripped of whitespace.
-
-    Args:
-        url: Media URL from any supported platform.
-
-    Returns:
-        str: Normalized URL for duplicate detection.
-             YouTube videos: "https://www.youtube.com/watch?v={video_id}"
-             YouTube playlists: "https://www.youtube.com/playlist?list={playlist_id}"
-             Other platforms: Original URL stripped of whitespace
-
-    Example:
-        >>> normalize_media_url("https://youtu.be/dQw4w9WgXcQ")
-        "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-        >>> normalize_media_url("https://vimeo.com/123456789")
-        "https://vimeo.com/123456789"
-    """
-    url = url.strip()
-
-    # Check if it's a YouTube playlist URL first
-    playlist_match = re.search(r"[?&]list=([\w\-_]+)", url)
-    if playlist_match and "youtube.com/playlist" in url:
-        playlist_id = playlist_match.group(1)
-        return f"https://www.youtube.com/playlist?list={playlist_id}"
-
-    # Extract video ID from various YouTube URL formats
-    video_id_patterns = [
-        r"youtube\.com/watch\?v=([^&\n]+)",
-        r"youtube\.com/embed/([^?\n]+)",
-        r"youtube\.com/v/([^?\n]+)",
-        r"youtu\.be/([^?\n]+)",
-    ]
-
-    for pattern in video_id_patterns:
-        match = re.search(pattern, url)
-        if match:
-            video_id = match.group(1)
-            return f"https://www.youtube.com/watch?v={video_id}"
-
-    # For non-YouTube URLs, return as-is (stripped)
-    return url
-
-
-# Backward compatibility alias
-normalize_youtube_url = normalize_media_url
-
-
-def _validate_media_url(url: str) -> tuple[str, MediaDownloadService]:
-    """Validate and normalize a media URL.
-
-    Args:
-        url: Raw media URL from the request.
-
-    Returns:
-        Tuple of (normalized_url, media_service).
-
-    Raises:
-        HTTPException: If URL is missing or invalid.
-    """
-    if not url:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="URL is required")
-
-    normalized_url = normalize_media_url(url)
-    media_service = MediaDownloadService()
-
-    if not media_service.is_valid_media_url(normalized_url):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid URL. Please enter a valid HTTP or HTTPS URL.",
-        )
-
-    return normalized_url, media_service
 
 
 def _handle_playlist_processing(
@@ -328,325 +113,76 @@ def _handle_playlist_processing(
         ) from e
 
 
-def _extract_video_info(
-    media_service: MediaDownloadService,
-    normalized_url: str,
-    media_username: str | None = None,
-    media_password: str | None = None,
-    user_id: int | None = None,
-) -> tuple[str, str, dict[str, Any]]:
-    """Extract video ID and title from a media URL.
+def _build_transcription_options(
+    request_data: URLProcessingRequest, http_request: Request
+) -> dict[str, Any]:
+    """Collect the per-file transcription options for a URL import.
 
     Args:
-        media_service: MediaDownloadService instance.
-        normalized_url: Normalized media URL.
-        user_id: Optional user ID for per-user credential resolution.
+        request_data: The URL processing request.
+        http_request: The incoming request (for the deployment-locked model).
 
     Returns:
-        Tuple of (video_id, video_title, video_info).
+        Speaker range and Whisper model for the file.
 
     Raises:
-        HTTPException: If video info extraction fails.
+        HTTPException: 422 if the requested model cannot be served.
     """
-    try:
-        video_info = media_service.extract_video_info(
-            normalized_url,
-            media_username=media_username,
-            media_password=media_password,
-            user_id=user_id,
-        )
-        video_id = video_info.get("id")
-        video_title = video_info.get("title", "Media Video")
-    except (HTTPException, DomainError):
-        # Re-raise HTTPExceptions (they already have proper error messages)
-        raise
-    except Exception as e:
-        # create_user_friendly_error is NOT a sanitizer despite the name — it only
-        # strips four literal yt-dlp prefixes on the non-auth-error branch, so the
-        # raw message (which can carry cookie/config paths or the URL itself) used
-        # to reach the response verbatim (#859). Log the real error; return a
-        # fixed, caller-safe literal.
-        logger.exception(f"Error extracting video info from {normalized_url}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Could not read information for that media URL.",
-        ) from e
-
-    if not video_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Could not extract video ID from URL",
-        )
-
-    return video_id, video_title, video_info
-
-
-def _check_duplicate_video(
-    db: Session, user_id: int, video_id: str, normalized_url: str, organization_id: int | None
-) -> None:
-    """Check if the video already exists for this user in the active tenant.
-
-    Args:
-        db: Database session.
-        user_id: User ID to check against.
-        video_id: Video ID from the platform.
-        normalized_url: Normalized media URL.
-        organization_id: The caller's active tenant (None = personal). The same
-            user's copy in another tenant is not a duplicate of this one.
-
-    Raises:
-        HTTPException: If a duplicate video is found (409 Conflict).
-    """
-    base = db.query(MediaFile).filter(
-        MediaFile.user_id == user_id,
-        org_stamp_is(MediaFile.organization_id, organization_id),
-    )
-
-    # Check by source_url first (works for all platforms)
-    existing_video = base.filter(MediaFile.source_url == normalized_url).first()
-
-    # Also check by metadata_raw video_id (for backward compatibility with YouTube)
-    if not existing_video:
-        existing_video = (
-            base.filter(text("metadata_raw->>'video_id' = :video_id"))
-            .params(video_id=video_id)
-            .first()
-        )
-
-    # Check by youtube_id for backward compatibility
-    if not existing_video:
-        existing_video = (
-            base.filter(text("metadata_raw->>'youtube_id' = :youtube_id"))
-            .params(youtube_id=video_id)
-            .first()
-        )
-
-    if not existing_video:
-        return
-
-    logger.info(
-        f"Found existing video with ID {video_id} for user {user_id}: "
-        f"MediaFile ID {existing_video.id}, status: {existing_video.status}"
-    )
-
-    _raise_duplicate_error(existing_video)
-
-
-def _raise_duplicate_error(existing_video: MediaFile) -> None:
-    """Raise appropriate HTTPException for a duplicate video.
-
-    Args:
-        existing_video: The existing MediaFile record.
-
-    Raises:
-        HTTPException: 409 Conflict with status-specific message.
-    """
-    if existing_video.status == FileStatus.ERROR:
-        # The stored column can still hold a download's raw yt-dlp text, so it goes
-        # through the same sanitizer as every other read edge (#786/#959).
-        reason = (
-            ErrorCategorizationService.user_message_for(existing_video.last_error_message)
-            or "Processing failed for this file."
-        )
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"This video already exists in your library but could not be processed: "
-            f"{reason} Please delete it first if you want to re-process it.",
-        )
-
-    if existing_video.status in [FileStatus.PENDING, FileStatus.PROCESSING]:
-        video_name = existing_video.title or existing_video.filename
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"This video is already being processed: {video_name}",
-        )
-
-    video_name = existing_video.title or existing_video.filename
-    raise HTTPException(
-        status_code=status.HTTP_409_CONFLICT,
-        detail=f"This video already exists in your library: {video_name}",
-    )
-
-
-def _create_media_file_record(
-    db: Session,
-    user_id: int,
-    normalized_url: str,
-    video_id: str,
-    video_title: str,
-    video_info: dict[str, Any],
-    organization_id: int | None = None,
-) -> MediaFile:
-    """Create a placeholder MediaFile record for the media video.
-
-    Args:
-        db: Database session.
-        user_id: User ID.
-        normalized_url: Normalized media URL.
-        video_id: Video ID from the platform.
-        video_title: Video title.
-        video_info: Full video info dict from yt-dlp or custom extractor.
-        organization_id: Active organization id (cloud org-scoped ingest) or
-            None for personal scope. Always None in the community edition.
-
-    Returns:
-        Created MediaFile instance.
-    """
-    # Get source platform from extractor
-    source = video_info.get("extractor", "unknown").lower()
-
-    placeholder_metadata = {
-        "video_id": video_id,
-        "source": source,
-        "source_url": normalized_url,
-        "title": video_title,
-        "processing": True,
+    # Per-file transcription options. The model is checked now so an unservable one is
+    # a 422 here rather than a silent fallback after the download.
+    return {
+        "min_speakers": request_data.min_speakers,
+        "max_speakers": request_data.max_speakers,
+        "num_speakers": request_data.num_speakers,
+        "whisper_model": require_servable_whisper_model(
+            effective_whisper_model(request_data.whisper_model, http_request)
+        ),
     }
 
-    # Add YouTube-specific fields for backward compatibility
-    if "youtube" in source:
-        placeholder_metadata["youtube_id"] = video_id
-        placeholder_metadata["youtube_url"] = normalized_url
 
-    media_file = MediaFile(
-        user_id=user_id,
-        organization_id=organization_id,
-        filename=video_title[:255],
-        storage_path="",
-        file_size=0,
-        content_type="video/mp4",
-        duration=video_info.get("duration"),
-        status=FileStatus.PROCESSING,
-        title=video_title,
-        author=video_info.get("uploader"),
-        description=video_info.get("description"),
-        source_url=normalized_url,
-        metadata_raw=placeholder_metadata,
-        metadata_important=placeholder_metadata,
-    )
-
-    db.add(media_file)
-    db.commit()
-    db.refresh(media_file)
-
-    return media_file
-
-
-def _dispatch_url_video_task(
+def _apply_single_video_options(
     db: Session,
     media_file: MediaFile,
-    normalized_url: str,
+    request_data: URLProcessingRequest,
+    transcription_options: dict[str, Any],
     user_id: int,
-    media_username: str | None = None,
-    media_password: str | None = None,
-    collection_ids: list[str] | None = None,
-    tag_names: list[str] | None = None,
-    video_quality: str | None = None,
-    audio_only: bool | None = None,
-    audio_quality: str | None = None,
 ) -> None:
-    """Dispatch the video processing background task.
+    """Record the requested options, skip-summary flag, collections and tags on the row.
 
     Args:
         db: Database session.
-        media_file: MediaFile record to process.
-        normalized_url: Normalized media URL.
-        user_id: User ID.
-        media_username: Optional username for authenticated downloads.
-        media_password: Optional password for authenticated downloads.
-        collection_ids: Optional collection UUIDs to assign after processing.
-        tag_names: Optional tag names to apply after processing.
-        video_quality: Optional video quality override for this download.
-        audio_only: Optional override to download only audio.
-        audio_quality: Optional audio bitrate override for this download.
-
-    Raises:
-        HTTPException: If task dispatch fails.
+        media_file: The placeholder MediaFile just created.
+        request_data: The URL processing request.
+        transcription_options: Options from ``_build_transcription_options``.
+        user_id: The requesting user's ID.
     """
-    try:
-        task_result = process_youtube_url_task.delay(
-            url=normalized_url,
-            user_id=user_id,
-            file_uuid=str(media_file.uuid),
-            media_username=media_username,
-            media_password=media_password,
-            collection_ids=collection_ids,
-            tag_names=tag_names,
-            video_quality=video_quality,
-            audio_only=audio_only,
-            audio_quality=audio_quality,
-        )
-        logger.info(
-            f"Dispatched media processing task {task_result.id} for MediaFile {media_file.id}"
-        )
-        # Product metric: media accepted via URL ingestion (API process). The
-        # download worker later runs dispatch_upload_pipeline, but that registry
-        # is never scraped, so the source="url" count is recorded here.
-        from app.core.metrics import files_uploaded_total
+    # Recorded on the row so they survive the download hop: the worker dispatches
+    # transcription when the download finishes and reads them back (and a retry replays).
+    apply_requested_options(media_file, transcription_options)
+    db.commit()
 
-        files_uploaded_total.labels(source="url").inc()
-    except (HTTPException, DomainError):
-        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
-        # anything it catches into a 500, which would report a deliberate 401/403/404/422
-        # raised inside this block as an internal server error (issue #431).
-        raise
-    except Exception as e:
-        logger.exception(f"Failed to dispatch media processing task: {e}")
-        db.delete(media_file)
+    # Per-file skip summary: mark as disabled before pipeline starts
+    if request_data.skip_summary:
+        media_file.summary_status = "disabled"  # type: ignore[assignment]
         db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to start video processing. Please try again.",
-        ) from e
 
+    # Assign to collections and apply tags immediately for single videos
+    if request_data.collection_ids or request_data.tag_names:
+        from app.api.endpoints.files.prepare_upload import add_file_to_collections
+        from app.api.endpoints.files.prepare_upload import add_tags_to_file
 
-def _notify_url_file_created(media_file: MediaFile, user_id: int) -> None:
-    """Send WebSocket notification for newly created file.
+        if request_data.collection_ids:
+            from uuid import UUID as _UUID
 
-    Routed through Redis pub/sub rather than the in-process ConnectionManager
-    (issue #284 A1.14). ``send_notification`` only reaches sockets held by THIS
-    process, so behind a load balancer a user connected to a different replica never
-    saw the new file appear — the gallery just looked stuck until a manual refresh.
-    ``send_ws_event`` publishes on the ``websocket_notifications`` channel, which every
-    replica's subscriber consumes, so the owning process delivers it wherever it is.
-
-    Synchronous on purpose: ``send_ws_event`` is a blocking Redis PUBLISH, so declaring
-    this ``async`` only made the blocking call happen *on the event loop* (issue #284
-    A2.4). It is now called from a sync request handler, i.e. Starlette's threadpool.
-
-    Args:
-        media_file: The created MediaFile.
-        user_id: User ID to notify.
-    """
-    try:
-        from app.utils.websocket_notify import send_ws_event_for_file
-
-        send_ws_event_for_file(
-            user_id=user_id,
-            notification_type="file_created",
-            file_uuid=media_file.uuid,
-            data={
-                "file_id": str(media_file.uuid),
-                "file": {
-                    "uuid": str(media_file.uuid),
-                    "filename": media_file.filename,
-                    "status": media_file.status.value,
-                    "display_status": FormattingService.format_status(
-                        FileStatus(media_file.status)
-                    ),
-                    "content_type": media_file.content_type,
-                    "file_size": media_file.file_size,
-                    "title": media_file.title,
-                    "author": media_file.author,
-                    "duration": media_file.duration,
-                    "upload_time": media_file.upload_time.isoformat()
-                    if media_file.upload_time
-                    else None,
-                },
-            },
-        )
-    except Exception as e:
-        logger.warning(f"Failed to send file_created notification: {e}")
+            add_file_to_collections(
+                db,
+                media_file.id,
+                user_id,
+                [_UUID(c) for c in request_data.collection_ids],
+            )
+        if request_data.tag_names:
+            add_tags_to_file(db, media_file.id, request_data.tag_names, user_id)
+        db.commit()
 
 
 @router.post(
@@ -725,16 +261,7 @@ def process_media_url(
         # Validate and normalize URL
         normalized_url, media_service = _validate_media_url(request_data.url)
 
-        # Per-file transcription options. The model is checked now so an unservable one is
-        # a 422 here rather than a silent fallback after the download.
-        transcription_options = {
-            "min_speakers": request_data.min_speakers,
-            "max_speakers": request_data.max_speakers,
-            "num_speakers": request_data.num_speakers,
-            "whisper_model": require_servable_whisper_model(
-                effective_whisper_model(request_data.whisper_model, http_request)
-            ),
-        }
+        transcription_options = _build_transcription_options(request_data, http_request)
 
         # Record download attempt after rate check passes
         if settings.YOUTUBE_USER_RATE_LIMIT_ENABLED:
@@ -777,33 +304,9 @@ def process_media_url(
             ctx.org_id,
         )
 
-        # Recorded on the row so they survive the download hop: the worker dispatches
-        # transcription when the download finishes and reads them back (and a retry replays).
-        apply_requested_options(media_file, transcription_options)
-        db.commit()
-
-        # Per-file skip summary: mark as disabled before pipeline starts
-        if request_data.skip_summary:
-            media_file.summary_status = "disabled"  # type: ignore[assignment]
-            db.commit()
-
-        # Assign to collections and apply tags immediately for single videos
-        if request_data.collection_ids or request_data.tag_names:
-            from app.api.endpoints.files.prepare_upload import add_file_to_collections
-            from app.api.endpoints.files.prepare_upload import add_tags_to_file
-
-            if request_data.collection_ids:
-                from uuid import UUID as _UUID
-
-                add_file_to_collections(
-                    db,
-                    media_file.id,
-                    current_user.id,
-                    [_UUID(c) for c in request_data.collection_ids],
-                )
-            if request_data.tag_names:
-                add_tags_to_file(db, media_file.id, request_data.tag_names, current_user.id)
-            db.commit()
+        _apply_single_video_options(
+            db, media_file, request_data, transcription_options, current_user.id
+        )
 
         # Dispatch background task (pass credentials only for this processing request)
         _dispatch_url_video_task(
@@ -856,7 +359,3 @@ def get_youtube_download_quota(
 
     quota = youtube_rate_limiter.get_remaining_quota(current_user.id)
     return quota
-
-
-# Backward compatibility alias
-process_youtube_url = process_media_url

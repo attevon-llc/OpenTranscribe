@@ -413,14 +413,14 @@ def test_mediacms_502_is_a_temporary_service_error(provider, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# url_processing._extract_video_info over the wire: a MediaCMS 502 stays a 502
+# url_video_import._extract_video_info over the wire: a MediaCMS 502 stays a 502
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture
 def wire_client(monkeypatch: pytest.MonkeyPatch):
     """Factory: a client whose probe route runs the real ``_extract_video_info`` + MediaCMS."""
-    from app.api.endpoints.files.url_processing import _extract_video_info
+    from app.api.endpoints.files.url_video_import import _extract_video_info
 
     def _make(session: MagicMock, allowed_hosts: set[str]) -> TestClient:
         provider = MediacmsProvider()

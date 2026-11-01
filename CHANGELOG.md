@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Legal acceptance records now store the organization the request acted in, the user agent and
   the locale the text was shown in. An organization administrator can accept a document on
   behalf of the organization (API and Settings > Legal), and list the organization's records.
+- The audit event for a new legal acceptance carries the organization, so it appears in the
+  organization's audit log.
 
 ## [0.6.0] - 2026-10-31
 

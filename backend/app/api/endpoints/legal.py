@@ -55,6 +55,24 @@ def _org_uuid(db: Session, org_id: int | None) -> uuid_pkg.UUID | None:
     return db.execute(select(Organization.uuid).where(Organization.id == org_id)).scalar_one()
 
 
+def _audit_details(row: LegalAcceptance) -> dict[str, str]:
+    """Strings only: other emitters index ``details.scope`` as a string (see privacy purge).
+
+    ``acceptance_uuid`` links the event to the row without copying its IP or email again.
+    An unset locale is omitted, not written as null (``details`` is dynamically mapped).
+    """
+    details = {
+        "document_key": row.document_key,
+        "version": row.version,
+        "sha256": row.sha256,
+        "scope": row.scope,
+        "acceptance_uuid": str(row.uuid),
+    }
+    if row.locale:
+        details["locale"] = row.locale
+    return details
+
+
 def _header_locale(request: Request) -> str | None:
     """The first ``Accept-Language`` tag, when it is a valid BCP 47 shape; else ``None``."""
     raw = request.headers.get("accept-language", "")
@@ -178,7 +196,8 @@ def acknowledge_legal_document(
             username=str(current_user.email),
             source_ip=client_ip,
             user_agent=user_agent,
-            details={"document_key": doc.key, "version": doc.version, "sha256": doc.sha256},
+            organization_id=ctx.org_id,
+            details=_audit_details(row),
         )
     return LegalAcknowledgmentRecord(
         key=row.document_key,

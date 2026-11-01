@@ -66,6 +66,7 @@ from app.models.topic import TopicSuggestion
 from app.models.watch_source import WatchSource
 from app.tasks import media_download as mdl
 from app.tasks import reindex_task as rix
+from app.tasks import speaker_embedding_reassignment_task as rsb
 from app.tasks import speaker_embedding_task as seb
 from app.tasks import speaker_identification_task as _sid_module
 from app.tasks import watch_source_tasks as wst
@@ -320,7 +321,6 @@ def test_extract_speaker_embeddings_holds_no_transaction_across_audio_and_model(
     assert np.allclose(next(iter(native.values())), np.array([0.6, 0.8, 0.0]))
     assert tracker.recorded["embedding_service"] is None
 
-    # And the task still records completion.
     task_row = db_session.query(TaskModel).filter(TaskModel.id == async_result.task_id).first()
     assert task_row is not None and task_row.status == "completed"
     assert result["speakers_processed"] == len(speakers)
@@ -386,7 +386,7 @@ def reassignment_env(db_session, monkeypatch):
     tracker = _ScopeTracker(db_session)
     recorded: dict = {}
 
-    monkeypatch.setattr(seb, "session_scope", tracker.scope)
+    monkeypatch.setattr(rsb, "session_scope", tracker.scope)
 
     def _download(storage_path):
         tracker.observe("minio_download")
@@ -445,7 +445,7 @@ def test_reassignment_holds_no_transaction_across_download_and_inference(
         .first()
     )
 
-    result = seb.update_speaker_embedding_on_reassignment.apply(
+    result = rsb.update_speaker_embedding_on_reassignment.apply(
         args=[
             str(segment.uuid),
             str(media_file.uuid),
@@ -483,7 +483,7 @@ def test_reassignment_read_phase_returns_plain_data(db_session, normal_user, rea
         .first()
     )
 
-    plan = seb._load_reassignment_plan(
+    plan = rsb._load_reassignment_plan(
         str(segment.uuid), str(speakers[0].uuid), str(speakers[1].uuid)
     )
 

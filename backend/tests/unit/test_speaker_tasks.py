@@ -37,6 +37,7 @@ Two things pinned:
 from celery.app.task import Task
 
 from app.core.celery import celery_app
+from app.tasks import speaker_embedding_reassignment_task
 from app.tasks import speaker_embedding_task
 from app.tasks import speaker_identification_task
 from app.tasks import speaker_tasks
@@ -88,7 +89,7 @@ def test_reexports_are_the_identical_object_as_the_real_implementation_not_a_cop
     )
     assert (
         speaker_tasks.update_speaker_embedding_on_reassignment
-        is speaker_embedding_task.update_speaker_embedding_on_reassignment
+        is speaker_embedding_reassignment_task.update_speaker_embedding_on_reassignment
     )
     assert (
         speaker_tasks.identify_speakers_llm_task

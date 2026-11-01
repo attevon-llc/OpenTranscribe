@@ -332,7 +332,7 @@ def test_a_moved_segment_leaves_the_old_speakers_voice_and_both_keep_their_tenan
 
     from app.models.media import TranscriptSegment
     from app.models.organization import Organization
-    from app.tasks import speaker_embedding_task as seb
+    from app.tasks import speaker_embedding_reassignment_task as seb
 
     org = Organization(name=f"spk-review-{uuid_pkg.uuid4().hex[:8]}")
     db_session.add(org)

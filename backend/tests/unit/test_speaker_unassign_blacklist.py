@@ -585,7 +585,7 @@ def test_segment_reassignment_rebuilds_the_drifted_aggregates_and_relinks_nothin
     db_session, normal_user, speaker_os_seams, monkeypatch
 ):
     """Item 3: the target's voiceprint drifts; every centroid and profile averaging it follows."""
-    from app.tasks import speaker_embedding_task as seb
+    from app.tasks import speaker_embedding_reassignment_task as seb
 
     trio = _trio(db_session, normal_user, speaker_os_seams)
     _unassign_c(db_session, normal_user, trio)

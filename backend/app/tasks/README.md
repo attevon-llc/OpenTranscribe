@@ -29,7 +29,8 @@ API Request → Task Dispatch → Celery Worker → AI Processing → Database U
 tasks/
 ├── transcription/                    # The processing pipeline (see below)
 ├── Speakers
-│   ├── speaker_embedding_task.py            # Voiceprint extraction and reassignment updates
+│   ├── speaker_embedding_task.py            # Voiceprint extraction
+│   ├── speaker_embedding_reassignment_task.py # Voiceprint updates on segment reassignment
 │   ├── speaker_identification_task.py       # LLM name suggestions (never auto-applied)
 │   ├── speaker_update_task.py, speaker_merge_task.py   # Background speaker updates and merges
 │   ├── speaker_attribute_task.py, speaker_attribute_migration_task.py, combined_speaker_analysis_task.py
@@ -114,7 +115,8 @@ Enrichment (speaker embeddings, indexing, summarization, topics, facts, redactio
 `speaker_tasks.py` is a re-export shim only. The implementations live in dedicated modules:
 - `speaker_identification_task.py`: LLM name suggestions from conversation context (`ai.identify_speakers`, nlp queue). Suggestions are never auto-applied; they need manual verification.
 - `speaker_update_task.py` / `speaker_merge_task.py`: background speaker record updates and merges.
-- `speaker_embedding_task.py`: voiceprint extraction (`extract_speaker_embeddings`) and reassignment updates, on the `cpu` queue.
+- `speaker_embedding_task.py`: voiceprint extraction (`extract_speaker_embeddings`), on the `cpu` queue.
+- `speaker_embedding_reassignment_task.py`: voiceprint updates after a segment is reassigned (`update_speaker_embedding_on_reassignment`).
 - `rename_propagation_task.py`: propagate speaker and title renames into the search chunk index.
 
 ## Analytics Tasks (`analytics.py`)

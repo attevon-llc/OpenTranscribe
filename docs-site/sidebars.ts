@@ -99,6 +99,7 @@ const sidebars: SidebarsConfig = {
         'configuration/neural-search-setup',
         'configuration/embedding-migration',
         'configuration/password-policy',
+        'configuration/legal-processing-gate',
       ],
     },
     {

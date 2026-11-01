@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- An optional server-side requirement that a file's owner has accepted chosen legal documents
+  before the file is processed (Settings → Legal, super administrators; off by default). It
+  covers uploads, URL and playlist imports, watch sources, reprocess, retry, recover, bulk
+  actions and the AI steps on an existing transcript (summaries, speaker identification, topic
+  extraction, redaction detection), and runs first in the shared dispatch check as a backstop.
+  Refusals carry a stable code (`legal_acceptance_required`, `legal_document_unavailable`,
+  `legal_gate_unavailable`), fail closed, and a refused file is never picked up again by
+  automatic retry or recovery.
+- A `files` scope for the voiceprint purge, used to destroy the voiceprints of named recordings
+  for retention. It never deletes a profile: each affected profile's embedding is recomputed
+  from the speakers it has left. Audited with `purge_reason: "retention"`.
+
+### Fixed
+
+- Re-running speaker detection on a file published its task directly instead of going through
+  the shared dispatch check; it now applies the legal processing requirement itself.
+
 ## [0.6.0] - 2026-10-31
 
 ### Overview

@@ -299,6 +299,25 @@ purged voiceprints back. After restoring a backup, run the purge again.
 | Personal workspaces | A super admin | `POST /api/admin/privacy-policy/purge` with `"scope": "personal"` | Every user's personal-workspace data, never an organization's |
 | Everything | A super admin, **single-tenant deployments only** | The same route with `"scope": "all"` | Literally all speaker data on the instance. In a multi-tenant deployment (any active organization, or `TENANCY_MODE=multi`) this answers **403** `purge_scope_not_allowed`: a platform administrator must not destroy tenant data, and each organization purges its own |
 
+### Destroying the voiceprints of specific files
+
+There is one more scope, `files`, with no route of its own: it is what a retention schedule uses
+to destroy the voiceprints of named recordings, whoever owns them. It runs through the same two
+passes, residual check and audit event as every other purge, with three differences:
+
+- **It never deletes a profile.** Each profile one of those speakers was linked to keeps its row,
+  its name and its links. Its embedding is **recomputed** from the speakers it still has, once
+  the purged speakers' voiceprint documents are confirmed gone; a profile left with no voiceprint
+  has its embedding document erased (it is rebuilt when a voiceprint links to it again). If the
+  deletion could not be confirmed, the embedding is erased rather than recomputed, so it can
+  never average a deleted voice back in.
+- **Every voiceprint of those files goes**, including one on a speaker a person linked to a
+  profile; the speaker row, its name and its link stay. Those speakers leave the promoted
+  clusters whose centroid averaged them in, and the centroids are rebuilt.
+- **It does not depend on a privacy switch.** It is a retention destruction, recorded in the
+  audit event as `purge_reason: "retention"` with `purge_scope.kind: "files"` and a
+  `purge_scope.file_count` (never file names). Without that reason a `files` purge is refused.
+
 **What a purge selects, and what it never touches.** Speakers belong to their recording's
 organization (or personal workspace), profiles to the organization they are stamped with, and a
 cluster to its members. A purge deletes voiceprint documents by the ids of those rows, because a

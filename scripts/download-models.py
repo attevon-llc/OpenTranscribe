@@ -212,54 +212,78 @@ def validate_gated_model_access():
         return True, None
 
 
-def validate_pyannote_download():
-    """Validate that all expected PyAnnote models were downloaded to the torch cache"""
-    torch_cache = Path.home() / '.cache' / 'torch' / 'pyannote'
+class GatedPipelineUnavailable(RuntimeError):
+    """``Pipeline.from_pretrained`` returned None: pyannote's report of an unreadable gated repo.
 
-    # Expected PyAnnote model directories
-    expected_models = {
-        'segmentation-3.0': 'models--pyannote--segmentation-3.0',
-        'speaker-diarization-community-1': 'models--pyannote--speaker-diarization-community-1',
-        'wespeaker-voxceleb': 'models--pyannote--wespeaker-voxceleb-resnet34-LM',
-    }
+    Its own class so the gated-access hint is never printed for an ordinary ``OSError``
+    (a full or unwritable cache), which ``PermissionError`` would have been confused with.
+    """
 
-    validation_result = {'all_present': True, 'models': {}}
 
-    if not torch_cache.exists():
-        validation_result['all_present'] = False
-        for model_name in expected_models:
-            validation_result['models'][model_name] = False
-        return validation_result
+def fetch_diarization_pipeline(hf_token):
+    """Fetch the PyAnnote diarization pipeline the backend loads, and prove it loads.
 
-    for model_name, model_dir in expected_models.items():
-        model_path = torch_cache / model_dir
-        is_present = model_path.exists() and model_path.is_dir()
-        validation_result['models'][model_name] = is_present
-        if not is_present:
-            validation_result['all_present'] = False
+    Two steps, neither of which runs inference:
 
-    return validation_result
+    1. ``snapshot_download`` of the pipeline repo. ``speaker-diarization-community-1`` is
+       self-contained -- its ``config.yaml`` points at ``$model/segmentation``,
+       ``$model/embedding`` and ``$model/plda`` inside the same repo -- so the snapshot is
+       every file the pipeline can ask for.
+    2. ``Pipeline.from_pretrained`` -- the exact call ``SpeakerDiarizer.load_model``
+       (``app/transcription/diarizer.py``) makes at runtime. Loading builds every
+       sub-model from the cache, so a snapshot the backend could not use fails here, at
+       download time, instead of on the first transcription.
+
+    This used to transcribe and diarize 30 s of synthetic sine-wave audio through whisperx.
+    whisperx's VAD found no speech in it, and ``FasterWhisperPipeline.transcribe`` handed an
+    empty batch to ``transformers`` 5.x, whose ``Pipeline.__call__`` indexes ``inputs[0]``:
+    ``IndexError: list index out of range``, deterministically, on every CPU run. Nothing in
+    the backend uses whisperx (``Transcriber`` is faster-whisper's
+    ``BatchedInferencePipeline``), and the Whisper weights are the ``whisperx`` group's job,
+    so the transcribe step bought nothing but that failure.
+
+    Args:
+        hf_token: Hugging Face token with the community-1 agreement accepted.
+
+    Returns:
+        The repo id that was fetched and loaded.
+
+    Raises:
+        GatedPipelineUnavailable: ``from_pretrained`` returned None, which is how pyannote
+            reports a gated repo the token cannot read.
+    """
+    from huggingface_hub import snapshot_download
+    from pyannote.audio import Pipeline
+
+    from app.transcription.diarizer import PYANNOTE_V4_MODEL
+
+    print_info(f'  Fetching {PYANNOTE_V4_MODEL} (segmentation, embedding, PLDA)...')
+    snapshot_download(PYANNOTE_V4_MODEL, token=hf_token)
+
+    print_info('  Loading the pipeline from the cache (the backend load path, no inference)...')
+    pipeline = Pipeline.from_pretrained(PYANNOTE_V4_MODEL, token=hf_token)
+    if pipeline is None:
+        raise GatedPipelineUnavailable(
+            f'pyannote returned no pipeline for {PYANNOTE_V4_MODEL}; '
+            'the token cannot read the gated repo'
+        )
+    del pipeline
+    return PYANNOTE_V4_MODEL
 
 
 def download_pyannote_models():
-    """Download PyAnnote models by running full WhisperX pipeline (same as backend)"""
+    """Download the PyAnnote diarization pipeline the backend loads (no inference)."""
     print_header('Downloading PyAnnote Models')
 
     try:
         import logging
         import warnings
 
-        import numpy as np
-        import torch
-        import whisperx
-
         # Suppress noisy-but-harmless library warnings that confuse users:
         # - Lightning checkpoint auto-upgrade notice (cosmetic, not an error)
         # - PyAnnote TF32 reproducibility advisory (we accept the trade-off)
-        # - WhisperX / transformers INFO logs during model load
         warnings.filterwarnings('ignore', message='.*Lightning automatically upgraded.*')
         warnings.filterwarnings('ignore', category=UserWarning, module='pyannote')
-        logging.getLogger('whisperx').setLevel(logging.WARNING)
         logging.getLogger('pyannote').setLevel(logging.WARNING)
         logging.getLogger('lightning').setLevel(logging.ERROR)
 
@@ -310,81 +334,15 @@ def download_pyannote_models():
             error_msg = access_result[0] if isinstance(access_result, tuple) else access_result
             return {'pyannote': {'status': 'failed', 'error': error_msg}}
 
-        # Use default paths (same as backend) - let WhisperX/PyAnnote handle caching
-        print_info('Using WhisperX full pipeline (same as backend) to download all models')
-        print_info('Models will be cached to default locations (managed by WhisperX/PyAnnote)')
+        repo_id = fetch_diarization_pipeline(hf_token)
+        print_success('  All PyAnnote model weights downloaded and loadable')
 
-        # Detect device
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        compute_type = 'float16' if device == 'cuda' else 'float32'
-        print_info(f'Using device: {device}')
-
-        # Create synthetic audio (30 seconds of silence with some noise for testing)
-        print_info('Creating synthetic test audio (30 seconds)...')
-        sample_rate = 16000
-        duration = 30  # 30 seconds
-
-        # Generate audio with some speech-like characteristics
-        # Use a simple sine wave pattern that mimics speech frequencies
-        t = np.linspace(0, duration, sample_rate * duration)
-        frequencies = [300, 500, 700]  # Speech-like frequencies
-        audio = np.zeros_like(t)
-        for freq in frequencies:
-            audio += 0.1 * np.sin(2 * np.pi * freq * t)
-
-        # Add some noise to make it more realistic
-        audio += 0.05 * np.random.randn(len(t))
-
-        # Normalize
-        audio = audio.astype(np.float32)
-        print_success('  Synthetic audio created')
-
-        # Use WhisperX full pipeline (same as backend)
-        print_info('Step 1/3: Audio ready...')
-        print_success('  Audio prepared')
-
-        # Step 2: Transcribe (same as backend)
-        print_info('Step 2/3: Running WhisperX transcription...')
-        model = whisperx.load_model(
-            os.environ.get('WHISPER_MODEL', 'base'), device=device, compute_type=compute_type
-        )
-        model.transcribe(audio, batch_size=16 if device == 'cuda' else 1)
-        print_success('  Transcription completed')
-        del model
-        torch.cuda.empty_cache() if device == 'cuda' else None
-
-        # Step 3: Diarize (same as backend - downloads PyAnnote models)
-        print_info('Step 3/3: Running speaker diarization (downloads PyAnnote models)...')
-        print_info(
-            '  This downloads: speaker-diarization-community-1 '
-            '(bundles segmentation, embedding, wespeaker-voxceleb)...'
-        )
-
-        try:
-            diarize_model = whisperx.diarize.DiarizationPipeline(
-                use_auth_token=hf_token, device=device
-            )
-        except TypeError:
-            # pyannote-audio 3.3+ renamed use_auth_token → token
-            diarize_model = whisperx.diarize.DiarizationPipeline(token=hf_token, device=device)
-
-        diarize_model(audio, min_speakers=1, max_speakers=20)
-
-        print_success('  Diarization completed')
-        print_success('  All PyAnnote model weights downloaded')
-
-        # Clean up
-        del diarize_model
-        del audio
-        torch.cuda.empty_cache() if device == 'cuda' else None
-
-        # Diarization ran without exception — models are present and working.
-        # (PyAnnote 3.x stores weights in ~/.cache/huggingface/hub/, not the
-        #  old ~/.cache/torch/pyannote/ path, so directory-name checks are
-        #  unreliable. A successful pipeline run is the definitive proof.)
+        # The pipeline loaded from the cache, so every file it needs is present. (PyAnnote
+        # 3.x+ stores weights in ~/.cache/huggingface/hub/, not the old
+        # ~/.cache/torch/pyannote/ path, so directory-name checks are unreliable.)
         return {
             'pyannote': {
-                'model': 'pyannote/speaker-diarization-community-1',
+                'model': repo_id,
                 'status': 'downloaded',
                 'validation': {'all_present': True},
             }
@@ -396,7 +354,8 @@ def download_pyannote_models():
 
         # Check if this looks like a gated model access error
         if (
-            'cannot find the requested files' in error_msg.lower()
+            isinstance(e, GatedPipelineUnavailable)
+            or 'cannot find the requested files' in error_msg.lower()
             or 'locate the file on the hub' in error_msg.lower()
             or '403' in error_msg
             or '401' in error_msg
@@ -423,6 +382,59 @@ def download_pyannote_models():
         return {'pyannote': {'status': 'failed', 'error': str(e)}}
 
 
+def break_nltk_hardlinks(root):
+    """Give every multiply-linked file under ``root`` its own inode, content unchanged.
+
+    nltk >= 3.10 (``nltk/pathsec.py``, CWE-59) refuses to open any file whose ``st_nlink``
+    exceeds one, and ``nltk.download`` reads the existing package zips before deciding
+    whether to fetch. A cache seeded with ``cp -al``, ``rsync --link-dest`` or a dedup tool
+    therefore failed every package in the group -- one linked ``punkt_tab.zip`` failed both
+    ``punkt_tab`` and ``punkt``. The refusal is intended, so the data is made to comply:
+    each linked file is copied beside itself and renamed over the original, which is atomic
+    and leaves any other name for the old inode untouched. nltk_data is ~50 MB, so the
+    duplicated bytes are negligible (unlike the huggingface/torch caches, which are left
+    alone).
+
+    This is stdlib-only and lives here rather than in ``app.utils`` because this script is
+    mounted into an already-published backend image, whose ``app`` package it cannot change.
+    ``scripts/common.sh``'s ``ensure_nltk_data_unlinked`` does the same on the host for
+    ``./opentr.sh start``, which runs this downloader only when the corpora are missing.
+
+    Args:
+        root: The NLTK data directory.
+
+    Returns:
+        ``(rewritten, unfixable)``: how many files were given their own inode, and the paths
+        that could not be (read-only mount, directory owned by another account).
+    """
+    import contextlib
+    import shutil
+    import stat
+
+    rewritten = 0
+    unfixable = []
+    for current, _dirs, files in os.walk(root):
+        for name in files:
+            path = os.path.join(current, name)
+            try:
+                info = os.lstat(path)
+            except OSError:
+                continue
+            # lstat + S_ISREG: a symlink is judged by nltk on its own, never rewritten here.
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink <= 1:
+                continue
+            tmp = f'{path}.dehl'
+            try:
+                shutil.copy2(path, tmp)
+                os.replace(tmp, path)
+                rewritten += 1
+            except OSError:
+                with contextlib.suppress(OSError):
+                    os.unlink(tmp)
+                unfixable.append(path)
+    return rewritten, unfixable
+
+
 def download_nltk_data():
     """Download NLTK data files required by transformers/whisperx"""
     print_header('Downloading NLTK Data')
@@ -440,6 +452,34 @@ def download_nltk_data():
         # and left the deployment to discover the gap at runtime.
         nltk_data_path = Path(os.environ.get('NLTK_DATA') or (Path.home() / '.cache' / 'nltk_data'))
         nltk_data_path.mkdir(parents=True, exist_ok=True)
+
+        rewritten, unfixable = break_nltk_hardlinks(str(nltk_data_path))
+        if rewritten:
+            print_info(
+                f'Gave {rewritten} multiply-linked NLTK file(s) their own inode '
+                '(nltk >= 3.10 refuses hardlinked files)'
+            )
+        if unfixable:
+            print_error(
+                f'{len(unfixable)} NLTK file(s) are hardlinked and could not be rewritten, '
+                f'e.g. {unfixable[0]}'
+            )
+            print_error(
+                'nltk >= 3.10 refuses multiply-linked files (pathsec, CWE-59), so every '
+                'package would fail. The cache was probably seeded with `cp -al`, '
+                '`rsync --link-dest` or a dedup tool.'
+            )
+            print_error(
+                'Fix on the host (content is kept, only the inode changes), then re-run:\n'
+                '     find <MODEL_CACHE_DIR>/nltk_data -type f -links +1 '
+                '-exec sh -c \'cp -p "$1" "$1.dehl" && mv -f "$1.dehl" "$1"\' _ {} \\;'
+            )
+            return {
+                'nltk': {
+                    'status': 'failed',
+                    'error': f'{len(unfixable)} multiply-linked file(s) under {nltk_data_path}',
+                }
+            }
 
         # nltk >= 3.10.4 refuses to install into (or later read from) a directory that is
         # group/world-writable, and the host-created bind mount usually is (umask 002).

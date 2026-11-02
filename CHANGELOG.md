@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Credential handling for protected media imports.** The site login supplied with a protected
+  media URL import is no longer passed to the background worker as a task argument. It is held
+  encrypted in Redis for a limited time under an opaque reference, read by the worker when it
+  runs (including on retries) and deleted when the import finishes or fails. If the entry has
+  expired the import fails with a clear message and can be submitted again. A test now fails if
+  any Celery task takes or is called with a parameter named like a secret. The API field
+  description now states how the value is held.
+- **Download URL construction for MediaCMS imports.** The media path returned by the server is
+  now resolved as a URL reference against the configured MediaCMS address, and any result that
+  differs in scheme, host or port is rejected before a request (or the user's token) is sent.
 - **Audit records in the database can no longer be changed or deleted by the application.**
   A trigger on the authentication-configuration log, the support-access records, the erasure
   ledger, the takedown records and the legal acceptance records refuses `DELETE`, `TRUNCATE`
@@ -20,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from every service except the backend. Settings > Audit Logs shows the measured state and
   `GET /api/admin/security/audit-integrity` reports it to a super administrator. Migration v453;
   see Operations > Audit record integrity.
+- **MediaCMS source matching.** A source configured with a port is now recognised, and its
+  stored-credentials hint shown, for URLs on that port: one rule (case-insensitive hostname plus
+  port, with the scheme's default port when none is given) is used by the backend and the upload
+  form. The "stored credentials" hint now also reflects the user's own and shared sources, not
+  only system-level ones.
 
 ### Added
 

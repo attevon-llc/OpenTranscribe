@@ -71,9 +71,24 @@ export function resetProtectedMediaAuthConfig(): void {
   generation++;
 }
 
-export function getAuthConfigForHost(hostname: string): ProtectedMediaAuthConfig | null {
+const DEFAULT_PORTS: Record<string, string> = { 'http:': '80', 'https:': '443' };
+
+// One identity rule, mirrored by `_host_identity` in backend protected_media_plugins/mediacms.py:
+// lower-cased hostname plus the port, where an absent port means the scheme's default.
+function hostIdentity(host: string, protocol: string): string | null {
+  try {
+    const parsed = new URL(`${protocol}//${host}`);
+    return `${parsed.hostname.toLowerCase()}:${parsed.port || DEFAULT_PORTS[protocol] || ''}`;
+  } catch {
+    return null;
+  }
+}
+
+export function getAuthConfigForUrl(url: URL): ProtectedMediaAuthConfig | null {
+  const wanted = hostIdentity(url.host, url.protocol);
+  if (wanted === null) return null;
   for (const cfg of protectedConfigs) {
-    if (cfg.hosts?.includes(hostname)) {
+    if (cfg.hosts?.some((h) => hostIdentity(h, url.protocol) === wanted)) {
       return cfg;
     }
   }

@@ -75,6 +75,15 @@ so keep heavy imports lazy.
   count+offset+limit boilerplate (counts with `order_by(None)`).
 - `encryption.py` — AES-256-GCM (v3) with legacy Fernet auto-detect. Every stored secret (ASR/LLM
   keys, S3/SMB creds, OIDC refresh/ID tokens) goes through it.
+- `task_secret_handoff.py` — **the only way a secret reaches a Celery task.** A task argument is
+  written to the broker, survives retries and shows in monitoring, so a credential is never one:
+  `stash_task_secret({...}, context=...)` stores it AES-GCM encrypted (the context, e.g. user+file, is the
+  GCM associated data, so a ref replayed elsewhere fails to decrypt) in Redis with a TTL
+  (`TASK_SECRET_HANDOFF_TTL_SECONDS`, derived from the retry/queue budget in `constants.py`) and
+  returns an opaque ref; the task calls `fetch_task_secret(ref, context=...)` (non-consuming, so retries work)
+  and `discard_task_secret(ref)` on success or terminal failure, but not while a `Retry` is
+  propagating. `tests/unit/test_media_credentials_handoff.py` AST-scans `app/` and fails on any
+  task parameter or `.delay`/`apply_async` argument named like a secret.
 - `uuid7.py` — RFC 9562 UUIDv7, the `default=` for every model `uuid` column (index locality).
 - `scratch_volume.py` — cross-worker WAV handoff at `/scratch/opentranscribe`. **Presence of the
   mount is the feature flag** — there is no enable/disable env var.

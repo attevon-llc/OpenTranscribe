@@ -1,0 +1,104 @@
+{
+  "date": "2026-11-01",
+  "version": 1,
+  "groups": {
+    "Python (non-test)": {
+      "files": 1205,
+      "median": 217,
+      "p90": 515,
+      "p95": 627,
+      "max": 2731,
+      "over_soft": 134,
+      "over_hard": 14,
+      "debt": {
+        "files_over_hard": 14,
+        "lines_above_hard": 5158,
+        "lines_above_soft": 25256
+      }
+    },
+    "TypeScript/JS (non-test)": {
+      "files": 231,
+      "median": 90,
+      "p90": 282,
+      "p95": 510,
+      "max": 1508,
+      "over_soft": 12,
+      "over_hard": 4,
+      "debt": {
+        "files_over_hard": 4,
+        "lines_above_hard": 1271,
+        "lines_above_soft": 4315
+      }
+    },
+    "Shell (non-test)": {
+      "files": 118,
+      "median": 245,
+      "p90": 996,
+      "p95": 1562,
+      "max": 4893,
+      "over_soft": 26,
+      "over_hard": 11,
+      "debt": {
+        "files_over_hard": 11,
+        "lines_above_hard": 11652,
+        "lines_above_soft": 20408
+      }
+    },
+    "Tests (py/ts/js/sh)": {
+      "files": 2189,
+      "median": 191,
+      "p90": 521,
+      "p95": 671,
+      "max": 2028,
+      "over_soft": 21,
+      "over_hard": 4,
+      "debt": {
+        "files_over_hard": 4,
+        "lines_above_hard": 1288,
+        "lines_above_soft": 6358
+      }
+    },
+    "Svelte <script> logic": {
+      "files": 375,
+      "median": 59,
+      "p90": 260,
+      "p95": 384,
+      "max": 2355,
+      "over_soft": 15,
+      "over_hard": 11,
+      "debt": {
+        "files_over_hard": 11,
+        "lines_above_hard": 4158,
+        "lines_above_soft": 6575
+      }
+    },
+    "Svelte total file": {
+      "files": 375,
+      "median": 238,
+      "p90": 730,
+      "p95": 1026,
+      "max": 2876,
+      "over_soft": 20,
+      "over_hard": 2,
+      "debt": {
+        "files_over_hard": 2,
+        "lines_above_hard": 936,
+        "lines_above_soft": 9832
+      }
+    },
+    "CLAUDE.md": {
+      "files": 57,
+      "median": 103,
+      "p90": 728,
+      "p95": 958,
+      "max": 1215,
+      "over_soft": 12,
+      "over_hard": 10,
+      "debt": {
+        "files_over_hard": 10,
+        "lines_above_hard": 3842,
+        "lines_above_soft": 4888
+      }
+    }
+  }
+}

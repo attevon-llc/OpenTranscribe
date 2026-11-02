@@ -65,7 +65,13 @@ Re-measure with the snippet in the git history of this file (it imports
 5. After a split, check cohesion again: re-merge a split that fragmented one idea, and make names
    imported across modules public (no leading underscore).
 
-## Planned: `scripts/guards/size_report.py` (measure, suggest, track; not built yet)
+## `scripts/guards/size_report.py` (measure, suggest, track)
+
+Built. `python3 scripts/guards/size_report.py` prints the table, suggested limits and debt and
+compares against `baselines/size_stats.json` (exit 1 only if a group's lines above hard grow);
+`--write-snapshot` regenerates it (date rewritten only when figures change), `--json` for machine
+output. Pre-commit hook `guard-size-report`; tests `backend/tests/unit/test_guard_size_report.py`.
+The bullets below are the original design.
 
 Goal: make the limits evidence-based and turn "how much work is left" into a number the pre-commit
 hook and the final gate can show.

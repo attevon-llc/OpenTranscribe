@@ -164,7 +164,9 @@ def measure_voiceprint_residual(
         ("cluster_docs", "cluster"),
     ):
         found = count_speaker_docs_by_ids(
-            ids[kind], also=org_stamp_clause(scope, kind), errors=errors
+            ids[kind],
+            also=org_stamp_clause(scope, kind, keeps_protected=targets.keeps_protected),
+            errors=errors,
         )
         if found is None:
             result.unverified.append(key)

@@ -185,6 +185,35 @@ def cancel_self_erasure(
     raise SelfErasureError("not_cancellable", "This request cannot be cancelled.", entry=entry)
 
 
+def _would_remove_last_super_admin(db: Session, user_id: int) -> bool:
+    """Execution-time form of the last-super-admin rule, serialized by a row lock.
+
+    Every active super administrator row is locked (id order, so two executions cannot
+    deadlock) until the caller commits the ``pending`` flip. A super administrator whose own
+    erasure is already ``pending`` no longer counts as remaining: their account may still exist
+    while the destroy runs, which is exactly when a concurrent execution would otherwise see them.
+    """
+    active = (
+        db.query(User.id)
+        .filter(User.role == "super_admin", User.is_active.is_(True))
+        .order_by(User.id)
+        .with_for_update()
+        .all()
+    )
+    active_ids = {int(r[0]) for r in active}
+    if user_id not in active_ids:
+        return False
+    being_erased = {
+        int(r[0])
+        for r in db.query(ErasureLedgerEntry.subject_user_id).filter(
+            ErasureLedgerEntry.subject_type == "user",
+            ErasureLedgerEntry.status == "pending",
+            ErasureLedgerEntry.subject_user_id.in_(active_ids),
+        )
+    }
+    return not (active_ids - {user_id} - being_erased)
+
+
 def _execute_one(db: Session, entry_id: int, now: datetime) -> bool:
     """Flip one due request to ``pending`` and erase the account. False when it was not due."""
     from app.services.gdpr_erasure_service import erase_user
@@ -198,6 +227,12 @@ def _execute_one(db: Session, entry_id: int, now: datetime) -> bool:
         or entry.subject_user_id is None
         or entry.scheduled_for > now
     ):
+        return False
+    if _would_remove_last_super_admin(db, int(entry.subject_user_id)):
+        ledger.block_request(db, entry, reason="last_super_admin")
+        logger.warning(
+            "Self-service erasure %s blocked: last active super administrator", entry.uuid
+        )
         return False
     entry.status = "pending"
     entry.deferred_reason = None

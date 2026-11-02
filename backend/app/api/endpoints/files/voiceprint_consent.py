@@ -34,6 +34,8 @@ from app.models.media import MediaFile
 from app.models.user import User
 from app.schemas.file_consent import FileVoiceprintConsent
 from app.schemas.file_consent import FileVoiceprintConsentUpdate
+from app.services.hold_guard import hold_state
+from app.services.hold_guard import refusal_detail
 from app.services.privacy import file_consent
 from app.services.privacy import policy_admin
 from app.services.privacy.policy import clear_write_backstop_cache
@@ -48,7 +50,8 @@ router = APIRouter()
     response_model=FileVoiceprintConsent,
     dependencies=[Depends(refuse_under_support_grant)],
     responses={
-        404: {"description": "No such file, or not the caller's."},
+        404: {"description": "No such file, or not the caller's, or the file is quarantined."},
+        409: {"description": "The file is under a legal hold; its voiceprints are kept."},
         503: {"description": "The state was saved but the purge could not be queued."},
     },
 )
@@ -68,8 +71,24 @@ def set_file_voiceprint_consent(
         .filter(MediaFile.uuid == file_uuid, MediaFile.user_id == current_user.id)
         .first()
     )
-    if row is None:
+    if row is None or row.is_quarantined:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+
+    # Refused before anything is written: a held file's voiceprints are kept, so recording
+    # "declined" would promise a deletion that cannot happen. Release the hold, then retry.
+    hold = hold_state(db, int(row.id))
+    if hold.held:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=refusal_detail(
+                hold,
+                reveal_uuids=False,
+                message=(
+                    "refused: the file is under an active legal hold, so its voiceprints "
+                    "cannot be changed or deleted. Release the hold, then retry."
+                ),
+            ),
+        )
 
     change = file_consent.change_state(row, body.state, int(current_user.id))
     file_id = int(row.id)

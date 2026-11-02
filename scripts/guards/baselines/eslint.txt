@@ -409,10 +409,7 @@ frontend/src/routes/search/+page.svelte::no-restricted-imports	1	lint: burn-down
 frontend/src/routes/search/+page.svelte::svelte/no-navigation-without-resolve	3	lint: burn-down planned
 frontend/src/routes/search/+page.svelte::svelte/prefer-svelte-reactivity	2	lint: burn-down planned
 frontend/src/routes/search/sidebar-chips.test.ts::@typescript-eslint/no-unused-vars	1	lint: burn-down planned
-frontend/src/routes/speakers/+page.svelte::@typescript-eslint/no-explicit-any	3	lint: burn-down planned
-frontend/src/routes/speakers/+page.svelte::prefer-const	1	lint: burn-down planned
 frontend/src/routes/speakers/+page.svelte::svelte/no-navigation-without-resolve	1	lint: burn-down planned
-frontend/src/routes/speakers/+page.svelte::svelte/prefer-svelte-reactivity	7	lint: burn-down planned
 frontend/src/routes/speakers/page.privacyNotice.test.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/routes/verify-email/+page.svelte::no-restricted-imports	1	lint: burn-down planned
 frontend/src/routes/verify-email/+page.svelte::svelte/no-navigation-without-resolve	2	lint: burn-down planned

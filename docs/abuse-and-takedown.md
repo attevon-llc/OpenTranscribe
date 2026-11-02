@@ -394,6 +394,10 @@ request, not at signing time, so:
   | `s3:DeleteObject` | `arn:aws:s3:::<your-cache-bucket>/*` | deleting them on takedown |
   | `s3:PutObject`, `s3:DeleteObject` | `arn:aws:s3:::<your-media-bucket>/_opentranscribe/probes/*` and `arn:aws:s3:::<your-cache-bucket>/_opentranscribe/probes/*` | the startup probe's throwaway object (the app already holds both for media); a refused media-bucket delete is logged as a leftover probe object, not as a missing takedown permission |
 
+  **Full policy.** The table above covers quarantine only. The complete list of S3 actions the
+  application uses, with an example policy, is in
+  [Object storage: Complete IAM policy reference](../docs-site/docs/operations/object-storage.md#complete-iam-policy-reference).
+
   **What counts as enforcing.** The policy is read conservatively: only an unconditional
   `Deny` of `s3:GetObject` (or `s3:Get*`, `s3:*`, `*`) to every principal (`"*"` or
   `{"AWS": "*"}`/`["*"]`) on the whole bucket (`<bucket>/*` or `*`), conditioned on exactly

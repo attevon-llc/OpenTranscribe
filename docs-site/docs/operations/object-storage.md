@@ -129,6 +129,107 @@ file purge or GDPR erasure records it as partial (`storage_unverified`), never c
 known to be versioned, a refused version listing is reported as a failed delete, because versions
 certainly remain. Deleting every version is irreversible, and that includes the orphan sweep.
 
+### Complete IAM policy reference
+
+This section lists every S3 action the backend calls, derived from the code. A unit test
+(`backend/tests/unit/test_s3_iam_docs_cover_code.py`) scans the backend for object-store client
+calls and fails when this table or the example policy omits one, so it stays current. The
+sections above describe the quarantine and version-delete subsets; this is the full list.
+
+The application uses up to four separate buckets, each with its own identity if you prefer:
+the media bucket and cache bucket (the storage identity), an optional backup bucket, an optional
+mirror destination, and, only if you enable AWS Transcribe, its temporary bucket. A watch source
+pointing at an S3 bucket needs only read access to that bucket (plus `s3:PutObject` if you enable
+stitched-file write-back).
+
+| Action | Resource | Used for |
+|---|---|---|
+| `s3:ListBucket` | bucket | listing keys, bucket existence and reachability probes (`HeadBucket`) |
+| `s3:GetObject` | `bucket/*` | reads, downloads, stat/head, presigned download URLs |
+| `s3:PutObject` | `bucket/*` | uploads (single and multipart), presigned upload URLs, the startup probe object |
+| `s3:AbortMultipartUpload` | `bucket/*` | cleaning up a failed or abandoned multipart upload |
+| `s3:DeleteObject` | `bucket/*` | deleting current objects (file delete, cache purge, orphan sweep, backup retention) |
+| `s3:ListBucketVersions` | bucket | finding every version and delete marker of a key (versioned buckets) |
+| `s3:DeleteObjectVersion` | `bucket/*` | removing each version (versioned buckets); irreversible |
+| `s3:GetBucketVersioning` | bucket | knowing whether old versions can exist |
+| `s3:GetObjectTagging`, `s3:PutObjectTagging` | `bucket/*` | the quarantine tag and the presigned-URL revocation probe |
+| `s3:GetBucketPolicy` | bucket | the quarantine posture check and presign identity check |
+| `s3:DeleteBucketPolicy` | bucket | startup removes a public-read bucket policy if one is found |
+| `s3:GetLifecycleConfiguration`, `s3:PutLifecycleConfiguration` | bucket | the export-expiry rule and the abort-incomplete-multipart rule (best-effort: a refusal is logged, uploads continue) |
+| `s3:PutBucketCORS` | bucket | browser-upload CORS, only when `S3_CONFIGURE_BUCKET_CORS=true` |
+| `s3:CreateBucket` | bucket | creating a missing bucket at startup, and AWS Transcribe's temporary bucket |
+| `s3:PutObjectLegalHold` | `bucket/*` | optional best-effort legal hold, Object Lock buckets only |
+
+Example policy for the storage identity on the media and cache buckets. Replace the bucket names;
+drop statements for features you do not use (for example the versioning and legal-hold actions on
+an unversioned bucket, `s3:PutBucketCORS` and `s3:CreateBucket` if you create and configure the
+buckets yourself):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BucketLevel",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket",
+        "s3:ListBucketVersions",
+        "s3:GetBucketVersioning",
+        "s3:GetBucketPolicy",
+        "s3:DeleteBucketPolicy",
+        "s3:GetLifecycleConfiguration",
+        "s3:PutLifecycleConfiguration",
+        "s3:PutBucketCORS",
+        "s3:CreateBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::<your-media-bucket>",
+        "arn:aws:s3:::<your-cache-bucket>"
+      ]
+    },
+    {
+      "Sid": "ObjectLevel",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:AbortMultipartUpload",
+        "s3:DeleteObject",
+        "s3:DeleteObjectVersion",
+        "s3:GetObjectTagging",
+        "s3:PutObjectTagging",
+        "s3:PutObjectLegalHold"
+      ],
+      "Resource": [
+        "arn:aws:s3:::<your-media-bucket>/*",
+        "arn:aws:s3:::<your-cache-bucket>/*"
+      ]
+    }
+  ]
+}
+```
+
+Minimal variants:
+
+- **Plain storage, unversioned bucket, buckets pre-created:** `s3:ListBucket` on the bucket and
+  `s3:GetObject`, `s3:PutObject`, `s3:AbortMultipartUpload`, `s3:DeleteObject` on `bucket/*`.
+  Lifecycle rules and CORS are then your responsibility.
+- **Add versioned-bucket deletes:** `s3:GetBucketVersioning`, `s3:ListBucketVersions` on the
+  bucket and `s3:DeleteObjectVersion` on `bucket/*`.
+- **Add quarantine enforcement:** `s3:GetObjectTagging`, `s3:PutObjectTagging` on `bucket/*` and
+  `s3:GetBucketPolicy` on the bucket, plus the deny policy described in
+  [Production deployment](./production-deployment.md#permissions-quarantine-needs-on-s3).
+- **Backup bucket:** `s3:ListBucket`, `s3:GetObject`, `s3:PutObject`, `s3:AbortMultipartUpload`,
+  `s3:DeleteObject` (retention pruning) on that bucket only.
+- **Watch source or mirror destination:** `s3:ListBucket` and `s3:GetObject` to read a source;
+  `s3:PutObject` and `s3:AbortMultipartUpload` on a mirror destination or a write-back source.
+- **AWS Transcribe temporary bucket:** `s3:CreateBucket` (only if the app should create it),
+  `s3:ListBucket`, `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`.
+
+This policy has not been run through the IAM policy simulator against a live AWS bucket; validate
+it in your account before relying on it.
+
 ## Roadmap
 
 These are plans, not part of 0.6.0:

@@ -459,30 +459,30 @@ is_blackwell_gpu() {
     [[ "$compute_cap" == 12.* ]]
 }
 
-# Host CPU architecture, normalized to the names Docker/OCI manifests use
-# (amd64 / arm64), so a caller never has to know that `uname -m` says x86_64 on
-# one and aarch64 on the other. Anything else is echoed through unchanged.
-host_architecture() {
-    local machine
-    machine=$(uname -m 2>/dev/null || echo unknown)
-    case "$machine" in
-        x86_64|amd64)   echo "amd64" ;;
-        aarch64|arm64)  echo "arm64" ;;
-        *)              echo "$machine" ;;
-    esac
-}
-
-# The deployment mode this run will actually use, env var beating .env.
-# read_env_value only ever reads .env, so a preflight that exports
-# DEPLOYMENT_MODE (see arm64_deployment_preflight below) would otherwise be
-# invisible to every consumer that asks .env directly.
-effective_deployment_mode() {
-    local mode="${DEPLOYMENT_MODE:-}"
-    if [ -z "$mode" ]; then
-        mode=$(read_env_value DEPLOYMENT_MODE)
-    fi
-    echo "$mode" | tr '[:upper:]' '[:lower:]'
-}
+# Fallback definitions: the canonical host_architecture()/effective_deployment_mode() live in
+# scripts/common.sh (resolve_backend_image() needs them too); this script is sometimes run
+# without common.sh (see the sourcing note at the top), so keep identical bodies here.
+# Parity is pinned by backend/tests/unit/test_backend_image_resolution.py.
+if ! declare -F host_architecture >/dev/null 2>&1; then
+    host_architecture() {
+        local machine
+        machine=$(uname -m 2>/dev/null || echo unknown)
+        case "$machine" in
+            x86_64|amd64)   echo "amd64" ;;
+            aarch64|arm64)  echo "arm64" ;;
+            *)              echo "$machine" ;;
+        esac
+    }
+fi
+if ! declare -F effective_deployment_mode >/dev/null 2>&1; then
+    effective_deployment_mode() {
+        local mode="${DEPLOYMENT_MODE:-}"
+        if [ -z "$mode" ]; then
+            mode=$(read_env_value DEPLOYMENT_MODE)
+        fi
+        echo "$mode" | tr '[:upper:]' '[:lower:]'
+    }
+fi
 
 # arm64 hosts: the FULL (CUDA) image has no working arm64 CAPABILITY, so default
 # to lite (#680). Three independent reasons, each one sufficient on its own:

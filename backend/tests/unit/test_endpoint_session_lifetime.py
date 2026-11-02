@@ -2,10 +2,10 @@
 # This suite passes a recording session stand-in to handlers that declare
 # ``db: Session``. Declared once here rather than as a cast at every call site —
 # a cast buries the thing being asserted, and widening a production signature to
-# suit a test is worse. Same convention as ``test_task_session_lifetime.py``.
+# suit a test is worse. Same convention as the ``test_*_session_lifetime.py`` task modules.
 """API handlers must not hold the request transaction across a network call.
 
-Sibling of ``test_task_session_lifetime.py``, which covers the Celery half. The
+Sibling of the ``test_*_session_lifetime.py`` task modules, which covers the Celery half. The
 defect is identical; only the session's provenance differs, and that difference
 is why these needed their own harness:
 

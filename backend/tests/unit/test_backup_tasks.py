@@ -17,7 +17,7 @@ due-check + window-claim, and the overlap-guarding Redis lock:
 beat tick — or a manual "Run Now" landing on a scheduled window — started two
 concurrent ``pg_dump`` processes against the same database. Most of these tests
 fake ``task_lock_manager.acquire_lock`` the way ``test_watch_fs_event_watchdog.
-py``/``test_task_session_lifetime.py`` already do for this exact seam, but
+py``/``test_watch_session_lifetime.py`` already do for this exact seam, but
 ``test_run_backup_lock_actually_prevents_a_concurrent_run`` proves the fix with
 a REAL Redis distributed lock — a throwaway, unauthenticated ``redis:7-alpine``
 container private to this module (never the password-protected dev-stack Redis,

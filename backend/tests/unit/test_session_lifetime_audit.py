@@ -165,7 +165,7 @@ def test_the_six_fixed_tasks_are_clean(auditor):
     """The instances fixed alongside this gate must not reappear.
 
     Asserted against the real source, not a fixture: this is the regression guard for the
-    fixes in ``test_task_session_lifetime.py``. ``watch_sources/processing.py`` is excluded
+    fixes in the ``test_*_session_lifetime.py`` task modules. ``watch_sources/processing.py`` is excluded
     on purpose — its ``ingest_prepared_file`` residual is a documented, allowlisted BACKLOG
     entry, and pretending otherwise here would be the false-clean signal this file exists
     to prevent.

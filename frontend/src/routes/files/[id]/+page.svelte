@@ -28,8 +28,7 @@
     type SpeakerNameBaseline,
   } from '$lib/fileDetail/speakerNames';
   import { seekTimeFromSearch } from '$lib/fileDetail/deepLinks';
-  import { patchSegmentInFile } from '$lib/fileDetail/segmentSync';
-  import { clearProcessedVideoCache, saveSegmentText, segmentSaveErrorKey } from '$lib/fileDetail/segmentEdit';
+  import { createSegmentEditor, hasUnsavedSegmentEdit } from '$lib/fileDetail/segmentEdit';
 
   import FilePlayer from '$components/fileDetail/FilePlayer.svelte';
   import MetadataDisplay from '$components/MetadataDisplay.svelte';
@@ -213,12 +212,11 @@
   // Detect changes in speaker names - depends on speaker display_name values
   $: speakerNamesChanged = hasUnsavedSpeakerNames(speakerList, originalSpeakerNames);
 
-  // An open segment editor only counts as unsaved once the text actually differs — opening
-  // one and closing the tab must not prompt. Trimmed on both sides so trailing whitespace
-  // the textarea introduced is not "an edit".
-  $: segmentEditUnsaved =
-    editingSegmentId !== null &&
-    editingSegmentText.trim() !== editingSegmentOriginalText.trim();
+  $: segmentEditUnsaved = hasUnsavedSegmentEdit({
+    id: editingSegmentId,
+    text: editingSegmentText,
+    originalText: editingSegmentOriginalText,
+  });
 
   // Issue #787: the "unsaved" dot beside the speaker panel used to be the ENTIRE
   // protection — a nav click or a tab close discarded a speaker-naming pass silently.
@@ -451,51 +449,21 @@
       .catch(error => console.warn(`Failed to update captions after ${reason}:`, error));
   }
 
-  function handleEditSegment(event: any) {
-    const segment = event.detail.segment;
-    editingSegmentId = segment.uuid;
-    editingSegmentText = segment.text;
-    editingSegmentOriginalText = segment.text ?? '';
-  }
-
-  async function handleSaveSegment(event: CustomEvent<{ segment: { uuid: string } }>) {
-    const segment = event.detail.segment;
-    if (!segment || !editingSegmentText) return;
-
-    try {
-      savingTranscript = true;
-      const segmentUuid = segment.uuid;
-      const saved = await saveSegmentText(fileId, segmentUuid, editingSegmentText);
-
-      if (saved) {
-        // Update the transcript store FIRST for reactivity (its readers do not read `file`)
-        transcriptStore.updateSegmentText(segmentUuid, editingSegmentText);
-
-        // Patch only `text`, so the segment's speaker fields cannot be clobbered.
-        file = patchSegmentInFile(file, segmentUuid, { text: saved.text ?? editingSegmentText });
-
-        // The write is committed — close the editor now. Everything below only affects
-        // future downloads and the subtitle track, so it must not hold the UI open.
-        handleCancelEditSegment();
-        clearProcessedVideoCache(file.uuid);
-        refreshCaptionTrack('segment edit');
-
-        // Word counts and talk-time are derived from segment text; refresh them.
-        handleAnalyticsRefreshNeeded();
-      }
-    } catch (error: unknown) {
-      console.error('Error saving segment:', error);
-      toastStore.error($t(segmentSaveErrorKey(getErrorStatus(error))));
-    } finally {
-      savingTranscript = false;
-    }
-  }
-
-  function handleCancelEditSegment() {
-    editingSegmentId = null;
-    editingSegmentText = '';
-    editingSegmentOriginalText = '';
-  }
+  // Inline segment editing; the state stays here so an open edit survives a reload.
+  const segmentEditor = createSegmentEditor({
+    getFileId: () => fileId,
+    getFile: () => file,
+    setFile: (f) => (file = f),
+    getEdit: () => ({ id: editingSegmentId, text: editingSegmentText, originalText: editingSegmentOriginalText }),
+    setEdit: (edit) => {
+      editingSegmentId = edit.id;
+      editingSegmentText = edit.text;
+      editingSegmentOriginalText = edit.originalText;
+    },
+    setSaving: (saving) => (savingTranscript = saving),
+    refreshCaptionTrack,
+    refreshAnalytics: () => handleAnalyticsRefreshNeeded(),
+  });
 
   function handleExportTranscript(event: CustomEvent<{ format: string }>) {
     if (!file || !file.transcript_segments) return;
@@ -812,9 +780,9 @@
           {hasMoreSegments}
           {loadingMoreSegments}
           on:segmentClick={handleSegmentClick}
-          on:editSegment={handleEditSegment}
-          on:saveSegment={handleSaveSegment}
-          on:cancelEditSegment={handleCancelEditSegment}
+          on:editSegment={(e) => segmentEditor.open(e.detail.segment)}
+          on:saveSegment={(e) => segmentEditor.save(e.detail.segment)}
+          on:cancelEditSegment={segmentEditor.cancel}
           on:speakerUpdate={handleSpeakerUpdate}
           on:speakerCreated={loadSpeakers}
           on:speakerDeleted={handleSpeakerDeleted}

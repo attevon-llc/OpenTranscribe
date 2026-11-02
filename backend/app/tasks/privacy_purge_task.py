@@ -31,6 +31,8 @@ from app.db.base import SessionLocal
 from app.db.session_utils import session_scope
 from app.models.user import User
 from app.services.privacy import purge
+from app.services.privacy.measure import GroupedCounts
+from app.services.privacy.measure import merge_grouped
 from app.utils.task_utils import TASK_STATUS_COMPLETED
 from app.utils.task_utils import TASK_STATUS_FAILED
 from app.utils.task_utils import TASK_STATUS_IN_PROGRESS
@@ -131,10 +133,10 @@ def privacy_purge_task(
     counts = result.counts()
     residual = result.residual()
     previous = purge.read_record(task_id) if phase > 1 else None
-    total: purge.GroupedCounts = {purge.POSTGRES: {}, purge.OPENSEARCH: {}}
+    total: GroupedCounts = {purge.POSTGRES: {}, purge.OPENSEARCH: {}}
     if previous and isinstance(previous.get("counts"), dict):
-        purge.merge_grouped(total, previous["counts"])
-    purge.merge_grouped(total, counts)
+        merge_grouped(total, previous["counts"])
+    merge_grouped(total, counts)
     purge.write_record(
         task_id,
         actor_user_id,

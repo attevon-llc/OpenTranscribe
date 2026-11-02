@@ -8,7 +8,7 @@ and domain formatting belong in the backend (thin-frontend rule).
 
 ## Key files
 
-- `formatting.ts` — **the single home for time/number/name formatting.** See the rule below.
+- `formatting.ts` — **the single home for display formatting** (dates, sizes, durations, relative time, subtitle timestamps). See the rule below.
 - `apiError.ts` — standard error handling: `getErrorMessage`, `handleApiError`, `withAsync`.
 - `clipboard.ts` — `copyToClipboard(text, onSuccess?, onError?)` with non-secure-context fallback.
 - `debounce.ts` — `createDebouncedHandler` (used by search inputs).
@@ -33,17 +33,28 @@ and domain formatting belong in the backend (thin-frontend rule).
 
 ## Conventions / patterns
 
-- **Time formatting lives ONLY in `formatting.ts`.** Do not write a local `formatTime`/
-  `formatTimestamp`/`formatDuration` in a component. Use:
-  - `formatDuration(s)` → padded `MM:SS` / `HH:MM:SS` (e.g. `01:05`).
-  - `formatClock(s)` → unpadded, hour-aware (`1:05`, `1:01:01`).
-  - `formatTimeWithMillis(s)` → live player time `HH:MM:SS.mmm`.
-  - `formatSrtTimestamp(s)` / `formatVttTimestamp(s)` → subtitle cues (always full `HH`).
+- **Display formatting lives ONLY in `formatting.ts`.** A convention test
+  (`components/formatters.convention.test.ts`) fails on a same-named copy, and on an inline
+  `new Date(x).toLocale*String()`, anywhere else. Use:
+  - `formatDate(s, locale?)` / `formatDateTime(value, fallback, locale?)` → app-locale dates
+    (never the browser's). Pass `$locale` from a component so a language switch re-renders.
+  - `formatAuditTimestamp(s, locale?, { withYear })` → one-call, Latin-digit, bidi-safe
+    audit-log timestamp for an LTR cell.
+  - `formatFileSize(bytes)`, `formatRelativeTime(date, now, t)`.
+  - `formatDuration(s, { padHours? })` → padded `MM:SS` / `HH:MM:SS` (`padHours` keeps a live
+    timer one width); `formatClock(s)` → unpadded (`1:05`, `1:01:01`);
+    `formatCompactDuration(s)` → `2m 5s`; `formatEta(s)` → compact or `''` when none;
+    `formatElapsed(s)` → `1h 0m 5s`.
+  - `formatTimeWithMillis(s)` → live player time; `formatSrtTimestamp(s)` /
+    `formatVttTimestamp(s)` → subtitle cues (always full `HH`).
   - `getInitials(name, email)` for avatars.
-    All clamp NaN/negative to zero. Behavior is locked by `formatting.test.ts`.
-- **Do NOT migrate** to the shared formatters: relative "X ago" labels, compact `Xh Ym`
-  durations, ETA formatters returning `undefined`, or unpadded formatters that intentionally
-  show minutes ≥ 60 without hour rollover — those differ from the shared ones.
+    Time helpers clamp NaN/negative to zero. Behavior is locked by `formatting.test.ts`.
+- A component that genuinely needs a different shape names its function for what it does
+  (`describeMinutes`, `relativeFromNow`, `formatModelBytes`) instead of reusing a shared name.
+- `poller.ts` — `createPoller(callback, { intervalMs })`: a repeating async task that never
+  overlaps itself, pauses while the tab is hidden and catches up on resume. Use it instead of a
+  bare `setInterval`; `start()` does not run the callback, so do the first load yourself.
+- The `Translate` function type (`t` store value) lives in `$lib/i18n`.
 - In `.ts` files use `get(store)` from `svelte/store`; `$store` syntax is `.svelte`-only.
 
 ## How it connects

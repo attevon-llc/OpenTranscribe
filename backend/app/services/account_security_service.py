@@ -24,6 +24,7 @@ see ``auth/token_service.py``).
 from __future__ import annotations
 
 import logging
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -95,12 +96,16 @@ def assert_local_fallback_settable(auth_type: str | None) -> None:
         )
 
 
-def count_other_active_super_admins(db: Session, user: User) -> int:
+def count_other_active_super_admins(
+    db: Session, user: User, *, already_removed: Collection[int] = ()
+) -> int:
     """Count active super_admins other than ``user``, locking every one of them.
 
     Shared by every guard that must refuse leaving the deployment with zero
-    active super_admins — role change, deactivation, and delete all need this
-    same count, decided against differently.
+    active super_admins — role change, deactivation, delete, and the inactivity
+    sweep all need this same count, decided against differently. The sweep passes
+    the ids it already disabled as ``already_removed``, so they never count as
+    survivors even if a committed ``is_active=False`` were somehow not yet visible.
 
     The rows stay locked until the caller's transaction ends. An unlocked count let
     two concurrent demotions (A demoting B, B demoting A) each count the other as a
@@ -115,7 +120,11 @@ def count_other_active_super_admins(db: Session, user: User) -> int:
         .with_for_update()
         .all()
     )
-    return sum(1 for (locked_id,) in locked_ids if locked_id != user.id)
+    return sum(
+        1
+        for (locked_id,) in locked_ids
+        if locked_id != user.id and locked_id not in already_removed
+    )
 
 
 def assert_not_last_super_admin(db: Session, user: User, new_role: str) -> None:

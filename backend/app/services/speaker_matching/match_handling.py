@@ -164,12 +164,18 @@ def _store_voiceprint_and_matches(
 
 
 def _blend_into_profile_centroid(
-    self: "SpeakerMatchingService", speaker: Speaker, aggregated_embedding: np.ndarray
+    self: "SpeakerMatchingService",
+    speaker: Speaker,
+    aggregated_embedding: np.ndarray,
+    *,
+    fold_in: bool = True,
 ) -> None:
-    """Weighted incremental average of the new voice into the profile's stored centroid."""
-    from app.services.opensearch_service import get_profile_embedding
-    from app.services.opensearch_service import store_profile_embedding
+    """Weighted incremental average of the new voice into the profile's stored centroid.
 
+    Args:
+        fold_in: False for a speaker that was already a member: its voice is in the
+            centroid already, so only the derived member count is refreshed.
+    """
     profile = self.db.query(SpeakerProfile).filter(SpeakerProfile.id == speaker.profile_id).first()
     if not profile:
         return
@@ -189,13 +195,27 @@ def _blend_into_profile_centroid(
     # `profile_embedding_service._process_profile_with_embeddings`
     # (`embedding_count = len(embeddings)`) instead of drifting
     # away from it until an admin runs a full recalculation.
-    existing = get_profile_embedding(str(profile.uuid))
     linked_count = self._linked_speaker_count(int(profile.id))
     # `speaker.profile_id` was assigned and flushed above, so the
     # count already includes this speaker. The stored centroid
     # represents the others.
     prior_count = max(linked_count - 1, 0)
     count = max(linked_count, 1)
+    if fold_in:
+        _store_blended_centroid(profile, aggregated_embedding, prior_count, count)
+        profile.last_embedding_update = datetime.now(UTC)  # type: ignore[assignment]
+    profile.embedding_count = count  # type: ignore[assignment]
+    self.db.commit()
+
+
+def _store_blended_centroid(
+    profile: SpeakerProfile, aggregated_embedding: np.ndarray, prior_count: int, count: int
+) -> None:
+    """Blend one new voice into the profile's stored centroid and store the result."""
+    from app.services.opensearch_service import get_profile_embedding
+    from app.services.opensearch_service import store_profile_embedding
+
+    existing = get_profile_embedding(str(profile.uuid))
     new_emb = aggregated_embedding.tolist()
     if existing and prior_count > 0:
         old = np.array(existing)
@@ -215,9 +235,6 @@ def _blend_into_profile_centroid(
         # Profile docs mirror the profile ROW's tenant scope
         organization_id=profile.organization_id,
     )
-    profile.embedding_count = count  # type: ignore[assignment]
-    profile.last_embedding_update = datetime.now(UTC)  # type: ignore[assignment]
-    self.db.commit()
 
 
 def _sync_profile_to_index(self: "SpeakerMatchingService", speaker: Speaker) -> None:
@@ -285,6 +302,10 @@ def handle_speaker_match(
 
     match_detail = self._match_detail(match)
     self._record_match_suggestion(speaker, match, match_detail)
+    # Read before the auto-accept links it. A speaker already linked to this profile is
+    # already in its centroid; blending it again (a re-run, or a task retried after a
+    # later speaker's index outage) would count its voice twice.
+    already_linked = bool(match.get("profile_id")) and speaker.profile_id == match["profile_id"]
 
     # If high confidence, auto-apply the suggestion
     if match["auto_accept"]:
@@ -314,7 +335,9 @@ def handle_speaker_match(
     if match["auto_accept"] and match.get("profile_id"):
         if speaker.profile_id and aggregated_embedding is not None:
             try:
-                _blend_into_profile_centroid(self, speaker, aggregated_embedding)
+                _blend_into_profile_centroid(
+                    self, speaker, aggregated_embedding, fold_in=not already_linked
+                )
             except Exception as e:
                 logger.warning(f"Incremental profile update failed (non-fatal): {e}")
 

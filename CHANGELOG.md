@@ -76,6 +76,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Erasure receipt listing and reads no longer fail when response headers are added.** The
+  three rate-limited receipt endpoints (`GET /api/admin/gdpr/erasures`, the receipts of one
+  erasure, and the organization-admin receipts) now declare the response parameter the rate
+  limiter writes its headers to; without it any reply built from a model could end in a server
+  error. The retired summaries index is counted by the receipt through the same module that
+  still erases it, so only that module names the index.
 - **Object-key unique indexes no longer block writes at startup.** The startup retry for the
   indexes the v456 migration had to skip now uses `CREATE UNIQUE INDEX CONCURRENTLY`, drops an
   invalid index left by a failed build before trying again, runs at most once per process, and

@@ -244,6 +244,8 @@ Minimal variants:
   `s3:DeleteObject` (retention pruning) on that bucket only.
 - **Watch source or mirror destination:** `s3:ListBucket` and `s3:GetObject` to read a source;
   `s3:PutObject` and `s3:AbortMultipartUpload` on a mirror destination or a write-back source.
+- **Splitting shared object keys (`split_shared_storage_paths --apply`):** a server-side copy,
+  so `s3:GetObject` and `s3:PutObject` on the media bucket's `bucket/*`.
 - **AWS Transcribe temporary bucket:** `s3:CreateBucket` (only if the app should create it),
   `s3:ListBucket`, `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`.
 

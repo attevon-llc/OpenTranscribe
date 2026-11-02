@@ -161,6 +161,32 @@ AUDITED_ROUTES: dict[tuple[str, str], Audited] = {
         ("ADMIN_USER_DELETE",), "org-member-erase"
     ),
     ("POST", "/api/org-admin/gdpr/erase-organization"): A(("ADMIN_USER_DELETE",), "org-erase"),
+    # Single-recording erasure, the account holder's own request (and its withdrawal), the
+    # receipt reads, and the per-file voiceprint opt-out whose purge is a compliance event.
+    ("POST", "/api/admin/gdpr/erase-file/{file_uuid}"): A(
+        ("ADMIN_USER_DELETE",), pinned_by="api/test_erasure_receipts_api.py"
+    ),
+    ("POST", "/api/org-admin/gdpr/erase-file/{file_uuid}"): A(
+        ("ADMIN_USER_DELETE",), pinned_by="api/test_erasure_receipts_api.py"
+    ),
+    ("POST", "/api/users/me/erasure-request"): A(
+        ("ADMIN_USER_DELETE",), pinned_by="api/test_self_erasure_api.py"
+    ),
+    ("DELETE", "/api/users/me/erasure-request/{ledger_uuid}"): A(
+        ("ADMIN_USER_DELETE",), pinned_by="api/test_self_erasure_api.py"
+    ),
+    ("GET", "/api/admin/gdpr/erasures/{ledger_uuid}/receipts"): A(
+        ("GDPR_RECEIPT_VIEW",), pinned_by="api/test_erasure_receipts_api.py"
+    ),
+    ("GET", "/api/org-admin/gdpr/erasures/{ledger_uuid}/receipts"): A(
+        ("GDPR_RECEIPT_VIEW",), pinned_by="api/test_erasure_receipts_api.py"
+    ),
+    ("PUT", "/api/admin/gdpr/erasure-receipt/ignored-indices"): A(
+        ("ADMIN_SETTINGS_CHANGE",), pinned_by="api/test_erasure_receipts_api.py"
+    ),
+    ("PATCH", "/api/files/{file_uuid}/voiceprint-consent"): A(
+        ("PRIVACY_VOICEPRINT_PURGE",), pinned_by="api/test_file_voiceprint_consent.py"
+    ),
     ("DELETE", "/api/admin/users/{user_uuid}"): A(("ADMIN_USER_DELETE",), "admin-user-delete"),
     ("DELETE", "/api/users/{user_uuid}"): A(("ADMIN_USER_DELETE",), "users-delete"),
     ("DELETE", "/api/files/{file_uuid}"): A(
@@ -225,6 +251,9 @@ NOT_AUDITED: dict[tuple[str, str], str] = {
     ("GET", "/api/admin/data-integrity/status"): _READ,
     ("GET", "/api/admin/data-integrity/storage/counts"): _READ,
     ("GET", "/api/admin/data-integrity/storage/status"): _READ,
+    ("GET", "/api/admin/data-integrity/storage/keys"): _READ,
+    ("GET", "/api/admin/gdpr/erasures"): _READ,
+    ("GET", "/api/admin/gdpr/erasure-receipt/ignored-indices"): _READ,
     ("GET", "/api/admin/takedown-notices"): _READ,
     ("GET", "/api/admin/takedown-notices/{notice_uuid}"): _READ,
     ("GET", "/api/org-admin/holds"): _READ,

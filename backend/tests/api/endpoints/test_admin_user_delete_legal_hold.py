@@ -176,12 +176,12 @@ def test_the_refusal_counts_every_held_file(client, admin_token_headers, normal_
 def test_the_users_router_delete_is_refused_too(
     client, admin_token_headers, normal_user, db_session
 ):
-    """``DELETE /api/users/{uuid}`` is the second caller and has no savepoint at all.
+    """``DELETE /api/users/{uuid}`` is the second caller, with no ``except Exception``.
 
-    It calls the same three cascade helpers with no ``begin_nested()`` and no
-    ``except Exception``, so a guard that only lived inside ``_delete_user_media_files``
-    would refuse here only *after* ``_delete_user_owned_records`` and
-    ``_delete_user_speakers`` had already deleted rows in the request's session.
+    It used to call the three cascade helpers with no ``begin_nested()`` either, so a
+    guard that only lived inside ``_delete_user_media_files`` would refuse here only
+    *after* ``_delete_user_owned_records`` and ``_delete_user_speakers`` had already
+    deleted rows in the request's session.
     """
     owned = seed_owned_rows(db_session, normal_user)
     owned.assert_all_present(db_session)

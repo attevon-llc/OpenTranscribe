@@ -316,13 +316,13 @@ def admin_update_external_email(
     # stale True on an address the deployment never actually verified is exactly the
     # kind of "looks fine, isn't" state this module exists to avoid. Deliberately no
     # re-verification token is issued here (unlike the self-service path in
-    # users.py): this endpoint is an administrator accepting an IdP's assertion for
+    # users_self_service.py): this endpoint is an administrator accepting an IdP's assertion for
     # an already-linked account, and mailing an IdP-owned address unprompted isn't
     # its job — issue_verification_token would also no-op for a genuinely external
     # account.
     user.email_verified = False
     user.email_verified_at = None
-    # Same shape as the self-service email change in `users.py`: revoke IN the
+    # Same shape as the self-service email change in `users_self_service.py`: revoke IN the
     # transaction so a commit failure rolls the revocation back with it. An email
     # change is an identity change on an account that authenticates by it, and
     # `auth/CLAUDE.md` makes revocation non-optional for that class of change.
@@ -352,7 +352,7 @@ def admin_update_external_email(
     )
     # Best-effort, and it may well bounce (a dead domain is one of the triggers) — but
     # a silent address change is the first half of an account takeover, so the previous
-    # address is told, exactly as the self-service change in `users.py` does.
+    # address is told, exactly as the self-service change in `users_self_service.py` does.
     notify_email_changed(previous_email, new_email)
 
     return UpdateExternalEmailResponse(success=True, email=new_email, previous_email=previous_email)

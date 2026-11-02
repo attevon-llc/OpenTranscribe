@@ -24,7 +24,7 @@ Two safety rules:
 2. **Never deactivate the last active super_admin.** Auth configuration, role
    changes and the audit log are all super_admin-gated, so zeroing them out locks
    everyone out permanently with no recovery path short of editing the database by
-   hand — the same reasoning `api/endpoints/users.py::_assert_not_last_super_admin`
+   hand — the same reasoning `account_security_service.assert_not_last_super_admin`
    already applies to a manual role change, adapted here as a non-raising
    skip-and-log check (a scheduled sweep has no request to fail).
 """
@@ -45,32 +45,10 @@ from app.auth.roles import ROLE_SUPER_ADMIN
 from app.core.config import settings
 from app.core.constants import ACCOUNT_INACTIVITY_MAX_DISABLES_PER_RUN
 from app.models.user import User
+from app.services.account_security_service import count_other_active_super_admins
 from app.services.account_security_service import revoke_all_sessions
 
 logger = logging.getLogger(__name__)
-
-
-def _would_leave_no_super_admin(db: Session, excluded_ids: set[int]) -> bool:
-    """True if deactivating every id in *excluded_ids* would zero active super_admins.
-
-    Called **per candidate, immediately before deactivating them** (not once from a
-    pre-loop snapshot) — a TOCTOU gap otherwise: if two super_admins are both
-    inactivity-eligible in the same sweep, a snapshot computed before the loop starts
-    would see both as "not the last one" and let both be deactivated. The caller
-    passes `{this_candidate_id} | deactivated_this_sweep`, so a super_admin already
-    disabled earlier in the same pass is treated as gone even if, for any reason, its
-    committed `is_active=False` were not yet visible to this query.
-    """
-    remaining = (
-        db.query(User)
-        .filter(
-            User.role == ROLE_SUPER_ADMIN,
-            User.id.notin_(excluded_ids),
-            User.is_active.is_(True),
-        )
-        .count()
-    )
-    return remaining == 0
 
 
 def _disable_inactive_user(db: Session, user: User, *, last_login_at: datetime) -> int:
@@ -194,7 +172,8 @@ def run_inactivity_sweep(db: Session) -> dict:
     errors = 0
     # Tracks who this pass has ALREADY deactivated, so the super_admin protection
     # check below is re-evaluated against current state per candidate rather than a
-    # single pre-loop snapshot -- see `_would_leave_no_super_admin`'s docstring.
+    # single pre-loop snapshot: a snapshot taken before the loop saw two eligible
+    # super_admins as "not the last one" each and let both be deactivated.
     deactivated_this_sweep: set[int] = set()
     for user_id, user_email in [(int(u.id), str(u.email)) for u in candidates]:
         # Re-fetched fresh, not reused from `candidates`: an earlier iteration's
@@ -217,9 +196,16 @@ def run_inactivity_sweep(db: Session) -> dict:
             )
             continue
 
-        if user_id in super_admin_ids and _would_leave_no_super_admin(
-            db, {user_id} | deactivated_this_sweep
+        # The guard's own count: it locks every active super_admin row until this
+        # transaction ends, so a concurrent admin demotion cannot also pass.
+        if (
+            user_id in super_admin_ids
+            and count_other_active_super_admins(db, user, already_removed=deactivated_this_sweep)
+            == 0
         ):
+            # Nothing is written on this path; commit only to release those locks
+            # rather than hold them for the rest of the sweep.
+            db.commit()
             skipped_super_admin += 1
             logger.warning(
                 "Account inactivity sweep: deactivating super_admin %s (id=%s) would "

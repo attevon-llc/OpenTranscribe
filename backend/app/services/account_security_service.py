@@ -24,6 +24,7 @@ see ``auth/token_service.py``).
 from __future__ import annotations
 
 import logging
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -36,6 +37,7 @@ from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.auth.mfa_policy import user_is_mfa_protected
 from app.auth.password_policy import validate_password
+from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.token_service import token_service
 from app.auth.utils import local_fallback_permitted_for
 from app.auth.utils import local_password_allowed
@@ -91,6 +93,68 @@ def assert_local_fallback_settable(auth_type: str | None) -> None:
         raise InvalidInputError(
             "allow_local_fallback only applies to accounts whose identity is owned "
             "by PKI or an OIDC provider."
+        )
+
+
+def count_other_active_super_admins(
+    db: Session, user: User, *, already_removed: Collection[int] = ()
+) -> int:
+    """Count active super_admins other than ``user``, locking every one of them.
+
+    Shared by every guard that must refuse leaving the deployment with zero
+    active super_admins — role change, deactivation, delete, and the inactivity
+    sweep all need this same count, decided against differently. The sweep passes
+    the ids it already disabled as ``already_removed``, so they never count as
+    survivors even if a committed ``is_active=False`` were somehow not yet visible.
+
+    The rows stay locked until the caller's transaction ends. An unlocked count let
+    two concurrent demotions (A demoting B, B demoting A) each count the other as a
+    survivor and both commit. The target is locked too, in id order: locking only
+    the others gives those two transactions disjoint lock sets. ``FOR UPDATE`` is
+    not allowed with an aggregate, so the rows are fetched and counted here.
+    """
+    locked_ids = (
+        db.query(User.id)
+        .filter(User.role == ROLE_SUPER_ADMIN, User.is_active.is_(True))
+        .order_by(User.id)
+        .with_for_update()
+        .all()
+    )
+    return sum(
+        1
+        for (locked_id,) in locked_ids
+        if locked_id != user.id and locked_id not in already_removed
+    )
+
+
+def assert_not_last_super_admin(db: Session, user: User, new_role: str) -> None:
+    """Refuse a change that would leave the deployment with no super_admin.
+
+    Auth configuration, role changes and the audit log are all super_admin-gated,
+    so demoting the last one locks everyone out of them permanently — there is no
+    recovery path short of editing the database by hand.
+    """
+    if str(user.role) != ROLE_SUPER_ADMIN or new_role == ROLE_SUPER_ADMIN:
+        return
+
+    if count_other_active_super_admins(db, user) == 0:
+        raise InvalidInputError(
+            "Cannot demote the last super_admin — promote another account first."
+        )
+
+
+def assert_not_last_super_admin_deactivation(db: Session, user: User) -> None:
+    """Refuse deactivating the last active super_admin.
+
+    Mirrors ``assert_not_last_super_admin``, but for `is_active=False` rather
+    than a role change — deactivating has the same lockout effect as demoting.
+    """
+    if str(user.role) != ROLE_SUPER_ADMIN or bool(user.is_active) is False:
+        return
+
+    if count_other_active_super_admins(db, user) == 0:
+        raise InvalidInputError(
+            "Cannot deactivate the last super_admin — promote another account first."
         )
 
 

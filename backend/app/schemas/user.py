@@ -121,7 +121,7 @@ class UserUpdate(BaseModel):
     is_active: bool | None = None
     is_superuser: bool | None = None
     role: str | None = None
-    #: super_admin-only (stripped for lesser admins in users.update_user, which
+    #: super_admin-only (stripped for lesser admins in users_admin_edit.update_user, which
     #: already listed it as privileged before the field existed here).
     auth_type: str | None = None
     allow_local_fallback: bool | None = None

@@ -42,7 +42,7 @@ api/
 │   ├── search.py, embedding_migration.py, speaker_attribute_migration.py, combined_speaker_migration.py
 │   ├── speakers.py, speaker_profiles.py (+ _matching/_attributes/_collections), speaker_clusters.py, speaker_update.py, transcript_segments.py
 │   ├── comments.py, media_collections*.py, groups.py, prompts.py, summarization.py, topics.py
-│   ├── tasks.py, user_files.py, users.py, usage.py, watch_sources*.py, legal.py, takedown_notices_user.py
+│   ├── tasks.py, user_files.py, users*.py, usage.py, watch_sources*.py, legal.py, takedown_notices_user.py
 │   ├── system.py, version.py, metrics.py
 │   └── ...                # see router.py for the full mount list
 ├── deps_context.py        # Tenant-aware request context (get_current_context, require_org_admin)
@@ -141,7 +141,7 @@ File processing states (`FileStatus`, `app/core/enums.py`): `pending`, `queued`,
 
 `last_error_message` in status responses is a fixed, user-facing sentence from `ErrorCategorizationService`, never the raw exception text (the raw message is logged server-side with the file's UUID).
 
-### Users (`users.py`)
+### Users (`users.py`, `users_self_service.py`, `users_admin_edit.py`)
 ```
 GET    /users, /users/search       # List / search users
 GET    /users/me;  PUT /users/me   # Current user profile / update

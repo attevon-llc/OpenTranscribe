@@ -1,6 +1,7 @@
 """Cascade helpers for permanently deleting a user account and everything it owns."""
 
 import logging
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -19,6 +20,8 @@ from app.models.speaker import SpeakerCollectionMember
 from app.models.speaker import SpeakerProfile
 from app.models.tag import FileTag
 from app.models.tag import Tag
+from app.models.user import User
+from app.services import account_purge
 
 # No basicConfig here — this module is imported via the API router before
 # configure_logging() runs; a default root handler would double every log line.
@@ -29,11 +32,11 @@ def _delete_user_speakers(db: Session, user_id: int) -> None:
     """Delete all speakers for a user. Pure DB — no OpenSearch here (issue #715).
 
     This used to remove each speaker's OpenSearch embedding itself, one round trip
-    per speaker, from inside the caller's open transaction (``delete_admin_user``'s
-    ``db.begin_nested()`` savepoint, or the bare request transaction in
-    ``users.delete_user``) — holding locks, including ``ACCESS SHARE`` on
-    ``media_file`` taken moments later, for as long as OpenSearch took to answer. The
-    caller now reads every speaker UUID via
+    per speaker, from inside the caller's open transaction (the
+    ``db.begin_nested()`` savepoint :func:`delete_user_account` opens) — holding
+    locks, including ``ACCESS SHARE`` on ``media_file`` taken moments later, for as
+    long as OpenSearch took to answer. :func:`delete_user_account` now reads every
+    speaker UUID via
     ``account_purge.load_account_purge_plans`` **before** this function runs
     and removes the embeddings via ``purge_account_external_copies`` **after** its own
     transaction commits, with no session held — the same phase split
@@ -271,11 +274,12 @@ def _delete_user_media_files(db: Session, user_id: int) -> None:
 
     **A user owning any file under an active legal hold is REFUSED before anything is
     deleted** (:func:`_assert_no_held_files`, issue #689). The check runs
-    here as well as in each endpoint because a guard in one caller protects one caller;
-    the endpoints call it *first* so that the two earlier passes
+    here as well as in :func:`delete_user_account`, the single caller of the three
+    passes, which runs it *first* so that the two earlier passes
     (``_delete_user_owned_records``, ``_delete_user_speakers``) have not already
-    destroyed anything by the time the refusal is raised, and this call is the backstop
-    that a future caller inherits without having to remember.
+    destroyed anything by the time the refusal is raised. This call is the backstop a
+    future direct caller inherits without having to remember; a new caller should go
+    through :func:`delete_user_account` instead.
 
     **Why the children are deleted by hand here.** ``MediaFile`` declares
     ``cascade="all, delete-orphan"`` on eight relationships, but four of the
@@ -392,3 +396,55 @@ def _delete_user_media_files(db: Session, user_id: int) -> None:
         # Now delete the media files
         db.query(MediaFile).filter(MediaFile.user_id == user_id).delete(synchronize_session=False)
         logger.info(f"Deleted {media_count} media files for user {user_id}")
+
+
+def delete_user_account(db: Session, user: User) -> list[dict[str, Any]]:
+    """Delete an account and everything it owns, then destroy its external copies.
+
+    The one cascade both ``DELETE /admin/users/{uuid}`` and ``DELETE /users/{uuid}``
+    run. Authorization, the self/last-super_admin checks and the audit record stay in
+    the handlers; this owns only the sequence, which had drifted between two copies
+    (only the admin one rolled a failed pass back).
+
+    1. Refuse the whole deletion if any owned file is legally held, before the first
+       pass, so a refusal never follows a partial destroy (issue #689).
+    2. Phase 0: read the storage/OpenSearch plan while the rows still exist. Postgres
+       reads only (issue #695).
+    3. Phase 1: the three bulk passes and the ``user`` delete inside one savepoint, so
+       a failure in any pass leaves the session as it was.
+    4. Commit.
+    5. Phase 2: object storage and OpenSearch, with NO transaction held. The rows are
+       gone, so a failure here is not retryable: it is returned, never swallowed.
+
+    Args:
+        db: Database session; committed by this function.
+        user: The account to delete.
+
+    Returns:
+        Per-object failures from ``account_purge.purge_account_external_copies``;
+        empty when every external copy was confirmed gone.
+
+    Raises:
+        ConflictError: 409 when an owned file is under a legal hold.
+    """
+    user_id = int(user.id)
+
+    _assert_no_held_files(db, user_id)
+
+    purge_plan = account_purge.load_account_purge_plans(db, user_id)
+
+    savepoint = db.begin_nested()
+    try:
+        _delete_user_owned_records(db, user_id)
+        _delete_user_speakers(db, user_id)
+        _delete_user_media_files(db, user_id)
+        # No email: the audit record carries the identity; app logs outlive erasure.
+        logger.info("Deleting user with ID %s", user_id)
+        db.delete(user)
+        savepoint.commit()
+    except Exception:
+        savepoint.rollback()
+        raise
+    db.commit()
+
+    return account_purge.purge_account_external_copies(purge_plan)

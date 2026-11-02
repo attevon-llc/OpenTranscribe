@@ -503,7 +503,7 @@ def test_a_speaker_embedding_removal_failure_is_reported_as_partial(
     """A removal failure must land in ``residual_errors`` -> PARTIAL, never a 500 or a silent pass.
 
     ``purge_account_external_copies`` takes no session and must never raise
-    (``users.delete_user`` has no try/except around it) — so this asserts the account
+    (``users_admin_edit.delete_user`` has no try/except around it) — so this asserts the account
     delete still returns 200 with the deletion already committed, AND that the
     failure is visible in the audit trail, not merely logged.
 

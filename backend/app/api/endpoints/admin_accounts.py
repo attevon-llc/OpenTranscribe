@@ -40,6 +40,7 @@ from app.schemas.admin import LockedAccount
 from app.schemas.admin import LockedAccountsList
 from app.schemas.admin import LockoutResetResponse
 from app.schemas.user import AdminPasswordResetRequest
+from app.services.account_security_service import assert_not_last_super_admin
 from app.services.account_security_service import assert_password_auth_possible
 from app.services.account_security_service import audit_password_change
 from app.services.account_security_service import audit_role_change
@@ -290,7 +291,7 @@ def _targets_a_super_admin_without_authority(user: User, current_user: User) -> 
     sessions of, every super_admin account: a deployment-wide lockout reachable through
     two endpoints that were never meant to reach that far (issue #867 finding (e), same
     shape as ``_validate_user_deletion`` above and ``update_user``'s guard in
-    ``users.py``).
+    ``users_admin_edit.py``).
     """
     return str(user.role) == ROLE_SUPER_ADMIN and str(current_user.role) != ROLE_SUPER_ADMIN
 
@@ -468,9 +469,7 @@ def admin_change_user_role(
     if str(user.uuid) == str(current_user.uuid):
         raise HTTPException(status_code=400, detail="Cannot change your own role")
 
-    from app.api.endpoints.users import _assert_not_last_super_admin
-
-    _assert_not_last_super_admin(db, user, new_role)
+    assert_not_last_super_admin(db, user, new_role)
 
     old_role = user.role
     user.role = new_role  # type: ignore[assignment]

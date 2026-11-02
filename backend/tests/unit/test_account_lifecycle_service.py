@@ -27,6 +27,10 @@ from app.models.user import User
 from app.services import account_lifecycle_service
 from app.services.account_lifecycle_service import run_inactivity_sweep
 
+# Shares a worker with test_last_super_admin_guard.py, whose concurrency test commits
+# active super_admins that this module's "lone super_admin" tests must not see.
+pytestmark = pytest.mark.xdist_group("last_super_admin")
+
 
 def _user(db_session, *, last_login_at, role="user", is_active=True):
     unique_id = str(uuid.uuid4())[:8]
@@ -211,6 +215,39 @@ def test_two_eligible_super_admins_in_one_sweep_deactivates_at_most_one(
     db_session.refresh(second)
     active_count = sum(1 for u in (first, second) if u.is_active)
     assert active_count == 1, "at least one super_admin must remain active"
+
+
+def test_the_sweep_decides_through_the_shared_locking_count(
+    db_session, expiration_enabled, monkeypatch
+):
+    """The sweep's last-super_admin check must be the guard's own locking count.
+
+    An unlocked count of its own let the sweep and a concurrent admin demotion each
+    count the other's target as a survivor. ``count_other_active_super_admins`` locks
+    every active super_admin row (pinned with two real sessions in
+    ``test_last_super_admin_guard.py::TestConcurrentGuardsSerialize``); this pins that
+    the sweep goes through it, with the accounts it already disabled excluded.
+    """
+    from app.services import account_security_service
+
+    calls: list[tuple[int, frozenset[int]]] = []
+    real = account_security_service.count_other_active_super_admins
+
+    def _spy(db, user, *, already_removed=frozenset()):
+        calls.append((int(user.id), frozenset(already_removed)))
+        return real(db, user, already_removed=already_removed)
+
+    monkeypatch.setattr(
+        account_lifecycle_service, "count_other_active_super_admins", _spy, raising=False
+    )
+    stale_login = datetime.now(UTC) - timedelta(days=999)
+    lone_super_admin = _user(db_session, last_login_at=stale_login, role="super_admin")
+    _neutralize_other_super_admins(db_session, keep=lone_super_admin)
+
+    result = run_inactivity_sweep(db_session)
+
+    assert calls == [(int(lone_super_admin.id), frozenset())]
+    assert result["skipped_super_admin"] == 1
 
 
 def test_exempted_super_admin_audit_row_has_no_expiry_event_for_that_run(

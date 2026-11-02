@@ -137,4 +137,50 @@ describe('AccountErasureCard', () => {
     await screen.findByText(/cannot confirm the request here/);
     expect(screen.queryByTestId('erasure-submit')).toBeNull();
   });
+
+  it('tells the person their request was blocked as the last super administrator', async () => {
+    api.getSelfErasureStatus.mockResolvedValue(
+      status({
+        last_outcome: {
+          status: 'blocked',
+          reason: 'last_super_admin',
+          ledger_uuid: 'u',
+          at: new Date().toISOString(),
+        },
+      })
+    );
+    render(AccountErasureCard);
+
+    const notice = await screen.findByTestId('erasure-blocked');
+    expect(notice.textContent).toContain('last active super administrator');
+    // The form stays: they may ask again once another super administrator exists.
+    expect(screen.getByTestId('erasure-submit')).toBeTruthy();
+  });
+
+  it('says the request can no longer be cancelled on 409 not_cancellable', async () => {
+    api.getSelfErasureStatus.mockResolvedValue(status({ request: receipt(HOUR) }));
+    api.cancelSelfErasure.mockRejectedValue({
+      response: { status: 409, data: { detail: { code: 'not_cancellable' } } },
+    });
+    render(AccountErasureCard);
+
+    await fireEvent.click(await screen.findByTestId('erasure-cancel'));
+
+    expect((await screen.findByTestId('erasure-error')).textContent).toContain(
+      'can no longer be cancelled'
+    );
+  });
+
+  it('says the request no longer exists on 404 not_found and reloads', async () => {
+    api.getSelfErasureStatus.mockResolvedValue(status({ request: receipt(HOUR) }));
+    api.cancelSelfErasure.mockRejectedValue({
+      response: { status: 404, data: { detail: { code: 'not_found' } } },
+    });
+    render(AccountErasureCard);
+
+    await fireEvent.click(await screen.findByTestId('erasure-cancel'));
+
+    expect((await screen.findByTestId('erasure-error')).textContent).toContain('no longer exists');
+    await waitFor(() => expect(api.getSelfErasureStatus).toHaveBeenCalledTimes(2));
+  });
 });

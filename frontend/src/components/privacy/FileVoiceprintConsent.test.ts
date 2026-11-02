@@ -23,6 +23,7 @@ const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock('$stores/toast', () => ({ toastStore: toast }));
 
 import FileVoiceprintConsent from './FileVoiceprintConsent.svelte';
+import enMessages from '$lib/i18n/locales/en.json';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -128,5 +129,60 @@ describe('FileVoiceprintConsent', () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
     expect(screen.getByTestId('file-voiceprint-consent-state').textContent).toMatch(/agreed/);
+  });
+
+  const reject = (status: number, detail: unknown) =>
+    api.setFileVoiceprintConsent.mockRejectedValue({ response: { status, data: { detail } } });
+  const en = (key: string) => (enMessages as Record<string, string>)[key];
+
+  it('says a held recording cannot change, without suggesting a retry', async () => {
+    reject(409, { error: 'FILE_UNDER_LEGAL_HOLD', message: 'held', held_by: ['organization'] });
+    render(FileVoiceprintConsent, { props: { fileUuid: 'f-1', state: 'granted', isOwner: true } });
+
+    await optOut();
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(en('file.voiceprintConsent.heldRefusal'))
+    );
+    expect(screen.getByTestId('file-voiceprint-consent-state').textContent).toMatch(/agreed/);
+  });
+
+  it('says a quarantined or missing recording is no longer available', async () => {
+    reject(404, 'File not found');
+    render(FileVoiceprintConsent, { props: { fileUuid: 'f-1', state: 'granted', isOwner: true } });
+
+    await optOut();
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(en('file.voiceprintConsent.unavailable'))
+    );
+  });
+
+  it('shows the opt-out as saved when only the purge could not be queued (503)', async () => {
+    reject(503, 'Could not queue the deletion');
+    render(FileVoiceprintConsent, { props: { fileUuid: 'f-1', state: 'granted', isOwner: true } });
+
+    await optOut();
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(en('file.voiceprintConsent.purgePending'))
+    );
+    expect(screen.getByTestId('file-voiceprint-consent-state').textContent).toMatch(
+      /Turned off for this recording/
+    );
+  });
+
+  it('surfaces the support-grant refusal sentence', async () => {
+    reject(403, {
+      code: 'support_grant_action_not_permitted',
+      message: 'Not permitted during support access.',
+    });
+    render(FileVoiceprintConsent, { props: { fileUuid: 'f-1', state: 'granted', isOwner: true } });
+
+    await optOut();
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('Not permitted during support access.')
+    );
   });
 });

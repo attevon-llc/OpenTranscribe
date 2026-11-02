@@ -497,6 +497,7 @@ export interface TraceDetail {
  */
 export type ChatErrorCode =
   | 'llm_unconfigured'
+  | 'llm_config_unusable'
   | 'quota_exceeded'
   | 'rate_limited'
   | 'provider_error'

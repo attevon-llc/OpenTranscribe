@@ -37,6 +37,7 @@ vi.mock('$stores/locale', () => ({
 }));
 
 import axiosInstance from '$lib/axios';
+import { toastStore } from '$stores/toast';
 import AutoLabelSettings from './AutoLabelSettings.svelte';
 
 const SERVER = {
@@ -109,5 +110,28 @@ describe('AutoLabelSettings: automatic suggestions switch', () => {
     render(AutoLabelSettings);
     const toggle = (await screen.findByLabelText('autoLabel.autoSuggestLabel')) as HTMLInputElement;
     expect(toggle.disabled).toBe(false);
+  });
+
+  it('shows the server reason when retroactive auto-label is refused', async () => {
+    vi.mocked(axiosInstance.post).mockRejectedValue({
+      response: {
+        status: 403,
+        data: {
+          detail: {
+            code: 'support_grant_action_not_permitted',
+            message: 'Refused during support access.',
+          },
+        },
+      },
+    });
+    render(AutoLabelSettings);
+
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'autoLabel.retroactiveButton' })
+    );
+
+    await waitFor(() =>
+      expect(toastStore.error).toHaveBeenCalledWith('Refused during support access.')
+    );
   });
 });

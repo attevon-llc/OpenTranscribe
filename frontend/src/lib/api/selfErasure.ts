@@ -23,12 +23,23 @@ export interface SelfErasureReceipt {
   cancelled_at: string | null;
 }
 
+/** A request the system closed without erasing anything. Codes only, no personal data. */
+export interface SelfErasureOutcome {
+  status: 'blocked';
+  reason: 'last_super_admin';
+  ledger_uuid: string;
+  /** When the blocked request fell due. */
+  at: string | null;
+}
+
 export interface SelfErasureStatus {
   enabled: boolean;
   grace_days: number;
   /** False for an account with neither a password nor MFA to confirm with. */
   can_reauthenticate: boolean;
   request: SelfErasureReceipt | null;
+  /** Present when there is no open request and the latest one was blocked (optional: older servers omit it). */
+  last_outcome?: SelfErasureOutcome | null;
 }
 
 export interface SelfErasureCreate {
@@ -77,6 +88,8 @@ const ERROR_KEYS: Record<string, string> = {
   reauth_required: 'settings.accountErasure.errorReauth',
   reauth_unavailable: 'settings.accountErasure.reauthUnavailable',
   already_executing: 'settings.accountErasure.errorTooLate',
+  not_cancellable: 'settings.accountErasure.errorNotCancellable',
+  not_found: 'settings.accountErasure.errorNotFound',
 };
 
 /** The i18n key for a refusal's `detail.code`, else the generic one. Never echoes server text. */

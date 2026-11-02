@@ -42,6 +42,8 @@ describe('self-service erasure API', () => {
     ['request_exists', 'settings.accountErasure.errorExists'],
     ['reauth_required', 'settings.accountErasure.errorReauth'],
     ['already_executing', 'settings.accountErasure.errorTooLate'],
+    ['not_cancellable', 'settings.accountErasure.errorNotCancellable'],
+    ['not_found', 'settings.accountErasure.errorNotFound'],
     ['something_new', 'settings.accountErasure.errorGeneric'],
   ])('maps %s to a fixed key', (code, key) => {
     expect(selfErasureErrorKey({ response: { data: { detail: { code } } } })).toBe(key);

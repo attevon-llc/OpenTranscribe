@@ -8,30 +8,53 @@
   import { onMount } from 'svelte';
   import { getSelfErasureStatus } from '$lib/api/selfErasure';
   import { locale, t } from '$stores/locale';
-  import { openErasureRequest } from '$stores/selfErasure';
+  import { lastErasureOutcome, openErasureRequest } from '$stores/selfErasure';
   import { settingsModalStore } from '$stores/settingsModalStore';
 
   $: request = $openErasureRequest ?? null;
   $: date = request?.scheduled_for
-    ? new Intl.DateTimeFormat($locale, { dateStyle: 'long' }).format(new Date(request.scheduled_for))
+    ? new Intl.DateTimeFormat($locale, { dateStyle: 'long', timeStyle: 'short' }).format(
+        new Date(request.scheduled_for)
+      )
     : '';
 
+  // A block older than a week stays in the Settings card but no longer interrupts every page.
+  const BLOCKED_NOTICE_DAYS = 7;
+  $: blockedAt = $lastErasureOutcome?.at ? Date.parse($lastErasureOutcome.at) : NaN;
+  $: showBlocked =
+    !request &&
+    $lastErasureOutcome?.reason === 'last_super_admin' &&
+    Number.isFinite(blockedAt) &&
+    Date.now() - blockedAt < BLOCKED_NOTICE_DAYS * 86_400_000;
+
+  async function refresh() {
+    try {
+      const status = await getSelfErasureStatus();
+      openErasureRequest.set(status.request);
+      lastErasureOutcome.set(status.request ? null : (status.last_outcome ?? null));
+    } catch {
+      // A banner is not worth an error; the Settings card reports load failures itself.
+      openErasureRequest.set(null);
+    }
+  }
+
+  // A request can be blocked while the tab sits open; look again when the person returns.
+  function onVisibility() {
+    if (document.visibilityState === 'visible') void refresh();
+  }
+
   onMount(() => {
-    (async () => {
-      try {
-        const status = await getSelfErasureStatus();
-        openErasureRequest.set(status.request);
-      } catch {
-        // A banner is not worth an error; the Settings card reports load failures itself.
-        openErasureRequest.set(null);
-      }
-    })();
+    void refresh();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
   });
 </script>
 
-{#if request}
+{#if request || showBlocked}
   <div class="erasure-banner" role="status" data-testid="erasure-banner">
-    <span>{$t('banner.accountErasure.message', { date })}</span>
+    <span>
+      {request ? $t('banner.accountErasure.message', { date }) : $t('banner.accountErasure.blocked')}
+    </span>
     <button type="button" class="manage" on:click={() => settingsModalStore.open('profile')}>
       {$t('banner.accountErasure.manage')}
     </button>

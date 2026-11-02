@@ -54,6 +54,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The storage-key uniqueness check (`GET /api/admin/data-integrity/storage/keys`) and the erasure
+  ledger and receipts (`/api/admin/gdpr/erasures`, `/api/admin/gdpr/erasure-receipt/...`) are
+  API-only in this release; there is no admin screen for them yet.
 - URL-import thumbnails are stored per media file, avatars under a per-upload key, and the
   `media_file` object-key columns are unique (partial unique indexes, migration v456). The
   migration never blocks startup: shared legacy thumbnails are regenerated, and shared originals
@@ -87,6 +90,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--gpus all` and was not wired into any gate).
 
 ### Fixed
+
+- **Refusals and blocked requests are now explained in the interface.** The per-file voice
+  identification opt-out says when a recording is under a legal hold or no longer available, and
+  shows the opt-out as saved when only the deletion of existing voiceprints could not be queued.
+  A self-service erasure request that the system closed because the account is the last active
+  super administrator is shown in the account card and, for a week, in the app banner
+  (`GET /api/users/me/erasure-request` gains `last_outcome`), and the banner now shows the time as
+  well as the date and refreshes when the tab becomes visible. Cancelling a request that has
+  already run or no longer exists gives its own message. A support-session refusal on summary
+  regeneration, content redaction, bulk summarize, speaker identification and redaction, and
+  retroactive auto-labelling now shows the server's sentence instead of a generic failure, and a
+  refused summary regeneration puts the existing summary back on the page.
+- **An unusable AI provider configuration is no longer reported as "none configured".** Chat
+  answers `400` with code `llm_config_unusable`, and the bulk summarize and speaker
+  identification actions report `LLM_CONFIG_UNUSABLE`, when the person's active configuration
+  exists but cannot be used (deleted, missing credentials or region). The interface shows its own
+  message, and the summary panel links to AI settings when AI features are unavailable.
+- **The WebSocket stops reconnecting after the server refuses it** (close codes 4001, 4002, 4003
+  and 4403). It checks the session once so an expired or restricted account reaches the normal
+  sign-in or account screen, and reconnects once if the session is still valid.
+- **MediaCMS host matching in the browser is no longer looser than the server's.** Hosts with a
+  user name, a backslash, a percent escape or non-ASCII characters are no longer matched by the
+  interface when the server refuses them; both sides are tested against one shared list.
 
 - **AI feature availability with an invalid personal LLM setting.** A saved LLM configuration with a
   non-numeric temperature or context size is now reported as unavailable consistently, so

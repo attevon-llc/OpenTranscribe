@@ -1310,8 +1310,8 @@ def clear_cache_now(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
-                f"{len(e.remaining)} cached object(s) could not be removed (a storage lock or "
-                "a refused delete). The server log names them; try again after resolving it."
+                "Some cached objects could not be removed (a storage lock or a refused "
+                "delete). The server log names them; try again after resolving it."
             ),
         ) from e
     return CacheClearResponse(deleted=deleted)

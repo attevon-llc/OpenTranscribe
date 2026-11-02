@@ -31,7 +31,7 @@ def isolated_orphan(db_session, normal_user, monkeypatch):
     Returns:
         The id of the created orphan.
     """
-    monkeypatch.setattr(svc, "delete_file_storage_artifacts", lambda db, file: True)
+    monkeypatch.setattr(svc, "delete_file_storage_artifacts", lambda *args, **kwargs: True)
     monkeypatch.setattr(svc, "_cleanup_opensearch_for_file", lambda file, file_uuid: None)
 
     db_session.query(MediaFile).filter(MediaFile.force_delete_eligible.is_(True)).update(

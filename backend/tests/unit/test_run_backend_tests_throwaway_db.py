@@ -13,7 +13,10 @@ So this pins, over the shell source (starting containers to find out is not a un
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess  # nosec B404 - runs bash on a function extracted from the checked-in script
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -94,3 +97,82 @@ def test_container_name_suffix_is_random_not_derived_from_the_checkout(source: s
     for derived in ("basename", "REPO_ROOT", "PWD"):
         assert derived not in slug_line.group(0)
     assert "platform_args[@]" in body, "the postgres image platform must be pinned"
+
+
+def _run_start_throwaway_db(tmp_path: Path, run_failures: list[str]) -> tuple[int, str, list[int]]:
+    """Run the script's own ``start_throwaway_db`` against a stub ``docker``.
+
+    Each ``docker run`` consumes the next entry of ``run_failures`` as its stderr and fails;
+    once the list is exhausted it succeeds. Returns (exit status, stderr, ports published).
+    """
+    code = _code_lines(SCRIPT.read_text(encoding="utf-8"))
+    start = code.index("THROWAWAY_PORT_ATTEMPTS=")
+    functions = code[start : code.index("\nif $THROWAWAY_DB", start)]
+    (tmp_path / "failures").write_text("\n".join(run_failures), encoding="utf-8")
+    (tmp_path / "ports").write_text("", encoding="utf-8")
+    stub = tmp_path / "bin" / "docker"
+    stub.parent.mkdir()
+    stub.write_text(
+        textwrap.dedent(
+            f"""\
+            #!/bin/bash
+            case "$1" in
+              version) echo linux/amd64 ;;
+              run)
+                for a in "$@"; do [[ "$a" == 127.0.0.1:* ]] && echo "${{a#127.0.0.1:}}" >> {tmp_path}/ports; done
+                n=$(wc -l < {tmp_path}/ports)
+                msg=$(sed -n "${{n}}p" {tmp_path}/failures)
+                if [[ -n "$msg" ]]; then echo "$msg" >&2; exit 125; fi
+                ;;
+            esac
+            exit 0
+            """
+        ),
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    driver = (
+        "RED= GREEN= YELLOW= BLUE= NC=; PY_BIN=true; cleanup_throwaway() { :; }\n"
+        + functions
+        + "\nstart_throwaway_db; echo rc=$?\n"
+    )
+    proc = subprocess.run(  # nosec B603 B607 - fixed argv, stubbed docker first on PATH
+        ["bash", "-c", driver],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+        env={"PATH": f"{stub.parent}:{os.environ['PATH']}", "TMPDIR": str(tmp_path)},
+    )
+    ports = [int(p.split(":")[0]) for p in (tmp_path / "ports").read_text().split()]
+    verdict = re.search(r"rc=(\d+)", proc.stdout)
+    assert verdict, f"start_throwaway_db printed no status: {proc.stdout!r} {proc.stderr!r}"
+    status = int(verdict.group(1))
+    return status, proc.stderr, ports
+
+
+def test_a_lost_port_race_is_retried_on_the_next_port(tmp_path: Path) -> None:
+    status, stderr, ports = _run_start_throwaway_db(
+        tmp_path, ["Bind for 127.0.0.1:55432 failed: port is already allocated"]
+    )
+
+    assert status == 0, stderr
+    assert len(ports) == 2 and ports[1] > ports[0], ports
+
+
+def test_a_bind_failure_is_retried_a_bounded_number_of_times(tmp_path: Path) -> None:
+    status, stderr, ports = _run_start_throwaway_db(
+        tmp_path, ["listen tcp4: bind: address already in use"] * 50
+    )
+
+    assert status != 0
+    assert len(ports) == 5, ports
+    assert "address already in use" in stderr
+
+
+def test_any_other_docker_run_failure_is_not_retried(tmp_path: Path) -> None:
+    status, stderr, ports = _run_start_throwaway_db(tmp_path, ["no such image: postgres"])
+
+    assert status != 0
+    assert len(ports) == 1, ports
+    assert "no such image" in stderr

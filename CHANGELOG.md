@@ -79,6 +79,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Building the object-key indexes at startup no longer waits indefinitely on another session.**
+  The background `CREATE UNIQUE INDEX CONCURRENTLY` waits for every open transaction in the
+  database; a single idle-in-transaction session could hold it, and startup, for as long as that
+  session stayed open. Each statement now waits at most two minutes, reports the index as not
+  built, and the next start retries.
 - **A slow local embedding-model registration no longer leaves a duplicate model.** When the
   registration outlived its wait, startup registered the same model a second time from the remote
   registry, leaving two models of one name. The name is now looked up again before registering

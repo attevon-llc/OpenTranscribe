@@ -11,7 +11,6 @@ backend/app/services/llm_service.py	1127	oversize: split by concern planned
 backend/app/services/search/CLAUDE.md	910	oversize: split by concern planned
 backend/app/tasks/CLAUDE.md	516	oversize: split by concern planned
 backend/tests/CLAUDE.md	957	oversize: split by concern planned
-backend/tests/api/test_privacy_purge.py	1660	oversize: split by concern planned
 frontend/scripts/audit-frontend-tests.mjs	1123	oversize: split by concern planned
 frontend/src/components/FileUploader.svelte::script	817	oversize: split by concern planned
 frontend/src/components/FilterSidebar.svelte::script	756	oversize: split by concern planned

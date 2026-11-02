@@ -38,6 +38,7 @@ from app.schemas.scim import SCIMUserRequest
 from app.schemas.scim import list_response
 from app.schemas.scim import user_resource
 from app.services import scim_service
+from app.utils.uuid_parse import parse_uuid_or_none
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -77,13 +78,7 @@ def _is_uuid(value: str) -> bool:
     A malformed id must be a clean 404, not a ``DataError`` wrapped in a 500 — an IdP
     retries a 404 and escalates a 500.
     """
-    from uuid import UUID
-
-    try:
-        UUID(value)
-    except (ValueError, AttributeError, TypeError):
-        return False
-    return True
+    return parse_uuid_or_none(value) is not None
 
 
 def _translate(exc: Exception) -> SCIMError:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import uuid as uuid_pkg
 from collections.abc import Iterable
 from datetime import UTC
 from datetime import datetime
@@ -25,6 +24,7 @@ from app.schemas.support_access import UsePage
 from app.schemas.support_access import UserRef
 from app.services.support_access_service import compute_status
 from app.services.support_access_service import pending_expires_at
+from app.utils.uuid_parse import parse_uuid_or_none
 
 STATUSES = ("pending", "active", "denied", "expired", "revoked", "lapsed")
 
@@ -187,8 +187,7 @@ def list_uses(db: Session, grant: SupportAccessGrant, *, limit: int, offset: int
 
 def find_grant(db: Session, grant_uuid: str) -> SupportAccessGrant | None:
     """The grant with this uuid, or ``None`` for an unknown or malformed uuid."""
-    try:
-        parsed = uuid_pkg.UUID(grant_uuid)
-    except (ValueError, AttributeError, TypeError):
+    parsed = parse_uuid_or_none(grant_uuid)
+    if parsed is None:
         return None
     return db.query(SupportAccessGrant).filter(SupportAccessGrant.uuid == parsed).first()

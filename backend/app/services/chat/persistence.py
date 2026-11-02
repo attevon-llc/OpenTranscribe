@@ -15,6 +15,7 @@ import time
 
 from starlette.concurrency import run_in_threadpool
 
+from app.core.chat_metadata_budget import cap_msg_metadata
 from app.models.chat import ROLE_ASSISTANT
 from app.services.chat import citations as citations_mod
 from app.services.chat import limits
@@ -201,7 +202,7 @@ def _persist_reply(
                 content=turn.answer,
                 reasoning_content=turn.reasoning or None,
                 citations=used_citations or None,
-                msg_metadata=turn.metadata or None,
+                msg_metadata=cap_msg_metadata(turn.metadata) or None,
                 prompt_tokens=turn.prompt_tokens,
                 completion_tokens=turn.completion_tokens,
                 total_tokens=total_tokens,

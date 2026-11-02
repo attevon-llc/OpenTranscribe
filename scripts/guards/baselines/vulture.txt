@@ -12,7 +12,6 @@ backend/app/auth/token_service.py::method::token_needs_upgrade	1	residual after 
 backend/app/core/capabilities.py::function::reset_capability_resolver	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/core/capabilities.py::function::set_capability_resolver	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/core/chat_flag_registry.py::function::find_missing_pieces	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/core/chat_metadata_budget.py::function::cap_msg_metadata	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/core/exceptions.py::class::TranscriptionError	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/core/security.py::function::needs_rehash_for_fips_v3	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/core/tenant_limits.py::function::reset_resolvers	1	residual after the dead-code pass; delete or whitelist when touched

@@ -15,6 +15,12 @@ THIS REVISION NEVER BLOCKS STARTUP. It looks for duplicates first:
   ``GET /api/admin/data-integrity/storage/keys``. ``python -m app.scripts.split_shared_storage_paths
   --apply`` gives each extra row its own copy of the object; the next start builds the index.
 
+The indexes are built inside this migration's transaction, so a plain ``CREATE UNIQUE INDEX``
+holds a SHARE lock on ``media_file`` (writes wait, reads work) for the build. A concurrent build
+cannot run in a transaction; the startup retry (``app.db.migrations._retry_object_key_indexes``)
+therefore builds any index this revision skipped with ``CREATE UNIQUE INDEX CONCURRENTLY`` and
+repairs an INVALID one.
+
 The SQL lives in ``app.db.object_key_indexes`` (shared with the startup retry, the status endpoint
 and the script). All statements are idempotent.
 

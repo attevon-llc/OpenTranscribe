@@ -5,6 +5,18 @@ history when either is purged. The indexes make that state unrepresentable. Shar
 revision, the startup retry, the admin status endpoint and the remediation script, so the
 definitions cannot drift apart.
 
+Two builders, one definition:
+
+* ``ensure_indexes`` is what the v456 migration runs. It builds inside the migration's transaction
+  with a plain ``CREATE UNIQUE INDEX``, which holds a SHARE lock on ``media_file`` (reads work,
+  writes wait) for the duration of the build. It is kept because the migration must stay a single
+  transactional step that cannot brick startup.
+* ``ensure_indexes_concurrently`` is what the startup retry runs, on an AUTOCOMMIT connection,
+  with ``CREATE UNIQUE INDEX CONCURRENTLY`` so writers keep working while an index is built. A
+  concurrent build that fails (for example a duplicate written while it ran) leaves an INVALID
+  index behind; the next call drops it and builds again. An invalid index enforces nothing, so
+  :func:`existing_indexes` does not count it.
+
 Building an index NEVER blocks startup. ``ensure_indexes`` checks for duplicates first and, for a
 column that has any, skips that index, logs an ERROR naming the count, and reports it through
 :func:`status`; the next start (or the remediation script) builds it once the rows are clean.
@@ -112,40 +124,121 @@ def clear_regenerable_duplicates(conn: Connection) -> dict[str, int]:
     return cleared
 
 
+_INDEX_STATE_SQL = text(
+    "SELECT c.relname FROM pg_index i "
+    "JOIN pg_class c ON c.oid = i.indexrelid "
+    "JOIN pg_class t ON t.oid = i.indrelid "
+    "JOIN pg_namespace n ON n.oid = t.relnamespace "
+    "WHERE n.nspname = current_schema() AND t.relname = :t AND c.relname = ANY(:n) "
+    "AND i.indisvalid = :valid"
+)
+
+
 def existing_indexes(conn: Connection) -> set[str]:
-    """Names of the key indexes already present."""
+    """Names of the key indexes present AND valid (an invalid one enforces nothing)."""
     rows = conn.execute(
-        text("SELECT indexname FROM pg_indexes WHERE tablename = :t AND indexname = ANY(:n)"),
-        {"t": TABLE, "n": [i.name for i in INDEXES]},
+        _INDEX_STATE_SQL, {"t": TABLE, "n": [i.name for i in INDEXES], "valid": True}
     )
     return {str(r[0]) for r in rows}
 
 
+def invalid_indexes(conn: Connection) -> set[str]:
+    """Names of key indexes left INVALID by a failed or interrupted concurrent build."""
+    rows = conn.execute(
+        _INDEX_STATE_SQL, {"t": TABLE, "n": [i.name for i in INDEXES], "valid": False}
+    )
+    return {str(r[0]) for r in rows}
+
+
+def _skip_for_duplicates(conn: Connection, index: KeyIndex) -> bool:
+    """Log and report whether ``index`` cannot be built because rows share a key."""
+    dupes = duplicate_groups(conn, index)
+    if not dupes:
+        return False
+    logger.error(
+        "Not building %s: %d %s value(s) are shared by %d media_file rows. Startup "
+        "continues. Resolve with 'python -m app.scripts.split_shared_storage_paths "
+        "--apply'; the index is built on the next start. Status: "
+        "GET /api/admin/data-integrity/storage/keys",
+        index.name,
+        len(dupes),
+        index.column,
+        sum(len(ids) for _, ids in dupes),
+    )
+    return True
+
+
+def ensure_indexes_concurrently(conn: Connection) -> dict[str, str]:
+    """Build every missing index with ``CREATE UNIQUE INDEX CONCURRENTLY``; never raise.
+
+    ``conn`` must be an AUTOCOMMIT connection: a concurrent build cannot run in a transaction.
+    An INVALID index left by an earlier failed build is dropped first (also concurrently).
+
+    Returns:
+        ``{index_name: "exists" | "built" | "skipped_duplicates" | "failed"}``.
+
+    Raises:
+        ValueError: ``conn`` is not in AUTOCOMMIT mode.
+    """
+    if conn.get_execution_options().get("isolation_level") != "AUTOCOMMIT":
+        raise ValueError("ensure_indexes_concurrently needs an AUTOCOMMIT connection")
+    outcome: dict[str, str] = {}
+    present = existing_indexes(conn)
+    broken = invalid_indexes(conn)
+    for index in INDEXES:
+        if index.name in present:
+            outcome[index.name] = "exists"
+            continue
+        try:
+            if index.name in broken:
+                conn.execute(text(f"DROP INDEX CONCURRENTLY IF EXISTS {index.name}"))
+            if _skip_for_duplicates(conn, index):
+                outcome[index.name] = "skipped_duplicates"
+                continue
+            sa.Index(
+                index.name,
+                index.col,
+                unique=True,
+                postgresql_where=index.predicate,
+                postgresql_concurrently=True,
+            ).create(conn)
+            outcome[index.name] = "built"
+        except DBAPIError:
+            outcome[index.name] = "failed"
+            logger.error("Could not build %s; startup continues", index.name, exc_info=True)
+            _drop_invalid_leftover(conn, index)
+    return outcome
+
+
+def _drop_invalid_leftover(conn: Connection, index: KeyIndex) -> None:
+    """Remove the INVALID index a failed concurrent build leaves behind (best effort)."""
+    try:
+        if index.name in invalid_indexes(conn):
+            conn.execute(text(f"DROP INDEX CONCURRENTLY IF EXISTS {index.name}"))
+    except DBAPIError:
+        logger.error("Could not drop the invalid index %s", index.name, exc_info=True)
+
+
 def ensure_indexes(conn: Connection) -> dict[str, str]:
     """Build every index whose column is free of duplicates; never raise on a build problem.
+
+    Runs inside the caller's transaction (the migration), so the build is not concurrent and
+    holds a SHARE lock on ``media_file`` until the transaction ends.
 
     Returns:
         ``{index_name: "exists" | "built" | "skipped_duplicates" | "failed"}``.
     """
     outcome: dict[str, str] = {}
     present = existing_indexes(conn)
+    broken = invalid_indexes(conn)
     for index in INDEXES:
         if index.name in present:
             outcome[index.name] = "exists"
             continue
-        dupes = duplicate_groups(conn, index)
-        if dupes:
+        if index.name in broken:
+            conn.execute(text(f"DROP INDEX IF EXISTS {index.name}"))
+        if _skip_for_duplicates(conn, index):
             outcome[index.name] = "skipped_duplicates"
-            logger.error(
-                "Not building %s: %d %s value(s) are shared by %d media_file rows. Startup "
-                "continues. Resolve with 'python -m app.scripts.split_shared_storage_paths "
-                "--apply'; the index is built on the next start. Status: "
-                "GET /api/admin/data-integrity/storage/keys",
-                index.name,
-                len(dupes),
-                index.column,
-                sum(len(ids) for _, ids in dupes),
-            )
             continue
         try:
             with conn.begin_nested():

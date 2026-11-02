@@ -86,6 +86,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Object-key unique indexes no longer block writes at startup.** The startup retry for the
+  indexes the v456 migration had to skip now uses `CREATE UNIQUE INDEX CONCURRENTLY`, drops an
+  invalid index left by a failed build before trying again, runs at most once per process, and
+  does nothing beyond one catalog query when all three indexes are valid. The migration itself
+  still builds inside its transaction (its lock on `media_file` is now documented).
 - **Erasure receipt that could not be stored.** When the receipt row failed to insert, the erasure
   still closed as complete with no stored receipt. The entry is now left deferred with an error so
   the reconciliation sweep retries it, and the response reports the receipt outcome as unverified.

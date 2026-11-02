@@ -1837,18 +1837,31 @@ def _repair_skipped_v230(config) -> None:
         engine.dispose()
 
 
+#: The retry below runs at most once per process. A dev hot reload starts a new process, but
+#: the common case (all three indexes valid) is one catalog query, so that costs nothing.
+_object_key_retry_done = False
+
+
 def _retry_object_key_indexes() -> None:
-    """Build any object-key unique index v456 had to skip (duplicates since cleaned up).
+    """Build any object-key unique index v456 had to skip, without blocking writers.
+
+    Uses ``CREATE UNIQUE INDEX CONCURRENTLY`` on an autocommit connection and first drops an
+    INVALID index a failed build left behind. v456 itself builds inside its transaction (and so
+    locks writes while it runs); this retry exists for the indexes it skipped or could not build.
 
     Never raises: a database problem here is logged and must not stop the backend.
     """
+    global _object_key_retry_done
+    if _object_key_retry_done:
+        return
+    _object_key_retry_done = True
     from app.db import object_key_indexes
 
     engine = create_engine(migration_database_url(), connect_args=migration_connect_args())
     try:
-        with engine.begin() as conn:
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
             if inspect(conn).has_table("media_file"):
-                object_key_indexes.ensure_indexes(conn)
+                object_key_indexes.ensure_indexes_concurrently(conn)
     except SQLAlchemyError:
         logger.error("Could not check the media_file object-key indexes", exc_info=True)
     finally:

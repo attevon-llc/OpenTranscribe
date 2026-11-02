@@ -1557,7 +1557,7 @@
       height={GALLERY_MODAL_HEIGHT}
       onClose={() => (showTagManagerModal = false)}
     >
-      <TagManagerModal on:close={() => (showTagManagerModal = false)} />
+      <TagManagerModal />
     </BaseModal>
 {/if}
 

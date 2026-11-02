@@ -1,14 +1,14 @@
 /**
  * TypeScript types for tags and tag management.
  *
- * Mirrors the Pydantic schemas in `backend/app/schemas/media.py` (Tag,
+ * Mirrors the Pydantic schemas in `backend/app/schemas/tag.py` (Tag,
  * TagWithCount, TagCollisionCluster, TagImpact*, TagMutationResult,
  * and the bulk tag envelope in
  * `backend/app/api/endpoints/files/management.py`.
  */
 
 /**
- * Canonical tag shape, mirroring `backend/app/schemas/media.py:Tag`.
+ * Canonical tag shape, mirroring `backend/app/schemas/tag.py:Tag`.
  *
  * Import via `$lib/types/tag`. This is the **only** tag shape on the API:
  * `/tags`, `POST /tags/files/{uuid}/tags` and `MediaFileDetail.tags` all serve
@@ -47,12 +47,33 @@ export interface TagWithCount extends Tag {
  */
 export type TagOwnership = 'mine' | 'system' | 'shared_with_me';
 
-/** True when the caller may rename / merge / delete this tag. */
+/**
+ * True when the caller may rename / merge / delete this tag.
+ *
+ * `isAdmin` is the right to write the shared vocabulary — pass
+ * {@link canWriteSystemTags}, not the bare role.
+ */
 export function canMutateTag(tag: Tag, isAdmin: boolean): boolean {
   const ownership = tag.ownership ?? 'mine';
   if (ownership === 'shared_with_me') return false;
   if (ownership === 'system') return isAdmin;
   return true;
+}
+
+/**
+ * Whether the caller may write system tags and promote into the shared
+ * vocabulary, mirroring the server's `deployment_scope_writable`: any admin in a
+ * single-tenant deployment, only a `super_admin` in a multi-tenant one.
+ *
+ * A tenancy the capabilities fetch has not reported reads as multi-tenant, so a
+ * plain admin is never offered a write the server would refuse.
+ */
+export function canWriteSystemTags(
+  role: string | undefined,
+  tenancyMode: 'single' | 'multi' | undefined
+): boolean {
+  if (role === 'super_admin') return true;
+  return role === 'admin' && tenancyMode === 'single';
 }
 
 /**

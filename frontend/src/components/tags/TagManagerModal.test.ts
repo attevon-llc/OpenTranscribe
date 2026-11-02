@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/sve
 
 /**
  * Coordinator-level tests. The modal owns every fetch, so the states that exist
- * only because of one (skeleton / error+retry / four distinct empty states) and
+ * only because of one (skeleton / error+retry / three distinct empty states) and
  * the detail-vs-bulk swap can only be exercised here.
  *
  * This was a route (`/tags`) until tags moved behind the gallery's Tags button:
@@ -32,12 +32,11 @@ vi.mock('$stores/locale', async () => {
 });
 
 const api = vi.hoisted(() => ({
+  createTag: vi.fn(),
+  listFilesForTag: vi.fn(),
   listTags: vi.fn(),
   listTagCollisions: vi.fn(),
   getTagImpact: vi.fn(),
-  getTagReviewImpact: vi.fn(),
-  acceptTags: vi.fn(),
-  rejectTags: vi.fn(),
   deleteTags: vi.fn(),
   mergeTags: vi.fn(),
   renameTag: vi.fn(),
@@ -65,6 +64,13 @@ vi.mock('$stores/auth', async () => {
 });
 
 import TagManagerModal from './TagManagerModal.svelte';
+import { capabilities } from '$stores/capabilities';
+import { toastStore } from '$stores/toast';
+
+/** The deployment's tenancy, as `GET /system/capabilities` reported it. */
+function setTenancy(mode: 'single' | 'multi' | undefined) {
+  capabilities.update((state) => ({ ...state, tenancyMode: mode }));
+}
 
 const UUID_A = 'aaaaaaaa-0000-0000-0000-000000000001';
 const UUID_B = 'bbbbbbbb-0000-0000-0000-000000000002';
@@ -75,7 +81,6 @@ const allTags = [
     name: 'interviews',
     source: 'manual',
     usage_count: 12,
-    awaiting_review: false,
     ownership: 'mine',
   },
   {
@@ -83,7 +88,6 @@ const allTags = [
     name: 'roadmap',
     source: 'auto_ai',
     usage_count: 4,
-    awaiting_review: true,
     ownership: 'system',
   },
 ];
@@ -91,20 +95,14 @@ const allTags = [
 beforeEach(() => {
   vi.clearAllMocks();
   auth.role = 'admin';
+  setTenancy('single');
   api.listTags.mockResolvedValue(allTags);
   api.listTagCollisions.mockResolvedValue([]);
+  api.listFilesForTag.mockResolvedValue({ files: [], total: 0 });
   api.getTagImpact.mockResolvedValue({
     tags: [],
     accessible_file_count: 3,
     total_file_count: 500,
-  });
-  api.getTagReviewImpact.mockResolvedValue({
-    tags: [],
-    removed_association_count: 7,
-    retained_association_count: 2,
-    deleted_uuids: [],
-    applied: false,
-    impact: { tags: [], accessible_file_count: 3, total_file_count: 500 },
   });
 });
 
@@ -116,6 +114,14 @@ beforeEach(() => {
 function tagRows(): HTMLElement[] {
   return within(screen.getByRole('listbox')).getAllByRole('option');
 }
+
+describe('test doubles', () => {
+  it('mocks only functions the tags API module really exports', async () => {
+    // A mock of a deleted endpoint keeps a test green while asserting nothing.
+    const actual = await vi.importActual<Record<string, unknown>>('$lib/api/tags');
+    expect(Object.keys(api).filter((name) => typeof actual[name] !== 'function')).toEqual([]);
+  });
+});
 
 describe('tag manager modal', () => {
   it('lists the tags the backend returned', async () => {
@@ -182,7 +188,6 @@ describe('tag manager modal', () => {
 
       await waitFor(() =>
         expect(api.listTags).toHaveBeenLastCalledWith({
-          awaiting_review: undefined,
           unused: true,
           scope: 'all',
         })
@@ -273,7 +278,6 @@ describe('tag manager modal', () => {
 
       await waitFor(() =>
         expect(api.listTags).toHaveBeenLastCalledWith({
-          awaiting_review: undefined,
           unused: undefined,
           scope: 'mine',
         })
@@ -368,11 +372,194 @@ describe('tag manager modal', () => {
       // asserts the two vocabularies have not drifted apart.
       await waitFor(() =>
         expect(api.listTags).toHaveBeenLastCalledWith({
-          awaiting_review: undefined,
           unused: undefined,
           scope: 'shared_with_me',
         })
       );
     });
+  });
+});
+
+describe('create field', () => {
+  it('holds at most the stored width, counted in characters rather than UTF-16 units', async () => {
+    render(TagManagerModal);
+    await waitFor(() => expect(tagRows()).toHaveLength(2));
+    const field = screen.getByLabelText('New tag') as HTMLInputElement;
+
+    await fireEvent.input(field, { target: { value: 'x'.repeat(60) } });
+    expect(field.value).toBe('x'.repeat(50));
+
+    const emoji = '\u{1F600}'.repeat(30);
+    await fireEvent.input(field, { target: { value: emoji } });
+    expect(field.value).toBe(emoji);
+    expect(field.hasAttribute('maxlength')).toBe(false);
+  });
+});
+
+describe('cluster view gating', () => {
+  it('offers no write controls for a cluster member shared with me', async () => {
+    api.listTagCollisions.mockResolvedValue([
+      {
+        normalized_name: 'roadmap',
+        members: [
+          {
+            uuid: UUID_A,
+            name: 'Roadmap',
+            source: 'manual',
+            usage_count: 9,
+            suggested_survivor: true,
+            ownership: 'mine',
+          },
+          {
+            uuid: UUID_B,
+            name: 'roadmap',
+            source: 'manual',
+            usage_count: 2,
+            suggested_survivor: false,
+            ownership: 'shared_with_me',
+          },
+        ],
+        suggested_survivor_uuid: UUID_A,
+        suggestions: [],
+      },
+    ]);
+    render(TagManagerModal);
+    await waitFor(() => expect(tagRows()).toHaveLength(2));
+    await fireEvent.click(screen.getByRole('tab', { name: /Collisions/ }));
+    await waitFor(() => expect(screen.getAllByRole('listbox')).toHaveLength(1));
+
+    const rows = within(screen.getByRole('listbox', { name: 'roadmap' })).getAllByRole('option');
+    await fireEvent.click(rows[2]);
+
+    // Same tag, same gate as in the flat list: the server answers 404 here.
+    expect(screen.getByRole('heading', { name: 'roadmap' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
+  });
+});
+
+describe('system tag write gate follows the deployment scope', () => {
+  // The server writes a system tag only for `deployment_scope_writable`: any
+  // admin in a single-tenant deployment, only a super_admin in a multi-tenant one.
+  async function selectSystemTag() {
+    api.listTags.mockResolvedValue([{ ...allTags[0], ownership: 'system', name: 'sys-tag' }]);
+    render(TagManagerModal);
+    await waitFor(() => expect(tagRows()).toHaveLength(1));
+    await fireEvent.click(tagRows()[0]);
+  }
+
+  it('offers an admin of a single-tenant deployment the system tag writes', async () => {
+    await selectSystemTag();
+    expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+  });
+
+  it('offers an admin of a multi-tenant deployment no system tag writes', async () => {
+    setTenancy('multi');
+    await selectSystemTag();
+    expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+  });
+
+  it('offers a super_admin of a multi-tenant deployment the system tag writes', async () => {
+    setTenancy('multi');
+    auth.role = 'super_admin';
+    await selectSystemTag();
+    expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument();
+  });
+
+  it('offers a plain admin nothing while the tenancy is unknown', async () => {
+    setTenancy(undefined);
+    await selectSystemTag();
+    expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull();
+  });
+
+  it('hides promote from an admin of a multi-tenant deployment', async () => {
+    setTenancy('multi');
+    render(TagManagerModal);
+    await waitFor(() => expect(tagRows()).toHaveLength(2));
+    await fireEvent.click(tagRows()[0]);
+    expect(screen.queryByRole('button', { name: 'Share with everyone' })).toBeNull();
+  });
+});
+
+describe('search', () => {
+  it('says the search matched nothing rather than that the library is empty', async () => {
+    render(TagManagerModal);
+    await waitFor(() => expect(tagRows()).toHaveLength(2));
+
+    await fireEvent.input(screen.getByLabelText('Search tags'), { target: { value: 'zzz' } });
+
+    expect(await screen.findByText('No results found for "zzz"')).toBeInTheDocument();
+    expect(screen.queryByText('No tags yet')).toBeNull();
+    expect(api.listTags).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('create', () => {
+  async function create(name: string) {
+    const field = screen.getByLabelText('New tag');
+    await fireEvent.input(field, { target: { value: name } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    await waitFor(() => expect(api.createTag).toHaveBeenCalledWith(name));
+  }
+
+  it('reports a name that matched an existing tag exactly as resolved, not created', async () => {
+    const success = vi.spyOn(toastStore, 'success');
+    api.createTag.mockResolvedValue({ uuid: UUID_A, name: 'interviews', ownership: 'mine' });
+    render(TagManagerModal);
+    await waitFor(() => expect(tagRows()).toHaveLength(2));
+
+    await create('interviews');
+
+    await waitFor(() =>
+      expect(success).toHaveBeenCalledWith('That name resolved to the existing tag "interviews"')
+    );
+    expect(success).not.toHaveBeenCalledWith('Created "interviews"');
+  });
+
+  it('reports a new tag as created and selects it', async () => {
+    const success = vi.spyOn(toastStore, 'success');
+    const fresh = {
+      uuid: 'fresh-uuid',
+      name: 'fresh',
+      source: 'manual',
+      usage_count: 0,
+      ownership: 'mine',
+    };
+    api.createTag.mockResolvedValue({ uuid: fresh.uuid, name: fresh.name, ownership: 'mine' });
+    render(TagManagerModal);
+    await waitFor(() => expect(tagRows()).toHaveLength(2));
+    api.listTags.mockResolvedValue([...allTags, fresh]);
+
+    await create('fresh');
+
+    await waitFor(() => expect(success).toHaveBeenCalledWith('Created "fresh"'));
+    expect(await screen.findByRole('heading', { name: 'fresh' })).toBeInTheDocument();
+  });
+
+  it('knows an existing tag the current view hides, and does not select it', async () => {
+    const success = vi.spyOn(toastStore, 'success');
+    api.createTag.mockResolvedValue({ uuid: UUID_A, name: 'interviews', ownership: 'mine' });
+    render(TagManagerModal);
+    await waitFor(() => expect(tagRows()).toHaveLength(2));
+    // The unused view does not list a tag that is on files.
+    api.listTags.mockImplementation(async (filters?: { unused?: boolean }) =>
+      filters?.unused ? [allTags[1]] : allTags
+    );
+    await fireEvent.click(screen.getByRole('tab', { name: /Unused/ }));
+    await waitFor(() => expect(tagRows()).toHaveLength(1));
+
+    await create('interviews');
+
+    await waitFor(() =>
+      expect(success).toHaveBeenCalledWith('That name resolved to the existing tag "interviews"')
+    );
+    // Selecting a row the view cannot show would leave the detail pane blank
+    // (and, below 768px, hide the list behind a "back" button).
+    await waitFor(() => expect(tagRows()).toHaveLength(1));
+    expect(screen.getByRole('status')).toHaveTextContent('No tags selected');
+    expect(screen.queryByRole('button', { name: 'Back to tags' })).toBeNull();
   });
 });

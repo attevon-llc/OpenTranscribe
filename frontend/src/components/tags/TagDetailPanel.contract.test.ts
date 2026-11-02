@@ -285,19 +285,61 @@ describe('TagDetailPanel merge-on-rename warning', () => {
     expect(label('tags.manager.detail.confirmMergeRename')).toBeNull();
   });
 
-  it('keep editing emits cancelRenameMerge and confirm emits confirmRenameMerge', async () => {
+  // D10 (8fb3cf289): the warning describes the name the last rename SENT, so confirm
+  // dispatches that name, and dispatches nothing when no rename was submitted.
+  it('keep editing emits cancelRenameMerge and confirm emits confirmRenameMerge for the submitted name', async () => {
+    const rename = vi.fn();
     const cancelRenameMerge = vi.fn();
     const confirmRenameMerge = vi.fn();
-    render(TagDetailPanel, {
-      props: { tag: tagWith(), renameMergeImpact: impact },
-      events: { cancelRenameMerge, confirmRenameMerge },
+    const view = render(TagDetailPanel, {
+      props: { tag: tagWith() },
+      events: { rename, cancelRenameMerge, confirmRenameMerge },
     });
+    await fireEvent.click(label('tags.manager.detail.rename')!);
+    await fireEvent.input(screen.getByLabelText('tags.manager.detail.renameLabel'), {
+      target: { value: 'Calls' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'tags.manager.detail.rename' }));
+    expect(rename.mock.calls.map((c) => c[0].detail)).toEqual([{ name: 'Calls' }]);
+    await view.rerender({ tag: tagWith(), renameMergeImpact: impact });
+
     await fireEvent.click(label('tags.manager.detail.keepEditing')!);
     expect(cancelRenameMerge).toHaveBeenCalledTimes(1);
     expect(confirmRenameMerge).not.toHaveBeenCalled();
 
     await fireEvent.click(label('tags.manager.detail.confirmMergeRename')!);
     expect(confirmRenameMerge).toHaveBeenCalledTimes(1);
+    expect(confirmRenameMerge.mock.calls[0][0].detail).toEqual({ name: 'Calls' });
+  });
+
+  it('confirms the previewed name, not text typed after the warning appeared', async () => {
+    const cancelRenameMerge = vi.fn();
+    const confirmRenameMerge = vi.fn();
+    const view = render(TagDetailPanel, {
+      props: { tag: tagWith() },
+      events: { cancelRenameMerge, confirmRenameMerge },
+    });
+    await fireEvent.click(label('tags.manager.detail.rename')!);
+    const field = screen.getByLabelText('tags.manager.detail.renameLabel');
+    await fireEvent.input(field, { target: { value: 'Calls' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'tags.manager.detail.rename' }));
+    await view.rerender({ tag: tagWith(), renameMergeImpact: impact });
+
+    await fireEvent.input(field, { target: { value: 'Other' } });
+    expect(cancelRenameMerge).toHaveBeenCalledTimes(1);
+
+    await fireEvent.click(label('tags.manager.detail.confirmMergeRename')!);
+    expect(confirmRenameMerge.mock.calls.map((c) => c[0].detail)).toEqual([{ name: 'Calls' }]);
+  });
+
+  it('confirm emits nothing when no rename was submitted', async () => {
+    const confirmRenameMerge = vi.fn();
+    render(TagDetailPanel, {
+      props: { tag: tagWith(), renameMergeImpact: impact },
+      events: { confirmRenameMerge },
+    });
+    await fireEvent.click(label('tags.manager.detail.confirmMergeRename')!);
+    expect(confirmRenameMerge).not.toHaveBeenCalled();
   });
 });
 

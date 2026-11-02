@@ -23,6 +23,7 @@ vi.mock('$stores/locale', async () => {
 
 const api = vi.hoisted(() => ({
   listTags: vi.fn(),
+  listTagsOnFiles: vi.fn(),
   createTag: vi.fn(),
   bulkTagFiles: vi.fn(),
 }));
@@ -50,14 +51,15 @@ function repeat(outcome: BulkTagOutcome, times: number): BulkTagOutcome[] {
 }
 
 const tagList = [
-  { uuid: 'a', name: 'interview', source: 'manual', usage_count: 12, awaiting_review: false },
-  { uuid: 'b', name: 'roadmap', source: 'manual', usage_count: 4, awaiting_review: false },
-  { uuid: 'c', name: 'q3 review', source: 'manual', usage_count: 2, awaiting_review: false },
+  { uuid: 'a', name: 'interview', source: 'manual', usage_count: 12 },
+  { uuid: 'b', name: 'roadmap', source: 'manual', usage_count: 4 },
+  { uuid: 'c', name: 'q3 review', source: 'manual', usage_count: 2 },
 ];
 
 beforeEach(() => {
   vi.clearAllMocks();
   api.listTags.mockResolvedValue(tagList);
+  api.listTagsOnFiles.mockResolvedValue([]);
   api.createTag.mockImplementation(async (name: string) => ({ uuid: 'a', name }));
   api.bulkTagFiles.mockResolvedValue(results(repeat('added', 50)));
 });
@@ -229,5 +231,87 @@ describe('BulkTagModal', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('tag rail exploded'));
     expect(screen.queryByRole('status')).toBeNull();
     expect(applied).not.toHaveBeenCalled();
+  });
+});
+
+describe('BulkTagModal chips on a single file', () => {
+  const chip = { uuid: 'b', name: 'roadmap', file_count: 1, selection_size: 1 };
+
+  it('shows a failed chip removal instead of dropping it', async () => {
+    api.listTagsOnFiles.mockResolvedValue([chip]);
+    api.bulkTagFiles.mockRejectedValue({ response: { data: { detail: 'remove refused' } } });
+    const applied = vi.fn();
+    render(BulkTagModal, {
+      props: { isOpen: true, action: 'add_tag', fileUuids: ['file-0'] },
+      events: { applied },
+    });
+
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Remove "roadmap" from this file' })
+    );
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('remove refused'));
+    expect(applied).not.toHaveBeenCalled();
+    // The busy state ends, so the chip can be tried again.
+    expect(screen.getByRole('button', { name: 'Remove "roadmap" from this file' })).toBeEnabled();
+  });
+});
+
+describe('BulkTagModal remove scope', () => {
+  it('scopes remove suggestions to the tags it loaded for the selection', async () => {
+    api.listTagsOnFiles.mockResolvedValue([
+      { uuid: 'b', name: 'roadmap', file_count: 3, selection_size: 50 },
+      { uuid: 'c', name: 'q3 review', file_count: 50, selection_size: 50 },
+    ]);
+    render(BulkTagModal, { props: { isOpen: true, action: 'remove_tag', fileUuids } });
+
+    expect(
+      await screen.findByText('Only tags the selected files carry are offered.')
+    ).toBeInTheDocument();
+
+    await type('r');
+    await waitFor(() =>
+      expect(screen.getByRole('option', { name: 'roadmap' })).toBeInTheDocument()
+    );
+    expect(screen.getByRole('option', { name: 'q3 review' })).toBeInTheDocument();
+    // In the library and matching the query, but on none of the selected files.
+    expect(screen.queryByRole('option', { name: 'interview' })).toBeNull();
+  });
+});
+
+describe('BulkTagModal add / remove switch', () => {
+  it('removes a tag across a multi-file selection opened in add mode', async () => {
+    api.bulkTagFiles.mockResolvedValue(results(repeat('removed', 50)));
+    const applied = vi.fn();
+    render(BulkTagModal, {
+      props: { isOpen: true, action: 'add_tag', fileUuids },
+      events: { applied },
+    });
+
+    await fireEvent.click(screen.getByRole('tab', { name: 'Remove Tag' }));
+    expect(
+      screen.getByRole('heading', { name: 'Remove a tag from 50 file(s)' })
+    ).toBeInTheDocument();
+
+    await type('roadmap');
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove tag' }));
+
+    await waitFor(() =>
+      expect(api.bulkTagFiles).toHaveBeenCalledWith(fileUuids, 'remove_tag', 'roadmap')
+    );
+    // Removing must never create the tag it removes.
+    expect(api.createTag).not.toHaveBeenCalled();
+    expect(applied.mock.calls[0][0].detail).toMatchObject({ action: 'remove_tag', changed: 50 });
+  });
+
+  it('starts in the mode it was opened with and switches back to add', async () => {
+    render(BulkTagModal, { props: { isOpen: true, action: 'remove_tag', fileUuids } });
+    expect(screen.getByRole('tab', { name: 'Remove Tag' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+
+    await fireEvent.click(screen.getByRole('tab', { name: 'Add Tag' }));
+    expect(screen.getByRole('heading', { name: 'Add a tag to 50 file(s)' })).toBeInTheDocument();
   });
 });

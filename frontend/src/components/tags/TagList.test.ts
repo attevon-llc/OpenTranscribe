@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, within } from '@testing-library/svelte';
 
 /**
  * The list is presentational: it renders what the backend already computed and
@@ -35,9 +35,9 @@ const UUID_B = 'bbbbbbbb-0000-0000-0000-000000000002';
 const UUID_C = 'cccccccc-0000-0000-0000-000000000003';
 
 const tags = [
-  { uuid: UUID_A, name: 'interviews', source: 'manual', usage_count: 12, awaiting_review: false },
-  { uuid: UUID_B, name: 'roadmap', source: 'auto_ai', usage_count: 4, awaiting_review: true },
-  { uuid: UUID_C, name: 'archive', source: null, usage_count: 0, awaiting_review: false },
+  { uuid: UUID_A, name: 'interviews', source: 'manual', usage_count: 12 },
+  { uuid: UUID_B, name: 'roadmap', source: 'auto_ai', usage_count: 4 },
+  { uuid: UUID_C, name: 'archive', source: null, usage_count: 0 },
 ];
 
 const cluster: TagCollisionCluster = {
@@ -174,5 +174,56 @@ describe('TagList — collision clusters', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: /road-map/ }));
     expect(select.mock.calls[0][0].detail).toEqual({ mode: 'add', uuids: [UUID_C] });
+  });
+});
+
+describe('TagList — ownership badges in cluster mode', () => {
+  it('marks a cluster member with the same ownership badge as its flat row', () => {
+    const owned: TagCollisionCluster = {
+      ...cluster,
+      members: [
+        { ...cluster.members[0], ownership: 'system' },
+        { ...cluster.members[1], ownership: 'shared_with_me' },
+      ],
+    };
+    render(TagList, { props: { clusters: [owned] } });
+
+    const [, systemRow, sharedRow] = screen.getAllByRole('option');
+    expect(within(systemRow).getByText('Shared')).toBeInTheDocument();
+    expect(within(sharedRow).getByText('Shared with me')).toBeInTheDocument();
+  });
+});
+
+describe('TagList — row state follows the props after mount', () => {
+  it('re-marks rows when the selection changes', async () => {
+    const { rerender } = render(TagList, { props: { tags, label: 'Tags', selectedUuids: [] } });
+    expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'false');
+
+    await rerender({ tags, label: 'Tags', selectedUuids: [UUID_A] });
+    const [first, second] = screen.getAllByRole('option');
+    expect(first).toHaveAttribute('aria-selected', 'true');
+    expect(first).toHaveClass('is-selected');
+    expect(second).toHaveAttribute('aria-selected', 'false');
+
+    await rerender({ tags, label: 'Tags', selectedUuids: [] });
+    expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'false');
+  });
+
+  it('re-marks rows when a mutation starts and ends', async () => {
+    const { rerender } = render(TagList, { props: { tags, label: 'Tags' } });
+
+    await rerender({ tags, label: 'Tags', pendingUuids: [UUID_B] });
+    expect(screen.getAllByRole('option')[1]).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getAllByRole('option')[1]).toHaveClass('is-pending');
+
+    await rerender({ tags, label: 'Tags', pendingUuids: [] });
+    expect(screen.getAllByRole('option')[1]).toHaveAttribute('aria-disabled', 'false');
+  });
+
+  it('re-marks a cluster header when its whole cluster becomes selected', async () => {
+    const { rerender } = render(TagList, { props: { clusters: [cluster] } });
+
+    await rerender({ clusters: [cluster], selectedUuids: [UUID_A, UUID_B] });
+    expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true');
   });
 });

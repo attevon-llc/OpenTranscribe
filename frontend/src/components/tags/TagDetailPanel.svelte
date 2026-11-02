@@ -77,6 +77,19 @@
    */
   let submittedName = '';
 
+  // The coordinator reuses this component across single selections, so an open
+  // edit has to be dropped when the tag changes, or the first tag's typing
+  // would rename the second.
+  let shownUuid = tag.uuid;
+  function dropEditOnTagChange(uuid: string) {
+    if (uuid === shownUuid) return;
+    shownUuid = uuid;
+    editing = false;
+    nameError = '';
+    submittedName = '';
+  }
+  $: dropEditOnTagChange(tag.uuid);
+
   // Mirrors GroupDetailPanel: while not editing, the field tracks the tag.
   $: if (!editing) editName = tag.name;
 

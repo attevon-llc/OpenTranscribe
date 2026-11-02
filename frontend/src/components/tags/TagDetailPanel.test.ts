@@ -190,3 +190,23 @@ describe('merge-on-rename confirmation', () => {
     expect(confirmRenameMerge.mock.calls[0][0].detail).toEqual({ name: 'Interview' });
   });
 });
+
+describe('selection change', () => {
+  it('drops an open rename when another tag is selected', async () => {
+    const rename = vi.fn();
+    const other = { ...tag, uuid: 'bbbbbbbb-0000-0000-0000-000000000002', name: 'roadmap' };
+    const { rerender } = render(TagDetailPanel, { props: { tag }, events: { rename } });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    await fireEvent.input(screen.getByLabelText('Tag name'), { target: { value: 'typed' } });
+
+    await rerender({ tag: other });
+
+    // The typing belonged to the first tag; submitting it would rename the second.
+    expect(screen.queryByLabelText('Tag name')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'roadmap' })).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    expect((screen.getByLabelText('Tag name') as HTMLInputElement).value).toBe('roadmap');
+    expect(rename).not.toHaveBeenCalled();
+  });
+});

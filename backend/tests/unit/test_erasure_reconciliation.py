@@ -35,6 +35,7 @@ from app.models.media import MediaFile
 from app.models.organization import Organization
 from app.models.user import User
 from app.services import erasure_ledger_service as ledger
+from tests.audit_maintenance import audit_maintenance
 
 
 def _mk_user(db, label: str = "sweep", *, role: str = "user") -> User:
@@ -411,9 +412,10 @@ def test_the_sweep_reopens_an_entry_the_database_lost_and_re_erases(db_session, 
 
     # The restore: the ledger row disappears, the subject comes back with the same
     # surrogate keys (the dump predates both).
-    db_session.query(ErasureLedgerEntry).filter(
-        ErasureLedgerEntry.subject_user_id == user_id
-    ).delete()
+    with audit_maintenance(db_session):  # the restore drops the row
+        db_session.query(ErasureLedgerEntry).filter(
+            ErasureLedgerEntry.subject_user_id == user_id
+        ).delete()
     db_session.add(
         User(
             id=user_id,
@@ -445,8 +447,9 @@ def test_the_sweep_is_a_no_op_on_an_empty_ledger(db_session, sweep):
     Also the guard against a sweep whose counters are computed from something other
     than the ledger — every number must be zero when there is nothing to do.
     """
-    db_session.query(ErasureLedgerEntry).delete()
-    db_session.commit()
+    with audit_maintenance(db_session):  # start from an empty ledger
+        db_session.query(ErasureLedgerEntry).delete()
+        db_session.commit()
 
     result = sweep()
 

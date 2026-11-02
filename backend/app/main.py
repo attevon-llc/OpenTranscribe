@@ -881,6 +881,19 @@ def _log_tenancy_mode_at_startup() -> None:
         logger.warning(f"Tenancy mode startup check failed (non-fatal): {e}")
 
 
+def _enforce_database_role_or_exit() -> None:
+    """Fail closed: a requested database role split must really be effective (superuser or
+    owner runtime roles are refused)."""
+    from app.db.base import engine
+    from app.db.role_check import enforce_runtime_role
+
+    try:
+        enforce_runtime_role(engine)
+    except RuntimeError as e:
+        logger.critical(f"Audit record protection requested but not effective: {e}")
+        raise SystemExit(1) from e
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager for startup and shutdown events."""
@@ -922,6 +935,8 @@ async def lifespan(app: FastAPI):
             "RUN_MIGRATIONS_ON_STARTUP=false — skipping migrations; a migrate job is "
             "expected to own them. Readiness will verify the schema is at head."
         )
+
+    _enforce_database_role_or_exit()
 
     _log_tenancy_mode_at_startup()
 

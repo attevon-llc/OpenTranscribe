@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Audit records in the database can no longer be changed or deleted by the application.**
+  A trigger on the authentication-configuration log, the support-access records, the erasure
+  ledger, the takedown records and the legal acceptance records refuses `DELETE`, `TRUNCATE`
+  and any update outside each table's lifecycle columns, while deleting a user or organization
+  still clears only the actor pointer. In a single-role installation this is an accident guard;
+  setting `POSTGRES_APP_USER` and `POSTGRES_APP_PASSWORD` makes it enforceable by running the
+  backend and workers as an unprivileged database role (grants re-applied on every start,
+  startup refused if the role turns out not to be effective). The owner password is removed
+  from every service except the backend. Settings > Audit Logs shows the measured state and
+  `GET /api/admin/security/audit-integrity` reports it to a super administrator. Migration v453;
+  see Operations > Audit record integrity.
+
 ### Added
+
 
 ### Changed
 
@@ -26,6 +41,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`AUDIT_LOG_RETENTION_DAYS` now does what it says.** It was read by nothing. It now defaults to
+  `0` (keep forever, no change on upgrade); a positive value must be at least 365 and drives a
+  daily sweep of the prunable Postgres audit tables. A value between 1 and 364 is refused at
+  startup. OpenSearch index retention is not managed by it.
+- **Alembic now honours `DATABASE_URL` and `POSTGRES_SSLMODE`.** It built its own connection
+  string from `POSTGRES_*` and ignored both, so a deployment pointing `DATABASE_URL` at another
+  server migrated one database and locked another. Migrations and the runner now share one URL.
 - **The model downloader's speaker-detection step no longer fails on every CPU run.**
   `scripts/download-models.py` transcribed synthetic sine-wave audio through whisperx before
   fetching the PyAnnote weights; whisperx found no speech in it and transformers 5.x raised

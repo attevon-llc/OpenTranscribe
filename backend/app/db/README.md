@@ -27,19 +27,21 @@ Provides the fundamental SQLAlchemy configuration and database connection setup.
 # Database engine with connection pooling (simplified; see base.py for the full call)
 engine = create_engine(
     settings.DATABASE_URL,
-    connect_args=connect_args,          # sslmode + idle_in_transaction_session_timeout
+    connect_args=connect_args,  # sslmode + idle_in_transaction_session_timeout
     pool_pre_ping=True,
     pool_recycle=3600,
-    pool_size=settings.DB_POOL_SIZE,    # default 20
+    pool_size=settings.DB_POOL_SIZE,  # default 20
     max_overflow=settings.DB_MAX_OVERFLOW,  # default 40
 )
 
 # Session factory for database transactions
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+
 # Base class for all ORM models (SQLAlchemy 2.0 typed declarative; deliberately no naming_convention)
 class Base(DeclarativeBase):
     pass
+
 
 # FastAPI dependency for database sessions
 def get_db():

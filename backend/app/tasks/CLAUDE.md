@@ -258,6 +258,7 @@ indexing → WebSocket notification.
   Design rationale (what the ledger must never store, and why `org_member` entries are
   never auto-re-erased) lives in `app/services/CLAUDE.md`.
 - `legal_retention.py` — `legal.acceptance_retention_sweep`, **utility** queue, daily 05:10: deletes pseudonymised `legal_acceptance` rows past `retain_until` (v451) under `SET LOCAL opentranscribe.legal_retention_sweep = 'on'`, the only DELETE the guard trigger admits. Bounded at 500 per tick.
+- `audit_retention.py` — `audit.retention_sweep`, **utility** queue, daily 05:15, no-op while `AUDIT_LOG_RETENTION_DAYS` is 0 (default; positive values must be >= 365, enforced at startup AND inside the `audit_prune` SQL function). Calls `audit_prune` for `auth_config_audit` and `support_access_use` only (SECURITY DEFINER; the only way the app role deletes audit rows). Ledger, takedown and grant rows are never pruned.
 - `voiceprint_retention.py` — `privacy.voiceprint_retention_sweep`, **utility** queue, daily 05:25, off unless `privacy.voiceprint_retention_months` > 0. Selects due files (every linked profile stale by `last_interaction_at`, file older than the cutoff, not held, voiceprints present; at most 200) and dispatches `PurgeScope(kind="files")`; returns `unavailable` while this build's purge has no files scope. Stale profiles left empty are listed, never deleted.
 - `directory_sync_task.py` — LDAP reconciliation/deprovisioning, **cpu** queue.
   `directory.sync_check_schedule` runs from beat every 15 min, reads the DB-stored cron

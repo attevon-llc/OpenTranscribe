@@ -409,12 +409,17 @@ class TestAuditLogQueryExportAU6:
         assert response.status_code == 400
 
     def test_audit_log_retention_config(self):
-        """Test that audit log retention is configured."""
-        from app.core.config import settings
+        """Retention is keep-forever by default and can never be configured below the floor."""
+        import pytest
 
-        assert hasattr(settings, "AUDIT_LOG_RETENTION_DAYS")
-        # FedRAMP requires minimum 90 days, typically 365 for HIGH impact
-        assert settings.AUDIT_LOG_RETENTION_DAYS >= 90
+        from app.core.config import Settings
+        from app.core.constants import AUDIT_RETENTION_FLOOR_DAYS
+
+        assert Settings().AUDIT_LOG_RETENTION_DAYS == 0
+        assert AUDIT_RETENTION_FLOOR_DAYS >= 365
+        assert Settings(AUDIT_LOG_RETENTION_DAYS=AUDIT_RETENTION_FLOOR_DAYS)
+        with pytest.raises(ValueError, match="floor"):
+            Settings(AUDIT_LOG_RETENTION_DAYS=90)
 
 
 class TestAuditFallbackOnOpenSearchFailureAU9:

@@ -94,6 +94,7 @@ docker-compose.scratch-tmpfs.yml	optional
 # arm64 manifest (see arm64_deployment_preflight in opentranscribe.sh), so on arm64 this
 # overlay is the only thing there is to run.
 docker-compose.lite.yml	optional
+docker-compose.db-roles.yml	optional
 
 # --- Reverse proxy -------------------------------------------------------------
 nginx/site.conf.template

@@ -454,6 +454,9 @@ class _Teardown:
     def sql(self, statements: list[tuple[str, dict[str, Any]]]) -> None:
         """One transaction per step, so one failure cannot roll another step back."""
         with self.engine.begin() as conn:
+            # Teardown removes seeded audit-protected rows (the notice record): the owner-only
+            # maintenance switch, transaction-local, is how a test does what the app cannot.
+            conn.execute(text("SELECT set_config('opentranscribe.audit_maintenance', 'on', true)"))
             for statement, params in statements:
                 conn.execute(text(statement), params)
 

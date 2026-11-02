@@ -51,9 +51,9 @@ function repeat(outcome: BulkTagOutcome, times: number): BulkTagOutcome[] {
 }
 
 const tagList = [
-  { uuid: 'a', name: 'interview', source: 'manual', usage_count: 12, awaiting_review: false },
-  { uuid: 'b', name: 'roadmap', source: 'manual', usage_count: 4, awaiting_review: false },
-  { uuid: 'c', name: 'q3 review', source: 'manual', usage_count: 2, awaiting_review: false },
+  { uuid: 'a', name: 'interview', source: 'manual', usage_count: 12 },
+  { uuid: 'b', name: 'roadmap', source: 'manual', usage_count: 4 },
+  { uuid: 'c', name: 'q3 review', source: 'manual', usage_count: 2 },
 ];
 
 beforeEach(() => {

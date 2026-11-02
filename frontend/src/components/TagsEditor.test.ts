@@ -44,9 +44,7 @@ import TagsEditor from './TagsEditor.svelte';
 type Row = { uuid: string; name: string; source?: string; usage_count?: number };
 
 function library(...rows: Row[]) {
-  api.listTags.mockResolvedValue(
-    rows.map((row) => ({ source: 'manual', usage_count: 1, awaiting_review: false, ...row }))
-  );
+  api.listTags.mockResolvedValue(rows.map((row) => ({ source: 'manual', usage_count: 1, ...row })));
 }
 
 /**

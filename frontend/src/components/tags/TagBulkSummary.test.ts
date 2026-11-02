@@ -29,9 +29,9 @@ const UUID_B = 'bbbbbbbb-0000-0000-0000-000000000002';
 const UUID_C = 'cccccccc-0000-0000-0000-000000000003';
 
 const tags = [
-  { uuid: UUID_A, name: 'roadmap', source: 'auto_ai', usage_count: 2, awaiting_review: true },
-  { uuid: UUID_B, name: 'Roadmap', source: 'manual', usage_count: 17, awaiting_review: false },
-  { uuid: UUID_C, name: 'road map', source: 'manual', usage_count: 5, awaiting_review: false },
+  { uuid: UUID_A, name: 'roadmap', source: 'auto_ai', usage_count: 2 },
+  { uuid: UUID_B, name: 'Roadmap', source: 'manual', usage_count: 17 },
+  { uuid: UUID_C, name: 'road map', source: 'manual', usage_count: 5 },
 ];
 
 const impact: TagImpact = {

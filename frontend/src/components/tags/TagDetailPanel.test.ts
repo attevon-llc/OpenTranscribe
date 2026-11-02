@@ -31,7 +31,6 @@ const tag = {
   name: 'interviews',
   source: 'manual',
   usage_count: 12,
-  awaiting_review: false,
 };
 
 const impact: TagImpact = {

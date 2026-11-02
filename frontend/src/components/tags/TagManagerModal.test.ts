@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/sve
 
 /**
  * Coordinator-level tests. The modal owns every fetch, so the states that exist
- * only because of one (skeleton / error+retry / four distinct empty states) and
+ * only because of one (skeleton / error+retry / three distinct empty states) and
  * the detail-vs-bulk swap can only be exercised here.
  *
  * This was a route (`/tags`) until tags moved behind the gallery's Tags button:
@@ -37,9 +37,6 @@ const api = vi.hoisted(() => ({
   listTags: vi.fn(),
   listTagCollisions: vi.fn(),
   getTagImpact: vi.fn(),
-  getTagReviewImpact: vi.fn(),
-  acceptTags: vi.fn(),
-  rejectTags: vi.fn(),
   deleteTags: vi.fn(),
   mergeTags: vi.fn(),
   renameTag: vi.fn(),
@@ -84,7 +81,6 @@ const allTags = [
     name: 'interviews',
     source: 'manual',
     usage_count: 12,
-    awaiting_review: false,
     ownership: 'mine',
   },
   {
@@ -92,7 +88,6 @@ const allTags = [
     name: 'roadmap',
     source: 'auto_ai',
     usage_count: 4,
-    awaiting_review: true,
     ownership: 'system',
   },
 ];
@@ -109,14 +104,6 @@ beforeEach(() => {
     accessible_file_count: 3,
     total_file_count: 500,
   });
-  api.getTagReviewImpact.mockResolvedValue({
-    tags: [],
-    removed_association_count: 7,
-    retained_association_count: 2,
-    deleted_uuids: [],
-    applied: false,
-    impact: { tags: [], accessible_file_count: 3, total_file_count: 500 },
-  });
 });
 
 /**
@@ -127,6 +114,14 @@ beforeEach(() => {
 function tagRows(): HTMLElement[] {
   return within(screen.getByRole('listbox')).getAllByRole('option');
 }
+
+describe('test doubles', () => {
+  it('mocks only functions the tags API module really exports', async () => {
+    // A mock of a deleted endpoint keeps a test green while asserting nothing.
+    const actual = await vi.importActual<Record<string, unknown>>('$lib/api/tags');
+    expect(Object.keys(api).filter((name) => typeof actual[name] !== 'function')).toEqual([]);
+  });
+});
 
 describe('tag manager modal', () => {
   it('lists the tags the backend returned', async () => {
@@ -193,7 +188,6 @@ describe('tag manager modal', () => {
 
       await waitFor(() =>
         expect(api.listTags).toHaveBeenLastCalledWith({
-          awaiting_review: undefined,
           unused: true,
           scope: 'all',
         })
@@ -284,7 +278,6 @@ describe('tag manager modal', () => {
 
       await waitFor(() =>
         expect(api.listTags).toHaveBeenLastCalledWith({
-          awaiting_review: undefined,
           unused: undefined,
           scope: 'mine',
         })
@@ -379,7 +372,6 @@ describe('tag manager modal', () => {
       // asserts the two vocabularies have not drifted apart.
       await waitFor(() =>
         expect(api.listTags).toHaveBeenLastCalledWith({
-          awaiting_review: undefined,
           unused: undefined,
           scope: 'shared_with_me',
         })

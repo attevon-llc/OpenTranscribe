@@ -35,6 +35,7 @@ from app.services.speaker_matching_service import ConfidenceLevel
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.services.speaker_profile_activity import touch_profile_interaction
 from app.services.speaker_profile_rename import apply_profile_name_to_speakers
+from app.services.takedown_service import quarantine_list_exempt
 from app.tasks.speaker_update_task import process_speaker_update_background
 from app.utils.db_helpers import org_stamp_is
 from app.utils.error_handlers import ErrorHandler
@@ -788,7 +789,7 @@ def get_speaker_profile_occurrences(
         occurrences = matching_service.find_speaker_occurrences(
             int(profile_id),
             current_user.id,
-            include_quarantined=ctx.bypass.user_is_admin,
+            include_quarantined=quarantine_list_exempt(ctx.bypass),
             organization_id=ctx.org_id,
         )
 

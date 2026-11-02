@@ -27,6 +27,7 @@ its owner does (not at all) and manages it from metadata (issue #1253).
 import logging
 import uuid as uuid_pkg
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 from typing import Any
 
 from sqlalchemy.orm import Query
@@ -34,6 +35,9 @@ from sqlalchemy.orm import Session
 
 from app.models.media import MediaFile
 from app.models.user import User
+
+if TYPE_CHECKING:
+    from app.services.platform_bypass import PlatformBypass
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +82,47 @@ def is_hidden_for(file: MediaFile, *, is_admin: bool) -> bool:
         True if the file is quarantined and the caller is not an admin.
     """
     return bool(getattr(file, "is_quarantined", False)) and not is_admin
+
+
+def quarantine_exempt(bypass: "PlatformBypass", file: MediaFile) -> bool:
+    """The ONE quarantine read rule: exempt only where the platform role reached this row.
+
+    ``bypass.allows`` decides against the row's own tenant (single mode: any admin;
+    multi-tenant mode: only under a support-access grant covering that tenant). A bare
+    admin role (``bypass.user_is_admin``) is not the test: it says nothing about whether
+    the platform role may act on this row.
+
+    Args:
+        bypass: The request's platform bypass.
+        file: The loaded media file.
+
+    Returns:
+        True if the platform role may read ``file`` for review.
+    """
+    return bypass.allows(
+        org_id=file.organization_id,
+        owner_id=file.user_id,
+        need="read",
+        resource_type="media_file",
+        resource_uuid=str(file.uuid),
+    )
+
+
+def is_quarantine_hidden(bypass: "PlatformBypass", file: MediaFile) -> bool:
+    """Whether ``file`` is quarantined and this request is not exempt under :func:`quarantine_exempt`."""
+    if not bool(getattr(file, "is_quarantined", False)):
+        return False
+    return not quarantine_exempt(bypass, file)
+
+
+def quarantine_list_exempt(bypass: "PlatformBypass") -> bool:
+    """List/query form of the rule: ``include_quarantined`` for ``exclude_quarantined``.
+
+    A list has no single row to ask ``allows`` about, so it uses the bypass's own
+    list-reach (``sees_all_in_scope``): every admin in single mode, only an organization
+    grant in multi-tenant mode.
+    """
+    return bypass.sees_all_in_scope
 
 
 def is_notification_suppressed(file_id: int, recipient_user_id: int) -> bool:

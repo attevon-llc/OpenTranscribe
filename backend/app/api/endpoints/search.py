@@ -44,6 +44,7 @@ from app.services.search.reindex_cancel import cancel_requested
 from app.services.search.reindex_cancel import clear_fanout
 from app.services.search.reindex_cancel import read_fanout
 from app.services.search.reindex_cancel import request_cancel
+from app.services.takedown_service import quarantine_list_exempt
 
 logger = logging.getLogger(__name__)
 
@@ -794,7 +795,7 @@ def _summary_search_payload(
             page=page,
             page_size=page_size,
             redaction_cfg=cfg,
-            include_quarantined=ctx.bypass.user_is_admin,
+            include_quarantined=quarantine_list_exempt(ctx.bypass),
             speakers=speakers,
             tags=tags,
             date_from=date_from,

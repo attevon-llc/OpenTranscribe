@@ -247,12 +247,12 @@ def set_file_urls(db_file: MediaFile, bypass: PlatformBypass = PlatformBypass.no
     """
     from app.core.config import settings
     from app.services.minio_service import get_file_url
-    from app.services.takedown_service import is_hidden_for
+    from app.services.takedown_service import is_quarantine_hidden
 
     # Fail closed: a taken-down file gets no media URLs here, whoever called. Callers filter
     # quarantined rows first, but this is the one place a thumbnail URL is minted for a list
     # or detail response, so the check lives here too and a new caller cannot forget it.
-    if is_hidden_for(db_file, is_admin=bypass.user_is_admin):
+    if is_quarantine_hidden(bypass, db_file):
         db_file.download_url = None
         db_file.thumbnail_url = None
         return

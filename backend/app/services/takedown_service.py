@@ -65,7 +65,10 @@ from app.services.takedown_predicates import filter_suppressed_file_uuids
 from app.services.takedown_predicates import is_hidden_for
 from app.services.takedown_predicates import is_notification_suppressed
 from app.services.takedown_predicates import is_notification_suppressed_for_uuid
+from app.services.takedown_predicates import is_quarantine_hidden
 from app.services.takedown_predicates import is_review_admin
+from app.services.takedown_predicates import quarantine_exempt
+from app.services.takedown_predicates import quarantine_list_exempt
 
 __all__ = [
     "OWNER_RELEASE_EVENT",
@@ -76,10 +79,13 @@ __all__ = [
     "exclude_quarantined",
     "filter_suppressed_file_uuids",
     "is_hidden_for",
+    "is_quarantine_hidden",
     "is_notification_suppressed",
     "is_notification_suppressed_for_uuid",
     "is_review_admin",
+    "quarantine_exempt",
     "quarantine_file",
+    "quarantine_list_exempt",
     "release_file",
     "stamp_completion_time",
 ]

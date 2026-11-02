@@ -586,6 +586,8 @@ def get_index_overview() -> dict[str, Any]:
                 indices.append(entry)
                 continue
         except Exception:
+            logger.warning("Failed to check whether %s exists", index_name, exc_info=True)
+            entry["error"] = "Index state is unavailable"
             indices.append(entry)
             continue
 
@@ -611,8 +613,10 @@ def get_index_overview() -> dict[str, Any]:
                 "clusters": clusters,
             }
         except Exception as e:
-            entry["total"] = 0
-            logger.warning(f"Failed to get counts for {index_name}: {e}")
+            # No `total`: zero would read as an empty index. `error` marks it unknown.
+            entry.pop("total", None)
+            entry["error"] = "Document counts are unavailable"
+            logger.warning(f"Failed to get counts for {index_name}: {e}", exc_info=True)
         indices.append(entry)
 
     # --- Transcripts (metadata + chunks combined) ---
@@ -632,9 +636,11 @@ def get_index_overview() -> dict[str, Any]:
             else:
                 tx_entry["breakdown"][sub_label] = 0
         except Exception:
-            tx_entry["breakdown"][sub_label] = 0
+            logger.warning("Failed to count transcript index %s", idx_name, exc_info=True)
+            tx_entry["error"] = "Document counts are unavailable"
     tx_entry["exists"] = any_tx_exists
-    tx_entry["total"] = sum(tx_entry["breakdown"].values())
+    if "error" not in tx_entry:
+        tx_entry["total"] = sum(tx_entry["breakdown"].values())
     indices.append(tx_entry)
 
     # --- Summaries ---
@@ -650,7 +656,8 @@ def get_index_overview() -> dict[str, Any]:
         else:
             sum_entry["total"] = 0
     except Exception:
-        sum_entry["total"] = 0
+        logger.warning("Failed to count summary index", exc_info=True)
+        sum_entry["error"] = "Document counts are unavailable"
     indices.append(sum_entry)
 
     # Also get PG counts for context

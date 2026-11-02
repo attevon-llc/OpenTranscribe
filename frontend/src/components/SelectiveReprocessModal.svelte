@@ -9,7 +9,7 @@
   import BaseModal from './ui/BaseModal.svelte';
   import PerFileModelSelect from './PerFileModelSelect.svelte';
   import { ASRSettingsApi } from '$lib/api/asrSettings';
-  import axiosInstance from '$lib/axios';
+  import { reprocessFile, reprocessFiles } from '$lib/api/reprocess';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { getErrorMessage } from '$lib/utils/apiError';
   import {
@@ -142,10 +142,10 @@
       });
 
       if (bulkMode) {
-        requestBody.file_uuids = bulkFiles.map((f) => f.uuid);
-        requestBody.action = 'reprocess';
-        const response = await axiosInstance.post('/files/management/bulk-action', requestBody);
-        const results = response.data;
+        const results = await reprocessFiles(
+          bulkFiles.map((f) => f.uuid),
+          requestBody
+        );
         const { successful, failed } = countBulkResults(results);
 
         if (successful > 0) {
@@ -158,7 +158,7 @@
         dispatch('reprocess', { stages: stagesArray, count: successful });
       } else {
         // Single file mode
-        await axiosInstance.post(`/files/${file!.uuid}/reprocess`, requestBody);
+        await reprocessFile(file!.uuid!, requestBody);
 
         toastStore.success($t('reprocess.startedSuccess'));
         dispatch('reprocess', {

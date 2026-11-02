@@ -22,6 +22,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import Query
 from fastapi import status
+from fastapi.responses import JSONResponse
 from fastapi.responses import Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -115,7 +116,7 @@ def list_groups(
     filter: str | None = Query(None),  # noqa: A002 - SCIM wire name
     db: Session = Depends(get_db),
     _token: SCIMToken = Depends(require_scim_token),
-):
+) -> JSONResponse:
     """List or search groups. Supports ``displayName eq``."""
     offset, limit = parse_pagination(startIndex, count)
     query = db.query(UserGroup)
@@ -140,7 +141,7 @@ def get_group(
     group_id: str,
     db: Session = Depends(get_db),
     _token: SCIMToken = Depends(require_scim_token),
-):
+) -> JSONResponse:
     """Fetch one group by SCIM id."""
     group = _load_group(db, group_id)
     return _scim_json(group_resource(group, members=_members(db, group)))
@@ -151,7 +152,7 @@ def create_group(
     payload: SCIMGroupRequest,
     db: Session = Depends(get_db),
     token: SCIMToken = Depends(require_scim_token),
-):
+) -> JSONResponse:
     """Create a group and set its initial membership."""
     if not payload.displayName or not payload.displayName.strip():
         raise bad_request("displayName is required")
@@ -177,7 +178,7 @@ def replace_group(
     payload: SCIMGroupRequest,
     db: Session = Depends(get_db),
     token: SCIMToken = Depends(require_scim_token),
-):
+) -> JSONResponse:
     """Replace a group's name and its SCIM-owned membership (RFC 7644 §3.5.1).
 
     Both attributes are now genuine full replace, not a merge:
@@ -220,7 +221,7 @@ def patch_group(
     payload: SCIMPatchRequest,
     db: Session = Depends(get_db),
     token: SCIMToken = Depends(require_scim_token),
-):
+) -> JSONResponse:
     """Apply a ``PatchOp`` to a group's membership or name."""
     group = _load_group(db, group_id)
     if not payload.Operations:
@@ -254,7 +255,7 @@ def delete_group(
     group_id: str,
     db: Session = Depends(get_db),
     token: SCIMToken = Depends(require_scim_token),
-):
+) -> Response:
     """Delete a group.
 
     Unlike a user, a group **is** deleted: it holds no content of its own, and its

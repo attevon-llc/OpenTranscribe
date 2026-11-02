@@ -350,7 +350,7 @@ def list_collections(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> list[CollectionWithCount]:
     """Get collections for the current user with media count.
 
     Use ownership param to filter:

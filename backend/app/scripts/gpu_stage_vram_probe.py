@@ -23,7 +23,7 @@ import json
 import os
 import threading
 import time
-from typing import Any
+from types import ModuleType
 
 
 def _rss_mb() -> float:
@@ -53,7 +53,7 @@ def _reset_hwm() -> None:
 class _DeviceSampler:
     """Track the minimum free device memory while a stage runs."""
 
-    def __init__(self: Any, torch_mod, index: int, interval_s: float = 0.02) -> None:
+    def __init__(self, torch_mod: ModuleType, index: int, interval_s: float = 0.02) -> None:
         self._torch = torch_mod
         self._index = index
         self._interval = interval_s
@@ -72,7 +72,7 @@ class _DeviceSampler:
         self._thread.start()
         return self
 
-    def __exit__(self: Any, *exc) -> None:
+    def __exit__(self, *exc: object) -> None:
         self._stop.set()
         self._thread.join()
 

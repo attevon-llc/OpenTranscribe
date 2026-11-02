@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 from fastapi import Depends
+from fastapi.responses import JSONResponse
 
 from app.api.endpoints.scim.auth import require_scim_token
 from app.api.endpoints.scim.errors import not_found
@@ -141,13 +142,13 @@ _SCHEMAS = [
 
 
 @router.get("/ServiceProviderConfig")
-def service_provider_config(_token: SCIMToken = Depends(require_scim_token)):
+def service_provider_config(_token: SCIMToken = Depends(require_scim_token)) -> JSONResponse:
     """Report what this server supports — see the module docstring on honesty."""
     return _scim_json(_SERVICE_PROVIDER_CONFIG)
 
 
 @router.get("/ResourceTypes")
-def resource_types(_token: SCIMToken = Depends(require_scim_token)):
+def resource_types(_token: SCIMToken = Depends(require_scim_token)) -> JSONResponse:
     """The two resource types this server exposes."""
     return _scim_json(
         {
@@ -161,7 +162,9 @@ def resource_types(_token: SCIMToken = Depends(require_scim_token)):
 
 
 @router.get("/ResourceTypes/{resource_id}")
-def resource_type(resource_id: str, _token: SCIMToken = Depends(require_scim_token)):
+def resource_type(
+    resource_id: str, _token: SCIMToken = Depends(require_scim_token)
+) -> JSONResponse:
     """One resource type by id (``User`` / ``Group``)."""
     match = next((r for r in _RESOURCE_TYPES if r["id"] == resource_id), None)
     if match is None:
@@ -170,7 +173,7 @@ def resource_type(resource_id: str, _token: SCIMToken = Depends(require_scim_tok
 
 
 @router.get("/Schemas")
-def schemas(_token: SCIMToken = Depends(require_scim_token)):
+def schemas(_token: SCIMToken = Depends(require_scim_token)) -> JSONResponse:
     """The core User and Group schemas, as this server implements them."""
     return _scim_json(
         {
@@ -184,7 +187,7 @@ def schemas(_token: SCIMToken = Depends(require_scim_token)):
 
 
 @router.get("/Schemas/{schema_id}")
-def schema_by_id(schema_id: str, _token: SCIMToken = Depends(require_scim_token)):
+def schema_by_id(schema_id: str, _token: SCIMToken = Depends(require_scim_token)) -> JSONResponse:
     """One schema by its URN (RFC 7644 §4).
 
     Consumed by an external SCIM client — an IdP's provisioning connector fetching

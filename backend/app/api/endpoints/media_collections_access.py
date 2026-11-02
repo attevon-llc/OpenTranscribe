@@ -9,6 +9,7 @@ from datetime import datetime
 
 from fastapi import HTTPException
 from fastapi import status
+from sqlalchemy import ColumnElement
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -83,7 +84,7 @@ def _collection_held(db: Session, collection: Collection, ctx: RequestContext) -
 
 def _hold_refusal(
     message: str, *, db: Session, collection: Collection, ctx: RequestContext, action: str
-):
+) -> HTTPException:
     """409 ``FILE_UNDER_LEGAL_HOLD`` for a collection change a hold forbids (and audit it).
 
     ``held_by`` is for everybody; the hold uuids only for the holding organization's admin.
@@ -119,7 +120,7 @@ def _can_change_visibility(collection: Collection, permission: str | None) -> bo
     return collection.organization_id is not None and permission == "owner"
 
 
-def _tenant_pred(ctx: RequestContext):
+def _tenant_pred(ctx: RequestContext) -> ColumnElement[bool]:
     """Collections that live in the request's tenant (org context: that org; else personal).
 
     Community edition: ctx.org_id is None and rows are org-less, so this is a no-op.

@@ -78,7 +78,7 @@ def list_tag_shares(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> list[TagShareTarget]:
     """Who this tag is shared with. Owner (or admin, for a system tag) only.
 
     Reuses the writable gate: who you have given a tag to is the owner's
@@ -107,7 +107,7 @@ def create_tag_share(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> TagShareTarget:
     """Share a tag with one user or one group.
 
     The middle tier between "mine alone" and "published to the whole
@@ -177,7 +177,7 @@ def revoke_tag_share(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> None:
     """Revoke one grant.
 
     The tag and every association survive: a recipient who applied it to their

@@ -1,6 +1,7 @@
 """Admin maintenance routes: GDPR erasure, integrity, backfill, embedding repair, imohash."""
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -40,7 +41,7 @@ def admin_erase_user(
     user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
-):
+) -> dict[str, Any]:
     """GDPR Art. 17 erasure of a user — platform/super-admin scope.
 
     Permanently cascades object storage, OpenSearch transcript + voiceprint

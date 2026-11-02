@@ -22,6 +22,7 @@ from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.custom_vocabulary import SUPPORTED_DOMAINS
+from app.models.custom_vocabulary import CustomVocabulary
 from app.services.request_context import RequestContext
 from app.services.uuid_helpers import require_resource_owner
 from app.utils.db_helpers import org_stamp_is
@@ -44,10 +45,8 @@ _MAX_BULK_IMPORT_ITEMS = 1000
 # ---------------------------------------------------------------------------
 
 
-def _get_vocab_model():
-    """Lazily import CustomVocabulary model to avoid early import errors."""
-    from app.models.custom_vocabulary import CustomVocabulary
-
+def _get_vocab_model() -> type[CustomVocabulary]:
+    """Return the CustomVocabulary model class."""
     return CustomVocabulary
 
 

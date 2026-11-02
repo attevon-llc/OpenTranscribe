@@ -96,7 +96,7 @@ def list_users(
     filter: str | None = Query(None),  # noqa: A002 - SCIM wire name
     db: Session = Depends(get_db),
     _token: SCIMToken = Depends(require_scim_token),
-):
+) -> JSONResponse:
     """List or search users. Supports ``userName eq`` / ``externalId eq``."""
     del request
     offset, limit = parse_pagination(startIndex, count)
@@ -126,7 +126,7 @@ def get_user(
     user_id: str,
     db: Session = Depends(get_db),
     _token: SCIMToken = Depends(require_scim_token),
-):
+) -> JSONResponse:
     """Fetch one user by SCIM id."""
     user = _load_user(db, user_id)
     return _scim_json(user_resource(user, groups=_group_refs(db, user)))
@@ -137,7 +137,7 @@ def create_user(
     payload: SCIMUserRequest,
     db: Session = Depends(get_db),
     token: SCIMToken = Depends(require_scim_token),
-):
+) -> JSONResponse:
     """Provision a new account.
 
     An address that already exists is a **409**, never a silent update: RFC 7644
@@ -168,7 +168,7 @@ def replace_user(
     payload: SCIMUserRequest,
     db: Session = Depends(get_db),
     token: SCIMToken = Depends(require_scim_token),
-):
+) -> JSONResponse:
     """Replace a user's mutable attributes — a genuine RFC 7644 §3.5.1 full replace.
 
     ``userName`` is required, matching ``POST /Users``: it is the account's SCIM
@@ -203,7 +203,7 @@ def patch_user(
     payload: SCIMPatchRequest,
     db: Session = Depends(get_db),
     token: SCIMToken = Depends(require_scim_token),
-):
+) -> JSONResponse:
     """Apply a ``PatchOp``.
 
     The supported operation set is closed and documented in
@@ -240,7 +240,7 @@ def delete_user(
     user_id: str,
     db: Session = Depends(get_db),
     token: SCIMToken = Depends(require_scim_token),
-):
+) -> Response:
     """**Soft-disable** the account and revoke its sessions.
 
     Not a row deletion. Open WebUI's equivalent is documented as "deactivate" and

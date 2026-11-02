@@ -6,6 +6,8 @@ burned-in-subtitle render, the prepare dispatch guard and the SSE event framing.
 
 import json
 import logging
+from collections.abc import AsyncIterator
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -228,7 +230,7 @@ def prepare_download(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """Prepare a media download.
 
     Returns one of:
@@ -300,7 +302,7 @@ def download_stream(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> StreamingResponse:
     """Server-Sent Events stream that pushes download progress + the final URL.
 
     The browser opens this (EventSource, cookie-authenticated) after a ``processing``
@@ -357,7 +359,7 @@ def download_stream(
             return sse("error", {"code": "transcript_not_ready", "message": e.detail})
         return sse("ready", ready) if ready else None
 
-    async def event_stream():
+    async def event_stream() -> AsyncIterator[str]:
         # 1. Fast path — already available (covers reconnects after completion). Checked
         # BEFORE touching Redis so a ready download still works when Redis is down.
         frame = await run_in_threadpool(_ready_frame)
@@ -447,7 +449,7 @@ def get_thumbnail(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_current_user),
-):
+) -> StreamingResponse:
     """
     Get the thumbnail image for a media file.
 

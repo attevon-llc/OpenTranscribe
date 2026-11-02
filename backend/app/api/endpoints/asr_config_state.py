@@ -96,7 +96,7 @@ def _clear_active_asr_setting(db: Session, user_id: int) -> None:
         db.commit()
 
 
-def _config_to_dict(config: Any, *, owner=None, is_own: bool = True) -> dict:
+def _config_to_dict(config: Any, *, owner: models.User | None = None, is_own: bool = True) -> dict:
     """Serialize a UserASRSettings record to a safe public dict (no raw API key)."""
     return {
         "id": config.id,

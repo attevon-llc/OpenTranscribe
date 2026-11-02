@@ -14,12 +14,13 @@ from app.schemas.search import SEARCH_RESULT_TYPES
 from app.schemas.search import SEARCH_SOURCES
 from app.services.collection_visibility import collections_on_files
 from app.services.request_context import RequestContext
+from app.services.search.search_types import SearchResponse
 from app.services.takedown_predicates import quarantined_among
 
 logger = logging.getLogger(__name__)
 
 
-def _search_response_to_schema(response) -> dict[str, Any]:
+def _search_response_to_schema(response: SearchResponse) -> dict[str, Any]:
     """Convert HybridSearchService response to serializable dict.
 
     Carries an ``embedding_warning`` when the index is a PROVEN mix of two

@@ -7,6 +7,7 @@ speaker gender/age detection.
 
 import json
 import logging
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 def get_attribute_migration_status(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Get the current speaker attribute migration status.
 
     Returns file counts (total, processed, pending) and progress info.
@@ -95,7 +96,7 @@ def start_attribute_migration(
     force: bool = False,
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Start bulk speaker attribute detection.
 
     Args:
@@ -139,7 +140,7 @@ def start_attribute_migration(
 def stop_attribute_migration(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Stop a running speaker attribute migration.
 
     Marks migration as stopped and revokes pending batch tasks so they
@@ -227,7 +228,7 @@ def stop_attribute_migration(
 def clear_attribute_progress(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Clear stale attribute migration progress data from Redis."""
     try:
         if attribute_migration_progress.is_running():

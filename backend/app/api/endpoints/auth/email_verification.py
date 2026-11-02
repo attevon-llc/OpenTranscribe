@@ -47,7 +47,7 @@ def verify_email_endpoint(
     body: EmailVerificationRequest,
     db: Session = Depends(get_db),
     _local_auth: None = Depends(require_local_auth_enabled),
-):
+) -> dict[str, str]:
     """Redeem an email-verification token.
 
     Returns 400 with one generic message for unknown, used and expired tokens
@@ -67,7 +67,7 @@ def resend_verification_endpoint(
     body: EmailVerificationResendRequest,
     db: Session = Depends(get_db),
     _local_auth: None = Depends(require_local_auth_enabled),
-):
+) -> dict[str, str]:
     """Request a fresh verification link. Always 200. Rate limited per IP."""
     client_ip = request.client.host if request.client else "unknown"
     resend_verification(db, body.email, client_ip)

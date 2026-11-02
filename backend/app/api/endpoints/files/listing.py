@@ -171,7 +171,7 @@ def list_media_files(
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
-):
+) -> PaginatedMediaFileResponse:
     """List media files for the current user with optional filters and pagination.
 
     Use ownership param to control scope:
@@ -241,7 +241,7 @@ def list_media_files(
     base_query = exclude_quarantined(base_query, include_quarantined=ctx.bypass.user_is_admin)
 
     # Prepare filters dictionary
-    filters = {
+    filters: dict[str, Any] = {
         "search": search,
         "tag": tag,
         "speaker": speaker,

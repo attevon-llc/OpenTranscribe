@@ -52,7 +52,9 @@ def _options_sha(body: TranscriptDocumentExportRequest) -> str:
     return hashlib.sha256(body.model_dump_json().encode("utf-8")).hexdigest()[:16]
 
 
-def _claim_or_existing_job(user_id: int, file_id: int, body: TranscriptDocumentExportRequest):
+def _claim_or_existing_job(
+    user_id: int, file_id: int, body: TranscriptDocumentExportRequest
+) -> tuple[str, str | None, bool]:
     """``(job_id, guard_key, is_new)``: a double click gets the SAME job, never a second render."""
     from app.core.redis import get_redis
 

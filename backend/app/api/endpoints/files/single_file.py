@@ -182,7 +182,7 @@ def get_media_file_stream_url(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """
     Generate a short-lived presigned URL for secure media streaming.
 

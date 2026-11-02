@@ -67,7 +67,7 @@ def session_status(
 def get_user_certificate_info(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
-):
+) -> dict[str, Any]:
     """
     Get certificate information for the current user.
 

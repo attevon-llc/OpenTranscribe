@@ -400,7 +400,7 @@ def disable_mfa(
     request_body: MFADisableRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
-):
+) -> JSONResponse:
     """
     Disable MFA for the current user.
 

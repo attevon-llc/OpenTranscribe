@@ -27,6 +27,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.auth.rate_limit import get_api_rate_limit
 from app.auth.rate_limit import limiter
 from app.db.base import get_db
+from app.services.asr.base import ASRProvider
 from app.services.request_context import RequestContext
 from app.utils.encryption import decrypt_api_key
 
@@ -71,7 +72,7 @@ def _create_asr_provider(
     base_url: str | None,
     region: str | None,
     access_key_id: str | None = None,
-):
+) -> ASRProvider:
     """Create an ASR provider instance via the factory."""
     from app.services.asr.factory import ASRProviderFactory
 

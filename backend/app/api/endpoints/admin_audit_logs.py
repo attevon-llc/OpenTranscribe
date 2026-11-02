@@ -2,12 +2,14 @@
 
 import logging
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
+from fastapi import Response
 from sqlalchemy import false as sa_false
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -34,7 +36,7 @@ router = APIRouter()
 def get_account_status_report(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> dict[str, int]:
     """Account status summary for compliance reporting."""
     # Consolidate 3 User COUNT queries into 1 using FILTER clauses.
     # The expiry cutoff comes from the password policy rather than a local
@@ -82,7 +84,7 @@ def get_audit_logs(
     offset: int = Query(default=0, ge=0, description="Offset for pagination"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
-):
+) -> dict[str, Any]:
     """
     Query audit logs with filtering. Super admin only (global, all tenants).
 
@@ -117,7 +119,7 @@ def export_audit_logs(
     start_date: datetime | None = Query(None, description="Start date for export"),
     end_date: datetime | None = Query(None, description="End date for export"),
     current_user: User = Depends(get_current_active_superuser),
-):
+) -> Response:
     """Export audit logs for compliance reporting. Super admin only (all tenants).
 
     Reads through ``query_audit_logs`` and renders with ``auth/audit_export``: the same two

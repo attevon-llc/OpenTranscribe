@@ -268,7 +268,7 @@ async def logout(
     request: Request,
     token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
-):
+) -> JSONResponse:
     """
     Logout the current session by revoking the current tokens.
 
@@ -359,7 +359,7 @@ async def logout_all_sessions(
     request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> JSONResponse:
     """
     Logout from all sessions by revoking all user's refresh tokens.
 
@@ -447,7 +447,7 @@ async def logout_all_sessions(
 def get_active_sessions(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """
     Get all active sessions for the current user.
 

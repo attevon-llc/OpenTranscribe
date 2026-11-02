@@ -230,6 +230,54 @@ describe('PurgeConfirmDialog', () => {
       expect(screen.getByTestId('purge-audit')).toHaveTextContent('privacy.voiceprints.purge');
     });
 
+    it('lists recordings kept for a legal hold or takedown', async () => {
+      status.mockResolvedValue(
+        done({
+          postgres: {
+            speakers: 4,
+            files_skipped_held: 2,
+            files_skipped_quarantined: 1,
+            profiles_retained: 1,
+          },
+          opensearch: {},
+        })
+      );
+      await runToTheEnd();
+
+      const kept = await screen.findByTestId('purge-protected');
+      expect(kept).toHaveTextContent('Kept because of a legal hold or takedown: 3 recording(s)');
+      // The skip counters are not deletions.
+      expect(screen.getByTestId('purge-results')).toHaveTextContent('Database records removed: 4');
+    });
+
+    it('never says nothing remains when recordings were kept', async () => {
+      status.mockResolvedValue(
+        done({ postgres: { speakers: 4, files_skipped_held: 2 }, opensearch: {} })
+      );
+      await runToTheEnd();
+
+      const verification = await screen.findByTestId('purge-verification');
+      expect(verification).toHaveTextContent('except the recordings kept above');
+      expect(verification).not.toHaveTextContent(
+        'nothing from this deletion remains in the affected scope'
+      );
+    });
+
+    it('behaves as before when the skip counters are zero', async () => {
+      status.mockResolvedValue(
+        done({
+          postgres: { speakers: 4, files_skipped_held: 0, files_skipped_quarantined: 0 },
+          opensearch: {},
+        })
+      );
+      await runToTheEnd();
+
+      expect(await screen.findByTestId('purge-verification')).toHaveTextContent(
+        'nothing from this deletion remains in the affected scope'
+      );
+      expect(screen.queryByTestId('purge-protected')).toBeNull();
+    });
+
     it('reports anything left behind as a failure, with the number, never as a clean result', async () => {
       status.mockResolvedValue(
         done(

@@ -29,6 +29,7 @@
   import {
     privacyErrorKey,
     purgeCountTotal,
+    purgeProtectedTotal,
     purgeStoreTotal,
     purgeVerification,
   } from '$lib/settings/privacyPolicy';
@@ -60,6 +61,7 @@
   $: canDelete = confirmed && !busy && !following && status === null;
   $: finished = status !== null && isTerminalPurgeState(status.status);
   $: verification = status !== null ? purgeVerification(status) : null;
+  $: protectedTotal = status !== null ? purgeProtectedTotal(status.counts) : 0;
 
   // Every opening starts from a clean slate: a stale ticked box must never pre-arm a delete.
   function syncOpen(open: boolean) {
@@ -210,12 +212,21 @@
                 count: purgeStoreTotal(status.counts, 'opensearch'),
               })}
             </li>
+            {#if protectedTotal > 0}
+              <li data-testid="purge-protected">
+                {$t('privacy.purge.protectedSkipped', { count: protectedTotal })}
+              </li>
+            {/if}
           </ul>
         {/if}
         {#if finished && verification}
           {#if verification.state === 'verified'}
             <p class="verified" data-testid="purge-verification">
               {$t('privacy.purge.residualOk')}
+            </p>
+          {:else if verification.state === 'verified_except_protected'}
+            <p class="verified" data-testid="purge-verification">
+              {$t('privacy.purge.residualOkExceptProtected')}
             </p>
           {:else if verification.state === 'remaining'}
             <p class="error" role="alert" data-testid="purge-verification">

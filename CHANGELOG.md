@@ -102,6 +102,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   regeneration, content redaction, bulk summarize, speaker identification and redaction, and
   retroactive auto-labelling now shows the server's sentence instead of a generic failure, and a
   refused summary regeneration puts the existing summary back on the page.
+- **A voiceprint purge reports the recordings it kept.** When a user, organization or instance
+  purge leaves recordings alone because of a legal hold or a takedown, the result lists how many
+  were kept and no longer says that nothing remains. The count rides in the existing purge
+  status `counts` (`files_skipped_held`, `files_skipped_quarantined`, `profiles_retained`).
 - **An unusable AI provider configuration is no longer reported as "none configured".** Chat
   answers `400` with code `llm_config_unusable`, and the bulk summarize and speaker
   identification actions report `LLM_CONFIG_UNUSABLE`, when the person's active configuration

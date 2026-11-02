@@ -487,3 +487,16 @@ describe('system tag write gate follows the deployment scope', () => {
     expect(screen.queryByRole('button', { name: 'Share with everyone' })).toBeNull();
   });
 });
+
+describe('search', () => {
+  it('says the search matched nothing rather than that the library is empty', async () => {
+    render(TagManagerModal);
+    await waitFor(() => expect(tagRows()).toHaveLength(2));
+
+    await fireEvent.input(screen.getByLabelText('Search tags'), { target: { value: 'zzz' } });
+
+    expect(await screen.findByText('No results found for "zzz"')).toBeInTheDocument();
+    expect(screen.queryByText('No tags yet')).toBeNull();
+    expect(api.listTags).toHaveBeenCalledTimes(1);
+  });
+});

@@ -172,7 +172,10 @@
     .map((uuid) => tagIndex.get(uuid))
     .filter((entry): entry is TagListEntry => entry !== undefined);
   $: rowCount = clusters.length > 0 ? clusters.length : visibleTags.length;
-  $: isEmpty = !loading && !loadError && rowCount === 0;
+  // Emptiness is a property of what the server returned, not of the search: a
+  // query that matches nothing must not read as an empty library.
+  $: isEmpty = !loading && !loadError && clusters.length === 0 && tags.length === 0;
+  $: noMatches = !loading && !loadError && !isEmpty && rowCount === 0;
   $: suggestedSurvivorUuid = findSuggestedSurvivor(clusters, selectedUuids);
 
   function buildIndex(
@@ -526,6 +529,10 @@
             <svg slot="icon" xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
           </EmptyState>
         {/if}
+      {:else if noMatches}
+        <EmptyState title={$t('search.noResults', { query: searchQuery.trim() })}>
+          <svg slot="icon" xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        </EmptyState>
       {:else}
         <TagList
           tags={visibleTags}

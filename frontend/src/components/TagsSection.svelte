@@ -115,7 +115,7 @@
   .tags-preview {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-1-5);
     flex-wrap: wrap;
   }
 
@@ -155,7 +155,7 @@
   .tags-readonly {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: var(--space-1-5);
   }
 
   .tags-content p {

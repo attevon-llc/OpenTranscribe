@@ -84,8 +84,13 @@ class TagNotFoundError(OpenTranscribeError):
 
     Raised rather than silently skipped: two merges running in opposite
     directions must not both report success, or each destroys the other's
-    survivor.
+    survivor. Always carries ``TAG_NOT_FOUND``, the detail an unknown uuid gets at
+    the API, so a vanished row is indistinguishable from one that never existed and
+    no internal id reaches the wire.
     """
+
+
+TAG_NOT_FOUND = "Tag not found"
 
 
 #: Origin ordering, least human first. A NULL origin predates auto-labeling and
@@ -556,12 +561,12 @@ def merge_tags(
 
     target = locked.get(int(target_id))
     if target is None:
-        raise TagNotFoundError(f"Tag {target_id} no longer exists")
+        raise TagNotFoundError(TAG_NOT_FOUND)
 
     doomed_ids = sorted({int(i) for i in source_ids} - {int(target_id)})
     missing = [i for i in doomed_ids if i not in locked]
     if missing:
-        raise TagNotFoundError(f"Tags no longer exist: {missing}")
+        raise TagNotFoundError(TAG_NOT_FOUND)
 
     target_tenant = tenant_key(target)
     if target_tenant != ("system",):
@@ -638,7 +643,7 @@ def rename_tag(
     locked = lock_tags(db, [tag_id])
     tag = locked.get(int(tag_id))
     if tag is None:
-        raise TagNotFoundError(f"Tag {tag_id} no longer exists")
+        raise TagNotFoundError(TAG_NOT_FOUND)
 
     # The collision is looked up in the RENAMED TAG's tenant, not the caller's:
     # renaming a system tag onto a word some tenant happens to own must not
@@ -713,7 +718,7 @@ def delete_tags(
     locked = lock_tags(db, wanted)
     missing = [tag_id for tag_id in wanted if tag_id not in locked]
     if missing:
-        raise TagNotFoundError(f"Tags no longer exist: {missing}")
+        raise TagNotFoundError(TAG_NOT_FOUND)
 
     doomed = [locked[tag_id] for tag_id in wanted]
     impact = preview_tag_impact(db, wanted, user_id=user_id, organization_id=organization_id)
@@ -847,7 +852,7 @@ def promote_tags_to_shared(
     locked = lock_tags(db, wanted)
     missing = [tag_id for tag_id in wanted if tag_id not in locked]
     if missing:
-        raise TagNotFoundError(f"Tags no longer exist: {missing}")
+        raise TagNotFoundError(TAG_NOT_FOUND)
 
     promoted = [locked[tag_id] for tag_id in wanted if not is_system_tag(locked[tag_id])]
     if not promoted:

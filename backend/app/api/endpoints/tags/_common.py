@@ -12,6 +12,7 @@ from app.core.constants import TAG_SOURCE_MANUAL
 from app.models.tag import Tag
 from app.schemas.tag import TagMutationResult
 from app.schemas.tag import TagShareTarget
+from app.services.tag_operations import TAG_NOT_FOUND
 from app.services.tag_operations import TagNotFoundError
 from app.services.tag_operations import TagTenantMismatchError
 from app.services.tag_scope import is_system_tag
@@ -122,7 +123,7 @@ def _apply(operation, *args, result_model=TagMutationResult, **kwargs):
     try:
         return result_model.model_validate(operation(*args, **kwargs))
     except TagNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=TAG_NOT_FOUND) from exc
     except TagTenantMismatchError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

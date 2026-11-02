@@ -206,14 +206,12 @@ def test_promote_with_cross_tenant_folding_folds_org_rows_too(db_session, normal
     assert _row(db_session, in_org_id) is None
 
 
-def test_promote_of_a_vanished_tag_raises_with_the_internal_id_pins_current_behaviour(
-    db_session, normal_user, hook
-):
-    """D16: the message that becomes the 404 detail names the integer id."""
+def test_promote_of_a_vanished_tag_raises_without_the_internal_id(db_session, normal_user, hook):
+    """D16: the message is a fixed literal; no integer id can reach a 404 detail."""
     with pytest.raises(TagNotFoundError) as caught:
         promote_tags_to_shared(db_session, [2_000_000_000], user_id=normal_user.id)
 
-    assert str(caught.value) == "Tags no longer exist: [2000000000]"
+    assert str(caught.value) == "Tag not found"
 
 
 def test_promoting_two_same_named_tags_in_one_call_fails_part_way_pins_current_behaviour(

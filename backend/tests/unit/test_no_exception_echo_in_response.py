@@ -714,11 +714,6 @@ _RAISE_ALLOWLIST: dict[str, tuple[int, str]] = {
         "verified: SpeakerClusteringService.unassign_speakers raises only fixed "
         "literals like 'No valid speakers found'",
     ),
-    "api/endpoints/tags/_common.py::_apply": (
-        1,
-        "our own TagNotFoundError message (the InvalidTagNameError branch beside it "
-        "raises a fixed literal and is not tainted at all)",
-    ),
     "api/endpoints/tags/sharing.py::create_tag_share": (
         1,
         "our own TagShareError message from services/tag_sharing.share_tag",

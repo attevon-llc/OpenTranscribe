@@ -1,8 +1,8 @@
 """Characterization of the rename / merge / delete / cleanup routes' edges.
 
 Written before the tags backend rewrite. Tests whose name says ``pins_current_behaviour``
-pin behaviour the owner has decided to change: D8 (merge silently drops share grants) and
-D16 (404 details carry internal integer ids).
+pin behaviour the owner has decided to change: D8 (merge silently drops share grants).
+A 404 detail never carries an internal integer id (D16).
 """
 
 from __future__ import annotations
@@ -246,7 +246,7 @@ def test_merge_leaves_the_survivors_own_grants_alone(
 
 
 # ---------------------------------------------------------------------------
-# D16: 404 details from TagNotFoundError carry internal integer ids
+# D16: a tag that vanishes mid-request is a plain 404, with no internal id
 # ---------------------------------------------------------------------------
 
 
@@ -256,10 +256,10 @@ def vanishing_rows(monkeypatch):
     monkeypatch.setattr("app.services.tag_operations.lock_tags", lambda db, tag_ids: {})
 
 
-def test_delete_404_detail_carries_the_internal_id_pins_current_behaviour(
+def test_delete_404_detail_carries_no_internal_id(
     client, db_session, normal_user, user_token_headers, vanishing_rows
 ):
-    """D16: the integer primary key reaches the wire."""
+    """D16: the same detail an unknown uuid gets; the integer primary key never reaches the wire."""
     tag = make_tag(db_session, word("gone"), user_id=normal_user.id)
 
     response = client.delete(
@@ -267,10 +267,10 @@ def test_delete_404_detail_carries_the_internal_id_pins_current_behaviour(
     )
 
     assert response.status_code == 404
-    assert response.json()["detail"] == f"Tags no longer exist: [{tag.id}]"
+    assert response.json() == {"detail": "Tag not found"}
 
 
-def test_rename_404_detail_carries_the_internal_id_pins_current_behaviour(
+def test_rename_404_detail_carries_no_internal_id(
     client, db_session, normal_user, user_token_headers, vanishing_rows
 ):
     """D16."""
@@ -281,13 +281,13 @@ def test_rename_404_detail_carries_the_internal_id_pins_current_behaviour(
     )
 
     assert response.status_code == 404
-    assert response.json()["detail"] == f"Tag {tag.id} no longer exists"
+    assert response.json() == {"detail": "Tag not found"}
 
 
-def test_merge_404_detail_carries_the_internal_id_pins_current_behaviour(
+def test_merge_404_detail_carries_no_internal_id(
     client, db_session, normal_user, user_token_headers, vanishing_rows
 ):
-    """D16: the target is looked up first, so its id is the one reported."""
+    """D16."""
     target = make_tag(db_session, word("t"), user_id=normal_user.id)
     source = make_tag(db_session, word("s"), user_id=normal_user.id)
 
@@ -298,10 +298,10 @@ def test_merge_404_detail_carries_the_internal_id_pins_current_behaviour(
     )
 
     assert response.status_code == 404
-    assert response.json()["detail"] == f"Tag {target.id} no longer exists"
+    assert response.json() == {"detail": "Tag not found"}
 
 
-def test_promote_404_detail_carries_the_internal_id_pins_current_behaviour(
+def test_promote_404_detail_carries_no_internal_id(
     client, db_session, admin_user, admin_token_headers, vanishing_rows, monkeypatch
 ):
     """D16, promote path (single-tenant so a plain admin may promote)."""
@@ -320,7 +320,7 @@ def test_promote_404_detail_carries_the_internal_id_pins_current_behaviour(
         reset_tenancy_mode_cache()
 
     assert response.status_code == 404
-    assert response.json()["detail"] == f"Tags no longer exist: [{tag.id}]"
+    assert response.json() == {"detail": "Tag not found"}
 
 
 # ---------------------------------------------------------------------------

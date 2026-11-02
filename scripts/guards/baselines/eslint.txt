@@ -83,7 +83,7 @@ frontend/src/components/UserFileStatus.svelte::svelte/infinite-reactive-loop	2	l
 frontend/src/components/UserFileStatus.svelte::svelte/prefer-svelte-reactivity	2	lint: burn-down planned
 frontend/src/components/UserFileStatus.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/UserManagementTable.svelte::no-restricted-imports	3	lint: burn-down planned
-frontend/src/components/UserManagementTable.svelte::no-useless-assignment	3	lint: burn-down planned
+frontend/src/components/UserManagementTable.svelte::no-useless-assignment	1	lint: burn-down planned
 frontend/src/components/VideoPlayer.svelte::@typescript-eslint/no-explicit-any	5	lint: burn-down planned
 frontend/src/components/VideoPlayer.svelte::svelte/infinite-reactive-loop	3	lint: burn-down planned
 frontend/src/components/VideoPlayer.svelte::svelte/no-unused-svelte-ignore	2	lint: burn-down planned

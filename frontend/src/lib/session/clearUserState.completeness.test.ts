@@ -83,6 +83,9 @@ const EXEMPT: Record<string, string> = {
     'component, so no previous user’s data can survive here. The detector matched ' +
     'on the `reset()` method name, not on real module state. It also holds only ' +
     'node keys and reveal timings, never trace content.',
+  'lib/users/rowPermissions':
+    'Pure functions with no state of any kind. The detector matched the `resetPassword` / ' +
+    '`resetMfa` keys of the RowActions flags object (which actions a row offers).',
 
   // ── Covered transitively by a registered module ──
   'lib/supportAccess/headers':

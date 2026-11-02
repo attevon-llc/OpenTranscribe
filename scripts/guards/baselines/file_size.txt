@@ -20,8 +20,8 @@ frontend/src/components/FileUploader.svelte::script	817	oversize: split by conce
 frontend/src/components/FilterSidebar.svelte::script	756	oversize: split by concern planned
 frontend/src/components/SegmentSpeakerDropdown.svelte::script	670	oversize: split by concern planned
 frontend/src/components/SettingsModal.svelte::script	998	oversize: split by concern planned
-frontend/src/components/UserManagementTable.svelte	2060	oversize: split by concern planned
-frontend/src/components/UserManagementTable.svelte::script	797	oversize: split by concern planned
+frontend/src/components/UserManagementTable.svelte	2059	oversize: split by concern planned
+frontend/src/components/UserManagementTable.svelte::script	790	oversize: split by concern planned
 frontend/src/components/settings/CLAUDE.md	408	oversize: split by concern planned
 frontend/src/components/settings/LLMConfigModal.svelte::script	648	oversize: split by concern planned
 frontend/src/lib/services/uploadService.ts	1393	oversize: split by concern planned

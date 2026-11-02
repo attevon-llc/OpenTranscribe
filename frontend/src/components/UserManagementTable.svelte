@@ -22,6 +22,11 @@
   import EmptyState from './ui/EmptyState.svelte';
   import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
   import AuthMailNotice from './ui/AuthMailNotice.svelte';
+  import {
+    canAssignElevatedRoles,
+    isSuperAdmin as viewerIsSuperAdmin,
+    permittedRowActions
+  } from '$lib/users/rowPermissions';
 
   /**
    * @typedef {Object} User
@@ -171,20 +176,13 @@
   /** @type {Array<User>} */
   let filteredUsers = [];
 
-  /** @type {string|null} */
-  let currentUserId = null;
+  $: currentUserId = $user ? $user.uuid : null;
 
-  // Subscribe to the user store to get the current user UUID and role
-  /** @type {boolean} */
-  let isSuperAdmin = false;
+  $: isSuperAdmin = viewerIsSuperAdmin($user);
 
-  $: if ($user) {
-    currentUserId = $user.uuid;
-    isSuperAdmin = $user.role === 'super_admin';
-  } else {
-    currentUserId = null;
-    isSuperAdmin = false;
-  }
+  // Minting an admin or super_admin account, directly or by invitation, is
+  // super_admin-only server-side.
+  $: canElevate = canAssignElevatedRoles($user);
 
   // Reactively update filtered users when users prop or search term changes
   $: {
@@ -777,11 +775,6 @@
   }
 
   /**
-   * Format date to locale string
-   * @param {string} dateString
-   * @returns {string}
-   */
-  /**
    * Toggle add user form
    */
   function toggleAddUserForm() {
@@ -871,7 +864,7 @@
         <label for="invite-role">{$t('userManagement.role')}</label>
         <select id="invite-role" bind:value={inviteRole} disabled={inviteSubmitting}>
           <option value="user">{$t('userManagement.roleUser')}</option>
-          {#if isSuperAdmin}
+          {#if canElevate}
             <!-- An invitation is a deferred account creation, so it inherits the
                  same gate as POST /admin/users: only a super_admin may mint
                  elevated accounts (the backend 403s otherwise). -->
@@ -879,7 +872,7 @@
             <option value="super_admin">{$t('userManagement.roleSuperAdmin')}</option>
           {/if}
         </select>
-        {#if isSuperAdmin && inviteRole === 'super_admin'}
+        {#if canElevate && inviteRole === 'super_admin'}
           <span class="role-warning">{$t('userManagement.superAdminWarning')}</span>
         {/if}
       </div>
@@ -982,13 +975,13 @@
         <label for="role">{$t('userManagement.role')}</label>
         <select id="role" bind:value={newRole}>
           <option value="user">{$t('userManagement.roleUser')}</option>
-          {#if isSuperAdmin}
+          {#if canElevate}
             <!-- Only a super_admin may mint elevated accounts (backend enforces this) -->
             <option value="admin">{$t('userManagement.roleAdmin')}</option>
             <option value="super_admin">{$t('userManagement.roleSuperAdmin')}</option>
           {/if}
         </select>
-        {#if isSuperAdmin && newRole === 'super_admin'}
+        {#if canElevate && newRole === 'super_admin'}
           <span class="role-warning">{$t('userManagement.superAdminWarning')}</span>
         {/if}
       </div>
@@ -1021,6 +1014,8 @@
       </thead>
       <tbody>
         {#each filteredUsers as currentUser (currentUser.uuid)}
+          <!-- What this viewer may do on this row: $lib/users/rowPermissions. -->
+          {@const can = permittedRowActions($user, currentUser)}
           <tr>
             <td>
               {currentUser.full_name || $t('userManagement.notAvailable')}
@@ -1053,7 +1048,7 @@
                    returned 403. A super_admin row also had no matching option,
                    so it rendered blank and any accidental change silently
                    demoted the account. Both cases now render as static text. -->
-              {#if currentUser.uuid !== currentUserId && isSuperAdmin}
+              {#if can.changeRole}
                 <select
                   value={currentUser.role}
                   on:change={(e) => handleUserRoleChange(currentUser.uuid, e)}
@@ -1071,7 +1066,7 @@
             <td>
               <div class="table-actions">
                 {#if currentUser.uuid !== currentUserId}
-                  {#if isSuperAdmin && currentUser.auth_type && currentUser.auth_type !== 'local' && currentUser.auth_type !== 'ldap'}
+                  {#if can.toggleLocalFallback}
                   <button
                     class="icon-button fallback-toggle-button"
                     class:active={currentUser.allow_local_fallback}
@@ -1087,7 +1082,7 @@
                     </svg>
                   </button>
                   {/if}
-                  {#if (currentUser.auth_type === 'local' || currentUser.allow_local_fallback) && (currentUser.role !== 'super_admin' || isSuperAdmin)}
+                  {#if can.resetPassword}
                   <button
                     class="icon-button reset-password-button"
                     on:click={() => openPasswordResetModal(currentUser)}
@@ -1099,7 +1094,7 @@
                     </svg>
                   </button>
                   {/if}
-                  {#if currentUser.is_active !== false}
+                  {#if can.lock}
                   <button
                     class="icon-button lock-button"
                     disabled={pendingActionUuid === currentUser.uuid}
@@ -1127,6 +1122,7 @@
                       <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
                     </svg>
                   </button>
+                  {#if can.forceLogout}
                   <button
                     class="icon-button force-logout-button"
                     disabled={pendingActionUuid === currentUser.uuid}
@@ -1139,9 +1135,8 @@
                       <line x1="21" y1="12" x2="9" y2="12"/>
                     </svg>
                   </button>
-                  {#if isSuperAdmin}
-                  <!-- MFA reset requires super_admin server-side; a plain admin
-                       would only get a 403 from the button. -->
+                  {/if}
+                  {#if can.resetMfa}
                   <button
                     class="icon-button mfa-reset-button"
                     disabled={pendingActionUuid === currentUser.uuid}
@@ -1155,7 +1150,7 @@
                     </svg>
                   </button>
                   {/if}
-                  {#if isSuperAdmin && currentUser.role !== 'super_admin'}
+                  {#if can.linkIdentity}
                   <!-- The account_linking operator remedy (P1.3): sets the
                        provider's own identifier so a login that a source
                        like Authentik (hardcodes email_verified: false)
@@ -1175,7 +1170,9 @@
                     </svg>
                   </button>
                   {/if}
-                  {#if expirationEditUuid === currentUser.uuid}
+                  {#if !can.editExpiration}
+                    <!-- No expiration editor for this row. -->
+                  {:else if expirationEditUuid === currentUser.uuid}
                     <span class="expiration-editor">
                       <input
                         type="date"
@@ -1233,6 +1230,7 @@
                       <path d="M16 16h5v5"/>
                     </svg>
                   </button>
+                  {#if can.delete}
                   <button
                     class="icon-button delete-button"
                     on:click={() => deleteUser(currentUser.uuid)}
@@ -1246,6 +1244,7 @@
                       <line x1="14" x2="14" y1="11" y2="17"/>
                     </svg>
                   </button>
+                  {/if}
                 {:else}
                   <span class="self-user">{$t('userManagement.currentUser')}</span>
                 {/if}

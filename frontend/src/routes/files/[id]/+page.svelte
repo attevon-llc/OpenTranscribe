@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy, afterUpdate, tick } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import type { Collection } from '$lib/types/collection';
   import type { Tag } from '$lib/types/tag';
   import { guardUnsavedChanges } from '$lib/navigation/unsavedChangesGuard';
@@ -27,12 +27,11 @@
     type SpeakerItem,
     type SpeakerNameBaseline,
   } from '$lib/fileDetail/speakerNames';
-  import { markActiveSegment, scrollToSegmentAtTime } from '$lib/fileDetail/segmentDom';
+  import { seekTimeFromSearch } from '$lib/fileDetail/deepLinks';
   import { patchSegmentInFile } from '$lib/fileDetail/segmentSync';
   import { clearProcessedVideoCache, saveSegmentText, segmentSaveErrorKey } from '$lib/fileDetail/segmentEdit';
 
-  import VideoPlayer from '$components/VideoPlayer.svelte';
-  import WaveformPlayer from '$components/WaveformPlayer.svelte';
+  import FilePlayer from '$components/fileDetail/FilePlayer.svelte';
   import MetadataDisplay from '$components/MetadataDisplay.svelte';
   import ProcessingSection from '$components/fileDetail/ProcessingSection.svelte';
   import AnalyticsSection from '$components/AnalyticsSection.svelte';
@@ -80,11 +79,11 @@
   // 404/403: the file is missing or not visible to this user; retrying can't help.
   let fileNotFound = false;
   let videoErrorMessage = '';
-  let videoPlayerComponent: any = null;
+  let filePlayer: FilePlayer | null = null;
   let currentTime = 0;
   let isLoading = true;
-  let playerInitialized = false;
-  let videoElementChecked = false;
+  // `?t=` from search results: the player seeks there once, then this is cleared.
+  let initialSeekTime = seekTimeFromSearch(window.location.search);
   let collections: Collection[] = [];
 
   // DOM-touching deferred work goes through this so onDestroy can cancel it (see pageTimers).
@@ -423,31 +422,11 @@
       streamContentType = stream.contentType;
       playbackMode = stream.playbackMode;
       videoUrl = stream.url;
-      // Reset video element check flag to prompt afterUpdate to try initialization
-      videoElementChecked = false;
     } catch (error) {
       console.error('Failed to get video URL:', error);
       videoUrl = '';
       videoErrorMessage = 'Video not available for this file';
     }
-  }
-
-  /**
-   * Initialize the video player with enhanced streaming capabilities
-   */
-  function initializePlayer() {
-    if (playerInitialized || !videoUrl) {
-      return;
-    }
-
-    const mediaElement = document.querySelector('#player') as HTMLMediaElement;
-
-    if (!mediaElement) {
-      return;
-    }
-
-    // Mark as initialized - all player initialization is now handled by VideoPlayer component
-    playerInitialized = true;
   }
 
   // Event handlers for components
@@ -540,7 +519,7 @@
   /** Re-fetch the player's caption track (server-built) after a committed change. */
   function refreshCaptionTrack(reason: string): void {
     tick()
-      .then(() => videoPlayerComponent?.updateSubtitles?.())
+      .then(() => filePlayer?.updateSubtitles())
       .catch(error => console.warn(`Failed to update captions after ${reason}:`, error));
   }
 
@@ -602,15 +581,8 @@
   }
 
   function seekToTime(time: number) {
-    // Add 0.5 second padding before the target time for better context
-    const paddedTime = Math.max(0, time - 0.5);
-
-    // Use VideoPlayer component's seek function for all media types
-    if (videoPlayerComponent && videoPlayerComponent.seekToTime) {
-      videoPlayerComponent.seekToTime(paddedTime);
-    } else {
-      console.warn('VideoPlayer component not available for seeking');
-    }
+    if (filePlayer) filePlayer.seekToTime(time);
+    else console.warn('VideoPlayer component not available for seeking');
   }
 
   // `file.tags` is the update path: assigning a member of the reactive `file`
@@ -636,17 +608,6 @@
 
   function handleVideoRetry() {
     fetchFileDetails();
-  }
-
-  // Audio player event handlers for custom player
-  function handleTimeUpdate(event: CustomEvent<{ currentTime: number }>) {
-    currentTime = event.detail.currentTime;
-    markActiveSegment(file?.transcript_segments, currentTime);
-  }
-
-  function handleWaveformSeek(event: CustomEvent) {
-    const seekTime = event.detail.time;
-    seekToTime(seekTime);
   }
 
   // Handle reprocess event from the SelectiveReprocessModal (header button). The modal has
@@ -699,7 +660,7 @@
       getFile: () => file,
       getLlmAvailable: () => llmAvailable,
       getRedactionStatus: () => redactionStatus,
-      getVideoPlayerComponent: () => videoPlayerComponent,
+      getVideoPlayerComponent: () => filePlayer,
       setFile: (f) => (file = f),
       setCurrentProcessingStep: (s) => (currentProcessingStep = s),
       setSummaryGenerating: (v) => (summaryGenerating = v),
@@ -761,9 +722,6 @@
     pageTimers.destroy();
     downloadManager.cleanup();
 
-    // Player cleanup is now handled by VideoPlayer component
-    playerInitialized = false;
-
     mediaStream.stop();
 
     // Clean up WebSocket subscription
@@ -777,58 +735,6 @@
     transcriptStore.clear();
   });
 
-  afterUpdate(() => {
-    if (videoUrl && !playerInitialized && !isLoading && !videoElementChecked) {
-      videoElementChecked = true;
-      const videoElement = document.getElementById('player');
-      if (videoElement) {
-        // Video element found — initialize immediately. `initializePlayer` only
-        // marks a flag once the element exists (already confirmed above); the
-        // previous 100ms sleep just delayed the `?t=` seek that follows it for
-        // no reason (#649).
-        initializePlayer();
-      } else {
-        // Video element not found yet, will try again next update
-        videoElementChecked = false;
-      }
-    }
-  });
-
-  // Handle ?t= timestamp seek from search results
-  let hasSeenTimestamp = false;
-  $: if (playerInitialized && videoPlayerComponent && !hasSeenTimestamp) {
-    const urlParams = new URLSearchParams(window.location.search);
-    const seekTime = urlParams.get('t');
-    if (seekTime) {
-      hasSeenTimestamp = true;
-      const targetTime = parseFloat(seekTime);
-      if (!isNaN(targetTime) && targetTime >= 0) {
-        // Seek the player to the specified timestamp immediately. The 500ms
-        // sleep here predated #647: `VideoPlayer.seekToTime` used to await
-        // `loadedmetadata` internally, so this queued the call behind that
-        // wait. It now issues the seek to the media element before metadata
-        // arrives, so the sleep was dead weight stacked on top of #647's fix
-        // (#649).
-        if (videoPlayerComponent && typeof videoPlayerComponent.seekToTime === 'function') {
-          videoPlayerComponent.seekToTime(targetTime);
-        } else {
-          currentTime = targetTime;
-        }
-        // Scroll the transcript segment into view
-        scrollToSegmentAtTime(file?.transcript_segments, targetTime, scheduleTimeout);
-      }
-    }
-  }
-
-  // Reactive statement to re-initialize player if videoUrl changes
-  $: if (videoUrl && !playerInitialized && !isLoading) {
-    // Video URL available but no player, scheduling initialization
-    scheduleTimeout(() => {
-      if (!playerInitialized) {
-        initializePlayer();
-      }
-    }, 200);
-  }
 </script>
 
 <svelte:head>
@@ -884,30 +790,20 @@
           />
         </div>
 
-        <VideoPlayer
-          bind:this={videoPlayerComponent}
+        <FilePlayer
+          bind:this={filePlayer}
+          bind:currentTime
+          {file}
           {videoUrl}
           {streamContentType}
           {playbackMode}
-          {file}
           errorMessage={videoErrorMessage}
           {showOriginal}
+          schedule={scheduleTimeout}
+          {initialSeekTime}
           on:retry={handleVideoRetry}
-          on:timeupdate={handleTimeUpdate}
+          on:initialSeekDone={() => (initialSeekTime = null)}
         />
-
-        <!-- Waveform visualization -->
-        {#if file && file.uuid && (file.content_type?.startsWith('audio/') || file.content_type?.startsWith('video/')) && file.status === 'completed'}
-          <div class="waveform-section">
-            <WaveformPlayer
-              fileId={file.uuid}
-              duration={file.duration_seconds || file.duration || 0}
-              {currentTime}
-              height={80}
-              on:seek={handleWaveformSeek}
-            />
-          </div>
-        {/if}
 
         {#if file && file.transcript_segments && file.transcript_segments.length > 0}
           <TranscriptActionsBar
@@ -1212,10 +1108,6 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
-  }
-
-  .waveform-section {
-    width: 100%;
   }
 
 

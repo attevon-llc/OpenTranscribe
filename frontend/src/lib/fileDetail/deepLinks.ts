@@ -12,3 +12,14 @@
 export function opensSummaryView(search: string): boolean {
   return new URLSearchParams(search).get('view') === 'summary';
 }
+
+/**
+ * `?t=<seconds>` — the playback position a search result links to. `null` when absent,
+ * not a number, or negative.
+ */
+export function seekTimeFromSearch(search: string): number | null {
+  const seekTime = new URLSearchParams(search).get('t');
+  if (!seekTime) return null;
+  const targetTime = parseFloat(seekTime);
+  return !isNaN(targetTime) && targetTime >= 0 ? targetTime : null;
+}

@@ -6,7 +6,6 @@ import { isCloudEdition } from '$lib/edition';
 import { loadCapabilities } from '$stores/capabilities';
 import { probeSessionWithRetry, SESSION_PROBE_TIMEOUT_MS } from '$lib/auth/sessionProbe';
 import { readAccountLifecycle, type AccountLifecycleState } from '$lib/auth/accountLifecycle';
-
 import {
   asAuthError,
   classifyEnrollmentError,
@@ -17,9 +16,11 @@ import {
   registrationFailure,
   type MfaEnrollmentError,
 } from '$lib/auth/authErrors';
+import { failClosedAuthMethods, sharedFreshRequest, type AuthMethods } from '$lib/auth/authMethods';
 
 export { readAccountLifecycle, type AccountLifecycleState } from '$lib/auth/accountLifecycle';
 export type { MfaEnrollmentError } from '$lib/auth/authErrors';
+export type { AuthMethods } from '$lib/auth/authMethods';
 
 // Certificate metadata lives with the endpoint that serves it
 // (`$lib/api/certificate`). It was declared here, and hung off the user type,
@@ -60,35 +61,6 @@ interface User {
   approved_at?: string | null;
   created_at: string;
   updated_at: string;
-}
-
-// Available authentication methods
-export interface AuthMethods {
-  methods: string[];
-  oidc_enabled: boolean;
-  /**
-   * @deprecated Duplicate of `oidc_enabled`, emitted by the backend for one
-   * minor release so a cached bundle of THIS file keeps working against an
-   * upgraded backend. Never read it in new code.
-   */
-  keycloak_enabled?: boolean;
-  pki_enabled: boolean;
-  ldap_enabled: boolean;
-  // Whether accounts holding a local password may sign in at all. Note this is
-  // NOT the same as "show the username/password form" — LDAP authenticates
-  // through that same form, so the form is gated on `local_enabled ||
-  // ldap_enabled`.
-  local_enabled: boolean;
-  // Whether anyone may create their own account via POST /auth/register.
-  allow_registration: boolean;
-  mfa_enabled: boolean;
-  mfa_required: boolean;
-  login_banner_enabled: boolean;
-  login_banner_text: string;
-  login_banner_classification: string;
-  /** Session limits in minutes (0 = off). Absent from an older backend. */
-  session_idle_timeout_minutes?: number;
-  session_absolute_timeout_minutes?: number;
 }
 
 // Define auth store interface
@@ -678,61 +650,26 @@ export async function logout(reason: SessionEndReason | null = null) {
 // share one request, and a successful answer stays fresh for a short window so the login page
 // mounting just after the layout's boot call does not ask again. Failures are never remembered.
 const AUTH_METHODS_FRESH_MS = 15_000;
-let authMethodsCache: { at: number; promise: Promise<AuthMethods> } | null = null;
+const authMethodsRequest = sharedFreshRequest(fetchAuthMethods, AUTH_METHODS_FRESH_MS);
 
 /** Drop the shared answer, e.g. after an admin edits the auth configuration. */
 export function invalidateAuthMethods(): void {
-  authMethodsCache = null;
+  authMethodsRequest.invalidate();
 }
 
 // Get available authentication methods
 export function getAuthMethods(): Promise<AuthMethods> {
-  if (authMethodsCache && Date.now() - authMethodsCache.at < AUTH_METHODS_FRESH_MS) {
-    return authMethodsCache.promise;
-  }
-  const request = fetchAuthMethods();
-  const entry = { at: Date.now(), promise: request.then((r) => r.methods) };
-  authMethodsCache = entry;
-  void request.then((r) => {
-    if (!r.ok && authMethodsCache === entry) authMethodsCache = null;
-  });
-  return entry.promise;
+  return authMethodsRequest.get();
 }
 
-async function fetchAuthMethods(): Promise<{ methods: AuthMethods; ok: boolean }> {
+async function fetchAuthMethods(): Promise<{ value: AuthMethods; ok: boolean }> {
   try {
     const response = await axiosInstance.get('/auth/methods');
-    return { methods: response.data, ok: true };
+    return { value: response.data, ok: true };
   } catch (error) {
     console.error('Failed to fetch auth methods:', error);
-    // Fail-closed defaults when the probe fails. The two new flags are
-    // deliberately ASYMMETRIC:
-    //   local_enabled: true  — "closed" here means "still reachable". A
-    //     self-hosted install whose /auth/methods probe fails (backend
-    //     restarting, proxy hiccup) must still render the sign-in form, or a
-    //     transient error locks every operator out of their own deployment.
-    //     The backend is the authority and rejects the login anyway if local
-    //     auth really is off.
-    //   allow_registration: false — "closed" here means "offer nothing". A
-    //     signup link we cannot confirm is enabled either 403s after the user
-    //     fills the whole form, or advertises an open-registration surface the
-    //     operator deliberately turned off. Both are worse than hiding it.
-    return {
-      ok: false,
-      methods: {
-        methods: ['local'],
-        oidc_enabled: false,
-        pki_enabled: false,
-        ldap_enabled: false,
-        local_enabled: true,
-        allow_registration: false,
-        mfa_enabled: false,
-        mfa_required: false,
-        login_banner_enabled: false,
-        login_banner_text: '',
-        login_banner_classification: 'UNCLASSIFIED',
-      },
-    };
+    // Fail-closed defaults ($lib/auth/authMethods explains the asymmetric flags).
+    return { ok: false, value: failClosedAuthMethods() };
   }
 }
 

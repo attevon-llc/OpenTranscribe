@@ -28,6 +28,7 @@ from app.models.upload_batch import UploadBatch
 from app.models.user import User
 from app.schemas.media import PrepareUploadRequest
 from app.services.collection_visibility import usable_collections
+from app.services.privacy import file_consent
 from app.services.tag_service import on_tags_changed
 from app.services.tag_service import resolve_or_create_tags
 from app.utils import benchmark_timing
@@ -268,6 +269,9 @@ def create_prepared_record(
     db_file.requested_max_speakers = request.max_speakers  # type: ignore[assignment]
     db_file.requested_num_speakers = request.num_speakers  # type: ignore[assignment]
     db_file.requested_disable_diarization = True if request.disable_diarization else None  # type: ignore[assignment]
+
+    # The uploader's stated voiceprint consent (issue #1356), recorded with the row and who said it.
+    file_consent.stamp_new_file(db_file, request.voiceprint_consent, int(current_user.id))
 
     db.flush()
 

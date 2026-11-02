@@ -714,6 +714,11 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'speaker_profile' AND column_name = 'last_interaction_at')"
     )
 
+    # v454: per-file voiceprint consent (issue #1356). Keyed on the partial index, created last.
+    has_voiceprint_consent = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname = 'ix_media_file_voiceprint_declined')"
+    )
+
     # v451: legal acceptance survives user deletion. Keyed on the guard trigger (created last),
     # the SET NULL rule of the user FK, and the subject CHECK: a column without its trigger
     # could keep an IP after erasure, so such a database re-runs the revision.
@@ -811,7 +816,15 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_task_active_unique
         and has_identity_source
     )
-    # v451: same as v450 plus the survival trigger. The top of the ladder.
+    # v454: same as v451 plus the per-file voiceprint consent column. The top of the ladder.
+    if (
+        matches_v449
+        and has_legal_acceptance_context
+        and has_legal_acceptance_survival
+        and has_voiceprint_consent
+    ):
+        return "v454_add_media_file_voiceprint_consent"
+    # v451: same as v450 plus the survival trigger.
     if matches_v449 and has_legal_acceptance_context and has_legal_acceptance_survival:
         return "v451_legal_acceptance_survives_user_deletion"
     # v450: same as v449 plus the legal acceptance context.

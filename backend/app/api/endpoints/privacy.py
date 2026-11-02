@@ -281,6 +281,7 @@ def put_instance_privacy_policy(
         voiceprint_matching=body.voiceprint_matching_enabled,
         gender_inference=body.gender_inference_enabled,
         actor_user_id=int(current_user.id),
+        voiceprint_upload_consent_required=body.voiceprint_upload_consent_required,
     )
     source_ip, user_agent = _get_client_info(request)
     for change in changes:

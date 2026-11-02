@@ -104,7 +104,10 @@ _SCOPE_KINDS = ("organization", "user", "instance_personal", "instance_all", "fi
 #: ``purge_reason`` of a destruction a retention schedule decided: it runs whether or not the
 #: privacy switch is on (see :func:`targets_still_enabled`).
 RETENTION = "retention"
-PURGE_REASONS = (RETENTION,)
+#: ``purge_reason`` of an owner's per-file opt-out (issue #1356): the file's consent column, set
+#: before the purge is queued, is what stops new voiceprints, so no switch needs to be off.
+OPT_OUT = "opt_out"
+PURGE_REASONS = (RETENTION, OPT_OUT)
 
 #: The second pass runs this long after the first. It must exceed the write backstop's cache TTL
 #: (``constants.PRIVACY_WRITE_BACKSTOP_TTL_SECONDS``, 10 s) plus an in-flight write, so a write
@@ -245,7 +248,8 @@ def targets_still_enabled(
 
     ``purge_reason=RETENTION`` is a destruction a retention schedule decided, not a privacy
     switch being honoured: it is allowed whatever the switches say (data past its retention
-    period goes whether or not matching is on). It is the only exemption, and it is explicit.
+    period goes whether or not matching is on). ``purge_reason=OPT_OUT`` is the owner's per-file
+    opt-out and is exempt the same way. They are the only exemptions, and both are explicit.
 
     The layers counted are the scope's own and everything above it: an instance purge counts
     platform and instance; an organization purge adds the organization; a user purge adds the
@@ -257,10 +261,10 @@ def targets_still_enabled(
 
     if purge_reason is not None and purge_reason not in PURGE_REASONS:
         raise ValueError(f"unknown purge reason {purge_reason!r}")
-    if purge_reason == RETENTION:
+    if purge_reason in (RETENTION, OPT_OUT):
         return []
     if scope.kind == "files":
-        # A files scope exists for retention; a privacy switch never authorises it.
+        # A files scope exists for retention and opt-out; a privacy switch never authorises it.
         return list(dict.fromkeys(targets))
     user_id = scope.user_id if scope.kind == "user" else None
     organization_id = scope.organization_id if scope.kind in ("organization", "user") else None

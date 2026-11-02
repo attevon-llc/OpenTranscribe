@@ -13,7 +13,9 @@ from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 from app.services.opensearch_service.client import _is_index_corruption_error
 from app.services.opensearch_service.indices import ensure_indices_exist
 from app.services.opensearch_service.repair import _repair_index
+from app.services.privacy.consent import has_voiceprint_consent_hooks
 from app.services.privacy.policy import assert_voiceprint_write_allowed
+from app.services.privacy.policy import declined_file_ids
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +59,7 @@ def add_speaker_embedding_v4(
 
     # Tier 3 of the privacy policy: no voiceprint document is written for a scope that forbids
     # voiceprints, whichever caller got here (issue #1280).
-    if not assert_voiceprint_write_allowed(user_id, organization_id):
+    if not assert_voiceprint_write_allowed(user_id, organization_id, media_file_id=media_file_id):
         return
 
     v4_index = get_speaker_index_v4()
@@ -123,6 +125,17 @@ def add_speaker_embedding_v4(
         )
 
 
+def _declined_files_of(embeddings_data: list[dict[str, Any]]) -> set[int]:
+    """The files in a batch whose consent denies voiceprints. One query for the whole batch."""
+    from app.db.session_utils import session_scope
+
+    ids = {d["media_file_id"] for d in embeddings_data if d.get("media_file_id") is not None}
+    if not ids:
+        return set()
+    with session_scope() as db:
+        return declined_file_ids(db, ids)
+
+
 def bulk_add_speaker_embeddings_v4(embeddings_data: list[dict[str, Any]]) -> dict[str, Any] | None:
     """Bulk-index v4 (256-dim) speaker embeddings in one OpenSearch round-trip.
 
@@ -156,6 +169,9 @@ def bulk_add_speaker_embeddings_v4(embeddings_data: list[dict[str, Any]]) -> dic
     now_iso = datetime.datetime.now(datetime.UTC).isoformat()
     accepted = 0
 
+    per_entry_file_check = has_voiceprint_consent_hooks()
+    declined_in_batch = _declined_files_of(embeddings_data)
+
     for data in embeddings_data:
         speaker_uuid = data.get("speaker_uuid")
         speaker_id = data.get("speaker_id")
@@ -165,8 +181,13 @@ def bulk_add_speaker_embeddings_v4(embeddings_data: list[dict[str, Any]]) -> dic
         # one forbidden scope must not take the others with it. A missing user_id cannot be
         # judged, so it is not written (the document needs one anyway).
         if data.get("user_id") is None or not assert_voiceprint_write_allowed(
-            data["user_id"], data.get("organization_id")
+            data["user_id"],
+            data.get("organization_id"),
+            media_file_id=data.get("media_file_id") if per_entry_file_check else None,
         ):
+            continue
+        # The per-file consent layer, read once for the whole batch (an opt-out must bite).
+        if data.get("media_file_id") in declined_in_batch:
             continue
 
         if speaker_uuid is None or speaker_id is None:
@@ -264,7 +285,7 @@ def add_speaker_embedding(
         return
 
     # Tier 3 of the privacy policy (see add_speaker_embedding_v4).
-    if not assert_voiceprint_write_allowed(user_id, organization_id):
+    if not assert_voiceprint_write_allowed(user_id, organization_id, media_file_id=media_file_id):
         return
 
     index_name = target_index or get_speaker_index()

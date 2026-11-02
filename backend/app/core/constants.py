@@ -1879,6 +1879,11 @@ PRIVACY_GENDER_INFERENCE_KEY = "privacy.gender_inference_enabled"
 #: layer is the pre-existing setting below, so their stored inferred gender is hidden.
 DEFAULT_PRIVACY_VOICEPRINT_MATCHING_ENABLED = True
 DEFAULT_PRIVACY_GENDER_INFERENCE_ENABLED = True
+#: ``SystemSettings`` key: ``"true"``/``"false"``. When on, a file whose per-file voiceprint
+#: consent is not ``granted`` is treated as declined (issue #1356). Default OFF. Turning it on
+#: hides voiceprints of existing files (they are ``unspecified``) and deletes nothing.
+PRIVACY_VOICEPRINT_UPLOAD_CONSENT_REQUIRED_KEY = "privacy.voiceprint_upload_consent_required"
+DEFAULT_PRIVACY_VOICEPRINT_UPLOAD_CONSENT_REQUIRED = False
 #: ``UserSetting`` key for the user layer of voiceprint matching. The gender user layer is the
 #: existing ``speaker_attribute_gender_detection_enabled``.
 PRIVACY_USER_VOICEPRINT_MATCHING_KEY = "privacy_voiceprint_matching_enabled"

@@ -9,7 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Per-upload voiceprint statement and per-recording opt-out (#1356). The upload wizard has an unchecked
+  box recording the uploader's statement that the speakers agreed to voice identification (a recorded
+  claim, not verified). The owner can turn voice identification off for a recording at any time: that
+  stops new voiceprints at once and deletes the existing ones with the file-scoped purge (reason
+  `opt_out`). Profile and cluster averages never include a voice from an opted-out recording. A new
+  system setting, `privacy.voiceprint_upload_consent_required` (off by default), treats a recording as
+  opted out unless a statement was recorded. API: `PATCH /files/{uuid}/voiceprint-consent`; prepare
+  and complete accept `voiceprint_consent` (complete only restricts). Migration v454; its downgrade
+  refuses while any recording is opted out.
+
 ### Changed
+
+- The OpenSearch voiceprint write guard now re-checks the recording's own consent state on every write
+  when the document names a file, and consent hooks receive that file id there.
+- Fixed: the voiceprint retention sweep queued its purge with a `reason` argument the task does not
+  accept; it now passes `purge_reason`.
 
 - **Behaviour change:** legal acceptance records are no longer deleted with the account. Every
   deletion path (admin delete, GDPR erasure, the first-run wizard) now keeps them, pseudonymised

@@ -21,6 +21,8 @@
   /** Why the speaker count is not used for this file, or null when it is. */
   export let speakerCountNote: 'off' | 'fast' | null = null;
   export let skipSummary = false;
+  /** The uploader stated the speakers agreed to voice identification. */
+  export let voiceprintConsent = false;
   export let selectedWhisperModel: string | null = null;
   export let adminDefaultModel = 'large-v3-turbo';
   export let transcriptionSystemDefaults: TranscriptionSystemDefaults | null = null;
@@ -124,6 +126,17 @@
       <span class="review-label">{$t('uploader.reviewSpeakers')}</span>
       <span class="review-value">{getSpeakerLabel()}</span>
     </div>
+
+    {#if speakerCountNote === null}
+      <div class="review-row" data-testid="review-voiceprint-consent">
+        <span class="review-label">{$t('uploader.voiceprintConsent.reviewLabel')}</span>
+        <span class="review-value">
+          {voiceprintConsent
+            ? $t('uploader.voiceprintConsent.reviewStated')
+            : $t('uploader.voiceprintConsent.reviewNone')}
+        </span>
+      </div>
+    {/if}
 
     <div class="review-row">
       <span class="review-label">{$t('uploader.reviewModel')}</span>

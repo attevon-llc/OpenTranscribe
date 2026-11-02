@@ -13,7 +13,7 @@
     fetchRetentionConfig,
   } from '$lib/settings/sectionData';
   import { toastStore } from '../../stores/toast';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import { settingsModalStore } from '../../stores/settingsModalStore';
 
   // ---- Types ---------------------------------------------------------------
@@ -381,9 +381,9 @@
     <div class="status-block">
       <div class="status-item">
         <span class="status-label">{$t('settings.retention.lastRunSection')}:</span>
-        <span class="status-value">{formatDateTime(lastRun, $t('settings.retention.lastRunNever'))}</span>
+        <span class="status-value">{formatDateTime(lastRun, $t('settings.retention.lastRunNever'), $locale)}</span>
         {#if lastRun && lastRunDeleted !== null}
-          <span class="status-badge">{$t('settings.retention.lastRunLabel', { datetime: formatDateTime(lastRun, $t('settings.retention.lastRunNever')), count: lastRunDeleted })}</span>
+          <span class="status-badge">{$t('settings.retention.lastRunLabel', { datetime: formatDateTime(lastRun, $t('settings.retention.lastRunNever'), $locale), count: lastRunDeleted })}</span>
         {/if}
       </div>
       <div class="status-item">
@@ -473,7 +473,7 @@
                   <tr>
                     <td class="col-title">{file.title}</td>
                     <td>{file.owner_email}</td>
-                    <td>{formatDateTime(file.completed_at, $t('settings.retention.lastRunNever'))}</td>
+                    <td>{formatDateTime(file.completed_at, $t('settings.retention.lastRunNever'), $locale)}</td>
                     <td>{file.age_days}d</td>
                     <td>{formatFileSize(file.size_bytes)}</td>
                     <td>{file.status}</td>

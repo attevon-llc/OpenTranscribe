@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { t } from '../../stores/locale';
+  import { t, locale } from '$stores/locale';
   import { formatDateTime, taskProgressPercent } from '$lib/utils/formatting';
   import ProcessingProvenance from '$components/ProcessingProvenance.svelte';
   import BaseModal from '$components/ui/BaseModal.svelte';
@@ -71,12 +71,12 @@
             </div>
             <div class="metadata-item">
               <span class="metadata-label">{$t('fileStatus.uploadTime')}:</span>
-              <span class="metadata-value">{formatDateTime(detailedStatus.file.upload_time, $t('common.notAvailable'))}</span>
+              <span class="metadata-value">{formatDateTime(detailedStatus.file.upload_time, $t('common.notAvailable'), $locale)}</span>
             </div>
             {#if detailedStatus.file.completed_at}
               <div class="metadata-item">
                 <span class="metadata-label">{$t('fileStatus.completedAt')}:</span>
-                <span class="metadata-value">{formatDateTime(detailedStatus.file.completed_at, $t('common.notAvailable'))}</span>
+                <span class="metadata-value">{formatDateTime(detailedStatus.file.completed_at, $t('common.notAvailable'), $locale)}</span>
               </div>
             {/if}
             <div class="metadata-item">
@@ -153,18 +153,18 @@
                   <div class="task-metadata-items">
                     <div class="metadata-item">
                       <span class="metadata-label">{$t('fileStatus.taskCreated')}</span>
-                      <span class="metadata-value">{formatDateTime(task.created_at, $t('common.notAvailable'))}</span>
+                      <span class="metadata-value">{formatDateTime(task.created_at, $t('common.notAvailable'), $locale)}</span>
                     </div>
                     {#if task.updated_at}
                       <div class="metadata-item">
                         <span class="metadata-label">{$t('fileStatus.lastUpdated')}</span>
-                        <span class="metadata-value">{formatDateTime(task.updated_at, $t('common.notAvailable'))}</span>
+                        <span class="metadata-value">{formatDateTime(task.updated_at, $t('common.notAvailable'), $locale)}</span>
                       </div>
                     {/if}
                     {#if task.completed_at}
                       <div class="metadata-item">
                         <span class="metadata-label">{$t('fileStatus.taskCompleted')}</span>
-                        <span class="metadata-value">{formatDateTime(task.completed_at, $t('common.notAvailable'))}</span>
+                        <span class="metadata-value">{formatDateTime(task.completed_at, $t('common.notAvailable'), $locale)}</span>
                       </div>
                       <div class="metadata-item">
                         <span class="metadata-label">{$t('fileStatus.processingTime')}</span>

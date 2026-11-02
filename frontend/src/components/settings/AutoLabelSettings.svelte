@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatEta } from '$lib/utils/formatting';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, onDestroy } from 'svelte';
   import axiosInstance from '$lib/axios';
@@ -130,16 +131,6 @@
       toastStore.error($t('autoLabel.retroactiveFailed'));
       retroactiveRunning = false;
     }
-  }
-
-  function formatEta(seconds: number | null | undefined): string {
-    if (seconds == null || seconds <= 0) return '';
-    if (seconds < 60) return `${Math.round(seconds)}s`;
-    const m = Math.floor(seconds / 60);
-    const s = Math.round(seconds % 60);
-    if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`;
-    const h = Math.floor(m / 60);
-    return `${h}h ${m % 60}m`;
   }
 
   // WebSocket event handler for auto-label status updates

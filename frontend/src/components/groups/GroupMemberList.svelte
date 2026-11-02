@@ -4,7 +4,7 @@
   import { GroupsApi } from '$lib/api/groups';
   import { toastStore } from '$stores/toast';
   import { authStore } from '$stores/auth';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { formatDate, getInitials } from '$lib/utils/formatting';
   import GroupRoleBadge from './GroupRoleBadge.svelte';
@@ -104,7 +104,7 @@
 
         <div class="member-meta">
           <GroupRoleBadge role={member.role} />
-          <span class="member-joined">{$t('groups.joined')} {formatDate(member.joined_at)}</span>
+          <span class="member-joined">{$t('groups.joined')} {formatDate(member.joined_at, $locale)}</span>
         </div>
 
         <div class="member-actions">

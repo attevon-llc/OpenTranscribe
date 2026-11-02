@@ -1,34 +1,45 @@
 /**
- * Frontend-only formatting utilities.
+ * Single home for display formatting (dates, sizes, durations, relative time, subtitle
+ * timestamps). A convention test (`components/formatters.convention.test.ts`) fails on a
+ * same-named copy elsewhere; a component needing a different shape names its function for
+ * what it does.
  *
- * Note: Basic formatting (duration, file size, dates) is now handled by the backend.
- * These utilities are kept only for UI-specific formatting needs.
+ * Date helpers format in the APP locale (the language setting), never the browser's. Pass
+ * `$locale` from a component so the text re-renders on a language switch; omitted, they read
+ * the store's current value.
  */
+import { get } from 'svelte/store';
+import { locale as appLocale } from '$stores/locale';
+
+import type { Translate } from '$lib/i18n';
+
+const currentLocale = (locale?: string): string => locale || get(appLocale) || 'en';
 
 /**
- * Formats a date string to a locale-aware short date.
+ * Formats a date string to a short date in the app locale.
  */
-export function formatDate(dateStr: string): string {
+export function formatDate(dateStr: string, locale?: string): string {
   try {
-    return new Date(dateStr).toLocaleDateString();
+    return new Date(dateStr).toLocaleDateString(currentLocale(locale));
   } catch {
     return dateStr;
   }
 }
 
 /**
- * Locale-aware date and time ("10/29/2026, 1:04:00 PM" in en-US) for an ISO string, a Date or
+ * Date and time in the app locale ("10/29/2026, 1:04:00 PM" for en-US) for an ISO string, a Date or
  * epoch milliseconds. Empty input returns `fallback` (default `''`), so a caller supplies its
  * own translated "never" / "n/a" text instead of re-implementing the formatter around it.
  * An unparseable value is returned as typed rather than rendered as "Invalid Date".
  */
 export function formatDateTime(
   value: string | number | Date | null | undefined,
-  fallback = ''
+  fallback = '',
+  locale?: string
 ): string {
   if (value === null || value === undefined || value === '') return fallback;
   const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString(currentLocale(locale));
 }
 
 /**
@@ -42,8 +53,6 @@ export function formatFileSize(bytes: number): string {
   const i = Math.min(Math.max(Math.floor(Math.log(bytes) / Math.log(k)), 0), units.length - 1);
   return `${(bytes / Math.pow(k, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
-
-type Translate = (key: string, options?: Record<string, unknown>) => string;
 
 /**
  * Coarse "5 minutes ago" label through the caller's translator (`notifications.*` keys).
@@ -75,11 +84,14 @@ export function getInitials(name: string | null, email: string): string {
 
 /**
  * Formats a duration in seconds for video player UI (HH:MM:SS or MM:SS format).
- * This is kept for video player controls and live timestamp display.
+ * `padHours` always emits the `HH:` part so a live timer keeps one width across the hour mark.
  * @param {number} totalSeconds - The duration in seconds.
  * @returns {string} The formatted duration string.
  */
-export function formatDuration(totalSeconds: number): string {
+export function formatDuration(
+  totalSeconds: number,
+  { padHours = false }: { padHours?: boolean } = {}
+): string {
   if (isNaN(totalSeconds) || totalSeconds < 0) {
     return '00:00';
   }
@@ -91,7 +103,7 @@ export function formatDuration(totalSeconds: number): string {
   const paddedMinutes = String(minutes).padStart(2, '0');
   const paddedSeconds = String(seconds).padStart(2, '0');
 
-  if (hours > 0) {
+  if (hours > 0 || padHours) {
     const paddedHours = String(hours).padStart(2, '0');
     return `${paddedHours}:${paddedMinutes}:${paddedSeconds}`;
   } else {
@@ -138,7 +150,10 @@ export function formatClock(totalSeconds: number | null | undefined): string {
 export function formatTimeOfDay(iso: string, locale?: string): string {
   const date = new Date(iso);
   if (isNaN(date.getTime())) return iso;
-  return new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(date);
+  return new Intl.DateTimeFormat(currentLocale(locale), {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
 }
 
 /**
@@ -146,11 +161,7 @@ export function formatTimeOfDay(iso: string, locale?: string): string {
  * (issue #753's notification duration chip; e.g. `125` -> `"2m 5s"`,
  * `45` -> `"45s"`, `3660` -> `"1h 1m"`). Unlike {@link formatDuration}/
  * {@link formatClock} this omits zero units entirely rather than padding —
- * intentionally different, per `lib/utils/CLAUDE.md`'s do-not-migrate note
- * for compact `Xh Ym` durations. `$stores/websocket`'s `formatEtaSeconds`
- * delegates its arithmetic here and keeps its own `undefined`-for-no-ETA
- * guard on top, so the two duration idioms share one implementation instead
- * of two independently-maintained copies of the same minute/hour rollover.
+ * intentionally different. {@link formatEta} wraps it with a no-ETA guard.
  */
 export function formatCompactDuration(totalSeconds: number): string {
   const seconds = Math.round(isNaN(totalSeconds) || totalSeconds < 0 ? 0 : totalSeconds);
@@ -161,6 +172,61 @@ export function formatCompactDuration(totalSeconds: number): string {
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
   return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+}
+
+/**
+ * ETA text, `''` when there is none to show (null, zero or negative): `125` -> `"2m 5s"`.
+ * Callers test the result for truthiness to decide whether to render the label.
+ */
+export function formatEta(seconds: number | null | undefined): string {
+  return seconds == null || seconds <= 0 ? '' : formatCompactDuration(seconds);
+}
+
+/**
+ * Elapsed time with every unit below the largest kept: `3605` -> `"1h 0m 5s"`, `65` ->
+ * `"1m 5s"`, zero or invalid -> `"0s"`.
+ */
+export function formatElapsed(totalSeconds: number): string {
+  if (!totalSeconds) return '0s';
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const secs = Math.floor(totalSeconds % 60);
+  let result = '';
+  if (hours > 0) result += `${hours}h `;
+  if (minutes > 0 || hours > 0) result += `${minutes}m `;
+  result += `${secs}s`;
+  return result;
+}
+
+/**
+ * Audit-log timestamp in the app locale. One formatter call with Latin digits, meant for an
+ * LTR cell: concatenating a date and a time formatted separately put strong right-to-left
+ * characters of the Arabic locale between the two, and the browser reordered the pieces (the
+ * date read "2513:04:32 10/"). An unparseable value is returned unchanged.
+ */
+export function formatAuditTimestamp(
+  value: string,
+  locale?: string,
+  { withYear = false }: { withYear?: boolean } = {}
+): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return (
+    date
+      .toLocaleString(currentLocale(locale), {
+        numberingSystem: 'latn',
+        ...(withYear ? { year: '2-digit' } : {}),
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      })
+      // The Arabic locale inserts a right-to-left mark after the day, which re-orders the
+      // slash and the month inside the LTR cell; the cell's own direction is what we want.
+      .replace(/[\u200e\u200f]/g, '')
+  );
 }
 
 /**

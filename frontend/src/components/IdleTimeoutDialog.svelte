@@ -8,6 +8,7 @@
   does not.
 -->
 <script lang="ts">
+  import { formatClock } from '$lib/utils/formatting';
   import { onDestroy, onMount } from 'svelte';
   import { t } from '$stores/locale';
   import { hasActiveUploads } from '$stores/uploads';
@@ -52,14 +53,7 @@
     clock = null;
   }
 
-  function formatRemaining(ms: number): string {
-    const total = Math.max(0, Math.ceil(ms / 1000));
-    const minutes = Math.floor(total / 60);
-    const seconds = total % 60;
-    return `${minutes}:${String(seconds).padStart(2, '0')}`;
-  }
-
-  $: remaining = warning ? formatRemaining(warning.deadline - now) : '';
+  $: remaining = warning ? formatClock(Math.max(0, Math.ceil((warning.deadline - now) / 1000))) : '';
 
   async function signOutNow(reason: 'idle' | 'absolute'): Promise<void> {
     if (signingOut) return;

@@ -4,6 +4,7 @@ import { render, screen } from '@testing-library/svelte';
 const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock('$lib/axios', () => ({ default: mockAxios, isRequestCancelled: () => false }));
 vi.mock('$stores/locale', () => ({
+  locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
   t: {
     subscribe: (run: (value: (key: string) => string) => void) => {
       run((key: string) => key);

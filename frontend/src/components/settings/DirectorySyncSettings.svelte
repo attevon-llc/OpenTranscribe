@@ -4,7 +4,7 @@
   import { onMount } from 'svelte';
   import Spinner from '../ui/Spinner.svelte';
   import { toastStore } from '../../stores/toast';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import {
     getDirectorySyncSettings,
     updateDirectorySyncSettings,
@@ -210,7 +210,7 @@
     <div class="status-block">
       <div class="status-item">
         <span class="status-label">{$t('settings.directorySync.lastRunSection')}:</span>
-        <span class="status-value">{formatDateTime(lastRunAt, $t('settings.directorySync.lastRunNever'))}</span>
+        <span class="status-value">{formatDateTime(lastRunAt, $t('settings.directorySync.lastRunNever'), $locale)}</span>
         {#if lastResult}
           {#if lastResult.status === 'ok'}
             <span class="status-badge ok">

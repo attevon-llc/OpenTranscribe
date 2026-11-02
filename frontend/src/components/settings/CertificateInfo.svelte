@@ -10,7 +10,7 @@
    */
   import { formatDateTime } from '$lib/utils/formatting';
   import { onMount } from 'svelte';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import { getCertificateInfo, type CertificateInfo } from '$lib/api/certificate';
 
   let certificate: CertificateInfo | undefined;
@@ -77,12 +77,12 @@
 
       <div class="cert-item">
         <span class="cert-label">{$t('settings.certificate.validFrom')}</span>
-        <span>{formatDateTime(certificate.valid_from, $t('common.notAvailable'))}</span>
+        <span>{formatDateTime(certificate.valid_from, $t('common.notAvailable'), $locale)}</span>
       </div>
 
       <div class="cert-item">
         <span class="cert-label">{$t('settings.certificate.validUntil')}</span>
-        <span class:expired={isExpired}>{formatDateTime(certificate.valid_until, $t('common.notAvailable'))}</span>
+        <span class:expired={isExpired}>{formatDateTime(certificate.valid_until, $t('common.notAvailable'), $locale)}</span>
       </div>
 
       <div class="cert-item full-width">

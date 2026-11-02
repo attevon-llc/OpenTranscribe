@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 
 vi.mock('$stores/locale', () => ({
+  locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
   t: {
     subscribe: (run: (value: (key: string, vars?: Record<string, unknown>) => string) => void) => {
       run((key: string, vars?: Record<string, unknown>) =>

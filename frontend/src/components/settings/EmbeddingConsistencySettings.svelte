@@ -5,7 +5,7 @@
   import axiosInstance from '$lib/axios';
   import { getErrorStatus } from '$lib/utils/apiError';
   import { toastStore } from '$stores/toast';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import StatusChip from './StatusChip.svelte';
   import Spinner from '../ui/Spinner.svelte';
 
@@ -200,7 +200,7 @@
           {#if lastRun}
             <StatusChip
               label={$t('settings.embeddingConsistency.chipLastRun')}
-              value={formatDateTime(lastRun.timestamp * 1000)}
+              value={formatDateTime(lastRun.timestamp * 1000, '', $locale)}
               status="neutral"
             />
             <StatusChip

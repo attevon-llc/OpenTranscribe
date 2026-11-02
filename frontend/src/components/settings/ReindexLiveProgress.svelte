@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatEta } from '$lib/utils/formatting';
   import Spinner from '$components/ui/Spinner.svelte';
   import ProgressBar from '$components/ui/ProgressBar.svelte';
   import { t } from '$stores/locale';
@@ -15,15 +16,6 @@
   export let isStopping: boolean;
   export let onstop: () => void;
 
-  function formatEta(seconds: number | null | undefined): string {
-    if (seconds == null || seconds <= 0) return '';
-    if (seconds < 60) return `${Math.round(seconds)}s`;
-    const m = Math.floor(seconds / 60);
-    const s = Math.round(seconds % 60);
-    if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`;
-    const h = Math.floor(m / 60);
-    return `${h}h ${m % 60}m`;
-  }
 </script>
 
   <div class="reindex-live-progress">

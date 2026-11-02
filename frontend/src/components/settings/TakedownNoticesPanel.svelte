@@ -1,11 +1,12 @@
 <script lang="ts">
+  import { formatDate } from '$lib/utils/formatting';
   /**
    * Takedown notice records (issue #1254): the durable list of legal notices (and operator
    * actions with none), the files each covers and what became of them, plus the compliance
    * export. Platform administrators only; the endpoints enforce that, this panel only mirrors it.
    */
   import { onMount } from 'svelte';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
   import Spinner from '$components/ui/Spinner.svelte';
@@ -170,7 +171,7 @@
                 aria-expanded={expanded === notice.uuid}
                 on:click={() => toggle(notice.uuid)}
               >
-                {new Date(notice.received_at).toLocaleDateString()}
+                {formatDate(notice.received_at, $locale)}
               </button>
             </td>
             <td>{labelFor($t, TAKEDOWN_NOTICE_TYPE_KEYS, notice.notice_type)}</td>

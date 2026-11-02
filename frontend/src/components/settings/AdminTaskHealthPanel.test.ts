@@ -3,7 +3,10 @@ import { fireEvent, render, waitFor } from '@testing-library/svelte';
 
 vi.mock('$stores/locale', () => {
   const t = (key: string) => key;
-  return { t: { subscribe: (run: (v: typeof t) => void) => (run(t), () => {}) } };
+  return {
+    locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
+    t: { subscribe: (run: (v: typeof t) => void) => (run(t), () => {}) },
+  };
 });
 const axiosMock = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock('$lib/axios', () => ({ default: axiosMock }));

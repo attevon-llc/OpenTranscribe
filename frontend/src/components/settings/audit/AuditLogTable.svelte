@@ -12,6 +12,7 @@
   import type { AuditLogEntry } from '$lib/api/admin';
   import { ORG_AUDIT_EVENT_KEYS, labelFor } from '$lib/i18n/keyMaps';
   import { t, locale } from '$stores/locale';
+  import { formatAuditTimestamp } from '$lib/utils/formatting';
 
   export let logs: AuditLogEntry[];
   export let total: number;
@@ -27,25 +28,6 @@
   function handleScroll(e: Event) {
     const el = e.target as HTMLElement;
     if (el.scrollTop + el.clientHeight >= el.scrollHeight - 100) dispatch('loadmore');
-  }
-
-  function auditTimestamp(dateString: string): string {
-    // One formatter call with Latin digits, shown in an LTR isolate: concatenating a date and
-    // a time formatted separately put strong right-to-left characters of the Arabic locale
-    // between the two, and the browser reordered the pieces (the date read "2513:04:32 10/").
-    return new Date(dateString)
-      .toLocaleString($locale || 'en', {
-        numberingSystem: 'latn',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-      })
-      // The Arabic locale inserts a right-to-left mark after the day, which re-orders the
-      // slash and the month inside the LTR cell; the cell's own direction is what we want.
-      .replace(/[\u200e\u200f]/g, '');
   }
 
   function outcomeClass(outcome: string): string {
@@ -90,7 +72,7 @@
       <tbody>
         {#each logs as event}
           <tr class:failure={event.outcome?.toLowerCase() === 'failure'}>
-            <td dir="ltr">{auditTimestamp(event.timestamp)}</td>
+            <td dir="ltr">{formatAuditTimestamp(event.timestamp, $locale)}</td>
             <td>
               {#if orgView}
                 <span class="event-label" title={event.event_type}>

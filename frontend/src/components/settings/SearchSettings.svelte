@@ -3,7 +3,7 @@
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, onDestroy } from 'svelte';
   import axiosInstance from '$lib/axios';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { createPoller } from '$lib/utils/poller';
   import { toastStore } from '$stores/toast';
@@ -169,15 +169,6 @@
       bootstrapPoller.start();
     } else {
       bootstrapPoller.stop();
-    }
-  }
-
-  function formatRetryAt(iso: string | null): string {
-    if (!iso) return '';
-    try {
-      return new Date(iso).toLocaleString();
-    } catch {
-      return iso;
     }
   }
 
@@ -477,7 +468,7 @@
       {/if}
       {#if bootstrapStatus.retry_at}
         <div class="banner-detail">
-          {$t('settings.search.bootstrapRetryAt', { time: formatRetryAt(bootstrapStatus.retry_at) })}
+          {$t('settings.search.bootstrapRetryAt', { time: formatDateTime(bootstrapStatus.retry_at, '', $locale) })}
         </div>
       {/if}
       {#if bootstrapStatus.text_only_chunk_files > 0}

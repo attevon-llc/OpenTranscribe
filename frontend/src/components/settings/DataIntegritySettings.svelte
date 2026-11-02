@@ -4,7 +4,7 @@
   import axiosInstance from '$lib/axios';
   import { getErrorStatus } from '$lib/utils/apiError';
   import { toastStore } from '$stores/toast';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import StatusChip from './StatusChip.svelte';
   import Spinner from '../ui/Spinner.svelte';
   import OrphanedDataPanel from './OrphanedDataPanel.svelte';
@@ -184,7 +184,7 @@
         {#if lastRun}
           <StatusChip
             label={$t('settings.dataIntegrity.chipLastRun')}
-            value={formatDateTime(lastRun.timestamp * 1000)}
+            value={formatDateTime(lastRun.timestamp * 1000, '', $locale)}
             status="neutral"
           />
           <StatusChip

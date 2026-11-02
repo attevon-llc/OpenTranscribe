@@ -8,7 +8,7 @@
 -->
 <script lang="ts">
   import { createEventDispatcher, tick } from 'svelte';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import CopyButton from '$components/ui/CopyButton.svelte';
   import ChatMarkdown from './ChatMarkdown.svelte';
   import ChatMessageMeta from './ChatMessageMeta.svelte';
@@ -100,7 +100,7 @@
   $: unsupportedLanguageList = formatLanguageNames(
     message.msg_metadata?.context_languages?.languages ?? []
   );
-  $: timestamp = formatDateTime(message.created_at);
+  $: timestamp = formatDateTime(message.created_at, '', $locale);
   $: canEdit = isUser && !message.pending;
 </script>
 

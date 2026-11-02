@@ -5,7 +5,7 @@
   import { toastStore } from '$stores/toast';
   import { t, locale } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
-  import { formatDate } from '$lib/utils/formatting';
+  import { formatDateTime } from '$lib/utils/formatting';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
 
@@ -131,9 +131,7 @@
   }
 
   function absoluteTime(iso: string): string {
-    const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) return iso;
-    return `${formatDate(iso)} ${date.toLocaleTimeString($locale || 'en')}`;
+    return formatDateTime(iso, iso, $locale);
   }
 </script>
 

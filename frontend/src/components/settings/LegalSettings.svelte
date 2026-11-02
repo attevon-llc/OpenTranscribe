@@ -3,8 +3,9 @@
   operator's own acknowledgment state, and (admin+) the acknowledgment record.
 -->
 <script lang="ts">
+  import { formatDateTime } from '$lib/utils/formatting';
   import { onMount } from 'svelte';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import LegalDocumentViewer from '$components/legal/LegalDocumentViewer.svelte';
   import {
     OPERATOR_ACK_KEY,
@@ -46,7 +47,7 @@
     viewerOpen = true;
   }
 
-  const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '');
+  const fmt = (iso: string | null) => formatDateTime(iso, '', $locale);
 </script>
 
 <p class="legal-note">{$t('legal.settings.officialText')}</p>

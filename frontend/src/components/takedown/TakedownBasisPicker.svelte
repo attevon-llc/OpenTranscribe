@@ -1,11 +1,12 @@
 <script lang="ts">
+  import { formatDate } from '$lib/utils/formatting';
   /**
    * How a takedown justifies itself (issue #1254): an existing recorded notice, a new notice
    * recorded inline, or an explicit "no notice (operator action)" with a stated reason. The
    * server refuses a takedown with neither, so this choice is required rather than defaulted.
    */
   import { onMount } from 'svelte';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import { TakedownNoticesApi, type TakedownNotice } from '$lib/api/takedownNotices';
   import { BASIS_MAX_LENGTH, type TakedownBasis } from '$lib/takedownBasis';
   import TakedownNoticeFields from './TakedownNoticeFields.svelte';
@@ -32,7 +33,7 @@
   });
 
   function label(n: TakedownNotice): string {
-    const date = new Date(n.received_at).toLocaleDateString();
+    const date = formatDate(n.received_at, $locale);
     return `${labelFor($t, TAKEDOWN_NOTICE_TYPE_KEYS, n.notice_type)} · ${n.requester_reference ?? ''} · ${date}`;
   }
 </script>

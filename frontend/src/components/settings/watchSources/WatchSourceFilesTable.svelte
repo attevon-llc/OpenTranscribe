@@ -8,7 +8,7 @@
   import { createEventDispatcher } from 'svelte';
   import Badge from '$components/ui/Badge.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import { formatDate } from '$lib/utils/formatting';
   import { RETRYABLE_FILE_STATUSES, type WatchSourceFile } from '$lib/api/watchSourcesApi';
 
@@ -124,7 +124,7 @@
           {/if}
         </td>
         <td class="attempts-cell">{attemptsLabel(file)}</td>
-        <td class="when-cell">{file.created_at ? formatDate(file.created_at) : ''}</td>
+        <td class="when-cell">{file.created_at ? formatDate(file.created_at, $locale) : ''}</td>
         <td class="actions-col">
           {#if RETRYABLE_FILE_STATUSES.has(file.status)}
             <button

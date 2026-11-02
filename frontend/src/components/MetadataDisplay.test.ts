@@ -10,6 +10,7 @@ import { render, screen } from '@testing-library/svelte';
 import type { MediaFileDetail } from '$lib/types/media';
 
 vi.mock('$stores/locale', () => ({
+  locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
   t: {
     subscribe: (run: (value: (key: string) => string) => void) => {
       run((key: string) => key);

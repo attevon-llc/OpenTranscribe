@@ -1,6 +1,6 @@
 <script>
   import MenuIcon from '$components/ui/MenuIcon.svelte';
-  import { formatClock } from '$lib/utils/formatting';
+  import { formatClock, formatDate } from '$lib/utils/formatting';
   import { supportSessionGate } from '$stores/supportSession';
   import { onMount, createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
@@ -12,7 +12,7 @@
   import { createConfirmDialog } from '$lib/confirmDialog';
   import EmptyState from './ui/EmptyState.svelte';
   import { toastStore } from '../stores/toast';
-  import { t } from '../stores/locale';
+  import { t, locale } from '$stores/locale';
 
   // The Svelte component is exported by default automatically
 
@@ -496,7 +496,7 @@
                   {formatClock(comment.timestamp)}
                 </button>
               {/if}
-              <span>{new Date(comment.created_at).toLocaleDateString()}</span>
+              <span>{formatDate(comment.created_at, $locale)}</span>
             </div>
           </div>
 

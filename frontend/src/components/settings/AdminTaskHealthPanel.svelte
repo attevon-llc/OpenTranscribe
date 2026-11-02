@@ -1,4 +1,5 @@
 <script context="module" lang="ts">
+  import { formatDateTime } from '$lib/utils/formatting';
   export interface ConfirmRequest {
     title: string;
     message: string;
@@ -13,7 +14,7 @@
   import { onMount, createEventDispatcher } from 'svelte';
   import { toastStore } from '$stores/toast';
   import axiosInstance from '$lib/axios';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import RetrySettings from '$components/settings/RetrySettings.svelte';
   import RecoveryActionRow from '$components/settings/RecoveryActionRow.svelte';
@@ -290,7 +291,7 @@
                     <td>{task.id}</td>
                     <td>{task.task_type}</td>
                     <td><Badge variant={badgeVariant(task.status)}>{#if isMobileView && taskStatusIcon(task.status)}<span class="status-glyph" role="img" aria-label={formatStatus(task.status)} title={formatStatus(task.status)}><MenuIcon name={taskStatusIcon(task.status) ?? 'status-queued'} size="xs" /></span>{:else}{formatStatus(task.status)}{/if}</Badge></td>
-                    <td>{new Date(task.created_at).toLocaleString()}</td>
+                    <td>{formatDateTime(task.created_at, '', $locale)}</td>
                     <td>
                       <button type="button" class="btn btn-secondary btn-small" on:click={() => retryTask(task.id)}>
                         {$t('settings.taskHealth.retry')}

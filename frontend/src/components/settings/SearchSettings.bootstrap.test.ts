@@ -14,6 +14,7 @@ vi.mock('$stores/toast', () => ({
 }));
 
 vi.mock('$stores/locale', () => ({
+  locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
   // Identity translator with interpolation so assertions can match on the
   // i18n key and its params, same pattern as ActiveSessionsPanel.test.ts.
   t: {

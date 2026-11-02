@@ -5,7 +5,7 @@
   import Spinner from '../ui/Spinner.svelte';
   import MediaMirrorSettings from './MediaMirrorSettings.svelte';
   import { toastStore } from '../../stores/toast';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import { settingsModalStore } from '../../stores/settingsModalStore';
   import {
     getBackupSettings,
@@ -510,7 +510,7 @@
     <div class="status-block">
       <div class="status-item">
         <span class="status-label">{$t('settings.backup.lastRunSection')}:</span>
-        <span class="status-value">{formatDateTime(lastRunAt, $t('settings.backup.lastRunNever'))}</span>
+        <span class="status-value">{formatDateTime(lastRunAt, $t('settings.backup.lastRunNever'), $locale)}</span>
         {#if lastResult}
           {#if lastResult.ok}
             <span class="status-badge ok">{$t('settings.backup.lastRunOk', { size: formatFileSize(lastResult.size_bytes ?? 0), seconds: lastResult.duration_s ?? 0 })}</span>
@@ -606,7 +606,7 @@
             {#each backups as file}
               <tr>
                 <td class="col-title">{file.filename}</td>
-                <td>{formatDateTime(file.created_at, $t('settings.backup.lastRunNever'))}</td>
+                <td>{formatDateTime(file.created_at, $t('settings.backup.lastRunNever'), $locale)}</td>
                 <td>{formatFileSize(file.size_bytes)}</td>
                 <td>{file.encrypted ? $t('settings.backup.yes') : $t('settings.backup.no')}</td>
               </tr>

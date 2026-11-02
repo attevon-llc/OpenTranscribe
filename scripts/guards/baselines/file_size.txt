@@ -32,7 +32,7 @@ frontend/src/routes/login/+page.svelte::script	771	oversize: split by concern pl
 frontend/src/routes/search/+page.svelte::script	628	oversize: split by concern planned
 frontend/src/routes/speakers/+page.svelte::script	859	oversize: split by concern planned
 frontend/src/stores/auth.ts	1247	oversize: split by concern planned
-frontend/src/stores/websocket.ts	1508	oversize: split by concern planned
+frontend/src/stores/websocket.ts	1504	oversize: split by concern planned
 opentr.sh	4893	oversize: split by concern planned
 opentranscribe.sh	2588	oversize: split by concern planned
 scripts/CLAUDE.md	1215	oversize: split by concern planned

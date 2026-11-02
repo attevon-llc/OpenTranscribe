@@ -32,6 +32,7 @@ vi.mock('$stores/toast', () => ({
 }));
 
 vi.mock('$stores/locale', () => ({
+  locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
   t: {
     subscribe: (run: (value: (key: string) => string) => void) => {
       run((key: string) => key);

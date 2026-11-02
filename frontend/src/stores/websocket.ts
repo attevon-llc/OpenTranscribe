@@ -4,7 +4,7 @@ import { downloadStore, type DownloadState } from './downloads';
 import { t } from '$stores/locale';
 import axiosInstance from '$lib/axios';
 import { generateId } from '$lib/utils/ids';
-import { formatCompactDuration } from '$lib/utils/formatting';
+import { formatEta } from '$lib/utils/formatting';
 import { reconnectDelayMs } from '$lib/utils/backoff';
 import { isCloudEdition } from '$lib/edition';
 import { pruneNotifications } from '$lib/notifications/retention';
@@ -155,13 +155,9 @@ interface WebSocketState {
   error: string | null;
 }
 
-// Format ETA seconds into human-readable string. The "no ETA yet" guard is
-// specific to this call site (an ETA of 0 or unknown means "don't show one"),
-// so it stays here; the Xh/Ym/Zs arithmetic itself is shared with the
-// notification duration chip via formatCompactDuration (issue #753).
+// Notification ETA text; undefined (not '') when there is no ETA to show.
 function formatEtaSeconds(seconds: number | null | undefined): string | undefined {
-  if (seconds == null || seconds <= 0) return undefined;
-  return formatCompactDuration(seconds);
+  return formatEta(seconds) || undefined;
 }
 
 // Admin task type to progressId mapping

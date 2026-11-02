@@ -120,6 +120,10 @@ const EXEMPT: Record<string, string> = {
     'createPageTimers() is a FACTORY: the pending timer handles live in its closure, one per ' +
     'file-detail page mount, and destroy() (called from that page’s onDestroy) cancels them. ' +
     '`clearTimeout` is the global, not a reset of module state. No user data is held.',
+  'lib/fileDetail/speakerSave':
+    'createSpeakerSaveFlow() is a FACTORY: the profile-decision queue and bulk decisions live ' +
+    'in its closure, one per file-detail page mount, and die with the page. resetBulkState() ' +
+    'clears that closure; its cache-clearing call is an HTTP DELETE, not module state.',
 
   // ── Deployment/system state, identical for every user ──
   'lib/services/llmService':

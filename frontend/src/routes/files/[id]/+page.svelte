@@ -12,10 +12,9 @@
   import { handleFileNotification } from '$lib/fileDetail/notificationHandler';
   import { createPageTimers } from '$lib/fileDetail/pageTimers';
   import { createSpeakerLoader } from '$lib/fileDetail/speakerLoader';
+  import { createSpeakerSaveFlow } from '$lib/fileDetail/speakerSave';
   import {
     hasUnsavedSpeakerNames,
-    speakerHasUnsavedChange,
-    validateSpeakerName,
     type SpeakerItem,
     type SpeakerNameBaseline,
   } from '$lib/fileDetail/speakerNames';
@@ -23,7 +22,6 @@
   import {
     appendSegmentPage,
     patchSegmentInFile,
-    renameSpeakersInFile,
     MAX_SEGMENT_PAGE_SIZE
   } from '$lib/fileDetail/segmentSync';
 
@@ -233,8 +231,9 @@
   let documentBusy = false;
   let copyStatus: 'idle' | 'copying' | 'copied' | 'failed' | 'empty' = 'idle';
 
-  // Speaker profile confirmation modal state
-  let showSpeakerProfileConfirmation = false;
+  // Update-globally / create-new dialog for a renamed speaker linked to a profile
+  let speakerProfileDialog: { title: string; message: string } | null = null;
+  $: showSpeakerProfileConfirmation = speakerProfileDialog !== null;
 
   // Scroll lock for the speaker-profile dialog's custom .modal-overlay
   let _prevSpeakerConfirm = false;
@@ -244,21 +243,6 @@
       _prevSpeakerConfirm = showSpeakerProfileConfirmation;
     }
   }
-  type PendingSpeakerUpdate = {
-    speakerId: number | string;
-    newName: string;
-    speaker: SpeakerItem;
-  };
-  let pendingSpeakerUpdate: PendingSpeakerUpdate | null = null;
-  let profileUpdateMessage = '';
-  let profileUpdateTitle = '';
-
-  // Bulk speaker save confirmation state
-  let speakerConfirmationQueue: SpeakerItem[] = [];
-  let currentConfirmationIndex = 0;
-  let bulkSaveInProgress = false;
-  let bulkSaveDecisions = new Map();
-
 
   /**
    * Fetches file details from the API
@@ -794,132 +778,25 @@
     }
   }
 
-  // Handle speaker name updates
-  async function handleSpeakerUpdate(event: CustomEvent) {
-    const { speakerId, newName } = event.detail;
+  // Speaker renames: single, linked-profile decision, and the editor's bulk save.
+  const speakerSave = createSpeakerSaveFlow({
+    getFile: () => file,
+    setFile: (f) => (file = f),
+    getSpeakerList: () => speakerList,
+    setSpeakerList: (speakers) => (speakerList = speakers),
+    getBaseline: () => originalSpeakerNames,
+    setBaseline: (baseline) => (originalSpeakerNames = baseline),
+    loadSpeakers,
+    setSavingSpeakers: (saving) => (savingSpeakers = saving),
+    setProfileConfirmation: (dialog) => (speakerProfileDialog = dialog),
+    closeSpeakerEditor: () => (isEditingSpeakers = false),
+    isDiarizationDisabled: () => diarizationDisabled,
+    refreshCaptionTrack,
+    refreshAnalytics: () => handleAnalyticsRefreshNeeded(),
+  });
 
-    // Validate the speaker name
-    const validation = validateSpeakerName(newName, $t);
-    if (!validation.isValid) {
-      toastStore.error(validation.error ?? $t('speakerValidation.nameRequired'));
-      return;
-    }
-
-    // Find the speaker to check if they have a profile
-    const speaker = speakerList.find(s => s.uuid === speakerId);
-
-    // Check if this speaker has a profile and the name is changing
-    if (speaker && speaker.profile && speaker.profile.name !== newName) {
-      // Show confirmation modal for profile update decision
-      pendingSpeakerUpdate = { speakerId, newName, speaker };
-      profileUpdateTitle = $t('speakerProfile.updateTitle');
-      profileUpdateMessage = $t('speakerProfile.linkedMessage', {
-        speakerName: speaker.display_name || speaker.name,
-        profileName: speaker.profile.name
-      });
-      showSpeakerProfileConfirmation = true;
-      return;
-    }
-
-    // If no profile or name is the same, proceed with normal update
-    await performSpeakerUpdate(speakerId, newName, 'normal');
-  }
-
-  // Handle speaker profile confirmation decision
-  async function handleProfileConfirmation(decision: 'update_profile' | 'create_new_profile') {
-    if (bulkSaveInProgress) {
-      // Handle bulk save confirmation
-      await handleBulkConfirmation(decision);
-    } else if (pendingSpeakerUpdate) {
-      // Handle individual speaker confirmation
-      const { speakerId, newName } = pendingSpeakerUpdate;
-
-      // Close BEFORE awaiting, as the bulk path already does. The optimistic rename runs
-      // synchronously inside performSpeakerUpdate, so the dialog closes and the transcript
-      // repaints in the same frame instead of the dialog sitting open through the request.
-      showSpeakerProfileConfirmation = false;
-      pendingSpeakerUpdate = null;
-      profileUpdateMessage = '';
-      profileUpdateTitle = '';
-
-      await performSpeakerUpdate(speakerId, newName, decision);
-    }
-  }
-
-  // Handle modal cancellation
-  function handleProfileConfirmationCancel() {
-    showSpeakerProfileConfirmation = false;
-    pendingSpeakerUpdate = null;
-    profileUpdateMessage = '';
-    profileUpdateTitle = '';
-
-    // Reset bulk save state if it was in progress
-    if (bulkSaveInProgress) {
-      bulkSaveInProgress = false;
-      speakerConfirmationQueue = [];
-      currentConfirmationIndex = 0;
-      bulkSaveDecisions.clear();
-      savingSpeakers = false;
-    }
-  }
-
-  // Handle bulk save confirmation
-  async function handleBulkConfirmation(decision: 'update_profile' | 'create_new_profile') {
-    if (!pendingSpeakerUpdate || speakerConfirmationQueue.length === 0) return;
-
-    const { speakerId, newName } = pendingSpeakerUpdate;
-
-    // Store the decision for this speaker
-    bulkSaveDecisions.set(speakerId, { decision, newName });
-
-    // Move to next confirmation or finish
-    currentConfirmationIndex++;
-
-    if (currentConfirmationIndex < speakerConfirmationQueue.length) {
-      // Show next confirmation
-      showNextConfirmation();
-    } else {
-      // All confirmations done, proceed with bulk save
-      showSpeakerProfileConfirmation = false;
-      await performBulkSaveWithDecisions();
-    }
-  }
-
-  // Show next confirmation in the queue
-  function showNextConfirmation() {
-    if (currentConfirmationIndex < speakerConfirmationQueue.length) {
-      const speaker = speakerConfirmationQueue[currentConfirmationIndex];
-      pendingSpeakerUpdate = {
-        speakerId: speaker.uuid,
-        newName: speaker.display_name ?? speaker.name,
-        speaker
-      };
-      profileUpdateTitle = $t('fileDetail.updateSpeakerProfileCounter', { current: currentConfirmationIndex + 1, total: speakerConfirmationQueue.length });
-      profileUpdateMessage = $t('fileDetail.profileLinkedMessage', { displayName: speaker.display_name || speaker.name, profileName: speaker.profile?.name ?? '' });
-      showSpeakerProfileConfirmation = true;
-    }
-  }
-
-  // Perform the actual speaker update with the specified action
-  /**
-   * Apply a speaker display-name change everywhere the page renders it.
-   *
-   * Used for the optimistic write, for rollback, and for the websocket backstop, so all
-   * three stay in step. `speakerLabel` is the original `SPEAKER_XX` (`speaker.name`),
-   * which is both a match fallback and the value speaker colours hash — it is never
-   * rewritten, only read.
-   */
-  function applySpeakerRename(speakerUuid: string, speakerLabel: string | undefined, newName: string) {
-    speakerList = speakerList.map(speaker =>
-      speaker.uuid === speakerUuid ? { ...speaker, display_name: newName } : speaker
-    );
-    // Feeds TranscriptModal, which reads the store rather than `file`.
-    transcriptStore.updateSpeakerName(speakerUuid, newName);
-    file = renameSpeakersInFile(file, [
-      { uuid: speakerUuid, label: speakerLabel, displayName: newName }
-    ]);
-    // The caption track is NOT refreshed here: it comes from the server, and this runs
-    // before the rename is saved. Callers refresh it once the server has the new name.
+  function handleSpeakerUpdate(event: CustomEvent<{ speakerId: string; newName: string }>) {
+    speakerSave.requestSpeakerRename(event.detail.speakerId, event.detail.newName);
   }
 
   /** Re-fetch the player's caption track (server-built) after a committed change. */
@@ -927,70 +804,6 @@
     tick()
       .then(() => videoPlayerComponent?.updateSubtitles?.())
       .catch(error => console.warn(`Failed to update captions after ${reason}:`, error));
-  }
-
-  // Perform the actual speaker update with the specified action
-  async function performSpeakerUpdate(speakerId: number | string, newName: string, action: 'normal' | 'update_profile' | 'create_new_profile') {
-    const speakerUuid = String(speakerId);
-    const speaker = speakerList.find(s => s.uuid === speakerId);
-    if (!speaker?.uuid) return;
-
-    // Captured before the optimistic write so a failed save can be undone.
-    const previousName = speaker.display_name || '';
-    const speakerLabel = speaker.name;
-
-    applySpeakerRename(speakerUuid, speakerLabel, newName);
-
-    // Persist to database with the action decision
-    try {
-      const payload: any = {
-        display_name: newName
-        // NEVER update 'name' field - it contains the original speaker ID for color consistency
-      };
-
-      // Add profile action if needed
-      if (action !== 'normal') {
-        payload.profile_action = action;
-      }
-
-      await axiosInstance.put(`/speakers/${speaker.uuid}`, payload);
-
-      // Postgres has committed — confirm now rather than after the refresh below.
-      const successMessage = action === 'update_profile'
-        ? $t('speakerProfile.updatedGlobally', { name: newName })
-        : action === 'create_new_profile'
-        ? $t('speakerProfile.newCreated', { name: newName })
-        : $t('speakerProfile.renamed', { name: newName });
-
-      toastStore.success(successMessage);
-      refreshCaptionTrack('speaker rename');
-
-      // Move the change-detection baseline with it, or the unsaved-changes indicator
-      // lights up for a name that just saved.
-      originalSpeakerNames = new Map(originalSpeakerNames).set(speakerUuid, newName.trim());
-
-      // Speaker labels appear in talk-time and turn-taking analytics.
-      handleAnalyticsRefreshNeeded();
-
-      // Refresh speakers to get updated profile data from GET endpoint
-      // This ensures speaker.profile.name is current before the next edit
-      await loadSpeakers();
-    } catch (error: unknown) {
-      console.error('Failed to update speaker name in database:', error);
-
-      // Show user-friendly error with option to retry
-      const status = getErrorStatus(error);
-      const errorMessage = status === 404
-        ? $t('speakerProfile.notFound')
-        : status === 403
-        ? $t('speakerProfile.permissionDenied')
-        : $t('speakerProfile.saveFailed');
-
-      // Undo the optimistic write. Leaving it would render the new name across the
-      // transcript, subtitles, modal and exports as though it had saved.
-      applySpeakerRename(speakerUuid, speakerLabel, previousName);
-      toastStore.error($t('speakerProfile.saveFailedReverted', { error: errorMessage }));
-    }
   }
 
   function handleEditSegment(event: any) {
@@ -1070,209 +883,6 @@
     if (!file || !file.transcript_segments) return;
     // CommentSection already holds this and reports it as it changes.
     exportDialogs.openExport(event.detail.format, commentCount > 0);
-  }
-
-  async function handleSaveSpeakerNames() {
-    if (!speakerList || speakerList.length === 0) return;
-
-    savingSpeakers = true;
-
-    try {
-      // Speakers whose display name actually changed since the last load/save —
-      // including a change to empty (see speakerHasUnsavedChange). The old filter
-      // dropped both empty and SPEAKER_-prefixed CURRENT values regardless of
-      // whether they had changed, so "clear a label" issued no PUT at all.
-      const speakersToUpdate = speakerList.filter((speaker) => speakerHasUnsavedChange(speaker, originalSpeakerNames));
-
-      if (speakersToUpdate.length === 0) {
-        savingSpeakers = false;
-        return;
-      }
-
-      // Validate non-empty names only — an empty name is a deliberate clear
-      // (see speakerHasUnsavedChange), not a validation failure.
-      for (const speaker of speakersToUpdate) {
-        const trimmed = (speaker.display_name ?? '').trim();
-        if (trimmed === '') continue;
-        const validation = validateSpeakerName(trimmed, $t);
-        if (!validation.isValid) {
-          toastStore.error(`${speaker.name}: ${validation.error}`);
-          savingSpeakers = false;
-          return;
-        }
-      }
-
-      // Check for speakers that need profile confirmation (skip when diarization
-      // disabled, and skip a clear — there is no new name to reconcile against
-      // the linked profile).
-      const speakersNeedingConfirmation = diarizationDisabled ? [] : speakersToUpdate.filter(speaker =>
-        speaker.profile &&
-        (speaker.display_name ?? '').trim() !== '' &&
-        speaker.profile.name !== (speaker.display_name ?? '').trim()
-      );
-
-      if (speakersNeedingConfirmation.length > 0) {
-        // Start bulk confirmation process
-        speakerConfirmationQueue = speakersNeedingConfirmation;
-        currentConfirmationIndex = 0;
-        bulkSaveInProgress = true;
-        bulkSaveDecisions.clear();
-
-        // Start with first confirmation
-        showNextConfirmation();
-        return;
-      }
-
-      // No confirmations needed, proceed with regular save
-      await performBulkSave(speakersToUpdate);
-
-    } catch (error) {
-      console.error('Error saving speaker names:', error);
-      toastStore.error($t('speakerProfile.saveAllFailed'));
-      savingSpeakers = false;
-    }
-  }
-
-  // Perform bulk save with confirmation decisions
-  async function performBulkSaveWithDecisions() {
-    try {
-      const speakersToUpdate = speakerList.filter((speaker) => speakerHasUnsavedChange(speaker, originalSpeakerNames));
-
-      await performBulkSave(speakersToUpdate, bulkSaveDecisions);
-
-      // Reset bulk save state
-      bulkSaveInProgress = false;
-      speakerConfirmationQueue = [];
-      currentConfirmationIndex = 0;
-      bulkSaveDecisions.clear();
-
-    } catch (error) {
-      console.error('Error in bulk save with decisions:', error);
-      toastStore.error($t('speakerProfile.saveAllFailed'));
-      savingSpeakers = false;
-
-      // Reset bulk save state
-      bulkSaveInProgress = false;
-      speakerConfirmationQueue = [];
-      currentConfirmationIndex = 0;
-      bulkSaveDecisions.clear();
-    }
-  }
-
-  // Perform the actual bulk save operation
-  async function performBulkSave(speakersToUpdate: SpeakerItem[], decisions = new Map()) {
-    // STEP 1: Optimistic UI updates - immediately update voice suggestions with new names
-    const nameChanges = new Map(); // Track profile name changes for voice suggestions
-
-    speakersToUpdate.forEach((speaker: SpeakerItem) => {
-      const decision = decisions.get(speaker.uuid);
-      const newName = (speaker.display_name ?? '').trim();
-
-      // If updating a profile globally, track the name change
-      if (decision && decision.decision === 'update_profile' && speaker.profile) {
-        nameChanges.set(speaker.profile.uuid, { oldName: speaker.profile.name, newName });
-      }
-    });
-
-    // Optimistically update profile suggestions for all speakers
-    if (nameChanges.size > 0) {
-      speakerList = speakerList.map(s => {
-        if (s.profile_suggestions && s.profile_suggestions.length > 0) {
-          s.profile_suggestions = s.profile_suggestions.map((suggestion: any) => {
-            for (const [profileId, change] of nameChanges) {
-              if (suggestion.name === change.oldName && suggestion.suggestion_type === 'profile') {
-                return { ...suggestion, name: change.newName };
-              }
-            }
-            return suggestion;
-          });
-        }
-        return s;
-      });
-    }
-
-    // STEP 2: Update speakers in the backend with decisions
-    // Backend returns immediately after saving to PostgreSQL - heavy processing happens in background
-    // `allSettled`, not `all`: with `all` a single rejection discarded the outcome of every
-    // other speaker, so the page could neither confirm the ones that saved nor undo the
-    // one that didn't.
-    const results = await Promise.allSettled(
-      speakersToUpdate.map((speaker: SpeakerItem) => {
-        const decision = decisions.get(speaker.uuid);
-        const payload: any = {
-          display_name: (speaker.display_name ?? '').trim(),
-          name: speaker.name
-        };
-
-        // Add profile action if there's a decision for this speaker
-        if (decision) {
-          payload.profile_action = decision.decision;
-        }
-
-        return axiosInstance.put(`/speakers/${speaker.uuid}`, payload);
-      })
-    );
-
-    const failed = speakersToUpdate.filter((_, i) => results[i].status === 'rejected');
-    const failedUuids = new Set(failed.map(speaker => speaker.uuid));
-    results.forEach((result, i) => {
-      if (result.status === 'rejected') {
-        console.error(`Failed to save speaker ${speakersToUpdate[i].uuid}:`, result.reason);
-      }
-    });
-
-    // Restore the names that did not save, so nothing renders as though it persisted.
-    if (failed.length > 0) {
-      speakerList = speakerList.map(speaker =>
-        failedUuids.has(speaker.uuid)
-          ? { ...speaker, display_name: originalSpeakerNames.get(speaker.uuid) ?? speaker.display_name }
-          : speaker
-      );
-    }
-
-    // STEP 4: PostgreSQL updates complete - stop save button spinner immediately!
-    savingSpeakers = false;
-    isEditingSpeakers = false;
-    if (failed.length > 0) {
-      toastStore.error($t('speakerProfile.bulkSavePartialFailure', { count: failed.length }));
-    } else if (speakersToUpdate.length > 0) {
-      // Only announce success when something was actually attempted and persisted.
-      // With an empty `speakersToUpdate` (nothing changed) this used to still fire.
-      toastStore.success($t('speakerProfile.savedSuccess'));
-    }
-
-    // Reset original names to current values (no changes after save)
-    originalSpeakerNames = new Map(
-      speakerList.map(speaker => [speaker.uuid, (speaker.display_name || '').trim()])
-    );
-
-    // STEP 5: Apply the saved names everywhere the page renders them (instant).
-    // Every speaker in `speakersToUpdate` that did NOT fail was just persisted —
-    // including a clear (an empty `display_name`). `renameSpeakersInFile` /
-    // `transcriptStore.updateSpeakerName` write whatever string they're given
-    // VERBATIM into `resolved_speaker_name`, and an empty one renders downstream as
-    // "Unknown Speaker" rather than reverting to the raw label — so a cleared
-    // speaker's raw `speaker.name` (SPEAKER_XX) is what gets applied here, never ''.
-    const renames = speakersToUpdate
-      .filter((speaker: SpeakerItem) => speaker.uuid && !failedUuids.has(speaker.uuid))
-      .map((speaker: SpeakerItem) => {
-        const trimmed = (speaker.display_name ?? '').trim();
-        return {
-          uuid: speaker.uuid,
-          label: speaker.name,
-          displayName: trimmed === '' ? (speaker.name ?? '') : trimmed
-        };
-      });
-
-    renames.forEach(rename => transcriptStore.updateSpeakerName(rename.uuid, rename.displayName));
-    file = renameSpeakersInFile(file, renames);
-
-    // Update captions and clear cache (async, don't block)
-    refreshCaptionTrack('saving speaker names');
-
-    axiosInstance.delete(`/files/${file.uuid}/cache`).catch(error => {
-      console.warn('Could not clear video cache:', error);
-    });
   }
 
   function handleSeekTo(event: any) {
@@ -1590,7 +1200,7 @@
       // touches neither the segments nor the transcript store.
       const speakerUuid = String(detail.speaker_uuid);
       const speakerLabel = speakerList.find(s => s.uuid === speakerUuid)?.name;
-      applySpeakerRename(speakerUuid, speakerLabel, String(detail.display_name));
+      speakerSave.applySpeakerRename(speakerUuid, speakerLabel, String(detail.display_name));
     }
 
     // Picks up labels the task auto-applied to OTHER speakers in this file.
@@ -1933,7 +1543,7 @@
             on:speakerNameChanged={handleSpeakerNameChanged}
             on:speakerUpdate={handleSpeakerUpdate}
             on:speakersMerged={handleSpeakersMerged}
-            on:saveSpeakerNames={handleSaveSpeakerNames}
+            on:saveSpeakerNames={speakerSave.saveAllSpeakerNames}
             on:segmentClick={handleSegmentClick}
             on:loadUpTo={handleLoadUpTo}
           />
@@ -2076,13 +1686,13 @@
 />
 
 <!-- Speaker Profile Confirmation Modal -->
-{#if showSpeakerProfileConfirmation}
+{#if speakerProfileDialog}
   <SpeakerProfileConfirmModal
-    title={profileUpdateTitle}
-    message={profileUpdateMessage}
-    on:updateProfile={() => handleProfileConfirmation('update_profile')}
-    on:createNewProfile={() => handleProfileConfirmation('create_new_profile')}
-    on:cancel={handleProfileConfirmationCancel}
+    title={speakerProfileDialog.title}
+    message={speakerProfileDialog.message}
+    on:updateProfile={() => speakerSave.decideProfile('update_profile')}
+    on:createNewProfile={() => speakerSave.decideProfile('create_new_profile')}
+    on:cancel={speakerSave.cancelProfileDecision}
   />
 {/if}
 

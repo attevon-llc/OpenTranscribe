@@ -48,7 +48,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-Layer = Literal["platform", "instance", "organization", "user", "consent"]
+Layer = Literal["platform", "instance", "organization", "user", "consent", "file"]
 
 _TRUTHY = ("true", "1", "yes", "on")
 
@@ -309,12 +309,60 @@ def _consent_allows(db: Session, request: VoiceprintConsentRequest | None) -> bo
         return False
 
 
+def _consent_required(db: Session) -> bool:
+    """``privacy.voiceprint_upload_consent_required`` (absent = coded default, NULL = off)."""
+    from app.models.system_settings import SystemSettings
+
+    row = (
+        db.query(SystemSettings.value)
+        .filter(SystemSettings.key == constants.PRIVACY_VOICEPRINT_UPLOAD_CONSENT_REQUIRED_KEY)
+        .first()
+    )
+    if row is None:
+        return constants.DEFAULT_PRIVACY_VOICEPRINT_UPLOAD_CONSENT_REQUIRED
+    return row[0] is not None and _parse(row[0])
+
+
+def _file_consent_allows(db: Session, media_file_id: int) -> bool:
+    """The file layer (issue #1356): restrict-only, and never cached.
+
+    Denies a ``declined`` file, and a file that is not ``granted`` while the required setting
+    is on. An unreadable file or setting denies. ``granted`` returns True here, which only means
+    this layer does not object: the layers above have already been applied.
+    """
+    from app.models.media import MediaFile
+
+    try:
+        state = _isolated(
+            db,
+            lambda: (
+                db.query(MediaFile.voiceprint_consent)
+                .filter(MediaFile.id == media_file_id)
+                .scalar()
+            ),
+        )
+        if state is None:
+            logger.warning("privacy: file %s has no consent state; denying", media_file_id)
+            return False
+        if state == "declined":
+            return False
+        if state == "granted":
+            return True
+        return not _isolated(db, lambda: _consent_required(db))
+    except Exception:
+        logger.exception("privacy: could not read the consent of file %s; denying", media_file_id)
+        return False
+
+
 def _voiceprint_decision(
     db: Session, user_id: int | None, organization_id: int | None, media_file_id: int | None
 ) -> tuple[Decision, bool]:
     layers, clean = _resolve(db, user_id, organization_id)
     if not layers.voiceprints.enabled:
         return layers.voiceprints, clean
+    # File layer: after the stored layers, before the consent hooks (a cheap deny first).
+    if media_file_id is not None and not _file_consent_allows(db, media_file_id):
+        return Decision(False, "file"), clean
     request = (
         VoiceprintConsentRequest(
             purpose="create",
@@ -472,15 +520,19 @@ def clear_write_backstop_cache() -> None:
 
 
 def assert_voiceprint_write_allowed(
-    user_id: int | None, organization_id: int | None, *, db: Session | None = None
+    user_id: int | None,
+    organization_id: int | None,
+    *,
+    db: Session | None = None,
+    media_file_id: int | None = None,
 ) -> bool:
     """Backstop for every OpenSearch voiceprint write. True = the write may proceed.
 
-    The decision is per SUBJECT (owner and organization), never per file: a document is written
-    for an owner, and no file is known at this point, so the ``create`` consent hooks receive
-    ``media_file_id=None``. A hook that refuses one file only (see ``PrivacyView``, which does
-    ask per file) therefore cannot stop this write backstop; the entry gates and the read side
-    do.
+    The subject decision (owner and organization) is cached per scope. When the document names
+    a file (``media_file_id``), that file's consent state is ALSO checked on every call, fresh
+    and uncached, so an opt-out bites at once, and the ``create`` consent hooks receive the file
+    id. A write with no file (a profile or cluster centroid) stays subject-scoped; the centroid
+    computation excludes declined files instead (:func:`declined_file_ids`).
 
     Despite the name it returns instead of raising: a denied write logs once per scope and the
     caller returns its own existing "not written" value. The answer is cached per
@@ -494,6 +546,8 @@ def assert_voiceprint_write_allowed(
         db: A session the caller already holds, if any. Otherwise a short one is opened and
             closed before returning (never held across slow work).
     """
+    if media_file_id is not None:
+        return _write_allowed_for_file(user_id, organization_id, media_file_id, db)
     scope = (user_id, organization_id)
     now = time.monotonic()
     with _cache_lock:
@@ -531,3 +585,61 @@ def assert_voiceprint_write_allowed(
                 organization_id,
             )
     return decision.enabled
+
+
+def _write_allowed_for_file(
+    user_id: int | None, organization_id: int | None, media_file_id: int, db: Session | None
+) -> bool:
+    """Subject decision (cached) AND the file layer (fresh) AND hooks given the file id."""
+    if not assert_voiceprint_write_allowed(user_id, organization_id, db=db):
+        return False
+    try:
+        if db is not None:
+            decision, _ = _voiceprint_decision(db, user_id, organization_id, media_file_id)
+        else:
+            from app.db.session_utils import session_scope
+
+            with session_scope() as short:
+                decision, _ = _voiceprint_decision(short, user_id, organization_id, media_file_id)
+    except Exception:
+        logger.exception("privacy file write backstop could not decide; denying")
+        return False
+    if not decision.enabled:
+        logger.warning(
+            "voiceprint write refused for file %s (locked_by=%s)", media_file_id, decision.locked_by
+        )
+    return decision.enabled
+
+
+def declined_file_ids(db: Session, file_ids: Iterable[int | None]) -> set[int]:
+    """Which of these files must contribute NO voice to an average (fresh read, fails closed).
+
+    A file is excluded when its consent denies voiceprints (``declined``, or not ``granted``
+    while the required setting is on). An unreadable state excludes every file asked about.
+    """
+    from app.models.media import MediaFile
+
+    ids = {int(i) for i in file_ids if i is not None}
+    if not ids:
+        return set()
+    try:
+        rows = _isolated(
+            db,
+            lambda: (
+                db.query(MediaFile.id, MediaFile.voiceprint_consent)
+                .filter(MediaFile.id.in_(ids))
+                .all()
+            ),
+        )
+        required = _isolated(db, lambda: _consent_required(db))
+    except Exception:
+        logger.exception("privacy: could not read file consent states; excluding all")
+        return ids
+    states = {int(r[0]): str(r[1]) for r in rows}
+    return {
+        i
+        for i in ids
+        if states.get(i) == "declined"
+        or states.get(i) is None
+        or (required and states[i] != "granted")
+    }

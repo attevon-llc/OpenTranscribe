@@ -39,6 +39,7 @@ export const LOCKED_BY_KEYS: Record<PrivacyLayer, string> = {
   organization: 'privacy.lockedBy.organization',
   user: 'privacy.lockedBy.user',
   consent: 'privacy.lockedBy.consent',
+  file: 'privacy.lockedBy.file',
 };
 
 /** Layers a person at `organization` level cannot override: the ones above it. */

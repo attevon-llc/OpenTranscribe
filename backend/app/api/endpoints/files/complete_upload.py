@@ -18,6 +18,7 @@ from __future__ import annotations
 import contextlib
 import logging
 from typing import Any
+from typing import Literal
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -38,6 +39,7 @@ from app.legal.processing_gate import refusal_error
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
+from app.services.privacy import file_consent
 from app.utils import benchmark_timing
 from app.utils.whisper_model_choice import require_servable_whisper_model
 
@@ -95,6 +97,13 @@ class CompleteUploadRequest(BaseModel):
         default=None,
         description=(
             "Skip speaker diarization for this file. Overrides what /files/prepare recorded."
+        ),
+    )
+    voiceprint_consent: Literal["granted", "declined"] | None = Field(
+        default=None,
+        description=(
+            "Restrict-only: 'declined' is applied, 'granted' never widens what /files/prepare "
+            "recorded (ignored, not an error, because clients retry this call)."
         ),
     )
 
@@ -223,6 +232,9 @@ def complete_upload(
     if refusal is not None:
         mark_file_refused(db, int(db_file.id), refusal)
         raise refusal_error(refusal)
+
+    # Per-file voiceprint consent may only be tightened here (issue #1356).
+    file_consent.restrict_at_complete(db_file, request.voiceprint_consent, int(current_user.id))
 
     # Reject an unservable model before the storage phase does any work. One recorded at
     # /prepare is re-checked (and dropped if the deployment has since locked model choice)

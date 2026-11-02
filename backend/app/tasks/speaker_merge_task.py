@@ -26,6 +26,7 @@ import logging
 from app.core.celery import celery_app
 from app.core.constants import CPUPriority
 from app.db.session_utils import session_scope
+from app.services.privacy.policy import declined_file_ids
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +137,11 @@ def process_speaker_merge_background(
 
         # 1. Average the two voiceprints onto the survivor (reads the source doc).
         #    NO session held — two OpenSearch reads and a write.
-        if target["voiceprints_allowed"]:
+        # Per-file consent (#1356): the source and the target may live in different files,
+        # and a voice from an opted-out file is never averaged into the survivor.
+        with session_scope() as db:
+            merge_excluded = declined_file_ids(db, affected_media_files)
+        if target["voiceprints_allowed"] and not merge_excluded:
             _merge_speaker_embeddings(source_speaker_uuid, target)
         else:
             logger.info(

@@ -11,6 +11,7 @@
   import { toastStore } from '$stores/toast';
   import { isOnline } from '$stores/network';
   import { t } from '$stores/locale';
+  import { loadEffectivePrivacy } from '$stores/privacyPolicy';
   import { isCloudEdition } from '$lib/edition';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { usageStore, isOverLimit, showQuotaExceeded } from '$lib/cloud';
@@ -139,6 +140,10 @@
   let minSpeakers: number | null = null;
   let maxSpeakers: number | null = null;
   let numSpeakers: number | null = null;
+  // The uploader's statement that the speakers agreed to voice identification (issue #1356).
+  // Unchecked records nothing. Only offered while voiceprints are on for the caller.
+  let voiceprintConsent = false;
+  let voiceprintsOn = true;
   let skipSummary = false;
   let selectedWhisperModel: string | null = null;
   let adminDefaultModel = 'large-v3-turbo';
@@ -214,6 +219,9 @@
   let handleDirectUpload: ((event: Event) => void) | null = null;
 
   onMount(() => {
+    void loadEffectivePrivacy().then((answer) => {
+      voiceprintsOn = answer?.voiceprint_matching?.enabled !== false;
+    });
     void loadProtectedMediaAuthConfig();
     loadRecordingSettings();
 
@@ -326,7 +334,8 @@
       maxSpeakers: range.maxSpeakers,
       numSpeakers: speakerCountApplies ? numSpeakers : null,
       whisperModel: selectedWhisperModel,
-      skipSummary
+      skipSummary,
+      voiceprintConsent: voiceprintConsent && voiceprintsOn && speakerCountApplies ? 'granted' : null
     };
   }
 
@@ -801,6 +810,7 @@
     processingUrl = false;
     currentStepIndex = 0;
     maxStepReached = 0;
+    voiceprintConsent = false;
     extractionChoice = 'extract';
     // Remove extraction step if it was dynamically added
     if (needsExtraction) {
@@ -992,6 +1002,8 @@
             bind:minSpeakers
             bind:maxSpeakers
             bind:numSpeakers
+            bind:voiceprintConsent
+            {voiceprintsOn}
             {transcriptionSettings}
             {transcriptionSystemDefaults}
           />
@@ -1016,6 +1028,7 @@
             {numSpeakers}
             speakerCountNote={speakerDetectionOff ? 'off' : fastModelChosen ? 'fast' : null}
             {skipSummary}
+            voiceprintConsent={voiceprintConsent && voiceprintsOn && speakerCountApplies}
             {selectedWhisperModel}
             {adminDefaultModel}
             {transcriptionSystemDefaults}

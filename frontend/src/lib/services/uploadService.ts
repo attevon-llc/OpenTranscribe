@@ -38,6 +38,8 @@ export interface UploadTranscriptionParams {
   /** `null` = the deployment's default model; sent only when the user picked one. */
   whisperModel?: string | null;
   skipSummary?: boolean;
+  /** The uploader's statement that the speakers agreed to voice identification (a claim, not verified). */
+  voiceprintConsent?: 'granted' | null;
 }
 
 export interface UploadItem {
@@ -84,6 +86,7 @@ export interface UploadItem {
   // Per-file transcription choices made in the upload wizard
   whisperModel?: string | null;
   skipSummary?: boolean;
+  voiceprintConsent?: 'granted' | null;
   // Organization parameters
   collectionIds?: string[];
   tagNames?: string[];
@@ -231,6 +234,7 @@ class UploadService {
       numSpeakers: transcriptionParams?.numSpeakers,
       whisperModel: transcriptionParams?.whisperModel,
       skipSummary: transcriptionParams?.skipSummary,
+      voiceprintConsent: transcriptionParams?.voiceprintConsent,
       collectionIds,
       tagNames,
       uploadBatchId,
@@ -301,6 +305,7 @@ class UploadService {
       numSpeakers: transcriptionParams?.numSpeakers,
       whisperModel: transcriptionParams?.whisperModel,
       skipSummary: transcriptionParams?.skipSummary,
+      voiceprintConsent: transcriptionParams?.voiceprintConsent,
     };
 
     this.uploads.set(id, upload);
@@ -772,6 +777,7 @@ class UploadService {
       tag_names: upload.tagNames || undefined,
       upload_batch_id: upload.uploadBatchId || undefined,
       whisper_model: upload.whisperModel || undefined,
+      voiceprint_consent: upload.voiceprintConsent || undefined,
       use_presigned: true,
     });
 
@@ -961,6 +967,7 @@ class UploadService {
       collection_ids: upload.collectionIds || undefined,
       tag_names: upload.tagNames || undefined,
       whisper_model: upload.whisperModel || undefined,
+      voiceprint_consent: upload.voiceprintConsent || undefined,
       use_presigned: true,
     });
 

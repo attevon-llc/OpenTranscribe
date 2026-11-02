@@ -6,6 +6,10 @@
   export let minSpeakers: number | null = null;
   export let maxSpeakers: number | null = null;
   export let numSpeakers: number | null = null;
+  /** The uploader states the speakers agreed to voice identification (recorded, not verified). */
+  export let voiceprintConsent = false;
+  /** False while voiceprints are off for this person: there is nothing to consent to. */
+  export let voiceprintsOn = true;
   export let transcriptionSettings: TranscriptionSettings | null = null;
   export let transcriptionSystemDefaults: TranscriptionSystemDefaults | null = null;
 
@@ -101,6 +105,21 @@
     />
   </div>
 
+  {#if voiceprintsOn}
+    <label class="consent-row" for="voiceprint-consent">
+      <input
+        id="voiceprint-consent"
+        type="checkbox"
+        bind:checked={voiceprintConsent}
+        data-testid="voiceprint-consent"
+      />
+      <span class="consent-text">
+        {$t('uploader.voiceprintConsent.label')}
+        <span class="hint">{$t('uploader.voiceprintConsent.hint')}</span>
+      </span>
+    </label>
+  {/if}
+
   {#if hasValidationError}
     <div class="validation-error">
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -141,6 +160,15 @@
   }
   .field input:disabled { opacity: 0.5; cursor: not-allowed; background: var(--disabled-background, #f5f5f5); }
   .field input::placeholder { color: var(--text-light); }
+
+  .consent-row {
+    display: flex; align-items: flex-start; gap: 0.625rem;
+    padding: 0.625rem 0.75rem; cursor: pointer;
+    border: 1px solid var(--border-color); border-radius: 6px;
+    background: var(--surface-color, transparent);
+  }
+  .consent-row input[type='checkbox'] { margin-top: 0.1875rem; flex-shrink: 0; }
+  .consent-text { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8125rem; font-weight: 500; color: var(--text-primary); }
 
   .validation-error {
     display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem;

@@ -155,6 +155,10 @@ class AuditEventType(StrEnum):
     # indexed labels that disagree with the policy. ``details`` holds the switch, its from/to
     # value, the scope kind and ids, and file COUNTS: never a name or a file id.
     PRIVACY_LABEL_RESYNC = "privacy.labels.resync"
+    # A file's voiceprint consent state changed (issue #1356). ``details`` holds the file id, the
+    # old and the new state and where the change came from (``upload`` / ``owner``); never a
+    # file name. The state is the uploader's recorded claim, not verified consent.
+    PRIVACY_FILE_CONSENT_CHANGE = "privacy.file_consent.change"
 
     # An audit-log export, by a platform admin or an organization admin (issue #1277):
     # ``details`` holds the format, the row count and whether it was truncated, never the rows.

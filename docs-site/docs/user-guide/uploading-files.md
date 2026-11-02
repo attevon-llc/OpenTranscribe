@@ -170,6 +170,14 @@ You can configure download quality preferences in **Settings → URL Import Qual
 
 You can also override these defaults per-download with **Download Options** in the **Media URL** tab.
 
+### Voice identification for this recording
+
+On the Speakers step an unchecked box reads "I state that the speakers in this recording agreed to
+voice identification". Checking it records your statement, the time and that you made it; OpenTranscribe
+does not verify it, and leaving it unchecked records nothing. You can turn voice identification off for
+a recording later from its speaker panel, which deletes the voiceprints already made from it. See
+[Privacy controls](../features/privacy-controls.md#per-recording-voice-identification-a-fifth-narrower-control).
+
 ## Organizing During Upload
 
 When uploading files, you can assign them to **tags** and **collections** directly in the upload dialog:

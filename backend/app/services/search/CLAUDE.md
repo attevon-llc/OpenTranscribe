@@ -46,7 +46,7 @@ separate and lives in the `../opensearch_service/` package (alias `speakers` →
 
 **Every write to that speaker plane passes the privacy write backstop (#1280).** `speaker_write.add_speaker_embedding_v4` /
 `bulk_add_speaker_embeddings_v4` / `add_speaker_embedding`, `profiles.store_profile_embedding_v4` / `store_profile_embedding` and
-the cluster-centroid writes in `clusters.py` call `services/privacy/policy.assert_voiceprint_write_allowed(user_id, organization_id)`
+the cluster-centroid writes in `clusters.py` call `services/privacy/policy.assert_voiceprint_write_allowed(user_id, organization_id)`; a speaker document passes its `media_file_id` too and the recording's per-file consent (#1356) is then re-read fresh on every write
 first and return their existing "not written" value when it is False (the scope comes from the document's own owner and
 organization, never request state; the cluster update reads it from the stored document and carries its `organization_id`
 over, because the rewrite replaces the whole document and a document without the stamp reads as personal). The answer is cached 10 s per

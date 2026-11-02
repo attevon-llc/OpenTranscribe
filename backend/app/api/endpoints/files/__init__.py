@@ -75,6 +75,7 @@ from . import cancel_upload
 from . import complete_upload
 from . import multipart
 from . import prepare_upload
+from . import voiceprint_consent
 from .captions import router as captions_router
 from .crud import _get_or_compute_analytics
 from .crud import delete_media_file
@@ -159,6 +160,7 @@ def _parse_speaker_params_from_headers(request: Request | None) -> SpeakerParams
 # Include all routers
 router.include_router(cancel_upload.router, prefix="", tags=["files"])
 router.include_router(prepare_upload.router, prefix="", tags=["files"])
+router.include_router(voiceprint_consent.router, prefix="", tags=["files"])
 router.include_router(complete_upload.router, prefix="", tags=["files"])
 router.include_router(multipart.router, prefix="", tags=["files"])
 router.include_router(subtitles_router, prefix="", tags=["subtitles"])

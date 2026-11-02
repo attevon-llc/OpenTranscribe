@@ -204,7 +204,7 @@ def dispatch_files_purge(file_ids: list[int]) -> str:
             "targets": ["voiceprints"],
             "actor_user_id": None,
             "phase": 1,
-            "reason": "retention",
+            "purge_reason": "retention",
         },
         task_id=task_id,
     )

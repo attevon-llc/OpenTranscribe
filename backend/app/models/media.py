@@ -44,6 +44,12 @@ if TYPE_CHECKING:
     from app.services.media_revocation import MediaRevocationReport
 
 
+#: Per-file voiceprint consent states (issue #1356): the single source for the CHECK, the schemas
+#: and the privacy gate. ``unspecified`` = never stated; ``granted`` = the uploader stated the
+#: speakers agreed (a recorded claim, never verified); ``declined`` = no voiceprints for this file.
+VOICEPRINT_CONSENT_STATES = ("unspecified", "granted", "declined")
+
+
 class MediaFile(Base):
     __tablename__ = "media_file"
 
@@ -363,6 +369,18 @@ class MediaFile(Base):
     # ``is_quarantined`` directly can never leave a file the organization could release.
     takedown_origin: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
+    # Per-file voiceprint consent (issue #1356, v454). See ``VOICEPRINT_CONSENT_STATES``. Read by
+    # ``services/privacy/policy`` after the layered switches; only ever RESTRICTS.
+    voiceprint_consent: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="unspecified", server_default="unspecified"
+    )
+    voiceprint_consent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    voiceprint_consent_by_user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+
     if TYPE_CHECKING:
         # Non-persisted, TYPE_CHECKING-only: `takedown_service.quarantine_file`/
         # `release_file` stamp these plain (non-`Mapped`) attributes onto the
@@ -391,6 +409,15 @@ class MediaFile(Base):
     #   * ``ck_media_file_recorded_date_locked_is_manual`` stops a re-derivation from
     #     relabelling a hand-entered date as machine-derived while leaving it locked.
     __table_args__ = (
+        CheckConstraint(
+            "voiceprint_consent IN ('unspecified', 'granted', 'declined')",
+            name="ck_media_file_voiceprint_consent",
+        ),
+        Index(
+            "ix_media_file_voiceprint_declined",
+            "id",
+            postgresql_where=text("voiceprint_consent = 'declined'"),
+        ),
         CheckConstraint(
             "takedown_origin IS NULL OR takedown_origin IN ('platform', 'organization')",
             name="ck_media_file_takedown_origin_valid",

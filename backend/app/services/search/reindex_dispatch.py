@@ -20,7 +20,7 @@ would leave the vector stale even though the text field looked fixed. The
 full task also refreshes the ``transcripts`` full-document index
 (``opensearch_service.index_transcript``, called from inside the task) and,
 via ``TranscriptIndexingService.index_transcript_chunks``, bumps the chat
-corpus version — see ``corpus_cache._invalidate_chat_retrieval_cache`` —
+corpus version — see ``chat.retrieval_cache.bump_corpus_version`` —
 which the search response cache now also keys on (``hybrid_search_service``'s
 ``corpus_version`` cache-key field), so a stale cached search page is never
 served past its own bump either, without needing a second invalidation path.

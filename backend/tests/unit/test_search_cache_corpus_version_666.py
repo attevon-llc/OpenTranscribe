@@ -6,7 +6,7 @@ process that actually serves cached search responses, so it was a no-op in the
 process that mattered. `_search_corpus_version()` reuses
 `chat.retrieval_cache.corpus_version()` — the SAME Redis counter that already
 gets bumped, cross-process, by every real content-changing chunk-plane write
-(`indexing_service._invalidate_chat_retrieval_cache`) — as a cache-key field, so
+(`chat.retrieval_cache.bump_corpus_version`) — as a cache-key field, so
 a version bump makes every previously cached key permanently unreachable
 without anyone needing to remember to clear a cache living in a different
 process.

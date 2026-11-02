@@ -76,7 +76,7 @@ The chunk plane in this package carries no voiceprint and is not gated.
     returns a Chinese transcript as one sentence, so the regex fallback was never reached.
     `reset_sentence_splitter_state()` exists for tests only.
 - `index_schema.py` (body, `_INDEX_VERSION`: bump logs a "full reindex" warning, never migrates), `index_admin.py`
-  (create/recreate/additive steps), `pipelines.py`, `plane_queries.py`, `corpus_cache.py`; `indexing_service.py` +
+  (create/recreate/additive steps), `pipelines.py`, `plane_queries.py`; `indexing_service.py` +
   `indexing/` = `TranscriptIndexingService` (per-plane mixins) — see `indexing/CLAUDE.md`.
 - `fusion.py` — **what a fusion strategy IS**: `FusionConfig`, the derived pipeline id, the
   pipeline body, and drift detection. See "Fusion is selectable per request" below.

@@ -288,12 +288,9 @@ def _finish(index_name: str, file_uuid: str, updated: int) -> None:
         except Exception as exc:  # noqa: BLE001 — visibility, not correctness of the write
             logger.warning(f"Chunk index refresh failed after rename of {file_uuid}: {exc}")
 
-    # Importing the private helper deliberately: it is the ONE place that knows
-    # how a corpus-version bump must fail (contained, never raising into the
-    # caller), and a second copy here would be a second implementation of it.
-    from app.services.search.corpus_cache import _invalidate_chat_retrieval_cache
+    from app.services.chat.retrieval_cache import bump_corpus_version
 
-    _invalidate_chat_retrieval_cache()
+    bump_corpus_version()
 
 
 @celery_app.task(

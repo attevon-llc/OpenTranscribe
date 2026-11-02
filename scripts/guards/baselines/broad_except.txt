@@ -35,6 +35,7 @@ backend/app/api/endpoints/speaker_profiles.py	3	ratchet: may only go down
 backend/app/api/endpoints/speaker_profiles_attributes.py	2	ratchet: may only go down
 backend/app/api/endpoints/speakers.py	2	ratchet: may only go down
 backend/app/api/endpoints/speakers_merge.py	2	ratchet: may only go down
+backend/app/api/endpoints/speakers_profile_workflow.py	2	ratchet: may only go down
 backend/app/api/endpoints/speakers_suggestions.py	1	ratchet: may only go down
 backend/app/api/endpoints/transcript_segments.py	1	ratchet: may only go down
 backend/app/api/endpoints/watch_sources.py	1	ratchet: may only go down
@@ -378,5 +379,4 @@ scripts/vram-probe-diarization-cpu.py	1	ratchet: may only go down
 scripts/vram-probe-diarization-mps.py	2	ratchet: may only go down
 scripts/vram-probe-diarization.py	8	ratchet: may only go down
 scripts/whole-stack-vram-probe.py	3	ratchet: may only go down
-backend/app/api/endpoints/speaker_profile_assignment.py	2	ratchet: may only go down
 scripts/release-tests/lib/os-probe.py	4	diagnostic probe for the release rehearsal: every failure is the payload and is reported as data to a release check, never swallowed (new in v0.6.0 master)

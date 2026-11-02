@@ -447,7 +447,7 @@ is not a statement that the members differ), and `blacklist: false` on unassign 
 nothing (the UI's "Prevent from rejoining" opt-out).
 
 **Autoflush is off.** A caller that sets `profile_id` and rebuilds in the same transaction
-must flush first (`speaker_update._update_profile_embedding` does): the rebuild otherwise
+must flush first (`speakers_profile_workflow._update_profile_embedding` does): the rebuild otherwise
 reads the membership from before the link, and the new voice never reaches the embedding.
 
 ## A speaker's label comes from a human or a voiceprint, never from an LLM (owner decision 2026-10-12)

@@ -539,7 +539,7 @@ def test_profile_gender_confirm_rewrites_only_the_callers_speakers(client, db_se
 
 def test_auto_profile_does_not_link_a_same_named_profile_of_another_tenant(world, monkeypatch):
     """The speaker gets its own tenant's "Jane Roe" instead (names are per tenant)."""
-    from app.api.endpoints.speaker_profile_assignment import auto_create_or_assign_profile
+    from app.api.endpoints.speakers_profile_workflow import auto_create_or_assign_profile
     from app.services import opensearch_service
 
     w = world

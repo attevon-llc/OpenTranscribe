@@ -29,11 +29,11 @@ import uuid
 import numpy as np
 import pytest
 
-from app.api.endpoints.speaker_profile_assignment import auto_create_or_assign_profile
 from app.api.endpoints.speaker_update import _get_profile_uuid
 from app.api.endpoints.speaker_update import calculate_cosine_similarity
 from app.api.endpoints.speaker_update import store_speaker_match
 from app.api.endpoints.speaker_update import trigger_retroactive_matching
+from app.api.endpoints.speakers_profile_workflow import auto_create_or_assign_profile
 from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerMatch
@@ -356,7 +356,6 @@ def test_labeling_workflow_stops_when_profile_assignment_fails(
     """A failed profile step must not proceed to commit and retroactive matching."""
     from sqlalchemy.exc import OperationalError
 
-    from app.api.endpoints import speaker_profile_assignment
     from app.api.endpoints import speaker_update
     from app.api.endpoints import speakers_profile_workflow
 
@@ -371,7 +370,7 @@ def test_labeling_workflow_stops_when_profile_assignment_fails(
         ran["matching"] = True
         return {"auto_applied_count": 0, "suggested_count": 0}
 
-    monkeypatch.setattr(speaker_profile_assignment, "auto_create_or_assign_profile", _boom)
+    monkeypatch.setattr(speakers_profile_workflow, "auto_create_or_assign_profile", _boom)
     monkeypatch.setattr(speaker_update, "trigger_retroactive_matching", _matching)
 
     with pytest.raises(OperationalError):

@@ -89,8 +89,7 @@ _AUDITOR = Path(__file__).resolve().parents[3] / "scripts" / "audit-session-life
 _KNOWN_RESIDUAL_SCOPES: set[str] = set()
 
 _SPEAKER_PLANE_FILES = (
-    "api/endpoints/speakers*.py",
-    "api/endpoints/speaker_profile_assignment.py",
+    "api/endpoints/speakers_profile_workflow.py",
     "api/endpoints/speaker_update.py",
     "tasks/speaker_update_task.py",
     "tasks/speaker_merge_task.py",

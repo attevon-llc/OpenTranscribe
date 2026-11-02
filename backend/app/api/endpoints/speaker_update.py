@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.api.endpoints.speaker_match_notify import (
     send_bulk_update_notification as _send_bulk_update_notification,
 )
-from app.api.endpoints.speaker_profile_assignment import _update_profile_embedding
+from app.api.endpoints.speakers_profile_workflow import _update_profile_embedding
 from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerMatch

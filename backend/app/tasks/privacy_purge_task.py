@@ -33,6 +33,7 @@ from app.models.user import User
 from app.services.privacy import purge
 from app.services.privacy.measure import GroupedCounts
 from app.services.privacy.measure import merge_grouped
+from app.services.privacy.purge_file_guard import guard_files_scope
 from app.utils.task_utils import TASK_STATUS_COMPLETED
 from app.utils.task_utils import TASK_STATUS_FAILED
 from app.utils.task_utils import TASK_STATUS_IN_PROGRESS
@@ -87,6 +88,8 @@ def privacy_purge_task(
 
     with session_scope() as db:
         blocked = purge.targets_still_enabled(db, purge_scope, wanted, purge_reason=purge_reason)
+        # Re-checked here, not only at request time: a hold can be placed while the task waits.
+        guarded_scope = guard_files_scope(db, purge_scope)
         actor = db.get(User, actor_user_id) if actor_user_id is not None else None
         username = str(actor.email) if actor is not None else None
 
@@ -108,6 +111,14 @@ def privacy_purge_task(
             reason=reason,
             purge_reason=purge_reason,
         )
+
+    if guarded_scope is None and wanted and not blocked:
+        logger.warning("privacy purge %s aborted: every file is held or quarantined", task_id)
+        audit(f"pass_{phase}_aborted", AuditOutcome.FAILURE, reason="files_protected")
+        _set_status(task_id, TASK_STATUS_FAILED, completed=True)
+        return {"status": "aborted", "reason": "files_protected"}
+    if guarded_scope is not None:
+        purge_scope = guarded_scope
 
     if not wanted or blocked:
         reason = "no_targets" if not wanted else "policy_enabled"

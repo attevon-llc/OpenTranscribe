@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Per-file voice identification opt-out respects legal holds and takedowns.** Turning voice
+  identification off for a file that is under a platform or organization legal hold is now
+  refused with `409 FILE_UNDER_LEGAL_HOLD` and changes nothing, so a held file keeps its
+  voiceprints until the hold is released. A quarantined (taken-down) file is treated as not
+  found by this route. The purge task re-checks the same rules when it runs and skips held and
+  quarantined files, so a hold placed after the request was queued is also honoured.
 - **Credential handling for protected media imports.** The site login supplied with a protected
   media URL import is no longer passed to the background worker as a task argument. It is held
   encrypted in Redis for a limited time under an opaque reference, read by the worker when it

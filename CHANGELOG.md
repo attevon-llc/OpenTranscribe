@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Tags stay inside the file's organization.** A file's detail page lists only tags of the
+  current organization (or personal workspace) and shared (system) tags; tagging a file never
+  reuses a tag of another organization that legacy data left on it; and a one-time repair at
+  startup moves any such tag association onto the file organization's own tag of the same
+  name (creating it if needed, deleting no tag). The bulk tag action reports a file it refuses
+  for this reason with the new per-file error code `TAG_TENANT_MISMATCH`.
+
 ## [0.6.0] - 2026-10-31
 
 ### Overview

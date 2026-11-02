@@ -18,6 +18,7 @@ from app.core.env import env_bool
 from app.core.exceptions import DomainError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
+from app.core.tenancy import _Unscoped
 from app.models.media import Analytics
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -36,6 +37,7 @@ from app.services.platform_bypass import PlatformBypass
 from app.services.speaker_provenance_view import ProvenanceViewer
 from app.services.speaker_status_service import SpeakerStatusService
 from app.services.tag_scope import tag_ownership
+from app.services.tag_scope import tenant_bound_or_system
 
 from .crud import get_media_file_by_uuid
 from .redaction_gate import _redaction_pending
@@ -49,18 +51,19 @@ from .transcript_view import redact_response_speakers
 logger = logging.getLogger(__name__)
 
 
-def get_file_tags(db: Session, file_id: int, user_id: int) -> list[TagSchema]:
+def get_file_tags(
+    db: Session, file_id: int, user_id: int, organization_id: int | None
+) -> list[TagSchema]:
     """Get the tags attached to a media file as full tag objects.
 
-    Returns the same ``{uuid, name, source}`` shape ``/api/tags`` serves, so the
-    file-detail payload and the tag endpoints agree on one definition of a tag.
+    Returns the same ``{uuid, name, source, ownership}`` shape ``/api/tags`` serves, so
+    the file-detail payload and the tag endpoints agree on one definition of a tag.
 
-    Visibility is unchanged from the previous name-only serializer: this returns
-    every tag attached to ``file_id``, and the caller has already been gated on
-    the file itself. ``endpoints/tags.py:_visible_to`` makes a tag visible when it
-    is attached to a file in the caller's accessible-files subquery, so any tag
-    reachable here is one ``GET /api/tags`` would already return in full to the
-    same caller. Widening the fields therefore discloses nothing new.
+    Only tags bound to ``organization_id`` (the request tenant) or system tags are
+    returned: the bound ``tag_scope.visible_to`` puts on its file arm, so this lists
+    exactly the attached tags ``GET /api/tags`` would show the same caller. A tag of
+    another tenant left on the file by legacy data is not shown (``tag_tenant_repair``
+    repoints those rows).
 
     ``ownership`` is classified against ``user_id`` rather than left to the
     schema default. This is the one tag surface where ``shared_with_me`` is
@@ -68,36 +71,35 @@ def get_file_tags(db: Session, file_id: int, user_id: int) -> list[TagSchema]:
     reporting those as ``mine`` would have the UI offer a rename that can only
     404 (``endpoints/tags.py:_writable_tag_ids``).
 
+    Errors propagate to the detail handler: an empty list here would read as "this
+    file has no tags", which a failed query is not.
+
     Args:
         db: Database session.
         file_id: Internal media file ID.
         user_id: The caller, for the ownership classification.
+        organization_id: The request tenant (None = personal).
 
     Returns:
-        Tag schemas for the file, or an empty list if the query fails.
+        Tag schemas for the file.
     """
-    try:
-        tags = (
-            db.query(Tag)
-            .join(FileTag, FileTag.tag_id == Tag.id)
-            .filter(FileTag.media_file_id == file_id)
-            .all()
+    tags = (
+        db.query(Tag)
+        .join(FileTag, FileTag.tag_id == Tag.id)
+        .filter(FileTag.media_file_id == file_id, tenant_bound_or_system(organization_id))
+        .all()
+    )
+    return [
+        TagSchema.model_validate(
+            {
+                "uuid": tag.uuid,
+                "name": tag.name,
+                "source": tag.source,
+                "ownership": tag_ownership(tag, user_id),
+            }
         )
-        return [
-            TagSchema.model_validate(
-                {
-                    "uuid": tag.uuid,
-                    "name": tag.name,
-                    "source": tag.source,
-                    "ownership": tag_ownership(tag, user_id),
-                }
-            )
-            for tag in tags
-        ]
-    except Exception as tag_error:
-        logger.exception(f"Error getting tags: {tag_error}")
-        db.rollback()
-        return []
+        for tag in tags
+    ]
 
 
 def get_file_collections(
@@ -424,7 +426,11 @@ def get_media_file_detail(
         file_id = db_file.id
 
         # Get related data
-        tags = get_file_tags(db, file_id, current_user.id)
+        # An unscoped (legacy) call has no request tenant; the file's own is the bound.
+        tag_tenant = (
+            db_file.organization_id if isinstance(organization_id, _Unscoped) else organization_id
+        )
+        tags = get_file_tags(db, file_id, current_user.id, tag_tenant)
         collections = get_file_collections(
             db, file_id, current_user.id, organization_id=organization_id
         )

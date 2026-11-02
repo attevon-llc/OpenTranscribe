@@ -1,8 +1,9 @@
 """Characterization of ``POST /tags/files/{uuid}/tags`` and ``DELETE /tags/files/{uuid}/tags/{name}``.
 
 Written before the tags backend rewrite. Tests whose name says ``pins_current_behaviour``
-pin behaviour the owner has decided to change (D2 viewer can attach, D3 ownership label,
-D10 non-string name); the lane that changes it flips them red first.
+pin behaviour the owner has decided to change (D10 non-string name); the lane that changes
+it flips them red first. Attach and detach need ``editor`` on the file, like the bulk rail
+(D2), and the attach response labels ownership as the tag list does (D3).
 """
 
 from __future__ import annotations
@@ -193,32 +194,31 @@ def test_attach_response_carries_only_uuid_name_source_ownership(
 
 
 # ---------------------------------------------------------------------------
-# D2: a viewer may attach and detach today
+# D2: attach and detach need editor permission, like the bulk rail
 # ---------------------------------------------------------------------------
 
 
-def test_viewer_shared_file_can_be_tagged_pins_current_behaviour(
+def test_viewer_shared_file_cannot_be_tagged(
     client, db_session, normal_user, other_user, user_token_headers, reindex
 ):
-    """D2: the single-file route loads the file at ``viewer``; the bulk rail needs ``editor``."""
+    """A read-only share is refused with the bulk rail's editor-gate status and detail."""
     media_file = make_file(db_session, other_user)
     _share(db_session, other_user, normal_user, media_file, "viewer")
     name = word("viewer")
 
     response = client.post(_attach_url(media_file), headers=user_token_headers, json={"name": name})
 
-    assert response.status_code == 200, response.text
-    (link,) = _links(db_session, media_file)
-    tag = db_session.query(Tag).filter(Tag.id == link.tag_id).one()
-    # Resolved in the file's tenant (personal) as the *caller's* own row.
-    assert tag.user_id == normal_user.id
-    assert reindex.calls == [[media_file.id]]
+    assert response.status_code == 403, response.text
+    assert response.json()["detail"] == "Requires editor permission on this file"
+    assert _links(db_session, media_file) == []
+    assert db_session.query(Tag).filter(Tag.name == name).first() is None
+    assert reindex.calls == []
 
 
-def test_viewer_shared_file_can_be_detached_pins_current_behaviour(
+def test_viewer_shared_file_cannot_be_detached(
     client, db_session, normal_user, other_user, user_token_headers, reindex
 ):
-    """D2, detach half."""
+    """Detach half: the association survives a viewer's request."""
     media_file = make_file(db_session, other_user)
     tag = make_tag(db_session, word("v-detach"), user_id=other_user.id)
     attach(db_session, media_file, tag)
@@ -226,19 +226,92 @@ def test_viewer_shared_file_can_be_detached_pins_current_behaviour(
 
     response = client.delete(f"{_attach_url(media_file)}/{tag.name}", headers=user_token_headers)
 
+    assert response.status_code == 403, response.text
+    assert response.json()["detail"] == "Requires editor permission on this file"
+    assert len(_links(db_session, media_file)) == 1
+    assert reindex.calls == []
+
+
+def test_editor_shared_file_can_be_tagged(
+    client, db_session, normal_user, other_user, user_token_headers, reindex
+):
+    """Control: an editor share still tags, resolving the caller's own personal row."""
+    media_file = make_file(db_session, other_user)
+    _share(db_session, other_user, normal_user, media_file, "editor")
+
+    response = client.post(
+        _attach_url(media_file), headers=user_token_headers, json={"name": word("editor")}
+    )
+
+    assert response.status_code == 200, response.text
+    (link,) = _links(db_session, media_file)
+    tag = db_session.query(Tag).filter(Tag.id == link.tag_id).one()
+    assert tag.user_id == normal_user.id
+    assert reindex.calls == [[media_file.id]]
+
+
+def test_editor_shared_file_can_be_detached(
+    client, db_session, normal_user, other_user, user_token_headers, reindex
+):
+    """Control, detach half."""
+    media_file = make_file(db_session, other_user)
+    tag = make_tag(db_session, word("e-detach"), user_id=other_user.id)
+    attach(db_session, media_file, tag)
+    _share(db_session, other_user, normal_user, media_file, "editor")
+
+    response = client.delete(f"{_attach_url(media_file)}/{tag.name}", headers=user_token_headers)
+
     assert response.status_code == 204, response.text
     assert _links(db_session, media_file) == []
+    assert reindex.calls == [[media_file.id]]
 
 
-def test_a_stranger_cannot_attach_to_someone_elses_file(
+def _unknown_attach(client, headers=None):
+    return client.post(f"/api/tags/files/{uuid.uuid4()}/tags", headers=headers, json={"name": "x"})
+
+
+def test_attach_to_a_strangers_file_is_answered_like_an_unknown_uuid(
     client, db_session, other_user, user_token_headers
 ):
+    """D5b: no existence signal; a file the caller cannot open is a 404, like a missing one."""
     media_file = make_file(db_session, other_user)
 
     response = client.post(_attach_url(media_file), headers=user_token_headers, json={"name": "x"})
 
-    assert response.status_code == 403
+    assert response.status_code == 404, response.text
+    assert response.json() == _unknown_attach(client, user_token_headers).json()
+    assert response.json() == {"detail": "File not found"}
     assert _links(db_session, media_file) == []
+
+
+def test_detach_from_a_strangers_file_is_answered_like_an_unknown_uuid(
+    client, db_session, other_user, user_token_headers
+):
+    media_file = make_file(db_session, other_user)
+    tag = make_tag(db_session, word("s-detach"), user_id=other_user.id)
+    attach(db_session, media_file, tag)
+
+    response = client.delete(f"{_attach_url(media_file)}/{tag.name}", headers=user_token_headers)
+    unknown = client.delete(
+        f"/api/tags/files/{uuid.uuid4()}/tags/{tag.name}", headers=user_token_headers
+    )
+
+    assert response.status_code == unknown.status_code == 404, response.text
+    assert response.json() == unknown.json() == {"detail": "File not found"}
+    assert len(_links(db_session, media_file)) == 1
+
+
+def test_attach_to_another_tenants_file_is_answered_like_an_unknown_uuid(client, org_world):
+    w = org_world
+    org_file = make_file(w.db, w.alice, w.org_a.id)
+
+    with acting_as(w.alice, None):
+        response = client.post(_attach_url(org_file), json={"name": word("cross")})
+        unknown = _unknown_attach(client)
+
+    assert response.status_code == 404, response.text
+    assert response.json() == unknown.json()
+    assert _links(w.db, org_file) == []
 
 
 # ---------------------------------------------------------------------------
@@ -328,12 +401,12 @@ def test_detach_of_a_name_containing_a_slash_cannot_be_routed_pins_current_behav
 
 
 # ---------------------------------------------------------------------------
-# D3: the ownership label on the bare-ORM response
+# D3: the attach response labels ownership as the list does
 # ---------------------------------------------------------------------------
 
 
-def test_attach_labels_a_colleagues_org_tag_as_mine_pins_current_behaviour(client, org_world):
-    """D3: ``Tag`` infers ownership from ``user_id`` alone, so the creator's row reads ``mine``."""
+def test_attach_labels_a_colleagues_org_tag_as_shared_with_me(client, org_world):
+    """D3: the creator's row reaches bob as ``shared_with_me``, never ``mine``."""
     w = org_world
     name = word("colleague")
     alice_tag = make_tag(w.db, name, user_id=w.alice.id, org_id=w.org_a.id)
@@ -344,11 +417,11 @@ def test_attach_labels_a_colleagues_org_tag_as_mine_pins_current_behaviour(clien
 
     assert response.status_code == 200, response.text
     assert response.json()["uuid"] == str(alice_tag.uuid)
-    assert response.json()["ownership"] == "mine"
+    assert response.json()["ownership"] == "shared_with_me"
 
 
-def test_attach_labels_an_unattributed_org_tag_as_system_pins_current_behaviour(client, org_world):
-    """D3: an org tag whose creator is gone has ``user_id`` NULL and so reads ``system``."""
+def test_attach_labels_an_unattributed_org_tag_as_shared_with_me(client, org_world):
+    """D3: an org tag whose creator is gone is still the org's, not the system vocabulary."""
     w = org_world
     name = word("orphan")
     orphan = make_tag(w.db, name, user_id=None, org_id=w.org_a.id)
@@ -359,7 +432,7 @@ def test_attach_labels_an_unattributed_org_tag_as_system_pins_current_behaviour(
 
     assert response.status_code == 200, response.text
     assert response.json()["uuid"] == str(orphan.uuid)
-    assert response.json()["ownership"] == "system"
+    assert response.json()["ownership"] == "shared_with_me"
 
 
 def test_attach_to_a_personal_file_creates_the_callers_personal_row(client, org_world):

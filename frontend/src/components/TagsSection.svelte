@@ -10,6 +10,12 @@
   export let file: MediaFileDetail | null = null;
   export let isTagsExpanded: boolean = false;
   export let aiTagSuggestions: Array<{name: string, confidence: number, rationale?: string}> = [];
+  // Fails closed like FileActionButtons: only the page's computed `canEdit` (owner or
+  // editor, not a read-only support session) shows the editor; anyone else gets the
+  // tags read-only, since the server refuses their attach/detach anyway.
+  export let canEdit = false;
+
+  $: editable = canEdit && !$supportSessionGate.readOnly;
 
   const dispatch = createEventDispatcher<{ tagsUpdated: { tags: Tag[] } }>();
 
@@ -29,7 +35,7 @@
     class="tags-header"
     on:click={toggleTags}
     on:keydown={e => e.key === 'Enter' && toggleTags()}
-    title={$t('tags.toggleEditorHint')} aria-expanded={isTagsExpanded && !$supportSessionGate.readOnly}>
+    title={$t('tags.toggleEditorHint')} aria-expanded={isTagsExpanded}>
     <h4 class="section-heading">{$t('tags.title')}</h4>
     <div class="tags-preview">
       {#if file?.tags && file.tags.length > 0}
@@ -50,9 +56,19 @@
     </span>
   </button>
 
-  {#if isTagsExpanded && !$supportSessionGate.readOnly}
+  {#if isTagsExpanded}
     <div class="tags-content" transition:slide={{ duration: 200 }}>
-      {#if file && file.uuid}
+      {#if !editable}
+        {#if file?.tags && file.tags.length > 0}
+          <div class="tags-readonly">
+            {#each file.tags as tag (tag.uuid)}
+              <span class="tag-chip">{tag.name}</span>
+            {/each}
+          </div>
+        {:else}
+          <span class="no-tags">{$t('tags.noTags')}</span>
+        {/if}
+      {:else if file && file.uuid}
         <TagsEditor
           fileId={String(file.uuid)}
           tags={file.tags || []}
@@ -134,6 +150,12 @@
     border-radius: 0 0 8px 8px;
     background: var(--surface-color);
     padding: 20px;
+  }
+
+  .tags-readonly {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
   }
 
   .tags-content p {

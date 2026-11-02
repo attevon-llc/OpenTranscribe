@@ -1,9 +1,9 @@
-"""Which tag mutations a support-access grant reaches today (defect D12).
+"""Tag mutations are refused under a support-access grant (D12).
 
-Only ``POST /api/tags`` carries ``refuse_under_support_grant``. Every other tag mutation
-is refused under a *read* grant by the HTTP-method check alone and allowed under a *write*
-grant. Tests whose name says ``pins_current_behaviour`` pin that gap; the owner has decided
-every tag mutation must be refused under a grant, so the lane that fixes it flips them red.
+Every tag mutation carries ``refuse_under_support_grant``, as ``POST /api/tags`` always did,
+so a *write* grant is answered ``support_grant_action_not_permitted`` and nothing changes. A
+*read* grant is still turned away earlier by the HTTP-method check
+(``support_grant_write_required``). Reads under a grant are untouched.
 """
 
 from __future__ import annotations
@@ -28,6 +28,11 @@ def _exists(db, tag: Tag) -> bool:
     return db.query(Tag).filter(Tag.id == tag.id).first() is not None
 
 
+def _refused(response) -> None:
+    assert response.status_code == 403, response.text
+    assert _code(response) == "support_grant_action_not_permitted"
+
+
 def test_create_tag_is_refused_under_a_write_grant(support_world):
     w = support_world
     headers = w.with_grant(w.active_grant(level="write"))
@@ -38,7 +43,7 @@ def test_create_tag_is_refused_under_a_write_grant(support_world):
     assert _code(response) == "support_grant_action_not_permitted"
 
 
-def test_attach_under_a_write_grant_is_allowed_pins_current_behaviour(support_world):
+def test_attach_under_a_write_grant_is_refused(support_world):
     w = support_world
     headers = w.with_grant(w.active_grant(level="write"))
     name = word("sa-attach")
@@ -47,11 +52,12 @@ def test_attach_under_a_write_grant_is_allowed_pins_current_behaviour(support_wo
         f"/api/tags/files/{w.file.uuid}/tags", headers=headers, json={"name": name}
     )
 
-    assert response.status_code == 200, response.text
-    assert w.db.query(FileTag).filter(FileTag.media_file_id == w.file.id).count() == 1
+    _refused(response)
+    assert w.db.query(FileTag).filter(FileTag.media_file_id == w.file.id).count() == 0
+    assert w.db.query(Tag).filter(Tag.name == name).first() is None
 
 
-def test_detach_under_a_write_grant_is_allowed_pins_current_behaviour(support_world):
+def test_detach_under_a_write_grant_is_refused(support_world):
     w = support_world
     tag = make_tag(w.db, word("sa-detach"), user_id=w.owner.id, org_id=w.org.id)
     attach(w.db, w.file, tag)
@@ -59,8 +65,25 @@ def test_detach_under_a_write_grant_is_allowed_pins_current_behaviour(support_wo
 
     response = w.client.delete(f"/api/tags/files/{w.file.uuid}/tags/{tag.name}", headers=headers)
 
-    assert response.status_code == 204, response.text
-    assert w.db.query(FileTag).filter(FileTag.media_file_id == w.file.id).count() == 0
+    _refused(response)
+    assert w.db.query(FileTag).filter(FileTag.media_file_id == w.file.id).count() == 1
+
+
+def test_the_file_owner_can_still_attach_and_detach_without_a_grant(support_world):
+    """Control: the refusal is about the grant, not the route."""
+    w = support_world
+    w.roles[w.owner.id] = (w.org.id, "org:member")
+    name = word("sa-owner")
+
+    attached = w.client.post(
+        f"/api/tags/files/{w.file.uuid}/tags", headers=w.owner_headers, json={"name": name}
+    )
+    detached = w.client.delete(
+        f"/api/tags/files/{w.file.uuid}/tags/{name}", headers=w.owner_headers
+    )
+
+    assert attached.status_code == 200, attached.text
+    assert detached.status_code == 204, detached.text
 
 
 def test_attach_under_a_read_grant_is_refused_by_the_method_check(support_world):
@@ -75,31 +98,33 @@ def test_attach_under_a_read_grant_is_refused_by_the_method_check(support_world)
     assert _code(response) == "support_grant_write_required"
 
 
-def test_rename_under_a_write_grant_is_allowed_pins_current_behaviour(support_world):
+def test_rename_under_a_write_grant_is_refused(support_world):
     w = support_world
     tag = make_tag(w.db, word("sa-rename"), user_id=w.admin.id, org_id=w.org.id)
+    original = tag.name
     headers = w.with_grant(w.active_grant(level="write"))
-    new_name = word("sa-renamed")
 
-    response = w.client.patch(f"/api/tags/{tag.uuid}", headers=headers, json={"name": new_name})
+    response = w.client.patch(
+        f"/api/tags/{tag.uuid}", headers=headers, json={"name": word("sa-renamed")}
+    )
 
-    assert response.status_code == 200, response.text
+    _refused(response)
     w.db.expire_all()
-    assert w.db.get(Tag, tag.id).name == new_name
+    assert w.db.get(Tag, tag.id).name == original
 
 
-def test_delete_under_a_write_grant_is_allowed_pins_current_behaviour(support_world):
+def test_delete_under_a_write_grant_is_refused(support_world):
     w = support_world
     tag = make_tag(w.db, word("sa-delete"), user_id=w.admin.id, org_id=w.org.id)
     headers = w.with_grant(w.active_grant(level="write"))
 
     response = w.client.delete("/api/tags", headers=headers, params={"tag_uuids": [str(tag.uuid)]})
 
-    assert response.status_code == 200, response.text
-    assert not _exists(w.db, tag)
+    _refused(response)
+    assert _exists(w.db, tag)
 
 
-def test_merge_under_a_write_grant_is_allowed_pins_current_behaviour(support_world):
+def test_merge_under_a_write_grant_is_refused(support_world):
     w = support_world
     survivor = make_tag(w.db, word("sa-survivor"), user_id=w.admin.id, org_id=w.org.id)
     doomed = make_tag(w.db, word("sa-doomed"), user_id=w.admin.id, org_id=w.org.id)
@@ -111,9 +136,50 @@ def test_merge_under_a_write_grant_is_allowed_pins_current_behaviour(support_wor
         json={"source_uuids": [str(doomed.uuid)]},
     )
 
-    assert response.status_code == 200, response.text
+    _refused(response)
     assert _exists(w.db, survivor)
-    assert not _exists(w.db, doomed)
+    assert _exists(w.db, doomed)
+
+
+def test_promote_under_a_write_grant_is_refused(support_world):
+    w = support_world
+    tag = make_tag(w.db, word("sa-promote"), user_id=w.admin.id, org_id=w.org.id)
+    headers = w.with_grant(w.active_grant(level="write"))
+
+    response = w.client.post(
+        "/api/tags/promote", headers=headers, json={"tag_uuids": [str(tag.uuid)]}
+    )
+
+    _refused(response)
+    w.db.expire_all()
+    assert w.db.get(Tag, tag.id).organization_id == w.org.id
+
+
+def test_cleanup_under_a_write_grant_is_refused(support_world):
+    w = support_world
+    unused = make_tag(w.db, word("sa-cleanup"), user_id=w.admin.id, org_id=w.org.id)
+    headers = w.with_grant(w.active_grant(level="write"))
+
+    response = w.client.delete("/api/tags/cleanup", headers=headers)
+
+    _refused(response)
+    assert _exists(w.db, unused)
+
+
+def test_tag_reads_under_a_grant_are_still_answered(support_world):
+    """Control: only mutations are refused; listing and impact still work under a grant."""
+    w = support_world
+    tag = make_tag(w.db, word("sa-read"), user_id=w.admin.id, org_id=w.org.id)
+    headers = w.with_grant(w.active_grant(level="write"))
+
+    listed = w.client.get("/api/tags", headers=headers)
+    impact = w.client.get(
+        "/api/tags/impact", headers=headers, params={"tag_uuids": [str(tag.uuid)]}
+    )
+
+    assert listed.status_code == 200, listed.text
+    assert str(tag.uuid) in {row["uuid"] for row in listed.json()}
+    assert impact.status_code == 200, impact.text
 
 
 def test_rename_under_a_read_grant_is_refused_by_the_method_check(support_world):

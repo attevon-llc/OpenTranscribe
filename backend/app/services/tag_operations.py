@@ -53,6 +53,7 @@ from app.core.constants import TAG_SOURCE_AI_ACCEPTED
 from app.core.constants import TAG_SOURCE_AUTO_AI
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.core.exceptions import OpenTranscribeError
+from app.models.sharing import TagShare
 from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.models.watch_source import WatchSource
@@ -84,8 +85,13 @@ class TagNotFoundError(OpenTranscribeError):
 
     Raised rather than silently skipped: two merges running in opposite
     directions must not both report success, or each destroys the other's
-    survivor.
+    survivor. Always carries ``TAG_NOT_FOUND``, the detail an unknown uuid gets at
+    the API, so a vanished row is indistinguishable from one that never existed and
+    no internal id reaches the wire.
     """
+
+
+TAG_NOT_FOUND = "Tag not found"
 
 
 #: Origin ordering, least human first. A NULL origin predates auto-labeling and
@@ -522,6 +528,63 @@ def _reassign_associations(db: Session, target: Tag, doomed_ids: Sequence[int]) 
     db.flush()
 
 
+def _move_share_grants(db: Session, target: Tag, doomed_ids: Sequence[int]) -> None:
+    """Repoint the doomed tags' ``tag_share`` grants at the survivor, never widening reach.
+
+    A merge folds only tags of one tenant (or anything into the system vocabulary), so a
+    moved grant stays inside the tenant its owner granted it in. The rules:
+
+    * survivor is a system tag: nothing moves. Every account already sees it, so a grant
+      there confers nothing, and it would gather grantees from several tenants on one row;
+    * the grantee already holds a grant on the survivor: the survivor's own grant is kept
+      (grants carry no permission level, so neither is stronger);
+    * the grantee is the survivor's owner: dropped, as ``tag_sharing.share_tag`` refuses
+      a grant on one's own tag;
+    * otherwise the grant row itself moves, keeping its uuid and its ``shared_by``.
+
+    Grants not moved stay on the doomed rows and go with them by the FK cascade.
+    """
+    if is_system_tag(target) or not doomed_ids:
+        return
+    held = {
+        (share.target_user_id, share.target_group_id)
+        for share in db.query(TagShare).filter(TagShare.tag_id == target.id)
+    }
+    grants = db.query(TagShare).filter(TagShare.tag_id.in_(doomed_ids)).order_by(TagShare.id)
+    for share in grants.all():
+        grantee = (share.target_user_id, share.target_group_id)
+        if grantee in held or (
+            share.target_user_id is not None and share.target_user_id == target.user_id
+        ):
+            continue
+        share.tag_id = target.id
+        held.add(grantee)
+    db.flush()
+
+
+def _fold_into(db: Session, target: Tag, doomed: Sequence[Tag]) -> list[int]:
+    """Fold ``doomed`` into ``target`` and delete them, flushing but never committing.
+
+    The shared body of :func:`merge_tags` and :func:`promote_tags_to_shared`, so a
+    promotion that folds several rows commits once. Returns the affected file ids.
+    """
+    doomed_ids = [tag.id for tag in doomed]
+    affected_file_ids = _affected_file_ids(db, doomed_ids)
+
+    _reassign_associations(db, target, doomed_ids)
+    _move_share_grants(db, target, doomed_ids)
+
+    if target.source == TAG_SOURCE_AUTO_AI:
+        target.source = TAG_SOURCE_AI_ACCEPTED
+
+    _rewrite_for_tags(db, doomed, target.name)
+
+    for tag in doomed:
+        db.delete(tag)
+    db.flush()
+    return affected_file_ids
+
+
 def merge_tags(
     db: Session,
     target_id: int,
@@ -534,7 +597,8 @@ def merge_tags(
 
     A merge is a human act, so the survivor is endorsed: an auto-labeled tag
     becomes ``ai_accepted``; a manual (or legacy NULL) tag is already human and
-    is left alone.
+    is left alone. Share grants on the folded tags move to the survivor
+    (:func:`_move_share_grants`), so a recipient keeps the word.
 
     Args:
         db: Database session. Committed on success.
@@ -556,12 +620,12 @@ def merge_tags(
 
     target = locked.get(int(target_id))
     if target is None:
-        raise TagNotFoundError(f"Tag {target_id} no longer exists")
+        raise TagNotFoundError(TAG_NOT_FOUND)
 
     doomed_ids = sorted({int(i) for i in source_ids} - {int(target_id)})
     missing = [i for i in doomed_ids if i not in locked]
     if missing:
-        raise TagNotFoundError(f"Tags no longer exist: {missing}")
+        raise TagNotFoundError(TAG_NOT_FOUND)
 
     target_tenant = tenant_key(target)
     if target_tenant != ("system",):
@@ -579,20 +643,9 @@ def merge_tags(
         return TagMutationOutcome(impact=impact, tag=target)
 
     doomed = [locked[i] for i in doomed_ids]
-    affected_file_ids = _affected_file_ids(db, doomed_ids)
-
-    _reassign_associations(db, target, doomed_ids)
-
-    if target.source == TAG_SOURCE_AUTO_AI:
-        target.source = TAG_SOURCE_AI_ACCEPTED
-
-    _rewrite_for_tags(db, doomed, target.name)
-
     system_scope = touches_system_tag([target, *doomed])
     deleted_uuids = [tag.uuid for tag in doomed]
-    for tag in doomed:
-        db.delete(tag)
-    db.flush()
+    affected_file_ids = _fold_into(db, target, doomed)
     db.commit()
 
     on_tags_changed(db, affected_file_ids, user_id=user_id, system_scope=system_scope)
@@ -638,7 +691,7 @@ def rename_tag(
     locked = lock_tags(db, [tag_id])
     tag = locked.get(int(tag_id))
     if tag is None:
-        raise TagNotFoundError(f"Tag {tag_id} no longer exists")
+        raise TagNotFoundError(TAG_NOT_FOUND)
 
     # The collision is looked up in the RENAMED TAG's tenant, not the caller's:
     # renaming a system tag onto a word some tenant happens to own must not
@@ -713,7 +766,7 @@ def delete_tags(
     locked = lock_tags(db, wanted)
     missing = [tag_id for tag_id in wanted if tag_id not in locked]
     if missing:
-        raise TagNotFoundError(f"Tags no longer exist: {missing}")
+        raise TagNotFoundError(TAG_NOT_FOUND)
 
     doomed = [locked[tag_id] for tag_id in wanted]
     impact = preview_tag_impact(db, wanted, user_id=user_id, organization_id=organization_id)
@@ -835,7 +888,8 @@ def promote_tags_to_shared(
 
     Returns:
         The outcome, whose ``impact`` covers the promoted tags and everything
-        merged into them.
+        merged into them, and whose ``deleted_uuids`` lists every row folded away
+        (ascending id). ``tag`` stays None: one call may promote several tags.
 
     Raises:
         TagNotFoundError: A tag no longer exists.
@@ -847,7 +901,7 @@ def promote_tags_to_shared(
     locked = lock_tags(db, wanted)
     missing = [tag_id for tag_id in wanted if tag_id not in locked]
     if missing:
-        raise TagNotFoundError(f"Tags no longer exist: {missing}")
+        raise TagNotFoundError(TAG_NOT_FOUND)
 
     promoted = [locked[tag_id] for tag_id in wanted if not is_system_tag(locked[tag_id])]
     if not promoted:
@@ -856,48 +910,56 @@ def promote_tags_to_shared(
             impact=preview_tag_impact(db, wanted, user_id=user_id, organization_id=organization_id)
         )
 
-    # Claim the shared namespace first. `uq_tag_name_system` is UNIQUE(name)
-    # WHERE user_id IS NULL, so a name already shared cannot be promoted twice —
-    # fold the private row into the existing shared one instead.
+    # Claim the shared namespace first. `uq_tag_system_name` is UNIQUE(name) among
+    # system rows, so a word already shared is never promoted twice: the tenant row
+    # folds into the existing system row. Every fold of this call happens in one
+    # transaction (no partial promotion), in ascending id order, so two requested
+    # tags with one normalized name always fold into the lower id.
     outcome_impact = preview_tag_impact(
         db, [tag.id for tag in promoted], user_id=user_id, organization_id=organization_id
     )
     affected_file_ids: list[int] = []
+    folded: dict[int, uuid_pkg.UUID] = {}
+    survivors: dict[str, Tag] = {}
     for tag in promoted:
+        if tag.id in folded:
+            continue
         normalized = stored_normalized_name(tag)
-        already_shared = (
+        survivor = survivors.get(normalized) or (
             db.query(Tag)
             .filter(system_tag(), Tag.normalized_name == normalized, Tag.id != tag.id)
             .first()
         )
-        if already_shared is not None:
-            merge_tags(
-                db,
-                already_shared.id,
-                [tag.id],
-                user_id=user_id,
-                organization_id=organization_id,
-            )
+        if survivor is not None:
+            doomed = [tag]
+        else:
+            origin = tenant_key(tag)
+            tag.user_id = None
+            tag.organization_id = None
+            affected_file_ids.extend(_affected_file_ids(db, [tag.id]))
+            survivor = tag
+            candidates = db.query(Tag).filter(Tag.normalized_name == normalized, Tag.id != tag.id)
+            doomed = [
+                row
+                for row in candidates.order_by(Tag.id).all()
+                if fold_across_tenants or tenant_key(row) == origin
+            ]
+        survivors[normalized] = survivor
+        if not doomed:
             continue
-
-        origin = tenant_key(tag)
-        tag.user_id = None
-        tag.organization_id = None
-        affected_file_ids.extend(_affected_file_ids(db, [tag.id]))
-
-        # Fold every other account's same-named row into the new shared one, so
-        # promotion collapses the duplicates rather than sitting beside them.
-        candidates = db.query(Tag).filter(Tag.normalized_name == normalized, Tag.id != tag.id)
-        duplicates = [
-            row.id for row in candidates.all() if fold_across_tenants or tenant_key(row) == origin
-        ]
-        if duplicates:
-            merge_tags(db, tag.id, duplicates, user_id=user_id, organization_id=organization_id)
+        held = lock_tags(db, [survivor.id, *(row.id for row in doomed)])
+        if survivor.id not in held:
+            raise TagNotFoundError(TAG_NOT_FOUND)
+        doomed = [row for row in doomed if row.id in held]
+        folded.update({row.id: row.uuid for row in doomed})
+        affected_file_ids.extend(_fold_into(db, survivor, doomed))
 
     db.flush()
     db.commit()
 
     # A system tag is in every account's list, so nothing narrower than a global
     # cache drop is correct here.
-    on_tags_changed(db, affected_file_ids, user_id=user_id, system_scope=True)
-    return TagMutationOutcome(impact=outcome_impact)
+    on_tags_changed(db, list(dict.fromkeys(affected_file_ids)), user_id=user_id, system_scope=True)
+    return TagMutationOutcome(
+        impact=outcome_impact, deleted_uuids=[folded[tag_id] for tag_id in sorted(folded)]
+    )

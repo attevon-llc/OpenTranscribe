@@ -1,8 +1,8 @@
 """Characterization of ``promote_tags_to_shared`` at the service level.
 
-Written before the tags backend rewrite. ``test_..._pins_current_behaviour`` names pin D7:
-promote reports nothing about the rows it folded, and promoting two tags that share a
-normalized name in one call fails loudly part-way through.
+Written before the tags backend rewrite. Promote reports every row it folded in
+``deleted_uuids``, commits once, and folds two requested tags that share a normalized name
+into the lower id instead of failing part-way (D7).
 """
 
 from __future__ import annotations
@@ -141,18 +141,19 @@ def test_promote_onto_an_existing_system_name_folds_into_that_system_tag(
     attach(db_session, media_file, personal)
     personal_id = personal.id
 
+    personal_uuid = personal.uuid
+
     outcome = promote_tags_to_shared(db_session, [personal_id], user_id=normal_user.id)
 
     assert _row(db_session, personal_id) is None
     assert _row(db_session, system.id) is not None
     assert _file_ids_with(db_session, system.id) == {media_file.id}
-    # The fold is invisible in the result (D7): nothing says a row was deleted.
-    assert outcome.deleted_uuids == []
+    assert outcome.deleted_uuids == [personal_uuid]
     assert outcome.merged is False and outcome.tag is None
-    # merge_tags fires its own hook; promote itself then fires its final one with no files.
-    assert [c["system_scope"] for c in hook.calls] == [True, True]
-    assert hook.calls[0]["files"] == [media_file.id]
-    assert hook.calls[-1]["files"] == []
+    # One hook for the whole promotion, carrying the folded row's file.
+    assert hook.calls == [
+        {"files": [media_file.id], "user_id": normal_user.id, "system_scope": True}
+    ]
 
 
 def test_promote_folds_other_users_same_named_tags_and_keeps_their_files(
@@ -165,10 +166,11 @@ def test_promote_folds_other_users_same_named_tags_and_keeps_their_files(
     their_file = make_file(db_session, other_user)
     attach(db_session, my_file, mine)
     attach(db_session, their_file, theirs)
-    theirs_id = theirs.id
+    theirs_id, theirs_uuid = theirs.id, theirs.uuid
 
-    promote_tags_to_shared(db_session, [mine.id], user_id=normal_user.id)
+    outcome = promote_tags_to_shared(db_session, [mine.id], user_id=normal_user.id)
 
+    assert outcome.deleted_uuids == [theirs_uuid]
     assert _row(db_session, theirs_id) is None
     assert _file_ids_with(db_session, mine.id) == {my_file.id, their_file.id}
     promoted = _row(db_session, mine.id)
@@ -206,29 +208,84 @@ def test_promote_with_cross_tenant_folding_folds_org_rows_too(db_session, normal
     assert _row(db_session, in_org_id) is None
 
 
-def test_promote_of_a_vanished_tag_raises_with_the_internal_id_pins_current_behaviour(
-    db_session, normal_user, hook
-):
-    """D16: the message that becomes the 404 detail names the integer id."""
+def test_promote_of_a_vanished_tag_raises_without_the_internal_id(db_session, normal_user, hook):
+    """D16: the message is a fixed literal; no integer id can reach a 404 detail."""
     with pytest.raises(TagNotFoundError) as caught:
         promote_tags_to_shared(db_session, [2_000_000_000], user_id=normal_user.id)
 
-    assert str(caught.value) == "Tags no longer exist: [2000000000]"
+    assert str(caught.value) == "Tag not found"
 
 
-def test_promoting_two_same_named_tags_in_one_call_fails_part_way_pins_current_behaviour(
-    db_session, normal_user, other_user, hook
+def test_promoting_two_same_named_tags_in_one_call_folds_them_into_the_lower_id(
+    db_session, normal_user, other_user, hook, commits
 ):
-    """D7: the first promoted row folds the second, then the loop reaches the folded row."""
+    """D7: deterministic. The lower id becomes the system row; the other folds into it."""
     name = word("twice")
     first = make_tag(db_session, name, user_id=normal_user.id)
-    second = make_tag(db_session, name, user_id=other_user.id)
-    first_id, second_id = first.id, second.id
+    second = make_tag(db_session, name.upper(), user_id=other_user.id)
+    their_file = make_file(db_session, other_user)
+    attach(db_session, their_file, second)
+    first_id, second_id, second_uuid = first.id, second.id, second.uuid
+    commits.clear()
 
-    with pytest.raises(TagNotFoundError):
-        promote_tags_to_shared(db_session, [first_id, second_id], user_id=normal_user.id)
+    outcome = promote_tags_to_shared(db_session, [second_id, first_id], user_id=normal_user.id)
 
-    # The first fold had already been committed by merge_tags when the error surfaced.
     survivor = _row(db_session, first_id)
-    assert survivor is not None and survivor.user_id is None
+    assert survivor is not None and (survivor.user_id, survivor.organization_id) == (None, None)
     assert _row(db_session, second_id) is None
+    assert _file_ids_with(db_session, first_id) == {their_file.id}
+    assert outcome.deleted_uuids == [second_uuid]
+    assert len(commits) == 1
+    assert hook.calls == [
+        {"files": [their_file.id], "user_id": normal_user.id, "system_scope": True}
+    ]
+
+
+def test_promoting_two_same_named_tags_of_two_tenants_folds_both_requested_rows(
+    db_session, normal_user, hook
+):
+    """Without cross-tenant folding a *requested* row is still folded: the caller named it."""
+    name = word("twotenants")
+    world = build_org_world(db_session)
+    mine = make_tag(db_session, name, user_id=normal_user.id)
+    in_org = make_tag(db_session, name, user_id=world.alice.id, org_id=world.org_a.id)
+    bystander = make_tag(db_session, name.upper(), user_id=world.bob.id)
+    mine_id, org_id, org_uuid, bystander_id = mine.id, in_org.id, in_org.uuid, bystander.id
+
+    outcome = promote_tags_to_shared(
+        db_session, [mine_id, org_id], user_id=normal_user.id, fold_across_tenants=False
+    )
+
+    assert outcome.deleted_uuids == [org_uuid]
+    assert _row(db_session, org_id) is None
+    assert _row(db_session, bystander_id) is not None
+
+
+def test_a_promotion_that_fails_part_way_commits_nothing(
+    db_session, normal_user, other_user, hook, commits
+):
+    """Atomic: an error on the second tag comes before any commit, so the request's rollback
+    undoes the first tag's promotion and fold too, and no reindex is sent for them."""
+    from sqlalchemy import event
+
+    first = make_tag(db_session, word("atomic-a"), user_id=normal_user.id)
+    make_tag(db_session, first.name.upper(), user_id=other_user.id)
+    second = make_tag(db_session, word("atomic-b"), user_id=normal_user.id)
+    first_id, second_id = first.id, second.id
+    commits.clear()
+
+    def refuse_the_second(session, _context, _instances):
+        if any(
+            isinstance(o, Tag) and o.id == second_id and o.user_id is None for o in session.dirty
+        ):
+            raise RuntimeError("refused")
+
+    event.listen(db_session, "before_flush", refuse_the_second)
+    try:
+        with pytest.raises(RuntimeError, match="refused"):
+            promote_tags_to_shared(db_session, [first_id, second_id], user_id=normal_user.id)
+    finally:
+        event.remove(db_session, "before_flush", refuse_the_second)
+
+    assert commits == []
+    assert hook.calls == []

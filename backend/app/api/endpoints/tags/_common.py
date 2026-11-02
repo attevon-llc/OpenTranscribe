@@ -10,12 +10,15 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.models.tag import Tag
+from app.schemas.tag import Tag as TagSchema
 from app.schemas.tag import TagMutationResult
 from app.schemas.tag import TagShareTarget
+from app.services.tag_operations import TAG_NOT_FOUND
 from app.services.tag_operations import TagNotFoundError
 from app.services.tag_operations import TagTenantMismatchError
 from app.services.tag_scope import is_system_tag
 from app.services.tag_scope import tag_in_tenant
+from app.services.tag_scope import tag_ownership
 from app.services.tag_scope import visible_to
 from app.services.tag_service import InvalidTagNameError
 from app.services.tag_service import resolve_or_create_tag
@@ -117,12 +120,27 @@ def _share_target(share) -> TagShareTarget:
     return TagShareTarget(uuid=share.uuid, target_type=kind, display_name=name, shared_by=shared_by)
 
 
+def _tag_response(tag: Tag, user_id: int) -> TagSchema:
+    """A tag on the wire, its ``ownership`` classified exactly as ``GET /tags`` classifies it.
+
+    The schema's own fallback can only read ``user_id``, which calls a colleague's org
+    tag ``mine`` and an org tag whose creator was deleted ``system``.
+    """
+    return TagSchema(
+        uuid=tag.uuid, name=tag.name, source=tag.source, ownership=tag_ownership(tag, user_id)
+    )
+
+
 def _apply(operation, *args, result_model=TagMutationResult, **kwargs):
-    """Run a tag operation, translating its service errors into HTTP ones."""
+    """Run a tag operation, translating its service errors into HTTP ones.
+
+    ``kwargs["user_id"]`` is the acting user every operation takes; the result's ``tag``
+    is labelled relative to them.
+    """
     try:
-        return result_model.model_validate(operation(*args, **kwargs))
+        outcome = operation(*args, **kwargs)
     except TagNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=TAG_NOT_FOUND) from exc
     except TagTenantMismatchError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -133,6 +151,10 @@ def _apply(operation, *args, result_model=TagMutationResult, **kwargs):
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Tag name is required",
         ) from exc
+    result = result_model.model_validate(outcome)
+    if getattr(outcome, "tag", None) is not None:
+        result.tag = _tag_response(outcome.tag, kwargs["user_id"])
+    return result
 
 
 #: The single router every module registers onto.

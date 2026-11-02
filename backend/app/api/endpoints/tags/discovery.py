@@ -29,6 +29,7 @@ from app.services.tag_collisions import find_tag_collisions
 from app.services.tag_collisions import tags_on_files
 from app.services.tag_scope import tag_ownership
 from app.services.uuid_helpers import get_by_uuid
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
 
 @router.get("/collisions", response_model=list[TagCollisionClusterSchema])
@@ -67,15 +68,24 @@ def list_tags_on_files(
     add-only: removing a tag that sits on three of five files is ambiguous in a
     way adding never is.
 
+    Every uuid must name a file the caller can open (the same gate as the file detail
+    page); one that does not is a 404 "File not found" whether it is unknown or merely
+    someone else's, so the route reveals nothing about files outside the caller's reach.
+
     Registered before ``/{tag_uuid}`` so the literal path is not swallowed.
     """
-    from app.models.media import MediaFile
-
     file_ids = [
-        get_by_uuid(db, MediaFile, file_uuid, error_message="File not found").id
-        for file_uuid in file_uuids
+        get_file_by_uuid_with_permission(
+            db,
+            file_uuid,
+            current_user.id,
+            bypass=ctx.bypass,
+            organization_id=ctx.org_id,
+            conceal_inaccessible=True,
+        ).id
+        for file_uuid in dict.fromkeys(file_uuids)
     ]
-    selection_size = len(set(file_ids))
+    selection_size = len(file_ids)
     rows = tags_on_files(db, file_ids, user_id=current_user.id, organization_id=ctx.org_id)
     return [
         TagOnSelection(

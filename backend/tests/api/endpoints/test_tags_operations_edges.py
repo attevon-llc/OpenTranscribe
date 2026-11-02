@@ -1,8 +1,8 @@
 """Characterization of the rename / merge / delete / cleanup routes' edges.
 
 Written before the tags backend rewrite. Tests whose name says ``pins_current_behaviour``
-pin behaviour the owner has decided to change: D8 (merge silently drops share grants) and
-D16 (404 details carry internal integer ids).
+pin behaviour the owner has decided to change. Merge moves the doomed tags' share grants
+to the survivor (D8), and a 404 detail never carries an internal integer id (D16).
 """
 
 from __future__ import annotations
@@ -208,14 +208,19 @@ def test_delete_removes_the_tags_share_grants(
     assert _shares(db_session, tag) == 0
 
 
-def test_merge_drops_the_doomed_tags_grants_without_moving_them_pins_current_behaviour(
-    client, db_session, normal_user, other_user, user_token_headers
+def _grants_of(db, tag: Tag) -> list[TagShare]:
+    db.expire_all()
+    rows: list[TagShare] = db.query(TagShare).filter(TagShare.tag_id == tag.id).all()
+    return rows
+
+
+def test_merge_moves_the_doomed_tags_grants_to_the_survivor(
+    client, db_session, normal_user, other_user, user_token_headers, other_user_auth_headers
 ):
-    """D8: the recipient of the doomed tag's grant silently loses access, and the survivor
-    gains no grant."""
+    """D8: the recipient keeps the word, now as the survivor, with the original attribution."""
     survivor = make_tag(db_session, word("survivor"), user_id=normal_user.id)
     doomed = make_tag(db_session, word("doomed"), user_id=normal_user.id)
-    _grant(db_session, doomed, normal_user, other_user)
+    grant = _grant(db_session, doomed, normal_user, other_user)
 
     response = client.post(
         f"/api/tags/{survivor.uuid}/merge",
@@ -224,8 +229,79 @@ def test_merge_drops_the_doomed_tags_grants_without_moving_them_pins_current_beh
     )
 
     assert response.status_code == 200, response.text
-    assert _shares(db_session, doomed) == 0
-    assert _shares(db_session, survivor) == 0
+    (moved,) = _grants_of(db_session, survivor)
+    assert (moved.uuid, moved.target_user_id, moved.shared_by_id) == (
+        grant.uuid,
+        other_user.id,
+        normal_user.id,
+    )
+    listed = client.get("/api/tags", headers=other_user_auth_headers).json()
+    assert str(survivor.uuid) in {row["uuid"] for row in listed}
+
+
+def test_merge_keeps_one_grant_when_the_survivor_already_holds_it(
+    client, db_session, normal_user, other_user, user_token_headers
+):
+    """A grantee on both sides keeps exactly the survivor's own grant."""
+    survivor = make_tag(db_session, word("survivor"), user_id=normal_user.id)
+    first = make_tag(db_session, word("doomed-a"), user_id=normal_user.id)
+    second = make_tag(db_session, word("doomed-b"), user_id=normal_user.id)
+    kept = _grant(db_session, survivor, normal_user, other_user)
+    _grant(db_session, first, normal_user, other_user)
+    _grant(db_session, second, normal_user, other_user)
+
+    response = client.post(
+        f"/api/tags/{survivor.uuid}/merge",
+        headers=user_token_headers,
+        json={"source_uuids": [str(first.uuid), str(second.uuid)]},
+    )
+
+    assert response.status_code == 200, response.text
+    assert [g.uuid for g in _grants_of(db_session, survivor)] == [kept.uuid]
+    assert db_session.query(TagShare).filter(TagShare.target_user_id == other_user.id).count() == 1
+
+
+def test_merge_drops_a_grant_to_the_survivors_own_owner(client, org_world):
+    """Moving it would grant bob his own tag, which ``share_tag`` refuses to create."""
+    w = org_world
+    survivor = make_tag(w.db, word("bobs"), user_id=w.bob.id, org_id=w.org_a.id)
+    doomed = make_tag(w.db, word("alices"), user_id=w.alice.id, org_id=w.org_a.id)
+    _grant(w.db, doomed, w.alice, w.bob)
+
+    with acting_as(w.alice, w.org_a.id, "org:admin"):
+        response = client.post(
+            f"/api/tags/{survivor.uuid}/merge", json={"source_uuids": [str(doomed.uuid)]}
+        )
+
+    assert response.status_code == 200, response.text
+    assert _grants_of(w.db, survivor) == []
+    assert w.db.query(TagShare).filter(TagShare.target_user_id == w.bob.id).count() == 0
+
+
+def test_merge_into_a_system_tag_drops_the_grants(
+    client, db_session, admin_user, other_user, admin_token_headers, monkeypatch
+):
+    """A grant on the shared vocabulary confers nothing (every account sees it), so none moves."""
+    from app.core.config import settings
+    from app.services.platform_access import reset_tenancy_mode_cache
+
+    monkeypatch.setattr(settings, "TENANCY_MODE", "single")
+    reset_tenancy_mode_cache()
+    try:
+        survivor = make_tag(db_session, word("system"), user_id=None)
+        doomed = make_tag(db_session, word("private"), user_id=admin_user.id)
+        _grant(db_session, doomed, admin_user, other_user)
+
+        response = client.post(
+            f"/api/tags/{survivor.uuid}/merge",
+            headers=admin_token_headers,
+            json={"source_uuids": [str(doomed.uuid)]},
+        )
+    finally:
+        reset_tenancy_mode_cache()
+
+    assert response.status_code == 200, response.text
+    assert _grants_of(db_session, survivor) == []
     assert db_session.query(TagShare).filter(TagShare.target_user_id == other_user.id).count() == 0
 
 
@@ -246,7 +322,7 @@ def test_merge_leaves_the_survivors_own_grants_alone(
 
 
 # ---------------------------------------------------------------------------
-# D16: 404 details from TagNotFoundError carry internal integer ids
+# D16: a tag that vanishes mid-request is a plain 404, with no internal id
 # ---------------------------------------------------------------------------
 
 
@@ -256,10 +332,10 @@ def vanishing_rows(monkeypatch):
     monkeypatch.setattr("app.services.tag_operations.lock_tags", lambda db, tag_ids: {})
 
 
-def test_delete_404_detail_carries_the_internal_id_pins_current_behaviour(
+def test_delete_404_detail_carries_no_internal_id(
     client, db_session, normal_user, user_token_headers, vanishing_rows
 ):
-    """D16: the integer primary key reaches the wire."""
+    """D16: the same detail an unknown uuid gets; the integer primary key never reaches the wire."""
     tag = make_tag(db_session, word("gone"), user_id=normal_user.id)
 
     response = client.delete(
@@ -267,10 +343,10 @@ def test_delete_404_detail_carries_the_internal_id_pins_current_behaviour(
     )
 
     assert response.status_code == 404
-    assert response.json()["detail"] == f"Tags no longer exist: [{tag.id}]"
+    assert response.json() == {"detail": "Tag not found"}
 
 
-def test_rename_404_detail_carries_the_internal_id_pins_current_behaviour(
+def test_rename_404_detail_carries_no_internal_id(
     client, db_session, normal_user, user_token_headers, vanishing_rows
 ):
     """D16."""
@@ -281,13 +357,13 @@ def test_rename_404_detail_carries_the_internal_id_pins_current_behaviour(
     )
 
     assert response.status_code == 404
-    assert response.json()["detail"] == f"Tag {tag.id} no longer exists"
+    assert response.json() == {"detail": "Tag not found"}
 
 
-def test_merge_404_detail_carries_the_internal_id_pins_current_behaviour(
+def test_merge_404_detail_carries_no_internal_id(
     client, db_session, normal_user, user_token_headers, vanishing_rows
 ):
-    """D16: the target is looked up first, so its id is the one reported."""
+    """D16."""
     target = make_tag(db_session, word("t"), user_id=normal_user.id)
     source = make_tag(db_session, word("s"), user_id=normal_user.id)
 
@@ -298,10 +374,10 @@ def test_merge_404_detail_carries_the_internal_id_pins_current_behaviour(
     )
 
     assert response.status_code == 404
-    assert response.json()["detail"] == f"Tag {target.id} no longer exists"
+    assert response.json() == {"detail": "Tag not found"}
 
 
-def test_promote_404_detail_carries_the_internal_id_pins_current_behaviour(
+def test_promote_404_detail_carries_no_internal_id(
     client, db_session, admin_user, admin_token_headers, vanishing_rows, monkeypatch
 ):
     """D16, promote path (single-tenant so a plain admin may promote)."""
@@ -320,7 +396,7 @@ def test_promote_404_detail_carries_the_internal_id_pins_current_behaviour(
         reset_tenancy_mode_cache()
 
     assert response.status_code == 404
-    assert response.json()["detail"] == f"Tags no longer exist: [{tag.id}]"
+    assert response.json() == {"detail": "Tag not found"}
 
 
 # ---------------------------------------------------------------------------
@@ -362,10 +438,8 @@ def test_cleanup_in_an_org_deletes_only_the_callers_own_unreferenced_org_tags(su
 # ---------------------------------------------------------------------------
 
 
-def test_held_rename_onto_a_colleagues_org_tag_reports_it_as_mine_pins_current_behaviour(
-    client, org_world
-):
-    """D3: the colliding row is bob's, yet the bare-ORM label for alice is ``mine``."""
+def test_held_rename_onto_a_colleagues_org_tag_reports_what_the_list_reports(client, org_world):
+    """D3: the colliding row is bob's, so alice sees it as ``shared_with_me`` here too."""
     w = org_world
     bobs = make_tag(w.db, word("bobs-word"), user_id=w.bob.id, org_id=w.org_a.id)
     alices = make_tag(w.db, word("alices-word"), user_id=w.alice.id, org_id=w.org_a.id)
@@ -378,14 +452,11 @@ def test_held_rename_onto_a_colleagues_org_tag_reports_it_as_mine_pins_current_b
     body = response.json()
     assert body["requires_confirmation"] is True
     assert body["tag"]["uuid"] == str(bobs.uuid)
-    assert body["tag"]["ownership"] == "mine"
-    assert listed[str(bobs.uuid)] == "shared_with_me"
+    assert body["tag"]["ownership"] == listed[str(bobs.uuid)] == "shared_with_me"
 
 
-def test_held_rename_onto_an_unattributed_org_tag_reports_it_as_system_pins_current_behaviour(
-    client, org_world
-):
-    """D3: an org tag with no creator is labelled ``system`` here, ``shared_with_me`` in the list."""
+def test_held_rename_onto_an_unattributed_org_tag_reports_what_the_list_reports(client, org_world):
+    """D3: an org tag with no creator is ``shared_with_me`` on both surfaces, never ``system``."""
     w = org_world
     orphan = make_tag(w.db, word("orphan-word"), user_id=None, org_id=w.org_a.id)
     alices = make_tag(w.db, word("alices-word"), user_id=w.alice.id, org_id=w.org_a.id)
@@ -396,8 +467,7 @@ def test_held_rename_onto_an_unattributed_org_tag_reports_it_as_system_pins_curr
 
     assert response.status_code == 200, response.text
     assert response.json()["tag"]["uuid"] == str(orphan.uuid)
-    assert response.json()["tag"]["ownership"] == "system"
-    assert listed[str(orphan.uuid)] == "shared_with_me"
+    assert response.json()["tag"]["ownership"] == listed[str(orphan.uuid)] == "shared_with_me"
 
 
 def test_a_plain_rename_reports_the_renamed_row_with_its_new_name(

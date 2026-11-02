@@ -55,6 +55,7 @@ from app.models.media import MediaFile
 from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.services.tag_scope import owned_or_system
+from app.services.tag_scope import tenant_bound_or_system
 from app.services.tag_scope import tenant_first
 
 logger = logging.getLogger(__name__)
@@ -177,7 +178,9 @@ def lookup_existing_tag(
     return tag
 
 
-def lookup_tag_on_file(db: Session, normalized: str, file_id: int) -> Tag | None:
+def lookup_tag_on_file(
+    db: Session, normalized: str, file_id: int, organization_id: int | None
+) -> Tag | None:
     """Find a tag already attached to ``file_id`` whose normalized name matches.
 
     Consulted **before** the caller's own vocabulary when tagging a specific
@@ -192,19 +195,30 @@ def lookup_tag_on_file(db: Session, normalized: str, file_id: int) -> Tag | None
     keeps its owner, and the caller could already see it (``_visible_to`` admits
     every tag on a file they can access).
 
+    Only a row of the tenant being resolved in, or a system row, is reused
+    (``tag_scope.tenant_bound_or_system``): a tag of another tenant left on the file
+    by legacy data is ignored, so resolution falls through to the tenant's own
+    vocabulary instead of attaching a foreign row again.
+
     Args:
         db: Database session.
         normalized: The normalized form being resolved.
         file_id: The file the tag is about to be attached to.
+        organization_id: The tenant being resolved in (None = personal).
 
     Returns:
-        The matching attached tag, preferring a system row, else None.
+        The matching attached tag, a tenant row ahead of a system row
+        (``tenant_first``), else None.
     """
     return (
         db.query(Tag)
         .join(FileTag, FileTag.tag_id == Tag.id)
-        .filter(FileTag.media_file_id == file_id, Tag.normalized_name == normalized)
-        .order_by(Tag.user_id)
+        .filter(
+            FileTag.media_file_id == file_id,
+            Tag.normalized_name == normalized,
+            tenant_bound_or_system(organization_id),
+        )
+        .order_by(*tenant_first(), Tag.id)
         .first()
     )
 
@@ -311,7 +325,7 @@ def resolve_or_create_tag(
         raise InvalidTagNameError(f"Tag name is empty after normalization: {name!r}")
 
     if file_id is not None:
-        on_file = lookup_tag_on_file(db, normalized, file_id)
+        on_file = lookup_tag_on_file(db, normalized, file_id, organization_id)
         if on_file is not None:
             return on_file
 

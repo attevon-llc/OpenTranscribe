@@ -1,18 +1,26 @@
 """Characterization of ``GET /api/tags/for-files`` (what a bulk selection already carries).
 
-Written before the tags backend rewrite. Every assertion describes what the route does
-today; the two tests whose name says ``pins_current_behaviour`` pin behaviour the owner has
-decided to change (an inaccessible file is accepted and counted, rather than answered like
-an unknown one), so the lane that changes it flips them red first.
+Written before the tags backend rewrite. A file the caller cannot open (another user's,
+another tenant's) is answered exactly like an unknown uuid, so the route is no existence
+signal (D5).
 """
 
 from __future__ import annotations
 
 import uuid
 
+import pytest
+from fixtures.tag_world import acting_as
+from fixtures.tag_world import build_org_world
+from fixtures.tag_world import make_file
+
+from app.core.config import settings
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.media import MediaFile
 from app.models.tag import FileTag
 from app.models.tag import Tag
+from app.services.platform_access import reset_tenancy_mode_cache
 from app.services.tag_service import normalize_tag_name
 
 URL = "/api/tags/for-files"
@@ -52,6 +60,30 @@ def _attach(db, media_file, tag) -> None:
 
 def _query(*files: MediaFile) -> list[tuple[str, str]]:
     return [("file_uuids", str(f.uuid)) for f in files]
+
+
+def _unknown(client, headers=None):
+    return client.get(URL, headers=headers, params=[("file_uuids", str(uuid.uuid4()))])
+
+
+def _share_with(db, owner, target, media_file) -> None:
+    from app.models.sharing import CollectionShare
+
+    collection = Collection(name=_word("coll"), user_id=owner.id)
+    db.add(collection)
+    db.commit()
+    db.refresh(collection)
+    db.add(CollectionMember(collection_id=collection.id, media_file_id=media_file.id))
+    db.add(
+        CollectionShare(
+            collection_id=collection.id,
+            shared_by_id=owner.id,
+            target_type="user",
+            target_user_id=target.id,
+            permission="viewer",
+        )
+    )
+    db.commit()
 
 
 def test_rows_are_ordered_by_file_count_descending_then_name(
@@ -131,52 +163,92 @@ def test_a_repeated_uuid_counts_once_in_selection_size_and_file_count(
     assert (row["file_count"], row["selection_size"]) == (1, 1)
 
 
-def test_tags_on_a_file_the_caller_cannot_access_are_not_returned(
+def test_a_file_shared_with_the_caller_is_counted_and_its_tags_returned(
     client, db_session, normal_user, other_user, user_token_headers
 ):
+    """Control for the 404s below: access through a share is access."""
     mine_file = _file(db_session, normal_user)
-    theirs_file = _file(db_session, other_user)
+    shared_file = _file(db_session, other_user)
+    _share_with(db_session, other_user, normal_user, shared_file)
     visible = _tag(db_session, _word("visible"), user_id=normal_user.id)
-    secret = _tag(db_session, _word("secret"), user_id=other_user.id)
+    theirs = _tag(db_session, _word("theirs"), user_id=other_user.id)
     _attach(db_session, mine_file, visible)
-    _attach(db_session, theirs_file, secret)
+    _attach(db_session, shared_file, theirs)
 
-    rows = client.get(URL, headers=user_token_headers, params=_query(mine_file, theirs_file)).json()
+    response = client.get(URL, headers=user_token_headers, params=_query(mine_file, shared_file))
 
-    assert [r["name"] for r in rows] == [visible.name]
+    assert response.status_code == 200, response.text
+    rows = response.json()
+    assert sorted(r["name"] for r in rows) == sorted([visible.name, theirs.name])
+    assert {r["selection_size"] for r in rows} == {2}
 
 
-def test_inaccessible_file_is_accepted_and_counted_pins_current_behaviour(
+def test_an_inaccessible_file_among_accessible_ones_is_answered_like_an_unknown_uuid(
     client, db_session, normal_user, other_user, user_token_headers
 ):
-    """D5: an existing but inaccessible file is not a 404 and still inflates selection_size.
-
-    The owner has decided it must be answered exactly like a nonexistent file (404).
-    """
     mine_file = _file(db_session, normal_user)
     theirs_file = _file(db_session, other_user)
     tag = _tag(db_session, _word("oracle"), user_id=normal_user.id)
+    secret = _tag(db_session, _word("secret"), user_id=other_user.id)
     _attach(db_session, mine_file, tag)
+    _attach(db_session, theirs_file, secret)
 
     response = client.get(URL, headers=user_token_headers, params=_query(mine_file, theirs_file))
+    unknown = client.get(
+        URL,
+        headers=user_token_headers,
+        params=[*_query(mine_file), ("file_uuids", str(uuid.uuid4()))],
+    )
 
-    assert response.status_code == 200, response.text
-    (row,) = response.json()
-    assert row["file_count"] == 1
-    assert row["selection_size"] == 2
+    assert response.status_code == 404, response.text
+    assert response.json() == unknown.json() == {"detail": "File not found"}
+    assert secret.name not in response.text
 
 
-def test_only_inaccessible_files_give_an_empty_list_not_a_404_pins_current_behaviour(
+def test_only_inaccessible_files_are_answered_like_an_unknown_uuid(
     client, db_session, other_user, user_token_headers
 ):
-    """D5 again: the sole file belongs to someone else, yet the answer is 200 and ``[]``."""
     theirs_file = _file(db_session, other_user)
     _attach(db_session, theirs_file, _tag(db_session, _word("x"), user_id=other_user.id))
 
     response = client.get(URL, headers=user_token_headers, params=_query(theirs_file))
 
+    assert response.status_code == 404, response.text
+    assert response.json() == _unknown(client, user_token_headers).json()
+
+
+def test_another_tenants_file_is_answered_like_an_unknown_uuid(client, db_session):
+    w = build_org_world(db_session)
+    org_file = make_file(db_session, w.alice, w.org_a.id)
+    personal_file = make_file(db_session, w.alice, None)
+
+    with acting_as(w.alice, None):
+        cross = client.get(URL, params=_query(org_file))
+        unknown = _unknown(client)
+        own = client.get(URL, params=_query(personal_file))
+
+    assert cross.status_code == 404, cross.text
+    assert cross.json() == unknown.json()
+    assert own.status_code == 200, own.text
+
+
+@pytest.fixture
+def single_tenant(monkeypatch):
+    monkeypatch.setattr(settings, "TENANCY_MODE", "single")
+    reset_tenancy_mode_cache()
+    yield
+    reset_tenancy_mode_cache()
+
+
+def test_a_single_tenant_admin_may_select_any_users_file(
+    client, db_session, normal_user, admin_token_headers, single_tenant
+):
+    """Control: the gallery lists every file to such an admin, so the selection is valid."""
+    media_file = _file(db_session, normal_user)
+
+    response = client.get(URL, headers=admin_token_headers, params=_query(media_file))
+
     assert response.status_code == 200, response.text
-    assert response.json() == []
 
 
 def test_an_unknown_file_uuid_is_a_404_with_a_fixed_message(client, user_token_headers):

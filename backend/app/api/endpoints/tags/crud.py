@@ -19,6 +19,7 @@ from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.tags._common import _resolve_tag
+from app.api.endpoints.tags._common import _tag_response
 from app.api.endpoints.tags._common import logger
 from app.api.endpoints.tags._common import router
 from app.api.error_handlers import ErrorHandler
@@ -32,6 +33,7 @@ from app.schemas.tag import Tag as TagSchema
 from app.schemas.tag import TagBase
 from app.schemas.tag import TagWithCount
 from app.services.request_context import RequestContext
+from app.services.tag_bulk import REQUIRED_PERMISSION
 from app.services.tag_collisions import list_tags_filtered
 from app.services.tag_collisions import list_unused_tag_rows
 from app.services.tag_operations import cleanup_unreferenced_tags
@@ -56,7 +58,7 @@ def create_tag(
     # No file carries it yet, so there is nothing to reindex — but the new row
     # joins the caller's read-through tag list, so that key has to go.
     on_tags_changed(db, user_id=current_user.id)
-    return tag
+    return _tag_response(tag, current_user.id)
 
 
 @router.get("", response_model=list[TagWithCount])
@@ -142,7 +144,9 @@ def list_unused_tags(
     return list_unused_tag_rows(db, user_id=current_user.id, organization_id=ctx.org_id)
 
 
-@router.delete("/cleanup", response_model=dict[str, Any])
+@router.delete(
+    "/cleanup", response_model=dict[str, Any], dependencies=[Depends(refuse_under_support_grant)]
+)
 def cleanup_unused_tags(
     scope: Literal["mine", "all_users"] = Query(
         "mine",
@@ -238,7 +242,11 @@ def cleanup_unused_tags(
         raise ErrorHandler.internal_error("Could not clean up unused tags.") from e
 
 
-@router.post("/files/{file_uuid}/tags", response_model=TagSchema)
+@router.post(
+    "/files/{file_uuid}/tags",
+    response_model=TagSchema,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def add_tag_to_file(
     request: Request,
     file_uuid: str,
@@ -254,9 +262,10 @@ def add_tag_to_file(
     the batched resolver instead — see ``prepare_upload.add_tags_to_file``).
 
     Authorized by ``get_file_by_uuid_with_permission``, which applies the sharing,
-    takedown and tenant (``ctx.org_id``) gates in one place — write access to the
-    *file* is the whole requirement, because tagging does not touch anyone else's
-    vocabulary.
+    takedown and tenant (``ctx.org_id``) gates in one place — ``editor`` access to
+    the *file* is the whole requirement (the bulk rail's ``REQUIRED_PERMISSION``),
+    because tagging does not touch anyone else's vocabulary. A file the caller cannot
+    open at all is a 404 "File not found", the same answer as an unknown uuid.
 
     The body is a raw ``dict`` rather than a schema, so a missing ``name`` is
     rejected as 422 by hand. The tag is resolved in the **file's tenant**: on an
@@ -281,6 +290,8 @@ def add_tag_to_file(
         current_user.id,
         bypass=ctx.bypass,
         organization_id=ctx.org_id,
+        min_permission=REQUIRED_PERMISSION,
+        conceal_inaccessible=True,
     )
     file_id = media_file.id  # Get internal ID for database operations
 
@@ -317,10 +328,14 @@ def add_tag_to_file(
 
         on_tags_changed(db, [file_id], user_id=current_user.id)
 
-    return tag
+    return _tag_response(tag, current_user.id)
 
 
-@router.delete("/files/{file_uuid}/tags/{tag_name}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/files/{file_uuid}/tags/{tag_name}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def remove_tag_from_file(
     file_uuid: str,
     tag_name: str,
@@ -328,9 +343,7 @@ def remove_tag_from_file(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """
-    Remove a tag from a media file
-    """
+    """Remove a tag from a media file; needs ``editor`` on the file, like attaching."""
     # Get file by UUID with permission check (tenant-gated via ctx.org_id)
     from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
@@ -340,6 +353,8 @@ def remove_tag_from_file(
         current_user.id,
         bypass=ctx.bypass,
         organization_id=ctx.org_id,
+        min_permission=REQUIRED_PERMISSION,
+        conceal_inaccessible=True,
     )
     file_id = media_file.id
 

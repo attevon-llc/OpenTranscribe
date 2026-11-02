@@ -1,8 +1,9 @@
 """Characterization of the ``update_file_tags_index`` Celery task body.
 
 Written before the tags backend rewrite, against a fake OpenSearch client and the test
-session standing in for the task's own short-lived one. ``pins_current_behaviour`` names pin
-D6: the task declares retries it never uses and reports success when the lookup failed.
+session standing in for the task's own short-lived one. A failed tag lookup is retried
+under the task's declared retry settings and ends as a task failure, never as ``success``
+(D6).
 """
 
 from __future__ import annotations
@@ -155,25 +156,68 @@ def test_a_failing_file_is_counted_and_the_next_one_still_runs(
     ]
 
 
-def test_a_failed_tag_lookup_counts_every_file_and_updates_nothing_pins_current_behaviour(
-    monkeypatch,
-):
-    """D6: the status is still ``success`` and no retry is attempted."""
+def _broken_scope(monkeypatch) -> list[int]:
+    attempts: list[int] = []
 
     @contextlib.contextmanager
     def broken_scope():
+        attempts.append(1)
         raise RuntimeError("database is down")
         yield  # pragma: no cover
 
     monkeypatch.setattr("app.db.session_utils.session_scope", broken_scope)
+    return attempts
+
+
+def test_a_failed_tag_lookup_is_retried_then_fails_and_updates_nothing(monkeypatch):
+    """D6: the declared retries are used, and the outcome is a task failure."""
+    attempts = _broken_scope(monkeypatch)
     client = _Client()
     _use_client(monkeypatch, client)
 
-    result = update_file_tags_index([11, 12, 13])
+    result = update_file_tags_index.apply(args=[[11, 12, 13]], throw=False)
 
-    assert result == {"status": "success", "updated": 0, "files": 3, "errors": 3}
+    assert result.state == "FAILURE"
+    assert isinstance(result.result, RuntimeError)
+    assert str(result.result) == "database is down"
+    assert len(attempts) == 1 + update_file_tags_index.max_retries
     assert client.calls == []
     assert client.indices.refreshes == []
+
+
+def test_a_failed_tag_lookup_called_directly_raises_rather_than_reporting_success(monkeypatch):
+    """Outside a worker there is nothing to retry into, so the error itself surfaces."""
+    _broken_scope(monkeypatch)
+    _use_client(monkeypatch, _Client())
+
+    with pytest.raises(RuntimeError, match="database is down"):
+        update_file_tags_index([11, 12, 13])
+
+
+def test_a_lookup_that_recovers_on_retry_succeeds(db_session, normal_user, monkeypatch):
+    """Control: one transient failure, then the retry writes the tags and reports success."""
+    media_file = make_file(db_session, normal_user)
+    tag = make_tag(db_session, word("retry"), user_id=normal_user.id)
+    attach(db_session, media_file, tag)
+    attempts: list[int] = []
+
+    @contextlib.contextmanager
+    def flaky_scope():
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise RuntimeError("database blipped")
+        yield db_session
+
+    monkeypatch.setattr("app.db.session_utils.session_scope", flaky_scope)
+    client = _Client(updated=2)
+    _use_client(monkeypatch, client)
+
+    result = update_file_tags_index.apply(args=[[media_file.id]], throw=False)
+
+    assert result.state == "SUCCESS", result.result
+    assert result.result == {"status": "success", "updated": 2, "files": 1, "errors": 0}
+    assert len(attempts) == 2
+    assert client.calls[0]["body"]["script"]["params"] == {"tags": [tag.name]}
 
 
 def test_the_task_is_registered_with_its_declared_retry_settings():

@@ -46,7 +46,7 @@ describe('TagsSection (#335 tag update forwarding)', () => {
     const file = fileWithTags();
 
     const { container } = render(TagsSection, {
-      props: { file, isTagsExpanded: true },
+      props: { file, isTagsExpanded: true, canEdit: true },
       events: { tagsUpdated: onTagsUpdated },
     });
 
@@ -62,7 +62,7 @@ describe('TagsSection (#335 tag update forwarding)', () => {
     const file = fileWithTags();
 
     const { container } = render(TagsSection, {
-      props: { file, isTagsExpanded: true },
+      props: { file, isTagsExpanded: true, canEdit: true },
       events: { tagsUpdated: vi.fn() },
     });
 
@@ -70,5 +70,44 @@ describe('TagsSection (#335 tag update forwarding)', () => {
 
     await waitFor(() => expect(axiosMock.delete).toHaveBeenCalledTimes(1));
     expect(file.tags).toEqual([{ uuid: 'tag-uuid-1', name: 'alpha' }]);
+  });
+});
+
+describe('TagsSection editing gate', () => {
+  beforeEach(() => {
+    axiosMock.get.mockReset().mockResolvedValue({ data: [] });
+    axiosMock.post.mockReset().mockResolvedValue({ data: {} });
+    axiosMock.delete.mockReset().mockResolvedValue({ data: {} });
+  });
+
+  it('shows a non-editor the tags read-only, with no attach or detach controls', () => {
+    const { container, getByText } = render(TagsSection, {
+      props: { file: fileWithTags(), isTagsExpanded: true, canEdit: false },
+    });
+
+    expect(container.querySelector('.tags-readonly')).toBeTruthy();
+    expect(getByText('alpha', { selector: '.tags-readonly .tag-chip' })).toBeTruthy();
+    expect(container.querySelector('.tag-remove')).toBeNull();
+    expect(container.querySelector('.tag-input')).toBeNull();
+    expect(container.querySelector('.tag-add-button')).toBeNull();
+  });
+
+  it('defaults to read-only when the page passes no permission', () => {
+    const { container } = render(TagsSection, {
+      props: { file: fileWithTags(), isTagsExpanded: true },
+    });
+
+    expect(container.querySelector('.tag-remove')).toBeNull();
+    expect(container.querySelector('.tag-input')).toBeNull();
+  });
+
+  it('gives an editor the attach and detach controls', () => {
+    const { container } = render(TagsSection, {
+      props: { file: fileWithTags(), isTagsExpanded: true, canEdit: true },
+    });
+
+    expect(container.querySelector('.tags-readonly')).toBeNull();
+    expect(container.querySelector('.tag-remove')).toBeTruthy();
+    expect(container.querySelector('.tag-input')).toBeTruthy();
   });
 });

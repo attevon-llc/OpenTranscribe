@@ -1,27 +1,32 @@
 <script>
   import { formatDateTime } from '$lib/utils/formatting';
   import { onMount } from 'svelte';
-  import axiosInstance from '../lib/axios';
+  import axiosInstance from '$lib/axios';
   import { AdminApi } from '$lib/api/admin';
   import {
     AUTH_TYPES,
-    INVITE_EXPIRY_DEFAULT_HOURS,
     INVITE_EXPIRY_MIN_HOURS,
-    INVITE_EXPIRY_MAX_HOURS,
-    createInvitation,
-    listInvitations,
-    revokeInvitation
+    INVITE_EXPIRY_MAX_HOURS
   } from '$lib/api/invitations';
-  import { user } from '../stores/auth';
-  import { toastStore } from '../stores/toast';
+  import { user } from '$stores/auth';
+  import { toastStore } from '$stores/toast';
   import ConfirmationModal from './ConfirmationModal.svelte';
   import { createConfirmDialog } from '$lib/confirmDialog';
-  import BaseModal from './ui/BaseModal.svelte';
   import LinkIdentityModal from './LinkIdentityModal.svelte';
+  import PasswordResetModal from '$components/users/PasswordResetModal.svelte';
   import { t, locale } from '$stores/locale';
   import EmptyState from './ui/EmptyState.svelte';
-  import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import AuthMailNotice from './ui/AuthMailNotice.svelte';
+  import {
+    canAssignElevatedRoles,
+    isSuperAdmin as viewerIsSuperAdmin,
+    permittedRowActions
+  } from '$lib/users/rowPermissions';
+  import { filterUsers } from '$lib/users/userSearch';
+  import { toDateInputValue } from '$lib/users/accountExpiry';
+  import { createAccountActions } from '$lib/users/accountActions';
+  import { createInvitationsController } from '$lib/users/invitationsController';
 
   /**
    * @typedef {Object} User
@@ -77,27 +82,8 @@
   // auth_type rather than storing a credential it will never accept.
   $: createNeedsPassword = newAuthType === 'local';
 
-  // ── invitations ───────────────────────────────────────────────────────────
   /** @type {boolean} */
   let showInviteForm = false;
-  /** @type {string} */
-  let inviteEmail = '';
-  /** @type {string} */
-  let inviteFullName = '';
-  /** @type {string} */
-  let inviteRole = 'user';
-  /** @type {import('$lib/api/invitations').AuthType} */
-  let inviteAuthType = 'local';
-  /** @type {number} */
-  let inviteExpiresInHours = INVITE_EXPIRY_DEFAULT_HOURS;
-  /** @type {boolean} */
-  let inviteSubmitting = false;
-  /** @type {Array<import('$lib/api/invitations').Invitation>} */
-  let invitations = [];
-  /** @type {boolean} */
-  let invitationsLoading = false;
-  /** @type {string|null} */
-  let pendingInviteUuid = null;
 
   // Confirmation modal state
   const confirmDialog = createConfirmDialog();
@@ -107,6 +93,19 @@
     message: confirmMessage,
     confirmText: confirmLabel,
   } = confirmDialog;
+
+  const accountActions = createAccountActions(confirmDialog, () => onRefresh());
+  /** UUID of the row with an account action in flight; its buttons are disabled. */
+  const { pendingUuid: pendingActionUuid } = accountActions;
+
+  const invites = createInvitationsController(confirmDialog);
+  const {
+    form: inviteForm,
+    invitations,
+    loading: invitationsLoading,
+    submitting: inviteSubmitting,
+    revokingUuid: pendingInviteUuid
+  } = invites;
 
   // Server-owned password policy (GET /auth/password-policy). Hardcoding a
   // client-side minimum drifts from the backend's — it said 8 while the policy
@@ -124,7 +123,7 @@
       } catch (err) {
         console.warn('Could not load password policy; using default minimum', err);
       }
-      await refreshInvitations();
+      await invites.refresh();
     })();
   });
 
@@ -152,15 +151,8 @@
     expired: $t('userManagement.invitationStatusExpired')
   });
 
-  // Password reset modal state
-  let showPasswordResetModal = false;
-  /** @type {User|null} */
+  /** The account whose password-reset dialog is open, or null. @type {User|null} */
   let passwordResetUser = null;
-  let resetPassword = '';
-  let confirmResetPassword = '';
-  let passwordResetLoading = false;
-  let showResetPassword = false;
-  let showConfirmResetPassword = false;
 
   /** @type {boolean} */
   let showAddUserForm = false;
@@ -168,36 +160,16 @@
   /** @type {string} */
   let searchTerm = '';
 
+  $: currentUserId = $user ? $user.uuid : null;
+
+  $: isSuperAdmin = viewerIsSuperAdmin($user);
+
+  // Minting an admin or super_admin account, directly or by invitation, is
+  // super_admin-only server-side.
+  $: canElevate = canAssignElevatedRoles($user);
+
   /** @type {Array<User>} */
-  let filteredUsers = [];
-
-  /** @type {string|null} */
-  let currentUserId = null;
-
-  // Subscribe to the user store to get the current user UUID and role
-  /** @type {boolean} */
-  let isSuperAdmin = false;
-
-  $: if ($user) {
-    currentUserId = $user.uuid;
-    isSuperAdmin = $user.role === 'super_admin';
-  } else {
-    currentUserId = null;
-    isSuperAdmin = false;
-  }
-
-  // Reactively update filtered users when users prop or search term changes
-  $: {
-    if (!searchTerm.trim()) {
-      filteredUsers = [...users];
-    } else {
-      const term = searchTerm.toLowerCase();
-      filteredUsers = users.filter(user =>
-        (user.full_name && user.full_name.toLowerCase().includes(term)) ||
-        (user.email && user.email.toLowerCase().includes(term))
-      );
-    }
-  }
+  $: filteredUsers = filterUsers(users, searchTerm);
 
   /**
    * Create a new user
@@ -260,119 +232,10 @@
     }
   }
 
-  // ── invitations ───────────────────────────────────────────────────────────
-
-  /**
-   * Load the pending invitation list.
-   *
-   * Each row carries a server-computed `status`; render it, never re-derive it
-   * from `expires_at` / `used_at` (fat backend, thin frontend).
-   */
-  async function refreshInvitations() {
-    invitationsLoading = true;
-    try {
-      invitations = await listInvitations(false);
-    } catch (err) {
-      // A plain admin still sees the rest of the panel; the endpoint is admin-
-      // gated exactly like the user list, so a failure here is not fatal.
-      console.warn('Could not load invitations', err);
-      invitations = [];
-    } finally {
-      invitationsLoading = false;
-    }
-  }
-
-  /**
-   * Invite someone to create their own account.
-   *
-   * Preferred over {@link createUser}: the admin never sees or chooses the
-   * invitee's password, the invitee gets an email, and `auth_type` is carried
-   * through so an IdP-fronted deployment can pre-provision matching accounts.
-   */
-  async function sendInvitation() {
-    if (!inviteEmail.trim()) {
-      toastStore.error($t('userManagement.fillAllFields'));
-      return;
-    }
-
-    if (inviteRole === 'super_admin') {
-      confirmDialog.request(
-        $t('userManagement.confirmSuperAdminTitle'),
-        $t('userManagement.confirmSuperAdminInvite', { name: inviteFullName || inviteEmail }),
-        () => executeSendInvitation(),
-        $t('userManagement.confirmSuperAdminButton')
-      );
-      return;
-    }
-
-    await executeSendInvitation();
-  }
-
-  async function executeSendInvitation() {
-    inviteSubmitting = true;
-    const invitedAddress = inviteEmail.trim();
-    try {
-      await createInvitation({
-        email: invitedAddress,
-        full_name: inviteFullName.trim() || undefined,
-        role: inviteRole,
-        auth_type: inviteAuthType,
-        expires_in_hours: inviteExpiresInHours
-      });
-
-      inviteEmail = '';
-      inviteFullName = '';
-      inviteRole = 'user';
-      inviteAuthType = 'local';
-      inviteExpiresInHours = INVITE_EXPIRY_DEFAULT_HOURS;
+  function sendInvitation() {
+    return invites.send(() => {
       showInviteForm = false;
-
-      toastStore.success($t('userManagement.inviteSent', { email: invitedAddress }));
-      await refreshInvitations();
-    } catch (err) {
-      console.error('Error creating invitation:', err);
-      // 503 is the backend's "no mail transport" refusal. Its sentence is English and names no
-      // fix, so say what happened to the invitation (it IS saved, as pending) and where to
-      // fix it. The invitation list is refreshed so that pending row is actually visible.
-      if (getErrorStatus(err) === 503) {
-        toastStore.error($t('userManagement.inviteMailUnavailable'));
-        await refreshInvitations();
-      } else {
-        toastStore.error(getErrorMessage(err, $t('userManagement.inviteFailed')));
-      }
-    } finally {
-      inviteSubmitting = false;
-    }
-  }
-
-  /**
-   * Revoke a pending invitation.
-   * @param {import('$lib/api/invitations').Invitation} invitation
-   */
-  function revokeInvite(invitation) {
-    confirmDialog.request(
-      $t('userManagement.revokeInvitation'),
-      $t('userManagement.revokeInvitationConfirm', { email: invitation.email }),
-      () => executeRevokeInvite(invitation),
-      $t('userManagement.revokeInvitation')
-    );
-  }
-
-  /**
-   * @param {import('$lib/api/invitations').Invitation} invitation
-   */
-  async function executeRevokeInvite(invitation) {
-    pendingInviteUuid = invitation.uuid;
-    try {
-      await revokeInvitation(invitation.uuid);
-      toastStore.success($t('userManagement.inviteRevoked', { email: invitation.email }));
-      await refreshInvitations();
-    } catch (err) {
-      console.error('Error revoking invitation:', err);
-      toastStore.error(getErrorMessage(err, $t('userManagement.revokeInviteFailed')));
-    } finally {
-      pendingInviteUuid = null;
-    }
+    });
   }
 
   /**
@@ -382,74 +245,13 @@
     showInviteForm = !showInviteForm;
     if (showInviteForm) {
       showAddUserForm = false;
-      inviteEmail = '';
-      inviteFullName = '';
-      inviteRole = 'user';
-      inviteAuthType = 'local';
-      inviteExpiresInHours = INVITE_EXPIRY_DEFAULT_HOURS;
-    }
-  }
-
-/**
-   * Delete a user
-   * @param {string} userId
-   */
-  async function deleteUser(userId) {
-    confirmDialog.request(
-      $t('userManagement.deleteUser'),
-      $t('userManagement.deleteUserConfirm'),
-      () => executeDeleteUser(userId)
-    );
-  }
-
-  /**
-   * Execute user deletion after confirmation
-   * @param {string} userId
-   */
-  async function executeDeleteUser(userId) {
-    try {
-      await axiosInstance.delete(`/users/${userId}`);
-      toastStore.success($t('userManagement.userDeletedSuccess'));
-
-      // Refresh user list
-      onRefresh();
-    } catch (err) {
-      console.error('Error deleting user:', err);
-      toastStore.error(getErrorMessage(err, $t('userManagement.deleteUserFailed')));
+      invites.resetForm();
     }
   }
 
   /**
-   * Update a user's role.
-   *
-   * Goes through the admin client (PUT /admin/users/{uuid}/role), not the
-   * generic user update — that route is the one that writes an audit record,
-   * revokes the target's sessions, and refuses to demote the last super_admin.
-   * @param {string} userId
-   * @param {string} role
-   */
-  async function updateUserRole(userId, role) {
-    try {
-      await AdminApi.changeUserRole(userId, role);
-      toastStore.success($t('userManagement.userRoleUpdated', { role: roleLabels[role] || role }));
-
-      // Refresh user list
-      onRefresh();
-    } catch (err) {
-      console.error('Error updating user role:', err);
-      toastStore.error(getErrorMessage(err, $t('userManagement.updateRoleFailed')));
-
-      // Unlike the sibling handlers below, this one refreshes on error too:
-      // the role <select> is one-way bound (`value={currentUser.role}`, not
-      // `bind:value`), so a rejected change leaves the DOM select showing the
-      // rejected role with nothing re-deriving it from server state until the
-      // list is refetched and re-rendered.
-      onRefresh();
-    }
-  }
-
-  /**
-   * Handle role change event
+   * Hand a role `<select>` change to the account actions, putting the select back
+   * if a confirmation is backed out of.
    * @param {string} userId
    * @param {Event} e
    */
@@ -457,27 +259,11 @@
     const select = /** @type {HTMLSelectElement} */ (e.currentTarget);
     if (!select) return;
 
-    const newRole = select.value;
     const target = users.find(u => u.uuid === userId);
     const previousRole = target?.role ?? 'user';
-    if (newRole === previousRole) return;
-
-    // Promoting to super_admin hands over auth-configuration and role-change
-    // power — make it deliberate, and put the select back if they back out.
-    if (newRole === 'super_admin') {
-      confirmDialog.request(
-        $t('userManagement.confirmSuperAdminTitle'),
-        $t('userManagement.confirmSuperAdminPromote', {
-          name: target?.full_name || target?.email || ''
-        }),
-        () => updateUserRole(userId, newRole),
-        $t('userManagement.confirmSuperAdminButton'),
-        () => { select.value = previousRole; }
-      );
-      return;
-    }
-
-    updateUserRole(userId, newRole);
+    accountActions.requestRoleChange(userId, target, select.value, () => {
+      select.value = previousRole;
+    });
   }
 
   /**
@@ -486,94 +272,11 @@
    */
   function openPasswordResetModal(userToReset) {
     passwordResetUser = userToReset;
-    resetPassword = '';
-    confirmResetPassword = '';
-    showResetPassword = false;
-    showConfirmResetPassword = false;
-    showPasswordResetModal = true;
   }
 
-  /**
-   * Close password reset modal
-   */
   function closePasswordResetModal() {
-    showPasswordResetModal = false;
     passwordResetUser = null;
-    resetPassword = '';
-    confirmResetPassword = '';
-    showResetPassword = false;
-    showConfirmResetPassword = false;
   }
-
-  /**
-   * Reset user password
-   */
-  async function executePasswordReset() {
-    if (!passwordResetUser) return;
-
-    // Validation
-    if (!resetPassword || !confirmResetPassword) {
-      toastStore.error($t('userManagement.fillBothPasswordFields'));
-      return;
-    }
-
-    if (resetPassword !== confirmResetPassword) {
-      toastStore.error($t('userManagement.passwordsDoNotMatch'));
-      return;
-    }
-
-    if (resetPassword.length < passwordMinLength) {
-      toastStore.error($t('userManagement.passwordMinLength', { min: passwordMinLength }));
-      return;
-    }
-
-    passwordResetLoading = true;
-
-    try {
-      await axiosInstance.put(`/users/${passwordResetUser.uuid}`, {
-        password: resetPassword
-      });
-
-      const userName = passwordResetUser.full_name || passwordResetUser.email;
-      toastStore.success($t('userManagement.passwordResetSuccess', { userName }));
-      closePasswordResetModal();
-    } catch (err) {
-      console.error('Error resetting password:', err);
-      toastStore.error(getErrorMessage(err, $t('userManagement.passwordResetFailed')));
-    } finally {
-      passwordResetLoading = false;
-    }
-  }
-
-  /**
-   * Toggle allow_local_fallback for a user (super_admin only)
-   * @param {User} targetUser
-   */
-  async function toggleLocalFallback(targetUser) {
-    const newValue = !targetUser.allow_local_fallback;
-    try {
-      await axiosInstance.put(`/users/${targetUser.uuid}`, {
-        allow_local_fallback: newValue
-      });
-      const userName = targetUser.full_name || targetUser.email;
-      if (newValue) {
-        toastStore.success($t('userManagement.localFallbackEnabled', { name: userName }));
-      } else {
-        toastStore.success($t('userManagement.localFallbackDisabled', { name: userName }));
-      }
-      onRefresh();
-    } catch (err) {
-      console.error('Error toggling local fallback:', err);
-      toastStore.error(getErrorMessage(err, $t('userManagement.localFallbackFailed')));
-    }
-  }
-
-  /**
-   * UUID of the row with an account action in flight, so its buttons can be
-   * disabled without freezing the whole table.
-   * @type {string|null}
-   */
-  let pendingActionUuid = null;
 
   /**
    * UUID of the row whose expiration-date editor is open, or null.
@@ -592,9 +295,7 @@
    */
   function openExpirationEditor(targetUser) {
     expirationEditUuid = targetUser.uuid;
-    expirationEditValue = targetUser.account_expires_at
-      ? targetUser.account_expires_at.slice(0, 10)
-      : '';
+    expirationEditValue = toDateInputValue(targetUser.account_expires_at);
   }
 
   function closeExpirationEditor() {
@@ -606,27 +307,8 @@
    * Save (or clear, if the date field was emptied) the row's account_expires_at.
    * @param {User} targetUser
    */
-  async function saveExpiration(targetUser) {
-    const isoValue = expirationEditValue ? `${expirationEditValue}T23:59:59` : null;
-    pendingActionUuid = targetUser.uuid;
-    try {
-      await axiosInstance.put(`/users/${targetUser.uuid}`, {
-        account_expires_at: isoValue
-      });
-      const userName = targetUser.full_name || targetUser.email;
-      toastStore.success(
-        isoValue
-          ? $t('userManagement.expirationSet', { name: userName })
-          : $t('userManagement.expirationCleared', { name: userName })
-      );
-      closeExpirationEditor();
-      onRefresh();
-    } catch (err) {
-      console.error('Error setting account expiration:', err);
-      toastStore.error(getErrorMessage(err, $t('userManagement.expirationFailed')));
-    } finally {
-      pendingActionUuid = null;
-    }
+  function saveExpiration(targetUser) {
+    return accountActions.saveExpiration(targetUser, expirationEditValue, closeExpirationEditor);
   }
 
   /** Target for {@link LinkIdentityModal} (P1.3 — the account_linking operator remedy). */
@@ -649,123 +331,6 @@
   }
 
   /**
-   * Run an admin account action for one row, with the row's buttons disabled for
-   * the duration and the backend's `detail` surfaced verbatim on failure.
-   * @param {User} targetUser
-   * @param {() => Promise<unknown>} action
-   * @param {(result: any, name: string) => string} successMessage
-   * @param {string} failureMessage
-   * @param {boolean | ((result: any) => boolean)} [refresh] - Refresh the user
-   *   list afterwards. A function is evaluated against the action's result —
-   *   used by {@link unlockAccount}, whose refresh need depends on whether the
-   *   call also reactivated a disabled account (issue #570 §A.1.1).
-   */
-  async function runAccountAction(targetUser, action, successMessage, failureMessage, refresh = false) {
-    pendingActionUuid = targetUser.uuid;
-    const userName = targetUser.full_name || targetUser.email;
-    try {
-      const result = await action();
-      toastStore.success(successMessage(result, userName));
-      const shouldRefresh = typeof refresh === 'function' ? refresh(result) : refresh;
-      if (shouldRefresh) onRefresh();
-    } catch (err) {
-      console.error('Account action failed:', err);
-      toastStore.error(getErrorMessage(err, failureMessage));
-    } finally {
-      pendingActionUuid = null;
-    }
-  }
-
-  /**
-   * Lock an account: deactivates it AND revokes every session it holds.
-   *
-   * The reason is written verbatim into the audit record, so it stays a stable
-   * English string rather than the admin's current UI language.
-   * @param {User} targetUser
-   */
-  function lockAccount(targetUser) {
-    confirmDialog.request(
-      $t('userManagement.lockAccount'),
-      $t('userManagement.lockConfirmMessage', { name: targetUser.full_name || targetUser.email }),
-      () => runAccountAction(
-        targetUser,
-        () => AdminApi.lockAccount(targetUser.uuid, 'Locked by admin from user management'),
-        (_result, name) => $t('userManagement.lockSuccess', { name }),
-        $t('userManagement.lockFailed'),
-        true
-      ),
-      $t('userManagement.lockAccount')
-    );
-  }
-
-  /**
-   * Clear a failed-login lockout — this IS the inverse of {@link lockAccount}
-   * (issue #570 §A.1.1): the endpoint clears both the lockout counter AND
-   * reactivates an account deactivated by `lockAccount`, reporting which
-   * happened via `was_locked`/`was_disabled`. `was_locked === false` alone is
-   * reported as "nothing to clear" rather than a successful unlock. The list
-   * is refreshed only when `was_disabled` is true — a reactivated account's row
-   * changes (it stops rendering as inactive); a merely lockout-locked one has
-   * nothing in the row to update.
-   * @param {User} targetUser
-   */
-  function unlockAccount(targetUser) {
-    confirmDialog.request(
-      $t('userManagement.unlockAccount'),
-      $t('userManagement.unlockConfirmMessage', { name: targetUser.full_name || targetUser.email }),
-      () => runAccountAction(
-        targetUser,
-        () => AdminApi.unlockAccount(targetUser.uuid),
-        (result, name) => result?.was_locked
-          ? $t('userManagement.unlockSuccess', { name })
-          : $t('userManagement.unlockNotLocked', { name }),
-        $t('userManagement.unlockFailed'),
-        (result) => Boolean(result?.was_disabled)
-      ),
-      $t('userManagement.unlockAccount')
-    );
-  }
-
-  /**
-   * Force logout: revoke every refresh token the target holds.
-   * @param {User} targetUser
-   */
-  function forceLogout(targetUser) {
-    confirmDialog.request(
-      $t('userManagement.forceLogout'),
-      $t('userManagement.forceLogoutConfirmMessage', { name: targetUser.full_name || targetUser.email }),
-      () => runAccountAction(
-        targetUser,
-        () => AdminApi.terminateUserSessions(targetUser.uuid),
-        (result, name) => $t('userManagement.forceLogoutSuccess', {
-          name,
-          sessions: result?.sessions_terminated ?? 0
-        }),
-        $t('userManagement.forceLogoutFailed')
-      ),
-      $t('userManagement.forceLogout')
-    );
-  }
-
-  /**
-   * Reset the target's MFA enrolment (super_admin only, enforced server-side).
-   * @param {User} targetUser
-   */
-  function resetUserMFA(targetUser) {
-    confirmDialog.request(
-      $t('userManagement.resetMfa'),
-      $t('userManagement.resetMfaConfirmMessage', { name: targetUser.full_name || targetUser.email }),
-      () => runAccountAction(
-        targetUser,
-        () => AdminApi.resetUserMFA(targetUser.uuid),
-        (_result, name) => $t('userManagement.resetMfaSuccess', { name }),
-        $t('userManagement.resetMfaFailed')
-      ),
-      $t('userManagement.resetMfa')
-    );
-  }
-
-  /**
    * Process search input
    * @param {Event} e
    */
@@ -776,11 +341,6 @@
     }
   }
 
-  /**
-   * Format date to locale string
-   * @param {string} dateString
-   * @returns {string}
-   */
   /**
    * Toggle add user form
    */
@@ -849,9 +409,9 @@
         <input
           type="email"
           id="invite-email"
-          bind:value={inviteEmail}
+          bind:value={$inviteForm.email}
           placeholder={$t('userManagement.email')}
-          disabled={inviteSubmitting}
+          disabled={$inviteSubmitting}
           required
         />
       </div>
@@ -861,17 +421,17 @@
         <input
           type="text"
           id="invite-full-name"
-          bind:value={inviteFullName}
+          bind:value={$inviteForm.full_name}
           placeholder={$t('userManagement.fullName')}
-          disabled={inviteSubmitting}
+          disabled={$inviteSubmitting}
         />
       </div>
 
       <div class="form-group">
         <label for="invite-role">{$t('userManagement.role')}</label>
-        <select id="invite-role" bind:value={inviteRole} disabled={inviteSubmitting}>
+        <select id="invite-role" bind:value={$inviteForm.role} disabled={$inviteSubmitting}>
           <option value="user">{$t('userManagement.roleUser')}</option>
-          {#if isSuperAdmin}
+          {#if canElevate}
             <!-- An invitation is a deferred account creation, so it inherits the
                  same gate as POST /admin/users: only a super_admin may mint
                  elevated accounts (the backend 403s otherwise). -->
@@ -879,14 +439,14 @@
             <option value="super_admin">{$t('userManagement.roleSuperAdmin')}</option>
           {/if}
         </select>
-        {#if isSuperAdmin && inviteRole === 'super_admin'}
+        {#if canElevate && $inviteForm.role === 'super_admin'}
           <span class="role-warning">{$t('userManagement.superAdminWarning')}</span>
         {/if}
       </div>
 
       <div class="form-group">
         <label for="invite-auth-type">{$t('userManagement.authType')}</label>
-        <select id="invite-auth-type" bind:value={inviteAuthType} disabled={inviteSubmitting}>
+        <select id="invite-auth-type" bind:value={$inviteForm.auth_type} disabled={$inviteSubmitting}>
           {#each AUTH_TYPES as authType (authType)}
             <option value={authType}>{authTypeLabels[authType] || authType}</option>
           {/each}
@@ -899,10 +459,10 @@
         <input
           type="number"
           id="invite-expiry"
-          bind:value={inviteExpiresInHours}
+          bind:value={$inviteForm.expires_in_hours}
           min={INVITE_EXPIRY_MIN_HOURS}
           max={INVITE_EXPIRY_MAX_HOURS}
-          disabled={inviteSubmitting}
+          disabled={$inviteSubmitting}
         />
         <span class="form-hint">
           {$t('userManagement.inviteExpiryHint', {
@@ -915,10 +475,10 @@
       <button
         on:click={sendInvitation}
         class="create-button"
-        disabled={inviteSubmitting}
+        disabled={$inviteSubmitting}
         title={$t('userManagement.inviteUserTitle')}
       >
-        {inviteSubmitting ? $t('userManagement.inviteSending') : $t('userManagement.sendInvite')}
+        {$inviteSubmitting ? $t('userManagement.inviteSending') : $t('userManagement.sendInvite')}
       </button>
     </div>
   {/if}
@@ -982,13 +542,13 @@
         <label for="role">{$t('userManagement.role')}</label>
         <select id="role" bind:value={newRole}>
           <option value="user">{$t('userManagement.roleUser')}</option>
-          {#if isSuperAdmin}
+          {#if canElevate}
             <!-- Only a super_admin may mint elevated accounts (backend enforces this) -->
             <option value="admin">{$t('userManagement.roleAdmin')}</option>
             <option value="super_admin">{$t('userManagement.roleSuperAdmin')}</option>
           {/if}
         </select>
-        {#if isSuperAdmin && newRole === 'super_admin'}
+        {#if canElevate && newRole === 'super_admin'}
           <span class="role-warning">{$t('userManagement.superAdminWarning')}</span>
         {/if}
       </div>
@@ -1021,6 +581,8 @@
       </thead>
       <tbody>
         {#each filteredUsers as currentUser (currentUser.uuid)}
+          <!-- What this viewer may do on this row: $lib/users/rowPermissions. -->
+          {@const can = permittedRowActions($user, currentUser)}
           <tr>
             <td>
               {currentUser.full_name || $t('userManagement.notAvailable')}
@@ -1053,7 +615,7 @@
                    returned 403. A super_admin row also had no matching option,
                    so it rendered blank and any accidental change silently
                    demoted the account. Both cases now render as static text. -->
-              {#if currentUser.uuid !== currentUserId && isSuperAdmin}
+              {#if can.changeRole}
                 <select
                   value={currentUser.role}
                   on:change={(e) => handleUserRoleChange(currentUser.uuid, e)}
@@ -1071,11 +633,11 @@
             <td>
               <div class="table-actions">
                 {#if currentUser.uuid !== currentUserId}
-                  {#if isSuperAdmin && currentUser.auth_type && currentUser.auth_type !== 'local' && currentUser.auth_type !== 'ldap'}
+                  {#if can.toggleLocalFallback}
                   <button
                     class="icon-button fallback-toggle-button"
                     class:active={currentUser.allow_local_fallback}
-                    on:click={() => toggleLocalFallback(currentUser)}
+                    on:click={() => accountActions.toggleLocalFallback(currentUser)}
                     title={currentUser.allow_local_fallback
                       ? $t('userManagement.disableLocalFallback', { name: currentUser.full_name || currentUser.email })
                       : $t('userManagement.enableLocalFallback', { name: currentUser.full_name || currentUser.email })}
@@ -1087,7 +649,7 @@
                     </svg>
                   </button>
                   {/if}
-                  {#if (currentUser.auth_type === 'local' || currentUser.allow_local_fallback) && (currentUser.role !== 'super_admin' || isSuperAdmin)}
+                  {#if can.resetPassword}
                   <button
                     class="icon-button reset-password-button"
                     on:click={() => openPasswordResetModal(currentUser)}
@@ -1099,11 +661,11 @@
                     </svg>
                   </button>
                   {/if}
-                  {#if currentUser.is_active !== false}
+                  {#if can.lock}
                   <button
                     class="icon-button lock-button"
-                    disabled={pendingActionUuid === currentUser.uuid}
-                    on:click={() => lockAccount(currentUser)}
+                    disabled={$pendingActionUuid === currentUser.uuid}
+                    on:click={() => accountActions.lockAccount(currentUser)}
                     title={$t('userManagement.lockAccountFor', { name: currentUser.full_name || currentUser.email })}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1118,8 +680,8 @@
                        does not re-activate a deactivated account. -->
                   <button
                     class="icon-button unlock-button"
-                    disabled={pendingActionUuid === currentUser.uuid}
-                    on:click={() => unlockAccount(currentUser)}
+                    disabled={$pendingActionUuid === currentUser.uuid}
+                    on:click={() => accountActions.unlockAccount(currentUser)}
                     title={$t('userManagement.unlockAccountFor', { name: currentUser.full_name || currentUser.email })}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1127,10 +689,11 @@
                       <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
                     </svg>
                   </button>
+                  {#if can.forceLogout}
                   <button
                     class="icon-button force-logout-button"
-                    disabled={pendingActionUuid === currentUser.uuid}
-                    on:click={() => forceLogout(currentUser)}
+                    disabled={$pendingActionUuid === currentUser.uuid}
+                    on:click={() => accountActions.forceLogout(currentUser)}
                     title={$t('userManagement.forceLogoutFor', { name: currentUser.full_name || currentUser.email })}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1139,13 +702,12 @@
                       <line x1="21" y1="12" x2="9" y2="12"/>
                     </svg>
                   </button>
-                  {#if isSuperAdmin}
-                  <!-- MFA reset requires super_admin server-side; a plain admin
-                       would only get a 403 from the button. -->
+                  {/if}
+                  {#if can.resetMfa}
                   <button
                     class="icon-button mfa-reset-button"
-                    disabled={pendingActionUuid === currentUser.uuid}
-                    on:click={() => resetUserMFA(currentUser)}
+                    disabled={$pendingActionUuid === currentUser.uuid}
+                    on:click={() => accountActions.resetUserMFA(currentUser)}
                     title={$t('userManagement.resetMfaFor', { name: currentUser.full_name || currentUser.email })}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1155,7 +717,7 @@
                     </svg>
                   </button>
                   {/if}
-                  {#if isSuperAdmin && currentUser.role !== 'super_admin'}
+                  {#if can.linkIdentity}
                   <!-- The account_linking operator remedy (P1.3): sets the
                        provider's own identifier so a login that a source
                        like Authentik (hardcodes email_verified: false)
@@ -1165,7 +727,7 @@
                        local-only by design. -->
                   <button
                     class="icon-button link-identity-button"
-                    disabled={pendingActionUuid === currentUser.uuid}
+                    disabled={$pendingActionUuid === currentUser.uuid}
                     on:click={() => openLinkIdentityModal(currentUser)}
                     title={$t('userManagement.linkIdentityFor', { name: currentUser.full_name || currentUser.email })}
                   >
@@ -1175,7 +737,9 @@
                     </svg>
                   </button>
                   {/if}
-                  {#if expirationEditUuid === currentUser.uuid}
+                  {#if !can.editExpiration}
+                    <!-- No expiration editor: PUT /users/{uuid} refuses this target. -->
+                  {:else if expirationEditUuid === currentUser.uuid}
                     <span class="expiration-editor">
                       <input
                         type="date"
@@ -1184,7 +748,7 @@
                       />
                       <button
                         class="icon-button expiration-save-button"
-                        disabled={pendingActionUuid === currentUser.uuid}
+                        disabled={$pendingActionUuid === currentUser.uuid}
                         on:click={() => saveExpiration(currentUser)}
                         title={$t('common.save')}
                       >
@@ -1194,7 +758,7 @@
                       </button>
                       <button
                         class="icon-button expiration-cancel-button"
-                        disabled={pendingActionUuid === currentUser.uuid}
+                        disabled={$pendingActionUuid === currentUser.uuid}
                         on:click={closeExpirationEditor}
                         title={$t('common.cancel')}
                       >
@@ -1233,9 +797,10 @@
                       <path d="M16 16h5v5"/>
                     </svg>
                   </button>
+                  {#if can.delete}
                   <button
                     class="icon-button delete-button"
-                    on:click={() => deleteUser(currentUser.uuid)}
+                    on:click={() => accountActions.deleteUser(currentUser.uuid)}
                     title={$t('userManagement.deleteAccount', { name: currentUser.full_name || currentUser.email })}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1246,6 +811,7 @@
                       <line x1="14" x2="14" y1="11" y2="17"/>
                     </svg>
                   </button>
+                  {/if}
                 {:else}
                   <span class="self-user">{$t('userManagement.currentUser')}</span>
                 {/if}
@@ -1261,9 +827,9 @@
   <!-- Pending invitations. `status` is computed server-side; this renders it. -->
   <section class="invitations-section">
     <h3>{$t('userManagement.pendingInvitations')}</h3>
-    {#if invitationsLoading}
+    {#if $invitationsLoading}
       <div class="loading-state"><p>{$t('userManagement.loadingInvitations')}</p></div>
-    {:else if invitations.length === 0}
+    {:else if $invitations.length === 0}
       <EmptyState title={$t('userManagement.noPendingInvitations')} padding="1.5rem" />
     {:else}
       <div class="table-scroll-wrapper">
@@ -1279,7 +845,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each invitations as invitation (invitation.uuid)}
+            {#each $invitations as invitation (invitation.uuid)}
               <tr>
                 <td>
                   {invitation.email}
@@ -1299,8 +865,8 @@
                   <div class="table-actions">
                     <button
                       class="icon-button delete-button"
-                      disabled={pendingInviteUuid === invitation.uuid}
-                      on:click={() => revokeInvite(invitation)}
+                      disabled={$pendingInviteUuid === invitation.uuid}
+                      on:click={() => invites.revoke(invitation)}
                       title={$t('userManagement.revokeInvitationFor', { email: invitation.email })}
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1342,115 +908,12 @@
 />
 
 <!-- Password Reset Modal -->
-{#if showPasswordResetModal && passwordResetUser}
-  <BaseModal
-    isOpen={true}
-    title={$t('userManagement.resetPassword')}
-    size="sm"
+{#if passwordResetUser}
+  <PasswordResetModal
+    target={passwordResetUser}
+    {passwordMinLength}
     onClose={closePasswordResetModal}
-  >
-    <p class="modal-description">
-      {$t('userManagement.setNewPasswordFor')} <strong>{passwordResetUser.full_name || passwordResetUser.email}</strong>
-    </p>
-
-    <form id="password-reset-form" on:submit|preventDefault={executePasswordReset} class="password-reset-form">
-      <div class="form-group">
-        <div class="password-header">
-          <label for="reset-password">{$t('userManagement.newPassword')}</label>
-          <button
-            type="button"
-            class="toggle-password"
-            on:click={() => showResetPassword = !showResetPassword}
-            tabindex="-1"
-            aria-label={showResetPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
-          >
-            {#if showResetPassword}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
-                <circle cx="12" cy="12" r="3"/>
-              </svg>
-            {:else}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="m15 18-.722-3.25"/>
-                <path d="m2 2 20 20"/>
-                <path d="m9 9-.637 3.181"/>
-                <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
-                <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
-                <path d="m18.147 8.476.853 3.524"/>
-              </svg>
-            {/if}
-          </button>
-        </div>
-        <input
-          type={showResetPassword ? 'text' : 'password'}
-          id="reset-password"
-          class="form-control"
-          bind:value={resetPassword}
-          placeholder={$t('userManagement.enterNewPassword')}
-          required
-          minlength={passwordMinLength}
-        />
-        <small class="form-text">{$t('userManagement.minimumCharacters', { min: passwordMinLength })}</small>
-      </div>
-
-      <div class="form-group">
-        <div class="password-header">
-          <label for="confirm-reset-password">{$t('userManagement.confirmPassword')}</label>
-          <button
-            type="button"
-            class="toggle-password"
-            on:click={() => showConfirmResetPassword = !showConfirmResetPassword}
-            tabindex="-1"
-            aria-label={showConfirmResetPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
-          >
-            {#if showConfirmResetPassword}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
-                <circle cx="12" cy="12" r="3"/>
-              </svg>
-            {:else}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="m15 18-.722-3.25"/>
-                <path d="m2 2 20 20"/>
-                <path d="m9 9-.637 3.181"/>
-                <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
-                <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
-                <path d="m18.147 8.476.853 3.524"/>
-              </svg>
-            {/if}
-          </button>
-        </div>
-        <input
-          type={showConfirmResetPassword ? 'text' : 'password'}
-          id="confirm-reset-password"
-          class="form-control"
-          bind:value={confirmResetPassword}
-          placeholder={$t('userManagement.confirmNewPassword')}
-          required
-          minlength={passwordMinLength}
-        />
-      </div>
-    </form>
-
-    <svelte:fragment slot="footer">
-      <button
-        type="button"
-        class="btn btn-secondary"
-        on:click={closePasswordResetModal}
-        disabled={passwordResetLoading}
-      >
-        {$t('common.cancel')}
-      </button>
-      <button
-        type="submit"
-        form="password-reset-form"
-        class="btn btn-primary"
-        disabled={passwordResetLoading || !resetPassword || !confirmResetPassword}
-      >
-        {passwordResetLoading ? $t('userManagement.resetting') : $t('userManagement.resetPasswordButton')}
-      </button>
-    </svelte:fragment>
-  </BaseModal>
+  />
 {/if}
 
 <style>
@@ -1938,68 +1401,6 @@
     margin-top: 1rem;
     color: var(--text-color);
     font-size: 0.8125rem;
-  }
-
-  .modal-description {
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-    margin: 0 0 1.25rem 0;
-  }
-
-  .modal-description strong {
-    color: var(--text-color);
-  }
-
-  .password-reset-form {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .password-reset-form .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-  }
-
-  .password-reset-form label {
-    font-weight: 500;
-    color: var(--text-color);
-    font-size: 0.8125rem;
-  }
-
-  .password-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .toggle-password {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 4px;
-    color: var(--text-secondary);
-    display: flex;
-    align-items: center;
-    border-radius: 4px;
-    transition: background-color 0.2s;
-  }
-
-  .toggle-password:hover {
-    background-color: var(--background-color);
-    color: var(--text-color);
-  }
-
-  .password-reset-form .form-control {
-    padding: 0.5rem 0.625rem;
-    font-size: 0.8125rem;
-  }
-
-  .password-reset-form .form-text {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    margin-top: 0.125rem;
   }
 
   .table-scroll-wrapper {

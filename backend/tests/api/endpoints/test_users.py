@@ -1,5 +1,6 @@
 """User endpoint tests."""
 
+import logging
 import uuid as uuid_pkg
 
 import pytest
@@ -281,6 +282,33 @@ def test_delete_user(client, admin_token_headers, normal_user, db_session):
     db_session.expire_all()
     assert db_session.query(User).filter(User.id == owned.user_id).first() is None
     assert owned.remaining(db_session) == {}
+
+
+def test_deleting_a_user_does_not_log_their_email(client, admin_token_headers, normal_user, caplog):
+    """The deleted account's address belongs in the audit record, not the app log.
+
+    Application logs have looser retention and access than the audit log, which
+    already records ``target_email``. The user id is still logged, which proves the
+    deletion's log line was captured at all.
+    """
+    email = str(normal_user.email)
+    user_id = int(normal_user.id)
+    caplog.set_level(logging.INFO, logger="app.services.user_deletion_service")
+
+    response = client.delete(f"/api/users/{normal_user.uuid}", headers=admin_token_headers)
+
+    assert response.status_code == 204, response.text
+    deletion_lines = [
+        r.getMessage()
+        for r in caplog.records
+        if r.name == "app.services.user_deletion_service"
+        and r.getMessage().startswith("Deleting user with ID")
+    ]
+    assert deletion_lines == [f"Deleting user with ID {user_id}"]
+    leaked_by = [r.name for r in caplog.records if r.name != "audit" and email in r.getMessage()]
+    assert leaked_by == []
+    # Control for the scan above: the address IS captured, in the audit record only.
+    assert any(r.name == "audit" and email in r.getMessage() for r in caplog.records)
 
 
 def test_delete_user_invalid_uuid(client, admin_token_headers):

@@ -438,7 +438,8 @@ def delete_user_account(db: Session, user: User) -> list[dict[str, Any]]:
         _delete_user_owned_records(db, user_id)
         _delete_user_speakers(db, user_id)
         _delete_user_media_files(db, user_id)
-        logger.info(f"Deleting user with ID {user_id} and email {user.email}")
+        # No email: the audit record carries the identity; app logs outlive erasure.
+        logger.info("Deleting user with ID %s", user_id)
         db.delete(user)
         savepoint.commit()
     except Exception:

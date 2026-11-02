@@ -86,7 +86,6 @@ describe('response mapping', () => {
       totalSegments: 0,
       totalSpeakerSegments: 0,
       segmentLimit: 500,
-      segmentOffset: 0,
     });
   });
 

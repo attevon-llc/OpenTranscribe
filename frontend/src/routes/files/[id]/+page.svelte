@@ -69,7 +69,6 @@
   export let data;
   $: id = data.id;
 
-  // State variables
   let file: any = null;
   let fileId = '';
   let videoUrl = '';
@@ -90,7 +89,6 @@
   const pageTimers = createPageTimers();
   const scheduleTimeout = pageTimers.schedule;
 
-  // UI state
   let showMetadata = false;
   let isTagsExpanded = false;
   let isCollectionsExpanded = false;
@@ -102,12 +100,8 @@
   // The text the open segment editor STARTED with. Without it "is this dirty" would be
   // "is an editor open", and merely clicking the pencil would prompt on the way out.
   let editingSegmentOriginalText = '';
-  // Issue #748 §5.2: this used to be passed one-way into `TranscriptDisplay`, which
-  // toggled its OWN local copy — the page's copy was never set to `true`, so the
-  // `isEditingSpeakers = false` after a successful bulk save (below) was a dead
-  // statement and the panel never actually closed. `TranscriptActionsBar` and
-  // `SpeakerEditorPanel` now render directly in this page, so the page owns the
-  // flag outright with no prop-forwarding indirection to lose it in.
+  // Owned here, not passed one-way into TranscriptDisplay: its own copy is why a successful
+  // bulk save never closed the speaker panel (#748 §5.2).
   let isEditingSpeakers = false;
 
   // The download SSE stream lives with the other `$lib/fileDetail/*` orchestration
@@ -169,15 +163,12 @@
   let currentProcessingStep = ''; // Current processing step from WebSocket notifications
   let lastProcessedNotificationState = ''; // Track processed notification state globally
 
-  // Transcript pagination state
   let totalSegments = 0;
   let totalSpeakerSegments = 0;
   let segmentLimit = 500;
-  let segmentOffset = 0;
   let loadingMoreSegments = false;
   $: hasMoreSegments = totalSegments > (file?.transcript_segments?.length || 0);
 
-  // AI Suggestions state
   let aiTagSuggestions: TagSuggestion[] = [];
   let aiCollectionSuggestions: CollectionSuggestion[] = [];
 
@@ -204,13 +195,11 @@
   $: canViewOriginal = permissionLoaded && (myPermission === null || myPermission === 'owner');
   $: showRedactionToggle = canViewOriginal && (redactionActive || showOriginal);
 
-  // LLM availability for summary functionality
   $: llmAvailable = $isLLMAvailable;
 
-  // Diarization disabled flag — when true, suppress all speaker-specific UI
+  // When true, suppress all speaker-specific UI
   $: diarizationDisabled = file?.diarization_disabled === true;
 
-  // Detect changes in speaker names - depends on speaker display_name values
   $: speakerNamesChanged = hasUnsavedSpeakerNames(speakerList, originalSpeakerNames);
 
   $: segmentEditUnsaved = hasUnsavedSegmentEdit({
@@ -301,7 +290,6 @@
       totalSegments = pagination.totalSegments;
       totalSpeakerSegments = pagination.totalSpeakerSegments;
       segmentLimit = pagination.segmentLimit;
-      segmentOffset = pagination.segmentOffset;
 
       // Set up video URL only if file might have media available
       if (file.status !== 'error' && file.status !== 'cancelled') {
@@ -398,16 +386,13 @@
     }
   }
 
-  // Event handlers for components
   function handleSegmentClick(event: any) {
     const startTime = event.detail.startTime;
     seekToTime(startTime);
   }
 
-  // Handle speaker name input changes (for reactivity)
-  function handleSpeakerNameChanged(event: CustomEvent) {
-    // Trigger reactivity by reassigning the speakerList array
-    // This ensures the reactive statement detects the change
+  // The editor mutated a speaker in place; reassign so `speakerNamesChanged` recomputes.
+  function handleSpeakerNameChanged() {
     speakerList = [...speakerList];
   }
 
@@ -418,7 +403,7 @@
     await speakers.refreshAfterMerge();
   }
 
-  // Handle analytics refresh after segment speaker change (backend refreshes analytics, frontend fetches)
+  // The backend recomputed analytics after a speaker/text change; fetch them.
   async function handleAnalyticsRefreshNeeded() {
     if (!file?.uuid) return;
     const result = await fetchFileAnalytics(file.uuid);
@@ -479,10 +464,8 @@
   function handleCollectionsUpdated(event: any) {
     const { collections: updatedCollections } = event.detail;
 
-    // Update collections array
     collections = updatedCollections;
 
-    // Update file object if it exists
     if (file) {
       file.collections = updatedCollections;
       file = { ...file }; // Trigger reactivity
@@ -502,7 +485,6 @@
     try {
       reprocessing = true;
 
-      // Reset notification processing state for reprocessing
       lastProcessedNotificationState = '';
 
       if (file) {
@@ -574,12 +556,10 @@
     }
 
     if (fileId) {
-      // Load file details
       fetchFileDetails(undefined, true).catch(err => {
         console.error('Error loading file details:', err);
       });
 
-      // Load AI suggestions if available
       loadAISuggestions().catch(err => {
         console.error('Error loading AI suggestions:', err);
       });
@@ -588,7 +568,6 @@
       isLoading = false;
     }
 
-    // Subscribe to WebSocket notifications for real-time updates
     wsUnsubscribe = websocketStore.subscribe(($ws) => handleNotifications($ws.notifications));
   });
 
@@ -600,14 +579,12 @@
 
     mediaStream.stop();
 
-    // Clean up WebSocket subscription
     if (wsUnsubscribe) {
       wsUnsubscribe();
     }
 
     stopSpeakerEvents?.();
 
-    // Clear the transcript store when leaving the page
     transcriptStore.clear();
   });
 

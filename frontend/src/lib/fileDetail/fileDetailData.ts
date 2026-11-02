@@ -74,7 +74,6 @@ export function paginationFrom(data: FileDetailPayload) {
     totalSegments: (data.total_segments as number) || 0,
     totalSpeakerSegments: (data.total_speaker_segments as number) || 0,
     segmentLimit: (data.segment_limit as number) || 500,
-    segmentOffset: (data.segment_offset as number) || 0,
   };
 }
 

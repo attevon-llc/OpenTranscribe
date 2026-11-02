@@ -49,6 +49,7 @@ from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.services.permission_service import PermissionService
 from app.services.platform_bypass import PlatformBypass
+from app.services.tag_scope import is_system_tag
 from app.services.tag_service import InvalidTagNameError
 from app.services.tag_service import clean_tag_name
 from app.services.tag_service import lookup_existing_tag
@@ -87,6 +88,12 @@ CHANGED_OUTCOMES = frozenset({BulkTagOutcome.ADDED, BulkTagOutcome.REMOVED})
 
 PERMISSION_ERROR = "PERMISSION_DENIED"
 MUTATION_ERROR = "TAG_UPDATE_FAILED"
+#: ``BulkActionResult.error`` when an add would attach a tag of another tenant than the
+#: file's (a non-system tag whose ``organization_id`` differs from the file's). The rail
+#: resolves the tag and gates the files in one request tenant, so this only fires for a
+#: file reached outside that tenant, e.g. through a single-tenant admin's bypass.
+TENANT_MISMATCH_ERROR = "TAG_TENANT_MISMATCH"
+TENANT_MISMATCH_MESSAGE = "This tag belongs to a different organization than the file"
 
 
 @dataclass(frozen=True)
@@ -202,8 +209,10 @@ def apply_tag_to_file(
         bypass: The request's platform bypass, decided on the file's own tenant.
 
     Returns:
-        This file's outcome. Never raises for an expected condition — a refusal
-        or a database error comes back as :attr:`BulkTagOutcome.FAILED`.
+        This file's outcome. Never raises for an expected condition — a refusal,
+        a tag of another tenant than the file's (``TENANT_MISMATCH_ERROR``; detach
+        stays allowed, it only removes such a row), or a database error comes back
+        as :attr:`BulkTagOutcome.FAILED`.
     """
     refusal = _require_editor(db, file_id, user_id, bypass)
     if refusal is not None:
@@ -212,6 +221,13 @@ def apply_tag_to_file(
     if tag is None:
         # Remove named a tag no row exists for: nothing carries it, by definition.
         return BulkTagResult(BulkTagOutcome.NOT_PRESENT, "No such tag; nothing to remove")
+
+    if add and not is_system_tag(tag):
+        file_org = db.query(MediaFile.organization_id).filter(MediaFile.id == file_id).scalar()
+        if tag.organization_id != file_org:
+            return BulkTagResult(
+                BulkTagOutcome.FAILED, TENANT_MISMATCH_MESSAGE, TENANT_MISMATCH_ERROR
+            )
 
     savepoint = db.begin_nested()
     try:

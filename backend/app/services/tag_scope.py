@@ -200,6 +200,16 @@ def _tenant_bound(organization_id: int | None) -> ColumnElement[bool]:
     return Tag.organization_id.is_(None)
 
 
+def tenant_bound_or_system(organization_id: int | None) -> ColumnElement[bool]:
+    """Tags a file of tenant ``organization_id`` may carry: that tenant's rows, or system rows.
+
+    Any owner's row within the tenant (in personal scope, any user's personal tag), which is
+    the bound :func:`visible_to` puts on its widened arms. A row of another tenant attached
+    to a file is legacy data that ``tag_tenant_repair`` repoints.
+    """
+    return or_(_tenant_bound(organization_id), system_tag())
+
+
 def visible_to(db: Session, user_id: int, organization_id: int | None) -> ColumnElement[bool]:
     """Predicate for the tags ``user_id`` is allowed to **read** in a tenant.
 

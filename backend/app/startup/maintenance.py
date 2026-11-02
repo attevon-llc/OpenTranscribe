@@ -8,6 +8,9 @@ Object-storage bootstrap, stale-Redis-state sweep and the delayed Celery dispatc
 import asyncio
 import logging
 
+from sqlalchemy.exc import SQLAlchemyError
+from starlette.concurrency import run_in_threadpool
+
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -287,6 +290,36 @@ async def _run_search_maintenance():
         logger.info(f"Search index maintenance task scheduled: {result.id}")
     except Exception as e:
         logger.error(f"Error scheduling search maintenance: {e}")
+
+
+def _repair_tag_tenancy() -> None:
+    """Run ``tag_tenant_repair`` in its own session; the caller logs a failure."""
+    from app.db.base import SessionLocal
+    from app.services.tag_tenant_repair import repair_cross_tenant_file_tags
+
+    db = SessionLocal()
+    try:
+        repair_cross_tenant_file_tags(db)
+    finally:
+        db.close()
+
+
+async def _run_tag_tenant_repair():
+    """Repoint tags attached to a file of another tenant, once per boot window.
+
+    A startup pass rather than an Alembic data revision; ``services/tag_tenant_repair``
+    says why. Elected so concurrent replicas do not walk the same rows, and run in the
+    threadpool because it is synchronous database work.
+    """
+    try:
+        await asyncio.sleep(20)
+        from app.utils.boot_once import run_once_per_boot
+
+        if not run_once_per_boot("tag_tenant_repair"):
+            return
+        await run_in_threadpool(_repair_tag_tenancy)
+    except SQLAlchemyError as e:
+        logger.error(f"Tag tenant repair failed (non-fatal, retried next boot): {e}")
 
 
 async def _run_thumbnail_migration():

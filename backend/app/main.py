@@ -45,6 +45,7 @@ from app.startup.maintenance import _run_imohash_recompute
 from app.startup.maintenance import _run_one_time_embedding_normalization
 from app.startup.maintenance import _run_search_maintenance
 from app.startup.maintenance import _run_startup_recovery
+from app.startup.maintenance import _run_tag_tenant_repair
 from app.startup.maintenance import _run_thumbnail_migration
 from app.startup.maintenance import _setup_minio
 from app.startup.warmups import _initialize_neural_search
@@ -244,6 +245,7 @@ async def lifespan(app: FastAPI):
     neural_search_task = asyncio.create_task(_initialize_neural_search())
     embedding_migration = asyncio.create_task(_run_one_time_embedding_normalization())
     imohash_recompute_task = asyncio.create_task(_run_imohash_recompute())
+    tag_tenant_repair = asyncio.create_task(_run_tag_tenant_repair())
 
     yield
 
@@ -259,6 +261,7 @@ async def lifespan(app: FastAPI):
         neural_search_task,
         embedding_migration,
         imohash_recompute_task,
+        tag_tenant_repair,
     ]:
         if not task.done():
             task.cancel()

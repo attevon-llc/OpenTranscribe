@@ -19,6 +19,7 @@ from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.tags._common import _resolve_tag
+from app.api.endpoints.tags._common import _tag_response
 from app.api.endpoints.tags._common import logger
 from app.api.endpoints.tags._common import router
 from app.api.error_handlers import ErrorHandler
@@ -57,7 +58,7 @@ def create_tag(
     # No file carries it yet, so there is nothing to reindex — but the new row
     # joins the caller's read-through tag list, so that key has to go.
     on_tags_changed(db, user_id=current_user.id)
-    return tag
+    return _tag_response(tag, current_user.id)
 
 
 @router.get("", response_model=list[TagWithCount])
@@ -327,7 +328,7 @@ def add_tag_to_file(
 
         on_tags_changed(db, [file_id], user_id=current_user.id)
 
-    return tag
+    return _tag_response(tag, current_user.id)
 
 
 @router.delete(

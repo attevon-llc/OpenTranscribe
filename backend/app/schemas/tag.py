@@ -54,15 +54,13 @@ class Tag(TagBase, UUIDBaseSchema):
         ``user_id`` is deliberately never serialized — which account owns a tag
         is nobody else's business, and the SPA only needs to know what it may do.
 
-        This validator cannot see the **caller**, so it can only distinguish
-        ``system`` from owned. That is sufficient for the endpoints that return a
-        bare ORM row (`POST /tags`, `POST /tags/files/{uuid}/tags`): both return
-        a tag the caller just resolved through ``owned_or_system``, so it is
-        theirs or the system's by construction and can never be
-        ``shared_with_me``. Every surface where the third value **is** reachable
-        — the list, the collision clusters, the file-detail payload — computes it
-        explicitly with ``tag_scope.tag_ownership(tag, user_id)`` and passes it
-        in, which this then leaves alone.
+        This validator cannot see the **caller**, so its fallback only reads
+        ``user_id``: it would call a colleague's org tag ``mine`` and an org tag
+        whose creator was deleted ``system``. Every endpoint therefore computes
+        ownership with ``tag_scope.tag_ownership(tag, user_id)`` and passes it in
+        (the list, the collision clusters, the file-detail payload, and through
+        ``tags._common._tag_response`` the create, attach and mutation responses),
+        which this then leaves alone.
 
         Runs **before** ``UUIDBaseSchema.prepare_uuid_response`` (a subclass's
         before-validator is the outer one), so it takes the raw ORM row and

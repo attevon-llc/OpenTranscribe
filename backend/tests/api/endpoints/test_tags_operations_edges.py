@@ -362,10 +362,8 @@ def test_cleanup_in_an_org_deletes_only_the_callers_own_unreferenced_org_tags(su
 # ---------------------------------------------------------------------------
 
 
-def test_held_rename_onto_a_colleagues_org_tag_reports_it_as_mine_pins_current_behaviour(
-    client, org_world
-):
-    """D3: the colliding row is bob's, yet the bare-ORM label for alice is ``mine``."""
+def test_held_rename_onto_a_colleagues_org_tag_reports_what_the_list_reports(client, org_world):
+    """D3: the colliding row is bob's, so alice sees it as ``shared_with_me`` here too."""
     w = org_world
     bobs = make_tag(w.db, word("bobs-word"), user_id=w.bob.id, org_id=w.org_a.id)
     alices = make_tag(w.db, word("alices-word"), user_id=w.alice.id, org_id=w.org_a.id)
@@ -378,14 +376,11 @@ def test_held_rename_onto_a_colleagues_org_tag_reports_it_as_mine_pins_current_b
     body = response.json()
     assert body["requires_confirmation"] is True
     assert body["tag"]["uuid"] == str(bobs.uuid)
-    assert body["tag"]["ownership"] == "mine"
-    assert listed[str(bobs.uuid)] == "shared_with_me"
+    assert body["tag"]["ownership"] == listed[str(bobs.uuid)] == "shared_with_me"
 
 
-def test_held_rename_onto_an_unattributed_org_tag_reports_it_as_system_pins_current_behaviour(
-    client, org_world
-):
-    """D3: an org tag with no creator is labelled ``system`` here, ``shared_with_me`` in the list."""
+def test_held_rename_onto_an_unattributed_org_tag_reports_what_the_list_reports(client, org_world):
+    """D3: an org tag with no creator is ``shared_with_me`` on both surfaces, never ``system``."""
     w = org_world
     orphan = make_tag(w.db, word("orphan-word"), user_id=None, org_id=w.org_a.id)
     alices = make_tag(w.db, word("alices-word"), user_id=w.alice.id, org_id=w.org_a.id)
@@ -396,8 +391,7 @@ def test_held_rename_onto_an_unattributed_org_tag_reports_it_as_system_pins_curr
 
     assert response.status_code == 200, response.text
     assert response.json()["tag"]["uuid"] == str(orphan.uuid)
-    assert response.json()["tag"]["ownership"] == "system"
-    assert listed[str(orphan.uuid)] == "shared_with_me"
+    assert response.json()["tag"]["ownership"] == listed[str(orphan.uuid)] == "shared_with_me"
 
 
 def test_a_plain_rename_reports_the_renamed_row_with_its_new_name(

@@ -2,8 +2,8 @@
 
 Written before the tags backend rewrite: ordering, the read-through cache contract, the
 repair writes the two collision-aware reads commit (D4), and the ownership label on
-``POST /api/tags`` (D3). Tests whose name says ``pins_current_behaviour`` pin behaviour the
-owner has decided to change.
+``POST /api/tags``, which agrees with the list (D3). Tests whose name says
+``pins_current_behaviour`` pin behaviour the owner has decided to change.
 """
 
 from __future__ import annotations
@@ -318,10 +318,8 @@ def test_create_in_personal_scope_reports_mine(client, user_token_headers):
     assert body["ownership"] == "mine"
 
 
-def test_create_returning_a_colleagues_org_tag_reports_mine_pins_current_behaviour(
-    client, org_world
-):
-    """D3: the list endpoint would call this row ``shared_with_me`` for bob."""
+def test_create_returning_a_colleagues_org_tag_reports_what_the_list_reports(client, org_world):
+    """D3: bob gets alice's org row back, labelled ``shared_with_me`` as the list labels it."""
     w = org_world
     name = word("shared-word")
     alice_tag = make_tag(w.db, name, user_id=w.alice.id, org_id=w.org_a.id)
@@ -331,14 +329,11 @@ def test_create_returning_a_colleagues_org_tag_reports_mine_pins_current_behavio
         listed = {r["uuid"]: r["ownership"] for r in client.get("/api/tags").json()}
 
     assert created.json()["uuid"] == str(alice_tag.uuid)
-    assert created.json()["ownership"] == "mine"
-    assert listed[str(alice_tag.uuid)] == "shared_with_me"
+    assert created.json()["ownership"] == listed[str(alice_tag.uuid)] == "shared_with_me"
 
 
-def test_create_returning_an_unattributed_org_tag_reports_system_pins_current_behaviour(
-    client, org_world
-):
-    """D3: an org tag with no creator is not system; the list says ``shared_with_me``."""
+def test_create_returning_an_unattributed_org_tag_reports_what_the_list_reports(client, org_world):
+    """D3: an org tag with no creator is not system; both surfaces say ``shared_with_me``."""
     w = org_world
     name = word("orphan")
     orphan = make_tag(w.db, name, user_id=None, org_id=w.org_a.id)
@@ -348,8 +343,7 @@ def test_create_returning_an_unattributed_org_tag_reports_system_pins_current_be
         listed = {r["uuid"]: r["ownership"] for r in client.get("/api/tags").json()}
 
     assert created.json()["uuid"] == str(orphan.uuid)
-    assert created.json()["ownership"] == "system"
-    assert listed[str(orphan.uuid)] == "shared_with_me"
+    assert created.json()["ownership"] == listed[str(orphan.uuid)] == "shared_with_me"
 
 
 def test_create_in_an_org_attributes_a_new_row_to_the_org_and_the_creator(client, org_world):

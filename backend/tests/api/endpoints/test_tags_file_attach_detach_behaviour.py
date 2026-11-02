@@ -1,9 +1,9 @@
 """Characterization of ``POST /tags/files/{uuid}/tags`` and ``DELETE /tags/files/{uuid}/tags/{name}``.
 
 Written before the tags backend rewrite. Tests whose name says ``pins_current_behaviour``
-pin behaviour the owner has decided to change (D3 ownership label, D10 non-string name);
-the lane that changes it flips them red first. Attach and detach need ``editor`` on the
-file, like the bulk rail (D2).
+pin behaviour the owner has decided to change (D10 non-string name); the lane that changes
+it flips them red first. Attach and detach need ``editor`` on the file, like the bulk rail
+(D2), and the attach response labels ownership as the tag list does (D3).
 """
 
 from __future__ import annotations
@@ -401,12 +401,12 @@ def test_detach_of_a_name_containing_a_slash_cannot_be_routed_pins_current_behav
 
 
 # ---------------------------------------------------------------------------
-# D3: the ownership label on the bare-ORM response
+# D3: the attach response labels ownership as the list does
 # ---------------------------------------------------------------------------
 
 
-def test_attach_labels_a_colleagues_org_tag_as_mine_pins_current_behaviour(client, org_world):
-    """D3: ``Tag`` infers ownership from ``user_id`` alone, so the creator's row reads ``mine``."""
+def test_attach_labels_a_colleagues_org_tag_as_shared_with_me(client, org_world):
+    """D3: the creator's row reaches bob as ``shared_with_me``, never ``mine``."""
     w = org_world
     name = word("colleague")
     alice_tag = make_tag(w.db, name, user_id=w.alice.id, org_id=w.org_a.id)
@@ -417,11 +417,11 @@ def test_attach_labels_a_colleagues_org_tag_as_mine_pins_current_behaviour(clien
 
     assert response.status_code == 200, response.text
     assert response.json()["uuid"] == str(alice_tag.uuid)
-    assert response.json()["ownership"] == "mine"
+    assert response.json()["ownership"] == "shared_with_me"
 
 
-def test_attach_labels_an_unattributed_org_tag_as_system_pins_current_behaviour(client, org_world):
-    """D3: an org tag whose creator is gone has ``user_id`` NULL and so reads ``system``."""
+def test_attach_labels_an_unattributed_org_tag_as_shared_with_me(client, org_world):
+    """D3: an org tag whose creator is gone is still the org's, not the system vocabulary."""
     w = org_world
     name = word("orphan")
     orphan = make_tag(w.db, name, user_id=None, org_id=w.org_a.id)
@@ -432,7 +432,7 @@ def test_attach_labels_an_unattributed_org_tag_as_system_pins_current_behaviour(
 
     assert response.status_code == 200, response.text
     assert response.json()["uuid"] == str(orphan.uuid)
-    assert response.json()["ownership"] == "system"
+    assert response.json()["ownership"] == "shared_with_me"
 
 
 def test_attach_to_a_personal_file_creates_the_callers_personal_row(client, org_world):

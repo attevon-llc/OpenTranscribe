@@ -193,3 +193,37 @@ describe('TagList — ownership badges in cluster mode', () => {
     expect(within(sharedRow).getByText('Shared with me')).toBeInTheDocument();
   });
 });
+
+describe('TagList — row state follows the props after mount', () => {
+  it('re-marks rows when the selection changes', async () => {
+    const { rerender } = render(TagList, { props: { tags, label: 'Tags', selectedUuids: [] } });
+    expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'false');
+
+    await rerender({ tags, label: 'Tags', selectedUuids: [UUID_A] });
+    const [first, second] = screen.getAllByRole('option');
+    expect(first).toHaveAttribute('aria-selected', 'true');
+    expect(first).toHaveClass('is-selected');
+    expect(second).toHaveAttribute('aria-selected', 'false');
+
+    await rerender({ tags, label: 'Tags', selectedUuids: [] });
+    expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'false');
+  });
+
+  it('re-marks rows when a mutation starts and ends', async () => {
+    const { rerender } = render(TagList, { props: { tags, label: 'Tags' } });
+
+    await rerender({ tags, label: 'Tags', pendingUuids: [UUID_B] });
+    expect(screen.getAllByRole('option')[1]).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getAllByRole('option')[1]).toHaveClass('is-pending');
+
+    await rerender({ tags, label: 'Tags', pendingUuids: [] });
+    expect(screen.getAllByRole('option')[1]).toHaveAttribute('aria-disabled', 'false');
+  });
+
+  it('re-marks a cluster header when its whole cluster becomes selected', async () => {
+    const { rerender } = render(TagList, { props: { clusters: [cluster] } });
+
+    await rerender({ clusters: [cluster], selectedUuids: [UUID_A, UUID_B] });
+    expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true');
+  });
+});

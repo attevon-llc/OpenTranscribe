@@ -136,19 +136,27 @@
   // Keep the roving tabindex on a row that still exists after a refetch.
   $: if (focusIndex > rows.length - 1) focusIndex = Math.max(0, rows.length - 1);
 
-  function uuidsForRow(index: number): string[] {
-    const row = rows[index];
+  function rowUuids(row: Row | undefined): string[] {
     if (!row) return [];
     return row.kind === 'cluster' ? row.uuids : [row.entry.uuid];
   }
 
-  function isRowSelected(index: number): boolean {
-    const uuids = uuidsForRow(index);
-    return uuids.length > 0 && uuids.every((uuid) => selected.has(uuid));
+  function uuidsForRow(index: number): string[] {
+    return rowUuids(rows[index]);
   }
 
+  // Per-row state as reactive arrays rather than helper calls in the markup:
+  // Svelte 5 runs a function call in a legacy template untracked, so a row
+  // would keep the state it had at mount when only `selectedUuids` or
+  // `pendingUuids` changed.
+  $: rowSelected = rows.map((row) => {
+    const uuids = rowUuids(row);
+    return uuids.length > 0 && uuids.every((uuid) => selected.has(uuid));
+  });
+  $: rowPending = rows.map((row) => rowUuids(row).some((uuid) => pending.has(uuid)));
+
   function isRowPending(index: number): boolean {
-    return uuidsForRow(index).some((uuid) => pending.has(uuid));
+    return rowPending[index] ?? false;
   }
 
   function emit(mode: TagSelectMode, uuids: string[]) {
@@ -250,12 +258,12 @@
               class="tag-row"
               class:cluster-header={row.kind === 'cluster'}
               class:cluster-member={row.kind === 'tag'}
-              class:is-selected={isRowSelected(index)}
-              class:is-pending={isRowPending(index)}
+              class:is-selected={rowSelected[index]}
+              class:is-pending={rowPending[index]}
               role="option"
               tabindex={index === focusIndex ? 0 : -1}
-              aria-selected={isRowSelected(index)}
-              aria-disabled={isRowPending(index)}
+              aria-selected={rowSelected[index]}
+              aria-disabled={rowPending[index]}
               on:click={(event) => onRowClick(event, index)}
               on:keydown={(event) => onRowKeydown(event, index)}
             >
@@ -339,12 +347,12 @@
         <div
           bind:this={rowEls[index]}
           class="tag-row"
-          class:is-selected={isRowSelected(index)}
-          class:is-pending={isRowPending(index)}
+          class:is-selected={rowSelected[index]}
+          class:is-pending={rowPending[index]}
           role="option"
           tabindex={index === focusIndex ? 0 : -1}
-          aria-selected={isRowSelected(index)}
-          aria-disabled={isRowPending(index)}
+          aria-selected={rowSelected[index]}
+          aria-disabled={rowPending[index]}
           on:click={(event) => onRowClick(event, index)}
           on:keydown={(event) => onRowKeydown(event, index)}
         >

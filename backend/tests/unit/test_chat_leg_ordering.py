@@ -34,6 +34,7 @@ from app.services.chat.legs import Leg
 from app.services.chat.trace import ListTraceRecorder
 from app.services.chat.trace import Outcome
 from app.services.chat.trace import QueryStage
+from app.services.chat.trace import TraceEvent
 from app.services.search.chunk_retrieval import ChunkHit
 
 pytestmark = pytest.mark.unit
@@ -119,25 +120,34 @@ def test_a_fast_leg_reports_before_a_slow_leg_submitted_earlier():
     found passes either way. Only the order distinguishes them.
 
     The two legs **handshake** rather than racing on a sleep: the slow leg is
-    submitted first and blocks until the fast leg has actually returned. So the
-    completion order is a fact of the test, not a timing hope — there is no
-    duration to tune and no jitter window to lose on a loaded machine.
+    submitted first and blocks until the fast leg's ``FOUND`` has been reported.
+    Waiting only for the fast leg's body to return is not enough: its future is
+    marked done after the body returns, so on a loaded host the slow leg could
+    still complete first. Under submission-order reporting the fast ``FOUND``
+    can never arrive while the slow leg blocks, so the slow leg fails at the
+    ceiling and the test goes red.
     """
-    recorder = ListTraceRecorder()
-    fast_returned = threading.Event()
+    fast_reported = threading.Event()
+
+    class _SignallingRecorder(ListTraceRecorder):
+        def record(self, event: TraceEvent) -> None:
+            super().record(event)
+            if event.stage is QueryStage.FOUND and event.node_id == "fast":
+                fast_reported.set()
+
+    recorder = _SignallingRecorder()
 
     def _slow():
         # Submitted FIRST, finishes SECOND, by construction.
-        assert fast_returned.wait(WEDGE_CEILING_SECONDS), (
-            "the fast leg never ran — the pool is too small for real parallelism"
+        assert fast_reported.wait(WEDGE_CEILING_SECONDS), (
+            "the fast leg was never reported while the slow leg ran: legs are "
+            "reported in submission order, or the pool is too small for real "
+            "parallelism"
         )
         return [_hit(0)]
 
     def _fast():
-        try:
-            return [_hit(1)]
-        finally:
-            fast_returned.set()
+        return [_hit(1)]
 
     built = [
         Leg(kind=LEG_MAIN, name="slow", run=_slow),

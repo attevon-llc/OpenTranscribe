@@ -25,7 +25,6 @@ scripts/audit_tests/selftest.py::run_selftest	19	complexity: decomposition plann
 scripts/bench_parallel/cli.py::main	22	complexity: decomposition planned
 scripts/bench_parallel/console_reports.py::print_reprocess_projection	17	complexity: decomposition planned
 scripts/bench_parallel/runner.py::run_batch	23	complexity: decomposition planned
-scripts/benchmark_rag.py::main	23	complexity: decomposition planned
 scripts/benchmark_upload_matrix.py::main	19	complexity: decomposition planned
 scripts/cleanup-test-data.py::_sweep_store_planes	17	complexity: decomposition planned
 scripts/e2e_bench/cli.py::main	24	complexity: decomposition planned
@@ -34,6 +33,7 @@ scripts/e2e_bench/stages.py::calculate_stages	24	complexity: decomposition plann
 scripts/generate-sbom-report.py::main	18	complexity: decomposition planned
 scripts/mutation-verify-apply.py::main	20	complexity: decomposition planned
 scripts/pyannote_direct/pipeline.py::load_pipeline	18	complexity: decomposition planned
+scripts/rag_bench/cli.py::main	23	complexity: decomposition planned
 scripts/session_lifetime_audit/cli.py::main	21	complexity: decomposition planned
 scripts/session_lifetime_audit/scan.py::scan_source	21	complexity: decomposition planned
 scripts/vram-probe-diarization.py::run_one	16	complexity: decomposition planned

@@ -21,7 +21,6 @@ frontend/src/routes/+page.svelte::script	1459	oversize: split by concern planned
 opentr.sh	4893	oversize: split by concern planned
 opentranscribe.sh	2588	oversize: split by concern planned
 scripts/CLAUDE.md	1215	oversize: split by concern planned
-scripts/benchmark_rag.py	1036	cohesive: one developer benchmark (retrieval quality over the injected eval corpus); needs a stack to prove behaviour
 scripts/cleanup-test-data.py	1158	cohesive: one signature-scoped sweep (cutoff, shapes, finders, API deletes, planes) sharing one safety model
 scripts/common.sh	1873	oversize: split by concern planned
 scripts/docker-build-push.sh	1562	oversize: split by concern planned

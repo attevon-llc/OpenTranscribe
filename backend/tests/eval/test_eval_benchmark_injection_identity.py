@@ -8,29 +8,42 @@ footgun this module closes: ``runinfo.json`` records every corpus actually prese
 measured index (scored or not), and ``--compare-only`` REFUSES rather than warns when two
 committed baselines' identities disagree.
 
-Loaded via ``importlib`` the same way ``test_eval_fusion_arm.py`` loads the CLI half of
+Imports the ``scripts/rag_bench`` package the same way ``test_eval_fusion_arm.py`` does for the CLI half of
 ``scripts/benchmark_rag.py`` — it lives outside the ``tests.eval`` package tree.
 """
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 
 def _benchmark_rag():
-    path = Path(__file__).resolve().parents[3] / "scripts" / "benchmark_rag.py"
-    spec = importlib.util.spec_from_file_location("benchmark_rag_under_test_identity", path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    """Gather the ``scripts/rag_bench`` package's modules under one name."""
+    scripts_dir = Path(__file__).resolve().parents[3] / "scripts"
+    sys.path.insert(0, str(scripts_dir))
+    try:
+        from rag_bench import baselines
+        from rag_bench import compare
+        from rag_bench import corpus
+        from rag_bench import fusion
+        from rag_bench import parser
+        from rag_bench import scoring
+    finally:
+        sys.path.remove(str(scripts_dir))
+    return SimpleNamespace(
+        baselines=baselines,
+        compare=compare,
+        corpus=corpus,
+        fusion=fusion,
+        parser=parser,
+        scoring=scoring,
+    )
 
 
 class FakeChunkClient:
@@ -106,7 +119,7 @@ class TestFingerprint:
         first = [{"key": "qmsum", "version": "abc"}]
         second = [dict(key="qmsum", version="abc")]
         assert first is not second
-        assert module._fingerprint(first) == module._fingerprint(second)
+        assert module.corpus.fingerprint(first) == module.corpus.fingerprint(second)
 
     def test_matches_a_fixed_precomputed_digest(self):
         """Pins the actual algorithm (sha256 of canonical JSON, first 16 hex chars) —
@@ -120,26 +133,26 @@ class TestFingerprint:
         expected = hashlib.sha256(
             _json.dumps(entries, sort_keys=True, separators=(",", ":")).encode("utf-8")
         ).hexdigest()[:16]
-        assert module._fingerprint(entries) == expected
+        assert module.corpus.fingerprint(entries) == expected
 
     def test_key_order_inside_an_entry_does_not_matter(self):
         module = _benchmark_rag()
         a = [{"key": "qmsum", "version": "abc"}]
         b = [{"version": "abc", "key": "qmsum"}]
-        assert module._fingerprint(a) == module._fingerprint(b)
+        assert module.corpus.fingerprint(a) == module.corpus.fingerprint(b)
 
     def test_a_different_version_changes_the_fingerprint(self):
         module = _benchmark_rag()
         a = [{"key": "qmsum", "version": "abc"}]
         b = [{"key": "qmsum", "version": "def"}]
-        assert module._fingerprint(a) != module._fingerprint(b)
+        assert module.corpus.fingerprint(a) != module.corpus.fingerprint(b)
 
     def test_an_extra_corpus_changes_the_fingerprint(self):
         """The AMI-distractor case: same scored corpus, one extra entry present."""
         module = _benchmark_rag()
         qmsum_only = [{"key": "qmsum", "version": "abc"}]
         qmsum_plus_ami = [{"key": "qmsum", "version": "abc"}, {"key": "ami", "version": "1.6.2"}]
-        assert module._fingerprint(qmsum_only) != module._fingerprint(qmsum_plus_ami)
+        assert module.corpus.fingerprint(qmsum_only) != module.corpus.fingerprint(qmsum_plus_ami)
 
 
 # --------------------------------------------------------------------------
@@ -159,7 +172,7 @@ class TestScanInjectionIdentity:
         _write_manifest(manifest_root / "orphaned", "orphaned", "zzz", {"m9": "uuid-9"})
 
         client = FakeChunkClient(present={"uuid-1": 3, "uuid-2": 5})
-        identity = module._scan_injection_identity(
+        identity = module.corpus.scan_injection_identity(
             client, "chunks-index", manifest_root, scored_keys={"qmsum"}
         )
         keys = [c["key"] for c in identity["corpora"]]
@@ -172,7 +185,7 @@ class TestScanInjectionIdentity:
         _write_manifest(manifest_root / "ami", "ami", "1.6.2", {"EN2001a": "uuid-ami-1"})
 
         client = FakeChunkClient(present={"uuid-1": 3, "uuid-ami-1": 7})
-        identity = module._scan_injection_identity(
+        identity = module.corpus.scan_injection_identity(
             client, "chunks-index", manifest_root, scored_keys={"qmsum"}
         )
         by_key = {c["key"]: c for c in identity["corpora"]}
@@ -186,7 +199,7 @@ class TestScanInjectionIdentity:
         _write_manifest(manifest_root / "z_corpus", "z_corpus", "1", {"m1": "uuid-z"})
         _write_manifest(manifest_root / "a_corpus", "a_corpus", "1", {"m2": "uuid-a"})
         client = FakeChunkClient(present={"uuid-z": 1, "uuid-a": 1})
-        identity = module._scan_injection_identity(
+        identity = module.corpus.scan_injection_identity(
             client, "chunks-index", manifest_root, scored_keys=set()
         )
         assert [c["key"] for c in identity["corpora"]] == ["a_corpus", "z_corpus"]
@@ -194,11 +207,11 @@ class TestScanInjectionIdentity:
     def test_a_missing_manifest_root_yields_an_empty_but_valid_identity(self, tmp_path: Path):
         module = _benchmark_rag()
         client = FakeChunkClient(present={})
-        identity = module._scan_injection_identity(
+        identity = module.corpus.scan_injection_identity(
             client, "chunks-index", tmp_path / "does-not-exist", scored_keys=set()
         )
         assert identity["corpora"] == []
-        assert identity["fingerprint"] == module._fingerprint([])
+        assert identity["fingerprint"] == module.corpus.fingerprint([])
 
 
 # --------------------------------------------------------------------------
@@ -223,7 +236,7 @@ class TestRefuseOnDifferingInjectionIdentity:
         identity = {"corpora": [{"key": "qmsum"}], "fingerprint": "same-fp"}
         a = _baseline_dir(tmp_path, "a", identity)
         b = _baseline_dir(tmp_path, "b", identity)
-        assert module._refuse_on_differing_injection_identity(str(a), str(b)) is None
+        assert module.corpus.refuse_on_differing_injection_identity(str(a), str(b)) is None
 
     def test_a_qmsum_only_run_vs_a_qmsum_plus_ami_run_is_refused(self, tmp_path: Path):
         module = _benchmark_rag()
@@ -234,7 +247,7 @@ class TestRefuseOnDifferingInjectionIdentity:
         }
         a = _baseline_dir(tmp_path, "a", qmsum_only)
         b = _baseline_dir(tmp_path, "b", qmsum_plus_ami)
-        refusal = module._refuse_on_differing_injection_identity(str(a), str(b))
+        refusal = module.corpus.refuse_on_differing_injection_identity(str(a), str(b))
         assert refusal is not None
         assert "DIFFERENT" in refusal
 
@@ -244,14 +257,14 @@ class TestRefuseOnDifferingInjectionIdentity:
         module = _benchmark_rag()
         a = _baseline_dir(tmp_path, "a", None)
         b = _baseline_dir(tmp_path, "b", None)
-        assert module._refuse_on_differing_injection_identity(str(a), str(b)) is None
+        assert module.corpus.refuse_on_differing_injection_identity(str(a), str(b)) is None
 
     def test_one_missing_runinfo_also_warns_rather_than_refuses(self, tmp_path: Path):
         module = _benchmark_rag()
         identity = {"corpora": [{"key": "qmsum"}], "fingerprint": "fp"}
         a = _baseline_dir(tmp_path, "a", identity)
         b = _baseline_dir(tmp_path, "b", None)
-        assert module._refuse_on_differing_injection_identity(str(a), str(b)) is None
+        assert module.corpus.refuse_on_differing_injection_identity(str(a), str(b)) is None
 
     def test_refusal_names_both_baselines_and_their_corpora(self, tmp_path: Path):
         module = _benchmark_rag()
@@ -259,7 +272,7 @@ class TestRefuseOnDifferingInjectionIdentity:
         identity_b = {"corpora": [{"key": "qmsum"}, {"key": "ami"}], "fingerprint": "fp-b"}
         a = _baseline_dir(tmp_path, "control-a", identity_a)
         b = _baseline_dir(tmp_path, "control-b", identity_b)
-        refusal = module._refuse_on_differing_injection_identity(str(a), str(b))
+        refusal = module.corpus.refuse_on_differing_injection_identity(str(a), str(b))
         assert refusal is not None
         assert "control-a" in refusal
         assert "control-b" in refusal
@@ -273,7 +286,7 @@ class TestRefuseOnDifferingInjectionIdentity:
 class TestCompareOnlyCliRefuses:
     def test_compare_only_exits_3_on_differing_identity(self, tmp_path: Path, monkeypatch):
         module = _benchmark_rag()
-        monkeypatch.setattr(module, "DEFAULT_BASELINE_ROOT", tmp_path)
+        monkeypatch.setattr(module.baselines, "DEFAULT_BASELINE_ROOT", tmp_path)
         qmsum_only = {"corpora": [{"key": "qmsum"}], "fingerprint": "fp-qmsum-only"}
         qmsum_plus_ami = {
             "corpora": [{"key": "ami"}, {"key": "qmsum"}],
@@ -299,14 +312,14 @@ class TestCompareOnlyCliRefuses:
             encoding="utf-8",
         )
 
-        args = module.build_parser().parse_args(["--compare-only", "control-a", "control-b"])
-        assert module._run_compare_only(args) == 3
+        args = module.parser.build_parser().parse_args(["--compare-only", "control-a", "control-b"])
+        assert module.compare.run_compare_only(args) == 3
 
     def test_compare_only_still_runs_when_neither_baseline_has_an_identity(
         self, tmp_path: Path, monkeypatch
     ):
         module = _benchmark_rag()
-        monkeypatch.setattr(module, "DEFAULT_BASELINE_ROOT", tmp_path)
+        monkeypatch.setattr(module.baselines, "DEFAULT_BASELINE_ROOT", tmp_path)
         rows = [
             {
                 "query_id": "q1",
@@ -321,8 +334,8 @@ class TestCompareOnlyCliRefuses:
             (out / "metrics.json").write_text(
                 json.dumps({"control_name": name, "retrieval_per_query": rows}), encoding="utf-8"
             )
-        args = module.build_parser().parse_args(["--compare-only", "legacy-a", "legacy-b"])
-        assert module._run_compare_only(args) == 0
+        args = module.parser.build_parser().parse_args(["--compare-only", "legacy-a", "legacy-b"])
+        assert module.compare.run_compare_only(args) == 0
 
 
 if __name__ == "__main__":

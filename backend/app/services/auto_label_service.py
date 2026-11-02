@@ -7,11 +7,13 @@ application to existing files.
 """
 
 import logging
+from collections.abc import Callable
 from datetime import UTC
 from datetime import datetime
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.auth.audit_events import AuditEventType
@@ -31,6 +33,7 @@ from app.services.content_audit import record_content_event
 from app.services.permission_service import PermissionService
 from app.services.tag_scope import owned_or_system
 from app.services.tag_scope import tenant_first
+from app.services.tag_service import InvalidTagNameError
 from app.services.tag_service import names_are_similar
 from app.services.tag_service import normalize_tag_name
 from app.services.tag_service import on_tags_changed
@@ -204,90 +207,64 @@ class AutoLabelService:
     ) -> dict:
         """Auto-apply high-confidence suggestions as tags and collections.
 
-        Returns dict with auto_applied_tags, auto_applied_collections,
-        skipped_tags, skipped_collections.
+        Returns dict with auto_applied_tags, auto_applied_collections, skipped_tags,
+        skipped_collections, failed_tags, failed_collections. A skip is a suggestion the
+        labeler declined (blank name, below the threshold, an unusable collection); a
+        failure is one a database error stopped. A suggestion with any failure is not
+        stamped ``auto_apply_completed_at``, so a retroactive run retries it.
         """
         result: dict[str, Any] = {
             "auto_applied_tags": [],
             "auto_applied_collections": [],
             "skipped_tags": [],
             "skipped_collections": [],
+            "failed_tags": [],
+            "failed_collections": [],
         }
 
-        suggested_tags = suggestion.suggested_tags or []
-        suggested_collections = suggestion.suggested_collections or []
+        def apply_tag(name: str, confidence: float) -> int | None:
+            # The tag lands in the FILE's tenant (issue #1050), credited to the file
+            # owner: this runs unattended, so there is no "current user" to attribute it to.
+            tag = self._get_or_create_tag_with_dedup(
+                name,
+                int(media_file.user_id),
+                organization_id=media_file.organization_id,
+                file_id=int(media_file.id),
+            )
+            return (
+                int(media_file.id) if self._add_tag_to_file(media_file, tag, confidence) else None
+            )
 
-        # Files whose tag set actually changed. Accumulated across the whole
-        # call and flushed through ``on_tags_changed`` once, after the commit
-        # below — the hook drops every user's cached tag list and enqueues a
-        # search refresh, so calling it per applied tag re-did that work T times
-        # for what is one file of change.
+        def apply_collection(name: str, confidence: float) -> Collection | None:
+            # Like tags: the collection is the FILE's tenant's, credited to the file owner (#1051).
+            collection, _created = self._get_or_create_collection_with_dedup(
+                name, int(media_file.user_id), organization_id=media_file.organization_id
+            )
+            joined = self._add_file_to_collection(media_file, collection, confidence)
+            return collection if joined else None
+
+        # Files whose tag set actually changed, flushed through ``on_tags_changed`` once
+        # after the commit: the hook drops every user's cached tag list and enqueues a
+        # search refresh, so calling it per applied tag re-did that work T times.
         retagged_file_ids: list[int] = []
-        # Collections this call put the file into: the post-commit announcement below needs them.
         joined_collections: list[Collection] = []
-
-        # Auto-apply tags
         if apply_tags:
-            for tag_data in suggested_tags:
-                name = tag_data.get("name", "")
-                if not name or not name.strip():
-                    result["skipped_tags"].append(name)
-                    continue
-                confidence = tag_data.get("confidence", 0.0)
-
-                if confidence < confidence_threshold:
-                    result["skipped_tags"].append(name)
-                    continue
-
-                try:
-                    # The tag lands in the FILE's tenant (issue #1050), credited
-                    # to the file owner — this runs unattended, so there is no
-                    # "current user" to attribute it to.
-                    tag = self._get_or_create_tag_with_dedup(
-                        name,
-                        int(media_file.user_id),
-                        organization_id=media_file.organization_id,
-                        file_id=int(media_file.id),
-                    )
-                    if self._add_tag_to_file(media_file, tag, confidence):
-                        retagged_file_ids.append(int(media_file.id))
-                    result["auto_applied_tags"].append(name)
-                except Exception as e:
-                    logger.warning(f"Failed to auto-apply tag '{name}': {e}")
-                    result["skipped_tags"].append(name)
-
-        # Auto-apply collections
+            retagged_file_ids = self._apply_each(
+                "tags", suggestion.suggested_tags or [], confidence_threshold, apply_tag, result
+            )
         if apply_collections:
-            for coll_data in suggested_collections:
-                name = coll_data.get("name", "")
-                if not name or not name.strip():
-                    result["skipped_collections"].append(name)
-                    continue
-                confidence = coll_data.get("confidence", 0.0)
+            joined_collections = self._apply_each(
+                "collections",
+                suggestion.suggested_collections or [],
+                confidence_threshold,
+                apply_collection,
+                result,
+            )
 
-                if confidence < confidence_threshold:
-                    result["skipped_collections"].append(name)
-                    continue
-
-                try:
-                    # Like tags: the collection is the FILE's tenant's, credited to
-                    # the file owner (issue #1051).
-                    collection, _created = self._get_or_create_collection_with_dedup(
-                        name,
-                        int(media_file.user_id),
-                        organization_id=media_file.organization_id,
-                    )
-                    if self._add_file_to_collection(media_file, collection, confidence):
-                        joined_collections.append(collection)
-                    result["auto_applied_collections"].append(name)
-                except Exception as e:
-                    logger.warning(f"Failed to auto-apply collection '{name}': {e}")
-                    result["skipped_collections"].append(name)
-
-        # Update suggestion record
         suggestion.auto_applied_tags = result["auto_applied_tags"]
         suggestion.auto_applied_collections = result["auto_applied_collections"]
-        suggestion.auto_apply_completed_at = datetime.now(UTC)
+        if not (result["failed_tags"] or result["failed_collections"]):
+            suggestion.auto_apply_completed_at = datetime.now(UTC)
 
         try:
             self.db.commit()
@@ -304,10 +281,53 @@ class AutoLabelService:
 
         logger.info(
             f"Auto-applied {len(result['auto_applied_tags'])} tags and "
-            f"{len(result['auto_applied_collections'])} collections for file {media_file.id}"
+            f"{len(result['auto_applied_collections'])} collections for file {media_file.id}; "
+            f"{len(result['failed_tags'])} tag and "
+            f"{len(result['failed_collections'])} collection failures"
         )
 
         return result
+
+    def _apply_each[T](
+        self,
+        kind: str,
+        items: list[dict],
+        threshold: float,
+        apply_one: Callable[[str, float], T | None],
+        result: dict[str, Any],
+    ) -> list[T]:
+        """Apply each suggestion of one ``kind`` in its own SAVEPOINT; return the non-None outcomes.
+
+        The SAVEPOINT is what keeps one suggestion's database error from aborting the
+        transaction under every suggestion after it (and the final commit).
+        """
+        outcomes: list[T] = []
+        for item in items:
+            name = item.get("name", "")
+            if not name or not name.strip() or item.get("confidence", 0.0) < threshold:
+                result[f"skipped_{kind}"].append(name)
+                continue
+            # Explicit commit/rollback, not ``with begin_nested()``: see privacy/policy._isolated.
+            savepoint = self.db.begin_nested()
+            try:
+                outcome = apply_one(name, item.get("confidence", 0.0))
+                savepoint.commit()
+            except (InvalidTagNameError, UnusableCollectionMatchError):
+                savepoint.rollback()
+                result[f"skipped_{kind}"].append(name)
+                continue
+            except SQLAlchemyError:
+                savepoint.rollback()
+                logger.exception(
+                    "Auto-apply of a suggested %s failed with a database error",
+                    kind.removesuffix("s"),
+                )
+                result[f"failed_{kind}"].append(name)
+                continue
+            if outcome is not None:
+                outcomes.append(outcome)
+            result[f"auto_applied_{kind}"].append(name)
+        return outcomes
 
     def _announce_collection_joins(
         self,

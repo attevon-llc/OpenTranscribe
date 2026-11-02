@@ -85,6 +85,7 @@ import logging
 
 import numpy as np
 
+from app.transcription.diar_sidecar_status import default_base_url
 from app.transcription.diar_sidecar_status import sidecar_ready
 from app.transcription.diar_sidecar_status import sidecar_supports_cpu_device
 from app.transcription.diarizer_native import post_json
@@ -194,8 +195,6 @@ def embed_waveform(samples: np.ndarray, base_url: str | None = None) -> np.ndarr
         never means "this audio has no speaker", so callers must not treat it as
         a result.
     """
-    from app.transcription.diar_sidecar_status import default_base_url
-
     windows = fit_to_window(samples)
     if not windows:
         return None

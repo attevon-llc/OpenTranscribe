@@ -51,13 +51,8 @@ from app.core.constants import DIAR_SIDECAR_MIN_RTF
 from app.core.constants import DIAR_SIDECAR_TIMEOUT_FLOOR_S
 from app.core.scratch_paths import DIAR_NATIVE_SHARED_DIR_DEFAULT
 from app.core.scratch_paths import resolve_engine_shared_volume_path
+from app.transcription import diar_sidecar_status
 from app.transcription.diar_sidecar_status import DiarSidecarUnavailableError
-from app.transcription.diar_sidecar_status import _classify_sidecar_failure
-from app.transcription.diar_sidecar_status import default_base_url
-from app.transcription.diar_sidecar_status import diarizer_require_sidecar
-from app.transcription.diar_sidecar_status import sidecar_healthy
-from app.transcription.diar_sidecar_status import sidecar_ready
-from app.transcription.diar_sidecar_status import sidecar_status
 from app.transcription.diarize_result import DiarizeResult
 from app.utils import scratch_volume
 
@@ -213,7 +208,7 @@ class NativeSpeakerDiarizer:
 
     def __init__(self, config: Any, base_url: str | None = None):
         self.config = config
-        self.base_url = (base_url or default_base_url()).rstrip("/")
+        self.base_url = (base_url or diar_sidecar_status.default_base_url()).rstrip("/")
         self.is_loaded = False
         self._fallback: SpeakerDiarizer | None = None
         # This object is shared by every task on the worker, so the fallback is too: it is
@@ -246,10 +241,10 @@ class NativeSpeakerDiarizer:
         is empty or broken answers /healthz with a cheerful 200. Raising here routes the
         caller to the PyAnnote fallback while it is still a choice.
         """
-        if not sidecar_healthy(self.base_url):
+        if not diar_sidecar_status.sidecar_healthy(self.base_url):
             raise RuntimeError(f"diar-native sidecar unavailable at {self.base_url}")
-        if not sidecar_ready(self.base_url):
-            status = sidecar_status(self.base_url)
+        if not diar_sidecar_status.sidecar_ready(self.base_url):
+            status = diar_sidecar_status.sidecar_status(self.base_url)
             raise RuntimeError(
                 f"diar-native sidecar at {self.base_url} is up but not ready "
                 f"(models_state={status.get('models_state', 'unknown')}): "
@@ -339,7 +334,7 @@ class NativeSpeakerDiarizer:
             # _AsyncDiarization.failed_unavailable must see a consistent classification
             # regardless of which branch actually ran.
             if isinstance(exc, Exception):
-                classified = _classify_sidecar_failure(exc)
+                classified = diar_sidecar_status._classify_sidecar_failure(exc)
                 if classified is not exc:
                     raise classified from exc
             raise
@@ -373,7 +368,7 @@ class NativeSpeakerDiarizer:
                     _ENGINE_SHARED_DIR,
                 )
                 return None
-            classified = _classify_sidecar_failure(exc)
+            classified = diar_sidecar_status._classify_sidecar_failure(exc)
             logger.warning(
                 "diar-native /diarize responded HTTP %s for the staged WAV at %s; NOT "
                 "retrying with a fresh copy — %s",
@@ -387,7 +382,7 @@ class NativeSpeakerDiarizer:
                 raise
             raise classified from exc
         except Exception as exc:  # noqa: BLE001 — timeout/connection loss: don't retry, re-raise
-            classified = _classify_sidecar_failure(exc)
+            classified = diar_sidecar_status._classify_sidecar_failure(exc)
             logger.warning(
                 "diar-native /diarize timed out or the connection was lost (%s); NOT "
                 "retrying — falling back to PyAnnote",
@@ -439,7 +434,7 @@ class NativeSpeakerDiarizer:
                 "models while transcription may still be running) — the caller must retry "
                 f"sequentially: {exc}"
             ) from exc
-        if diarizer_require_sidecar():
+        if diar_sidecar_status.diarizer_require_sidecar():
             # Issue #656 Step 6: makes the fail-hard policy exercisable in production BEFORE
             # #572 deletes the fallback outright. Re-raise the classified exception unchanged
             # so a Celery task's `except DiarSidecarUnavailableError` handler (Step 5) sees

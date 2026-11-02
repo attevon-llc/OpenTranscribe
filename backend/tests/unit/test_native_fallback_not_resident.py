@@ -15,7 +15,6 @@ import pytest
 
 from app.transcription import diar_sidecar_status
 from app.transcription import diarizer as diarizer_mod
-from app.transcription import diarizer_native
 from app.transcription.config import TranscriptionConfig
 from app.transcription.diarize_result import DiarizeResult
 from app.transcription.diarizer_native import NativeSpeakerDiarizer
@@ -56,13 +55,11 @@ class FakeSpeakerDiarizer:
 def sidecar(monkeypatch: pytest.MonkeyPatch):
     """Sidecar readiness the test controls; PyAnnote replaced by the fake."""
     state = {"ready": True}
-    # Two planes read the same three predicates through their own module globals: the client
-    # (`diarizer_native`: load_model, the fallback policy) and the manager's function-level
-    # imports (`diar_sidecar_status`). Patch both or one side probes a real sidecar.
-    for module in (diarizer_native, diar_sidecar_status):
-        monkeypatch.setattr(module, "sidecar_ready", lambda *a, **k: state["ready"])
-        monkeypatch.setattr(module, "sidecar_healthy", lambda *a, **k: state["ready"])
-        monkeypatch.setattr(module, "diarizer_require_sidecar", lambda: False)
+    # The client and the manager both call the probes through the `diar_sidecar_status` module,
+    # so one patch covers both planes.
+    monkeypatch.setattr(diar_sidecar_status, "sidecar_ready", lambda *a, **k: state["ready"])
+    monkeypatch.setattr(diar_sidecar_status, "sidecar_healthy", lambda *a, **k: state["ready"])
+    monkeypatch.setattr(diar_sidecar_status, "diarizer_require_sidecar", lambda: False)
     monkeypatch.setattr(diarizer_mod, "SpeakerDiarizer", FakeSpeakerDiarizer)
     monkeypatch.setattr("app.transcription.model_manager.SpeakerDiarizer", FakeSpeakerDiarizer)
     monkeypatch.setattr(ModelManager, "get_transcriber", lambda self, config: None)

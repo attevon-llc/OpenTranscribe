@@ -49,9 +49,8 @@ nothing.
   `sidecar_healthy`, `sidecar_status`), `describe_diarizer_status`, `DiarSidecarUnavailableError`
   and `diarizer_require_sidecar`; the reuse-WAV containment check is `utils/scratch_volume.is_on_scratch_volume` (boundary
   `scratch_volume.SCRATCH_ROOT_REAL`).
-  The client calls the probes through its own module globals, so a test that patches the client
-  path patches `diarizer_native` and one that patches the manager/admin path patches
-  `diar_sidecar_status`. A test driving both must patch both.
+  The client calls the probes as attributes of `diar_sidecar_status`, so one patch on that module
+  covers both the client path and the manager/admin path.
 - `ModelManager._build_diarizer` constructs `NativeSpeakerDiarizer` (`diarizer_native.py`) for
   `native` and falls back to the in-process `SpeakerDiarizer` on **any** exception, logging
   `Native diarizer unavailable (...); falling back to PyAnnote`.

@@ -74,10 +74,18 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
     Returns:
         Test result with success status, message, and optional details
     """
+    # Imported in their own try: the except clauses below name LDAPException, which
+    # is unbound when the import is what failed.
     try:
         import ldap3
         from ldap3.core.exceptions import LDAPException
+    except ImportError:
+        return AuthMethodTestResponse(
+            success=False,
+            message="LDAP library (ldap3) is not installed",
+        )
 
+    try:
         server_address = config.get("ldap_server", "")
         port = config.get("ldap_port", 636)
         use_ssl = config.get("ldap_use_ssl", True)
@@ -149,11 +157,6 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
             success=False,
             message="LDAP connection failed. Please verify server address, port, and credentials.",
         )
-    except ImportError:
-        return AuthMethodTestResponse(
-            success=False,
-            message="LDAP library (ldap3) is not installed",
-        )
     except Exception as e:
         logger.exception(f"LDAP connection test error: {e}")
         return AuthMethodTestResponse(
@@ -202,9 +205,16 @@ async def _test_oidc_connection(config: dict[str, Any]) -> AuthMethodTestRespons
     Returns:
         Test result with success status, message, and optional details
     """
+    # Same reason as the LDAP test: ``except httpx.ConnectError`` needs httpx bound.
     try:
         import httpx
+    except ImportError:
+        return AuthMethodTestResponse(
+            success=False,
+            message="HTTP client library (httpx) is not installed",
+        )
 
+    try:
         from app.utils.url_validation import assert_safe_outbound_url
 
         server_url = config.get("oidc_server_url", "")

@@ -4,6 +4,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+#: Redis key of a user's reindex lock; its value is the holding run id. The API reads it
+#: here and the Celery coordinator writes it, so both must spell it through this constant.
+REINDEX_LOCK_KEY = "reindex_lock:{user_id}"
+
 
 class ReindexLockUnavailableError(Exception):
     """The reindex lock could not be read, so "running or not" is unknown."""
@@ -30,7 +34,7 @@ def running_reindex_run_id(user_id: int) -> str | None:
     try:
         from app.core.redis import get_redis
 
-        value = get_redis().get(f"reindex_lock:{user_id}")
+        value = get_redis().get(REINDEX_LOCK_KEY.format(user_id=user_id))
     except Exception as e:
         logger.warning(f"Could not check reindex lock: {type(e).__name__}")
         raise ReindexLockUnavailableError(str(user_id)) from e

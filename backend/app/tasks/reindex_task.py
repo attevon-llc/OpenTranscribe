@@ -11,6 +11,7 @@ from app.core.queues import CPUPriority
 from app.core.redis import get_redis
 from app.db.session_utils import session_scope
 from app.services.search.reindex_cancel import consume_pending_cancel
+from app.services.search.reindex_lock import REINDEX_LOCK_KEY
 from app.tasks.reindex_completion import _handle_reindex_completion
 from app.tasks.reindex_index_ops import _check_and_recreate_stale_index
 from app.tasks.reindex_index_ops import _ensure_neural_pipeline_ready
@@ -18,7 +19,6 @@ from app.tasks.reindex_index_ops import _handle_model_switch
 from app.tasks.reindex_index_ops import _index_structure_lock
 from app.tasks.reindex_index_ops import _restore_normal_mode
 from app.tasks.reindex_index_ops import _set_bulk_indexing_mode
-from app.tasks.reindex_run_state import _REINDEX_LOCK_KEY
 from app.tasks.reindex_run_state import _REINDEX_STATE_TTL_SECONDS
 from app.tasks.reindex_run_state import _clear_stale_progress
 from app.tasks.reindex_run_state import _is_cancellation_requested
@@ -222,7 +222,7 @@ def reindex_transcripts_task(
     # Prevent concurrent reindex runs for the same user. Kept USER-scoped: this
     # is the mutual exclusion, and run-scoping it would grant the concurrency.
     redis_lock = get_redis()
-    lock_key = _REINDEX_LOCK_KEY.format(user_id=user_id)
+    lock_key = REINDEX_LOCK_KEY.format(user_id=user_id)
     if not redis_lock.set(lock_key, task_id, nx=True, ex=3600):
         logger.warning(f"Reindex already running for user {user_id}, skipping")
         return {"status": "skipped", "message": "Reindex already in progress"}

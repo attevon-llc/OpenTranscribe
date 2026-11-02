@@ -6,6 +6,7 @@ from typing import Any
 from app.core.constants import NOTIFICATION_TYPE_REINDEX_PROGRESS
 from app.core.redis import get_redis
 from app.services.search.reindex_cancel import cancel_requested
+from app.services.search.reindex_lock import REINDEX_LOCK_KEY
 from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,6 @@ def _is_cancellation_requested(user_id: int, run_id: str | None = None) -> bool:
 
 _REINDEX_STATE_KEY = "reindex_state:{user_id}"
 _REINDEX_UUIDS_KEY = "reindex_uuids:{user_id}"
-_REINDEX_LOCK_KEY = "reindex_lock:{user_id}"
 
 #: TTL on a run's coordination keys. A crashed coordinator or a batch worker that
 #: never reaches completion leaves them behind; run-scoping means each such run
@@ -93,7 +93,7 @@ def _release_reindex_lock(redis_client: Any, user_id: int, run_id: str | None) -
     Returns:
         True if the lock was released or was already gone.
     """
-    lock_key = _REINDEX_LOCK_KEY.format(user_id=user_id)
+    lock_key = REINDEX_LOCK_KEY.format(user_id=user_id)
     if run_id:
         holder = redis_client.get(lock_key)
         if isinstance(holder, bytes):

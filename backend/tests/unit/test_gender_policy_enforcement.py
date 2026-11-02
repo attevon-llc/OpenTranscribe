@@ -82,7 +82,7 @@ def _file(db, user, org: Organization | None, **speaker_kw: Any):
         user_id=user.id,
         organization_id=org.id if org else None,
         filename="a.mp4",
-        storage_path="test/a.mp4",
+        storage_path=f"test/a-{uuid_mod.uuid4().hex}.mp4",
         content_type="video/mp4",
         file_size=1000,
         status="completed",

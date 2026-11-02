@@ -133,7 +133,7 @@ def _make_transcribed_file(db_session, user, *, speakers: int = 2):
         uuid=str(uuid_mod.uuid4()),
         user_id=user.id,
         filename="meeting.mp4",
-        storage_path="test/meeting.mp4",
+        storage_path=f"test/meeting-{uuid_mod.uuid4().hex}.mp4",
         content_type="video/mp4",
         file_size=1000,
     )
@@ -362,7 +362,7 @@ def test_speaker_embedding_read_phase_returns_plain_data(
     assert tracker.depth == 0
     assert inputs["file_id"] == media_file.id
     assert inputs["user_id"] == normal_user.id
-    assert inputs["storage_path"] == "test/meeting.mp4"
+    assert inputs["storage_path"] == media_file.storage_path
     assert len(inputs["processed_segments"]) == 2
     assert inputs["processed_segments"][0] == {
         "start": 0.0,

@@ -48,6 +48,7 @@ from .endpoints import privacy
 from .endpoints import prompts
 from .endpoints import redaction_settings
 from .endpoints import search
+from .endpoints import self_erasure
 from .endpoints import speaker_attribute_migration
 from .endpoints import speaker_clusters
 from .endpoints import speaker_profiles
@@ -149,6 +150,13 @@ include_router_with_consistency(tags.router, prefix="/tags", tags=["tags"])
 # /users/me/support-access is not read as a /users/{uuid}/... path.
 include_router_with_consistency(
     support_access.me_router, prefix="/users/me/support-access", tags=["support-access"]
+)
+# The subject's own erasure request (issue #1354); before users.router for the same reason.
+include_router_with_consistency(
+    self_erasure.router, prefix="/users/me/erasure-request", tags=["privacy"]
+)
+include_router_with_consistency(
+    self_erasure.admin_router, prefix="/admin/self-erasure", tags=["admin"]
 )
 include_router_with_consistency(users.router, prefix="/users", tags=["users"])
 include_router_with_consistency(

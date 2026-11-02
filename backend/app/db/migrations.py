@@ -736,6 +736,13 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_erasure_receipt_digest')"
     )
 
+    # v455: self-service erasure requests (issues #1354/#1355). Keyed on the LAST object the
+    # revision creates, the unique open-request index.
+    has_self_service_erasure = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_indexes "
+        "WHERE indexname = 'uq_erasure_ledger_open_self_request')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -816,7 +823,16 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_task_active_unique
         and has_identity_source
     )
-    # v452: same as v451 plus the erasure receipt. The top of the ladder.
+    # v455: same as v452 plus the self-service erasure request. The top of the ladder.
+    if (
+        matches_v449
+        and has_legal_acceptance_context
+        and has_legal_acceptance_survival
+        and has_erasure_receipt
+        and has_self_service_erasure
+    ):
+        return "v455_add_self_service_erasure_request"
+    # v452: same as v451 plus the erasure receipt.
     if (
         matches_v449
         and has_legal_acceptance_context

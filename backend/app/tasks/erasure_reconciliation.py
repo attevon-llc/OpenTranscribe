@@ -23,6 +23,23 @@ again, matching on **both** the id and the UUID: a restore rewinds the id sequen
 a later account can be issued an id the erased subject once held, and matching on id
 alone would erase an innocent bystander.
 
+**3. Self-service requests that came due (phase 0).**
+A request made under ``/users/me/erasure-request`` is a ``deferred`` / ``grace_period`` ledger
+entry. Once its ``scheduled_for`` has passed, ``self_erasure_service.execute_due_requests`` runs
+it; worst-case lag after the grace period is one beat interval. Until then it is invisible to
+phases 1 and 2 (``open_entries`` excludes it), and a cancelled one never runs.
+
+**4. Documents that came back in a search index (phase 4).**
+An OpenSearch-only restore leaves Postgres untouched, so the subject-row check cannot see it.
+``erasure_index_reconcile`` asks every index, one batched query each, and re-deletes what it
+finds. An unreachable cluster is ``index_unverified``, never clean.
+
+**5. Organization members, automated and time-bounded.**
+An ``org_member`` erasure never deletes the user row, so the rows themselves are the signal: any
+the member owns in that organization created at or before the erasure completed
+(``erasure_org_member_rerun``). Rows created later are the member's own new data and are never
+touched; rows with no usable timestamp are reported as ``org_member_needs_review``.
+
 Why a sweep and not only a hook
 -------------------------------
 ``takedown_service.release_file`` *does* call ``notify_hold_released`` below, so the
@@ -76,14 +93,10 @@ def _subject_is_alive(db, entry) -> bool:
     - ``user`` — the account row was deleted, so its reappearance is unambiguous.
     - ``organization`` — likewise for the tenant row.
 
-    **``org_member`` deliberately returns False**, and that is a judgement rather than
-    an omission. That scope never deletes the ``user`` row, so "does the subject exist"
-    is always True and cannot distinguish a restore from normal life. The only
-    available signal — "does this member have org-stamped rows again?" — is also what a
-    member legitimately uploading new files to the tenant the next day looks like, and
-    acting on it would destroy data nobody asked to erase. So org-member entries are
-    reported for **manual review** instead (``manual_review`` in the result) and never
-    auto-re-erased.
+    **``org_member`` returns False here**: that scope never deletes the ``user`` row, so "does
+    the subject exist" is always True. Its restore check is separate and time-bounded
+    (``erasure_org_member_rerun.rerun_state``), because "the member has org rows" alone is also
+    what a legitimate upload the next day looks like.
 
     Both surviving cases match on id AND uuid: a restored dump rewinds the id sequence.
     """
@@ -121,6 +134,7 @@ def _rerun(db, entry) -> dict[str, Any]:
     second one — an SLA clock that restarted on every tick would never expire, which is
     precisely the failure mode the ledger exists to prevent.
     """
+    from app.services.erasure_org_member_rerun import cutoff_of
     from app.services.gdpr_erasure_service import erase_file
     from app.services.gdpr_erasure_service import erase_org_member_data
     from app.services.gdpr_erasure_service import erase_organization
@@ -137,6 +151,7 @@ def _rerun(db, entry) -> dict[str, Any]:
         int(entry.subject_user_id),
         int(entry.subject_organization_id),
         ledger_entry=entry,
+        created_before=cutoff_of(entry),
     )
 
 
@@ -152,16 +167,24 @@ def erasure_reconciliation_sweep(self) -> dict:  # noqa: ARG001 — bind=True si
         Counters for the pass: how many entries were re-opened from the on-disk
         journal (non-zero means the database was rolled back past an erasure), how
         many open entries were retried and how many of those completed, how many
-        resurrections were found and re-erased, how many org-member entries need
-        manual review, and how many entries are past their Art. 12(3) deadline
-        (``overdue`` — a reportable breach, not a housekeeping number).
+        resurrections were found and re-erased, how many org-member entries were re-run
+        or still need review, how many self-service requests came due and ran, what the
+        index-level check re-deleted or could not verify, and how many entries are past their
+        Art. 12(3) deadline (``overdue`` — a reportable breach, not a housekeeping number).
     """
     from app.db.session_utils import session_scope
     from app.models.erasure import ErasureLedgerEntry
     from app.services import erasure_ledger_service as ledger
+    from app.services import self_erasure_service
+    from app.services.erasure_index_reconcile import run_index_phase
+    from app.services.erasure_org_member_rerun import rerun_state
 
     retried = completed = resurrected = failures = 0
-    manual_review = 0
+    org_member_rerun = org_member_needs_review = 0
+
+    # Phase 0 -- self-service requests whose grace period ran out. Their own sessions.
+    due = self_erasure_service.execute_due_requests()
+    failures += due["failures"]
 
     # Phase 1 — a SHORT session that decides the work and returns plain ids.
     # An erasure does object-storage and OpenSearch deletes, and holding one session
@@ -205,7 +228,13 @@ def erasure_reconciliation_sweep(self) -> dict:  # noqa: ARG001 — bind=True si
                 if entry is None or entry.status != "complete":
                     continue
                 if entry.subject_type == "org_member":
-                    manual_review += 1
+                    state = rerun_state(db, entry)
+                    if state.untimed_rows:
+                        org_member_needs_review += 1
+                    if state.old_rows:
+                        org_member_rerun += 1
+                        ledger.record_resurrection(db, entry, store_key="pg.org_member")
+                        _rerun(db, entry)
                     continue
                 if not _subject_is_alive(db, entry):
                     continue
@@ -215,6 +244,9 @@ def erasure_reconciliation_sweep(self) -> dict:  # noqa: ARG001 — bind=True si
         except Exception as e:  # noqa: BLE001
             failures += 1
             logger.error("Re-erasure after resurrection failed for entry %s: %s", entry_id, e)
+
+    # Phase 4 -- documents back in a search index while Postgres is unchanged.
+    index_phase = run_index_phase()
 
     with session_scope() as db:
         overdue = len(ledger.overdue_entries(db))
@@ -237,7 +269,13 @@ def erasure_reconciliation_sweep(self) -> dict:  # noqa: ARG001 — bind=True si
         "open_retried": retried,
         "completed": completed,
         "resurrections_reerased": resurrected,
-        "org_member_manual_review": manual_review,
+        "self_erasure_due": due["due"],
+        "self_erasure_executed": due["executed"],
+        "org_member_rerun": org_member_rerun,
+        "org_member_needs_review": org_member_needs_review + index_phase["org_member_needs_review"],
+        "index_resurrections_redeleted": index_phase["index_resurrections_redeleted"],
+        "index_resurrected_entries": index_phase["index_resurrected_entries"],
+        "index_unverified": index_phase["index_unverified"],
         "failures": failures,
         "overdue": overdue,
         "truncated": retried >= MAX_OPEN_ENTRIES_PER_RUN,

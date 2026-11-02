@@ -255,8 +255,13 @@ indexing → WebSocket notification.
   backup restore brought back. `takedown_service.release_file` calls its
   `notify_hold_released` for latency; **the schedule is the guarantee** — a hold can also
   be cleared by a DB edit or a restore, and a hook alone has a silent failure mode.
-  Design rationale (what the ledger must never store, and why `org_member` entries are
-  never auto-re-erased) lives in `app/services/CLAUDE.md`.
+  Phases: 0 self-service requests that came due (`self_erasure_service.execute_due_requests`), 1-2
+  open entries, 3 completed entries (user/organization row back; `org_member` re-run bounded by time),
+  4 index-level check (`erasure_index_reconcile.run_index_phase`). Result keys: `self_erasure_due`,
+  `self_erasure_executed`, `org_member_rerun`, `org_member_needs_review` (replaced
+  `org_member_manual_review`), `index_resurrections_redeleted`, `index_resurrected_entries`,
+  `index_unverified`. Design rationale (what the ledger must never store, why the org-member re-run is
+  time-bounded) lives in `app/services/CLAUDE.md`.
 - `legal_retention.py` — `legal.acceptance_retention_sweep`, **utility** queue, daily 05:10: deletes pseudonymised `legal_acceptance` rows past `retain_until` (v451) under `SET LOCAL opentranscribe.legal_retention_sweep = 'on'`, the only DELETE the guard trigger admits. Bounded at 500 per tick.
 - `voiceprint_retention.py` — `privacy.voiceprint_retention_sweep`, **utility** queue, daily 05:25, off unless `privacy.voiceprint_retention_months` > 0. Selects due files (every linked profile stale by `last_interaction_at`, file older than the cutoff, not held, voiceprints present; at most 200) and dispatches `PurgeScope(kind="files")`; returns `unavailable` while this build's purge has no files scope. Stale profiles left empty are listed, never deleted.
 - `directory_sync_task.py` — LDAP reconciliation/deprovisioning, **cpu** queue.

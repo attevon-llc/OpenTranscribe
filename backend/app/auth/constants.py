@@ -88,6 +88,16 @@ def auth_type_check_sql() -> str:
 # index of its own shows up as ``os.unclassified`` and keeps receipts ``unverified``). New
 # subject ``file`` on the ledger (``erase_file``). Alembic ``v452`` adds ``erasure_receipt``.
 #
+# v13 (also 0.6.1): self-service erasure and index-level reconciliation (issues #1354, #1355;
+# the coordinator sets the final number). Additive for an extension: ledger status ``cancelled``
+# and deferral reason ``grace_period``; columns ``scheduled_for``, ``cancelled_at``,
+# ``request_digest``, ``index_checked_at`` (Alembic ``v455``); ``record_request`` keyword-only
+# ``status`` / ``deferred_reason`` / ``scheduled_for`` / ``request_digest`` / ``requested_at`` /
+# ``entry_uuid``; ``record_resurrection(store_key=)``; ``erase_org_member_data(created_before=)``;
+# ``open_entries`` now excludes grace-period and cancelled entries (a custom sweep must not retry
+# a waiting request). The reconciliation result key ``org_member_manual_review`` was RENAMED
+# ``org_member_needs_review``; anything reading it must follow.
+#
 # v12 (0.6.0): organization content governance (#1275-#1277). v11 is the privacy policy layer and
 # v10 the viewer-aware capabilities endpoint, both below.
 # File-read semantics changed: a member of an organization collection they may see now

@@ -54,6 +54,7 @@ const sidebars: SidebarsConfig = {
         'user-guide/tags',
         'user-guide/notifications-and-about',
         'user-guide/admin-panel',
+        'user-guide/erase-my-account',
       ],
     },
     {

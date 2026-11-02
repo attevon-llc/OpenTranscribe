@@ -322,11 +322,27 @@ Two judgement calls worth not re-litigating blindly:
   the account's survival is a side effect, made temporary by the ledger entry and the
   sweep. Making it genuinely file-granular means anonymising the account instead —
   a design change, not a patch.
-- **`org_member` entries are never auto-re-erased after a restore.** That scope never
-  deletes the `user` row, so "is the subject present" is always true; the only other
-  signal ("does the member have org rows again?") is indistinguishable from the member
-  legitimately uploading to that tenant the next day, and acting on it would destroy
-  data nobody asked to erase. They are counted as `org_member_manual_review` instead.
+- **`org_member` entries are re-run after a restore, but only up to the erasure time** (#1355).
+  That scope never deletes the `user` row, and "does the member have org rows again?" alone is
+  what a legitimate upload the next day looks like. So `erasure_org_member_rerun.rerun_state`
+  counts only rows created **at or before** the entry's `completed_at`
+  (`erase_org_member_data(created_before=)`; media files use `upload_time`, the rest
+  `created_at`), a NULL timestamp is reported (`org_member_needs_review`) and never deleted, and
+  a time-bounded run takes no erasure receipt (the receipt measures the whole scope, which
+  legitimately holds newer rows). **`completed_at` doubles as that bound once the entry has been
+  resurrected**: `_completion_time` keeps it through a deferral and through the re-run's own
+  completion, so a retry is still bounded; do not "refresh" it.
+- **Self-service erasure is a ledger entry, not a second state machine** (#1354):
+  `self_erasure_service` (request / cancel / `execute_due_requests`), `self_erasure_reauth`
+  (password or TOTP), `deferred` / `grace_period` / `scheduled_for`, terminal status `cancelled`.
+  `open_entries` excludes every grace-period entry (phase 0 of the sweep runs the due ones) and
+  `overdue_entries` excludes `cancelled`. Journal lines carry the grace fields and the **last line
+  per uuid wins** on restore, so a cancelled request is never revived.
+- **Index-level resurrection** (#1355): `erasure_index_reconcile` reuses the receipt registry
+  (`stores_external.classify_index`) and the single speaker-index enumerator; one `filters`
+  aggregation per index for up to 500 entries (`index_checked_at` cursor); an unreachable cluster
+  is `index_unverified` and does not advance the cursor; a live user row with the same id makes the
+  subject ambiguous and it is skipped.
 
 ## Removing a voice: `speaker_cleanup.py` is the only implementation (issue #1214)
 

@@ -68,6 +68,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.auth.audit import AuditEventType
@@ -118,6 +119,12 @@ def _journal_record(entry: ErasureLedgerEntry) -> dict[str, Any]:
         "actor_kind": entry.actor_kind,
         "requested_at": entry.requested_at.isoformat() if entry.requested_at else None,
         "sla_due_at": entry.sla_due_at.isoformat() if entry.sla_due_at else None,
+        # A self-service request's grace semantics, so a restore re-opens it as a request
+        # (or as cancelled) and never as an immediate erasure. Null for every other entry.
+        "deferred_reason": entry.deferred_reason,
+        "scheduled_for": entry.scheduled_for.isoformat() if entry.scheduled_for else None,
+        "cancelled_at": entry.cancelled_at.isoformat() if entry.cancelled_at else None,
+        "request_digest": entry.request_digest,
     }
 
 
@@ -300,6 +307,33 @@ def reopen_entry(db: Session, entry: ErasureLedgerEntry) -> None:
     _audit(entry, action="gdpr_erasure_reopened", outcome=AuditOutcome.PARTIAL)
 
 
+def _iso(value: Any) -> datetime | None:
+    return datetime.fromisoformat(value) if value else None
+
+
+def _restored_state(record: dict[str, Any]) -> dict[str, Any]:
+    """Status columns for a journalled entry the database lost.
+
+    Everything comes back ``pending`` (re-erase now) EXCEPT a self-service request: it keeps its
+    grace semantics (``deferred`` / ``grace_period`` / ``scheduled_for``), or ``cancelled`` when
+    the last journal line says so. Re-opening a withdrawn request as ``pending`` would erase an
+    account the subject chose to keep; re-opening a pending one early would skip the grace period.
+    """
+    if record.get("status") == "cancelled":
+        return {
+            "status": "cancelled",
+            "scheduled_for": _iso(record.get("scheduled_for")),
+            "cancelled_at": _iso(record.get("cancelled_at")),
+        }
+    if record.get("deferred_reason") == "grace_period" and record.get("scheduled_for"):
+        return {
+            "status": "deferred",
+            "deferred_reason": "grace_period",
+            "scheduled_for": _iso(record["scheduled_for"]),
+        }
+    return {"status": "pending"}
+
+
 def restore_from_journal(db: Session) -> int:
     """Re-open journalled entries the database no longer has. Returns how many.
 
@@ -326,13 +360,19 @@ def restore_from_journal(db: Session) -> int:
     if records is None:
         return 0
 
-    restored = 0
+    # The file journal is append-only and a cancelled request is journalled a second time, so
+    # the LAST line for a uuid is its state. (Object storage overwrites one key: same result.)
+    latest: dict[str, dict[str, Any]] = {}
     for record in records:
         if not isinstance(record, dict):
             logger.warning("Skipping erasure journal entry that is not an object")
             continue
         if record.get("kind") == "receipt" or record.get("uuid") in known:
             continue
+        latest[str(record.get("uuid"))] = record
+
+    restored = 0
+    for record in latest.values():
         try:
             db.add(
                 ErasureLedgerEntry(
@@ -355,10 +395,11 @@ def restore_from_journal(db: Session) -> int:
                         if record.get("subject_file_uuid")
                         else None
                     ),
-                    status="pending",
+                    **_restored_state(record),
                     actor_kind=record.get("actor_kind") or "system",
                     requested_at=datetime.fromisoformat(record["requested_at"]),
                     sla_due_at=datetime.fromisoformat(record["sla_due_at"]),
+                    request_digest=record.get("request_digest"),
                     counters={},
                 )
             )
@@ -413,6 +454,12 @@ def record_request(
     subject_file_uuid: uuid_pkg.UUID | None = None,
     actor_kind: str = "system",
     actor_user_id: int | None = None,
+    status: str = "pending",
+    deferred_reason: str | None = None,
+    scheduled_for: datetime | None = None,
+    request_digest: str | None = None,
+    requested_at: datetime | None = None,
+    entry_uuid: uuid_pkg.UUID | None = None,
 ) -> ErasureLedgerEntry | None:
     """Open a ledger entry and COMMIT it before any data is destroyed.
 
@@ -430,19 +477,27 @@ def record_request(
         actor_kind: One of ``models.erasure.ACTOR_KINDS`` — a category, so the entry
             stays meaningful after the actor's own account is deleted.
         actor_user_id: The acting staff member, when there is one.
+        status / deferred_reason / scheduled_for / request_digest / requested_at / entry_uuid:
+            Only a self-service request sets these (``deferred`` / ``grace_period`` and its
+            schedule; the uuid is chosen up front so the digest can cover it). The defaults are
+            the operator path, unchanged.
 
     Returns:
         The committed entry, or ``None`` if it could not be written.
     """
-    now = datetime.now(UTC)
+    now = requested_at or datetime.now(UTC)
     entry = ErasureLedgerEntry(
+        **({"uuid": entry_uuid} if entry_uuid is not None else {}),
         subject_type=subject_type,
         subject_user_id=subject_user_id,
         subject_user_uuid=subject_user_uuid,
         subject_organization_id=subject_organization_id,
         subject_organization_uuid=subject_organization_uuid,
         subject_file_uuid=subject_file_uuid,
-        status="pending",
+        status=status,
+        deferred_reason=deferred_reason,
+        scheduled_for=scheduled_for,
+        request_digest=request_digest,
         actor_kind=actor_kind,
         actor_user_id=actor_user_id,
         requested_at=now,
@@ -468,6 +523,19 @@ def record_request(
     _append_journal(entry)
     _audit(entry, action="gdpr_erasure_requested", outcome=AuditOutcome.SUCCESS)
     return entry
+
+
+def _completion_time(entry: ErasureLedgerEntry, status: str, now: datetime) -> datetime | None:
+    """``completed_at`` after an outcome.
+
+    For an ``org_member`` entry that has been resurrected it is the creation-time bound of the
+    automatic re-run (rows newer than the original erasure belong to the member), so it is kept
+    through a deferral and through the re-run's own completion rather than moved to ``now``.
+    """
+    keeps_bound = entry.subject_type == "org_member" and int(entry.resurrections_detected or 0) > 0
+    if keeps_bound and entry.completed_at is not None:
+        return entry.completed_at
+    return now if status == "complete" else None
 
 
 def record_outcome(
@@ -510,7 +578,7 @@ def record_outcome(
         entry.counters = _numeric_counters(summary)
         entry.attempts = int(entry.attempts or 0) + 1
         entry.last_attempt_at = now
-        entry.completed_at = now if status == "complete" else None
+        entry.completed_at = _completion_time(entry, status, now)
         db.commit()
         db.refresh(entry)
     except Exception as e:  # noqa: BLE001 — the deletion already happened; never re-raise
@@ -526,18 +594,25 @@ def record_outcome(
     return entry
 
 
-def record_resurrection(db: Session, entry: ErasureLedgerEntry) -> None:
+def record_resurrection(
+    db: Session, entry: ErasureLedgerEntry, *, store_key: str | None = None
+) -> None:
     """Note that a subject this entry says was erased has been found alive again.
 
     Counted rather than silently re-erased: a resurrection means a restore replayed data
     past an Art. 17 erasure, which is a compliance incident an operator needs to see even
     once the sweep has cleaned it up. Never raises.
+
+    ``store_key`` marks an index-level finding (documents back in a search index while Postgres
+    is unchanged): counted and audited, but the entry stays ``complete`` because the sweep
+    re-deletes the documents itself and there is no subject row to re-erase.
     """
     try:
         entry.resurrections_detected = int(entry.resurrections_detected or 0) + 1
         entry.last_resurrection_at = datetime.now(UTC)
-        entry.status = "pending"
-        entry.completed_at = None
+        if store_key is None:
+            entry.status = "pending"
+            entry.completed_at = None
         db.commit()
     except Exception as e:  # noqa: BLE001
         db.rollback()
@@ -550,19 +625,50 @@ def record_resurrection(db: Session, entry: ErasureLedgerEntry) -> None:
         entry.uuid,
         entry.subject_type,
     )
-    _audit(entry, action="gdpr_erasure_resurrection_detected", outcome=AuditOutcome.FAILURE)
+    _audit(
+        entry,
+        action="gdpr_erasure_resurrection_detected",
+        outcome=AuditOutcome.FAILURE,
+        extra={"store_key": store_key} if store_key else None,
+    )
+
+
+def _is_open_grace():
+    return and_(
+        ErasureLedgerEntry.status == "deferred",
+        ErasureLedgerEntry.deferred_reason == "grace_period",
+    )
 
 
 def open_entries(db: Session, *, limit: int) -> list[ErasureLedgerEntry]:
     """Entries the reconciliation sweep still owes work on, oldest request first.
 
-    Everything that is not ``complete``: ``pending`` (including the row a crashed worker
-    left behind), ``deferred`` (a legal hold or a store outage), and ``failed``.
+    Everything that is not finished: ``pending`` (including the row a crashed worker
+    left behind), ``deferred`` (a legal hold or a store outage), and ``failed``. Excluded:
+    ``cancelled`` (withdrawn) and ``deferred`` / ``grace_period`` (a self-service request,
+    which :func:`due_grace_entries` hands to the executor once ``scheduled_for`` passes, and
+    which must NEVER be retried as an ordinary deferral before then).
     """
     return (
         db.query(ErasureLedgerEntry)
-        .filter(ErasureLedgerEntry.status != "complete")
+        .filter(
+            ErasureLedgerEntry.status.notin_(("complete", "cancelled")),
+            ~_is_open_grace(),
+        )
         .order_by(ErasureLedgerEntry.requested_at.asc())
+        .limit(limit)
+        .all()
+    )
+
+
+def due_grace_entries(
+    db: Session, *, limit: int, now: datetime | None = None
+) -> list[ErasureLedgerEntry]:
+    """Self-service requests whose grace period has run out, soonest first."""
+    return (
+        db.query(ErasureLedgerEntry)
+        .filter(_is_open_grace(), ErasureLedgerEntry.scheduled_for <= (now or datetime.now(UTC)))
+        .order_by(ErasureLedgerEntry.scheduled_for.asc())
         .limit(limit)
         .all()
     )
@@ -579,17 +685,34 @@ def completed_entries(db: Session, *, limit: int) -> list[ErasureLedgerEntry]:
     )
 
 
+def index_check_entries(db: Session, *, limit: int) -> list[ErasureLedgerEntry]:
+    """Completed entries for the index-level check, least recently checked first."""
+    return (
+        db.query(ErasureLedgerEntry)
+        .filter(
+            ErasureLedgerEntry.status == "complete",
+            ErasureLedgerEntry.subject_type.in_(("user", "organization", "org_member")),
+        )
+        .order_by(
+            ErasureLedgerEntry.index_checked_at.asc().nullsfirst(),
+            ErasureLedgerEntry.id.asc(),
+        )
+        .limit(limit)
+        .all()
+    )
+
+
 def overdue_entries(db: Session, *, now: datetime | None = None) -> list[ErasureLedgerEntry]:
     """Open entries past their Art. 12(3) one-month deadline.
 
     The SLA was previously a constant echoed into an API response and measured by
-    nothing. This is the measurement.
+    nothing. This is the measurement. A ``cancelled`` request is not open.
     """
     cutoff = now or datetime.now(UTC)
     return (
         db.query(ErasureLedgerEntry)
         .filter(
-            ErasureLedgerEntry.status != "complete",
+            ErasureLedgerEntry.status.notin_(("complete", "cancelled")),
             ErasureLedgerEntry.sla_due_at < cutoff,
         )
         .order_by(ErasureLedgerEntry.sla_due_at.asc())
@@ -597,7 +720,31 @@ def overdue_entries(db: Session, *, now: datetime | None = None) -> list[Erasure
     )
 
 
-def _audit(entry: ErasureLedgerEntry, *, action: str, outcome: AuditOutcome) -> None:
+def cancel_request(
+    db: Session, entry: ErasureLedgerEntry, *, now: datetime | None = None
+) -> ErasureLedgerEntry:
+    """Withdraw a self-service request. Journals the cancellation (a restore must not revive it).
+
+    Raises on a database failure: unlike an erasure, a cancel the system could not record must
+    not be reported to the subject as done.
+    """
+    entry.status = "cancelled"
+    entry.cancelled_at = now or datetime.now(UTC)
+    entry.deferred_reason = None
+    db.commit()
+    db.refresh(entry)
+    _append_journal(entry)
+    _audit(entry, action="gdpr_self_erasure_cancelled", outcome=AuditOutcome.SUCCESS)
+    return entry
+
+
+def _audit(
+    entry: ErasureLedgerEntry,
+    *,
+    action: str,
+    outcome: AuditOutcome,
+    extra: dict[str, Any] | None = None,
+) -> None:
     """Emit the ledger event to the audit trail. Never raises.
 
     The audit stream is written to stdout and (optionally) OpenSearch — **neither of
@@ -644,6 +791,7 @@ def _audit(entry: ErasureLedgerEntry, *, action: str, outcome: AuditOutcome) -> 
                 "actor_kind": entry.actor_kind,
                 "attempts": entry.attempts,
                 "sla_due_at": entry.sla_due_at.isoformat() if entry.sla_due_at else None,
+                **(extra or {}),
             },
         )
     except Exception as e:  # noqa: BLE001 — audit must never break the erasure

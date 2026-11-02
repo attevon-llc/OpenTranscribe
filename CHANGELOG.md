@@ -9,7 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Self-service account erasure** (#1354). A signed-in person can ask for their own account to be
+  erased from Settings > Profile, with a waiting period (default 14 days, at most 21) in which the
+  account stays usable and the request can be cancelled. The request needs the password or an
+  authenticator code, returns a receipt (ledger ID and sha256 digest), is refused for the last
+  active super administrator, and survives a database restore. Off by default; super administrators
+  enable it and set the period under Privacy & Redaction. Migration v455 (its downgrade refuses while
+  a request is open).
+- **Index-level erasure reconciliation** (#1355). The daily erasure reconciliation now also asks the
+  search indices for documents belonging to completed erasures (for example after an OpenSearch-only
+  restore) and re-deletes them; an unreachable cluster is reported as unverified, never clean.
+
 ### Changed
+
+- **Behaviour change:** erasures of an organization member are now re-run automatically after a
+  restore, limited to rows created at or before the original erasure (newer work is never touched);
+  rows with no creation time are reported. The reconciliation result key `org_member_manual_review`
+  is replaced by `org_member_needs_review`. On the first passes after upgrading, reconciliation
+  re-checks every historical completed erasure, bounded per pass.
 
 - **Behaviour change:** legal acceptance records are no longer deleted with the account. Every
   deletion path (admin delete, GDPR erasure, the first-run wizard) now keeps them, pseudonymised

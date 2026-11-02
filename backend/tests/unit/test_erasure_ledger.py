@@ -37,7 +37,9 @@ from app.models.erasure import ErasureLedgerEntry
 from app.services import erasure_ledger_service as ledger
 
 #: The only textual columns the table is allowed to have, each backed by a CHECK.
-ENUM_COLUMNS = {"subject_type", "status", "actor_kind", "deferred_reason"}
+#: ``request_digest`` is a fixed-shape sha256 hex string (``ck_erasure_ledger_request_digest``),
+#: not free text.
+ENUM_COLUMNS = {"subject_type", "status", "actor_kind", "deferred_reason", "request_digest"}
 
 
 @pytest.fixture()
@@ -312,6 +314,11 @@ def test_the_journal_line_carries_surrogate_keys_and_nothing_else(db_session, jo
         "actor_kind",
         "requested_at",
         "sla_due_at",
+        # A self-service request's grace semantics: reasons, times and a sha256, never text.
+        "deferred_reason",
+        "scheduled_for",
+        "cancelled_at",
+        "request_digest",
     }
 
 

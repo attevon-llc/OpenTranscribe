@@ -54,6 +54,7 @@
   let SettingsModalShell: Component<any> | null = null;
   let shellShown = false;
   let FirstRunWizard: Component<any> | null = null;
+  let ErasureRequestBanner: Component<any> | null = null;
   let QuotaExceededModal: Component<any> | null = null;
   let LegalGateModal: Component<any> | null = null;
   let IdleTimeoutDialog: Component<any> | null = null;
@@ -96,6 +97,12 @@
   // Settings can only re-open it for that same role.
   $: if ($isAuthenticated && !lifecycleHold && $user?.role === 'super_admin' && !FirstRunWizard) {
     void import("../components/FirstRunWizard.svelte").then((m) => (FirstRunWizard = m.default));
+  }
+  // Lazy: the banner only matters while an erasure request is open (self-service erasure, #1354).
+  $: if ($isAuthenticated && !lifecycleHold && !ErasureRequestBanner) {
+    void import("../components/ErasureRequestBanner.svelte").then(
+      (m) => (ErasureRequestBanner = m.default)
+    );
   }
   $: if (isCloudEdition && $isAuthenticated && !lifecycleHold && !QuotaExceededModal) {
     void import("$lib/cloud/components/QuotaExceededModal.svelte").then((m) => (QuotaExceededModal = m.default));
@@ -307,6 +314,7 @@
     {#if $isAuthenticated && !lifecycleHold}
       <Navbar />
       {#if $supportSession.active}<SupportAccessBanner />{/if}
+      {#if ErasureRequestBanner}<svelte:component this={ErasureRequestBanner} />{/if}
       <NotificationsPanel />
       <UploadManager />
       {#if SettingsModal}

@@ -317,7 +317,7 @@ export async function initAuth() {
     }
 
     authStore.reset();
-  } catch (error) {
+  } catch {
     authStore.reset();
   }
 }

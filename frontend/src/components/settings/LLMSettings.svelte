@@ -17,7 +17,8 @@
   } from '$lib/settings/llmSettingsView';
   import { runConnectionTest, runContextWindowProbe, runReasoningProbe } from '$lib/settings/llmProbes';
   import { withShareState } from '$lib/settings/shareState';
-  import axiosInstance from '$lib/axios';
+  import { UserSettingsApi } from '$lib/api/userSettings';
+  import { AdminSettingsApi } from '$lib/api/adminSettings';
 
   export let onSettingsChange: (() => void) | null = null;
   export let isAdmin: boolean = false;
@@ -142,8 +143,8 @@
 
   async function loadAutoSummarySetting() {
     try {
-      const res = await axiosInstance.get('/user-settings/ai-summary');
-      autoSummaryEnabled = res.data.ai_summary_enabled;
+      const res = await UserSettingsApi.getAiSummaryPreference();
+      autoSummaryEnabled = res.ai_summary_enabled;
     } catch (err) {
       console.warn('Failed to load auto-summary setting:', err);
     }
@@ -152,9 +153,9 @@
   async function saveAutoSummary() {
     autoSummaryLoading = true;
     try {
-      const res = await axiosInstance.put('/user-settings/ai-summary', { enabled: autoSummaryEnabled });
-      autoSummaryEnabled = res.data.ai_summary_enabled;
-      toastStore.success(res.data.message, 3000);
+      const res = await UserSettingsApi.setAiSummaryPreference(autoSummaryEnabled);
+      autoSummaryEnabled = res.ai_summary_enabled;
+      toastStore.success(res.message ?? '', 3000);
     } catch (err: unknown) {
       toastStore.error(getErrorMessage(err, $t('common.error')), 5000);
       autoSummaryEnabled = !autoSummaryEnabled; // rollback
@@ -165,8 +166,8 @@
 
   async function loadSystemSummarySetting() {
     try {
-      const res = await axiosInstance.get('/admin/system/ai-summary');
-      systemSummaryEnabled = res.data.ai_summary_enabled;
+      const res = await AdminSettingsApi.getSystemAiSummary();
+      systemSummaryEnabled = res.ai_summary_enabled;
     } catch (err) {
       console.warn('Failed to load system summary setting:', err);
     }
@@ -175,11 +176,8 @@
   async function saveSystemSummary() {
     systemSummaryLoading = true;
     try {
-      // `enabled` is a query parameter on this route (a JSON body is refused with a 422).
-      const res = await axiosInstance.put('/admin/system/ai-summary', null, {
-        params: { enabled: systemSummaryEnabled }
-      });
-      systemSummaryEnabled = res.data.ai_summary_enabled;
+      const res = await AdminSettingsApi.setSystemAiSummary(systemSummaryEnabled);
+      systemSummaryEnabled = res.ai_summary_enabled;
       const state = systemSummaryEnabled ? $t('common.enabled') : $t('common.disabled');
       toastStore.success(`${$t('settings.llm.systemSummary')}: ${state}`, 3000);
     } catch (err: unknown) {

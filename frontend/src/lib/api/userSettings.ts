@@ -24,10 +24,28 @@ export interface ResetResponse {
   default_settings: RecordingSettings;
 }
 
+/** The user's auto-summary preference (`GET`/`PUT /user-settings/ai-summary`). */
+export interface AiSummaryPreference {
+  ai_summary_enabled: boolean;
+  /** Present on the `PUT` reply only. */
+  message?: string;
+}
+
 /**
  * API service class for user settings operations
  */
 export class UserSettingsApi {
+  /** Whether summaries are generated automatically after this user's transcriptions. */
+  static async getAiSummaryPreference(): Promise<AiSummaryPreference> {
+    const response = await axiosInstance.get('/user-settings/ai-summary');
+    return response.data;
+  }
+
+  static async setAiSummaryPreference(enabled: boolean): Promise<AiSummaryPreference> {
+    const response = await axiosInstance.put('/user-settings/ai-summary', { enabled });
+    return response.data;
+  }
+
   /**
    * Get user's current recording settings from database
    * @returns Promise resolving to current recording settings with defaults for unset values

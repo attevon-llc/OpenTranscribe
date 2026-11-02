@@ -24,6 +24,12 @@ export interface GarbageCleanupConfigUpdate {
   max_word_length?: number;
 }
 
+/** The deployment-wide auto-summary switch (`/admin/system/ai-summary`). */
+export interface SystemAiSummarySetting {
+  ai_summary_enabled: boolean;
+  scope: 'system';
+}
+
 export class AdminSettingsApi {
   private static readonly BASE_PATH = '/admin';
 
@@ -58,6 +64,27 @@ export class AdminSettingsApi {
     config: GarbageCleanupConfigUpdate
   ): Promise<GarbageCleanupConfig> {
     const response = await axiosInstance.put(`${this.BASE_PATH}/settings/garbage-cleanup`, config);
+    return response.data;
+  }
+
+  /**
+   * Get the deployment-wide auto-summary switch (admin only)
+   */
+  static async getSystemAiSummary(): Promise<SystemAiSummarySetting> {
+    const response = await axiosInstance.get(`${this.BASE_PATH}/system/ai-summary`);
+    return response.data;
+  }
+
+  /**
+   * Set the deployment-wide auto-summary switch (admin only).
+   *
+   * `enabled` is a QUERY parameter on this route, not a body field: the handler declares a
+   * bare `bool`, so a JSON body is refused with a 422.
+   */
+  static async setSystemAiSummary(enabled: boolean): Promise<SystemAiSummarySetting> {
+    const response = await axiosInstance.put(`${this.BASE_PATH}/system/ai-summary`, null, {
+      params: { enabled },
+    });
     return response.data;
   }
 }

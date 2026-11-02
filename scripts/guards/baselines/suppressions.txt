@@ -241,7 +241,6 @@ noqa::backend/tests/unit/test_ws_event_quarantine_discipline.py	4	suppression: r
 noqa::backend/tests/unit/test_youtube_rate_limiter.py	1	suppression: reason to be added
 noqa::scripts/benchmark-pyannote-mps.py	1	suppression: reason to be added
 noqa::scripts/benchmark-thorough.py	4	suppression: reason to be added
-noqa::scripts/benchmark_concurrent_uploads.py	1	suppression: reason to be added
 noqa::scripts/benchmark_engine_single.py	1	suppression: reason to be added
 noqa::scripts/benchmark_router.py	1	suppression: reason to be added
 noqa::scripts/benchmark_upload_matrix.py	3	suppression: reason to be added

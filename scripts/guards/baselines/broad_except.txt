@@ -346,16 +346,12 @@ backend/app/services/thumbnail.py	3	ratchet: may only go down
 backend/app/utils/vram_profiler.py	1	ratchet: may only go down
 backend/app/utils/websocket_notify.py	1	ratchet: may only go down
 scripts/benchmark-diarization.py	1	ratchet: may only go down
-scripts/benchmark-pyannote-direct.py	9	ratchet: may only go down
 scripts/benchmark-thorough.py	2	ratchet: may only go down
 scripts/benchmark_concurrent_uploads.py	2	ratchet: may only go down
-scripts/benchmark_e2e.py	2	ratchet: may only go down
 scripts/benchmark_engine_compare.py	3	ratchet: may only go down
 scripts/benchmark_engine_queue.py	9	ratchet: may only go down
 scripts/benchmark_engine_single.py	2	ratchet: may only go down
-scripts/benchmark_parallel.py	2	ratchet: may only go down
 scripts/benchmark_projection.py	1	ratchet: may only go down
-scripts/benchmark_rag.py	1	ratchet: may only go down
 scripts/benchmark_upload_baseline.py	1	ratchet: may only go down
 scripts/benchmark_upload_matrix.py	2	ratchet: may only go down
 scripts/check-schema-drift.py	1	ratchet: may only go down
@@ -367,7 +363,6 @@ scripts/measure_embedding_window.py	1	ratchet: may only go down
 scripts/onnx_benchmark_providers.py	2	ratchet: may only go down
 scripts/organize-all-screenshots.py	1	ratchet: may only go down
 scripts/preconvert-onnx-models.py	3	ratchet: may only go down
-scripts/probe_chat_rag.py	4	ratchet: may only go down
 scripts/soak_seed_audio.py	1	ratchet: may only go down
 scripts/spike-onnx-export-v2.py	12	ratchet: may only go down
 scripts/update-a11y-baseline.py	1	ratchet: may only go down
@@ -377,3 +372,13 @@ scripts/vram-probe-diarization-mps.py	2	ratchet: may only go down
 scripts/vram-probe-diarization.py	8	ratchet: may only go down
 scripts/whole-stack-vram-probe.py	3	ratchet: may only go down
 scripts/release-tests/lib/os-probe.py	4	diagnostic probe for the release rehearsal: every failure is the payload and is reported as data to a release check, never swallowed (new in v0.6.0 master)
+scripts/bench_parallel/monitors.py	2	ratchet: may only go down
+scripts/pyannote_direct/audio_io.py	2	ratchet: may only go down
+scripts/pyannote_direct/driver.py	2	ratchet: may only go down
+scripts/pyannote_direct/pipeline.py	2	ratchet: may only go down
+scripts/pyannote_direct/vram.py	3	ratchet: may only go down
+scripts/e2e_bench/backend_api.py	1	ratchet: may only go down
+scripts/e2e_bench/cli.py	1	ratchet: may only go down
+scripts/rag_bench/cli.py	1	ratchet: may only go down
+scripts/chat_probe/conversation.py	1	ratchet: may only go down
+scripts/chat_probe/stack_state.py	3	ratchet: may only go down

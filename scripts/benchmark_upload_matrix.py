@@ -41,12 +41,12 @@ from benchmark_concurrent_uploads import (  # noqa: E402
     _db_query,
     fetch_timing_rows,
 )
-from benchmark_e2e import (  # noqa: E402
-    DEFAULT_BACKEND_URL,
+from e2e_bench.backend_api import (  # noqa: E402
     get_auth_token,
     poll_task_completion,
-    upload_file_via_api,  # noqa: E402
+    upload_file_via_api,
 )
+from e2e_bench.config import DEFAULT_BACKEND_URL  # noqa: E402
 
 
 def resolve_task_id_from_db(file_uuid: str) -> str:

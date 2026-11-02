@@ -25,9 +25,9 @@ than what came back.
 
 from __future__ import annotations
 
-import importlib.util
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -213,24 +213,36 @@ def test_a_run_that_asks_for_no_timings_still_works(legs) -> None:
 
 
 def _benchmark_rag():
-    """Load the sweep script as a module (it lives outside the package tree)."""
-    path = Path(__file__).resolve().parents[3] / "scripts" / "benchmark_rag.py"
-    spec = importlib.util.spec_from_file_location("benchmark_rag_under_test", path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    """Gather the ``scripts/rag_bench`` package's modules under one name."""
+    scripts_dir = Path(__file__).resolve().parents[3] / "scripts"
+    sys.path.insert(0, str(scripts_dir))
+    try:
+        from rag_bench import baselines
+        from rag_bench import compare
+        from rag_bench import corpus
+        from rag_bench import fusion
+        from rag_bench import parser
+        from rag_bench import scoring
+    finally:
+        sys.path.remove(str(scripts_dir))
+    return SimpleNamespace(
+        baselines=baselines,
+        compare=compare,
+        corpus=corpus,
+        fusion=fusion,
+        parser=parser,
+        scoring=scoring,
+    )
 
 
 def _parse(argv: list[str]):
     module = _benchmark_rag()
-    return module, module.build_parser().parse_args(argv)
+    return module, module.parser.build_parser().parse_args(argv)
 
 
 def test_no_fusion_flag_means_the_deployments_configured_default() -> None:
     module, args = _parse([])
-    assert module._build_fusion(args) is None
+    assert module.fusion.build_fusion(args) is None
 
 
 #: Each fusion flag, alone, and the attribute it must land on. A flag missing
@@ -252,14 +264,14 @@ def test_every_fusion_flag_on_its_own_lands_on_its_own_parameter(
     flag: str, value: str, attribute: str, expected: object
 ) -> None:
     module, _ = _parse([])
-    config = module._build_fusion(module.build_parser().parse_args([flag, value]))
+    config = module.fusion.build_fusion(module.parser.build_parser().parse_args([flag, value]))
     assert config is not None, f"{flag} did not select an arm at all"
     assert getattr(config, attribute) == expected
 
 
 def test_a_rank_constant_alone_stays_rrf_and_carries_the_number() -> None:
     module, args = _parse(["--rank-constant", "60"])
-    config = module._build_fusion(args)
+    config = module.fusion.build_fusion(args)
     assert config.strategy == "rrf"
     assert config.rank_constant == 60
 
@@ -277,7 +289,7 @@ def test_normalization_flags_compose_into_one_arm() -> None:
             "0.3,0.7",
         ]
     )
-    config = module._build_fusion(args)
+    config = module.fusion.build_fusion(args)
     assert config.slug() == "norm-z_score-geometric_mean-w30_70"
 
 
@@ -290,14 +302,14 @@ def test_a_configuration_opensearch_would_reject_is_refused_before_any_query() -
     """
     module, args = _parse(["--combination-weights", "0.705,0.295"])
     with pytest.raises(SystemExit, match="Unusable --fusion configuration"):
-        module._build_fusion(args)
+        module.fusion.build_fusion(args)
 
 
 def test_the_budget_flags_reach_the_run_config_and_are_recorded() -> None:
     module, args = _parse(
         ["--stage", "rerank", "--final-chunks", "24", "--max-per-file", "2", "--size", "96"]
     )
-    config = RetrievalConfig(stage=args.stage, size=args.size, **module._build_budget(args))
+    config = RetrievalConfig(stage=args.stage, size=args.size, **module.fusion.build_budget(args))
     recorded = config.as_dict()
     assert (recorded["candidate_pool"], recorded["final_chunks"]) == (96, 24)
     assert recorded["max_chunks_per_file"] == 2
@@ -307,13 +319,13 @@ def test_the_budget_flags_reach_the_run_config_and_are_recorded() -> None:
 
 def test_an_unset_budget_flag_leaves_the_shipped_value_alone() -> None:
     module, args = _parse([])
-    assert module._build_budget(args) == {}
+    assert module.fusion.build_budget(args) == {}
 
 
 def test_the_latency_quantiles_are_values_that_were_actually_observed() -> None:
     """Nearest-rank, not interpolated: an arm's p95 must be a real measurement."""
     module = _benchmark_rag()
-    summary = module._latency_summary([float(n) for n in range(1, 101)], workers=4)
+    summary = module.scoring.latency_summary([float(n) for n in range(1, 101)], workers=4)
     assert summary["p50"] == 50.0
     assert summary["p95"] == 95.0
     assert summary["p99"] == 99.0
@@ -325,5 +337,5 @@ def test_the_latency_quantiles_are_values_that_were_actually_observed() -> None:
 def test_no_latency_samples_says_so_rather_than_reporting_zero() -> None:
     """A ``p95: 0`` would read as "this arm is free" — the opposite of no data."""
     module = _benchmark_rag()
-    summary = module._latency_summary([], workers=4)
+    summary = module.scoring.latency_summary([], workers=4)
     assert summary == {"samples": 0}

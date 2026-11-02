@@ -472,13 +472,13 @@ repos:
         entry: python3 scripts/audit-session-lifetime.py --selftest
         language: system
         pass_filenames: false
-        files: ^scripts/audit-session-lifetime\.py$
+        files: ^scripts/(audit-session-lifetime\.py|session_lifetime_audit/.*\.py)$
       - id: audit-session-lifetime
         name: audit DB session lifetime (no transaction held across slow work)
         entry: python3 scripts/audit-session-lifetime.py backend/app
         language: system
         pass_filenames: false
-        files: ^(backend/app/.*\.py|scripts/session-lifetime-allowlist\.txt|scripts/audit-session-lifetime\.py)$
+        files: ^(backend/app/.*\.py|scripts/session-lifetime-allowlist\.txt|scripts/audit-session-lifetime\.py|scripts/session_lifetime_audit/.*\.py)$
 
   # Error-disclosure gate (issues #786, #959) — every read edge that puts a stored failure
   # column (`last_error_message`, a task's `error_message`) on the wire must go through

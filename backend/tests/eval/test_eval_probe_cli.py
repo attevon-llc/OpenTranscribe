@@ -1,7 +1,7 @@
 """``scripts/probe_chat_rag.py`` — the pure (non-network) half of the live chat probe.
 
-Loaded via ``importlib`` the same way ``test_eval_fusion_arm.py`` loads the CLI half
-of ``scripts/benchmark_rag.py`` — it lives outside the ``tests.eval`` package tree.
+Imports the ``scripts/chat_probe`` package the way ``test_eval_fusion_arm.py`` imports the
+CLI half of ``scripts/benchmark_rag.py`` — it lives outside the ``tests.eval`` package tree.
 Only functions that touch neither the network nor a live stack are exercised here:
 argument parsing, question-set loading/validation, scope parsing, and the raw-record
 assembly. Everything that calls ``requests`` (``login``, ``create_conversation``,
@@ -11,24 +11,39 @@ this file never imports ``requests`` itself and never invokes ``main()``.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 pytestmark = pytest.mark.unit
 
 
-def _probe_module():
-    path = Path(__file__).resolve().parents[3] / "scripts" / "probe_chat_rag.py"
-    spec = importlib.util.spec_from_file_location("probe_chat_rag_under_test", path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+def _probe_module() -> SimpleNamespace:
+    """Gather the ``scripts/chat_probe`` package's modules under one name."""
+    scripts_dir = Path(__file__).resolve().parents[3] / "scripts"
+    sys.path.insert(0, str(scripts_dir))
+    try:
+        from chat_probe import cli
+        from chat_probe import config
+        from chat_probe import conversation
+        from chat_probe import parser
+        from chat_probe import questions
+        from chat_probe import report
+        from chat_probe import stack_state
+    finally:
+        sys.path.remove(str(scripts_dir))
+    return SimpleNamespace(
+        cli=cli,
+        config=config,
+        conversation=conversation,
+        parser=parser,
+        questions=questions,
+        report=report,
+        stack_state=stack_state,
+    )
 
 
 probe = _probe_module()
@@ -40,15 +55,15 @@ probe = _probe_module()
 
 
 def test_parse_scope_splits_and_strips() -> None:
-    assert probe.parse_scope(" a, b ,c") == ["a", "b", "c"]
+    assert probe.questions.parse_scope(" a, b ,c") == ["a", "b", "c"]
 
 
 def test_parse_scope_drops_blanks() -> None:
-    assert probe.parse_scope("a,,b,") == ["a", "b"]
+    assert probe.questions.parse_scope("a,,b,") == ["a", "b"]
 
 
 def test_parse_scope_empty_string_is_empty_list() -> None:
-    assert probe.parse_scope("") == []
+    assert probe.questions.parse_scope("") == []
 
 
 # ---------------------------------------------------------------------------
@@ -84,7 +99,7 @@ def test_load_question_set_valid_file(tmp_path: Path) -> None:
             },
         ],
     )
-    questions = probe.load_question_set(path)
+    questions = probe.questions.load_question_set(path)
     assert [q.label for q in questions] == ["q1", "q2"]
     assert questions[0].file_uuids == ["a"]
     assert questions[0].reference is None
@@ -97,25 +112,25 @@ def test_load_question_set_missing_required_key_exits(tmp_path: Path) -> None:
         tmp_path, [{"label": "q1", "category": "x"}]
     )  # no question/file_uuids
     with pytest.raises(SystemExit):
-        probe.load_question_set(path)
+        probe.questions.load_question_set(path)
 
 
 def test_load_question_set_not_a_list_exits(tmp_path: Path) -> None:
     path = _write_question_set(tmp_path, {"label": "q1"})
     with pytest.raises(SystemExit):
-        probe.load_question_set(path)
+        probe.questions.load_question_set(path)
 
 
 def test_load_question_set_invalid_json_exits(tmp_path: Path) -> None:
     path = tmp_path / "bad.json"
     path.write_text("{not json", encoding="utf-8")
     with pytest.raises(SystemExit):
-        probe.load_question_set(path)
+        probe.questions.load_question_set(path)
 
 
 def test_load_question_set_missing_file_exits(tmp_path: Path) -> None:
     with pytest.raises(SystemExit):
-        probe.load_question_set(tmp_path / "does-not-exist.json")
+        probe.questions.load_question_set(tmp_path / "does-not-exist.json")
 
 
 # ---------------------------------------------------------------------------
@@ -124,23 +139,23 @@ def test_load_question_set_missing_file_exits(tmp_path: Path) -> None:
 
 
 def test_build_parser_requires_question_or_question_set() -> None:
-    parser = probe.build_parser()
+    parser = probe.parser.build_parser()
     with pytest.raises(SystemExit):
         parser.parse_args(["--host", "localhost"])
 
 
 def test_build_parser_question_set_and_question_are_mutually_exclusive() -> None:
-    parser = probe.build_parser()
+    parser = probe.parser.build_parser()
     with pytest.raises(SystemExit):
         parser.parse_args(["--question-set", "x.json", "--question", "text", "--scope", "a"])
 
 
 def test_build_parser_defaults() -> None:
-    parser = probe.build_parser()
+    parser = probe.parser.build_parser()
     args = parser.parse_args(["--question-set", "x.json"])
     assert args.host == "localhost"
     assert args.port == 5174
-    assert args.email == probe.DEFAULT_EMAIL
+    assert args.email == probe.config.DEFAULT_EMAIL
     assert args.out == "/tmp/ot-probe"  # noqa: S108 — asserting the CLI default, not writing here
     assert args.metrics_out is None
     assert args.skip_llm_config is False
@@ -149,7 +164,7 @@ def test_build_parser_defaults() -> None:
 def test_build_parser_port_is_overridable_for_a_fresh_stack() -> None:
     """The tool must be able to target a --fresh stack's offset port, not only
     the dev default — this is the '--port' half of the brief's requirement."""
-    parser = probe.build_parser()
+    parser = probe.parser.build_parser()
     args = parser.parse_args(["--question-set", "x.json", "--port", "5274"])
     assert args.port == 5274
 
@@ -164,28 +179,28 @@ def test_resolve_questions_from_question_set(tmp_path: Path) -> None:
         tmp_path,
         [{"label": "q1", "category": "c", "question": "text", "file_uuids": ["a"]}],
     )
-    parser = probe.build_parser()
+    parser = probe.parser.build_parser()
     args = parser.parse_args(["--question-set", str(path)])
-    questions = probe._resolve_questions(args)
+    questions = probe.cli._resolve_questions(args)
     assert len(questions) == 1
     assert questions[0].label == "q1"
 
 
 def test_resolve_questions_ad_hoc_requires_scope() -> None:
-    parser = probe.build_parser()
+    parser = probe.parser.build_parser()
     args = parser.parse_args(["--question", "text"])
     with pytest.raises(SystemExit):
-        probe._resolve_questions(args)
+        probe.cli._resolve_questions(args)
 
 
 def test_resolve_questions_ad_hoc_builds_one_question() -> None:
-    parser = probe.build_parser()
+    parser = probe.parser.build_parser()
     args = parser.parse_args(
         ["--question", "text", "--scope", "a,b", "--label", "my-q", "--category", "smoke"]
     )
-    questions = probe._resolve_questions(args)
+    questions = probe.cli._resolve_questions(args)
     assert len(questions) == 1
-    assert questions[0] == probe.Question(
+    assert questions[0] == probe.questions.Question(
         label="my-q", category="smoke", question="text", file_uuids=["a", "b"]
     )
 
@@ -196,7 +211,7 @@ def test_resolve_questions_ad_hoc_builds_one_question() -> None:
 
 
 def test_result_to_record_shape_matches_probe_metrics_expectations() -> None:
-    question = probe.Question(
+    question = probe.questions.Question(
         label="q1",
         category="single_specific",
         question="text",
@@ -205,7 +220,7 @@ def test_result_to_record_shape_matches_probe_metrics_expectations() -> None:
         reference="ref",
         expect_refusal=False,
     )
-    result = probe.Result(
+    result = probe.questions.Result(
         q=question,
         conversation_uuid="uuid-1",
         answer_text="answer",
@@ -215,7 +230,7 @@ def test_result_to_record_shape_matches_probe_metrics_expectations() -> None:
         retrieved=10,
         offered_citations=[{"id": 1, "file_uuid": "a"}],
     )
-    record = probe.result_to_record(result)
+    record = probe.report.result_to_record(result)
     # Every field tests.eval.harness.probe_metrics.extract_turn_metrics reads.
     for required in (
         "label",
@@ -239,9 +254,9 @@ def test_result_to_record_shape_matches_probe_metrics_expectations() -> None:
 def test_result_offered_citations_defaults_to_empty_list() -> None:
     """A Result built without the kwarg (e.g. an errored turn) must not carry a
     mutable-default landmine shared across instances."""
-    question = probe.Question(label="q", category="c", question="t", file_uuids=["a"])
-    first = probe.Result(q=question)
-    second = probe.Result(q=question)
+    question = probe.questions.Question(label="q", category="c", question="t", file_uuids=["a"])
+    first = probe.questions.Result(q=question)
+    second = probe.questions.Result(q=question)
     first.offered_citations.append({"id": 1, "file_uuid": "a"})
     assert second.offered_citations == []
 
@@ -252,7 +267,7 @@ def test_result_offered_citations_defaults_to_empty_list() -> None:
 
 
 def test_offered_citation_refs_keeps_only_id_and_file_uuid() -> None:
-    refs = probe._offered_citation_refs(
+    refs = probe.conversation._offered_citation_refs(
         [
             {
                 "id": 3,
@@ -270,7 +285,7 @@ def test_offered_citation_refs_keeps_only_id_and_file_uuid() -> None:
 def test_offered_citation_refs_skips_malformed_entries() -> None:
     """A missing id/file_uuid is dropped, not raised — one odd frame from a live
     server must not abort the whole probe run."""
-    refs = probe._offered_citation_refs(
+    refs = probe.conversation._offered_citation_refs(
         [
             {"id": 1, "file_uuid": "a"},
             {"id": 2},  # no file_uuid
@@ -282,7 +297,7 @@ def test_offered_citation_refs_skips_malformed_entries() -> None:
 
 
 def test_offered_citation_refs_empty_input_is_empty_output() -> None:
-    assert probe._offered_citation_refs([]) == []
+    assert probe.conversation._offered_citation_refs([]) == []
 
 
 # ---------------------------------------------------------------------------
@@ -291,31 +306,31 @@ def test_offered_citation_refs_empty_input_is_empty_output() -> None:
 
 
 def test_parse_chat_flags_true_and_false() -> None:
-    assert probe._parse_chat_flags(
+    assert probe.cli._parse_chat_flags(
         ["speaker_resolver_enabled=true", "recurrence_enabled=false"]
     ) == {"speaker_resolver_enabled": True, "recurrence_enabled": False}
 
 
 def test_parse_chat_flags_case_insensitive_and_trims_whitespace() -> None:
-    assert probe._parse_chat_flags([" speaker_resolver_enabled = TRUE "]) == {
+    assert probe.cli._parse_chat_flags([" speaker_resolver_enabled = TRUE "]) == {
         "speaker_resolver_enabled": True
     }
 
 
 def test_parse_chat_flags_empty_list_is_empty_dict() -> None:
-    assert probe._parse_chat_flags([]) == {}
+    assert probe.cli._parse_chat_flags([]) == {}
 
 
 def test_parse_chat_flags_missing_equals_sign_refuses() -> None:
     with pytest.raises(SystemExit, match="FIELD=true\\|false"):
-        probe._parse_chat_flags(["speaker_resolver_enabled"])
+        probe.cli._parse_chat_flags(["speaker_resolver_enabled"])
 
 
 def test_parse_chat_flags_non_boolean_value_refuses() -> None:
     """Only booleans are supported today — a silently-mis-parsed value would defeat
     the whole point of the read-back check that consumes this dict."""
     with pytest.raises(SystemExit, match="only true/false"):
-        probe._parse_chat_flags(["candidate_pool=48"])
+        probe.cli._parse_chat_flags(["candidate_pool=48"])
 
 
 # ---------------------------------------------------------------------------
@@ -362,7 +377,9 @@ class _FakeChatSettingsSession:
 
 def test_ensure_chat_flags_applies_and_reads_back() -> None:
     session = _FakeChatSettingsSession({"speaker_resolver_enabled": False})
-    result = probe.ensure_chat_flags(session, "http://x/api", {"speaker_resolver_enabled": True})
+    result = probe.stack_state.ensure_chat_flags(
+        session, "http://x/api", {"speaker_resolver_enabled": True}
+    )
     assert result == {"speaker_resolver_enabled": True}
 
 
@@ -378,7 +395,7 @@ def test_ensure_chat_flags_empty_updates_is_a_noop() -> None:
         def get(self, *a, **k):  # noqa: ANN001, ANN002, ANN003
             raise AssertionError("must not GET when there are no updates")
 
-    assert probe.ensure_chat_flags(_ExplodingSession(), "http://x/api", {}) == {}
+    assert probe.stack_state.ensure_chat_flags(_ExplodingSession(), "http://x/api", {}) == {}
 
 
 def test_ensure_chat_flags_refuses_on_readback_mismatch() -> None:
@@ -390,7 +407,9 @@ def test_ensure_chat_flags_refuses_on_readback_mismatch() -> None:
         stuck_at={"speaker_resolver_enabled": False},
     )
     with pytest.raises(SystemExit, match="read-back mismatch"):
-        probe.ensure_chat_flags(session, "http://x/api", {"speaker_resolver_enabled": True})
+        probe.stack_state.ensure_chat_flags(
+            session, "http://x/api", {"speaker_resolver_enabled": True}
+        )
 
 
 def test_ensure_chat_flags_error_names_the_applied_check_failure_mode() -> None:
@@ -401,4 +420,6 @@ def test_ensure_chat_flags_error_names_the_applied_check_failure_mode() -> None:
         stuck_at={"speaker_resolver_enabled": False},
     )
     with pytest.raises(SystemExit, match="applied-check"):
-        probe.ensure_chat_flags(session, "http://x/api", {"speaker_resolver_enabled": True})
+        probe.stack_state.ensure_chat_flags(
+            session, "http://x/api", {"speaker_resolver_enabled": True}
+        )

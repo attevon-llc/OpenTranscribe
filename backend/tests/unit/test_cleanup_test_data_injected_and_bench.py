@@ -9,6 +9,7 @@ stamps a seed that tests mint in a registered shape, and the benchmark uploads u
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import re
 import sys
@@ -36,8 +37,12 @@ cleanup = _load("cleanup_test_data_injected", _REPO / "scripts" / "cleanup-test-
 
 @pytest.fixture(scope="module")
 def bench(tmp_path_factory) -> ModuleType:
-    # The script reconfigures sys.stdout at import; pytest's capture stream may refuse that.
-    return _load("benchmark_parallel_under_test", _REPO / "scripts" / "benchmark_parallel.py")
+    scripts_dir = str(_REPO / "scripts")
+    sys.path.insert(0, scripts_dir)
+    try:
+        return importlib.import_module("bench_parallel.backend_api")
+    finally:
+        sys.path.remove(scripts_dir)
 
 
 def _bench_spec() -> Any:
@@ -86,10 +91,10 @@ class TestBenchParallelUploads:
             return _Resp()
 
         monkeypatch.setattr(bench.requests, "post", fake_post)
-        monkeypatch.setattr(bench, "_UPLOADED_UUIDS", [])
+        monkeypatch.setattr(bench, "UPLOADED_UUIDS", [])
         assert bench.upload_file("tok", str(audio)) == "11111111-1111-1111-1111-111111111111"
         assert _bench_spec().shape.match(seen["filename"]), seen["filename"]
-        assert bench._UPLOADED_UUIDS == ["11111111-1111-1111-1111-111111111111"]
+        assert bench.UPLOADED_UUIDS == ["11111111-1111-1111-1111-111111111111"]
 
     def test_cleanup_falls_back_to_force_and_counts_what_it_could_not_delete(
         self, bench, monkeypatch

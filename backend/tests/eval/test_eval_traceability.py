@@ -1,7 +1,7 @@
 """``tests.eval.harness.traceability`` — the deterministic traceability half of task #11 /
 GH #463 (representation / traceability / correctness). No LLM judge, no network, no live
 stack: everything here is a pure function over a canned record shaped like the probe's own
-per-question JSON (``scripts/probe_chat_rag.py::result_to_record``).
+per-question JSON (``scripts/chat_probe/report.py::result_to_record``).
 
 None of the canned text below is QMSum's or any other licensed dataset's — it is written for
 this test file, exactly like ``test_eval_probe_metrics.py``.

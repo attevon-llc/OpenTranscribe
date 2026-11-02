@@ -57,7 +57,6 @@ Two shapes of test, because the plane has two shapes of session:
 
 from __future__ import annotations
 
-import importlib.util
 import inspect
 import sys
 import uuid as uuid_mod
@@ -80,7 +79,7 @@ from app.tasks import speaker_update_task as spt
 from tests.unit._session_lifetime_trackers import ScopeTracker
 from tests.unit._session_lifetime_trackers import leak
 
-_AUDITOR = Path(__file__).resolve().parents[3] / "scripts" / "audit-session-lifetime.py"
+_SCRIPTS_DIR = Path(__file__).resolve().parents[3] / "scripts"
 
 #: EMPTY, and that is the point. This held
 #: ``ProfileEmbeddingService.calculate_profile_similarity``, whose ``db`` parameter was
@@ -880,14 +879,12 @@ def test_batch_suggestions_run_with_the_database_unreachable(db_session, normal_
 # --------------------------------------------------------------------------- #
 @pytest.fixture(scope="module")
 def auditor():
-    if not _AUDITOR.exists():
-        pytest.fail(f"{_AUDITOR} is missing — the session-lifetime gate has no implementation")
-    spec = importlib.util.spec_from_file_location("audit_session_lifetime", _AUDITOR)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["audit_session_lifetime"] = module
-    spec.loader.exec_module(module)
-    return module
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+    try:
+        from session_lifetime_audit import scan
+    finally:
+        sys.path.remove(str(_SCRIPTS_DIR))
+    return scan
 
 
 def test_speaker_plane_has_no_session_lifetime_findings_left(auditor):

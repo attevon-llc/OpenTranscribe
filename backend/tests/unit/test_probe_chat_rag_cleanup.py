@@ -8,26 +8,27 @@ probe body replaced by one that records a conversation and then raises.
 
 from __future__ import annotations
 
-import importlib.util
 import re
 import sys
 from pathlib import Path
-from types import ModuleType
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
-_SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "probe_chat_rag.py"
+_SCRIPTS_DIR = Path(__file__).resolve().parents[3] / "scripts"
 
 
-def _load() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("probe_chat_rag_cleanup", _SCRIPT)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+def _load() -> SimpleNamespace:
+    """Gather the ``scripts/chat_probe`` package's modules under one name."""
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+    try:
+        from chat_probe import cli
+        from chat_probe import conversation
+        from chat_probe import questions
+    finally:
+        sys.path.remove(str(_SCRIPTS_DIR))
+    return SimpleNamespace(cli=cli, conversation=conversation, questions=questions)
 
 
 probe = _load()
@@ -76,11 +77,13 @@ class _Session:
 def fake(monkeypatch: pytest.MonkeyPatch) -> _Session:
     session = _Session()
     monkeypatch.setitem(sys.modules, "requests", SimpleNamespace(Session=lambda: session))
-    monkeypatch.setattr(probe, "login", lambda *a, **k: None)
+    monkeypatch.setattr(probe.cli, "login", lambda *a, **k: None)
     monkeypatch.setattr(
-        probe,
+        probe.cli,
         "_resolve_questions",
-        lambda args: [probe.Question(label="q1", category="c", question="?", file_uuids=["f"])],
+        lambda args: [
+            probe.questions.Question(label="q1", category="c", question="?", file_uuids=["f"])
+        ],
     )
 
     def dies_after_one_conversation(args, sess, base_url, questions, flags, records, req):
@@ -88,7 +91,7 @@ def fake(monkeypatch: pytest.MonkeyPatch) -> _Session:
         records.append({"conversation_uuid": "conv-1"})
         raise RuntimeError("the probe died mid-run")
 
-    monkeypatch.setattr(probe, "_run", dies_after_one_conversation)
+    monkeypatch.setattr(probe.cli, "_run", dies_after_one_conversation)
     return session
 
 
@@ -98,7 +101,7 @@ _ARGS = ["--question", "?", "--scope", "f", "--chat-flag", "speaker_resolver_ena
 @pytest.mark.unit
 def test_a_dying_probe_deletes_its_conversations_and_restores_what_it_changed(fake) -> None:
     with pytest.raises(RuntimeError, match="died mid-run"):
-        probe.main(_ARGS)
+        probe.cli.main(_ARGS)
     assert any(
         m == "DELETE" and u.endswith("/chat/conversations/conv-1") for m, u, _ in fake.writes
     )
@@ -120,13 +123,13 @@ def test_a_dying_probe_deletes_its_conversations_and_restores_what_it_changed(fa
 @pytest.mark.unit
 def test_keep_conversations_keeps_them_but_still_restores_settings(fake) -> None:
     with pytest.raises(RuntimeError):
-        probe.main([*_ARGS, "--keep-conversations"])
+        probe.cli.main([*_ARGS, "--keep-conversations"])
     assert not any(m == "DELETE" for m, _, _ in fake.writes)
     assert any(u.endswith("/admin/chat-settings") for m, u, _ in fake.writes if m == "PUT")
 
 
 @pytest.mark.unit
 def test_conversation_titles_carry_the_registered_probe_shape() -> None:
-    assert re.fullmatch(r"[0-9a-f]{8}", probe.RUN_TAG)
-    source = _SCRIPT.read_text(encoding="utf-8")
+    assert re.fullmatch(r"[0-9a-f]{8}", probe.conversation.RUN_TAG)
+    source = Path(probe.conversation.__file__).read_text(encoding="utf-8")
     assert "f'probe-{RUN_TAG}: {question.label}'" in source

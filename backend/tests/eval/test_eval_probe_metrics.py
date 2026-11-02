@@ -6,7 +6,7 @@ QMSum, a verbatim human reference answer. Both are prose this **public** repo mu
 never commit alongside a question set whose upstream README asks research-only use.
 
 These tests exercise the metrics-only extraction with a canned record shaped like the
-probe's own per-question JSON (see ``scripts/probe_chat_rag.py::result_to_record``) —
+probe's own per-question JSON (see ``scripts/chat_probe/report.py::result_to_record``) —
 nothing here makes a network call, and none of the canned text below is QMSum's; it is
 written for this test file.
 """

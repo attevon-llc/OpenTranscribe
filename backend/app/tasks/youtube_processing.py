@@ -174,6 +174,8 @@ def process_youtube_url_task(
     Raises:
         Exception: Any error during processing will be caught and returned in result dict.
     """
+    from app.legal.processing_gate import check_processing_allowed_for_file
+    from app.legal.processing_gate import mark_file_refused
     from app.utils.uuid_helpers import get_file_by_uuid
 
     file_id = None  # Initialize to handle exceptions before file_id is assigned
@@ -215,6 +217,13 @@ def process_youtube_url_task(
         with session_scope() as db:
             media_file = get_file_by_uuid(db, file_uuid)
             file_id = int(media_file.id)
+            # The legal processing gate, BEFORE anything is downloaded: the setting may have
+            # changed since the route checked, and recovery re-queues this task directly.
+            refusal = check_processing_allowed_for_file(db, media_file)
+            if refusal is not None:
+                mark_file_refused(db, file_id, refusal)
+                logger.info(f"URL import of {file_uuid} refused: {refusal.message}")
+                return {"status": "skipped", "message": refusal.message, "file_id": file_id}
 
         # Send initial processing notification (needs file_id from above)
         send_youtube_notification_via_redis(
@@ -704,7 +713,19 @@ def process_youtube_playlist_task(
     Raises:
         Exception: Any error during processing will be caught and returned in result dict.
     """
+    from app.legal.processing_gate import check_processing_allowed
+
     logger.info(f"Starting YouTube playlist processing task for URL: {url}")
+    # The legal processing gate, before any placeholder is created or anything downloaded.
+    # The requester owns every file this import creates, in the originating tenant.
+    with session_scope() as db:
+        refusal = check_processing_allowed(
+            db, owner_user_id=user_id, organization_id=organization_id
+        )
+    if refusal is not None:
+        logger.info(f"Playlist import for user {user_id} refused: {refusal.message}")
+        _send_playlist_notification(user_id, "error", refusal.message, 0)
+        return _create_playlist_error_result(refusal.message)
     _send_playlist_notification(user_id, "processing", "Extracting playlist information...", 5)
 
     try:

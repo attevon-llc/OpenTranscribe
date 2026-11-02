@@ -30,6 +30,7 @@ from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_active_user
 from app.core.config import settings
 from app.db.base import get_db
+from app.legal.processing_gate import require_processing_allowed
 from app.models.email_notification_config import EmailNotificationConfig
 from app.models.email_notification_config import WatchSourceEmail
 from app.models.user import User
@@ -823,6 +824,9 @@ def scan_watch_source(
     from app.tasks.watch_source_tasks import scan_single
 
     source = _get_source_or_404(db, source_uuid, ctx)
+    require_processing_allowed(
+        db, owner_user_id=int(source.user_id), organization_id=source.organization_id
+    )
     if not source.is_enabled:
         raise HTTPException(status_code=400, detail="Enable the source before scanning")
     task = scan_single.delay(source.id)
@@ -1035,6 +1039,9 @@ def retry_source_files(
     report "queued" and watch the row's status, not assume the import happened.
     """
     source = _get_source_or_404(db, source_uuid, ctx)
+    require_processing_allowed(
+        db, owner_user_id=int(source.user_id), organization_id=source.organization_id
+    )
     if not source.is_enabled:
         # 409 rather than the /scan endpoint's 400: this is a conflict with the
         # source's STATE, not a malformed request, and resetting rows for a scan that

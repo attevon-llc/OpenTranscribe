@@ -31,6 +31,7 @@ from .endpoints import engine_settings
 from .endpoints import first_run_wizard
 from .endpoints import groups
 from .endpoints import legal
+from .endpoints import legal_processing_gate
 from .endpoints import llm_settings
 from .endpoints import llm_status
 from .endpoints import local_models
@@ -352,6 +353,11 @@ include_router_with_consistency(
 include_router_with_consistency(privacy.user_router, prefix="/privacy", tags=["privacy"])
 include_router_with_consistency(
     privacy.admin_router, prefix="/admin/privacy-policy", tags=["admin"]
+)
+# Legal documents required before processing (super_admin). Enforcement is
+# app.legal.processing_gate, at every entry point that starts processing.
+include_router_with_consistency(
+    legal_processing_gate.router, prefix="/admin/legal-processing-gate", tags=["admin"]
 )
 include_router_with_consistency(
     admin_hf_token.router,

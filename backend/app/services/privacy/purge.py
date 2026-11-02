@@ -8,6 +8,19 @@ the separate, explicit, audited deletion, and it is irreversible by design. Thre
 * ``user``: one person's own data in one tenant (organization or personal workspace).
 * ``instance_personal`` / ``instance_all``: every personal workspace, or literally everything (a
   super_admin; ``instance_all`` is refused in a multi-tenant deployment by the caller).
+* ``files``: the voiceprints of the speakers of named files, whoever owns them (a retention
+  destruction, ``purge_reason="retention"``). It never deletes a profile row or a profile
+  document: each profile one of those speakers was linked to has its embedding RECOMPUTED from
+  its remaining speakers after the speaker documents are gone (or erased when none remains).
+  It is id-scoped only, like ``user``.
+
+Interface of the ``files`` scope (stable; the voiceprint retention sweep codes against it)::
+
+    scope = PurgeScope(kind="files", file_ids=(12, 34))     # non-empty; no org / user id
+    targets_still_enabled(db, scope, [VOICEPRINTS], purge_reason=RETENTION) == []
+    run_purge_pass(scope, [VOICEPRINTS], session_factory=SessionLocal)   # one pass
+    privacy_purge_task.delay(scope=scope.to_payload(), targets=[VOICEPRINTS],
+                             actor_user_id=None, purge_reason=RETENTION)  # both passes, audited
 
 What is deleted
 ---------------
@@ -57,6 +70,7 @@ from typing import cast
 
 from sqlalchemy import Text
 from sqlalchemy import cast as sql_cast
+from sqlalchemy import false
 from sqlalchemy import literal
 from sqlalchemy import or_
 from sqlalchemy import select
@@ -84,8 +98,13 @@ VOICEPRINTS = "voiceprints"
 INFERRED_GENDER = "inferred_gender"
 PURGE_TARGETS = (VOICEPRINTS, INFERRED_GENDER)
 
-ScopeKind = Literal["organization", "user", "instance_personal", "instance_all"]
-_SCOPE_KINDS = ("organization", "user", "instance_personal", "instance_all")
+ScopeKind = Literal["organization", "user", "instance_personal", "instance_all", "files"]
+_SCOPE_KINDS = ("organization", "user", "instance_personal", "instance_all", "files")
+
+#: ``purge_reason`` of a destruction a retention schedule decided: it runs whether or not the
+#: privacy switch is on (see :func:`targets_still_enabled`).
+RETENTION = "retention"
+PURGE_REASONS = (RETENTION,)
 
 #: The second pass runs this long after the first. It must exceed the write backstop's cache TTL
 #: (``constants.PRIVACY_WRITE_BACKSTOP_TTL_SECONDS``, 10 s) plus an in-flight write, so a write
@@ -106,10 +125,20 @@ class PurgeScope:
     kind: ScopeKind
     organization_id: int | None = None
     user_id: int | None = None
+    #: The files of a ``files`` scope (and only of one).
+    file_ids: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:
         if self.kind not in _SCOPE_KINDS:
             raise ValueError(f"unknown purge scope {self.kind!r}")
+        if self.kind == "files":
+            if not self.file_ids:
+                raise ValueError("a files scope needs at least one file id")
+            if self.organization_id is not None or self.user_id is not None:
+                raise ValueError("a files scope names no organization or user")
+            object.__setattr__(self, "file_ids", tuple(sorted({int(i) for i in self.file_ids})))
+        elif self.file_ids:
+            raise ValueError("only a files scope names file ids")
         if self.kind == "organization" and self.organization_id is None:
             raise ValueError("an organization scope needs an organization id")
         if self.kind == "user" and self.user_id is None:
@@ -121,11 +150,14 @@ class PurgeScope:
 
     def to_payload(self) -> dict[str, Any]:
         """JSON-safe form for a Celery argument."""
-        return {
+        payload: dict[str, Any] = {
             "kind": self.kind,
             "organization_id": self.organization_id,
             "user_id": self.user_id,
         }
+        if self.kind == "files":
+            payload["file_ids"] = list(self.file_ids)
+        return payload
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> PurgeScope:
@@ -133,7 +165,19 @@ class PurgeScope:
             kind=payload["kind"],
             organization_id=payload.get("organization_id"),
             user_id=payload.get("user_id"),
+            file_ids=tuple(payload.get("file_ids") or ()),
         )
+
+    def audit_details(self) -> dict[str, Any]:
+        """The ``purge_scope`` object of an audit event: kind and ids, a file COUNT, no names."""
+        details: dict[str, Any] = {
+            "kind": self.kind,
+            "organization_id": self.organization_id,
+            "user_id": self.user_id,
+        }
+        if self.kind == "files":
+            details["file_count"] = len(self.file_ids)
+        return details
 
     def sql_filters(self, model: Any) -> list[Any]:
         """Conditions selecting this scope's rows of a table with ``user_id`` / ``organization_id``.
@@ -141,7 +185,16 @@ class PurgeScope:
         Not for ``Speaker``: production never stamps ``speaker.organization_id`` (the diarization
         helper creates the row without it), so a speaker's tenant is its FILE's. Use
         :meth:`speaker_filters`.
+
+        A ``files`` scope selects its own ``MediaFile`` rows and NOTHING of any other table: a
+        file purge never deletes or resets a profile (or a stamped cluster) directly.
         """
+        if self.kind == "files":
+            from app.models.media import MediaFile
+
+            if model is MediaFile:
+                return [or_(*(MediaFile.id.in_(c) for c in _id_chunks(self.file_ids)))]
+            return [false()]
         if self.kind == "instance_all":
             return []
         if self.kind == "instance_personal":
@@ -166,15 +219,33 @@ class PurgeScope:
         from app.models.media import MediaFile
         from app.models.media import Speaker
 
+        if self.kind == "files":
+            return [or_(*(Speaker.media_file_id.in_(c) for c in _id_chunks(self.file_ids)))]
         file_ids = select(MediaFile.id).where(*self.sql_filters(MediaFile))
         return [Speaker.media_file_id.in_(file_ids)]
+
+
+def _id_chunks(ids: tuple[int, ...]) -> list[list[int]]:
+    from app.services.privacy.purge_voiceprints import _CHUNK
+
+    return [list(ids[i : i + _CHUNK]) for i in range(0, len(ids), _CHUNK)]
 
 
 # --- Is the purge allowed? ---------------------------------------------------------------
 
 
-def targets_still_enabled(db: Session, scope: PurgeScope, targets: Iterable[str]) -> list[str]:
+def targets_still_enabled(
+    db: Session,
+    scope: PurgeScope,
+    targets: Iterable[str],
+    *,
+    purge_reason: str | None = None,
+) -> list[str]:
     """The targets whose switch is NOT off at the purging layer or above. Empty = purge allowed.
+
+    ``purge_reason=RETENTION`` is a destruction a retention schedule decided, not a privacy
+    switch being honoured: it is allowed whatever the switches say (data past its retention
+    period goes whether or not matching is on). It is the only exemption, and it is explicit.
 
     The layers counted are the scope's own and everything above it: an instance purge counts
     platform and instance; an organization purge adds the organization; a user purge adds the
@@ -184,6 +255,13 @@ def targets_still_enabled(db: Session, scope: PurgeScope, targets: Iterable[str]
     """
     from app.services.privacy.policy import _resolve as resolve_with_status
 
+    if purge_reason is not None and purge_reason not in PURGE_REASONS:
+        raise ValueError(f"unknown purge reason {purge_reason!r}")
+    if purge_reason == RETENTION:
+        return []
+    if scope.kind == "files":
+        # A files scope exists for retention; a privacy switch never authorises it.
+        return list(dict.fromkeys(targets))
     user_id = scope.user_id if scope.kind == "user" else None
     organization_id = scope.organization_id if scope.kind in ("organization", "user") else None
     policy, clean = resolve_with_status(db, user_id, organization_id)
@@ -406,6 +484,15 @@ def run_purge_pass(
             dict.fromkeys([*done.targets.cluster_uuids, *map(str, carried_cluster_uuids)])
         )
         outcome.counts[OPENSEARCH].update(purge_voiceprint_docs(scope, done.targets, result.errors))
+        if done.targets.recompute_profile_ids:
+            # AFTER the speaker documents are gone (and the index refreshed), so a recompute
+            # can never average a voiceprint this pass deleted back into a profile.
+            outcome.counts[OPENSEARCH]["profiles_recomputed"] = recompute_profiles(
+                done.targets.recompute_profile_ids,
+                done.targets.speaker_uuids,
+                session_factory,
+                result.errors,
+            )
         outcome.residual = measure_voiceprint_residual(
             scope, done.targets, session_factory=session_factory, errors=result.errors
         )
@@ -427,6 +514,55 @@ def run_purge_pass(
         result.outcomes[INFERRED_GENDER] = outcome
 
     return result
+
+
+def recompute_profiles(
+    profile_ids: Iterable[int],
+    deleted_speaker_uuids: Iterable[str],
+    session_factory: Callable[[], Session],
+    errors: list[dict[str, Any]],
+) -> int:
+    """Recompute each profile's embedding from the speakers it still has; erase what cannot be.
+
+    Runs only once the deleted speakers' documents are confirmed gone (a refresh, then a count):
+    otherwise a recompute could average a voiceprint this pass deleted back into the profile, so
+    the embedding is ERASED instead (an absent embedding is rebuilt later; a stale one is a copy
+    of the deleted voices). The rebuild is the one every speaker removal uses
+    (``speaker_cleanup.reconcile_speaker_impact``): the average of the remaining voiceprints, or
+    an erased document when none remains. The profile ROW and its links stay.
+
+    Returns:
+        How many profiles were recomputed (0 when they had to be erased); failures land in
+        ``errors``.
+    """
+    from app.models.media import SpeakerProfile
+    from app.services.gdpr_erasure_service import count_speaker_docs_by_ids
+    from app.services.speaker_cleanup import SpeakerImpact
+    from app.services.speaker_cleanup import reconcile_speaker_impact
+
+    ids = sorted({int(p) for p in profile_ids})
+    if not ids:
+        return 0
+    remaining = count_speaker_docs_by_ids(list(deleted_speaker_uuids), errors=errors)
+    db = session_factory()
+    try:
+        if remaining == 0:
+            impact = SpeakerImpact(profile_ids=set(ids))
+        else:
+            uuids = {
+                str(r[0])
+                for r in db.query(SpeakerProfile.uuid).filter(SpeakerProfile.id.in_(ids)).all()
+            }
+            db.query(SpeakerProfile).filter(SpeakerProfile.id.in_(ids)).update(
+                {SpeakerProfile.embedding_count: 0}, synchronize_session=False
+            )
+            db.commit()
+            impact = SpeakerImpact(erase_profile_uuids=uuids)
+        for residue in reconcile_speaker_impact(db, impact):
+            errors.append(dict(residue))
+    finally:
+        db.close()
+    return len(ids) if remaining == 0 else 0
 
 
 # --- Audit and status record -------------------------------------------------------------
@@ -453,12 +589,15 @@ def audit_purge(
     task_id: str | None = None,
     outcomes: dict[str, TargetOutcome] | None = None,
     reason: str | None = None,
+    purge_reason: str | None = None,
 ) -> None:
     """One audit event per target, org-stamped, so an administrator can verify a purge from it.
 
-    ``details`` hold the task id, phase, the purge's targets, the ``purge_scope`` (kind and ids), and, for
-    a pass that ran, that target's exact counts per store plus the residual it measured and
-    whether it was all zero. Counts and ids of the scope only; never a name.
+    ``details`` hold the task id, phase, the purge's targets, the ``purge_scope`` (kind and ids;
+    a ``files`` scope gives a ``file_count``), ``purge_reason`` when one was given (``retention``),
+    and, for a pass that ran, that target's exact counts per store plus the residual it measured
+    and whether it was all zero. ``reason`` is the OUTCOME's reason (``residual``, ``error``...),
+    a different thing. Counts and ids of the scope only; never a name.
     """
     wanted = list(dict.fromkeys(targets))
     for target in wanted:
@@ -470,12 +609,10 @@ def audit_purge(
             # string, and OpenSearch rejects an object under a text-typed field (mapper_parsing_
             # exception). The rejected purge event fell to the fallback file and was unsearchable,
             # which the v0.6.0 rehearsal's audit check found.
-            "purge_scope": {
-                "kind": scope.kind,
-                "organization_id": scope.organization_id,
-                "user_id": scope.user_id,
-            },
+            "purge_scope": scope.audit_details(),
         }
+        if purge_reason is not None:
+            details["purge_reason"] = purge_reason
         measured = (outcomes or {}).get(target)
         if measured is not None:
             details["counts"] = measured.counts
@@ -504,7 +641,7 @@ def purge_audit_event_types(targets: Iterable[str] | None) -> list[AuditEventTyp
 
 def write_record(
     task_id: str,
-    user_id: int,
+    user_id: int | None,
     counts: GroupedCounts | dict[str, Any],
     *,
     targets: list[str] | None = None,

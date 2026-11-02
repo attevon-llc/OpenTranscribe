@@ -57,3 +57,25 @@ export async function listLegalAcknowledgments(): Promise<LegalAcknowledgment[]>
   const { data } = await axiosInstance.get('/legal/acknowledgments');
   return Array.isArray(data) ? data : [];
 }
+
+/** Whose acceptance satisfies the processing requirement (server-validated). */
+export type ProcessingAcceptanceScope = 'user' | 'organization' | 'either';
+
+export interface ProcessingGateSettings {
+  required_document_keys: string[];
+  acceptance_scope: ProcessingAcceptanceScope;
+  enabled: boolean;
+  available_documents: { key: string; title: string; version: string }[];
+}
+
+export async function getProcessingGateSettings(): Promise<ProcessingGateSettings> {
+  const { data } = await axiosInstance.get('/admin/legal-processing-gate');
+  return data;
+}
+
+export async function updateProcessingGateSettings(
+  changes: Partial<Pick<ProcessingGateSettings, 'required_document_keys' | 'acceptance_scope'>>
+): Promise<ProcessingGateSettings> {
+  const { data } = await axiosInstance.put('/admin/legal-processing-gate', changes);
+  return data;
+}

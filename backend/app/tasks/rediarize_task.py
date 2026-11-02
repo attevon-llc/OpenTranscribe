@@ -574,6 +574,17 @@ def rediarize_task(
     voiceprint_owns_audio = False
     timing_id = pipeline_task_id or task_id
 
+    if not pipeline_completion:
+        # The manual re-run is its own entry point; a pipeline post stage already passed the
+        # legal processing gate at dispatch.
+        from app.legal.processing_gate import refusal_for_file
+        from app.legal.processing_gate import skipped_result
+
+        refusal = refusal_for_file(file_uuid=file_uuid)
+        if refusal is not None:
+            logger.info("Speaker re-detection of %s refused: %s", file_uuid, refusal.message)
+            return skipped_result(refusal)
+
     try:
         meta = _start(file_uuid, task_id, engine)
         file_id, user_id = meta["file_id"], meta["user_id"]

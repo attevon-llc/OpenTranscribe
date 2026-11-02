@@ -25,6 +25,7 @@ from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
+from app.legal.processing_gate import require_processing_allowed_for_file
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task as TaskModel
@@ -397,6 +398,7 @@ def retry_file_processing(
             min_permission="editor",
         )
         file_id = media_file.id
+        require_processing_allowed_for_file(db, media_file)
 
         # Check if retry is appropriate. A NULL `status` fails this membership test and so
         # lands in this branch — where `.status.value` would raise AttributeError and turn a

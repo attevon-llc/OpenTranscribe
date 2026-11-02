@@ -269,6 +269,15 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
         dict: Contains status, suggestion_id, tag_count, and collection_count
     """
     task_id = self.request.id
+
+    from app.legal.processing_gate import refusal_for_file
+    from app.legal.processing_gate import skipped_result
+
+    # The legal processing gate (backstop): LLM topic extraction processes the file.
+    refusal = refusal_for_file(file_uuid=file_uuid)
+    if refusal is not None:
+        return skipped_result(refusal)
+
     try:
         # Phase 1a — read (DB session open, Postgres only).
         context = _load_file_context(file_uuid)

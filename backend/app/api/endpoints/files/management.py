@@ -23,6 +23,8 @@ from app.core.exceptions import ASRConfigurationError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.db.base import get_db
+from app.legal.processing_gate import check_processing_allowed_for_file
+from app.legal.processing_gate import require_processing_allowed_for_file
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Tag
@@ -287,6 +289,7 @@ def retry_file_processing(
             min_permission="editor",
         )
         file_id = db_file.id  # Get internal ID for task operations
+        require_processing_allowed_for_file(db, db_file)
 
         # Check if file can be retried
         if db_file.status not in [
@@ -393,6 +396,7 @@ def recover_file(
             min_permission="editor",
         )
         file_id = db_file.id  # Get internal ID for task operations
+        require_processing_allowed_for_file(db, db_file)
 
         success = recover_stuck_file(db, file_id)
         if not success:
@@ -1109,6 +1113,12 @@ def _redact_if_enabled(
     return _handle_redact_action(db, file_uuid, file_id)
 
 
+#: Bulk actions that start processing of the file, and so pass the legal processing gate.
+PROCESSING_BULK_ACTIONS = frozenset(
+    {"retry", "recover", "reprocess", "summarize", "redact", "identify_speakers"}
+)
+
+
 def _process_single_file_action(
     db: Session,
     file_uuid: str,
@@ -1145,6 +1155,18 @@ def _process_single_file_action(
         min_permission="editor",
     )
     file_id = db_file.id
+
+    if action in PROCESSING_BULK_ACTIONS:
+        # The legal processing gate, per file, for the file OWNER. A refusal is this file's
+        # result (its code in ``error``); the rest of the batch carries on.
+        refusal = check_processing_allowed_for_file(db, db_file)
+        if refusal is not None:
+            return BulkActionResult(
+                file_uuid=file_uuid,
+                success=False,
+                message=refusal.message,
+                error=refusal.code,
+            )
 
     action_handlers = {
         "retry": lambda: _handle_retry_action(db, file_uuid, file_id, reset_retry_count, is_admin),

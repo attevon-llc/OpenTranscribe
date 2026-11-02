@@ -1,11 +1,13 @@
 <!--
   LegalSettings.svelte — read-only list of the versioned legal documents, the
-  operator's own acknowledgment state, and (admin+) the acknowledgment record.
+  operator's own acknowledgment state, (admin+) the acknowledgment record and (super_admin)
+  the requirement to accept documents before processing (LegalProcessingGateCard).
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t } from '$stores/locale';
   import LegalDocumentViewer from '$components/legal/LegalDocumentViewer.svelte';
+  import LegalProcessingGateCard from '$components/settings/LegalProcessingGateCard.svelte';
   import {
     OPERATOR_ACK_KEY,
     listLegalDocuments,
@@ -76,6 +78,10 @@
       {$t('legal.settings.ownNotAcknowledged')}
     {/if}
   </div>
+{/if}
+
+{#if isSuperAdmin}
+  <LegalProcessingGateCard />
 {/if}
 
 {#if isAdmin}

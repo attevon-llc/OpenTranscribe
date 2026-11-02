@@ -9,41 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Release rehearsal Scenario D: the model downloader from an empty cache.** v0.6.0's
-  `scripts/download-models.py` fails its `pyannote` group for every user from a cold cache, on CPU
-  and GPU alike (`list index out of range`), and no release gate noticed: the rehearsal installs
-  unattended, which skips the download, and seeds a warm model cache. `./scripts/release.sh
-  rehearse` now runs `scripts/release-tests/test-cold-model-download.sh` first: every download group
-  in its own container, CPU-only, against the image being released, with three blocking criteria
-  (`cold-cache-model-download`, `cold-cache-weights-present`,
-  `cold-cache-nltk-hardlinks-fail-loudly`). When it passes, the fresh-install scenario uses its
-  output as the model cache. A patch release that touches `download-models.*` no longer waives the
-  rehearsal. The scenario refuses a reused cache root, bounds every download with a deadline,
-  checks each model's required files, runs before the live stack is stopped, and removes its
-  cache afterwards.
-
-- `scripts/check-image-hygiene.sh`: fails (exit 1) when a built image contains developer
-  artifacts, and exits 2 when an image could not be inspected. It reads the image with
-  `docker create` + `docker export` (nothing from the image runs, any architecture works), never
-  pulls or removes images, and also flags keys (`*.pem`, `*.key`, `*.p12`, `id_rsa*`,
-  `id_ed25519*`), editor/agent directories, `htmlcov`, `.mutmut-cache`, `*.bak`, `*.orig`,
-  `backups` and `*.log` at any depth under the payload root.
-- Release `scan` stage: new blocking criterion `images-carry-no-dev-artifacts` runs the check on
-  every per-leg local tag; an image it could not inspect records `not-measured`.
-
-- A register of compliance-audited routes (`backend/tests/fixtures/compliance_audit_routes.py`)
-  with a fast structural test: a new quarantine, hold, export, purge, erasure, support-access,
-  takedown-notice or data-integrity route with no audit decision fails, and so does removing the
-  emitter a registered route reaches. A route pinned to another suite must have that suite name
-  both the route and the event; three entries had pointed at suites that mentioned neither and
-  are now driven live.
-- `test_audit_field_type_clashes.py`: fails when two audit emitters write one field with types a
-  shared monthly index cannot hold (the failure that once dropped every privacy-purge event).
-- A live test that drives each registered action against a real OpenSearch audit index and reads
-  the row back through the admin and organization audit queries (actor, target, tenant).
-- The deletion residue gate scans every object VERSION and fails when a configured index or
-  bucket is never populated by its seed, so a new store cannot be silently left out.
-
 ### Removed
 
 - `scripts/test-model-download.sh`, superseded by the scenario above (it ran `:latest` with
@@ -143,6 +108,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support-access use (`support_access.used`) and platform content access
   (`platform_admin.content.access`) events carry `resource_type` / `resource_uuid` as typed
   fields, so an administrator filtering the audit log by a file now sees staff access to it.
+
+- Re-running speaker detection on a file published its task directly instead of going through
+  the shared dispatch check; it now applies the legal processing requirement itself.
 
 ### Security
 

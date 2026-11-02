@@ -36,6 +36,12 @@ An acknowledgment is tied to the exact text. The app stores the document key, it
 SHA-256 hash of the text you saw. If the text changes in a later release, the new version needs a
 new acknowledgment. Acknowledging the same text twice changes nothing.
 
+## Requiring acceptance before processing
+
+An operator can also require that a file's owner has accepted chosen documents before the file
+is processed. It is off by default; see
+[Required legal documents before processing](../configuration/legal-processing-gate.md).
+
 ## Where the text comes from
 
 The wording is maintained in one central legal repository. OpenTranscribe copies a pinned release

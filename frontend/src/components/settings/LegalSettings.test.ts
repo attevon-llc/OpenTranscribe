@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 
-const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
+const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn() }));
 vi.mock('$lib/axios', () => ({ default: mockAxios, isRequestCancelled: () => false }));
 vi.mock('$stores/locale', () => ({
   t: {
@@ -11,6 +11,8 @@ vi.mock('$stores/locale', () => ({
     },
   },
 }));
+
+vi.mock('$stores/toast', () => ({ toastStore: { success: vi.fn(), error: vi.fn() } }));
 
 import LegalSettings from './LegalSettings.svelte';
 
@@ -39,21 +41,36 @@ const docs = [
   },
 ];
 
+const gate = {
+  required_document_keys: [] as string[],
+  acceptance_scope: 'either',
+  enabled: false,
+  available_documents: [
+    { key: 'opentranscribe-terms-of-use', title: 'Terms of Use', version: '1.0' },
+    { key: 'opentranscribe-privacy-notice', title: 'Privacy Notice', version: '1.0' },
+  ],
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
+  mockAxios.put.mockImplementation(async (_url: string, body: Record<string, unknown>) => ({
+    data: { ...gate, ...body, enabled: true },
+  }));
   mockAxios.get.mockImplementation(async (url: string) => ({
     data:
       url === '/legal/documents'
         ? docs
-        : [
-            {
-              user_email: 'op@example.com',
-              key: docs[0].key,
-              version: '1.0',
-              sha256: 'a'.repeat(64),
-              accepted_at: '2026-10-01T00:00:00Z',
-            },
-          ],
+        : url === '/admin/legal-processing-gate'
+          ? gate
+          : [
+              {
+                user_email: 'op@example.com',
+                key: docs[0].key,
+                version: '1.0',
+                sha256: 'a'.repeat(64),
+                accepted_at: '2026-10-01T00:00:00Z',
+              },
+            ],
   }));
 });
 
@@ -77,5 +94,35 @@ describe('LegalSettings', () => {
     expect(screen.getByTestId('legal-own-ack').textContent).toContain(
       'legal.settings.ownAcknowledged'
     );
+  });
+
+  it('shows the processing requirement only to super admins', async () => {
+    render(LegalSettings, { isAdmin: true, isSuperAdmin: false });
+    expect(await screen.findByTestId('legal-ack-table')).toBeTruthy();
+    expect(screen.queryByTestId('legal-processing-gate')).toBeNull();
+    expect(mockAxios.get).not.toHaveBeenCalledWith('/admin/legal-processing-gate');
+  });
+
+  it('saves the selected documents and scope', async () => {
+    render(LegalSettings, { isAdmin: true, isSuperAdmin: true });
+
+    expect(await screen.findByTestId('legal-gate-off')).toBeTruthy();
+    const save = screen.getByTestId('legal-gate-save') as HTMLButtonElement;
+    expect(save.disabled).toBe(true); // nothing changed yet
+    const boxes = screen.getAllByTestId('legal-gate-doc') as HTMLInputElement[];
+    expect(boxes.map((b) => b.value)).toEqual([
+      'opentranscribe-terms-of-use',
+      'opentranscribe-privacy-notice',
+    ]);
+    await fireEvent.click(boxes[0]);
+    await fireEvent.click(screen.getByLabelText('legal.processingGate.scopeUser'));
+    expect(save.disabled).toBe(false);
+    await fireEvent.click(save);
+
+    expect(mockAxios.put).toHaveBeenCalledWith('/admin/legal-processing-gate', {
+      required_document_keys: ['opentranscribe-terms-of-use'],
+      acceptance_scope: 'user',
+    });
+    await vi.waitFor(() => expect(screen.queryByTestId('legal-gate-off')).toBeNull());
   });
 });

@@ -56,9 +56,10 @@ def privacy_purge_task(
     self: Any,
     scope: dict[str, Any],
     targets: list[str],
-    actor_user_id: int,
+    actor_user_id: int | None,
     phase: int = 1,
     carried_cluster_uuids: list[str] | None = None,
+    purge_reason: str | None = None,
 ) -> dict[str, Any]:
     """Purge ``targets`` ("voiceprints", "inferred_gender") for ``scope``. Both passes.
 
@@ -67,10 +68,13 @@ def privacy_purge_task(
             can never name a tenant the caller does not administer.
         targets: Subset of ``purge.PURGE_TARGETS``.
         actor_user_id: Who asked. Only the id travels through the broker; the audit username is
-            looked up here.
+            looked up here. ``None`` for a scheduled destruction (no person asked).
         phase: 1 for the first pass; the task schedules phase 2 itself.
         carried_cluster_uuids: Cluster centroid documents the previous pass could not confirm
             deleted. Their Postgres rows are gone, so only the previous pass knows the ids.
+        purge_reason: ``purge.RETENTION`` for a destruction a retention schedule decided (the
+            ``files`` scope): allowed whatever the privacy switches say, and recorded in the
+            audit event as ``purge_reason``. ``None`` for a privacy purge.
 
     Returns:
         ``{"status": "completed" | "aborted" | "failed", ...}`` with this pass's counts.
@@ -80,8 +84,8 @@ def privacy_purge_task(
     wanted = [t for t in dict.fromkeys(targets) if t in purge.PURGE_TARGETS]
 
     with session_scope() as db:
-        blocked = purge.targets_still_enabled(db, purge_scope, wanted)
-        actor = db.get(User, actor_user_id)
+        blocked = purge.targets_still_enabled(db, purge_scope, wanted, purge_reason=purge_reason)
+        actor = db.get(User, actor_user_id) if actor_user_id is not None else None
         username = str(actor.email) if actor is not None else None
 
     def audit(
@@ -100,6 +104,7 @@ def privacy_purge_task(
             task_id=task_id,
             outcomes=outcomes,
             reason=reason,
+            purge_reason=purge_reason,
         )
 
     if not wanted or blocked:
@@ -161,6 +166,7 @@ def privacy_purge_task(
                     "actor_user_id": actor_user_id,
                     "phase": 2,
                     "carried_cluster_uuids": result.unfinished_cluster_uuids,
+                    "purge_reason": purge_reason,
                 },
                 task_id=task_id,
                 countdown=purge.SECOND_PASS_DELAY_SECONDS,

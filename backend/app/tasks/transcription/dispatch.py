@@ -38,6 +38,7 @@ from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
 
 from .hooks import DispatchBlockedError
+from .hooks import LegalAcceptanceRequiredError
 from .hooks import QuotaExceededError
 from .requested_options import resolve_dispatch_options
 
@@ -225,6 +226,9 @@ def _run_pre_dispatch_gate(db, media_file: MediaFile, file_uuid: str, task_id: s
     :func:`dispatch_batch_transcription` so a registered gate cannot be bypassed by
     dispatching as a batch (#1169).
 
+    0. The legal processing gate (``app.legal.processing_gate``), FIRST: a file whose owner
+       has not accepted a required document neither reserves quota nor is marked ERROR for
+       its duration. It checks the file's OWNER and organization, never the caller.
     1. The per-organization duration ceiling from the upload-limits resolver (``None``
        when no resolver is registered). Enforced here, the earliest point where the true
        duration is known; upload-time checks only see bytes. The global URL-ingest cap
@@ -236,10 +240,16 @@ def _run_pre_dispatch_gate(db, media_file: MediaFile, file_uuid: str, task_id: s
             been marked ERROR.
         QuotaExceededError: A hook refused because the account is over quota.
         DispatchBlockedError: A hook refused for any other deliberate reason.
+        LegalAcceptanceRequiredError: The legal processing gate refused (a
+            ``DispatchBlockedError``); the file has been marked ERROR with the refusal code
+            and a category automatic recovery never retries.
     """
     from decimal import Decimal
 
     from app.core.tenant_limits import resolve_upload_limits
+    from app.legal.processing_gate import check_processing_allowed_for_file
+    from app.legal.processing_gate import mark_file_refused
+    from app.legal.processing_gate import refusal_error
 
     from .hooks import DispatchContext
     from .hooks import fire_before_dispatch
@@ -248,6 +258,11 @@ def _run_pre_dispatch_gate(db, media_file: MediaFile, file_uuid: str, task_id: s
     # extraction hasn't populated it yet). Coercing unknown to 0 would let a quota
     # hook wave every such job through; only a positive, known duration becomes a
     # concrete estimate, and the hook decides what to do with None.
+    refusal = check_processing_allowed_for_file(db, media_file)
+    if refusal is not None:
+        mark_file_refused(db, int(media_file.id), refusal)
+        raise refusal_error(refusal)
+
     duration_s = media_file.duration
 
     limits = resolve_upload_limits(media_file.organization_id)
@@ -478,6 +493,10 @@ def dispatch_batch_transcription(
 
                 try:
                     _run_pre_dispatch_gate(db, media_file, file_uuid, task_id)
+                except LegalAcceptanceRequiredError as e:
+                    # The gate marked this file ERROR with its code; keep the batch going.
+                    logger.warning(f"Dispatch of {file_uuid} refused: {e.message}")
+                    continue
                 except (QuotaExceededError, DispatchBlockedError) as e:
                     # A deliberate refusal: skip this file exactly as the single-file
                     # path would (no task record, status untouched), keep the batch going.

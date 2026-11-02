@@ -28,6 +28,7 @@ from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.core.constants import DEFAULT_AUTO_LABEL_CONFIDENCE_THRESHOLD
 from app.db.base import get_db
+from app.legal.processing_gate import require_processing_allowed_for_file
 from app.models.topic import TopicSuggestion
 from app.models.user import User
 from app.schemas.topic import ApplyTopicSuggestionsRequest
@@ -397,6 +398,7 @@ def extract_topics(
         organization_id=ctx.org_id,
         min_permission="editor",
     )
+    require_processing_allowed_for_file(db, media_file)
 
     # Check if file has transcript
     if not media_file.transcript_segments:

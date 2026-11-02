@@ -76,6 +76,9 @@ class VoiceprintTargets:
         rebuild_cluster_uuids: Clusters that also hold another scope's speakers (or a promoted
             cluster of another scope's profile): their centroid is rebuilt from the rest.
         rebuild_owner_ids: Owners of those clusters.
+        recompute_profile_ids: Profiles a ``files`` scope's speakers were linked to, captured
+            BEFORE the relational purge: their embedding is recomputed from the speakers they
+            have left once the purged speakers' documents are gone. Never deleted.
     """
 
     speaker_uuids: list[str] = field(default_factory=list)
@@ -83,6 +86,7 @@ class VoiceprintTargets:
     cluster_uuids: list[str] = field(default_factory=list)
     rebuild_cluster_uuids: list[str] = field(default_factory=list)
     rebuild_owner_ids: list[int] = field(default_factory=list)
+    recompute_profile_ids: list[int] = field(default_factory=list)
 
     def doc_ids(self) -> dict[str, list[str]]:
         """OpenSearch ``_id`` values by kind: ``speaker`` / ``profile`` / ``cluster``."""
@@ -515,6 +519,16 @@ def purge_voiceprints_postgres(db: Session, scope: PurgeScope) -> PostgresPurge:
     ).all()
     targets.profile_uuids = [str(r[1]) for r in profile_rows]
     scope_profile_ids = [int(r[0]) for r in profile_rows]
+    files_scope = scope.kind == "files"
+    if files_scope:
+        targets.recompute_profile_ids = sorted(
+            int(r[0])
+            for r in db.execute(
+                select(Speaker.profile_id)
+                .where(*scope.speaker_filters(), Speaker.profile_id.isnot(None))
+                .distinct()
+            )
+        )
 
     (
         reverted,
@@ -531,7 +545,15 @@ def purge_voiceprints_postgres(db: Session, scope: PurgeScope) -> PostgresPurge:
     counts["suggestion_details_cleared"] = details_with_them
     machine_ids = reverted + unlinked
 
-    removed, touched = _remove_from_promoted_clusters(db, machine_ids)
+    # A files scope deletes EVERY in-scope voiceprint, a person-linked speaker's too, so every
+    # in-scope speaker leaves the promoted clusters whose centroid averaged it in (its profile
+    # link stays; the profile's embedding is recomputed without it).
+    leaving = (
+        sorted(int(r[0]) for r in db.execute(_scope_speaker_ids(scope)))
+        if files_scope
+        else machine_ids
+    )
+    removed, touched = _remove_from_promoted_clusters(db, leaving)
     counts["promoted_cluster_members_removed"] = removed
     from app.models.media import SpeakerCluster
 

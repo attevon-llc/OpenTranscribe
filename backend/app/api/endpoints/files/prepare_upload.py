@@ -20,6 +20,7 @@ from app.api.endpoints.files.upload import create_media_file_record
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
+from app.legal.processing_gate import require_processing_allowed
 from app.models.media import CollectionMember
 from app.models.media import FileTag
 from app.models.media import MediaFile
@@ -323,6 +324,13 @@ async def prepare_upload(
     upload bytes directly to MinIO, bypassing the API container entirely.
     """
     current_user = ctx.user
+    # The legal processing gate, before any row or presigned URL exists. The caller will own
+    # the file, in the request's tenant.
+    await run_in_threadpool(
+        lambda: require_processing_allowed(
+            db, owner_user_id=int(current_user.id), organization_id=ctx.org_id
+        )
+    )
     # The capability resolver may query the database; keep it off the event loop.
     requested_whisper_model = await run_in_threadpool(
         lambda: require_servable_whisper_model(

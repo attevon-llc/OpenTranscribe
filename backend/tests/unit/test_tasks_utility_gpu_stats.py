@@ -13,13 +13,13 @@ draws a conclusion about capacity from it. On a box where GPU 1 is this project'
 GPU and GPUs 0 and 2 belong to unrelated work, "which device am I looking at" is not a
 cosmetic question. It had no tests.
 
-``_query_single_gpu`` takes the ``subprocess`` module as a parameter, so the parsing tests
+``query_gpu_stats`` takes the ``subprocess`` module as a parameter, so the parsing tests
 below drive it with a fake and never shell out.
 
 Pinned here:
 
 1. ``_safe_float`` — the ``[N/A]`` guard that unified-memory systems (DGX Spark) need.
-2. ``_query_single_gpu`` — MiB→bytes conversion, the derived free/percent values, and the
+2. ``query_gpu_stats`` — MiB→bytes conversion, the derived free/percent values, and the
    torch fallback path.
 3. ``update_gpu_stats`` — device selection under each GPU-scale configuration, and the
    Redis/WebSocket state it actually writes.
@@ -35,13 +35,16 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
 from app.core.config import settings
 from app.tasks import utility
-from app.tasks.utility import _query_single_gpu
-from app.tasks.utility import _safe_float
+from app.utils import gpu_stats as gpu_stats_module
+from app.utils.gpu_stats import _safe_float
+from app.utils.gpu_stats import query_gpu_stats
+from app.utils.stats_helpers import format_bytes
 
 #: The env vars the device-selection logic reads. Cleared per test so a developer's own
 #: shell (or the dev stack's .env) cannot decide the outcome.
@@ -52,18 +55,15 @@ GPU_ENV_VARS = (
 )
 
 
-def _fmt(byte_count: float) -> str:
-    """The task's own ``format_bytes``, restated so parsing tests can assert exact strings."""
-    for unit in ["B", "KB", "MB", "GB", "TB"]:
-        if byte_count < 1024 or unit == "TB":
-            return f"{byte_count:.2f} {unit}"
-        byte_count /= 1024
-    return f"{byte_count:.2f} TB"
-
-
 def _fake_subprocess(stdout: str):
     """A stand-in for the ``subprocess`` module that returns fixed ``nvidia-smi`` output."""
     return SimpleNamespace(run=lambda *_a, **_kw: SimpleNamespace(stdout=stdout, returncode=0))
+
+
+def _query_single_gpu(device_id: int, subprocess_mod):
+    """Run ``query_gpu_stats`` with ``subprocess`` swapped for a stand-in."""
+    with patch.object(gpu_stats_module, "subprocess", subprocess_mod):
+        return query_gpu_stats(device_id)
 
 
 def _exploding_subprocess(exc: BaseException):
@@ -128,15 +128,15 @@ def test_a_healthy_gpu_is_reported_with_mib_values_converted_to_bytes():
     """nvidia-smi ``nounits`` emits MiB; every consumer of this dict expects bytes."""
     stdout = "NVIDIA RTX A6000, 4096, 49140, 45044, 37, 61\n"
 
-    stats = _query_single_gpu(1, _fake_subprocess(stdout), _fmt)
+    stats = _query_single_gpu(1, _fake_subprocess(stdout))
 
     assert stats is not None
     assert stats["available"] is True
     assert stats["device_id"] == 1
     assert stats["name"] == "NVIDIA RTX A6000"
-    assert stats["memory_used"] == _fmt(4096 * 1024 * 1024)
-    assert stats["memory_total"] == _fmt(49140 * 1024 * 1024)
-    assert stats["memory_free"] == _fmt(45044 * 1024 * 1024)
+    assert stats["memory_used"] == format_bytes(4096 * 1024 * 1024)
+    assert stats["memory_total"] == format_bytes(49140 * 1024 * 1024)
+    assert stats["memory_free"] == format_bytes(45044 * 1024 * 1024)
     assert stats["memory_percent"] == "8.3%"
     assert stats["utilization_percent"] == "37%"
     assert stats["temperature_celsius"] == 61
@@ -147,10 +147,10 @@ def test_free_memory_is_derived_when_nvidia_smi_omits_it():
     """``memory.free`` reported as ``[N/A]`` must not blank the field — derive it."""
     stdout = "NVIDIA RTX A6000, 4096, 49140, [N/A], 37, 61\n"
 
-    stats = _query_single_gpu(1, _fake_subprocess(stdout), _fmt)
+    stats = _query_single_gpu(1, _fake_subprocess(stdout))
 
     assert stats is not None
-    assert stats["memory_free"] == _fmt((49140 - 4096) * 1024 * 1024)
+    assert stats["memory_free"] == format_bytes((49140 - 4096) * 1024 * 1024)
     assert stats["memory_source"] == "nvidia-smi"
 
 
@@ -158,7 +158,7 @@ def test_absent_utilization_and_temperature_do_not_drop_the_gpu():
     """A board without a temperature sensor still has usable memory numbers."""
     stdout = "NVIDIA RTX A6000, 4096, 49140, 45044, [N/A], [N/A]\n"
 
-    stats = _query_single_gpu(1, _fake_subprocess(stdout), _fmt)
+    stats = _query_single_gpu(1, _fake_subprocess(stdout))
 
     assert stats is not None
     assert stats["available"] is True
@@ -171,25 +171,25 @@ def test_unified_memory_falls_back_to_torch_when_nvidia_smi_reports_na(monkeypat
     """The DGX Spark path: memory comes from ``torch.cuda.mem_get_info`` instead."""
     stdout = "NVIDIA GB10, [N/A], [N/A], [N/A], 12, 44\n"
     monkeypatch.setattr(
-        utility, "_query_gpu_memory_torch", lambda _d: (2.0 * 1024**3, 8.0 * 1024**3)
+        gpu_stats_module, "_query_gpu_memory_torch", lambda _d: (2.0 * 1024**3, 8.0 * 1024**3)
     )
 
-    stats = _query_single_gpu(0, _fake_subprocess(stdout), _fmt)
+    stats = _query_single_gpu(0, _fake_subprocess(stdout))
 
     assert stats is not None
     assert stats["memory_source"] == "torch.cuda.mem_get_info"
-    assert stats["memory_total"] == _fmt(8.0 * 1024**3)
-    assert stats["memory_free"] == _fmt(2.0 * 1024**3)
-    assert stats["memory_used"] == _fmt(6.0 * 1024**3)
+    assert stats["memory_total"] == format_bytes(8.0 * 1024**3)
+    assert stats["memory_free"] == format_bytes(2.0 * 1024**3)
+    assert stats["memory_used"] == format_bytes(6.0 * 1024**3)
     assert stats["memory_percent"] == "75.0%"
 
 
 def test_unified_memory_without_torch_reports_available_with_a_note(monkeypatch):
     """Still ``available: True`` — the GPU exists, only its memory is unknowable."""
     stdout = "NVIDIA GB10, [N/A], [N/A], [N/A], 12, 44\n"
-    monkeypatch.setattr(utility, "_query_gpu_memory_torch", lambda _d: None)
+    monkeypatch.setattr(gpu_stats_module, "_query_gpu_memory_torch", lambda _d: None)
 
-    stats = _query_single_gpu(0, _fake_subprocess(stdout), _fmt)
+    stats = _query_single_gpu(0, _fake_subprocess(stdout))
 
     assert stats is not None
     assert stats["available"] is True
@@ -202,15 +202,13 @@ def test_unified_memory_without_torch_reports_available_with_a_note(monkeypatch)
 
 def test_a_failing_nvidia_smi_call_yields_none_rather_than_raising():
     """The task must survive a driver hiccup; ``None`` is how this function says so."""
-    assert (
-        _query_single_gpu(1, _exploding_subprocess(FileNotFoundError("nvidia-smi")), _fmt) is None
-    )
-    assert _query_single_gpu(1, _exploding_subprocess(RuntimeError("boom")), _fmt) is None
+    assert _query_single_gpu(1, _exploding_subprocess(FileNotFoundError("nvidia-smi"))) is None
+    assert _query_single_gpu(1, _exploding_subprocess(RuntimeError("boom"))) is None
 
 
 def test_truncated_nvidia_smi_output_yields_none_rather_than_a_half_filled_dict():
     """A short row would otherwise IndexError partway through building the dict."""
-    assert _query_single_gpu(1, _fake_subprocess("NVIDIA RTX A6000\n"), _fmt) is None
+    assert _query_single_gpu(1, _fake_subprocess("NVIDIA RTX A6000\n")) is None
 
 
 def test_a_fractional_utilization_reading_is_truncated_not_discarded():
@@ -236,7 +234,7 @@ def test_a_fractional_utilization_reading_is_truncated_not_discarded():
     """
     stdout = "NVIDIA RTX A6000, 4096, 49140, 45044, 37.5, 61\n"
 
-    stats = _query_single_gpu(1, _fake_subprocess(stdout), _fmt)
+    stats = _query_single_gpu(1, _fake_subprocess(stdout))
 
     assert stats is not None, "a fractional utilization reading discarded the whole GPU"
     assert stats["utilization_percent"] == "37%"
@@ -255,7 +253,7 @@ def test_a_fractional_temperature_reading_is_also_kept():
     """
     stdout = "NVIDIA RTX A6000, 4096, 49140, 45044, 37, 61.4\n"
 
-    stats = _query_single_gpu(1, _fake_subprocess(stdout), _fmt)
+    stats = _query_single_gpu(1, _fake_subprocess(stdout))
 
     assert stats is not None, "a fractional temperature reading discarded the whole GPU"
     assert stats["temperature_celsius"] == 61
@@ -290,7 +288,7 @@ class _FakeRedis:
 def gpu_task_env(monkeypatch):
     """Isolate the task from Redis, the WebSocket bus, and the ambient GPU environment.
 
-    Returns ``(fake_redis, queried_device_ids)``. ``_query_single_gpu`` is replaced with a
+    Returns ``(fake_redis, queried_device_ids)``. ``query_gpu_stats`` is replaced with a
     recorder so the tests below can assert *which* devices were interrogated — the thing
     the env parsing decides — without needing a GPU.
     """
@@ -306,7 +304,7 @@ def gpu_task_env(monkeypatch):
 
     queried: list[int] = []
 
-    def _record(device_id, _subprocess_mod, format_bytes):
+    def _record(device_id, **_kw):
         queried.append(device_id)
         return {
             "available": True,
@@ -318,7 +316,7 @@ def gpu_task_env(monkeypatch):
             "memory_percent": "50.0%",
         }
 
-    monkeypatch.setattr(utility, "_query_single_gpu", _record)
+    monkeypatch.setattr(utility, "query_gpu_stats", _record)
     return fake, queried
 
 
@@ -482,7 +480,7 @@ def test_a_broadcast_failure_does_not_lose_the_redis_write(monkeypatch, gpu_task
 def test_no_queryable_device_reports_a_single_unavailable_entry(monkeypatch, gpu_task_env):
     fake, _queried = gpu_task_env
     monkeypatch.setattr(settings, "GPU_DEVICE_ID", 1)
-    monkeypatch.setattr(utility, "_query_single_gpu", lambda *_a, **_kw: None)
+    monkeypatch.setattr(utility, "query_gpu_stats", lambda *_a, **_kw: None)
 
     result = utility.update_gpu_stats()
 
@@ -499,7 +497,7 @@ def test_the_file_not_found_handler_is_unreachable_so_the_configured_device_is_r
 
     ``update_gpu_stats`` has a dedicated ``except FileNotFoundError`` arm for "nvidia-smi
     not found", which logs that message and returns a fallback with ``device_id: 0``. It
-    can never run: ``_query_single_gpu`` catches ``Exception`` at L162, so the
+    can never run: ``query_gpu_stats`` catches ``Exception`` at L162, so the
     ``FileNotFoundError`` is swallowed one frame down and the task takes the empty-list
     fallback at L218 instead.
 
@@ -511,7 +509,7 @@ def test_the_file_not_found_handler_is_unreachable_so_the_configured_device_is_r
     The assertion is on the reported ``device_id``: with ``GPU_DEVICE_ID=1`` the live
     fallback says ``1``, whereas the dead handler would say ``0``.
 
-    WHEN FIXED (delete the dead arm, or let ``_query_single_gpu`` re-raise
+    WHEN FIXED (delete the dead arm, or let ``query_gpu_stats`` re-raise
     ``FileNotFoundError``) this test will need updating — if the handler is made
     reachable, assert ``device_id == 0``; if it is deleted, keep this test and drop the
     characterization note.
@@ -520,7 +518,7 @@ def test_the_file_not_found_handler_is_unreachable_so_the_configured_device_is_r
     monkeypatch.setattr(settings, "GPU_DEVICE_ID", 1)
     # Undo the fixture's recorder: this test needs the REAL query path so the
     # FileNotFoundError is raised where production raises it.
-    monkeypatch.setattr(utility, "_query_single_gpu", _query_single_gpu)
+    monkeypatch.setattr(utility, "query_gpu_stats", query_gpu_stats)
 
     import subprocess
 

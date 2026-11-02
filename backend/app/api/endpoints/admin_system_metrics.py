@@ -8,6 +8,7 @@ import psutil
 
 from app.core.config import settings
 from app.core.queues import CeleryQueues
+from app.utils.gpu_stats import query_gpu_stats
 from app.utils.stats_helpers import format_bytes
 
 # No basicConfig here — this module is imported via the API router before
@@ -116,46 +117,6 @@ def get_disk_usage():
         }
 
 
-def _query_gpu_via_smi() -> dict | None:
-    """Run nvidia-smi directly to get GPU stats. Returns None if unavailable."""
-    import subprocess
-
-    try:
-        device_id = settings.GPU_DEVICE_ID
-        result = subprocess.run(  # noqa: S603 - fixed argv, no shell, no user input  # nosec B603
-            [  # noqa: S607 - nvidia-smi resolved from PATH on the GPU host  # nosec B607
-                "nvidia-smi",
-                "--query-gpu=name,memory.used,memory.total,memory.free,utilization.gpu,temperature.gpu",
-                "--format=csv,noheader,nounits",
-                f"--id={device_id}",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=True,
-        )
-        parts = result.stdout.strip().split(", ")
-        used_mib, total_mib, free_mib = float(parts[1]), float(parts[2]), float(parts[3])
-        used_bytes = used_mib * 1024 * 1024
-        total_bytes = total_mib * 1024 * 1024
-        free_bytes = free_mib * 1024 * 1024
-        pct = (used_bytes / total_bytes * 100) if total_bytes > 0 else 0
-        util = int(parts[4]) if len(parts) > 4 else None
-        temp = int(parts[5]) if len(parts) > 5 else None
-        return {
-            "available": True,
-            "name": parts[0],
-            "memory_total": format_bytes(total_bytes),
-            "memory_used": format_bytes(used_bytes),
-            "memory_free": format_bytes(free_bytes),
-            "memory_percent": f"{pct:.1f}%",
-            "utilization_percent": f"{util}%" if util is not None else "N/A",
-            "temperature_celsius": temp,
-        }
-    except (FileNotFoundError, subprocess.SubprocessError, ValueError, IndexError):
-        return None
-
-
 def get_gpu_usage():
     """Get GPU usage array from Redis cache, falling back to direct nvidia-smi query.
 
@@ -177,7 +138,7 @@ def get_gpu_usage():
             return data if isinstance(data, list) else [data]
 
         # Redis empty — try nvidia-smi directly (works if backend host has NVIDIA drivers)
-        direct_stats = _query_gpu_via_smi()
+        direct_stats = query_gpu_stats(settings.GPU_DEVICE_ID)
         if direct_stats:
             result = [direct_stats]
             redis_client.setex("gpu_stats", 600, json.dumps(result))

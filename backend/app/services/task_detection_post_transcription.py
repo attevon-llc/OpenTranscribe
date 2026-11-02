@@ -11,6 +11,7 @@ from datetime import timedelta
 
 from sqlalchemy.orm import Session
 
+from app.core.task_config import RECOVERED_AFTER_STUCK
 from app.core.task_config import TaskRecoveryConfig
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -18,9 +19,6 @@ from app.models.media import Task
 from app.services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
-
-#: The message ``recover_stuck_task`` writes, and the prefix Step 5.7 matches on.
-RECOVERED_AFTER_STUCK = "Task recovered after being stuck in processing"
 
 
 @dataclass

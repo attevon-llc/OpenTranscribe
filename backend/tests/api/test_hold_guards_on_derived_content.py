@@ -14,6 +14,8 @@ from unittest.mock import patch
 import pytest
 from fastapi import status
 
+from app.auth.audit import AuditEventType
+from app.auth.audit import audit_logger
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.services.hold_guard import LEGAL_HOLD_ERROR_CODE
@@ -46,6 +48,13 @@ def _speaker(db_session, owner, mf) -> Speaker:
     return speaker
 
 
+@pytest.fixture()
+def events(monkeypatch) -> list[dict]:
+    written: list[dict] = []
+    monkeypatch.setattr(audit_logger, "log", lambda **kw: written.append(kw))
+    return written
+
+
 def _refused(response) -> None:
     assert response.status_code == status.HTTP_409_CONFLICT, response.text
     detail = response.json()["detail"]
@@ -53,13 +62,24 @@ def _refused(response) -> None:
     assert detail["held_by"] == ["platform"]
 
 
+def _refusals(events, action: str) -> list[dict]:
+    return [
+        e
+        for e in events
+        if e["event_type"] is AuditEventType.CONTENT_HOLD_REFUSED
+        and e["details"]["action"] == action
+    ]
+
+
 def test_deleting_a_held_files_summary_is_refused(
-    client, user_token_headers, normal_user, db_session
+    client, user_token_headers, normal_user, db_session, events
 ):
     mf = _file(db_session, normal_user, held=True, summary=True)
     _refused(client.delete(f"/api/files/{mf.uuid}/summary", headers=user_token_headers))
     db_session.refresh(mf)
     assert mf.summary_data == {"bluf": "kept"}
+    refused = _refusals(events, "summary_delete")
+    assert len(refused) == 1 and refused[0]["resource_uuid"] == str(mf.uuid)
 
 
 def test_deleting_an_unheld_files_summary_works(
@@ -73,7 +93,7 @@ def test_deleting_an_unheld_files_summary_works(
 
 
 def test_deleting_a_held_files_speaker_is_refused(
-    client, user_token_headers, normal_user, db_session
+    client, user_token_headers, normal_user, db_session, events
 ):
     mf = _file(db_session, normal_user, held=True)
     speaker = _speaker(db_session, normal_user, mf)
@@ -82,6 +102,8 @@ def test_deleting_a_held_files_speaker_is_refused(
         _refused(client.delete(f"/api/speakers/{speaker_uuid}", headers=user_token_headers))
     capture.assert_not_called()
     assert db_session.query(Speaker).filter(Speaker.uuid == speaker_uuid).count() == 1
+    refused = _refusals(events, "speaker_delete")
+    assert len(refused) == 1 and refused[0]["resource_uuid"] == str(mf.uuid)
 
 
 def test_deleting_an_unheld_files_speaker_works(

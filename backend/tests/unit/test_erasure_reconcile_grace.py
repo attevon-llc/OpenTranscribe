@@ -13,6 +13,7 @@ from app.services import erasure_ledger_service as ledger
 from app.services import gdpr_erasure_service
 from app.services import self_erasure_service as service
 from app.services.system_settings_service import set_setting
+from tests.audit_maintenance import audit_maintenance
 
 NOW = datetime(2026, 11, 1, 12, 0, tzinfo=UTC)
 
@@ -72,7 +73,10 @@ def test_cancelled_entry_never_executes_and_is_not_overdue(
     db_session, normal_user, request_entry, erase_calls
 ):
     service.cancel_self_erasure(db_session, normal_user, request_entry.uuid, now=NOW)
-    request_entry.sla_due_at = NOW - timedelta(days=1)
+    # Back-dating the SLA clock is something only the table owner may do, under maintenance.
+    with audit_maintenance(db_session):
+        request_entry.sla_due_at = NOW - timedelta(days=1)
+        db_session.flush()
     db_session.commit()
 
     late = NOW + timedelta(days=60)
@@ -93,7 +97,9 @@ def test_an_ordinary_deferral_is_still_retried_and_can_be_overdue(db_session, no
     assert entry is not None
     entry.status = "deferred"
     entry.deferred_reason = "legal_hold"
-    entry.sla_due_at = NOW - timedelta(days=1)
+    with audit_maintenance(db_session):
+        entry.sla_due_at = NOW - timedelta(days=1)
+        db_session.flush()
     db_session.commit()
 
     assert entry.id in {e.id for e in ledger.open_entries(db_session, limit=100)}

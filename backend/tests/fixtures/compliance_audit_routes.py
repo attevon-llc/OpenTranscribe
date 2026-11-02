@@ -176,6 +176,12 @@ AUDITED_ROUTES: dict[tuple[str, str], Audited] = {
         ("CONTENT_HOLD_REFUSED",), "hold-refused-reprocess"
     ),
     ("POST", "/api/files/{file_uuid}/retry"): A(("CONTENT_HOLD_REFUSED",), "hold-refused-retry"),
+    ("DELETE", "/api/files/{file_uuid}/summary"): A(
+        ("CONTENT_HOLD_REFUSED",), pinned_by="api/test_hold_guards_on_derived_content.py"
+    ),
+    ("DELETE", "/api/speakers/{speaker_uuid}"): A(
+        ("CONTENT_HOLD_REFUSED",), pinned_by="api/test_hold_guards_on_derived_content.py"
+    ),
     ("DELETE", "/api/collections/{collection_uuid}"): A(
         ("CONTENT_HOLD_REFUSED",), pinned_by="api/test_org_admin_holds.py"
     ),

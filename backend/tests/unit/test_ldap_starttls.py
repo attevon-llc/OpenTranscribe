@@ -54,7 +54,7 @@ class TestConnectAndBindTls:
         FakeConnection.instances = []
 
     def _patch(self, monkeypatch, **conn_kwargs):
-        def _factory(server, user, password, auto_bind):
+        def _factory(server, user, password, auto_bind, receive_timeout=None):
             conn = FakeConnection(server, user, password, auto_bind)
             for k, v in conn_kwargs.items():
                 setattr(conn, k, v)

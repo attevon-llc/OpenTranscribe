@@ -17,6 +17,7 @@ from ldap3 import Connection
 from ldap3 import Server
 from ldap3.core.exceptions import LDAPBindError
 from ldap3.core.exceptions import LDAPException
+from ldap3.core.exceptions import LDAPSocketReceiveError
 from sqlalchemy.exc import IntegrityError
 
 from app.auth.account_linking import assert_email_link_permitted
@@ -235,7 +236,11 @@ def _connect_and_bind(
     Returns:
         A bound ``Connection``, or ``None`` if TLS negotiation or the bind failed.
     """
-    conn = Connection(server, user=user, password=password, auto_bind=False)
+    # The Server's connect_timeout only bounds the TCP connect; without a receive timeout a
+    # directory that accepts and then never answers holds this thread indefinitely.
+    conn = Connection(
+        server, user=user, password=password, auto_bind=False, receive_timeout=cfg.timeout
+    )
     try:
         if cfg.use_tls and not cfg.use_ssl and (not conn.open() or not conn.start_tls()):
             logger.error(
@@ -248,6 +253,13 @@ def _connect_and_bind(
             return None
         return conn
     except LDAPBindError:
+        return None
+    except LDAPSocketReceiveError:
+        logger.error(
+            "LDAP directory did not answer within %s s (ldap_timeout); refusing the bind",
+            cfg.timeout,
+        )
+        _close_connection(conn, "timed-out")
         return None
 
 
@@ -484,15 +496,24 @@ def _check_group_access(
     return False
 
 
-def _extract_user_attributes(cfg: LdapConfig, user_entry, ldap_username: str) -> dict | None:
-    """Extract and validate user attributes from LDAP entry."""
-    # Extract username
+def _directory_username(cfg: LdapConfig, user_entry, fallback: str) -> str:
+    """The account's username as the directory holds it: the username attribute, else *fallback*.
+
+    The one form stored as ``ldap_uid`` and compared against ``admin_users``, by login and by
+    the directory sweep alike. Comparing different forms (for example a ``userPrincipalName``
+    against its part before ``@``) makes the two paths disagree about who is an admin.
+    """
     attr_value = (
         getattr(user_entry, cfg.username_attr, None)
         if hasattr(user_entry, cfg.username_attr)
         else None
     )
-    username_value = str(attr_value) if attr_value is not None else ldap_username
+    return str(attr_value) if attr_value is not None else fallback
+
+
+def _extract_user_attributes(cfg: LdapConfig, user_entry, ldap_username: str) -> dict | None:
+    """Extract and validate user attributes from LDAP entry."""
+    username_value = _directory_username(cfg, user_entry, ldap_username)
 
     # Extract email
     email_value = user_entry[cfg.email_attr].value if cfg.email_attr in user_entry else None
@@ -1018,6 +1039,10 @@ def probe_ldap_user(
         return LdapProbe(DIRECTORY_NOT_ENTITLED)
 
     is_admin = _is_ldap_admin(
-        cfg, ldap_username, user_groups, bind_conn=bind_conn, user_dn=user_entry.entry_dn
+        cfg,
+        _directory_username(cfg, user_entry, ldap_uid),
+        user_groups,
+        bind_conn=bind_conn,
+        user_dn=user_entry.entry_dn,
     )
     return LdapProbe(DIRECTORY_PRESENT, tuple(user_groups), is_admin)

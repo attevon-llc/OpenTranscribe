@@ -14,6 +14,7 @@ from app.core.celery import celery_app
 from app.core.queues import UtilityPriority
 from app.db.session_utils import session_scope
 from app.services.file_cleanup_cycle import cleanup_service
+from app.utils.time_format import age_seconds
 
 logger = logging.getLogger(__name__)
 
@@ -192,22 +193,6 @@ def emergency_file_recovery(self, file_uuids: list):
         raise
 
 
-def _minutes_since(timestamp: datetime | None) -> float | None:
-    """Age of ``timestamp`` in minutes, treating a naive value as UTC.
-
-    Args:
-        timestamp: Instant to measure from.
-
-    Returns:
-        Age in minutes, or None when ``timestamp`` is None.
-    """
-    if timestamp is None:
-        return None
-    if timestamp.tzinfo is None:
-        timestamp = timestamp.replace(tzinfo=UTC)
-    return (datetime.now(UTC) - timestamp).total_seconds() / 60.0
-
-
 def _upload_grace_minutes(file_size: int | None, base_minutes: int) -> int:
     """How long a PENDING row of this size must be left alone.
 
@@ -297,7 +282,8 @@ def orphan_upload_sweeper(self, max_age_minutes: int = 30) -> dict[str, int]:
             for media_file in stale:
                 file_id = int(media_file.id)
                 storage_path = media_file.storage_path or ""
-                age = _minutes_since(media_file.upload_time)
+                age_s = age_seconds(media_file.upload_time)
+                age = None if age_s is None else age_s / 60.0
                 grace = _upload_grace_minutes(media_file.file_size, base_minutes)
                 if age is not None and age < grace:
                     skipped_in_progress += 1

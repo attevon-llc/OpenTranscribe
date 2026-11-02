@@ -23,27 +23,11 @@ from app.utils.task_utils import TASK_STATUS_COMPLETED
 from app.utils.task_utils import TASK_STATUS_FAILED
 from app.utils.task_utils import TASK_STATUS_IN_PROGRESS
 from app.utils.task_utils import TASK_STATUS_PENDING
+from app.utils.time_format import age_seconds
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-# Helper function to calculate age in seconds
-def calculate_age_seconds(timestamp):
-    """Calculate seconds between now and a timestamp, handling timezone differences safely"""
-    if not timestamp:
-        return None
-
-    # Get current time with timezone
-    now = datetime.now(UTC)
-
-    # Make timestamp timezone-aware if it's not
-    if timestamp.tzinfo is None:
-        timestamp = timestamp.replace(tzinfo=UTC)
-
-    # Calculate the difference
-    return (now - timestamp).total_seconds()
 
 
 @router.get("/system/health", response_model=dict[str, Any])
@@ -109,7 +93,7 @@ def task_system_health(
                     "media_file_id": str(task.media_file.uuid) if task.media_file else None,
                     "created_at": task.created_at,
                     "updated_at": task.updated_at,
-                    "age_seconds": calculate_age_seconds(task.created_at),
+                    "age_seconds": age_seconds(task.created_at),
                 }
             )
 
@@ -127,7 +111,7 @@ def task_system_health(
                     "status": file.status.value if file.status else None,
                     "user_id": str(file.user.uuid) if file.user else None,
                     "upload_time": file.upload_time,
-                    "age_seconds": calculate_age_seconds(file.upload_time),
+                    "age_seconds": age_seconds(file.upload_time),
                 }
             )
 

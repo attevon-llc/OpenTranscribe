@@ -21,6 +21,21 @@ def as_utc(value: datetime | None) -> datetime | None:
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
+def age_seconds(timestamp: datetime | None) -> float | None:
+    """Seconds elapsed since ``timestamp`` (a naive value is taken to be UTC).
+
+    Args:
+        timestamp: Instant to measure from.
+
+    Returns:
+        Age in seconds, or ``None`` when ``timestamp`` is ``None``.
+    """
+    aware = as_utc(timestamp)
+    if aware is None:
+        return None
+    return (datetime.now(UTC) - aware).total_seconds()
+
+
 def _split_hms(seconds: float) -> tuple[int, int, float]:
     """Break ``seconds`` into ``(hours, minutes, remaining seconds)``.
 

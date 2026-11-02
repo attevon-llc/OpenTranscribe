@@ -18,6 +18,7 @@ from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.core.config import settings
+from app.core.exceptions import DomainError
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -209,7 +210,7 @@ def admitted_on_optional_auth(user: User, db: Session) -> bool:
         return False
     try:
         return _approval_refusal(user, db) is None
-    except HTTPException:
+    except (HTTPException, DomainError):
         return False
 
 

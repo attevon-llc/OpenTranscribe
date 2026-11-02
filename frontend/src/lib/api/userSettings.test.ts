@@ -117,3 +117,16 @@ describe('RecordingSettingsHelper.cleanupLocalStorage', () => {
     expect(localStorage.getItem('recordingSettings')).toBeNull();
   });
 });
+
+describe('auto-summary preference', () => {
+  it('reads it and writes it as a JSON body', async () => {
+    mockInstance.get.mockResolvedValue({ data: { ai_summary_enabled: true } });
+    expect((await UserSettingsApi.getAiSummaryPreference()).ai_summary_enabled).toBe(true);
+    expect(mockInstance.get).toHaveBeenCalledWith('/user-settings/ai-summary');
+
+    mockInstance.put.mockResolvedValue({ data: { ai_summary_enabled: false, message: 'saved' } });
+    const updated = await UserSettingsApi.setAiSummaryPreference(false);
+    expect(mockInstance.put).toHaveBeenCalledWith('/user-settings/ai-summary', { enabled: false });
+    expect(updated.message).toBe('saved');
+  });
+});

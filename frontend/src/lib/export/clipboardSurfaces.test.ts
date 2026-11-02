@@ -46,7 +46,7 @@ const ALLOWED: Record<string, string> = {
   'components/mfa/MfaEnrollment.svelte':
     "MFA backup codes — the user's own freshly-minted credentials, shown once. Not " +
     'recording-derived content and unrelated to the redaction/export policy.',
-  'components/settings/PromptSettings.svelte':
+  'components/settings/PromptCopyButton.svelte':
     'A summarization prompt template the user authored. Their own text, not transcript ' +
     'content.',
   'components/settings/SAMLSettings.svelte':

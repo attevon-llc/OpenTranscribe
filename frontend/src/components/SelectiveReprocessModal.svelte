@@ -1,32 +1,44 @@
 <script lang="ts">
-  import type { MediaFile } from '$lib/types/media';
   import { createEventDispatcher } from 'svelte';
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import { t } from '$stores/locale';
-  import { isLLMAvailable, llmStatusStore } from '../stores/llmStatus';
-  import axiosInstance from '../lib/axios';
-  import { toastStore } from '../stores/toast';
+  import { isLLMAvailable, llmStatusStore } from '$stores/llmStatus';
+  import { toastStore } from '$stores/toast';
   import Spinner from './ui/Spinner.svelte';
   import BaseModal from './ui/BaseModal.svelte';
   import PerFileModelSelect from './PerFileModelSelect.svelte';
   import { ASRSettingsApi } from '$lib/api/asrSettings';
+  import { reprocessFile, reprocessFiles } from '$lib/api/reprocess';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { getErrorMessage } from '$lib/utils/apiError';
   import {
     getTranscriptionSettings,
     getTranscriptionSystemDefaults,
     speakerPrefill,
-    speakerSubmitRange,
     type TranscriptionSettings,
     type TranscriptionSystemDefaults
   } from '$lib/api/transcriptionSettings';
+  import {
+    buildReprocessBody,
+    buildStageGroups,
+    countBulkResults,
+    isReprocessValid,
+    requiresSettingsStep,
+    selectableStageIds,
+    selectionHasDiarizationDisabled,
+    selectionHasTranscript,
+    showsSpeakerSettings,
+    toggleStage,
+    wizardStepLabels,
+    type ReprocessFile
+  } from '$lib/fileDetail/reprocessStages';
 
   export let showModal: boolean = false;
-  export let file: any = null;
+  export let file: ReprocessFile & { uuid?: string } | null = null;
   export let reprocessing: boolean = false;
   export let bulkMode: boolean = false;
-  export let bulkFiles: any[] = [];
+  export let bulkFiles: (ReprocessFile & { uuid: string })[] = [];
 
   const dispatch = createEventDispatcher();
 
@@ -58,30 +70,18 @@
   let adminDefaultModel = '';
 
   // Computed state
-  // In bulk mode, gallery file objects use the list schema (no transcript_segments/total_segments).
-  // A completed file always has a transcript, so use status as the indicator.
-  // For mixed selections (completed + error), enable stages if ANY file qualifies.
-  $: hasTranscript = bulkMode
-    ? bulkFiles.some((f: MediaFile) => f.status === 'completed')
-    : file?.status === 'completed' && ((file?.transcript_segments?.length ?? 0) > 0 || (file?.total_segments ?? 0) > 0);
-  $: hasWordTimestamps = bulkMode
-    ? bulkFiles.some((f: MediaFile) => f.status === 'completed')
-    : file?.status === 'completed' && ((file?.transcript_segments?.length ?? 0) > 0 || (file?.total_segments ?? 0) > 0);
+  $: hasTranscript = selectionHasTranscript(file, bulkMode, bulkFiles);
+  // A completed file's transcript always carries word timestamps, so re-diarize needs no more.
+  $: hasWordTimestamps = hasTranscript;
   // A cloud ASR provider returns its own speakers on a transcription re-run, so the range is
   // moot there; a re-diarize re-detects with the user's current speaker-detection choice
   // whichever provider transcribed the file, so its range always applies.
-  $: showSpeakerSettings =
-    selectedStages.has('rediarize') || (selectedStages.has('transcription') && !isCloudASR);
-  $: isValid =
-    selectedStages.size > 0 &&
-    (!showSpeakerSettings ||
-      !(minSpeakers !== null && maxSpeakers !== null && minSpeakers > maxSpeakers));
+  $: showSpeakerSettings = showsSpeakerSettings(selectedStages, isCloudASR);
+  $: isValid = isReprocessValid(selectedStages, showSpeakerSettings, minSpeakers, maxSpeakers);
 
   // Step navigation — show settings step for speaker config OR model selection
-  $: needsSettingsStep = showSpeakerSettings || selectedStages.has('transcription');
-  $: stepLabels = needsSettingsStep
-    ? ['reprocess.stepStages', 'reprocess.stepSettings', 'reprocess.stepReview']
-    : ['reprocess.stepStages', 'reprocess.stepReview'];
+  $: needsSettingsStep = requiresSettingsStep(selectedStages, showSpeakerSettings);
+  $: stepLabels = wizardStepLabels(needsSettingsStep);
   $: totalSteps = stepLabels.length;
   $: isLastStep = currentStep === totalSteps;
   $: canGoNext = currentStep === 1 ? selectedStages.size > 0 : true;
@@ -91,97 +91,11 @@
   $: if (maxSpeakers !== null && maxSpeakers < 1) maxSpeakers = 1;
   $: if (numSpeakers !== null && numSpeakers < 1) numSpeakers = 1;
 
-  // Stage definitions
-  interface StageDefinition {
-    id: string;
-    labelKey: string;
-    descKey: string;
-    disabled: boolean;
-    disabledReason: string;
-  }
-
-  $: coreStages = [
-    {
-      id: 'transcription',
-      labelKey: 'reprocess.stageTranscription',
-      descKey: 'reprocess.stageTranscriptionDesc',
-      disabled: false,
-      disabledReason: '',
-    },
-    {
-      id: 'rediarize',
-      labelKey: 'reprocess.stageRediarize',
-      descKey: 'reprocess.stageRediarizeDesc',
-      disabled: !hasWordTimestamps,
-      disabledReason: $t('reprocess.stageRediarizeDisabled'),
-    },
-  ] as StageDefinition[];
-
-  $: searchStages = [
-    {
-      id: 'search_indexing',
-      labelKey: 'reprocess.stageSearchIndexing',
-      descKey: 'reprocess.stageSearchIndexingDesc',
-      disabled: !hasTranscript,
-      disabledReason: $t('reprocess.transcriptRequired'),
-    },
-    {
-      id: 'analytics',
-      labelKey: 'reprocess.stageAnalytics',
-      descKey: 'reprocess.stageAnalyticsDesc',
-      disabled: !hasTranscript,
-      disabledReason: $t('reprocess.transcriptRequired'),
-    },
-  ] as StageDefinition[];
-
-  $: aiStages = [
-    {
-      id: 'speaker_llm',
-      labelKey: 'reprocess.stageSpeakerLLM',
-      descKey: 'reprocess.stageSpeakerLLMDesc',
-      disabled: !hasTranscript || !$isLLMAvailable,
-      disabledReason: !hasTranscript
-        ? $t('reprocess.transcriptRequired')
-        : $t('reprocess.llmNotAvailable'),
-    },
-    {
-      id: 'summarization',
-      labelKey: 'reprocess.stageSummarization',
-      descKey: 'reprocess.stageSummarizationDesc',
-      disabled: !hasTranscript || !$isLLMAvailable,
-      disabledReason: !hasTranscript
-        ? $t('reprocess.transcriptRequired')
-        : $t('reprocess.llmNotAvailable'),
-    },
-    {
-      id: 'topic_extraction',
-      labelKey: 'reprocess.stageTopicExtraction',
-      descKey: 'reprocess.stageTopicExtractionDesc',
-      disabled: !hasTranscript || !$isLLMAvailable,
-      disabledReason: !hasTranscript
-        ? $t('reprocess.transcriptRequired')
-        : $t('reprocess.llmNotAvailable'),
-    },
-  ] as StageDefinition[];
-
-  $: allStages = [...coreStages, ...searchStages, ...aiStages];
-
-  function toggleStage(stageId: string) {
-    const newSet = new Set(selectedStages);
-
-    if (newSet.has(stageId)) {
-      newSet.delete(stageId);
-    } else {
-      newSet.add(stageId);
-      if (stageId === 'transcription') {
-        newSet.delete('rediarize');
-      } else if (stageId === 'rediarize') {
-        newSet.delete('transcription');
-      }
-    }
-
-    selectedStages = newSet;
-  }
+  $: stageGroups = buildStageGroups(
+    { hasTranscript, hasWordTimestamps, llmAvailable: $isLLMAvailable },
+    $t
+  );
+  $: allStages = stageGroups.flatMap((group) => group.stages);
 
   function goNext() {
     if (currentStep < totalSteps && canGoNext) {
@@ -215,57 +129,40 @@
     try {
       reprocessing = true;
       const stagesArray = Array.from(selectedStages);
-      const requestBody: Record<string, unknown> = {
+      const requestBody = buildReprocessBody({
         stages: stagesArray,
-      };
-
-      if (showSpeakerSettings) {
-        const range = speakerSubmitRange(
-          transcriptionSettings,
-          transcriptionSystemDefaults,
-          { minSpeakers, maxSpeakers },
-          numSpeakers
-        );
-        if (range.minSpeakers !== null) requestBody.min_speakers = range.minSpeakers;
-        if (range.maxSpeakers !== null) requestBody.max_speakers = range.maxSpeakers;
-        if (numSpeakers !== null) requestBody.num_speakers = numSpeakers;
-      }
-
-      if (selectedReprocessModel && modelChoiceEnabled) {
-        requestBody.whisper_model = selectedReprocessModel;
-      }
+        showSpeakerSettings,
+        settings: transcriptionSettings,
+        systemDefaults: transcriptionSystemDefaults,
+        minSpeakers,
+        maxSpeakers,
+        numSpeakers,
+        model: selectedReprocessModel,
+        modelChoiceEnabled
+      });
 
       if (bulkMode) {
-        // Bulk mode: POST to bulk-action endpoint
-        requestBody.file_uuids = bulkFiles.map((f: MediaFile) => f.uuid);
-        requestBody.action = 'reprocess';
-
-        const response = await axiosInstance.post(
-          '/files/management/bulk-action',
+        const results = await reprocessFiles(
+          bulkFiles.map((f) => f.uuid),
           requestBody
         );
-        const results = response.data;
-        const successful = results.filter((r: any) => r.success);
-        const failed = results.filter((r: any) => !r.success);
+        const { successful, failed } = countBulkResults(results);
 
-        if (successful.length > 0) {
-          toastStore.success($t('reprocess.bulkStartedSuccess', { count: successful.length }));
+        if (successful > 0) {
+          toastStore.success($t('reprocess.bulkStartedSuccess', { count: successful }));
         }
-        if (failed.length > 0) {
-          toastStore.error($t('reprocess.bulkStartFailed', { count: failed.length }));
+        if (failed > 0) {
+          toastStore.error($t('reprocess.bulkStartFailed', { count: failed }));
         }
 
-        dispatch('reprocess', { stages: stagesArray, count: successful.length });
+        dispatch('reprocess', { stages: stagesArray, count: successful });
       } else {
         // Single file mode
-        await axiosInstance.post(
-          `/files/${file.uuid}/reprocess`,
-          requestBody
-        );
+        await reprocessFile(file!.uuid!, requestBody);
 
         toastStore.success($t('reprocess.startedSuccess'));
         dispatch('reprocess', {
-          fileId: file.uuid,
+          fileId: file!.uuid,
           stages: stagesArray,
         });
       }
@@ -345,26 +242,16 @@
   }
 
   function selectAll() {
-    const newSet = new Set<string>();
-    for (const stage of allStages) {
-      if (!stage.disabled) {
-        // Transcription subsumes rediarize — pick transcription
-        if (stage.id === 'rediarize') continue;
-        newSet.add(stage.id);
-      }
-    }
-    selectedStages = newSet;
+    selectedStages = new Set(selectableStageIds(allStages));
   }
 
   function deselectAll() {
     selectedStages = new Set();
   }
 
-  $: hasDiarizationDisabled = bulkMode
-    ? bulkFiles.some((f: MediaFile) => f.diarization_disabled)
-    : file?.diarization_disabled === true;
+  $: hasDiarizationDisabled = selectionHasDiarizationDisabled(file, bulkMode, bulkFiles);
 
-  $: allSelected = allStages.filter(s => !s.disabled && s.id !== 'rediarize').every(s => selectedStages.has(s.id));
+  $: allSelected = selectableStageIds(allStages).every((id) => selectedStages.has(id));
 
   function getStageLabelById(id: string): string {
     const stage = allStages.find(s => s.id === id);
@@ -375,7 +262,7 @@
 <BaseModal isOpen={showModal} title={bulkMode ? $t('reprocess.bulkModalTitle', { count: bulkFiles.length }) : $t('reprocess.modalTitle')} size="md" zIndex={9999} onClose={handleClose}>
         <!-- Step Indicator -->
         <div class="step-indicator">
-          {#each stepLabels as label, i}
+          {#each stepLabels as label, i (label)}
             {@const stepNum = i + 1}
             <button
               class="step-dot"
@@ -436,132 +323,48 @@
                 {/if}
 
                 {#if hasDiarizationDisabled}
-                  <div class="warning-banner warning-info" style="margin-top: 0; margin-bottom: 0.75rem;">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <line x1="12" y1="16" x2="12" y2="12"></line>
-                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                    </svg>
-                    <span>{$t('reprocess.diarizationWasDisabled')}</span>
-                  </div>
+                  {@render infoBanner($t('reprocess.diarizationWasDisabled'))}
                 {/if}
 
-                <!-- Core Processing -->
-                <div class="stage-group">
-                  <div class="stage-group-header">
-                    <span class="stage-group-label">{$t('reprocess.coreProcessing')}</span>
-                    <div class="stage-group-line"></div>
-                  </div>
-                  {#each coreStages as stage (stage.id)}
-                    <label
-                      class="stage-item"
-                      class:disabled={stage.disabled}
-                      class:selected={selectedStages.has(stage.id)}
-                    >
-                      <div class="stage-checkbox-area">
-                        <input
-                          type="checkbox"
-                          checked={selectedStages.has(stage.id)}
-                          disabled={stage.disabled}
-                          on:change={() => toggleStage(stage.id)}
-                          class="stage-checkbox"
-                        />
-                        <div class="stage-check-custom" class:checked={selectedStages.has(stage.id)} class:disabled={stage.disabled}>
-                          {#if selectedStages.has(stage.id)}
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                              <polyline points="20 6 9 17 4 12"></polyline>
-                            </svg>
+                {#each stageGroups as group (group.labelKey)}
+                  <div class="stage-group">
+                    <div class="stage-group-header">
+                      <span class="stage-group-label">{$t(group.labelKey)}</span>
+                      <div class="stage-group-line"></div>
+                    </div>
+                    {#each group.stages as stage (stage.id)}
+                      <label
+                        class="stage-item"
+                        class:disabled={stage.disabled}
+                        class:selected={selectedStages.has(stage.id)}
+                      >
+                        <div class="stage-checkbox-area">
+                          <input
+                            type="checkbox"
+                            checked={selectedStages.has(stage.id)}
+                            disabled={stage.disabled}
+                            on:change={() => (selectedStages = toggleStage(selectedStages, stage.id))}
+                            class="stage-checkbox"
+                          />
+                          <div class="stage-check-custom" class:checked={selectedStages.has(stage.id)} class:disabled={stage.disabled}>
+                            {#if selectedStages.has(stage.id)}
+                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                              </svg>
+                            {/if}
+                          </div>
+                        </div>
+                        <div class="stage-info">
+                          <span class="stage-label">{$t(stage.labelKey)}</span>
+                          <span class="stage-desc">{$t(stage.descKey)}</span>
+                          {#if stage.disabled && stage.disabledReason}
+                            <span class="stage-disabled-hint">{stage.disabledReason}</span>
                           {/if}
                         </div>
-                      </div>
-                      <div class="stage-info">
-                        <span class="stage-label">{$t(stage.labelKey)}</span>
-                        <span class="stage-desc">{$t(stage.descKey)}</span>
-                        {#if stage.disabled && stage.disabledReason}
-                          <span class="stage-disabled-hint">{stage.disabledReason}</span>
-                        {/if}
-                      </div>
-                    </label>
-                  {/each}
-                </div>
-
-                <!-- Search & Discovery -->
-                <div class="stage-group">
-                  <div class="stage-group-header">
-                    <span class="stage-group-label">{$t('reprocess.searchDiscovery')}</span>
-                    <div class="stage-group-line"></div>
+                      </label>
+                    {/each}
                   </div>
-                  {#each searchStages as stage (stage.id)}
-                    <label
-                      class="stage-item"
-                      class:disabled={stage.disabled}
-                      class:selected={selectedStages.has(stage.id)}
-                    >
-                      <div class="stage-checkbox-area">
-                        <input
-                          type="checkbox"
-                          checked={selectedStages.has(stage.id)}
-                          disabled={stage.disabled}
-                          on:change={() => toggleStage(stage.id)}
-                          class="stage-checkbox"
-                        />
-                        <div class="stage-check-custom" class:checked={selectedStages.has(stage.id)} class:disabled={stage.disabled}>
-                          {#if selectedStages.has(stage.id)}
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                              <polyline points="20 6 9 17 4 12"></polyline>
-                            </svg>
-                          {/if}
-                        </div>
-                      </div>
-                      <div class="stage-info">
-                        <span class="stage-label">{$t(stage.labelKey)}</span>
-                        <span class="stage-desc">{$t(stage.descKey)}</span>
-                        {#if stage.disabled && stage.disabledReason}
-                          <span class="stage-disabled-hint">{stage.disabledReason}</span>
-                        {/if}
-                      </div>
-                    </label>
-                  {/each}
-                </div>
-
-                <!-- AI Features -->
-                <div class="stage-group">
-                  <div class="stage-group-header">
-                    <span class="stage-group-label">{$t('reprocess.aiFeatures')}</span>
-                    <div class="stage-group-line"></div>
-                  </div>
-                  {#each aiStages as stage (stage.id)}
-                    <label
-                      class="stage-item"
-                      class:disabled={stage.disabled}
-                      class:selected={selectedStages.has(stage.id)}
-                    >
-                      <div class="stage-checkbox-area">
-                        <input
-                          type="checkbox"
-                          checked={selectedStages.has(stage.id)}
-                          disabled={stage.disabled}
-                          on:change={() => toggleStage(stage.id)}
-                          class="stage-checkbox"
-                        />
-                        <div class="stage-check-custom" class:checked={selectedStages.has(stage.id)} class:disabled={stage.disabled}>
-                          {#if selectedStages.has(stage.id)}
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                              <polyline points="20 6 9 17 4 12"></polyline>
-                            </svg>
-                          {/if}
-                        </div>
-                      </div>
-                      <div class="stage-info">
-                        <span class="stage-label">{$t(stage.labelKey)}</span>
-                        <span class="stage-desc">{$t(stage.descKey)}</span>
-                        {#if stage.disabled && stage.disabledReason}
-                          <span class="stage-disabled-hint">{stage.disabledReason}</span>
-                        {/if}
-                      </div>
-                    </label>
-                  {/each}
-                </div>
+                {/each}
 
               <!-- Step 2: Settings (only when needsSettingsStep && currentStep === 2) -->
               {:else if isOnSettingsStep()}
@@ -641,27 +444,7 @@
 
                   <!-- V4 Info Card -->
                   {#if selectedStages.has('transcription') || selectedStages.has('rediarize')}
-                    <div class="v4-info-card">
-                      <div class="v4-info-header">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <circle cx="12" cy="12" r="10"></circle>
-                          <line x1="12" y1="16" x2="12" y2="12"></line>
-                          <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                        </svg>
-                        <span>{$t('reprocess.v4InfoTitle')}</span>
-                      </div>
-                      {#if selectedStages.has('transcription')}
-                        <div class="v4-path">
-                          <strong>{$t('reprocess.v4PathTranscription')}</strong>
-                          <span>{$t('reprocess.v4PathTranscriptionDesc')}</span>
-                        </div>
-                      {:else}
-                        <div class="v4-path">
-                          <strong>{$t('reprocess.v4PathRediarize')}</strong>
-                          <span>{$t('reprocess.v4PathRediarizeDesc')}</span>
-                        </div>
-                      {/if}
-                    </div>
+                    {@render v4InfoCard()}
                   {/if}
                 </div>
                 {/if}
@@ -672,21 +455,14 @@
 
                 <!-- Bulk info banner -->
                 {#if bulkMode}
-                  <div class="warning-banner warning-info" style="margin-top: 0; margin-bottom: 0.75rem;">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <line x1="12" y1="16" x2="12" y2="12"></line>
-                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                    </svg>
-                    <span>{$t('reprocess.bulkInfoMessage', { count: bulkFiles.length })}</span>
-                  </div>
+                  {@render infoBanner($t('reprocess.bulkInfoMessage', { count: bulkFiles.length }))}
                 {/if}
 
                 <!-- Selected stages -->
                 <div class="review-section">
                   <span class="review-label">{$t('reprocess.reviewStages')}</span>
                   <div class="review-pills">
-                    {#each Array.from(selectedStages) as stageId}
+                    {#each Array.from(selectedStages) as stageId (stageId)}
                       <span class="stage-pill">{getStageLabelById(stageId)}</span>
                     {/each}
                   </div>
@@ -715,27 +491,7 @@
 
                 <!-- V4 info card on review (if no settings step was shown) -->
                 {#if !needsSettingsStep && (selectedStages.has('transcription') || selectedStages.has('rediarize'))}
-                  <div class="v4-info-card">
-                    <div class="v4-info-header">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <line x1="12" y1="16" x2="12" y2="12"></line>
-                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                      </svg>
-                      <span>{$t('reprocess.v4InfoTitle')}</span>
-                    </div>
-                    {#if selectedStages.has('transcription')}
-                      <div class="v4-path">
-                        <strong>{$t('reprocess.v4PathTranscription')}</strong>
-                        <span>{$t('reprocess.v4PathTranscriptionDesc')}</span>
-                      </div>
-                    {:else}
-                      <div class="v4-path">
-                        <strong>{$t('reprocess.v4PathRediarize')}</strong>
-                        <span>{$t('reprocess.v4PathRediarizeDesc')}</span>
-                      </div>
-                    {/if}
-                  </div>
+                  {@render v4InfoCard()}
                 {/if}
 
                 <!-- Warnings -->
@@ -821,6 +577,42 @@
           {/if}
         </svelte:fragment>
 </BaseModal>
+
+{#snippet infoBanner(text: string)}
+  <div class="warning-banner warning-info" style="margin-top: 0; margin-bottom: 0.75rem;">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="16" x2="12" y2="12"></line>
+      <line x1="12" y1="8" x2="12.01" y2="8"></line>
+    </svg>
+    <span>{text}</span>
+  </div>
+{/snippet}
+
+<!-- What a transcription / re-diarize re-run does to the speaker data. -->
+{#snippet v4InfoCard()}
+  <div class="v4-info-card">
+    <div class="v4-info-header">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="16" x2="12" y2="12"></line>
+        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+      </svg>
+      <span>{$t('reprocess.v4InfoTitle')}</span>
+    </div>
+    {#if selectedStages.has('transcription')}
+      <div class="v4-path">
+        <strong>{$t('reprocess.v4PathTranscription')}</strong>
+        <span>{$t('reprocess.v4PathTranscriptionDesc')}</span>
+      </div>
+    {:else}
+      <div class="v4-path">
+        <strong>{$t('reprocess.v4PathRediarize')}</strong>
+        <span>{$t('reprocess.v4PathRediarizeDesc')}</span>
+      </div>
+    {/if}
+  </div>
+{/snippet}
 
 <style>
   /* Step Indicator */

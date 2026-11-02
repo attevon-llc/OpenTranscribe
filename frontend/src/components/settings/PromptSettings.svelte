@@ -2,15 +2,32 @@
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount } from 'svelte';
-  import { PromptsApi, type SummaryPrompt, type ActivePromptResponse, type SummaryPromptCreate, type SummaryPromptUpdate, type SharedPromptLibrary } from '../../lib/api/prompts';
-  import BaseModal from '../ui/BaseModal.svelte';
-  import ConfirmationModal from '../ConfirmationModal.svelte';
-  import Spinner from '../ui/Spinner.svelte';
-  import TagInput from '../ui/TagInput.svelte';
-  import { copyToClipboard } from '$lib/utils/clipboard';
-  import { toastStore } from '../../stores/toast';
+  import { PromptsApi, type SummaryPrompt, type ActivePromptResponse, type SummaryPromptCreate, type SummaryPromptUpdate, type SharedPromptLibrary } from '$lib/api/prompts';
+  import BaseModal from '$components/ui/BaseModal.svelte';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
+  import TagInput from '$components/ui/TagInput.svelte';
+  import PromptCopyButton from './PromptCopyButton.svelte';
+  import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import {
+    activeAfterDelete,
+    defaultPromptId,
+    findPromptById,
+    splitLoadedPrompts,
+    userPromptsOf,
+    visibleSystemPrompts
+  } from '$lib/settings/promptList';
+  import {
+    blankPromptForm,
+    cloneForm,
+    isPromptFormDirty,
+    isPromptFormValid,
+    promptFormFrom,
+    type PromptFormData
+  } from '$lib/settings/promptForm';
+  import { withShareState } from '$lib/settings/shareState';
 
   export let onSettingsChange: (() => void) | null = null;
 
@@ -42,24 +59,10 @@
   let pendingCloseAction: (() => void) | null = null;
 
   // Form dirty state tracking
-  let originalFormData = {};
+  let originalFormData: PromptFormData = blankPromptForm();
   let isDirty = false;
 
-  let formData: {
-    name: string;
-    description: string;
-    prompt_text: string;
-    content_type: string;
-    tags: string[];
-    is_shared: boolean;
-  } = {
-    name: '',
-    description: '',
-    prompt_text: '',
-    content_type: 'general',
-    tags: [],
-    is_shared: false
-  };
+  let formData: PromptFormData = blankPromptForm();
 
   $: contentTypes = [
     { value: 'general', label: $t('prompts.contentTypeGeneral') },
@@ -86,29 +89,17 @@
       ]);
 
       // Separate own prompts from shared prompts (shared are non-owner, non-system)
-      const allLoaded = promptsResponse.prompts || [];
-      allPrompts = allLoaded.filter(p => p.is_system_default || p.is_owner !== false);
-      sharedPrompts = allLoaded.filter(p => !p.is_system_default && p.is_owner === false);
+      const split = splitLoadedPrompts(promptsResponse.prompts || []);
+      allPrompts = split.own;
+      sharedPrompts = split.shared;
 
       activePrompt = activeResponse.active_prompt;
       selectedPromptId = activeResponse.active_prompt_id;
 
       // Auto-select universal prompt if no prompt is selected
       if (!selectedPromptId && allPrompts.length > 0) {
-        const universalPrompt = allPrompts.find(p =>
-          p.is_system_default &&
-          (p.name.toLowerCase().includes('universal') || p.name.toLowerCase().includes('general'))
-        );
-
-        if (universalPrompt) {
-          await setActivePrompt(universalPrompt.uuid);
-        } else {
-          // Fallback to first system prompt if no universal found
-          const firstSystemPrompt = allPrompts.find(p => p.is_system_default);
-          if (firstSystemPrompt) {
-            await setActivePrompt(firstSystemPrompt.uuid);
-          }
-        }
+        const fallbackId = defaultPromptId(allPrompts);
+        if (fallbackId) await setActivePrompt(fallbackId);
       }
     } catch (err: unknown) {
       console.error('Error loading prompts:', err);
@@ -127,7 +118,7 @@
       });
 
       selectedPromptId = promptId;
-      activePrompt = allPrompts.find(p => p.uuid === promptId) || sharedPrompts.find(p => p.uuid === promptId) || null;
+      activePrompt = findPromptById(promptId, allPrompts, sharedPrompts);
       toastStore.success($t('prompts.activePromptUpdated'));
 
       if (onSettingsChange) {
@@ -167,15 +158,8 @@
   function openCreateForm() {
     showCreateForm = true;
     editingPrompt = null;
-    formData = {
-      name: '',
-      description: '',
-      prompt_text: '',
-      content_type: 'general',
-      tags: [],
-      is_shared: false
-    };
-    originalFormData = { ...formData, tags: [...formData.tags] };
+    formData = blankPromptForm();
+    originalFormData = cloneForm(formData);
   }
 
   function openEditForm(prompt: SummaryPrompt) {
@@ -186,15 +170,8 @@
 
     showCreateForm = true;
     editingPrompt = prompt;
-    formData = {
-      name: prompt.name,
-      description: prompt.description || '',
-      prompt_text: prompt.prompt_text,
-      content_type: prompt.content_type || 'general',
-      tags: [...(prompt.tags || [])],
-      is_shared: prompt.is_shared || false
-    };
-    originalFormData = { ...formData, tags: [...formData.tags] };
+    formData = promptFormFrom(prompt);
+    originalFormData = cloneForm(formData);
   }
 
   function closeForm(force: boolean = false) {
@@ -211,15 +188,8 @@
   function executeCloseForm() {
     showCreateForm = false;
     editingPrompt = null;
-    formData = {
-      name: '',
-      description: '',
-      prompt_text: '',
-      content_type: 'general',
-      tags: [],
-      is_shared: false
-    };
-    originalFormData = { ...formData, tags: [...formData.tags] };
+    formData = blankPromptForm();
+    originalFormData = cloneForm(formData);
   }
 
   function handleUnsavedChangesConfirm() {
@@ -303,11 +273,10 @@
       // Check if we deleted the active prompt
       const wasActivePrompt = selectedPromptId === prompt.uuid;
 
-      // Check if we have any remaining user prompts after deletion
-      const remainingUserPrompts = allPrompts.filter(p => !p.is_system_default);
-
-      // If no user prompts remain, automatically activate Universal Content Analyzer (regardless of which prompt was active)
-      if (remainingUserPrompts.length === 0) {
+      // With no user prompt left the server falls back to the built-in default (Universal Content
+      // Analyzer), whichever prompt had been active, so ask it which one that is.
+      const afterDelete = activeAfterDelete(allPrompts, wasActivePrompt);
+      if (afterDelete === 'refetch') {
         try {
           // Load fresh active prompt data - backend will automatically fall back to Universal Content Analyzer
           const activeResponse = await PromptsApi.getActivePrompt();
@@ -325,7 +294,7 @@
           activePrompt = null;
           toastStore.success($t('prompts.promptDeleted'));
         }
-      } else if (wasActivePrompt) {
+      } else if (afterDelete === 'clear') {
         // Just clear the selection if it was active but we still have user prompts
         selectedPromptId = null;
         activePrompt = null;
@@ -350,18 +319,15 @@
   async function handleShareToggle(prompt: SummaryPrompt) {
     if (prompt.is_system_default) return;
     const newShared = !prompt.is_shared;
-    const idx = allPrompts.findIndex(p => p.uuid === prompt.uuid);
     const prevSharedAt = prompt.shared_at;
 
     // Optimistic update — flip toggle immediately for responsive UI
-    if (idx !== -1) {
-      allPrompts[idx] = {
-        ...allPrompts[idx],
-        is_shared: newShared,
-        shared_at: newShared ? new Date().toISOString() : undefined
-      };
-      allPrompts = allPrompts;
-    }
+    allPrompts = withShareState(
+      allPrompts,
+      prompt.uuid,
+      newShared,
+      newShared ? new Date().toISOString() : undefined
+    );
 
     saving = true;
     try {
@@ -371,14 +337,7 @@
       );
     } catch (err: unknown) {
       // Rollback on failure
-      if (idx !== -1) {
-        allPrompts[idx] = {
-          ...allPrompts[idx],
-          is_shared: !newShared,
-          shared_at: prevSharedAt
-        };
-        allPrompts = allPrompts;
-      }
+      allPrompts = withShareState(allPrompts, prompt.uuid, !newShared, prevSharedAt);
       console.error('Error toggling share:', err);
       toastStore.error(getErrorMessage(err, $t('prompts.shareFailed')));
     } finally {
@@ -387,8 +346,8 @@
   }
 
   // Separate prompts by type - exclude speaker_identification from UI
-  $: systemPrompts = allPrompts.filter(p => p.is_system_default && p.content_type !== 'speaker_identification');
-  $: userPrompts = allPrompts.filter(p => !p.is_system_default);
+  $: systemPrompts = visibleSystemPrompts(allPrompts);
+  $: userPrompts = userPromptsOf(allPrompts);
 
   function viewPrompt(prompt: SummaryPrompt) {
     viewingPrompt = prompt;
@@ -400,10 +359,10 @@
     viewingPrompt = null;
   }
 
-  $: isFormValid = !!(formData.name && formData.name.trim() && formData.prompt_text && formData.prompt_text.trim());
+  $: isFormValid = isPromptFormValid(formData);
 
   // Track form changes for dirty state (tags is an array, so JSON compare works)
-  $: isDirty = JSON.stringify({ ...formData, tags: formData.tags }) !== JSON.stringify(originalFormData);
+  $: isDirty = isPromptFormDirty(formData, originalFormData);
 
   // Function to prevent native tooltip flicker and position tooltip
   function removeTitle(event: MouseEvent) {
@@ -426,29 +385,6 @@
     tooltip.style.setProperty('--tooltip-left', `${rect.left + rect.width / 2}px`);
     tooltip.style.setProperty('--tooltip-top', `${rect.bottom}px`);
   }
-
-  // Copy functionality - matches SummaryModal pattern
-  let copyButtonText = 'Copy';
-  let isCopied = false;
-
-  function copyPromptText(text: string) {
-    if (!text) return;
-
-    copyToClipboard(
-      text,
-      () => {
-        isCopied = true;
-        setTimeout(() => {
-          isCopied = false;
-        }, 2000);
-      },
-      (error) => {
-        // Failed - just keep default state
-      }
-    );
-  }
-
-
 </script>
 
 <div class="prompt-settings">
@@ -469,7 +405,7 @@
         </div>
 
         <div class="config-list">
-          {#each systemPrompts as prompt}
+          {#each systemPrompts as prompt (prompt.uuid)}
             <div class="config-item" class:active={selectedPromptId === prompt.uuid}>
               <div class="config-info">
                 <div class="config-name">
@@ -494,7 +430,7 @@
                 {#if prompt.linked_collections && prompt.linked_collections.length > 0}
                   <div class="linked-collections">
                     <span class="linked-label">{$t('prompts.usedByCollections')}:</span>
-                    {#each prompt.linked_collections as col}
+                    {#each prompt.linked_collections as col (col.uuid)}
                       <span class="collection-tag">{col.name}</span>
                     {/each}
                   </div>
@@ -575,7 +511,7 @@
 
       {#if userPrompts.length > 0}
         <div class="config-list">
-          {#each userPrompts as prompt}
+          {#each userPrompts as prompt (prompt.uuid)}
             <div class="config-item" class:active={selectedPromptId === prompt.uuid}>
               <div class="config-info">
                 <div class="config-name">
@@ -596,7 +532,7 @@
                 {#if prompt.linked_collections && prompt.linked_collections.length > 0}
                   <div class="linked-collections">
                     <span class="linked-label">{$t('prompts.usedByCollections')}:</span>
-                    {#each prompt.linked_collections as col}
+                    {#each prompt.linked_collections as col (col.uuid)}
                       <span class="collection-tag">{col.name}</span>
                     {/each}
                   </div>
@@ -719,7 +655,7 @@
         </div>
 
         <div class="config-list">
-          {#each sharedPrompts as prompt}
+          {#each sharedPrompts as prompt (prompt.uuid)}
             <div class="config-item shared" class:active={selectedPromptId === prompt.uuid}>
               <div class="config-info">
                 <div class="config-name">
@@ -844,7 +780,7 @@
           disabled={saving}
           class="form-control"
         >
-          {#each contentTypes as type}
+          {#each contentTypes as type (type.value)}
             <option value={type.value}>{type.label}</option>
           {/each}
         </select>
@@ -881,27 +817,7 @@
         <div class="textarea-header">
           <label for="prompt_text">{$t('prompts.promptText')}</label>
           {#if formData.prompt_text.trim()}
-            <button
-              type="button"
-              class="copy-button-header"
-              class:copied={isCopied}
-              on:click={() => copyPromptText(formData.prompt_text)}
-              aria-label={$t('prompts.copy')}
-              title={isCopied ? $t('prompts.copiedToClipboard') : $t('prompts.copy')}
-            >
-              {#if isCopied}
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/>
-                </svg>
-                {$t('prompts.copied')}
-              {:else}
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
-                  <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
-                </svg>
-                {$t('prompts.copy')}
-              {/if}
-            </button>
+            <PromptCopyButton text={formData.prompt_text} />
           {/if}
         </div>
         <textarea
@@ -972,7 +888,7 @@
           <div class="detail-row">
             <strong>{$t('prompts.usedByCollections')}:</strong>
             <div class="linked-collections-modal">
-              {#each viewingPrompt.linked_collections as col}
+              {#each viewingPrompt.linked_collections as col (col.uuid)}
                 <span class="collection-tag">{col.name}</span>
               {/each}
             </div>
@@ -982,27 +898,7 @@
       <div class="prompt-text-container">
         <div class="prompt-text-header">
           <strong>{$t('prompts.promptTextLabel')}:</strong>
-          <button
-            type="button"
-            class="copy-button-header"
-            class:copied={isCopied}
-            on:click={() => copyPromptText(viewingPrompt?.prompt_text ?? '')}
-            aria-label={$t('prompts.copy')}
-            title={isCopied ? $t('prompts.copiedToClipboard') : $t('prompts.copy')}
-          >
-            {#if isCopied}
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/>
-              </svg>
-              {$t('prompts.copied')}
-            {:else}
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
-                <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
-              </svg>
-              {$t('prompts.copy')}
-            {/if}
-          </button>
+          <PromptCopyButton text={viewingPrompt?.prompt_text ?? ''} />
         </div>
         <div class="prompt-text-display">{viewingPrompt.prompt_text}</div>
       </div>
@@ -1400,7 +1296,6 @@
     transform: scale(1);
   }
 
-  /* Copy button styles - matches SummaryModal */
   .textarea-header {
     display: flex;
     justify-content: space-between;
@@ -1413,38 +1308,6 @@
     justify-content: space-between;
     align-items: center;
     margin-bottom: 0.75rem;
-  }
-
-  .copy-button-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    color: var(--text-secondary);
-    padding: 0.5rem 0.75rem;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    font-size: 0.8125rem;
-  }
-
-  .copy-button-header:hover {
-    background-color: var(--hover-bg);
-    color: var(--primary-on-surface);
-    border-color: var(--primary-color);
-  }
-
-  .copy-button-header.copied {
-    background-color: var(--success-bg);
-    border-color: var(--success-color);
-    color: var(--success-color);
-  }
-
-  .copy-button-header.copied:hover {
-    background-color: var(--success-bg);
-    border-color: var(--success-color);
-    color: var(--success-color);
   }
 
   .prompt-form {

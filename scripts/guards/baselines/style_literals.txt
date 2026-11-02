@@ -329,7 +329,7 @@ duration::frontend/src/components/settings/OIDCSettings.svelte	1	styling layer: 
 duration::frontend/src/components/settings/OrganizationContextSettings.svelte	6	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 duration::frontend/src/components/settings/PKISettings.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 duration::frontend/src/components/settings/ProcessingDetailsModal.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-duration::frontend/src/components/settings/PromptSettings.svelte	8	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+duration::frontend/src/components/settings/PromptSettings.svelte	7	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 duration::frontend/src/components/settings/ProxySettings.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 duration::frontend/src/components/settings/RedactionPolicySettings.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 duration::frontend/src/components/settings/ReindexLiveProgress.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -606,7 +606,7 @@ font-size::frontend/src/components/ProcessingProvenance.svelte	2	styling layer: 
 font-size::frontend/src/components/ProvenanceField.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/RetrievalQualityNotice.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/SearchableMultiSelect.svelte	5	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-font-size::frontend/src/components/SegmentSpeakerDropdown.svelte	9	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+font-size::frontend/src/components/SegmentSpeakerDropdown.svelte	6	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/SelectiveReprocessModal.svelte	20	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/SettingsModal.svelte	11	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/SpeakerMerge.svelte	7	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -747,7 +747,7 @@ font-size::frontend/src/components/settings/PasswordPolicySettings.svelte	11	sty
 font-size::frontend/src/components/settings/PendingApprovalsPanel.svelte	7	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/PipelineOverview.svelte	8	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/ProcessingDetailsModal.svelte	10	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-font-size::frontend/src/components/settings/PromptSettings.svelte	28	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+font-size::frontend/src/components/settings/PromptSettings.svelte	27	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/ProxySettings.svelte	8	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/PyannoteCredentialForm.svelte	8	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-size::frontend/src/components/settings/QuarantinePanel.svelte	9	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -881,7 +881,7 @@ font-weight::frontend/src/components/MetadataDisplay.svelte	2	styling layer: pre
 font-weight::frontend/src/components/Navbar.svelte	5	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-weight::frontend/src/components/ProcessingProvenance.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-weight::frontend/src/components/SearchableMultiSelect.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-font-weight::frontend/src/components/SegmentSpeakerDropdown.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+font-weight::frontend/src/components/SegmentSpeakerDropdown.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-weight::frontend/src/components/SelectiveReprocessModal.svelte	9	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-weight::frontend/src/components/SettingsModal.svelte	6	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 font-weight::frontend/src/components/SpeakerMerge.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -1395,7 +1395,7 @@ radius::frontend/src/components/settings/PasswordPolicySettings.svelte	4	styling
 radius::frontend/src/components/settings/PendingApprovalsPanel.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 radius::frontend/src/components/settings/PipelineOverview.svelte	5	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 radius::frontend/src/components/settings/ProcessingDetailsModal.svelte	1	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-radius::frontend/src/components/settings/PromptSettings.svelte	16	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+radius::frontend/src/components/settings/PromptSettings.svelte	15	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 radius::frontend/src/components/settings/ProxySettings.svelte	4	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 radius::frontend/src/components/settings/PyannoteCredentialForm.svelte	4	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 radius::frontend/src/components/settings/QuarantinePanel.svelte	5	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -1637,8 +1637,8 @@ spacing::frontend/src/components/ProcessingProvenance.svelte	4	styling layer: pr
 spacing::frontend/src/components/ProvenanceField.svelte	11	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/RetrievalQualityNotice.svelte	5	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/SearchableMultiSelect.svelte	11	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-spacing::frontend/src/components/SegmentSpeakerDropdown.svelte	28	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-spacing::frontend/src/components/SelectiveReprocessModal.svelte	55	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+spacing::frontend/src/components/SegmentSpeakerDropdown.svelte	25	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+spacing::frontend/src/components/SelectiveReprocessModal.svelte	54	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/SessionCheckScreen.svelte	15	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/SettingsModal.svelte	27	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/SpeakerMerge.svelte	23	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -1803,7 +1803,7 @@ spacing::frontend/src/components/settings/PasswordPolicySettings.svelte	32	styli
 spacing::frontend/src/components/settings/PendingApprovalsPanel.svelte	14	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/settings/PipelineOverview.svelte	20	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/settings/ProcessingDetailsModal.svelte	24	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-spacing::frontend/src/components/settings/PromptSettings.svelte	69	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+spacing::frontend/src/components/settings/PromptSettings.svelte	66	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/settings/ProxySettings.svelte	27	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/settings/PyannoteCredentialForm.svelte	19	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 spacing::frontend/src/components/settings/QuarantinePanel.svelte	19	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md

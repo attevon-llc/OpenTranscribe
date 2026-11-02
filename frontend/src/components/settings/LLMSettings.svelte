@@ -1,16 +1,24 @@
 <script lang="ts">
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
-  import { CONTEXT_WINDOW_RELATION_KEYS, CONTEXT_WINDOW_STATUS_KEYS, REASONING_OFF_SWITCH_KEYS, keyFor } from '$lib/i18n/keyMaps';
   import { onMount, onDestroy } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
-  import { LLMSettingsApi, llmProviderDisplayName, type UserLLMSettings, type ProviderDefaults, type ConnectionTestResponse, type UserLLMConfigurationsList } from '../../lib/api/llmSettings';
-  import ConfirmationModal from '../ConfirmationModal.svelte';
+  import { LLMSettingsApi, llmProviderDisplayName, type UserLLMSettings, type ProviderDefaults, type ConnectionTestResponse, type UserLLMConfigurationsList } from '$lib/api/llmSettings';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import LLMConfigModal from './LLMConfigModal.svelte';
-  import { toastStore } from '../../stores/toast';
-  import { llmStatusStore } from '../../stores/llmStatus';
+  import { toastStore } from '$stores/toast';
+  import { llmStatusStore } from '$stores/llmStatus';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
-  import axiosInstance from '$lib/axios';
+  import {
+    connectionFromStoredTest,
+    isNoConfigurationsAnswer,
+    loadFailureMessage,
+    resolveActiveConfiguration
+  } from '$lib/settings/llmSettingsView';
+  import { runConnectionTest, runContextWindowProbe, runReasoningProbe } from '$lib/settings/llmProbes';
+  import { withShareState } from '$lib/settings/shareState';
+  import { UserSettingsApi } from '$lib/api/userSettings';
+  import { AdminSettingsApi } from '$lib/api/adminSettings';
 
   export let onSettingsChange: (() => void) | null = null;
   export let isAdmin: boolean = false;
@@ -80,8 +88,8 @@
       // Fetch providers and configurations in parallel
       const [providersResponse, configurationsResponse] = await Promise.all([
         LLMSettingsApi.getSupportedProviders(),
-        LLMSettingsApi.getUserConfigurations().catch((err: any) => {
-          if (err.response?.status === 404 || err.response?.status === 403) {
+        LLMSettingsApi.getUserConfigurations().catch((err: unknown) => {
+          if (isNoConfigurationsAnswer(err)) {
             return null; // No configs — not an error
           }
           throw err;
@@ -96,21 +104,19 @@
         activeConfigurationId = configurationsResponse.active_configuration_id || null;
 
         if (activeConfigurationId && (savedConfigurations.length > 0 || sharedConfigurations.length > 0)) {
-          currentSettings = savedConfigurations.find(c => c.uuid === activeConfigurationId)
-            || sharedConfigurations.find(c => c.uuid === activeConfigurationId) || null;
+          currentSettings = resolveActiveConfiguration(
+            savedConfigurations,
+            sharedConfigurations,
+            activeConfigurationId
+          );
           hasSettings = true;
 
           // Use last test result from configurations data instead of re-testing
-          if (currentSettings?.test_status === 'success') {
-            connectionStatus = 'connected';
-            statusMessage = currentSettings.test_message || '';
-            statusLastChecked = currentSettings.last_tested ? new Date(currentSettings.last_tested) : null;
-          } else if (currentSettings?.test_status === 'failed') {
-            connectionStatus = 'disconnected';
-            statusMessage = currentSettings.test_message || '';
-            statusLastChecked = currentSettings.last_tested ? new Date(currentSettings.last_tested) : null;
-          } else {
-            connectionStatus = 'unknown';
+          const stored = connectionFromStoredTest(currentSettings);
+          connectionStatus = stored.status;
+          if (stored.status !== 'unknown') {
+            statusMessage = stored.message;
+            statusLastChecked = stored.lastChecked;
           }
         } else {
           currentSettings = null;
@@ -126,10 +132,8 @@
       void llmStatusStore.invalidate();
     } catch (err: unknown) {
       console.error('Error loading LLM providers:', err);
-      const detailStr = getErrorMessage(err, '');
-      const rawMessage = err instanceof Error ? err.message : '';
-      if (!rawMessage.includes('LLM') && !detailStr.includes('configuration')) {
-        const errorMsg = detailStr || $t('settings.llmProvider.loadProvidersError');
+      const errorMsg = loadFailureMessage(err, $t('settings.llmProvider.loadProvidersError'));
+      if (errorMsg !== null) {
         toastStore.error(errorMsg, 5000);
       }
     } finally {
@@ -139,8 +143,8 @@
 
   async function loadAutoSummarySetting() {
     try {
-      const res = await axiosInstance.get('/user-settings/ai-summary');
-      autoSummaryEnabled = res.data.ai_summary_enabled;
+      const res = await UserSettingsApi.getAiSummaryPreference();
+      autoSummaryEnabled = res.ai_summary_enabled;
     } catch (err) {
       console.warn('Failed to load auto-summary setting:', err);
     }
@@ -149,9 +153,9 @@
   async function saveAutoSummary() {
     autoSummaryLoading = true;
     try {
-      const res = await axiosInstance.put('/user-settings/ai-summary', { enabled: autoSummaryEnabled });
-      autoSummaryEnabled = res.data.ai_summary_enabled;
-      toastStore.success(res.data.message, 3000);
+      const res = await UserSettingsApi.setAiSummaryPreference(autoSummaryEnabled);
+      autoSummaryEnabled = res.ai_summary_enabled;
+      toastStore.success(res.message ?? '', 3000);
     } catch (err: unknown) {
       toastStore.error(getErrorMessage(err, $t('common.error')), 5000);
       autoSummaryEnabled = !autoSummaryEnabled; // rollback
@@ -162,8 +166,8 @@
 
   async function loadSystemSummarySetting() {
     try {
-      const res = await axiosInstance.get('/admin/system/ai-summary');
-      systemSummaryEnabled = res.data.ai_summary_enabled;
+      const res = await AdminSettingsApi.getSystemAiSummary();
+      systemSummaryEnabled = res.ai_summary_enabled;
     } catch (err) {
       console.warn('Failed to load system summary setting:', err);
     }
@@ -172,8 +176,8 @@
   async function saveSystemSummary() {
     systemSummaryLoading = true;
     try {
-      const res = await axiosInstance.put('/admin/system/ai-summary', { enabled: systemSummaryEnabled });
-      systemSummaryEnabled = res.data.ai_summary_enabled;
+      const res = await AdminSettingsApi.setSystemAiSummary(systemSummaryEnabled);
+      systemSummaryEnabled = res.ai_summary_enabled;
       const state = systemSummaryEnabled ? $t('common.enabled') : $t('common.disabled');
       toastStore.success(`${$t('settings.llm.systemSummary')}: ${state}`, 3000);
     } catch (err: unknown) {
@@ -258,91 +262,29 @@
 
   async function testSavedConfiguration(config: UserLLMSettings): Promise<void> {
     testing = true;
-
     try {
-      const result = await LLMSettingsApi.testConfiguration(config.uuid);
-
-      if (result.success) {
-        toastStore.success(`${config.name}: ${result.message}`, 5000);
-      } else {
-        toastStore.error(`${config.name}: ${result.message}`, 8000);
-      }
-    } catch (err: unknown) {
-      const errorMsg = getErrorMessage(err, $t('settings.llmProvider.testFailed'));
-      toastStore.error(`${config.name}: ${errorMsg}`, 8000);
+      await runConnectionTest(config, $t);
     } finally {
       testing = false;
       void llmStatusStore.invalidate();
     }
   }
 
-  /**
-   * Measure whether this model honours a "do not reason" request (issue #64).
-   *
-   * Explicitly user-invoked, never automatic: it costs THREE real generations
-   * against the configured endpoint. Putting it in front of a chat turn would
-   * make the first question minutes slow, and running it on a schedule would
-   * dial every configured third-party provider — and bill for it — unprompted.
-   *
-   * The verdict is what decides whether the chat panel offers a reasoning
-   * toggle at all, because a provider accepting the parameter is not evidence
-   * the model obeys it.
-   */
+  // Both probes are explicitly user-invoked, never automatic (they cost real generations or
+  // calls against the configured endpoint); `$lib/settings/llmProbes` says why.
   async function probeReasoning(config: UserLLMSettings): Promise<void> {
     probingReasoning = config.uuid;
-    toastStore.info($t('settings.llmProvider.probeReasoningRunning', { name: config.name }), 6000);
-
     try {
-      const result = await LLMSettingsApi.probeReasoningCapability(config.uuid);
-      const message = $t(keyFor(REASONING_OFF_SWITCH_KEYS, result.off_switch, REASONING_OFF_SWITCH_KEYS.unknown));
-
-      if (result.off_switch === 'works') {
-        toastStore.success(`${config.name}: ${message}`, 8000);
-      } else {
-        toastStore.info(`${config.name}: ${message}`, 8000);
-      }
-    } catch (err: unknown) {
-      const errorMsg = getErrorMessage(err, $t('settings.llmProvider.testFailed'));
-      toastStore.error(`${config.name}: ${errorMsg}`, 8000);
+      await runReasoningProbe(config, $t);
     } finally {
       probingReasoning = null;
     }
   }
 
-  /**
-   * Discover the model's maximum context window from its own server (#533).
-   *
-   * `max_tokens` IS the context window the app drives the model at, and its
-   * 8192 default silently caps a 60k/256k model — nothing else in the UI says
-   * the window is the binding constraint on how much transcript the model
-   * sees. One metadata call; the server records the measurement and reports
-   * how it compares to this configuration.
-   */
   async function probeContextWindow(config: UserLLMSettings): Promise<void> {
     probingWindow = config.uuid;
-
     try {
-      const result = await LLMSettingsApi.probeContextWindow(config.uuid);
-      if (result.status === 'measured' && result.relation) {
-        const params = {
-          window: result.context_window ?? 0,
-          configured: result.configured_max_tokens ?? 0
-        };
-        const message = $t(CONTEXT_WINDOW_RELATION_KEYS[result.relation], params);
-        if (result.relation === 'match') {
-          toastStore.success(`${config.name}: ${message}`, 8000);
-        } else {
-          // Both mismatch directions are actionable, not celebratory: 'below'
-          // wastes the model, 'above' breaks requests.
-          toastStore.warning(`${config.name}: ${message}`, 10000);
-        }
-      } else {
-        const message = $t(keyFor(CONTEXT_WINDOW_STATUS_KEYS, result.status, CONTEXT_WINDOW_STATUS_KEYS.unknown));
-        toastStore.info(`${config.name}: ${message}`, 8000);
-      }
-    } catch (err: unknown) {
-      const errorMsg = getErrorMessage(err, $t('settings.llmProvider.testFailed'));
-      toastStore.error(`${config.name}: ${errorMsg}`, 8000);
+      await runContextWindowProbe(config, $t);
     } finally {
       probingWindow = null;
     }
@@ -464,18 +406,15 @@
 
   async function handleShareToggle(config: UserLLMSettings) {
     const newShared = !config.is_shared;
-    const idx = savedConfigurations.findIndex(c => c.uuid === config.uuid);
     const prevSharedAt = config.shared_at;
 
     // Optimistic update — flip toggle immediately for responsive UI
-    if (idx !== -1) {
-      savedConfigurations[idx] = {
-        ...savedConfigurations[idx],
-        is_shared: newShared,
-        shared_at: newShared ? new Date().toISOString() : undefined
-      };
-      savedConfigurations = savedConfigurations;
-    }
+    savedConfigurations = withShareState(
+      savedConfigurations,
+      config.uuid,
+      newShared,
+      newShared ? new Date().toISOString() : undefined
+    );
 
     saving = true;
     try {
@@ -486,14 +425,7 @@
       );
     } catch (err: unknown) {
       // Rollback on failure
-      if (idx !== -1) {
-        savedConfigurations[idx] = {
-          ...savedConfigurations[idx],
-          is_shared: !newShared,
-          shared_at: prevSharedAt
-        };
-        savedConfigurations = savedConfigurations;
-      }
+      savedConfigurations = withShareState(savedConfigurations, config.uuid, !newShared, prevSharedAt);
       const errorMsg = getErrorMessage(err, $t('settings.llmProvider.shareFailed'));
       toastStore.error(errorMsg, 5000);
     } finally {
@@ -505,7 +437,8 @@
   $: {
     const _anyOpen = showConfigModal || showDeleteConfigModal || showDeleteAllModal;
     if (_anyOpen !== _llmModalWasOpen) {
-      _anyOpen ? lockScroll() : unlockScroll();
+      if (_anyOpen) lockScroll();
+      else unlockScroll();
       _llmModalWasOpen = _anyOpen;
     }
   }
@@ -558,7 +491,7 @@
 
       {#if savedConfigurations.length > 0}
         <div class="config-list">
-          {#each savedConfigurations as config}
+          {#each savedConfigurations as config (config.uuid)}
             <div class="config-item" class:active={config.uuid === activeConfigurationId}>
               <div class="config-info">
                 <div class="config-name">
@@ -717,7 +650,7 @@
           </h4>
         </div>
         <div class="config-list">
-          {#each sharedConfigurations as config}
+          {#each sharedConfigurations as config (config.uuid)}
             <div class="config-item shared" class:active={config.uuid === activeConfigurationId}>
               <div class="config-info">
                 <div class="config-name">

@@ -3,21 +3,23 @@
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { anchoredPanel } from '$lib/actions/anchoredPanel';
   import { getSpeakerColor } from '$lib/utils/speakerColors';
+  import { buildSpeakerMenu, renderProfileMatches } from '$lib/speakers/speakerMenuDom';
   import type { Speaker } from '$lib/types/speaker';
   import type { TranscriptSegment } from '$lib/types/media';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
-  import axiosInstance from '$lib/axios';
   import { listProfiles } from '$lib/api/speakerClusters';
   import { apiCache, CacheTTL } from '$lib/apiCache';
-  import { toastStore } from '$stores/toast';
-  import BaseModal from '$components/ui/BaseModal.svelte';
-  import { portal } from '$lib/actions/portal';
+  import SegmentNewSpeakerModal from '$components/SegmentNewSpeakerModal.svelte';
+  import { nextPlaceholderSpeakerName } from '$lib/utils/speakerNames';
   import {
-    isPlaceholderSpeakerName,
-    nextPlaceholderSpeakerName,
-    placeholderSpeakerNumber
-  } from '$lib/utils/speakerNames';
+    confirmedSpeakerName,
+    inlineNameCheck,
+    matchingProfileNames,
+    pendingSuggestionOf,
+    speakerNumberLabelOf,
+    uniqueProfileNames
+  } from '$lib/speakers/speakerMenu';
 
   export let segment: TranscriptSegment;
   export let speakers: Speaker[] = [];
@@ -37,7 +39,6 @@
   let portalContainer: HTMLDivElement | null = null;
   let menuPanel: { destroy: () => void } | null = null;
   let isOpen = false;
-  let isCreatingSpeaker = false;
 
   // The full wire shape (`suggested_name` / `suggestion_source` / `confidence` /
   // `verified`) is declared on `TranscriptSegment['speaker']` in `$lib/types/media.ts`,
@@ -45,32 +46,17 @@
   // guess.
   $: wireSpeaker = segment.speaker ?? null;
 
-  // `display_name` is the ONLY field that means "a human confirmed this name":
-  // `POST /speakers` and `PUT /speakers/{uuid}` both flip `verified` the moment it
-  // is set, and nothing else writes it without an affirmative click.
-  //
-  // Deliberately NOT part of this chain: `speaker.resolved_display_name` and
-  // `segment.resolved_speaker_name`. Both are `canonical_speaker_label(...)`, which
-  // returns a voiceprint-matched `suggested_name` (>= 0.75) as well as a typed one,
-  // so they cover "confirmed" and "matched by voice" in one string. An LLM guess
-  // never reaches them, but this chain is the one that shows a human-confirmed
-  // name only, so it stays on `display_name` (#741).
-  $: confirmedName = (wireSpeaker?.display_name ?? '').trim();
-  $: speakerNumberLabel = wireSpeaker?.name || segment.speaker_label || '';
+  // `display_name` is the only "a human confirmed this name" field; see `confirmedSpeakerName`
+  // for why the resolved_* fields are deliberately not part of this chain (#741).
+  $: confirmedName = confirmedSpeakerName(wireSpeaker);
+  $: speakerNumberLabel = speakerNumberLabelOf(wireSpeaker, segment.speaker_label);
   $: triggerLabel = translateSpeakerLabel(
     confirmedName || speakerNumberLabel || $t('common.unknown')
   );
 
   // An unconfirmed suggestion is surfaced as its own row in the menu, with the
   // confidence score, never as the speaker's name.
-  $: pendingSuggestion =
-    !confirmedName && wireSpeaker?.suggested_name && wireSpeaker.uuid
-      ? {
-          uuid: wireSpeaker.uuid,
-          name: wireSpeaker.suggested_name,
-          confidence: wireSpeaker.confidence ?? 0
-        }
-      : null;
+  $: pendingSuggestion = pendingSuggestionOf(wireSpeaker, confirmedName);
 
   // --- Name THIS speaker, inline (#1086) ---------------------------------------
   // The common case is "this SPEAKER_02 is Laura": a rename of the speaker the segment
@@ -89,17 +75,8 @@
   let inlineHint: HTMLElement | null = null;
   let inlineMatches: HTMLElement | null = null;
 
-  function inlineNameCheck(raw: string): 'ok' | 'empty' | 'placeholder' | 'unchanged' {
-    const name = raw.trim();
-    if (name === '') return 'empty';
-    // `SPEAKER_NN` is a diarization slot, not an identity -- same rule as "Add speaker".
-    if (isPlaceholderSpeakerName(name)) return 'placeholder';
-    if (name === confirmedName) return 'unchanged';
-    return 'ok';
-  }
-
   function submitInlineName(raw: string = inlineName) {
-    if (!wireSpeaker?.uuid || inlineNameCheck(raw) !== 'ok') return;
+    if (!wireSpeaker?.uuid || inlineNameCheck(raw, confirmedName) !== 'ok') return;
     dispatch('speakerUpdate', { speakerId: wireSpeaker.uuid, newName: raw.trim() });
     closeDropdown();
   }
@@ -110,7 +87,7 @@
     apiCache
       .getOrFetch('speakers:profiles', () => listProfiles(), CacheTTL.SPEAKERS)
       .then((profiles) => {
-        profileNames = [...new Set((profiles ?? []).map((p) => p.name).filter(Boolean))];
+        profileNames = uniqueProfileNames(profiles);
         if (isOpen) refreshInlineNameUi();
       })
       .catch(() => {
@@ -119,7 +96,7 @@
   }
 
   function refreshInlineNameUi() {
-    const check = inlineNameCheck(inlineName);
+    const check = inlineNameCheck(inlineName, confirmedName);
     if (inlineSaveButton) inlineSaveButton.disabled = check !== 'ok';
     if (inlineHint) {
       inlineHint.textContent = check === 'placeholder' ? $t('speaker.placeholderNameRejected') : '';
@@ -127,34 +104,10 @@
     }
     if (!inlineMatches) return;
 
-    const typed = inlineName.trim().toLowerCase();
-    const matches =
-      typed === ''
-        ? []
-        : profileNames
-            .filter((name) => name.toLowerCase().includes(typed))
-            // The API's order is unspecified; a stable one keeps the list from shuffling.
-            .sort((a, b) => a.localeCompare(b))
-            .slice(0, 5);
-    inlineMatches.replaceChildren();
-    inlineMatches.hidden = matches.length === 0;
-    if (matches.length === 0) return;
-
-    const label = document.createElement('div');
-    label.className = 'dropdown-header inline-name-matches-label';
-    label.textContent = $t('speaker.nameThisSpeakerMatches');
-    inlineMatches.appendChild(label);
-    for (const name of matches) {
-      const pick = document.createElement('button');
-      pick.className = 'dropdown-item inline-name-match';
-      pick.dataset.action = 'pick-profile';
-      pick.textContent = name; // textContent is XSS-safe
-      pick.addEventListener('click', (e) => {
-        e.stopPropagation();
-        submitInlineName(name);
-      });
-      inlineMatches.appendChild(pick);
-    }
+    const matches = matchingProfileNames(profileNames, inlineName);
+    renderProfileMatches(inlineMatches, matches, $t('speaker.nameThisSpeakerMatches'), (name) =>
+      submitInlineName(name)
+    );
   }
 
   // The next free diarization SLOT for this file (e.g. SPEAKER_03). It is never a
@@ -168,7 +121,6 @@
   // offered a field, and nothing in the segment row changed, so it read as a no-op —
   // and every repeat click minted another orphan SPEAKER_NN row.
   let showCreateModal = false;
-  let newSpeakerName = '';
   let newSpeakerSlot = '';
 
   function openCreateSpeakerModal() {
@@ -177,66 +129,29 @@
     // it open would float it over the dialog.
     closeDropdown();
     newSpeakerSlot = getNextSpeakerSlot();
-    newSpeakerName = '';
     showCreateModal = true;
   }
 
   function closeCreateSpeakerModal() {
     showCreateModal = false;
-    newSpeakerName = '';
   }
 
-  // A typed name that is itself `SPEAKER_NN` is a placeholder, not an identity —
-  // accepting it would recreate exactly the state #740 exists to stop.
-  $: newSpeakerNameIsPlaceholder =
-    newSpeakerName.trim() !== '' && isPlaceholderSpeakerName(newSpeakerName);
-  $: canCreateSpeaker =
-    !isCreatingSpeaker && newSpeakerName.trim() !== '' && !newSpeakerNameIsPlaceholder;
+  function handleSpeakerCreated(event: CustomEvent<{ speaker: Speaker }>) {
+    const newSpeaker = event.detail.speaker;
 
-  async function confirmCreateSpeaker() {
-    const typedName = newSpeakerName.trim();
-    if (!mediaFileUuid || !canCreateSpeaker) return;
+    // Notify the parent that a new speaker was created.
+    dispatch('speakerCreated', { speaker: newSpeaker });
 
-    isCreatingSpeaker = true;
-    try {
-      // `name` keeps the diarization slot (speaker colours hash it, and the
-      // named-vs-auto ordering below reads it); the human's label goes in
-      // `display_name`, which is also what marks the new row verified server-side.
-      const response = await axiosInstance.post(`/speakers?media_file_uuid=${mediaFileUuid}`, {
-        name: newSpeakerSlot,
-        display_name: typedName
-      });
-
-      const newSpeaker = response.data;
-
-      // Dispatch event to notify parent that a new speaker was created
-      dispatch('speakerCreated', { speaker: newSpeaker });
-
-      // Auto-select the new speaker for this segment. The speaker OBJECT rides
-      // along: the parent's optimistic patch resolves the uuid against
-      // `speakerList`, which cannot contain a speaker created a millisecond ago,
-      // so without it the segment renders "Unknown" until a refetch lands — the
-      // "I clicked Add speaker and nothing happened" report.
-      dispatch('change', {
-        segmentUuid: segment.uuid,
-        speakerUuid: newSpeaker.uuid,
-        speaker: newSpeaker
-      });
-
-      closeCreateSpeakerModal();
-    } catch (error) {
-      console.error('Failed to create new speaker:', error);
-      toastStore.error($t('common.somethingWentWrong'));
-    } finally {
-      isCreatingSpeaker = false;
-    }
-  }
-
-  function handleCreateModalKeydown(event: KeyboardEvent) {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      confirmCreateSpeaker();
-    }
+    // Auto-select the new speaker for this segment. The speaker OBJECT rides
+    // along: the parent's optimistic patch resolves the uuid against
+    // `speakerList`, which cannot contain a speaker created a millisecond ago,
+    // so without it the segment renders "Unknown" until a refetch lands — the
+    // "I clicked Add speaker and nothing happened" report.
+    dispatch('change', {
+      segmentUuid: segment.uuid,
+      speakerUuid: newSpeaker.uuid,
+      speaker: newSpeaker
+    });
   }
 
   /**
@@ -337,98 +252,6 @@
     return segment.speaker.uuid === speakerUuid;
   }
 
-  // Helper to create SVG checkmark element
-  function createCheckmarkSvg(): SVGSVGElement {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('width', '16');
-    svg.setAttribute('height', '16');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('fill', 'none');
-    svg.setAttribute('stroke', 'currentColor');
-    svg.setAttribute('stroke-width', '2');
-    const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-    polyline.setAttribute('points', '20 6 9 17 4 12');
-    svg.appendChild(polyline);
-    return svg;
-  }
-
-  // Helper to create SVG plus icon element
-  function createPlusSvg(): SVGSVGElement {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('width', '14');
-    svg.setAttribute('height', '14');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('fill', 'none');
-    svg.setAttribute('stroke', 'currentColor');
-    svg.setAttribute('stroke-width', '2');
-    const line1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line1.setAttribute('x1', '12');
-    line1.setAttribute('y1', '5');
-    line1.setAttribute('x2', '12');
-    line1.setAttribute('y2', '19');
-    const line2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line2.setAttribute('x1', '5');
-    line2.setAttribute('y1', '12');
-    line2.setAttribute('x2', '19');
-    line2.setAttribute('y2', '12');
-    svg.appendChild(line1);
-    svg.appendChild(line2);
-    return svg;
-  }
-
-  // Helper to create the "AI suggestion" sparkle icon element
-  function createSparkleSvg(): SVGSVGElement {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('width', '12');
-    svg.setAttribute('height', '12');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('fill', 'currentColor');
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute(
-      'd',
-      'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z'
-    );
-    svg.appendChild(path);
-    return svg;
-  }
-
-  // Helper to create a speaker dropdown item button using DOM methods (XSS-safe)
-  function createDropdownItem(
-    speakerUuid: string,
-    label: string,
-    isSelected: boolean,
-    colorBg?: string,
-    colorBorder?: string,
-    isNoSpeaker: boolean = false
-  ): HTMLButtonElement {
-    const button = document.createElement('button');
-    button.className = `dropdown-item${isSelected ? ' selected' : ''}`;
-    button.dataset.speakerUuid = speakerUuid;
-
-    const speakerOption = document.createElement('div');
-    speakerOption.className = 'speaker-option';
-
-    const colorIndicator = document.createElement('div');
-    colorIndicator.className = `speaker-color-indicator${isNoSpeaker ? ' no-speaker' : ''}`;
-    if (colorBg && colorBorder) {
-      colorIndicator.style.backgroundColor = colorBg;
-      colorIndicator.style.borderColor = colorBorder;
-    }
-
-    const span = document.createElement('span');
-    span.textContent = label; // textContent is XSS-safe
-
-    speakerOption.appendChild(colorIndicator);
-    speakerOption.appendChild(span);
-    button.appendChild(speakerOption);
-
-    if (isSelected) {
-      button.appendChild(createCheckmarkSvg());
-    }
-
-    return button;
-  }
-
   function renderPortal() {
     if (!portalContainer) return;
 
@@ -453,202 +276,32 @@
     menuPanel?.destroy();
     menuPanel = null;
 
-    // Build menu using DOM methods to prevent XSS
-    const menu = document.createElement('div');
-    menu.className = 'dropdown-menu';
-
-    // Header
-    const header = document.createElement('div');
-    header.className = 'dropdown-header';
-    header.textContent = $t('speaker.assignSpeaker');
-    menu.appendChild(header);
-
-    // Name THIS speaker (#1086): a field first, because it is the common action.
-    let inlineInput: HTMLInputElement | null = null;
-    if (wireSpeaker?.uuid) {
-      const row = document.createElement('div');
-      row.className = 'inline-name-row';
-
-      inlineInput = document.createElement('input');
-      inlineInput.type = 'text';
-      inlineInput.className = 'inline-name-input';
-      inlineInput.maxLength = 255;
-      inlineInput.autocomplete = 'off';
-      // A name typed in Arabic must align right even inside an LTR page, and vice versa.
-      inlineInput.dir = 'auto';
-      inlineInput.placeholder = $t('speaker.nameThisSpeakerPlaceholder', {
-        label: translateSpeakerLabel(speakerNumberLabel || $t('common.unknown'))
-      });
-      inlineInput.setAttribute('aria-label', $t('speaker.nameThisSpeakerLabel'));
-      inlineInput.value = inlineName;
-      const input = inlineInput;
-      input.addEventListener('input', () => {
-        inlineName = input.value;
+    const parts = buildSpeakerMenu({
+      speakers,
+      currentSpeakerUuid,
+      noSpeaker: !segment.speaker,
+      wireSpeakerUuid: wireSpeaker?.uuid,
+      speakerNumberLabel,
+      inlineName,
+      pendingSuggestion,
+      canCreateSpeaker: !!mediaFileUuid,
+      t: $t,
+      translateLabel: translateSpeakerLabel,
+      onInlineInput: (value) => {
+        inlineName = value;
         refreshInlineNameUi();
-      });
-      input.addEventListener('keydown', (e) => {
-        // Typing must not reach the page's own shortcuts (play/pause, seek, ...).
-        e.stopPropagation();
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          submitInlineName();
-        } else if (e.key === 'Escape') {
-          e.preventDefault();
-          closeDropdown();
-        }
-      });
-      row.appendChild(input);
-
-      const save = document.createElement('button');
-      save.className = 'inline-name-save';
-      save.dataset.action = 'save-inline-name';
-      save.setAttribute('aria-label', $t('speaker.nameThisSpeakerSave'));
-      save.title = $t('speaker.nameThisSpeakerSave');
-      save.appendChild(createCheckmarkSvg());
-      save.addEventListener('click', (e) => {
-        e.stopPropagation();
-        submitInlineName();
-      });
-      row.appendChild(save);
-      inlineSaveButton = save;
-      menu.appendChild(row);
-
-      const hint = document.createElement('div');
-      hint.className = 'inline-name-hint';
-      hint.hidden = true;
-      menu.appendChild(hint);
-      inlineHint = hint;
-
-      const matchList = document.createElement('div');
-      matchList.className = 'inline-name-matches';
-      matchList.hidden = true;
-      menu.appendChild(matchList);
-      inlineMatches = matchList;
-
-      const nameDivider = document.createElement('div');
-      nameDivider.className = 'dropdown-divider';
-      menu.appendChild(nameDivider);
-      refreshInlineNameUi();
-    } else {
-      inlineSaveButton = inlineHint = inlineMatches = null;
-    }
-
-    // Unconfirmed LLM / voice-match suggestion — offered HERE, with its confidence
-    // score, and never in the name slot (#741). One affirmative click accepts it.
-    if (pendingSuggestion) {
-      const suggestionHeader = document.createElement('div');
-      suggestionHeader.className = 'dropdown-header suggestion-header';
-      suggestionHeader.textContent = $t('speaker.unconfirmedSuggestion');
-      menu.appendChild(suggestionHeader);
-
-      const suggestionBtn = document.createElement('button');
-      suggestionBtn.className = 'dropdown-item suggestion-btn';
-      suggestionBtn.dataset.action = 'accept-suggestion';
-      suggestionBtn.title = $t('speaker.acceptSuggestionTitle');
-
-      const suggestionOption = document.createElement('div');
-      suggestionOption.className = 'speaker-option';
-      suggestionOption.appendChild(createSparkleSvg());
-
-      const suggestionSpan = document.createElement('span');
-      suggestionSpan.textContent = pendingSuggestion.name;
-      suggestionOption.appendChild(suggestionSpan);
-      suggestionBtn.appendChild(suggestionOption);
-
-      const confidenceBadge = document.createElement('span');
-      confidenceBadge.className = 'suggestion-confidence';
-      confidenceBadge.textContent = `${Math.round(pendingSuggestion.confidence * 100)}%`;
-      suggestionBtn.appendChild(confidenceBadge);
-
-      suggestionBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        acceptSuggestion();
-      });
-      menu.appendChild(suggestionBtn);
-
-      const suggestionDivider = document.createElement('div');
-      suggestionDivider.className = 'dropdown-divider';
-      menu.appendChild(suggestionDivider);
-    }
-
-    // "Add speaker" — top of list for quick access. Opens the naming dialog; the
-    // speaker is not created until the user has typed a name (#740).
-    if (mediaFileUuid) {
-      const createBtn = document.createElement('button');
-      createBtn.className = 'dropdown-item create-speaker-btn';
-      createBtn.dataset.action = 'create-speaker';
-
-      const createOption = document.createElement('div');
-      createOption.className = 'speaker-option';
-      createOption.appendChild(createPlusSvg());
-
-      const createSpan = document.createElement('span');
-      createSpan.textContent = $t('speaker.newSpeakerForSegment');
-      createOption.appendChild(createSpan);
-
-      createBtn.appendChild(createOption);
-      createBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openCreateSpeakerModal();
-      });
-      menu.appendChild(createBtn);
-    }
-
-    // "No Speaker" option
-    const noSpeakerBtn = createDropdownItem(
-      '',
-      $t('speaker.noSpeaker'),
-      !segment.speaker,
-      undefined,
-      undefined,
-      true
-    );
-    noSpeakerBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      handleSpeakerSelect(null);
+      },
+      onSubmitInline: () => submitInlineName(),
+      onEscape: closeDropdown,
+      onAcceptSuggestion: acceptSuggestion,
+      onCreateSpeaker: openCreateSpeakerModal,
+      onSelect: handleSpeakerSelect
     });
-    menu.appendChild(noSpeakerBtn);
-
-    // Divider — separates utility actions from named speakers
-    const divider = document.createElement('div');
-    divider.className = 'dropdown-divider';
-    menu.appendChild(divider);
-
-    // Split speakers: human-named first, then unidentified SPEAKER_## auto-labels.
-    // Classification uses the effective display name so that a speaker renamed to
-    // "John Smith" (display_name) is treated as named even though their internal
-    // name is still "SPEAKER_01".
-    const isAutoLabel = (s: Speaker) => isPlaceholderSpeakerName(s.display_name || s.name);
-    const namedSpeakers = speakers.filter((s) => !isAutoLabel(s));
-    const autoSpeakers = speakers.filter((s) => isAutoLabel(s));
-
-    const renderSpeakerBtn = (speaker: Speaker) => {
-      const isSelected = speaker.uuid === currentSpeakerUuid;
-      const color = getSpeakerColor(speaker.name);
-      // If the speaker has a human name but the underlying id is SPEAKER_##,
-      // append the number so the user can see continuity in the ordered list.
-      const slotNumber = placeholderSpeakerNumber(speaker.name);
-      const effectiveName = translateSpeakerLabel(speaker.display_name || speaker.name);
-      const label =
-        slotNumber !== null && speaker.display_name
-          ? `${effectiveName} (${slotNumber.toString().padStart(2, '0')})`
-          : effectiveName;
-      const speakerBtn = createDropdownItem(
-        speaker.uuid,
-        label,
-        isSelected,
-        color.bg,
-        color.border
-      );
-      speakerBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        handleSpeakerSelect(speaker.uuid);
-      });
-      menu.appendChild(speakerBtn);
-    };
-
-    for (const speaker of namedSpeakers) renderSpeakerBtn(speaker);
-    for (const speaker of autoSpeakers) renderSpeakerBtn(speaker);
+    const { menu, inlineInput } = parts;
+    inlineSaveButton = parts.inlineSaveButton;
+    inlineHint = parts.inlineHint;
+    inlineMatches = parts.inlineMatches;
+    if (inlineInput) refreshInlineNameUi();
 
     // Clear and append
     portalContainer.innerHTML = '';
@@ -905,64 +558,13 @@
   </button>
 </div>
 
-<!--
-  Portaled to <body> deliberately. This component renders inside a transcript
-  segment's `<button class="segment-content">`, so an in-place dialog is both
-  invalid HTML (interactive content inside a button) and visually broken: the
-  backdrop's `position: fixed` resolved `width/height: 100%` against the 548px
-  segment row, not the viewport, so the dialog rendered as a strip wedged into
-  the transcript row with no backdrop and no way to use it (#740).
-
-  `closeOnBackdropClick={false}` because the dialog holds a half-typed name.
--->
-<div use:portal>
-  <BaseModal
-    isOpen={showCreateModal}
-    title={$t('speaker.newSpeakerTitle')}
-    size="sm"
-    closeOnBackdropClick={false}
-    onClose={closeCreateSpeakerModal}
-  >
-  <label class="new-speaker-field">
-    <span class="new-speaker-label">{$t('speaker.newSpeakerNameLabel')}</span>
-    <!-- svelte-ignore a11y-autofocus -->
-    <input
-      class="new-speaker-name-input"
-      type="text"
-      autofocus
-      maxlength="100"
-      bind:value={newSpeakerName}
-      on:keydown={handleCreateModalKeydown}
-      placeholder={$t('speaker.newSpeakerNamePlaceholder')}
-    />
-  </label>
-  {#if newSpeakerNameIsPlaceholder}
-    <p class="new-speaker-error">{$t('speaker.placeholderNameRejected')}</p>
-  {:else}
-    <p class="new-speaker-hint">{$t('speaker.newSpeakerSlotHint', { label: newSpeakerSlot })}</p>
-  {/if}
-  <svelte:fragment slot="footer">
-    <!-- `modal-button` / `modal-cancel-button` / `modal-primary-button` are the
-         global classes in `src/styles/form-elements.css`; the `create-speaker-*`
-         classes are selector hooks only and carry no styling of their own. -->
-    <button
-      type="button"
-      class="modal-button modal-cancel-button create-speaker-cancel"
-      on:click={closeCreateSpeakerModal}
-    >
-      {$t('common.cancel')}
-    </button>
-    <button
-      type="button"
-      class="modal-button modal-primary-button create-speaker-confirm"
-      on:click={confirmCreateSpeaker}
-      disabled={!canCreateSpeaker}
-    >
-      {isCreatingSpeaker ? $t('common.saving') : $t('speaker.addSpeaker')}
-    </button>
-  </svelte:fragment>
-</BaseModal>
-</div>
+<SegmentNewSpeakerModal
+  open={showCreateModal}
+  {mediaFileUuid}
+  speakerSlot={newSpeakerSlot}
+  on:created={handleSpeakerCreated}
+  on:close={closeCreateSpeakerModal}
+/>
 
 <style>
   .speaker-dropdown-container {
@@ -1052,32 +654,5 @@
     height: 12px;
     flex-shrink: 0;
     color: var(--warning-color, #f59e0b);
-  }
-
-  .new-speaker-field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-  }
-
-  .new-speaker-label {
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--text-secondary);
-  }
-
-  /* The input itself is deliberately unstyled here: `src/styles/form-elements.css`
-     already themes every `input` for light and dark. */
-
-  .new-speaker-hint {
-    margin: 0.625rem 0 0;
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-  }
-
-  .new-speaker-error {
-    margin: 0.625rem 0 0;
-    font-size: 0.75rem;
-    color: var(--error-color);
   }
 </style>

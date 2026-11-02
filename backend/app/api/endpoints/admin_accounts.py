@@ -40,6 +40,7 @@ from app.schemas.admin import LockedAccount
 from app.schemas.admin import LockedAccountsList
 from app.schemas.admin import LockoutResetResponse
 from app.schemas.user import AdminPasswordResetRequest
+from app.services.account_security_service import assert_not_last_super_admin
 from app.services.account_security_service import assert_password_auth_possible
 from app.services.account_security_service import audit_password_change
 from app.services.account_security_service import audit_role_change
@@ -468,9 +469,7 @@ def admin_change_user_role(
     if str(user.uuid) == str(current_user.uuid):
         raise HTTPException(status_code=400, detail="Cannot change your own role")
 
-    from app.api.endpoints.users_admin_edit import _assert_not_last_super_admin
-
-    _assert_not_last_super_admin(db, user, new_role)
+    assert_not_last_super_admin(db, user, new_role)
 
     old_role = user.role
     user.role = new_role  # type: ignore[assignment]

@@ -22,6 +22,7 @@ from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.user import User
 from app.services import system_settings_service
+from app.services.account_security_service import assert_not_last_super_admin
 from app.services.request_context import RequestContext
 
 # No basicConfig here — this module is imported via the API router before
@@ -67,9 +68,7 @@ def admin_erase_user(
     # super_admin-gated, and the self guard above means the target is someone else,
     # so the caller always remains. Kept for the same reason as its twin on
     # DELETE /admin/users/{uuid} — it is the backstop if either premise changes.
-    from app.api.endpoints.users_admin_edit import _assert_not_last_super_admin
-
-    _assert_not_last_super_admin(db, target, ROLE_USER)
+    assert_not_last_super_admin(db, target, ROLE_USER)
 
     from app.services.gdpr_erasure_service import erase_user
 

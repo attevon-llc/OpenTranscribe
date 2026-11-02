@@ -24,7 +24,7 @@ Two safety rules:
 2. **Never deactivate the last active super_admin.** Auth configuration, role
    changes and the audit log are all super_admin-gated, so zeroing them out locks
    everyone out permanently with no recovery path short of editing the database by
-   hand — the same reasoning `api/endpoints/users_admin_edit.py::_assert_not_last_super_admin`
+   hand — the same reasoning `account_security_service.assert_not_last_super_admin`
    already applies to a manual role change, adapted here as a non-raising
    skip-and-log check (a scheduled sweep has no request to fail).
 """

@@ -4,7 +4,7 @@ Auth configuration, role changes, the audit log and SCIM tokens are all
 super_admin-gated, so an install with zero super_admins is locked out of them
 permanently — there is no recovery short of editing the database by hand.
 
-``_assert_not_last_super_admin`` existed and was wired into exactly two of the four
+``assert_not_last_super_admin`` existed and was wired into exactly two of the four
 routes that can remove one (issue #431):
 
 ===============================================  ============  ==================
@@ -123,7 +123,7 @@ class TestAdminDeleteUserCompositionKeepsOneSuperAdmin:
     * deleting a super_admin requires **being** one (403 otherwise), and
     * you cannot target yourself (400).
 
-    So the caller is always a surviving super_admin, and ``_assert_not_last_super_admin``
+    So the caller is always a surviving super_admin, and ``assert_not_last_super_admin``
     on this route can never fire. It is kept as a backstop for a future change to either
     premise (see the comment at its call site), but a test named "deleting the last
     super_admin is refused" would really be asserting the self-target guard while
@@ -215,14 +215,51 @@ class TestUpdateUserDeactivationGuard:
         assert refreshed.is_active is False
 
 
+class TestRefusalWireShape:
+    """The exact status and JSON body of both last-super_admin refusals.
+
+    The guards live below the API layer, so they raise a ``DomainError`` rather than
+    an ``HTTPException``. ``main.py`` renders one through FastAPI's own handler, and
+    these pins are what show a client cannot tell the difference.
+    """
+
+    @pytest.mark.parametrize(
+        ("payload", "detail"),
+        [
+            (
+                {"role": "user"},
+                "Cannot demote the last super_admin — promote another account first.",
+            ),
+            (
+                {"is_active": False},
+                "Cannot deactivate the last super_admin — promote another account first.",
+            ),
+        ],
+        ids=["demote", "deactivate"],
+    )
+    def test_the_refusal_body_is_exactly_the_detail(
+        self, client, super_admin_token_headers, super_admin_user, db_session, payload, detail
+    ):
+        _neutralize_other_super_admins(db_session, super_admin_user)
+
+        response = client.put(
+            f"/api/users/{super_admin_user.uuid}",
+            json=payload,
+            headers=super_admin_token_headers,
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.headers["content-type"] == "application/json"
+        assert response.json() == {"detail": detail}
+
+
 class TestTheGuardItself:
-    """``_assert_not_last_super_admin`` in isolation, since three routes rely on it."""
+    """``assert_not_last_super_admin`` in isolation, since three routes rely on it."""
 
     def test_it_refuses_when_the_target_is_the_only_super_admin(self, db_session):
-        from fastapi import HTTPException
-
-        from app.api.endpoints.users_admin_edit import _assert_not_last_super_admin
         from app.auth.roles import ROLE_USER
+        from app.core.exceptions import InvalidInputError
+        from app.services.account_security_service import assert_not_last_super_admin
 
         sole = _make_super_admin(db_session)
         for other in (
@@ -233,15 +270,15 @@ class TestTheGuardItself:
         db_session.commit()
         assert _super_admin_count(db_session) == 1
 
-        with pytest.raises(HTTPException) as exc:
-            _assert_not_last_super_admin(db_session, sole, ROLE_USER)
+        with pytest.raises(InvalidInputError) as exc:
+            assert_not_last_super_admin(db_session, sole, ROLE_USER)
 
         assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_it_permits_the_change_when_another_super_admin_remains(self, db_session):
         """Positive control: the guard must not refuse unconditionally."""
-        from app.api.endpoints.users_admin_edit import _assert_not_last_super_admin
         from app.auth.roles import ROLE_USER
+        from app.services.account_security_service import assert_not_last_super_admin
         from tests.helpers import does_not_raise
 
         victim = _make_super_admin(db_session)
@@ -249,7 +286,7 @@ class TestTheGuardItself:
         assert _super_admin_count(db_session) >= 2
 
         with does_not_raise("demoting one of several super_admins must be allowed"):
-            _assert_not_last_super_admin(db_session, victim, ROLE_USER)
+            assert_not_last_super_admin(db_session, victim, ROLE_USER)
 
     def test_promoting_to_super_admin_is_never_refused(self, db_session):
         """The `new_role == ROLE_SUPER_ADMIN` early return.
@@ -257,10 +294,10 @@ class TestTheGuardItself:
         Re-affirming an existing super_admin's role must not trip the guard, or an
         idempotent role write would fail on a single-super_admin deployment.
         """
-        from app.api.endpoints.users_admin_edit import _assert_not_last_super_admin
+        from app.services.account_security_service import assert_not_last_super_admin
         from tests.helpers import does_not_raise
 
         sole = _make_super_admin(db_session)
 
         with does_not_raise("re-affirming super_admin must not trip the last-one guard"):
-            _assert_not_last_super_admin(db_session, sole, ROLE_SUPER_ADMIN)
+            assert_not_last_super_admin(db_session, sole, ROLE_SUPER_ADMIN)

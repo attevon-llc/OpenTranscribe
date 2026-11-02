@@ -36,6 +36,7 @@ from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.auth.mfa_policy import user_is_mfa_protected
 from app.auth.password_policy import validate_password
+from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.token_service import token_service
 from app.auth.utils import local_fallback_permitted_for
 from app.auth.utils import local_password_allowed
@@ -91,6 +92,51 @@ def assert_local_fallback_settable(auth_type: str | None) -> None:
         raise InvalidInputError(
             "allow_local_fallback only applies to accounts whose identity is owned "
             "by PKI or an OIDC provider."
+        )
+
+
+def count_other_active_super_admins(db: Session, user: User) -> int:
+    """Count active super_admins other than ``user``.
+
+    Shared by every guard that must refuse leaving the deployment with zero
+    active super_admins — role change, deactivation, and delete all need this
+    same count, decided against differently.
+    """
+    return (
+        db.query(User)
+        .filter(User.role == ROLE_SUPER_ADMIN, User.id != user.id, User.is_active.is_(True))
+        .count()
+    )
+
+
+def assert_not_last_super_admin(db: Session, user: User, new_role: str) -> None:
+    """Refuse a change that would leave the deployment with no super_admin.
+
+    Auth configuration, role changes and the audit log are all super_admin-gated,
+    so demoting the last one locks everyone out of them permanently — there is no
+    recovery path short of editing the database by hand.
+    """
+    if str(user.role) != ROLE_SUPER_ADMIN or new_role == ROLE_SUPER_ADMIN:
+        return
+
+    if count_other_active_super_admins(db, user) == 0:
+        raise InvalidInputError(
+            "Cannot demote the last super_admin — promote another account first."
+        )
+
+
+def assert_not_last_super_admin_deactivation(db: Session, user: User) -> None:
+    """Refuse deactivating the last active super_admin.
+
+    Mirrors ``assert_not_last_super_admin``, but for `is_active=False` rather
+    than a role change — deactivating has the same lockout effect as demoting.
+    """
+    if str(user.role) != ROLE_SUPER_ADMIN or bool(user.is_active) is False:
+        return
+
+    if count_other_active_super_admins(db, user) == 0:
+        raise InvalidInputError(
+            "Cannot deactivate the last super_admin — promote another account first."
         )
 
 

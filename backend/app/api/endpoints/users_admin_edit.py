@@ -32,6 +32,8 @@ from app.schemas.user import User as UserSchema
 from app.schemas.user import UserUpdate
 from app.services.account_security_service import DeletedUser
 from app.services.account_security_service import assert_local_fallback_settable
+from app.services.account_security_service import assert_not_last_super_admin
+from app.services.account_security_service import assert_not_last_super_admin_deactivation
 from app.services.account_security_service import assert_password_auth_possible
 from app.services.account_security_service import audit_account_status_change
 from app.services.account_security_service import audit_expiration_change
@@ -261,10 +263,10 @@ def _validate_role_and_activation_changes(
                 detail=f"Invalid role: {update_data['role']}",
             )
         update_data["is_superuser"] = role_implies_superuser(update_data["role"])
-        _assert_not_last_super_admin(db, user, update_data["role"])
+        assert_not_last_super_admin(db, user, update_data["role"])
 
     if update_data.get("is_active") is False:
-        _assert_not_last_super_admin_deactivation(db, user)
+        assert_not_last_super_admin_deactivation(db, user)
 
 
 def _audit_expiration_if_changed(
@@ -274,53 +276,6 @@ def _audit_expiration_if_changed(
     new_expires_at = str(user.account_expires_at) if user.account_expires_at else None
     if new_expires_at != old_expires_at:
         audit_expiration_change(user, actor, old_expires_at, new_expires_at, client_ip, user_agent)
-
-
-def _count_other_active_super_admins(db: Session, user: User) -> int:
-    """Count active super_admins other than ``user``.
-
-    Shared by every guard that must refuse leaving the deployment with zero
-    active super_admins — role change, deactivation, and delete all need this
-    same count, decided against differently.
-    """
-    return (
-        db.query(User)
-        .filter(User.role == ROLE_SUPER_ADMIN, User.id != user.id, User.is_active.is_(True))
-        .count()
-    )
-
-
-def _assert_not_last_super_admin(db: Session, user: User, new_role: str) -> None:
-    """Refuse a change that would leave the deployment with no super_admin.
-
-    Auth configuration, role changes and the audit log are all super_admin-gated,
-    so demoting the last one locks everyone out of them permanently — there is no
-    recovery path short of editing the database by hand.
-    """
-    if str(user.role) != ROLE_SUPER_ADMIN or new_role == ROLE_SUPER_ADMIN:
-        return
-
-    if _count_other_active_super_admins(db, user) == 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot demote the last super_admin — promote another account first.",
-        )
-
-
-def _assert_not_last_super_admin_deactivation(db: Session, user: User) -> None:
-    """Refuse deactivating the last active super_admin.
-
-    Mirrors ``_assert_not_last_super_admin``, but for `is_active=False` rather
-    than a role change — deactivating has the same lockout effect as demoting.
-    """
-    if str(user.role) != ROLE_SUPER_ADMIN or bool(user.is_active) is False:
-        return
-
-    if _count_other_active_super_admins(db, user) == 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot deactivate the last super_admin — promote another account first.",
-        )
 
 
 @router.delete("/{user_uuid}", status_code=status.HTTP_204_NO_CONTENT)
@@ -351,7 +306,7 @@ def delete_user(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only a super_admin can delete a super_admin account",
             )
-        _assert_not_last_super_admin(db, user, ROLE_USER)
+        assert_not_last_super_admin(db, user, ROLE_USER)
 
     # Capture what the audit record needs before the row is gone.
     deleted_snapshot = DeletedUser.of(user)

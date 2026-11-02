@@ -54,9 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- LDAP: login and the directory sweep compare the same username form against `admin_users`,
-  every LDAP connection carries a read timeout (`ldap_timeout`) and refuses the bind when the
-  directory does not answer, and the SSL-plus-StartTLS startup warning names the mode in use.
+
 
 - **The model downloader's speaker-detection step no longer fails on every CPU run.**
   `scripts/download-models.py` transcribed synthetic sine-wave audio through whisperx before

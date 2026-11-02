@@ -28,6 +28,7 @@ from app.services.tag_collisions import files_for_tag
 from app.services.tag_collisions import find_tag_collisions
 from app.services.tag_collisions import tags_on_files
 from app.services.tag_service import tag_ownership
+from app.services.takedown_service import quarantine_list_exempt
 from app.utils.uuid_helpers import get_by_uuid
 
 
@@ -119,7 +120,7 @@ def list_files_for_tag(
         user_id=current_user.id,
         organization_id=ctx.org_id,
         limit=limit,
-        is_admin=ctx.bypass.user_is_admin,
+        include_quarantined=quarantine_list_exempt(ctx.bypass),
     )
     return TagFileList(
         total=total,

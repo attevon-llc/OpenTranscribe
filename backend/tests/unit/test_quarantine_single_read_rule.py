@@ -117,7 +117,7 @@ class TestSetFileUrls:
         assert row.thumbnail_url == "/api/files/f-1/thumbnail"
 
 
-_GUARDED = {"is_hidden_for": "is_admin", "exclude_quarantined": "include_quarantined"}
+_EXEMPTION_KWARGS = {"is_admin", "include_quarantined"}
 
 
 def _mentions_user_is_admin(node: ast.AST, tainted: set[str]) -> bool:
@@ -129,10 +129,20 @@ def _mentions_user_is_admin(node: ast.AST, tainted: set[str]) -> bool:
     return False
 
 
+def _names_quarantine(node: ast.AST) -> bool:
+    return any(
+        (isinstance(n, ast.Name) and "quarantin" in n.id.lower())
+        or (isinstance(n, ast.Attribute) and "quarantin" in n.attr.lower())
+        for n in ast.walk(node)
+    )
+
+
 def find_role_derived_quarantine_args(source: str) -> list[tuple[int, str]]:
-    """Calls to a quarantine predicate whose exemption argument comes from ``user_is_admin``."""
+    """Quarantine exemptions derived from ``user_is_admin``: as an exemption keyword on any
+    call, or as the test of an ``if`` / conditional expression that handles quarantined rows.
+    """
     tree = ast.parse(source)
-    findings: list[tuple[int, str]] = []
+    findings: set[tuple[int, str]] = set()
     scopes: list[ast.AST] = [
         n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
     ]
@@ -142,18 +152,21 @@ def find_role_derived_quarantine_args(source: str) -> list[tuple[int, str]]:
         for stmt in ast.walk(scope):
             if isinstance(stmt, ast.Assign) and _mentions_user_is_admin(stmt.value, set()):
                 tainted |= {t.id for t in stmt.targets if isinstance(t, ast.Name)}
-        for call in ast.walk(scope):
-            if not isinstance(call, ast.Call):
-                continue
-            fn = call.func
-            name = fn.id if isinstance(fn, ast.Name) else getattr(fn, "attr", None)
-            kw_name = _GUARDED.get(name or "")
-            if kw_name is None:
-                continue
-            for kw in call.keywords:
-                if kw.arg == kw_name and _mentions_user_is_admin(kw.value, tainted):
-                    findings.append((call.lineno, name or ""))
-    return sorted(set(findings))
+        for node in ast.walk(scope):
+            if isinstance(node, ast.Call):
+                fn = node.func
+                name = fn.id if isinstance(fn, ast.Name) else getattr(fn, "attr", "?")
+                for kw in node.keywords:
+                    if kw.arg in _EXEMPTION_KWARGS and _mentions_user_is_admin(kw.value, tainted):
+                        findings.add((node.lineno, f"{name}({kw.arg}=)"))
+            elif isinstance(node, ast.If | ast.IfExp):
+                body = [node.body] if isinstance(node.body, ast.AST) else node.body
+                rest = [node.orelse] if isinstance(node.orelse, ast.AST) else node.orelse
+                if _mentions_user_is_admin(node.test, tainted) and any(
+                    _names_quarantine(part) for part in [*body, *rest]
+                ):
+                    findings.add((node.lineno, "conditional"))
+    return sorted(findings)
 
 
 def test_no_quarantine_predicate_takes_its_exemption_from_the_bare_role():
@@ -170,7 +183,7 @@ def test_no_quarantine_predicate_takes_its_exemption_from_the_bare_role():
 class TestGuardDetector:
     def test_fires_on_a_direct_attribute(self):
         src = "def f(ctx, m):\n    return is_hidden_for(m, is_admin=ctx.bypass.user_is_admin)\n"
-        assert find_role_derived_quarantine_args(src) == [(2, "is_hidden_for")]
+        assert find_role_derived_quarantine_args(src) == [(2, "is_hidden_for(is_admin=)")]
 
     def test_fires_through_a_local_variable(self):
         src = (
@@ -178,7 +191,24 @@ class TestGuardDetector:
             "    allowed = ctx.bypass.user_is_admin\n"
             "    return exclude_quarantined(q, include_quarantined=allowed)\n"
         )
-        assert find_role_derived_quarantine_args(src) == [(3, "exclude_quarantined")]
+        assert find_role_derived_quarantine_args(src) == [
+            (3, "exclude_quarantined(include_quarantined=)")
+        ]
+
+    def test_fires_on_a_conditional_that_skips_the_quarantine_lookup(self):
+        src = (
+            "def f(ctx):\n"
+            "    q = [] if ctx.bypass.user_is_admin else _quarantined_file_uuids()\n"
+            "    if not ctx.bypass.user_is_admin:\n"
+            "        drop_quarantined_hits()\n"
+        )
+        assert find_role_derived_quarantine_args(src) == [(2, "conditional"), (3, "conditional")]
+
+    def test_fires_on_a_service_function_keyword(self):
+        src = "def f(ctx, db):\n    return files_for_tag(db, 1, include_quarantined=ctx.bypass.user_is_admin)\n"
+        assert find_role_derived_quarantine_args(src) == [
+            (2, "files_for_tag(include_quarantined=)")
+        ]
 
     def test_stays_quiet_for_the_shared_helper_and_literals(self):
         src = (

@@ -507,7 +507,7 @@ def files_for_tag(
     user_id: int,
     organization_id: OrgScope = UNSCOPED,
     limit: int = 50,
-    is_admin: bool = False,
+    include_quarantined: bool = False,
 ) -> tuple[list[MediaFile], int]:
     """Return the accessible files carrying ``tag_id``, newest first.
 
@@ -529,7 +529,8 @@ def files_for_tag(
         organization_id: Tenant scope.
         limit: Most rows to return; the caller gets the true total separately so
             it can say "and N more" rather than silently truncating.
-        is_admin: Admin "see all" — skip the takedown exclusion below.
+        include_quarantined: Review visibility — skip the takedown exclusion below; pass
+            ``quarantine_list_exempt(bypass)``, never the bare admin role.
 
     Returns:
         ``(files, total)`` — at most ``limit`` files, and how many there are.
@@ -540,7 +541,7 @@ def files_for_tag(
         .join(FileTag, FileTag.media_file_id == MediaFile.id)
         .filter(FileTag.tag_id == tag_id, MediaFile.id.in_(accessible))
     )
-    base = exclude_quarantined(base, include_quarantined=is_admin)
+    base = exclude_quarantined(base, include_quarantined=include_quarantined)
     total = base.count()
     files = (
         base.order_by(MediaFile.upload_time.desc().nullslast(), MediaFile.id.desc())

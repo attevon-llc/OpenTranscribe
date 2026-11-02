@@ -367,7 +367,7 @@ def search_transcripts(
         # Abuse/DMCA: the OpenSearch transcript index has no quarantine field, so
         # drop any taken-down files from the result page against the DB (page-sized,
         # one IN query). Admins keep visibility for review.
-        if not ctx.bypass.user_is_admin:
+        if not quarantine_list_exempt(ctx.bypass):
             search_response = _drop_quarantined_search_hits(db, search_response)
 
         payload = _search_response_to_schema(search_response)
@@ -539,7 +539,7 @@ def _source_counts(
                 q,
                 user_id=ctx.user.id,
                 organization_id=ctx.org_id,
-                is_admin=ctx.bypass.user_is_admin,
+                is_admin=quarantine_list_exempt(ctx.bypass),
                 fields=fields,
                 count_files=True,
                 **filter_kwargs,
@@ -548,7 +548,7 @@ def _source_counts(
             logger.warning("source_counts: %s count unavailable", source)
 
     try:
-        quarantined = [] if ctx.bypass.user_is_admin else _quarantined_file_uuids()
+        quarantined = [] if quarantine_list_exempt(ctx.bypass) else _quarantined_file_uuids()
         _hits, total = service.search_summary_plane(
             q,
             ctx.user.id,
@@ -618,7 +618,7 @@ def search_match_count(
             user_id=ctx.user.id,
             file_uuid=file_uuid,
             organization_id=ctx.org_id,
-            is_admin=ctx.bypass.user_is_admin,
+            is_admin=quarantine_list_exempt(ctx.bypass),
         )
     except QuarantineExclusionUnavailableError as e:
         # Literal 503 to match get_available_filters' raise below; this module
@@ -879,7 +879,7 @@ def search_suggestions(
             user_id=ctx.user.id,
             limit=limit,
             organization_id=ctx.org_id,
-            is_admin=ctx.bypass.user_is_admin,
+            is_admin=quarantine_list_exempt(ctx.bypass),
         )
     except QuarantineExclusionUnavailableError as e:
         raise HTTPException(
@@ -918,7 +918,9 @@ def get_available_filters(
     search_service = HybridSearchService()
     try:
         return search_service.get_available_filters(
-            user_id=ctx.user.id, organization_id=ctx.org_id, is_admin=ctx.bypass.user_is_admin
+            user_id=ctx.user.id,
+            organization_id=ctx.org_id,
+            is_admin=quarantine_list_exempt(ctx.bypass),
         )
     except QuarantineExclusionUnavailableError as e:
         # Literal 503 to match _summary_search_payload's masking-outage raise

@@ -48,6 +48,10 @@ def _mark_invalid(conn: Connection, name: str) -> None:
     )
 
 
+def _drop_index(conn: Connection, name: str) -> None:
+    conn.execute(text(f"DROP INDEX {name}"))
+
+
 def test_an_invalid_index_is_dropped_and_rebuilt_concurrently():
     with _exclusive_autocommit() as conn:
         _mark_invalid(conn, PLAYBACK.name)
@@ -66,7 +70,7 @@ def test_a_missing_index_is_built_and_valid_ones_are_left_alone():
         oid_before = conn.execute(
             text("SELECT oid FROM pg_class WHERE relname = :n"), {"n": oki.STORAGE_PATH.name}
         ).scalar_one()
-        conn.execute(text(f"DROP INDEX {PLAYBACK.name}"))
+        _drop_index(conn, PLAYBACK.name)
         statements: list[str] = []
 
         def record(_c, _cur, statement, *_rest):

@@ -42,7 +42,7 @@ _VERSIONS_DIR = _TESTS_ROOT.parent / "alembic" / "versions"
 #: not) and ``TRUNCATE`` are included because they block DML on the target just as hard.
 _DDL = re.compile(
     r"\b(ALTER\s+TABLE|DROP\s+TABLE|CREATE\s+TABLE|TRUNCATE|CREATE\s+(UNIQUE\s+)?INDEX"
-    r"|DROP\s+INDEX)\b",
+    r"|DROP\s+INDEX|(CREATE\s+(OR\s+REPLACE\s+)?|DROP\s+)TRIGGER)\b",
     re.IGNORECASE,
 )
 
@@ -185,10 +185,22 @@ def _revision_ddl_constants(revision: str) -> frozenset[str]:
     for node in body:
         if not isinstance(node, ast.Assign):
             continue
-        builder_call = (
-            isinstance(node.value, ast.Call)
-            and isinstance(node.value.func, ast.Name)
-            and node.value.func.id in ddl
+        # Anywhere in the expression, not just at its root: v457 builds
+        # ``UPGRADE_SQL = "".join(_row_and_truncate(...) for ...)`` (root: ``join``) and v453
+        # ``FUNCTIONS_SQL + PRUNE_SQL + _trigger_sql()`` (root: ``+``). A reference to a name
+        # already known to hold DDL, or a call of a builder that returns it, makes the whole a DDL.
+        builder_call = any(
+            (
+                isinstance(inner, ast.Call)
+                and isinstance(inner.func, ast.Name)
+                and inner.func.id in ddl
+            )
+            or (isinstance(inner, ast.Name) and inner.id in ddl)
+            for inner in ast.walk(node.value)
+        ) or any(
+            is_ddl(_resolve_string(inner, values) or "")
+            for inner in ast.walk(node.value)
+            if isinstance(inner, ast.Constant | ast.JoinedStr)
         )
         resolved = _resolve_string(node.value, values)
         for target in node.targets:
@@ -273,6 +285,21 @@ def _executes_ddl(fn: ast.AST, ddl_consts: set[str], ddl_attrs: frozenset[str]) 
     return False
 
 
+def _ddl_fixtures(tree: ast.Module, ddl_consts: set[str], ddl_attrs: frozenset[str]) -> set[str]:
+    """Module-level fixtures whose body executes DDL.
+
+    A test that requests one runs that DDL on its own connection even though its body shows
+    none (v456's ``bare`` drops the three indexes, then the test replays the revision).
+    """
+    return {
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and "fixture" in _decorator_names(node)
+        and _executes_ddl(node, ddl_consts, ddl_attrs)
+    }
+
+
 def _takes_lock_explicitly(fn: ast.AST) -> bool:
     """True when the test calls a ``tests/db_locks.py`` helper itself."""
     for node in ast.walk(fn):
@@ -312,6 +339,7 @@ def _collect() -> tuple[list[str], list[str], list[str]]:
         module_markers = _module_marker_names(tree)
         ddl_consts = _ddl_constants(tree)
         ddl_attrs = _ddl_attributes(tree)
+        ddl_fixtures = _ddl_fixtures(tree, ddl_consts, ddl_attrs)
 
         for node in ast.walk(tree):
             if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
@@ -321,7 +349,8 @@ def _collect() -> tuple[list[str], list[str], list[str]]:
 
             ident = f"{rel}::{node.name}"
             marked = "ddl_exclusive" in (module_markers | _decorator_names(node))
-            runs_ddl = _executes_ddl(node, ddl_consts, ddl_attrs)
+            requested = {a.arg for a in node.args.args} | {a.arg for a in node.args.kwonlyargs}
+            runs_ddl = _executes_ddl(node, ddl_consts, ddl_attrs) or bool(requested & ddl_fixtures)
 
             if not runs_ddl:
                 if marked:

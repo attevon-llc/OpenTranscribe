@@ -27,7 +27,8 @@ from tests.unit._migration_detection import assert_detected_at_or_after
 REVISION = "v456_unique_object_keys"
 _PATH = Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{REVISION}.py"
 
-pytestmark = pytest.mark.ddl_exclusive
+#: ``ddl_exclusive`` is applied PER TEST: only the tests on the ``bare`` fixture (which drops the
+#: indexes) replay DDL; a module-wide marker made the read-only ones full-suite barriers too.
 
 
 def _module():
@@ -113,6 +114,7 @@ def _run_downgrade(conn) -> None:
         _module().downgrade()
 
 
+@pytest.mark.ddl_exclusive
 def test_a_clean_table_gets_all_three_indexes(db_session, normal_user, bare):
     a, b = _rows(db_session, normal_user, 2, thumbnail_path=None, playback_path="")
     b.storage_path = ""  # the placeholder an upload row carries; repeats are allowed
@@ -123,6 +125,7 @@ def test_a_clean_table_gets_all_three_indexes(db_session, normal_user, bare):
     assert oki.status(bare)["healthy"] is True
 
 
+@pytest.mark.ddl_exclusive
 def test_shared_legacy_thumbnails_keep_the_lowest_id_and_the_index_is_built(
     db_session, normal_user, bare
 ):
@@ -146,6 +149,7 @@ def test_shared_legacy_thumbnails_keep_the_lowest_id_and_the_index_is_built(
     assert oki.existing_indexes(bare) == {i.name for i in oki.INDEXES}
 
 
+@pytest.mark.ddl_exclusive
 def test_shared_originals_never_block_the_upgrade_and_are_reported(
     db_session, normal_user, bare, caplog
 ):
@@ -183,6 +187,7 @@ def test_shared_originals_never_block_the_upgrade_and_are_reported(
     assert oki.status(bare)["healthy"] is True
 
 
+@pytest.mark.ddl_exclusive
 def test_the_downgrade_drops_the_indexes_and_loses_no_rows(db_session, normal_user, bare):
     rows = _rows(db_session, normal_user, 2)
     _run_upgrade(bare)

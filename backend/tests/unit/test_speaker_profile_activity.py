@@ -69,6 +69,24 @@ def test_touch_sets_now_and_ignores_none(db_session, normal_user):
     assert _stamp(db_session, p) > _OLD
 
 
+def test_changing_or_removing_an_avatar_moves_the_clock(db_session, normal_user):
+    """The avatar routes stamp through ``swap_avatar_path`` (see test_profile_interaction_sites)."""
+    from app.services.speaker_avatar_service import swap_avatar_path
+
+    p = _profile(db_session, normal_user)
+    swap_avatar_path(db_session, int(p.id), "avatars/new.png")
+    after_upload = _stamp(db_session, p)
+    assert after_upload > _OLD
+
+    db_session.execute(
+        text("UPDATE speaker_profile SET last_interaction_at = :t WHERE id = :i"),
+        {"t": _OLD, "i": p.id},
+    )
+    previous = swap_avatar_path(db_session, int(p.id), None)
+    assert previous == "avatars/new.png"
+    assert _stamp(db_session, p) > _OLD
+
+
 def test_an_unknown_kind_is_refused(db_session):
     with pytest.raises(ValueError):
         touch_profile_interaction(db_session, 1, "viewed")

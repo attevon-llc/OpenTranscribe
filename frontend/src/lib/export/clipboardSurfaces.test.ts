@@ -27,7 +27,7 @@ const SRC = path.resolve(__dirname, '../..');
 
 /** `<file>`: why this surface may put its text on the clipboard. */
 const ALLOWED: Record<string, string> = {
-  'routes/files/[id]/+page.svelte':
+  'components/fileDetail/TranscriptExportDialogs.svelte':
     'Issue #821. Does NOT serialize anything: it calls GET /files/{uuid}/export (via ' +
     'requestTranscriptExport) and copies the SERVER response, so the admin export_locked ' +
     'floor and the reader redaction policy decide the bytes, exactly as for a download.',

@@ -119,7 +119,7 @@ noqa::backend/app/tasks/topic_extraction.py	1	suppression: reason to be added
 noqa::backend/app/tasks/transcription/audio_processor.py	2	suppression: reason to be added
 noqa::backend/app/tasks/transcription/metadata_extractor.py	2	suppression: reason to be added
 noqa::backend/app/tasks/transcription/waveform_generator.py	4	suppression: reason to be added
-noqa::backend/app/tasks/utility.py	3	suppression: reason to be added
+noqa::backend/app/tasks/utility.py	1	suppression: reason to be added
 noqa::backend/app/tasks/watch_source_tasks.py	3	suppression: reason to be added
 noqa::backend/app/tasks/youtube_processing.py	1	suppression: reason to be added
 noqa::backend/app/transcription/config.py	2	suppression: reason to be added
@@ -129,6 +129,7 @@ noqa::backend/app/transcription/diarizer_native.py	1	suppression: reason to be a
 noqa::backend/app/transcription/native_provision.py	1	suppression: reason to be added
 noqa::backend/app/transcription/transcriber.py	1	suppression: reason to be added
 noqa::backend/app/utils/error_classification.py	1	suppression: reason to be added
+noqa::backend/app/utils/gpu_stats.py	2	suppression: reason to be added
 noqa::backend/app/utils/transcript_builders.py	1	suppression: reason to be added
 noqa::backend/scripts/benchmark_migration.py	1	suppression: reason to be added
 noqa::backend/scripts/celery_pool_healthcheck.py	2	suppression: reason to be added

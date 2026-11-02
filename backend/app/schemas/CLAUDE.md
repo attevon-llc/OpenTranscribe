@@ -41,8 +41,8 @@ Request/response shaping and validation only; logic lives in `app/services`. 42 
   always equal Python names.
 - **Enums are local, not shared.** Few schemas import from `core/enums` (`media.py` imports `FileStatus`;
   `post_processing.py`, `llm_settings.py` and `takedown_notice.py` import the enums their wire shapes carry);
-  `ASRProvider`, `LLMProvider`, `SourceType`, `TaskStatus` etc. are each
-  declared in their own schema module. Defaults for DB-backed settings come from `core/constants.py`.
+  `ASRProvider`, `SourceType`, `TaskStatus` etc. are each declared in their own schema module. A value set
+  that a service also dispatches on (`LLMProvider`) lives once in `core/enums` and both sides import it. Defaults for DB-backed settings come from `core/constants.py`.
 
 ## How it connects
 

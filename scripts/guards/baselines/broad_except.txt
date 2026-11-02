@@ -310,7 +310,7 @@ backend/app/tasks/transcription/queue_consumers.py	2	ratchet: may only go down
 backend/app/tasks/transcription/run_ownership.py	3	ratchet: may only go down
 backend/app/tasks/transcription/speaker_processor.py	2	ratchet: may only go down
 backend/app/tasks/transcription/waveform_generator.py	3	ratchet: may only go down
-backend/app/tasks/utility.py	4	ratchet: may only go down
+backend/app/tasks/utility.py	2	ratchet: may only go down
 backend/app/tasks/watch_source_tasks.py	3	ratchet: may only go down
 backend/app/tasks/waveform.py	2	ratchet: may only go down
 backend/app/tasks/waveform_generation.py	3	ratchet: may only go down
@@ -333,6 +333,7 @@ backend/app/utils/boot_once.py	1	ratchet: may only go down
 backend/app/utils/encryption.py	6	ratchet: may only go down
 backend/app/utils/file_hash.py	2	ratchet: may only go down
 backend/app/utils/file_validation.py	1	ratchet: may only go down
+backend/app/utils/gpu_stats.py	2	ratchet: may only go down
 backend/app/utils/hardware_detection.py	8	ratchet: may only go down
 backend/app/utils/nvml_monitor.py	2	ratchet: may only go down
 backend/app/utils/prompt_manager.py	1	ratchet: may only go down

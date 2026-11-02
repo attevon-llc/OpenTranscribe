@@ -26,8 +26,8 @@ from app.core.exceptions import OperationFailedError
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
-from app.services.media_download_formats import _YOUTUBE_EXTRACTOR_ARGS
-from app.services.media_download_formats import _YT_DLP_BASE_OPTS
+from app.services.media_download_formats import YOUTUBE_EXTRACTOR_ARGS
+from app.services.media_download_formats import YT_DLP_BASE_OPTS
 from app.services.media_download_formats import _build_yt_dlp_format_string
 from app.services.media_download_formats import _select_quality_from_available_formats
 from app.services.media_download_metadata import MediaMetadataMixin
@@ -245,11 +245,11 @@ class MediaDownloadService(PlaylistMixin, MediaMetadataMixin):
             )
 
         ydl_opts = {
-            **_YT_DLP_BASE_OPTS,
+            **YT_DLP_BASE_OPTS,
             "quiet": True,
             "no_warnings": True,
             "extract_flat": False,
-            "extractor_args": _YOUTUBE_EXTRACTOR_ARGS,
+            "extractor_args": YOUTUBE_EXTRACTOR_ARGS,
         }
 
         try:
@@ -340,7 +340,7 @@ class MediaDownloadService(PlaylistMixin, MediaMetadataMixin):
 
         # Configure yt-dlp options for highest quality with web-compatible output
         ydl_opts = {
-            **_YT_DLP_BASE_OPTS,
+            **YT_DLP_BASE_OPTS,
             # Initial format string — refined after extract_info reveals real availability
             "format": _build_yt_dlp_format_string(video_quality, audio_only, audio_quality),
             "outtmpl": os.path.join(output_path, "%(title)s.%(ext)s"),
@@ -357,7 +357,7 @@ class MediaDownloadService(PlaylistMixin, MediaMetadataMixin):
             # 2026 YouTube client rotation — avoids SABR blocking.
             # 'android' and 'android_sdkless' are deprecated; ios_downgraded
             # and android_vr bypass server-side restrictions on many networks.
-            "extractor_args": _YOUTUBE_EXTRACTOR_ARGS,
+            "extractor_args": YOUTUBE_EXTRACTOR_ARGS,
             # Browser impersonation headers (Chrome 131 — current stable Jan 2026)
             "http_headers": {
                 "User-Agent": (

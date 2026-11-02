@@ -292,11 +292,10 @@ class LLMSummarizationMixin(LLMChunkingMixin, LLMJsonExtractMixin):
         )
 
         try:
-            content = response.content.strip()
-            if content.startswith("```json") and content.endswith("```"):
-                content = content[7:-3].strip()
-            elif content.startswith("```") and content.endswith("```"):
-                content = content[3:-3].strip()
+            # Fences only, not `_extract_json_from_response`: an Anthropic prefill reply
+            # arrives without its opening brace, and brace-bound extraction would then
+            # return the first nested object instead of leaving the text for json_repair.
+            content = self._strip_markdown_fences(response.content.strip())
 
             parsed_result: dict[str, Any] = json.loads(content)
             return parsed_result

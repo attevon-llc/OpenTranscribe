@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any
 
-from app.services.llm_host import LLMHost
+from app.services.llm_types import LLMHost
 from app.services.llm_types import LLMResponse
 from app.utils.llm_log_safety import describe_llm_text
 from app.utils.llm_log_safety import log_llm_text_excerpt

@@ -13,8 +13,8 @@ from app.core.exceptions import InvalidInputError
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
-from app.services.media_download_formats import _YOUTUBE_EXTRACTOR_ARGS
-from app.services.media_download_formats import _YT_DLP_BASE_OPTS
+from app.services.media_download_formats import YOUTUBE_EXTRACTOR_ARGS
+from app.services.media_download_formats import YT_DLP_BASE_OPTS
 
 logger = logging.getLogger(__name__)
 
@@ -231,12 +231,12 @@ class PlaylistMixin:
             InvalidInputError: If unable to extract playlist information
         """
         ydl_opts = {
-            **_YT_DLP_BASE_OPTS,
+            **YT_DLP_BASE_OPTS,
             "quiet": True,
             "no_warnings": True,
             "extract_flat": "in_playlist",  # Extract video info without downloading
             "skip_download": True,
-            "extractor_args": _YOUTUBE_EXTRACTOR_ARGS,
+            "extractor_args": YOUTUBE_EXTRACTOR_ARGS,
         }
 
         try:

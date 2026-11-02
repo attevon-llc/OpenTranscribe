@@ -44,6 +44,8 @@ from app.core.config import settings
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
+from app.services.media_download_formats import YOUTUBE_EXTRACTOR_ARGS
+from app.services.media_download_formats import YT_DLP_BASE_OPTS
 from app.utils.media_types import file_extension
 from app.utils.media_types import normalize_media_content_type
 
@@ -430,11 +432,12 @@ def fetch_youtube_metadata(video_id: str) -> dict[str, Any] | None:
 
         url = f"https://www.youtube.com/watch?v={video_id}"
         opts = {
+            **YT_DLP_BASE_OPTS,
             "quiet": True,
             "no_warnings": True,
             "skip_download": True,
             "extract_flat": False,
-            "socket_timeout": 30,
+            "extractor_args": YOUTUBE_EXTRACTOR_ARGS,
         }
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)

@@ -7,8 +7,10 @@
   import { guardUnsavedChanges } from '$lib/navigation/unsavedChangesGuard';
   import axiosInstance from '$lib/axios';
   import { formatDuration } from '$lib/utils/formatting';
-  import { websocketStore } from '$stores/websocket';
+  import { websocketStore, type Notification } from '$stores/websocket';
   import { handleFileNotification } from '$lib/fileDetail/notificationHandler';
+  import { isForFile, latestNotificationForFile, notificationSignature } from '$lib/fileDetail/notificationSelect';
+  import { listenForSpeakerEvents } from '$lib/fileDetail/speakerEvents';
   import { createPageTimers } from '$lib/fileDetail/pageTimers';
   import {
     fetchFileAnalytics,
@@ -763,64 +765,52 @@
     if (summaryData) showSummaryModal = true;
   }
 
-  // WebSocket subscription for real-time updates
+  // Live updates: websocket notifications for this file, and the speaker CustomEvents.
   let wsUnsubscribe: () => void;
+  let stopSpeakerEvents: () => void;
 
-  // Component mount logic
-  // Handler for speaker-updated CustomEvent (dispatched by websocket.ts, never enters store)
-  function handleSpeakerUpdatedEvent(e: Event) {
-    const detail = (e as CustomEvent).detail;
-    // Publishers disagree on the field name: speaker_attribute_task sends `file_id`,
-    // the speaker endpoints send `media_file_id`. Accept both.
-    const eventFileId = detail?.file_id ?? detail?.media_file_id;
-    // Only refresh if this event is for the current file
-    if (eventFileId && String(eventFileId) === String(fileId)) {
-      loadSpeakers();
-    }
-  }
+  function handleNotifications(notifications: Notification[]) {
+    const latest = latestNotificationForFile(notifications, fileId);
+    if (!latest) return;
+    // Only act when the content changed (progressive notifications update in place).
+    const signature = notificationSignature(latest);
+    if (signature === lastProcessedNotificationState) return;
+    lastProcessedNotificationState = signature;
+    // Skip if fileId is not set yet (component still initializing)
+    if (!fileId || !isForFile(latest, fileId)) return;
 
-  /**
-   * Eventual-consistency backstop for a speaker rename or merge.
-   *
-   * Renaming a speaker kicks off a background task that projects the change into
-   * OpenSearch and retroactively labels matching speakers in other files. This event is
-   * how those downstream effects reach an open page. It was dispatched but never listened
-   * for, so auto-applied labels only appeared after a manual reload.
-   */
-  function handleSpeakerProcessingCompleteEvent(e: Event) {
-    const detail = (e as CustomEvent).detail;
-    if (!detail?.media_file_id || String(detail.media_file_id) !== String(fileId)) return;
-
-    if (detail.reason === 'speaker_merged') {
-      // The merged-away speaker's uuid is gone from Postgres; there is no rename mapping
-      // to patch segments in place with, so refetch rather than trying to guess. See
-      // `segmentPager.refetchAfterMerge`'s docstring.
-      segmentPager.refetchAfterMerge();
-    } else if (detail.speaker_uuid && detail.display_name) {
-      // Repaint the renamed speaker directly: loadSpeakers() refreshes the speaker list but
-      // touches neither the segments nor the transcript store.
-      const speakerUuid = String(detail.speaker_uuid);
-      const speakerLabel = speakerList.find(s => s.uuid === speakerUuid)?.name;
-      speakerSave.applySpeakerRename(speakerUuid, speakerLabel, String(detail.display_name));
-    }
-
-    // Picks up labels the task auto-applied to OTHER speakers in this file.
-    loadSpeakers();
-    refreshCaptionTrack('speaker processing');
-
-    const autoApplied = detail.auto_applied_count || 0;
-    const suggested = detail.suggested_count || 0;
-    if (autoApplied > 0) {
-      toastStore.info($t('speakerProfile.autoAppliedToOthers', { count: autoApplied }));
-    } else if (suggested > 0) {
-      toastStore.info($t('speakerProfile.suggestionsCreated', { count: suggested }));
-    }
+    handleFileNotification(latest, {
+      getFileId: () => fileId,
+      getFile: () => file,
+      getLlmAvailable: () => llmAvailable,
+      getRedactionStatus: () => redactionStatus,
+      getVideoPlayerComponent: () => videoPlayerComponent,
+      setFile: (f) => (file = f),
+      setCurrentProcessingStep: (s) => (currentProcessingStep = s),
+      setSummaryGenerating: (v) => (summaryGenerating = v),
+      setGeneratingSummary: (v) => (generatingSummary = v),
+      setReprocessing: (v) => (reprocessing = v),
+      setRedactionStatus: (s) => (redactionStatus = s),
+      setRedactionPending: (v) => (redactionPending = v),
+      fetchTranscriptData,
+      loadSpeakers,
+      loadAISuggestions,
+      fetchFileDetails,
+      t: $t,
+      toastError: (message, durationMs) => toastStore.error(message, durationMs),
+      toastInfo: (message) => toastStore.info(message),
+    });
   }
 
   onMount(() => {
-    // Listen for speaker-updated CustomEvents (gender detection, attribute changes)
-    window.addEventListener('speaker-updated', handleSpeakerUpdatedEvent);
-    window.addEventListener('speaker-processing-complete', handleSpeakerProcessingCompleteEvent);
+    stopSpeakerEvents = listenForSpeakerEvents({
+      getFileId: () => fileId,
+      getSpeakerList: () => speakerList,
+      loadSpeakers,
+      applySpeakerRename: speakerSave.applySpeakerRename,
+      refetchSegmentsAfterMerge: segmentPager.refetchAfterMerge,
+      refreshCaptionTrack,
+    });
 
     // Use dynamic URL based on current location (works with reverse proxy)
     apiBaseUrl = getAppBaseUrl();
@@ -852,81 +842,7 @@
     // LLM status monitoring is now handled by the Settings component and reactive store
 
     // Subscribe to WebSocket notifications for real-time updates
-    wsUnsubscribe = websocketStore.subscribe(($ws) => {
-
-
-      if ($ws.notifications.length > 0) {
-
-        // Find the most recently updated notification for the current file
-        const currentFileNotifications = $ws.notifications.filter(n => {
-          const notificationFileId = String(n.data?.file_id || '');
-          const currentFileId = String(fileId);
-          return notificationFileId === currentFileId;
-        });
-
-        if (currentFileNotifications.length === 0) {
-          return;
-        }
-
-        // Sort by timestamp (most recent first)
-        currentFileNotifications.sort((a, b) => {
-          const aTime = a.timestamp;
-          const bTime = b.timestamp;
-          return new Date(bTime).getTime() - new Date(aTime).getTime();
-        });
-
-        const latestNotification = currentFileNotifications[0];
-
-
-        // Create a unique state signature to detect content changes, not just ID changes
-        const notificationState = `${latestNotification.id}_${latestNotification.status}_${latestNotification.progress?.percentage}_${latestNotification.currentStep}_${latestNotification.timestamp}`;
-
-        // Only process if the notification content has changed (not just new ID)
-        if (notificationState !== lastProcessedNotificationState) {
-          lastProcessedNotificationState = notificationState;
-
-          // Check if this notification is for our current file
-          // Skip if fileId is not set yet (component still initializing)
-          if (!fileId) {
-            return;
-          }
-
-          // Convert both to strings for comparison since notification sends file_id as string
-          const notificationFileId = String(latestNotification.data?.file_id);
-          const currentFileId = String(fileId);
-
-
-          if (notificationFileId === currentFileId && notificationFileId !== 'undefined' && currentFileId !== 'undefined') {
-
-            handleFileNotification(latestNotification, {
-              getFileId: () => fileId,
-              getFile: () => file,
-              getLlmAvailable: () => llmAvailable,
-              getRedactionStatus: () => redactionStatus,
-              getVideoPlayerComponent: () => videoPlayerComponent,
-              setFile: (f) => (file = f),
-              setCurrentProcessingStep: (s) => (currentProcessingStep = s),
-              setSummaryGenerating: (v) => (summaryGenerating = v),
-              setGeneratingSummary: (v) => (generatingSummary = v),
-              setReprocessing: (v) => (reprocessing = v),
-              setRedactionStatus: (s) => (redactionStatus = s),
-              setRedactionPending: (v) => (redactionPending = v),
-              fetchTranscriptData,
-              loadSpeakers,
-              loadAISuggestions,
-              fetchFileDetails,
-              t: $t,
-              toastError: (message, durationMs) => toastStore.error(message, durationMs),
-              toastInfo: (message) => toastStore.info(message),
-            });
-
-          } else {
-          }
-        } else {
-        }
-      } else {
-      }
-    });
+    wsUnsubscribe = websocketStore.subscribe(($ws) => handleNotifications($ws.notifications));
   });
 
   onDestroy(() => {
@@ -947,9 +863,7 @@
       wsUnsubscribe();
     }
 
-    // Clean up CustomEvent listeners
-    window.removeEventListener('speaker-updated', handleSpeakerUpdatedEvent);
-    window.removeEventListener('speaker-processing-complete', handleSpeakerProcessingCompleteEvent);
+    stopSpeakerEvents?.();
 
     // Clear the transcript store when leaving the page
     transcriptStore.clear();

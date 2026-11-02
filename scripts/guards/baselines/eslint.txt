@@ -388,7 +388,6 @@ frontend/src/routes/file-status/+page.svelte::svelte/no-navigation-without-resol
 frontend/src/routes/file-status/page.test.ts::no-restricted-imports	2	lint: burn-down planned
 frontend/src/routes/files/[id]/+page.svelte::@typescript-eslint/no-explicit-any	7	lint: burn-down planned
 frontend/src/routes/files/[id]/+page.svelte::@typescript-eslint/no-unused-expressions	1	lint: burn-down planned
-frontend/src/routes/files/[id]/+page.svelte::no-empty	3	lint: burn-down planned
 frontend/src/routes/files/[id]/+page.svelte::no-restricted-imports	2	lint: burn-down planned
 frontend/src/routes/files/[id]/+page.svelte::no-useless-assignment	3	lint: burn-down planned
 frontend/src/routes/files/[id]/+page.svelte::prefer-const	2	lint: burn-down planned

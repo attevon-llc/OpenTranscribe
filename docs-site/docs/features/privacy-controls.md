@@ -708,3 +708,21 @@ What the two features store, and what each purge target removes. This is the sta
 - [Speaker diarization](./speaker-diarization.md) for how speakers are detected.
 - [Content redaction](./content-redaction.md) for the redaction floor an organization can add to.
 - [Support access](../operations/support-access.md) for `TENANCY_MODE` and support-access grants.
+
+## Self-service account erasure
+
+Separate from the voiceprint and gender switches, a super administrator can let people erase their
+own account (**Settings > Privacy & Redaction > policy tab**). It is **off by default**, because on an
+employer-run deployment erasure is the controller's process.
+
+| Setting | Key | Default | Range |
+|---|---|---|---|
+| Self-service account erasure | `gdpr.self_erasure_enabled` | off | on/off |
+| Waiting period (days) | `gdpr.self_erasure_grace_days` | 14 | 0 to 21 |
+
+The cap exists because the one-month deadline for handling the request (GDPR Art. 12(3)) starts at
+the request, not at the end of the waiting period. A request is an entry in the erasure ledger, so it
+has one deadline clock and survives a database restore (the on-disk journal re-opens it as a request,
+or as cancelled, never as an immediate erasure). The person gets a request receipt (ledger ID plus a
+sha256 digest); the erasure receipt is the separate, measured record that follows. Both settings are
+audited as `admin.settings.change`. User-facing steps: [Erase my account](../user-guide/erase-my-account.md).

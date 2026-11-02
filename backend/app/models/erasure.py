@@ -72,7 +72,9 @@ SUBJECT_TYPES = ("user", "org_member", "organization", "file")
 #: process that died mid-erasure leaves behind, which is why it is the initial value).
 #: ``complete`` — nothing survived. ``deferred`` — a legal hold stopped part of it and
 #: the sweep must retry. ``failed`` — something else stopped it; also retried.
-LEDGER_STATUSES = ("pending", "complete", "deferred", "failed")
+#: ``cancelled`` -- a self-service request (``deferred`` / ``grace_period``) the subject withdrew
+#: before its ``scheduled_for``; terminal, never retried, and never an open or overdue entry.
+LEDGER_STATUSES = ("pending", "complete", "deferred", "failed", "cancelled")
 
 #: Who asked. Recorded as a *category* rather than a name so the entry stays
 #: meaningful after the actor's own account is deleted, and so an org admin's identity
@@ -80,7 +82,11 @@ LEDGER_STATUSES = ("pending", "complete", "deferred", "failed")
 ACTOR_KINDS = ("data_subject", "super_admin", "org_admin", "system")
 
 #: Why the erasure could not finish. An enum, not a message — see the module docstring.
-DEFERRAL_REASONS = ("legal_hold", "error")
+#: ``grace_period`` is not a failure: it is a self-service request waiting for ``scheduled_for``.
+DEFERRAL_REASONS = ("legal_hold", "error", "grace_period")
+
+#: ``request_digest`` is a sha256 hex string or NULL.
+REQUEST_DIGEST_SQL = "request_digest IS NULL OR request_digest ~ '^[0-9a-f]{64}$'"
 
 
 def _sql_in(column: str, values: tuple[str, ...]) -> str:
@@ -196,6 +202,18 @@ class ErasureLedgerEntry(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    #: When a self-service request becomes due. NULL for every operator-started erasure.
+    scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: sha256 over the canonical request fields (uuid, requested_at, scheduled_for): the
+    #: reference a data subject can quote. Not the erasure receipt, which is measured afterwards.
+    request_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    #: Cursor of the index-level resurrection check: when this completed entry was last checked
+    #: against the search indices (NULL = never, checked first).
+    index_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     __table_args__ = (
         CheckConstraint(_sql_in("subject_type", SUBJECT_TYPES), name="ck_erasure_ledger_subject"),
         CheckConstraint(_sql_in("status", LEDGER_STATUSES), name="ck_erasure_ledger_status"),
@@ -206,6 +224,20 @@ class ErasureLedgerEntry(Base):
         ),
         CheckConstraint(COUNTERS_NUMERIC_SQL, name="ck_erasure_ledger_counters_numeric"),
         CheckConstraint(SUBJECT_IDENTIFIED_SQL, name="ck_erasure_ledger_subject_identified"),
+        CheckConstraint(REQUEST_DIGEST_SQL, name="ck_erasure_ledger_request_digest"),
+        # One open self-service request per user, enforced by the database (race-safe).
+        Index(
+            "uq_erasure_ledger_open_self_request",
+            "subject_user_id",
+            unique=True,
+            postgresql_where=text("deferred_reason = 'grace_period' AND status = 'deferred'"),
+        ),
+        # The executor's only query: requests whose grace period has run out.
+        Index(
+            "ix_erasure_ledger_due_grace",
+            "scheduled_for",
+            postgresql_where=text("status = 'deferred' AND deferred_reason = 'grace_period'"),
+        ),
         # The sweep's only query: everything that is not finished. Partial, because on
         # a healthy deployment nearly every row is 'complete' and therefore noise.
         Index(

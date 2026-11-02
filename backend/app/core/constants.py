@@ -1888,6 +1888,15 @@ DEFAULT_PRIVACY_GENDER_INFERENCE_ENABLED = True
 #: hides voiceprints of existing files (they are ``unspecified``) and deletes nothing.
 PRIVACY_VOICEPRINT_UPLOAD_CONSENT_REQUIRED_KEY = "privacy.voiceprint_upload_consent_required"
 DEFAULT_PRIVACY_VOICEPRINT_UPLOAD_CONSENT_REQUIRED = False
+
+#: Self-service account erasure (issue #1354). OFF by default: in an employer-run deployment erasure
+#: is the controller's process. The grace period is capped so grace plus retry time stays inside the
+#: Art. 12(3) one-month window (``ERASURE_SLA_DAYS`` = 30), because the SLA clock starts at the request.
+GDPR_SELF_ERASURE_ENABLED_KEY = "gdpr.self_erasure_enabled"
+GDPR_SELF_ERASURE_GRACE_DAYS_KEY = "gdpr.self_erasure_grace_days"
+DEFAULT_GDPR_SELF_ERASURE_ENABLED = False
+DEFAULT_GDPR_SELF_ERASURE_GRACE_DAYS = 14
+MAX_GDPR_SELF_ERASURE_GRACE_DAYS = 21
 #: ``UserSetting`` key for the user layer of voiceprint matching. The gender user layer is the
 #: existing ``speaker_attribute_gender_detection_enabled``.
 PRIVACY_USER_VOICEPRINT_MATCHING_KEY = "privacy_voiceprint_matching_enabled"

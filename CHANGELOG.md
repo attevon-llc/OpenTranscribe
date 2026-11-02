@@ -23,14 +23,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-
-
 ### Changed
 
 - The OpenSearch voiceprint write guard now re-checks the recording's own consent state on every write
   when the document names a file, and consent hooks receive that file id there.
 - Fixed: the voiceprint retention sweep queued its purge with a `reason` argument the task does not
   accept; it now passes `purge_reason`.
+
+- **Behaviour change:** erasures of an organization member are now re-run automatically after a
+  restore, limited to rows created at or before the original erasure (newer work is never touched);
+  rows with no creation time are reported. The reconciliation result key `org_member_manual_review`
+  is replaced by `org_member_needs_review`. On the first passes after upgrading, reconciliation
+  re-checks every historical completed erasure, bounded per pass.
+
 
 - **Behaviour change:** legal acceptance records are no longer deleted with the account. Every
   deletion path (admin delete, GDPR erasure, the first-run wizard) now keeps them, pseudonymised

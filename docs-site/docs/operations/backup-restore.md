@@ -774,6 +774,32 @@ docker compose down
 docker compose up -d
 ```
 
+## Erased data after a restore
+
+Restoring a backup taken before an erasure brings the erased data back. The daily erasure
+reconciliation job (`gdpr.erasure_reconcile`) is what removes it again, and it does not depend on
+which store was restored:
+
+| What was restored | What reconciliation does |
+|---|---|
+| The **database** | Re-opens ledger entries from the on-disk journal (original request time and deadline kept) and re-erases any subject whose account or organization row is back, matching on id **and** uuid. |
+| **OpenSearch only** (snapshot restore, `POST /search/repair-indices`, the speaker index rebuilt from its backup) | Asks every search index for documents belonging to completed erasures, one batched query per index per pass, and re-deletes what it finds. Each find is counted on the ledger entry (`resurrections_detected`) and audited. |
+| An **organization member's** data (member erased, account kept) | Re-erases rows the member owns in that organization that were **created at or before** the erasure completed. Anything created later is the member's own new data and is never touched. Rows with no creation time are reported (`org_member_needs_review`), not deleted. |
+
+Things to know:
+
+- An unreachable OpenSearch is reported as `index_unverified`, never as clean, and the check is retried.
+- The check works through the ledger 500 entries per pass, least recently checked first, so a long
+  ledger is covered over several daily passes. After upgrading, the first passes re-check every
+  historical completed erasure.
+- An id that a live account now holds is skipped and counted as `index_unverified` rather than
+  deleted, because the documents might belong to that account.
+- To run it now: `./opentr.sh shell celery-worker`, then dispatch `gdpr.erasure_reconcile`; the
+  result lists `index_resurrections_redeleted`, `index_unverified`, `org_member_rerun`,
+  `org_member_needs_review`, `self_erasure_due` and `self_erasure_executed`.
+- Timestamps compared are database-side `now()` values; clock skew of seconds is irrelevant at this
+  granularity.
+
 ## Disaster Recovery
 
 ### Full System Recovery from Scratch

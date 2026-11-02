@@ -109,6 +109,12 @@ PLATFORM_OP_RULES: tuple[tuple[str, str, str], ...] = (
         "content (issue #1353); erase-file destroys a named recording and returns the same",
     ),
     (
+        r"^\w+ /api/admin/self-erasure",
+        "platform-ops",
+        "the self-service erasure switch and grace period: two instance settings, no tenant "
+        "content (issue #1354)",
+    ),
+    (
         r"^\w+ /api/(tasks/system/|tasks/recover-stuck-tasks|tasks/fix-inconsistent-files)",
         "state-repair",
         "pipeline-state repair by id or in bulk; returns counts and status, never content",

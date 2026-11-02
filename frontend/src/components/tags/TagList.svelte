@@ -458,7 +458,7 @@
   }
 
   .tag-row.cluster-member {
-    margin-left: 20px;
+    margin-inline-start: 20px;
   }
 
   .row-main {
@@ -490,7 +490,8 @@
   }
 
   .cluster-suggestions {
-    padding: 0 4px 0 20px;
+    padding-block: 0;
+    padding-inline: 20px 4px;
   }
 
   .suggestion-list {
@@ -513,7 +514,7 @@
     border-radius: 8px;
     background: var(--surface-color);
     color: var(--text-color);
-    text-align: left;
+    text-align: start;
     cursor: pointer;
     box-shadow: none;
   }
@@ -537,10 +538,10 @@
 
   @media (max-width: 768px) {
     .tag-row.cluster-member {
-      margin-left: 10px;
+      margin-inline-start: 10px;
     }
     .cluster-suggestions {
-      padding-left: 10px;
+      padding-inline-start: 10px;
     }
   }
 </style>

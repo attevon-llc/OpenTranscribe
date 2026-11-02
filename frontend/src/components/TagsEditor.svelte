@@ -564,7 +564,7 @@
     padding: 0.25rem 0.5rem;
     font-size: 0.8rem;
     cursor: pointer;
-    margin-left: 0.5rem;
+    margin-inline-start: 0.5rem;
   }
 
   .tag-add-button:disabled {

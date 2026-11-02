@@ -661,7 +661,7 @@
 
   .create-icon {
     position: absolute;
-    left: 12px;
+    inset-inline-start: 12px;
     color: var(--text-secondary);
     pointer-events: none;
   }
@@ -671,7 +671,9 @@
   .create-input,
   .search-input {
     width: 100%;
-    padding: 0.5rem 2rem 0.5rem 2.25rem;
+    padding-block: 0.5rem;
+    /* Room for the leading icon at the start and the clear button at the end. */
+    padding-inline: 2.25rem 2rem;
     /* The app's input tokens, not --surface-color: the modal body is already
        surface-coloured, so a surface-coloured input read as a grey smear
        rather than a field. Matches form-elements.css and CollectionsPanel. */
@@ -718,7 +720,7 @@
 
   .search-icon {
     position: absolute;
-    left: 12px;
+    inset-inline-start: 12px;
     top: 50%;
     transform: translateY(-50%);
     color: var(--text-secondary);
@@ -732,7 +734,7 @@
 
   .search-clear {
     position: absolute;
-    right: 6px;
+    inset-inline-end: 6px;
     top: 50%;
     transform: translateY(-50%);
     display: flex;
@@ -814,7 +816,7 @@
     max-height: min(58vh, 520px);
     overflow-y: auto;
     /* Room for the scrollbar so rows do not shift under the cursor. */
-    padding-right: 4px;
+    padding-inline-end: 4px;
   }
 
   .detail-pane {

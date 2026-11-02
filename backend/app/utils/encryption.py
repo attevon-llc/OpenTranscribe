@@ -368,6 +368,24 @@ def test_encryption() -> bool:
         return False
 
 
+def encrypt_value(value: str, aad: bytes | None = None) -> str | None:
+    """Encrypt a sensitive value with AES-256-GCM, bound to optional associated data.
+
+    The counterpart of ``decrypt_value``: the same ``aad`` must be supplied to decrypt,
+    so a ciphertext cannot be replayed into a different context.
+
+    Returns:
+        Encrypted value in v3 format, or None if the value is empty or encryption fails.
+    """
+    if not value or not value.strip():
+        return None
+    try:
+        return _encrypt_v3(value.encode("utf-8"), DEFAULT_AAD if aad is None else aad)
+    except Exception as e:
+        logger.error(f"Failed to encrypt value: {e}")
+        return None
+
+
 def decrypt_value(encrypted_value: str, aad: bytes | None = None) -> str | None:
     """
     Decrypt a stored sensitive value.

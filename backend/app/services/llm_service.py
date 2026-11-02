@@ -41,6 +41,7 @@ if TYPE_CHECKING:  # pragma: no cover - import cost is paid only by type checker
     from sqlalchemy.orm import Session
 
     from app.models.user_llm_settings import UserLLMSettings
+    from app.services.llm_usage import CallUsage
     from app.utils.url_validation import PinnedTarget
 
 logger = logging.getLogger(__name__)
@@ -730,11 +731,41 @@ class LLMService:
         return self._send_llm_request(url, payload, self._get_headers(), timeout)
 
     def chat_completion(self, messages: list[dict[str, str]], **kwargs) -> LLMResponse:
+        """Send a chat completion request to the LLM provider.
+
+        Every call, successful or not, is reported to the open usage run
+        (``services/llm_usage.py``) so no task has to count tokens itself.
         """
-        Send chat completion request to LLM provider
-        """
+        from app.services import llm_usage
+
+        call = llm_usage.CallUsage()
+        try:
+            response = self._chat_completion_untracked(messages, call, **kwargs)
+        except Exception:
+            llm_usage.note_call(
+                provider=self.config.provider.value,
+                model=self.config.model,
+                messages=messages,
+                call=call,
+                success=False,
+            )
+            raise
+        call.content = response.content
+        llm_usage.note_call(
+            provider=self.config.provider.value,
+            model=self.config.model,
+            messages=messages,
+            call=call,
+            success=True,
+        )
+        return response
+
+    def _chat_completion_untracked(
+        self, messages: list[dict[str, str]], call: "CallUsage", **kwargs
+    ) -> LLMResponse:
+        """Provider dispatch for :meth:`chat_completion`; fills ``call`` with reported usage."""
         if self.config.provider == LLMProvider.BEDROCK:
-            return self._bedrock_chat_completion(messages, **kwargs)
+            return self._bedrock_chat_completion(messages, call=call, **kwargs)
 
         url = self._resolve_endpoint()
         headers = self._get_headers()
@@ -750,6 +781,9 @@ class LLMService:
 
         try:
             data = self._send_llm_request(url, payload, headers, timeout)
+            from app.services.llm_usage import split_usage
+
+            call.usage = split_usage(data)
             content, usage_tokens, finish_reason = self._extract_response_content(data)
 
             if not content:
@@ -782,7 +816,9 @@ class LLMService:
             )
             raise
 
-    def _bedrock_chat_completion(self, messages: list[dict[str, str]], **kwargs) -> LLMResponse:
+    def _bedrock_chat_completion(
+        self, messages: list[dict[str, str]], call: "CallUsage | None" = None, **kwargs
+    ) -> LLMResponse:
         """Non-streaming completion via the Bedrock Converse SDK path.
 
         Bedrock is an SDK call, not an HTTP endpoint (it has no entry in
@@ -800,8 +836,10 @@ class LLMService:
         from app.services.llm_bedrock import BedrockStreamError
         from app.services.llm_bedrock import converse
 
+        usage_out: dict[str, int] = {}
         try:
             content, usage_tokens, finish_reason = converse(
+                usage_out=usage_out,
                 model=self.config.model,
                 region=resolve_region(self.config.bedrock),
                 connection=self.config.bedrock,
@@ -814,6 +852,16 @@ class LLMService:
         except BedrockStreamError as e:
             logger.error(f"Bedrock chat completion failed: {e}")
             raise Exception(f"Bedrock error: {e}") from e
+        finally:
+            if call is not None and usage_out:
+                from app.services.llm_usage import Usage
+
+                call.usage = Usage(
+                    prompt_tokens=usage_out.get("prompt_tokens"),
+                    completion_tokens=usage_out.get("completion_tokens"),
+                    cache_read_tokens=usage_out.get("cache_read_tokens", 0),
+                    cache_write_tokens=usage_out.get("cache_write_tokens", 0),
+                )
 
         if not content:
             raise Exception("Empty content in LLM response")

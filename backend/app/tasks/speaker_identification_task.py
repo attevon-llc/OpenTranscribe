@@ -34,6 +34,7 @@ from app.models.media import TranscriptSegment
 from app.services.file_provenance import llm_facts
 from app.services.file_provenance import record_stage
 from app.services.llm_service import LLMService
+from app.services.llm_usage import llm_usage_run
 from app.services.metadata_speaker_extractor import MetadataSpeakerExtractor
 from app.services.metadata_speaker_extractor import build_cross_reference_context
 from app.services.metadata_speaker_extractor import cross_reference_attributes
@@ -706,14 +707,15 @@ def _generate_predictions(
         logger.info(f"Using LLM output language: {output_language}")
 
         provenance = llm_facts(llm_service.config)
-        predictions = _run_llm_identification(
-            llm_service,
-            full_transcript,
-            speaker_segments,
-            known_speakers,
-            output_language,
-            _with_gender_context(metadata_context, gender_context, llm_service.config),
-        )
+        with llm_usage_run("speaker_id", file_id=file_id):
+            predictions = _run_llm_identification(
+                llm_service,
+                full_transcript,
+                speaker_segments,
+                known_speakers,
+                output_language,
+                _with_gender_context(metadata_context, gender_context, llm_service.config),
+            )
         if not predictions.get("error"):
             predictions["llm_provenance"] = provenance
 

@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+
 ### Changed
 
 - The OpenSearch voiceprint write guard now re-checks the recording's own consent state on every write

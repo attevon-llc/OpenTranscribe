@@ -172,7 +172,10 @@
   async function saveSystemSummary() {
     systemSummaryLoading = true;
     try {
-      const res = await axiosInstance.put('/admin/system/ai-summary', { enabled: systemSummaryEnabled });
+      // `enabled` is a query parameter on this route (a JSON body is refused with a 422).
+      const res = await axiosInstance.put('/admin/system/ai-summary', null, {
+        params: { enabled: systemSummaryEnabled }
+      });
       systemSummaryEnabled = res.data.ai_summary_enabled;
       const state = systemSummaryEnabled ? $t('common.enabled') : $t('common.disabled');
       toastStore.success(`${$t('settings.llm.systemSummary')}: ${state}`, 3000);

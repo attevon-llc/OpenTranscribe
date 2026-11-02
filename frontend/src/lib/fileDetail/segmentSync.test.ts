@@ -171,8 +171,8 @@ describe('renameSpeakersInFile', () => {
   });
 
   it('matches by uuid alone when label is undefined (issue #603 regression pin)', () => {
-    // `handleSpeakerProcessingCompleteEvent`'s websocket backstop
-    // (`routes/files/[id]/+page.svelte`) calls `applySpeakerRename(speakerUuid, speakerLabel,
+    // The `speaker-processing-complete` websocket backstop
+    // (`lib/fileDetail/speakerEvents.ts`) calls `applySpeakerRename(speakerUuid, speakerLabel,
     // ...)` with `speakerLabel = speakerList.find(s => s.uuid === speakerUuid)?.name` — which
     // is `undefined` whenever the renamed speaker isn't (yet) in the locally-loaded
     // `speakerList`. `matchesRename` must still find the segment on `rename.uuid` alone; a

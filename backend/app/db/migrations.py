@@ -705,6 +705,32 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE conname = 'speaker_identity_source_user_id_fkey')"
     )
 
+    # v450: legal acceptance context + speaker_profile.last_interaction_at. Keyed on the CHECK the
+    # revision creates last, and on the profile column (same transaction, but both are cheap).
+    has_legal_acceptance_context = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_legal_acceptance_scope')"
+    ) and _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'speaker_profile' AND column_name = 'last_interaction_at')"
+    )
+
+    # v451: legal acceptance survives user deletion. Keyed on the guard trigger (created last),
+    # the SET NULL rule of the user FK, and the subject CHECK: a column without its trigger
+    # could keep an IP after erasure, so such a database re-runs the revision.
+    has_legal_acceptance_survival = (
+        _check_exists(
+            "SELECT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname = 'trg_legal_acceptance_guard')"
+        )
+        and _check_exists(
+            "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE contype = 'f' "
+            "AND conrelid = 'legal_acceptance'::regclass AND confrelid = '\"user\"'::regclass "
+            "AND confdeltype = 'n')"
+        )
+        and _check_exists(
+            "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_legal_acceptance_subject')"
+        )
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -774,9 +800,8 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_legal_acceptance
         and has_takedown_origin
     )
-    # v449: same as v448 plus speaker.identity_source. The newest revision on this chain, so
-    # this is the top of the ladder.
-    if (
+    # Bound to a name: v450 onward are each v449's fingerprint plus one more probe.
+    matches_v449 = (
         matches_v442
         and has_takedown_notice
         and has_takedown_notification
@@ -785,7 +810,15 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_content_hold
         and has_task_active_unique
         and has_identity_source
-    ):
+    )
+    # v451: same as v450 plus the survival trigger. The top of the ladder.
+    if matches_v449 and has_legal_acceptance_context and has_legal_acceptance_survival:
+        return "v451_legal_acceptance_survives_user_deletion"
+    # v450: same as v449 plus the legal acceptance context.
+    if matches_v449 and has_legal_acceptance_context:
+        return "v450_legal_acceptance_context_and_profile_interaction"
+    # v449: same as v448 plus speaker.identity_source.
+    if matches_v449:
         return "v449_add_speaker_identity_source"
     # v448: same as v447 plus the one-active-row-per-file-step guard.
     if (

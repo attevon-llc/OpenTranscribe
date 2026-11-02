@@ -6389,5 +6389,12 @@
   "privacy.purge.scopeMine": "le tue registrazioni",
   "privacy.speakerNotice.voiceprintsOffTitle": "Il riconoscimento dei parlanti è disattivato.",
   "privacy.speakerNotice.voiceprintsOffBody": "I suggerimenti di nomi basati sulla voce e i cluster di parlanti non sono disponibili. I tuoi parlanti con nome e i profili vengono mantenuti.",
-  "privacy.speakerNotice.openSettings": "Apri le impostazioni"
+  "privacy.speakerNotice.openSettings": "Apri le impostazioni",
+  "legal.orgAcceptance.title": "Accettazione dell’organizzazione",
+  "legal.orgAcceptance.description": "Come amministratore dell’organizzazione puoi accettare un documento per conto della tua organizzazione. La registrazione indica l’organizzazione e te come persona che ha accettato.",
+  "legal.orgAcceptance.acceptForOrg": "Accetta per l’organizzazione",
+  "legal.orgAcceptance.acceptedOn": "Accettato per l’organizzazione il {{date}}",
+  "legal.orgAcceptance.failed": "Non è stato possibile salvare l’accettazione. Ricarica la pagina e riprova.",
+  "legal.errors.orgAcceptanceForbidden": "Solo un amministratore di questa organizzazione può accettare per suo conto.",
+  "legal.retention.erasedRecord": "Account eliminato (registrazione conservata, pseudonimizzata)"
 }

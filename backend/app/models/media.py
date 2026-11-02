@@ -571,6 +571,12 @@ class SpeakerProfile(Base):
     last_embedding_update: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # When a person last linked, unlinked, edited or decided on this voiceprint (v450). Written
+    # only by services/speaker_profile_activity (creation is the first
+    # interaction, hence the default); maintenance never moves it (updated_at does).
+    last_interaction_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True, default=func.now()
+    )
 
     # Avatar image path in MinIO
     avatar_path: Mapped[str | None] = mapped_column(String(512), nullable=True)

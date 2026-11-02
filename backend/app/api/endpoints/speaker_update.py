@@ -27,6 +27,7 @@ from app.services.opensearch_service import get_speaker_embedding
 from app.services.permission_service import file_ids_in_scope
 from app.services.privacy import policy as privacy_policy
 from app.services.privacy.redact_view import PrivacyView
+from app.services.speaker_profile_activity import touch_profile_interaction
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.utils.db_helpers import org_stamp_is
 from app.utils.speaker_identity_detail import ORIGIN_PROFILE_ASSIGNED
@@ -124,6 +125,7 @@ def auto_create_or_assign_profile(
             lift_profile_blacklist(db, int(speaker.id), int(existing_profile.id))
             # Assign speaker to existing profile
             speaker.profile_id = existing_profile.id
+            touch_profile_interaction(db, [existing_profile.id, old_profile_id], "human_link")
             # A person typed this name (issue #1280). The request that saved the name already
             # recorded it, with the suggestion it accepted; this step must not overwrite that.
             record_human_identity(
@@ -169,6 +171,7 @@ def auto_create_or_assign_profile(
 
             # Assign speaker to new profile
             speaker.profile_id = new_profile.id
+            touch_profile_interaction(db, [new_profile.id, old_profile_id], "human_link")
             record_human_identity(
                 speaker, user_id=user_id, origin=ORIGIN_PROFILE_CREATED, keep_recorded=True
             )
@@ -329,6 +332,7 @@ def _apply_high_confidence_match(
     if trigger["profile_id"]:
         old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
         speaker.profile_id = trigger["profile_id"]  # type: ignore[assignment]
+        touch_profile_interaction(db, [int(trigger["profile_id"]), old_profile_id], "auto_link")
         _update_profile_embedding(db, speaker.id, old_profile_id, int(trigger["profile_id"]))
 
     tracker.record(int(speaker.media_file_id), before, canonical_speaker_label_for_row(speaker))

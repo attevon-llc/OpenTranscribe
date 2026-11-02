@@ -620,6 +620,76 @@ def teardown_seed(
     td.raise_if_failed()
 
 
+# --------------------------------------------------------------------------- legal acceptance
+#
+# ``legal_acceptance`` is a DOCUMENTED SURVIVOR of account deletion (v451): the row stays,
+# pseudonymised, as evidence of which terms applied. It is not exempt from the scan; its kept
+# state is asserted exactly by :func:`legal_acceptance_survivor_findings`.
+
+LEGAL_SEED_IP = "198.51.100.23"
+LEGAL_SEED_UA = "DelresLegalAgent/1.0"
+
+
+def seed_legal_acceptance(conn: Connection, user_id: int) -> str:
+    """One acceptance with an IP and user agent. Returns the row uuid."""
+    import uuid as uuid_pkg
+
+    row_uuid = str(uuid_pkg.uuid4())
+    conn.execute(
+        text(
+            "INSERT INTO legal_acceptance (uuid, user_id, document_key, version, sha256,"
+            " ip_address, user_agent, locale) VALUES (:id, :u, 'delres-terms', '1', :sha,"
+            " :ip, :ua, 'en')"
+        ),
+        {"id": row_uuid, "u": user_id, "sha": "d" * 64, "ip": LEGAL_SEED_IP, "ua": LEGAL_SEED_UA},
+    )
+    return row_uuid
+
+
+def legal_acceptance_survivor_findings(
+    conn: Connection, row_uuid: str, personal: list[str]
+) -> list[str]:
+    """Findings unless the row survives in exactly the documented pseudonymised state.
+
+    Kept: the row, its document fields, ``subject_user_uuid``, the retention dates. Not kept:
+    ``user_id``, ``ip_address``, ``user_agent``, and any trace of ``personal`` (email, name,
+    seeded IP / UA) anywhere in the row's text.
+    """
+    row = (
+        conn.execute(
+            text(
+                "SELECT user_id, ip_address, user_agent, subject_erased_at, retain_until,"
+                " la::text AS whole FROM legal_acceptance la WHERE uuid = :u"
+            ),
+            {"u": row_uuid},
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if row is None:
+        return ["postgres: legal_acceptance evidence row was deleted with the account"]
+    findings = []
+    if row["user_id"] is not None:
+        findings.append("postgres: legal_acceptance still names the deleted account")
+    if row["ip_address"] is not None or row["user_agent"] is not None:
+        findings.append("postgres: legal_acceptance kept the IP address or user agent")
+    if row["subject_erased_at"] is None or row["retain_until"] is None:
+        findings.append("postgres: legal_acceptance has no retention clock")
+    findings += [
+        f"postgres: legal_acceptance holds personal data {p!r}"
+        for p in personal
+        if p and p in row["whole"]
+    ]
+    return findings
+
+
+def delete_legal_seed(conn: Connection, row_uuid: str) -> None:
+    """Remove a seeded evidence row. The guard trigger refuses this by design, so teardown
+    disables triggers for its own transaction (``session_replication_role``)."""
+    conn.execute(text("SET LOCAL session_replication_role = replica"))
+    conn.execute(text("DELETE FROM legal_acceptance WHERE uuid = :u"), {"u": row_uuid})
+
+
 def _delete_throwaway_user(engine: Any, user_id: int) -> None:
     """Delete a throwaway account the way ``DELETE /api/users/{uuid}`` does, if it exists."""
     from sqlalchemy.orm import Session

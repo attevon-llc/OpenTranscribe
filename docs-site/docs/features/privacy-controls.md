@@ -369,6 +369,29 @@ source IP and user agent. Events hold counts and ids only, never a name.
 
 Every purge writes audit events (see below) and records counts only, never a name.
 
+## Voiceprint retention (opt-in)
+
+An operator can have voiceprints destroyed once nobody has used them for a set time. It is off by
+default: the system setting `privacy.voiceprint_retention_months` is `0`. A value such as `24`
+turns on a daily task (`privacy.voiceprint_retention_sweep`, 05:25).
+
+A voiceprint is **used** when a person links or unlinks a speaker to a profile, edits the profile,
+accepts or rejects a suggestion for it, or when an automatic voiceprint match writes a link. Viewing
+a profile, computing a suggestion and maintenance (re-embedding, cluster rebuilds, migrations,
+purges) do not count. The time is `speaker_profile.last_interaction_at`. Because automatic matches
+count, a voice that keeps being recognised stays in use.
+
+A file is due when it was uploaded before the cutoff, **every** profile linked to one of its
+speakers was last used before the cutoff (an unlinked speaker counts as due), nobody holds the file
+(legal or organization hold), and it still has voiceprints. Due files go to the file-scoped
+voiceprint purge (at most 200 per day). That purge removes the files' speaker voiceprints and
+recomputes each affected profile from its remaining speakers; it never deletes a profile. A stale
+profile left with no speakers is **listed** in the task result for review, not deleted: deleting a
+named person record is a human decision.
+
+The file-scoped purge ships separately; until it is installed the task logs that nothing was
+destroyed and returns `unavailable`.
+
 ## API reference
 
 All routes are under `/api`. Request and response shapes are in `backend/openapi.json`.

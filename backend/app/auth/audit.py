@@ -183,6 +183,7 @@ class AuditEventType(StrEnum):
 
     # An administrator acknowledged a versioned legal document (key, version, sha256 in details).
     LEGAL_ACKNOWLEDGED = "legal.acknowledged"
+    LEGAL_RECORDS_EXPIRED = "legal.records_expired"
 
     # A user saved or removed a third-party service credential of their own (issue #1204,
     # the pyannote.ai key). ``details`` names the provider and purpose only, NEVER the key.

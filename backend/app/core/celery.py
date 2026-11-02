@@ -261,6 +261,8 @@ celery_app = Celery(
         "app.tasks.rename_propagation_task",
         "app.tasks.redaction_task",
         "app.tasks.chat_retention",
+        "app.tasks.legal_retention",
+        "app.tasks.voiceprint_retention",
         "app.tasks.erasure_reconciliation",
         "app.tasks.privacy_purge_task",
         "app.tasks.privacy_label_resync_task",
@@ -597,6 +599,9 @@ celery_app.conf.update(
         "session.cap_sweep": {"queue": CeleryQueues.UTILITY},
         # Chat retention: one settings read, then bounded deletes. Utility — never gpu.
         "chat.retention_sweep": {"queue": CeleryQueues.UTILITY},
+        # Legal record / voiceprint retention: bounded selection + delete or dispatch. Utility.
+        "legal.acceptance_retention_sweep": {"queue": CeleryQueues.UTILITY},
+        "privacy.voiceprint_retention_sweep": {"queue": CeleryQueues.UTILITY},
         # Benchmark-timing bookkeeping (one Redis hash -> one DB row), dispatched with a
         # countdown after postprocess. Utility, so telemetry never takes a cpu slot.
         "pipeline_timing.flush_tail": {"queue": CeleryQueues.UTILITY},
@@ -727,6 +732,19 @@ celery_app.conf.update(
             # deadline it defends is one MONTH (Art. 12(3)) and the prompt path is
             # the hook in tasks/erasure_reconciliation.notify_hold_released.
             "schedule": crontab(minute=40, hour=4),
+            "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
+        },
+        "legal-acceptance-retention-sweep": {
+            "task": "legal.acceptance_retention_sweep",
+            # Daily at 05:10, after the 04:10-04:55 sweeps. Deletes pseudonymised legal
+            # acceptance records whose retain_until has passed (v451); a no-op otherwise.
+            "schedule": crontab(minute=10, hour=5),
+            "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
+        },
+        "voiceprint-retention-sweep": {
+            "task": "privacy.voiceprint_retention_sweep",
+            # Daily at 05:25. A no-op unless privacy.voiceprint_retention_months > 0.
+            "schedule": crontab(minute=25, hour=5),
             "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
         },
         "session-cap-sweep": {

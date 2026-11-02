@@ -1485,6 +1485,19 @@ DEFAULT_CHAT_MESSAGES_PER_HOUR = 120  # chat.limits.messages_per_hour
 DEFAULT_CHAT_MAX_CONCURRENT_STREAMS = 6  # chat.limits.max_concurrent_streams
 DEFAULT_CHAT_RETENTION_DAYS = 0  # chat.retention_days (0 = keep forever)
 
+# Legal acceptance records of a deleted account are kept, pseudonymised, for this many days
+# after the deletion (v451), then deleted by tasks/legal_retention.py. The database function
+# legal_acceptance_retention_days() reads the setting and applies the floor; v451 freezes a copy
+# of both numbers and its consistency test asserts they still agree. 0 is not allowed: a value
+# below the floor reads as the floor.
+LEGAL_ACCEPTANCE_RETENTION_DAYS_KEY = "legal.acceptance_retention_days"
+DEFAULT_LEGAL_ACCEPTANCE_RETENTION_DAYS = 2190  # 6 years
+MIN_LEGAL_ACCEPTANCE_RETENTION_DAYS = 365
+
+# Opt-in voiceprint retention (tasks/voiceprint_retention.py). 0 = off; an operator sets e.g. 24.
+PRIVACY_VOICEPRINT_RETENTION_MONTHS_KEY = "privacy.voiceprint_retention_months"
+DEFAULT_PRIVACY_VOICEPRINT_RETENTION_MONTHS = 0
+
 # W2.4: the aggregation tier's speaker-facet/speaker-stats fixes. Both default
 # OFF — they change what an existing question mechanism answers (facet scope)
 # or add a new one (talk-time stats), and either is a measurement-gated rollout

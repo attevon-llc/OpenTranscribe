@@ -33,6 +33,7 @@ from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import derived_profile_genders
 from app.services.speaker_matching_service import ConfidenceLevel
 from app.services.speaker_matching_service import SpeakerMatchingService
+from app.services.speaker_profile_activity import touch_profile_interaction
 from app.services.speaker_profile_rename import apply_profile_name_to_speakers
 from app.tasks.speaker_update_task import process_speaker_update_background
 from app.utils.db_helpers import org_stamp_is
@@ -374,6 +375,7 @@ def update_speaker_profile(
         if description is not None:
             profile.description = description  # type: ignore[assignment]
 
+        touch_profile_interaction(db, int(profile.id), "human_edit")
         db.commit()
         db.refresh(profile)
 
@@ -940,6 +942,7 @@ async def upload_profile_avatar(
 
         # Update profile
         profile.avatar_path = object_name  # type: ignore[assignment]
+        touch_profile_interaction(db, int(profile.id), "human_edit")
         db.commit()
         db.refresh(profile)
 
@@ -976,6 +979,7 @@ def delete_profile_avatar(
                 logger.warning(f"Failed to delete avatar file for profile {profile.uuid}")
 
             profile.avatar_path = None  # type: ignore[assignment]
+            touch_profile_interaction(db, int(profile.id), "human_edit")
             db.commit()
 
         return None
@@ -1026,6 +1030,7 @@ def confirm_profile_gender(
         )
     )
 
+    touch_profile_interaction(db, int(profile.id), "human_edit")
     db.commit()
 
     return {

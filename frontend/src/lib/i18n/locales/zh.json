@@ -6389,5 +6389,12 @@
   "privacy.purge.scopeMine": "您自己的录音",
   "privacy.speakerNotice.voiceprintsOffTitle": "说话人识别已关闭。",
   "privacy.speakerNotice.voiceprintsOffBody": "基于声音的姓名建议和说话人聚类不可用。您已命名的说话人和档案会保留。",
-  "privacy.speakerNotice.openSettings": "打开设置"
+  "privacy.speakerNotice.openSettings": "打开设置",
+  "legal.orgAcceptance.title": "组织接受",
+  "legal.orgAcceptance.description": "作为组织管理员，您可以代表您的组织接受文档。记录中会注明该组织以及您是接受人。",
+  "legal.orgAcceptance.acceptForOrg": "代表组织接受",
+  "legal.orgAcceptance.acceptedOn": "已于 {{date}} 代表组织接受",
+  "legal.orgAcceptance.failed": "无法保存接受记录。请重新加载页面后重试。",
+  "legal.errors.orgAcceptanceForbidden": "只有此组织的管理员才能代表其接受。",
+  "legal.retention.erasedRecord": "已删除的账户（记录已保留并假名化）"
 }

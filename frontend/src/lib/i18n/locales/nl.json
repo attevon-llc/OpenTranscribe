@@ -6389,5 +6389,12 @@
   "privacy.purge.scopeMine": "uw eigen opnames",
   "privacy.speakerNotice.voiceprintsOffTitle": "Sprekerherkenning staat uit.",
   "privacy.speakerNotice.voiceprintsOffBody": "Stemgebaseerde naamsuggesties en sprekerclusters zijn niet beschikbaar. Uw benoemde sprekers en profielen blijven behouden.",
-  "privacy.speakerNotice.openSettings": "Instellingen openen"
+  "privacy.speakerNotice.openSettings": "Instellingen openen",
+  "legal.orgAcceptance.title": "Acceptatie door de organisatie",
+  "legal.orgAcceptance.description": "Als beheerder van de organisatie kunt u een document namens uw organisatie accepteren. De vastlegging noemt de organisatie en u als degene die accepteerde.",
+  "legal.orgAcceptance.acceptForOrg": "Accepteren voor de organisatie",
+  "legal.orgAcceptance.acceptedOn": "Geaccepteerd voor de organisatie op {{date}}",
+  "legal.orgAcceptance.failed": "De acceptatie kon niet worden opgeslagen. Laad de pagina opnieuw en probeer het nog eens.",
+  "legal.errors.orgAcceptanceForbidden": "Alleen een beheerder van deze organisatie kan namens haar accepteren.",
+  "legal.retention.erasedRecord": "Verwijderd account (vastlegging bewaard, gepseudonimiseerd)"
 }

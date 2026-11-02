@@ -34,9 +34,11 @@ def test_v441_revision_chain():
 
 
 def test_table_shape(db_session):
+    """The v441 columns are all present. Later revisions add columns (v450) and swap the user
+    UNIQUE for a partial index (v450); their own consistency tests pin those shapes."""
     insp = inspect(db_session.connection())
     cols = {c["name"]: c for c in insp.get_columns("legal_acceptance")}
-    assert set(cols) == {
+    assert {
         "id",
         "uuid",
         "user_id",
@@ -45,13 +47,11 @@ def test_table_shape(db_session):
         "sha256",
         "accepted_at",
         "ip_address",
-    }
+    } <= set(cols)
     assert cols["ip_address"]["nullable"] is True
     assert cols["accepted_at"]["type"].timezone is True
-    uniques = {tuple(u["column_names"]) for u in insp.get_unique_constraints("legal_acceptance")}
-    assert ("user_id", "document_key", "sha256") in uniques
-    fk = insp.get_foreign_keys("legal_acceptance")[0]
-    assert fk["referred_table"] == "user" and fk["options"].get("ondelete") == "CASCADE"
+    fks = [f for f in insp.get_foreign_keys("legal_acceptance") if f["referred_table"] == "user"]
+    assert len(fks) == 1 and fks[0]["constrained_columns"] == ["user_id"]
 
 
 @pytest.mark.ddl_exclusive

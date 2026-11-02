@@ -6389,5 +6389,12 @@
   "privacy.purge.scopeMine": "your own recordings",
   "privacy.speakerNotice.voiceprintsOffTitle": "Speaker recognition is turned off.",
   "privacy.speakerNotice.voiceprintsOffBody": "Voice-based name suggestions and speaker clusters are not available. Your named speakers and profiles are kept.",
-  "privacy.speakerNotice.openSettings": "Open settings"
+  "privacy.speakerNotice.openSettings": "Open settings",
+  "legal.orgAcceptance.title": "Organization acceptance",
+  "legal.orgAcceptance.description": "As an organization administrator you can accept a document on behalf of your organization. The record names the organization and you as the person who accepted.",
+  "legal.orgAcceptance.acceptForOrg": "Accept for the organization",
+  "legal.orgAcceptance.acceptedOn": "Accepted for the organization on {{date}}",
+  "legal.orgAcceptance.failed": "The acceptance could not be saved. Reload the page and try again.",
+  "legal.errors.orgAcceptanceForbidden": "Only an administrator of this organization can accept on its behalf.",
+  "legal.retention.erasedRecord": "Deleted account (record kept, pseudonymised)"
 }

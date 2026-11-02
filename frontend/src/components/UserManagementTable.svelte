@@ -1,18 +1,17 @@
 <script>
   import { formatDateTime } from '$lib/utils/formatting';
   import { onMount } from 'svelte';
-  import axiosInstance from '../lib/axios';
+  import axiosInstance from '$lib/axios';
   import { AdminApi } from '$lib/api/admin';
   import {
     AUTH_TYPES,
     INVITE_EXPIRY_MIN_HOURS,
     INVITE_EXPIRY_MAX_HOURS
   } from '$lib/api/invitations';
-  import { user } from '../stores/auth';
-  import { toastStore } from '../stores/toast';
+  import { user } from '$stores/auth';
+  import { toastStore } from '$stores/toast';
   import ConfirmationModal from './ConfirmationModal.svelte';
   import { createConfirmDialog } from '$lib/confirmDialog';
-  import BaseModal from './ui/BaseModal.svelte';
   import LinkIdentityModal from './LinkIdentityModal.svelte';
   import PasswordResetModal from '$components/users/PasswordResetModal.svelte';
   import { t, locale } from '$stores/locale';

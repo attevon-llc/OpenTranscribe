@@ -21,18 +21,18 @@ import pytest
 
 from app.services.search import hybrid_search_service as hss
 from app.services.search import search_cache
-from app.services.search import search_infra
 from app.services.search.search_cache import _make_cache_key
+from tests.helpers import reset_search_infrastructure_state
 
 pytestmark = [pytest.mark.unit, pytest.mark.xdist_group("search_cache_state")]
 
 
 @pytest.fixture(autouse=True)
 def _clean_cache_state():
-    search_infra.reset_infrastructure_state()
+    reset_search_infrastructure_state()
     search_cache._search_cache.clear()
     yield
-    search_infra.reset_infrastructure_state()
+    reset_search_infrastructure_state()
     search_cache._search_cache.clear()
 
 

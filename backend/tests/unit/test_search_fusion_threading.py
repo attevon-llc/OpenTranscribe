@@ -35,6 +35,7 @@ from app.services.search.fusion import NORMALIZATION
 from app.services.search.fusion import RRF
 from app.services.search.fusion import FusionConfig
 from app.services.search.fusion import search_pipeline_id
+from tests.helpers import reset_search_infrastructure_state
 
 pytestmark = [pytest.mark.unit, pytest.mark.xdist_group("search_fusion_state")]
 
@@ -65,10 +66,10 @@ class _Recorder:
 @pytest.fixture(autouse=True)
 def _clean_pipeline_state():
     """No verified-pipeline id survives into or out of a test in this module."""
-    search_infra.reset_infrastructure_state()
+    reset_search_infrastructure_state()
     search_cache._search_cache.clear()
     yield
-    search_infra.reset_infrastructure_state()
+    reset_search_infrastructure_state()
     search_cache._search_cache.clear()
 
 
@@ -251,7 +252,7 @@ class TestVerifiedPipelineCache:
 
         assert seen == [_NORM.slug()]
 
-    def test_reset_infrastructure_state_clears_every_cached_pipeline_id(self, monkeypatch):
+    def test_reset_search_infrastructure_state_clears_every_cached_pipeline_id(self, monkeypatch):
         """A stale id survives a config change and the next request trusts it."""
         seen = _record_ensure_calls(monkeypatch)
 
@@ -260,14 +261,14 @@ class TestVerifiedPipelineCache:
         assert len(seen) == 2
         assert search_infra._verified_pipelines
 
-        search_infra.reset_infrastructure_state()
+        reset_search_infrastructure_state()
 
         assert search_infra._verified_pipelines == set()
         search_infra.ensure_fusion_pipeline(FusionConfig(strategy=RRF))
         search_infra.ensure_fusion_pipeline(_NORM)
         assert seen == ["rrf-30", _NORM.slug(), "rrf-30", _NORM.slug()]
 
-    def test_reset_infrastructure_state_also_clears_the_index_flag(self, monkeypatch):
+    def test_reset_search_infrastructure_state_also_clears_the_index_flag(self, monkeypatch):
         """The index check shares the reset; #363 must not have dropped it."""
         monkeypatch.setattr(search_infra, "ensure_chunks_index_exists", lambda: True)
         monkeypatch.setattr(search_infra, "ensure_search_pipeline_exists", lambda fusion=None: True)
@@ -275,6 +276,6 @@ class TestVerifiedPipelineCache:
         search_infra._ensure_infrastructure()
         assert search_infra._index_verified is True
 
-        search_infra.reset_infrastructure_state()
+        reset_search_infrastructure_state()
 
         assert search_infra._index_verified is False

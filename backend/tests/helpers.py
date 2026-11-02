@@ -181,3 +181,17 @@ def detail_dict(exc: HTTPException | DomainError) -> dict[str, Any]:
     detail: object = exc.detail
     assert isinstance(detail, dict), f"expected a dict detail, got {type(detail).__name__}"
     return detail
+
+
+def reset_search_infrastructure_state() -> None:
+    """Forget which chunks index and fusion pipelines this process has verified.
+
+    The verification cache is per process and nothing in app code needs to drop it (an
+    index recreation leaves the index present, and pipelines are cluster-level), so only
+    tests that repoint index names or stub the existence checks reset it.
+    """
+    from app.services.search import search_infra
+
+    with search_infra._state_lock:
+        search_infra._index_verified = False
+        search_infra._verified_pipelines.clear()

@@ -8,6 +8,8 @@ own and shared sources, not only system ones.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -15,24 +17,23 @@ import pytest
 from app.services.protected_media_plugins.mediacms import MediacmsProvider
 from app.services.protected_media_plugins.mediacms import host_matches
 
+_VECTORS = json.loads(
+    (Path(__file__).resolve().parents[1] / "fixtures" / "mediacms_host_vectors.json").read_text(
+        encoding="utf-8"
+    )
+)["vectors"]
+
+# Candidates a browser URL can never produce, so only the backend sees them.
+_BACKEND_ONLY = [
+    ("m.example.com", "evil@m.example.com", "https", False),
+    ("m.example.com", "m.example.com:notaport", "https", False),
+]
+
 
 @pytest.mark.parametrize(
     ("configured", "candidate", "scheme", "expected"),
-    [
-        ("m.example.com", "m.example.com", "https", True),
-        ("M.Example.com", "m.example.COM", "https", True),
-        ("m.example.com", "m.example.com:443", "https", True),
-        ("m.example.com:443", "m.example.com", "https", True),
-        ("m.example.com", "m.example.com:80", "http", True),
-        ("m.example.com:8443", "m.example.com:8443", "https", True),
-        ("m.example.com:8443", "m.example.com", "https", False),
-        ("m.example.com", "m.example.com:8443", "https", False),
-        ("m.example.com", "m.example.com:80", "https", False),
-        ("m.example.com", "other.example.com", "https", False),
-        ("m.example.com", "evil@m.example.com", "https", False),
-        ("m.example.com", "m.example.com:notaport", "https", False),
-        ("", "m.example.com", "https", False),
-    ],
+    [(v["configured"], v["candidate"], v["scheme"], v["expected"]) for v in _VECTORS]
+    + _BACKEND_ONLY,
 )
 def test_one_identity_rule(configured, candidate, scheme, expected):
     assert host_matches(configured, candidate, scheme) is expected

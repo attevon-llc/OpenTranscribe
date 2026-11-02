@@ -479,6 +479,15 @@ def migrate_from_env(
     except Exception as e:
         logger.error("Migration failed: %s", e, exc_info=True)
         db.rollback()
+        _audit_auth_config_event(
+            request,
+            actor_id,
+            actor_email,
+            action="auth_config_migrate_from_env",
+            outcome=AuditOutcome.FAILURE,
+            error_code="AUTH_CONFIG_MIGRATE_FAILED",
+            details={},
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An internal error occurred. Please try again.",

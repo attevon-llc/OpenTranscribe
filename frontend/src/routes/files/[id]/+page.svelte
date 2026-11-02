@@ -67,6 +67,7 @@
   import { getAppBaseUrl } from '$lib/utils/url';
   import type { PlaybackMode } from '$lib/api/mediaUrl';
   import { createMediaStream } from '$lib/fileDetail/mediaStream';
+  import { applyReprocessStart, reprocessRegeneratesSummary } from '$lib/fileDetail/reprocess';
   import Spinner from '../../../components/ui/Spinner.svelte';
   import FileDetailSkeleton from '../../../components/FileDetailSkeleton.svelte';
 
@@ -692,7 +693,10 @@
     seekToTime(seekTime);
   }
 
-  async function handleReprocess(event: CustomEvent) {
+  // Handle reprocess event from the SelectiveReprocessModal (header button). The modal has
+  // already made the API call; this is the optimistic UI, and websocket notifications
+  // carry the rest (no immediate refetch).
+  async function handleReprocessFromModal(event: CustomEvent<{ fileId: string; stages?: string[] }>) {
     const { fileId: reprocessFileId, stages } = event.detail;
 
     try {
@@ -701,34 +705,13 @@
       // Reset notification processing state for reprocessing
       lastProcessedNotificationState = '';
 
-      // Only set processing state for destructive stages that change file status
-      const isDestructive = !stages || stages.includes('transcription') || stages.includes('rediarize');
-
       if (file) {
-        if (isDestructive) {
-          file.status = 'processing';
-          file.progress = 0;
-        }
-
-        // Only clear transcript data if full transcription is being rerun
-        if (!stages || stages.includes('transcription')) {
-          file.transcript_segments = [];
-          file.has_summary = false;
-          file.summary_opensearch_id = null;
-        }
-
-        // Set summary generating state if summarization is in the stages
-        if (stages && stages.includes('summarization') && llmAvailable) {
+        file = applyReprocessStart(file, stages);
+        if (reprocessRegeneratesSummary(stages, llmAvailable)) {
           summaryGenerating = true;
           generatingSummary = true;
         }
-
-        file = file; // Trigger reactivity
       }
-
-      // API call is already made by the SelectiveReprocessModal
-      // Just handle the optimistic UI update here
-
     } catch (error) {
       console.error('Error handling reprocess event:', error);
 
@@ -740,56 +723,6 @@
       reprocessing = false;
     }
   }
-
-  // Handle reprocess event from the SelectiveReprocessModal (header button)
-  async function handleReprocessFromModal(event: CustomEvent) {
-    const { fileId: reprocessFileId, stages } = event.detail;
-
-    try {
-      reprocessing = true;
-
-      // Reset notification processing state for reprocessing
-      lastProcessedNotificationState = '';
-
-      // Only set processing state for destructive stages that change file status
-      const isDestructive = stages?.includes('transcription') || stages?.includes('rediarize');
-
-      if (file) {
-        if (isDestructive) {
-          file.status = 'processing';
-          file.progress = 0;
-        }
-
-        // Only clear transcript data if full transcription is being rerun
-        if (stages && stages.includes('transcription')) {
-          file.transcript_segments = [];
-          file.has_summary = false;
-          file.summary_opensearch_id = null;
-        }
-
-        // Set summary generating state if summarization is in the stages
-        if (stages && stages.includes('summarization') && llmAvailable) {
-          summaryGenerating = true;
-          generatingSummary = true;
-        }
-
-        file = file; // Trigger reactivity
-      }
-
-      // Don't immediately fetch - let WebSocket notifications handle updates
-
-    } catch (error) {
-      console.error('Error handling reprocess event:', error);
-
-      // Revert optimistic update on error
-      if (file) {
-        await fetchFileDetails(reprocessFileId);
-      }
-    } finally {
-      reprocessing = false;
-    }
-  }
-
 
   /** Say what happened to tag/collection suggestions queued alongside a summary, if anything. */
   function announceTopicExtraction(res: SummarizeResponse): void {

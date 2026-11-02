@@ -8,13 +8,10 @@
   import type { TranscriptSegment } from '$lib/types/media';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
-  import axiosInstance from '$lib/axios';
   import { listProfiles } from '$lib/api/speakerClusters';
   import { apiCache, CacheTTL } from '$lib/apiCache';
-  import { toastStore } from '$stores/toast';
-  import BaseModal from '$components/ui/BaseModal.svelte';
-  import { portal } from '$lib/actions/portal';
-  import { isPlaceholderSpeakerName, nextPlaceholderSpeakerName } from '$lib/utils/speakerNames';
+  import SegmentNewSpeakerModal from '$components/SegmentNewSpeakerModal.svelte';
+  import { nextPlaceholderSpeakerName } from '$lib/utils/speakerNames';
   import {
     confirmedSpeakerName,
     inlineNameCheck,
@@ -44,7 +41,6 @@
   let portalContainer: HTMLDivElement | null = null;
   let menuPanel: { destroy: () => void } | null = null;
   let isOpen = false;
-  let isCreatingSpeaker = false;
 
   // The full wire shape (`suggested_name` / `suggestion_source` / `confidence` /
   // `verified`) is declared on `TranscriptSegment['speaker']` in `$lib/types/media.ts`,
@@ -127,7 +123,6 @@
   // offered a field, and nothing in the segment row changed, so it read as a no-op —
   // and every repeat click minted another orphan SPEAKER_NN row.
   let showCreateModal = false;
-  let newSpeakerName = '';
   let newSpeakerSlot = '';
 
   function openCreateSpeakerModal() {
@@ -136,66 +131,29 @@
     // it open would float it over the dialog.
     closeDropdown();
     newSpeakerSlot = getNextSpeakerSlot();
-    newSpeakerName = '';
     showCreateModal = true;
   }
 
   function closeCreateSpeakerModal() {
     showCreateModal = false;
-    newSpeakerName = '';
   }
 
-  // A typed name that is itself `SPEAKER_NN` is a placeholder, not an identity —
-  // accepting it would recreate exactly the state #740 exists to stop.
-  $: newSpeakerNameIsPlaceholder =
-    newSpeakerName.trim() !== '' && isPlaceholderSpeakerName(newSpeakerName);
-  $: canCreateSpeaker =
-    !isCreatingSpeaker && newSpeakerName.trim() !== '' && !newSpeakerNameIsPlaceholder;
+  function handleSpeakerCreated(event: CustomEvent<{ speaker: Speaker }>) {
+    const newSpeaker = event.detail.speaker;
 
-  async function confirmCreateSpeaker() {
-    const typedName = newSpeakerName.trim();
-    if (!mediaFileUuid || !canCreateSpeaker) return;
+    // Notify the parent that a new speaker was created.
+    dispatch('speakerCreated', { speaker: newSpeaker });
 
-    isCreatingSpeaker = true;
-    try {
-      // `name` keeps the diarization slot (speaker colours hash it, and the
-      // named-vs-auto ordering below reads it); the human's label goes in
-      // `display_name`, which is also what marks the new row verified server-side.
-      const response = await axiosInstance.post(`/speakers?media_file_uuid=${mediaFileUuid}`, {
-        name: newSpeakerSlot,
-        display_name: typedName
-      });
-
-      const newSpeaker = response.data;
-
-      // Dispatch event to notify parent that a new speaker was created
-      dispatch('speakerCreated', { speaker: newSpeaker });
-
-      // Auto-select the new speaker for this segment. The speaker OBJECT rides
-      // along: the parent's optimistic patch resolves the uuid against
-      // `speakerList`, which cannot contain a speaker created a millisecond ago,
-      // so without it the segment renders "Unknown" until a refetch lands — the
-      // "I clicked Add speaker and nothing happened" report.
-      dispatch('change', {
-        segmentUuid: segment.uuid,
-        speakerUuid: newSpeaker.uuid,
-        speaker: newSpeaker
-      });
-
-      closeCreateSpeakerModal();
-    } catch (error) {
-      console.error('Failed to create new speaker:', error);
-      toastStore.error($t('common.somethingWentWrong'));
-    } finally {
-      isCreatingSpeaker = false;
-    }
-  }
-
-  function handleCreateModalKeydown(event: KeyboardEvent) {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      confirmCreateSpeaker();
-    }
+    // Auto-select the new speaker for this segment. The speaker OBJECT rides
+    // along: the parent's optimistic patch resolves the uuid against
+    // `speakerList`, which cannot contain a speaker created a millisecond ago,
+    // so without it the segment renders "Unknown" until a refetch lands — the
+    // "I clicked Add speaker and nothing happened" report.
+    dispatch('change', {
+      segmentUuid: segment.uuid,
+      speakerUuid: newSpeaker.uuid,
+      speaker: newSpeaker
+    });
   }
 
   /**
@@ -602,64 +560,13 @@
   </button>
 </div>
 
-<!--
-  Portaled to <body> deliberately. This component renders inside a transcript
-  segment's `<button class="segment-content">`, so an in-place dialog is both
-  invalid HTML (interactive content inside a button) and visually broken: the
-  backdrop's `position: fixed` resolved `width/height: 100%` against the 548px
-  segment row, not the viewport, so the dialog rendered as a strip wedged into
-  the transcript row with no backdrop and no way to use it (#740).
-
-  `closeOnBackdropClick={false}` because the dialog holds a half-typed name.
--->
-<div use:portal>
-  <BaseModal
-    isOpen={showCreateModal}
-    title={$t('speaker.newSpeakerTitle')}
-    size="sm"
-    closeOnBackdropClick={false}
-    onClose={closeCreateSpeakerModal}
-  >
-  <label class="new-speaker-field">
-    <span class="new-speaker-label">{$t('speaker.newSpeakerNameLabel')}</span>
-    <!-- svelte-ignore a11y-autofocus -->
-    <input
-      class="new-speaker-name-input"
-      type="text"
-      autofocus
-      maxlength="100"
-      bind:value={newSpeakerName}
-      on:keydown={handleCreateModalKeydown}
-      placeholder={$t('speaker.newSpeakerNamePlaceholder')}
-    />
-  </label>
-  {#if newSpeakerNameIsPlaceholder}
-    <p class="new-speaker-error">{$t('speaker.placeholderNameRejected')}</p>
-  {:else}
-    <p class="new-speaker-hint">{$t('speaker.newSpeakerSlotHint', { label: newSpeakerSlot })}</p>
-  {/if}
-  <svelte:fragment slot="footer">
-    <!-- `modal-button` / `modal-cancel-button` / `modal-primary-button` are the
-         global classes in `src/styles/form-elements.css`; the `create-speaker-*`
-         classes are selector hooks only and carry no styling of their own. -->
-    <button
-      type="button"
-      class="modal-button modal-cancel-button create-speaker-cancel"
-      on:click={closeCreateSpeakerModal}
-    >
-      {$t('common.cancel')}
-    </button>
-    <button
-      type="button"
-      class="modal-button modal-primary-button create-speaker-confirm"
-      on:click={confirmCreateSpeaker}
-      disabled={!canCreateSpeaker}
-    >
-      {isCreatingSpeaker ? $t('common.saving') : $t('speaker.addSpeaker')}
-    </button>
-  </svelte:fragment>
-</BaseModal>
-</div>
+<SegmentNewSpeakerModal
+  open={showCreateModal}
+  {mediaFileUuid}
+  speakerSlot={newSpeakerSlot}
+  on:created={handleSpeakerCreated}
+  on:close={closeCreateSpeakerModal}
+/>
 
 <style>
   .speaker-dropdown-container {
@@ -749,32 +656,5 @@
     height: 12px;
     flex-shrink: 0;
     color: var(--warning-color, #f59e0b);
-  }
-
-  .new-speaker-field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-  }
-
-  .new-speaker-label {
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--text-secondary);
-  }
-
-  /* The input itself is deliberately unstyled here: `src/styles/form-elements.css`
-     already themes every `input` for light and dark. */
-
-  .new-speaker-hint {
-    margin: 0.625rem 0 0;
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-  }
-
-  .new-speaker-error {
-    margin: 0.625rem 0 0;
-    font-size: 0.75rem;
-    color: var(--error-color);
   }
 </style>

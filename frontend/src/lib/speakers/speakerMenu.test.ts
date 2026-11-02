@@ -5,6 +5,7 @@ import {
   confirmedSpeakerName,
   inlineNameCheck,
   matchingProfileNames,
+  newSpeakerNameState,
   partitionSpeakers,
   pendingSuggestionOf,
   speakerMenuLabel,
@@ -110,5 +111,23 @@ describe('speakerMenuLabel', () => {
   });
   it('translates the effective name', () => {
     expect(speakerMenuLabel(spk({ name: 'SPEAKER_02' }), (n) => `<${n}>`)).toBe('<SPEAKER_02>');
+  });
+});
+
+describe('newSpeakerNameState', () => {
+  it('allows a real name', () => {
+    expect(newSpeakerNameState('Laura', false)).toEqual({ isPlaceholder: false, canCreate: true });
+  });
+  it('rejects a blank name without calling it a placeholder', () => {
+    expect(newSpeakerNameState('   ', false)).toEqual({ isPlaceholder: false, canCreate: false });
+  });
+  it('rejects SPEAKER_NN as a placeholder (#740)', () => {
+    expect(newSpeakerNameState(' SPEAKER_04 ', false)).toEqual({
+      isPlaceholder: true,
+      canCreate: false,
+    });
+  });
+  it('blocks a second create while one is in flight', () => {
+    expect(newSpeakerNameState('Laura', true).canCreate).toBe(false);
   });
 });

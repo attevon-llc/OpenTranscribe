@@ -112,3 +112,17 @@ export function speakerMenuLabel(speaker: Speaker, translate: (name: string) => 
     ? `${effectiveName} (${slotNumber.toString().padStart(2, '0')})`
     : effectiveName;
 }
+
+/**
+ * Whether the "Add speaker" dialog may create. A typed name that is itself `SPEAKER_NN` is a
+ * placeholder, not an identity: accepting it would recreate exactly the state #740 exists to
+ * stop (a bare slot with no human name).
+ */
+export function newSpeakerNameState(
+  name: string,
+  isCreating: boolean
+): { isPlaceholder: boolean; canCreate: boolean } {
+  const typed = name.trim() !== '';
+  const isPlaceholder = typed && isPlaceholderSpeakerName(name);
+  return { isPlaceholder, canCreate: !isCreating && typed && !isPlaceholder };
+}

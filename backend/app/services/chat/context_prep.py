@@ -346,7 +346,7 @@ def _drop_quarantined(
         result.chunks = _drop_quarantined_hits(db, result.chunks)
         result.digests = _drop_quarantined_hits(db, result.digests)
     # `result.retrieved` feeds the `no_context` warning's contract (documented
-    # at the yield site below and in `services/chat/CLAUDE.md`): non-zero means
+    # in `frames._grounding_frames` and in `services/chat/CLAUDE.md`): non-zero means
     # masking failed closed on every chunk. A quarantined chunk never reaches
     # masking at all, so leaving it counted in `retrieved` made a quarantine
     # drop impersonate a masking failure — `{"code": "no_context", "retrieved":

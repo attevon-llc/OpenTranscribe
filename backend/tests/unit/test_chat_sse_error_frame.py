@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 
-from app.services.chat.service import sse
+from app.services.chat.frames import sse
 
 
 class TestSseErrorFrameFormat:

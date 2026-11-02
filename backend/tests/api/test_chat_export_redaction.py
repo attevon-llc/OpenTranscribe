@@ -275,12 +275,12 @@ def test_persisted_content_is_the_masked_one():
     """
     import inspect
 
+    from app.services.chat import frames as chat_frames
     from app.services.chat import persistence as chat_persistence
-    from app.services.chat import service as chat_service
 
-    # The stream accumulates the redacted text (`service.py`); the persist step stores
+    # The stream accumulates the redacted text (`frames.py`); the persist step stores
     # that accumulation (`persistence.py`). Each fact is checked where it lives.
-    stream_source = inspect.getsource(chat_service)
+    stream_source = inspect.getsource(chat_frames)
     persist_source = inspect.getsource(chat_persistence)
     assert "_redact_delta(answer_redactor" in stream_source, (
         "the answer stream no longer passes through OutputRedactor before being accumulated; "

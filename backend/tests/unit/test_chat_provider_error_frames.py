@@ -18,6 +18,7 @@ from typing import Any
 
 import pytest
 
+from app.services.chat import frames as chat_frames
 from app.services.chat import service as chat_service
 from app.services.chat.redactor import MaskedChunk
 from app.services.chat.settings import ChatSettings
@@ -141,13 +142,13 @@ async def test_a_transient_provider_error_is_reported_as_provider_unavailable(mo
     frames, turn = await _run(monkeypatch, _FailingLLM(BEDROCK_503, transient=True))
 
     assert _error_frames(frames) == [
-        {"code": "provider_unavailable", "message": chat_service.PROVIDER_UNAVAILABLE_MESSAGE}
+        {"code": "provider_unavailable", "message": chat_frames.PROVIDER_UNAVAILABLE_MESSAGE}
     ]
     assert turn is not None, "the turn was never finalized"
     assert turn.error_code == "provider_unavailable"
     # Persisted so a reloaded thread renders the same translated message.
     assert turn.metadata["error_code"] == "provider_unavailable"
-    assert turn.error == chat_service.PROVIDER_UNAVAILABLE_MESSAGE
+    assert turn.error == chat_frames.PROVIDER_UNAVAILABLE_MESSAGE
 
 
 @pytest.mark.asyncio
@@ -155,7 +156,7 @@ async def test_a_non_transient_provider_error_is_a_generic_provider_error(monkey
     frames, turn = await _run(monkeypatch, _FailingLLM(BEDROCK_VALIDATION, transient=False))
 
     assert _error_frames(frames) == [
-        {"code": "provider_error", "message": chat_service.PROVIDER_ERROR_MESSAGE}
+        {"code": "provider_error", "message": chat_frames.PROVIDER_ERROR_MESSAGE}
     ]
     assert turn.error_code == "provider_error"
     assert turn.metadata["error_code"] == "provider_error"
@@ -168,7 +169,7 @@ async def test_a_non_transient_provider_error_is_a_generic_provider_error(monkey
 async def test_provider_prose_never_reaches_the_wire_or_the_row(
     monkeypatch, caplog, message, transient
 ):
-    with caplog.at_level("WARNING", logger=chat_service.logger.name):
+    with caplog.at_level("WARNING", logger=chat_frames.logger.name):
         frames, turn = await _run(monkeypatch, _FailingLLM(message, transient=transient))
 
     wire = json.dumps(frames)
@@ -190,7 +191,7 @@ async def test_an_exception_in_the_stream_does_not_persist_its_text(monkeypatch)
     frames, turn = await _run(monkeypatch, _ExplodingLLM("", transient=False))
 
     assert _error_frames(frames) == [
-        {"code": "provider_error", "message": chat_service.GENERATION_FAILED_MESSAGE}
+        {"code": "provider_error", "message": chat_frames.GENERATION_FAILED_MESSAGE}
     ]
     assert "secret internal detail" not in (turn.error or "")
     assert turn.metadata["error_code"] == "provider_error"

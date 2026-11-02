@@ -22,6 +22,7 @@ from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.models.user import User
 from app.services.platform_bypass import PlatformBypass
+from app.utils.sql_like import escape_like
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ def apply_search_filter(query: Query, search: str | None) -> Query:
     """
     if search:
         # Escape LIKE metacharacters so user input like "%" or "_" is treated literally
-        escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        escaped = escape_like(search)
         conditions = [MediaFile.filename.ilike(f"%{escaped}%", escape="\\")]
         if MediaFile.title is not None:
             conditions.append(MediaFile.title.ilike(f"%{escaped}%", escape="\\"))

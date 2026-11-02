@@ -21,6 +21,7 @@ from app.core.enums import RecordedDateSource
 from app.services.chat.aggregation import MAX_BUCKETS
 from app.services.chat.aggregation import buckets
 from app.services.chat.router import TemporalHint
+from app.utils.sql_like import escape_like
 
 logger = logging.getLogger(__name__)
 
@@ -403,7 +404,7 @@ def _occurrence_count(
         .select_from(TranscriptSegment)
         .join(MediaFile, MediaFile.id == TranscriptSegment.media_file_id)
         .where(scoped_predicate)
-        .where(TranscriptSegment.text.ilike(f"%{_like_escape(subject)}%", escape="\\"))
+        .where(TranscriptSegment.text.ilike(f"%{escape_like(subject)}%", escape="\\"))
     )
     return int(db.execute(statement).scalar() or 0)
 
@@ -411,7 +412,3 @@ def _occurrence_count(
 def _posix_escape(value: str) -> str:
     """Escape a literal for a POSIX ERE, which is not Python's regex dialect."""
     return re.sub(r"([\\.^$*+?()\[\]{}|])", r"\\\1", value)
-
-
-def _like_escape(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")

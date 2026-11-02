@@ -63,14 +63,28 @@ def get_user_auto_label_settings(db: Session, user_id: int) -> dict:
     return result
 
 
+_BOOL_SETTINGS = (
+    "enabled",
+    "tags_enabled",
+    "collections_enabled",
+    "bulk_grouping_enabled",
+    "auto_topic_extraction",
+)
+
+
 def save_user_auto_label_settings(db: Session, user_id: int, settings_data: dict) -> None:
     """Save auto-label settings to user_setting table.
 
-    Validates confidence_threshold is between 0.0 and 1.0 before saving.
+    Validates every field before writing any: confidence_threshold must be between 0.0
+    and 1.0 and each switch must be a real ``bool`` (the reader parses only "true"/"false",
+    so anything else would be stored and silently read back as off).
 
     Raises:
-        ValueError: If confidence_threshold is out of range.
+        ValueError: If confidence_threshold is out of range or a switch is not a bool.
     """
+    for switch in _BOOL_SETTINGS:
+        if switch in settings_data and not isinstance(settings_data[switch], bool):
+            raise ValueError(f"{switch} must be true or false")
     # Validate confidence_threshold range
     if "confidence_threshold" in settings_data:
         try:

@@ -228,3 +228,29 @@ def test_settings_reject_an_out_of_range_threshold_without_writing(gov, bad):
 def test_settings_accept_the_threshold_range_edges(gov, edge):
     save_user_auto_label_settings(gov.db, gov.alice.id, {"confidence_threshold": edge})
     assert get_user_auto_label_settings(gov.db, gov.alice.id)["confidence_threshold"] == edge
+
+
+_BOOL_FIELDS = (
+    "enabled",
+    "tags_enabled",
+    "collections_enabled",
+    "bulk_grouping_enabled",
+    "auto_topic_extraction",
+)
+
+
+@pytest.mark.parametrize("field", _BOOL_FIELDS)
+@pytest.mark.parametrize("bad", ["yes", "true", 1, 0, None])
+def test_settings_reject_a_non_bool_switch_without_writing(gov, field, bad):
+    with pytest.raises(ValueError, match=field):
+        save_user_auto_label_settings(
+            gov.db, gov.alice.id, {"confidence_threshold": 0.8, field: bad}
+        )
+    assert not gov.db.query(UserSetting).filter_by(user_id=gov.alice.id).count()
+
+
+@pytest.mark.parametrize("field", _BOOL_FIELDS)
+@pytest.mark.parametrize("value", [True, False])
+def test_settings_store_each_bool_switch(gov, field, value):
+    save_user_auto_label_settings(gov.db, gov.alice.id, {field: value})
+    assert get_user_auto_label_settings(gov.db, gov.alice.id)[field] is value

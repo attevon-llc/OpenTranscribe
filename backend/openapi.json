@@ -11422,6 +11422,97 @@
         "title": "MessageList",
         "type": "object"
       },
+      "MigrationStatus": {
+        "description": "Type definition for migration status.",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "eta_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta Seconds"
+          },
+          "failed_files": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Failed Files",
+            "type": "array"
+          },
+          "last_updated": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Updated"
+          },
+          "orchestrator_task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orchestrator Task Id"
+          },
+          "processed_files": {
+            "title": "Processed Files",
+            "type": "integer"
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "total_files": {
+            "title": "Total Files",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "running",
+          "total_files",
+          "processed_files",
+          "failed_files",
+          "started_at",
+          "completed_at",
+          "orchestrator_task_id",
+          "last_updated"
+        ],
+        "title": "MigrationStatus",
+        "type": "object"
+      },
       "MirrorDestinationStatus": {
         "properties": {
           "destination": {
@@ -24197,7 +24288,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Audit Logs Api Admin Audit Logs Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -26130,7 +26225,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Erase User Api Admin Gdpr Erase User  User Uuid  Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -27239,7 +27338,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "title": "Response Get Account Status Report Api Admin Reports Account Status Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -29174,7 +29279,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Search Users Api Admin Users Search Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -29398,7 +29507,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Admin Lock Account Api Admin Users  User Uuid  Lock Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -29444,7 +29559,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Admin Reset User Mfa Api Admin Users  User Uuid  Mfa Reset Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -29500,7 +29621,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Admin Reset User Password Api Admin Users  User Uuid  Reset Password Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -29557,7 +29684,20 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "title": "Response Admin Change User Role Api Admin Users  User Uuid  Role Put",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -29603,7 +29743,20 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ]
+                  },
+                  "title": "Response Admin Terminate User Sessions Api Admin Users  User Uuid  Sessions Delete",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -29647,7 +29800,26 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "items": {
+                      "additionalProperties": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "title": "Response Admin Get User Sessions Api Admin Users  User Uuid  Sessions Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -29693,7 +29865,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Admin Unlock Account Api Admin Users  User Uuid  Unlock Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -30354,7 +30532,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Acknowledge Banner Api Auth Banner Acknowledge Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -30752,7 +30936,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get User Certificate Info Api Auth Me Certificate Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -31061,7 +31249,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Password Policy Api Auth Password Policy Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -31091,7 +31283,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Confirm Password Reset Endpoint Api Auth Password Reset Confirm Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -31131,7 +31329,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Request Password Reset Endpoint Api Auth Password Reset Request Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -31374,7 +31578,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Active Sessions Api Auth Sessions Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -31496,7 +31704,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Verify Email Endpoint Api Auth Verify Email Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -31536,7 +31750,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Resend Verification Endpoint Api Auth Verify Email Resend Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -34430,7 +34650,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Finalize Migration Api Embeddings Migration Finalize Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -34455,7 +34679,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Force Complete Migration Api Embeddings Migration Force Complete Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -34480,7 +34708,20 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ]
+                  },
+                  "title": "Response Get Embedding Mode Api Embeddings Migration Mode Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -34505,7 +34746,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Clear Progress Api Embeddings Migration Progress Delete",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -34528,7 +34773,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationStatus"
+                }
               }
             },
             "description": "Successful Response"
@@ -34553,7 +34800,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Retry Failed Files Api Embeddings Migration Retry Failed Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -34606,7 +34857,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Start Migration Api Embeddings Migration Start Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -34641,7 +34896,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Migration Status Api Embeddings Migration Status Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -34666,7 +34925,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Stop Migration Api Embeddings Migration Stop Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -35800,7 +36063,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Generate Waveforms For Files Api Files Waveforms Generate Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -35836,7 +36103,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Waveform Status Api Files Waveforms Status Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -36986,7 +37257,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Prepare Download Api Files  File Uuid  Prepare Download Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -37397,7 +37672,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Media File Stream Url Api Files  File Uuid  Stream Url Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -38204,7 +38483,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Audio Waveform Api Files  File Uuid  Waveform Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -38261,7 +38544,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Generate Waveform For File Api Files  File Uuid  Waveform Generate Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -38336,7 +38623,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Audio Waveform Peaks Api Files  File Uuid  Waveform Peaks Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -40336,7 +40627,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Org Audit Logs Api Org Admin Audit Logs Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -40819,7 +41114,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Erase Own Organization Api Org Admin Gdpr Erase Organization Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -40865,7 +41164,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Erase Org Member Api Org Admin Gdpr Erase User  User Uuid  Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -43633,7 +43936,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Clear Attribute Progress Api Speaker Attributes Migration Progress Delete",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -43670,7 +43977,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Start Attribute Migration Api Speaker Attributes Migration Start Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -43705,7 +44016,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Attribute Migration Status Api Speaker Attributes Migration Status Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -43730,7 +44045,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Stop Attribute Migration Api Speaker Attributes Migration Stop Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -45463,7 +45782,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Clear Combined Progress Api Speakers Combined Migration Progress Delete",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -45488,7 +45811,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Start Combined Migration Api Speakers Combined Migration Start Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -45513,7 +45840,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Combined Migration Status Api Speakers Combined Migration Status Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -45538,7 +45869,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Stop Combined Migration Api Speakers Combined Migration Stop Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"

@@ -13,14 +13,14 @@ import os
 
 import pytest
 
-from app.transcription import diar_shared_volume
+from app.utils import scratch_volume
 
 
 @pytest.fixture(autouse=True)
 def _root(tmp_path, monkeypatch):
     root = tmp_path / "opentranscribe"
     root.mkdir()
-    monkeypatch.setattr(diar_shared_volume, "_SHARED_VOLUME_ROOT", os.path.realpath(str(root)))
+    monkeypatch.setattr(scratch_volume, "SCRATCH_ROOT_REAL", os.path.realpath(str(root)))
     return root
 
 
@@ -28,26 +28,26 @@ def test_engine_namespace_path_is_contained(_root):
     p = _root / "engine" / "x.wav"
     p.parent.mkdir()
     p.write_bytes(b"x")
-    assert diar_shared_volume._path_is_on_shared_volume(str(p)) is True
+    assert scratch_volume.is_on_scratch_volume(str(p)) is True
 
 
 def test_uuid_namespace_path_is_contained(_root):
     p = _root / "11111111-1111-1111-1111-111111111111" / "audio.wav"
     p.parent.mkdir()
     p.write_bytes(b"x")
-    assert diar_shared_volume._path_is_on_shared_volume(str(p)) is True
+    assert scratch_volume.is_on_scratch_volume(str(p)) is True
 
 
 def test_sibling_directory_with_shared_string_prefix_is_rejected(_root, tmp_path):
     evil = tmp_path / "opentranscribe-evil" / "x.wav"
     evil.parent.mkdir()
     evil.write_bytes(b"x")
-    assert diar_shared_volume._path_is_on_shared_volume(str(evil)) is False
+    assert scratch_volume.is_on_scratch_volume(str(evil)) is False
 
 
 def test_dotdot_traversal_out_of_root_is_rejected(_root):
     escaped = str(_root / "engine" / ".." / ".." / "etc" / "passwd")
-    assert diar_shared_volume._path_is_on_shared_volume(escaped) is False
+    assert scratch_volume.is_on_scratch_volume(escaped) is False
 
 
 def test_symlink_escaping_root_is_rejected(_root, tmp_path):
@@ -55,4 +55,4 @@ def test_symlink_escaping_root_is_rejected(_root, tmp_path):
     outside.mkdir()
     link = _root / "escape_link"
     link.symlink_to(outside)
-    assert diar_shared_volume._path_is_on_shared_volume(str(link / "x.wav")) is False
+    assert scratch_volume.is_on_scratch_volume(str(link / "x.wav")) is False

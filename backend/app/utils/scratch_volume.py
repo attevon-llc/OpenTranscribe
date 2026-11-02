@@ -46,12 +46,33 @@ logger = logging.getLogger(__name__)
 # via ``PIPELINE_SCRATCH_DIR`` for non-standard deployments.
 SCRATCH_DIR = Path(os.environ.get("PIPELINE_SCRATCH_DIR", PIPELINE_SCRATCH_DEFAULT))
 
+# Resolved once: the containment boundary for ``is_on_scratch_volume``. It is the VOLUME ROOT,
+# not a subdirectory such as ``engine/``: both the engine's WAV (``.../engine/<task>.wav``) and
+# rediarize's (``.../<uuid>/audio.wav``) live on the same volume, and a boundary keyed on one
+# namespace would reject the other.
+SCRATCH_ROOT_REAL = os.path.realpath(SCRATCH_DIR)
+
 # Name of the audio artifact inside each per-file directory.
 AUDIO_FILENAME = "audio.wav"
 
 # Default TTL for janitor cleanup. 1 hour is enough for the longest
 # typical pipeline run (3-hour audio ≈ 12-min wall-clock on A6000).
 DEFAULT_TTL_SECONDS = 60 * 60
+
+
+def is_on_scratch_volume(path: str) -> bool:
+    """True when ``path`` resolves to somewhere inside the scratch volume root.
+
+    Uses ``os.path.realpath`` on both sides (resolves ``..`` and symlinks) plus
+    ``os.path.commonpath`` — never ``str.startswith``, which a sibling directory sharing the
+    same string prefix (e.g. ``/scratch/opentranscribe-evil``) would pass.
+    """
+    try:
+        real = os.path.realpath(path)
+        return os.path.commonpath([real, SCRATCH_ROOT_REAL]) == SCRATCH_ROOT_REAL
+    except (ValueError, OSError):
+        # ValueError: paths on different drives (Windows) or otherwise incomparable.
+        return False
 
 
 def is_scratch_available() -> bool:

@@ -10,7 +10,7 @@ waveform, against one sidecar** — the only thing that varies is the handoff:
     arm B  wav_path=None                        -> _post_own_copy      (pre-E2 behaviour)
 
 ``NativeSpeakerDiarizer.diarize`` decides with
-``reused = wav_path and _path_is_on_shared_volume(wav_path) and isfile(wav_path)``, so arm B
+``reused = wav_path and is_on_scratch_volume(wav_path) and isfile(wav_path)``, so arm B
 is *structurally* the old path: ``None`` cannot satisfy the first clause. That is why the arms
 cannot silently converge — unlike a flag, which could be read wrong.
 
@@ -80,15 +80,15 @@ def main() -> int:
 
     # resolve_engine_shared_volume_path() rather than a config attribute: it is the single
     # reader of ENGINE_SHARED_VOLUME_PATH (app/core/scratch_paths.py) and the exact value
-    # diar_shared_volume._ENGINE_SHARED_DIR is built from, so the WAV is guaranteed to be written
-    # where _path_is_on_shared_volume looks. Reading it from anywhere else reintroduces the
+    # diarizer_native._ENGINE_SHARED_DIR is built from, so the WAV is guaranteed to be written
+    # where is_on_scratch_volume looks. Reading it from anywhere else reintroduces the
     # two-sources-of-truth bug the resolver exists to remove.
     from app.core.scratch_paths import resolve_engine_shared_volume_path
     from app.transcription.config import TranscriptionConfig
-    from app.transcription.diar_shared_volume import _path_is_on_shared_volume
     from app.transcription.diar_sidecar_status import sidecar_ready
     from app.transcription.diarizer_native import NativeSpeakerDiarizer
     from app.transcription.engine.audio_loader import write_wav_to_shared_volume
+    from app.utils.scratch_volume import is_on_scratch_volume
 
     if not sidecar_ready():
         print(
@@ -109,7 +109,7 @@ def main() -> int:
 
     # THE GUARD. If this is False, arm A takes _post_own_copy exactly like arm B, both arms
     # are the same code, and the delta is ~0 for a reason that has nothing to do with #661.
-    if not _path_is_on_shared_volume(wav):
+    if not is_on_scratch_volume(wav):
         print(
             f"FATAL: {wav} is not on the shared volume by the engine's own predicate, so arm A "
             f'would take the own-copy path too and this would compare a path to itself. '

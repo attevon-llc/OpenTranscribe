@@ -987,9 +987,8 @@ in the backend image (`js_runtimes` at `/usr/local/bin/deno`, required since yt-
 YouTube PO tokens; `_YOUTUBE_EXTRACTOR_ARGS` rotates player clients).
 
 - Limits: **15 GB** (`max_filesize`, matches the upload limit) and **4 h** (`duration > 14400`).
-- `create_user_friendly_error` maps raw yt-dlp errors → guidance via `AUTH_ERROR_PATTERNS` +
-  `PLATFORM_GUIDANCE`. `RECOMMENDED_PLATFORMS = ["YouTube", "Dailymotion", "Twitter/X"]`.
-  Vimeo / Instagram / Facebook / LinkedIn / Patreon usually need auth.
+- yt-dlp failures return a fixed literal and log the real error; the raw message can carry
+  cookie/config paths or the URL (#859). Vimeo / Instagram / Facebook / LinkedIn / Patreon usually need auth.
 
 ## Exports and redaction — three rules that are not obvious (issue #85)
 

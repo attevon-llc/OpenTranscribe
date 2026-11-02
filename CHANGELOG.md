@@ -17,6 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Speaker profiles record when a person, or an automatic voiceprint match that writes a link,
   last interacted with them (`speaker_profile.last_interaction_at`, backfilled on upgrade).
   Viewing a profile and maintenance work do not count.
+- Opt-in voiceprint retention (`privacy.voiceprint_retention_months`, off by default): a daily
+  task selects files whose linked profiles have all gone unused past the cutoff and hands them
+  to the file-scoped voiceprint purge. Profiles are listed for review, never deleted.
+
+### Changed
+
+- **Behaviour change:** legal acceptance records are no longer deleted with the account. Every
+  deletion path (admin delete, GDPR erasure, the first-run wizard) now keeps them, pseudonymised
+  by the database: the user link, IP address and user agent are removed, and the record is
+  deleted after `legal.acceptance_retention_days` (default 2190 days, minimum 365) by a daily
+  sweep. The records are pseudonymised, not anonymous; operators state their own lawful basis
+  (see Legal documents). The database also refuses rewrites of an accepted record. Migration
+  v451; its downgrade deletes the pseudonymised records.
 
 ## [0.6.0] - 2026-10-31
 

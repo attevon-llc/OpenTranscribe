@@ -44,7 +44,7 @@ Every model must be exported from `__init__.py`, the canonical import surface (a
 - `password_history.py`, `password_reset.py` - password reuse tracking and reset tokens
 - `invitation.py` - `UserInvitation`, `EmailVerificationToken` (token hashes only)
 - `scim_token.py` - `SCIMToken`: bearer credentials for the SCIM provisioning surface (digest only)
-- `legal_acceptance.py` - `LegalAcceptance`: which user (or, at `scope="organization"`, which organization through its admin) accepted which legal document version, with the org context, user agent and locale (v450)
+- `legal_acceptance.py` - `LegalAcceptance`: which user (or, at `scope="organization"`, which organization through its admin) accepted which legal document version, with the org context, user agent and locale (v450); outlives the account, pseudonymised by a DB trigger, until `retain_until` (v451)
 
 ### Organizations, Governance and Compliance
 - `organization.py` - `Organization`, `OrganizationMembership`

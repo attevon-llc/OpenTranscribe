@@ -247,6 +247,8 @@ indexing → WebSocket notification.
   be cleared by a DB edit or a restore, and a hook alone has a silent failure mode.
   Design rationale (what the ledger must never store, and why `org_member` entries are
   never auto-re-erased) lives in `app/services/CLAUDE.md`.
+- `legal_retention.py` — `legal.acceptance_retention_sweep`, **utility** queue, daily 05:10: deletes pseudonymised `legal_acceptance` rows past `retain_until` (v451) under `SET LOCAL opentranscribe.legal_retention_sweep = 'on'`, the only DELETE the guard trigger admits. Bounded at 500 per tick.
+- `voiceprint_retention.py` — `privacy.voiceprint_retention_sweep`, **utility** queue, daily 05:25, off unless `privacy.voiceprint_retention_months` > 0. Selects due files (every linked profile stale by `last_interaction_at`, file older than the cutoff, not held, voiceprints present; at most 200) and dispatches `PurgeScope(kind="files")`; returns `unavailable` while this build's purge has no files scope. Stale profiles left empty are listed, never deleted.
 - `directory_sync_task.py` — LDAP reconciliation/deprovisioning, **cpu** queue.
   `directory.sync_check_schedule` runs from beat every 15 min, reads the DB-stored cron
   (`directory_sync.schedule`), and dispatches `directory.sync_run` when due — so changing the

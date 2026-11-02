@@ -245,6 +245,8 @@ def list_legal_acknowledgments(
             scope=r.scope,
             organization_uuid=r.organization_uuid,
             user_email=str(email) if email is not None else None,
+            erased=r.user_id is None,
+            retain_until=r.retain_until,
         )
         for r, email in rows
     ]

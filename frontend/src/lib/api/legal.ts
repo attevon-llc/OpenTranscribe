@@ -39,6 +39,9 @@ export interface LegalAcknowledgment {
   accepted_at: string;
   scope: LegalAcceptanceScope;
   organization_uuid: string | null;
+  /** The accepting account was deleted; the row is kept, pseudonymised, until retain_until. */
+  erased?: boolean;
+  retain_until?: string | null;
 }
 
 export async function listLegalDocuments(): Promise<LegalDocumentSummary[]> {

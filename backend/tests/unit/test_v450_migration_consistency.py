@@ -17,12 +17,22 @@ _PATH = Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{REVISI
 _SHA = "a" * 64
 
 
-def _module():
-    spec = importlib.util.spec_from_file_location(REVISION, _PATH)
+def _module(revision: str = REVISION):
+    path = _PATH.with_name(f"{revision}.py")
+    spec = importlib.util.spec_from_file_location(revision, path)
     assert spec is not None and spec.loader is not None
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     return m
+
+
+#: v451 builds a guard trigger on the v450 columns; step it down first, as alembic would.
+_V451 = "v451_legal_acceptance_survives_user_deletion"
+
+
+def _downgrade_to_v449(conn, module) -> None:
+    conn.execute(text(_module(_V451).DOWNGRADE_SQL))
+    conn.execute(text(module.DOWNGRADE_SQL))
 
 
 def test_v450_revision_chain():
@@ -86,7 +96,7 @@ def test_upgrade_over_populated_v441_table(db_session, normal_user, admin_user):
     module = _module()
     conn = db_session.connection()
     try:
-        conn.execute(text(module.DOWNGRADE_SQL))
+        _downgrade_to_v449(conn, module)
         _insert(conn, normal_user.id)
         _insert(conn, normal_user.id, sha="b" * 64)
         _insert(conn, admin_user.id)
@@ -127,7 +137,7 @@ def test_backfill_takes_the_latest_existing_timestamp(db_session, normal_user):
     module = _module()
     conn = db_session.connection()
     try:
-        conn.execute(text(module.DOWNGRADE_SQL))
+        _downgrade_to_v449(conn, module)
         pid = conn.execute(
             text(
                 "INSERT INTO speaker_profile (uuid, user_id, name, created_at, updated_at,"
@@ -157,7 +167,7 @@ def test_downgrade_keeps_the_oldest_duplicate_and_restores_the_constraint(db_ses
         conn.execute(text(module.UPGRADE_SQL))
         _insert(conn, normal_user.id, accepted="'2020-01-01Z'")
         _insert(conn, normal_user.id, scope="organization", org_uuid=uuid_pkg.uuid4())
-        conn.execute(text(module.DOWNGRADE_SQL))
+        _downgrade_to_v449(conn, module)
         conn.execute(text(module.DOWNGRADE_SQL))
         left = conn.execute(
             text("SELECT count(*) FROM legal_acceptance WHERE user_id = :u"), {"u": normal_user.id}

@@ -82,6 +82,7 @@ import logging
 from collections.abc import Iterable
 from typing import Any
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth.audit import AuditEventType
@@ -310,6 +311,16 @@ def delete_speaker_docs_by_ids(
     if also is not None:
         deleted += delete_speaker_docs_by_query({"query": also}, errors=errors, label=label)
     return deleted
+
+
+def _count_legal_acceptances(db: Session, user_id: int) -> int:
+    """Acceptance rows the user delete will pseudonymise rather than remove (v451)."""
+    from app.models.legal_acceptance import LegalAcceptance
+
+    return int(
+        db.query(func.count(LegalAcceptance.id)).filter(LegalAcceptance.user_id == user_id).scalar()
+        or 0
+    )
 
 
 def count_speaker_docs_by_ids(
@@ -560,6 +571,9 @@ def _new_summary(subject: str, subject_id: int) -> dict[str, Any]:
         "watch_sources_deleted": 0,
         "voiceprints_deleted": 0,
         "users_deleted": 0,
+        # Legal acceptance records are KEPT, pseudonymised by the database (v451,
+        # trg_legal_acceptance_guard), under Art. 17(3)(e). Counted, never deleted here.
+        "legal_acceptances_pseudonymised": 0,
         "legal_holds_skipped": 0,
         "errors": [],
         "complete": True,
@@ -689,9 +703,11 @@ def erase_user(
     else:
         ledger_entry_id = ledger_entry.id if ledger_entry is not None else None
         try:
+            pseudonymised = _count_legal_acceptances(db, user.id)
             db.delete(user)
             db.commit()
             summary["users_deleted"] = 1
+            summary["legal_acceptances_pseudonymised"] = pseudonymised
         except Exception as e:  # noqa: BLE001 — record, don't raise
             db.rollback()
             # `summary` is returned straight out of this function and becomes the
@@ -755,6 +771,7 @@ def erase_user(
                     "speaker_profiles_deleted",
                     "voiceprints_deleted",
                     "users_deleted",
+                    "legal_acceptances_pseudonymised",
                     "legal_holds_skipped",
                 )
             },

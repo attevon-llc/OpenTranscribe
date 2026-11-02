@@ -1,4 +1,4 @@
-"""An acceptance of one exact version of a legal document (migrations v441, v450)."""
+"""An acceptance of one exact version of a legal document (migrations v441, v450, v451)."""
 
 import uuid as uuid_pkg
 from datetime import datetime
@@ -26,8 +26,13 @@ class LegalAcceptance(Base):
     ``sha256`` is the hash of the exact bytes served at acceptance time; a new version or
     a changed text therefore needs a new row. ``scope='user'`` with ``organization_id`` set is
     a personal acceptance made while acting in that organization; ``scope='organization'`` is
-    an org admin accepting on the organization's behalf. Rows are removed with the user
-    (CASCADE).
+    an org admin accepting on the organization's behalf.
+
+    Since v451 a row outlives the account (``ON DELETE SET NULL``). The database trigger
+    ``trg_legal_acceptance_guard`` then blanks ``ip_address`` and ``user_agent``, sets
+    ``subject_erased_at`` and ``retain_until``, and keeps ``subject_user_uuid``: the row is
+    pseudonymised personal data, not anonymous. The same trigger makes the table append-only;
+    only ``tasks/legal_retention.py`` may delete a row, after ``retain_until``.
     """
 
     __tablename__ = "legal_acceptance"
@@ -49,6 +54,17 @@ class LegalAcceptance(Base):
             postgresql_where=text("scope = 'organization'"),
         ),
         CheckConstraint(
+            "(user_id IS NOT NULL AND subject_erased_at IS NULL)"
+            " OR (user_id IS NULL AND subject_erased_at IS NOT NULL AND retain_until IS NOT NULL"
+            " AND ip_address IS NULL AND user_agent IS NULL)",
+            name="ck_legal_acceptance_subject",
+        ),
+        Index(
+            "ix_legal_acceptance_retain_until",
+            "retain_until",
+            postgresql_where=text("retain_until IS NOT NULL"),
+        ),
+        CheckConstraint(
             "(scope = 'user') OR (scope = 'organization' AND organization_uuid IS NOT NULL)",
             name="ck_legal_acceptance_scope",
         ),
@@ -58,8 +74,8 @@ class LegalAcceptance(Base):
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
         UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
-    user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
+    user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("user.id", ondelete="SET NULL"), nullable=True, index=True
     )
     document_key: Mapped[str] = mapped_column(String(128), nullable=False)
     version: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -79,3 +95,11 @@ class LegalAcceptance(Base):
     organization_uuid: Mapped[uuid_pkg.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True
     )
+    #: Set by a BEFORE INSERT trigger from the account; kept after the account is deleted.
+    subject_user_uuid: Mapped[uuid_pkg.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
+    subject_erased_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    retain_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

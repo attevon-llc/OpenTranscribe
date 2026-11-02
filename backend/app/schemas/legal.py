@@ -63,3 +63,7 @@ class LegalAcknowledgmentAdminRecord(LegalAcknowledgmentRecord):
     """An acceptance as listed to administrators."""
 
     user_email: str | None = None
+    #: True when the accepting account was deleted: the row is kept, pseudonymised (v451).
+    erased: bool = False
+    #: When the retention sweep deletes a pseudonymised row; ``None`` while the account exists.
+    retain_until: datetime | None = None

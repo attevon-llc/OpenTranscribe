@@ -201,3 +201,74 @@ describe('TagsEditor name length', () => {
     await waitFor(() => expect(api.addTagToFile).toHaveBeenCalledWith('file-1', emoji));
   });
 });
+
+describe('TagsEditor AI suggestion acceptance', () => {
+  async function mountedWith(props: Record<string, unknown>, aiSuggestionAccepted: () => void) {
+    const result = render(TagsEditor, {
+      props: { fileId: 'file-1', tags: [], aiSuggestions: [], ...props },
+      events: { aiSuggestionAccepted },
+    });
+    await waitFor(() => expect(api.listTags).toHaveBeenCalled());
+    return result;
+  }
+
+  async function acceptSuggestion(name: string, container: HTMLElement) {
+    await fireEvent.click(container.querySelector('.ai-suggestions-header') as HTMLElement);
+    const chip = Array.from(container.querySelectorAll('.suggestion-chip')).find(
+      (el) => el.querySelector('.chip-name')?.textContent === name
+    ) as HTMLElement;
+    await fireEvent.click(chip.querySelector('.chip-add') as HTMLElement);
+  }
+
+  it('reports a suggestion as accepted only once its tag is applied', async () => {
+    library({ uuid: 'q3', name: 'q3-earnings', usage_count: 9 });
+    resolvesTo({ 'q3-earnings': { uuid: 'q3', name: 'q3-earnings' } });
+    const aiSuggestionAccepted = vi.fn();
+    const suggestion = { name: 'q4-earnings', confidence: 0.9 };
+    const { container } = await mountedWith({ aiSuggestions: [suggestion] }, aiSuggestionAccepted);
+
+    await acceptSuggestion('q4-earnings', container);
+
+    // A near match is only a question: nothing has been applied yet.
+    const accept = await screen.findByRole('button', {
+      name: translate('tags.nearMatch.accept', { name: 'q3-earnings' }),
+    });
+    expect(aiSuggestionAccepted).not.toHaveBeenCalled();
+
+    await fireEvent.click(accept);
+    await waitFor(() => expect(aiSuggestionAccepted).toHaveBeenCalledTimes(1));
+    expect(aiSuggestionAccepted.mock.calls[0][0].detail).toEqual({ suggestion });
+  });
+
+  it('does not report a suggestion as accepted when applying it failed', async () => {
+    api.addTagToFile.mockRejectedValue({ response: { status: 500, data: {} } });
+    const aiSuggestionAccepted = vi.fn();
+    const { container } = await mountedWith(
+      { aiSuggestions: [{ name: 'budget', confidence: 0.9 }] },
+      aiSuggestionAccepted
+    );
+
+    await acceptSuggestion('budget', container);
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(aiSuggestionAccepted).not.toHaveBeenCalled();
+  });
+});
+
+describe('TagsEditor create errors', () => {
+  it('renders a validation-error detail as text, not as an object', async () => {
+    api.addTagToFile.mockRejectedValue({
+      response: { status: 422, data: { detail: [{ loc: ['body', 'name'], msg: 'Name too odd' }] } },
+    });
+    await mounted();
+
+    await submit('budget');
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        translate('tags.failedToCreateWithDetail', { detail: 'Name too odd' })
+      )
+    );
+    expect(toast.error).not.toHaveBeenCalledWith(expect.stringContaining('[object Object]'));
+  });
+});

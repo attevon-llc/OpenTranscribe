@@ -2,7 +2,7 @@
   import { createEventDispatcher, onMount } from 'svelte';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
-  import { getErrorStatus, getErrorCode } from '$lib/utils/apiError';
+  import { getErrorStatus, getErrorCode, getErrorMessage } from '$lib/utils/apiError';
   import { addTagToFile, listTags, removeTagFromFile } from '$lib/api/tags';
   import {
     clampTagNameInput,
@@ -51,7 +51,7 @@
    * backend's 0.85 threshold `q3-earnings` and `q4-earnings` score 0.909, and
    * nothing in the product can split two tags back apart afterwards.
    */
-  let nearMatch: { typed: string; name: string } | null = null;
+  let nearMatch: { typed: string; name: string; suggestion?: AISuggestion } | null = null;
 
   // Event dispatcher
   const dispatch = createEventDispatcher<{
@@ -140,8 +140,9 @@
    * @param name - The name to send. Either what the user typed, or the name of
    *   a near match they accepted.
    * @param typed - What the user actually typed, for the announcement.
+   * @returns Whether the file now carries the tag.
    */
-  async function applyTagName(name: string, typed: string) {
+  async function applyTagName(name: string, typed: string): Promise<boolean> {
     loading = true;
     try {
       const finalTag = await addTagToFile(fileId, name);
@@ -172,32 +173,34 @@
         );
       }
       newTagInput = '';
+      return true;
     } catch (err: unknown) {
-      // Safely check for error properties
-      if (err && typeof err === 'object') {
-        const errorObj = err as any;
-
-        if (errorObj.response && errorObj.response.status === 401) {
-          toastStore.error($t('tags.unauthorizedLogin'));
-        } else if (
-          errorObj.response &&
-          typeof errorObj.response === 'object' &&
-          'data' in errorObj.response &&
-          errorObj.response.data &&
-          typeof errorObj.response.data === 'object' &&
-          'detail' in errorObj.response.data
-        ) {
-          toastStore.error($t('tags.failedToCreateWithDetail', { detail: errorObj.response.data.detail }));
-        } else {
-          toastStore.error($t('tags.failedToCreate'));
-        }
+      if (getErrorStatus(err) === 401) {
+        toastStore.error($t('tags.unauthorizedLogin'));
       } else {
-        toastStore.error($t('tags.failedToCreate'));
+        const detail = serverDetailText(err);
+        toastStore.error(
+          detail ? $t('tags.failedToCreateWithDetail', { detail }) : $t('tags.failedToCreate')
+        );
       }
       console.error('[TagsEditor] Error creating tag:', err);
+      return false;
     } finally {
       loading = false;
     }
+  }
+
+  /**
+   * The server's `detail` as readable text, or `''` when it sent none. A 422
+   * carries a list of validation objects, which interpolated raw would read
+   * "[object Object]"; `getErrorMessage` already knows every detail shape.
+   * Only the detail is passed on, so axios' own "Request failed…" never shows.
+   */
+  function serverDetailText(err: unknown): string {
+    const detail = (err as { response?: { data?: { detail?: unknown } } } | null)?.response?.data
+      ?.detail;
+    if (detail === undefined || detail === null) return '';
+    return getErrorMessage({ response: { data: { detail } } }, '');
   }
 
   /**
@@ -207,9 +210,13 @@
    * which resolves it. A name that only *nearly* matches an existing tag is
    * offered instead of applied — accepting it is the user's call, and declining
    * creates the tag they actually typed (R18).
+   *
+   * @param suggestion - The AI suggestion this name came from, if any; it is
+   *   reported as accepted only once its tag is actually applied.
+   * @returns Whether the name was applied now (false while a near match waits).
    */
-  async function submitTypedName() {
-    if (loading) return;
+  async function submitTypedName(suggestion?: AISuggestion): Promise<boolean> {
+    if (loading) return false;
 
     // Mirror the server's own rule rather than inventing a client allowlist:
     // it clamps to the stored column width and rejects a name that is empty
@@ -217,7 +224,7 @@
     const cleaned = cleanTagName(newTagInput);
     if (!normalizeTagName(cleaned)) {
       toastStore.error($t('tags.nameRequired'));
-      return;
+      return false;
     }
 
     resolvedNotice = '';
@@ -228,28 +235,33 @@
     if (!resolvesExactly) {
       const similar = findSimilarTagName(cleaned, allTags.map(tag => tag.name));
       if (similar) {
-        nearMatch = { typed: cleaned, name: similar };
-        return;
+        nearMatch = { typed: cleaned, name: similar, suggestion };
+        return false;
       }
     }
 
-    await applyTagName(cleaned, cleaned);
+    return applyTagName(cleaned, cleaned);
+  }
+
+  /** Report an AI suggestion as accepted, once the tag it led to is on the file. */
+  function reportSuggestion(suggestion: AISuggestion | undefined, applied: boolean) {
+    if (suggestion && applied) dispatch('aiSuggestionAccepted', { suggestion });
   }
 
   /** Take the offered near match: the existing tag is applied, and announced. */
-  function acceptNearMatch() {
+  async function acceptNearMatch() {
     const pending = nearMatch;
     if (!pending) return;
     nearMatch = null;
-    void applyTagName(pending.name, pending.typed);
+    reportSuggestion(pending.suggestion, await applyTagName(pending.name, pending.typed));
   }
 
   /** Decline the offered near match: the typed name becomes its own tag. */
-  function declineNearMatch() {
+  async function declineNearMatch() {
     const pending = nearMatch;
     if (!pending) return;
     nearMatch = null;
-    void applyTagName(pending.typed, pending.typed);
+    reportSuggestion(pending.suggestion, await applyTagName(pending.typed, pending.typed));
   }
 
   // Remove a tag from the file
@@ -343,10 +355,9 @@
     // A person accepted this name, so it takes the same path a typed name does:
     // a near match is offered, never substituted (R18).
     newTagInput = suggestion.name;
-    await submitTypedName();
     // Don't remove from aiSuggestions - let reactive filtering handle it
     // This allows suggestions to reappear if the tag is later removed
-    dispatch('aiSuggestionAccepted', { suggestion });
+    reportSuggestion(suggestion, await submitTypedName(suggestion));
   }
 
   onMount(() => {
@@ -385,7 +396,7 @@
       {#if newTagInput.trim()}
         <button
           class="tag-add-button"
-          on:click={submitTypedName}
+          on:click={() => submitTypedName()}
           disabled={loading}
           title={$t('tags.createAndAddHint', { tagName: newTagInput.trim() })}
         >

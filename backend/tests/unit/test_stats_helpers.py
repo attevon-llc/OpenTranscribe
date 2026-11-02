@@ -1013,7 +1013,7 @@ class TestFormatBytes:
 
         assert admin_system_metrics.format_bytes is format_bytes
 
-    def test_tasks_utility_module_imports_the_same_function(self):
-        from app.tasks import utility as utility_module
+    def test_gpu_stats_module_imports_the_same_function(self):
+        from app.utils import gpu_stats
 
-        assert utility_module.format_bytes is format_bytes
+        assert gpu_stats.format_bytes is format_bytes

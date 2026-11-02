@@ -545,7 +545,7 @@ def test_a_zero_file_run_releases_the_user_lock(monkeypatch, redis, dispatched) 
     result = _run_coordinator(monkeypatch, [], "zero-files-run")
 
     assert result == {"total_files": 0}
-    lock_key = reindex_task_module()._REINDEX_LOCK_KEY.format(user_id=USER_ID)
+    lock_key = reindex_task_module().REINDEX_LOCK_KEY.format(user_id=USER_ID)
     assert redis.get(lock_key) is None, (
         "the zero-file return kept the user lock, so every reindex for this user in "
         "the next hour is silently skipped while its dispatcher reports success"
@@ -579,7 +579,7 @@ def test_a_failed_model_switch_releases_the_user_lock(monkeypatch, redis, dispat
     result = _run_coordinator_with_model(monkeypatch, "some/model")
 
     assert result == {"error": "unknown model"}
-    lock_key = reindex_task_module()._REINDEX_LOCK_KEY.format(user_id=USER_ID)
+    lock_key = reindex_task_module().REINDEX_LOCK_KEY.format(user_id=USER_ID)
     assert redis.get(lock_key) is None, "the model-switch error return kept the user lock"
 
 

@@ -20,6 +20,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+#: Both the hit count and the kNN ``k`` of the speaker-to-speaker match query.
+MATCH_CANDIDATES = 20
+
 
 def build_speaker_match_query(
     self: "SpeakerMatchingService",
@@ -27,7 +30,6 @@ def build_speaker_match_query(
     user_id: int,
     exclude_speaker_id: int,
     organization_id: int | None = None,
-    size: int = 20,
 ) -> dict[str, Any]:
     """
     Build OpenSearch query for finding speaker matches.
@@ -41,7 +43,6 @@ def build_speaker_match_query(
         exclude_speaker_id: Speaker ID to exclude from results
         organization_id: Tenant scope (None = personal) — org term when
             set, else the personal ``must_not exists`` gate.
-        size: Both the hit count and the kNN ``k``.
 
     Returns:
         OpenSearch query dictionary
@@ -62,12 +63,12 @@ def build_speaker_match_query(
     ]
 
     return {
-        "size": size,
+        "size": MATCH_CANDIDATES,
         "query": {
             "knn": {
                 "embedding": {
                     "vector": embedding.tolist(),
-                    "k": size,
+                    "k": MATCH_CANDIDATES,
                     "filter": {"bool": {"filter": filters}},
                 }
             }
@@ -197,7 +198,6 @@ def perform_opensearch_query(
     user_id: int,
     new_speaker_id: int,
     organization_id: int | None = None,
-    size: int = 20,
 ) -> dict[str, Any] | None:
     """
     Perform OpenSearch query for speaker matches.
@@ -207,7 +207,6 @@ def perform_opensearch_query(
         user_id: User ID
         new_speaker_id: ID of the speaker to exclude from the hits
         organization_id: Tenant scope (None = personal)
-        size: Both the hit count and the kNN ``k``.
 
     Returns:
         OpenSearch response or None if client unavailable
@@ -216,7 +215,7 @@ def perform_opensearch_query(
     from app.services.opensearch_service import opensearch_client
 
     query = self._build_speaker_match_query(
-        embedding, user_id, new_speaker_id, organization_id=organization_id, size=size
+        embedding, user_id, new_speaker_id, organization_id=organization_id
     )
     if opensearch_client is None:
         logger.error("OpenSearch client is not available")

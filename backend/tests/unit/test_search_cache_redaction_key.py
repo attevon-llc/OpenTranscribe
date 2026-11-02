@@ -27,9 +27,9 @@ import pytest
 from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.search import hybrid_search_service as hss
 from app.services.search import search_cache
-from app.services.search import search_infra
 from app.services.search.search_cache import _make_cache_key
 from app.services.search.search_cache import _redaction_policy_fingerprint
+from tests.helpers import reset_search_infrastructure_state
 
 pytestmark = [pytest.mark.unit, pytest.mark.xdist_group("search_cache_state")]
 
@@ -40,10 +40,10 @@ _UNMASKED = EffectiveRedactionConfig(enabled=False, enabled_categories=set())
 @pytest.fixture(autouse=True)
 def _clean_cache_state():
     """No cached page or verified-pipeline id survives into or out of a test here."""
-    search_infra.reset_infrastructure_state()
+    reset_search_infrastructure_state()
     search_cache._search_cache.clear()
     yield
-    search_infra.reset_infrastructure_state()
+    reset_search_infrastructure_state()
     search_cache._search_cache.clear()
 
 

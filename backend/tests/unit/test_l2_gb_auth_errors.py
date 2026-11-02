@@ -307,6 +307,28 @@ def test_proxy_super_admin_link_refusal_is_the_same_generic_401(db_session):
 # -- LDAP login refusal over the real login path (R1) --------------------------
 
 
+def _enable_ldap(monkeypatch):
+    """Turn LDAP on where ``_authenticate_ldap_user`` actually reads it.
+
+    The function imports ``get_auth_settings`` inside its body, so the name bound in
+    ``authenticators`` is not the one it calls; patching that leaves LDAP "disabled" and
+    the login takes the plain HTTPException 401 instead of the LDAP path.
+    """
+    from app.core import auth_settings as auth_settings_module
+
+    real = auth_settings_module.get_auth_settings
+
+    class _LdapOn:
+        def __init__(self, inner):
+            self._inner = inner
+            self.ldap_enabled = True
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    monkeypatch.setattr(auth_settings_module, "get_auth_settings", lambda db: _LdapOn(real(db)))
+
+
 def _ldap_login_setup(db_session, monkeypatch):
     uid = f"ldapuid_{uuid_pkg.uuid4().hex[:8]}"
     victim = _local_user(
@@ -317,12 +339,7 @@ def _ldap_login_setup(db_session, monkeypatch):
         hashed_password="!",
     )
     monkeypatch.setenv("TESTING", "false")
-    real = authenticators.get_auth_settings
-    monkeypatch.setattr(
-        authenticators,
-        "get_auth_settings",
-        lambda db: SimpleNamespace(ldap_enabled=True, _real=real(db)),
-    )
+    _enable_ldap(monkeypatch)
     monkeypatch.setattr(
         authenticators,
         "ldap_authenticate",
@@ -384,23 +401,7 @@ def test_ldap_email_match_without_a_local_row_is_the_uniform_401_and_one_failed_
     victim = _local_user(db_session, hashed_password="!")
     ghost = f"ghost_{uuid_pkg.uuid4().hex[:8]}"
     monkeypatch.setenv("TESTING", "false")
-    # _authenticate_ldap_user imports get_auth_settings inside the function, so the
-    # module-level name in ``authenticators`` is not the one it calls. Patching only
-    # that name leaves LDAP "disabled" and the test would take the plain HTTPException
-    # 401 instead of the link-refusal DomainError this case exists to pin.
-    from app.core import auth_settings as auth_settings_module
-
-    real = auth_settings_module.get_auth_settings
-
-    class _LdapOn:
-        def __init__(self, inner):
-            self._inner = inner
-            self.ldap_enabled = True
-
-        def __getattr__(self, name):
-            return getattr(self._inner, name)
-
-    monkeypatch.setattr(auth_settings_module, "get_auth_settings", lambda db: _LdapOn(real(db)))
+    _enable_ldap(monkeypatch)
     monkeypatch.setattr(
         authenticators,
         "ldap_authenticate",

@@ -254,6 +254,21 @@ repos:
         additional_dependencies: ["bandit[toml]"]
         stages: [pre-push]
 
+  # backend/openapi.json is generated from the app's routes and schemas, so any docstring or
+  # model change can leave it stale. CI checks it in the backend-tests job (it needs torch,
+  # which the bare pre-commit job lacks), so this is the local mirror: the check imports the
+  # whole app (about 15 s), which is a push-time cost, not an edit-loop one. The pre-push CI
+  # step skips this hook by id for the reason above.
+  - repo: local
+    hooks:
+      - id: openapi-snapshot
+        name: backend/openapi.json is current
+        entry: bash -c 'TESTING=True backend/venv/bin/python scripts/generate-openapi.py --check'
+        language: system
+        pass_filenames: false
+        files: ^backend/(app/.*\.py|openapi\.json)$
+        stages: [pre-push]
+
   # Import-linter — enforce the cloud seam direction: the open-source core
   # (`app.*`) must NEVER import the closed-source cloud edition (`cloud`/clerk/
   # stripe). Contract lives in backend/pyproject.toml ([tool.importlinter]).

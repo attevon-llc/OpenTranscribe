@@ -55,7 +55,7 @@ def throwaway_indices(monkeypatch):
     from app.core.config import settings
     from app.services.opensearch_service import get_opensearch_client
     from app.services.search import pipelines
-    from app.services.search.search_infra import reset_infrastructure_state
+    from tests.helpers import reset_search_infrastructure_state
 
     client = get_opensearch_client()
     assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
@@ -65,14 +65,14 @@ def throwaway_indices(monkeypatch):
     monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", chunks_name)
     monkeypatch.setattr(settings, "OPENSEARCH_TRANSCRIPT_INDEX", transcripts_name)
     pipelines.reset_neural_pipeline_state()
-    reset_infrastructure_state()
+    reset_search_infrastructure_state()
     try:
         yield client
     finally:
         client.indices.delete(index=chunks_name, ignore=[404])
         client.indices.delete(index=transcripts_name, ignore=[404])
         pipelines.reset_neural_pipeline_state()
-        reset_infrastructure_state()
+        reset_search_infrastructure_state()
 
 
 @pytest.fixture

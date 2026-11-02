@@ -1,8 +1,8 @@
 """Per-process verification that the chunks index and a fusion pipeline exist.
 
 The query path checks its infrastructure once per process (per pipeline id, see
-below) rather than once per request; ``reset_infrastructure_state`` drops the cache
-after an index is recreated.
+below) rather than once per request. Tests drop the cache with
+``tests.helpers.reset_search_infrastructure_state``; nothing in app code needs to.
 """
 
 import logging
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 # have let the FIRST strategy a process saw certify every later one, so the
 # second arm of an A/B would attach a pipeline id that had never been created
 # and OpenSearch would run the query **unfused**. That is a plausible number,
-# not an error. ``reset_infrastructure_state`` clears the set.
+# not an error. Tests clear it.
 _index_verified = False
 _verified_pipelines: set[str] = set()
 
@@ -83,21 +83,6 @@ def _ensure_infrastructure(fusion: FusionConfig | None = None) -> str:
                 ensure_chunks_index_exists()
                 _index_verified = True
     return ensure_fusion_pipeline(fusion)
-
-
-def reset_infrastructure_state() -> None:
-    """Reset index/pipeline verification state. Call after index recreation.
-
-    Clears **every** verified pipeline id, not just the default one. A stale id
-    left behind here is exactly the "cached infrastructure state that survived a
-    config change" failure this repo keeps hitting: the next request would
-    attach a pipeline nobody re-checked.
-    """
-    global _index_verified
-    with _state_lock:
-        _index_verified = False
-        _verified_pipelines.clear()
-    logger.info("Infrastructure verification state reset")
 
 
 def _chunks_index_verified(client: "OpenSearch", index_name: str) -> bool:

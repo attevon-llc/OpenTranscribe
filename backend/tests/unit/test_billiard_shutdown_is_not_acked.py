@@ -13,6 +13,7 @@ safe) and fails if the shutdown ``SystemExit`` ever comes back as anything but a
 
 from __future__ import annotations
 
+import os
 import subprocess  # nosec B404 - runs this interpreter on a fixed script
 import sys
 import textwrap
@@ -30,7 +31,7 @@ _SCRIPT = textwrap.dedent(
     if __name__ == "__main__":
         pool = billiard.Pool(1)
         try:
-            outcome = pool.apply_async(job).get(timeout=150)
+            outcome = pool.apply_async(job).get(timeout=__POOL_WAIT_S__)
             print("RESULT", repr(outcome))
         except WorkerLostError:
             print("LOST")
@@ -43,16 +44,36 @@ _SCRIPT = textwrap.dedent(
 )
 
 
-# The budgets are for a 48-way xdist run on a loaded host (release.sh test timed out at 90 s with
-# load ~60; the test takes ~12 s alone). A regression still fails fast: the pool returns RESULT.
+# Seconds the child waits on the pool, and the extra the parent allows for interpreter start-up,
+# the billiard import and ``pool.terminate()``. The test takes ~12 s alone; the budget is 20x
+# that at idle and grows with host load (a 48-way xdist run on a loaded host starved the
+# 240 s fixed budget). A regression still fails fast: the pool returns RESULT, not a hang.
+_POOL_WAIT_S = 150
+_PROCESS_HEADROOM_S = 90
+
+
+def _load_factor() -> float:
+    """1.0 on an idle host, rising with the 1-minute load average per CPU."""
+    return max(1.0, os.getloadavg()[0] / (os.cpu_count() or 1))
+
+
 def test_the_shutdown_systemexit_is_reported_as_a_lost_worker_not_a_result():
-    proc = subprocess.run(  # nosec B603 - fixed argv, no shell
-        [sys.executable, "-I", "-c", _SCRIPT],
-        capture_output=True,
-        text=True,
-        timeout=240,
-        check=False,
-    )
+    factor = _load_factor()
+    pool_wait = int(_POOL_WAIT_S * factor)
+    try:
+        proc = subprocess.run(  # nosec B603 - fixed argv, no shell
+            [sys.executable, "-I", "-c", _SCRIPT.replace("__POOL_WAIT_S__", str(pool_wait))],
+            capture_output=True,
+            text=True,
+            timeout=pool_wait + int(_PROCESS_HEADROOM_S * factor),
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise AssertionError(
+            f"the pool probe produced no verdict within {exc.timeout}s (load factor "
+            f"{factor:.2f}); a hung terminate is a failure, not a slow host, once the "
+            f"budget scales with load. stdout={exc.stdout!r}"
+        ) from exc
 
     assert "LOST" in proc.stdout.splitlines(), (
         "the pool reported the cold-shutdown SystemExit as something other than a lost "

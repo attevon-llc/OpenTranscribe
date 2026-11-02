@@ -321,11 +321,14 @@ fi
 
 # ── Throwaway database (--throwaway-db) ────────────────────────────────────
 
+# Bound on retries after losing the probe-then-bind race to a concurrent run.
+THROWAWAY_PORT_ATTEMPTS=5
+
 # Probe with bash's /dev/tcp: succeeds only when something already listens there.
 port_in_use() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
 
 start_throwaway_db() {
-    local slug port pw i platform platform_args=()
+    local slug port pw i attempt run_err platform platform_args=()
     command -v docker >/dev/null || { echo -e "${RED}--throwaway-db needs docker${NC}" >&2; return 2; }
     command -v openssl >/dev/null || { echo -e "${RED}--throwaway-db needs openssl${NC}" >&2; return 2; }
     # Random per-run suffix: a name derived from the checkout directory is wrong from a git
@@ -338,10 +341,6 @@ start_throwaway_db() {
         return 2
     fi
     port=55432
-    while port_in_use "$port"; do
-        port=$((port + 1))
-        (( port < 55532 )) || { echo -e "${RED}no free port in 55432-55531${NC}" >&2; return 2; }
-    done
     pw="$(openssl rand -hex 16)"
     # Pin the image platform to the daemon's own (same idiom as gr_run_in_probe_image): a foreign
     # -arch image left in the local store by a multi-arch build would otherwise be picked.
@@ -349,14 +348,34 @@ start_throwaway_db() {
         && [[ -n "$platform" && "$platform" != "/" ]]; then
         platform_args=(--platform "$platform")
     fi
-    # The labels give the container its own compose-project namespace, so no project-scoped
-    # command against the live stack can match it, and nothing here can match the live stack.
-    docker run -d --rm --name "$THROWAWAY_CANDIDATE" "${platform_args[@]}" \
-        --label "com.docker.compose.project=${THROWAWAY_CANDIDATE}" \
-        --label "org.opentranscribe.purpose=throwaway-test-db" \
-        --tmpfs /var/lib/postgresql/data \
-        -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD="$pw" -e POSTGRES_DB=transcribe_test \
-        -p "127.0.0.1:${port}:5432" postgres:17.5-alpine >/dev/null || return 2
+    # The probe-then-bind is not atomic: a concurrent run can take the port between the check and
+    # `docker run`. That one failure is retried on the next port (the daemon removes the
+    # container it failed to start, thanks to --rm, so the name is free again); any other
+    # failure is final.
+    for attempt in $(seq 1 "$THROWAWAY_PORT_ATTEMPTS"); do
+        while port_in_use "$port"; do
+            port=$((port + 1))
+            (( port < 55532 )) || { echo -e "${RED}no free port in 55432-55531${NC}" >&2; return 2; }
+        done
+        # The labels give the container its own compose-project namespace, so no project-scoped
+        # command against the live stack can match it, and nothing here can match the live stack.
+        if run_err="$(docker run -d --rm --name "$THROWAWAY_CANDIDATE" "${platform_args[@]}" \
+            --label "com.docker.compose.project=${THROWAWAY_CANDIDATE}" \
+            --label "org.opentranscribe.purpose=throwaway-test-db" \
+            --tmpfs /var/lib/postgresql/data \
+            -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD="$pw" -e POSTGRES_DB=transcribe_test \
+            -p "127.0.0.1:${port}:5432" postgres:17.5-alpine 2>&1 >/dev/null)"; then
+            break
+        fi
+        if [[ "$run_err" == *"port is already allocated"* || "$run_err" == *"address already in use"* ]] \
+            && (( attempt < THROWAWAY_PORT_ATTEMPTS )); then
+            echo -e "${YELLOW}port ${port} was taken by a concurrent run; retrying on the next port${NC}" >&2
+            port=$((port + 1))
+            continue
+        fi
+        echo "$run_err" >&2
+        return 2
+    done
     THROWAWAY_NAME="$THROWAWAY_CANDIDATE"
     trap cleanup_throwaway EXIT
     # -h 127.0.0.1: the init-time server listens on the unix socket only, so a TCP probe does not

@@ -6,6 +6,7 @@ All route modules register onto the one :data:`router`; the package
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from collections.abc import Iterator
 from contextlib import contextmanager
 from uuid import UUID
@@ -20,12 +21,12 @@ from app.models.tag import Tag
 from app.schemas.tag import Tag as TagSchema
 from app.schemas.tag import TagMutationResult
 from app.schemas.tag import TagShareTarget
+from app.services.request_context import RequestContext
 from app.services.tag_operations import TAG_NOT_FOUND
 from app.services.tag_operations import TagMutationOutcome
 from app.services.tag_operations import TagNotFoundError
 from app.services.tag_operations import TagTenantMismatchError
-from app.services.tag_scope import is_system_tag
-from app.services.tag_scope import tag_in_tenant
+from app.services.tag_scope import TagWriteRights
 from app.services.tag_scope import tag_ownership
 from app.services.tag_service import InvalidTagNameError
 from app.services.tag_service import tags_by_uuid
@@ -51,10 +52,8 @@ def _writable_tag_ids(
 ) -> list[int]:
     """Resolve tag uuids to ids the caller may rename, merge, delete or share.
 
-    A system tag needs ``can_write_system``. Any other tag must be in the request
-    tenant and be the caller's own, or an organization tag with the caller an
-    org admin. Anything else answers 404, never 403, so probing cannot tell
-    another tenant's tag from an unknown uuid.
+    The rule is :class:`TagWriteRights`. A tag it refuses answers 404, never
+    403, so probing cannot tell another tenant's tag from an unknown uuid.
 
     Returns:
         Ids in input order, duplicates kept.
@@ -62,22 +61,42 @@ def _writable_tag_ids(
     Raises:
         HTTPException: 404 "Tag not found" for any unknown or non-writable uuid.
     """
+    rights = TagWriteRights(
+        user_id=user_id,
+        organization_id=organization_id,
+        can_write_system=can_write_system,
+        is_org_admin=is_org_admin,
+    )
     rows = tags_by_uuid(db, tag_uuids)
     ids: list[int] = []
     for tag_uuid in tag_uuids:
         tag = rows.get(tag_uuid)
-        if tag is None:
-            raise _tag_not_found()
-        if is_system_tag(tag):
-            allowed = can_write_system
-        else:
-            allowed = tag_in_tenant(tag, user_id, organization_id) and (
-                tag.user_id == user_id or (tag.organization_id is not None and is_org_admin)
-            )
-        if not allowed:
+        if tag is None or not rights.permits(tag):
             raise _tag_not_found()
         ids.append(tag.id)
     return ids
+
+
+def _write_rights(ctx: RequestContext, user_id: int) -> TagWriteRights:
+    """The request's tag write rights, built from the same inputs every write route passes.
+
+    A support grant refuses every tag write at the route, so under one nothing
+    is reported writable.
+    """
+    return TagWriteRights(
+        user_id=user_id,
+        organization_id=ctx.org_id,
+        can_write_system=ctx.bypass.deployment_scope_writable,
+        is_org_admin=ctx.is_org_admin,
+        refused=ctx.bypass.under_grant,
+    )
+
+
+def _writable_uuids(db: Session, tag_uuids: Iterable[UUID], rights: TagWriteRights) -> set[UUID]:
+    """Which of ``tag_uuids`` the caller may write, loaded in one query."""
+    return {
+        tag_uuid for tag_uuid, tag in tags_by_uuid(db, tag_uuids).items() if rights.permits(tag)
+    }
 
 
 def _share_target(share: TagShare) -> TagShareTarget:
@@ -99,23 +118,24 @@ def _share_target(share: TagShare) -> TagShareTarget:
     )
 
 
-def _tag_response(tag: Tag, user_id: int) -> TagSchema:
-    """A tag as the caller sees it, ownership included, exactly as ``GET /tags`` labels it."""
+def _tag_response(tag: Tag, rights: TagWriteRights) -> TagSchema:
+    """A tag as the caller sees it, labelled with its ownership and write right."""
     return TagSchema.model_validate(
         {
             "uuid": tag.uuid,
             "name": tag.name,
             "source": tag.source,
-            "ownership": tag_ownership(tag, user_id),
+            "ownership": tag_ownership(tag, rights.user_id),
+            "can_write": rights.permits(tag),
         }
     )
 
 
-def _mutation_response(outcome: TagMutationOutcome, user_id: int) -> TagMutationResult:
+def _mutation_response(outcome: TagMutationOutcome, rights: TagWriteRights) -> TagMutationResult:
     """Serialize an operation's outcome, labelling its tag for the acting user."""
     result = TagMutationResult.model_validate(outcome)
     if outcome.tag is not None:
-        result.tag = _tag_response(outcome.tag, user_id)
+        result.tag = _tag_response(outcome.tag, rights)
     return result
 
 

@@ -476,5 +476,6 @@ def test_a_plain_rename_reports_the_renamed_row_with_its_new_name(
         "name": new_name,
         "source": "manual",
         "ownership": "mine",
+        "can_write": True,
     }
     assert body["deleted_uuids"] == []

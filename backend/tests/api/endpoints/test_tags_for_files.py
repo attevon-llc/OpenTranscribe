@@ -69,11 +69,13 @@ def test_row_shape_has_no_internal_id_and_reports_the_source(
         "name",
         "source",
         "ownership",
+        "can_write",
         "file_count",
         "selection_size",
     }
     assert row["uuid"] == str(tag.uuid)
     assert row["source"] == "manual"
+    assert row["can_write"] is True
 
 
 def test_ownership_is_reported_per_row(

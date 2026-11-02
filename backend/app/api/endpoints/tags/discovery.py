@@ -12,10 +12,13 @@ from sqlalchemy.orm import Session
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.tags._common import _tag_not_found
+from app.api.endpoints.tags._common import _writable_uuids
+from app.api.endpoints.tags._common import _write_rights
 from app.api.endpoints.tags._common import router
 from app.db.base import get_db
 from app.models.tag import Tag
 from app.models.user import User
+from app.schemas.tag import Tag as TagSchema
 from app.schemas.tag import TagCollisionCluster
 from app.schemas.tag import TagFileList
 from app.schemas.tag import TaggedFile
@@ -42,7 +45,16 @@ def list_tag_collisions(
     distinct names as suggestions. Repairs stale stored normalizations first.
     """
     clusters = find_tag_collisions(db, user_id=current_user.id, organization_id=ctx.org_id)
-    return [TagCollisionCluster.model_validate(cluster) for cluster in clusters]
+    responses = [TagCollisionCluster.model_validate(cluster) for cluster in clusters]
+    listed: list[TagSchema] = [
+        tag for response in responses for tag in [*response.members, *response.suggestions]
+    ]
+    writable = _writable_uuids(
+        db, [tag.uuid for tag in listed], _write_rights(ctx, current_user.id)
+    )
+    for tag in listed:
+        tag.can_write = tag.uuid in writable
+    return responses
 
 
 @router.get("/for-files", response_model=list[TagOnSelection])
@@ -72,12 +84,14 @@ def list_tags_on_files(
         for file_uuid in selected
     ]
     rows = tags_on_files(db, file_ids, user_id=current_user.id, organization_id=ctx.org_id)
+    rights = _write_rights(ctx, current_user.id)
     return [
         TagOnSelection(
             uuid=tag.uuid,
             name=tag.name,
             source=tag.source,
             ownership=tag_ownership(tag, current_user.id),
+            can_write=rights.permits(tag),
             file_count=count,
             selection_size=len(file_ids),
         )

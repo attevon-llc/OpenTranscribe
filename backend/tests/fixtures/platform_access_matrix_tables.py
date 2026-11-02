@@ -72,6 +72,8 @@ CONTENT_GUARDS: dict[str, str] = {
     "GET /api/files/{file_uuid}/waveform/peaks": "bypass",
     "GET /api/groups": "caller",
     "GET /api/groups/{group_uuid}": "caller",
+    "GET /api/legal/acknowledgments": "caller",
+    "GET /api/legal/documents": "caller",
     "GET /api/llm-settings": "caller",
     "GET /api/llm-settings/config/{config_uuid}": "caller",
     "GET /api/llm-settings/config/{config_uuid}/context-window": "caller",
@@ -129,6 +131,7 @@ CONTENT_GUARDS: dict[str, str] = {
     "POST /api/files/batch-extract": "bypass",
     "POST /api/files/management/bulk-action": "bypass",
     "POST /api/files/retroactive-auto-label": "caller",
+    "POST /api/legal/acknowledgments": "bypass",
     "POST /api/files/{file_uuid}/analytics/refresh": "bypass",
     "POST /api/files/{file_uuid}/apply": "bypass",
     "POST /api/files/{file_uuid}/auto-label": "bypass",
@@ -229,6 +232,10 @@ INLINE_ROLE_ROUTES: dict[str, tuple[str, str]] = {
     "POST /api/legal/acknowledgments": (
         "settings",
         "only a super_admin may accept the operator acknowledgment; deployment-level record",
+    ),
+    "GET /api/legal/acknowledgments": (
+        "account-admin",
+        "the role test (platform admin, or org admin for organization=current) only decides which acceptance records are listed; the organization form is filtered on ctx.org_id; the rows carry the accepting account's email and document versions, never tenant media or transcripts",
     ),
     "DELETE /api/admin/users/{user_uuid}": (
         "account-admin",

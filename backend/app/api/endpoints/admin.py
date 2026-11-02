@@ -1305,13 +1305,15 @@ def clear_cache_now(
     logger.info(f"Manual derived-cache clear by admin {current_user.email}")
     try:
         deleted = cache_management_service.clear_derived_cache()
+    except HTTPException:
+        raise
     except StorageDeleteIncompleteError as e:
         logger.error(f"Derived-cache clear left objects behind: {e}")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"{len(e.remaining)} cached object(s) could not be removed (a storage lock or "
-                "a refused delete). The server log names them; try again after resolving it."
+                "Some cached objects could not be removed (a storage lock or a refused "
+                "delete). The server log names them; try again after resolving it."
             ),
         ) from e
     except Exception as e:

@@ -146,11 +146,6 @@ PLATFORM_OP_RULES: tuple[tuple[str, str, str], ...] = (
         "scope, never tenant content",
     ),
     (
-        r"^GET /api/legal/acknowledgments",
-        "settings",
-        "the operator's legal acknowledgment record; deployment-level",
-    ),
-    (
         r"^GET /api/speakers/debug/cross-media-data",
         "self-scoped",
         "admin-gated diagnostic that reads only the caller's own speakers (user_id filter)",

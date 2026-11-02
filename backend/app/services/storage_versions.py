@@ -97,13 +97,18 @@ def versioning_state(client: Any, bucket: str) -> str:
     cached = _versioning.get(bucket)
     if cached is not None and time.monotonic() - cached[1] < VERSIONING_CACHE_SECONDS:
         return cached[0]
+    denied = False
+    no_versioning = False
     try:
         status = getattr(client.get_bucket_versioning(bucket), "status", None)
         state = ON if status in ("Enabled", "Suspended") else OFF
     except S3Error as e:
-        if e.code not in _DENIED:
+        denied = e.code in _DENIED
+        no_versioning = e.code == _NO_VERSIONING
+        if not denied:
             raise
-        state = OFF if e.code == _NO_VERSIONING else UNKNOWN
+    if denied:
+        state = OFF if no_versioning else UNKNOWN
     if state == ON:
         _versioning[bucket] = (state, time.monotonic())
     else:

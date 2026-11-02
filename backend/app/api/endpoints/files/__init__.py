@@ -1409,8 +1409,8 @@ def clear_video_cache(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"{len(e.remaining)} cached object(s) could not be removed (a storage lock or "
-                "a refused delete). The server log names them."
+                "Some cached objects could not be removed (a storage lock or a refused "
+                "delete). The server log names them."
             ),
         ) from e
     except Exception as e:

@@ -580,7 +580,8 @@ ensure_opensearch_models() {
   # Do NOT set CUDA_VISIBLE_DEVICES - PyTorch will automatically use the only available GPU
   # The output is captured, not piped through `grep || true`: that pipeline's status was
   # grep's, so a crashed downloader looked identical to a quiet one.
-  local dl_output dl_status=0
+  local dl_output
+  local dl_status=0
   # shellcheck disable=SC2086
   dl_output=$(docker run --rm \
       $gpu_args \

@@ -134,6 +134,9 @@ class _FakeQuery:
     def update(self, *args, **kwargs) -> int:
         return 0
 
+    def scalar(self) -> int:
+        return 0
+
 
 class _FakeSession:
     """Minimal Session stand-in. ``delete`` raises; everything else is inert.

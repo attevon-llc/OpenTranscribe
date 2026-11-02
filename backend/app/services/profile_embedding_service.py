@@ -19,10 +19,12 @@ from typing import Any
 import numpy as np
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.embedding_models import get_speaker_index
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerProfile
 from app.services.opensearch_service import get_speaker_embedding
+from app.services.opensearch_service.client import OpenSearchUnavailableError
 from app.services.opensearch_service.profiles import SPEAKER_PROFILE_MATCH_THRESHOLD
 from app.services.permission_service import file_ids_in_scope
 from app.services.privacy.policy import Decision
@@ -154,7 +156,7 @@ def _process_profile_with_embeddings(
 
 
 def _check_opensearch_profile_prerequisites(
-    user_id: int,
+    user_id: int, *, strict: bool = False
 ) -> tuple[Any, Any, bool]:
     """
     Check prerequisites for OpenSearch profile similarity search.
@@ -165,6 +167,8 @@ def _check_opensearch_profile_prerequisites(
     from app.services.opensearch_service import opensearch_client
 
     if not opensearch_client:
+        if strict and settings.OPENSEARCH_ENABLED:
+            raise OpenSearchUnavailableError("OpenSearch client unavailable")
         logger.warning("OpenSearch client not initialized")
         return None, None, False
 
@@ -238,8 +242,10 @@ def _execute_knn_search(
     threshold: float,
     accessible_profile_ids: set[int] | None = None,
     organization_id: int | None = None,
+    *,
+    strict: bool = False,
 ) -> list[dict]:
-    """Execute KNN search and return matches above threshold."""
+    """Execute KNN search and return matches above threshold (``strict``: raise on failure)."""
     from app.services.opensearch_service import _is_index_corruption_error
     from app.services.opensearch_service import _repair_index
     from app.services.opensearch_service import _speaker_org_filter_clauses
@@ -282,6 +288,8 @@ def _execute_knn_search(
                 except Exception as retry_err:
                     logger.error(f"KNN search retry after repair failed: {retry_err}")
         logger.error(f"Error in OpenSearch KNN search: {e}")
+        if strict:
+            raise OpenSearchUnavailableError(f"profile kNN failed: {e}") from e
         return []
 
     return _extract_matches_from_response(response, threshold)
@@ -604,6 +612,8 @@ class ProfileEmbeddingService:
         threshold: float = SPEAKER_PROFILE_MATCH_THRESHOLD,
         accessible_profile_ids: set[int] | None = None,
         organization_id: int | None = None,
+        *,
+        strict: bool = False,
     ) -> list[dict]:
         """
         Find speaker profiles using OpenSearch native kNN search for optimal performance.
@@ -618,12 +628,19 @@ class ProfileEmbeddingService:
             accessible_profile_ids: Optional set of profile IDs to search within
                 (for shared profile scope). If None, filters by user_id.
             organization_id: Active org id (None = personal) — tenant gate.
+            strict: Raise instead of returning ``[]`` when the cluster could not
+                answer, for callers that act on "no profile matched".
 
         Returns:
             List of matching profiles with similarity scores
+
+        Raises:
+            OpenSearchUnavailableError: ``strict`` and the search failed.
         """
         try:
-            opensearch_client, _, should_continue = _check_opensearch_profile_prerequisites(user_id)
+            opensearch_client, _, should_continue = _check_opensearch_profile_prerequisites(
+                user_id, strict=strict
+            )
             if not should_continue:
                 return []
 
@@ -644,6 +661,7 @@ class ProfileEmbeddingService:
                 threshold,
                 accessible_profile_ids=accessible_profile_ids,
                 organization_id=organization_id,
+                strict=strict,
             )
 
             logger.info(
@@ -653,4 +671,8 @@ class ProfileEmbeddingService:
 
         except Exception as e:
             logger.error(f"Error in OpenSearch profile similarity search: {e}")
+            if strict:
+                if isinstance(e, OpenSearchUnavailableError):
+                    raise
+                raise OpenSearchUnavailableError(f"profile similarity search failed: {e}") from e
             return []

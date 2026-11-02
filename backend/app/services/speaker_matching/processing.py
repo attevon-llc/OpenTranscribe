@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 
 from app.models.speaker import Speaker
+from app.services.opensearch_service.client import OpenSearchUnavailableError
 
 if TYPE_CHECKING:
     from app.services.speaker_matching_service import SpeakerMatchingService
@@ -34,6 +35,11 @@ def process_speaker_embeddings_native(
 
     Returns:
         List of speaker match results.
+
+    Raises:
+        OpenSearchUnavailableError: A match lookup could not answer. The run stops at that
+            speaker without recording it and rolls back what is uncommitted: read as "no
+            match", the outage would store each voice as a new one.
     """
     # Tenant scope for all stores/queries follows the file's org.
     organization_id = self._media_file_org_id(media_file_id)
@@ -44,17 +50,22 @@ def process_speaker_embeddings_native(
         return []
 
     results = []
-    for speaker_id, embedding in native_embeddings.items():
-        result = self._process_single_speaker(
-            speaker_id,
-            [embedding],
-            user_id,
-            media_file_id,
-            accessible_profile_ids=accessible_profile_ids,
-            organization_id=organization_id,
-        )
-        if result:
-            results.append(result)
+    try:
+        for speaker_id, embedding in native_embeddings.items():
+            result = self._process_single_speaker(
+                speaker_id,
+                [embedding],
+                user_id,
+                media_file_id,
+                accessible_profile_ids=accessible_profile_ids,
+                organization_id=organization_id,
+            )
+            if result:
+                results.append(result)
+    except OpenSearchUnavailableError:
+        self.db.rollback()
+        self._rename_tracker.discard()
+        raise
 
     self.db.commit()
     self._rename_tracker.flush(self.db)
@@ -82,6 +93,9 @@ def process_single_speaker(
 
     Returns:
         Speaker processing result or None if failed
+
+    Raises:
+        OpenSearchUnavailableError: The match lookup could not answer; nothing is written.
     """
 
     if not embeddings:

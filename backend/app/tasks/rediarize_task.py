@@ -390,6 +390,7 @@ def _voiceprint_stage(
         )
         return False
 
+    from app.services.opensearch_service.client import OpenSearchUnavailableError
     from app.tasks.transcription.context import TranscriptionContext
     from app.tasks.transcription.embeddings import _process_speaker_embeddings_native
     from app.tasks.transcription.embeddings import _should_use_native_embeddings
@@ -406,11 +407,15 @@ def _voiceprint_stage(
         content_type=meta["content_type"],
     )
     if native and _should_use_native_embeddings({"native_speaker_embeddings": native}):
-        with stage_timing.stage("speaker_embedding", task_id=task_id, file_id=meta["file_id"]):
-            _process_speaker_embeddings_native(ctx, native, processed, speaker_mapping)
-        return False
-
-    if native:
+        try:
+            with stage_timing.stage("speaker_embedding", task_id=task_id, file_id=meta["file_id"]):
+                _process_speaker_embeddings_native(ctx, native, processed, speaker_mapping)
+            return False
+        except OpenSearchUnavailableError as e:
+            # Matching stopped without recording the speaker it failed on; the embedding
+            # stage below retries until the index answers.
+            logger.warning(f"Inline speaker matching for {file_uuid} deferred: {e}")
+    elif native:
         # A v3 (512-d) index cannot take the 256-d centroids; keep them staged for the
         # migration, and let the embedding stage produce vectors in the index's space.
         try:

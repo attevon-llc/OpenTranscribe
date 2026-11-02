@@ -3,9 +3,11 @@
 import logging
 from typing import Any
 
+from app.core.config import settings
 from app.core.constants import SPEAKER_CONFIDENCE_MEDIUM
 from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.aliases import get_active_speaker_index
+from app.services.opensearch_service.client import OpenSearchUnavailableError
 from app.services.opensearch_service.client import _is_index_corruption_error
 from app.services.opensearch_service.client import _speaker_org_filter_clauses
 from app.services.opensearch_service.client import query_embedding_dimension_mismatch
@@ -43,6 +45,12 @@ def _extract_speaker_match(hit: dict, threshold: float) -> dict[str, Any] | None
     }
 
 
+def _top_hit_match(response: dict[str, Any], threshold: float) -> dict[str, Any] | None:
+    """The best hit as a match, or None when there is none above ``threshold``."""
+    hits = response["hits"]["hits"]
+    return _extract_speaker_match(hits[0], threshold) if hits else None
+
+
 def find_matching_speaker(
     embedding: list[float],
     user_id: int,
@@ -51,6 +59,8 @@ def find_matching_speaker(
     exclude_speaker_ids: list[int] | None = None,
     accessible_user_ids: list[int] | None = None,
     organization_id: int | None = None,
+    *,
+    strict: bool = False,
 ) -> dict[str, Any] | None:
     """
     Find a matching speaker for a given embedding with confidence score
@@ -66,11 +76,18 @@ def find_matching_speaker(
         organization_id: Active org id (None = personal). Adds the default-deny
             tenant gate so cross-org voiceprints never match. Community-edition
             invariance: None + org-less docs => the personal gate is a no-op.
+        strict: Raise instead of returning None when the cluster could not answer.
+            Matching must pass it: "no match" stores the voiceprint as a new voice.
 
     Returns:
         Dictionary with speaker info and confidence if a match is found, None otherwise
+
+    Raises:
+        OpenSearchUnavailableError: ``strict`` and the search failed.
     """
     if not _client.opensearch_client:
+        if strict and settings.OPENSEARCH_ENABLED:
+            raise OpenSearchUnavailableError("OpenSearch client unavailable")
         logger.warning("OpenSearch client not initialized, skipping speaker matching")
         return None
 
@@ -122,15 +139,7 @@ def find_matching_speaker(
 
         # Execute search
         response = _client.opensearch_client.search(index=get_active_speaker_index(), body=query)
-
-        # Check if we have a match
-        if len(response["hits"]["hits"]) > 0:
-            match = _extract_speaker_match(response["hits"]["hits"][0], threshold)
-            if match:
-                return match
-
-        # No match found or score below threshold
-        return None
+        return _top_hit_match(response, threshold)
 
     except Exception as e:
         if _is_index_corruption_error(e):
@@ -142,15 +151,15 @@ def find_matching_speaker(
                     response = _client.opensearch_client.search(
                         index=get_active_speaker_index(), body=query
                     )
-                    if len(response["hits"]["hits"]) > 0:
-                        match = _extract_speaker_match(response["hits"]["hits"][0], threshold)
-                        if match:
-                            return match
-                    return None
+                    return _top_hit_match(response, threshold)
                 except Exception as retry_err:
                     logger.error(f"Retry after repair failed for speaker matching: {retry_err}")
+                    if strict:
+                        raise OpenSearchUnavailableError(str(retry_err)) from retry_err
                     return None
         logger.error(f"Error finding matching speaker: {e}")
+        if strict:
+            raise OpenSearchUnavailableError(f"speaker kNN failed: {e}") from e
         return None
 
 

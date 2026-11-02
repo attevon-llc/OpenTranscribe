@@ -278,3 +278,40 @@ describe('BulkTagModal remove scope', () => {
     expect(screen.queryByRole('option', { name: 'interview' })).toBeNull();
   });
 });
+
+describe('BulkTagModal add / remove switch', () => {
+  it('removes a tag across a multi-file selection opened in add mode', async () => {
+    api.bulkTagFiles.mockResolvedValue(results(repeat('removed', 50)));
+    const applied = vi.fn();
+    render(BulkTagModal, {
+      props: { isOpen: true, action: 'add_tag', fileUuids },
+      events: { applied },
+    });
+
+    await fireEvent.click(screen.getByRole('tab', { name: 'Remove Tag' }));
+    expect(
+      screen.getByRole('heading', { name: 'Remove a tag from 50 file(s)' })
+    ).toBeInTheDocument();
+
+    await type('roadmap');
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove tag' }));
+
+    await waitFor(() =>
+      expect(api.bulkTagFiles).toHaveBeenCalledWith(fileUuids, 'remove_tag', 'roadmap')
+    );
+    // Removing must never create the tag it removes.
+    expect(api.createTag).not.toHaveBeenCalled();
+    expect(applied.mock.calls[0][0].detail).toMatchObject({ action: 'remove_tag', changed: 50 });
+  });
+
+  it('starts in the mode it was opened with and switches back to add', async () => {
+    render(BulkTagModal, { props: { isOpen: true, action: 'remove_tag', fileUuids } });
+    expect(screen.getByRole('tab', { name: 'Remove Tag' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+
+    await fireEvent.click(screen.getByRole('tab', { name: 'Add Tag' }));
+    expect(screen.getByRole('heading', { name: 'Add a tag to 50 file(s)' })).toBeInTheDocument();
+  });
+});

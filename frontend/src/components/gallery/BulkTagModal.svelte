@@ -26,6 +26,7 @@
   import MetadataChips from '$components/ui/MetadataChips.svelte';
   import SearchableSelect from '$components/ui/SearchableSelect.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
+  import Tabs from '$components/ui/Tabs.svelte';
   import { bulkTagFiles, createTag, listTags, listTagsOnFiles } from '$lib/api/tags';
   import type { TagOnSelection } from '$lib/types/tag';
   import { getErrorMessage } from '$lib/utils/apiError';
@@ -36,7 +37,7 @@
   import type { BulkTagAction, BulkTagActionResult } from '$lib/types/tag';
 
   export let isOpen = false;
-  /** Which direction the Organize menu asked for. */
+  /** The direction the dialog opens in; the user can switch it inside. */
   export let action: BulkTagAction = 'add_tag';
   /** UUIDs of the selected files, in selection order. */
   export let fileUuids: string[] = [];
@@ -128,8 +129,36 @@
   let summary: Summary | null = null;
   let allTagNames: string[] = [];
   let wasOpen = false;
+  /**
+   * The direction actually applied. The gallery offers one Tags entry, so the
+   * dialog is the only place a multi-file selection can choose to remove.
+   */
+  let mode: BulkTagAction = action;
 
-  $: isAdd = action === 'add_tag';
+  $: isAdd = mode === 'add_tag';
+  $: modeTabs = [
+    {
+      id: 'add_tag',
+      label: $t('gallery.bulk.addTag'),
+      title: $t('gallery.bulk.addTagTooltip'),
+      disabled: busy,
+    },
+    {
+      id: 'remove_tag',
+      label: $t('gallery.bulk.removeTag'),
+      title: $t('gallery.bulk.removeTagTooltip'),
+      disabled: busy,
+    },
+  ];
+
+  function changeMode(event: CustomEvent<string>) {
+    const next = event.detail as BulkTagAction;
+    if (next === mode || busy) return;
+    mode = next;
+    // The summary and any error described the other direction.
+    summary = null;
+    errorMessage = '';
+  }
   $: presentNames = Array.from(
     new Set(
       [...presentTagNames, ...currentTags.map((tag) => tag.name)].filter(
@@ -154,6 +183,7 @@
   }
 
   async function openReset() {
+    mode = action;
     tagName = '';
     errorMessage = '';
     summary = null;
@@ -223,10 +253,10 @@
     summary = null;
     try {
       const resolved = await resolveName(typed);
-      const results = await bulkTagFiles(fileUuids, action, resolved);
+      const results = await bulkTagFiles(fileUuids, mode, resolved);
       summary = summarize(results, typed, resolved);
       dispatch('applied', {
-        action,
+        action: mode,
         name: resolved,
         changed: summary.changed,
         unchanged: summary.unchanged,
@@ -254,6 +284,13 @@
   onClose={close}
 >
   <form class="bulk-tag-form" on:submit|preventDefault={submit}>
+    <Tabs
+      tabs={modeTabs}
+      activeId={mode}
+      ariaLabel={$t('gallery.bulk.addOrEditTags')}
+      on:change={changeMode}
+    />
+
     <!-- What the selection already has. Chips are removable for a single file
          (the file detail page's editor, same shape) and read-only with an
          "on N of M" count for several, because removing across a mixed

@@ -657,7 +657,7 @@ def test_an_llm_suggestion_never_brings_back_a_name_the_user_unassigned(
 def test_typing_the_name_on_one_speaker_overrides_the_correction(
     db_session, normal_user, speaker_os_seams
 ):
-    from app.api.endpoints.speaker_profile_assignment import auto_create_or_assign_profile
+    from app.api.endpoints.speakers_profile_workflow import auto_create_or_assign_profile
 
     trio = _trio(db_session, normal_user, speaker_os_seams)
     _unassign_c(db_session, normal_user, trio)

@@ -256,7 +256,7 @@ def test_naming_a_cluster_member_someone_else_takes_it_out_of_the_old_cluster(
     db_session, normal_user, speaker_os_seams
 ):
     """Typing "Alice" on a member of Bob's cluster: the section is Alice's, not Bob's."""
-    from app.api.endpoints.speaker_profile_assignment import auto_create_or_assign_profile
+    from app.api.endpoints.speakers_profile_workflow import auto_create_or_assign_profile
 
     group = _bob_cluster(db_session, normal_user, speaker_os_seams, c_voice=VX)
     c = db_session.get(Speaker, group["c"].id)

@@ -447,7 +447,7 @@ is not a statement that the members differ), and `blacklist: false` on unassign 
 nothing (the UI's "Prevent from rejoining" opt-out).
 
 **Autoflush is off.** A caller that sets `profile_id` and rebuilds in the same transaction
-must flush first (`speaker_update._update_profile_embedding` does): the rebuild otherwise
+must flush first (`speakers_profile_workflow._update_profile_embedding` does): the rebuild otherwise
 reads the membership from before the link, and the new voice never reaches the embedding.
 
 ## A speaker's label comes from a human or a voiceprint, never from an LLM (owner decision 2026-10-12)
@@ -987,9 +987,8 @@ in the backend image (`js_runtimes` at `/usr/local/bin/deno`, required since yt-
 YouTube PO tokens; `YOUTUBE_EXTRACTOR_ARGS` rotates player clients).
 
 - Limits: **15 GB** (`max_filesize`, matches the upload limit) and **4 h** (`duration > 14400`).
-- `create_user_friendly_error` maps raw yt-dlp errors → guidance via `AUTH_ERROR_PATTERNS` +
-  `PLATFORM_GUIDANCE`. `RECOMMENDED_PLATFORMS = ["YouTube", "Dailymotion", "Twitter/X"]`.
-  Vimeo / Instagram / Facebook / LinkedIn / Patreon usually need auth.
+- yt-dlp failures return a fixed literal and log the real error; the raw message can carry
+  cookie/config paths or the URL (#859). Vimeo / Instagram / Facebook / LinkedIn / Patreon usually need auth.
 
 ## Exports and redaction — three rules that are not obvious (issue #85)
 

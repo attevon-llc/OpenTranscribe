@@ -54,9 +54,7 @@ def seams(monkeypatch, db_session):
     monkeypatch.setattr("app.db.session_utils.session_scope", scope)
     monkeypatch.setattr("app.services.opensearch_service.get_opensearch_client", FakeClient)
     monkeypatch.setattr("app.services.search.reindex_dispatch.queue_transcript_reindex", queue)
-    monkeypatch.setattr(
-        "app.services.search.corpus_cache._invalidate_chat_retrieval_cache", lambda: None
-    )
+    monkeypatch.setattr("app.services.chat.retrieval_cache.bump_corpus_version", lambda: None)
     return {"updates": updates, "reindexes": reindexes}
 
 

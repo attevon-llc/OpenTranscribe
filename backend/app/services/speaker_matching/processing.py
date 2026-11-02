@@ -14,63 +14,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def process_speaker_segments(
-    self: "SpeakerMatchingService",
-    audio_path: str,
-    media_file_id: int,
-    user_id: int,
-    segments: list[dict[str, Any]],
-    speaker_mapping: dict[str, int],
-    accessible_profile_ids: set[int] | None = None,
-) -> list[dict[str, Any]]:
-    """
-    Process speaker segments and match to profiles.
-
-    Args:
-        audio_path: Path to audio file
-        media_file_id: Media file ID
-        user_id: User ID
-        segments: Transcript segments
-        speaker_mapping: Mapping of speaker labels to IDs
-        accessible_profile_ids: Optional set of accessible profile IDs for shared matching
-
-    Returns:
-        List of speaker match results
-    """
-    # Tenant scope for all stores/queries follows the file's org.
-    organization_id = self._media_file_org_id(media_file_id)
-
-    # Privacy policy (#1280): no embedding is even extracted for a scope that is off.
-    if not self._voiceprints_allowed(user_id, organization_id):
-        logger.info("Speaker matching for file %s skipped by privacy policy", media_file_id)
-        return []
-
-    # Extract embeddings for all speakers
-    if self.embedding_service is None:
-        raise ValueError("Embedding service is required for processing speaker segments")
-    speaker_embeddings = self.embedding_service.extract_embeddings_for_segments(
-        audio_path, segments, speaker_mapping
-    )
-
-    results = []
-
-    for speaker_id, embeddings in speaker_embeddings.items():
-        result = self._process_single_speaker(
-            speaker_id,
-            embeddings,
-            user_id,
-            media_file_id,
-            accessible_profile_ids=accessible_profile_ids,
-            organization_id=organization_id,
-        )
-        if result:
-            results.append(result)
-
-    self.db.commit()
-    self._rename_tracker.flush(self.db)
-    return results
-
-
 def process_speaker_embeddings_native(
     self: "SpeakerMatchingService",
     media_file_id: int,

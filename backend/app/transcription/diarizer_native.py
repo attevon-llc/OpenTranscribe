@@ -50,17 +50,11 @@ import numpy as np
 from app.core.constants import DIAR_SIDECAR_MIN_RTF
 from app.core.constants import DIAR_SIDECAR_TIMEOUT_FLOOR_S
 from app.core.scratch_paths import DIAR_NATIVE_SHARED_DIR_DEFAULT
-from app.transcription.diar_shared_volume import _ENGINE_SHARED_DIR
-from app.transcription.diar_shared_volume import _log_reuse_decision
-from app.transcription.diar_shared_volume import _path_is_on_shared_volume
+from app.core.scratch_paths import resolve_engine_shared_volume_path
+from app.transcription import diar_sidecar_status
 from app.transcription.diar_sidecar_status import DiarSidecarUnavailableError
-from app.transcription.diar_sidecar_status import _classify_sidecar_failure
-from app.transcription.diar_sidecar_status import default_base_url
-from app.transcription.diar_sidecar_status import diarizer_require_sidecar
-from app.transcription.diar_sidecar_status import sidecar_healthy
-from app.transcription.diar_sidecar_status import sidecar_ready
-from app.transcription.diar_sidecar_status import sidecar_status
 from app.transcription.diarize_result import DiarizeResult
+from app.utils import scratch_volume
 
 if TYPE_CHECKING:
     from app.transcription.diarizer import SpeakerDiarizer
@@ -77,6 +71,49 @@ NATIVE_MODEL_NAME = "pyannote/speaker-diarization-community-1"
 # own-copy fallback namespace inside pipeline_scratch (issue #661 E2). Still a documented,
 # independently overridable env var; only the default changed.
 _SHARED_DIR = os.environ.get("DIAR_NATIVE_SHARED_DIR", DIAR_NATIVE_SHARED_DIR_DEFAULT)
+
+# The engine's Stage-1 shared-volume WAV mount, as seen from THIS container (the worker, not
+# the sidecar). Same env var EngineConfig reads for shared_volume_path — deliberately not a
+# second knob, since issue #661 is precisely about reusing the WAV that variable locates.
+#
+# The default is `ENGINE_SHARED_VOLUME_DEFAULT` (app.core.scratch_paths) — the SAME constant
+# `engine/config.py` and `tasks/transcription/preprocess.py` fall back to. When this file
+# alone defaulted to "/tmp/transcription" while the write side (preprocess.py) and EngineConfig
+# defaulted to a bare "/tmp", an install whose `.env` predated `ENGINE_SHARED_VOLUME_PATH`
+# wrote the WAV into the writer's container-LOCAL /tmp, this reader looked in the real mount,
+# found nothing, and silently fell back to MinIO — the exact per-job re-serialization cost
+# this shared-volume path exists to avoid. Since "reuse silently never fires" is itself a
+# failure mode nothing else would surface, diarize() logs which case fired on every call —
+# see `_log_reuse_decision`.
+_ENGINE_SHARED_DIR = resolve_engine_shared_volume_path()
+
+
+def _log_reuse_decision(wav_path: str | None, reused: bool) -> None:
+    """Observable signal for issue #661's E0 (make the fast path run, and PROVE it).
+
+    Silence here is exactly the failure mode that let the reuse optimisation never fire on
+    an install whose ``.env`` predates ``ENGINE_SHARED_VOLUME_PATH`` — every health check
+    stayed green while every diarization quietly took the slower re-encode path.
+    """
+    if wav_path and not reused:
+        if not scratch_volume.is_on_scratch_volume(wav_path):
+            logger.info(
+                "diar-native reuse-WAV optimisation NOT used: %s is not under the shared "
+                "volume root %s. If this worker and the sidecar should share a volume, set "
+                "PIPELINE_SCRATCH_DIR the same way in both (see .env.example).",
+                wav_path,
+                scratch_volume.SCRATCH_ROOT_REAL,
+            )
+        else:
+            logger.info(
+                "diar-native reuse-WAV optimisation NOT used: staged path %s does not "
+                "exist on disk.",
+                wav_path,
+            )
+    elif reused:
+        logger.info("diar-native reusing staged WAV at %s", wav_path)
+
+
 # CEILING on one /diarize request (issue #656 Step 4) — the real per-request budget is
 # duration-scaled, see _diarize_budget_s() and core/constants.py's DIAR_SIDECAR_* comment.
 # Default lowered 3600 -> 1800: at 1800 the worst case (a wedged sidecar plus the own-copy
@@ -171,7 +208,7 @@ class NativeSpeakerDiarizer:
 
     def __init__(self, config: Any, base_url: str | None = None):
         self.config = config
-        self.base_url = (base_url or default_base_url()).rstrip("/")
+        self.base_url = (base_url or diar_sidecar_status.default_base_url()).rstrip("/")
         self.is_loaded = False
         self._fallback: SpeakerDiarizer | None = None
         # This object is shared by every task on the worker, so the fallback is too: it is
@@ -204,10 +241,10 @@ class NativeSpeakerDiarizer:
         is empty or broken answers /healthz with a cheerful 200. Raising here routes the
         caller to the PyAnnote fallback while it is still a choice.
         """
-        if not sidecar_healthy(self.base_url):
+        if not diar_sidecar_status.sidecar_healthy(self.base_url):
             raise RuntimeError(f"diar-native sidecar unavailable at {self.base_url}")
-        if not sidecar_ready(self.base_url):
-            status = sidecar_status(self.base_url)
+        if not diar_sidecar_status.sidecar_ready(self.base_url):
+            status = diar_sidecar_status.sidecar_status(self.base_url)
             raise RuntimeError(
                 f"diar-native sidecar at {self.base_url} is up but not ready "
                 f"(models_state={status.get('models_state', 'unknown')}): "
@@ -297,7 +334,7 @@ class NativeSpeakerDiarizer:
             # _AsyncDiarization.failed_unavailable must see a consistent classification
             # regardless of which branch actually ran.
             if isinstance(exc, Exception):
-                classified = _classify_sidecar_failure(exc)
+                classified = diar_sidecar_status._classify_sidecar_failure(exc)
                 if classified is not exc:
                     raise classified from exc
             raise
@@ -331,7 +368,7 @@ class NativeSpeakerDiarizer:
                     _ENGINE_SHARED_DIR,
                 )
                 return None
-            classified = _classify_sidecar_failure(exc)
+            classified = diar_sidecar_status._classify_sidecar_failure(exc)
             logger.warning(
                 "diar-native /diarize responded HTTP %s for the staged WAV at %s; NOT "
                 "retrying with a fresh copy — %s",
@@ -345,7 +382,7 @@ class NativeSpeakerDiarizer:
                 raise
             raise classified from exc
         except Exception as exc:  # noqa: BLE001 — timeout/connection loss: don't retry, re-raise
-            classified = _classify_sidecar_failure(exc)
+            classified = diar_sidecar_status._classify_sidecar_failure(exc)
             logger.warning(
                 "diar-native /diarize timed out or the connection was lost (%s); NOT "
                 "retrying — falling back to PyAnnote",
@@ -397,7 +434,7 @@ class NativeSpeakerDiarizer:
                 "models while transcription may still be running) — the caller must retry "
                 f"sequentially: {exc}"
             ) from exc
-        if diarizer_require_sidecar():
+        if diar_sidecar_status.diarizer_require_sidecar():
             # Issue #656 Step 6: makes the fail-hard policy exercisable in production BEFORE
             # #572 deletes the fallback outright. Re-raise the classified exception unchanged
             # so a Celery task's `except DiarSidecarUnavailableError` handler (Step 5) sees
@@ -535,7 +572,9 @@ class NativeSpeakerDiarizer:
         # the transcription-temp mount existed keeps its old mount set until it is
         # RECREATED, not merely restarted. Reproduced live, and it made every diarization on
         # the box fall back while every health check stayed green.
-        reused = bool(wav_path and _path_is_on_shared_volume(wav_path) and os.path.isfile(wav_path))
+        reused = bool(
+            wav_path and scratch_volume.is_on_scratch_volume(wav_path) and os.path.isfile(wav_path)
+        )
         _log_reuse_decision(wav_path, reused)
 
         own_wav: str | None = None

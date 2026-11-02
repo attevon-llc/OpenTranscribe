@@ -113,7 +113,7 @@ orm_call_in_api::backend/app/api/endpoints/speakers_list.py	2	layering: removal 
 orm_call_in_api::backend/app/api/endpoints/speakers_list_filters.py	9	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/speakers_merge.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/speakers_occurrences.py	2	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/speakers_profile_workflow.py	7	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/speakers_profile_workflow.py	10	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/speakers_suggestions.py	7	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/summarization.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/support_access.py	1	layering: removal planned
@@ -145,4 +145,3 @@ orm_call_in_api::backend/app/api/endpoints/watch_sources_email_configs.py	4	laye
 orm_call_in_api::backend/app/api/endpoints/watch_sources_email_links.py	7	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/watch_sources_files.py	4	layering: removal planned
 orm_call_in_api::backend/app/api/websockets.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/speaker_profile_assignment.py	3	layering: removal planned

@@ -5,7 +5,6 @@ import logging
 from app.core.config import settings
 from app.services.opensearch_service import opensearch_client
 
-from ..corpus_cache import _invalidate_chat_retrieval_cache
 from ..plane_queries import chunk_plane_query
 from ..plane_queries import file_plane_query
 from .orphans import OrphanProbeMixin
@@ -49,7 +48,10 @@ class ChunkPlaneMixin(OrphanProbeMixin):
             deleted: int = response.get("deleted", 0)
             logger.info(f"Deleted {deleted} chunks for file {file_uuid}")
             if deleted:
-                _invalidate_chat_retrieval_cache()
+                # Function-local: chat.retrieval_cache imports search.chunk_retrieval at top level.
+                from app.services.chat.retrieval_cache import bump_corpus_version
+
+                bump_corpus_version()
             return deleted
         except Exception as e:
             logger.error(f"Error deleting chunks for file {file_uuid}: {e}")

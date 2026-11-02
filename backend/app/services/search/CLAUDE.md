@@ -19,7 +19,7 @@ in the sibling speaker/voiceprint plane, none in this package):
   `batch_find_matching_speakers` · `msearch_speaker_similarities`
 - `../opensearch_service/profiles.py` — `msearch_profile_knn_batch` · `find_matching_profiles`
 - `../opensearch_service/clusters.py` — `find_matching_clusters`
-- `../speaker_matching/` — `match_queries.find_unlabeled_speaker_matches` · `match_storage.process_match_hit`
+- `../speaker_matching/` — `match_queries.match_speaker_to_known_speakers` · `match_storage.process_match_hit`
 - `../profile_embedding_service.py` · `../similarity_service.py`
 
 This package itself never reads a raw kNN score: transcript search ranks by **RRF**, whose
@@ -76,7 +76,7 @@ The chunk plane in this package carries no voiceprint and is not gated.
     returns a Chinese transcript as one sentence, so the regex fallback was never reached.
     `reset_sentence_splitter_state()` exists for tests only.
 - `index_schema.py` (body, `_INDEX_VERSION`: bump logs a "full reindex" warning, never migrates), `index_admin.py`
-  (create/recreate/additive steps), `pipelines.py`, `plane_queries.py`, `corpus_cache.py`; `indexing_service.py` +
+  (create/recreate/additive steps), `pipelines.py`, `plane_queries.py`; `indexing_service.py` +
   `indexing/` = `TranscriptIndexingService` (per-plane mixins) — see `indexing/CLAUDE.md`.
 - `fusion.py` — **what a fusion strategy IS**: `FusionConfig`, the derived pipeline id, the
   pipeline body, and drift detection. See "Fusion is selectable per request" below.

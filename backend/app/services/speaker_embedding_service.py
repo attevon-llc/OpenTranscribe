@@ -558,29 +558,6 @@ class SpeakerEmbeddingService:
 
         return aggregated  # type: ignore[no-any-return]
 
-    def extract_reference_embedding(self, audio_paths: list[str]) -> np.ndarray | None:
-        """
-        Extract a reference embedding from multiple audio samples of the same speaker.
-
-        Args:
-            audio_paths: List of audio file paths containing the same speaker
-
-        Returns:
-            Aggregated reference embedding or None if failed
-        """
-        embeddings = []
-
-        for audio_path in audio_paths:
-            embedding = self.extract_embedding_from_file(audio_path)
-            if embedding is not None:
-                embeddings.append(embedding)
-
-        if not embeddings:
-            logger.error("Failed to extract any embeddings from reference audio")
-            return None
-
-        return self.aggregate_embeddings(embeddings)
-
     def get_embedding_dimension(self) -> int:
         """Get the dimension of the embeddings produced by the model."""
         return EmbeddingModeService.get_embedding_dimension(self.mode)

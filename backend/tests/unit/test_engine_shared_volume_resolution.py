@@ -101,7 +101,7 @@ def test_every_reader_and_writer_goes_through_the_resolver() -> None:
     # including these, not merely that it found no violations.
     known_readers = {
         "tasks/transcription/preprocess.py",
-        "transcription/diar_shared_volume.py",
+        "transcription/diarizer_native.py",
         "transcription/engine/config.py",
     }
     seen_readers: set[str] = set()

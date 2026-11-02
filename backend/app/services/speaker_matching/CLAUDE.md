@@ -9,13 +9,12 @@ class are unchanged.
 | Module | Concern |
 |---|---|
 | `thresholds.py` | `ConfidenceLevel`, `MATCHING_ORIGIN_TASK` |
-| `match_queries.py` | voiceprint -> known speakers / profiles / unlabeled speakers (read-only) |
-| `profiles.py` | profile create/assign, reference-embedding refresh, collections, occurrences |
-| `processing.py` | per-file entry points (`process_speaker_segments`, `..._native`) |
-| `match_guards.py` | user corrections that block a match; the origin record a match leaves |
-| `match_handling.py` | applying a found / not-found match (voiceprint store, profile centroid blend) |
+| `match_queries.py` | voiceprint -> known speakers / profiles (read-only) |
+| `profiles.py` | assigning a speaker to a profile, profile occurrences |
+| `processing.py` | per-file entry point (`process_speaker_embeddings_native`) and the per-speaker match-or-store step |
+| `match_handling.py` | applying a found / not-found match: user corrections that block it, the origin record it leaves, voiceprint store, profile centroid blend |
 | `propagation.py` | spreading a profile assignment to similar speakers |
-| `match_storage.py` | speaker-to-speaker match pairs: kNN query, stored rows, read-back |
+| `match_storage.py` | speaker-to-speaker match pairs: kNN query, stored rows |
 
 Mock targets: `add_speaker_embedding` is imported into `match_handling`; `find_matching_speaker`
 into `match_queries` AND `match_storage` (patch both when a flow crosses them);

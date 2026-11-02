@@ -430,13 +430,13 @@ def test_a_name_typed_for_a_speaker_with_no_profile_yet_is_human(
 ):
     """``auto_create_or_assign_profile`` links the typed name to a profile (an existing
     same-named one, or a new one); either way the link is the person's."""
-    from app.api.endpoints.speaker_profile_assignment import auto_create_or_assign_profile
+    from app.api.endpoints.speakers_profile_workflow import auto_create_or_assign_profile
 
     speaker, _ = _machine_named(db_session, normal_user, linked=False)
     if profile_exists:
         make_profile(db_session, normal_user, "Zed")
     speaker.display_name = "Zed"
-    with patch("app.api.endpoints.speaker_profile_assignment._update_profile_embedding"):
+    with patch("app.api.endpoints.speakers_profile_workflow._update_profile_embedding"):
         assert auto_create_or_assign_profile(speaker, "Zed", db_session)
     db_session.commit()
 

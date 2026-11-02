@@ -85,6 +85,7 @@ import logging
 
 import numpy as np
 
+from app.transcription.diar_sidecar_status import default_base_url
 from app.transcription.diar_sidecar_status import sidecar_ready
 from app.transcription.diar_sidecar_status import sidecar_supports_cpu_device
 from app.transcription.diarizer_native import post_json
@@ -97,8 +98,8 @@ NATIVE_EMBEDDING_SAMPLE_RATE = 16_000
 NATIVE_EMBEDDING_DIMENSION = 256
 
 # Upper bound on requests per extraction. Nothing in the pipeline caps segment
-# duration (``select_top_segments`` actively returns the LONGEST merged sections,
-# and ``extract_reference_embedding`` passes whole files), so an uncapped tiling
+# duration (``select_top_segments`` actively returns the LONGEST merged sections),
+# so an uncapped tiling
 # would issue one ~80 ms request per 10 s of audio without limit. 60 tiles covers
 # 10 minutes of speech before any subsampling begins, which is past every
 # realistic merged section. Beyond it the tiles are spread evenly across the clip
@@ -194,8 +195,6 @@ def embed_waveform(samples: np.ndarray, base_url: str | None = None) -> np.ndarr
         never means "this audio has no speaker", so callers must not treat it as
         a result.
     """
-    from app.transcription.diar_sidecar_status import default_base_url
-
     windows = fit_to_window(samples)
     if not windows:
         return None

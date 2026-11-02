@@ -257,11 +257,9 @@ class MediaDownloadService(PlaylistMixin, MediaMetadataMixin):
                 info = ydl.extract_info(url, download=False)
                 return info  # type: ignore[no-any-return]
         except yt_dlp.DownloadError as e:
-            # create_user_friendly_error is NOT a sanitizer despite the name — it
-            # only strips four literal yt-dlp prefixes on the non-auth-error
-            # branch, so the raw yt-dlp message (which can carry cookie/config
-            # paths or the URL itself) used to reach the response verbatim
-            # (#859). Log the real error with a traceback; return a fixed literal.
+            # The raw yt-dlp message can carry cookie/config paths or the URL
+            # itself, so it must never reach the response (#859). Log the real
+            # error with a traceback; return a fixed literal.
             logger.exception(f"Error extracting video info from {url}")
             raise InvalidInputError("Could not read information for that media URL.") from e
         except Exception as e:
@@ -479,8 +477,8 @@ class MediaDownloadService(PlaylistMixin, MediaMetadataMixin):
             }
 
         except yt_dlp.DownloadError as e:
-            # Same "create_user_friendly_error is not a sanitizer" reasoning as
-            # extract_video_info above — never echo the raw yt-dlp message (#859).
+            # Same reasoning as extract_video_info above: never echo the raw
+            # yt-dlp message (#859).
             logger.exception(f"yt-dlp download error for {url}")
             raise InvalidInputError("The media could not be downloaded from that URL.") from e
         except Exception as e:

@@ -30,7 +30,6 @@ import pytest
 
 from app.services.ingest_artifacts import index_mapping as digest_mapping
 from app.services.search import plane_queries
-from app.services.search.indexing import chunk_plane as chunk_plane_module
 from tests.fixtures.indexing_client import bind_indexing_client
 
 FILE_UUID = "11111111-2222-3333-4444-555555555555"
@@ -109,7 +108,7 @@ class _FakeOpenSearch:
         return True
 
     def record_cache_bump(self) -> None:
-        """Stands in for ``_invalidate_chat_retrieval_cache``, which would want Redis."""
+        """Stands in for ``bump_corpus_version``, which would want Redis."""
         self.cache_bumps += 1
 
     def delete_by_query(self, index: str, body: dict[str, Any], **_: Any) -> dict[str, int]:  # noqa: ARG002
@@ -150,7 +149,7 @@ def cluster(monkeypatch):
         # Contained in production (its failure must never fail indexing) and it
         # would reach for Redis here; counted so the invalidation is still asserted.
         monkeypatch.setattr(
-            chunk_plane_module, "_invalidate_chat_retrieval_cache", fake.record_cache_bump
+            "app.services.chat.retrieval_cache.bump_corpus_version", fake.record_cache_bump
         )
         return fake
 

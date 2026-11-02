@@ -18,14 +18,18 @@ back what it touched; the caller commits, flushes its tracker and passes the ret
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING
 from typing import Literal
 
 from sqlalchemy.orm import Session
 
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCluster
+from app.models.speaker import SpeakerClusterMember
+from app.models.speaker import SpeakerProfile
 from app.services.speaker_cleanup import SpeakerImpact
 from app.services.speaker_identity_rules import record_unassignment
 from app.services.speaker_identity_rules import speaker_blocked_from_profile
+from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.utils.speaker_identity_detail import ORIGIN_CLUSTER_JOIN
 from app.utils.speaker_identity_detail import ORIGIN_CLUSTER_MERGED
 from app.utils.speaker_identity_detail import voiceprint_detail
@@ -33,11 +37,6 @@ from app.utils.speaker_identity_source import after_unlink
 from app.utils.speaker_identity_source import clear_suggestion
 from app.utils.speaker_identity_source import record_human_identity
 from app.utils.speaker_identity_source import record_machine_identity
-
-if TYPE_CHECKING:
-    from app.models.speaker import Speaker
-    from app.models.speaker import SpeakerCluster
-    from app.services.speaker_rename_tracker import SpeakerRenameTracker
 
 
 def unlink_from_profile(
@@ -54,7 +53,6 @@ def unlink_from_profile(
     told through ``tracker``, which the caller flushes after its commit. A speaker linked
     to a different profile is not touched.
     """
-    from app.models.speaker import SpeakerProfile
     from app.utils.speaker_labels import canonical_speaker_label_for_row
 
     name = db.query(SpeakerProfile.name).filter(SpeakerProfile.id == int(profile_id)).scalar()
@@ -103,7 +101,6 @@ def join_cluster_identity(
         The profiles whose membership changed (the new one and any it left), for the
         caller's :class:`SpeakerImpact`; empty when nothing changed.
     """
-    from app.models.speaker import SpeakerProfile
     from app.utils.speaker_labels import canonical_speaker_label_for_row
 
     profile_id = cluster.promoted_to_profile_id
@@ -159,8 +156,6 @@ def detach_from_cluster(
     ``tracker`` and hands the returned impact to :func:`reconcile_speaker_impact`, which
     rebuilds the centroid and the profile embedding (an emptied cluster is deleted).
     """
-    from app.models.speaker import SpeakerClusterMember
-
     remove_ids = sorted({int(s.id) for s in speakers})
     remaining = [
         int(r[0])

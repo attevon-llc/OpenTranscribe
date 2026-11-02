@@ -304,7 +304,7 @@ wrong:
 - **A warm-up per arm is discarded** — the first call pays ORT session init and CUDA context
   setup, which would otherwise land entirely on whichever arm ran first.
 - **It refuses to run rather than measure nothing.** If the WAV fails the engine's own
-  `_path_is_on_shared_volume` predicate, arm A takes the own-copy path *too*, both arms become
+  `scratch_volume.is_on_scratch_volume` predicate, arm A takes the own-copy path *too*, both arms become
   the same code, and the delta is ~0 — which reads exactly like "the optimisation does
   nothing". That is checked and made fatal *before* any timing, not inferred from the numbers
   afterwards. It also compares segment counts across arms and warns if they differ, since a

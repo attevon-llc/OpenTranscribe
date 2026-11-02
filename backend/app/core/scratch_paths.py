@@ -3,7 +3,8 @@
 The env-reading resolvers live here with the default paths they fall back to.
 """
 
-import os as _os
+import logging
+import os
 
 # =============================================================================
 # Engine shared-volume WAV handoff (issue #661 E0, consolidated onto pipeline_scratch in E2)
@@ -29,7 +30,7 @@ def pipeline_scratch_shared() -> bool:
     Read at call time so a test can flip it. Only the literal ``false`` turns it off, so a typo
     keeps the fast path instead of silently disabling it.
     """
-    return _os.environ.get("PIPELINE_SCRATCH_SHARED", "true").strip().lower() != "false"
+    return os.environ.get("PIPELINE_SCRATCH_SHARED", "true").strip().lower() != "false"
 
 
 def engine_shared_volume_enabled() -> bool:
@@ -42,7 +43,7 @@ def engine_shared_volume_enabled() -> bool:
     storage — the right behaviour when preprocess and GPU workers run on different nodes,
     where a written WAV is never readable by the GPU worker and never cleaned up by anyone.
     """
-    explicit = _os.environ.get("ENGINE_SHARED_VOLUME_ENABLED", "").strip().lower()
+    explicit = os.environ.get("ENGINE_SHARED_VOLUME_ENABLED", "").strip().lower()
     if explicit:
         return explicit != "false"
     return pipeline_scratch_shared()
@@ -74,9 +75,6 @@ def resolve_engine_shared_volume_path() -> str:
     this function exists to catch, not a case where the check is inert. It deliberately does
     NOT rewrite ``.env``; this repo never edits an operator's ``.env`` without confirmation.
     """
-    import logging
-    import os
-
     configured = os.environ.get("ENGINE_SHARED_VOLUME_PATH")
     if not configured or configured == ENGINE_SHARED_VOLUME_DEFAULT:
         return ENGINE_SHARED_VOLUME_DEFAULT
@@ -136,8 +134,6 @@ def _stat_dev(path: str) -> int | None:
     filesystem-only test can't exercise the real comparison. Tests monkeypatch this function
     directly instead.
     """
-    import os
-
     try:
         return os.stat(path).st_dev
     except OSError:

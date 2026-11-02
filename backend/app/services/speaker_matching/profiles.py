@@ -1,18 +1,13 @@
-"""Profiles: create, assign a speaker, refresh the reference embedding, collections, occurrences."""
+"""Profiles: assign a speaker, find a profile's occurrences."""
 
 import logging
-import uuid
 from typing import TYPE_CHECKING
 from typing import Any
-
-import numpy as np
 
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import MediaFile
 from app.models.speaker import Speaker
-from app.models.speaker import SpeakerCollectionMember
-from app.models.speaker import SpeakerProfile
 from app.services.permission_service import org_scope_pred
 from app.services.privacy.redact_view import PrivacyView
 from app.services.takedown_service import exclude_quarantined
@@ -25,57 +20,6 @@ if TYPE_CHECKING:
     from app.services.speaker_matching_service import SpeakerMatchingService
 
 logger = logging.getLogger(__name__)
-
-
-def create_speaker_profile(
-    self: "SpeakerMatchingService",
-    name: str,
-    user_id: int,
-    description: str | None = None,
-    initial_embedding: np.ndarray | None = None,
-    organization_id: int | None = None,
-) -> SpeakerProfile:
-    """
-    Create a new speaker profile.
-
-    Args:
-        name: Speaker name
-        user_id: User ID
-        description: Optional description
-        initial_embedding: Optional initial embedding
-        organization_id: Tenant scope the profile is created in (None =
-            personal). Stamped on the DB row AND mirrored onto the
-            OpenSearch profile doc so org queries can match it.
-
-    Returns:
-        Created SpeakerProfile
-    """
-    profile = SpeakerProfile(
-        user_id=user_id,
-        name=name,
-        description=description,
-        uuid=str(uuid.uuid4()),
-        organization_id=organization_id,
-    )
-
-    self.db.add(profile)
-    self.db.flush()
-
-    # Add initial embedding to OpenSearch if provided
-    if initial_embedding is not None:
-        from app.services.opensearch_service import store_profile_embedding
-
-        store_profile_embedding(
-            profile_id=int(profile.id),
-            profile_uuid=str(profile.uuid),
-            profile_name=name,
-            embedding=initial_embedding.tolist(),
-            speaker_count=1,
-            user_id=user_id,
-            organization_id=organization_id,
-        )
-
-    return profile
 
 
 def assign_speaker_to_profile(
@@ -137,100 +81,6 @@ def assign_speaker_to_profile(
     self.db.commit()
     self._rename_tracker.flush(self.db)
     return speaker  # type: ignore[no-any-return]
-
-
-def update_speaker_embeddings(
-    self: "SpeakerMatchingService", profile_id: int, audio_paths: list[str]
-) -> bool:
-    """
-    Update speaker profile embeddings with new reference audio.
-
-    Args:
-        profile_id: Speaker profile ID
-        audio_paths: List of audio file paths
-
-    Returns:
-        Success status
-    """
-    try:
-        profile = self.db.query(SpeakerProfile).filter(SpeakerProfile.id == profile_id).first()
-
-        if not profile:
-            logger.error(f"Speaker profile {profile_id} not found")
-            return False
-
-        # Extract reference embedding
-        if not self._voiceprints_allowed(int(profile.user_id), profile.organization_id):
-            logger.info("Profile %s reference embedding skipped by privacy policy", profile_id)
-            return False
-        if self.embedding_service is None:
-            logger.error("Embedding service is not available")
-            return False
-        embedding = self.embedding_service.extract_reference_embedding(audio_paths)
-
-        if embedding is None:
-            logger.error("Failed to extract reference embedding")
-            return False
-
-        # Update in OpenSearch
-        from app.services.opensearch_service import store_profile_embedding
-
-        store_profile_embedding(
-            profile_id=profile_id,
-            profile_uuid=str(profile.uuid),
-            profile_name=str(profile.name),
-            embedding=embedding.tolist(),
-            speaker_count=1,
-            user_id=int(profile.user_id),
-            # Profile docs mirror the profile ROW's tenant scope
-            organization_id=profile.organization_id,
-        )
-
-        return True
-
-    except Exception as e:
-        logger.error(f"Error updating speaker embeddings: {e}")
-        return False
-
-
-def add_speaker_to_collection(
-    self: "SpeakerMatchingService", profile_id: int, collection_id: int
-) -> bool:
-    """
-    Add a speaker profile to a collection.
-
-    Args:
-        profile_id: Speaker profile ID
-        collection_id: Collection ID
-
-    Returns:
-        Success status
-    """
-    try:
-        # Check if already exists
-        existing = (
-            self.db.query(SpeakerCollectionMember)
-            .filter(
-                SpeakerCollectionMember.collection_id == collection_id,
-                SpeakerCollectionMember.speaker_profile_id == profile_id,
-            )
-            .first()
-        )
-
-        if existing:
-            return True
-
-        member = SpeakerCollectionMember(collection_id=collection_id, speaker_profile_id=profile_id)
-
-        self.db.add(member)
-        self.db.commit()
-
-        return True
-
-    except Exception as e:
-        logger.error(f"Error adding speaker to collection: {e}")
-        self.db.rollback()
-        return False
 
 
 def find_speaker_occurrences(

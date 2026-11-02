@@ -797,27 +797,15 @@ def test_cache_key_is_stable_within_one_corpus_version():
     )
 
 
-def test_indexing_bumps_the_corpus_version():
-    """New transcript content invalidates every cached retrieval."""
-    from app.services.search import corpus_cache
-
-    with patch("app.services.chat.retrieval_cache.bump_corpus_version") as bump:
-        corpus_cache._invalidate_chat_retrieval_cache()
-    bump.assert_called_once()
-
-
 def test_corpus_bump_failure_never_breaks_indexing():
     """A Redis outage must not fail transcription indexing."""
-    from app.services.search import corpus_cache
+    from app.services.chat import retrieval_cache
 
-    with patch(
-        "app.services.chat.retrieval_cache.bump_corpus_version",
-        side_effect=RuntimeError("redis down"),
-    ) as bump:
+    with patch("app.core.redis.get_redis", side_effect=RuntimeError("redis down")) as get_redis:
         with does_not_raise("a Redis outage must not fail transcription indexing"):
-            corpus_cache._invalidate_chat_retrieval_cache()
+            retrieval_cache.bump_corpus_version()
 
-    bump.assert_called_once()
+    get_redis.assert_called_once()
 
 
 def test_corpus_version_degrades_to_zero_without_redis():

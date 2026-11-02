@@ -10,7 +10,6 @@ from app.services.ingest_artifacts import index_mapping as digest_mapping
 from app.services.opensearch_service import get_opensearch_client
 
 from .chunking_service import chunk_transcript_by_speaker_turns
-from .corpus_cache import _invalidate_chat_retrieval_cache
 from .embedding_provenance import active_embedding_model
 from .index_admin import ensure_chunks_index_exists
 from .indexing.bulk import _suspended_refresh_for_large_index
@@ -265,7 +264,9 @@ class TranscriptIndexingService(ChunkPlaneMixin, DigestPlaneMixin, SummaryPlaneM
             )
             # New/changed transcript content: chat must not keep serving
             # retrieval results computed against the previous version.
-            _invalidate_chat_retrieval_cache()
+            from app.services.chat.retrieval_cache import bump_corpus_version
+
+            bump_corpus_version()
             return {
                 "chunk_count": indexed,
                 "chunk_ms": chunk_ms,

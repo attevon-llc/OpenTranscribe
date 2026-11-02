@@ -275,8 +275,8 @@ class PlaylistMixin:
                 }
 
         except Exception as e:
-            # Same "create_user_friendly_error is not a sanitizer" reasoning as
-            # extract_video_info above — never echo the raw yt-dlp message (#859).
+            # Same reasoning as extract_video_info above: never echo the raw
+            # yt-dlp message (#859).
             logger.exception(f"Error extracting playlist info from {url}")
             raise InvalidInputError("Could not read that playlist.") from e
 

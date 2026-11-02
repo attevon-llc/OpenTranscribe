@@ -32,12 +32,12 @@ import threading
 import numpy as np
 import pytest
 
-import app.transcription.diar_shared_volume as diar_shared_volume
 import app.transcription.diar_sidecar_status as diar_sidecar_status
 import app.transcription.diarizer_native as diarizer_native
 from app.transcription.diar_sidecar_status import reset_readiness_cache
 from app.transcription.diar_sidecar_status import sidecar_ready
 from app.transcription.diarizer_native import NativeSpeakerDiarizer
+from app.utils import scratch_volume
 
 #: All diar-native tests that stand up a real HTTP server, or drive the sidecar modules'
 #: module-level state, run on ONE xdist worker. `_free_port()` binds port 0, reads the
@@ -70,7 +70,7 @@ class TestWavHandoff:
         engine_shared = tmp_path / "engine-shared"
         engine_shared.mkdir()
         diar_scratch = tmp_path / "diar-native-scratch"
-        monkeypatch.setattr(diar_shared_volume, "_SHARED_VOLUME_ROOT", str(engine_shared))
+        monkeypatch.setattr(scratch_volume, "SCRATCH_ROOT_REAL", str(engine_shared))
         monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(diar_scratch))
 
         pre_wav = engine_shared / "task-abc123.wav"
@@ -104,7 +104,7 @@ class TestWavHandoff:
     def test_a_supplied_wav_is_never_deleted_by_diarize(self, tmp_path, monkeypatch):
         engine_shared = tmp_path / "engine-shared"
         engine_shared.mkdir()
-        monkeypatch.setattr(diar_shared_volume, "_SHARED_VOLUME_ROOT", str(engine_shared))
+        monkeypatch.setattr(scratch_volume, "SCRATCH_ROOT_REAL", str(engine_shared))
         monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-native-scratch"))
 
         pre_wav = engine_shared / "task-keepme.wav"
@@ -131,7 +131,7 @@ class TestWavHandoff:
         """
         diar_scratch = tmp_path / "diar-native-scratch"
         monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(diar_scratch))
-        # No _SHARED_VOLUME_ROOT patch needed: wav_path is never passed, so the reuse branch
+        # No SCRATCH_ROOT_REAL patch needed: wav_path is never passed, so the reuse branch
         # can never be taken regardless of what that prefix is set to.
 
         seen: dict = {}
@@ -238,7 +238,7 @@ class TestRetryPolicy:
         try:
             engine_shared = tmp_path / "engine-shared"
             engine_shared.mkdir()
-            monkeypatch.setattr(diar_shared_volume, "_SHARED_VOLUME_ROOT", str(engine_shared))
+            monkeypatch.setattr(scratch_volume, "SCRATCH_ROOT_REAL", str(engine_shared))
             monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-scratch"))
 
             pre_wav = engine_shared / "task-422.wav"
@@ -270,7 +270,7 @@ class TestRetryPolicy:
         with _accept_and_hang_server() as (base_url, accepted):
             engine_shared = tmp_path / "engine-shared"
             engine_shared.mkdir()
-            monkeypatch.setattr(diar_shared_volume, "_SHARED_VOLUME_ROOT", str(engine_shared))
+            monkeypatch.setattr(scratch_volume, "SCRATCH_ROOT_REAL", str(engine_shared))
             monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-scratch"))
             monkeypatch.setattr("app.transcription.diarizer.SpeakerDiarizer", _FakeFallback)
 
@@ -333,7 +333,7 @@ class TestRetryPolicy:
         with _accept_and_hang_server() as (base_url, accepted):
             engine_shared = tmp_path / "engine-shared"
             engine_shared.mkdir()
-            monkeypatch.setattr(diar_shared_volume, "_SHARED_VOLUME_ROOT", str(engine_shared))
+            monkeypatch.setattr(scratch_volume, "SCRATCH_ROOT_REAL", str(engine_shared))
             monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-scratch"))
 
             pre_wav = engine_shared / "task-timeout2.wav"
@@ -381,7 +381,7 @@ class TestSidecarFailureClassification:
             engine_shared = tmp_path / "engine-shared"
             engine_shared.mkdir()
             diar_scratch = tmp_path / "diar-scratch"
-            monkeypatch.setattr(diar_shared_volume, "_SHARED_VOLUME_ROOT", str(engine_shared))
+            monkeypatch.setattr(scratch_volume, "SCRATCH_ROOT_REAL", str(engine_shared))
             monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(diar_scratch))
 
             pre_wav = engine_shared / "task-429.wav"
@@ -421,7 +421,7 @@ class TestSidecarFailureClassification:
         with _accept_and_hang_server() as (base_url, accepted):
             engine_shared = tmp_path / "engine-shared"
             engine_shared.mkdir()
-            monkeypatch.setattr(diar_shared_volume, "_SHARED_VOLUME_ROOT", str(engine_shared))
+            monkeypatch.setattr(scratch_volume, "SCRATCH_ROOT_REAL", str(engine_shared))
             monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-scratch"))
 
             pre_wav = engine_shared / "task-saturated.wav"
@@ -474,7 +474,7 @@ class TestSidecarFailureClassification:
         try:
             engine_shared = tmp_path / "engine-shared"
             engine_shared.mkdir()
-            monkeypatch.setattr(diar_shared_volume, "_SHARED_VOLUME_ROOT", str(engine_shared))
+            monkeypatch.setattr(scratch_volume, "SCRATCH_ROOT_REAL", str(engine_shared))
             monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-scratch"))
 
             pre_wav = engine_shared / "task-422b.wav"
@@ -586,7 +586,7 @@ class TestReuseObservability:
 
         engine_shared = tmp_path / "engine-shared"
         engine_shared.mkdir()
-        monkeypatch.setattr(diar_shared_volume, "_SHARED_VOLUME_ROOT", str(engine_shared))
+        monkeypatch.setattr(scratch_volume, "SCRATCH_ROOT_REAL", str(engine_shared))
         monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-scratch"))
         monkeypatch.setattr(diarizer_native, "post_json", _fake_diarize_reply)
 
@@ -612,7 +612,7 @@ class TestReuseObservability:
 
         engine_shared = tmp_path / "engine-shared"
         engine_shared.mkdir()
-        monkeypatch.setattr(diar_shared_volume, "_SHARED_VOLUME_ROOT", str(engine_shared))
+        monkeypatch.setattr(scratch_volume, "SCRATCH_ROOT_REAL", str(engine_shared))
         monkeypatch.setattr(diarizer_native, "_SHARED_DIR", str(tmp_path / "diar-scratch"))
         monkeypatch.setattr(diarizer_native, "post_json", _fake_diarize_reply)
 

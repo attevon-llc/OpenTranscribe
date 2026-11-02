@@ -1,11 +1,11 @@
-"""Both speaker-to-speaker kNN callers send the tenant filter of the scope they resolved.
+"""The speaker-to-speaker kNN lookup sends the tenant filter of the scope it resolved.
 
-``find_and_store_speaker_matches`` and ``find_unlabeled_speaker_matches`` share one query
-builder (``match_storage.build_speaker_match_query``). These tests capture the body each
-caller sends and require the organization clauses for the scope the caller resolved, so
-dropping ``organization_id`` from either call site, or the clauses from the builder, fails
-here. The personal case also requires the owner's organization-file exclusion, which only
-appears when the builder passes ``user_ids``.
+``find_and_store_speaker_matches`` builds its query with
+``match_storage.build_speaker_match_query``. These tests capture the body it sends and
+require the organization clauses for the resolved scope, so dropping ``organization_id``
+from the call site, or the clauses from the builder, fails here. The personal case also
+requires the owner's organization-file exclusion, which only appears when the builder
+passes ``user_ids``.
 
 The scope resolution itself (file org, privacy switch) is covered against Postgres in
 ``tests/test_speaker_tenant_gating.py`` and ``test_speaker_matching_policy.py``; here it is
@@ -14,7 +14,6 @@ stubbed so the assertion is only about what reaches OpenSearch.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -94,42 +93,3 @@ def test_stored_match_lookup_sends_the_resolved_tenant_filter(client, monkeypatc
     _index, body = client.searches[0]
     _assert_tenant_filter(body, organization_id)
     assert body["size"] == _knn(body)["k"] == 20
-
-
-@pytest.mark.parametrize("organization_id", [42, None])
-def test_unlabeled_match_lookup_sends_the_resolved_tenant_filter(
-    client, monkeypatch, organization_id
-):
-    service = _service()
-    service.db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
-        media_file_id=5
-    )
-    monkeypatch.setattr(service, "_media_file_org_id", lambda _file_id: organization_id)
-    monkeypatch.setattr(service, "_voiceprints_allowed", lambda _user, _org: True)
-
-    service.find_unlabeled_speaker_matches(np.ones(4, dtype=np.float32), USER_ID, SPEAKER_ID)
-
-    assert len(client.searches) == 1
-    _index, body = client.searches[0]
-    _assert_tenant_filter(body, organization_id)
-    assert body["size"] == _knn(body)["k"] == 10
-
-
-def test_both_callers_query_the_same_index(client, monkeypatch):
-    from app.core.embedding_models import get_speaker_index
-    from app.services.speaker_matching import match_storage
-
-    service = _service()
-    service.db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
-        media_file_id=5
-    )
-    monkeypatch.setattr(service, "_scope_gate", lambda _u, _o, speaker_id=None: (True, 42))
-    monkeypatch.setattr(service, "_media_file_org_id", lambda _file_id: 42)
-    monkeypatch.setattr(service, "_voiceprints_allowed", lambda _user, _org: True)
-    monkeypatch.setattr(match_storage, "find_matching_speaker", lambda *a, **k: [{"id": 1}])
-
-    embedding = np.ones(4, dtype=np.float32)
-    service.find_and_store_speaker_matches(SPEAKER_ID, embedding, USER_ID, organization_id=42)
-    service.find_unlabeled_speaker_matches(embedding, USER_ID, SPEAKER_ID)
-
-    assert [index for index, _body in client.searches] == [get_speaker_index()] * 2

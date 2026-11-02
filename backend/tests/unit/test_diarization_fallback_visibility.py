@@ -23,7 +23,6 @@ import pytest
 from prometheus_client import REGISTRY
 
 import app.transcription.diar_sidecar_status as diar_sidecar_status
-import app.transcription.diarizer_native as diarizer_native
 from app.transcription.diar_sidecar_status import DiarSidecarUnavailableError
 from app.transcription.diarization_runs import record_diarization_run
 from app.transcription.diarization_runs import run_outcome
@@ -130,7 +129,7 @@ def _loaded_native(monkeypatch: pytest.MonkeyPatch) -> NativeSpeakerDiarizer:
     diarizer = NativeSpeakerDiarizer(_Config(), base_url="http://fake-sidecar")
     diarizer.is_loaded = True
     monkeypatch.setattr(diarizer, "_fallback_engine", lambda: _Fallback())
-    monkeypatch.setattr(diarizer_native, "diarizer_require_sidecar", lambda: False)
+    monkeypatch.setattr(diar_sidecar_status, "diarizer_require_sidecar", lambda: False)
     return diarizer
 
 

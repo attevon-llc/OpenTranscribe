@@ -77,7 +77,7 @@ def _make_file(
 def _share_file(db_session, media_file, owner, viewer, *, permission: str) -> Collection:
     """Put ``media_file`` in a collection shared with ``viewer`` at ``permission``.
 
-    Copied verbatim (pattern-wise) from ``test_bulk_tag_action.py::_share_file``.
+    The same grant shape as ``fixtures/tag_recorders.share_file``.
     """
     collection = Collection(
         user_id=owner.id, name=f"shared-{_suffix()}", description="mutation perm share"

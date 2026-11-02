@@ -27,6 +27,10 @@ from app.models.user import User
 from app.services import account_lifecycle_service
 from app.services.account_lifecycle_service import run_inactivity_sweep
 
+# Shares a worker with test_last_super_admin_guard.py, whose concurrency test commits
+# active super_admins that this module's "lone super_admin" tests must not see.
+pytestmark = pytest.mark.xdist_group("last_super_admin")
+
 
 def _user(db_session, *, last_login_at, role="user", is_active=True):
     unique_id = str(uuid.uuid4())[:8]

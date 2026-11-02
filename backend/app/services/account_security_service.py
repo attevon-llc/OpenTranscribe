@@ -96,17 +96,26 @@ def assert_local_fallback_settable(auth_type: str | None) -> None:
 
 
 def count_other_active_super_admins(db: Session, user: User) -> int:
-    """Count active super_admins other than ``user``.
+    """Count active super_admins other than ``user``, locking every one of them.
 
     Shared by every guard that must refuse leaving the deployment with zero
     active super_admins — role change, deactivation, and delete all need this
     same count, decided against differently.
+
+    The rows stay locked until the caller's transaction ends. An unlocked count let
+    two concurrent demotions (A demoting B, B demoting A) each count the other as a
+    survivor and both commit. The target is locked too, in id order: locking only
+    the others gives those two transactions disjoint lock sets. ``FOR UPDATE`` is
+    not allowed with an aggregate, so the rows are fetched and counted here.
     """
-    return (
-        db.query(User)
-        .filter(User.role == ROLE_SUPER_ADMIN, User.id != user.id, User.is_active.is_(True))
-        .count()
+    locked_ids = (
+        db.query(User.id)
+        .filter(User.role == ROLE_SUPER_ADMIN, User.is_active.is_(True))
+        .order_by(User.id)
+        .with_for_update()
+        .all()
     )
+    return sum(1 for (locked_id,) in locked_ids if locked_id != user.id)
 
 
 def assert_not_last_super_admin(db: Session, user: User, new_role: str) -> None:

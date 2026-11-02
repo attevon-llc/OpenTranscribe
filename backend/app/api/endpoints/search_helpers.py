@@ -14,6 +14,7 @@ from app.schemas.search import SEARCH_RESULT_TYPES
 from app.schemas.search import SEARCH_SOURCES
 from app.services.collection_visibility import collections_on_files
 from app.services.request_context import RequestContext
+from app.services.takedown_predicates import quarantined_among
 
 logger = logging.getLogger(__name__)
 
@@ -214,17 +215,7 @@ def _drop_quarantined_search_hits(db: Session, response: Any) -> Any:
     hits = getattr(response, "results", None) or []
     if not hits:
         return response
-    from app.models.media import MediaFile
-
-    uuids = [h.file_uuid for h in hits if getattr(h, "file_uuid", None)]
-    if not uuids:
-        return response
-    quarantined = {
-        str(row[0])
-        for row in db.query(MediaFile.uuid)
-        .filter(MediaFile.uuid.in_(uuids), MediaFile.is_quarantined.is_(True))
-        .all()
-    }
+    quarantined = quarantined_among(db, (getattr(h, "file_uuid", None) for h in hits))
     if not quarantined:
         return response
     kept = [h for h in hits if str(h.file_uuid) not in quarantined]

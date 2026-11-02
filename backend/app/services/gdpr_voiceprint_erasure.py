@@ -107,24 +107,15 @@ def delete_speaker_docs_by_query(
 
     deleted = 0
     try:
-        from app.core.embedding_models import get_speaker_index
-        from app.core.embedding_models import get_speaker_index_v3
-        from app.core.embedding_models import get_speaker_index_v3_backup
-        from app.core.embedding_models import get_speaker_index_v4
         from app.services.opensearch_service import opensearch_client
+        from app.services.opensearch_service.speaker_maintenance import speaker_embedding_indices
 
         if opensearch_client is None:
             logger.warning("OpenSearch unavailable — skipping voiceprint erasure (orphan docs)")
             _record("OpenSearch client unavailable")
             return 0
 
-        indices = {
-            get_speaker_index(),
-            get_speaker_index_v3(),
-            get_speaker_index_v4(),
-            get_speaker_index_v3_backup(),
-        }
-        for idx in indices:
+        for idx in speaker_embedding_indices():
             try:
                 if not opensearch_client.indices.exists(index=idx):
                     continue
@@ -158,18 +149,9 @@ _DOC_ID_BATCH = 1000
 
 def _speaker_index_names(client: Any) -> list[str]:
     """The speaker indices that exist (v3, v4, alias, legacy backup), without duplicates."""
-    from app.core.embedding_models import get_speaker_index
-    from app.core.embedding_models import get_speaker_index_v3
-    from app.core.embedding_models import get_speaker_index_v3_backup
-    from app.core.embedding_models import get_speaker_index_v4
+    from app.services.opensearch_service.speaker_maintenance import speaker_embedding_indices
 
-    wanted = [
-        get_speaker_index(),
-        get_speaker_index_v3(),
-        get_speaker_index_v4(),
-        get_speaker_index_v3_backup(),
-    ]
-    return [idx for idx in dict.fromkeys(wanted) if client.indices.exists(index=idx)]
+    return [idx for idx in speaker_embedding_indices() if client.indices.exists(index=idx)]
 
 
 def delete_speaker_docs_by_ids(

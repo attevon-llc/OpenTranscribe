@@ -24,6 +24,7 @@ from app.services.chat.trace import QueryStage
 from app.services.chat.trace import TraceRecorder
 from app.services.chat.trace import emit as emit_trace
 from app.services.search.chunk_retrieval import ChunkHit
+from app.services.takedown_predicates import quarantined_among
 
 
 def _drop_quarantined_hits(db: Session, hits: list[ChunkHit]) -> list[ChunkHit]:
@@ -55,17 +56,7 @@ def _drop_quarantined_hits(db: Session, hits: list[ChunkHit]) -> list[ChunkHit]:
     """
     if not hits:
         return hits
-    from app.models.media import MediaFile
-
-    uuids = {hit.file_uuid for hit in hits if hit.file_uuid}
-    if not uuids:
-        return hits
-    quarantined = {
-        str(row[0])
-        for row in db.query(MediaFile.uuid)
-        .filter(MediaFile.uuid.in_(uuids), MediaFile.is_quarantined.is_(True))
-        .all()
-    }
+    quarantined = quarantined_among(db, (hit.file_uuid for hit in hits))
     if not quarantined:
         return hits
     return [hit for hit in hits if hit.file_uuid not in quarantined]

@@ -11,6 +11,9 @@ keep working.
   * :func:`is_hidden_for` — the per-request access gate used by the resource
     lookup choke-point (``get_file_by_uuid_with_permission``): a quarantined
     file 404s for non-admins, stays visible to platform admins for review.
+  * :func:`quarantined_among` — which of a batch of file uuids are quarantined,
+    for the post-filters over index-backed results (search hits, chat evidence,
+    chat aggregation, persisted citations), whose index carries no quarantine field.
   * :func:`is_notification_suppressed` / :func:`is_notification_suppressed_for_uuid` /
     :func:`filter_suppressed_file_uuids` — the WebSocket-push-side twin of
     ``exclude_quarantined``/``is_hidden_for``: a quarantined file's identity must
@@ -26,6 +29,7 @@ its owner does (not at all) and manages it from metadata (issue #1253).
 
 import logging
 import uuid as uuid_pkg
+from collections.abc import Iterable
 from collections.abc import Sequence
 from typing import Any
 
@@ -79,6 +83,32 @@ def is_hidden_for(file: MediaFile, *, is_admin: bool) -> bool:
         True if the file is quarantined and the caller is not an admin.
     """
     return bool(getattr(file, "is_quarantined", False)) and not is_admin
+
+
+def quarantined_among(db: Session, file_uuids: Iterable[str | uuid_pkg.UUID | None]) -> set[str]:
+    """The subset of ``file_uuids`` whose file is currently quarantined, as strings.
+
+    One query over exactly the given ids (never the whole quarantined table); an
+    empty input, or one with only falsy ids, returns ``set()`` without querying.
+    A query error propagates: callers drop hits on the strength of this answer, so
+    an exception must fail the read rather than pass every hit through.
+
+    Args:
+        db: Database session.
+        file_uuids: Candidate file uuids, as the caller's hits carry them.
+
+    Returns:
+        The stringified uuids of the quarantined files among ``file_uuids``.
+    """
+    ids = {file_uuid for file_uuid in file_uuids if file_uuid}
+    if not ids:
+        return set()
+    rows = (
+        db.query(MediaFile.uuid)
+        .filter(MediaFile.uuid.in_(ids), MediaFile.is_quarantined.is_(True))
+        .all()
+    )
+    return {str(row[0]) for row in rows}
 
 
 def is_notification_suppressed(file_id: int, recipient_user_id: int) -> bool:

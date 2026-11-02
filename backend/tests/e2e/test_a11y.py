@@ -298,6 +298,35 @@ class TestAccessibility:
             "file-status-badges", theme, results, load_allowlist(), discovered_results
         )
 
+    @pytest.mark.parametrize("locale", ["en", "ar"])
+    def test_ui_kit_a11y(
+        self,
+        authed_page: Page,
+        theme: str,
+        locale: str,
+        discovered_results: dict[tuple[str, str], dict[str, int]],
+        base_url: str,
+    ) -> None:
+        """Every shared styling primitive in every state has no new violation (styling layer).
+
+        Scans ``/a11y-fixtures/ui-kit`` (frontend styling-layer plan section 5.7): a fixture
+        route with no backend calls and deterministic content, so busy, disabled, error and
+        progress states are scanned on every run instead of only when the live app happens to
+        show them. ``ar`` is scanned as its own surface (``ui-kit-ar``) because RTL changes
+        layout and therefore which pairs sit on which surface.
+        """
+        page = authed_page
+        page.context.add_init_script(f"window.localStorage.setItem('locale', {locale!r});")
+        page.goto(f"{base_url}/a11y-fixtures/ui-kit")
+        set_theme(page, theme)
+        page.wait_for_load_state("networkidle")
+        expect(page.locator('[data-kit-section="buttons"]')).to_be_visible(timeout=15000)
+        expect(page.locator("html")).to_have_attribute("dir", "rtl" if locale == "ar" else "ltr")
+        page.wait_for_timeout(500)
+        results = run_axe(page)
+        surface = "ui-kit" if locale == "en" else "ui-kit-ar"
+        _assert_surface_clean(surface, theme, results, load_allowlist(), discovered_results)
+
     def test_upload_panel_a11y(
         self,
         authed_page: Page,

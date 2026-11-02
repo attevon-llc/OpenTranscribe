@@ -82,6 +82,9 @@ import requests
 # was invisible because the eight baselines were already failing for unrelated
 # reasons, so nobody ran the module. `tests/unit/test_visual_diff_fraction.py`
 # keeps the dotted form, which is correct under the repo-root rootdir it runs in.
+from _visual_capture import login
+from _visual_capture import make_context as _make_context
+from _visual_capture import stabilize as _stabilize
 from _visual_diff import CHANNEL_NOISE_THRESHOLD  # noqa: F401
 from _visual_diff import DIFF_TOLERANCE
 from _visual_diff import diff_fraction as _diff_fraction
@@ -91,7 +94,6 @@ from playwright.sync_api import expect
 from privacy_ui import PRIVACY_SURFACES
 from privacy_ui import open_privacy_surface
 from timeouts import APP_SHELL_READY_MS
-from timeouts import LOGIN_FORM_READY_MS
 
 pytestmark = pytest.mark.visual  # run-e2e.sh runs visual tests serially (quiet stack)
 
@@ -102,9 +104,6 @@ pytestmark = pytest.mark.visual  # run-e2e.sh runs visual tests serially (quiet 
 # conftest's ``base_url`` / ``backend_url`` fixtures instead.
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
 TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: S105
-
-# Fixed viewport so baselines are deterministic across machines.
-VIEWPORT = {"width": 1280, "height": 800}
 
 SCREENSHOT_DIR = Path(__file__).parent / "__screenshots__"
 
@@ -424,62 +423,9 @@ def trace_conversation_uuid(api_token: str, backend_url: str) -> Iterator[str]:
                 pass
 
 
-# ---------------------------------------------------------------------------
-# Per-theme authenticated context. Theme is forced via localStorage in an init
-# script BEFORE first paint (matches static/theme.js, which reads it on load).
-# ---------------------------------------------------------------------------
 def _login(page: Page, base_url: str) -> None:
-    """Log in via the form, tolerating an already-authenticated context."""
-    page.goto(base_url)
-    if page.locator(".user-button").count():
-        page.wait_for_selector(".user-button", timeout=10000)
-        return
-    page.wait_for_selector("#email", timeout=LOGIN_FORM_READY_MS)
-    page.fill("#email", TEST_ADMIN_EMAIL)
-    page.fill("#password", TEST_ADMIN_PASSWORD)
-    page.click("button[type=submit]")
-    page.wait_for_selector(".user-button", timeout=30000)
-
-
-def _make_context(browser: Any, theme: str) -> Any:
-    """Build a browser context pinned to a viewport and a forced theme."""
-    context = browser.new_context(
-        viewport=VIEWPORT,
-        ignore_https_errors=True,
-        # Freeze animations/transitions and CSS caret so screenshots are stable.
-        reduced_motion="reduce",
-    )
-    context.add_init_script(f"window.localStorage.setItem('theme', '{theme}');")
-    return context
-
-
-def _stabilize(page: Page) -> None:
-    """Quiet the page before capture: network idle, no animations, no caret."""
-    page.wait_for_load_state("networkidle")
-    # Disable animations/transitions and pause media to remove non-determinism.
-    page.add_style_tag(
-        content=(
-            "*,*::before,*::after{animation:none!important;"
-            "transition:none!important;caret-color:transparent!important}"
-        )
-    )
-    page.evaluate(
-        "document.querySelectorAll('video,audio').forEach(m=>{try{m.pause();"
-        "m.currentTime=0;}catch(e){}})"
-    )
-    # Web fonts load lazily, and `networkidle` can fire before the first text uses a face. A
-    # capture taken before Poppins lands photographs the fallback sans-serif, and that image
-    # then fails against every correct render (v0.6.0: all ten baselines were recaptured
-    # in the fallback face once). Wait for pending faces, then REFUSE to capture without
-    # the real one, so a missing font fails loudly instead of being baked into a baseline.
-    page.evaluate("document.fonts.ready.then(() => true)")
-    assert page.evaluate("document.fonts.check('600 14px Poppins')"), (
-        "Poppins is not loaded; a visual capture now would bake the fallback font into the "
-        "baseline (is frontend/static/fonts populated by the prebuild step?)"
-    )
-    # Kept deliberately: a paint/layout settle before a screenshot. The comparison is a
-    # pixel diff, not a locator, so there is nothing to auto-wait on (issue #431).
-    page.wait_for_timeout(600)
+    """Log in as the suite's admin (see ``_visual_capture.login``)."""
+    login(page, base_url, TEST_ADMIN_EMAIL, TEST_ADMIN_PASSWORD)
 
 
 # Surfaces parametrized over both themes. Each entry: (surface, theme).

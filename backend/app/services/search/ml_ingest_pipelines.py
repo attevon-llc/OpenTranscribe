@@ -1,10 +1,9 @@
-"""Neural ingest pipelines and the active-model setting.
+"""The active embedding model setting.
 
 Mixed into :class:`~app.services.search.ml_model_service.OpenSearchMLModelService`.
 """
 
 import logging
-from typing import Any
 
 from app.services.search.ml_model_host import MLModelHost
 
@@ -12,123 +11,10 @@ logger = logging.getLogger(__name__)
 
 
 class MLIngestPipelineMixin(MLModelHost):
-    """Ingest-pipeline CRUD and active-model bookkeeping (mixed into ``OpenSearchMLModelService``)."""
+    """Active-model bookkeeping (mixed into ``OpenSearchMLModelService``).
 
-    def create_ingest_pipeline(
-        self,
-        pipeline_id: str,
-        model_id: str,
-        source_field: str = "content",
-        target_field: str = "embedding",
-        description: str = "",
-    ) -> bool:
-        """Create a neural ingest pipeline with text_embedding processor.
-
-        Args:
-            pipeline_id: ID for the ingest pipeline.
-            model_id: The deployed model ID to use.
-            source_field: Field to read text from.
-            target_field: Field to write embedding to.
-            description: Optional pipeline description.
-
-        Returns:
-            True if pipeline was created successfully.
-        """
-        if not self._ensure_client():
-            return False
-
-        try:
-            pipeline_body: dict[str, Any] = {
-                "description": description or f"Neural embedding pipeline using model {model_id}",
-                "processors": [
-                    {
-                        "text_embedding": {
-                            "model_id": model_id,
-                            "field_map": {source_field: target_field},
-                        }
-                    }
-                ],
-            }
-
-            assert self._client is not None
-            self._client.ingest.put_pipeline(id=pipeline_id, body=pipeline_body)
-            logger.info(f"Created ingest pipeline: {pipeline_id}")
-            return True
-
-        except Exception as e:
-            logger.error(f"Failed to create ingest pipeline {pipeline_id}: {e}")
-            return False
-
-    def delete_ingest_pipeline(self, pipeline_id: str) -> bool:
-        """Delete an ingest pipeline.
-
-        Args:
-            pipeline_id: ID of the pipeline to delete.
-
-        Returns:
-            True if deletion succeeded.
-        """
-        if not self._ensure_client():
-            return False
-
-        try:
-            assert self._client is not None
-            self._client.ingest.delete_pipeline(id=pipeline_id)
-            logger.info(f"Deleted ingest pipeline: {pipeline_id}")
-            return True
-
-        except Exception as e:
-            logger.debug(f"Could not delete pipeline {pipeline_id}: {e}")
-            return False
-
-    def get_ingest_pipeline(self, pipeline_id: str) -> dict[str, Any] | None:
-        """Get an ingest pipeline configuration.
-
-        Args:
-            pipeline_id: ID of the pipeline.
-
-        Returns:
-            Pipeline configuration dict, or None if not found.
-        """
-        if not self._ensure_client():
-            return None
-
-        try:
-            assert self._client is not None
-            response = self._client.ingest.get_pipeline(id=pipeline_id)
-            result: dict[str, Any] | None = response.get(pipeline_id)
-            return result
-
-        except Exception as e:
-            logger.debug(f"Pipeline {pipeline_id} not found: {e}")
-            return None
-
-    def update_ingest_pipeline_model(self, pipeline_id: str, new_model_id: str) -> bool:
-        """Update an existing ingest pipeline with a new model.
-
-        Args:
-            pipeline_id: ID of the pipeline to update.
-            new_model_id: The new model ID to use.
-
-        Returns:
-            True if update succeeded.
-        """
-        current = self.get_ingest_pipeline(pipeline_id)
-        if not current:
-            logger.warning(f"Pipeline {pipeline_id} not found, cannot update")
-            return False
-
-        # Update the model_id in the text_embedding processor
-        processors = current.get("processors", [])
-        for processor in processors:
-            if "text_embedding" in processor:
-                processor["text_embedding"]["model_id"] = new_model_id
-
-        return self.create_ingest_pipeline(
-            pipeline_id=pipeline_id,
-            model_id=new_model_id,
-            description=current.get("description", ""),
-        )
+    The ingest pipeline itself is owned by ``search.pipelines.ensure_neural_ingest_pipeline``.
+    """
 
     def get_active_model_id(self) -> str | None:
         """Get the currently active model ID from settings.

@@ -194,7 +194,6 @@ backend/app/services/search/indexing/chunk_plane.py	2	ratchet: may only go down
 backend/app/services/search/indexing/digest_plane.py	3	ratchet: may only go down
 backend/app/services/search/indexing/orphans.py	1	ratchet: may only go down
 backend/app/services/search/indexing/summary_plane.py	2	ratchet: may only go down
-backend/app/services/search/ml_ingest_pipelines.py	3	ratchet: may only go down
 backend/app/services/search/ml_model_deployment.py	5	ratchet: may only go down
 backend/app/services/search/ml_model_registration.py	3	ratchet: may only go down
 backend/app/services/search/ml_model_service.py	3	ratchet: may only go down

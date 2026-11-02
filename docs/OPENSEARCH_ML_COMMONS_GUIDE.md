@@ -1062,12 +1062,9 @@ model_id = service.ensure_model_deployed(
 )
 
 # 3. Create ingest pipeline
-service.create_ingest_pipeline(
-    pipeline_id="transcript-neural-ingest",
-    model_id=model_id,
-    source_field="content",
-    target_field="embedding"
-)
+from app.services.search.pipelines import ensure_neural_ingest_pipeline
+
+ensure_neural_ingest_pipeline(model_id)
 
 # 4. Verify deployment
 status = service.get_model_status(model_id)
@@ -1125,13 +1122,8 @@ new_model_id = service.ensure_model_deployed(
     "huggingface/sentence-transformers/all-mpnet-base-v2"
 )
 
-# 2. Update ingest pipeline to use new model
-service.update_ingest_pipeline_model(
-    pipeline_id="transcript-neural-ingest",
-    new_model_id=new_model_id
-)
-
-# 3. Update settings
+# 2. Update settings; the next ensure_neural_ingest_pipeline() sees the drift and recreates
+#    the pipeline with the new model
 service.set_active_model_id(new_model_id)
 
 # 4. Optionally re-index existing documents
@@ -1198,13 +1190,7 @@ metrics = {
 if metrics["error_rate"] > THRESHOLD:
     logger.warning("Rolling back to previous model")
 
-    # Update pipeline to use old model
-    service.update_ingest_pipeline_model(
-        pipeline_id="transcript-neural-ingest",
-        new_model_id=old_model_id
-    )
-
-    # Update settings
+    # Update settings; the pipeline follows the active model
     service.set_active_model_id(old_model_id)
 
     # Undeploy new model (after confirmation)
@@ -1813,7 +1799,7 @@ results = search_transcripts(
 
 # Manage models
 model_id = service.ensure_model_deployed("huggingface/sentence-transformers/all-MiniLM-L6-v2")
-service.create_ingest_pipeline("transcript-neural-ingest", model_id)
+ensure_neural_ingest_pipeline(model_id)
 status = service.get_model_status(model_id)
 ```
 

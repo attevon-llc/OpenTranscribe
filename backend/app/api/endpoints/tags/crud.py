@@ -143,7 +143,9 @@ def list_unused_tags(
     return list_unused_tag_rows(db, user_id=current_user.id, organization_id=ctx.org_id)
 
 
-@router.delete("/cleanup", response_model=dict[str, Any])
+@router.delete(
+    "/cleanup", response_model=dict[str, Any], dependencies=[Depends(refuse_under_support_grant)]
+)
 def cleanup_unused_tags(
     scope: Literal["mine", "all_users"] = Query(
         "mine",
@@ -239,7 +241,11 @@ def cleanup_unused_tags(
         raise ErrorHandler.internal_error("Could not clean up unused tags.") from e
 
 
-@router.post("/files/{file_uuid}/tags", response_model=TagSchema)
+@router.post(
+    "/files/{file_uuid}/tags",
+    response_model=TagSchema,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def add_tag_to_file(
     request: Request,
     file_uuid: str,
@@ -322,7 +328,11 @@ def add_tag_to_file(
     return tag
 
 
-@router.delete("/files/{file_uuid}/tags/{tag_name}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/files/{file_uuid}/tags/{tag_name}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def remove_tag_from_file(
     file_uuid: str,
     tag_name: str,

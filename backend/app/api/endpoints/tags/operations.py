@@ -1,5 +1,8 @@
 """The destructive half: rename, merge, delete, promote — each fronted by an impact preview.
 
+Every mutation here refuses a support-access grant, like ``POST /tags``: a grant is for
+diagnosis and never rewrites a tenant's vocabulary.
+
 Shared helpers and the visibility rules live in ``_common``.
 """
 
@@ -12,6 +15,7 @@ from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.tags._common import _apply
 from app.api.endpoints.tags._common import _writable_tag_ids
@@ -61,7 +65,9 @@ def get_tag_impact(
     return TagImpact.model_validate(report)
 
 
-@router.post("/promote", response_model=TagMutationResult)
+@router.post(
+    "/promote", response_model=TagMutationResult, dependencies=[Depends(refuse_under_support_grant)]
+)
 def promote_tags_endpoint(
     payload: TagPromoteRequest,
     db: Session = Depends(get_db),
@@ -107,7 +113,11 @@ def promote_tags_endpoint(
     )
 
 
-@router.patch("/{tag_uuid}", response_model=TagMutationResult)
+@router.patch(
+    "/{tag_uuid}",
+    response_model=TagMutationResult,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def rename_tag_endpoint(
     tag_uuid: UUID,
     payload: TagRenameRequest,
@@ -141,7 +151,11 @@ def rename_tag_endpoint(
     )
 
 
-@router.post("/{tag_uuid}/merge", response_model=TagMutationResult)
+@router.post(
+    "/{tag_uuid}/merge",
+    response_model=TagMutationResult,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def merge_tags_endpoint(
     tag_uuid: UUID,
     payload: TagMergeRequest,
@@ -175,7 +189,9 @@ def merge_tags_endpoint(
     )
 
 
-@router.delete("", response_model=TagMutationResult)
+@router.delete(
+    "", response_model=TagMutationResult, dependencies=[Depends(refuse_under_support_grant)]
+)
 def delete_tags_endpoint(
     tag_uuids: list[UUID] = Query(..., min_length=1),
     db: Session = Depends(get_db),

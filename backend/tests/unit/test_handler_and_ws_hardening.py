@@ -112,10 +112,13 @@ def test_internal_error_detail_does_not_leak_exception_text(func_name):
 
 def test_websocket_auth_checks_is_active_and_revocation():
     from app.api import websockets as ws_module
+    from app.auth.token_service import TokenService
 
     source = inspect.getsource(ws_module._try_authenticate_token)
+    verdict = inspect.getsource(TokenService.access_token_revoked)
 
-    assert "is_token_revoked" in source, "WS auth must check the revocation blacklist"
+    assert "access_token_revoked" in source, "WS auth must take the shared revocation verdict"
+    assert "self.is_token_revoked(" in verdict, "the shared verdict must check the blacklist"
     assert "is_active" in source, "WS auth must reject deactivated accounts"
 
 

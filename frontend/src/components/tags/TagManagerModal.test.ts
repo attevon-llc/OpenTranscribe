@@ -392,3 +392,46 @@ describe('create field', () => {
     expect(field.hasAttribute('maxlength')).toBe(false);
   });
 });
+
+describe('cluster view gating', () => {
+  it('offers no write controls for a cluster member shared with me', async () => {
+    api.listTagCollisions.mockResolvedValue([
+      {
+        normalized_name: 'roadmap',
+        members: [
+          {
+            uuid: UUID_A,
+            name: 'Roadmap',
+            source: 'manual',
+            usage_count: 9,
+            suggested_survivor: true,
+            ownership: 'mine',
+          },
+          {
+            uuid: UUID_B,
+            name: 'roadmap',
+            source: 'manual',
+            usage_count: 2,
+            suggested_survivor: false,
+            ownership: 'shared_with_me',
+          },
+        ],
+        suggested_survivor_uuid: UUID_A,
+        suggestions: [],
+      },
+    ]);
+    render(TagManagerModal);
+    await waitFor(() => expect(tagRows()).toHaveLength(2));
+    await fireEvent.click(screen.getByRole('tab', { name: /Collisions/ }));
+    await waitFor(() => expect(screen.getAllByRole('listbox')).toHaveLength(1));
+
+    const rows = within(screen.getByRole('listbox', { name: 'roadmap' })).getAllByRole('option');
+    await fireEvent.click(rows[2]);
+
+    // Same tag, same gate as in the flat list: the server answers 404 here.
+    expect(screen.getByRole('heading', { name: 'roadmap' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
+  });
+});

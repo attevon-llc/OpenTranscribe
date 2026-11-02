@@ -189,6 +189,9 @@
           name: member.name,
           source: member.source,
           usage_count: member.usage_count,
+          // Without it a cluster member reads as `mine` to `canMutateTag`, and
+          // the detail pane offers writes the server refuses.
+          ownership: member.ownership,
         });
       }
     }

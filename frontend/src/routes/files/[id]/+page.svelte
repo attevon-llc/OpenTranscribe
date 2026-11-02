@@ -2473,7 +2473,7 @@
           />
         {:else}
           <TagsSection
-            {file}
+            {file} {canEdit}
             bind:isTagsExpanded
             {aiTagSuggestions}
             on:tagsUpdated={handleTagsUpdated}

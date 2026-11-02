@@ -65,6 +65,7 @@ from app.services.delete_permissions import can_delete_file
 from app.services.formatting_service import FormattingService
 from app.services.playback_rendition import resolve_playback
 from app.services.privacy.redact_view import PrivacyView
+from app.services.storage_versions import StorageDeleteIncompleteError
 from app.utils.error_handlers import ErrorHandler
 from app.utils.media_types import normalize_media_content_type
 from app.utils.whisper_model_choice import require_servable_whisper_model
@@ -1398,11 +1399,22 @@ def clear_video_cache(
 
     except HTTPException:
         raise
+    except StorageDeleteIncompleteError as e:
+        # A lock or refused delete left objects behind: a conflict, not an outage (same
+        # status as POST /admin/settings/cache-config/clear).
+        logger.error(f"Video cache clear for file {file_id} left objects behind: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"{len(e.remaining)} cached object(s) could not be removed (a storage lock or "
+                "a refused delete). The server log names them."
+            ),
+        ) from e
     except Exception as e:
         logger.exception(f"Error clearing video cache for file {file_id}: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error clearing video cache",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Object storage unavailable while clearing the video cache",
         ) from e
 
 

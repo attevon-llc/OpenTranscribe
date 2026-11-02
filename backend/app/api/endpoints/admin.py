@@ -1308,11 +1308,17 @@ def clear_cache_now(
     except StorageDeleteIncompleteError as e:
         logger.error(f"Derived-cache clear left objects behind: {e}")
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=status.HTTP_409_CONFLICT,
             detail=(
                 f"{len(e.remaining)} cached object(s) could not be removed (a storage lock or "
                 "a refused delete). The server log names them; try again after resolving it."
             ),
+        ) from e
+    except Exception as e:
+        logger.exception("Derived-cache clear failed: object storage unavailable")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Object storage unavailable while clearing the derived cache",
         ) from e
     return CacheClearResponse(deleted=deleted)
 

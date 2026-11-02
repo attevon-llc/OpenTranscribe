@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Complete S3 IAM policy reference** in the object-storage guide: every S3 action the backend
+  calls, one example policy and a minimal variant per feature. A unit test scans the backend for
+  object-store client calls and fails when the guide omits one.
+
 ### Removed
 
 - `scripts/test-model-download.sh`, superseded by the scenario above (it ran `:latest` with
@@ -16,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The OpenSearch model step pulls the backend image the install runs.** `resolve_backend_image`
+  now returns the lite repository for lite installs and for arm64 hosts (the CPU-only image is the
+  only one published for arm64), instead of always the CUDA repository.
+- **Clearing the derived cache answers a lock or refused delete with 409 on both routes.**
+  `DELETE /files/{uuid}/cache` returned 500 and the admin clear returned 503 for the same
+  condition; both now return 409 for objects left behind and 503 only when object storage is
+  unreachable.
+- **The thumbnail migration no longer deletes a `.jpg` another media file still references.**
 - **The model downloader's speaker-detection step no longer fails on every CPU run.**
   `scripts/download-models.py` transcribed synthetic sine-wave audio through whisperx before
   fetching the PyAnnote weights; whisperx found no speech in it and transformers 5.x raised

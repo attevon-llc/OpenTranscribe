@@ -102,10 +102,12 @@ def _route_marker(path: str) -> str:
     return "/" + literal[-1]
 
 
-def pinned_evidence_gaps(path: str, events: tuple[str, ...], source: str) -> list[str]:
+def pinned_evidence_gaps(method: str, path: str, events: tuple[str, ...], source: str) -> list[str]:
     """What a ``pinned_by`` suite fails to show for one route; empty means it is evidence.
 
-    A suite counts only when it names the route AND every event it is pinned for, by member
+    A suite counts only when it names the route, issues its HTTP method (``.post(`` or a
+    quoted ``"POST"``, so a GET-only suite cannot vouch for a POST that shares the path), AND
+    every event it is pinned for, by member
     (``AuditEventType.X``) or by value (``"x.y"``). A file merely existing is not evidence:
     three entries once pointed at suites that never mentioned their event.
     """
@@ -114,6 +116,8 @@ def pinned_evidence_gaps(path: str, events: tuple[str, ...], source: str) -> lis
     missing = [seg for seg in literal if f"/{seg}" not in source]
     if missing:
         gaps.append(f"never names the route ({_route_marker(path)}; missing {missing})")
+    if f".{method.lower()}(" not in source and f'"{method.upper()}"' not in source:
+        gaps.append(f"never issues a {method.upper()} request")
     for member in events:
         value = AuditEventType[member].value
         if f"AuditEventType.{member}" not in source and f'"{value}"' not in source:
@@ -130,7 +134,7 @@ def test_a_pinned_suite_names_its_route_and_event(key):
     entry = AUDITED_ROUTES[key]
     assert entry.pinned_files, key
     source = "\n".join((TESTS / f).read_text(encoding="utf-8") for f in entry.pinned_files)
-    gaps = pinned_evidence_gaps(key[1], entry.events, source)
+    gaps = pinned_evidence_gaps(key[0], key[1], entry.events, source)
     assert not gaps, f"{key}: {entry.pinned_by} is not evidence: {gaps}"
 
 
@@ -138,14 +142,27 @@ def test_the_evidence_check_rejects_a_suite_that_names_neither():
     """Guard the guard: an unrelated suite must not count as evidence for any route."""
     unrelated = "def test_x(client):\n    assert client.get('/api/health').status_code == 200\n"
     gaps = pinned_evidence_gaps(
-        "/api/admin/data-integrity", ("ADMIN_DATA_INTEGRITY_PURGE",), unrelated
+        "POST", "/api/admin/data-integrity", ("ADMIN_DATA_INTEGRITY_PURGE",), unrelated
     )
-    assert len(gaps) == 2, gaps
+    assert len(gaps) == 3, gaps
     real = 'client.post("/api/admin/data-integrity")\nAuditEventType.ADMIN_DATA_INTEGRITY_PURGE\n'
     assert (
-        pinned_evidence_gaps("/api/admin/data-integrity", ("ADMIN_DATA_INTEGRITY_PURGE",), real)
+        pinned_evidence_gaps(
+            "POST", "/api/admin/data-integrity", ("ADMIN_DATA_INTEGRITY_PURGE",), real
+        )
         == []
     )
+
+
+def test_a_suite_using_only_another_method_is_not_evidence():
+    """Must-fire for the method requirement: the right path and event, but only a GET."""
+    get_only = (
+        'client.get("/api/admin/data-integrity")\nAuditEventType.ADMIN_DATA_INTEGRITY_PURGE\n'
+    )
+    gaps = pinned_evidence_gaps(
+        "POST", "/api/admin/data-integrity", ("ADMIN_DATA_INTEGRITY_PURGE",), get_only
+    )
+    assert gaps == ["never issues a POST request"]
 
 
 def test_every_compliance_event_is_written_somewhere_declared():

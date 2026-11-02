@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 #
 # Resilience settings prevent hung connections and transient failures that are
 # common in headless / containerised server environments.
-_YT_DLP_BASE_OPTS: dict[str, object] = {
+YT_DLP_BASE_OPTS: dict[str, object] = {
     # JavaScript runtime — solves YouTube's bot-detection challenge
     "js_runtimes": {"deno": {"path": "/usr/local/bin/deno"}},
     # Connection resilience
@@ -38,7 +38,7 @@ _YT_DLP_BASE_OPTS: dict[str, object] = {
 # 'android' and 'android_sdkless' are deprecated/blocked; ios_downgraded
 # and android_vr bypass SABR restrictions on many networks.
 # Skip auto-translated subtitles to reduce unnecessary network requests.
-_YOUTUBE_EXTRACTOR_ARGS: dict[str, dict] = {
+YOUTUBE_EXTRACTOR_ARGS: dict[str, dict] = {
     "youtube": {
         "player_client": ["default", "web_safari", "ios_downgraded", "android_vr"],
         "skip": ["translated_subs"],

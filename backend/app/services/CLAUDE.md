@@ -984,7 +984,7 @@ where it ran. Steps: `transcription`, `diarization`, `voiceprints`, `summary`, `
 
 `media_download_service.py`. 1800+ platforms, no extra config — yt-dlp and a Deno runtime ship
 in the backend image (`js_runtimes` at `/usr/local/bin/deno`, required since yt-dlp 2025.11 for
-YouTube PO tokens; `_YOUTUBE_EXTRACTOR_ARGS` rotates player clients).
+YouTube PO tokens; `YOUTUBE_EXTRACTOR_ARGS` rotates player clients).
 
 - Limits: **15 GB** (`max_filesize`, matches the upload limit) and **4 h** (`duration > 14400`).
 - `create_user_friendly_error` maps raw yt-dlp errors → guidance via `AUTH_ERROR_PATTERNS` +

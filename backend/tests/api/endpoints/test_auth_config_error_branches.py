@@ -5,7 +5,7 @@ that turns any failure into an opaque 500, preceded by a narrow
 ``except (HTTPException, DomainError): raise`` so a deliberate 403/404 raised below
 is not reported as an internal error (issue #431). Neither branch had a test, so
 dropping the re-raise, leaking the exception text, or losing the failure audit
-record on the update path would have passed the suite.
+record on either path would have passed the suite.
 
 Run: ``../scripts/run-backend-tests.sh --throwaway-db tests/api/endpoints/test_auth_config_error_branches.py``
 """
@@ -140,6 +140,25 @@ class TestMigrate:
         assert response.json()["detail"] == INTERNAL_DETAIL
         assert "hunter2" not in response.text
 
+    def test_unexpected_failure_is_audited_as_a_failure(
+        self, client, super_admin_token_headers, super_admin_user, monkeypatch
+    ):
+        monkeypatch.setattr(AuthConfigService, "migrate_from_env", _boom)
+        events = _collect_audit(monkeypatch)
+        actor_id, actor_email = super_admin_user.id, str(super_admin_user.email)
+
+        response = client.post(f"{BASE}/migrate", headers=super_admin_token_headers)
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        records = _settings_changes(events, "auth_config_migrate_from_env")
+        assert len(records) == 1, events
+        record = records[0]
+        assert record["outcome"] is AuditOutcome.FAILURE
+        assert record["error_code"] == "AUTH_CONFIG_MIGRATE_FAILED"
+        assert record["user_id"] == actor_id
+        assert record["username"] == actor_email
+        assert "hunter2" not in repr(record)
+
     @pytest.mark.parametrize(
         ("raised", "expected_status"),
         [
@@ -155,8 +174,10 @@ class TestMigrate:
             raise raised
 
         monkeypatch.setattr(AuthConfigService, "migrate_from_env", refuse)
+        events = _collect_audit(monkeypatch)
 
         response = client.post(f"{BASE}/migrate", headers=super_admin_token_headers)
 
         assert response.status_code == expected_status
         assert response.json()["detail"] == "deliberate"
+        assert _settings_changes(events, "auth_config_migrate_from_env") == []

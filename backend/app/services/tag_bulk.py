@@ -1,54 +1,29 @@
-"""Bulk tag attach/detach for a gallery selection — the per-file mutation half.
+"""Attach or detach one tag across a gallery selection (the bulk-action rail).
 
-The rail that drives this lives in ``app/api/endpoints/files/management.py``
-(``POST /api/files/management/bulk-action``); the bodies live here because that
-module is already large and every hazard below is a *service* concern.
-
-Three things a naive per-file loop gets wrong, and what this module does instead:
-
-* **A no-op is not a failure.** Adding a tag to a selection where some files
-  already carry it must end with every file carrying it and the rest reported as
-  *unchanged* — the bulk envelope's ``success | message | error`` could not
-  express that, so :class:`BulkTagOutcome` distinguishes a change from a no-op.
-* **Read access is not write access.** The rail resolves files through
-  ``get_media_file_by_uuid``, which admits *any* non-None permission — and
-  ``viewer`` is one. A read-only member of a shared collection could otherwise
-  retag every file in it. Every mutation here first demands ``editor`` via
-  :meth:`PermissionService.check_file_access`, and reports the refusal as that
-  file's outcome instead of 403-ing the whole batch.
-* **One aborted statement must not poison the batch.** Every file in a request
-  runs on the *same* ``Depends(get_db)`` session, and the rail's per-file
-  ``except`` appends a result and continues **without a rollback**. After the
-  first database-level error psycopg2 leaves the transaction aborted, so every
-  later file dies with ``InFailedSqlTransaction: current transaction is
-  aborted`` — a failure attributable to nothing in particular. Each mutation
-  therefore runs inside its own SAVEPOINT (``db.begin_nested()``) and commits
-  per file: the failing file rolls back to its savepoint, the session stays
-  usable, and the files processed before it keep their change. The other bulk
-  handlers get their durability from helpers that commit internally; these have
-  to do it explicitly.
-
-The search refresh is deliberately **one** task for the whole batch
-(:func:`refresh_tagged_files`), not one per file — ``on_tags_changed`` enqueues a
-partial update over a file-id list.
+The rail resolves the tag once per batch (:func:`resolve_bulk_tag`), applies it
+file by file (:func:`apply_tag_to_file`), and refreshes caches and the search
+index once for the files that changed (:func:`refresh_tagged_files`). Each file
+gets its own outcome: a refusal or a database error on one file never fails the
+batch, and earlier files keep their change.
 """
 
 from __future__ import annotations
 
 import logging
-import uuid as uuid_pkg
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Final
 
 from sqlalchemy.orm import Session
 
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.core.exceptions import AccessDeniedError
 from app.models.media import MediaFile
-from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.services.permission_service import PermissionService
 from app.services.platform_bypass import PlatformBypass
+from app.services.tag_files import add_file_tag
+from app.services.tag_files import remove_file_tag
 from app.services.tag_scope import is_system_tag
 from app.services.tag_service import InvalidTagNameError
 from app.services.tag_service import clean_tag_name
@@ -59,22 +34,21 @@ from app.services.tag_service import resolve_or_create_tag
 
 logger = logging.getLogger(__name__)
 
-#: Bulk actions this module owns, as they appear in ``BulkActionRequest.action``.
-ADD_TAG_ACTION = "add_tag"
-REMOVE_TAG_ACTION = "remove_tag"
-TAG_ACTIONS = frozenset({ADD_TAG_ACTION, REMOVE_TAG_ACTION})
+ADD_TAG_ACTION: Final = "add_tag"
+REMOVE_TAG_ACTION: Final = "remove_tag"
+TAG_ACTIONS: Final = frozenset({ADD_TAG_ACTION, REMOVE_TAG_ACTION})
 
-#: Minimum permission a caller needs on a file to change its tags.
-REQUIRED_PERMISSION = "editor"
+#: The permission a caller needs on a file to change its tags.
+REQUIRED_PERMISSION: Final = "editor"
+
+PERMISSION_ERROR: Final = "PERMISSION_DENIED"
+MUTATION_ERROR: Final = "TAG_UPDATE_FAILED"
+TENANT_MISMATCH_ERROR: Final = "TAG_TENANT_MISMATCH"
+TENANT_MISMATCH_MESSAGE: Final = "This tag belongs to a different organization than the file"
 
 
 class BulkTagOutcome(StrEnum):
-    """What a bulk tag action did to one file.
-
-    ``ALREADY_PRESENT`` / ``NOT_PRESENT`` are *successful* no-ops: the file ends
-    in the requested state, it simply did not have to change to get there. Only
-    ``FAILED`` means the file did not reach that state.
-    """
+    """What happened to one file of the selection."""
 
     ADDED = "added"
     ALREADY_PRESENT = "already_present"
@@ -83,22 +57,13 @@ class BulkTagOutcome(StrEnum):
     FAILED = "failed"
 
 
-#: Outcomes that changed a file's tag set, and therefore its search document.
-CHANGED_OUTCOMES = frozenset({BulkTagOutcome.ADDED, BulkTagOutcome.REMOVED})
-
-PERMISSION_ERROR = "PERMISSION_DENIED"
-MUTATION_ERROR = "TAG_UPDATE_FAILED"
-#: ``BulkActionResult.error`` when an add would attach a tag of another tenant than the
-#: file's (a non-system tag whose ``organization_id`` differs from the file's). The rail
-#: resolves the tag and gates the files in one request tenant, so this only fires for a
-#: file reached outside that tenant, e.g. through a single-tenant admin's bypass.
-TENANT_MISMATCH_ERROR = "TAG_TENANT_MISMATCH"
-TENANT_MISMATCH_MESSAGE = "This tag belongs to a different organization than the file"
+#: Outcomes after which the file's tag set differs, so it needs a reindex.
+CHANGED_OUTCOMES: Final = frozenset({BulkTagOutcome.ADDED, BulkTagOutcome.REMOVED})
 
 
 @dataclass(frozen=True)
 class BulkTagResult:
-    """One file's outcome, before it is mapped onto the bulk response envelope."""
+    """The per-file result the rail maps onto its response row."""
 
     outcome: BulkTagOutcome
     message: str
@@ -106,7 +71,7 @@ class BulkTagResult:
 
     @property
     def success(self) -> bool:
-        """True for every outcome except :attr:`BulkTagOutcome.FAILED`."""
+        """Every outcome but a failure counts as success (a no-op included)."""
         return self.outcome is not BulkTagOutcome.FAILED
 
 
@@ -118,43 +83,27 @@ def resolve_bulk_tag(
     user_id: int,
     organization_id: int | None,
 ) -> Tag | None:
-    """Resolve the batch's tag **once**, before the per-file loop.
+    """Resolve the batch's tag once, in the request tenant.
 
-    Add resolves through :func:`app.services.tag_service.resolve_or_create_tag`
-    (normalized-exact, so ``Q3 Review`` and ``q3-review`` are one tag) and
-    **commits**: the row has to survive a later per-file rollback, or every
-    remaining file would insert an association pointing at a tag that no longer
-    exists. Remove only *looks the tag up* — creating a tag in order to detach it
-    would leave a new row behind on every typo.
-
-    Args:
-        db: Database session. Committed when a tag is created.
-        action: ``add_tag`` or ``remove_tag``.
-        tag_name: Supplied name, trimmed and clamped like every other tag path.
-        user_id: The acting user. Owns (or, in an organization, is credited
-            with) a tag this creates.
-        organization_id: The request's tenant, which scopes the lookup —
-            resolving unscoped would let a bulk action attach or detach another
-            tenant's identically-named row. The rail tenant-gates every file
-            against the same context, so the one tag fits the whole batch.
-
-    Returns:
-        The tag to apply, or None when a remove names a tag nothing carries —
-        which is a per-file ``NOT_PRESENT``, not an error.
+    Removing only looks the name up, so a typo leaves no new row and may yield
+    None. Adding resolves or creates, then commits so the row survives a later
+    per-file rollback.
 
     Raises:
-        InvalidTagNameError: The name is empty once normalized.
+        InvalidTagNameError: The name is missing or empty once normalized.
     """
     cleaned = clean_tag_name(tag_name or "")
     normalized = normalize_tag_name(cleaned)
     if not normalized:
-        raise InvalidTagNameError(f"Tag name is empty after normalization: {tag_name!r}")
-
+        raise InvalidTagNameError("Tag name is required")
     if action == REMOVE_TAG_ACTION:
         return lookup_existing_tag(db, normalized, cleaned, user_id, organization_id)
-
     tag = resolve_or_create_tag(
-        db, cleaned, user_id=user_id, organization_id=organization_id, source=TAG_SOURCE_MANUAL
+        db,
+        cleaned,
+        user_id=user_id,
+        organization_id=organization_id,
+        source=TAG_SOURCE_MANUAL,
     )
     db.commit()
     return tag
@@ -163,15 +112,15 @@ def resolve_bulk_tag(
 def _require_editor(
     db: Session, file_id: int, user_id: int, bypass: PlatformBypass
 ) -> BulkTagResult | None:
-    """Return a failure result unless the caller may *write* to this file."""
+    """None when the caller may edit the file's tags, else the refusal row."""
     if bypass.user_is_admin:
-        file = db.get(MediaFile, file_id)
-        if file is not None and bypass.allows(
-            org_id=file.organization_id,
-            owner_id=file.user_id,
+        media_file = db.get(MediaFile, file_id)
+        if media_file is not None and bypass.allows(
+            org_id=media_file.organization_id,
+            owner_id=media_file.user_id,
             need="write",
             resource_type="media_file",
-            resource_uuid=str(file.uuid),
+            resource_uuid=str(media_file.uuid),
         ):
             return None
     try:
@@ -179,8 +128,39 @@ def _require_editor(
             db, file_id, user_id, min_permission=REQUIRED_PERMISSION
         )
     except AccessDeniedError as exc:
-        return BulkTagResult(BulkTagOutcome.FAILED, str(exc.detail), PERMISSION_ERROR)
+        return BulkTagResult(BulkTagOutcome.FAILED, message=str(exc.detail), error=PERMISSION_ERROR)
     return None
+
+
+def _crosses_tenant(db: Session, tag: Tag, file_id: int) -> bool:
+    """Whether attaching ``tag`` would put another tenant's tag on the file."""
+    if is_system_tag(tag):
+        return False
+    file_org: int | None = (
+        db.query(MediaFile.organization_id).filter(MediaFile.id == file_id).scalar()
+    )
+    return tag.organization_id != file_org
+
+
+def _change_association(db: Session, file_id: int, tag: Tag, add: bool) -> BulkTagResult:
+    if add:
+        if add_file_tag(db, file_id, tag.id):
+            return BulkTagResult(BulkTagOutcome.ADDED, f"Tag '{tag.name}' added")
+        return BulkTagResult(
+            BulkTagOutcome.ALREADY_PRESENT, f"File already carried tag '{tag.name}'"
+        )
+    if remove_file_tag(db, file_id, tag.id):
+        return BulkTagResult(BulkTagOutcome.REMOVED, f"Tag '{tag.name}' removed")
+    return BulkTagResult(BulkTagOutcome.NOT_PRESENT, f"File did not carry tag '{tag.name}'")
+
+
+def _failed(exception_class: str) -> BulkTagResult:
+    # The class name only: exception text can carry SQL, paths or connection strings.
+    return BulkTagResult(
+        BulkTagOutcome.FAILED,
+        message=f"Tag change failed ({exception_class})",
+        error=MUTATION_ERROR,
+    )
 
 
 def apply_tag_to_file(
@@ -192,117 +172,63 @@ def apply_tag_to_file(
     user_id: int,
     bypass: PlatformBypass = PlatformBypass.none(),
 ) -> BulkTagResult:
-    """Attach or detach ``tag`` on one file, isolated from the rest of the batch.
-
-    The mutation runs inside its own SAVEPOINT and commits on success, so a
-    database error here rolls back to that savepoint and leaves the session
-    usable for the next file — see the module docstring for why that is
-    load-bearing rather than defensive.
+    """Attach or detach ``tag`` on one file and commit that file's change.
 
     Args:
-        db: Database session shared by the whole batch. Committed on a change.
-        file_id: Internal id of the file, already resolved and tenant-gated by
-            the rail.
-        tag: The batch's tag, or None when a remove named an unknown tag.
-        add: True to attach, False to detach.
-        user_id: The acting user, checked for ``editor`` on this file.
-        bypass: The request's platform bypass, decided on the file's own tenant.
+        db: Session; it stays usable for the next file whatever happens here.
+        file_id: The file.
+        tag: The batch's tag; None for a removal of a name that does not exist.
+        add: Attach when True, detach when False.
+        user_id: The caller, who needs editor rights on the file.
+        bypass: The request's platform bypass.
 
     Returns:
-        This file's outcome. Never raises for an expected condition — a refusal,
-        a tag of another tenant than the file's (``TENANT_MISMATCH_ERROR``; detach
-        stays allowed, it only removes such a row), or a database error comes back
-        as :attr:`BulkTagOutcome.FAILED`.
+        The file's outcome. Adding another organization's tag is refused;
+        detaching is never refused on tenant grounds, so a stray association
+        can still be removed.
     """
     refusal = _require_editor(db, file_id, user_id, bypass)
     if refusal is not None:
         return refusal
-
     if tag is None:
-        # Remove named a tag no row exists for: nothing carries it, by definition.
         return BulkTagResult(BulkTagOutcome.NOT_PRESENT, "No such tag; nothing to remove")
+    if add and _crosses_tenant(db, tag, file_id):
+        return BulkTagResult(
+            BulkTagOutcome.FAILED, message=TENANT_MISMATCH_MESSAGE, error=TENANT_MISMATCH_ERROR
+        )
 
-    if add and not is_system_tag(tag):
-        file_org = db.query(MediaFile.organization_id).filter(MediaFile.id == file_id).scalar()
-        if tag.organization_id != file_org:
-            return BulkTagResult(
-                BulkTagOutcome.FAILED, TENANT_MISMATCH_MESSAGE, TENANT_MISMATCH_ERROR
-            )
-
+    tag_name = tag.name
     savepoint = db.begin_nested()
     try:
-        link = (
-            db.query(FileTag)
-            .filter(FileTag.media_file_id == file_id, FileTag.tag_id == tag.id)
-            .first()
-        )
-        if add:
-            if link is not None:
-                savepoint.rollback()
-                return BulkTagResult(
-                    BulkTagOutcome.ALREADY_PRESENT, f"File already carried tag '{tag.name}'"
-                )
-            db.add(FileTag(media_file_id=file_id, tag_id=tag.id, source=TAG_SOURCE_MANUAL))
-            outcome = BulkTagOutcome.ADDED
-            message = f"Tag '{tag.name}' added"
-        else:
-            if link is None:
-                savepoint.rollback()
-                return BulkTagResult(
-                    BulkTagOutcome.NOT_PRESENT, f"File did not carry tag '{tag.name}'"
-                )
-            db.delete(link)
-            outcome = BulkTagOutcome.REMOVED
-            message = f"Tag '{tag.name}' removed"
+        result = _change_association(db, file_id, tag, add)
         db.flush()
-    except Exception as exc:
-        # ROLLBACK TO SAVEPOINT: undoes only this file and clears the aborted
-        # transaction state, so the files after it are still processable.
-        # `message` below is rendered verbatim into BulkActionResult.message
-        # (api/endpoints/files/management.py) -- never interpolate the raw
-        # exception text, only its class name.
-        savepoint.rollback()
-        logger.exception("Bulk tag change failed for file %s", file_id)
-        return BulkTagResult(
-            BulkTagOutcome.FAILED, f"Tag change failed ({type(exc).__name__})", MUTATION_ERROR
-        )
-
-    try:
         savepoint.commit()
+    except Exception as exc:
+        # Any failure, a poisoned transaction included: undo only this file.
+        savepoint.rollback()
+        logger.exception(f"Bulk tag change failed on file {file_id} for tag '{tag_name}'")
+        return _failed(type(exc).__name__)
+    try:
         db.commit()
     except Exception as exc:
         db.rollback()
-        logger.exception("Bulk tag commit failed for file %s", file_id)
-        return BulkTagResult(
-            BulkTagOutcome.FAILED, f"Tag change failed ({type(exc).__name__})", MUTATION_ERROR
-        )
-
-    return BulkTagResult(outcome, message)
+        logger.exception(f"Commit failed after a bulk tag change on file {file_id}")
+        return _failed(type(exc).__name__)
+    return result
 
 
 def refresh_tagged_files(db: Session, changed_file_uuids: list[str], *, user_id: int) -> list[int]:
-    """Bust tag caches and enqueue ONE search refresh for the whole batch.
+    """Run the change hook once for the batch's changed files.
 
-    Called once after the loop, never per file: ``on_tags_changed`` fires a
-    single partial-update task carrying every file id. Only files that actually
-    changed are listed — a file that already carried the tag has a correct
-    indexed tag array, so reindexing it is work with no effect. The call happens
-    even when nothing changed, because the cache-bust half still has to run for
-    a tag the batch created.
-
-    Args:
-        db: Database session, used to resolve the public uuids to internal ids.
-        changed_file_uuids: Uuids of the files whose tag set changed.
-        user_id: The acting user, whose cached listings are busted.
+    Called even with no changed files: a tag created for the batch still needs
+    the caller's cached tag list dropped. Unknown uuids are ignored.
 
     Returns:
-        The file ids a refresh was enqueued for.
+        The internal ids handed to the reindex.
     """
-    file_ids: list[int] = []
+    ids: list[int] = []
     if changed_file_uuids:
-        parsed = [uuid_pkg.UUID(str(value)) for value in changed_file_uuids]
-        file_ids = [
-            int(file_id)
-            for (file_id,) in db.query(MediaFile.id).filter(MediaFile.uuid.in_(parsed)).all()
-        ]
-    return on_tags_changed(db, file_ids, user_id=user_id)
+        rows = db.query(MediaFile.uuid, MediaFile.id).filter(MediaFile.uuid.in_(changed_file_uuids))
+        by_uuid = {str(file_uuid): int(file_id) for file_uuid, file_id in rows}
+        ids = [by_uuid[key] for key in map(str, changed_file_uuids) if key in by_uuid]
+    return on_tags_changed(db, ids, user_id=user_id)

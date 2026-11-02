@@ -1,10 +1,10 @@
-"""The destructive half: rename, merge, delete, promote — each fronted by an impact preview.
+"""The destructive half of the tag API: impact preview, promote, rename, merge, delete.
 
-Every mutation here refuses a support-access grant, like ``POST /tags``: a grant is for
-diagnosis and never rewrites a tenant's vocabulary.
-
-Shared helpers and the visibility rules live in ``_common``.
+Every route resolves its tags through ``_writable_tag_ids``, so a tag the caller
+may not change answers 404 exactly like an unknown one.
 """
+
+from __future__ import annotations
 
 from uuid import UUID
 
@@ -17,7 +17,8 @@ from sqlalchemy.orm import Session
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
-from app.api.endpoints.tags._common import _apply
+from app.api.endpoints.tags._common import _mutation_response
+from app.api.endpoints.tags._common import _translated_tag_errors
 from app.api.endpoints.tags._common import _writable_tag_ids
 from app.api.endpoints.tags._common import router
 from app.db.base import get_db
@@ -38,35 +39,31 @@ from app.services.tag_operations import rename_tag
 
 @router.get("/impact", response_model=TagImpact)
 def get_tag_impact(
-    tag_uuids: list[UUID] = Query(..., min_length=1),
+    tag_uuids: list[UUID] = Query(..., min_length=1, description="The tags to measure."),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Report what renaming, merging, or deleting these tags would touch.
+    """How many files a rename, merge or delete of these tags would touch.
 
-    Returns the caller-visible count **and** the global count separately: tags
-    are global rows, so an operation confirmed against the accessible number
-    alone would understate its own blast radius.
+    Reports the files you can open and the deployment-wide total separately.
     """
-    report = preview_tag_impact(
+    tag_ids = _writable_tag_ids(
         db,
-        _writable_tag_ids(
-            db,
-            tag_uuids,
-            user_id=current_user.id,
-            can_write_system=ctx.bypass.deployment_scope_writable,
-            organization_id=ctx.org_id,
-            is_org_admin=ctx.is_org_admin,
-        ),
+        tag_uuids,
         user_id=current_user.id,
+        can_write_system=ctx.bypass.deployment_scope_writable,
         organization_id=ctx.org_id,
+        is_org_admin=ctx.is_org_admin,
     )
+    report = preview_tag_impact(db, tag_ids, user_id=current_user.id, organization_id=ctx.org_id)
     return TagImpact.model_validate(report)
 
 
 @router.post(
-    "/promote", response_model=TagMutationResult, dependencies=[Depends(refuse_under_support_grant)]
+    "/promote",
+    response_model=TagMutationResult,
+    dependencies=[Depends(refuse_under_support_grant)],
 )
 def promote_tags_endpoint(
     payload: TagPromoteRequest,
@@ -74,43 +71,33 @@ def promote_tags_endpoint(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Publish owned tags into the shared vocabulary (admin only).
+    """Publish tags to the shared vocabulary every account sees.
 
-    In a multi-tenant deployment this needs a ``super_admin``: the result is visible to every
-    tenant. Only same-named tags of the promoted tag's own tenant are folded into it.
-
-    The consolidation lever for a multi-user deployment: ownership keeps one
-    account from renaming another's tag, but it also lets four private
-    "Interview" rows accumulate with nothing to point at. Promoting one makes it
-    the row every account resolves onto, and folds the same-named private rows
-    into it so their file associations are preserved rather than orphaned.
-
-    Registered **before** ``PATCH /{tag_uuid}`` and the other path-parameter
-    routes for the usual FastAPI reason — ``/promote`` would otherwise be
-    swallowed by ``/{tag_uuid}``.
+    Same-named tags are folded into the published one: across every tenant in
+    a single-tenant deployment, otherwise only within the tag's own tenant.
     """
     if not ctx.bypass.deployment_scope_writable:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admin users can promote tags to the shared vocabulary",
         )
-    return _apply(
-        promote_tags_to_shared,
+    tag_ids = _writable_tag_ids(
         db,
-        _writable_tag_ids(
-            db,
-            payload.tag_uuids,
-            user_id=current_user.id,
-            can_write_system=ctx.bypass.deployment_scope_writable,
-            organization_id=ctx.org_id,
-            is_org_admin=ctx.is_org_admin,
-        ),
+        payload.tag_uuids,
         user_id=current_user.id,
+        can_write_system=ctx.bypass.deployment_scope_writable,
         organization_id=ctx.org_id,
-        # Single-tenant: one vocabulary, so every same-named row is folded. Multi-tenant: only
-        # the promoted tag's own tenant is, another tenant's rows are not this caller's to merge.
-        fold_across_tenants=ctx.bypass.mode is TenancyMode.SINGLE,
+        is_org_admin=ctx.is_org_admin,
     )
+    with _translated_tag_errors():
+        outcome = promote_tags_to_shared(
+            db,
+            tag_ids,
+            user_id=current_user.id,
+            organization_id=ctx.org_id,
+            fold_across_tenants=ctx.bypass.mode is TenancyMode.SINGLE,
+        )
+    return _mutation_response(outcome, current_user.id)
 
 
 @router.patch(
@@ -127,28 +114,28 @@ def rename_tag_endpoint(
 ):
     """Rename a tag.
 
-    A new name that resolves to a *different* existing tag is a merge; the
-    response comes back with ``requires_confirmation`` and an impact preview and
-    nothing is applied until the caller retries with ``confirm_merge``. A case
-    variant of the tag's own name is a plain rename.
+    When the new name already belongs to another tag nothing changes and
+    ``requires_confirmation`` is set, with that tag and the files affected;
+    repeat with ``confirm_merge`` to fold this tag into it.
     """
-    tag_id = _writable_tag_ids(
+    (tag_id,) = _writable_tag_ids(
         db,
         [tag_uuid],
         user_id=current_user.id,
         can_write_system=ctx.bypass.deployment_scope_writable,
         organization_id=ctx.org_id,
         is_org_admin=ctx.is_org_admin,
-    )[0]
-    return _apply(
-        rename_tag,
-        db,
-        tag_id,
-        payload.name,
-        confirm_merge=payload.confirm_merge,
-        user_id=current_user.id,
-        organization_id=ctx.org_id,
     )
+    with _translated_tag_errors():
+        outcome = rename_tag(
+            db,
+            tag_id,
+            payload.name,
+            confirm_merge=payload.confirm_merge,
+            user_id=current_user.id,
+            organization_id=ctx.org_id,
+        )
+    return _mutation_response(outcome, current_user.id)
 
 
 @router.post(
@@ -163,53 +150,50 @@ def merge_tags_endpoint(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Fold the listed tags into the tag in the path, which survives."""
-    target_id = _writable_tag_ids(
+    """Fold the source tags into this tag; their files and grants move to it."""
+    (target_id,) = _writable_tag_ids(
         db,
         [tag_uuid],
         user_id=current_user.id,
         can_write_system=ctx.bypass.deployment_scope_writable,
         organization_id=ctx.org_id,
         is_org_admin=ctx.is_org_admin,
-    )[0]
-    return _apply(
-        merge_tags,
-        db,
-        target_id,
-        _writable_tag_ids(
-            db,
-            payload.source_uuids,
-            user_id=current_user.id,
-            can_write_system=ctx.bypass.deployment_scope_writable,
-            organization_id=ctx.org_id,
-            is_org_admin=ctx.is_org_admin,
-        ),
-        user_id=current_user.id,
-        organization_id=ctx.org_id,
     )
+    source_ids = _writable_tag_ids(
+        db,
+        payload.source_uuids,
+        user_id=current_user.id,
+        can_write_system=ctx.bypass.deployment_scope_writable,
+        organization_id=ctx.org_id,
+        is_org_admin=ctx.is_org_admin,
+    )
+    with _translated_tag_errors():
+        outcome = merge_tags(
+            db, target_id, source_ids, user_id=current_user.id, organization_id=ctx.org_id
+        )
+    return _mutation_response(outcome, current_user.id)
 
 
 @router.delete(
-    "", response_model=TagMutationResult, dependencies=[Depends(refuse_under_support_grant)]
+    "",
+    response_model=TagMutationResult,
+    dependencies=[Depends(refuse_under_support_grant)],
 )
 def delete_tags_endpoint(
-    tag_uuids: list[UUID] = Query(..., min_length=1),
+    tag_uuids: list[UUID] = Query(..., min_length=1, description="The tags to delete."),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Delete one or more tags, returning the impact the delete realized."""
-    return _apply(
-        delete_tags,
+    """Delete tags. Their files lose them and their share grants go too."""
+    tag_ids = _writable_tag_ids(
         db,
-        _writable_tag_ids(
-            db,
-            tag_uuids,
-            user_id=current_user.id,
-            can_write_system=ctx.bypass.deployment_scope_writable,
-            organization_id=ctx.org_id,
-            is_org_admin=ctx.is_org_admin,
-        ),
+        tag_uuids,
         user_id=current_user.id,
+        can_write_system=ctx.bypass.deployment_scope_writable,
         organization_id=ctx.org_id,
+        is_org_admin=ctx.is_org_admin,
     )
+    with _translated_tag_errors():
+        outcome = delete_tags(db, tag_ids, user_id=current_user.id, organization_id=ctx.org_id)
+    return _mutation_response(outcome, current_user.id)

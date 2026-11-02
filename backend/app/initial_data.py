@@ -199,13 +199,12 @@ def _admin_exists(db: Session) -> bool:
 
 
 def _ensure_default_tags(db: Session) -> None:
-    """Create the system tag vocabulary if it doesn't exist.
+    """Seed the shared system tag vocabulary when it is missing.
 
-    These are *system* tags: no ``user_id`` and no ``organization_id`` makes
-    them visible in every tenant, which is the one case where an ownerless tag
-    is intentional — so
-    this is the one seeding path that deliberately does **not** go through
-    ``resolve_or_create_tag`` (which always attributes an owner). The lookup
+    Seeded rows are *system* tags: with neither ``user_id`` nor
+    ``organization_id`` they appear in every tenant. That is the single place
+    an ownerless tag is wanted, so seeding bypasses ``resolve_or_create_tag``
+    (which always records an owner). The lookup
     must carry the same predicate — a user's own "Meeting", or an organization's
     whose creator has gone (``user_id`` NULL, org set), must not satisfy the
     seeder and leave the shared row missing.

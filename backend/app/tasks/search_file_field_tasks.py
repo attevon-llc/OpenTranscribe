@@ -155,34 +155,23 @@ def update_file_access_index(file_ids: list[int]) -> dict[str, Any]:
     max_retries=3,
     default_retry_delay=10,
 )
-def update_file_tags_index(self, file_ids: list[int]) -> dict[str, Any]:
-    """Overwrite the ``tags`` field on the search documents for the given files.
+def update_file_tags_index(self: Any, file_ids: list[int]) -> dict[str, Any]:
+    """Rewrite the ``tags`` field on every search document of the given files.
 
-    Dispatched by ``services/tag_service.on_tags_changed`` from every path that
-    changes which tags a file carries, so filtering by tag and searching by tag
-    stay in agreement.
-
-    Deliberately *not* ``index_transcript_search`` (reloads every segment and
-    regenerates chunk embeddings on the GPU-adjacent embedding worker — the
-    wrong weight class for a metadata edit) and *not* ``reindex_transcripts``
-    (a per-user coordinator holding ``reindex_lock:{user_id}``, which would
-    no-op on exactly the large multi-file merges this matters for). This is a
-    lightweight ``update_by_query`` on the utility queue, same shape as
-    :func:`update_file_access_index`.
-
-    An empty tag list is written as an empty array rather than skipped —
-    detaching a file's last tag has to clear the indexed value.
-
-    A failed tag lookup is retried (``self.retry``, the declared ``max_retries``
-    and delay) and, once those are spent, fails the task: writing nothing and
-    reporting ``success`` would leave every document's tags stale with no sign.
-    The rewrite is idempotent, so a retry is always safe.
+    Chunk and digest documents alike are matched by ``file_id`` (no plane
+    filter: a digest left with stale tags drops out of tag-scoped chat). The
+    whole array is overwritten, so a re-run converges and a retry is safe.
 
     Args:
-        file_ids: Media file integer IDs whose tags changed.
+        file_ids: Integer ids of the media files whose tag set changed.
 
     Returns:
-        Dict with update stats.
+        Dict with ``status``; on success also ``updated`` (documents changed),
+        ``files`` and ``errors`` (per-file OpenSearch failures).
+
+    Raises:
+        Exception: The tag lookup's own error, once the retry budget is spent
+            (or immediately when called outside a worker).
     """
     from app.core.config import settings
     from app.db.session_utils import session_scope
@@ -198,32 +187,28 @@ def update_file_tags_index(self, file_ids: list[int]) -> dict[str, Any]:
         logger.warning("OpenSearch client not available, skipping tag index update")
         return {"status": "skipped", "reason": "no_opensearch"}
 
-    index_name = settings.OPENSEARCH_CHUNKS_INDEX
-    updated = 0
-    errors = 0
-
-    # One grouped query for the whole batch: a 500-file merge used to open 500
-    # sessions and issue 500 round trips for what is a single join.
-    tags_by_file: dict[int, list[str]] = {}
+    names_by_file: dict[int, list[str]] = {}
     try:
         with session_scope() as db:
             rows = (
                 db.query(FileTag.media_file_id, Tag.name)
-                .join(Tag, FileTag.tag_id == Tag.id)
+                .join(Tag, Tag.id == FileTag.tag_id)
                 .filter(FileTag.media_file_id.in_(file_ids))
                 .all()
             )
-    except Exception as e:
-        logger.error(f"Failed to load tag names for {len(file_ids)} file(s): {e}")
-        raise self.retry(exc=e) from e
-    for tagged_file_id, name in rows:
-        if tagged_file_id is None:
-            continue
-        tags_by_file.setdefault(int(tagged_file_id), []).append(name)
+            for media_file_id, name in rows:
+                if media_file_id is not None:
+                    names_by_file.setdefault(int(media_file_id), []).append(name)
+    except Exception as exc:
+        # Writing an empty array here would wipe every file's tags from search.
+        logger.exception(f"Tag lookup failed for {len(file_ids)} files; retrying")
+        raise self.retry(exc=exc) from exc
 
+    index_name = settings.OPENSEARCH_CHUNKS_INDEX
+    updated = 0
+    errors = 0
     for file_id in file_ids:
         try:
-            tag_names = tags_by_file.get(int(file_id), [])
             response = client.update_by_query(
                 index=index_name,
                 body={
@@ -231,33 +216,24 @@ def update_file_tags_index(self, file_ids: list[int]) -> dict[str, Any]:
                     "script": {
                         "source": "ctx._source.tags = params.tags",
                         "lang": "painless",
-                        "params": {"tags": tag_names},
+                        "params": {"tags": names_by_file.get(int(file_id), [])},
                     },
                 },
                 conflicts="proceed",
             )
-
-            file_updated = response.get("updated", 0)
-            updated += file_updated
-            logger.debug(
-                f"Updated tags for file {file_id}: {file_updated} chunks, {len(tag_names)} tags"
-            )
-
+            updated += int(response.get("updated", 0))
         except Exception as e:
             errors += 1
-            logger.error(f"Failed to update tag index for file {file_id}: {e}")
+            logger.error(f"Failed to update tags in the search index for file {file_id}: {e}")
 
-    # One refresh for the batch instead of a forced segment refresh per file;
-    # the writes are still visible by the time the task returns.
     if updated:
         try:
             client.indices.refresh(index=index_name)
         except Exception as e:
-            logger.warning(f"Tag index refresh failed after {updated} update(s): {e}")
+            logger.warning(f"Search index refresh after a tag update failed: {e}")
 
     logger.info(
-        f"Tag index update complete: {updated} chunks updated across "
-        f"{len(file_ids)} files, {errors} errors"
+        f"Tag index update: {updated} documents across {len(file_ids)} files, {errors} errors"
     )
     return {"status": "success", "updated": updated, "files": len(file_ids), "errors": errors}
 

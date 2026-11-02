@@ -1,53 +1,33 @@
-"""Tag management operations: impact preview, rename, merge, delete.
+"""Destructive tag operations: impact preview, rename, merge, delete, cleanup, promote.
 
-Split out of :mod:`app.services.tag_service`, which owns *resolution* (one
-supplied name → one ``Tag`` row). This module owns the destructive side, and it
-carries a different set of hazards:
+Callers pass internal ids already authorized by the endpoint layer
+(``tags._common._writable_tag_ids``); nothing here re-checks permissions.
 
-* **A tag reaches files the caller cannot see.** A tag belongs to a tenant
-  (an organization, or one user's personal space — ``v420``) or is *system*
-  (no owner, no tenant), and a system tag is attached across every account.
-  ``GET /tags`` reports counts scoped to what the caller can see, so a
-  confirmation reading "3 files" in
-  front of a delete that strips the tag from 500 is a lie:
-  :func:`preview_tag_impact` reports the caller-visible count and the true
-  deployment-wide count as **separate** numbers. Which tags a caller may reach
-  at all is decided before this module runs, by
-  ``endpoints/tags/_common._writable_tag_ids`` — own tags in the request's
-  tenant, an org admin's org tags, system tags for an admin, never another
-  tenant's. :func:`merge_tags` additionally refuses to fold one tenant's tag
-  into another's.
-* **``file_tag`` carries ``UNIQUE(media_file_id, tag_id)``** (declared in the DDL
-  at ``alembic/versions/v010_baseline.py``, and now on the ORM model too). A bare
-  ``UPDATE file_tag SET tag_id = survivor`` therefore aborts the transaction the
-  first time a file carries both tags — which is the common case for exactly the
-  near-duplicate pairs merge exists for. Merge collapses those pairs instead.
-* **NULL origins are legacy, not unknown.** ``Tag.source``/``FileTag.source`` are
-  nullable and migration v230 backfilled ``normalized_name`` but not ``source``,
-  so every tag predating auto-labeling carries NULL. NULL orders as manual.
-* **Tag names are stored outside the tag table.** ``WatchSource.tag_names`` is a
-  JSON list of names reapplied on every poll; merge a tag away without rewriting
-  it and the next poll recreates the tag.
-
-Every mutation here commits and then calls
-:func:`app.services.tag_service.on_tags_changed` — the reindex task reads the tag
-rows back from its own session, so an uncommitted change is invisible to it.
+Every mutation locks the tag rows it touches in ascending id order (so two
+opposite merges cannot deadlock), commits once on success, and then calls
+:func:`on_tags_changed` with the files whose tags changed: the reindex task
+reads rows back from its own session, so it must run after the commit.
 """
 
 from __future__ import annotations
 
 import logging
-import uuid as uuid_pkg
 from collections.abc import Iterable
 from collections.abc import Sequence
 from dataclasses import dataclass
 from dataclasses import field
+from typing import Any
+from uuid import UUID
 
+from sqlalchemy import and_
+from sqlalchemy import case
+from sqlalchemy import delete
 from sqlalchemy import distinct
+from sqlalchemy import exists
 from sqlalchemy import func
+from sqlalchemy import not_
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.constants import TAG_SOURCE_AI_ACCEPTED
 from app.core.constants import TAG_SOURCE_AUTO_AI
@@ -56,7 +36,6 @@ from app.core.exceptions import OpenTranscribeError
 from app.models.sharing import TagShare
 from app.models.tag import FileTag
 from app.models.tag import Tag
-from app.models.watch_source import WatchSource
 from app.services.tag_scope import accessible_file_ids_subquery
 from app.services.tag_scope import is_system_tag
 from app.services.tag_scope import system_tag
@@ -67,48 +46,49 @@ from app.services.tag_service import lookup_existing_tag
 from app.services.tag_service import normalize_tag_name
 from app.services.tag_service import on_tags_changed
 from app.services.tag_service import stored_normalized_name
+from app.services.tag_stored_names import rewrite_stored_tag_names
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "TAG_NOT_FOUND",
+    "TagImpactEntry",
+    "TagImpactReport",
+    "TagMutationOutcome",
+    "TagNotFoundError",
+    "TagTenantMismatchError",
+    "cleanup_unreferenced_tags",
+    "delete_tags",
+    "lock_tags",
+    "merge_tags",
+    "preview_tag_impact",
+    "promote_tags_to_shared",
+    "rename_tag",
+    "rewrite_stored_tag_names",
+    "touches_system_tag",
+]
 
-class TagTenantMismatchError(OpenTranscribeError):
-    """A merge would move associations across a tenant boundary.
-
-    Folding tenant A's tag into tenant B's would attach B's row to A's files —
-    B's word, visible to A. Only folding *into* the system vocabulary (which is
-    already in every tenant) or within one tenant is allowed.
-    """
-
-
-class TagNotFoundError(OpenTranscribeError):
-    """A tag referenced by an operation no longer exists.
-
-    Raised rather than silently skipped: two merges running in opposite
-    directions must not both report success, or each destroys the other's
-    survivor. Always carries ``TAG_NOT_FOUND``, the detail an unknown uuid gets at
-    the API, so a vanished row is indistinguishable from one that never existed and
-    no internal id reaches the wire.
-    """
-
-
+#: The only message a :class:`TagNotFoundError` carries; it is also the 404 detail.
 TAG_NOT_FOUND = "Tag not found"
 
 
-#: Origin ordering, least human first. A NULL origin predates auto-labeling and
-#: is therefore human-entered, so it ranks with ``manual``.
-_ORIGIN_RANK: dict[str, int] = {
-    TAG_SOURCE_AUTO_AI: 0,
-    TAG_SOURCE_AI_ACCEPTED: 1,
-    TAG_SOURCE_MANUAL: 2,
-}
-_MANUAL_RANK = _ORIGIN_RANK[TAG_SOURCE_MANUAL]
+class TagTenantMismatchError(OpenTranscribeError):
+    """A merge would fold a tag into a tag of another tenant."""
+
+
+class TagNotFoundError(OpenTranscribeError):
+    """A referenced tag does not exist (any more).
+
+    Always raised with :data:`TAG_NOT_FOUND`, so a row that vanished mid-request
+    reads exactly like an unknown uuid and no internal id reaches a response.
+    """
 
 
 @dataclass(frozen=True)
 class TagImpactEntry:
-    """File counts for a single tag in a pending operation."""
+    """File counts for one tag."""
 
-    uuid: uuid_pkg.UUID
+    uuid: UUID
     name: str
     accessible_file_count: int
     total_file_count: int
@@ -116,15 +96,7 @@ class TagImpactEntry:
 
 @dataclass(frozen=True)
 class TagImpactReport:
-    """What a rename / merge / delete would touch, before it touches it.
-
-    Attributes:
-        tags: Per-tag breakdown, in the order the tags were supplied.
-        accessible_file_count: Distinct files the caller can see across all tags.
-        total_file_count: Distinct files across all tags install-wide. Always
-            greater than or equal to ``accessible_file_count``; the gap is the
-            damage a caller-scoped confirmation would have hidden.
-    """
+    """File counts for a set of tags; the totals count each file once."""
 
     tags: list[TagImpactEntry] = field(default_factory=list)
     accessible_file_count: int = 0
@@ -133,38 +105,28 @@ class TagImpactReport:
 
 @dataclass
 class TagMutationOutcome:
-    """Result of a rename / merge / delete.
-
-    Attributes:
-        tag: The surviving tag, when one survives.
-        merged: True when associations were moved onto a surviving tag.
-        requires_confirmation: True when the operation was *not* applied because
-            it turned out to be a merge the caller has not confirmed.
-        deleted_uuids: Public identifiers of the tags that were removed.
-        impact: What the operation touched (or would touch, when it was held for
-            confirmation).
-    """
+    """Result of a mutation, serialized as ``schemas.tag.TagMutationResult``."""
 
     impact: TagImpactReport
     tag: Tag | None = None
     merged: bool = False
     requires_confirmation: bool = False
-    deleted_uuids: list[uuid_pkg.UUID] = field(default_factory=list)
+    deleted_uuids: list[UUID] = field(default_factory=list)
 
 
-def _origin_rank(source: str | None) -> int:
-    """Rank an origin by how human it is; NULL and unknown values read as manual."""
-    if source is None:
-        return _MANUAL_RANK
-    return _ORIGIN_RANK.get(source, _MANUAL_RANK)
+# Least to most human. NULL (legacy) and unknown origins rank as manual.
+_ORIGIN_RANK = {TAG_SOURCE_AUTO_AI: 0, TAG_SOURCE_AI_ACCEPTED: 1, TAG_SOURCE_MANUAL: 2}
+
+
+def _origin_rank(origin: str | None) -> int:
+    return _ORIGIN_RANK.get(origin or TAG_SOURCE_MANUAL, _ORIGIN_RANK[TAG_SOURCE_MANUAL])
 
 
 def _promote_origin(keep: str | None, other: str | None) -> str | None:
-    """Return the more human of two association origins.
+    """The more human of two association origins, preferring ``keep`` on a tie.
 
-    A NULL that outranks a machine origin is written out as ``manual`` — the
-    promotion is real, and storing it repairs a legacy row on the way past. Two
-    NULLs stay NULL, so an untouched pair is left exactly as it was.
+    A NULL ``other`` that outranks ``keep`` is written as ``"manual"``, which
+    repairs the legacy row; two NULLs stay NULL.
     """
     if _origin_rank(other) > _origin_rank(keep):
         return other if other is not None else TAG_SOURCE_MANUAL
@@ -172,7 +134,7 @@ def _promote_origin(keep: str | None, other: str | None) -> str | None:
 
 
 def _better_confidence(a: float | None, b: float | None) -> float | None:
-    """Return the higher of two optional confidences."""
+    """The higher of two confidences; a missing value loses to any number."""
     if a is None:
         return b
     if b is None:
@@ -180,60 +142,49 @@ def _better_confidence(a: float | None, b: float | None) -> float | None:
     return max(a, b)
 
 
-def touches_system_tag(tags: Iterable[Tag | None]) -> bool:
-    """Whether any of these tags is a system tag (no owner and no tenant).
-
-    Decides how wide the cache invalidation has to be. A system tag is in every
-    account's list, so a mutation touching one leaves every other account's
-    cached list wrong; an owned tag concerns only its owner and the owners of
-    the files it was on. Read the flag from the rows **before** they are
-    deleted — afterwards the answer is unavailable.
-    """
-    return any(tag is not None and is_system_tag(tag) for tag in tags)
-
-
 def lock_tags(db: Session, tag_ids: Iterable[int]) -> dict[int, Tag]:
-    """Lock the given tag rows ``FOR UPDATE`` in ascending id order.
-
-    The ordering is the point: two merges running in opposite directions
-    (``A → B`` and ``B → A``) that grabbed their rows in caller order would
-    deadlock or interleave into each destroying the other's survivor.
-
-    Args:
-        db: Database session.
-        tag_ids: Tag ids to lock. Missing ids are simply absent from the result.
+    """Lock the given tag rows with one ``SELECT ... ORDER BY tag.id ... FOR UPDATE``.
 
     Returns:
-        The locked rows keyed by id.
+        The rows found, by id. A missing id is simply absent.
     """
-    wanted = sorted({int(tag_id) for tag_id in tag_ids})
-    if not wanted:
+    ids = sorted({int(i) for i in tag_ids})
+    if not ids:
         return {}
-    rows = db.query(Tag).filter(Tag.id.in_(wanted)).order_by(Tag.id).with_for_update().all()
-    return {row.id: row for row in rows}
-
-
-def _affected_file_ids(db: Session, tag_ids: Sequence[int]) -> list[int]:
-    """Return the distinct files carrying any of these tags, for the reindex hook.
-
-    The null guard is not decorative: ``file_tag.media_file_id`` is nullable, and
-    a ``None`` in the list would reach the search-refresh task as a file id.
-
-    Args:
-        db: Database session.
-        tag_ids: Tags whose associations are about to change.
-
-    Returns:
-        The distinct, non-null media file ids.
-    """
-    return [
-        file_id
-        for (file_id,) in db.query(FileTag.media_file_id)
-        .filter(FileTag.tag_id.in_(list(tag_ids)))
-        .distinct()
+    # Sessions do not autoflush: write pending changes first so the refresh
+    # below re-reads them instead of discarding them.
+    db.flush()
+    rows = (
+        db.query(Tag)
+        .filter(Tag.id.in_(ids))
+        .order_by(Tag.id)
+        .with_for_update()
+        .populate_existing()
         .all()
-        if file_id is not None
-    ]
+    )
+    return {tag.id: tag for tag in rows}
+
+
+def touches_system_tag(tags: Iterable[Any]) -> bool:
+    """Whether any of ``tags`` is a system tag (its change reaches every account)."""
+    return any(is_system_tag(tag) for tag in tags)
+
+
+def _require_all(locked: dict[int, Tag], ids: Iterable[int]) -> list[Tag]:
+    try:
+        return [locked[i] for i in ids]
+    except KeyError:
+        raise TagNotFoundError(TAG_NOT_FOUND) from None
+
+
+def _file_ids_of(db: Session, tag_ids: Sequence[int]) -> list[int]:
+    rows = (
+        db.query(FileTag.media_file_id)
+        .filter(FileTag.tag_id.in_(tag_ids), FileTag.media_file_id.is_not(None))
+        .order_by(FileTag.id)
+        .all()
+    )
+    return list(dict.fromkeys(int(fid) for (fid,) in rows))
 
 
 def preview_tag_impact(
@@ -244,345 +195,139 @@ def preview_tag_impact(
     organization_id: int | None = None,
     association_source: str | None = None,
 ) -> TagImpactReport:
-    """Count the files a pending tag operation would affect.
-
-    Errors are allowed to propagate — an impact preview that degrades to zero
-    would understate a destructive operation, which is the exact failure this
-    exists to prevent.
+    """Count the files a set of tags is on, before an operation changes them.
 
     Args:
-        db: Database session.
-        tag_ids: Tags the operation covers.
-        user_id: The acting user, used to scope the accessible count.
-        organization_id: Tenant scope for the accessible count (``None`` =
-            personal), matching ``GET /tags``.
-        association_source: Count only files whose association carries this
-            origin. Rename / merge / delete act on every association and leave
-            it ``None``; reject (``app.services.tag_review``) removes only the
-            auto-labeler's own associations, so counting them all would
-            overstate what it takes away. A legacy NULL association origin never
-            matches — NULL is a human's row.
+        db: Session.
+        tag_ids: Tags in the order their entries should be reported; unknown
+            ids are skipped.
+        user_id: The caller, for the accessible counts.
+        organization_id: The request tenant; None is personal scope, not unscoped.
+        association_source: Count only associations of this origin.
 
     Returns:
-        Per-tag and union counts, accessible and global reported separately.
+        Per-tag accessible and deployment-wide counts, plus union totals.
     """
-    ordered = [int(tag_id) for tag_id in tag_ids]
-    if not ordered:
+    if not tag_ids:
         return TagImpactReport()
-
-    tags = {tag.id: tag for tag in db.query(Tag).filter(Tag.id.in_(ordered)).all()}
-    accessible_sq = select(accessible_file_ids_subquery(db, user_id, organization_id))
-    scope: list[ColumnElement[bool]] = [FileTag.tag_id.in_(ordered)]
+    unique_ids = sorted({int(i) for i in tag_ids})
+    accessible = select(accessible_file_ids_subquery(db, user_id, organization_id))
+    file_id = FileTag.media_file_id
+    accessible_file = case((file_id.in_(accessible), file_id))
+    conditions: list[Any] = [FileTag.tag_id.in_(unique_ids), file_id.is_not(None)]
     if association_source is not None:
-        scope.append(FileTag.source == association_source)
+        conditions.append(FileTag.source == association_source)
 
-    total_by_tag: dict[int, int] = {
-        int(tag_id): int(count)
-        for tag_id, count in db.query(FileTag.tag_id, func.count(distinct(FileTag.media_file_id)))
-        .filter(*scope)
-        .group_by(FileTag.tag_id)
-        .all()
-        if tag_id is not None
-    }
-    accessible_by_tag: dict[int, int] = {
-        int(tag_id): int(count)
-        for tag_id, count in db.query(FileTag.tag_id, func.count(distinct(FileTag.media_file_id)))
-        .filter(*scope, FileTag.media_file_id.in_(accessible_sq))
-        .group_by(FileTag.tag_id)
-        .all()
-        if tag_id is not None
-    }
-
-    entries = [
-        TagImpactEntry(
-            uuid=tags[tag_id].uuid,
-            name=tags[tag_id].name,
-            accessible_file_count=int(accessible_by_tag.get(tag_id, 0)),
-            total_file_count=int(total_by_tag.get(tag_id, 0)),
+    per_tag = {
+        int(tag_id): (int(open_count), int(total))
+        for tag_id, open_count, total in db.query(
+            FileTag.tag_id, func.count(distinct(accessible_file)), func.count(distinct(file_id))
         )
-        for tag_id in ordered
-        if tag_id in tags
-    ]
-
-    # Union counts, not the sum of the per-tag numbers: a file carrying two of
-    # the tags is one affected file, not two.
-    union_total = db.query(func.count(distinct(FileTag.media_file_id))).filter(*scope).scalar() or 0
-    union_accessible = (
-        db.query(func.count(distinct(FileTag.media_file_id)))
-        .filter(*scope, FileTag.media_file_id.in_(accessible_sq))
-        .scalar()
-        or 0
+        .filter(*conditions)
+        .group_by(FileTag.tag_id)
+    }
+    open_union, total_union = (
+        db.query(func.count(distinct(accessible_file)), func.count(distinct(file_id)))
+        .filter(*conditions)
+        .one()
     )
-
-    return TagImpactReport(
-        tags=entries,
-        accessible_file_count=int(union_accessible),
-        total_file_count=int(union_total),
-    )
-
-
-def _sources_in_tenant(db: Session, tenant: tuple):
-    """Watch sources holding a stored name list, bounded to one tag tenant.
-
-    A tag's name is only meaningful inside the tenant that owns the tag, so the
-    rewrite reaches the sources of that tenant and no others: an organization's
-    sources for an organization tag, the owner's organization-less sources for a
-    personal one, and every source for a system tag (the shared vocabulary).
-
-    The system case is a candidate set, not the final answer: a stored name
-    resolves to the tenant's own tag first and to the system tag only when the
-    tenant has none (:func:`app.services.tag_service.lookup_existing_tag`), so
-    :func:`rewrite_stored_tag_names` drops the sources of a tenant that holds a
-    same-named tag of its own.
-    """
-    query = db.query(WatchSource).filter(WatchSource.tag_names.isnot(None))
-    kind = tenant[0]
-    if kind == "org":
-        return query.filter(WatchSource.organization_id == tenant[1])
-    if kind == "user":
-        return query.filter(WatchSource.user_id == tenant[1], WatchSource.organization_id.is_(None))
-    return query
-
-
-def _names_held_by_source_tenants(
-    db: Session, sources: Sequence[WatchSource], names: set[str]
-) -> dict[tuple, set[str]]:
-    """Normalized ``names`` that each source's tenant holds as its own (non-system) tag.
-
-    Keyed by ``("org", id)`` for a source stamped with an organization and
-    ``("user", id)`` for an organization-less one. One query per kind, not per source.
-    """
-    org_ids = {int(s.organization_id) for s in sources if s.organization_id is not None}
-    user_ids = {int(s.user_id) for s in sources if s.organization_id is None}
-    held: dict[tuple, set[str]] = {}
-    if not org_ids and not user_ids:
-        return held
-
-    def _normalized(tag_name: str, stored: str | None) -> str:
-        return stored or normalize_tag_name(tag_name)
-
-    if org_ids:
-        for org_id, name, stored in db.query(
-            Tag.organization_id, Tag.name, Tag.normalized_name
-        ).filter(Tag.organization_id.in_(org_ids)):
-            if _normalized(name, stored) in names:
-                held.setdefault(("org", int(org_id)), set()).add(_normalized(name, stored))
-    if user_ids:
-        for user_id, name, stored in db.query(Tag.user_id, Tag.name, Tag.normalized_name).filter(
-            Tag.user_id.in_(user_ids), Tag.organization_id.is_(None)
-        ):
-            if _normalized(name, stored) in names:
-                held.setdefault(("user", int(user_id)), set()).add(_normalized(name, stored))
-    return held
-
-
-def rewrite_stored_tag_names(
-    db: Session,
-    doomed_normalized: set[str],
-    replacement: str | None,
-    *,
-    tenant: tuple,
-) -> int:
-    """Rewrite tag names stored outside the tag table.
-
-    ``WatchSource.tag_names`` holds *names*, reapplied on every poll, so a merge
-    that ignores it is undone by the next scan. Matching is on the normalized
-    form so entries written before normalization existed are still caught.
-
-    The rewritten list is **reassigned wholesale**: the column is plain ``JSON``
-    with no ``MutableList`` wrapper, so mutating an element in place passes its
-    own assertion in-session and is silently dropped on commit.
-
-    Args:
-        db: Database session.
-        doomed_normalized: Normalized names to rewrite or strip.
-        replacement: Name to substitute, or ``None`` to strip the entry.
-        tenant: The :func:`tenant_key` of the tag being changed. Only sources of
-            that tenant are touched. For a **system** tag that means every source
-            whose tenant holds no tag of its own with the same normalized name:
-            such a source's stored word resolves to the tenant's tag, not the
-            system one, so it is left as written.
-
-    Returns:
-        The number of watch sources changed.
-    """
-    if not doomed_normalized:
-        return 0
-
-    replacement_normalized = normalize_tag_name(replacement) if replacement else ""
-    changed = 0
-
-    sources = _sources_in_tenant(db, tenant).all()
-    shadowed = (
-        _names_held_by_source_tenants(db, sources, doomed_normalized)
-        if tenant[0] == "system"
-        else {}
-    )
-
-    for source in sources:
-        stored = source.tag_names
-        if not isinstance(stored, list):
+    tags = {tag.id: tag for tag in db.query(Tag).filter(Tag.id.in_(unique_ids))}
+    entries = []
+    for tag_id in tag_ids:
+        tag = tags.get(int(tag_id))
+        if tag is None:
             continue
-        source_tenant = (
-            ("org", int(source.organization_id))
-            if source.organization_id is not None
-            else ("user", int(source.user_id))
+        open_count, total = per_tag.get(tag.id, (0, 0))
+        entries.append(TagImpactEntry(tag.uuid, tag.name, open_count, total))
+    return TagImpactReport(entries, int(open_union), int(total_union))
+
+
+def _move_associations(db: Session, survivor: Tag, doomed_ids: list[int]) -> list[int]:
+    """Repoint the doomed tags' associations to the survivor; return the files touched.
+
+    A file that ends up carrying the survivor twice keeps one row, carrying the
+    more human origin and the higher confidence. The duplicates are deleted and
+    flushed before anything is repointed, so ``UNIQUE(media_file_id, tag_id)``
+    never sees both rows of a pair.
+    """
+    links = db.query(FileTag).filter(FileTag.tag_id.in_(doomed_ids)).order_by(FileTag.id).all()
+    affected = list(
+        dict.fromkeys(int(link.media_file_id) for link in links if link.media_file_id is not None)
+    )
+    keeper: dict[int, FileTag] = {
+        int(link.media_file_id): link
+        for link in db.query(FileTag).filter(
+            FileTag.tag_id == survivor.id, FileTag.media_file_id.in_(affected)
         )
-        if shadowed.get(source_tenant):
-            # The tenant's own tag wins the name for this source; for a rewrite of a
-            # system tag only the names the tenant does not hold are the system tag's.
-            doomed_here = doomed_normalized - shadowed[source_tenant]
-        else:
-            doomed_here = doomed_normalized
-        if not doomed_here:
-            continue
-
-        rewritten: list = []
-        seen: set[str] = set()
-        modified = False
-
-        for entry in stored:
-            if not isinstance(entry, str):
-                rewritten.append(entry)
-                continue
-
-            entry_normalized = normalize_tag_name(entry)
-            if entry_normalized in doomed_here:
-                modified = True
-                if replacement is None:
-                    continue
-                candidate, candidate_normalized = replacement, replacement_normalized
-            else:
-                candidate, candidate_normalized = entry, entry_normalized
-
-            if candidate_normalized and candidate_normalized in seen:
-                # The survivor was already configured on this source.
-                modified = True
-                continue
-            if candidate_normalized:
-                seen.add(candidate_normalized)
-            rewritten.append(candidate)
-
-        if modified:
-            source.tag_names = rewritten
-            changed += 1
-
-    if changed:
-        db.flush()
-    return changed
-
-
-def _rewrite_for_tags(db: Session, tags: Iterable[Tag], replacement: str | None) -> int:
-    """Rewrite stored names for ``tags``, each within its own tenant."""
-    by_tenant: dict[tuple, set[str]] = {}
-    for tag in tags:
-        by_tenant.setdefault(tenant_key(tag), set()).add(stored_normalized_name(tag))
-    return sum(
-        rewrite_stored_tag_names(db, names, replacement, tenant=tenant)
-        for tenant, names in by_tenant.items()
-    )
-
-
-def _reassign_associations(db: Session, target: Tag, doomed_ids: Sequence[int]) -> None:
-    """Move every association off the doomed tags onto the survivor.
-
-    ``file_tag`` carries ``UNIQUE(media_file_id, tag_id)``, so a file that
-    already holds the survivor cannot simply have its second row repointed —
-    that is the ``IntegrityError`` a bare bulk ``UPDATE`` hits on the first
-    genuinely-duplicated pair. Those associations are collapsed instead: one row
-    survives, carrying the more human origin and the higher confidence of the
-    two.
-
-    Args:
-        db: Database session.
-        target: The surviving tag.
-        doomed_ids: Tags whose associations are being moved.
-    """
-    kept_by_file: dict[int, FileTag] = {
-        link.media_file_id: link
-        for link in db.query(FileTag).filter(FileTag.tag_id == target.id).all()
         if link.media_file_id is not None
     }
-
-    # Delete the collapsed rows before repointing the rest so the unique
-    # constraint never sees both rows of a pair at once.
-    pending_moves: list[FileTag] = []
-    for link in db.query(FileTag).filter(FileTag.tag_id.in_(list(doomed_ids))).all():
-        file_id = link.media_file_id
-        if file_id is None:
-            # Orphaned association (nullable FK); repoint it and move on.
-            pending_moves.append(link)
+    collapsed: list[FileTag] = []
+    moving: list[FileTag] = []
+    for link in links:
+        kept = keeper.get(link.media_file_id) if link.media_file_id is not None else None
+        if kept is None:
+            moving.append(link)
+            if link.media_file_id is not None:
+                keeper[int(link.media_file_id)] = link
             continue
-        keeper = kept_by_file.get(file_id)
-        if keeper is None:
-            kept_by_file[file_id] = link
-            pending_moves.append(link)
-            continue
-        keeper.source = _promote_origin(keeper.source, link.source)
-        keeper.ai_confidence = _better_confidence(keeper.ai_confidence, link.ai_confidence)
+        kept.source = _promote_origin(kept.source, link.source)
+        kept.ai_confidence = _better_confidence(kept.ai_confidence, link.ai_confidence)
+        collapsed.append(link)
+    for link in collapsed:
         db.delete(link)
     db.flush()
-
-    for link in pending_moves:
-        link.tag_id = target.id
+    for link in moving:
+        link.tag_id = survivor.id
     db.flush()
+    return affected
 
 
-def _move_share_grants(db: Session, target: Tag, doomed_ids: Sequence[int]) -> None:
-    """Repoint the doomed tags' ``tag_share`` grants at the survivor, never widening reach.
+def _move_share_grants(db: Session, survivor: Tag, doomed_ids: list[int]) -> None:
+    """Hand the doomed tags' grants to the survivor, one per grantee.
 
-    A merge folds only tags of one tenant (or anything into the system vocabulary), so a
-    moved grant stays inside the tenant its owner granted it in. The rules:
-
-    * survivor is a system tag: nothing moves. Every account already sees it, so a grant
-      there confers nothing, and it would gather grantees from several tenants on one row;
-    * the grantee already holds a grant on the survivor: the survivor's own grant is kept
-      (grants carry no permission level, so neither is stronger);
-    * the grantee is the survivor's owner: dropped, as ``tag_sharing.share_tag`` refuses
-      a grant on one's own tag;
-    * otherwise the grant row itself moves, keeping its uuid and its ``shared_by``.
-
-    Grants not moved stay on the doomed rows and go with them by the FK cascade.
+    Nothing moves onto a system tag: every account already sees it. Grants left
+    behind are removed with their tag by the foreign key cascade.
     """
-    if is_system_tag(target) or not doomed_ids:
+    if is_system_tag(survivor):
         return
     held = {
-        (share.target_user_id, share.target_group_id)
-        for share in db.query(TagShare).filter(TagShare.tag_id == target.id)
+        (grant.target_user_id, grant.target_group_id)
+        for grant in db.query(TagShare).filter(TagShare.tag_id == survivor.id)
     }
     grants = db.query(TagShare).filter(TagShare.tag_id.in_(doomed_ids)).order_by(TagShare.id)
-    for share in grants.all():
-        grantee = (share.target_user_id, share.target_group_id)
-        if grantee in held or (
-            share.target_user_id is not None and share.target_user_id == target.user_id
-        ):
+    for grant in grants:
+        grantee = (grant.target_user_id, grant.target_group_id)
+        if grantee in held:
             continue
-        share.tag_id = target.id
+        if grant.target_user_id is not None and grant.target_user_id == survivor.user_id:
+            continue
+        grant.tag_id = survivor.id
         held.add(grantee)
     db.flush()
 
 
-def _fold_into(db: Session, target: Tag, doomed: Sequence[Tag]) -> list[int]:
-    """Fold ``doomed`` into ``target`` and delete them, flushing but never committing.
+def _fold(db: Session, survivor: Tag, doomed: list[Tag]) -> list[int]:
+    """Fold ``doomed`` into ``survivor``: associations, grants, stored names, rows.
 
-    The shared body of :func:`merge_tags` and :func:`promote_tags_to_shared`, so a
-    promotion that folds several rows commits once. Returns the affected file ids.
+    Flushes but never commits (merge and promote own the transaction).
+
+    Returns:
+        The files whose tag set changed.
     """
     doomed_ids = [tag.id for tag in doomed]
-    affected_file_ids = _affected_file_ids(db, doomed_ids)
-
-    _reassign_associations(db, target, doomed_ids)
-    _move_share_grants(db, target, doomed_ids)
-
-    if target.source == TAG_SOURCE_AUTO_AI:
-        target.source = TAG_SOURCE_AI_ACCEPTED
-
-    _rewrite_for_tags(db, doomed, target.name)
-
+    affected = _move_associations(db, survivor, doomed_ids)
+    _move_share_grants(db, survivor, doomed_ids)
+    if survivor.source == TAG_SOURCE_AUTO_AI:
+        survivor.source = TAG_SOURCE_AI_ACCEPTED
+    by_tenant: dict[tuple[Any, ...], set[str]] = {}
+    for tag in doomed:
+        by_tenant.setdefault(tenant_key(tag), set()).add(stored_normalized_name(tag))
+    for tenant, names in by_tenant.items():
+        rewrite_stored_tag_names(db, names, survivor.name, tenant=tenant)
     for tag in doomed:
         db.delete(tag)
     db.flush()
-    return affected_file_ids
+    return affected
 
 
 def merge_tags(
@@ -593,63 +338,46 @@ def merge_tags(
     user_id: int,
     organization_id: int | None = None,
 ) -> TagMutationOutcome:
-    """Merge one or more tags into a surviving tag.
-
-    A merge is a human act, so the survivor is endorsed: an auto-labeled tag
-    becomes ``ai_accepted``; a manual (or legacy NULL) tag is already human and
-    is left alone. Share grants on the folded tags move to the survivor
-    (:func:`_move_share_grants`), so a recipient keeps the word.
-
-    Args:
-        db: Database session. Committed on success.
-        target_id: The surviving tag.
-        source_ids: Tags to fold into it. Ids equal to ``target_id`` are ignored.
-        user_id: The acting user, for cache invalidation.
-        organization_id: Tenant scope for the accessible impact count.
-
-    Returns:
-        The outcome, carrying the survivor and the realized impact.
+    """Fold the source tags into the target tag.
 
     Raises:
-        TagNotFoundError: The target, or any named source, no longer exists.
-        TagTenantMismatchError: A source belongs to a different tenant than a
-            non-system target.
+        TagNotFoundError: The target or a source no longer exists (so the second
+            of two opposite merges fails instead of destroying the first's survivor).
+        TagTenantMismatchError: A source belongs to another tenant than the
+            target. Folding into a system tag is always allowed.
     """
-    wanted = {int(target_id)} | {int(i) for i in source_ids}
-    locked = lock_tags(db, wanted)
-
-    target = locked.get(int(target_id))
+    locked = lock_tags(db, [target_id, *source_ids])
+    target = locked.get(target_id)
     if target is None:
         raise TagNotFoundError(TAG_NOT_FOUND)
+    doomed_ids = sorted({int(i) for i in source_ids} - {target_id})
+    doomed = _require_all(locked, doomed_ids)
+    if not is_system_tag(target) and any(tenant_key(t) != tenant_key(target) for t in doomed):
+        raise TagTenantMismatchError("Tags from different tenants cannot be merged")
 
-    doomed_ids = sorted({int(i) for i in source_ids} - {int(target_id)})
-    missing = [i for i in doomed_ids if i not in locked]
-    if missing:
-        raise TagNotFoundError(TAG_NOT_FOUND)
-
-    target_tenant = tenant_key(target)
-    if target_tenant != ("system",):
-        crossing = [i for i in doomed_ids if tenant_key(locked[i]) != target_tenant]
-        if crossing:
-            raise TagTenantMismatchError(
-                "Tags from different tenants cannot be merged into one another"
-            )
-
-    # Only the disappearing tags' files are counted: a file carrying just the
-    # survivor is untouched, and folding it into the number would overstate the
-    # operation exactly as scoping the count would understate it.
     impact = preview_tag_impact(db, doomed_ids, user_id=user_id, organization_id=organization_id)
-    if not doomed_ids:
+    if not doomed:
         return TagMutationOutcome(impact=impact, tag=target)
 
-    doomed = [locked[i] for i in doomed_ids]
     system_scope = touches_system_tag([target, *doomed])
     deleted_uuids = [tag.uuid for tag in doomed]
-    affected_file_ids = _fold_into(db, target, doomed)
+    affected = _fold(db, target, doomed)
     db.commit()
-
-    on_tags_changed(db, affected_file_ids, user_id=user_id, system_scope=system_scope)
+    on_tags_changed(db, affected, user_id=user_id, system_scope=system_scope)
     return TagMutationOutcome(impact=impact, tag=target, merged=True, deleted_uuids=deleted_uuids)
+
+
+def _rename_collision(db: Session, tag: Tag, normalized: str, cleaned: str, user_id: int):
+    """The row the new name already belongs to, looked up in the renamed tag's tenant."""
+    if is_system_tag(tag):
+        return (
+            db.query(Tag)
+            .filter(system_tag(), Tag.normalized_name == normalized, Tag.id != tag.id)
+            .order_by(Tag.id)
+            .first()
+        )
+    owner = tag.user_id if tag.user_id is not None else user_id
+    return lookup_existing_tag(db, normalized, cleaned, owner, tag.organization_id)
 
 
 def rename_tag(
@@ -661,23 +389,11 @@ def rename_tag(
     user_id: int,
     organization_id: int | None = None,
 ) -> TagMutationOutcome:
-    """Rename a tag, routing a collision to :func:`merge_tags`.
+    """Rename a tag; onto another tag's name, hold for confirmation or merge.
 
-    A new name that resolves to a *different* existing tag is a merge in
-    disguise, so it is held behind an impact preview until ``confirm_merge`` is
-    passed. A name that resolves only to the tag's own normalized form
-    (``interview`` → ``Interview``) is a plain rename.
-
-    Args:
-        db: Database session. Committed on success.
-        tag_id: The tag to rename.
-        new_name: Supplied name, trimmed and clamped like every other tag path.
-        confirm_merge: Apply the merge when the new name collides.
-        user_id: The acting user, for cache invalidation.
-        organization_id: Tenant scope for the accessible impact count.
-
-    Returns:
-        The outcome. ``requires_confirmation`` is True when nothing was applied.
+    Without ``confirm_merge`` a collision changes nothing and returns
+    ``requires_confirmation`` with the colliding tag. With it, the renamed tag
+    is merged into that one. A new spelling of the tag's own name is a plain rename.
 
     Raises:
         InvalidTagNameError: The new name is empty once normalized.
@@ -686,52 +402,30 @@ def rename_tag(
     cleaned = clean_tag_name(new_name)
     normalized = normalize_tag_name(cleaned)
     if not normalized:
-        raise InvalidTagNameError(f"Tag name is empty after normalization: {new_name!r}")
-
-    locked = lock_tags(db, [tag_id])
-    tag = locked.get(int(tag_id))
+        raise InvalidTagNameError("Tag name is required")
+    tag = lock_tags(db, [tag_id]).get(tag_id)
     if tag is None:
         raise TagNotFoundError(TAG_NOT_FOUND)
 
-    # The collision is looked up in the RENAMED TAG's tenant, not the caller's:
-    # renaming a system tag onto a word some tenant happens to own must not
-    # fold the global row into that tenant's.
-    if is_system_tag(tag):
-        existing = (
-            db.query(Tag)
-            .filter(system_tag(), Tag.normalized_name == normalized, Tag.id != tag.id)
-            .first()
-        )
-    else:
-        existing = lookup_existing_tag(
-            db,
-            normalized,
-            cleaned,
-            int(tag.user_id) if tag.user_id is not None else user_id,
-            int(tag.organization_id) if tag.organization_id is not None else None,
-        )
+    existing = _rename_collision(db, tag, normalized, cleaned, user_id)
     if existing is not None and existing.id != tag.id:
-        if not confirm_merge:
-            impact = preview_tag_impact(
-                db, [tag.id], user_id=user_id, organization_id=organization_id
+        if confirm_merge:
+            return merge_tags(
+                db, existing.id, [tag.id], user_id=user_id, organization_id=organization_id
             )
-            return TagMutationOutcome(impact=impact, tag=existing, requires_confirmation=True)
-        return merge_tags(
-            db, existing.id, [tag.id], user_id=user_id, organization_id=organization_id
-        )
+        impact = preview_tag_impact(db, [tag.id], user_id=user_id, organization_id=organization_id)
+        return TagMutationOutcome(impact=impact, tag=existing, requires_confirmation=True)
 
     impact = preview_tag_impact(db, [tag.id], user_id=user_id, organization_id=organization_id)
-    old_normalized = stored_normalized_name(tag)
-    affected_file_ids = _affected_file_ids(db, [tag.id])
-
-    system_scope = touches_system_tag([tag])
+    affected = _file_ids_of(db, [tag.id])
+    old_form = stored_normalized_name(tag)
+    was_system = is_system_tag(tag)
     tag.name = cleaned
     tag.normalized_name = normalized
-    rewrite_stored_tag_names(db, {old_normalized}, cleaned, tenant=tenant_key(tag))
+    rewrite_stored_tag_names(db, {old_form}, cleaned, tenant=tenant_key(tag))
     db.flush()
     db.commit()
-
-    on_tags_changed(db, affected_file_ids, user_id=user_id, system_scope=system_scope)
+    on_tags_changed(db, affected, user_id=user_id, system_scope=was_system)
     return TagMutationOutcome(impact=impact, tag=tag)
 
 
@@ -742,47 +436,33 @@ def delete_tags(
     user_id: int,
     organization_id: int | None = None,
 ) -> TagMutationOutcome:
-    """Delete one or more tags, reporting what the delete touched.
+    """Delete tags, their associations and (by cascade) their share grants.
 
-    The impact is measured before any row is removed, so the returned counts
-    describe the files that actually lost the tag.
-
-    Args:
-        db: Database session. Committed on success.
-        tag_ids: Tags to remove.
-        user_id: The acting user, for cache invalidation.
-        organization_id: Tenant scope for the accessible impact count.
-
-    Returns:
-        The outcome, carrying the realized impact and the removed uuids.
+    The impact is measured before anything is removed. Stored watch-source
+    names of each tag's tenant are stripped.
 
     Raises:
-        TagNotFoundError: Any named tag no longer exists.
+        TagNotFoundError: Any of the tags no longer exists.
     """
-    wanted = sorted({int(tag_id) for tag_id in tag_ids})
-    if not wanted:
+    if not tag_ids:
         return TagMutationOutcome(impact=TagImpactReport())
+    ids = sorted({int(i) for i in tag_ids})
+    tags = _require_all(lock_tags(db, ids), ids)
+    impact = preview_tag_impact(db, ids, user_id=user_id, organization_id=organization_id)
+    affected = _file_ids_of(db, ids)
+    deleted_uuids = [tag.uuid for tag in tags]
+    system_scope = touches_system_tag(tags)
 
-    locked = lock_tags(db, wanted)
-    missing = [tag_id for tag_id in wanted if tag_id not in locked]
-    if missing:
-        raise TagNotFoundError(TAG_NOT_FOUND)
-
-    doomed = [locked[tag_id] for tag_id in wanted]
-    impact = preview_tag_impact(db, wanted, user_id=user_id, organization_id=organization_id)
-    affected_file_ids = _affected_file_ids(db, wanted)
-
-    _rewrite_for_tags(db, doomed, None)
-
-    system_scope = touches_system_tag(doomed)
-    db.query(FileTag).filter(FileTag.tag_id.in_(wanted)).delete(synchronize_session=False)
-    deleted_uuids = [tag.uuid for tag in doomed]
-    for tag in doomed:
+    by_tenant: dict[tuple[Any, ...], set[str]] = {}
+    for tag in tags:
+        by_tenant.setdefault(tenant_key(tag), set()).add(stored_normalized_name(tag))
+    for tenant, names in by_tenant.items():
+        rewrite_stored_tag_names(db, names, None, tenant=tenant)
+    db.execute(delete(FileTag).where(FileTag.tag_id.in_(ids)))
+    for tag in tags:
         db.delete(tag)
-    db.flush()
     db.commit()
-
-    on_tags_changed(db, affected_file_ids, user_id=user_id, system_scope=system_scope)
+    on_tags_changed(db, affected, user_id=user_id, system_scope=system_scope)
     return TagMutationOutcome(impact=impact, deleted_uuids=deleted_uuids)
 
 
@@ -793,59 +473,49 @@ def cleanup_unreferenced_tags(
     organization_id: int | None = None,
     all_users: bool = False,
 ) -> int:
-    """Delete owned tags that no ``file_tag`` row anywhere references.
+    """Delete tags no file carries anywhere. System tags are always kept.
 
-    "Unreferenced" is deliberately measured **globally**, not against the acting
-    user's accessible files: an owned tag can sit on a file the owner can no
-    longer see (tagging a shared file adds the word to *your* vocabulary, and the
-    share can be revoked afterwards), and deleting that row would strip the tag
-    off someone else's file. So this is the intersection of "looks unused" and
-    "provably attached to nothing" — which makes it safe to run without an impact
-    preview, unlike :func:`delete_tags`.
-
-    System tags (no owner, no tenant) are always exempt. They are the shared
-    vocabulary every account's picker shows and being unattached is their normal
-    state, so sweeping them would empty the picker for everyone.
+    "Unreferenced" is deployment-wide: a tag on a file the caller can no longer
+    open still has a user and survives.
 
     Args:
-        db: Database session. Committed when anything is deleted.
-        acting_user_id: The caller — the creator whose tags are swept, and the
-            cache-invalidation scope.
-        organization_id: The request's tenant. The caller-scoped sweep only
-            touches their tags **in that tenant**, never the ones they made in
-            another organization.
-        all_users: Sweep every user's tags rather than only the caller's. The
-            deployment-wide form: irreversible, and it removes rows the caller
-            was never able to see.
+        db: Session.
+        acting_user_id: The caller.
+        organization_id: The request tenant (None = personal).
+        all_users: Sweep every account's tags, not only the caller's own in
+            the request tenant.
 
     Returns:
-        How many tag rows were deleted.
+        The number of tags the delete statement removed.
     """
-    used_tag_ids = select(FileTag.tag_id).where(FileTag.tag_id.is_not(None))
-    query = db.query(Tag).filter(~Tag.id.in_(used_tag_ids), ~system_tag())
+    conditions: list[Any] = [
+        ~exists().where(FileTag.tag_id == Tag.id),
+        not_(system_tag()),
+    ]
     if not all_users:
-        query = query.filter(Tag.user_id == acting_user_id)
-        if organization_id is not None:
-            query = query.filter(Tag.organization_id == organization_id)
-        else:
-            query = query.filter(Tag.organization_id.is_(None))
-
-    # Report the DELETE's own rowcount rather than a preceding count(): the two
-    # are evaluated at different instants, so a tag attached between them is
-    # (correctly) left alone by the DELETE while a separate count would still
-    # have included it — over-reporting an irreversible operation.
-    deleted = query.delete(synchronize_session=False)
+        conditions.append(Tag.user_id == acting_user_id)
+        conditions.append(
+            Tag.organization_id == organization_id
+            if organization_id is not None
+            else Tag.organization_id.is_(None)
+        )
+    result = db.execute(
+        delete(Tag).where(*conditions).execution_options(synchronize_session="fetch")
+    )
+    deleted = int(getattr(result, "rowcount", 0) or 0)
     if not deleted:
         return 0
-
     db.commit()
-
-    # No file loses a tag here (that is the definition of unreferenced), but the
-    # deleted rows were in someone's cached `GET /tags` list — a deployment-wide
-    # sweep touches every account's, so nothing narrower than system_scope is
-    # correct for it.
+    logger.info(f"Removed {deleted} unreferenced tags (all_users={all_users})")
     on_tags_changed(db, user_id=acting_user_id, system_scope=all_users)
     return deleted
+
+
+def _same_tenant_as(key: tuple[Any, ...]) -> Any:
+    """SQL predicate for the non-system tenant named by a ``tenant_key``."""
+    if key[0] == "org":
+        return Tag.organization_id == key[1]
+    return and_(Tag.user_id == key[1], Tag.organization_id.is_(None))
 
 
 def promote_tags_to_shared(
@@ -856,110 +526,65 @@ def promote_tags_to_shared(
     organization_id: int | None = None,
     fold_across_tenants: bool = True,
 ) -> TagMutationOutcome:
-    """Publish tenant tags into the shared vocabulary (``user_id`` and org → NULL).
+    """Move tags into the system vocabulary, folding same-named rows into each.
 
-    The consolidation half of tag management. Ownership stops one account's
-    "Interview" from being renamed out from under another's, but it also lets a
-    deployment accumulate one "Interview" per user with nothing to point them
-    at. Promotion makes one row the canonical answer: a system tag is visible to
-    every account, and ``resolve_or_create_tag`` prefers a same-named system row
-    over creating a private one, so from here on a person typing "interview"
-    attaches to *this* row instead of forking their own.
-
-    Any same-named tags owned by other users are folded into the promoted row by
-    :func:`merge_tags`, so promotion converges the deployment on one row rather
-    than adding a fifth spelling beside four private ones. Their file
-    associations carry over — nobody loses a tag they applied.
-
-    Admin-gated at the endpoint (``_writable_tag_ids``): the result appears in
-    every account's picker, so this is a deployment-level act, not a personal
-    one. Already-shared tags are a no-op rather than an error, which keeps a
-    repeated click idempotent.
-
-    Args:
-        db: Database session. Committed here.
-        tag_ids: Tags to publish.
-        user_id: The acting admin, for cache invalidation.
-        organization_id: Tenant scope for the impact preview.
-        fold_across_tenants: Fold every same-named tag in the deployment into the
-            promoted row (single-tenant behaviour). When False only same-named tags
-            of the promoted tag's own tenant are folded, and another tenant's rows
-            are left exactly as they were.
-
-    Returns:
-        The outcome, whose ``impact`` covers the promoted tags and everything
-        merged into them, and whose ``deleted_uuids`` lists every row folded away
-        (ascending id). ``tag`` stays None: one call may promote several tags.
+    Requested tags are processed in ascending id order. A tag whose normalized
+    name already has a system row (or was promoted earlier in this call) is
+    folded into it; otherwise it becomes the system row and every other tag of
+    that name is folded into it, restricted to the tag's own tenant unless
+    ``fold_across_tenants``. The whole call commits once, or not at all.
 
     Raises:
-        TagNotFoundError: A tag no longer exists.
+        TagNotFoundError: A requested tag (or a chosen survivor) no longer exists.
     """
-    wanted = sorted({int(tag_id) for tag_id in tag_ids})
-    if not wanted:
+    if not tag_ids:
         return TagMutationOutcome(impact=TagImpactReport())
+    ids = sorted({int(i) for i in tag_ids})
+    requested = _require_all(lock_tags(db, ids), ids)
+    pending = [tag for tag in requested if not is_system_tag(tag)]
+    if not pending:
+        impact = preview_tag_impact(db, ids, user_id=user_id, organization_id=organization_id)
+        return TagMutationOutcome(impact=impact)
 
-    locked = lock_tags(db, wanted)
-    missing = [tag_id for tag_id in wanted if tag_id not in locked]
-    if missing:
-        raise TagNotFoundError(TAG_NOT_FOUND)
-
-    promoted = [locked[tag_id] for tag_id in wanted if not is_system_tag(locked[tag_id])]
-    if not promoted:
-        # Every requested tag is already shared. Idempotent, not an error.
-        return TagMutationOutcome(
-            impact=preview_tag_impact(db, wanted, user_id=user_id, organization_id=organization_id)
-        )
-
-    # Claim the shared namespace first. `uq_tag_system_name` is UNIQUE(name) among
-    # system rows, so a word already shared is never promoted twice: the tenant row
-    # folds into the existing system row. Every fold of this call happens in one
-    # transaction (no partial promotion), in ascending id order, so two requested
-    # tags with one normalized name always fold into the lower id.
-    outcome_impact = preview_tag_impact(
-        db, [tag.id for tag in promoted], user_id=user_id, organization_id=organization_id
+    impact = preview_tag_impact(
+        db, [tag.id for tag in pending], user_id=user_id, organization_id=organization_id
     )
-    affected_file_ids: list[int] = []
-    folded: dict[int, uuid_pkg.UUID] = {}
     survivors: dict[str, Tag] = {}
-    for tag in promoted:
+    folded: dict[int, UUID] = {}
+    affected: list[int] = []
+    for tag in pending:
         if tag.id in folded:
             continue
-        normalized = stored_normalized_name(tag)
-        survivor = survivors.get(normalized) or (
+        form = stored_normalized_name(tag)
+        survivor = survivors.get(form) or (
             db.query(Tag)
-            .filter(system_tag(), Tag.normalized_name == normalized, Tag.id != tag.id)
+            .filter(system_tag(), Tag.normalized_name == form, Tag.id != tag.id)
+            .order_by(Tag.id)
             .first()
         )
         if survivor is not None:
-            doomed = [tag]
+            doomed_ids = [tag.id]
         else:
             origin = tenant_key(tag)
+            affected.extend(_file_ids_of(db, [tag.id]))
             tag.user_id = None
             tag.organization_id = None
-            affected_file_ids.extend(_affected_file_ids(db, [tag.id]))
             survivor = tag
-            candidates = db.query(Tag).filter(Tag.normalized_name == normalized, Tag.id != tag.id)
-            doomed = [
-                row
-                for row in candidates.order_by(Tag.id).all()
-                if fold_across_tenants or tenant_key(row) == origin
-            ]
-        survivors[normalized] = survivor
-        if not doomed:
+            same_name = db.query(Tag.id).filter(Tag.normalized_name == form, Tag.id != tag.id)
+            if not fold_across_tenants:
+                same_name = same_name.filter(_same_tenant_as(origin))
+            doomed_ids = sorted(int(row_id) for (row_id,) in same_name)
+        survivors[form] = survivor
+        if not doomed_ids:
             continue
-        held = lock_tags(db, [survivor.id, *(row.id for row in doomed)])
-        if survivor.id not in held:
+        locked = lock_tags(db, [survivor.id, *doomed_ids])
+        if survivor.id not in locked:
             raise TagNotFoundError(TAG_NOT_FOUND)
-        doomed = [row for row in doomed if row.id in held]
-        folded.update({row.id: row.uuid for row in doomed})
-        affected_file_ids.extend(_fold_into(db, survivor, doomed))
+        doomed = [locked[i] for i in doomed_ids if i in locked]
+        folded.update((row.id, row.uuid) for row in doomed)
+        affected.extend(_fold(db, survivor, doomed))
 
     db.flush()
     db.commit()
-
-    # A system tag is in every account's list, so nothing narrower than a global
-    # cache drop is correct here.
-    on_tags_changed(db, list(dict.fromkeys(affected_file_ids)), user_id=user_id, system_scope=True)
-    return TagMutationOutcome(
-        impact=outcome_impact, deleted_uuids=[folded[tag_id] for tag_id in sorted(folded)]
-    )
+    on_tags_changed(db, list(dict.fromkeys(affected)), user_id=user_id, system_scope=True)
+    return TagMutationOutcome(impact=impact, deleted_uuids=[folded[i] for i in sorted(folded)])

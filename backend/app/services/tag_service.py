@@ -1,49 +1,22 @@
-"""Shared tag resolution — the single path from a supplied name to a ``Tag`` row.
+"""Tag names: normalization, resolution to a row, creation, and the change hook.
 
-Every creation path (manual tag API, upload prepare, URL ingest, watch sources,
-auto-labeling) resolves through :func:`resolve_or_create_tag` so that one
-normalized name can never end up stored as two rows *within one vocabulary*.
-Resolution is **normalized-exact only**: names differing solely by case,
-hyphens, underscores, or repeated whitespace collapse onto the same tag;
-anything else is a new tag.
+Resolution is **normalized-exact** inside one tenant plus the system
+vocabulary: ``"Q3_Review"`` and ``"q3 review"`` are the same tag, while a near
+match such as ``"q4 review"`` is a different one. Fuzzy similarity exists only
+as an explicit suggestion (:func:`suggest_similar_tag`); it never resolves.
 
-**Scope.** A tag belongs to a **tenant** (``v420_add_tag_organization_id``,
-issue #1050): an organization's tags are shared by every member of it, a
-personal tag belongs to its owner's personal workspace, and a *system* tag
-(``user_id IS NULL AND organization_id IS NULL``, the seeded vocabulary) is in
-every tenant. Names are unique only per tenant, so every lookup by name carries
-:func:`owned_or_system` for the request's tenant — resolving unscoped would
-attach a typed name to another tenant's row, which is both wrong and a
-disclosure. Creation is never tenantless: a tag with neither owner nor org is
-published to every account, correct only for the bootstrap seed in
-``app/initial_data.py``. Background paths resolve in the **file's** tenant
-(``MediaFile.organization_id``), never the owner's personal one.
-
-Fuzzy matching lives here too but is deliberately a *separate*, opt-in lookup
-(:func:`suggest_similar_tag`). At the 0.85 threshold ``q3-earnings`` and
-``q4-earnings`` score 0.909, so resolving fuzzily with no human in the loop
-silently attaches the wrong tag — and nothing can split two tags back apart once
-combined. Only the auto-labeling path may chain suggest → apply automatically;
-on every path where a person supplied the name, a near match is a suggestion to
-accept or decline, never an automatic substitution.
-
-Rename, merge, delete, and the impact preview that fronts them live in
-:mod:`app.services.tag_operations` — this module stays the *resolution* half
-(one supplied name → one row) plus the shared :func:`on_tags_changed` hook that
-every tag mutation, here or there, calls.
-
-The tenancy and visibility predicates the whole tag plane agrees on
-(:func:`~app.services.tag_scope.owned_or_system`,
-:func:`~app.services.tag_scope.visible_to`, ...) live in
-:mod:`app.services.tag_scope`; :func:`stored_normalized_name` stays here, so
-``tag_operations`` and ``tag_collisions`` cannot drift into two answers for one
-question.
+Nothing here commits. Callers own the transaction and call
+:func:`on_tags_changed` once their change has committed.
 """
+
+from __future__ import annotations
 
 import difflib
 import logging
 import re
 from collections.abc import Iterable
+from typing import Any
+from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -60,84 +33,56 @@ from app.services.tag_scope import tenant_first
 
 logger = logging.getLogger(__name__)
 
-#: Storage width of ``tag.name`` (``VARCHAR(50)``). Supplied names are clamped
-#: to this on every path — an over-long name used to reach Postgres unclamped
-#: from the tag API and abort the transaction with a ``DataError``.
+#: Width of ``tag.name``; longer input is clamped to this many characters.
 MAX_TAG_NAME_LENGTH = 50
+
+# Kept byte-for-byte in step with frontend/src/lib/utils/tagName.ts.
+_SEPARATOR_RUN = re.compile(r"[-_]+")
+_WHITESPACE_RUN = re.compile(r"\s+")
 
 
 class InvalidTagNameError(OpenTranscribeError):
-    """A supplied tag name is empty once normalized, so it cannot name a tag."""
+    """A supplied tag name is empty once normalized."""
 
 
 def normalize_tag_name(name: str) -> str:
-    """Normalize a tag name for deduplication comparison.
+    """Return the comparison form of a tag name.
 
-    Lowercases, replaces hyphens/underscores with spaces, collapses runs of
-    whitespace, and trims. This is the single definition of tag-name
-    normalization; it is what gets stored in ``Tag.normalized_name``, and it
-    matches the SQL backfill in ``v230_add_auto_labeling`` (which also trims
-    *after* substitution, so ``"-foo-"`` normalizes to ``"foo"`` and a name made
-    only of separators normalizes to the empty string).
+    Lowercases, turns each run of ``-``/``_`` into a space, collapses
+    whitespace and trims. Nothing else is altered.
 
     Args:
-        name: Raw supplied name.
+        name: Any user-supplied spelling.
 
     Returns:
-        The normalized form, or ``""`` for a name with no usable characters.
+        The normalized form; ``""`` for empty input or a name made only of
+        separators and whitespace.
     """
     if not name:
         return ""
-    normalized = re.sub(r"[-_]+", " ", name.lower())
-    normalized = re.sub(r"\s+", " ", normalized)
-    return normalized.strip()
+    collapsed = _SEPARATOR_RUN.sub(" ", name.lower())
+    return _WHITESPACE_RUN.sub(" ", collapsed).strip()
 
 
 def clean_tag_name(name: str) -> str:
-    """Trim a supplied name and clamp it to the stored column width.
+    """Return the display form stored in ``tag.name``.
 
-    Args:
-        name: Raw supplied name.
-
-    Returns:
-        The name as it would be stored: stripped and at most
-        :data:`MAX_TAG_NAME_LENGTH` characters.
+    Trims, clamps to :data:`MAX_TAG_NAME_LENGTH` characters and trims again so
+    a cut after a space leaves no trailing blank. Case and inner spacing are kept.
     """
     if not name:
         return ""
     return name.strip()[:MAX_TAG_NAME_LENGTH].strip()
 
 
-def stored_normalized_name(tag: Tag) -> str:
-    """Return a tag's stored normalized form, recomputing it when legacy-NULL.
-
-    ``Tag.normalized_name`` is maintained by :func:`resolve_or_create_tag` and
-    was backfilled by migration v230, but the bootstrap seed tags predate both,
-    so the column can still be NULL. Reading it through here means no caller has
-    to remember the fallback.
-
-    Args:
-        tag: The tag row.
-
-    Returns:
-        The stored normalization, or :func:`normalize_tag_name` of the name.
-    """
+def stored_normalized_name(tag: Any) -> str:
+    """The tag's stored normalized form, recomputed when the column is empty."""
     return tag.normalized_name or normalize_tag_name(tag.name)
 
 
 def names_are_similar(a: str, b: str, threshold: float = FUZZY_MATCH_THRESHOLD) -> bool:
-    """Report whether two names are similar enough to be considered the same topic.
-
-    Args:
-        a: First name.
-        b: Second name.
-        threshold: Minimum ``SequenceMatcher`` ratio to count as similar.
-
-    Returns:
-        True when the normalized forms are equal or score at/above ``threshold``.
-    """
-    norm_a = normalize_tag_name(a)
-    norm_b = normalize_tag_name(b)
+    """Whether two names are equal once normalized, or close by ``SequenceMatcher`` ratio."""
+    norm_a, norm_b = normalize_tag_name(a), normalize_tag_name(b)
     if not norm_a or not norm_b:
         return False
     if norm_a == norm_b:
@@ -145,33 +90,43 @@ def names_are_similar(a: str, b: str, threshold: float = FUZZY_MATCH_THRESHOLD) 
     return difflib.SequenceMatcher(None, norm_a, norm_b).ratio() >= threshold
 
 
+def tags_by_uuid(db: Session, tag_uuids: Iterable[UUID]) -> dict[UUID, Tag]:
+    """Load tags by public uuid in one query; unknown uuids are absent."""
+    wanted = set(tag_uuids)
+    if not wanted:
+        return {}
+    return {tag.uuid: tag for tag in db.query(Tag).filter(Tag.uuid.in_(wanted))}
+
+
 def lookup_existing_tag(
     db: Session, normalized: str, name: str, user_id: int, organization_id: int | None
 ) -> Tag | None:
-    """Find a tag of the request's tenant by normalized name, else by exact name.
+    """Find the row a name resolves to in one tenant plus the system vocabulary.
 
-    The fallback covers rows written before this service owned creation — the
-    bootstrap seed tags ("Important", "Meeting", …) were inserted with a NULL
-    ``normalized_name``, which left them invisible to normalized-exact
-    resolution yet still able to collide on the unique ``name`` constraint. A
-    row found that way is repaired in place (within the caller's transaction) so
-    the next lookup takes the indexed fast path.
+    Matches the stored normalized form first. Failing that, matches the exact
+    stored ``name``, which catches legacy rows whose normalization is missing
+    or stale; a missing one is filled in and flushed (not committed).
 
-    Both arms order by :func:`tenant_first`, so the tenant's own row always wins
-    over a same-named system row; only when the tenant has none does applying a
-    seeded default attach the shared row instead of forking a duplicate.
+    Args:
+        db: Session.
+        normalized: ``normalize_tag_name`` of the cleaned name.
+        name: The cleaned display spelling.
+        user_id: The caller.
+        organization_id: The tenant to resolve in (None = personal).
+
+    Returns:
+        The tenant's row ahead of a same-named system row, or None.
     """
     scope = owned_or_system(user_id, organization_id)
     tag: Tag | None = (
         db.query(Tag)
-        .filter(Tag.normalized_name == normalized, scope)
-        .order_by(*tenant_first())
+        .filter(scope, Tag.normalized_name == normalized)
+        .order_by(*tenant_first(), Tag.id)
         .first()
     )
     if tag is not None:
         return tag
-
-    tag = db.query(Tag).filter(Tag.name == name, scope).order_by(*tenant_first()).first()
+    tag = db.query(Tag).filter(scope, Tag.name == name).order_by(*tenant_first(), Tag.id).first()
     if tag is not None and not tag.normalized_name:
         tag.normalized_name = normalized
         db.flush()
@@ -181,36 +136,12 @@ def lookup_existing_tag(
 def lookup_tag_on_file(
     db: Session, normalized: str, file_id: int, organization_id: int | None
 ) -> Tag | None:
-    """Find a tag already attached to ``file_id`` whose normalized name matches.
+    """Find a tag already on ``file_id`` with this normalized form.
 
-    Consulted **before** the caller's own vocabulary when tagging a specific
-    file, and the reason a shared file cannot accumulate two rows both named
-    "interview". Tag names are unique per owner, so without this the second
-    person to tag a shared file forks their own row and the file carries the
-    same word twice — visibly duplicated on the detail page, and the reason the
-    gallery's ALL-filter had to count ``DISTINCT Tag.name`` rather than
-    ``Tag.id``.
-
-    Reusing the row grants nothing: the association is what changes, the tag row
-    keeps its owner, and the caller could already see it (``_visible_to`` admits
-    every tag on a file they can access).
-
-    Only a row of the tenant being resolved in, or a system row, is reused
-    (``tag_scope.tenant_bound_or_system``): a tag of another tenant left on the file
-    by legacy data is ignored, so resolution falls through to the tenant's own
-    vocabulary instead of attaching a foreign row again.
-
-    Args:
-        db: Database session.
-        normalized: The normalized form being resolved.
-        file_id: The file the tag is about to be attached to.
-        organization_id: The tenant being resolved in (None = personal).
-
-    Returns:
-        The matching attached tag, a tenant row ahead of a system row
-        (``tenant_first``), else None.
+    Only rows the file's tenant may carry count (that tenant's tags, or system
+    tags), so a foreign tag left on the file by legacy data is never reused.
     """
-    return (
+    tag: Tag | None = (
         db.query(Tag)
         .join(FileTag, FileTag.tag_id == Tag.id)
         .filter(
@@ -221,6 +152,7 @@ def lookup_tag_on_file(
         .order_by(*tenant_first(), Tag.id)
         .first()
     )
+    return tag
 
 
 def suggest_similar_tag(
@@ -232,43 +164,74 @@ def suggest_similar_tag(
     threshold: float = FUZZY_MATCH_THRESHOLD,
     candidates: list[Tag] | None = None,
 ) -> Tag | None:
-    """Find an existing tag that is a *near* match for a supplied name.
+    """Return the first tag in the tenant whose name is close to ``name``.
 
-    Opt-in and never called by :func:`resolve_or_create_tag`. Callers on
-    human-supplied paths must surface the result as a suggestion to accept or
-    decline; only auto-labeling may apply it without confirmation.
+    A suggestion only: human-driven paths must show it, never apply it.
 
     Args:
-        db: Database session.
-        name: Supplied name to look for.
-        user_id: The acting user.
-        organization_id: The tenant to scan (``None`` = personal). Only that
-            tenant's vocabulary plus the system one — suggesting another
-            tenant's tag would disclose its name, and applying it (the
-            auto-labeler does apply automatically) would attach it across the
-            tenant boundary.
-        threshold: Minimum similarity ratio.
-        candidates: Optional pre-fetched tag list (e.g. an instance-level cache).
-            Callers passing a cache are responsible for having scoped it to the
-            same tenant — ``AutoLabelService`` keys its cache by
-            ``(user_id, organization_id)`` for this reason. When omitted, the
-            scoped set is queried.
-
-    Returns:
-        The first similar tag, or None when nothing is close enough.
+        db: Session.
+        name: The name to match.
+        user_id: The caller.
+        organization_id: The tenant (None = personal).
+        threshold: Minimum ``SequenceMatcher`` ratio.
+        candidates: A pre-loaded pool, which the caller guarantees was drawn
+            from the same tenant; loaded here when omitted.
     """
     if not normalize_tag_name(name):
         return None
+    pool = candidates
+    if pool is None:
+        pool = (
+            db.query(Tag)
+            .filter(owned_or_system(user_id, organization_id))
+            .order_by(*tenant_first(), Tag.id)
+            .all()
+        )
+    return next((tag for tag in pool if names_are_similar(name, tag.name, threshold)), None)
 
-    pool = (
-        candidates
-        if candidates is not None
-        else db.query(Tag).filter(owned_or_system(user_id, organization_id)).all()
+
+def _prepare_name(name: str | None) -> tuple[str, str]:
+    cleaned = clean_tag_name(name or "")
+    return cleaned, normalize_tag_name(cleaned)
+
+
+def _insert_tag(
+    db: Session,
+    cleaned: str,
+    normalized: str,
+    *,
+    user_id: int,
+    organization_id: int | None,
+    source: str,
+) -> Tag:
+    """Create the row in a savepoint; on a lost race return the winning row.
+
+    The insert must go through the ORM: the race tests inject a competing
+    commit from a ``before_flush`` hook that looks for this row in ``session.new``.
+
+    Raises:
+        IntegrityError: The insert collided and no winning row is visible.
+    """
+    savepoint = db.begin_nested()
+    tag = Tag(
+        name=cleaned,
+        user_id=user_id,
+        organization_id=organization_id,
+        source=source,
+        normalized_name=normalized,
     )
-    for existing in pool:
-        if names_are_similar(name, existing.name, threshold):
-            return existing
-    return None
+    try:
+        db.add(tag)
+        db.flush()
+    except IntegrityError:
+        # Only the savepoint goes: the caller's other pending writes must survive.
+        savepoint.rollback()
+        winner = lookup_existing_tag(db, normalized, cleaned, user_id, organization_id)
+        if winner is None:
+            raise
+        return winner
+    savepoint.commit()
+    return tag
 
 
 def resolve_or_create_tag(
@@ -280,80 +243,43 @@ def resolve_or_create_tag(
     source: str = TAG_SOURCE_MANUAL,
     file_id: int | None = None,
 ) -> Tag:
-    """Resolve a supplied name to a tag of the given tenant, or create one there.
-
-    The single path from a supplied name to a ``Tag`` row. Resolution order:
-
-    1. A tag already on ``file_id``, when attaching to a specific file — keeps a
-       shared file from carrying the same word twice (:func:`lookup_tag_on_file`).
-    2. The tenant's tag, then a same-named **system** tag, so applying a
-       seeded default attaches the shared row rather than forking a duplicate
-       (:func:`lookup_existing_tag`). In an organization the tenant's tag may be
-       a colleague's — reusing it is what makes org vocabulary shared.
-    3. Otherwise a new tag in ``organization_id`` (personal when ``None``),
-       attributed to ``user_id``.
-
-    Matching is normalized-exact (see :func:`normalize_tag_name`) — a near match
-    is *not* resolved here, it becomes a new tag. The insert runs inside a
-    SAVEPOINT so that losing a race on ``uq_tag_user_name`` rolls back only the
-    failed insert; the caller's other pending writes survive.
+    """Resolve ``name`` to a tag in the given tenant, creating it when absent.
 
     Args:
-        db: Database session. Not committed — the caller owns the transaction.
-        name: Supplied tag name. Trimmed and clamped to
-            :data:`MAX_TAG_NAME_LENGTH`.
-        user_id: Owner (personal) or creator (organization) of a tag this
-            creates. **Required** — a tag with neither owner nor tenant is a
-            system tag, published to every account, which is only ever correct
-            for the bootstrap seed.
-        organization_id: The tenant to resolve in. For a request, the request's
-            tenant; for a background path, the file's ``organization_id``.
-        source: Provenance recorded on a newly created tag.
-        file_id: The file being tagged, when there is one. Enables step 1.
+        db: Session. Flushed, never committed.
+        name: The supplied spelling.
+        user_id: The caller; recorded as owner (or creator) of a new row.
+        organization_id: The tenant to resolve and create in (None = personal).
+        source: Origin recorded on a newly created row.
+        file_id: When given, a matching tag already on that file wins, so two
+            people tagging one shared file do not fork the same word.
 
     Returns:
-        The existing or newly created tag (flushed, so ``tag.id`` is populated).
+        A flushed ``Tag`` row. A new row is never a system tag.
 
     Raises:
         InvalidTagNameError: The name is empty once normalized.
-        IntegrityError: A collision occurred and the winning row still could not
-            be found afterwards.
+        IntegrityError: The insert collided and no winning row could be found.
     """
-    cleaned = clean_tag_name(name)
-    normalized = normalize_tag_name(cleaned)
+    cleaned, normalized = _prepare_name(name)
     if not normalized:
-        raise InvalidTagNameError(f"Tag name is empty after normalization: {name!r}")
-
+        raise InvalidTagNameError("Tag name is required")
     if file_id is not None:
         on_file = lookup_tag_on_file(db, normalized, file_id, organization_id)
         if on_file is not None:
             return on_file
-
     existing = lookup_existing_tag(db, normalized, cleaned, user_id, organization_id)
     if existing is not None:
         return existing
-
-    nested = db.begin_nested()
-    try:
-        tag = Tag(
-            name=cleaned,
-            user_id=user_id,
-            organization_id=organization_id,
-            source=source,
-            normalized_name=normalized,
-        )
-        db.add(tag)
-        db.flush()
-        return tag
-    except IntegrityError:
-        # Another writer won the race. Roll back only the SAVEPOINT — never the
-        # session — so the caller's pending work is untouched, then take theirs.
-        nested.rollback()
-        winner = lookup_existing_tag(db, normalized, cleaned, user_id, organization_id)
-        if winner is not None:
-            logger.debug("Lost tag-insert race for %r, using the winning row", cleaned)
-            return winner
-        raise
+    created = _insert_tag(
+        db,
+        cleaned,
+        normalized,
+        user_id=user_id,
+        organization_id=organization_id,
+        source=source,
+    )
+    return created
 
 
 def resolve_or_create_tags(
@@ -364,100 +290,70 @@ def resolve_or_create_tags(
     organization_id: int | None,
     source: str = TAG_SOURCE_MANUAL,
 ) -> list[Tag]:
-    """Resolve a whole list of names in a constant number of queries.
+    """Batched :func:`resolve_or_create_tag` with a constant number of SELECTs.
 
-    The batched sibling of :func:`resolve_or_create_tag`, for the bulk paths
-    (upload prepare, URL ingest, watch-source poll) where the per-name resolver
-    cost 2N round trips — the regression issue #284 A2.8 removed, pinned by
-    ``tests/api/test_upload_prep_batching.py``. Same semantics as the single
-    resolver: normalized-exact, own row before system row, never fuzzy.
-
-    Two SELECTs regardless of list length — one on ``normalized_name``, one
-    covering the legacy rows where that column is still NULL (repaired in place
-    as they are found). Only a name that genuinely does not exist costs an
-    INSERT, and each keeps its own SAVEPOINT so one lost race cannot poison the
-    caller's transaction.
-
-    Args:
-        db: Database session. Not committed — the caller owns the transaction.
-        names: Supplied names. Blank/unusable ones are dropped, and names that
-            normalize to the same form collapse to one tag.
-        user_id: Owner / creator for any tag this creates.
-        organization_id: The tenant to resolve in (the file's, on the import
-            paths).
-        source: Provenance recorded on newly created tags.
+    Blank names are dropped; spellings with one normalized form collapse onto
+    the first. The exact-name fallback repairs only an empty stored
+    normalization. A name whose insert loses a race and still cannot be found
+    is logged and skipped.
 
     Returns:
-        The resolved tags, in first-seen order of their normalized form.
+        Tags in first-seen order of their normalized form.
     """
-    wanted: dict[str, str] = {}  # normalized -> cleaned, first spelling wins
+    wanted: dict[str, str] = {}
     for raw in names:
-        cleaned = clean_tag_name(raw or "")
-        normalized = normalize_tag_name(cleaned)
-        if normalized:
-            wanted.setdefault(normalized, cleaned)
+        cleaned, normalized = _prepare_name(raw)
+        if normalized and normalized not in wanted:
+            wanted[normalized] = cleaned
     if not wanted:
         return []
 
     scope = owned_or_system(user_id, organization_id)
     found: dict[str, Tag] = {}
+    by_normalized = (
+        db.query(Tag)
+        .filter(scope, Tag.normalized_name.in_(list(wanted)))
+        .order_by(*tenant_first(), Tag.id)
+        .all()
+    )
+    for tag in by_normalized:
+        found.setdefault(tag.normalized_name or "", tag)
 
-    # tenant_first() is ASC NULLS LAST, so a tenant row beats the system row.
-    for row in (
-        db.query(Tag).filter(Tag.normalized_name.in_(list(wanted)), scope).order_by(*tenant_first())
-    ):
-        found.setdefault(str(row.normalized_name), row)
-
-    missing = {norm: name for norm, name in wanted.items() if norm not in found}
+    missing = [norm for norm in wanted if norm not in found]
     if missing:
-        # Fall back to an exact name match, exactly as `lookup_existing_tag`
-        # does. This is not only about rows predating the column: a row whose
-        # stored normalization is simply *wrong* is invisible to the query above
-        # yet still collides on `uq_tag_user_name`, so skipping this would make
-        # every such name cost a failed INSERT plus its recovery lookup —
-        # 2N queries, which is the regression #284 A2.8 removed.
-        for row in (
+        by_name = (
             db.query(Tag)
-            .filter(Tag.name.in_(list(missing.values())), scope)
-            .order_by(*tenant_first())
-        ):
-            normalized = normalize_tag_name(str(row.name))
-            if normalized in missing and normalized not in found:
-                if not row.normalized_name:
-                    row.normalized_name = normalized
-                found[normalized] = row
+            .filter(scope, Tag.name.in_([wanted[norm] for norm in missing]))
+            .order_by(*tenant_first(), Tag.id)
+            .all()
+        )
+        for tag in by_name:
+            norm = normalize_tag_name(tag.name)
+            if norm in wanted and norm not in found:
+                found[norm] = tag
+                if not tag.normalized_name:
+                    tag.normalized_name = norm
 
     resolved: list[Tag] = []
-    for normalized, cleaned in wanted.items():
-        tag = found.get(normalized)
-        if tag is None:
-            nested = db.begin_nested()
-            try:
-                tag = Tag(
-                    name=cleaned,
+    for norm, cleaned in wanted.items():
+        hit = found.get(norm)
+        if hit is not None:
+            resolved.append(hit)
+            continue
+        try:
+            resolved.append(
+                _insert_tag(
+                    db,
+                    cleaned,
+                    norm,
                     user_id=user_id,
                     organization_id=organization_id,
                     source=source,
-                    normalized_name=normalized,
                 )
-                db.add(tag)
-                db.flush()
-            except IntegrityError:
-                nested.rollback()
-                tag = lookup_existing_tag(db, normalized, cleaned, user_id, organization_id)
-                if tag is None:
-                    logger.warning("Could not resolve tag %r after losing its insert race", cleaned)
-                    continue
-        resolved.append(tag)
+            )
+        except IntegrityError:
+            logger.warning(f"Tag '{cleaned}' lost a creation race and could not be re-read")
     return resolved
-
-
-def _owner_ids(db: Session, file_ids: list[int]) -> set[int]:
-    """Resolve the owning user ids for a set of files in one query."""
-    if not file_ids:
-        return set()
-    rows = db.query(MediaFile.user_id).filter(MediaFile.id.in_(file_ids)).distinct().all()
-    return {int(owner) for (owner,) in rows if owner is not None}
 
 
 def on_tags_changed(
@@ -467,75 +363,46 @@ def on_tags_changed(
     user_id: int | None = None,
     system_scope: bool = False,
 ) -> list[int]:
-    """Bust tag caches and refresh the search index after any tag mutation.
+    """Propagate a committed tag change to the read cache and the search index.
 
-    The single hook every tag-mutation path calls — the tag API (create,
-    attach, detach), the upload helper, and the auto-labeler. Two things happen
-    that no caller should have to remember:
-
-    1. The affected users' cached tag lists are dropped — the actor's, plus
-       every owner of a touched file, since on a **shared** file the actor and
-       the owner are different accounts and both listings changed. Pass
-       ``system_scope=True`` when the mutation touched a system tag: that row
-       appears in *every* account's list, so nothing narrower is correct.
-    2. One partial-update task, carrying the whole affected-file list, refreshes
-       those files' search documents, so filtering by tag and searching by tag
-       can't drift apart. Same shape as the access-index updater; deliberately
-       not the per-user reindex coordinator, which self-skips under a lock on
-       exactly the large multi-file merges this exists for.
-
-    Best-effort throughout: neither Redis nor the broker being down may fail the
-    mutation that already committed.
-
-    Call this **after** the mutation commits where the caller controls the
-    transaction — the refresh task reads the tag rows back from its own session,
-    so an uncommitted change is invisible to it. The flush-only callers
-    (upload prepare, auto-labeling) commit moments later in the same request or
-    task; the task is idempotent and rewrites the whole array, so a re-run
-    always converges.
+    Both steps are best-effort: the change has already committed, and a cache
+    or broker outage must not turn it into an error.
 
     Args:
-        db: Database session, used only to resolve file owners.
-        file_ids: Files whose tag set changed. Duplicates are collapsed, so a
-            mutation touching one file many times still enqueues one refresh.
-            Empty for tag-only changes (creating a tag attaches it to nothing).
-        user_id: The acting user, when known — their file listings are busted
-            even if they own none of ``file_ids``.
-        system_scope: The mutation touched a system tag (``user_id IS NULL``),
-            which is in every account's list, so every account's key must go.
-            A blunt instrument on a shared Redis — reserved for the case that
-            genuinely warrants it rather than applied to every tag write.
+        db: Session, used to look up the owners of the affected files.
+        file_ids: Files whose tag set (or a tag's name) changed.
+        user_id: The acting user, whose cached tag list is dropped too.
+        system_scope: The change touched a system tag, which every account
+            lists, so every user's cached tag list is dropped.
 
     Returns:
-        The deduplicated file ids a refresh was enqueued for.
+        The affected file ids, deduplicated in first-seen order.
     """
-    affected: list[int] = []
-    seen: set[int] = set()
-    for raw in file_ids or ():
-        if raw is None:
-            continue
-        file_id = int(raw)
-        if file_id not in seen:
-            seen.add(file_id)
-            affected.append(file_id)
+    affected = list(dict.fromkeys(int(fid) for fid in (file_ids or []) if fid is not None))
 
     try:
         from app.services.redis_cache_service import redis_cache
 
         if system_scope:
             redis_cache.invalidate_tags_global()
-        for owner_id in _owner_ids(db, affected) | ({user_id} if user_id is not None else set()):
-            redis_cache.invalidate_tags(owner_id)
-            redis_cache.invalidate_user_files(owner_id)
+        users: set[int] = set()
+        if affected:
+            owners = db.query(MediaFile.user_id).filter(MediaFile.id.in_(affected)).distinct()
+            users.update(int(owner) for (owner,) in owners if owner is not None)
+        if user_id is not None:
+            users.add(int(user_id))
+        for uid in sorted(users):
+            redis_cache.invalidate_tags(uid)
+            redis_cache.invalidate_user_files(uid)
     except Exception as e:
         logger.debug(f"Tag cache invalidation failed (non-critical): {e}")
 
     if affected:
         try:
-            from app.tasks.search_file_field_tasks import update_file_tags_index
+            # Looked up at call time so the task attribute can be replaced in tests.
+            from app.tasks import search_file_field_tasks
 
-            update_file_tags_index.delay(affected)
+            search_file_field_tasks.update_file_tags_index.delay(affected)
         except Exception as e:
-            logger.warning(f"Could not enqueue tag reindex for files {affected}: {e}")
-
+            logger.warning(f"Could not enqueue the tag reindex for {len(affected)} files: {e}")
     return affected

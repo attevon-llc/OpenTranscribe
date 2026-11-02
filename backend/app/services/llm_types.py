@@ -1,8 +1,16 @@
-"""Provider enum and request/response dataclasses shared by the LLM service modules."""
+"""Provider enum, request/response dataclasses and the contract every ``LLMService`` mixin may assume.
+
+The mixins (``llm_payloads``, ``llm_chunking``, ``llm_summarization``, ``llm_json_extract``,
+``llm_speaker_id``, ``llm_health``) are mixed into :class:`~app.services.llm_service.LLMService`,
+which sets the :class:`LLMHost` attributes in ``__init__`` and owns the transport methods.
+Declaring them lets the type checker verify each mixin against the same contract; nothing in
+``LLMHost`` exists at runtime beyond the annotations.
+"""
 
 from dataclasses import dataclass
 from dataclasses import field
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from app.services.bedrock_settings import BedrockConnection
 
@@ -63,3 +71,18 @@ class LLMConfig:
     #: Bedrock only: the configuration's own region and AWS credentials (None = the server's
     #: region and credential chain). Secrets are excluded from repr.
     bedrock: BedrockConnection | None = field(default=None, repr=False)
+
+
+class LLMHost:
+    """Contract a mixin may assume of the ``LLMService`` it is mixed into."""
+
+    config: LLMConfig
+    user_context_window: int
+    response_tokens: int
+    endpoints: dict[LLMProvider, str | None]
+
+    if TYPE_CHECKING:
+
+        def chat_completion(self, messages: list[dict[str, str]], **kwargs) -> LLMResponse: ...
+
+        def _get_headers(self) -> dict[str, str]: ...

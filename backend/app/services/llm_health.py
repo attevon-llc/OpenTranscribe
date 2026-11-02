@@ -3,9 +3,9 @@
 import logging
 
 from app.services.bedrock_settings import resolve_region
-from app.services.llm_host import LLMHost
 from app.services.llm_types import PROVIDERS_REQUIRING_API_KEY
 from app.services.llm_types import SDK_PROVIDERS
+from app.services.llm_types import LLMHost
 from app.services.llm_types import LLMProvider
 
 logger = logging.getLogger(__name__)

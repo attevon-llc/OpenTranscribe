@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any
 
-from app.services.llm_host import LLMHost
+from app.services.llm_types import LLMHost
 from app.services.llm_types import LLMProvider
 
 logger = logging.getLogger(__name__)

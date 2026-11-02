@@ -4,29 +4,22 @@ import { t } from '$stores/locale';
 import { clearUserState } from '$lib/session/clearUserState';
 import { isCloudEdition } from '$lib/edition';
 import { loadCapabilities } from '$stores/capabilities';
-import { retryAfterFromHeaders } from '$lib/utils/retryAfter';
 import { probeSessionWithRetry, SESSION_PROBE_TIMEOUT_MS } from '$lib/auth/sessionProbe';
 import { readAccountLifecycle, type AccountLifecycleState } from '$lib/auth/accountLifecycle';
 
+import {
+  asAuthError,
+  classifyEnrollmentError,
+  loginFailure,
+  mfaVerifyFailure,
+  passwordChangeFailure,
+  pkiLoginFailure,
+  registrationFailure,
+  type MfaEnrollmentError,
+} from '$lib/auth/authErrors';
+
 export { readAccountLifecycle, type AccountLifecycleState } from '$lib/auth/accountLifecycle';
-
-/**
- * Minimal shape of an axios error used for status- and detail-based message
- * extraction in this module. Mirrors the relevant subset of AxiosError.
- */
-interface AuthRequestError {
-  response?: {
-    status?: number;
-    headers?: unknown;
-    data?: { detail?: unknown; message?: unknown };
-  };
-  request?: unknown;
-  message?: string;
-}
-
-function asAuthError(error: unknown): AuthRequestError {
-  return (error ?? {}) as AuthRequestError;
-}
+export type { MfaEnrollmentError } from '$lib/auth/authErrors';
 
 // Certificate metadata lives with the endpoint that serves it
 // (`$lib/api/certificate`). It was declared here, and hung off the user type,
@@ -514,46 +507,7 @@ export async function login(
 
     authStore.reset();
 
-    // Extract meaningful error message from backend response
-    let errorMessage = get(t)('auth.error.loginFailedCheckCredentials');
-    let retryAfter: number | null = null;
-
-    if (err.response) {
-      // Server responded with an error status
-      switch (err.response.status) {
-        case 401:
-          errorMessage =
-            (err.response.data?.detail as string) || get(t)('auth.error.invalidCredentials');
-          break;
-        case 400:
-          errorMessage =
-            (err.response.data?.detail as string) || get(t)('auth.error.invalidRequest');
-          break;
-        case 429:
-          retryAfter = retryAfterFromHeaders(err.response.headers);
-          errorMessage =
-            retryAfter !== null
-              ? get(t)('auth.error.tooManyLoginAttemptsWait', { seconds: retryAfter })
-              : get(t)('auth.error.tooManyLoginAttempts');
-          break;
-        case 500:
-        case 502:
-        case 503:
-          errorMessage = get(t)('auth.error.serverError');
-          break;
-        default:
-          errorMessage =
-            (err.response.data?.detail as string) ||
-            (err.response.data?.message as string) ||
-            get(t)('auth.error.loginFailed');
-      }
-    } else if (err.request) {
-      // Network error - no response received
-      errorMessage = get(t)('auth.error.networkUnreachable');
-    } else if (err.message) {
-      // Something else happened
-      errorMessage = get(t)('auth.error.unexpected');
-    }
+    const { message: errorMessage, retryAfter } = loginFailure(err, get(t));
 
     return {
       success: false,
@@ -587,19 +541,7 @@ export async function changeOwnPassword(
     await fetchUserInfo();
     return { success: true };
   } catch (rawError: unknown) {
-    const detail = asAuthError(rawError).response?.data?.detail;
-
-    if (typeof detail === 'string') return { success: false, message: detail };
-    if (Array.isArray(detail)) {
-      return {
-        success: false,
-        message: detail
-          .map((item: { msg?: string }) => item?.msg ?? String(item))
-          .filter(Boolean)
-          .join('. '),
-      };
-    }
-    return { success: false, message: get(t)('auth.forcedChange.failed') };
+    return { success: false, message: passwordChangeFailure(rawError, get(t)) };
   }
 }
 
@@ -616,29 +558,9 @@ export async function register(email: string, fullName: string, password: string
   } catch (error: unknown) {
     console.error('auth.ts: Registration error:', error);
 
-    // Handle validation errors (array) vs simple error messages (string)
-    let errorMessage = get(t)('auth.error.registrationFailed');
-    const detail = asAuthError(error).response?.data?.detail;
-
-    if (detail) {
-      if (typeof detail === 'string') {
-        errorMessage = detail;
-      } else if (Array.isArray(detail)) {
-        // Pydantic validation errors - extract messages
-        errorMessage = detail
-          .map(
-            (item: { msg?: string; message?: string }) => item.msg || item.message || String(item)
-          )
-          .join('. ');
-      } else if (typeof detail === 'object') {
-        const d = detail as { msg?: string; message?: string };
-        errorMessage = d.msg || d.message || JSON.stringify(detail);
-      }
-    }
-
     return {
       success: false,
-      message: errorMessage,
+      message: registrationFailure(error, get(t)),
     };
   }
 }
@@ -950,17 +872,8 @@ export async function loginWithPKI(): Promise<{
       message: get(t)('auth.error.pkiInvalidResponse'),
     };
   } catch (rawError: unknown) {
-    const error = asAuthError(rawError);
     console.error('PKI login error:', rawError);
-
-    let message = get(t)('auth.error.pkiFailed');
-    if (error.response?.status === 401) {
-      message = get(t)('auth.error.pkiCertificateMissing');
-    } else if (error.response?.status === 400) {
-      message = (error.response?.data?.detail as string) || get(t)('auth.error.pkiNotEnabled');
-    }
-
-    return { success: false, message };
+    return { success: false, message: pkiLoginFailure(rawError, get(t)) };
   }
 }
 
@@ -996,19 +909,8 @@ export async function verifyMFA(
       message: get(t)('auth.error.mfaInvalidResponse'),
     };
   } catch (rawError: unknown) {
-    const error = asAuthError(rawError);
     console.error('MFA verification error:', rawError);
-
-    let message = get(t)('auth.error.mfaFailed');
-    if (error.response?.status === 401) {
-      message = (error.response?.data?.detail as string) || get(t)('auth.error.mfaInvalidCode');
-    } else if (error.response?.status === 400) {
-      message = (error.response?.data?.detail as string) || get(t)('auth.error.mfaInvalidToken');
-    } else if (error.response?.status === 429) {
-      message = get(t)('auth.error.mfaTooManyAttempts');
-    }
-
-    return { success: false, message };
+    return { success: false, message: mfaVerifyFailure(rawError, get(t)) };
   }
 }
 
@@ -1033,62 +935,10 @@ export interface MfaSetupData {
   qr_code_base64: string;
 }
 
-/**
- * How the UI should react to a failed enrolment call.
- *
- * - `retry`       — wrong code (or an unclassified 4xx); the half-token is still
- *                   good, let the user try again in place.
- * - `expired`     — the half-token is spent or past its lifetime; only a fresh
- *                   login can mint another one.
- * - `restart`     — server state moved on (already enabled / setup not
- *                   initiated); re-run /mfa/setup.
- * - `unavailable` — this account can never enrol here (external IdP owns the
- *                   second factor, or MFA is off system-wide). Not a retry.
- */
-type MfaEnrollmentErrorKind = 'retry' | 'expired' | 'restart' | 'unavailable';
-
-export interface MfaEnrollmentError {
-  kind: MfaEnrollmentErrorKind;
-  message: string;
-}
-
 function enrollmentAuthConfig(mfaToken: string) {
   // An empty token means "use the ambient cookie session" — that is the path a
   // voluntary enrolment from Settings would take.
   return mfaToken ? { headers: { Authorization: `Bearer ${mfaToken}` } } : {};
-}
-
-function classifyEnrollmentError(rawError: unknown): MfaEnrollmentError {
-  const error = asAuthError(rawError);
-  const status = error.response?.status;
-  const detail = typeof error.response?.data?.detail === 'string' ? error.response.data.detail : '';
-
-  // 401 == the half-token was already claimed or has expired. (The axios
-  // response interceptor first attempts a cookie refresh, which cannot succeed
-  // during enrolment and rejects with its own 401 — either way we land here.)
-  if (status === 401) {
-    return { kind: 'expired', message: get(t)('auth.mfaEnroll.error.tokenExpired') };
-  }
-
-  if (status === 400) {
-    // The wire carries no error code, so the API's own English `detail` is the
-    // only signal separating "type the code again" from "this account can never
-    // enrol". Match narrowly and treat anything unrecognised as a retry — the
-    // safe default, since it leaves the user in the flow.
-    const lower = detail.toLowerCase();
-    if (
-      lower.includes('not available for your authentication type') ||
-      lower.includes('not enabled on this system')
-    ) {
-      return { kind: 'unavailable', message: get(t)('auth.mfaEnroll.error.unavailable') };
-    }
-    if (lower.includes('already enabled') || lower.includes('setup not initiated')) {
-      return { kind: 'restart', message: get(t)('auth.mfaEnroll.error.restart') };
-    }
-    return { kind: 'retry', message: get(t)('auth.mfaEnroll.error.invalidCode') };
-  }
-
-  return { kind: 'retry', message: detail || get(t)('auth.mfaEnroll.error.setupFailed') };
 }
 
 /**
@@ -1107,7 +957,7 @@ export async function setupMfaEnrollment(
     return { success: true, data: response.data };
   } catch (rawError: unknown) {
     console.error('auth.ts: MFA enrolment setup failed:', rawError);
-    return { success: false, error: classifyEnrollmentError(rawError) };
+    return { success: false, error: classifyEnrollmentError(rawError, get(t)) };
   }
 }
 
@@ -1142,6 +992,6 @@ export async function verifyMfaEnrollment(
     return { success: true, backupCodes: response.data?.backup_codes ?? [] };
   } catch (rawError: unknown) {
     console.error('auth.ts: MFA enrolment verification failed:', rawError);
-    return { success: false, error: classifyEnrollmentError(rawError) };
+    return { success: false, error: classifyEnrollmentError(rawError, get(t)) };
   }
 }

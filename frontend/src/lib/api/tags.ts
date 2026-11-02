@@ -36,10 +36,6 @@ function repeatedParam(key: string, values: string[]): URLSearchParams {
   return params;
 }
 
-function tagPath(tagUuid: string): string {
-  return `/tags/${tagUuid}`;
-}
-
 /** Tags visible to the caller, most used first, then by name. */
 export async function listTags(filters: TagListFilters = {}): Promise<TagWithCount[]> {
   const params: Record<string, string | boolean> = {};
@@ -67,7 +63,7 @@ export async function removeTagFromFile(fileUuid: string, tagName: string): Prom
 }
 
 export async function listFilesForTag(tagUuid: string, limit = 50): Promise<TagFileList> {
-  const response = await axiosInstance.get(`${tagPath(tagUuid)}/files`, { params: { limit } });
+  const response = await axiosInstance.get(`/tags/${tagUuid}/files`, { params: { limit } });
   return response.data;
 }
 
@@ -80,17 +76,17 @@ export async function listTagsOnFiles(fileUuids: string[]): Promise<TagOnSelecti
 }
 
 export async function listTagShares(tagUuid: string): Promise<TagShareTarget[]> {
-  const response = await axiosInstance.get(`${tagPath(tagUuid)}/shares`);
+  const response = await axiosInstance.get(`/tags/${tagUuid}/shares`);
   return response.data;
 }
 
 export async function shareTag(tagUuid: string, payload: TagShareCreate): Promise<TagShareTarget> {
-  const response = await axiosInstance.post(`${tagPath(tagUuid)}/shares`, payload);
+  const response = await axiosInstance.post(`/tags/${tagUuid}/shares`, payload);
   return response.data;
 }
 
 export async function revokeTagShare(tagUuid: string, shareUuid: string): Promise<void> {
-  await axiosInstance.delete(`${tagPath(tagUuid)}/shares/${shareUuid}`);
+  await axiosInstance.delete(`/tags/${tagUuid}/shares/${shareUuid}`);
 }
 
 /** Groups of tags whose names normalize alike, with near matches beside each. */
@@ -119,7 +115,7 @@ export async function renameTag(
     name: payload.name,
     confirm_merge: payload.confirm_merge ?? false,
   };
-  const response = await axiosInstance.patch(tagPath(tagUuid), body);
+  const response = await axiosInstance.patch(`/tags/${tagUuid}`, body);
   return response.data;
 }
 
@@ -128,7 +124,7 @@ export async function mergeTags(
   sourceUuids: string[]
 ): Promise<TagMutationResult> {
   const body: TagMergeRequest = { source_uuids: sourceUuids };
-  const response = await axiosInstance.post(`${tagPath(targetUuid)}/merge`, body);
+  const response = await axiosInstance.post(`/tags/${targetUuid}/merge`, body);
   return response.data;
 }
 

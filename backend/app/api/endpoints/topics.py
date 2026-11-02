@@ -289,6 +289,8 @@ def auto_label_single_file(
         "collections_applied": len(result["auto_applied_collections"]),
         "tags_skipped": len(result["skipped_tags"]),
         "collections_skipped": len(result["skipped_collections"]),
+        "tags_failed": len(result["failed_tags"]),
+        "collections_failed": len(result["failed_collections"]),
     }
 
 

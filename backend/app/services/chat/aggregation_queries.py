@@ -21,6 +21,7 @@ from app.core.enums import RecordedDateSource
 from app.services.chat.aggregation import MAX_BUCKETS
 from app.services.chat.aggregation import buckets
 from app.services.chat.router import TemporalHint
+from app.services.takedown_predicates import quarantined_among
 
 logger = logging.getLogger(__name__)
 
@@ -271,14 +272,7 @@ def _quarantined_among(
     with _short_session(session_factory) as db:
         if db is None:
             return frozenset()
-        from app.models.media import MediaFile
-
-        rows = (
-            db.query(MediaFile.uuid)
-            .filter(MediaFile.uuid.in_(ids), MediaFile.is_quarantined.is_(True))
-            .all()
-        )
-        return frozenset(str(row[0]) for row in rows)
+        return frozenset(quarantined_among(db, ids))
 
 
 def _files_matching(

@@ -30,19 +30,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.models.media import MediaFile
-
-
-def _quarantined_uuids(db: Session, file_uuids: set[str]) -> set[str]:
-    """The subset of ``file_uuids`` that are currently quarantined."""
-    if not file_uuids:
-        return set()
-    rows = (
-        db.query(MediaFile.uuid)
-        .filter(MediaFile.uuid.in_(file_uuids), MediaFile.is_quarantined.is_(True))
-        .all()
-    )
-    return {str(row[0]) for row in rows}
+from app.services.takedown_predicates import quarantined_among
 
 
 def drop_quarantined_citations(db: Session, citations: list[dict], *, is_admin: bool) -> list[dict]:
@@ -62,7 +50,7 @@ def drop_quarantined_citations(db: Session, citations: list[dict], *, is_admin: 
         return citations
 
     uuids = {c["file_uuid"] for c in citations if c.get("file_uuid")}
-    quarantined = _quarantined_uuids(db, uuids)
+    quarantined = quarantined_among(db, uuids)
     if not quarantined:
         return citations
 
@@ -95,7 +83,7 @@ def drop_quarantined_citations_bulk(
     for citations in list_of_citation_lists:
         uuids.update(c["file_uuid"] for c in citations if c.get("file_uuid"))
 
-    quarantined = _quarantined_uuids(db, uuids)
+    quarantined = quarantined_among(db, uuids)
     if not quarantined:
         return list_of_citation_lists
 

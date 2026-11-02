@@ -12,7 +12,8 @@ service is the takedown.
 The module is a facade over four, split by concern (issue #1253):
 
   * :mod:`app.services.takedown_predicates` — the read side: ``exclude_quarantined``,
-    ``is_hidden_for``, ``is_review_admin`` and the WebSocket suppression twins.
+    ``is_hidden_for``, ``quarantined_among``, ``is_review_admin`` and the WebSocket
+    suppression twins.
     Re-exported here, so every existing import keeps working.
   * :mod:`app.services.takedown_authority` — who may take a file down or release it
     (``platform`` or ``organization``, "platform wins").
@@ -64,6 +65,7 @@ from app.services.takedown_predicates import is_hidden_for
 from app.services.takedown_predicates import is_notification_suppressed
 from app.services.takedown_predicates import is_notification_suppressed_for_uuid
 from app.services.takedown_predicates import is_review_admin
+from app.services.takedown_predicates import quarantined_among
 
 __all__ = [
     "OWNER_RELEASE_EVENT",
@@ -77,6 +79,7 @@ __all__ = [
     "is_notification_suppressed",
     "is_notification_suppressed_for_uuid",
     "is_review_admin",
+    "quarantined_among",
     "quarantine_file",
     "release_file",
     "stamp_completion_time",

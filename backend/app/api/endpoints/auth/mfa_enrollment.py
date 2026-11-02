@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.dependencies import get_current_user
 from app.api.endpoints.auth.dependencies import oauth2_scheme
+from app.api.endpoints.auth.login_completion import record_successful_login
 from app.api.endpoints.auth.mfa_tokens import MFA_SCOPE_ENROLL
 from app.api.endpoints.auth.mfa_tokens import _claim_mfa_token
 from app.api.endpoints.auth.mfa_tokens import _user_can_setup_mfa
@@ -109,11 +110,7 @@ def issue_session_response(
 
     # Every successful auth path stamps last_login_at. This function is the single
     # post-MFA session-issue point, so it covers /mfa/verify AND the forced
-    # enrolment completion at /mfa/verify-setup. Imported here rather than at module
-    # scope: login_completion.py imports this module's siblings, and a top-level import would
-    # close the cycle.
-    from app.api.endpoints.auth.login_completion import record_successful_login
-
+    # enrolment completion at /mfa/verify-setup.
     record_successful_login(db, user)
     return response
 

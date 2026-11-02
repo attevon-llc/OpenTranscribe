@@ -3,6 +3,7 @@
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { anchoredPanel } from '$lib/actions/anchoredPanel';
   import { getSpeakerColor } from '$lib/utils/speakerColors';
+  import { buildSpeakerMenu, renderProfileMatches } from '$lib/speakers/speakerMenuDom';
   import type { Speaker } from '$lib/types/speaker';
   import type { TranscriptSegment } from '$lib/types/media';
   import { t } from '$stores/locale';
@@ -110,25 +111,9 @@
     if (!inlineMatches) return;
 
     const matches = matchingProfileNames(profileNames, inlineName);
-    inlineMatches.replaceChildren();
-    inlineMatches.hidden = matches.length === 0;
-    if (matches.length === 0) return;
-
-    const label = document.createElement('div');
-    label.className = 'dropdown-header inline-name-matches-label';
-    label.textContent = $t('speaker.nameThisSpeakerMatches');
-    inlineMatches.appendChild(label);
-    for (const name of matches) {
-      const pick = document.createElement('button');
-      pick.className = 'dropdown-item inline-name-match';
-      pick.dataset.action = 'pick-profile';
-      pick.textContent = name; // textContent is XSS-safe
-      pick.addEventListener('click', (e) => {
-        e.stopPropagation();
-        submitInlineName(name);
-      });
-      inlineMatches.appendChild(pick);
-    }
+    renderProfileMatches(inlineMatches, matches, $t('speaker.nameThisSpeakerMatches'), (name) =>
+      submitInlineName(name)
+    );
   }
 
   // The next free diarization SLOT for this file (e.g. SPEAKER_03). It is never a
@@ -311,98 +296,6 @@
     return segment.speaker.uuid === speakerUuid;
   }
 
-  // Helper to create SVG checkmark element
-  function createCheckmarkSvg(): SVGSVGElement {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('width', '16');
-    svg.setAttribute('height', '16');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('fill', 'none');
-    svg.setAttribute('stroke', 'currentColor');
-    svg.setAttribute('stroke-width', '2');
-    const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-    polyline.setAttribute('points', '20 6 9 17 4 12');
-    svg.appendChild(polyline);
-    return svg;
-  }
-
-  // Helper to create SVG plus icon element
-  function createPlusSvg(): SVGSVGElement {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('width', '14');
-    svg.setAttribute('height', '14');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('fill', 'none');
-    svg.setAttribute('stroke', 'currentColor');
-    svg.setAttribute('stroke-width', '2');
-    const line1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line1.setAttribute('x1', '12');
-    line1.setAttribute('y1', '5');
-    line1.setAttribute('x2', '12');
-    line1.setAttribute('y2', '19');
-    const line2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line2.setAttribute('x1', '5');
-    line2.setAttribute('y1', '12');
-    line2.setAttribute('x2', '19');
-    line2.setAttribute('y2', '12');
-    svg.appendChild(line1);
-    svg.appendChild(line2);
-    return svg;
-  }
-
-  // Helper to create the "AI suggestion" sparkle icon element
-  function createSparkleSvg(): SVGSVGElement {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('width', '12');
-    svg.setAttribute('height', '12');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('fill', 'currentColor');
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute(
-      'd',
-      'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z'
-    );
-    svg.appendChild(path);
-    return svg;
-  }
-
-  // Helper to create a speaker dropdown item button using DOM methods (XSS-safe)
-  function createDropdownItem(
-    speakerUuid: string,
-    label: string,
-    isSelected: boolean,
-    colorBg?: string,
-    colorBorder?: string,
-    isNoSpeaker: boolean = false
-  ): HTMLButtonElement {
-    const button = document.createElement('button');
-    button.className = `dropdown-item${isSelected ? ' selected' : ''}`;
-    button.dataset.speakerUuid = speakerUuid;
-
-    const speakerOption = document.createElement('div');
-    speakerOption.className = 'speaker-option';
-
-    const colorIndicator = document.createElement('div');
-    colorIndicator.className = `speaker-color-indicator${isNoSpeaker ? ' no-speaker' : ''}`;
-    if (colorBg && colorBorder) {
-      colorIndicator.style.backgroundColor = colorBg;
-      colorIndicator.style.borderColor = colorBorder;
-    }
-
-    const span = document.createElement('span');
-    span.textContent = label; // textContent is XSS-safe
-
-    speakerOption.appendChild(colorIndicator);
-    speakerOption.appendChild(span);
-    button.appendChild(speakerOption);
-
-    if (isSelected) {
-      button.appendChild(createCheckmarkSvg());
-    }
-
-    return button;
-  }
-
   function renderPortal() {
     if (!portalContainer) return;
 
@@ -427,190 +320,32 @@
     menuPanel?.destroy();
     menuPanel = null;
 
-    // Build menu using DOM methods to prevent XSS
-    const menu = document.createElement('div');
-    menu.className = 'dropdown-menu';
-
-    // Header
-    const header = document.createElement('div');
-    header.className = 'dropdown-header';
-    header.textContent = $t('speaker.assignSpeaker');
-    menu.appendChild(header);
-
-    // Name THIS speaker (#1086): a field first, because it is the common action.
-    let inlineInput: HTMLInputElement | null = null;
-    if (wireSpeaker?.uuid) {
-      const row = document.createElement('div');
-      row.className = 'inline-name-row';
-
-      inlineInput = document.createElement('input');
-      inlineInput.type = 'text';
-      inlineInput.className = 'inline-name-input';
-      inlineInput.maxLength = 255;
-      inlineInput.autocomplete = 'off';
-      // A name typed in Arabic must align right even inside an LTR page, and vice versa.
-      inlineInput.dir = 'auto';
-      inlineInput.placeholder = $t('speaker.nameThisSpeakerPlaceholder', {
-        label: translateSpeakerLabel(speakerNumberLabel || $t('common.unknown'))
-      });
-      inlineInput.setAttribute('aria-label', $t('speaker.nameThisSpeakerLabel'));
-      inlineInput.value = inlineName;
-      const input = inlineInput;
-      input.addEventListener('input', () => {
-        inlineName = input.value;
+    const parts = buildSpeakerMenu({
+      speakers,
+      currentSpeakerUuid,
+      noSpeaker: !segment.speaker,
+      wireSpeakerUuid: wireSpeaker?.uuid,
+      speakerNumberLabel,
+      inlineName,
+      pendingSuggestion,
+      canCreateSpeaker: !!mediaFileUuid,
+      t: $t,
+      translateLabel: translateSpeakerLabel,
+      onInlineInput: (value) => {
+        inlineName = value;
         refreshInlineNameUi();
-      });
-      input.addEventListener('keydown', (e) => {
-        // Typing must not reach the page's own shortcuts (play/pause, seek, ...).
-        e.stopPropagation();
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          submitInlineName();
-        } else if (e.key === 'Escape') {
-          e.preventDefault();
-          closeDropdown();
-        }
-      });
-      row.appendChild(input);
-
-      const save = document.createElement('button');
-      save.className = 'inline-name-save';
-      save.dataset.action = 'save-inline-name';
-      save.setAttribute('aria-label', $t('speaker.nameThisSpeakerSave'));
-      save.title = $t('speaker.nameThisSpeakerSave');
-      save.appendChild(createCheckmarkSvg());
-      save.addEventListener('click', (e) => {
-        e.stopPropagation();
-        submitInlineName();
-      });
-      row.appendChild(save);
-      inlineSaveButton = save;
-      menu.appendChild(row);
-
-      const hint = document.createElement('div');
-      hint.className = 'inline-name-hint';
-      hint.hidden = true;
-      menu.appendChild(hint);
-      inlineHint = hint;
-
-      const matchList = document.createElement('div');
-      matchList.className = 'inline-name-matches';
-      matchList.hidden = true;
-      menu.appendChild(matchList);
-      inlineMatches = matchList;
-
-      const nameDivider = document.createElement('div');
-      nameDivider.className = 'dropdown-divider';
-      menu.appendChild(nameDivider);
-      refreshInlineNameUi();
-    } else {
-      inlineSaveButton = inlineHint = inlineMatches = null;
-    }
-
-    // Unconfirmed LLM / voice-match suggestion — offered HERE, with its confidence
-    // score, and never in the name slot (#741). One affirmative click accepts it.
-    if (pendingSuggestion) {
-      const suggestionHeader = document.createElement('div');
-      suggestionHeader.className = 'dropdown-header suggestion-header';
-      suggestionHeader.textContent = $t('speaker.unconfirmedSuggestion');
-      menu.appendChild(suggestionHeader);
-
-      const suggestionBtn = document.createElement('button');
-      suggestionBtn.className = 'dropdown-item suggestion-btn';
-      suggestionBtn.dataset.action = 'accept-suggestion';
-      suggestionBtn.title = $t('speaker.acceptSuggestionTitle');
-
-      const suggestionOption = document.createElement('div');
-      suggestionOption.className = 'speaker-option';
-      suggestionOption.appendChild(createSparkleSvg());
-
-      const suggestionSpan = document.createElement('span');
-      suggestionSpan.textContent = pendingSuggestion.name;
-      suggestionOption.appendChild(suggestionSpan);
-      suggestionBtn.appendChild(suggestionOption);
-
-      const confidenceBadge = document.createElement('span');
-      confidenceBadge.className = 'suggestion-confidence';
-      confidenceBadge.textContent = `${Math.round(pendingSuggestion.confidence * 100)}%`;
-      suggestionBtn.appendChild(confidenceBadge);
-
-      suggestionBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        acceptSuggestion();
-      });
-      menu.appendChild(suggestionBtn);
-
-      const suggestionDivider = document.createElement('div');
-      suggestionDivider.className = 'dropdown-divider';
-      menu.appendChild(suggestionDivider);
-    }
-
-    // "Add speaker" — top of list for quick access. Opens the naming dialog; the
-    // speaker is not created until the user has typed a name (#740).
-    if (mediaFileUuid) {
-      const createBtn = document.createElement('button');
-      createBtn.className = 'dropdown-item create-speaker-btn';
-      createBtn.dataset.action = 'create-speaker';
-
-      const createOption = document.createElement('div');
-      createOption.className = 'speaker-option';
-      createOption.appendChild(createPlusSvg());
-
-      const createSpan = document.createElement('span');
-      createSpan.textContent = $t('speaker.newSpeakerForSegment');
-      createOption.appendChild(createSpan);
-
-      createBtn.appendChild(createOption);
-      createBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openCreateSpeakerModal();
-      });
-      menu.appendChild(createBtn);
-    }
-
-    // "No Speaker" option
-    const noSpeakerBtn = createDropdownItem(
-      '',
-      $t('speaker.noSpeaker'),
-      !segment.speaker,
-      undefined,
-      undefined,
-      true
-    );
-    noSpeakerBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      handleSpeakerSelect(null);
+      },
+      onSubmitInline: () => submitInlineName(),
+      onEscape: closeDropdown,
+      onAcceptSuggestion: acceptSuggestion,
+      onCreateSpeaker: openCreateSpeakerModal,
+      onSelect: handleSpeakerSelect
     });
-    menu.appendChild(noSpeakerBtn);
-
-    // Divider — separates utility actions from named speakers
-    const divider = document.createElement('div');
-    divider.className = 'dropdown-divider';
-    menu.appendChild(divider);
-
-    // Human-named speakers first, then unidentified SPEAKER_## auto-labels.
-    const { named: namedSpeakers, auto: autoSpeakers } = partitionSpeakers(speakers);
-
-    const renderSpeakerBtn = (speaker: Speaker) => {
-      const isSelected = speaker.uuid === currentSpeakerUuid;
-      const color = getSpeakerColor(speaker.name);
-      const label = speakerMenuLabel(speaker, translateSpeakerLabel);
-      const speakerBtn = createDropdownItem(
-        speaker.uuid,
-        label,
-        isSelected,
-        color.bg,
-        color.border
-      );
-      speakerBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        handleSpeakerSelect(speaker.uuid);
-      });
-      menu.appendChild(speakerBtn);
-    };
-
-    for (const speaker of namedSpeakers) renderSpeakerBtn(speaker);
-    for (const speaker of autoSpeakers) renderSpeakerBtn(speaker);
+    const { menu, inlineInput } = parts;
+    inlineSaveButton = parts.inlineSaveButton;
+    inlineHint = parts.inlineHint;
+    inlineMatches = parts.inlineMatches;
+    if (inlineInput) refreshInlineNameUi();
 
     // Clear and append
     portalContainer.innerHTML = '';

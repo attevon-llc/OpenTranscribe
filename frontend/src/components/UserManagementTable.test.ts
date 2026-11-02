@@ -584,3 +584,195 @@ describe('inline account-expiration editor', () => {
     expect(mockAxios.put).not.toHaveBeenCalled();
   });
 });
+
+describe('the remaining row actions', () => {
+  it('force logout confirms, revokes the sessions, reports the count and does not refresh', async () => {
+    mockAxios.delete.mockResolvedValue({ data: { sessions_terminated: 3 } });
+    const onRefresh = vi.fn();
+    const { getByTitle, getByRole } = render(UserManagementTable, {
+      props: { users: [makeUser({ uuid: 'u-1' })], onRefresh },
+    });
+
+    await fireEvent.click(getByTitle('userManagement.forceLogoutFor', { exact: false }));
+    expect(mockAxios.delete).not.toHaveBeenCalled();
+    await fireEvent.click(getByRole('button', { name: 'userManagement.forceLogout' }));
+
+    await waitFor(() => expect(mockAxios.delete).toHaveBeenCalledWith('/admin/users/u-1/sessions'));
+    await waitFor(() =>
+      expect(toastStore.success).toHaveBeenCalledWith('userManagement.forceLogoutSuccess')
+    );
+    expect(onRefresh).not.toHaveBeenCalled();
+  });
+
+  it('MFA reset confirms, posts the reset and surfaces a refusal verbatim', async () => {
+    mockAxios.post.mockRejectedValue({
+      response: { status: 403, data: { detail: 'Not enough permissions - super_admin required' } },
+    });
+    const { getByTitle, getByRole } = render(UserManagementTable, {
+      props: { users: [makeUser({ uuid: 'u-1' })] },
+    });
+
+    await fireEvent.click(getByTitle('userManagement.resetMfaFor', { exact: false }));
+    await fireEvent.click(getByRole('button', { name: 'userManagement.resetMfa' }));
+
+    await waitFor(() => expect(mockAxios.post).toHaveBeenCalledWith('/admin/users/u-1/mfa/reset'));
+    await waitFor(() =>
+      expect(toastStore.error).toHaveBeenCalledWith('Not enough permissions - super_admin required')
+    );
+    const mfaBtn = getByTitle('userManagement.resetMfaFor', { exact: false }) as HTMLButtonElement;
+    expect(mfaBtn.disabled).toBe(false);
+  });
+
+  it('delete confirms with the default label, deletes the user and refreshes', async () => {
+    const onRefresh = vi.fn();
+    const { getByTitle, getByRole } = render(UserManagementTable, {
+      props: { users: [makeUser({ uuid: 'u-1' })], onRefresh },
+    });
+
+    await fireEvent.click(getByTitle('userManagement.deleteAccount', { exact: false }));
+    expect(mockAxios.delete).not.toHaveBeenCalled();
+    await fireEvent.click(getByRole('button', { name: 'common.delete' }));
+
+    await waitFor(() => expect(mockAxios.delete).toHaveBeenCalledWith('/users/u-1'));
+    await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+    expect(toastStore.success).toHaveBeenCalledWith('userManagement.userDeletedSuccess');
+  });
+
+  it('a failed delete reports the server message and does not refresh', async () => {
+    mockAxios.delete.mockRejectedValue({
+      response: { status: 409, data: { detail: 'User owns files on legal hold' } },
+    });
+    const onRefresh = vi.fn();
+    const { getByTitle, getByRole } = render(UserManagementTable, {
+      props: { users: [makeUser({ uuid: 'u-1' })], onRefresh },
+    });
+
+    await fireEvent.click(getByTitle('userManagement.deleteAccount', { exact: false }));
+    await fireEvent.click(getByRole('button', { name: 'common.delete' }));
+
+    await waitFor(() =>
+      expect(toastStore.error).toHaveBeenCalledWith('User owns files on legal hold')
+    );
+    expect(onRefresh).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [false, true, 'userManagement.localFallbackEnabled'],
+    [true, false, 'userManagement.localFallbackDisabled'],
+  ])(
+    'the fallback toggle flips allow_local_fallback (%s -> %s) without a confirmation',
+    async (current, next, message) => {
+      const onRefresh = vi.fn();
+      const users = [makeUser({ uuid: 'u-1', auth_type: 'oidc', allow_local_fallback: current })];
+      const { container } = render(UserManagementTable, { props: { users, onRefresh } });
+
+      await fireEvent.click(container.querySelector('.fallback-toggle-button') as HTMLElement);
+
+      await waitFor(() =>
+        expect(mockAxios.put).toHaveBeenCalledWith('/users/u-1', { allow_local_fallback: next })
+      );
+      expect(toastStore.success).toHaveBeenCalledWith(message);
+      expect(onRefresh).toHaveBeenCalled();
+    }
+  );
+
+  it('file recovery hands the row uuid to the parent', async () => {
+    const onUserRecovery = vi.fn();
+    const { getByTitle } = render(UserManagementTable, {
+      props: { users: [makeUser({ uuid: 'u-1' })], onUserRecovery },
+    });
+
+    await fireEvent.click(getByTitle('userManagement.recoverFilesFor', { exact: false }));
+    expect(onUserRecovery).toHaveBeenCalledWith('u-1');
+  });
+});
+
+describe('pending invitations', () => {
+  const invitation = {
+    uuid: 'inv-1',
+    email: 'invitee@x.com',
+    full_name: 'Invited Person',
+    role: 'admin',
+    auth_type: 'oidc',
+    expires_at: '2026-02-01T00:00:00Z',
+    created_at: '2026-01-01T00:00:00Z',
+    used_at: null,
+    revoked_at: null,
+    status: 'pending',
+  };
+
+  function serveInvitations(list: unknown[]) {
+    mockAxios.get.mockImplementation((url: string) => {
+      if (url === '/auth/password-policy') return Promise.resolve({ data: { min_length: 12 } });
+      if (url === '/auth/invitations') return Promise.resolve({ data: list });
+      return Promise.resolve({ data: [] });
+    });
+  }
+
+  it('renders the server-computed status and labels, never a recomputed one', async () => {
+    serveInvitations([{ ...invitation, status: 'expired' }]);
+    const { findByText, container } = render(UserManagementTable, { props: { users: [] } });
+
+    expect(await findByText('invitee@x.com')).toBeInTheDocument();
+    const badge = container.querySelector('.invitations-section .status-badge');
+    expect(badge?.className).toContain('status-expired');
+    expect(badge?.textContent?.trim()).toBe('userManagement.invitationStatusExpired');
+    const cells = Array.from(container.querySelectorAll('.invitations-section td')).map(
+      (td) => td.textContent?.trim()
+    );
+    expect(cells).toContain('userManagement.roleAdmin');
+    expect(cells).toContain('userManagement.authTypeOidc');
+  });
+
+  it('an empty list renders the empty state, and a failed load is not fatal', async () => {
+    mockAxios.get.mockImplementation((url: string) =>
+      url === '/auth/invitations'
+        ? Promise.reject(new Error('boom'))
+        : Promise.resolve({ data: { min_length: 12 } })
+    );
+    const { getByText } = render(UserManagementTable, { props: { users: [] } });
+    // The empty state also shows before the load starts; wait for the load to have run.
+    await waitFor(() =>
+      expect(mockAxios.get).toHaveBeenCalledWith('/auth/invitations', expect.anything())
+    );
+    await waitFor(() =>
+      expect(getByText('userManagement.noPendingInvitations')).toBeInTheDocument()
+    );
+  });
+
+  it('revoke confirms, deletes the invitation and reloads the list', async () => {
+    serveInvitations([invitation]);
+    const { findByTitle, getByRole } = render(UserManagementTable, { props: { users: [] } });
+
+    await fireEvent.click(await findByTitle('userManagement.revokeInvitationFor'));
+    expect(mockAxios.delete).not.toHaveBeenCalled();
+    mockAxios.get.mockClear();
+    await fireEvent.click(getByRole('button', { name: 'userManagement.revokeInvitation' }));
+
+    await waitFor(() => expect(mockAxios.delete).toHaveBeenCalledWith('/auth/invitations/inv-1'));
+    await waitFor(() =>
+      expect(mockAxios.get).toHaveBeenCalledWith('/auth/invitations', expect.anything())
+    );
+    expect(toastStore.success).toHaveBeenCalledWith('userManagement.inviteRevoked');
+  });
+
+  it('a successful invite resets and closes the form', async () => {
+    const { getByText, getByLabelText, queryByLabelText } = render(UserManagementTable, {
+      props: { users: [] },
+    });
+
+    await fireEvent.click(getByText('userManagement.inviteUser'));
+    await fireEvent.input(getByLabelText('userManagement.email'), {
+      target: { value: 'someone@x.com' },
+    });
+    await fireEvent.click(getByText('userManagement.sendInvite'));
+
+    await waitFor(() =>
+      expect(toastStore.success).toHaveBeenCalledWith('userManagement.inviteSent')
+    );
+    expect(queryByLabelText('userManagement.email')).toBeNull();
+
+    await fireEvent.click(getByText('userManagement.inviteUser'));
+    expect((getByLabelText('userManagement.email') as HTMLInputElement).value).toBe('');
+  });
+});

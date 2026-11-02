@@ -86,6 +86,11 @@ const EXEMPT: Record<string, string> = {
   'lib/users/rowPermissions':
     'Pure functions with no state of any kind. The detector matched the `resetPassword` / ' +
     '`resetMfa` keys of the RowActions flags object (which actions a row offers).',
+  'lib/users/accountActions':
+    'Pure factory: the only state (`pendingUuid`, the row with an action in flight) is a ' +
+    'store created per createAccountActions() call. UserManagementTable makes one per mount ' +
+    'and it is discarded with the component, so nothing outlives the session. The detector ' +
+    'matched the `resetUserMFA` action name, which is an HTTP POST, not a teardown API.',
 
   // ── Covered transitively by a registered module ──
   'lib/supportAccess/headers':

@@ -29,7 +29,8 @@
     permittedRowActions
   } from '$lib/users/rowPermissions';
   import { filterUsers } from '$lib/users/userSearch';
-  import { toDateInputValue, toEndOfDayTimestamp } from '$lib/users/accountExpiry';
+  import { toDateInputValue } from '$lib/users/accountExpiry';
+  import { createAccountActions } from '$lib/users/accountActions';
 
   /**
    * @typedef {Object} User
@@ -115,6 +116,10 @@
     message: confirmMessage,
     confirmText: confirmLabel,
   } = confirmDialog;
+
+  const accountActions = createAccountActions(confirmDialog, () => onRefresh());
+  /** UUID of the row with an account action in flight; its buttons are disabled. */
+  const { pendingUuid: pendingActionUuid } = accountActions;
 
   // Server-owned password policy (GET /auth/password-policy). Hardcoding a
   // client-side minimum drifts from the backend's — it said 8 while the policy
@@ -371,66 +376,9 @@
     }
   }
 
-/**
-   * Delete a user
-   * @param {string} userId
-   */
-  async function deleteUser(userId) {
-    confirmDialog.request(
-      $t('userManagement.deleteUser'),
-      $t('userManagement.deleteUserConfirm'),
-      () => executeDeleteUser(userId)
-    );
-  }
-
   /**
-   * Execute user deletion after confirmation
-   * @param {string} userId
-   */
-  async function executeDeleteUser(userId) {
-    try {
-      await axiosInstance.delete(`/users/${userId}`);
-      toastStore.success($t('userManagement.userDeletedSuccess'));
-
-      // Refresh user list
-      onRefresh();
-    } catch (err) {
-      console.error('Error deleting user:', err);
-      toastStore.error(getErrorMessage(err, $t('userManagement.deleteUserFailed')));
-    }
-  }
-
-  /**
-   * Update a user's role.
-   *
-   * Goes through the admin client (PUT /admin/users/{uuid}/role), not the
-   * generic user update — that route is the one that writes an audit record,
-   * revokes the target's sessions, and refuses to demote the last super_admin.
-   * @param {string} userId
-   * @param {string} role
-   */
-  async function updateUserRole(userId, role) {
-    try {
-      await AdminApi.changeUserRole(userId, role);
-      toastStore.success($t('userManagement.userRoleUpdated', { role: roleLabels[role] || role }));
-
-      // Refresh user list
-      onRefresh();
-    } catch (err) {
-      console.error('Error updating user role:', err);
-      toastStore.error(getErrorMessage(err, $t('userManagement.updateRoleFailed')));
-
-      // Unlike the sibling handlers below, this one refreshes on error too:
-      // the role <select> is one-way bound (`value={currentUser.role}`, not
-      // `bind:value`), so a rejected change leaves the DOM select showing the
-      // rejected role with nothing re-deriving it from server state until the
-      // list is refetched and re-rendered.
-      onRefresh();
-    }
-  }
-
-  /**
-   * Handle role change event
+   * Hand a role `<select>` change to the account actions, putting the select back
+   * if a confirmation is backed out of.
    * @param {string} userId
    * @param {Event} e
    */
@@ -438,27 +386,11 @@
     const select = /** @type {HTMLSelectElement} */ (e.currentTarget);
     if (!select) return;
 
-    const newRole = select.value;
     const target = users.find(u => u.uuid === userId);
     const previousRole = target?.role ?? 'user';
-    if (newRole === previousRole) return;
-
-    // Promoting to super_admin hands over auth-configuration and role-change
-    // power — make it deliberate, and put the select back if they back out.
-    if (newRole === 'super_admin') {
-      confirmDialog.request(
-        $t('userManagement.confirmSuperAdminTitle'),
-        $t('userManagement.confirmSuperAdminPromote', {
-          name: target?.full_name || target?.email || ''
-        }),
-        () => updateUserRole(userId, newRole),
-        $t('userManagement.confirmSuperAdminButton'),
-        () => { select.value = previousRole; }
-      );
-      return;
-    }
-
-    updateUserRole(userId, newRole);
+    accountActions.requestRoleChange(userId, target, select.value, () => {
+      select.value = previousRole;
+    });
   }
 
   /**
@@ -472,36 +404,6 @@
   function closePasswordResetModal() {
     passwordResetUser = null;
   }
-
-  /**
-   * Toggle allow_local_fallback for a user (super_admin only)
-   * @param {User} targetUser
-   */
-  async function toggleLocalFallback(targetUser) {
-    const newValue = !targetUser.allow_local_fallback;
-    try {
-      await axiosInstance.put(`/users/${targetUser.uuid}`, {
-        allow_local_fallback: newValue
-      });
-      const userName = targetUser.full_name || targetUser.email;
-      if (newValue) {
-        toastStore.success($t('userManagement.localFallbackEnabled', { name: userName }));
-      } else {
-        toastStore.success($t('userManagement.localFallbackDisabled', { name: userName }));
-      }
-      onRefresh();
-    } catch (err) {
-      console.error('Error toggling local fallback:', err);
-      toastStore.error(getErrorMessage(err, $t('userManagement.localFallbackFailed')));
-    }
-  }
-
-  /**
-   * UUID of the row with an account action in flight, so its buttons can be
-   * disabled without freezing the whole table.
-   * @type {string|null}
-   */
-  let pendingActionUuid = null;
 
   /**
    * UUID of the row whose expiration-date editor is open, or null.
@@ -532,27 +434,8 @@
    * Save (or clear, if the date field was emptied) the row's account_expires_at.
    * @param {User} targetUser
    */
-  async function saveExpiration(targetUser) {
-    const isoValue = toEndOfDayTimestamp(expirationEditValue);
-    pendingActionUuid = targetUser.uuid;
-    try {
-      await axiosInstance.put(`/users/${targetUser.uuid}`, {
-        account_expires_at: isoValue
-      });
-      const userName = targetUser.full_name || targetUser.email;
-      toastStore.success(
-        isoValue
-          ? $t('userManagement.expirationSet', { name: userName })
-          : $t('userManagement.expirationCleared', { name: userName })
-      );
-      closeExpirationEditor();
-      onRefresh();
-    } catch (err) {
-      console.error('Error setting account expiration:', err);
-      toastStore.error(getErrorMessage(err, $t('userManagement.expirationFailed')));
-    } finally {
-      pendingActionUuid = null;
-    }
+  function saveExpiration(targetUser) {
+    return accountActions.saveExpiration(targetUser, expirationEditValue, closeExpirationEditor);
   }
 
   /** Target for {@link LinkIdentityModal} (P1.3 — the account_linking operator remedy). */
@@ -572,123 +455,6 @@
 
   function handleIdentityLinked() {
     onRefresh();
-  }
-
-  /**
-   * Run an admin account action for one row, with the row's buttons disabled for
-   * the duration and the backend's `detail` surfaced verbatim on failure.
-   * @param {User} targetUser
-   * @param {() => Promise<unknown>} action
-   * @param {(result: any, name: string) => string} successMessage
-   * @param {string} failureMessage
-   * @param {boolean | ((result: any) => boolean)} [refresh] - Refresh the user
-   *   list afterwards. A function is evaluated against the action's result —
-   *   used by {@link unlockAccount}, whose refresh need depends on whether the
-   *   call also reactivated a disabled account (issue #570 §A.1.1).
-   */
-  async function runAccountAction(targetUser, action, successMessage, failureMessage, refresh = false) {
-    pendingActionUuid = targetUser.uuid;
-    const userName = targetUser.full_name || targetUser.email;
-    try {
-      const result = await action();
-      toastStore.success(successMessage(result, userName));
-      const shouldRefresh = typeof refresh === 'function' ? refresh(result) : refresh;
-      if (shouldRefresh) onRefresh();
-    } catch (err) {
-      console.error('Account action failed:', err);
-      toastStore.error(getErrorMessage(err, failureMessage));
-    } finally {
-      pendingActionUuid = null;
-    }
-  }
-
-  /**
-   * Lock an account: deactivates it AND revokes every session it holds.
-   *
-   * The reason is written verbatim into the audit record, so it stays a stable
-   * English string rather than the admin's current UI language.
-   * @param {User} targetUser
-   */
-  function lockAccount(targetUser) {
-    confirmDialog.request(
-      $t('userManagement.lockAccount'),
-      $t('userManagement.lockConfirmMessage', { name: targetUser.full_name || targetUser.email }),
-      () => runAccountAction(
-        targetUser,
-        () => AdminApi.lockAccount(targetUser.uuid, 'Locked by admin from user management'),
-        (_result, name) => $t('userManagement.lockSuccess', { name }),
-        $t('userManagement.lockFailed'),
-        true
-      ),
-      $t('userManagement.lockAccount')
-    );
-  }
-
-  /**
-   * Clear a failed-login lockout — this IS the inverse of {@link lockAccount}
-   * (issue #570 §A.1.1): the endpoint clears both the lockout counter AND
-   * reactivates an account deactivated by `lockAccount`, reporting which
-   * happened via `was_locked`/`was_disabled`. `was_locked === false` alone is
-   * reported as "nothing to clear" rather than a successful unlock. The list
-   * is refreshed only when `was_disabled` is true — a reactivated account's row
-   * changes (it stops rendering as inactive); a merely lockout-locked one has
-   * nothing in the row to update.
-   * @param {User} targetUser
-   */
-  function unlockAccount(targetUser) {
-    confirmDialog.request(
-      $t('userManagement.unlockAccount'),
-      $t('userManagement.unlockConfirmMessage', { name: targetUser.full_name || targetUser.email }),
-      () => runAccountAction(
-        targetUser,
-        () => AdminApi.unlockAccount(targetUser.uuid),
-        (result, name) => result?.was_locked
-          ? $t('userManagement.unlockSuccess', { name })
-          : $t('userManagement.unlockNotLocked', { name }),
-        $t('userManagement.unlockFailed'),
-        (result) => Boolean(result?.was_disabled)
-      ),
-      $t('userManagement.unlockAccount')
-    );
-  }
-
-  /**
-   * Force logout: revoke every refresh token the target holds.
-   * @param {User} targetUser
-   */
-  function forceLogout(targetUser) {
-    confirmDialog.request(
-      $t('userManagement.forceLogout'),
-      $t('userManagement.forceLogoutConfirmMessage', { name: targetUser.full_name || targetUser.email }),
-      () => runAccountAction(
-        targetUser,
-        () => AdminApi.terminateUserSessions(targetUser.uuid),
-        (result, name) => $t('userManagement.forceLogoutSuccess', {
-          name,
-          sessions: result?.sessions_terminated ?? 0
-        }),
-        $t('userManagement.forceLogoutFailed')
-      ),
-      $t('userManagement.forceLogout')
-    );
-  }
-
-  /**
-   * Reset the target's MFA enrolment (super_admin only, enforced server-side).
-   * @param {User} targetUser
-   */
-  function resetUserMFA(targetUser) {
-    confirmDialog.request(
-      $t('userManagement.resetMfa'),
-      $t('userManagement.resetMfaConfirmMessage', { name: targetUser.full_name || targetUser.email }),
-      () => runAccountAction(
-        targetUser,
-        () => AdminApi.resetUserMFA(targetUser.uuid),
-        (_result, name) => $t('userManagement.resetMfaSuccess', { name }),
-        $t('userManagement.resetMfaFailed')
-      ),
-      $t('userManagement.resetMfa')
-    );
   }
 
   /**
@@ -998,7 +764,7 @@
                   <button
                     class="icon-button fallback-toggle-button"
                     class:active={currentUser.allow_local_fallback}
-                    on:click={() => toggleLocalFallback(currentUser)}
+                    on:click={() => accountActions.toggleLocalFallback(currentUser)}
                     title={currentUser.allow_local_fallback
                       ? $t('userManagement.disableLocalFallback', { name: currentUser.full_name || currentUser.email })
                       : $t('userManagement.enableLocalFallback', { name: currentUser.full_name || currentUser.email })}
@@ -1025,8 +791,8 @@
                   {#if can.lock}
                   <button
                     class="icon-button lock-button"
-                    disabled={pendingActionUuid === currentUser.uuid}
-                    on:click={() => lockAccount(currentUser)}
+                    disabled={$pendingActionUuid === currentUser.uuid}
+                    on:click={() => accountActions.lockAccount(currentUser)}
                     title={$t('userManagement.lockAccountFor', { name: currentUser.full_name || currentUser.email })}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1041,8 +807,8 @@
                        does not re-activate a deactivated account. -->
                   <button
                     class="icon-button unlock-button"
-                    disabled={pendingActionUuid === currentUser.uuid}
-                    on:click={() => unlockAccount(currentUser)}
+                    disabled={$pendingActionUuid === currentUser.uuid}
+                    on:click={() => accountActions.unlockAccount(currentUser)}
                     title={$t('userManagement.unlockAccountFor', { name: currentUser.full_name || currentUser.email })}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1053,8 +819,8 @@
                   {#if can.forceLogout}
                   <button
                     class="icon-button force-logout-button"
-                    disabled={pendingActionUuid === currentUser.uuid}
-                    on:click={() => forceLogout(currentUser)}
+                    disabled={$pendingActionUuid === currentUser.uuid}
+                    on:click={() => accountActions.forceLogout(currentUser)}
                     title={$t('userManagement.forceLogoutFor', { name: currentUser.full_name || currentUser.email })}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1067,8 +833,8 @@
                   {#if can.resetMfa}
                   <button
                     class="icon-button mfa-reset-button"
-                    disabled={pendingActionUuid === currentUser.uuid}
-                    on:click={() => resetUserMFA(currentUser)}
+                    disabled={$pendingActionUuid === currentUser.uuid}
+                    on:click={() => accountActions.resetUserMFA(currentUser)}
                     title={$t('userManagement.resetMfaFor', { name: currentUser.full_name || currentUser.email })}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1088,7 +854,7 @@
                        local-only by design. -->
                   <button
                     class="icon-button link-identity-button"
-                    disabled={pendingActionUuid === currentUser.uuid}
+                    disabled={$pendingActionUuid === currentUser.uuid}
                     on:click={() => openLinkIdentityModal(currentUser)}
                     title={$t('userManagement.linkIdentityFor', { name: currentUser.full_name || currentUser.email })}
                   >
@@ -1109,7 +875,7 @@
                       />
                       <button
                         class="icon-button expiration-save-button"
-                        disabled={pendingActionUuid === currentUser.uuid}
+                        disabled={$pendingActionUuid === currentUser.uuid}
                         on:click={() => saveExpiration(currentUser)}
                         title={$t('common.save')}
                       >
@@ -1119,7 +885,7 @@
                       </button>
                       <button
                         class="icon-button expiration-cancel-button"
-                        disabled={pendingActionUuid === currentUser.uuid}
+                        disabled={$pendingActionUuid === currentUser.uuid}
                         on:click={closeExpirationEditor}
                         title={$t('common.cancel')}
                       >
@@ -1161,7 +927,7 @@
                   {#if can.delete}
                   <button
                     class="icon-button delete-button"
-                    on:click={() => deleteUser(currentUser.uuid)}
+                    on:click={() => accountActions.deleteUser(currentUser.uuid)}
                     title={$t('userManagement.deleteAccount', { name: currentUser.full_name || currentUser.email })}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

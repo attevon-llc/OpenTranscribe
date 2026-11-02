@@ -46,8 +46,8 @@ from contextlib import contextmanager
 
 import pytest
 
+from app.services.chat import context_prep
 from app.services.chat import evidence as chat_evidence
-from app.services.chat import service as chat_service
 from app.services.chat.retrieval import RetrievalResult
 from app.services.chat.settings import ChatSettings
 from app.services.search.chunk_retrieval import ChunkHit
@@ -180,7 +180,7 @@ def _run_prepare_context(monkeypatch, db_session, user, *, chunks, digests):
     def _retrieve(**kwargs):
         return RetrievalResult(chunks=list(chunks), digests=list(digests), retrieved=len(chunks))
 
-    monkeypatch.setattr(chat_service, "retrieve_context", _retrieve)
+    monkeypatch.setattr(context_prep, "retrieve_context", _retrieve)
     # Force the counted tier off regardless of how the router classifies the
     # question — this test is about the quarantine gate, not aggregation.
     monkeypatch.setattr(
@@ -192,14 +192,14 @@ def _run_prepare_context(monkeypatch, db_session, user, *, chunks, digests):
     from app.services.chat.redactor import MaskedChunk
 
     monkeypatch.setattr(
-        chat_service,
+        context_prep,
         "mask_chunks",
         lambda _factory, chunks, _user_id, **_kwargs: [
             MaskedChunk(source=c, content=c.content) for c in chunks
         ],
     )
 
-    return chat_service._prepare_context(
+    return context_prep._prepare_context(
         user_id=user.id,
         organization_id=None,
         question="What did Dana say about the roadmap?",

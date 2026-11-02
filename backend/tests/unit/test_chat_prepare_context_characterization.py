@@ -28,7 +28,7 @@ from typing import Any
 
 import pytest
 
-from app.services.chat import service as chat_service
+from app.services.chat import context_prep
 from app.services.chat.language import METADATA_KEY as LANGUAGE_METADATA_KEY
 from app.services.chat.language import WARNING_CODE as LANGUAGE_WARNING_CODE
 from app.services.chat.legs import FanOutResult
@@ -176,9 +176,9 @@ def _harness(monkeypatch, *, route: Route, retrieval: RetrievalResult) -> _Calls
     )
     monkeypatch.setattr("app.services.chat.router.route", _route)
     monkeypatch.setattr("app.services.chat.limits.is_cancelled", _probe)
-    monkeypatch.setattr(chat_service, "retrieve_context", _retrieve)
-    monkeypatch.setattr(chat_service, "_drop_quarantined_hits", _drop)
-    monkeypatch.setattr(chat_service, "mask_chunks", _mask_chunks(calls))
+    monkeypatch.setattr(context_prep, "retrieve_context", _retrieve)
+    monkeypatch.setattr(context_prep, "_drop_quarantined_hits", _drop)
+    monkeypatch.setattr(context_prep, "mask_chunks", _mask_chunks(calls))
     monkeypatch.setattr("app.services.chat.redactor.mask_digests", _mask_digests(calls))
     return calls
 
@@ -244,7 +244,7 @@ def _split_timings(meta: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
 
 
 def _run(*, llm, settings, history, file_uuids, speakers, rewrite_enabled, recorder):
-    return chat_service._prepare_context(
+    return context_prep._prepare_context(
         user_id=3,
         organization_id=7,
         question="What did the team decide about the budget?",

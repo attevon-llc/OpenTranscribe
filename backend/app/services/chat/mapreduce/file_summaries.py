@@ -249,7 +249,7 @@ def scope_digest_hits(
     caller who eventually reads the map, and re-deriving that agreement here —
     rather than trusting every caller to have already enforced it — is what
     keeps this rule from silently drifting out of step the way
-    ``service._drop_quarantined_hits``'s docstring once claimed it could not:
+    ``evidence._drop_quarantined_hits``'s docstring once claimed it could not:
     the ranked digest leg (``retrieve_digests``) is dropped at phase 3.5 and,
     without this filter, the MAP leg here would serve the same file's digest
     sections regardless. Filtering by predicate rather than a second post-fetch

@@ -321,20 +321,20 @@ def _null_session():
 
 def test_prepare_context_completes_with_no_llm_configured(monkeypatch):
     """D6: a deployment with no LLM_PROVIDER must still produce masked context."""
-    from app.services.chat import service as chat_service
+    from app.services.chat import context_prep
     from app.services.chat.retrieval import RetrievalResult
 
     hit = _chunk("plain content, nothing to detect")
     monkeypatch.setattr("app.db.session_utils.session_scope", _null_session)
     monkeypatch.setattr(
-        chat_service,
+        context_prep,
         "retrieve_context",
         lambda **_kwargs: RetrievalResult(chunks=[hit], retrieved=1),
     )
     # Phase 3.5 (quarantine drop) would run a real Postgres query; it is stubbed
     # below regardless of what the session yields, matching
     # `test_chat_masking_diagnostics.py`'s `_prepare` helper.
-    monkeypatch.setattr(chat_service, "_drop_quarantined_hits", lambda _db, hits: hits)
+    monkeypatch.setattr(context_prep, "_drop_quarantined_hits", lambda _db, hits: hits)
     # The real `mask_chunks`/`redactor._gather` run for real here (not stubbed)
     # — the point of this test is that the CALL SITE in `_prepare_context`
     # survives `llm=None` when computing `unmask_for_local`, not that masking
@@ -349,7 +349,7 @@ def test_prepare_context_completes_with_no_llm_configured(monkeypatch):
         ),
     )
 
-    masked, meta, counted, overview, _synthesis, _recurrence = chat_service._prepare_context(
+    masked, meta, counted, overview, _synthesis, _recurrence = context_prep._prepare_context(
         user_id=1,
         organization_id=None,
         question="What did they decide?",
@@ -436,8 +436,8 @@ def _drive_prepare_context(
     two maskers replaced by recorders. Returns the recorded ``(site, kwargs)``
     list. Shares the D6 test's `_null_session` scaffold above.
     """
+    from app.services.chat import context_prep
     from app.services.chat import router as chat_router
-    from app.services.chat import service as chat_service
     from app.services.chat.retrieval import RetrievalResult
 
     recorded: list[tuple[str, dict]] = []
@@ -445,23 +445,23 @@ def _drive_prepare_context(
     monkeypatch.setattr(chat_router, "route", lambda *_a, **_kw: decision)
     monkeypatch.setattr("app.db.session_utils.session_scope", _null_session)
     monkeypatch.setattr(
-        chat_service,
+        context_prep,
         "retrieve_context",
         lambda **_kwargs: RetrievalResult(
             chunks=chunks or [], digests=digests or [], retrieved=len(chunks or [])
         ),
     )
-    monkeypatch.setattr(chat_service, "_drop_quarantined_hits", lambda _db, hits: hits)
+    monkeypatch.setattr(context_prep, "_drop_quarantined_hits", lambda _db, hits: hits)
     monkeypatch.setattr(
         "app.services.redaction.config.resolve_effective_config",
         lambda db, user_id: _cfg(enabled=False, redact_before_llm=False),
     )
-    monkeypatch.setattr(chat_service, "mask_chunks", _recording_masker(recorded, "chunk"))
+    monkeypatch.setattr(context_prep, "mask_chunks", _recording_masker(recorded, "chunk"))
     monkeypatch.setattr(
         "app.services.chat.redactor.mask_digests", _recording_masker(recorded, "digest")
     )
 
-    chat_service._prepare_context(
+    context_prep._prepare_context(
         user_id=1,
         organization_id=None,
         question="What did they decide?",

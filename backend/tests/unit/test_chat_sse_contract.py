@@ -6,7 +6,7 @@ Three frozen contracts, each with a documented failure mode if it silently drift
    name is not in its `known` allowlist (forward-compatibility with an older
    client) — so a backend-only change that emits a new frame name ships a
    frame nobody ever sees, with no error anywhere. The set of names
-   `service.py` actually emits via `sse(...)` must be a SUBSET of that
+   `service.py` and `frames.py` emit via `sse(...)` must be a SUBSET of that
    allowlist.
 2. **Warning codes.** `schemas.chat.ChatWarningCode` (backend) and
    `lib/types/chat.ts`'s `ChatWarningCode` (frontend) must name the exact same
@@ -70,6 +70,9 @@ _BACKEND_ROOT = Path(__file__).resolve().parents[2] / "app"
 _FRONTEND_SRC = Path(__file__).resolve().parents[3] / "frontend" / "src"
 
 _SERVICE_PY = _BACKEND_ROOT / "services" / "chat" / "service.py"
+_FRAMES_PY = _BACKEND_ROOT / "services" / "chat" / "frames.py"
+#: The chat turn's frame names come from the generator and the frame builders.
+_CHAT_FRAME_EMITTERS = (_SERVICE_PY, _FRAMES_PY)
 _MESSAGES_PY = _BACKEND_ROOT / "api" / "endpoints" / "chat" / "messages.py"
 _CHAT_STREAM_TS = _FRONTEND_SRC / "lib" / "api" / "chatStream.ts"
 _CHAT_TYPES_TS = _FRONTEND_SRC / "lib" / "types" / "chat.ts"
@@ -104,9 +107,9 @@ def backend_sse_event_names(source: str) -> set[str]:
     `backend_sse_error_codes`'s `_is_sse_call_target` above: an attribute-access
     call like `foo.sse(...)` must NOT be mistaken for the module helper here — see
     `test_the_backend_scanner_ignores_a_differently_named_call`. That test's own
-    scope is still just `service.py` (frame names are consumed by chatStream.ts's
-    parser specifically, unlike the error-code slug/subset invariant, which the
-    module docstring's ⚠️ note explains now applies tree-wide).
+    scope is still just `service.py` and `frames.py` (frame names are consumed
+    by chatStream.ts's parser specifically, unlike the error-code slug/subset
+    invariant, which the module docstring's ⚠️ note explains now applies tree-wide).
     """
     tree = ast.parse(source)
     names: set[str] = set()
@@ -227,18 +230,20 @@ def _relative_offenders(paths: list[Path]) -> str:
 
 
 def test_every_backend_sse_frame_name_is_in_the_frontend_allowlist():
-    backend_events = backend_sse_event_names(_SERVICE_PY.read_text(encoding="utf-8"))
+    backend_events: set[str] = set()
+    for emitter in _CHAT_FRAME_EMITTERS:
+        names = backend_sse_event_names(emitter.read_text(encoding="utf-8"))
+        # If this is empty the AST scan broke, not "this file emits no frames":
+        # the generator emits start/status/delta and the builders sources/done.
+        assert names, (
+            f"scanner found zero sse(...) calls in {emitter.name} — check it still matches"
+        )
+        backend_events |= names
     frontend_known = frontend_known_event_names(_CHAT_STREAM_TS.read_text(encoding="utf-8"))
-
-    # If this is empty the AST scan broke, not "service.py emits no frames" —
-    # a real chat turn emits at least start/status/delta/done.
-    assert backend_events, (
-        "scanner found zero sse(...) calls in service.py — check it still matches"
-    )
 
     missing = backend_events - frontend_known
     assert not missing, (
-        f"service.py emits frame(s) {sorted(missing)} that chatStream.ts's `known` "
+        f"the chat turn emits frame(s) {sorted(missing)} that chatStream.ts's `known` "
         "list does not include — those frames are silently dropped on arrival. "
         "Add them to the `known` array in chatStream.ts."
     )
@@ -320,6 +325,7 @@ def test_the_backend_python_file_walk_reaches_beyond_the_original_two_files():
     before this fix (`files/subtitles.py`, `files/media_delivery.py`)."""
     paths = set(_iter_backend_python_files())
     assert _SERVICE_PY in paths
+    assert _FRAMES_PY in paths
     assert _MESSAGES_PY in paths
     subtitles_py = _BACKEND_ROOT / "api" / "endpoints" / "files" / "subtitles.py"
     media_delivery_py = _BACKEND_ROOT / "api" / "endpoints" / "files" / "media_delivery.py"

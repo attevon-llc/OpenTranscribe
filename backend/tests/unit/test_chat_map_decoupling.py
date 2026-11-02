@@ -21,7 +21,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from app.services.chat import service as chat_service
+from app.services.chat import context_prep
 from app.services.chat.mapreduce import DigestScopeHits
 from app.services.chat.redactor import MaskedChunk
 from app.services.chat.retrieval import RetrievalResult
@@ -64,16 +64,16 @@ def _prepare(
     its own (the `mock-heavy` finding `scripts/audit-tests.py` flags a test
     for accumulating directly)."""
     monkeypatch.setattr("app.db.session_utils.session_scope", _null_session)
-    monkeypatch.setattr(chat_service, "_drop_quarantined_hits", lambda _db, hits: hits)
+    monkeypatch.setattr(context_prep, "_drop_quarantined_hits", lambda _db, hits: hits)
     monkeypatch.setattr(
         "app.services.chat.router.route", lambda *_a, **_k: route or _summarize_route()
     )
     monkeypatch.setattr(
-        chat_service,
+        context_prep,
         "retrieve_context",
         lambda **_: RetrievalResult(chunks=[], digests=list(digests), retrieved=0),
     )
-    monkeypatch.setattr(chat_service, "mask_chunks", lambda *_a, **_k: [])
+    monkeypatch.setattr(context_prep, "mask_chunks", lambda *_a, **_k: [])
     monkeypatch.setattr(
         "app.services.chat.redactor.mask_digests",
         lambda _factory, hits, _uid, **_k: [MaskedChunk(source=h, content=h.content) for h in hits],
@@ -87,7 +87,7 @@ def _prepare(
         scope_digest_hits or _default_scope_digest_hits,
     )
 
-    return chat_service._prepare_context(
+    return context_prep._prepare_context(
         user_id=1,
         organization_id=None,
         question="summarize what we covered",

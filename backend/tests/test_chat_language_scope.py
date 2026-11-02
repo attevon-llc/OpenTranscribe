@@ -23,6 +23,7 @@ from contextlib import contextmanager
 import pytest
 
 from app.models.media import MediaFile
+from app.services.chat import context_prep
 from app.services.chat import language as lang
 from app.services.chat import service as chat_service
 from app.services.chat.redactor import MaskedChunk
@@ -276,12 +277,12 @@ def _run_prepare_context(monkeypatch, db, *, file_uuids, chunk_file_uuids):
         for i, uuid in enumerate(chunk_file_uuids, start=1)
     ]
     monkeypatch.setattr(
-        chat_service,
+        context_prep,
         "retrieve_context",
         lambda **_kwargs: RetrievalResult(chunks=chunks, retrieved=len(chunks)),
     )
     monkeypatch.setattr(
-        chat_service,
+        context_prep,
         "mask_chunks",
         # First arg is the session FACTORY, not a session (#83) — the masker owns
         # its own short transaction so the detector never runs inside one.
@@ -315,7 +316,7 @@ def _run_prepare_context(monkeypatch, db, *, file_uuids, chunk_file_uuids):
         _overview,
         _synthesis,
         _recurrence,
-    ) = chat_service._prepare_context(
+    ) = context_prep._prepare_context(
         user_id=1,
         organization_id=None,
         question="What did they decide?",

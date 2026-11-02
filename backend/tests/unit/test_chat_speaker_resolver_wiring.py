@@ -23,6 +23,7 @@ from contextlib import contextmanager
 
 import pytest
 
+from app.services.chat import context_prep
 from app.services.chat import service as chat_service
 from app.services.chat.redactor import MaskedChunk
 from app.services.chat.retrieval import RetrievalResult
@@ -50,7 +51,7 @@ def test_flag_off_never_calls_the_resolver_and_returns_no_names(monkeypatch):
     monkeypatch.setattr("app.services.chat.speaker_resolver.resolve_speaker_mentions", _explode)
     meta: dict = {}
 
-    names = chat_service._apply_speaker_resolution(
+    names = context_prep._apply_speaker_resolution(
         settings=ChatSettings(speaker_resolver_enabled=False),
         question="What did Dana say?",
         user_id=1,
@@ -70,7 +71,7 @@ def test_flag_on_with_a_resolved_focus_returns_the_matched_names(monkeypatch):
     )
     meta: dict = {}
 
-    names = chat_service._apply_speaker_resolution(
+    names = context_prep._apply_speaker_resolution(
         settings=ChatSettings(speaker_resolver_enabled=True),
         question="What did Dana say about pricing?",
         user_id=1,
@@ -90,7 +91,7 @@ def test_flag_on_but_nothing_resolved_still_never_sets_the_meta_key(monkeypatch)
     )
     meta: dict = {}
 
-    names = chat_service._apply_speaker_resolution(
+    names = context_prep._apply_speaker_resolution(
         settings=ChatSettings(speaker_resolver_enabled=True),
         question="What was decided?",
         user_id=1,
@@ -113,7 +114,7 @@ def test_a_match_without_a_speaker_verb_frame_is_not_a_focus(monkeypatch):
     )
     meta: dict = {}
 
-    names = chat_service._apply_speaker_resolution(
+    names = context_prep._apply_speaker_resolution(
         settings=ChatSettings(speaker_resolver_enabled=True),
         question="the meeting with Dana",
         user_id=1,
@@ -133,7 +134,7 @@ def test_an_ambiguous_match_is_reported_but_resolves_no_focus(monkeypatch):
     )
     meta: dict = {}
 
-    names = chat_service._apply_speaker_resolution(
+    names = context_prep._apply_speaker_resolution(
         settings=ChatSettings(speaker_resolver_enabled=True),
         question="what did Dana say",
         user_id=1,
@@ -162,7 +163,7 @@ def _prepare(
     lane wires up. Retrieval/masking/mapping are stubbed no-ops; only the
     resolver wiring is under test."""
     monkeypatch.setattr("app.db.session_utils.session_scope", _null_session)
-    monkeypatch.setattr(chat_service, "_drop_quarantined_hits", lambda _db, hits: hits)
+    monkeypatch.setattr(context_prep, "_drop_quarantined_hits", lambda _db, hits: hits)
 
     captured: dict = {}
 
@@ -185,10 +186,10 @@ def _prepare(
         captured["retrieve_kwargs"] = kwargs
         return RetrievalResult(chunks=[], digests=[], retrieved=0)
 
-    monkeypatch.setattr(chat_service, "retrieve_context", _fake_retrieve_context)
-    monkeypatch.setattr(chat_service, "mask_chunks", lambda *_a, **_k: [])
+    monkeypatch.setattr(context_prep, "retrieve_context", _fake_retrieve_context)
+    monkeypatch.setattr(context_prep, "mask_chunks", lambda *_a, **_k: [])
 
-    masked, meta, _counted, _overview, _synthesis, _recurrence = chat_service._prepare_context(
+    masked, meta, _counted, _overview, _synthesis, _recurrence = context_prep._prepare_context(
         user_id=1,
         organization_id=None,
         question=question,

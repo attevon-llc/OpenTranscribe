@@ -124,7 +124,7 @@ def _accessible_scoped_files(
     counterpart of `_quarantined_among` below, which does the same job for the
     shapes that read OpenSearch instead. Chat has no admin bypass on quarantine
     anywhere else (`context_resolver._visible_files_query`,
-    `service._drop_quarantined_hits`), so this predicate would otherwise be the
+    `evidence._drop_quarantined_hits`), so this predicate would otherwise be the
     one path in the package where a taken-down file's segments still counted —
     exactly the gap `_occurrence_count` shipped with.
 
@@ -250,7 +250,7 @@ def _quarantined_among(
 ) -> frozenset[str]:
     """Which of ``file_uuids`` belong to a quarantined file — the aggregation
     tier's post-filter, mirroring ``api/endpoints/search_helpers.py::
-    _drop_quarantined_search_hits`` and ``service._drop_quarantined_hits``.
+    _drop_quarantined_search_hits`` and ``evidence._drop_quarantined_hits``.
 
     Quarantine is not an OpenSearch filter field (see ``context_resolver``'s
     module docstring), so the three OpenSearch-backed shapes here
@@ -263,7 +263,7 @@ def _quarantined_among(
     session. That is a narrower "no session" contract than the rest of this
     module's Postgres shapes (which decline the WHOLE answer): these three
     shapes have always been answerable with no Postgres access at all (they are
-    OpenSearch-only), and every real caller (``service.py``'s
+    OpenSearch-only), and every real caller (``context_prep.py``'s
     ``_prepare_context``) always passes a working factory. Chat has no other
     path that reaches these shapes with ``session_factory=None``.
     """

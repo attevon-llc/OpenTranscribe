@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 
-from app.services.chat import service as chat_service
+from app.services.chat import context_prep
 from app.services.chat.redactor import MaskedChunk
 from app.services.chat.retrieval import RetrievalResult
 from app.services.chat.settings import ChatSettings
@@ -42,23 +42,23 @@ def _null_session():
 def _prepare(monkeypatch, *, masked: list[MaskedChunk], retrieved: int) -> dict:
     monkeypatch.setattr("app.db.session_utils.session_scope", _null_session)
     monkeypatch.setattr(
-        chat_service,
+        context_prep,
         "retrieve_context",
         lambda **_: RetrievalResult(chunks=[chunk.source for chunk in masked], retrieved=retrieved),
     )
-    monkeypatch.setattr(chat_service, "mask_chunks", lambda *_args, **_kwargs: masked)
+    monkeypatch.setattr(context_prep, "mask_chunks", lambda *_args, **_kwargs: masked)
     # Phase 3.5 (quarantine drop) runs a real Postgres query and this module's
     # session factory yields `None` on purpose, to stay Postgres-free like
     # `mask_chunks` above; see test_chat_permissions_quarantine.py for the
     # real-database coverage of `_drop_quarantined_hits` itself.
-    monkeypatch.setattr(chat_service, "_drop_quarantined_hits", lambda _db, hits: hits)
+    monkeypatch.setattr(context_prep, "_drop_quarantined_hits", lambda _db, hits: hits)
     # `_prepare_context` returns (masked_chunks, meta, counted, overview,
     # synthesis_block, recurrence_block) — Stage 4 added the counted and overview
     # tiers, #403 added the two fan-out blocks. Only `meta` is under test here, so
     # the rest are discarded by name rather than by arity: a bare `_, meta = ...`
     # broke silently when the tuple grew, whereas naming every member makes the
     # next growth a loud `ValueError` in exactly the place that has to be updated.
-    _, meta, _counted, _overview, _synthesis, _recurrence = chat_service._prepare_context(
+    _, meta, _counted, _overview, _synthesis, _recurrence = context_prep._prepare_context(
         user_id=1,
         organization_id=None,
         question="what did we decide?",

@@ -339,6 +339,12 @@ repos:
         language: system
         pass_filenames: false
         files: ^((backend|scripts)/.*\.py|frontend/src/.*\.(ts|js|svelte)|scripts/guards/.*)$
+      - id: guard-style-literals
+        name: stylesheet colours, spacing, radii, shadows use design tokens (baselined)
+        entry: python3 scripts/guards/check_style_literals.py
+        language: system
+        pass_filenames: false
+        files: ^(frontend/src/.*\.(svelte|css)|scripts/guards/.*)$
       - id: guard-migration-safety
         name: alembic migrations avoid table-locking operations (baselined)
         entry: python3 scripts/guards/check_migration_safety.py

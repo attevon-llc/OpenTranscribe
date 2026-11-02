@@ -221,10 +221,6 @@ def find_unlabeled_speaker_matches(
     logger.info(f"Finding unlabeled matches for speaker {exclude_speaker_id}, user {user_id}")
 
     try:
-        from app.core.embedding_models import get_speaker_index
-        from app.services.opensearch_service import _speaker_org_filter_clauses
-        from app.services.opensearch_service import opensearch_client
-
         # Tenant gate follows the reference speaker's file org.
         source_speaker = self.db.query(Speaker).filter(Speaker.id == exclude_speaker_id).first()
         organization_id = self._media_file_org_id(
@@ -233,42 +229,11 @@ def find_unlabeled_speaker_matches(
         if not self._voiceprints_allowed(user_id, organization_id):
             return matches
 
-        query = {
-            "size": 10,  # Get more potential matches for unlabeled speakers
-            "query": {
-                "knn": {
-                    "embedding": {
-                        "vector": embedding.tolist(),
-                        "k": 10,
-                        "filter": {
-                            "bool": {
-                                "filter": [
-                                    {"term": {"user_id": user_id}},
-                                    *_speaker_org_filter_clauses(
-                                        organization_id, user_ids=[user_id]
-                                    ),
-                                    {
-                                        "bool": {
-                                            "must_not": [
-                                                {"term": {"speaker_id": exclude_speaker_id}},
-                                                {
-                                                    "exists": {"field": "document_type"}
-                                                },  # Exclude profile documents
-                                            ]
-                                        }
-                                    },
-                                ]
-                            }
-                        },
-                    }
-                }
-            },
-        }
-
-        if opensearch_client is None:
-            logger.error("OpenSearch client is not available")
+        response = self._perform_opensearch_query(
+            embedding, user_id, exclude_speaker_id, organization_id=organization_id, size=10
+        )
+        if response is None:
             return matches
-        response = opensearch_client.search(index=get_speaker_index(), body=query)
 
         logger.info(
             f"OpenSearch response for speaker {exclude_speaker_id}: {len(response['hits']['hits'])} hits"

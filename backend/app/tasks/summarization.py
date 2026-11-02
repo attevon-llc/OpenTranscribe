@@ -45,6 +45,7 @@ from app.models.media import TranscriptSegment
 from app.services.file_provenance import llm_facts
 from app.services.file_provenance import record_stage
 from app.services.ingest_artifacts.service import source_fingerprint
+from app.services.llm_service import LLMConfigurationError
 from app.services.llm_service import LLMService
 from app.services.llm_usage import llm_usage_run
 from app.services.post_processing_status import announce_started
@@ -117,11 +118,16 @@ def _llm_is_configured(user_id: int | None) -> bool:
     creates its own moments later, which costs one settings read and keeps
     ownership of the long-lived client in one place.
     """
-    service = (
-        LLMService.create_from_user_settings(user_id)
-        if user_id
-        else LLMService.create_from_system_settings()
-    )
+    try:
+        service = (
+            LLMService.create_from_user_settings(user_id)
+            if user_id
+            else LLMService.create_from_system_settings()
+        )
+    except LLMConfigurationError as unusable:
+        # An active-but-broken config is "unavailable", never the system provider.
+        logger.warning("Skipping AI summary for user %s: %s", user_id, unusable)
+        return False
     if service is None:
         return False
     service.close()
@@ -542,7 +548,11 @@ def _generate_llm_summary(
     logger.info(f"LLM output language: {output_language}")
 
     if user_id:
-        llm_service = LLMService.create_from_user_settings(user_id)
+        try:
+            llm_service = LLMService.create_from_user_settings(user_id)
+        except LLMConfigurationError as unusable:
+            logger.warning("Skipping AI summary for user %s: %s", user_id, unusable)
+            return None
         logger.info(f"Attempted to load user LLM settings for user {user_id}")
     else:
         llm_service = LLMService.create_from_system_settings()

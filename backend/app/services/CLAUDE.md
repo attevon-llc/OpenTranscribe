@@ -732,7 +732,11 @@ every difference between the two backends (issue #284 A1.11/A1.12):
 deprecated alias for `anthropic`).
 
 - **Resolution order**: `create_from_user_settings(user_id)` → falls back to
-  `create_from_system_settings()` (env `LLM_PROVIDER` + provider keys/endpoints). Empty
+  `create_from_system_settings()` (env `LLM_PROVIDER` + provider keys/endpoints) **only when the
+  user has NO active config**; an active-but-unusable one (bad pointer, dangling id, unknown
+  provider, undecryptable key, Bedrock without region, vllm/custom without `base_url`) raises
+  `LLMConfigurationError` and must never reach the system provider (masking was decided for the
+  user's provider). `create_from_settings` returns `None`, `describe_for_user` returns `None`. Empty
   `LLM_PROVIDER` and no user config = transcription-only; `create_from_system_settings`
   returns `None` and callers must handle it. `custom` is **user-config only** — it always
   returns `None` from system settings.

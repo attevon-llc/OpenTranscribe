@@ -33,6 +33,7 @@ from app.models.media import SpeakerProfile
 from app.models.media import TranscriptSegment
 from app.services.file_provenance import llm_facts
 from app.services.file_provenance import record_stage
+from app.services.llm_service import LLMConfigurationError
 from app.services.llm_service import LLMService
 from app.services.llm_usage import llm_usage_run
 from app.services.metadata_speaker_extractor import MetadataSpeakerExtractor
@@ -264,7 +265,12 @@ def _create_llm_service(user_id: int | None) -> LLMService | None:
     failure, so the caller skips quietly instead of logging an error per file.
     """
     if user_id:
-        return LLMService.create_from_user_settings(user_id)
+        try:
+            return LLMService.create_from_user_settings(user_id)
+        except LLMConfigurationError as unusable:
+            # Active-but-broken config: skip, never substitute the system provider.
+            logger.warning("Skipping speaker identification for user %s: %s", user_id, unusable)
+            return None
     return LLMService.create_from_system_settings()
 
 

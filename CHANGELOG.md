@@ -69,6 +69,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Per-file voiceprint consent visibility.** The file detail response now returns
+  `voiceprint_consent` and `voiceprint_consent_at` only to the file owner and organization
+  administrators; other viewers get `unspecified` and `null`.
 
 
 - **The model downloader's speaker-detection step no longer fails on every CPU run.**

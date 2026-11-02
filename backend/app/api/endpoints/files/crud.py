@@ -1059,6 +1059,12 @@ def get_media_file_detail(
         response.processing_steps = build_processing_steps(db_file)
         response.hold = file_hold_summary(db, int(file_id), reveal_uuids=reveal_hold_uuids)
 
+        # The uploader's recorded consent claim is for the owner and the organization
+        # administrators; any other viewer gets the defaults.
+        if int(db_file.user_id) != int(current_user.id) and not reveal_hold_uuids:
+            response.voiceprint_consent = "unspecified"
+            response.voiceprint_consent_at = None
+
         return response
 
     except HTTPException:

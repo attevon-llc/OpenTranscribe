@@ -27,8 +27,6 @@ import yaml
 WORKFLOWS_DIR = Path(__file__).resolve().parents[3] / ".github" / "workflows"
 
 FENCED: dict[str, str] = {
-    "release-validate.yml": "edited only by the release workstream; its pins and checkout "
-    "hardening land after the release",
     "docker-publish.yml": "retired stub owned by the release workstream; its top-level "
     "permissions block lands after the release",
 }

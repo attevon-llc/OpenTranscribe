@@ -75,6 +75,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **WebSocket sign-in for accounts that are not admitted.** The WebSocket handshake now applies
+  the account approval and expiry checks, so a rejected, expired or (while approval is required)
+  pending account no longer opens a socket.
+
 - **AI features with a broken personal LLM configuration.** When a user had an active LLM
   configuration that could not be used (missing, invalid or incomplete), AI features could fall
   back to the server-wide provider. They now report the AI feature as unavailable for that user

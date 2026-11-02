@@ -267,13 +267,15 @@ def _chunked(ids: list, size: int = _TERMS_CHUNK) -> list[list]:
 
 
 def _speaker_indices(client: Any) -> list[str]:
-    """Existing speaker indices to backfill (active alias + versioned)."""
-    from app.core.constants import get_speaker_index
-    from app.core.constants import get_speaker_index_v3
-    from app.core.constants import get_speaker_index_v4
+    """Existing speaker indices to backfill: alias, v3, v4 and the legacy v3 backup.
+
+    The backup is included because its documents are served again: it is copied back into
+    v3 whenever v3 is found empty, so a document left unstamped there returns unstamped.
+    """
+    from app.services.opensearch_service.speaker_maintenance import speaker_embedding_indices
 
     indices = []
-    for index_name in {get_speaker_index(), get_speaker_index_v3(), get_speaker_index_v4()}:
+    for index_name in speaker_embedding_indices():
         try:
             if client.indices.exists(index=index_name):
                 indices.append(index_name)
@@ -316,7 +318,7 @@ def _backfill_speaker_docs(client: Any, scope: SpeakerScopeMaps) -> int:
 
     Idempotent: stamp queries skip docs already carrying the correct org, and
     repair queries only match docs that still carry a stray org field. Targets
-    the active alias plus the versioned indices so both v3/v4 are covered.
+    every speaker index (``_speaker_indices``), the legacy v3 backup included.
     """
     updated = 0
     for index_name in _speaker_indices(client):

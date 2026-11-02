@@ -81,12 +81,12 @@ def _markdown_meta(
 
 def _resolve_export_redaction(
     db: Session,
-    media_file,
-    current_user,
+    media_file: MediaFile,
+    current_user: User,
     redact: bool,
-    organization_id=None,
+    organization_id: int | None = None,
     bypass: PlatformBypass = PlatformBypass.none(),
-):
+) -> tuple[EffectiveRedactionConfig, set[str]]:
     """Resolve (cfg, reveal_categories) for a transcript export.
 
     Identical fail-closed shape to ``subtitles._resolve_subtitle_redaction``: honors the

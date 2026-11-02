@@ -6,6 +6,7 @@ from audio and video files for use in the frontend player interface.
 """
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -215,7 +216,7 @@ def get_audio_waveform(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """
     Generate waveform visualization data for an audio or video file.
     Uses caching to improve performance for repeated requests.
@@ -256,7 +257,7 @@ def get_audio_waveform_peaks(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """
     Generate waveform peaks data optimized for a specific display size.
     This endpoint provides more detailed control over the waveform visualization.
@@ -315,7 +316,7 @@ def generate_waveform_for_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """
     Generate waveform data for a specific file.
     Can be used to create missing waveform data or force regeneration.
@@ -370,7 +371,7 @@ def generate_waveforms_for_files(
     force_regenerate: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
-):
+) -> dict[str, Any]:
     """
     Generate waveform data for all eligible files that don't have it.
     Only admin users can trigger this operation.
@@ -434,7 +435,7 @@ def generate_waveforms_for_files(
 @router.get("/waveforms/status")
 def get_waveform_status(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
-):
+) -> dict[str, Any]:
     """
     Get status of waveform data across all files.
     Shows how many files have/don't have waveform data.

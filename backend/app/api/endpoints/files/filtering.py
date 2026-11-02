@@ -3,6 +3,7 @@ from datetime import datetime
 from uuid import UUID
 
 import sqlalchemy as sa
+from sqlalchemy import ColumnElement
 from sqlalchemy import Float
 from sqlalchemy import Integer
 from sqlalchemy import String
@@ -103,7 +104,9 @@ LIST_SPEAKER_COLUMNS = (
 )
 
 
-def hidden_speaker_name_clause(db: Session, query: Query, speaker: list[str] | None):
+def hidden_speaker_name_clause(
+    db: Session, query: Query, speaker: list[str] | None
+) -> ColumnElement[bool] | None:
     """The SQL condition "this speaker's display name is withheld", or ``None`` with no filter.
 
     A speaker filter matches the name the response would show: a display name a voiceprint

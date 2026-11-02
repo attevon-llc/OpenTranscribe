@@ -26,7 +26,9 @@ from app.services.llm_service import LLMConfig
 from app.services.llm_service import LLMProvider
 from app.services.llm_service import LLMService
 
-RUN_ID = "celery-task-0001"
+_REAL_DEFAULT_RUN_ID = llm_usage._default_run_id
+TASK_ID = "celery-task-0001"
+RUN_ID = f"{TASK_ID}:0"  # task id + attempt (request.retries)
 
 
 def _body(content: str = "ok", prompt: int = 120, completion: int = 30, usage: bool = True):
@@ -269,7 +271,7 @@ def _run_topics(mf: MediaFile, svc: LLMService):
         patch("app.services.post_processing_status.resolve_file", return_value=None),
         patch("app.services.post_processing_status.report"),
     ):
-        te.extract_topics_task.apply(args=(str(mf.uuid),), task_id=RUN_ID)
+        te.extract_topics_task.apply(args=(str(mf.uuid),), task_id=TASK_ID)
 
 
 def test_topics_run_records_one_row(db_session, org_file):
@@ -377,3 +379,27 @@ def test_unknown_stage_is_rejected():
     with pytest.raises(ValueError, match="Unknown LLM usage stage"):
         with llm_usage.llm_usage_run("nope", file_id=None):
             pass
+
+
+def test_default_run_identity_is_task_id_plus_attempt():
+    from types import SimpleNamespace
+
+    for retries, expected in ((0, f"{TASK_ID}:0"), (2, f"{TASK_ID}:2")):
+        task = SimpleNamespace(request=SimpleNamespace(id=TASK_ID, retries=retries))
+        with patch("celery.current_task", task):
+            assert _REAL_DEFAULT_RUN_ID() == expected
+
+
+def test_retry_that_spends_tokens_is_its_own_row_but_redelivery_is_not(db_session, org_file):
+    def attempt(n: int) -> None:
+        with llm_usage.llm_usage_run("summary", file_id=org_file.id, run_id=f"{TASK_ID}:{n}"):
+            _service().chat_completion([{"role": "user", "content": "a"}])
+
+    attempt(0)
+    attempt(1)  # Celery retry: real spend, second row
+    attempt(1)  # redelivery of attempt 1: still the same row
+    rows = _rows(db_session, org_file, "summary.tokens")
+    assert sorted(str(r.idempotency_key) for r in rows) == [
+        f"llm:summary:{org_file.id}:{TASK_ID}:0",
+        f"llm:summary:{org_file.id}:{TASK_ID}:1",
+    ]

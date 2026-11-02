@@ -347,7 +347,7 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
         # Phase 2 — the slow phase. NO DB session is held here: the service opens
         # a short read scope for the transcript, calls the provider with nothing
         # held, then reopens a short write scope for the TopicSuggestion row.
-        with llm_usage_run("topics", file_id=file_id, run_id=task_id):
+        with llm_usage_run("topics", file_id=file_id):
             result = extraction_service.extract_topics(
                 media_file_id=file_id,
                 force_regenerate=force_regenerate,

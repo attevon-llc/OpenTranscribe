@@ -282,11 +282,14 @@ prompt and completion split, cache tokens, provider, model, number of provider c
 whether the run succeeded. The owner and organization come from the file the run worked
 on. A long recording that is summarized in several sections is still one event.
 
-Events are keyed on the task run (`llm:<stage>:<file id>:<task id>`), so a Celery
-retry or redelivery of the same task does not add a second row. A run that fails after
+Events are written **one row per attempt**, keyed `llm:<stage>:<file id>:<task id>:<attempt>`.
+A Celery retry that spends tokens gets its own row (those tokens are real cost), while a
+broker redelivery of the same attempt does not add a second one. A run that fails after
 spending tokens still records what was spent. When a provider reports no usage, the
 prompt and reply are estimated at about four characters per token and the event is
-flagged `tokens_estimated`. A failure to record usage is logged and never fails the task.
+flagged `tokens_estimated`. Two detections of the same file inside one task share a
+run identity and so record once. Only the standard completion call is metered; a new caller
+of `chat_completion_raw` or `chat_completion_stream` outside chat needs its own metering. A failure to record usage is logged and never fails the task.
 
 ### Anthropic
 

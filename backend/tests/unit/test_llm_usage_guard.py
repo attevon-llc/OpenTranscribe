@@ -45,6 +45,8 @@ COVERED_ELSEWHERE = {
 EXEMPT = {
     "services/chat/": "chat records chat.tokens per assistant message (services/chat/usage.py)",
     "services/llm_reasoning.py": "admin capability probe, not tied to a file or a task run",
+    # chat_completion_raw / chat_completion_stream are NOT metered by LLMService: a new
+    # non-chat caller of either needs its own metering path.
 }
 
 

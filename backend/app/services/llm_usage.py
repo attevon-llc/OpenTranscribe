@@ -19,11 +19,10 @@ the work; it never counts tokens itself. A static guard
 (``tests/unit/test_llm_usage_guard.py``) fails when a module outside chat calls the
 LLM service without opening a run.
 
-**Idempotency.** ``llm:<stage>:<file_id>:<run_id>`` where ``run_id`` is the Celery
-task id. A retry (``self.retry``) keeps the task id and a broker redelivery
-re-runs the same id, so neither can add a second row. The consequence, chosen
-deliberately: tokens spent by a *later* attempt of the same task id are not added
-to the row an earlier attempt already wrote.
+**Idempotency.** ``llm:<stage>:<file_id>:<task id>:<attempt>`` where ``attempt`` is
+Celery's ``request.retries``. One row per *attempt*: tokens a retry really spends are
+real cost and get their own row, while a broker redelivery of the same attempt keeps
+the same key and cannot add a second row.
 
 **Tenancy.** Organization and user come from the ``media_file`` row, never from
 request state.
@@ -230,9 +229,10 @@ def _default_run_id() -> str:
     with contextlib.suppress(Exception):
         from celery import current_task
 
-        task_id = getattr(getattr(current_task, "request", None), "id", None)
+        request = getattr(current_task, "request", None)
+        task_id = getattr(request, "id", None)
         if task_id:
-            return str(task_id)
+            return f"{task_id}:{int(getattr(request, 'retries', 0) or 0)}"
     return uuid.uuid4().hex
 
 

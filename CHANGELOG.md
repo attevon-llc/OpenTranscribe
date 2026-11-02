@@ -26,8 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Token usage is now recorded for summaries, topic suggestions, speaker identification
   and the LLM redaction detector, not only chat.** One usage event per task run
   (`summary.tokens`, `topics.tokens`, `speaker_id.tokens`, `redaction.tokens`) with the
-  prompt/completion split, model, provider, owner and organization. Retries and
-  redeliveries do not double count, and a failed run still records the tokens it spent.
+  prompt/completion split, model, provider, owner and organization. One row per attempt: a retry that spends
+  tokens is recorded, a redelivery of the same attempt is not double counted, and a failed run still records the tokens it spent.
 
 ### Changed
 

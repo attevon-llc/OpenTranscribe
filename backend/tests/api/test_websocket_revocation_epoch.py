@@ -12,105 +12,48 @@ and a private in-memory revocation store, on both the first-message and the cook
 
 from __future__ import annotations
 
-import contextlib
 import json
 import time
-import uuid as uuid_pkg
 from collections.abc import Iterator
 
 import pytest
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from app.api import websockets as ws_module
-from app.auth.session import InMemoryStore
-from app.auth.token_service import USER_REVOCATION_EPOCH_PREFIX
 from app.auth.token_service import TokenService
-from app.core.auth_types import TOKEN_TYPE_ACCESS
-from app.core.config import settings
-from app.core.security import get_password_hash
 from app.models.user import User
-from tests.jwt_compat import jwt
-
-INVALID_TOKEN_CLOSE = 4003
+from tests.fixtures.ws_handshake import INVALID_TOKEN_CLOSE
+from tests.fixtures.ws_handshake import access_token
+from tests.fixtures.ws_handshake import authenticate_frame
+from tests.fixtures.ws_handshake import cookie_header
+from tests.fixtures.ws_handshake import isolated_revocation
+from tests.fixtures.ws_handshake import make_user
+from tests.fixtures.ws_handshake import stamp_epoch
+from tests.fixtures.ws_handshake import ws_test_client
 
 
 @pytest.fixture
 def revocation(monkeypatch) -> TokenService:
-    """A ``TokenService`` on a private in-memory store, wired into the WebSocket module."""
-    service = TokenService()
-    service._store = InMemoryStore()
-    monkeypatch.setattr(ws_module, "token_service", service)
-    monkeypatch.setattr(settings, "TOKEN_REVOCATION_ENABLED", True)
-    return service
+    return isolated_revocation(monkeypatch)
 
 
 @pytest.fixture
 def client(db_session, monkeypatch) -> Iterator[TestClient]:
-    """A TestClient for the real endpoint, using the test's own DB session."""
-
-    @contextlib.contextmanager
-    def _test_session_scope():
-        yield db_session
-
-    monkeypatch.setattr(ws_module, "session_scope", _test_session_scope)
-    monkeypatch.setattr(ws_module, "setup_redis", lambda: None)
-    app = FastAPI()
-    app.add_api_websocket_route("/ws", ws_module.websocket_endpoint)
-    with TestClient(app) as test_client:
+    with ws_test_client(db_session, monkeypatch) as test_client:
         yield test_client
 
 
 @pytest.fixture
 def account(db_session) -> User:
-    unique = uuid_pkg.uuid4().hex[:8]
-    user = User(
-        email=f"ws-epoch-{unique}@example.com",
-        full_name="Socket Person",
-        hashed_password=get_password_hash("irrelevant-Passphrase99!"),
-        role="user",
-        auth_type="local",
-        is_active=True,
-        is_superuser=False,
-    )
-    db_session.add(user)
-    db_session.commit()
-    db_session.refresh(user)
-    return user
-
-
-def _token(user: User, *, issued_at: int) -> str:
-    """An otherwise-valid access token with a chosen ``iat``."""
-    return jwt.encode(
-        {
-            "sub": str(user.uuid),
-            "type": TOKEN_TYPE_ACCESS,
-            "jti": uuid_pkg.uuid4().hex,
-            "iat": issued_at,
-            "exp": int(time.time()) + 600,
-        },
-        settings.JWT_SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM,
-    )
-
-
-def _stamp_epoch(service: TokenService, user: User, *, seconds_ago: int) -> int:
-    epoch = int(time.time()) - seconds_ago
-    service.store.set(f"{USER_REVOCATION_EPOCH_PREFIX}{user.uuid}", str(epoch), ex=600)
-    return epoch
-
-
-def _authenticate_frame(token: str) -> str:
-    return json.dumps({"type": "authenticate", "token": token})
+    return make_user(db_session)
 
 
 def test_first_message_token_issued_before_epoch_is_refused(revocation, client, account):
-    epoch = _stamp_epoch(revocation, account, seconds_ago=0)
-    stale = _token(account, issued_at=epoch - 60)
+    epoch = stamp_epoch(revocation, account, seconds_ago=0)
+    stale = access_token(account, issued_at=epoch - 60)
 
     with client.websocket_connect("/ws") as socket:
-        socket.send_text(_authenticate_frame(stale))
+        socket.send_text(authenticate_frame(stale))
         with pytest.raises(WebSocketDisconnect) as closed:
             socket.receive_text()
 
@@ -119,11 +62,11 @@ def test_first_message_token_issued_before_epoch_is_refused(revocation, client, 
 
 def test_cookie_token_issued_before_epoch_is_refused(revocation, client, account):
     """A stale cookie does not establish the socket; the fallback frame is refused too."""
-    epoch = _stamp_epoch(revocation, account, seconds_ago=0)
-    stale = _token(account, issued_at=epoch - 60)
+    epoch = stamp_epoch(revocation, account, seconds_ago=0)
+    stale = access_token(account, issued_at=epoch - 60)
 
-    with client.websocket_connect("/ws", headers={"cookie": f"access_token={stale}"}) as socket:
-        socket.send_text(_authenticate_frame(stale))
+    with client.websocket_connect("/ws", headers=cookie_header(stale)) as socket:
+        socket.send_text(authenticate_frame(stale))
         with pytest.raises(WebSocketDisconnect) as closed:
             socket.receive_text()
 
@@ -132,11 +75,11 @@ def test_cookie_token_issued_before_epoch_is_refused(revocation, client, account
 
 def test_first_message_token_issued_after_epoch_connects(revocation, client, account):
     """Control: signing in again after the revocation opens a socket at once."""
-    _stamp_epoch(revocation, account, seconds_ago=120)
-    fresh = _token(account, issued_at=int(time.time()))
+    stamp_epoch(revocation, account, seconds_ago=120)
+    fresh = access_token(account, issued_at=int(time.time()))
 
     with client.websocket_connect("/ws") as socket:
-        socket.send_text(_authenticate_frame(fresh))
+        socket.send_text(authenticate_frame(fresh))
         established = json.loads(socket.receive_text())
 
     assert established["type"] == "connection_established"
@@ -144,10 +87,10 @@ def test_first_message_token_issued_after_epoch_connects(revocation, client, acc
 
 def test_cookie_token_issued_after_epoch_connects(revocation, client, account):
     """Control: the cookie path still authenticates a token newer than the epoch."""
-    _stamp_epoch(revocation, account, seconds_ago=120)
-    fresh = _token(account, issued_at=int(time.time()))
+    stamp_epoch(revocation, account, seconds_ago=120)
+    fresh = access_token(account, issued_at=int(time.time()))
 
-    with client.websocket_connect("/ws", headers={"cookie": f"access_token={fresh}"}) as socket:
+    with client.websocket_connect("/ws", headers=cookie_header(fresh)) as socket:
         established = json.loads(socket.receive_text())
 
     assert established["type"] == "connection_established"

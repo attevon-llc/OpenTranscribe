@@ -13,7 +13,7 @@ frontend/src/components/CollectionsPanel.svelte::@typescript-eslint/no-explicit-
 frontend/src/components/CollectionsPanel.svelte::svelte/prefer-svelte-reactivity	1	lint: burn-down planned
 frontend/src/components/CollectionsSection.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
 frontend/src/components/CollectionsSection.svelte::svelte/require-each-key	1	lint: burn-down planned
-frontend/src/components/CommentSection.svelte::no-restricted-imports	4	lint: burn-down planned
+frontend/src/components/CommentSection.svelte::no-restricted-imports	3	lint: burn-down planned
 frontend/src/components/CommentSection.test.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/FileDetailSkeleton.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/FileHeader.svelte::svelte/require-each-key	1	lint: burn-down planned
@@ -104,7 +104,6 @@ frontend/src/components/chat/ChatTracePanel.svelte::no-useless-assignment	1	lint
 frontend/src/components/collections/CollectionFormModal.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
 frontend/src/components/collections/CollectionFormModal.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/fileStatus/FileDetailModal.svelte::@typescript-eslint/no-explicit-any	4	lint: burn-down planned
-frontend/src/components/fileStatus/FileDetailModal.svelte::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/fileStatus/FileDetailModal.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/fileStatus/TaskFilterPanel.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
 frontend/src/components/fileStatus/TaskFilterPanel.svelte::no-restricted-imports	1	lint: burn-down planned

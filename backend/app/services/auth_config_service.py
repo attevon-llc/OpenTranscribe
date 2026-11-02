@@ -56,6 +56,24 @@ SENSITIVE_NO_CHANGE_VALUES = frozenset(
     {SENSITIVE_SET_SENTINEL, "***REDACTED***", "***ENCRYPTED***", ""}
 )
 
+#: The no-change values that are markers, never a real secret. ``""`` is left out:
+#: storing an empty secret is how an unset env value migrates.
+SENSITIVE_PLACEHOLDER_VALUES = SENSITIVE_NO_CHANGE_VALUES - {""}
+
+
+class PlaceholderSecretError(ValueError):
+    """A write tried to store a placeholder marker as a secret value."""
+
+
+def _is_sensitive_row(config: AuthConfig) -> bool:
+    """Whether a stored row holds a secret: its flag OR its key says so.
+
+    Fail closed on the flag. A row rewritten before ``set_config`` re-derived
+    ``is_sensitive`` holds ciphertext under a False flag; trusting the flag alone
+    served that ciphertext as the credential and, unmasked, to the admin UI.
+    """
+    return bool(config.is_sensitive) or config.config_key in AuthConfigService.SENSITIVE_KEYS
+
 
 class AuthConfigService:
     """Service for managing authentication configuration.
@@ -376,7 +394,7 @@ class AuthConfigService:
             return None
 
         value: str | None = config.config_value  # type: ignore[assignment]
-        if config.is_sensitive and decrypt and value:
+        if _is_sensitive_row(config) and decrypt and value:
             # Undecryptable means UNSET, never "hand back the ciphertext".
             #
             # This used to return the stored ciphertext on failure, and returned it
@@ -506,32 +524,36 @@ class AuthConfigService:
             # decrypt=False (the admin GET /{category} endpoint) skipped it and
             # returned the raw CIPHERTEXT to the browser — the opposite of what
             # the endpoint's own comment claimed.
-            if config.is_sensitive and not decrypt:
+            sensitive = _is_sensitive_row(config)
+            if sensitive and not decrypt:
                 result[config.config_key] = SENSITIVE_SET_SENTINEL if value else None
                 continue
 
-            if config.is_sensitive and decrypt and value:
+            if sensitive and value:
+                # Undecryptable is UNSET, exactly as get_config answers. A
+                # "***ENCRYPTED***" placeholder here was credential-shaped: a caller
+                # using this dict as config would have sent it as the secret. The
+                # failure must still be visible (issue #324).
                 try:
                     decrypted = decrypt_api_key(value)  # type: ignore[call-overload]
-                    if not decrypted:
-                        logger.error(
-                            "Decrypting sensitive auth config %s produced an empty value; "
-                            "masking it. Check ENCRYPTION_KEY.",
-                            config.config_key,
-                        )
-                    # Masked, not the ciphertext. This surface feeds the admin UI, so
-                    # the placeholder is deliberate — but it must never be usable as a
-                    # credential, and the failure must be visible (issue #324): both
-                    # branches previously masked in silence.
-                    value = decrypted or "***ENCRYPTED***"  # type: ignore[assignment]
                 except Exception:
                     logger.exception(
-                        "Failed to decrypt sensitive auth config %s; masking it. "
+                        "Failed to decrypt sensitive auth config %s; treating it as unset. "
                         "Check ENCRYPTION_KEY — a rotated or lost key makes stored "
                         "secrets unrecoverable and they must be re-entered.",
                         config.config_key,
                     )
-                    value = "***ENCRYPTED***"  # type: ignore[assignment]
+                    result[config.config_key] = None
+                    continue
+                if not decrypted:
+                    logger.error(
+                        "Decrypting sensitive auth config %s produced an empty value; "
+                        "treating it as unset. Check ENCRYPTION_KEY.",
+                        config.config_key,
+                    )
+                    result[config.config_key] = None
+                    continue
+                value = decrypted
 
             # Convert to appropriate type
             data_type = config.data_type or "string"
@@ -570,7 +592,22 @@ class AuthConfigService:
 
         Returns:
             Updated or created AuthConfig object
+
+        Raises:
+            PlaceholderSecretError: *value* is one of the read-side placeholders for
+                a sensitive key. ``bulk_update_category`` skips those before calling
+                here; this guards every other write path, which would otherwise
+                encrypt the marker over the real credential.
         """
+        if (
+            (is_sensitive or key in AuthConfigService.SENSITIVE_KEYS)
+            and isinstance(value, str)
+            and value in SENSITIVE_PLACEHOLDER_VALUES
+        ):
+            raise PlaceholderSecretError(
+                f"{key}: refusing to store a placeholder as the secret value"
+            )
+
         # Auto-detect data type if not provided
         if data_type is None:
             data_type = AuthConfigService.DATA_TYPE_MAPPING.get(key, "string")
@@ -603,6 +640,10 @@ class AuthConfigService:
             # Re-derived on every write, not just on create: rows written before
             # the flag was populated would otherwise stay False forever.
             config.requires_restart = requires_restart  # type: ignore[assignment]
+            # Same for the sensitivity flag: a row created before its key joined
+            # SENSITIVE_KEYS kept False while its new value was encrypted, so reads
+            # returned the ciphertext as if it were the credential.
+            config.is_sensitive = is_sensitive  # type: ignore[assignment]
             # Heal a stale category. `config_key` is globally UNIQUE and this branch
             # never rewrote `category`, so a key that used to be listed under two
             # categories stayed pinned to whichever tab wrote it first — and then
@@ -919,15 +960,25 @@ class AuthConfigService:
                 if env_value is not None:
                     is_sensitive = key in AuthConfigService.SENSITIVE_KEYS
 
-                    AuthConfigService.set_config(
-                        db=db,
-                        key=key,
-                        value=env_value,
-                        is_sensitive=is_sensitive,
-                        category=category,
-                        user_id=user_id,
-                        description=f"Migrated from environment variable {env_key}",
-                    )
+                    try:
+                        AuthConfigService.set_config(
+                            db=db,
+                            key=key,
+                            value=env_value,
+                            is_sensitive=is_sensitive,
+                            category=category,
+                            user_id=user_id,
+                            description=f"Migrated from environment variable {env_key}",
+                        )
+                    except PlaceholderSecretError:
+                        # Skipped like the category update skips it, so one stale
+                        # env value does not fail the keys after it.
+                        logger.warning(
+                            "Not migrating %s: %s holds a placeholder, not a secret",
+                            key,
+                            env_key,
+                        )
+                        continue
                     migrated += 1
                     logger.info(f"Migrated {key} from env to database")
 

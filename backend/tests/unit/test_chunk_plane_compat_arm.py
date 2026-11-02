@@ -103,6 +103,16 @@ _ALLOWED: dict[str, str] = {
         "Same: it re-sends the filters of the collapse body it is handed, which "
         "_build_filters armed, narrowed to that body's own result files (#1064)."
     ),
+    "services/erasure_receipt/stores_external.py::_count": (
+        "Not a chunks reader. The module names OPENSEARCH_CHUNKS_INDEX only to CLASSIFY index "
+        "names (_configured_indices); this helper counts the index it is handed, and its only "
+        "callers pass the transcripts and summaries indices. Chunks are counted by "
+        "TranscriptIndexingService.count_file_documents, which carries the plane arm."
+    ),
+    "services/erasure_receipt/stores_external.py::_os_audit": (
+        "Not a chunks reader: it counts the audit-logs-* indices, the file only mentions the "
+        "chunks index to classify names. An audit document has no doc_type."
+    ),
     "services/search/hybrid_search_service.py::_hydrate_page_highlights": (
         "Same: the collapse body's own filters, narrowed to ids that body returned."
     ),

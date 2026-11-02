@@ -30,7 +30,6 @@ _BATCH = 1000
 #: ``os.unclassified``: the store an erasure forgets.
 INDEX_PATTERNS: tuple[tuple[str, str], ...] = (
     ("transcript_chunks", "os.transcript_chunks"),
-    ("transcript_summaries", "os.transcript_summaries"),
     ("transcripts", "os.transcripts"),
     ("speakers", "os.speakers"),
     ("audit-logs-", "os.audit"),
@@ -64,6 +63,8 @@ def classify_index(name: str, configured: dict[str, str] | None = None) -> str |
     for prefix, key in INDEX_PATTERNS:
         if name.startswith(prefix):
             return key
+    if name.startswith(_legacy_summary_index()):
+        return "os.transcript_summaries"
     return None
 
 
@@ -73,9 +74,16 @@ def _configured_indices() -> dict[str, str]:
     return {
         settings.OPENSEARCH_TRANSCRIPT_INDEX: "os.transcripts",
         settings.OPENSEARCH_CHUNKS_INDEX: "os.transcript_chunks",
-        settings.OPENSEARCH_SUMMARY_INDEX: "os.transcript_summaries",
+        _legacy_summary_index(): "os.transcript_summaries",
         settings.OPENSEARCH_SPEAKER_INDEX: "os.speakers",
     }
+
+
+def _legacy_summary_index() -> str:
+    """The retired summaries index (#67), named only where retired names are allowed."""
+    from app.services.file_cleanup_service import legacy_summary_index_name
+
+    return legacy_summary_index_name()
 
 
 def _os_client() -> Any:
@@ -113,13 +121,10 @@ def _os_chunks(scope: ErasureScope, captured: Captured) -> int:
 
 
 def _os_summaries(scope: ErasureScope, captured: Captured) -> int:
-    from app.core.config import settings
+    from app.services.file_cleanup_service import count_legacy_summary_docs
 
     ids = captured.file_ids
-    return sum(
-        _count(settings.OPENSEARCH_SUMMARY_INDEX, {"terms": {"file_id": ids[i : i + _BATCH]}})
-        for i in range(0, len(ids), _BATCH)
-    )
+    return sum(count_legacy_summary_docs(ids[i : i + _BATCH]) for i in range(0, len(ids), _BATCH))
 
 
 def _speaker_stamp(scope: ErasureScope) -> dict[str, Any] | None:

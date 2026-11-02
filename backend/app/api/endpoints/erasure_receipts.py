@@ -22,6 +22,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
+from fastapi import Response
 from fastapi import status
 from sqlalchemy import func
 from sqlalchemy import select
@@ -111,6 +112,7 @@ def _audit_view(entry: ErasureLedgerEntry, viewer: User, org_id: int | None) -> 
 @limiter.limit(ERASURE_RECEIPT_READ_RATE_LIMIT, key_func=user_or_ip_key)
 def list_erasures(
     request: Request,
+    response: Response,  # required by slowapi
     status_filter: str | None = Query(None, alias="status"),
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
@@ -167,6 +169,7 @@ def list_erasures(
 @limiter.limit(ERASURE_RECEIPT_READ_RATE_LIMIT, key_func=user_or_ip_key)
 def read_receipts(
     request: Request,
+    response: Response,  # required by slowapi
     ledger_uuid: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
@@ -186,6 +189,7 @@ def read_receipts(
 @limiter.limit(ERASURE_RECEIPT_READ_RATE_LIMIT, key_func=user_or_ip_key)
 def read_org_receipts(
     request: Request,
+    response: Response,  # required by slowapi
     ledger_uuid: UUID,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(require_org_admin),

@@ -14,6 +14,8 @@ from unittest.mock import patch
 
 import pytest
 
+from app.auth.audit import AuditEventType
+from app.auth.audit import audit_logger
 from app.models.erasure import ErasureLedgerEntry
 from app.models.erasure import ErasureReceipt
 from app.models.organization import Organization
@@ -228,6 +230,120 @@ def test_erase_file_goes_through_the_ledger_and_returns_a_receipt(
     assert entry.subject_type == "file"
     assert str(entry.subject_file_uuid) == file_uuid
     assert entry.status == "complete"
+
+
+def _erase_file_audit_events(client, url, headers, monkeypatch) -> list[dict]:
+    """POST an erase-file URL with the destroy stages stubbed; return the audit events written."""
+    written: list[dict] = []
+    monkeypatch.setattr(audit_logger, "log", lambda **kw: written.append(kw))
+    receipt: dict[str, object] = {
+        "uuid": None,
+        "outcome": "verified",
+        "residual_total": 0,
+        "unverified_keys": [],
+    }
+
+    def _finish(db, entry, scope, captured, before, summary):
+        summary["receipt"] = receipt
+
+    flow = Mock(begin=Mock(return_value=(object(), {})), finish=Mock(side_effect=_finish))
+    with (
+        patch(
+            "app.services.gdpr_erasure_service.purge_media_file",
+            return_value={"deleted": True, "residual_errors": []},
+        ),
+        patch("app.services.gdpr_erasure_service.receipt_flow", flow),
+        patch("app.services.gdpr_erasure_service.erase_extras"),
+    ):
+        response = client.post(url, headers=headers)
+    assert response.status_code == 200, response.text
+    return written
+
+
+def _recording(db, owner, org_id=None):
+    from app.models.media import MediaFile
+
+    media = MediaFile(
+        uuid=uuid_pkg.uuid4(),
+        filename="e2e-delres-bbbbbbbb.wav",
+        storage_path="media/e2e-delres-bbbbbbbb.wav",
+        content_type="audio/wav",
+        file_size=1,
+        user_id=owner.id,
+        organization_id=org_id,
+        status="completed",
+    )
+    db.add(media)
+    db.commit()
+    return str(media.uuid)
+
+
+def test_admin_erase_file_writes_an_erasure_audit_event_naming_the_actor(
+    client, db_session, super_admin_token_headers, normal_user, monkeypatch
+):
+    file_uuid = _recording(db_session, normal_user)
+    written = _erase_file_audit_events(
+        client, f"/api/admin/gdpr/erase-file/{file_uuid}", super_admin_token_headers, monkeypatch
+    )
+    [event] = [
+        e
+        for e in written
+        if e["event_type"] == AuditEventType.ADMIN_USER_DELETE
+        and e["details"].get("action") == "gdpr_erasure_file"
+    ]
+    assert event["target_user_id"] == normal_user.id
+    assert event["user_id"] is not None
+
+
+@pytest.mark.usefixtures("organizations_capability_on")
+def test_org_admin_erase_file_writes_an_erasure_audit_event_in_its_organization(
+    client, db_session, normal_user, user_token_headers, org_context, monkeypatch
+):
+    org = _org(db_session)
+    db_session.add(
+        OrganizationMembership(organization_id=org.id, user_id=normal_user.id, role="org:admin")
+    )
+    db_session.commit()
+    org_context(org_id=org.id, org_role="org:admin", only_for=normal_user.id)
+    file_uuid = _recording(db_session, normal_user, org_id=org.id)
+
+    written = _erase_file_audit_events(
+        client, f"/api/org-admin/gdpr/erase-file/{file_uuid}", user_token_headers, monkeypatch
+    )
+    [event] = [
+        e
+        for e in written
+        if e["event_type"] == AuditEventType.ADMIN_USER_DELETE
+        and e["details"].get("action") == "gdpr_erasure_file"
+    ]
+    assert event["organization_id"] == org.id
+    assert event["user_id"] == normal_user.id
+
+
+def test_ignored_indices_round_trip_and_the_write_is_audited_with_a_count_only(
+    client, super_admin_token_headers, user_token_headers, monkeypatch
+):
+    url = "/api/admin/gdpr/erasure-receipt/ignored-indices"
+    written: list[dict] = []
+    monkeypatch.setattr(audit_logger, "log", lambda **kw: written.append(kw))
+
+    assert client.put(url, json={"names": ["a"]}, headers=user_token_headers).status_code == 403
+    assert written == []
+
+    put = client.put(
+        url,
+        json={"names": [" scratch ", "scratch", "", "other"]},
+        headers=super_admin_token_headers,
+    )
+    assert put.status_code == 200, put.text
+    assert put.json()["names"] == ["other", "scratch"]
+    assert client.get(url, headers=super_admin_token_headers).json()["names"] == [
+        "other",
+        "scratch",
+    ]
+    [event] = [e for e in written if e["event_type"] == AuditEventType.ADMIN_SETTINGS_CHANGE]
+    assert event["details"]["count"] == 2
+    assert "scratch" not in str(event), "the audit record must carry the count, not the names"
 
 
 def test_erase_file_of_a_missing_file_is_404(client, super_admin_token_headers):

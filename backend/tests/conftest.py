@@ -484,6 +484,30 @@ from tests.db_locks import acquire_ddl_lock_exclusive  # noqa: E402
 from tests.db_locks import acquire_ddl_lock_shared  # noqa: E402
 
 
+@pytest.fixture
+def no_receipt_measurement():
+    """Opt-in: stand in for the erasure receipt's measurement stage.
+
+    For tests that pin what an erasure DESTROYS in the SQL plane. The receipt measures every
+    store of the inventory (OpenSearch, object storage, Redis, the filesystem) from a fresh
+    session, so on a shared stack its outcome depends on whatever other runs have left in those
+    stores -- a stray ``test_*`` index alone makes it ``unverified`` (``os.unclassified``) and
+    the erasure, correctly, refuses to complete. The receipt itself is covered against real
+    stores by ``integration/test_erasure_receipt_e2e.py``.
+    """
+    from unittest.mock import MagicMock
+    from unittest.mock import patch
+
+    with (
+        patch(
+            "app.services.gdpr_erasure_service.receipt_flow.begin",
+            return_value=(MagicMock(), {}),
+        ),
+        patch("app.services.gdpr_erasure_service.receipt_flow.finish"),
+    ):
+        yield
+
+
 @pytest.fixture(scope="function")
 def db_session(request):
     """Fixture that provides a SQLAlchemy session for tests.

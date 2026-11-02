@@ -33,6 +33,8 @@ METHOD_ACTIONS: dict[str, set[str]] = {
     "head_object": {"s3:GetObject"},
     "presigned_get_object": {"s3:GetObject"},
     "download_file": {"s3:GetObject"},
+    # a server-side copy reads the source object and writes the destination
+    "copy_object": {"s3:GetObject", "s3:PutObject"},
     # writes
     "put_object": _PUT,
     "fput_object": _PUT,

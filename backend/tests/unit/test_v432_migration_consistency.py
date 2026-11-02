@@ -378,6 +378,7 @@ def test_detection_stamps_lower_without_the_tables(db_session):
     assert order.index(detected) < order.index(REVISION)
 
 
+@pytest.mark.ddl_exclusive
 def test_rerunning_the_upgrade_is_a_no_op(db_session):
     """The invariant the startup runner depends on, executed rather than asserted about."""
     module = _revision_module()

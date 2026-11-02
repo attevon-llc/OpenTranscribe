@@ -12,6 +12,8 @@ from typing import Any
 import pytest
 from fastapi import status
 
+from app.auth.audit import AuditEventType
+from app.auth.audit import audit_logger
 from app.models.media import MediaFile
 from app.models.media import Task
 from app.services.privacy import file_consent
@@ -154,6 +156,24 @@ def test_owner_opt_out_commits_the_state_then_queues_a_files_scope_opt_out_purge
     assert body["purge_task_id"] == sent[0]["task_id"]
     task = db_session.get(Task, body["purge_task_id"])
     assert task is not None and task.user_id == normal_user.id
+
+
+def test_a_decline_audits_the_consent_change_and_the_requested_voiceprint_purge(
+    client, user_token_headers, db_session, normal_user, sent, monkeypatch
+):
+    """The compliance register pins this route to ``privacy.voiceprints.purge``."""
+    written: list[dict[str, Any]] = []
+    monkeypatch.setattr(audit_logger, "log", lambda **kw: written.append(kw))
+    file_uuid = _prepare(client, user_token_headers, voiceprint_consent="granted")["file_id"]
+    assert _patch(client, user_token_headers, file_uuid, "declined").status_code == 200
+
+    by_type = {e["event_type"]: e for e in written}
+    assert AuditEventType.PRIVACY_FILE_CONSENT_CHANGE in by_type
+    purge = by_type[AuditEventType.PRIVACY_VOICEPRINT_PURGE]
+    assert purge["details"]["phase"] == "requested"
+    assert purge["user_id"] == normal_user.id
+    assert purge["details"]["purge_scope"]["kind"] == "files"
+    assert purge["details"]["purge_scope"]["file_count"] == 1
 
 
 def test_repeating_a_decline_requeues_the_purge(client, user_token_headers, sent):

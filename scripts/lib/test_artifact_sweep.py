@@ -187,6 +187,12 @@ TEST_BUCKET_SPECS: list[ArtifactSpec] = [
         TIER_A,
         'integration/test_versioned_bucket_erasure.py',
     ),
+    _spec(
+        'storage-key-ownership',
+        rf'e2e-key-owner-{_H12}',
+        TIER_A,
+        'integration/test_storage_key_ownership.py',
+    ),
 ]
 
 

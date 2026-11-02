@@ -20,6 +20,9 @@ from pathlib import Path
 APP = Path(__file__).resolve().parents[2] / "app"
 PROFILE_ROUTES = APP / "api" / "endpoints" / "speaker_profiles.py"
 _TOUCH = "touch_profile_interaction"
+#: Helpers that stamp inside their own commit, so a caller that goes through one is stamped.
+#: ``swap_avatar_path`` is pinned to that by ``test_speaker_profile_activity.py``.
+_STAMPING_HELPERS = frozenset({_TOUCH, "swap_avatar_path"})
 _MUTATING = {"post", "put", "patch", "delete"}
 
 #: ``<path relative to app>::<function>`` -> why it does not stamp.
@@ -68,7 +71,7 @@ def _touches(fn: ast.AST) -> bool:
         if isinstance(node, ast.Call):
             f = node.func
             name = f.id if isinstance(f, ast.Name) else getattr(f, "attr", None)
-            if name == _TOUCH:
+            if name in _STAMPING_HELPERS:
                 return True
     return False
 
@@ -153,6 +156,10 @@ def rename(db, profile):
 @router.get("/profiles/{profile_uuid}")
 def view(profile):
     return profile
+
+@router.post("/profiles/{profile_uuid}/avatar")
+def upload(db, profile):
+    previous = swap_avatar_path(db, profile.id, "key")
 
 def outer(speaker):
     def inner(db):

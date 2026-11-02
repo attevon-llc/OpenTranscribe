@@ -54,14 +54,19 @@ def _session_of(db):
     yield db
 
 
-def _prepared(org_id: int | None, user_id: int, speaker_uuid: str) -> PreparedFile:
+def _prepared(world, user, org_id: int | None, speaker_uuid: str) -> PreparedFile:
+    """A prepared file backed by a REAL media row: the write backstop's file layer reads the
+    row's consent state and, for a file it cannot find, denies. A made-up id would make every
+    writer refuse for that reason and the tenant assertions would never be reached."""
+    media_file = world.new_file(user, org_id)
+    world.db.commit()
     return PreparedFile(
         file_uuid=str(uuid_pkg.uuid4()),
         audio_source="s3://bucket/key",
         speakers=[SpeakerSnapshot(id=1, uuid=speaker_uuid, name="SPEAKER_00")],
         speaker_segments={},
-        media_file_id=1,
-        user_id=user_id,
+        media_file_id=int(media_file.id),
+        user_id=user.id,
         organization_id=org_id,
     )
 
@@ -82,7 +87,7 @@ def test_the_repair_writers_stamp_an_organization_file_and_leave_a_personal_one_
     org_id = privacy_world.new_org().id if in_org else None
     monkeypatch.setattr(repair_task, "_voiceprints_allowed", lambda _file_id: True)
     speaker_uuid = str(uuid_pkg.uuid4())
-    prepared = _prepared(org_id, normal_user.id, speaker_uuid)
+    prepared = _prepared(privacy_world, normal_user, org_id, speaker_uuid)
 
     written = getattr(repair_task, writer_name)(prepared, _results(), {speaker_uuid})
 
@@ -106,7 +111,7 @@ def test_the_write_backstop_judges_the_files_organization_not_the_owners_persona
     speaker_uuid = str(uuid_pkg.uuid4())
 
     written = getattr(repair_task, writer_name)(
-        _prepared(org.id, normal_user.id, speaker_uuid), _results(), {speaker_uuid}
+        _prepared(privacy_world, normal_user, org.id, speaker_uuid), _results(), {speaker_uuid}
     )
 
     assert written == 0
@@ -132,7 +137,7 @@ def test_the_v4_migration_stamps_the_documents_it_bulk_writes(
     speaker_uuid = str(uuid_pkg.uuid4())
 
     migration_task._embedding_result_writer(
-        _prepared(org_id, normal_user.id, speaker_uuid), _results()
+        _prepared(privacy_world, normal_user, org_id, speaker_uuid), _results()
     )
 
     (doc,) = docs
@@ -296,7 +301,7 @@ def test_an_organizations_repaired_voiceprint_goes_with_its_purge_and_not_the_pe
     monkeypatch.setattr(repair_task, "_voiceprints_allowed", lambda _file_id: True)
     speaker_uuid = str(speaker.uuid)
     repair_task._v4_result_writer(
-        _prepared(org.id, normal_user.id, speaker_uuid), _results(), {speaker_uuid}
+        _prepared(privacy_world, normal_user, org.id, speaker_uuid), _results(), {speaker_uuid}
     )
     (doc,) = _indexed(cluster)
     assert doc["organization_id"] == org.id

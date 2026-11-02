@@ -632,6 +632,12 @@ def _scan_container_returns() -> dict[str, list[int]]:
 #: Every entry here raises/echoes OUR OWN authored message, never a caught library
 #: exception's raw text — verified against the real source, not copied blind.
 _RAISE_ALLOWLIST: dict[str, tuple[int, str]] = {
+    "api/endpoints/chat/messages.py::_resolve_chat_llm": (
+        1,
+        "our own LLMConfigurationError: __init__ takes only a LLMConfigFailure enum member and "
+        "sets a fixed sentence per reason from _LLM_CONFIG_FAILURE_MESSAGES; the underlying "
+        "exception is logged where it is raised and never carried (llm_service.py)",
+    ),
     "api/endpoints/admin_group_mappings.py::create_group_mapping": (
         1,
         "our own RoleNotGrantableError message (assert_grantable_role's refusal), "

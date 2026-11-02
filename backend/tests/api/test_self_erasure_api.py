@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from app.auth.audit import AuditEventType
+from app.auth.audit import audit_logger
 from app.core.constants import GDPR_SELF_ERASURE_ENABLED_KEY
 from app.services.system_settings_service import set_setting
 
@@ -72,7 +74,17 @@ def test_a_second_request_is_a_conflict(client, user_token_headers, enabled):
     assert r.json()["detail"]["code"] == "request_exists"
 
 
-def test_the_last_super_admin_is_refused(client, super_admin_token_headers, enabled):
+def test_the_last_super_admin_is_refused(
+    client, db_session, super_admin_user, super_admin_token_headers, enabled
+):
+    from app.models.user import User
+
+    # A stack that has ever been set up holds its own seeded super administrator; the rule only
+    # refuses the LAST one, so the test must make the fixture user the only active one.
+    db_session.query(User).filter(
+        User.role == "super_admin", User.id != super_admin_user.id
+    ).update({"is_active": False}, synchronize_session=False)
+    db_session.commit()
     r = client.post(
         URL,
         json={"confirm": "ERASE", "password": "superadminpass"},
@@ -88,6 +100,30 @@ def test_cancel_withdraws_the_request(client, user_token_headers, enabled):
     assert r.status_code == 200
     assert r.json()["status"] == "cancelled"
     assert client.get(URL, headers=user_token_headers).json()["request"] is None
+
+
+def test_a_request_and_its_cancellation_each_write_an_erasure_audit_event(
+    client, user_token_headers, normal_user, enabled, monkeypatch
+):
+    """The compliance register pins POST and DELETE here to ``ADMIN_USER_DELETE``."""
+    written: list[dict] = []
+    monkeypatch.setattr(audit_logger, "log", lambda **kw: written.append(kw))
+
+    receipt = client.post(URL, json=GOOD, headers=user_token_headers).json()
+    requested = [e for e in written if e["event_type"] == AuditEventType.ADMIN_USER_DELETE]
+    assert [e["details"]["action"] for e in requested][-1] == "gdpr_self_erasure_requested"
+    assert requested[-1]["user_id"] == normal_user.id
+    assert requested[-1]["details"]["ledger_uuid"] == receipt["ledger_uuid"]
+
+    written.clear()
+    assert (
+        client.delete(f"{URL}/{receipt['ledger_uuid']}", headers=user_token_headers).status_code
+        == 200
+    )
+    cancelled = [e for e in written if e["event_type"] == AuditEventType.ADMIN_USER_DELETE]
+    assert cancelled, "a cancelled erasure request left no audit record"
+    assert cancelled[-1]["details"]["ledger_uuid"] == receipt["ledger_uuid"]
+    assert cancelled[-1]["details"]["status"] == "cancelled"
 
 
 def test_another_users_request_cannot_be_cancelled(

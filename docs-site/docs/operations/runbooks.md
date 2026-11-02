@@ -561,7 +561,7 @@ request as an ordinary deferred erasure, so it would erase the account **early**
 1. Turn the feature off: **Settings > Privacy & Redaction > policy tab**, or
    `PUT /api/admin/self-erasure` with `{"enabled": false}`. New requests are refused (404).
 2. List the open requests (ledger entries with `status = deferred` and `deferred_reason =
-   grace_period`) and either let them run or ask the people to cancel from **Settings > Profile**.
+   grace_period`) and either let them run or ask the people to cancel from **Settings > Profile & Security**.
 3. Only when none are open, downgrade. The downgrade **refuses** while any request is open, and
    deletes cancelled requests (their status does not exist in the old schema).
 4. Then roll the code back.

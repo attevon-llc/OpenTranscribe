@@ -7,7 +7,7 @@ description: How to ask for your account and everything you own in it to be perm
 # Erase my account
 
 If your administrator has turned it on, you can ask for your own account to be permanently deleted
-from **Settings > Profile > Erase my account**. If you do not see the card, self-service erasure is
+from **Settings > Profile & Security > Erase my account**. If you do not see the card, self-service erasure is
 off on this deployment; ask whoever runs it.
 
 ## What gets deleted
@@ -26,7 +26,7 @@ Two things are kept, and the receipt says so:
 
 ## Asking for it
 
-1. Open **Settings > Profile** and find **Erase my account**.
+1. Open **Settings > Profile & Security** and find **Erase my account**.
 2. Type your password (or a current code from your authenticator app if your account uses one).
 3. Type `ERASE` to confirm and press **Request erasure**.
 

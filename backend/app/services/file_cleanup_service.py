@@ -630,6 +630,25 @@ def _erase_transcript_chunks(file_uuid: str, fail: Callable[[str, object], None]
         fail("transcript_chunks", f"could not verify: {e}")
 
 
+def legacy_summary_index_name() -> str:
+    """Physical name of the retired ``transcript_summaries`` index (#67).
+
+    Upgraded deployments may still hold it with real user summaries, so the erasure paths keep
+    sweeping it and the erasure receipt keeps measuring it. This module is where the retired name
+    is allowed to live; everything else asks here.
+    """
+    from app.services.opensearch_service import settings as os_settings
+
+    return str(os_settings.OPENSEARCH_SUMMARY_INDEX)
+
+
+def count_legacy_summary_docs(file_ids: list[int]) -> int:
+    """Documents of ``file_ids`` still in the retired summaries index. An absent index is 0."""
+    if not file_ids:
+        return 0
+    return _count_surviving(legacy_summary_index_name(), {"terms": {"file_id": file_ids}})
+
+
 def _erase_summary_docs(file_id: int, fail: Callable[[str, object], None]) -> None:
     """Delete the file's LLM-written summaries — prose about the recording."""
     try:

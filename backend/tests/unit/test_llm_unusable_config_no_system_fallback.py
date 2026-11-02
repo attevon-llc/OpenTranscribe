@@ -265,3 +265,13 @@ class TestConfigIdBedrockRegion:
                 LLMService.create_from_config_id(user_id=1, config_id=7)
             except LLMConfigurationError as err:
                 assert err.reason != LLMConfigFailure.BEDROCK_REGION
+
+
+@pytest.mark.parametrize("reason", list(LLMConfigFailure))
+def test_user_message_is_the_fixed_sentence_for_every_reason(reason):
+    """Callers put ``user_message`` on the wire; it must be non-empty and reason-specific."""
+    err = LLMConfigurationError(reason)
+    assert err.user_message
+    assert err.user_message == str(err)
+    others = {LLMConfigurationError(r).user_message for r in LLMConfigFailure if r is not reason}
+    assert err.user_message not in others

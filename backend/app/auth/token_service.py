@@ -519,6 +519,21 @@ class TokenService(RefreshTokenOps):
         # take effect on it immediately rather than at its natural expiry.
         return self._issued_before_user_epoch(jti, db, user_uuid, issued_at)
 
+    def access_token_revoked(self, payload: dict, db: Session | None) -> bool:
+        """Revocation verdict for a decoded access token, shared by every verifier.
+
+        The one place that maps claims onto :meth:`is_token_revoked`: ``jti`` for the
+        blacklist, ``sub`` for the database fallback and ``iat`` for the per-user epoch.
+        The HTTP dependencies and the WebSocket handshake each used to spell this call
+        out, and the handshake's copy dropped ``iat``, so logout-all never reached it.
+        """
+        jti = payload.get("jti")
+        if not settings.TOKEN_REVOCATION_ENABLED or not jti:
+            return False
+        return self.is_token_revoked(
+            jti, db=db, user_uuid=payload.get("sub"), issued_at=payload.get("iat")
+        )
+
     def cleanup_expired_tokens(self, db: Session) -> int:
         """
         Remove expired refresh tokens from database.

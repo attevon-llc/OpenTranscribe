@@ -183,20 +183,10 @@ def get_current_user(
             )
             raise credentials_exception
 
-        # Check token revocation blacklist (FedRAMP AC-12). `issued_at` lets the
-        # per-user revocation epoch invalidate a stateless access token, which has
-        # no blacklist entry of its own.
-        if (
-            settings.TOKEN_REVOCATION_ENABLED
-            and token_jti
-            and token_service.is_token_revoked(
-                token_jti,
-                db=db,
-                user_uuid=user_uuid_str,
-                issued_at=payload.get("iat"),
-            )
-        ):
-            logger.warning(f"Rejected revoked token (jti={token_jti[:8]}...)")
+        # Token revocation (FedRAMP AC-12): the blacklist plus the per-user epoch, via
+        # the verdict the WebSocket handshake and get_optional_current_user also use.
+        if token_service.access_token_revoked(payload, db):
+            logger.warning(f"Rejected revoked token (jti={str(token_jti)[:8]}...)")
             raise credentials_exception
 
         # Validate UUID format
@@ -326,7 +316,6 @@ def get_optional_current_user(
         JWTClaimsRegistry(exp={"essential": True}).validate(token_obj.claims)
         payload = token_obj.claims
         user_uuid_str: str | None = payload.get("sub")
-        token_jti: str | None = payload.get("jti")
 
         if user_uuid_str is None:
             return None
@@ -336,19 +325,9 @@ def get_optional_current_user(
         if payload.get("type") != TOKEN_TYPE_ACCESS:
             return None
 
-        # Check token revocation blacklist. Same as get_current_user, `issued_at` is what
-        # lets the per-user revocation epoch (logout-all, password reset, admin
-        # termination) cancel a still-valid stateless access token.
-        if (
-            settings.TOKEN_REVOCATION_ENABLED
-            and token_jti
-            and token_service.is_token_revoked(
-                token_jti,
-                db=db,
-                user_uuid=user_uuid_str,
-                issued_at=payload.get("iat"),
-            )
-        ):
+        # Same revocation verdict as get_current_user, so logout-all, a password reset
+        # or an admin termination also cancels a still-valid token on optional routes.
+        if token_service.access_token_revoked(payload, db):
             return None
 
         # Validate UUID format

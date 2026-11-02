@@ -275,16 +275,12 @@ def _try_authenticate_token(
         if not user_identifier:
             return None
 
-        # Mirror the HTTP path's checks (endpoints/auth.py) — this branch used to skip
-        # BOTH, so a revoked token or a deactivated account still opened a socket and
-        # kept receiving that user's events (issue #284 A0.7).
-        token_jti = payload.get("jti")
-        if (
-            settings.TOKEN_REVOCATION_ENABLED
-            and token_jti
-            and token_service.is_token_revoked(token_jti, db=db, user_uuid=user_identifier)
-        ):
-            logger.warning("Rejected revoked token on WebSocket (jti=%s...)", token_jti[:8])
+        # Same revocation verdict as the HTTP dependencies — one function, not a copy:
+        # a copy here once dropped `iat`, so logout-all never reached the handshake.
+        if token_service.access_token_revoked(payload, db):
+            logger.warning(
+                "Rejected revoked token on WebSocket (jti=%s...)", str(payload.get("jti"))[:8]
+            )
             return None
 
         user = db.query(User).filter(User.uuid == user_identifier).first()

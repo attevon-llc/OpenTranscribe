@@ -161,9 +161,12 @@ def list_messages(
     # history forever (issue #817). Applied here, after serialization, so it
     # covers the same field shape `export_conversation` masks.
     from app.api.endpoints.chat.citation_takedown import drop_quarantined_citations_bulk
+    from app.services.takedown_service import quarantine_list_exempt
 
     citation_lists = drop_quarantined_citations_bulk(
-        db, [m["citations"] or [] for m in serialized], is_admin=ctx.bypass.user_is_admin
+        db,
+        [m["citations"] or [] for m in serialized],
+        include_quarantined=quarantine_list_exempt(ctx.bypass),
     )
     for message, citations in zip(serialized, citation_lists, strict=True):
         message["citations"] = citations

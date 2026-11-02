@@ -32,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `takedown_predicates`), on the file URL stamping, collection member list, speaker preview,
   transcript segment and list paths alike. Previously these paths consulted the bare admin
   role instead.
+- **Quarantine read rule on exports, chat history, tag listings and background tasks.** Chat
+  history and export, the tag file listing, search and speaker listings, and the background
+  export and notification paths now use the same helper instead of the bare admin role.
+  Background tasks hold no support-access grant, so there the review exemption applies only in
+  single-tenant mode.
 - **Thumbnail fetch hardening.** The URL-import thumbnail fetch now connects to the address it
   validated and does not follow redirects.
 

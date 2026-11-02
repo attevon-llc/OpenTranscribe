@@ -51,6 +51,7 @@ from app.services.speaker_profile_activity import touch_profile_interaction
 from app.services.speaker_provenance_view import attach_speaker_provenance
 from app.services.speaker_provenance_view import provenance_for_dict
 from app.services.speaker_status_service import SpeakerStatusService
+from app.services.takedown_service import quarantine_list_exempt
 from app.utils.db_helpers import org_stamp_is
 from app.utils.error_handlers import ErrorHandler
 from app.utils.speaker_identity_detail import ORIGIN_ACCEPTED_SUGGESTION
@@ -2793,7 +2794,7 @@ def _get_profile_based_occurrences(
     )
     if not bypass.sees_all_in_scope:
         query = query.filter(Speaker.user_id == current_user.id)
-    if not bypass.user_is_admin:
+    if not quarantine_list_exempt(bypass):
         query = query.filter(MediaFile.is_quarantined.is_(False))
     tenant_pred = org_scope_pred(MediaFile.organization_id, organization_id)
     if tenant_pred is not None:
@@ -2857,7 +2858,7 @@ def _get_display_name_based_occurrences(
     )
     if not bypass.sees_all_in_scope:
         similar_q = similar_q.filter(Speaker.user_id == current_user.id)
-    if not bypass.user_is_admin:
+    if not quarantine_list_exempt(bypass):
         similar_q = similar_q.filter(MediaFile.is_quarantined.is_(False))
     tenant_pred = org_scope_pred(MediaFile.organization_id, organization_id)
     if tenant_pred is not None:

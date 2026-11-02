@@ -311,13 +311,21 @@ def _coerce_uuid(value: str | uuid_pkg.UUID) -> uuid_pkg.UUID | None:
 
 
 def is_review_admin(db: Session, user_id: int | None) -> bool:
-    """Whether user_id holds the admin review visibility every predicate here is relative to.
+    """Whether user_id holds the review visibility every predicate here is relative to.
 
     Public because the ASYNC plane needs it: a Celery task holds a user id, never a
     User, and must re-resolve the role at RUN time rather than trust a flag captured
     at dispatch. None is never an admin.
+
+    A background task has no request, so no support-access grant can reach it. The
+    only deployment where an admin's role alone reaches every row is single-tenant mode
+    (the same rule as ``PlatformBypass.allows`` there); in multi-tenant mode this is
+    False for everyone, which keeps the async plane fail-closed.
     """
     if user_id is None:
         return False
+    from app.services.platform_access import TenancyMode
+    from app.services.platform_access import tenancy_mode
+
     recipient = db.query(User).filter(User.id == int(user_id)).first()
-    return bool(recipient and recipient.is_admin)
+    return bool(recipient and recipient.is_admin and tenancy_mode(db) is TenancyMode.SINGLE)

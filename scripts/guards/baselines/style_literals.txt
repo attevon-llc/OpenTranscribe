@@ -173,7 +173,7 @@ colour::frontend/src/components/speakers/ProfilesTab.svelte	19	styling layer: pr
 colour::frontend/src/components/speakers/SpeakerClusterCard.svelte	58	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/speakers/SpeakerInboxItem.svelte	25	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/supportAccess/StatusChip.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-colour::frontend/src/components/tags/TagBulkSummary.svelte	7	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+colour::frontend/src/components/tags/TagBulkSummary.svelte	6	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/tags/TagDetailPanel.svelte	7	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/tags/TagManagerModal.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 colour::frontend/src/components/transcript/SpeakerEditorPanel.svelte	36	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
@@ -543,7 +543,7 @@ fallback::frontend/src/components/speakers/ProfilesTab.svelte	18	styling layer: 
 fallback::frontend/src/components/speakers/SpeakerClusterCard.svelte	28	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 fallback::frontend/src/components/speakers/SpeakerInboxItem.svelte	25	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 fallback::frontend/src/components/supportAccess/SupportAccessBanner.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-fallback::frontend/src/components/tags/TagBulkSummary.svelte	7	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+fallback::frontend/src/components/tags/TagBulkSummary.svelte	5	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 fallback::frontend/src/components/tags/TagDetailPanel.svelte	6	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 fallback::frontend/src/components/tags/TagManagerModal.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 fallback::frontend/src/components/transcript/SpeakerEditorPanel.svelte	6	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md

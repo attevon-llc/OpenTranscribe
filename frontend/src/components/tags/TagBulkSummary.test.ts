@@ -137,3 +137,39 @@ describe('TagBulkSummary write gates', () => {
     expect(screen.getByRole('button', { name: 'Share with everyone' })).toBeInTheDocument();
   });
 });
+
+describe('TagBulkSummary delete', () => {
+  it('confirms a multi-tag delete in the same dialog a single delete uses', async () => {
+    const previewDelete = vi.fn();
+    const confirmDelete = vi.fn();
+    const cancelDelete = vi.fn();
+    const { rerender } = render(TagBulkSummary, {
+      props: { tags },
+      events: { previewDelete, confirmDelete, cancelDelete },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(previewDelete).toHaveBeenCalledTimes(1);
+
+    await rerender({ tags, deletePreview: impact });
+    // The shared ConfirmationModal, naming every tag and carrying both counts.
+    expect(
+      screen.getByText(
+        /Delete "roadmap, Roadmap, road map"\? It is on 4 of your files, and 42 in total/
+      )
+    ).toBeInTheDocument();
+    const confirm = document.querySelector('.modal-delete-button') as HTMLButtonElement;
+    expect(confirm).toHaveTextContent('Delete');
+    await fireEvent.click(confirm);
+    expect(confirmDelete).toHaveBeenCalledTimes(1);
+    expect(cancelDelete).not.toHaveBeenCalled();
+  });
+
+  it('reports a cancelled multi-tag delete', async () => {
+    const cancelDelete = vi.fn();
+    render(TagBulkSummary, { props: { tags, deletePreview: impact }, events: { cancelDelete } });
+
+    await fireEvent.click(document.querySelector('.modal-cancel-button') as HTMLButtonElement);
+    expect(cancelDelete).toHaveBeenCalledTimes(1);
+  });
+});

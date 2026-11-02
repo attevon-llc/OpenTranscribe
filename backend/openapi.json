@@ -25657,7 +25657,7 @@
     },
     "/api/admin/engine-settings/metrics": {
       "get": {
-        "description": "Return live engine metrics from all active workers via Redis.\n\nEach Celery GPU worker publishes counters under ``engine:metrics:<hostname>``\nwith a 120-second TTL. Returns a dict keyed by hostname. An empty dict\nmeans no workers have reported metrics recently.",
+        "description": "Return live engine metrics from all active workers via Redis.\n\nEach Celery GPU worker publishes counters under ``engine:metrics:<hostname>``\nwith a 120-second TTL. Returns a dict keyed by hostname. An empty dict\nmeans no workers have reported metrics recently; **503** means Redis could\nnot be read, which is not the same answer.",
         "operationId": "get_engine_metrics_api_admin_engine_settings_metrics_get",
         "responses": {
           "200": {

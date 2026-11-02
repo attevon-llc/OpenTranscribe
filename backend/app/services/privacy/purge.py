@@ -183,15 +183,11 @@ class PurgeScope:
             details["file_count"] = len(self.file_ids)
         return details
 
-    def sql_filters(self, model: Any) -> list[Any]:
-        """Conditions selecting this scope's rows of a table with ``user_id`` / ``organization_id``.
+    def tenant_filters(self, model: Any) -> list[Any]:
+        """The scope's rows of a table with ``user_id`` / ``organization_id``, protection ignored.
 
-        Not for ``Speaker``: production never stamps ``speaker.organization_id`` (the diarization
-        helper creates the row without it), so a speaker's tenant is its FILE's. Use
-        :meth:`speaker_filters`.
-
-        A ``files`` scope selects its own ``MediaFile`` rows and NOTHING of any other table: a
-        file purge never deletes or resets a profile (or a stamped cluster) directly.
+        What :meth:`sql_filters` would select if no file were held or quarantined. Used to count
+        and name what a purge LEAVES; everything that deletes goes through :meth:`sql_filters`.
         """
         if self.kind == "files":
             from app.models.media import MediaFile
@@ -211,6 +207,37 @@ class PurgeScope:
             else model.organization_id == self.organization_id
         )
         return [model.user_id == self.user_id, org]
+
+    def sql_filters(self, model: Any) -> list[Any]:
+        """Conditions selecting this scope's rows of a table with ``user_id`` / ``organization_id``.
+
+        Not for ``Speaker``: production never stamps ``speaker.organization_id`` (the diarization
+        helper creates the row without it), so a speaker's tenant is its FILE's. Use
+        :meth:`speaker_filters`.
+
+        A ``files`` scope selects its own ``MediaFile`` rows and NOTHING of any other table: a
+        file purge never deletes or resets a profile (or a stamped cluster) directly.
+
+        The other scopes are protection-aware, in this one place (issue: scope purges ignored
+        holds): a ``MediaFile`` under a legal hold (platform or organization) or in quarantine is
+        NOT in scope, which removes its speakers from :meth:`speaker_filters` and so from every
+        count, deletion and residual measure. A ``SpeakerProfile`` that still has such a file's
+        speaker linked to it is not in scope either: it keeps that voiceprint, so it is neither
+        reset nor reported as purged (its embedding is recomputed from what it has left).
+        """
+        filters = self.tenant_filters(model)
+        if self.kind == "files":
+            return filters
+        from app.models.media import MediaFile
+        from app.models.media import SpeakerProfile
+        from app.services.privacy.purge_file_guard import profile_keeps_protected_voice
+        from app.services.privacy.purge_file_guard import unprotected_file_pred
+
+        if model is MediaFile:
+            return [*filters, unprotected_file_pred()]
+        if model is SpeakerProfile:
+            return [*filters, ~profile_keeps_protected_voice()]
+        return filters
 
     def speaker_filters(self) -> list[Any]:
         """Conditions selecting this scope's speakers, by the tenant of the speaker's FILE.
@@ -453,6 +480,7 @@ def run_purge_pass(
     """
     wanted = set(targets)
     result = PassResult()
+    protection_counts = _protection_counts(scope, session_factory)
 
     if VOICEPRINTS in wanted:
         outcome = TargetOutcome()
@@ -506,7 +534,23 @@ def run_purge_pass(
         outcome.residual = measure_gender_residual(scope, session_factory=session_factory)
         result.outcomes[INFERRED_GENDER] = outcome
 
+    if protection_counts and result.outcomes:
+        # Once per pass, whatever the targets: the skipped files are one fact about the scope.
+        first = next(iter(result.outcomes.values()))
+        first.counts[POSTGRES].update(protection_counts)
     return result
+
+
+def _protection_counts(scope: PurgeScope, session_factory: Callable[[], Session]) -> dict[str, int]:
+    """How many held/quarantined files and retained profiles this pass leaves; {} when none."""
+    from app.services.privacy.purge_file_guard import scope_protection
+
+    db = session_factory()
+    try:
+        protection = scope_protection(db, scope)
+    finally:
+        db.close()
+    return protection.counts() if protection.any else {}
 
 
 def recompute_profiles(

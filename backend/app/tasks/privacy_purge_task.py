@@ -33,6 +33,7 @@ from app.models.user import User
 from app.services.privacy import purge
 from app.services.privacy.measure import GroupedCounts
 from app.services.privacy.measure import merge_grouped
+from app.services.privacy.purge_file_guard import PROTECTION_COUNT_KEYS
 from app.services.privacy.purge_file_guard import guard_files_scope
 from app.utils.task_utils import TASK_STATUS_COMPLETED
 from app.utils.task_utils import TASK_STATUS_FAILED
@@ -142,6 +143,10 @@ def privacy_purge_task(
         return {"status": "failed", "reason": "error"}
 
     counts = result.counts()
+    if phase > 1:
+        # The second pass sees the same protected files; the total must not count them twice.
+        for key in PROTECTION_COUNT_KEYS:
+            counts[purge.POSTGRES].pop(key, None)
     residual = result.residual()
     previous = purge.read_record(task_id) if phase > 1 else None
     total: GroupedCounts = {purge.POSTGRES: {}, purge.OPENSEARCH: {}}

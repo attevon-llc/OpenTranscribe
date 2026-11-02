@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Voiceprint purges after a privacy switch-off leave held and quarantined files alone.** The
+  user, organization and instance purges deleted the voiceprints of files under a platform or
+  organization legal hold or in quarantine, although the per-file purge and the retention sweep
+  already excluded them. All three now skip those files, and a profile that still holds one of
+  their voices is kept (its embedding is recomputed) rather than reset. The purge status and audit
+  event report `files_skipped_held`, `files_skipped_quarantined` and `profiles_retained` as counts
+  only, never a hold identifier. Skipped data is purged by a later switch-off purge once the hold
+  is released; nothing schedules it automatically.
 - **Self-service erasure keeps at least one active super administrator.** The check that
   refuses the last super administrator was made only when the request was filed. It is now
   repeated when the request falls due, under a row lock on the active super administrators, so

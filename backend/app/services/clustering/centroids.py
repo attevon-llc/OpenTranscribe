@@ -20,6 +20,29 @@ class CentroidRecomputeError(RuntimeError):
     """A strict centroid recompute could not replace the stored centroid."""
 
 
+def cluster_geometry_scores(arr: np.ndarray | None, centroid: np.ndarray) -> tuple[float, float]:
+    """Return a cluster's ``(quality_score, min_similarity)`` from its member voiceprints.
+
+    ``quality_score`` is the mean cosine similarity of the members to the centroid, the same
+    metric shown per member in the UI, so the cluster score agrees with the member scores.
+    ``min_similarity`` is the tightest pairwise cosine similarity (the worst-case pair). A
+    cluster with fewer than two members scores 1.0 on both.
+
+    Args:
+        arr: Member embeddings, one row per member, or None when there are none.
+        centroid: The L2-normalized cluster centroid.
+
+    Returns:
+        ``(quality_score, min_similarity)``.
+    """
+    if arr is None or len(arr) < 2:
+        return 1.0, 1.0
+    normed = arr / np.linalg.norm(arr, axis=1, keepdims=True).clip(1e-8)
+    sim_matrix = normed @ normed.T
+    iu = np.triu_indices(len(arr), k=1)
+    return float(np.mean(normed @ centroid)), float(np.min(sim_matrix[iu]))
+
+
 def update_cluster_centroid(
     self: "SpeakerClusteringService",
     cluster: SpeakerCluster,
@@ -88,18 +111,9 @@ def update_cluster_centroid(
             raise CentroidRecomputeError(f"cluster {cluster.uuid} centroid is a zero vector")
         return
 
-    # Quality score: average centroid similarity (consistent with
-    # per-member confidence shown in the UI).
-    # min_similarity: tightest pairwise cosine similarity.
-    if len(embeddings) >= 2:
-        normed = arr / np.linalg.norm(arr, axis=1, keepdims=True).clip(1e-8)
-        cluster.quality_score = float(np.mean(normed @ centroid))  # type: ignore[assignment]
-        sim_matrix = normed @ normed.T
-        iu = np.triu_indices(len(embeddings), k=1)
-        cluster.min_similarity = float(np.min(sim_matrix[iu]))  # type: ignore[assignment]
-    else:
-        cluster.quality_score = 1.0  # type: ignore[assignment]
-        cluster.min_similarity = 1.0  # type: ignore[assignment]
+    quality_score, min_similarity = cluster_geometry_scores(arr, centroid)
+    cluster.quality_score = quality_score  # type: ignore[assignment]
+    cluster.min_similarity = min_similarity  # type: ignore[assignment]
 
     if best_speaker_id:
         cluster.representative_speaker_id = best_speaker_id  # type: ignore[assignment]

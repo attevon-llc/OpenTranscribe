@@ -16,6 +16,7 @@ import numpy as np
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCannotLink
 from app.models.speaker import SpeakerCluster
+from app.services.clustering.centroids import cluster_geometry_scores
 from app.services.clustering.thresholds import GENDER_OUTLIER_EVICT_THRESHOLD
 
 if TYPE_CHECKING:
@@ -244,31 +245,9 @@ def _centroid_and_confidence(member_ids: list[int], emb_cache: dict[int, list[fl
 
 def _score_cluster(cluster: SpeakerCluster, geometry: _Geometry, member_ids: list[int]) -> None:
     """Set the cluster's quality score, tightest pair and representative speaker."""
-    member_embs, arr, centroid = geometry.member_embs, geometry.arr, geometry.centroid
-    # Quality score: average centroid similarity (same metric
-    # shown per-member, so the cluster score is consistent
-    # with individual member scores users see in the UI).
-    # min_similarity: tightest pairwise cosine similarity
-    # (worst-case pair within the cluster).
-    if len(member_embs) >= 2:
-        normed = arr / np.linalg.norm(
-            arr,
-            axis=1,
-            keepdims=True,
-        ).clip(1e-8)
-        # Average centroid similarity for quality score
-        cluster.quality_score = float(  # type: ignore[assignment]
-            np.mean(normed @ centroid)
-        )
-        # Min pairwise for worst-case indicator
-        sim_mat = normed @ normed.T
-        iu = np.triu_indices(len(member_embs), k=1)
-        cluster.min_similarity = float(  # type: ignore[assignment]
-            np.min(sim_mat[iu])
-        )
-    else:
-        cluster.quality_score = 1.0  # type: ignore[assignment]
-        cluster.min_similarity = 1.0  # type: ignore[assignment]
+    quality_score, min_similarity = cluster_geometry_scores(geometry.arr, geometry.centroid)
+    cluster.quality_score = quality_score  # type: ignore[assignment]
+    cluster.min_similarity = min_similarity  # type: ignore[assignment]
 
     cluster.representative_speaker_id = member_ids[0]  # type: ignore[assignment]
 

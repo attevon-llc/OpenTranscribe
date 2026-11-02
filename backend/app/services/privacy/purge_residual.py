@@ -11,8 +11,6 @@ Only counts leave this module (no names, no ids).
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
-from dataclasses import field
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -20,6 +18,7 @@ from sqlalchemy import func
 from sqlalchemy import or_
 from sqlalchemy import select
 
+from app.services.privacy.measure import Residual
 from app.services.privacy.purge_voiceprints import org_stamp_clause
 from app.utils.speaker_identity_source import MACHINE_IDENTITY_SOURCES
 
@@ -44,24 +43,6 @@ VOICEPRINT_RESIDUAL_KEYS = (
 )
 
 GENDER_RESIDUAL_KEYS = ("speakers_with_inferred_gender",)
-
-
-@dataclass
-class Residual:
-    """What a pass left behind. ``counts`` are measured; ``unverified`` names the measures that
-    could not be taken (and so are NOT in ``counts``)."""
-
-    counts: dict[str, int] = field(default_factory=dict)
-    unverified: list[str] = field(default_factory=list)
-
-    @property
-    def ok(self) -> bool:
-        """True only when everything was measured and every measure is 0."""
-        return not self.unverified and all(v == 0 for v in self.counts.values())
-
-    def merge(self, other: Residual) -> None:
-        self.counts.update(other.counts)
-        self.unverified.extend(other.unverified)
 
 
 def _count(db: Session, statement: Any) -> int:

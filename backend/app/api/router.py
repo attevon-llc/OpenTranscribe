@@ -28,6 +28,7 @@ from .endpoints import diarization_settings
 from .endpoints import directory_sync_settings
 from .endpoints import embedding_migration
 from .endpoints import engine_settings
+from .endpoints import erasure_receipts
 from .endpoints import first_run_wizard
 from .endpoints import groups
 from .endpoints import legal
@@ -183,6 +184,17 @@ include_router_with_consistency(
 include_router_with_consistency(
     admin_approvals.router, prefix="/admin/user-approvals", tags=["admin"]
 )
+# Erasure receipts and single-file erasure (issue #1353). /admin refuses a support grant by
+# prefix; the org-admin half is refused under a grant too.
+include_router_with_consistency(erasure_receipts.admin_router, prefix="/admin", tags=["admin"])
+include_router_with_consistency(
+    erasure_receipts.org_router,
+    prefix="/org-admin",
+    tags=["org-admin"],
+    capability="organizations",
+    refuse_under_grant=True,
+)
+
 # Org-admin tenant administration (audit-log read + GDPR erasure). Gated by the
 # "organizations" capability: 404 in the community edition (no orgs), enabled by
 # the cloud capability resolver. require_org_admin further gates each route.

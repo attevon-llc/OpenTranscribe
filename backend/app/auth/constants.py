@@ -77,6 +77,17 @@ def auth_type_check_sql() -> str:
 # refusal reason codes; cloud code that starts processing must call it), and a file-scoped
 # voiceprint purge (PurgeScope kind="files"). All inactive while the new settings are off.
 #
+# v13 (also 0.6.1): erasure receipts (issue #1353). The ``erase_user`` / ``erase_org_member_data`` /
+# ``erase_organization`` summaries gained ``receipt`` (uuid, outcome, residual_total,
+# unverified_keys, digest), and ``summary["complete"]`` is STRICTER: it is true only when there
+# were no errors AND the receipt is ``verified`` (every store measured, nothing left behind).
+# A downstream deletion webhook that treated ``complete`` as advisory will see ``False`` more
+# often, and the reconciliation sweep retries those entries. New hook:
+# ``app.services.erasure_receipt.inventory.register_erasure_store(ErasureStore(...))`` for a
+# store an edition owns (without it the store is invisible to the receipt, and an OpenSearch
+# index of its own shows up as ``os.unclassified`` and keeps receipts ``unverified``). New
+# subject ``file`` on the ledger (``erase_file``). Alembic ``v452`` adds ``erasure_receipt``.
+#
 # v12 (0.6.0): organization content governance (#1275-#1277). v11 is the privacy policy layer and
 # v10 the viewer-aware capabilities endpoint, both below.
 # File-read semantics changed: a member of an organization collection they may see now

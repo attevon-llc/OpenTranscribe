@@ -27,22 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **One quarantine read rule.** A quarantined file is now exempt from the read rule only where
-  the platform role was granted access to that row's tenant (single shared helper in
-  `takedown_predicates`), on the file URL stamping, collection member list, speaker preview,
-  transcript segment and list paths alike. Previously these paths consulted the bare admin
-  role instead.
-- **Thumbnail fetch hardening.** The URL-import thumbnail fetch now connects to the address it
-  validated and does not follow redirects.
 
-- **The OpenSearch model step pulls the backend image the install runs.** `resolve_backend_image`
-  now returns the lite repository for lite installs and for arm64 hosts (the CPU-only image is the
-  only one published for arm64), instead of always the CUDA repository.
-- **Clearing the derived cache answers a lock or refused delete with 409 on both routes.**
-  `DELETE /files/{uuid}/cache` returned 500 and the admin clear returned 503 for the same
-  condition; both now return 409 for objects left behind and 503 only when object storage is
-  unreachable.
-- **The thumbnail migration no longer deletes a `.jpg` another media file still references.**
 - **The model downloader's speaker-detection step no longer fails on every CPU run.**
   `scripts/download-models.py` transcribed synthetic sine-wave audio through whisperx before
   fetching the PyAnnote weights; whisperx found no speech in it and transformers 5.x raised

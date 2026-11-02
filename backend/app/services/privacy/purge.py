@@ -79,9 +79,10 @@ from sqlalchemy import update
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.services.privacy.measure import GroupedCounts
+from app.services.privacy.measure import Residual
 from app.services.privacy.purge_residual import GENDER_RESIDUAL_KEYS
 from app.services.privacy.purge_residual import VOICEPRINT_RESIDUAL_KEYS
-from app.services.privacy.purge_residual import Residual
 from app.services.privacy.purge_residual import measure_gender_residual
 from app.services.privacy.purge_residual import measure_voiceprint_residual
 from app.services.privacy.purge_voiceprints import purge_voiceprint_docs
@@ -383,9 +384,6 @@ def _queue_reindexes(files: list[tuple[int, str, int]]) -> int:
 POSTGRES = "postgres"
 OPENSEARCH = "opensearch"
 
-#: Counts of a store group, by the name the audit event and the status response use.
-GroupedCounts = dict[str, dict[str, int]]
-
 
 @dataclass
 class TargetOutcome:
@@ -424,15 +422,6 @@ class PassResult:
         for outcome in self.outcomes.values():
             merged.merge(outcome.residual)
         return merged
-
-
-def merge_grouped(total: GroupedCounts, more: GroupedCounts) -> GroupedCounts:
-    """Add ``more`` into ``total`` (pass 2 adds to pass 1)."""
-    for store, values in more.items():
-        bucket = total.setdefault(store, {})
-        for key, amount in values.items():
-            bucket[key] = bucket.get(key, 0) + int(amount)
-    return total
 
 
 def run_purge_pass(

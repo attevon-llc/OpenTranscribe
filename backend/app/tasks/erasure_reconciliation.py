@@ -121,12 +121,15 @@ def _rerun(db, entry) -> dict[str, Any]:
     second one — an SLA clock that restarted on every tick would never expire, which is
     precisely the failure mode the ledger exists to prevent.
     """
+    from app.services.gdpr_erasure_service import erase_file
     from app.services.gdpr_erasure_service import erase_org_member_data
     from app.services.gdpr_erasure_service import erase_organization
     from app.services.gdpr_erasure_service import erase_user
 
     if entry.subject_type == "user":
         return erase_user(db, int(entry.subject_user_id), ledger_entry=entry)
+    if entry.subject_type == "file":
+        return erase_file(db, entry.subject_file_uuid, ledger_entry=entry)
     if entry.subject_type == "organization":
         return erase_organization(db, int(entry.subject_organization_id), ledger_entry=entry)
     return erase_org_member_data(

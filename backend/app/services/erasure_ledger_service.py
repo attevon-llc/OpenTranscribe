@@ -113,11 +113,17 @@ def _journal_record(entry: ErasureLedgerEntry) -> dict[str, Any]:
         "subject_organization_uuid": (
             str(entry.subject_organization_uuid) if entry.subject_organization_uuid else None
         ),
+        "subject_file_uuid": str(entry.subject_file_uuid) if entry.subject_file_uuid else None,
         "status": entry.status,
         "actor_kind": entry.actor_kind,
         "requested_at": entry.requested_at.isoformat() if entry.requested_at else None,
         "sla_due_at": entry.sla_due_at.isoformat() if entry.sla_due_at else None,
     }
+
+
+#: Receipt lines go beside the entries in the file journal (``kind: "receipt"``) and under this
+#: sub-prefix in object storage, where the entry listing skips them.
+RECEIPT_JOURNAL_DIR = "receipts/"
 
 
 def _journal_backend() -> str:
@@ -212,7 +218,9 @@ def _object_journal_records(known: set[str]) -> Iterator[dict[str, Any]] | None:
         names = [
             str(obj.object_name)
             for obj in client.list_objects(bucket, prefix=prefix, recursive=True)
-            if obj.object_name and str(obj.object_name).endswith(".json")
+            if obj.object_name
+            and str(obj.object_name).endswith(".json")
+            and not str(obj.object_name).startswith(prefix + RECEIPT_JOURNAL_DIR)
         ]
     except Exception as e:  # noqa: BLE001
         logger.error("Erasure journal unreadable at %s/%s: %s", bucket, prefix, e)
@@ -234,6 +242,62 @@ def _object_journal_records(known: set[str]) -> Iterator[dict[str, Any]] | None:
                     response.release_conn()
 
     return _fetch()
+
+
+def append_receipt_line(entry: ErasureLedgerEntry, receipt: Any) -> None:
+    """Journal a receipt: ids, the outcome and the digest, nothing a restore would act on.
+
+    ``restore_from_journal`` skips these lines (``kind == "receipt"``). Never raises.
+    """
+    record = {
+        "kind": "receipt",
+        "uuid": str(entry.uuid),
+        "receipt_uuid": str(receipt.uuid),
+        "phase": receipt.phase,
+        "outcome": receipt.outcome,
+        "digest": receipt.digest,
+        "inventory_version": receipt.inventory_version,
+    }
+    try:
+        body = json.dumps(record, separators=(",", ":"))
+        if _journal_backend() == "object_storage":
+            from app.core.config import settings
+
+            client, bucket = _journal_storage()
+            data = body.encode("utf-8")
+            name = (
+                f"{settings.ERASURE_JOURNAL_OBJECT_PREFIX.rstrip('/')}/{RECEIPT_JOURNAL_DIR}"
+                f"{receipt.uuid}.json"
+            )
+            client.put_object(
+                bucket_name=bucket,
+                object_name=name,
+                data=io.BytesIO(data),
+                length=len(data),
+                content_type="application/json",
+            )
+            return
+        path = journal_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(body + "\n")
+    except Exception as e:  # noqa: BLE001
+        logger.error("Erasure receipt journal append FAILED for %s: %s", entry.uuid, e)
+
+
+def reopen_entry(db: Session, entry: ErasureLedgerEntry) -> None:
+    """Re-open a completed entry whose delayed receipt found a leftover, so the sweep retries.
+    Never raises."""
+    try:
+        entry.status = "deferred"
+        entry.deferred_reason = "error"
+        entry.completed_at = None
+        db.commit()
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        logger.error("Erasure ledger reopen FAILED for entry %s: %s", entry.uuid, e)
+        return
+    _audit(entry, action="gdpr_erasure_reopened", outcome=AuditOutcome.PARTIAL)
 
 
 def restore_from_journal(db: Session) -> int:
@@ -267,7 +331,7 @@ def restore_from_journal(db: Session) -> int:
         if not isinstance(record, dict):
             logger.warning("Skipping erasure journal entry that is not an object")
             continue
-        if record.get("uuid") in known:
+        if record.get("kind") == "receipt" or record.get("uuid") in known:
             continue
         try:
             db.add(
@@ -284,6 +348,11 @@ def restore_from_journal(db: Session) -> int:
                     subject_organization_uuid=(
                         uuid_pkg.UUID(record["subject_organization_uuid"])
                         if record.get("subject_organization_uuid")
+                        else None
+                    ),
+                    subject_file_uuid=(
+                        uuid_pkg.UUID(record["subject_file_uuid"])
+                        if record.get("subject_file_uuid")
                         else None
                     ),
                     status="pending",
@@ -341,6 +410,7 @@ def record_request(
     subject_user_uuid: uuid_pkg.UUID | None = None,
     subject_organization_id: int | None = None,
     subject_organization_uuid: uuid_pkg.UUID | None = None,
+    subject_file_uuid: uuid_pkg.UUID | None = None,
     actor_kind: str = "system",
     actor_user_id: int | None = None,
 ) -> ErasureLedgerEntry | None:
@@ -371,6 +441,7 @@ def record_request(
         subject_user_uuid=subject_user_uuid,
         subject_organization_id=subject_organization_id,
         subject_organization_uuid=subject_organization_uuid,
+        subject_file_uuid=subject_file_uuid,
         status="pending",
         actor_kind=actor_kind,
         actor_user_id=actor_user_id,

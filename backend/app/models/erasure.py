@@ -66,7 +66,7 @@ from app.utils.uuid7 import uuid7
 
 #: What was asked to be erased. ``org_member`` is the org-admin scope (one member's
 #: rows inside one tenant); ``user`` is the whole account; ``organization`` the tenant.
-SUBJECT_TYPES = ("user", "org_member", "organization")
+SUBJECT_TYPES = ("user", "org_member", "organization", "file")
 
 #: ``pending`` — recorded, destructive work not yet finished (this is also what a
 #: process that died mid-erasure leaves behind, which is why it is the initial value).
@@ -113,7 +113,8 @@ SUBJECT_IDENTIFIED_SQL = (
     "(subject_type = 'user' AND subject_user_id IS NOT NULL) OR "
     "(subject_type = 'organization' AND subject_organization_id IS NOT NULL) OR "
     "(subject_type = 'org_member' AND subject_user_id IS NOT NULL "
-    "AND subject_organization_id IS NOT NULL)"
+    "AND subject_organization_id IS NOT NULL) OR "
+    "(subject_type = 'file' AND subject_file_uuid IS NOT NULL)"
 )
 
 
@@ -143,6 +144,12 @@ class ErasureLedgerEntry(Base):
     )
     subject_organization_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     subject_organization_uuid: Mapped[uuid_pkg.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+
+    #: The recording of a ``file`` erasure (``erase_file``). Not a foreign key, for the same
+    #: reason as ``subject_user_id``: the row it names is the one destroyed.
+    subject_file_uuid: Mapped[uuid_pkg.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True
     )
 
@@ -214,3 +221,88 @@ class ErasureLedgerEntry(Base):
             f"<ErasureLedgerEntry {self.uuid} {self.subject_type} "
             f"status={self.status} attempts={self.attempts}>"
         )
+
+
+#: When a receipt was produced. ``immediate`` is the measurement taken straight after the
+#: destroy, ``delayed`` the re-check a minute later (a debounced reindex or a late write can land
+#: after the first one), ``resurrection`` the one the restore check takes after a re-erasure.
+RECEIPT_PHASES = ("immediate", "delayed", "resurrection")
+#: ``verified`` -- every deleted store measured 0 and nothing was unmeasurable. ``residual`` --
+#: something was left behind. ``unverified`` -- a store could not be measured (never read as 0).
+RECEIPT_OUTCOMES = ("verified", "residual", "unverified")
+RECEIPT_MAP_COLUMNS = ("deleted", "de_attributed", "retained", "ttl", "residual", "unverified")
+
+#: Store keys are logical names (``pg.media_file``), never a physical index, bucket, file uuid or
+#: address. No backslash: a jsonpath string needs it doubled, and the character class is enough.
+#: Written the way Postgres stores it (see the note on ``COUNTERS_NUMERIC_SQL``).
+STORE_KEYS_SQL = (
+    "NOT jsonb_path_exists({col}, "
+    '\'$.keyvalue()?(!(@."key" like_regex "^(pg|os|s3|redis|fs|mirror|backup)[.][a-z0-9_.]{{1,80}}$"))\')'
+)
+
+
+def _numeric_sql(column: str) -> str:
+    return COUNTERS_NUMERIC_SQL.replace("counters", column)
+
+
+class ErasureReceipt(Base):
+    """What one erasure measurement found, per store: counts keyed by store name and a digest.
+
+    **Numbers only, like the ledger.** Every map is JSONB under two CHECKs: each value is a JSON
+    number and each key has the logical-store shape. There is no free-text column, no file uuid,
+    no address and no physical index or bucket name, so the receipt that proves a deletion cannot
+    become a copy of what was deleted. Insert-only by convention (the append-only plan registers
+    it); ``ledger_entry_id`` is ``ON DELETE RESTRICT`` so a ledger entry cannot vanish under it.
+    """
+
+    __tablename__ = "erasure_receipt"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    uuid: Mapped[uuid_pkg.UUID] = mapped_column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
+    )
+    ledger_entry_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("erasure_ledger.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    phase: Mapped[str] = mapped_column(String(12), nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    outcome: Mapped[str] = mapped_column(String(12), nullable=False)
+    deleted: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    de_attributed: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    retained: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    ttl: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    residual: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    unverified: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    inventory_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: sha256 of the canonical JSON of the data fields: tamper evidence, and a value to quote.
+    digest: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(_sql_in("phase", RECEIPT_PHASES), name="ck_erasure_receipt_phase"),
+        CheckConstraint(_sql_in("outcome", RECEIPT_OUTCOMES), name="ck_erasure_receipt_outcome"),
+        *(
+            CheckConstraint(_numeric_sql(col), name=f"ck_erasure_receipt_{col}_numeric")
+            for col in RECEIPT_MAP_COLUMNS
+        ),
+        *(
+            CheckConstraint(STORE_KEYS_SQL.format(col=col), name=f"ck_erasure_receipt_{col}_keys")
+            for col in RECEIPT_MAP_COLUMNS
+        ),
+        CheckConstraint("digest ~ '^[0-9a-f]{64}$'", name="ck_erasure_receipt_digest"),
+        {"extend_existing": True},
+    )

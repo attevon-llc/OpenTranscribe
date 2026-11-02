@@ -307,6 +307,7 @@ def test_the_journal_line_carries_surrogate_keys_and_nothing_else(db_session, jo
         "subject_user_uuid",
         "subject_organization_id",
         "subject_organization_uuid",
+        "subject_file_uuid",
         "status",
         "actor_kind",
         "requested_at",

@@ -120,6 +120,7 @@ const sidebars: SidebarsConfig = {
         'operations/prompt-engineering',
         'operations/security-hardening',
         'operations/support-access',
+        'operations/gdpr-erasure',
         'legal/legal-documents',
         'operations/runbooks',
       ],

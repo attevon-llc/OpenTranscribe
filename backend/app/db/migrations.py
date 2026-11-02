@@ -731,6 +731,11 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         )
     )
 
+    # v452: the erasure receipt (issue #1353). Keyed on the LAST CHECK the revision creates.
+    has_erasure_receipt = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_erasure_receipt_digest')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -811,7 +816,15 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_task_active_unique
         and has_identity_source
     )
-    # v451: same as v450 plus the survival trigger. The top of the ladder.
+    # v452: same as v451 plus the erasure receipt. The top of the ladder.
+    if (
+        matches_v449
+        and has_legal_acceptance_context
+        and has_legal_acceptance_survival
+        and has_erasure_receipt
+    ):
+        return "v452_add_erasure_receipt"
+    # v451: same as v450 plus the survival trigger.
     if matches_v449 and has_legal_acceptance_context and has_legal_acceptance_survival:
         return "v451_legal_acceptance_survives_user_deletion"
     # v450: same as v449 plus the legal acceptance context.

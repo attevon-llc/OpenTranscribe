@@ -295,7 +295,7 @@
     font-size: var(--font-size-2xs);
     padding: 0.05rem 0.35rem;
     border-radius: 0.25rem;
-    background: var(--surface-alt, var(--background-secondary));
+    background: var(--background-secondary);
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
   }

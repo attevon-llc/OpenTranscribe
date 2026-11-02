@@ -114,6 +114,52 @@ into `backend/tests/e2e/fixtures/` (created on first use, gitignored, cached) â€
 downloads. Upload tests delete everything they create through the API, so
 the dev environment stays clean.
 
+## Styling A/B tool (frontend styling layer)
+
+Not a pytest suite: `styling_ab.py` (with `styling_screens.py`, the screen manifest, and the shared
+`_visual_capture.py`) compares two frontends screen by screen, and `scripts/e2e/styling-ab.sh` is the
+one command. Plan: `docs/design/frontend_styling_layer_plan.md` section 6. It photographs
+68 screens x 4 variants (`en-light en-dark ar-light ar-dark`) and diffs **computed styles of every
+visible element** as well as pixels, because a 2 px padding change on one button is far below any
+pixel tolerance of a full page.
+
+```bash
+# 1. The lead starts an ISOLATED stack (never the live one; the script refuses offset 0):
+./opentr.sh start dev --fresh styling --port-offset 200 --seed-benchmark --with-mock-llm
+#    wait until every seeded file has left "processing"
+
+# 2. Self-check: before == after on one server. Must pass `zero` (this is the noise floor).
+scripts/e2e/styling-ab.sh --lane noise --base HEAD --selfcheck --stack styling
+
+# 3. Negative control: injects a +1px .btn padding on AFTER. Must FAIL on every screen with a .btn
+#    and list padding-left / padding-right; the last line must read "NEGATIVE CONTROL OK".
+scripts/e2e/styling-ab.sh --lane negctl --base HEAD --negative-control --stack styling
+
+# 4. A real comparison: base git ref vs the working tree (a snapshot, rsync'd), pass rule `zero`.
+scripts/e2e/styling-ab.sh --lane p0 --base master --after WORKTREE --mode zero --stack styling
+#    --after <ref> compares two refs; --screens 'login,settings-*'; --variants en-light,ar-dark
+#    --mode intended reports changes (changes.txt) instead of failing; --control a,b must still be zero
+```
+
+Output goes to `~/ot-cleanup-work/styling/ab/<lane>/` (not `/tmp`, which is cleaned mid-session):
+`before/ after/ diff/` PNGs named `<screen>__<variant>.png` (the diff is the AFTER image in grey with
+differing pixels in magenta), `summary.json`, `changes.txt` (`property: before -> after (N elements;
+screens ...)`, the list a lane's commit body quotes) and a console table. Exit 0 pass, 1 differences or
+ERROR rows, 2 misuse, 3 precondition unmet. `SKIP` rows (a manifest `skip_reason`, or a section the
+seeded admin cannot see) never fail a run but are printed; read them.
+
+How it works: the wrapper builds `frontend/` for each side (`git archive`, or an rsync snapshot for
+`WORKTREE`), links the worktree's `node_modules` (refusing if `package-lock.json` differs), copies the
+gitignored `static/fonts`, and starts one Vite dev server per side on `5291+N` / `5292+N` (Node 26,
+`nice -n 19`) with `VITE_API_PROXY_TARGET` at the ONE shared backend, so data is identical. Captures
+are interleaved (A then B per screen). The EXIT trap `kill -TERM`s only the PIDs it started.
+
+Requirements: `settings-*` screens need `data-section={item.id}` on the SettingsModal `.nav-item`
+(the translated label cannot be selected in `ar`); without it those screens report ERROR with that
+message. `chat` is skipped until a provider is configured. Unit tests for the pure parts:
+`backend/tests/unit/test_styling_ab.py`. The axe surface for the shared-component fixture
+(`/a11y-fixtures/ui-kit`, surfaces `ui-kit` and `ui-kit-ar`) is in `test_a11y.py`.
+
 ## Test Structure
 
 ```

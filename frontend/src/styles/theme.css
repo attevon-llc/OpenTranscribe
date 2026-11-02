@@ -181,6 +181,47 @@
   --color-info-text: #1d4ed8;
   --text-on-tint: #475569;
 
+  /* ---------------------------------------------------------------------
+     Role tokens added by the styling layer (docs/design/frontend_styling_layer_plan.md
+     section 3.2). Additive: nothing consumes them yet, so adding them changes no pixel.
+     Components reference ROLES, never a palette step. Rule: `-color` never carries text;
+     text on a surface uses `-text`; a fill that carries a label uses `-solid` with
+     `--text-on-solid` (or `--text-on-warning` on the amber fill).
+     --------------------------------------------------------------------- */
+  --text-on-solid: #ffffff; /* label on --primary-color, any --*-solid fill, or media */
+  --text-on-warning: #1e293b; /* label on the amber warning fill: 6.81:1 (white is 2.15:1) */
+
+  /* Boundary of an input, select, switch off-track or checkbox: 3:1 against the surface
+     (SC 1.4.11). --border-color is decorative and stays lighter. 3.28:1 on white. */
+  --control-border: #838fa1;
+  /* Every :focus-visible outline. A dark value exists because --primary-color is 2.83:1 on
+     the dark card (SC 1.4.11); light is 5.17:1 on white. */
+  --focus-ring-color: #2563eb;
+  /* The soft halo that accompanies the outline. */
+  --focus-ring: 0 0 0 3px rgba(var(--primary-color-rgb), 0.25);
+
+  /* Frozen tint blue: equals the 188 rgba(59,130,246,a) literals it replaces, so migrating
+     them stays pixel-identical. Pointed at --primary-color-rgb in one reviewed edit later
+     (decision D2). */
+  --accent-rgb: 59, 130, 246;
+
+  /* Status families: the six roles each (error, warning, success, info). The pre-existing
+     names stay; these fill the gaps. */
+  --error-solid-hover: #b91c1c; /* white on it 6.47:1 */
+  --error-text: var(--color-error-text);
+  --error-bg: rgba(var(--error-color-rgb), 0.1);
+  --warning-solid: #f59e0b; /* label is --text-on-warning, never white */
+  --warning-solid-hover: #d97706;
+  --success-solid: #047857; /* white on it 5.48:1 */
+  --success-solid-hover: #065f46;
+  --success-text: var(--color-success-text);
+  --info-solid: var(--primary-color);
+  --info-solid-hover: var(--primary-hover);
+  --info-text: var(--color-info-text);
+  --info-bg: var(--color-info-bg);
+  --info-border: var(--color-info-border);
+  --info-color-rgb: 59, 130, 246; /* #3b82f6 */
+
   /* Alternate-name aliases used by some components */
   --bg-primary: var(--surface-color);
   --text-primary: var(--text-color);
@@ -194,7 +235,13 @@
   --background-secondary: #f1f5f9;
 
   /* ---------------------------------------------------------------------
-     Compatibility aliases.
+     Compatibility aliases. DEPRECATED FOR CORE USE (decision D10): new and migrated code
+     uses the canonical names in the plan's section 3.9 (--text-muted, --text-light and the
+     --*-text-secondary spellings -> --text-secondary; --bg-secondary -> --surface-secondary;
+     --card-bg -> --surface-color; --hover-bg -> --hover-color; --accent -> --primary-color;
+     --danger-color -> --error-color; ...). The DEFINITIONS stay: the managed edition's
+     private overlay may still reference them, and an undefined var() with no fallback is
+     invalid at computed-value time (it would silently unstyle that edition).
 
      Every name below was referenced by at least one component but declared
      nowhere. `var(--card-bg)` with no fallback makes the whole declaration
@@ -325,6 +372,67 @@
 
   /* Search-match highlight shared by every <mark> without its own rule. */
   --highlight-bg: rgba(250, 204, 21, 0.4);
+
+  /* ---------------------------------------------------------------------
+     Scales added by the styling layer (plan sections 3.3 to 3.8). Theme-independent, so
+     they are declared ONCE here and must never be redeclared in the dark block
+     (token-parity.test.ts enforces both). Additive until a migration lane adopts them.
+     --------------------------------------------------------------------- */
+  --font-size-base: 1rem; /* 16px */
+  --line-height-none: 1;
+  --line-height-normal: 1.5;
+
+  /* Space: rem, 4px base, so it follows the user's browser font size (WCAG 1.4.4). Raw
+     0, auto, 1px, % and em stay allowed; a negative step is calc(-1 * var(--space-N)). */
+  --space-0-5: 0.125rem; /* 2px */
+  --space-1: 0.25rem; /* 4px */
+  --space-1-5: 0.375rem; /* 6px */
+  --space-2: 0.5rem; /* 8px */
+  --space-2-5: 0.625rem; /* 10px */
+  --space-3: 0.75rem; /* 12px */
+  --space-3-5: 0.875rem; /* 14px */
+  --space-4: 1rem; /* 16px */
+  --space-5: 1.25rem; /* 20px */
+  --space-6: 1.5rem; /* 24px */
+  --space-8: 2rem; /* 32px */
+  --space-10: 2.5rem; /* 40px */
+  --space-12: 3rem; /* 48px */
+  --space-16: 4rem; /* 64px */
+
+  /* Radius: px on purpose, radii should not scale with text. */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-2xl: 12px;
+  --radius-3xl: 16px;
+  --radius-pill: 999px;
+  --radius-round: 50%;
+
+  /* Motion. Only TRANSITION durations are tokens; loop animations (spinners, shimmer,
+     pulse) keep their literal duration beside their @keyframes. Reduced motion is global
+     in animations.css and does not need these to change. */
+  --duration-fast: 0.15s;
+  --duration-base: 0.2s;
+  --duration-slow: 0.3s;
+  --ease-standard: ease;
+  --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Elevation. Declared in BOTH blocks because elevation reads differently on dark
+     surfaces. Until the dark-elevation flip (decision D13) the dark values equal these, so
+     adopting a token is pixel-identical in both themes. */
+  --shadow-xs: 0 1px 3px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.1);
+  --shadow-hover: 0 4px 8px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.15);
+  --shadow-xl: 0 4px 20px rgba(0, 0, 0, 0.15);
+  --shadow-thumb: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-primary: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+  --shadow-primary-hover: 0 4px 8px rgba(var(--accent-rgb), 0.25);
+  --shadow-danger: 0 2px 4px rgba(var(--error-color-rgb), 0.2);
+  --shadow-danger-hover: 0 4px 8px rgba(var(--error-color-rgb), 0.3);
 }
 
 /* Dark Theme */
@@ -439,6 +547,25 @@
   --warning-dark: #fcd34d;
   --info-dark: #93c5fd;
   --highlight-bg: rgba(250, 204, 21, 0.3);
+
+  /* Styling-layer role tokens whose dark value differs (see the :root block). */
+  --control-border: #7c8aa0; /* 4.18:1 on the dark card */
+  --focus-ring-color: #60a5fa; /* 5.75:1 on the dark card */
+  --info-color-rgb: 96, 165, 250; /* #60a5fa */
+
+  /* Elevation: same values as light until decision D13 raises them. Declared here so the
+     token exists in both themes and the flip is a value edit, not a structural change. */
+  --shadow-xs: 0 1px 3px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.1);
+  --shadow-hover: 0 4px 8px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.15);
+  --shadow-xl: 0 4px 20px rgba(0, 0, 0, 0.15);
+  --shadow-thumb: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-primary: 0 2px 4px rgba(var(--accent-rgb), 0.2);
+  --shadow-primary-hover: 0 4px 8px rgba(var(--accent-rgb), 0.25);
+  --shadow-danger: 0 2px 4px rgba(var(--error-color-rgb), 0.2);
+  --shadow-danger-hover: 0 4px 8px rgba(var(--error-color-rgb), 0.3);
 }
 
 /* Global styles that should adapt to theme */

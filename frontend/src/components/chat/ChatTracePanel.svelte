@@ -250,7 +250,7 @@
   }
 
   .trace-close:hover {
-    background-color: var(--surface-alt, var(--background-secondary));
+    background-color: var(--background-secondary);
     color: var(--text-color);
   }
 

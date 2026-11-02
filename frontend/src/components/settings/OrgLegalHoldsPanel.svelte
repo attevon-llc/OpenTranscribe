@@ -512,7 +512,7 @@
   }
 
   .field small.error {
-    color: var(--color-error, #dc2626);
+    color: var(--error-solid);
   }
 
   .release-body {

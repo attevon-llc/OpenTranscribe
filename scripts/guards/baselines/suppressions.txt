@@ -177,7 +177,7 @@ noqa::backend/tests/redaction/test_language_fail_closed.py	2	suppression: reason
 noqa::backend/tests/redaction/test_pii_warmup.py	2	suppression: reason to be added
 noqa::backend/tests/redaction/test_scan_coverage.py	1	suppression: reason to be added
 noqa::backend/tests/redaction/test_segment_edit_redetection.py	2	suppression: reason to be added
-noqa::backend/tests/test_pki_auth.py	1	suppression: reason to be added
+noqa::backend/tests/pki_auth/test_pki_endpoints.py	1	suppression: reason to be added
 noqa::backend/tests/test_speaker_constraints.py	1	suppression: reason to be added
 noqa::backend/tests/transcription/test_engine_job.py	3	suppression: reason to be added
 noqa::backend/tests/unit/test_asr_error_taxonomy.py	1	suppression: reason to be added

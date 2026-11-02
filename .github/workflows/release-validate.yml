@@ -80,13 +80,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          persist-credentials: false
           # Full history: previous-version detection walks the tag list.
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: '3.13'
 
@@ -159,8 +160,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          persist-credentials: false
           # Tags are required: the pin check compares each downloaded artifact against
           # `git show <tag>:<path>`. Without full history it would silently skip that
           # comparison and pass an unpinned install.
@@ -201,8 +203,10 @@ jobs:
           --health-cmd pg_isready --health-interval 10s
           --health-timeout 5s --health-retries 5
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: '3.13'
 
@@ -252,18 +256,24 @@ jobs:
             tests/unit/test_version_consistency.py \
             tests/unit/test_release_manifest.py \
             tests/unit/test_install_upgrade_scripts.py \
+            tests/unit/test_upgrade_rollback.py \
+            tests/unit/test_upgrade_backup_restore_arms.py \
+            tests/unit/test_installer_download.py \
             tests/unit/test_env_example_coverage.py
 
   docs:
     name: Docs build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version-file: docs-site/.nvmrc
-          cache: npm
-          cache-dependency-path: docs-site/package-lock.json
+          # No dependency cache in a tag-triggered release workflow: a poisoned cache
+          # entry would flow into the release validation.
+          package-manager-cache: false
       - name: Build
         working-directory: docs-site
         # deploy-docs.yml does NOT fire on tag pushes, so this is the only thing

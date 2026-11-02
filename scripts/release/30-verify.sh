@@ -152,6 +152,9 @@ if backend/venv/bin/pytest -o addopts="" -q \
         backend/tests/unit/test_model_registration.py \
         backend/tests/unit/test_release_manifest.py \
         backend/tests/unit/test_install_upgrade_scripts.py \
+        backend/tests/unit/test_upgrade_rollback.py \
+        backend/tests/unit/test_upgrade_backup_restore_arms.py \
+        backend/tests/unit/test_installer_download.py \
         backend/tests/unit/test_env_example_coverage.py >/dev/null 2>&1; then
     record structural-tests pass
 else

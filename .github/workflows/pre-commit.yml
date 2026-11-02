@@ -392,7 +392,7 @@ jobs:
         env:
           FIPS_MODE: 'true'
         run: >-
-          pytest tests/test_pki_auth.py tests/test_mfa_security.py
+          pytest tests/pki_auth tests/test_mfa_security.py
           tests/test_llm_settings.py tests/test_fedramp_compliance.py
           tests/test_fedramp_controls.py tests/test_fips_140_3.py
           tests/test_auth_config_service.py tests/test_admin_security.py

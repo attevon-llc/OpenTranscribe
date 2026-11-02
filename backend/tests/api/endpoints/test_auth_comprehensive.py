@@ -504,7 +504,7 @@ class TestPasswordPolicy:
 #
 # Deleted rather than reimplemented, because every one of these flows is already covered
 # properly elsewhere and a fourth copy would duplicate ~290 real tests:
-#   PKI   tests/test_pki_auth.py (105, ungated in this branch) + tests/e2e/test_pki.py
+#   PKI   tests/pki_auth/ (105, ungated in this branch) + tests/e2e/test_pki.py
 #   OIDC  tests/unit/test_oidc_auth.py (44) + test_oidc_discovery.py (51)
 #         + test_oidc_groups_overage_detection.py + test_oidc_session_id_token.py
 #   LDAP  tests/unit/test_ldap_group_parsing.py (36) + test_local_auth_policy.py

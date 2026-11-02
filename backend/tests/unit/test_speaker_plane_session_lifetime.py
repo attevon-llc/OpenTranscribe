@@ -1,10 +1,11 @@
 # mypy: disable-error-code="arg-type"
 # This suite passes structural stand-ins (a fake session, plain dicts) to signatures
 # that declare Session/Speaker. Declared once here rather than as a cast at every call
-# site — same convention as tests/unit/test_task_session_lifetime.py.
+# site — same convention as tests/unit/_session_lifetime_trackers.py.
 """The speaker plane must not hold a DB transaction across OpenSearch or MinIO work.
 
-Sibling of ``test_task_session_lifetime.py``. That module covers the Celery tasks found
+Sibling of the ``test_*_task_session_lifetime`` modules (shared stand-in in
+``_session_lifetime_trackers.py``). Those cover the Celery tasks found
 in the first two sweeps; this one covers the sixteen findings
 ``scripts/audit-session-lifetime.py`` catalogued in the **speaker** plane, which had
 been allowlisted as ``BACKLOG`` rather than fixed:
@@ -41,7 +42,7 @@ on backend startup — pins the vacuum horizon on ``transcript_segment``, and bu
 Two shapes of test, because the plane has two shapes of session:
 
 * **Tasks** own their sessions. Those tests swap the module's ``session_scope`` for the
-  depth-tracking stand-in from ``test_task_session_lifetime`` and have every slow-call
+  depth-tracking stand-in from ``_session_lifetime_trackers`` and have every slow-call
   stub report the open-scope depth *at the moment it runs*. Each also asserts at least
   two scopes were opened, so a task that stopped touching the DB entirely cannot pass.
 * **Request/caller-owned sessions** (``trigger_retroactive_matching``,
@@ -76,8 +77,8 @@ from app.models.speaker import SpeakerProfile
 from app.services import smart_speaker_suggestion_service as smart
 from app.tasks import speaker_merge_task as smt
 from app.tasks import speaker_update_task as spt
-from tests.unit.test_task_session_lifetime import _leak
-from tests.unit.test_task_session_lifetime import _ScopeTracker
+from tests.unit._session_lifetime_trackers import ScopeTracker
+from tests.unit._session_lifetime_trackers import leak
 
 _AUDITOR = Path(__file__).resolve().parents[3] / "scripts" / "audit-session-lifetime.py"
 
@@ -175,7 +176,7 @@ def _make_speaker(db_session, user, media_file, name="SPEAKER_00", **kwargs) -> 
 @pytest.fixture
 def update_task_env(db_session, monkeypatch):
     """Patch the update task's slow seams so each reports the open-scope depth."""
-    tracker = _ScopeTracker(db_session)
+    tracker = ScopeTracker(db_session)
     recorded: dict = {}
 
     monkeypatch.setattr(spt, "session_scope", tracker.scope)
@@ -271,7 +272,7 @@ def test_speaker_update_task_syncs_the_index_outside_the_session(
         "os_profile_rename",
         "clear_video_cache",
     ):
-        assert observed[label] == 0, _leak(tracker, label)
+        assert observed[label] == 0, leak(tracker, label)
 
     # The two genuinely DB-bound steps are *supposed* to be inside a scope.
     # Pinning that stops the fix regressing into "the task stopped using the DB",
@@ -354,7 +355,7 @@ def test_speaker_update_plan_skips_the_profile_write_when_nothing_changed(
 # --------------------------------------------------------------------------- #
 @pytest.fixture
 def merge_task_env(db_session, monkeypatch):
-    tracker = _ScopeTracker(db_session)
+    tracker = ScopeTracker(db_session)
     recorded: dict = {}
 
     monkeypatch.setattr(smt, "session_scope", tracker.scope)
@@ -438,7 +439,7 @@ def test_speaker_merge_task_runs_index_and_storage_work_outside_the_session(
 
     observed = tracker.seen
     for label in ("voiceprint_average", "clear_video_cache", "index_merge"):
-        assert observed[label] == 0, _leak(tracker, label)
+        assert observed[label] == 0, leak(tracker, label)
 
     # The Postgres-side follow-ups belong inside a (short) scope.
     assert observed["profile_embeddings"] == 1, tracker.observations
@@ -496,7 +497,7 @@ def test_clear_video_cache_opens_its_own_short_session(db_session, normal_user, 
     """
     from app.services import video_processing_service as vps
 
-    tracker = _ScopeTracker(db_session)
+    tracker = ScopeTracker(db_session)
     recorded: dict = {}
     media_file = _make_file(db_session, normal_user)
 
@@ -520,8 +521,8 @@ def test_clear_video_cache_opens_its_own_short_session(db_session, normal_user, 
 
     spk_workflow._clear_video_cache_for_speaker(media_file.id)
 
-    assert tracker.seen["storage_client"] == 0, _leak(tracker, "storage_client")
-    assert tracker.seen["clear_cache"] == 0, _leak(tracker, "clear_cache")
+    assert tracker.seen["storage_client"] == 0, leak(tracker, "storage_client")
+    assert tracker.seen["clear_cache"] == 0, leak(tracker, "clear_cache")
     assert tracker.opened == 1, f"expected exactly one short session, got {tracker.opened}"
     assert tracker.max_depth == 1
     assert tracker.depth == 0
@@ -533,7 +534,7 @@ def test_clear_speaker_video_cache_uses_one_session_per_file(db_session, normal_
     """The merge path purges each file in its OWN transaction, not one across both."""
     from app.services import video_processing_service as vps
 
-    tracker = _ScopeTracker(db_session)
+    tracker = ScopeTracker(db_session)
     purged: list[int] = []
     first = _make_file(db_session, normal_user, "a")
     second = _make_file(db_session, normal_user, "b")
@@ -556,7 +557,7 @@ def test_clear_speaker_video_cache_uses_one_session_per_file(db_session, normal_
     assert sorted(purged) == sorted([first.id, second.id])
     # Each purge runs at depth 0 — the per-file read scope closes before it. The scope
     # COUNT still has to differ per file, or one transaction is spanning the whole merge.
-    assert tracker.seen["clear_cache"] == 0, _leak(tracker, "clear_cache")
+    assert tracker.seen["clear_cache"] == 0, leak(tracker, "clear_cache")
     counts = tracker.opened_at("clear_cache")
     assert len(set(counts)) == len(counts), (
         "both files were purged after the SAME session — one read transaction is "

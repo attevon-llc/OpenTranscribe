@@ -231,7 +231,7 @@ Failure handlers classify the error once (`ErrorCategorizationService.classify_f
 
 Task tests live in `backend/tests/` (mostly `tests/unit/`), run against the live dev stack's PostgreSQL. Call the task function directly (a bound task's `.run(...)`, or `.apply(...)` to go through Celery's eager machinery) and mock only external network services. The stage tasks take a pipeline-plan dict; build one with `services/pipeline_plan.resolve_pipeline_plan(...).to_context()` rather than hand-writing it.
 
-Useful structural tests: `test_task_routes_complete.py` (routing), `test_task_session_lifetime.py` (session scope), `test_pipeline_execution_matrix.py` (pipeline plan cells). Run with `./scripts/run-backend-tests.sh tests/unit`; see `backend/README.md`.
+Useful structural tests: `test_task_routes_complete.py` (routing), the `test_*_session_lifetime.py` modules (session scope), `test_pipeline_execution_matrix.py` (pipeline plan cells). Run with `./scripts/run-backend-tests.sh tests/unit`; see `backend/README.md`.
 
 ## 🔧 Adding New Tasks
 

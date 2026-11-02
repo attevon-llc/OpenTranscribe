@@ -70,7 +70,7 @@ def gate_enabled(var_name: str, *, default: bool = False) -> bool:
         var_name: The environment variable name, e.g. ``"RUN_SCHEMA_DRIFT_TESTS"``.
         default: Value to use when the variable is unset or empty. Every current gate in this
             repo is opt-in (default ``False``); a suite that should run by default should not
-            be behind a ``RUN_*`` gate at all (see ``test_pki_auth.py``'s history).
+            be behind a ``RUN_*`` gate at all (see ``tests/pki_auth``'s history).
 
     Returns:
         Whether the gate is open.

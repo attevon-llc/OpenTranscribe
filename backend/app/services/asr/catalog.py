@@ -6,6 +6,8 @@ holds the data and the one function that reads a capability out of an entry.
 
 from __future__ import annotations
 
+from typing import Any
+
 from app.core.local_whisper_catalog import provider_model_dicts
 
 # Two capability fields every provider entry carries (a model entry overrides where it
@@ -410,7 +412,7 @@ def _capabilities(provider_entry: dict, model_entry: dict | None) -> dict:
     """One catalog entry's capabilities; a model entry's value wins over its provider's."""
     model = model_entry or {}
 
-    def pick(key: str, default):
+    def pick(key: str, default: Any) -> Any:
         return model.get(key, provider_entry.get(key, default))
 
     return {

@@ -26,6 +26,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
+from typing import Any
 
 from app.core.config import settings
 from app.core.pipeline_constants import ASR_SEGMENT_MAX_DURATION_SECONDS
@@ -214,7 +215,7 @@ class AWSTranscribeProvider(ASRProvider):
             )
         return str(account)
 
-    def _boto_client(self, service: str):
+    def _boto_client(self, service: str) -> Any:
         import boto3
 
         kw: dict = {"region_name": self._region}

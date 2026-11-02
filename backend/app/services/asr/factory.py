@@ -15,6 +15,8 @@ from .catalog import _capabilities
 from .local_provider import LocalASRProvider
 
 if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
     from app.models.user_asr_settings import UserASRSettings
 
 logger = logging.getLogger(__name__)
@@ -85,7 +87,7 @@ def _env_provider_usable(provider: str) -> bool:
 
 class ASRProviderFactory:
     @staticmethod
-    def create_from_db_config(cfg) -> ASRProvider:
+    def create_from_db_config(cfg: UserASRSettings) -> ASRProvider:
         """Build a provider from a stored ``UserASRSettings`` row, decrypting credentials.
 
         The single place that turns a saved config into a live provider. Both the
@@ -140,7 +142,7 @@ class ASRProviderFactory:
         )
 
     @staticmethod
-    def _active_config_row(user_id: int, db) -> UserASRSettings | None:
+    def _active_config_row(user_id: int, db: Session) -> UserASRSettings | None:
         """The user's active ``UserASRSettings`` row (own or shared), or ``None``.
 
         ``None`` covers no pointer, a dangling or no-longer-shared pointer, a row that
@@ -200,7 +202,7 @@ class ASRProviderFactory:
         return cfg
 
     @staticmethod
-    def resolve_active_config(user_id: int, db) -> tuple[str, str, UserASRSettings | None]:
+    def resolve_active_config(user_id: int, db: Session) -> tuple[str, str, UserASRSettings | None]:
         """``(provider, model, cfg)`` the user's transcription would run with.
 
         The "which config row" half of :meth:`create_for_user`, without building a
@@ -227,7 +229,7 @@ class ASRProviderFactory:
         return "local", settings.WHISPER_MODEL, None
 
     @staticmethod
-    def create_for_user(user_id: int, db) -> ASRProvider:
+    def create_for_user(user_id: int, db: Session) -> ASRProvider:
         """Load active ASR config from DB → env vars → default local.
 
         Selection priority (highest to lowest):
@@ -459,7 +461,7 @@ class ASRProviderFactory:
         return _capabilities(provider_entry, None)
 
     @staticmethod
-    def get_active_model_capabilities(user_id: int, db) -> dict:
+    def get_active_model_capabilities(user_id: int, db: Session) -> dict:
         """Get capabilities for user's active ASR model.
 
         Resolution is :meth:`resolve_active_config`: user DB ASR config -> a usable

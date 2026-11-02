@@ -35,6 +35,7 @@ import os
 import threading
 import time
 from collections.abc import Callable
+from typing import Any
 
 from .base import ASRProvider
 from .types import ASRConfig
@@ -161,9 +162,9 @@ class AzureASRProvider(ASRProvider):
 
     def _transcribe_without_diarization(
         self,
-        sdk,
-        speech_cfg,
-        audio_cfg,
+        sdk: Any,
+        speech_cfg: Any,
+        audio_cfg: Any,
         filename: str,
         progress_callback: Callable[[float, str], None] | None,
     ) -> list[ASRSegment]:
@@ -171,7 +172,7 @@ class AzureASRProvider(ASRProvider):
         cancellation_reason: list[str] = []
         done = threading.Event()
 
-        def _on_recognized(evt) -> None:
+        def _on_recognized(evt: Any) -> None:
             if evt.result.reason == sdk.ResultReason.RecognizedSpeech:
                 try:
                     data = json.loads(evt.result.json)
@@ -208,7 +209,7 @@ class AzureASRProvider(ASRProvider):
                         )
                     )
 
-        def _on_canceled(evt) -> None:
+        def _on_canceled(evt: Any) -> None:
             if evt.reason == sdk.CancellationReason.Error:
                 err = self._sanitize_error(
                     f"Azure Speech canceled: {evt.error_code} {evt.error_details}",
@@ -250,9 +251,9 @@ class AzureASRProvider(ASRProvider):
 
     def _transcribe_with_diarization(
         self,
-        sdk,
-        speech_cfg,
-        audio_cfg,
+        sdk: Any,
+        speech_cfg: Any,
+        audio_cfg: Any,
         filename: str,
         config: ASRConfig,
         progress_callback: Callable[[float, str], None] | None,
@@ -268,7 +269,7 @@ class AzureASRProvider(ASRProvider):
         cancellation_reason: list[str] = []
         done = threading.Event()
 
-        def _on_transcribed(evt) -> None:
+        def _on_transcribed(evt: Any) -> None:
             """Handle a final transcription result with speaker ID."""
             result = evt.result
             if result.reason == sdk.ResultReason.RecognizedSpeech:
@@ -310,7 +311,7 @@ class AzureASRProvider(ASRProvider):
                         )
                     )
 
-        def _on_canceled(evt) -> None:
+        def _on_canceled(evt: Any) -> None:
             if evt.reason == sdk.CancellationReason.Error:
                 err = self._sanitize_error(
                     f"Azure ConversationTranscriber canceled: {evt.error_code} {evt.error_details}",

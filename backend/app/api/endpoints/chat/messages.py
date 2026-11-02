@@ -64,6 +64,7 @@ from app.services.chat.service import sse
 from app.services.chat.settings import apply_tenant_limits
 from app.services.chat.settings import apply_user_preferences
 from app.services.chat.settings import get_chat_settings
+from app.services.llm_service import LLMConfigurationError
 from app.services.llm_service import LLMService
 from app.services.redaction.llm_guard import is_local_provider
 from app.utils.db_helpers import org_stamp_is
@@ -220,10 +221,9 @@ def _prepare_turn(
         )
 
     try:
-        llm = (
-            LLMService.create_from_config_id(ctx.user.id, int(conversation.llm_config_id))
-            if conversation.llm_config_id is not None
-            else LLMService.create_from_settings(user_id=ctx.user.id)
+        llm = _resolve_chat_llm(
+            ctx.user.id,
+            int(conversation.llm_config_id) if conversation.llm_config_id is not None else None,
         )
         if llm is None:
             raise HTTPException(
@@ -597,6 +597,16 @@ def cancel_message(
     return {"status": "cancelling", "message_uuid": message_uuid}
 
 
+def _resolve_chat_llm(user_id: int, config_id: int | None) -> LLMService | None:
+    """The chat LLM for a turn; an unusable configuration is a clean 400, never a fallback."""
+    try:
+        if config_id is not None:
+            return LLMService.create_from_config_id(user_id, config_id)
+        return LLMService.create_from_settings(user_id=user_id)
+    except LLMConfigurationError as unusable:
+        raise HTTPException(status_code=400, detail=str(unusable)) from None
+
+
 @router.post("/context/estimate", response_model=ContextEstimate)
 def estimate_context(
     body: ChatScope,
@@ -644,11 +654,7 @@ def answer_budget(
     """
     chat_settings = apply_tenant_limits(get_chat_settings(db), ctx.org_id)
     config_id = resolve_llm_config_id(db, ctx, llm_config_uuid)
-    llm = (
-        LLMService.create_from_config_id(ctx.user.id, config_id)
-        if config_id is not None
-        else LLMService.create_from_settings(user_id=ctx.user.id)
-    )
+    llm = _resolve_chat_llm(ctx.user.id, config_id)
     if llm is None:
         raise HTTPException(status_code=400, detail="No LLM is configured.")
 

@@ -75,6 +75,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **AI features with a broken personal LLM configuration.** When a user had an active LLM
+  configuration that could not be used (missing, invalid or incomplete), AI features could fall
+  back to the server-wide provider. They now report the AI feature as unavailable for that user
+  instead, and never use another provider.
 - **WebSocket sessions after sign-out everywhere.** The WebSocket handshake now applies the
   per-user revocation time (sign out everywhere, password reset, administrator session
   termination, role change) like the HTTP routes, so a token issued before it no longer opens a

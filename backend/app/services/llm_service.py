@@ -151,6 +151,42 @@ class _ResolvedUserLLM:
     bedrock: BedrockConnection | None = None
 
 
+class LLMConfigFailure(StrEnum):
+    """Why a user's ACTIVE LLM configuration cannot be used (never the "no config" case)."""
+
+    BAD_POINTER = "bad_pointer"
+    NOT_FOUND = "not_found"
+    UNKNOWN_PROVIDER = "unknown_provider"
+    CREDENTIALS = "credentials"
+    BEDROCK_REGION = "bedrock_region"
+    INVALID = "invalid"
+
+
+_LLM_CONFIG_FAILURE_MESSAGES = {
+    LLMConfigFailure.BAD_POINTER: "Your selected LLM configuration is invalid.",
+    LLMConfigFailure.NOT_FOUND: "Your selected LLM configuration is no longer available.",
+    LLMConfigFailure.UNKNOWN_PROVIDER: "Your selected LLM configuration uses an unsupported provider.",
+    LLMConfigFailure.CREDENTIALS: "Your selected LLM configuration's credentials cannot be used.",
+    LLMConfigFailure.BEDROCK_REGION: "Your selected LLM configuration has no AWS region.",
+    LLMConfigFailure.INVALID: "Your selected LLM configuration is incomplete or invalid.",
+}
+
+
+class LLMConfigurationError(Exception):
+    """A user HAS an active LLM configuration, but it cannot be used.
+
+    Deliberately distinct from "no configuration": the latter falls back to the system
+    provider, this must NOT. Callers decided transcript masking for the user's (possibly
+    local) provider, so substituting the system provider -- possibly a cloud API -- would
+    send unmasked text off the machine. ``str()`` is a fixed sentence per reason and is safe
+    to show a user; the underlying exception is logged, never carried.
+    """
+
+    def __init__(self, reason: LLMConfigFailure) -> None:
+        self.reason = reason
+        super().__init__(_LLM_CONFIG_FAILURE_MESSAGES[reason])
+
+
 class LLMEndpointBlockedError(Exception):
     """The configured LLM endpoint is not a permitted outbound target.
 
@@ -2298,15 +2334,16 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
                 user_service = LLMService.create_from_user_settings(user_id)
                 if user_service:
                     return user_service
-            except Exception as e:
-                logger.warning(f"Failed to load user LLM settings for user {user_id}: {e}")
+            except LLMConfigurationError as e:
+                logger.warning(f"Unusable LLM configuration for user {user_id}: {e.reason}")
+                return None
 
         # No fallback - users must explicitly configure LLM settings
         logger.info(f"No active LLM configuration found for user {user_id}")
         return None
 
     @staticmethod
-    def create_from_config_id(user_id: int, config_id: int) -> Optional["LLMService"]:
+    def create_from_config_id(user_id: int, config_id: int) -> "LLMService":
         """Create LLMService from ONE specific LLM configuration the user may use.
 
         Used by RAG chat, where a conversation can pin a model different from the
@@ -2319,7 +2356,10 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
             config_id: ``user_llm_settings.id`` to load.
 
         Returns:
-            A configured service, or None if the config is missing or not theirs.
+            A configured service.
+
+        Raises:
+            LLMConfigurationError: the config is missing, not theirs, or unusable.
         """
         from app.db.base import SessionLocal
         from app.models.user_llm_settings import UserLLMSettings
@@ -2337,19 +2377,23 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
             )
             if not user_settings:
                 logger.warning(f"LLM config {config_id} not available to user {user_id}")
-                return None
+                raise LLMConfigurationError(LLMConfigFailure.NOT_FOUND)
 
             try:
                 api_key, bedrock = LLMService.credentials_from_row(user_settings)
             except ValueError:
                 logger.error(f"Failed to decrypt stored credentials for LLM config {config_id}")
-                return None
+                raise LLMConfigurationError(LLMConfigFailure.CREDENTIALS) from None
 
             from app.services import llm_context_window
 
             declared_window = int(user_settings.max_tokens)
+            try:
+                provider = LLMProvider(user_settings.provider)
+            except ValueError:
+                raise LLMConfigurationError(LLMConfigFailure.UNKNOWN_PROVIDER) from None
             config = LLMConfig(
-                provider=LLMProvider(user_settings.provider),
+                provider=provider,
                 model=str(user_settings.model_name),
                 api_key=api_key,
                 base_url=str(user_settings.base_url) if user_settings.base_url else None,
@@ -2364,20 +2408,23 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
                 bedrock=bedrock,
             )
             return LLMService(config)
-        except Exception as e:  # noqa: BLE001
+        except (ValueError, TypeError, KeyError) as e:
             logger.error(f"Could not build LLMService from config {config_id}: {e}")
-            return None
+            raise LLMConfigurationError(LLMConfigFailure.INVALID) from None
         finally:
             db.close()
 
     @staticmethod
     def _resolve_user_llm_settings(db: "Session", user_id: int) -> _ResolvedUserLLM | None:
-        """The user's active LLM configuration, or ``None`` to fall back to system settings.
+        """The user's active LLM configuration, or ``None`` when they have none.
+
+        ``None`` means NO active configuration (system fallback is correct). An active
+        configuration that cannot be used raises :class:`LLMConfigurationError` instead.
 
         DB-only (no network). Shared by :meth:`create_from_user_settings` and
         :meth:`is_configured_for_user` so the two cannot disagree about which row
         counts: a dangling or foreign ``active_llm_config_id``, an undecryptable key
-        or an unknown provider string all resolve to ``None`` here in both.
+        or an unknown provider string all raise here in both.
         """
         from app import models
         from app.models.user_llm_settings import UserLLMSettings
@@ -2402,7 +2449,7 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
                 f"Configuration error for user {user_id}: active_llm_config_id "
                 f"{active_config_setting.setting_value!r} is not an integer"
             )
-            return None
+            raise LLMConfigurationError(LLMConfigFailure.BAD_POINTER) from None
 
         # The active configuration may be the user's own or one shared within a tenant
         # both belong to; the stored pointer is re-validated because it outlives
@@ -2418,28 +2465,28 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
         if not user_settings:
             logger.warning(
                 f"Active LLM config {active_config_id} not found for user {user_id}, "
-                "checking system settings"
+                "refusing system fallback"
             )
-            return None
+            raise LLMConfigurationError(LLMConfigFailure.NOT_FOUND)
 
         try:
             provider = LLMProvider(user_settings.provider)
         except ValueError as e:
             logger.error(f"Configuration error for user {user_id}: {e}")
-            return None
+            raise LLMConfigurationError(LLMConfigFailure.UNKNOWN_PROVIDER) from None
 
         try:
             api_key, bedrock = LLMService.credentials_from_row(user_settings)
         except ValueError:
             logger.error(f"Failed to decrypt stored credentials for user {user_id}")
-            return None
+            raise LLMConfigurationError(LLMConfigFailure.CREDENTIALS) from None
 
         if provider == LLMProvider.BEDROCK and not resolve_region(bedrock):
             logger.warning(
                 f"Bedrock configuration for user {user_id} has no region and the server has "
-                "none either, checking system settings"
+                "none either, refusing system fallback"
             )
-            return None
+            raise LLMConfigurationError(LLMConfigFailure.BEDROCK_REGION)
 
         base_url = str(user_settings.base_url) if user_settings.base_url else None
         return _ResolvedUserLLM(user_settings, provider, api_key, base_url, bedrock)
@@ -2488,12 +2535,16 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
         """``(provider, model, base_url)`` of the LLM this user's features would use.
 
         ``None`` exactly when :meth:`is_configured_for_user` is False; the same DB-only
-        resolution (user config, else system settings), no network.
+        resolution (user config, else system settings), no network. A user whose ACTIVE
+        configuration is unusable gets ``None`` -- never the system provider's description.
         """
-        resolved = LLMService._resolve_user_llm_settings(db, user_id)
-        if resolved is not None and LLMService._endpoint_resolves(
-            resolved.provider, resolved.base_url
-        ):
+        try:
+            resolved = LLMService._resolve_user_llm_settings(db, user_id)
+        except LLMConfigurationError:
+            return None
+        if resolved is not None:
+            if not LLMService._endpoint_resolves(resolved.provider, resolved.base_url):
+                return None
             return resolved.provider.value, str(resolved.settings.model_name), resolved.base_url
         system = LLMService._resolve_system_provider()
         if system is None:
@@ -2503,7 +2554,12 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
 
     @staticmethod
     def create_from_user_settings(user_id: int) -> Optional["LLMService"]:
-        """Create LLMService from user-specific database settings"""
+        """Create LLMService from the user's active configuration.
+
+        No active configuration -> the system provider (or ``None``). An active
+        configuration that cannot be used raises :class:`LLMConfigurationError`; it never
+        falls back to the system provider. Database errors propagate.
+        """
         from app.db.base import SessionLocal
 
         db = SessionLocal()
@@ -2541,14 +2597,9 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
             )
             return LLMService(config)
 
-        except (ValueError, KeyError) as e:
+        except (ValueError, TypeError, KeyError) as e:
             logger.error(f"Configuration error for user {user_id}: {e}")
-            return LLMService.create_from_system_settings()
-        except Exception as e:
-            logger.error(
-                f"Unexpected error creating LLMService from user settings for user {user_id}: {e}"
-            )
-            return LLMService.create_from_system_settings()
+            raise LLMConfigurationError(LLMConfigFailure.INVALID) from None
         finally:
             db.close()
 

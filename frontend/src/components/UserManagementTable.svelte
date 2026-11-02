@@ -28,6 +28,7 @@
     permittedRowActions
   } from '$lib/users/rowPermissions';
   import { filterUsers } from '$lib/users/userSearch';
+  import { toDateInputValue, toEndOfDayTimestamp } from '$lib/users/accountExpiry';
 
   /**
    * @typedef {Object} User
@@ -578,9 +579,7 @@
    */
   function openExpirationEditor(targetUser) {
     expirationEditUuid = targetUser.uuid;
-    expirationEditValue = targetUser.account_expires_at
-      ? targetUser.account_expires_at.slice(0, 10)
-      : '';
+    expirationEditValue = toDateInputValue(targetUser.account_expires_at);
   }
 
   function closeExpirationEditor() {
@@ -593,7 +592,7 @@
    * @param {User} targetUser
    */
   async function saveExpiration(targetUser) {
-    const isoValue = expirationEditValue ? `${expirationEditValue}T23:59:59` : null;
+    const isoValue = toEndOfDayTimestamp(expirationEditValue);
     pendingActionUuid = targetUser.uuid;
     try {
       await axiosInstance.put(`/users/${targetUser.uuid}`, {

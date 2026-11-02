@@ -10,6 +10,7 @@ from app.models.speaker import SpeakerCluster
 from app.models.speaker import SpeakerClusterMember
 from app.services.clustering.thresholds import CLUSTER_ASSIGNMENT_THRESHOLD
 from app.services.clustering.thresholds import GENDER_CROSS_THRESHOLD
+from app.services.opensearch_service.client import OpenSearchUnavailableError
 from app.services.speaker_cleanup import SpeakerImpact
 from app.services.speaker_cleanup import clusters_holding_speakers
 from app.services.speaker_identity_rules import identity_conflicts_with_cluster
@@ -40,6 +41,11 @@ def find_or_create_cluster(
 
     Returns:
         The cluster the speaker was assigned to, or None on error.
+
+    Raises:
+        OpenSearchUnavailableError: The centroid kNN could not answer. Read as "no
+            match" it would create a second cluster for a voice that already has one;
+            the session is rolled back and the caller's task retries.
     """
     try:
         speaker = self.db.query(Speaker).filter(Speaker.id == speaker_id).with_for_update().first()
@@ -67,7 +73,12 @@ def find_or_create_cluster(
 
         organization_id = self._media_file_org_id(int(speaker.media_file_id))
         matches = find_matching_clusters(
-            embedding, user_id, k=5, threshold=threshold, organization_id=organization_id
+            embedding,
+            user_id,
+            k=5,
+            threshold=threshold,
+            organization_id=organization_id,
+            strict=True,
         )
 
         if matches:
@@ -138,10 +149,17 @@ def find_or_create_cluster(
 
     except Exception as e:
         logger.error("Error in find_or_create_cluster for speaker %s: %s", speaker_id, e)
-        self.db.rollback()
-        self._rename_tracker.discard()
-        self._assigned = SpeakerImpact()
+        _abandon_assignments(self)
+        if isinstance(e, OpenSearchUnavailableError):
+            raise
         return None
+
+
+def _abandon_assignments(self: "SpeakerClusteringService") -> None:
+    """Roll back this unit of work's uncommitted assignments and what they queued."""
+    self.db.rollback()
+    self._rename_tracker.discard()
+    self._assigned = SpeakerImpact()
 
 
 def cluster_speakers_for_file(
@@ -176,13 +194,19 @@ def cluster_speakers_for_file(
         return []
 
     clusters: list[SpeakerCluster] = []
-    for speaker in speakers:
-        embedding = self._get_speaker_embedding(speaker)
-        if embedding is None:
-            continue
-        cluster = self.find_or_create_cluster(int(speaker.id), user_id, embedding)
-        if cluster:
-            clusters.append(cluster)
+    try:
+        for speaker in speakers:
+            embedding = self._get_speaker_embedding(speaker)
+            if embedding is None:
+                continue
+            cluster = self.find_or_create_cluster(int(speaker.id), user_id, embedding)
+            if cluster:
+                clusters.append(cluster)
+    except OpenSearchUnavailableError:
+        # All or nothing: a retry re-runs every speaker, and a partial commit here
+        # would leave the file half-clustered with nothing to finish it.
+        _abandon_assignments(self)
+        raise
 
     self.db.commit()
     # Any speaker that joined a promoted cluster was relabelled above; the

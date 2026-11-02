@@ -111,8 +111,7 @@ backend/app/services/chat/reranker_threads.py	2	ratchet: may only go down
 backend/app/services/chat/retrieval_cache.py	8	ratchet: may only go down
 backend/app/services/chat/settings.py	1	ratchet: may only go down
 backend/app/services/clustering/admin_ops.py	2	ratchet: may only go down
-backend/app/services/clustering/assignment.py	2	ratchet: may only go down
-backend/app/services/clustering/centroids.py	1	ratchet: may only go down
+backend/app/services/clustering/assignment.py	1	ratchet: may only go down
 backend/app/services/clustering/cluster_identity.py	1	ratchet: may only go down
 backend/app/services/clustering/queries.py	1	ratchet: may only go down
 backend/app/services/clustering/recluster.py	3	ratchet: may only go down
@@ -154,7 +153,7 @@ backend/app/services/native_embedding_client.py	1	ratchet: may only go down
 backend/app/services/notification_service.py	1	ratchet: may only go down
 backend/app/services/opensearch_erasure.py	9	ratchet: may only go down
 backend/app/services/opensearch_service/client.py	2	ratchet: may only go down
-backend/app/services/opensearch_service/clusters.py	5	ratchet: may only go down
+backend/app/services/opensearch_service/clusters.py	4	ratchet: may only go down
 backend/app/services/opensearch_service/indices.py	1	ratchet: may only go down
 backend/app/services/opensearch_service/matching.py	4	ratchet: may only go down
 backend/app/services/opensearch_service/profiles.py	5	ratchet: may only go down
@@ -162,7 +161,7 @@ backend/app/services/opensearch_service/repair.py	10	ratchet: may only go down
 backend/app/services/opensearch_service/speaker_collections.py	4	ratchet: may only go down
 backend/app/services/opensearch_service/speaker_maintenance.py	3	ratchet: may only go down
 backend/app/services/opensearch_service/speaker_metadata.py	5	ratchet: may only go down
-backend/app/services/opensearch_service/speaker_read.py	7	ratchet: may only go down
+backend/app/services/opensearch_service/speaker_read.py	5	ratchet: may only go down
 backend/app/services/opensearch_service/speaker_write.py	5	ratchet: may only go down
 backend/app/services/opensearch_service/transcripts.py	2	ratchet: may only go down
 backend/app/services/opensearch_snapshot.py	6	ratchet: may only go down

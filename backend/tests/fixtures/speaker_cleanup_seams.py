@@ -117,7 +117,7 @@ def speaker_os_seams(monkeypatch) -> dict[str, Any]:
         "erase_error": None,
     }
 
-    def get(speaker_uuid):
+    def get(speaker_uuid, strict=False):
         return rec["voiceprints"].get(str(speaker_uuid))
 
     monkeypatch.setattr("app.services.opensearch_service.get_speaker_embedding", get)

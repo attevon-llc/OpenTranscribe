@@ -38,7 +38,9 @@ def speaker_assignment_seams(
     rec["segment_counts"] = {}
     rec["deleted_centroids"] = []
 
-    def find_matching_clusters(embedding, user_id, k=5, threshold=0.75, organization_id=None):
+    def find_matching_clusters(
+        embedding, user_id, k=5, threshold=0.75, organization_id=None, strict=False
+    ):
         scored = sorted(
             ((cosine(list(embedding), c), u) for u, c in rec["clusters"].items()), reverse=True
         )

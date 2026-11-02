@@ -3,9 +3,11 @@
 import datetime
 import logging
 
+from app.core.config import settings
 from app.core.constants import SPEAKER_CONFIDENCE_HIGH
 from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.aliases import get_active_speaker_index
+from app.services.opensearch_service.client import OpenSearchUnavailableError
 from app.services.opensearch_service.client import _speaker_org_filter_clauses
 from app.services.opensearch_service.client import query_embedding_dimension_mismatch
 from app.services.opensearch_service.indices import ensure_indices_exist
@@ -132,6 +134,8 @@ def find_matching_clusters(
     k: int = 5,
     threshold: float = SPEAKER_CONFIDENCE_HIGH,
     organization_id: int | None = None,
+    *,
+    strict: bool = False,
 ) -> list[dict]:
     """Find matching cluster centroids for a speaker embedding using kNN.
 
@@ -141,11 +145,18 @@ def find_matching_clusters(
         k: Number of nearest neighbors.
         threshold: Minimum cosine similarity.
         organization_id: Active org id (None = personal) — tenant gate.
+        strict: Raise instead of returning ``[]`` when the cluster could not
+            answer. Assignment must pass it: it creates a new cluster on "no match".
 
     Returns:
         List of dicts with cluster_uuid, similarity, label.
+
+    Raises:
+        OpenSearchUnavailableError: ``strict`` and the search failed.
     """
     if not _client.opensearch_client:
+        if strict and settings.OPENSEARCH_ENABLED:
+            raise OpenSearchUnavailableError("OpenSearch client unavailable")
         logger.warning("OpenSearch client not initialized")
         return []
 
@@ -198,6 +209,8 @@ def find_matching_clusters(
 
     except Exception as e:
         logger.error(f"Error finding matching clusters: {e}")
+        if strict:
+            raise OpenSearchUnavailableError(f"cluster kNN failed: {e}") from e
         return []
 
 

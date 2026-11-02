@@ -9,12 +9,19 @@
  *   super_admin-only (`get_current_active_superuser`; `PUT /users/{uuid}` strips
  *   `allow_local_fallback` from anyone else), as is minting an elevated account
  *   (the `ELEVATED_ROLES` gate on `POST /admin/users` and `POST /auth/invitations`).
+ * - Lock, session termination, account edits (password, expiration) and delete refuse
+ *   a super_admin target unless the caller is one too (`admin_accounts.py`
+ *   `_targets_a_super_admin_without_authority`, `users_admin_edit.py`).
+ * - A local password exists only where `auth.utils.local_password_allowed` allows it.
  * - Unlock and file recovery are admin-tier with no target restriction, so the table
  *   offers them on every row but the viewer's own; they have no flag here.
  * - Identity linking refuses a super_admin target unconditionally (local-only by design).
  */
 
 export const ROLE_SUPER_ADMIN = 'super_admin';
+
+/** `AUTH_TYPES_SUPPORT_LOCAL_FALLBACK` in `backend/app/auth/constants.py`. */
+const LOCAL_FALLBACK_AUTH_TYPES: readonly string[] = ['pki', 'oidc'];
 
 export interface Viewer {
   uuid: string;
@@ -62,9 +69,13 @@ export function canAssignElevatedRoles(viewer: Viewer | null | undefined): boole
   return isSuperAdmin(viewer);
 }
 
-/** Whether the account can hold a local password at all. */
+/** `auth.utils.local_password_allowed`: local, or pki/oidc with the per-user fallback. */
 export function localPasswordAllowed(target: ManagedUser): boolean {
-  return target.auth_type === 'local' || Boolean(target.allow_local_fallback);
+  if (target.auth_type === 'local') return true;
+  return (
+    LOCAL_FALLBACK_AUTH_TYPES.includes(target.auth_type ?? '') &&
+    Boolean(target.allow_local_fallback)
+  );
 }
 
 /**
@@ -79,20 +90,19 @@ export function permittedRowActions(
 
   const superAdmin = isSuperAdmin(viewer);
   const targetOutranksViewer = target.role === ROLE_SUPER_ADMIN && !superAdmin;
+  const fallbackCapable = LOCAL_FALLBACK_AUTH_TYPES.includes(target.auth_type ?? '');
 
   return {
     changeRole: superAdmin,
-    toggleLocalFallback:
-      superAdmin &&
-      Boolean(target.auth_type) &&
-      target.auth_type !== 'local' &&
-      target.auth_type !== 'ldap',
+    // Enabling is accepted only for pki/oidc (`assert_local_fallback_settable`);
+    // disabling is always accepted.
+    toggleLocalFallback: superAdmin && (fallbackCapable || Boolean(target.allow_local_fallback)),
     resetPassword: localPasswordAllowed(target) && !targetOutranksViewer,
-    lock: target.is_active !== false,
-    forceLogout: true,
+    lock: target.is_active !== false && !targetOutranksViewer,
+    forceLogout: !targetOutranksViewer,
     resetMfa: superAdmin,
     linkIdentity: superAdmin && target.role !== ROLE_SUPER_ADMIN,
-    editExpiration: true,
-    delete: true,
+    editExpiration: !targetOutranksViewer,
+    delete: !targetOutranksViewer,
   };
 }

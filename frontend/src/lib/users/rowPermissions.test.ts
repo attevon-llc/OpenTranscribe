@@ -36,13 +36,18 @@ describe('isSuperAdmin / canAssignElevatedRoles', () => {
   });
 });
 
-describe('localPasswordAllowed', () => {
+describe('localPasswordAllowed mirrors auth.utils.local_password_allowed', () => {
   it.each([
     ['local', false, true],
-    ['oidc', true, true],
+    ['local', true, true],
     ['pki', true, true],
+    ['oidc', true, true],
+    ['pki', false, false],
     ['oidc', false, false],
-    ['ldap', false, false],
+    ['ldap', true, false],
+    ['saml', true, false],
+    ['something-new', true, false],
+    [undefined, true, false],
   ])('auth_type=%s fallback=%s -> %s', (authType, fallback, expected) => {
     expect(
       localPasswordAllowed(target({ auth_type: authType, allow_local_fallback: fallback }))
@@ -79,15 +84,22 @@ describe('permittedRowActions', () => {
     ]);
   });
 
+  it('a plain admin on a super_admin row is offered none of the flagged actions', () => {
+    expect(offered(permittedRowActions(admin, target({ role: 'super_admin' })))).toEqual([]);
+  });
+
   it('a super_admin on a super_admin row may do everything but link an identity', () => {
     const actions = permittedRowActions(superAdmin, target({ role: 'super_admin' }));
     expect(actions.linkIdentity).toBe(false);
-    expect(actions.changeRole).toBe(true);
-    expect(actions.resetPassword).toBe(true);
-  });
-
-  it('a plain admin is not offered a password reset on a super_admin row', () => {
-    expect(permittedRowActions(admin, target({ role: 'super_admin' })).resetPassword).toBe(false);
+    expect(offered(actions)).toEqual([
+      'changeRole',
+      'delete',
+      'editExpiration',
+      'forceLogout',
+      'lock',
+      'resetMfa',
+      'resetPassword',
+    ]);
   });
 
   it('does not offer lock on an account that is already inactive', () => {
@@ -96,13 +108,29 @@ describe('permittedRowActions', () => {
   });
 
   it.each([
-    ['oidc', true],
-    ['pki', true],
-    ['local', false],
-    ['ldap', false],
-  ])('local-fallback toggle for a super_admin: auth_type=%s -> %s', (authType, expected) => {
-    const row = target({ auth_type: authType });
-    expect(permittedRowActions(superAdmin, row).toggleLocalFallback).toBe(expected);
-    expect(permittedRowActions(admin, row).toggleLocalFallback).toBe(false);
+    ['oidc', false, true],
+    ['pki', false, true],
+    ['local', false, false],
+    ['ldap', false, false],
+    ['saml', false, false],
+    ['ldap', true, true],
+    ['saml', true, true],
+  ])(
+    'local-fallback toggle for a super_admin: auth_type=%s fallback=%s -> %s',
+    (authType, fallback, expected) => {
+      const row = target({ auth_type: authType, allow_local_fallback: fallback });
+      expect(permittedRowActions(superAdmin, row).toggleLocalFallback).toBe(expected);
+      expect(permittedRowActions(admin, row).toggleLocalFallback).toBe(false);
+    }
+  );
+
+  it('password reset needs both a password-capable account and authority over it', () => {
+    const ldapRow = target({ auth_type: 'ldap', allow_local_fallback: true });
+    expect(permittedRowActions(superAdmin, ldapRow).resetPassword).toBe(false);
+    const oidcFallback = target({ auth_type: 'oidc', allow_local_fallback: true });
+    expect(permittedRowActions(admin, oidcFallback).resetPassword).toBe(true);
+    expect(permittedRowActions(admin, { ...oidcFallback, role: 'super_admin' }).resetPassword).toBe(
+      false
+    );
   });
 });

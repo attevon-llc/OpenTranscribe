@@ -1171,7 +1171,7 @@
                   </button>
                   {/if}
                   {#if !can.editExpiration}
-                    <!-- No expiration editor for this row. -->
+                    <!-- No expiration editor: PUT /users/{uuid} refuses this target. -->
                   {:else if expirationEditUuid === currentUser.uuid}
                     <span class="expiration-editor">
                       <input

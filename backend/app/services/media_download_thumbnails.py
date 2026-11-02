@@ -1,15 +1,15 @@
-"""Thumbnail URL resolution and fallback generation for downloaded media."""
+"""Thumbnail URL resolution, fetch and fallback generation for downloaded media."""
 
+import io
 import logging
-from typing import TYPE_CHECKING
 from typing import Any
 
 import requests
 
+from app.services.minio_service import upload_file
 from app.services.thumbnail import generate_and_upload_thumbnail
-
-if TYPE_CHECKING:
-    from app.services.media_download_service import MediaDownloadService
+from app.utils.url_validation import pinned_requests_session
+from app.utils.url_validation import resolve_pinned_target
 
 logger = logging.getLogger(__name__)
 
@@ -79,8 +79,71 @@ def _get_fallback_thumbnail_url(video_id: str | None, extractor: str) -> str | N
     return None
 
 
+def _download_media_thumbnail_sync(media_info: dict[str, Any], user_id: int) -> str | None:
+    """
+    Download media thumbnail and upload to storage (synchronous version).
+
+    Args:
+        media_info: Media metadata from yt-dlp
+        user_id: User ID for storage path
+
+    Returns:
+        Storage path of uploaded thumbnail or None if failed
+    """
+    try:
+        thumbnail_url = _resolve_thumbnail_url(media_info)
+
+        if not thumbnail_url:
+            logger.warning("No thumbnail URL found in media metadata")
+            return None
+
+        # `is_valid_media_url` only validates the SUBMITTED page URL — this is yt-dlp's
+        # EXTRACTED metadata for that page, which the page (via a generic extractor) can
+        # point at an arbitrary internal/link-local target. The address checked is the
+        # address dialled, and a redirect is not followed: a pin covers one hop.
+        target, reason = resolve_pinned_target(thumbnail_url)
+        if target is None:
+            logger.warning("SSRF blocked: %s for thumbnail URL: %s", reason, thumbnail_url[:200])
+            return None
+
+        with pinned_requests_session(target) as session:
+            response = session.get(
+                target.url, headers=target.headers, timeout=30, allow_redirects=False
+            )
+        if response.status_code != 200:
+            logger.warning(
+                "Thumbnail fetch returned HTTP %s for: %s",
+                response.status_code,
+                thumbnail_url[:200],
+            )
+            return None
+        thumbnail_data = response.content
+
+        if not thumbnail_data:
+            logger.warning("Empty thumbnail data received")
+            return None
+
+        # Generate storage path and upload
+        video_id = media_info.get("id", "unknown")
+        source = media_info.get("extractor", "media").lower()
+        storage_path = f"user_{user_id}/{source}_{video_id}/thumbnail.jpg"
+
+        upload_file(
+            file_content=io.BytesIO(thumbnail_data),
+            file_size=len(thumbnail_data),
+            object_name=storage_path,
+            content_type="image/jpeg",
+        )
+
+        logger.info(f"Successfully downloaded and uploaded media thumbnail: {storage_path}")
+        return storage_path
+
+    except Exception as e:
+        logger.error(f"Error downloading media thumbnail: {e}")
+        return None
+
+
 def _get_thumbnail_with_fallback(
-    media_service: "MediaDownloadService",
     media_info: dict[str, Any],
     user_id: int,
     media_file_id: int,
@@ -99,7 +162,6 @@ def _get_thumbnail_with_fallback(
     blocking the download worker.
 
     Args:
-        media_service: MediaDownloadService instance.
         media_info: yt-dlp metadata dict (contains ``thumbnail`` URL if any).
         user_id: Owner user ID.
         media_file_id: Media file integer ID.
@@ -118,7 +180,7 @@ def _get_thumbnail_with_fallback(
         or None when the fallback generation was deferred (or both failed).
     """
     try:
-        thumbnail_path = media_service._download_media_thumbnail_sync(media_info, user_id)
+        thumbnail_path = _download_media_thumbnail_sync(media_info, user_id)
         if thumbnail_path:
             logger.debug(f"Successfully downloaded media thumbnail: {thumbnail_path}")
             return thumbnail_path

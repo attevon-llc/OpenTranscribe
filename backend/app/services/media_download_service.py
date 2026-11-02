@@ -17,7 +17,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import requests
 import yt_dlp
 from sqlalchemy.orm import Session
 
@@ -34,8 +33,6 @@ from app.services.media_download_formats import _select_quality_from_available_f
 from app.services.media_download_metadata import MediaMetadataMixin
 from app.services.media_download_playlist import PlaylistMixin
 from app.services.media_download_thumbnails import _get_thumbnail_with_fallback
-from app.services.media_download_thumbnails import _resolve_thumbnail_url
-from app.services.minio_service import upload_file
 from app.services.minio_service import upload_file_tuned
 from app.services.protected_media_providers import PROTECTED_MEDIA_PROVIDERS
 from app.services.protected_media_providers import ProtectedMediaProvider
@@ -490,66 +487,6 @@ class MediaDownloadService(PlaylistMixin, MediaMetadataMixin):
             logger.exception(f"Unexpected error downloading {url}")
             raise OperationFailedError("The media download failed.") from e
 
-    def _download_media_thumbnail_sync(
-        self, media_info: dict[str, Any], user_id: int
-    ) -> str | None:
-        """
-        Download media thumbnail and upload to storage (synchronous version).
-
-        Args:
-            media_info: Media metadata from yt-dlp
-            user_id: User ID for storage path
-
-        Returns:
-            Storage path of uploaded thumbnail or None if failed
-        """
-        try:
-            thumbnail_url = _resolve_thumbnail_url(media_info)
-
-            if not thumbnail_url:
-                logger.warning("No thumbnail URL found in media metadata")
-                return None
-
-            # `is_safe_url` above (`:846`) only validates the SUBMITTED page URL — this is
-            # yt-dlp's EXTRACTED metadata for that page, which a malicious page (via a
-            # generic extractor) can point at an arbitrary internal/link-local target. Same
-            # SSRF class as the submitted-URL check; same guard, applied to what is actually
-            # fetched.
-            safe, reason = is_safe_url(thumbnail_url)
-            if not safe:
-                logger.warning(
-                    "SSRF blocked: %s for thumbnail URL: %s", reason, thumbnail_url[:200]
-                )
-                return None
-
-            # Download the thumbnail
-            response = requests.get(thumbnail_url, timeout=30)
-            response.raise_for_status()
-            thumbnail_data = response.content
-
-            if not thumbnail_data:
-                logger.warning("Empty thumbnail data received")
-                return None
-
-            # Generate storage path and upload
-            video_id = media_info.get("id", "unknown")
-            source = media_info.get("extractor", "media").lower()
-            storage_path = f"user_{user_id}/{source}_{video_id}/thumbnail.jpg"
-
-            upload_file(
-                file_content=io.BytesIO(thumbnail_data),
-                file_size=len(thumbnail_data),
-                object_name=storage_path,
-                content_type="image/jpeg",
-            )
-
-            logger.info(f"Successfully downloaded and uploaded media thumbnail: {storage_path}")
-            return storage_path
-
-        except Exception as e:
-            logger.error(f"Error downloading media thumbnail: {e}")
-            return None
-
     def process_media_url_sync(
         self,
         url: str,
@@ -797,7 +734,6 @@ class MediaDownloadService(PlaylistMixin, MediaMetadataMixin):
             thumbnail_path: str | None = None
             with benchmark_timing.stage(benchmark_task_id, "thumbnail"):
                 thumbnail_path = _get_thumbnail_with_fallback(
-                    self,
                     media_info,
                     int(resolve_user_id) if resolve_user_id is not None else 0,
                     file_id,
@@ -847,12 +783,6 @@ class MediaDownloadService(PlaylistMixin, MediaMetadataMixin):
     def _prepare_youtube_metadata(self, url: str, youtube_info: dict[str, Any]) -> dict[str, Any]:
         """Alias for _prepare_media_metadata for backward compatibility."""
         return self._prepare_media_metadata(url, youtube_info)
-
-    def _download_youtube_thumbnail_sync(
-        self, youtube_info: dict[str, Any], user_id: int
-    ) -> str | None:
-        """Alias for _download_media_thumbnail_sync for backward compatibility."""
-        return self._download_media_thumbnail_sync(youtube_info, user_id)
 
 
 # Backward compatibility alias

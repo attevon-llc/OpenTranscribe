@@ -32,6 +32,7 @@ from app.schemas.tag import Tag as TagSchema
 from app.schemas.tag import TagBase
 from app.schemas.tag import TagWithCount
 from app.services.request_context import RequestContext
+from app.services.tag_bulk import REQUIRED_PERMISSION
 from app.services.tag_collisions import list_tags_filtered
 from app.services.tag_collisions import list_unused_tag_rows
 from app.services.tag_operations import cleanup_unreferenced_tags
@@ -254,9 +255,9 @@ def add_tag_to_file(
     the batched resolver instead — see ``prepare_upload.add_tags_to_file``).
 
     Authorized by ``get_file_by_uuid_with_permission``, which applies the sharing,
-    takedown and tenant (``ctx.org_id``) gates in one place — write access to the
-    *file* is the whole requirement, because tagging does not touch anyone else's
-    vocabulary.
+    takedown and tenant (``ctx.org_id``) gates in one place — ``editor`` access to
+    the *file* is the whole requirement (the bulk rail's ``REQUIRED_PERMISSION``),
+    because tagging does not touch anyone else's vocabulary.
 
     The body is a raw ``dict`` rather than a schema, so a missing ``name`` is
     rejected as 422 by hand. The tag is resolved in the **file's tenant**: on an
@@ -281,6 +282,7 @@ def add_tag_to_file(
         current_user.id,
         bypass=ctx.bypass,
         organization_id=ctx.org_id,
+        min_permission=REQUIRED_PERMISSION,
     )
     file_id = media_file.id  # Get internal ID for database operations
 
@@ -328,9 +330,7 @@ def remove_tag_from_file(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """
-    Remove a tag from a media file
-    """
+    """Remove a tag from a media file; needs ``editor`` on the file, like attaching."""
     # Get file by UUID with permission check (tenant-gated via ctx.org_id)
     from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
@@ -340,6 +340,7 @@ def remove_tag_from_file(
         current_user.id,
         bypass=ctx.bypass,
         organization_id=ctx.org_id,
+        min_permission=REQUIRED_PERMISSION,
     )
     file_id = media_file.id
 

@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
@@ -82,7 +83,7 @@ class VRAMProfiler:
             torch.cuda.reset_peak_memory_stats(0)
 
     @contextmanager
-    def step(self, name: str):
+    def step(self, name: str) -> Iterator[None]:
         """Profile a pipeline step.
 
         Captures NVML device_used (total GPU memory including CTranslate2)

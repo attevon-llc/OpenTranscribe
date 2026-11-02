@@ -3,6 +3,7 @@ Prompt management utilities for AI summarization
 """
 
 import logging
+import uuid
 
 from sqlalchemy import and_
 from sqlalchemy import or_
@@ -170,7 +171,7 @@ def resolve_active_prompt_record(
             db.close()
 
 
-def increment_prompt_usage(db: Session, prompt_id_or_uuid) -> None:
+def increment_prompt_usage(db: Session, prompt_id_or_uuid: int | str | uuid.UUID) -> None:
     """Increment ``usage_count`` by one for the given prompt (best-effort).
 
     Called once per successful summarization for the prompt actually used, so

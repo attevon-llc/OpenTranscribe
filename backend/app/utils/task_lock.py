@@ -7,13 +7,21 @@ instances of the same task from running simultaneously.
 
 import functools
 import logging
+from collections.abc import Callable
+from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Any
+from typing import ParamSpec
+from typing import TypeVar
 
 import redis
 
 from app.core.redis import get_redis
 
 logger = logging.getLogger(__name__)
+
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 class TaskLockError(Exception):
@@ -23,7 +31,7 @@ class TaskLockError(Exception):
 class TaskLockManager:
     """Manages distributed locks for task execution."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the lock manager."""
         self._redis_client: redis.Redis | None = None
         self._redis_init_failed: bool = False
@@ -41,7 +49,9 @@ class TaskLockManager:
         return self._redis_client
 
     @contextmanager
-    def acquire_lock(self, lock_key: str, timeout: int = 300, blocking_timeout: int = 0):
+    def acquire_lock(
+        self, lock_key: str, timeout: int = 300, blocking_timeout: int = 0
+    ) -> Iterator[bool]:
         """
         Acquire a distributed lock for task execution.
 
@@ -145,7 +155,9 @@ class TaskLockManager:
 task_lock_manager = TaskLockManager()
 
 
-def with_task_lock(lock_key: str, timeout: int = 300):
+def with_task_lock(
+    lock_key: str, timeout: int = 300
+) -> Callable[[Callable[P, R]], Callable[P, R | dict[str, Any]]]:
     """
     Decorator to ensure only one instance of a task runs at a time.
 
@@ -160,13 +172,13 @@ def with_task_lock(lock_key: str, timeout: int = 300):
             pass
     """
 
-    def decorator(func):
+    def decorator(func: Callable[P, R]) -> Callable[P, R | dict[str, Any]]:
         # functools.wraps keeps __name__/__doc__/__wrapped__ intact. Without it
         # every decorated task presents as "wrapper", which breaks Celery's
         # implicit task naming for any caller that does not pass name= and hides
         # the real docstring from introspection.
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R | dict[str, Any]:
             with task_lock_manager.acquire_lock(lock_key, timeout=timeout) as acquired:
                 if acquired:
                     return func(*args, **kwargs)

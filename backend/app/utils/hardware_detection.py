@@ -13,10 +13,14 @@ Supports:
 import logging
 import os
 import platform
+from typing import TYPE_CHECKING
 from typing import Any
 
 from app.core.config import settings
 from app.utils.cpu_budget import effective_cpu_count
+
+if TYPE_CHECKING:
+    import torch
 
 logger = logging.getLogger(__name__)
 
@@ -277,7 +281,7 @@ class HardwareConfig:
             else:
                 return 2  # likely OOM; use medium or small
 
-    def get_torch_device(self):
+    def get_torch_device(self) -> "torch.device":
         """Get PyTorch device object."""
         if not self.torch_available:
             raise RuntimeError("PyTorch not available")
@@ -408,7 +412,7 @@ class HardwareConfig:
         else:
             return {"device": self.device, "message": "Not using CUDA"}
 
-    def log_vram_usage(self, context: str = ""):
+    def log_vram_usage(self, context: str = "") -> None:
         """
         Log current VRAM usage with context.
 
@@ -463,7 +467,7 @@ class HardwareConfig:
             return float(torch.cuda.max_memory_allocated(self.device_index)) / (1024**2)
         return 0.0
 
-    def optimize_memory_usage(self, aggressive: bool = True):
+    def optimize_memory_usage(self, aggressive: bool = True) -> None:
         """
         Optimize memory usage based on device.
 

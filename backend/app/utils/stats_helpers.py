@@ -215,11 +215,11 @@ def get_recent_tasks(db: Session, limit: int = 10) -> list[dict[str, Any]]:
         db.query(Task)
         .options(
             load_only(
-                Task.id,  # type: ignore[arg-type]
-                Task.task_type,  # type: ignore[arg-type]
-                Task.status,  # type: ignore[arg-type]
-                Task.created_at,  # type: ignore[arg-type]
-                Task.completed_at,  # type: ignore[arg-type]
+                Task.id,
+                Task.task_type,
+                Task.status,
+                Task.created_at,
+                Task.completed_at,
             )
         )
         .order_by(Task.created_at.desc())

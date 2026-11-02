@@ -27,13 +27,13 @@ def _finalize_unconfirmed_cancellation(db: Session, media_file: MediaFile, task_
     """
     task = db.query(Task).filter(Task.id == task_id).first()
     if task:
-        task.status = TASK_STATUS_FAILED  # type: ignore[assignment]
-        task.error_message = "Task cancelled by user"  # type: ignore[assignment]
-        task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
+        task.status = TASK_STATUS_FAILED
+        task.error_message = "Task cancelled by user"
+        task.completed_at = datetime.now(UTC)
 
     media_file.status = FileStatus.CANCELLED
-    media_file.active_task_id = None  # type: ignore[assignment]
-    media_file.task_started_at = None  # type: ignore[assignment]
+    media_file.active_task_id = None
+    media_file.task_started_at = None
     media_file.cancellation_requested = False
 
 

@@ -5,10 +5,15 @@ statistics, and resolving speaker display names. Used by speaker identification,
 summarization, and other transcript-processing tasks.
 """
 
+from __future__ import annotations
+
 import logging
+from collections.abc import Sequence
 from typing import Any
+from typing import Protocol
 
 from app.core import redaction_defaults
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.utils.speaker_labels import canonical_speaker_label
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 from app.utils.speaker_stats import tally_by_speaker
@@ -16,7 +21,38 @@ from app.utils.speaker_stats import tally_by_speaker
 logger = logging.getLogger(__name__)
 
 
-def mask_segment_text(segment, redaction_cfg=None) -> str:
+class SpeakerLike(Protocol):
+    """What the builders read off a segment's speaker."""
+
+    @property
+    def name(self) -> str | None: ...
+
+
+class TimedSegment(Protocol):
+    """Read side shared by the ORM ``TranscriptSegment`` and the plain-dict adapters."""
+
+    @property
+    def text(self) -> str | None: ...
+    @property
+    def start_time(self) -> float: ...
+    @property
+    def end_time(self) -> float: ...
+    @property
+    def speaker(self) -> SpeakerLike | None: ...
+
+
+class MaskableSegment(TimedSegment, Protocol):
+    """A segment whose cached redaction spans can be applied (ORM rows only)."""
+
+    @property
+    def redactions(self) -> list[Any] | None: ...
+    @property
+    def words(self) -> list[Any] | None: ...
+
+
+def mask_segment_text(
+    segment: MaskableSegment, redaction_cfg: EffectiveRedactionConfig | None = None
+) -> str:
     """Return a segment's text, masked when an enabled redaction config is supplied.
 
     Used to keep PII/profane content out of prompts sent to external LLM providers
@@ -55,7 +91,7 @@ def mask_segment_text(segment, redaction_cfg=None) -> str:
         return redaction_defaults.REDACTION_LLM_FAILSAFE_TEXT
 
 
-def get_speaker_name(segment, *, voiceprint_names: bool | None = None) -> str:
+def get_speaker_name(segment: TimedSegment, *, voiceprint_names: bool | None = None) -> str:
     """Get the best available speaker name from a transcript segment.
 
     Delegates to :func:`app.utils.speaker_labels.canonical_speaker_label` — the single
@@ -78,7 +114,10 @@ def get_speaker_name(segment, *, voiceprint_names: bool | None = None) -> str:
     return canonical_speaker_label_for_row(segment.speaker, voiceprint_names=voiceprint_names)
 
 
-def build_full_transcript(transcript_segments, redaction_cfg=None) -> str:
+def build_full_transcript(
+    transcript_segments: Sequence[MaskableSegment],
+    redaction_cfg: EffectiveRedactionConfig | None = None,
+) -> str:
     """Build formatted transcript text from segments with speaker labels and timestamps.
 
     When ``redaction_cfg`` is enabled, segment text is masked (for ``redact_before_llm``).
@@ -95,7 +134,9 @@ def build_full_transcript(transcript_segments, redaction_cfg=None) -> str:
 
 
 def build_speaker_segments(
-    transcript_segments, limit: int = 50, redaction_cfg=None
+    transcript_segments: Sequence[MaskableSegment],
+    limit: int = 50,
+    redaction_cfg: EffectiveRedactionConfig | None = None,
 ) -> list[dict[str, Any]]:
     """Build speaker segments data for LLM analysis.
 
@@ -125,7 +166,7 @@ def build_speaker_segments(
 
 
 def compute_speaker_stats(
-    transcript_segments, *, voiceprint_names: bool | None = None
+    transcript_segments: Sequence[TimedSegment], *, voiceprint_names: bool | None = None
 ) -> dict[str, Any]:
     """Per-speaker talk time, segment count, word count and share of the conversation.
 
@@ -169,8 +210,8 @@ def compute_speaker_stats(
 
 
 def build_transcript_and_stats(
-    transcript_segments,
-    redaction_cfg=None,
+    transcript_segments: Sequence[MaskableSegment],
+    redaction_cfg: EffectiveRedactionConfig | None = None,
     *,
     voiceprint_names: bool | None = None,
 ) -> tuple[str, dict[str, Any]]:

@@ -8,6 +8,7 @@ have been moved to app.tasks.recovery for better organization.
 import contextlib
 import json
 import logging
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.config import settings
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 @celery_app.task(name="system.update_gpu_stats", bind=True, priority=CPUPriority.SYSTEM)
-def update_gpu_stats(self):
+def update_gpu_stats(self: Any) -> list[dict[str, Any]]:
     """Periodic task to update GPU statistics in Redis.
 
     Runs on the cpu worker (which has 'count: all' NVIDIA device access via

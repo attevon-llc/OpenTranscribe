@@ -7,6 +7,7 @@ Runs asynchronously in the background to avoid blocking the upload response.
 import io
 import logging
 from datetime import timedelta
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.queues import CPUPriority
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 @celery_app.task(name="generate_thumbnail", bind=True, priority=CPUPriority.PIPELINE_CRITICAL)
-def generate_thumbnail_task(self, file_id: int, user_id: int, storage_path: str) -> dict:
+def generate_thumbnail_task(self: Any, file_id: int, user_id: int, storage_path: str) -> dict:
     """
     Generate and upload a WebP thumbnail for a video file.
 
@@ -91,7 +92,7 @@ def generate_thumbnail_task(self, file_id: int, user_id: int, storage_path: str)
             with session_scope() as db:
                 media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
                 if media_file:
-                    media_file.thumbnail_path = thumbnail_storage_path  # type: ignore[assignment]
+                    media_file.thumbnail_path = thumbnail_storage_path
                     db.commit()
                     logger.info(f"Updated MediaFile {file_id} with thumbnail path")
                 else:

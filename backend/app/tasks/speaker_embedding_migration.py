@@ -250,7 +250,9 @@ def _normalize_index(
 
 
 @celery_app.task(name="migration.normalize_embeddings", bind=True, priority=CPUPriority.ADMIN_BATCH)
-def normalize_speaker_embeddings_task(self, batch_size: int = SCROLL_BATCH_SIZE) -> dict[str, Any]:
+def normalize_speaker_embeddings_task(
+    self: Any, batch_size: int = SCROLL_BATCH_SIZE
+) -> dict[str, Any]:
     """Normalize all speaker/cluster/profile embeddings to L2 unit vectors.
 
     Scans the main speaker index AND the active speaker index (which

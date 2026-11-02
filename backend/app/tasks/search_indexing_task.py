@@ -107,7 +107,7 @@ class FileGoneError(ValueError):
 @stage_timing.stage("search_indexing")
 @tracks_post_processing(PostProcessingTask.SEARCH_INDEXING, file_param="file_id")
 def index_transcript_search_task(  # noqa: C901
-    self,
+    self: Any,
     file_id: int,
     file_uuid: str,
     user_id: int,

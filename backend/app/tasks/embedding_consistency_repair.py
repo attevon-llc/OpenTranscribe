@@ -299,7 +299,7 @@ def _update_repair_progress(
         message=f"Repaired {processed} of {total_files} files",
         failed_item=file_uuid if not success else None,
     )
-    return progress  # type: ignore[return-value]
+    return progress
 
 
 # ---------------------------------------------------------------------------
@@ -375,7 +375,7 @@ def _run_repair_phase(
     priority=GPUPriority.ADMIN_MIGRATION,
 )
 def speaker_embedding_consistency_repair_batch_task(
-    self,
+    self: Any,
     file_uuids: list[str],
     batch_index: int = 0,
     total_batches: int = 1,

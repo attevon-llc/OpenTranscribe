@@ -208,12 +208,12 @@ def _load_summarization_inputs(
             logger.info(
                 f"Force regenerate requested - clearing existing summaries for file {file_id}"
             )
-            media_file.summary_data = None  # type: ignore[assignment]
+            media_file.summary_data = None
             # Vestigial pointer into the retired transcript_summaries index (#67);
             # nothing sets it any more, so this only drains upgraded rows.
-            media_file.summary_opensearch_id = None  # type: ignore[assignment]
+            media_file.summary_opensearch_id = None
 
-        media_file.summary_status = "processing"  # type: ignore[assignment]
+        media_file.summary_status = "processing"
         db.commit()
 
         if force_regenerate:

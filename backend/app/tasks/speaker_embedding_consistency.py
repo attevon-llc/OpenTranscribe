@@ -365,7 +365,7 @@ def _select_voiceprints_to_remove(
     priority=CPUPriority.MAINTENANCE,
 )
 def speaker_embedding_consistency_check_task(
-    self, manual: bool = False, user_id: int = 1
+    self: Any, manual: bool = False, user_id: int = 1
 ) -> dict[str, Any]:
     """Detect speakers missing from OpenSearch and dispatch GPU repair batches.
 

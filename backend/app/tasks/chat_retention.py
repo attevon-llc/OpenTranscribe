@@ -14,6 +14,7 @@ import logging
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.queues import UtilityPriority
@@ -31,7 +32,7 @@ MAX_DELETIONS_PER_RUN = 500
     name="chat.retention_sweep",
     priority=UtilityPriority.BACKGROUND,
 )
-def chat_retention_sweep(self) -> dict:  # noqa: ARG001 — bind=True signature
+def chat_retention_sweep(self: Any) -> dict:  # noqa: ARG001 — bind=True signature
     """Delete conversations older than the configured retention window.
 
     Returns:

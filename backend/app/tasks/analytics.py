@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.enums import PostProcessingTask
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
     bind=True, name="analytics.analyze_transcript", priority=CPUPriority.USER_TRIGGERED
 )
 @tracks_post_processing(PostProcessingTask.ANALYTICS, file_param="file_uuid")
-def analyze_transcript_task(self, file_uuid: str):
+def analyze_transcript_task(self: Any, file_uuid: str) -> dict[str, Any]:
     """
     Analyze a transcript to extract comprehensive analytics:
     - Speaker talk time and statistics

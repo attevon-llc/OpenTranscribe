@@ -8,6 +8,7 @@ The voiceprint extraction run after transcription lives in ``speaker_embedding_t
 """
 
 import logging
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.queues import GPUPriority
@@ -24,13 +25,13 @@ logger = logging.getLogger(__name__)
     bind=True, name="update_speaker_embedding_on_reassignment", priority=GPUPriority.INTERACTIVE
 )
 def update_speaker_embedding_on_reassignment(
-    self,
+    self: Any,
     segment_uuid: str,
     media_file_uuid: str,
     target_speaker_uuid: str,
     source_speaker_uuid: str | None,
     user_id: int,
-):
+) -> dict[str, Any]:
     """
     Update speaker embeddings after a segment is manually reassigned to a different speaker.
 
@@ -56,7 +57,8 @@ def update_speaker_embedding_on_reassignment(
         # transaction inside the download/inference phase below.
         plan = _load_reassignment_plan(segment_uuid, target_speaker_uuid, source_speaker_uuid)
         if "skip" in plan:
-            return plan["skip"]
+            skipped: dict[str, Any] = plan["skip"]
+            return skipped
 
         # Phase 2 — MinIO download, ffmpeg conversion, embedding inference.
         # NO DB session is held here.

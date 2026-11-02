@@ -8,6 +8,7 @@ the post stage the pipeline plan names (``post_stage_local`` on this server's en
 import logging
 import os
 import tempfile
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.config import settings
@@ -140,7 +141,7 @@ def _refuse_on_lite() -> None:
     retry_backoff=True,
     retry_backoff_max=30,
 )
-def transcribe_cpu_task(self, preprocess_context: dict) -> dict:
+def transcribe_cpu_task(self: Any, preprocess_context: dict) -> dict:
     """CPU-only: Lightweight Whisper transcription (base/tiny models).
 
     Stage 2 alternative for the 3-stage pipeline chain. Runs on the CPU worker

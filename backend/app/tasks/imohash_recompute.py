@@ -19,6 +19,8 @@ been processed.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.queues import CeleryQueues
@@ -29,6 +31,9 @@ from app.models.media import MediaFile
 from app.services.imohash_service import compute_from_minio
 from app.services.migration_progress_service import MigrationProgressService
 from app.services.system_settings_service import set_setting
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +47,7 @@ RECOMPUTE_FLAG_KEY = "imohash_package_recompute_complete"
 _SKIP_STATUSES = (FileStatus.ERROR, FileStatus.CANCELLED, FileStatus.ORPHANED)
 
 
-def _count_eligible(db) -> int:
+def _count_eligible(db: Session) -> int:
     """Count rows that have storage and are not in a terminal-failed state."""
     return int(
         db.query(MediaFile.id)
@@ -121,7 +126,7 @@ def _store_fingerprints(fingerprints: dict[int, str]) -> None:
 @celery_app.task(
     name="imohash_recompute.recompute_all", bind=True, priority=CPUPriority.ADMIN_BATCH
 )
-def recompute_all(self, batch_size: int = 100, after_id: int = 0) -> dict:
+def recompute_all(self: Any, batch_size: int = 100, after_id: int = 0) -> dict:
     """Recompute ``media_file.imohash`` for all eligible rows, batch by batch.
 
     Args:

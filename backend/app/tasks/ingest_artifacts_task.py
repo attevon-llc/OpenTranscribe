@@ -19,6 +19,7 @@ digest with ``LLM_PROVIDER`` empty*.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.enums import PostProcessingTask
@@ -43,7 +44,7 @@ logger = logging.getLogger(__name__)
 )
 @tracks_post_processing(PostProcessingTask.FILE_FACTS, file_param="file_id")
 def generate_file_facts_task(
-    self,
+    self: Any,
     file_id: int,
     force: bool = False,
     pipeline_task_id: str | None = None,

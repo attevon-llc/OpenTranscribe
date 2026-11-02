@@ -8,9 +8,13 @@ Uses the unified migration_pipeline for I/O pipelining and GPU workers,
 and speaker_analysis_models.GenderModelAdapter for model abstraction.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 from datetime import UTC
+from typing import TYPE_CHECKING
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_ATTRIBUTE_MIGRATION_COMPLETE
@@ -27,6 +31,9 @@ from app.services.progress_tracker import emit_progress_notification
 from app.services.speaker_analysis_models import SegmentResult
 from app.tasks.migration_pipeline import PreparedFile
 
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,7 +46,7 @@ attribute_migration_progress = MigrationProgressService(key_prefix="speaker_attr
 # ---------------------------------------------------------------------------
 
 
-def _get_files_needing_attribute_detection(db) -> list:
+def _get_files_needing_attribute_detection(db: Session) -> list:
     """Query completed files with speakers that have never had attributes predicted."""
     from sqlalchemy import exists
 
@@ -60,7 +67,7 @@ def _get_files_needing_attribute_detection(db) -> list:
     )
 
 
-def _get_all_files_with_speakers(db) -> list:
+def _get_all_files_with_speakers(db: Session) -> list:
     """Query all completed files that have speakers (for force reprocess)."""
     from sqlalchemy import exists
 
@@ -78,7 +85,9 @@ def _get_all_files_with_speakers(db) -> list:
     )
 
 
-def _reset_all_speaker_attributes(db, exclude_file_ids: frozenset[int] = frozenset()) -> int:
+def _reset_all_speaker_attributes(
+    db: Session, exclude_file_ids: frozenset[int] = frozenset()
+) -> int:
     """Reset attributes_predicted_at for all speakers to enable full reprocessing.
 
     ``exclude_file_ids`` are files whose speakers must keep what they hold: gender inference is
@@ -106,7 +115,7 @@ def _reset_all_speaker_attributes(db, exclude_file_ids: frozenset[int] = frozens
     return int(count)
 
 
-def _partition_by_gender_policy(db, files: list) -> tuple[list, list]:
+def _partition_by_gender_policy(db: Session, files: list) -> tuple[list, list]:
     """Split ``files`` into (gender inference allowed, forbidden) for their owners' scopes.
 
     The decision depends only on (owner, organization), so it is resolved once per scope. A
@@ -278,7 +287,7 @@ def _emit_attr_progress(
 
 
 @celery_app.task(bind=True, name="migrate_speaker_attributes", priority=CPUPriority.ADMIN_BATCH)
-def migrate_speaker_attributes_task(self, user_id: int, force: bool = False):
+def migrate_speaker_attributes_task(self: Any, user_id: int, force: bool = False) -> dict[str, Any]:
     """Orchestrate bulk speaker attribute detection for existing files."""
     task_id = self.request.id
     logger.info("Starting speaker attribute migration: task_id=%s", task_id)
@@ -422,13 +431,13 @@ def migrate_speaker_attributes_task(self, user_id: int, force: bool = False):
     time_limit=2100,
 )
 def detect_speaker_attributes_batch_task(
-    self,
+    self: Any,
     file_uuids: list[str],
     batch_index: int = 0,
     total_batches: int = 1,
     total_files: int = 0,
     user_id: int | None = None,
-):
+) -> dict[str, Any]:
     """Process a batch of files for speaker attribute detection.
 
     Uses the unified migration_pipeline with GenderModelAdapter.

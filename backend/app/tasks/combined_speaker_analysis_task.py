@@ -10,6 +10,7 @@ Audio segments are loaded ONCE and fed to both models back-to-back.
 
 import json
 import logging
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_COMBINED_MIGRATION_COMPLETE
@@ -96,13 +97,13 @@ def _combined_result_writer(
     time_limit=2100,
 )
 def analyze_speakers_combined_batch_task(
-    self,
+    self: Any,
     file_uuids: list[str],
     batch_index: int = 0,
     total_batches: int = 1,
     total_files: int = 0,
     user_id: int | None = None,
-):
+) -> dict[str, Any]:
     """Batch version using pipelined I/O + multi-GPU workers for combined analysis."""
     from app.services.speaker_analysis_models import EmbeddingModelAdapter
     from app.services.speaker_analysis_models import GenderModelAdapter
@@ -220,7 +221,7 @@ def analyze_speakers_combined_batch_task(
 
 
 @celery_app.task(bind=True, name="migrate_speakers_combined", priority=CPUPriority.ADMIN_BATCH)
-def migrate_speakers_combined_task(self, user_id: int):
+def migrate_speakers_combined_task(self: Any, user_id: int) -> dict[str, Any]:
     """Orchestrator: dispatch batches for combined embedding + gender migration.
 
     Processes all completed files, running both models on each file's audio.

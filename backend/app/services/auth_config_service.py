@@ -70,6 +70,16 @@ class PlaceholderSecretError(ValueError):
     """A write tried to store a placeholder marker as a secret value."""
 
 
+def _is_sensitive_row(config: AuthConfig) -> bool:
+    """Whether a stored row holds a secret: its flag OR its key says so.
+
+    Fail closed on the flag. A row rewritten before ``set_config`` re-derived
+    ``is_sensitive`` holds ciphertext under a False flag; trusting the flag alone
+    served that ciphertext as the credential and, unmasked, to the admin UI.
+    """
+    return bool(config.is_sensitive) or config.config_key in SENSITIVE_KEYS
+
+
 class AuthConfigService:
     """Service for managing authentication configuration.
 
@@ -98,7 +108,7 @@ class AuthConfigService:
             return None
 
         value: str | None = config.config_value  # type: ignore[assignment]
-        if config.is_sensitive and decrypt and value:
+        if _is_sensitive_row(config) and decrypt and value:
             # Undecryptable means UNSET, never "hand back the ciphertext".
             #
             # This used to return the stored ciphertext on failure, and returned it
@@ -228,32 +238,36 @@ class AuthConfigService:
             # decrypt=False (the admin GET /{category} endpoint) skipped it and
             # returned the raw CIPHERTEXT to the browser — the opposite of what
             # the endpoint's own comment claimed.
-            if config.is_sensitive and not decrypt:
+            sensitive = _is_sensitive_row(config)
+            if sensitive and not decrypt:
                 result[config.config_key] = SENSITIVE_SET_SENTINEL if value else None
                 continue
 
-            if config.is_sensitive and decrypt and value:
+            if sensitive and value:
+                # Undecryptable is UNSET, exactly as get_config answers. A
+                # "***ENCRYPTED***" placeholder here was credential-shaped: a caller
+                # using this dict as config would have sent it as the secret. The
+                # failure must still be visible (issue #324).
                 try:
                     decrypted = decrypt_api_key(value)  # type: ignore[call-overload]
-                    if not decrypted:
-                        logger.error(
-                            "Decrypting sensitive auth config %s produced an empty value; "
-                            "masking it. Check ENCRYPTION_KEY.",
-                            config.config_key,
-                        )
-                    # Masked, not the ciphertext. This surface feeds the admin UI, so
-                    # the placeholder is deliberate — but it must never be usable as a
-                    # credential, and the failure must be visible (issue #324): both
-                    # branches previously masked in silence.
-                    value = decrypted or "***ENCRYPTED***"  # type: ignore[assignment]
                 except Exception:
                     logger.exception(
-                        "Failed to decrypt sensitive auth config %s; masking it. "
+                        "Failed to decrypt sensitive auth config %s; treating it as unset. "
                         "Check ENCRYPTION_KEY — a rotated or lost key makes stored "
                         "secrets unrecoverable and they must be re-entered.",
                         config.config_key,
                     )
-                    value = "***ENCRYPTED***"  # type: ignore[assignment]
+                    result[config.config_key] = None
+                    continue
+                if not decrypted:
+                    logger.error(
+                        "Decrypting sensitive auth config %s produced an empty value; "
+                        "treating it as unset. Check ENCRYPTION_KEY.",
+                        config.config_key,
+                    )
+                    result[config.config_key] = None
+                    continue
+                value = decrypted
 
             # Convert to appropriate type
             data_type = config.data_type or "string"

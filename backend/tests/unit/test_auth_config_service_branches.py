@@ -62,17 +62,25 @@ class TestCategoryReadMasksSecrets:
         result = AuthConfigService.get_config_by_category(db, "ldap", decrypt=False)
         assert result == {"ldap_bind_password": None}
 
-    def test_decrypt_failure_is_masked(self) -> None:
+    # Same answer as get_config: undecryptable is unset, never a credential-shaped
+    # placeholder a caller could use as the secret.
+    def test_decrypt_failure_reads_as_unset(self) -> None:
         db = _db_with_rows([_row("ldap_bind_password", "ciphertext", sensitive=True)])
         with patch(_DECRYPT, side_effect=Exception("bad key")):
             result = AuthConfigService.get_config_by_category(db, "ldap", decrypt=True)
-        assert result == {"ldap_bind_password": "***ENCRYPTED***"}
+        assert result == {"ldap_bind_password": None}
 
-    def test_empty_decrypt_is_masked(self) -> None:
+    def test_empty_decrypt_reads_as_unset(self) -> None:
         db = _db_with_rows([_row("ldap_bind_password", "ciphertext", sensitive=True)])
         with patch(_DECRYPT, return_value=""):
             result = AuthConfigService.get_config_by_category(db, "ldap", decrypt=True)
-        assert result == {"ldap_bind_password": "***ENCRYPTED***"}
+        assert result == {"ldap_bind_password": None}
+
+    def test_decrypted_secret_is_returned(self) -> None:
+        db = _db_with_rows([_row("ldap_bind_password", "ciphertext", sensitive=True)])
+        with patch(_DECRYPT, return_value="the-secret"):
+            result = AuthConfigService.get_config_by_category(db, "ldap", decrypt=True)
+        assert result == {"ldap_bind_password": "the-secret"}
 
     def test_retired_key_row_is_not_served(self) -> None:
         db = _db_with_rows(

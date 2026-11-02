@@ -119,6 +119,7 @@ CHECK created; the downgrade drops every organization's saved choices),
 `v450_legal_acceptance_context_and_profile_interaction` (`legal_acceptance` gains `scope` (`user` | `organization`, NOT NULL DEFAULT `user`), `organization_id` (FK `ON DELETE SET NULL`), `organization_uuid`, `user_agent`, `locale`; the plain `UNIQUE(user_id, document_key, sha256)` becomes a partial UNIQUE INDEX of the same name `WHERE scope = 'user'` beside `uq_legal_acceptance_org_doc_sha` `WHERE scope = 'organization'`, safe on a populated table because every existing row is user scope; `speaker_profile.last_interaction_at` backfilled from `GREATEST(created_at, last_embedding_update, updated_at)`; arm keys on `ck_legal_acceptance_scope` (created last) and the profile column, above v449's; rollback by image needs no downgrade; the downgrade deletes org-scope rows and duplicate user rows, keeping the oldest).
 `v451_legal_acceptance_survives_user_deletion` (`legal_acceptance.user_id` `CASCADE` -> `SET NULL`, found by columns not name, re-added `NOT VALID` + `VALIDATE`; `subject_user_uuid` (backfilled, and stamped by a BEFORE INSERT trigger), `subject_erased_at`, `retain_until`; `trg_legal_acceptance_guard` pseudonymises on the FK's SET NULL (blanks IP and user agent, starts the clock from `system_settings` `legal.acceptance_retention_days`, default 2190, floor 365, never raising), refuses every other rewrite, and refuses DELETE unless `opentranscribe.legal_retention_sweep = 'on'` and `retain_until` has passed; `ck_legal_acceptance_subject`; arm keys on the trigger, the FK rule and the CHECK, above v450's; downgrade DELETES pseudonymised rows; rollback by image to 0.6.1 needs no downgrade).
 `v452_add_erasure_receipt` (issue #1353: `erasure_receipt`, numbers-only counts keyed by store name, two CHECKs per JSONB map and a sha256 digest; `ledger_entry_id` `ON DELETE RESTRICT`; also `erasure_ledger.subject_file_uuid` and the `file` subject on its two CHECKs; chained off `v451`; arm keys on `ck_erasure_receipt_digest`, created last; the downgrade drops every receipt and every `file` ledger entry, and is not executed by its test).
+`v453_audit_row_immutability` (audit row immutability, issue #1352: `audit_row_guard()` trigger on the protected audit tables (`BEFORE UPDATE OR DELETE` per row plus `BEFORE TRUNCATE`) refusing DELETE/TRUNCATE and UPDATE outside each table's lifecycle columns with SQLSTATE 42501, `ON DELETE SET NULL` clears of declared actor columns pass; `audit_maintenance_allowed()` honours `opentranscribe.audit_maintenance = 'on'` for the table owner only; `audit_prune(table, days)` SECURITY DEFINER with a 365-day floor over two insert-only tables; `legal_acceptance` keeps its own v451 guard and is not given the generic one. Numbered v453 on a lane; chained off `v451` until the coordinator re-chains it behind v452. Arm keys on `trg_audit_guard_erasure_ledger`, created last; downgrade drops triggers and functions, no data loss).
 **Derive
 the head, never trust this sentence** — `scripts/release-tests/lib/alembic-head.py`
 walks the `down_revision` graph.
@@ -175,6 +176,28 @@ v377-v383 (after the chat chain) rather than renumbering chat's, since the chat 
 had already reached production. Nothing about any revision's DDL changed — only the
 seven files' names and their `revision`/`down_revision` strings, and everything that
 referenced them (detection arms, consistency tests, this file).
+
+## Roles: migration URL vs runtime URL (issue #1352)
+
+- **Two connection URLs.** `settings.MIGRATION_DATABASE_URL` (the owner; Alembic, the runner, the
+  advisory lock, `app/db/migration_connection.py`) and `settings.DATABASE_URL` (runtime, `base.py`).
+  They are equal unless `POSTGRES_APP_USER` is set. `alembic/env.py` takes its URL from
+  `migration_database_url()`: it used to hand-build one from `POSTGRES_*` and ignored `DATABASE_URL`
+  and the SSL mode. Migration engines (and only those) connect with
+  `-c opentranscribe.audit_maintenance=on`; never add that to `base.py`.
+- **Registry = one source of truth**: `audit_protection.py` (`PROTECTED_TABLES`, `EXEMPT_TABLES`,
+  `register_protected_table` for editions). The v453 revision holds a frozen copy that
+  `test_audit_protection_registry.py` compares with it. Never widen `mutable_columns` without a
+  failing test that needs the column; every `ON DELETE SET NULL` column must be in
+  `nullable_on_cascade` or deleting its parent fails.
+- **Reconcile** (`roles.py`) runs at the end of `run_migrations()` and as
+  `python -m app.db.roles reconcile`, as the owner, idempotently; it repairs a `--no-acl` restore.
+  **Never `DROP ROLE`.** `role_check.py` measures the runtime role (`has_table_privilege`) for the boot
+  check (backend lifespan and the Celery `worker_init`; requested-but-ineffective = exit 1) and the
+  status endpoint.
+- Postgres runs `ON DELETE SET NULL` as the OWNER of the referencing table, so revoking UPDATE from the
+  app role does not break user or organization deletion. A BEFORE trigger still fires on that update,
+  which is why the guard allows "declared columns go to NULL".
 
 ## Never hold a transaction across slow work (issue #440)
 

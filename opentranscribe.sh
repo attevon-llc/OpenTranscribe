@@ -912,6 +912,15 @@ get_compose_files() {
         fi
     fi
 
+    # Optional database role split: auto-load when POSTGRES_APP_USER is set in .env or the
+    # shell, so workers run without the owner password (docs: Audit record integrity).
+    local db_app_user="${POSTGRES_APP_USER:-}"
+    [ -n "$db_app_user" ] || db_app_user=$(read_env_value POSTGRES_APP_USER)
+    if [ -n "$db_app_user" ] && [ -f docker-compose.db-roles.yml ]; then
+        compose_files="$compose_files -f docker-compose.db-roles.yml"
+        echo -e "${BLUE}🔒 DB role split overlay AUTO-LOADED (POSTGRES_APP_USER is set)${NC}" >&2
+    fi
+
     # Add NGINX overlay if NGINX_SERVER_NAME is configured
     local nginx_server_name=""
     nginx_server_name=$(read_env_value NGINX_SERVER_NAME)

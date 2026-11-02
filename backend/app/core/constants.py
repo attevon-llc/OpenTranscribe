@@ -1490,6 +1490,10 @@ DEFAULT_CHAT_RETENTION_DAYS = 0  # chat.retention_days (0 = keep forever)
 # legal_acceptance_retention_days() reads the setting and applies the floor; v451 freezes a copy
 # of both numbers and its consistency test asserts they still agree. 0 is not allowed: a value
 # below the floor reads as the floor.
+# Hard floor for AUDIT_LOG_RETENTION_DAYS (0 = keep forever is the only value below it that is
+# accepted). Enforced at startup in config and again inside the audit_prune() SQL function.
+AUDIT_RETENTION_FLOOR_DAYS = 365
+
 LEGAL_ACCEPTANCE_RETENTION_DAYS_KEY = "legal.acceptance_retention_days"
 DEFAULT_LEGAL_ACCEPTANCE_RETENTION_DAYS = 2190  # 6 years
 MIN_LEGAL_ACCEPTANCE_RETENTION_DAYS = 365

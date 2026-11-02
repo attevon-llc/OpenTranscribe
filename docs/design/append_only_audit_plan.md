@@ -1,6 +1,6 @@
 # Append-only audit records: stop the application role from rewriting or deleting audit rows. Design
 
-Status: **PLAN ONLY.** Nothing here is implemented. Written 2026-11-01 against `master` @ `e6843db20`
+Status: **IMPLEMENTED** on `feat/append-only-audit` (issue #1352; migration v453, chained off v451 until re-chained behind v452). Implementation notes are at the end of this file. Written 2026-11-01 against `master` @ `e6843db20`
 (Alembic head `v449_add_speaker_identity_source`). Target release: **v0.7.0**. Line numbers drift:
 search for the quoted symbol, not the number.
 
@@ -440,3 +440,27 @@ These are fixed; implement as written.
 4. `usage_event`: exempt (cloud-seam table), exemption written with its reason next to the protected-table list.
 5. OpenSearch audit stream: out of scope for v0.7.0; file a follow-up issue for write-only OpenSearch roles.
 6. Overlay that blanks the owner password on workers: ship in v0.7.0.
+
+## Implementation notes (2026-11-01)
+
+- Delivered as written. Deviations: `legal_acceptance` keeps its own v451 guard trigger (the generic
+  trigger is not added to it); the app role keeps `DELETE` on it, which that guard still gates
+  (`opentranscribe.legal_retention_sweep` plus `retain_until`). `erasure_receipt` is not registered here;
+  register it in `audit_protection.PROTECTED_TABLES` (insert-only) and add it last-but-before
+  `erasure_ledger` in the revision's `GUARDED` order when the receipt lane lands, then re-chain v453
+  behind the receipt revision.
+- Cloud seam: not bumped here (the coordinator sets the final number). The edition-facing facts to put
+  in the seam notes: the runtime role may no longer own tables or UPDATE/DELETE a protected table,
+  `app.db.audit_protection.register_protected_table` exists for edition tables, and an edition's own
+  additive migrations still run as the owner.
+- Rehearsal notes for the upgrade scenario: (1) the upgrade adds only functions and triggers, so a
+  populated database needs no data step; (2) after the upgrade the status endpoint reports
+  `enforced: false`, `guard_trigger_present: true` for every table; (3) with `POSTGRES_APP_USER` set
+  on an existing database the first start creates the role and the next boot check reports
+  `enforced: true`; (4) `./opentr.sh restore` of an older dump drops the grants, and the next backend
+  start re-applies them (covered by `test_reconcile_restores_grants_after_a_no_acl_restore_and_is_idempotent`);
+  (5) a rollback to a release without the feature needs `POSTGRES_APP_USER` unset, otherwise that
+  release ignores it and connects as the owner, which is harmless.
+- Verified on an isolated stack (`--fresh`): backend, a CPU worker and the GPU-family worker connect as
+  the application role; workers hold no owner password; DELETE, TRUNCATE and a non-lifecycle UPDATE as
+  that role fail with 42501; the measured status is `enforced`.

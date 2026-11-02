@@ -1887,6 +1887,9 @@ restore_database() {
   echo "ℹ️  MinIO and the OpenSearch SEARCH indices were NOT rolled back — reindex from"
   echo "   Admin → Search if the restored database's file list differs from what they hold."
   echo "   (The speaker/voiceprint indices were handled above — see the line starting 🗣️.)"
+  echo "ℹ️  A dump is taken with --no-acl, so the restored database has no grants for the optional"
+  echo "   application role (POSTGRES_APP_USER): the backend re-applies them on its next start"
+  echo "   (or run: python -m app.db.roles reconcile in a migrate-job deployment)."
   if [ -n "$safety_dump_file" ]; then
     echo "   Pre-restore safety dump of the database this replaced: $safety_dump_file"
   fi

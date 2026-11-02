@@ -119,6 +119,7 @@ const sidebars: SidebarsConfig = {
         'operations/performance-tuning',
         'operations/prompt-engineering',
         'operations/security-hardening',
+        'operations/audit-integrity',
         'operations/support-access',
         'operations/gdpr-erasure',
         'legal/legal-documents',

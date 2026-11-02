@@ -110,6 +110,7 @@ from celery.signals import before_task_publish  # noqa: E402
 from celery.signals import setup_logging  # noqa: E402
 from celery.signals import task_postrun  # noqa: E402
 from celery.signals import task_prerun  # noqa: E402
+from celery.signals import worker_init  # noqa: E402
 from celery.signals import worker_process_init  # noqa: E402
 from celery.signals import worker_process_shutdown  # noqa: E402
 from celery.signals import worker_ready  # noqa: E402
@@ -262,6 +263,7 @@ celery_app = Celery(
         "app.tasks.redaction_task",
         "app.tasks.chat_retention",
         "app.tasks.legal_retention",
+        "app.tasks.audit_retention",
         "app.tasks.voiceprint_retention",
         "app.tasks.erasure_reconciliation",
         "app.tasks.erasure_receipt_reverify",
@@ -603,6 +605,7 @@ celery_app.conf.update(
         "chat.retention_sweep": {"queue": CeleryQueues.UTILITY},
         # Legal record / voiceprint retention: bounded selection + delete or dispatch. Utility.
         "legal.acceptance_retention_sweep": {"queue": CeleryQueues.UTILITY},
+        "audit.retention_sweep": {"queue": CeleryQueues.UTILITY},
         "privacy.voiceprint_retention_sweep": {"queue": CeleryQueues.UTILITY},
         # Benchmark-timing bookkeeping (one Redis hash -> one DB row), dispatched with a
         # countdown after postprocess. Utility, so telemetry never takes a cpu slot.
@@ -741,6 +744,13 @@ celery_app.conf.update(
             # Daily at 05:10, after the 04:10-04:55 sweeps. Deletes pseudonymised legal
             # acceptance records whose retain_until has passed (v451); a no-op otherwise.
             "schedule": crontab(minute=10, hour=5),
+            "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
+        },
+        "audit-retention-sweep": {
+            "task": "audit.retention_sweep",
+            # Daily at 05:15. A no-op unless AUDIT_LOG_RETENTION_DAYS > 0 (default 0 = keep
+            # forever); the database function enforces the 365-day floor regardless.
+            "schedule": crontab(minute=15, hour=5),
             "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
         },
         "voiceprint-retention-sweep": {
@@ -1000,6 +1010,26 @@ def init_worker_process(**kwargs):
     logger.info(
         "Celery fork init finished (pid=%s, elapsed=%.3fs)", pid, time.monotonic() - started
     )
+
+
+@worker_init.connect
+def verify_database_role(**kwargs):
+    """Refuse to start a worker whose database role defeats the requested role split.
+
+    Runs once in the main process (``worker_init``), not in the forked children, so it is
+    outside the ``worker_process_init`` kill timer. A worker started with an old ``.env``
+    would otherwise silently keep running as the table owner.
+    """
+    from app.db.base import engine
+    from app.db.role_check import enforce_runtime_role
+
+    try:
+        enforce_runtime_role(engine)
+    except RuntimeError as e:
+        logger.critical("Audit record protection requested but not effective: %s", e)
+        raise SystemExit(1) from e
+    finally:
+        engine.dispose()
 
 
 @worker_ready.connect

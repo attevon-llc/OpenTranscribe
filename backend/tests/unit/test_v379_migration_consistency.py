@@ -24,6 +24,8 @@ from pathlib import Path
 
 from sqlalchemy import text
 
+from tests.audit_maintenance import audit_maintenance
+
 REVISION = "v379_rename_keycloak_config_to_oidc"
 _REVISION_PATH = Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{REVISION}.py"
 
@@ -260,7 +262,8 @@ def test_audit_history_follows_the_key(db_session):
         {"k": f"{LEGACY_PREFIX}enabled_{suffix}", "u": user_id},
     )
 
-    conn.execute(text(module.RENAME_SQL))
+    with audit_maintenance(conn):  # a data migration repairs audit rows under the switch
+        conn.execute(text(module.RENAME_SQL))
 
     assert (
         conn.execute(

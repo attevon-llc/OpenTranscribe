@@ -19,7 +19,7 @@ Downgrade REFUSES while any file is ``declined`` unless ``OT_ALLOW_CONSENT_DOWNG
 build ignores the column and would start creating voiceprints for opted-out files.
 
 Revision ID: v454_add_media_file_voiceprint_consent
-Revises: v452_add_erasure_receipt
+Revises: v453_audit_row_immutability
 Create Date: 2026-11-01
 """
 
@@ -29,7 +29,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "v454_add_media_file_voiceprint_consent"
-down_revision = "v452_add_erasure_receipt"
+down_revision = "v453_audit_row_immutability"
 branch_labels = None
 depends_on = None
 

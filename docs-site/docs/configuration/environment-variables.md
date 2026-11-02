@@ -921,6 +921,12 @@ POSTGRES_USER=postgres
 POSTGRES_PASSWORD=auto_generated_on_install
 POSTGRES_DB=opentranscribe
 POSTGRES_SSLMODE=prefer  # disable/allow/prefer/require/verify-ca/verify-full
+
+# Optional audit-record protection: an unprivileged runtime role (see Operations > Audit record integrity)
+POSTGRES_APP_USER=                # blank = single role (default)
+POSTGRES_APP_PASSWORD=
+POSTGRES_APP_ROLE_PROVISION=true  # false when the role is created outside the app
+MIGRATION_DATABASE_URL=           # owner connection string; blank = built from POSTGRES_USER
 ```
 
 Database initialization is handled entirely by Alembic migrations on backend startup. No external SQL init file is needed.
@@ -1175,6 +1181,7 @@ RATE_LIMIT_API_PER_MINUTE=100
 AUDIT_LOG_ENABLED=true
 AUDIT_LOG_FORMAT=json  # or: cef
 AUDIT_LOG_TO_OPENSEARCH=true   # default true
+AUDIT_LOG_RETENTION_DAYS=0     # 0 = keep forever; otherwise >= 365 (prunable Postgres audit tables only)
 
 # Login Banner
 LOGIN_BANNER_ENABLED=false

@@ -7,17 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Audit records in the database can no longer be changed or deleted by the application.**
+  A trigger on the authentication-configuration log, the support-access records, the erasure
+  ledger, the takedown records and the legal acceptance records refuses `DELETE`, `TRUNCATE`
+  and any update outside each table's lifecycle columns, while deleting a user or organization
+  still clears only the actor pointer. In a single-role installation this is an accident guard;
+  setting `POSTGRES_APP_USER` and `POSTGRES_APP_PASSWORD` makes it enforceable by running the
+  backend and workers as an unprivileged database role (grants re-applied on every start,
+  startup refused if the role turns out not to be effective). The owner password is removed
+  from every service except the backend. Settings > Audit Logs shows the measured state and
+  `GET /api/admin/security/audit-integrity` reports it to a super administrator. Migration v453;
+  see Operations > Audit record integrity.
+
 ### Added
 
-- Per-upload voiceprint statement and per-recording opt-out (#1356). The upload wizard has an unchecked
-  box recording the uploader's statement that the speakers agreed to voice identification (a recorded
-  claim, not verified). The owner can turn voice identification off for a recording at any time: that
-  stops new voiceprints at once and deletes the existing ones with the file-scoped purge (reason
-  `opt_out`). Profile and cluster averages never include a voice from an opted-out recording. A new
-  system setting, `privacy.voiceprint_upload_consent_required` (off by default), treats a recording as
-  opted out unless a statement was recorded. API: `PATCH /files/{uuid}/voiceprint-consent`; prepare
-  and complete accept `voiceprint_consent` (complete only restricts). Migration v454; its downgrade
-  refuses while any recording is opted out.
+
 
 ### Changed
 

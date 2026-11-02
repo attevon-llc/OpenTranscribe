@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Annotated
 from typing import ClassVar
 from typing import Literal
+from urllib.parse import quote
 
 from pydantic import ValidationInfo
 from pydantic import field_validator
@@ -13,6 +14,7 @@ from pydantic_settings import BaseSettings
 from pydantic_settings import NoDecode
 from pydantic_settings import SettingsConfigDict
 
+from app.core.constants import AUDIT_RETENTION_FLOOR_DAYS
 from app.core.constants import DEFAULT_CHAT_RERANKER_TORCH_THREADS
 from app.core.legacy_auth_env import oidc_bool_env
 from app.core.legacy_auth_env import oidc_env
@@ -449,7 +451,10 @@ class Settings(BaseSettings):
     AUDIT_LOG_ENABLED: bool = os.getenv("AUDIT_LOG_ENABLED", "true").lower() == "true"
     AUDIT_LOG_FORMAT: str = os.getenv("AUDIT_LOG_FORMAT", "json")  # json or cef
     AUDIT_LOG_TO_OPENSEARCH: bool = os.getenv("AUDIT_LOG_TO_OPENSEARCH", "true").lower() == "true"
-    AUDIT_LOG_RETENTION_DAYS: int = 365
+    # 0 = keep forever (the default). Anything else is the age, in days, after which the daily
+    # sweep may delete rows from the prunable audit tables; values below
+    # AUDIT_RETENTION_FLOOR_DAYS are rejected at startup (see validate_auth_settings).
+    AUDIT_LOG_RETENTION_DAYS: int = 0
     # Fallback to file-based logging when OpenSearch is unavailable (FedRAMP AU-9)
     AUDIT_LOG_FALLBACK_ENABLED: bool = (
         os.getenv("AUDIT_LOG_FALLBACK_ENABLED", "true").lower() == "true"
@@ -517,6 +522,16 @@ class Settings(BaseSettings):
     # affects pydantic-settings' own post-hoc re-sourcing of a field from the
     # environment, not a Python expression that already ran in the class body.
     DATABASE_URL: str = ""
+
+    # Optional database role split (docs-site operations/audit-integrity). POSTGRES_USER stays
+    # the owner/migration role; when POSTGRES_APP_USER is set, the backend and workers connect
+    # as that unprivileged role at runtime. Resolved in `validate_auth_settings`.
+    POSTGRES_APP_USER: str = ""
+    POSTGRES_APP_PASSWORD: str = ""
+    # False for managed databases where the role is created outside the app.
+    POSTGRES_APP_ROLE_PROVISION: bool = True
+    # Owner URL used by Alembic and the migration runner; blank = built from POSTGRES_USER.
+    MIGRATION_DATABASE_URL: str = ""
 
     # MinIO / S3 settings
     MINIO_ROOT_USER: str = os.getenv("MINIO_ROOT_USER", "minioadmin")
@@ -911,6 +926,11 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = ""
 
     @property
+    def db_role_split_requested(self) -> bool:
+        """Whether the operator asked for the owner/app database role split."""
+        return bool(self.POSTGRES_APP_USER) or self.MIGRATION_DATABASE_URL != self.DATABASE_URL
+
+    @property
     def is_hardened(self) -> bool:
         """Whether security controls are enforced (the fail-closed default).
 
@@ -966,6 +986,36 @@ class Settings(BaseSettings):
             return v
         raise ValueError(v)
 
+    def _resolve_database_urls(self) -> None:
+        """Resolve DATABASE_URL (runtime) and MIGRATION_DATABASE_URL (owner) and the retention."""
+        owner_url = (
+            f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        )
+        if self.POSTGRES_APP_USER and self.DATABASE_URL and not self.MIGRATION_DATABASE_URL:
+            raise ValueError(
+                "POSTGRES_APP_USER is set and DATABASE_URL is explicit: set "
+                "MIGRATION_DATABASE_URL (owner) and point DATABASE_URL at the app role, "
+                "or unset POSTGRES_APP_USER"
+            )
+        if not self.DATABASE_URL:
+            if self.POSTGRES_APP_USER:
+                self.DATABASE_URL = (
+                    f"postgresql://{quote(self.POSTGRES_APP_USER, safe='')}:"
+                    f"{quote(self.POSTGRES_APP_PASSWORD, safe='')}"
+                    f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+                )
+            else:
+                self.DATABASE_URL = owner_url
+        if not self.MIGRATION_DATABASE_URL:
+            self.MIGRATION_DATABASE_URL = owner_url if self.POSTGRES_APP_USER else self.DATABASE_URL
+        if 0 < self.AUDIT_LOG_RETENTION_DAYS < AUDIT_RETENTION_FLOOR_DAYS:
+            raise ValueError(
+                f"AUDIT_LOG_RETENTION_DAYS={self.AUDIT_LOG_RETENTION_DAYS} is below the "
+                f"{AUDIT_RETENTION_FLOOR_DAYS}-day floor; use 0 (keep forever) or "
+                f">= {AUDIT_RETENTION_FLOOR_DAYS}"
+            )
+
     @model_validator(mode="after")
     def validate_auth_settings(self) -> "Settings":
         """Validate that required fields are set when authentication features are enabled.
@@ -1006,11 +1056,7 @@ class Settings(BaseSettings):
         # fields with LITERAL `os.getenv` defaults, so they are already
         # correctly resolved on `self` by this point regardless of whether
         # this validator runs before or after them.
-        if not self.DATABASE_URL:
-            self.DATABASE_URL = (
-                f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
-                f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
-            )
+        self._resolve_database_urls()
         if not self.REDIS_URL:
             scheme = "rediss" if self.REDIS_USE_TLS else "redis"
             auth = f":{self.REDIS_PASSWORD}@" if self.REDIS_PASSWORD else ""

@@ -47,6 +47,22 @@ export interface ContentAccessAuditStatus {
   bytes_per_active_user_per_day_estimate: number;
 }
 
+/** `GET /admin/security/audit-integrity`: measured audit record protection (super_admin). */
+export interface AuditIntegrityStatus {
+  split_requested: boolean;
+  enforced: boolean;
+  runtime_role_is_superuser: boolean;
+  runtime_role_owns_tables: boolean;
+  tables: {
+    name: string;
+    insert: boolean;
+    update_columns: string[];
+    delete: boolean;
+    truncate: boolean;
+    guard_trigger_present: boolean;
+  }[];
+}
+
 export interface AccountStatusReport {
   total_users: number;
   active_users: number;
@@ -477,6 +493,12 @@ export class AdminApi {
 
   static async setContentAccessAudit(enabled: boolean): Promise<ContentAccessAuditStatus> {
     const response = await axiosInstance.put('/admin/audit/content-access', { enabled });
+    return response.data;
+  }
+
+  // Audit record protection status (super_admin)
+  static async getAuditIntegrity(): Promise<AuditIntegrityStatus> {
+    const response = await axiosInstance.get('/admin/security/audit-integrity');
     return response.data;
   }
 

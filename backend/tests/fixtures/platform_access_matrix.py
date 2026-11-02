@@ -132,7 +132,7 @@ PLATFORM_OP_RULES: tuple[tuple[str, str, str], ...] = (
     ),
     (
         r"^\w+ /api/(admin/(settings|auth-config|first-run-wizard|system|asr-providers|"
-        r"audit/content-access|hf-token|local-models|engine-settings|chat-settings|"
+        r"audit/content-access|security/audit-integrity|hf-token|local-models|engine-settings|chat-settings|"
         r"redaction-policy|backup|directory-sync)|watch-sources/(settings|email-configs)|"
         r"llm-settings/bedrock|asr-settings/local-model)",
         "settings",

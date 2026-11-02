@@ -20,7 +20,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
 from alembic import command  # type: ignore[attr-defined]
-from app.core.config import settings
+from app.db.migration_connection import migration_connect_args
+from app.db.migration_connection import migration_database_url
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,8 @@ def get_alembic_config() -> Config:
     alembic_ini = backend_dir / "alembic.ini"
 
     config = Config(str(alembic_ini))
-    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+    # configparser interpolation: a literal % (percent-encoded password) must be doubled.
+    config.set_main_option("sqlalchemy.url", migration_database_url().replace("%", "%%"))
     return config
 
 
@@ -741,6 +743,11 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_erasure_receipt_digest')"
     )
 
+    # v453: audit row immutability. Keyed on the erasure_ledger guard trigger, created last.
+    has_audit_row_guard = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname = 'trg_audit_guard_erasure_ledger')"
+    ) and _check_exists("SELECT EXISTS(SELECT 1 FROM pg_proc WHERE proname = 'audit_prune')")
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -821,15 +828,25 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_task_active_unique
         and has_identity_source
     )
-    # v454: same as v452 plus the per-file voiceprint consent column. The top of the ladder.
+    # v454: same as v453 plus the per-file voiceprint consent column. The top of the ladder.
     if (
         matches_v449
         and has_legal_acceptance_context
         and has_legal_acceptance_survival
         and has_erasure_receipt
+        and has_audit_row_guard
         and has_voiceprint_consent
     ):
         return "v454_add_media_file_voiceprint_consent"
+    # v453: same as v452 plus the audit guard.
+    if (
+        matches_v449
+        and has_legal_acceptance_context
+        and has_legal_acceptance_survival
+        and has_erasure_receipt
+        and has_audit_row_guard
+    ):
+        return "v453_audit_row_immutability"
     # v452: same as v451 plus the erasure receipt.
     if (
         matches_v449
@@ -1609,7 +1626,7 @@ def _repair_skipped_v230(config) -> None:
     chain was linearised. All SQL is idempotent (IF NOT EXISTS).
     """
 
-    engine = create_engine(settings.DATABASE_URL)
+    engine = create_engine(migration_database_url(), connect_args=migration_connect_args())
     try:
         with engine.connect() as conn:
             missing = not _check_column_exists(conn, "media_file", "upload_batch_id")
@@ -1815,7 +1832,7 @@ def _await_database_available(budget_s: float | None = None) -> None:
     attempt = 0
     while True:
         attempt += 1
-        probe = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
+        probe = create_engine(migration_database_url(), pool_pre_ping=True)
         try:
             with probe.connect() as conn:
                 conn.execute(text("SELECT 1"))
@@ -1862,7 +1879,7 @@ def run_migrations() -> None:
 
     _await_database_available()
 
-    engine = create_engine(settings.DATABASE_URL)
+    engine = create_engine(migration_database_url(), connect_args=migration_connect_args())
 
     # Acquire the advisory lock on a DEDICATED connection held open for the whole
     # upgrade (issue #284 A1.4).
@@ -1876,7 +1893,7 @@ def run_migrations() -> None:
     #
     # A separate engine is used so the engine.dispose() further down (which exists to
     # free pooled connections before Alembic opens its own) cannot close this one.
-    lock_engine = create_engine(settings.DATABASE_URL)
+    lock_engine = create_engine(migration_database_url())
     lock_conn = lock_engine.connect()
     lock_conn.execute(text("SELECT pg_advisory_lock(42)"))
     lock_conn.commit()
@@ -1928,6 +1945,12 @@ def run_migrations() -> None:
         # Post-migration repair: apply any idempotent schema changes from v230
         # that may have been skipped due to a branch merge ordering issue.
         _repair_skipped_v230(config)
+
+        # Layer 2 of audit protection: re-apply the app role's grants on EVERY start (this
+        # also repairs a `--no-acl` restore). No-op unless the role split was requested.
+        from app.db.roles import reconcile_from_settings
+
+        reconcile_from_settings()
 
         logger.info("Database migrations complete")
     finally:

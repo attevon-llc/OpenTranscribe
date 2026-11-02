@@ -107,6 +107,10 @@ def quiet_stores():
         ),
         patch("app.services.gdpr_erasure_service._erase_speaker_voiceprints", return_value=0),
         patch("app.services.opensearch_service.remove_profile_embedding", return_value=True),
+        # The receipt refuses to verify while ANY unclassified index exists on the cluster, and a
+        # shared stack always has some (other runs' scratch indices). Which indices exist is not
+        # what these tests are about, and an unverified receipt keeps the erasure open by design.
+        patch("app.services.erasure_receipt.stores_external.unclassified_indices", return_value=[]),
         patch("app.services.gdpr_erasure_service.audit_logger"),
         patch("app.services.erasure_ledger_service.audit_logger"),
     ):
@@ -444,8 +448,8 @@ def test_the_sweep_reopens_an_entry_the_database_lost_and_re_erases(db_session, 
 
     # The restore: the ledger row disappears, the subject comes back with the same
     # surrogate keys (the dump predates both). The dump predates the entry's receipts too.
-    db_session.query(ErasureReceipt).delete()
-    with audit_maintenance(db_session):  # the restore drops the row
+    with audit_maintenance(db_session):  # the restore drops the receipts and the row alike
+        db_session.query(ErasureReceipt).delete()
         db_session.query(ErasureLedgerEntry).filter(
             ErasureLedgerEntry.subject_user_id == user_id
         ).delete()

@@ -124,13 +124,31 @@ def test_index_classification(name, key):
     assert classify_index(name) == key
 
 
+def _sweep():
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[3] / "scripts" / "lib" / "test_artifact_sweep.py"
+    spec = importlib.util.spec_from_file_location("test_artifact_sweep_shapes", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 @pytest.mark.skipif(
     os.environ.get("SKIP_OPENSEARCH") == "True", reason="needs a reachable OpenSearch"
 )
 def test_every_live_index_is_classified_or_a_system_index():
     from app.services.erasure_receipt.stores_external import unclassified_indices
 
-    stray = unclassified_indices()
+    # Indices a concurrent test run is minting right now carry a registered test-artifact shape
+    # (the sweep deletes them); they are that run's scratch, not a store an erasure forgets. A
+    # real application index, or a test index of an UNREGISTERED shape, still fails here.
+    sweep = _sweep()
+    stray = [
+        n for n in unclassified_indices() if sweep.match_spec(n, sweep.TEST_INDEX_SPECS) is None
+    ]
     assert stray == [], (
         f"OpenSearch indices no erasure store covers: {stray}. Classify them in "
         "stores_external.INDEX_PATTERNS, or (an index with no personal data) allow-list them."

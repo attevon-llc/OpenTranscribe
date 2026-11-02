@@ -80,7 +80,22 @@ def test_a_second_request_returns_the_existing_one(db_session, normal_user, enab
     assert caught.value.entry.uuid == first.uuid
 
 
+def _sole_super_admin(db, keep) -> None:
+    """Make ``keep`` the only ACTIVE super administrator, as the rule under test needs.
+
+    A stack that has ever been set up holds its own seeded super administrator, which makes
+    the fixture user a second one and the rule correctly say "someone else remains".
+    """
+    from app.models.user import User
+
+    db.query(User).filter(User.role == "super_admin", User.id != keep.id).update(
+        {"is_active": False}, synchronize_session=False
+    )
+    db.commit()
+
+
 def test_the_last_super_admin_is_refused(db_session, super_admin_user, enabled):
+    _sole_super_admin(db_session, super_admin_user)
     with pytest.raises(service.SelfErasureError) as caught:
         service.request_self_erasure(db_session, super_admin_user, now=NOW)
     assert caught.value.code == "last_super_admin"

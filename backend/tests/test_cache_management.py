@@ -329,6 +329,9 @@ class TestLegacyAudioReclaimOnce:
         from app.services import system_settings_service
 
         key = cache_management_service.LEGACY_AUDIO_RECLAIM_KEY
+        # Backend startup runs the real pass and persists this flag, so any stack that has ever
+        # started holds True here; the test must set the state it is about, not inherit it.
+        system_settings_service.set_setting(db_session, key, False, "test start state")
         passes = iter([self._result(False), self._result(True)])
         calls: list[int] = []
 

@@ -515,7 +515,9 @@ def test_deleting_a_member_keeps_the_orgs_collections_and_drops_personal_ones(or
     assert w.db.query(Collection).filter(Collection.id == personal_id).first() is None
 
 
-def test_erasing_an_org_member_keeps_the_orgs_collections_de_attributed(org_world, monkeypatch):
+def test_erasing_an_org_member_keeps_the_orgs_collections_de_attributed(
+    org_world, monkeypatch, no_receipt_measurement
+):
     from app.services import gdpr_erasure_service
     from app.services.gdpr_erasure_service import erase_org_member_data
 
@@ -549,7 +551,9 @@ def test_unattributed_org_collection_stays_usable_by_members(client, org_world):
         assert client.delete(f"/api/collections/{coll.uuid}").status_code == 200
 
 
-def test_erasing_an_organization_removes_its_collections(org_world, monkeypatch):
+def test_erasing_an_organization_removes_its_collections(
+    org_world, monkeypatch, no_receipt_measurement
+):
     from app.services import gdpr_erasure_service
     from app.services.gdpr_erasure_service import erase_organization
 

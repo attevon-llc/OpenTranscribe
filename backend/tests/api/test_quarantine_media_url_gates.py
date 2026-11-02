@@ -65,15 +65,26 @@ def test_the_owner_still_gets_a_404_for_their_own_quarantined_file(support_world
 
 
 @pytest.mark.parametrize(
-    ("quarantined", "who", "hidden"),
-    [(True, "owner", True), (True, "admin", False), (False, "owner", False)],
+    ("tenancy", "quarantined", "who", "hidden"),
+    [
+        ("multi", True, "owner", True),
+        # A task or replay holds no support-access grant, so in a multi-tenant deployment the
+        # platform admin's role alone reaches nothing (takedown_predicates.is_review_admin).
+        ("multi", True, "admin", True),
+        ("multi", False, "owner", False),
+        ("single", True, "owner", True),
+        ("single", True, "admin", False),
+        ("single", False, "owner", False),
+    ],
 )
 def test_the_export_replay_check_reads_the_live_quarantine_state(
-    support_world, monkeypatch, quarantined, who, hidden
+    support_world, monkeypatch, tenancy, quarantined, who, hidden
 ):
+    from app.core.config import settings
     from app.services import media_revocation_cache as cache
 
     w = support_world
+    monkeypatch.setattr(settings, "TENANCY_MODE", tenancy)
     w.file.is_quarantined = quarantined
     w.db.commit()
     # The check opens its own short session; point it at the test's.

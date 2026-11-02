@@ -16,9 +16,7 @@
     confirmedSpeakerName,
     inlineNameCheck,
     matchingProfileNames,
-    partitionSpeakers,
     pendingSuggestionOf,
-    speakerMenuLabel,
     speakerNumberLabelOf,
     uniqueProfileNames
   } from '$lib/speakers/speakerMenu';

@@ -27,6 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Auth hardening: optional-auth routes apply the approval and expiry gates, an unrecognised
+  concurrent-session policy is enforced as `reject`, a login whose account lookup fails is
+  refused, and a failed banner-setting read keeps the banner gate it last saw.
+- Auth-config hardening: placeholders are never stored as secrets, reads decrypt a secret row by
+  its key, the migrate failure path is audited, the LDAP connection test negotiates StartTLS like
+  login does, and the connection tests answer cleanly when a client library is missing.
+- Automatic recovery resets a file only through the guarded retry reset.
+- Auto-label failures are reported separately from skips and retried; the settings reject
+  non-boolean switches.
+- The tenant backfill covers the legacy speaker backup index.
 - **The OpenSearch model step pulls the backend image the install runs.** `resolve_backend_image`
   now returns the lite repository for lite installs and for arm64 hosts (the CPU-only image is the
   only one published for arm64), instead of always the CUDA repository.

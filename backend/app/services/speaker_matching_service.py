@@ -9,7 +9,6 @@ from app.models.speaker import Speaker
 from app.services.privacy import policy as privacy_policy
 from app.services.privacy.redact_view import PrivacyView
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
-from app.services.speaker_matching import match_guards
 from app.services.speaker_matching import match_handling
 from app.services.speaker_matching import match_queries
 from app.services.speaker_matching import match_storage
@@ -158,11 +157,11 @@ class SpeakerMatchingService:
     process_speaker_embeddings_native = processing.process_speaker_embeddings_native
     _process_single_speaker = processing.process_single_speaker
 
-    _linked_speaker_count = match_guards.linked_speaker_count
-    _refusals = match_guards.refusals
-    _match_is_blocked = match_guards.match_is_blocked
-    _match_detail = match_guards.match_detail
-    _record_match_suggestion = staticmethod(match_guards.record_match_suggestion)
+    _linked_speaker_count = match_handling.linked_speaker_count
+    _refusals = match_handling.refusals
+    _match_is_blocked = match_handling.match_is_blocked
+    _match_detail = match_handling.match_detail
+    _record_match_suggestion = staticmethod(match_handling.record_match_suggestion)
 
     _handle_speaker_match = match_handling.handle_speaker_match
     _handle_no_speaker_match = match_handling.handle_no_speaker_match

@@ -75,6 +75,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Tag permissions.** Attaching or removing a tag on a single file now needs `editor` access
+  to the file, the same as the bulk tag action. Every tag-changing route (rename, merge, delete,
+  promote, attach, detach, clean up) now refuses a support-access grant, as creating a tag
+  already did. `GET /api/tags/for-files` and the single-file attach and detach routes now answer
+  a file the caller cannot open exactly as they answer an unknown file ("File not found").
+
 
 
 - **The model downloader's speaker-detection step no longer fails on every CPU run.**

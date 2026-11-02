@@ -2,7 +2,7 @@
  * API client for transcript operations
  */
 import axiosInstance from '../axios';
-import type { Segment } from '$lib/types/speaker';
+import type { TranscriptSegment } from '$lib/types/media';
 
 /**
  * Update the speaker assignment for a transcript segment
@@ -13,7 +13,7 @@ import type { Segment } from '$lib/types/speaker';
 export async function updateSegmentSpeaker(
   segmentUuid: string,
   speakerUuid: string | null
-): Promise<Segment> {
+): Promise<TranscriptSegment> {
   try {
     const response = await axiosInstance.put(`/transcripts/segments/${segmentUuid}/speaker`, {
       speaker_uuid: speakerUuid,

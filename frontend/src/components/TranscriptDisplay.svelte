@@ -1,6 +1,6 @@
 <script lang="ts">
   import { supportSessionGate } from '$stores/supportSession';
-  import type { Segment, Speaker } from '$lib/types/speaker';
+  import type { Speaker } from '$lib/types/speaker';
   import { resolveGroupedSegments } from '$lib/transcript/resolveGroupedSegments';
   import { createEventDispatcher } from 'svelte';
   import TranscriptSearch from './TranscriptSearch.svelte';
@@ -102,7 +102,7 @@
 
     // Find the segment in our local state
     const existingSegment = file.transcript_segments?.find(
-      (s: Segment) => s.uuid === segmentUuid
+      (s: TranscriptSegment) => s.uuid === segmentUuid
     );
 
     if (!existingSegment) {
@@ -145,7 +145,7 @@
       const originalSpeakerUuid = originalSpeaker?.uuid;
       if (originalSpeaker && originalSpeakerUuid) {
         const oldSpeakerStillUsed = file.transcript_segments.some(
-          (s: Segment) => s.speaker?.uuid === originalSpeakerUuid
+          (s: TranscriptSegment) => s.speaker?.uuid === originalSpeakerUuid
         );
 
         if (!oldSpeakerStillUsed) {

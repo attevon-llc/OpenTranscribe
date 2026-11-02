@@ -1,7 +1,7 @@
 <script lang="ts">
   import MenuIcon from '$components/ui/MenuIcon.svelte';
-  import type { GroupedSegmentView } from '$lib/types/media';
-  import type { Segment, Speaker } from '$lib/types/speaker';
+  import type { GroupedSegmentView, TranscriptSegment } from '$lib/types/media';
+  import type { Speaker } from '$lib/types/speaker';
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import SegmentSpeakerDropdown from '$components/SegmentSpeakerDropdown.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
@@ -219,14 +219,14 @@
   // `indexOf` returns -1 and highlights silently vanish. Look up by uuid instead.
   $: segmentIndexByUuid = (() => {
     const map = new Map<string | number, number>();
-    (file?.transcript_segments || []).forEach((s: Segment, i: number) => {
+    (file?.transcript_segments || []).forEach((s: TranscriptSegment, i: number) => {
       if (s?.uuid != null) map.set(s.uuid, i);
     });
     return map;
   })();
 
   // Helper to get original segment index for search highlighting
-  function getOriginalSegmentIndex(segment: Segment): number {
+  function getOriginalSegmentIndex(segment: TranscriptSegment): number {
     if (segment?.uuid != null && segmentIndexByUuid.has(segment.uuid)) {
       return segmentIndexByUuid.get(segment.uuid) as number;
     }
@@ -240,7 +240,7 @@
   // match with nothing visibly marked. This resolves which speaker match (if any)
   // applies to a segment, so the speaker chip/label can carry the same
   // .search-match / .current-match treatment the transcript text already gets.
-  function speakerMatchState(segment: Segment): { highlighted: boolean; isCurrent: boolean } {
+  function speakerMatchState(segment: TranscriptSegment): { highlighted: boolean; isCurrent: boolean } {
     if (!searchMatches.length) return { highlighted: false, isCurrent: false };
     const originalIndex = getOriginalSegmentIndex(segment);
     const matchIdx = searchMatches.findIndex(
@@ -269,11 +269,11 @@
     dispatch('segmentClick', { startTime });
   }
 
-  function editSegment(segment: Segment) {
+  function editSegment(segment: TranscriptSegment) {
     dispatch('editSegment', { segment });
   }
 
-  function saveSegment(segment: Segment) {
+  function saveSegment(segment: TranscriptSegment) {
     dispatch('saveSegment', { segment });
   }
 

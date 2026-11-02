@@ -74,7 +74,11 @@ def _connect_and_bind(
     Returns:
         A bound ``Connection``, or ``None`` if TLS negotiation or the bind failed.
     """
-    conn = Connection(server, user=user, password=password, auto_bind=False)
+    # The Server's connect_timeout only bounds the TCP connect; without a receive timeout a
+    # directory that accepts and then never answers holds this thread indefinitely.
+    conn = Connection(
+        server, user=user, password=password, auto_bind=False, receive_timeout=cfg.timeout
+    )
     try:
         if cfg.use_tls and not cfg.use_ssl and (not conn.open() or not conn.start_tls()):
             logger.error(

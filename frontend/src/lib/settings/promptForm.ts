@@ -13,7 +13,7 @@ export interface PromptFormData {
   is_shared: boolean;
 }
 
-export const DEFAULT_CONTENT_TYPE = 'general';
+const DEFAULT_CONTENT_TYPE = 'general';
 
 export function blankPromptForm(): PromptFormData {
   return {

@@ -41,7 +41,7 @@ export function createCheckmarkSvg(): SVGSVGElement {
   return svg;
 }
 
-export function createPlusSvg(): SVGSVGElement {
+function createPlusSvg(): SVGSVGElement {
   const svg = strokeSvg('14');
   const line1 = document.createElementNS(SVG_NS, 'line');
   line1.setAttribute('x1', '12');
@@ -59,7 +59,7 @@ export function createPlusSvg(): SVGSVGElement {
 }
 
 /** The "AI suggestion" sparkle. */
-export function createSparkleSvg(): SVGSVGElement {
+function createSparkleSvg(): SVGSVGElement {
   const svg = svgRoot('12', 'currentColor');
   const path = document.createElementNS(SVG_NS, 'path');
   path.setAttribute(
@@ -71,7 +71,7 @@ export function createSparkleSvg(): SVGSVGElement {
 }
 
 /** A speaker row: colour dot, label, and a checkmark on the selected one. */
-export function createDropdownItem(
+function createDropdownItem(
   speakerUuid: string,
   label: string,
   isSelected: boolean,

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, within } from '@testing-library/svelte';
 
 /**
  * The list is presentational: it renders what the backend already computed and
@@ -174,5 +174,22 @@ describe('TagList — collision clusters', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: /road-map/ }));
     expect(select.mock.calls[0][0].detail).toEqual({ mode: 'add', uuids: [UUID_C] });
+  });
+});
+
+describe('TagList — ownership badges in cluster mode', () => {
+  it('marks a cluster member with the same ownership badge as its flat row', () => {
+    const owned: TagCollisionCluster = {
+      ...cluster,
+      members: [
+        { ...cluster.members[0], ownership: 'system' },
+        { ...cluster.members[1], ownership: 'shared_with_me' },
+      ],
+    };
+    render(TagList, { props: { clusters: [owned] } });
+
+    const [, systemRow, sharedRow] = screen.getAllByRole('option');
+    expect(within(systemRow).getByText('Shared')).toBeInTheDocument();
+    expect(within(sharedRow).getByText('Shared with me')).toBeInTheDocument();
   });
 });

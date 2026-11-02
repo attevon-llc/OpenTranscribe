@@ -280,6 +280,15 @@
                 {#if row.suggestedSurvivor}
                   <Badge variant="info">{$t('tags.manager.cluster.suggested')}</Badge>
                 {/if}
+                {#if row.entry.ownership === 'system'}
+                  <Badge variant="info" title={$t('tags.manager.sharedTooltip')}>
+                    {$t('tags.manager.sharedBadge')}
+                  </Badge>
+                {:else if row.entry.ownership === 'shared_with_me'}
+                  <Badge variant="default" title={$t('tags.manager.sharedWithMeTooltip')}>
+                    {$t('tags.manager.sharedWithMeBadge')}
+                  </Badge>
+                {/if}
               {/if}
             </div>
           {/each}

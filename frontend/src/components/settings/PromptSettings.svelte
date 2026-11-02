@@ -2,13 +2,13 @@
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount } from 'svelte';
-  import { PromptsApi, type SummaryPrompt, type ActivePromptResponse, type SummaryPromptCreate, type SummaryPromptUpdate, type SharedPromptLibrary } from '../../lib/api/prompts';
-  import BaseModal from '../ui/BaseModal.svelte';
-  import ConfirmationModal from '../ConfirmationModal.svelte';
-  import Spinner from '../ui/Spinner.svelte';
-  import TagInput from '../ui/TagInput.svelte';
+  import { PromptsApi, type SummaryPrompt, type ActivePromptResponse, type SummaryPromptCreate, type SummaryPromptUpdate, type SharedPromptLibrary } from '$lib/api/prompts';
+  import BaseModal from '$components/ui/BaseModal.svelte';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
+  import TagInput from '$components/ui/TagInput.svelte';
   import PromptCopyButton from './PromptCopyButton.svelte';
-  import { toastStore } from '../../stores/toast';
+  import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import {
@@ -405,7 +405,7 @@
         </div>
 
         <div class="config-list">
-          {#each systemPrompts as prompt}
+          {#each systemPrompts as prompt (prompt.uuid)}
             <div class="config-item" class:active={selectedPromptId === prompt.uuid}>
               <div class="config-info">
                 <div class="config-name">
@@ -430,7 +430,7 @@
                 {#if prompt.linked_collections && prompt.linked_collections.length > 0}
                   <div class="linked-collections">
                     <span class="linked-label">{$t('prompts.usedByCollections')}:</span>
-                    {#each prompt.linked_collections as col}
+                    {#each prompt.linked_collections as col (col.uuid)}
                       <span class="collection-tag">{col.name}</span>
                     {/each}
                   </div>
@@ -511,7 +511,7 @@
 
       {#if userPrompts.length > 0}
         <div class="config-list">
-          {#each userPrompts as prompt}
+          {#each userPrompts as prompt (prompt.uuid)}
             <div class="config-item" class:active={selectedPromptId === prompt.uuid}>
               <div class="config-info">
                 <div class="config-name">
@@ -532,7 +532,7 @@
                 {#if prompt.linked_collections && prompt.linked_collections.length > 0}
                   <div class="linked-collections">
                     <span class="linked-label">{$t('prompts.usedByCollections')}:</span>
-                    {#each prompt.linked_collections as col}
+                    {#each prompt.linked_collections as col (col.uuid)}
                       <span class="collection-tag">{col.name}</span>
                     {/each}
                   </div>
@@ -655,7 +655,7 @@
         </div>
 
         <div class="config-list">
-          {#each sharedPrompts as prompt}
+          {#each sharedPrompts as prompt (prompt.uuid)}
             <div class="config-item shared" class:active={selectedPromptId === prompt.uuid}>
               <div class="config-info">
                 <div class="config-name">
@@ -780,7 +780,7 @@
           disabled={saving}
           class="form-control"
         >
-          {#each contentTypes as type}
+          {#each contentTypes as type (type.value)}
             <option value={type.value}>{type.label}</option>
           {/each}
         </select>
@@ -888,7 +888,7 @@
           <div class="detail-row">
             <strong>{$t('prompts.usedByCollections')}:</strong>
             <div class="linked-collections-modal">
-              {#each viewingPrompt.linked_collections as col}
+              {#each viewingPrompt.linked_collections as col (col.uuid)}
                 <span class="collection-tag">{col.name}</span>
               {/each}
             </div>

@@ -14,7 +14,7 @@
    * near matches, the suggested survivor) — those are
    * rendered as received.
    */
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { onMount } from 'svelte';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
@@ -44,8 +44,6 @@
   import type { TagListEntry, TagSelectDetail } from '$components/tags/TagList.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
   import ListRowSkeleton from '$components/ui/ListRowSkeleton.svelte';
-
-  const dispatch = createEventDispatcher<{ close: void }>();
 
   // Creating a tag here is the missing third of add/edit/delete. Until now a
   // tag could only be born by tagging a file, which meant the tool called "tag
@@ -559,7 +557,6 @@
           isAdmin={canWriteSystem}
           on:previewMerge={previewMerge}
           on:promote={promoteSelection}
-          on:share={() => (sharingTag = selectedEntries[0] ?? null)}
           on:confirmMerge={confirmMerge}
           on:cancelMerge={clearPreviews}
           on:previewDelete={previewDelete}

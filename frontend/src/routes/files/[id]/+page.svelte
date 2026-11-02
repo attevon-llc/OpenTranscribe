@@ -1,12 +1,10 @@
 <script lang="ts">
   import { onMount, onDestroy, afterUpdate, tick } from 'svelte';
   import type { Collection } from '$lib/types/collection';
-  import type { Comment } from '$lib/types/comment';
   import type { Tag } from '$lib/types/tag';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { guardUnsavedChanges } from '$lib/navigation/unsavedChangesGuard';
   import axiosInstance from '$lib/axios';
-  import { formatDuration } from '$lib/utils/formatting';
   import { websocketStore, type Notification } from '$stores/websocket';
   import { handleFileNotification } from '$lib/fileDetail/notificationHandler';
   import { isForFile, latestNotificationForFile, notificationSignature } from '$lib/fileDetail/notificationSelect';
@@ -34,7 +32,6 @@
   import { patchSegmentInFile } from '$lib/fileDetail/segmentSync';
   import { clearProcessedVideoCache, saveSegmentText, segmentSaveErrorKey } from '$lib/fileDetail/segmentEdit';
 
-  // Import new components
   import VideoPlayer from '$components/VideoPlayer.svelte';
   import WaveformPlayer from '$components/WaveformPlayer.svelte';
   import MetadataDisplay from '$components/MetadataDisplay.svelte';
@@ -60,21 +57,17 @@
   import RedactionPendingPanel from '$components/fileDetail/RedactionPendingPanel.svelte';
   import SpeakerProfileConfirmModal from '$components/fileDetail/SpeakerProfileConfirmModal.svelte';
   import { isLLMAvailable } from '$stores/llmStatus';
-  import { authStore } from '$stores/auth';
   import { transcriptStore } from '$stores/transcriptStore';
   import { downloadStore } from '$stores/downloads';
   import { supportSessionGate } from '$stores/supportSession';
   import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
   import type { SummarizeOptions } from '$lib/api/summarize';
   import { fetchSummaryData, startSummary } from '$lib/fileDetail/summaryActions';
-  import { getAppBaseUrl } from '$lib/utils/url';
   import type { PlaybackMode } from '$lib/api/mediaUrl';
   import { createMediaStream } from '$lib/fileDetail/mediaStream';
   import { applyReprocessStart, reprocessRegeneratesSummary } from '$lib/fileDetail/reprocess';
-  import Spinner from '../../../components/ui/Spinner.svelte';
-  import FileDetailSkeleton from '../../../components/FileDetailSkeleton.svelte';
-
-  // No need for a global commentsForExport variable - we'll fetch when needed
+  import Spinner from '$components/ui/Spinner.svelte';
+  import FileDetailSkeleton from '$components/FileDetailSkeleton.svelte';
 
   // Props - SvelteKit passes data from +page.ts
   export let data;
@@ -90,13 +83,9 @@
   // 404/403: the file is missing or not visible to this user; retrying can't help.
   let fileNotFound = false;
   let videoErrorMessage = '';
-  let apiBaseUrl = '';
   let videoPlayerComponent: any = null;
   let currentTime = 0;
-  let duration = 0;
   let isLoading = true;
-  let isPlayerBuffering = false;
-  let loadProgress = 0;
   let playerInitialized = false;
   let videoElementChecked = false;
   let collections: Collection[] = [];
@@ -157,7 +146,6 @@
   });
   // Reported by CommentSection; the export flow reads it instead of refetching comments.
   let commentCount = 0;
-  let speakerNamesChanged = false; // Track if any speaker names have been modified
   let reprocessing = false;
   let showReprocessModal = false;
   let summaryData: any = null;
@@ -233,9 +221,6 @@
     summaryGenerating = false;
     generatingSummary = false;
   }
-
-
-
 
   // Transcript export / copy (server-side, issues #673/#821/#1278): see TranscriptExportDialogs.
   let exportDialogs: TranscriptExportDialogs;
@@ -484,7 +469,6 @@
     seekToTime(startTime);
   }
 
-
   // Handle speaker name input changes (for reactivity)
   function handleSpeakerNameChanged(event: CustomEvent) {
     // Trigger reactivity by reassigning the speakerList array
@@ -580,7 +564,6 @@
     editingSegmentOriginalText = segment.text ?? '';
   }
 
-
   async function handleSaveSegment(event: CustomEvent<{ segment: { uuid: string } }>) {
     const segment = event.detail.segment;
     if (!segment || !editingSegmentText) return;
@@ -620,7 +603,6 @@
     editingSegmentOriginalText = '';
   }
 
-
   function handleExportTranscript(event: CustomEvent<{ format: string }>) {
     if (!file || !file.transcript_segments) return;
     // CommentSection already holds this and reports it as it changes.
@@ -631,9 +613,6 @@
     const time = event.detail.time || event.detail;
     seekToTime(time);
   }
-
-
-  // Speaker verification event handlers
 
   function seekToTime(time: number) {
     // Add 0.5 second padding before the target time for better context
@@ -673,22 +652,9 @@
   }
 
   // Audio player event handlers for custom player
-  function handleTimeUpdate(event: CustomEvent) {
+  function handleTimeUpdate(event: CustomEvent<{ currentTime: number }>) {
     currentTime = event.detail.currentTime;
-    duration = event.detail.duration;
     markActiveSegment(file?.transcript_segments, currentTime);
-  }
-
-  function handlePlay(_event: CustomEvent) {
-    // Handle play event if needed
-  }
-
-  function handlePause(_event: CustomEvent) {
-    // Handle pause event if needed
-  }
-
-  function handleLoadedMetadata(event: CustomEvent) {
-    duration = event.detail.duration;
   }
 
   function handleWaveformSeek(event: CustomEvent) {
@@ -812,9 +778,6 @@
       refreshCaptionTrack,
     });
 
-    // Use dynamic URL based on current location (works with reverse proxy)
-    apiBaseUrl = getAppBaseUrl();
-
     if (id) {
       fileId = id;
     } else {
@@ -839,8 +802,6 @@
       isLoading = false;
     }
 
-    // LLM status monitoring is now handled by the Settings component and reactive store
-
     // Subscribe to WebSocket notifications for real-time updates
     wsUnsubscribe = websocketStore.subscribe(($ws) => handleNotifications($ws.notifications));
   });
@@ -855,8 +816,6 @@
     playerInitialized = false;
 
     mediaStream.stop();
-
-    // LLM status cleanup is handled by the Settings component
 
     // Clean up WebSocket subscription
     if (wsUnsubscribe) {
@@ -1002,15 +961,10 @@
           {streamContentType}
           {playbackMode}
           {file}
-          {isPlayerBuffering}
-          {loadProgress}
           errorMessage={videoErrorMessage}
           {showOriginal}
           on:retry={handleVideoRetry}
           on:timeupdate={handleTimeUpdate}
-          on:play={handlePlay}
-          on:pause={handlePause}
-          on:loadedmetadata={handleLoadedMetadata}
         />
 
         <!-- Waveform visualization -->

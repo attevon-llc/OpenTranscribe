@@ -131,3 +131,35 @@ describe('TagDetailPanel', () => {
     });
   });
 });
+
+describe('rename field rules', () => {
+  async function openRename(props: Record<string, unknown> = {}, events = {}) {
+    const result = render(TagDetailPanel, { props: { tag, ...props }, events });
+    await fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    return { ...result, input: screen.getByLabelText('Tag name') as HTMLInputElement };
+  }
+
+  it('holds no more than the stored width, like every other tag field', async () => {
+    const { input } = await openRename();
+
+    await fireEvent.input(input, { target: { value: 'x'.repeat(60) } });
+    expect(input.value).toBe('x'.repeat(50));
+    expect(input.hasAttribute('maxlength')).toBe(false);
+  });
+
+  it('refuses a name that is empty once normalized instead of sending it', async () => {
+    const rename = vi.fn();
+    const { input } = await openRename({}, { rename });
+
+    await fireEvent.input(input, { target: { value: ' -_- ' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+
+    expect(rename).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter a tag name.');
+    // The field stays open so the name can be corrected.
+    expect(screen.getByLabelText('Tag name')).toBeInTheDocument();
+
+    await fireEvent.input(input, { target: { value: 'renamed' } });
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+});

@@ -15,6 +15,7 @@
   import type { TagImpact } from '$lib/types/tag';
   import { canMutateTag } from '$lib/types/tag';
   import type { TaggedFile } from '$lib/types/tag';
+  import { clampTagNameInput, normalizeTagName } from '$lib/utils/tagName';
 
   export let tag: TagListEntry;
   /** Which mutation is in flight, if any. Disables the confirming control. */
@@ -68,6 +69,8 @@
 
   let editing = false;
   let editName = tag.name;
+  /** Set when the typed name is one the server would refuse as empty. */
+  let nameError = '';
 
   // Mirrors GroupDetailPanel: while not editing, the field tracks the tag.
   $: if (!editing) editName = tag.name;
@@ -80,6 +83,7 @@
   function cancelEdit() {
     editing = false;
     editName = tag.name;
+    nameError = '';
     if (renameMergeImpact) dispatch('cancelRenameMerge');
   }
 
@@ -87,6 +91,12 @@
     const name = editName.trim();
     if (!name || name === tag.name) {
       cancelEdit();
+      return;
+    }
+    // `---` is not blank but normalizes to nothing, which the server answers
+    // with a 422 the coordinator could only report as a generic failure.
+    if (!normalizeTagName(name)) {
+      nameError = $t('tags.nameRequired');
       return;
     }
     dispatch('rename', { name });
@@ -102,6 +112,11 @@
    */
   function cancelRenameMerge() {
     dispatch('cancelRenameMerge');
+  }
+
+  function onNameInput(event: Event) {
+    editName = clampTagNameInput(event);
+    nameError = '';
   }
 
   function onNameKeydown(event: KeyboardEvent) {
@@ -121,11 +136,16 @@
           id="tag-rename-input"
           type="text"
           class="edit-input"
-          bind:value={editName}
-          maxlength="255"
+          value={editName}
+          aria-invalid={nameError !== ''}
+          aria-describedby={nameError ? 'tag-rename-error' : undefined}
           disabled={busy === 'rename'}
+          on:input={onNameInput}
           on:keydown={onNameKeydown}
         />
+        {#if nameError}
+          <p id="tag-rename-error" class="edit-error" role="alert">{nameError}</p>
+        {/if}
         <div class="edit-actions">
           <button
             type="button"
@@ -353,6 +373,12 @@
   .edit-input {
     width: 100%;
     box-sizing: border-box;
+  }
+
+  .edit-error {
+    margin: 0;
+    font-size: var(--font-size-xs);
+    color: var(--error-color);
   }
 
   .edit-actions,

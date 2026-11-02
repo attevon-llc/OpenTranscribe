@@ -12,6 +12,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from pydantic import BaseModel
 from pydantic import Field
+from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
 from app import models
@@ -268,16 +269,17 @@ def get_engine_metrics(
 
     Each Celery GPU worker publishes counters under ``engine:metrics:<hostname>``
     with a 120-second TTL. Returns a dict keyed by hostname. An empty dict
-    means no workers have reported metrics recently.
+    means no workers have reported metrics recently; **503** means Redis could
+    not be read, which is not the same answer.
     """
     try:
         from app.core.redis import get_redis
 
         r = get_redis()
         keys = r.keys(f"{_METRICS_KEY_PREFIX}*")
-    except Exception as exc:
-        logger.warning("engine-metrics: Redis unavailable: %s", exc)
-        return {}
+    except (RedisError, OSError) as exc:
+        logger.error("engine-metrics: Redis unavailable", exc_info=True)
+        raise HTTPException(status_code=503, detail="Engine metrics are unavailable.") from exc
 
     result: dict[str, Any] = {}
     for key in keys:

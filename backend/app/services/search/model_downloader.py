@@ -216,9 +216,18 @@ def _update_manifest(cache_dir: Path, model_name: str, model_info: dict[str, Any
         try:
             with open(manifest_path) as f:
                 manifest = json.load(f)
-        except Exception as e:
-            logger.warning(f"Could not read existing manifest: {e}")
+        except json.JSONDecodeError as e:
+            # The content is unrecoverable, so a fresh manifest is the repair.
+            logger.warning(f"Existing manifest is not valid JSON, starting a new one: {e}")
             manifest = {}
+        except OSError as e:
+            # Unreadable is not the same as empty: rewriting from nothing would drop
+            # every other model's entry, so the manifest is left untouched.
+            logger.error(
+                f"Could not read existing manifest {manifest_path}; leaving it unchanged: {e}",
+                exc_info=True,
+            )
+            return
 
     # Update manifest
     if "models" not in manifest:

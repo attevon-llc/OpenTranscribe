@@ -8,6 +8,8 @@ import contextlib
 import logging
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
 from app.core.embedding_models import get_speaker_index_v3
 from app.core.embedding_models import get_speaker_index_v3_backup
@@ -34,8 +36,6 @@ def get_migration_status() -> dict:
     — return the same "not available" envelope as the no-client branch instead
     of letting a connection error bubble up as a 500 from the status endpoint.
     """
-    from opensearchpy.exceptions import OpenSearchException
-
     from app.services.opensearch_service import get_opensearch_client
 
     client = get_opensearch_client()
@@ -58,21 +58,20 @@ def get_migration_status() -> dict:
     speaker_only_query = {"query": {"bool": {"must_not": {"exists": {"field": "document_type"}}}}}
 
     # Query concrete versioned indices directly (not through alias)
+    # A count that cannot be taken is an outage, not zero documents: zero would read as
+    # "nothing to migrate" / "migration complete".
     try:
         v3_document_count = (
             client.count(index=v3_index, body=speaker_only_query)["count"]
             if client.indices.exists(index=v3_index)
             else 0
         )
-    except Exception:
-        v3_document_count = 0
-
-    try:
         v4_document_count = (
             client.count(index=v4_index, body=speaker_only_query)["count"] if v4_exists else 0
         )
-    except Exception:
-        v4_document_count = 0
+    except OpenSearchException as e:
+        logger.warning("OpenSearch unreachable while counting migration documents: %s", e)
+        return {"status": "error", "message": "OpenSearch not available"}
 
     # If v3 concrete index is empty, check the legacy backup (non-critical)
     if v3_document_count == 0 and backup_exists:
@@ -166,7 +165,12 @@ _ALREADY_MIGRATED_COMPOSITE_PAGE_SIZE = 10000
 
 
 def _get_already_migrated_file_ids() -> set[int]:
-    """Return set of media_file_id values fully migrated in the v4 index."""
+    """Return set of media_file_id values fully migrated in the v4 index.
+
+    Raises:
+        OpenSearchException: The index could not be read. An empty set means "nothing
+            is migrated" and would make a migration redo every file.
+    """
     from app.services.opensearch_service import get_opensearch_client
 
     client = get_opensearch_client()
@@ -209,9 +213,11 @@ def _get_already_migrated_file_ids() -> set[int]:
             after = file_ids_agg.get("after_key")
             if after is None or len(buckets) < page_size:
                 break
-    except Exception as e:
-        logger.warning(f"Could not query v4 index for skip logic: {e}")
-        return set()
+    except OpenSearchException:
+        # Not an empty set: "nothing migrated" would re-migrate every file. The caller
+        # decides (the migration task fails; the status probe reports no stalled run).
+        logger.error("Could not query v4 index for skip logic", exc_info=True)
+        raise
 
     if not v4_counts:
         return set()

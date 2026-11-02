@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from opensearchpy.exceptions import NotFoundError
 
 from app.core.config import settings
 from app.services.search import pipelines
@@ -36,7 +37,7 @@ class _FakeIngest:
 
     def get_pipeline(self, id: str) -> dict[str, Any]:  # noqa: A002 - opensearch-py's kwarg
         if self.live is None:
-            raise LookupError(f"pipeline {id} not found")
+            raise NotFoundError(404, f"pipeline {id} not found", {})
         return {id: self.live}
 
     def put_pipeline(self, id: str, body: dict[str, Any]) -> None:  # noqa: A002

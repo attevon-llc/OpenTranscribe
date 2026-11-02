@@ -123,8 +123,12 @@ def _scope_doc_counts_to_caller(client: Any, health: dict[str, Any], ctx: Reques
         try:
             entry["doc_count"] = int(client.count(index=idx, body=query).get("count", 0))
         except Exception as e:
-            logger.debug("Scoped doc count failed for %s: %s", idx, e)
+            # A count that could not be taken is not a count of zero: report the index
+            # as unreachable, the same shape the bulk _cat/indices failure produces.
+            logger.error("Scoped doc count failed for %s: %s", idx, e, exc_info=True)
+            entry["status"] = "red"
             entry["doc_count"] = 0
+            entry["error"] = "Document count is unavailable"
 
 
 def _probe_index_health(indices: list[str]) -> dict[str, str]:

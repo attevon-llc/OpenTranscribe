@@ -732,7 +732,8 @@ class LLMService(
                 bedrock=bedrock,
             )
             return LLMService(config)
-        except Exception as e:  # noqa: BLE001
+        except (ValueError, KeyError, TypeError) as e:
+            # A database error is not "unavailable": it propagates as an outage.
             logger.error(f"Could not build LLMService from config {config_id}: {e}")
             return None
         finally:
@@ -912,11 +913,10 @@ class LLMService(
         except (ValueError, KeyError) as e:
             logger.error(f"Configuration error for user {user_id}: {e}")
             return LLMService.create_from_system_settings()
-        except Exception as e:
-            logger.error(
-                f"Unexpected error creating LLMService from user settings for user {user_id}: {e}"
-            )
-            return LLMService.create_from_system_settings()
+        except Exception:
+            # Never swap in the SYSTEM provider on a failed read: it may not be the user's choice.
+            logger.exception("Could not resolve LLM settings for user %s", user_id)
+            raise
         finally:
             db.close()
 

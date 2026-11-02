@@ -84,16 +84,18 @@ class TestGetAlreadyMigratedFileIds:
         assert result == {25}
 
     @patch(_OS_CLIENT_PATCH)
-    def test_returns_empty_on_search_error(self, mock_get_client):
+    def test_raises_on_search_error_instead_of_reporting_nothing_migrated(self, mock_get_client):
+        from opensearchpy.exceptions import ConnectionError as OSConnectionError
+
         from app.tasks.embedding_migration_v4_scope import _get_already_migrated_file_ids
 
         mock_client = MagicMock()
         mock_client.indices.exists.return_value = True
-        mock_client.search.side_effect = Exception("search failed")
+        mock_client.search.side_effect = OSConnectionError("N/A", "search failed", Exception("x"))
         mock_get_client.return_value = mock_client
 
-        result = _get_already_migrated_file_ids()
-        assert result == set()
+        with pytest.raises(OSConnectionError):
+            _get_already_migrated_file_ids()
 
 
 class TestBulkWriteV4Embeddings:

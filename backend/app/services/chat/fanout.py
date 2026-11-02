@@ -249,6 +249,7 @@ def _run_plan_fanout(
     if decision.wants_digest:
         from app.services.search.chunk_retrieval import retrieve_digests
 
+        digest_diagnostics: dict[str, Any] = {}
         result.digests = retrieve_digests(
             effective_query,
             user_id=user_id,
@@ -256,7 +257,9 @@ def _run_plan_fanout(
             file_uuids=file_uuids,
             size=6,
             search_mode=search_mode,
+            diagnostics=digest_diagnostics,
         )
+        result.digest_retrieval_failed = bool(digest_diagnostics.get("digest_retrieval_failed"))
 
     meta.update(outcome.as_metadata())
     subq_names = {f"subquestion-{i}" for i in range(len(plan.subquestions[:3]))}

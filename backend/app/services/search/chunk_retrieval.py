@@ -504,6 +504,7 @@ def retrieve_digests(
     search_mode: str = "hybrid",
     fusion: FusionConfig | None = None,
     text_fields: list[str] | None = None,
+    diagnostics: dict[str, Any] | None = None,
 ) -> list[ChunkHit]:
     """Retrieve digest-plane documents for ``query`` (#403 Stage 4).
 
@@ -536,6 +537,12 @@ def retrieve_digests(
         text_fields: Same #506 BM25 field override as :func:`retrieve_chunks` —
             see that parameter's docstring, including the response-cache warning.
 
+        diagnostics: Optional out-param, the digest twin of ``retrieve_chunks``'s. On a
+            retrieval FAILURE (no client, or the search raising) it is set to
+            ``{"digest_retrieval_failed": True}``, so a caller holding an empty list can
+            tell "the digest leg was down" from "no digest matched". Left untouched on
+            every path that legitimately found nothing.
+
     Returns:
         Digest hits in provider-ranked order; empty on any failure, so a broken
         digest leg degrades the answer rather than breaking the turn.
@@ -550,6 +557,8 @@ def retrieve_digests(
 
     client = get_opensearch_client()
     if not client:
+        if diagnostics is not None:
+            diagnostics["digest_retrieval_failed"] = True
         return []
 
     service = HybridSearchService()
@@ -595,6 +604,8 @@ def retrieve_digests(
         )
     except Exception as exc:  # noqa: BLE001 — a failed digest leg must not break chat
         logger.warning(f"Chat digest retrieval failed: {exc}")
+        if diagnostics is not None:
+            diagnostics["digest_retrieval_failed"] = True
         return []
 
     hits = response.get("hits", {}).get("hits", [])

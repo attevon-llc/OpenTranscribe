@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from app.core.config import settings
+from app.core.exceptions import ServiceUnavailableError
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 from app.services.opensearch_service import opensearch_client
 from app.services.search.access_filter import access_filter_clause
@@ -242,5 +243,6 @@ def get_available_filters(
             },
         }
     except Exception as e:
-        logger.error(f"Error getting filters: {e}")
-        return {"speakers": [], "tags": [], "date_range": {}}
+        # Empty facets are a legitimate answer; an unreachable cluster is not.
+        logger.error("Error getting filters: %s", e, exc_info=True)
+        raise ServiceUnavailableError("Search filters are temporarily unavailable.") from e

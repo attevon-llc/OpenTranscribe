@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 from app.core.config import settings
+from app.core.exceptions import ServiceUnavailableError
 from app.services.search.collapse_bodies import _build_collapsed_bm25_body
 from app.services.search.result_processing import _process_collapsed_results
 from app.services.search.search_types import SearchHit
@@ -246,11 +247,11 @@ def _search_with_collapse(
                         body=fallback_body,
                     )
                 except Exception as e3:
-                    logger.error(f"BM25 fallback also failed: {e3}")
-                    return service._empty_response(query, page, page_size)
+                    logger.error("BM25 fallback also failed: %s", e3, exc_info=True)
+                    raise ServiceUnavailableError("Search is temporarily unavailable.") from e3
         else:
-            logger.error(f"Collapsed search failed: {e}")
-            return service._empty_response(query, page, page_size)
+            logger.error("Collapsed search failed: %s", e, exc_info=True)
+            raise ServiceUnavailableError("Search is temporarily unavailable.") from e
 
     opensearch_ms = round((time.time() - t_opensearch) * 1000)
 

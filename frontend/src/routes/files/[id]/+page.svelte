@@ -18,7 +18,8 @@
     startRedactionScan,
     type FileDetailPayload,
   } from '$lib/fileDetail/fileDetailData';
-  import { createSegmentPager, redactParams } from '$lib/fileDetail/segmentPaging';
+  import { createRedactionView } from '$lib/fileDetail/redactionView';
+  import { createSegmentPager } from '$lib/fileDetail/segmentPaging';
   import { createFileSpeakers } from '$lib/fileDetail/fileSpeakers';
   import { syncTranscriptStore } from '$lib/fileDetail/speakerLoader';
   import {
@@ -323,52 +324,19 @@
     }
   }
 
-  /**
-   * Toggle between the redacted view and the original (owner/admin only).
-   * Refreshes ONLY the transcript data — no isLoading flip, no video/player
-   * re-setup — so the text swaps in place without a full-page flicker.
-   * Admin-forced categories always remain masked regardless of this toggle.
-   */
+  // "Show original" (offered only when `canViewOriginal`): swaps the transcript in place.
   let redactionToggleBusy = false;
-
-  async function toggleShowOriginal(): Promise<void> {
-    if (redactionToggleBusy) return;
-    redactionToggleBusy = true;
-    showOriginal = !showOriginal;
-    try {
-      await refreshTranscriptOnly();
-    } finally {
-      redactionToggleBusy = false;
-    }
-  }
-
-  /**
-   * Re-fetch transcript segments (honoring the current redact flag) and update
-   * transcript-related state in place. Everything else on the page — player,
-   * metadata, analytics — is left untouched.
-   */
-  async function refreshTranscriptOnly(): Promise<void> {
-    try {
-      const response = await axiosInstance.get(`/files/${fileId}`, {
-        params: redactParams(showOriginal),
-      });
-      if (response.data && typeof response.data === 'object') {
-        // Replace BOTH segment representations: TranscriptDisplay prefers the
-        // backend-pre-grouped `grouped_segments`, so leaving the stale copy in
-        // place would keep rendering the old (masked/unmasked) text.
-        file = {
-          ...file,
-          transcript_segments: response.data.transcript_segments,
-          grouped_segments: response.data.grouped_segments
-        };
-        applyRedactionState(response.data);
-        processTranscriptData();
-      }
-    } catch (error) {
-      console.error('Error refreshing transcript:', error);
-      toastStore.error($t('fileDetail.failedToLoadFile'));
-    }
-  }
+  const { toggleShowOriginal } = createRedactionView({
+    getFileId: () => fileId,
+    getFile: () => file,
+    setFile: (f) => (file = f),
+    getShowOriginal: () => showOriginal,
+    setShowOriginal: (value) => (showOriginal = value),
+    isToggleBusy: () => redactionToggleBusy,
+    setToggleBusy: (busy) => (redactionToggleBusy = busy),
+    applyRedactionState,
+    onTranscriptReloaded: () => processTranscriptData(),
+  });
 
   async function triggerRedaction(): Promise<void> {
     if (!file?.uuid) return;

@@ -266,15 +266,52 @@ def test_editor_shared_file_can_be_detached(
     assert reindex.calls == [[media_file.id]]
 
 
-def test_a_stranger_cannot_attach_to_someone_elses_file(
+def _unknown_attach(client, headers=None):
+    return client.post(f"/api/tags/files/{uuid.uuid4()}/tags", headers=headers, json={"name": "x"})
+
+
+def test_attach_to_a_strangers_file_is_answered_like_an_unknown_uuid(
     client, db_session, other_user, user_token_headers
 ):
+    """D5b: no existence signal; a file the caller cannot open is a 404, like a missing one."""
     media_file = make_file(db_session, other_user)
 
     response = client.post(_attach_url(media_file), headers=user_token_headers, json={"name": "x"})
 
-    assert response.status_code == 403
+    assert response.status_code == 404, response.text
+    assert response.json() == _unknown_attach(client, user_token_headers).json()
+    assert response.json() == {"detail": "File not found"}
     assert _links(db_session, media_file) == []
+
+
+def test_detach_from_a_strangers_file_is_answered_like_an_unknown_uuid(
+    client, db_session, other_user, user_token_headers
+):
+    media_file = make_file(db_session, other_user)
+    tag = make_tag(db_session, word("s-detach"), user_id=other_user.id)
+    attach(db_session, media_file, tag)
+
+    response = client.delete(f"{_attach_url(media_file)}/{tag.name}", headers=user_token_headers)
+    unknown = client.delete(
+        f"/api/tags/files/{uuid.uuid4()}/tags/{tag.name}", headers=user_token_headers
+    )
+
+    assert response.status_code == unknown.status_code == 404, response.text
+    assert response.json() == unknown.json() == {"detail": "File not found"}
+    assert len(_links(db_session, media_file)) == 1
+
+
+def test_attach_to_another_tenants_file_is_answered_like_an_unknown_uuid(client, org_world):
+    w = org_world
+    org_file = make_file(w.db, w.alice, w.org_a.id)
+
+    with acting_as(w.alice, None):
+        response = client.post(_attach_url(org_file), json={"name": word("cross")})
+        unknown = _unknown_attach(client)
+
+    assert response.status_code == 404, response.text
+    assert response.json() == unknown.json()
+    assert _links(w.db, org_file) == []
 
 
 # ---------------------------------------------------------------------------

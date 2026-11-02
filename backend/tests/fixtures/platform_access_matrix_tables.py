@@ -96,7 +96,7 @@ CONTENT_GUARDS: dict[str, str] = {
     "GET /api/speakers/{speaker_uuid}/cross-media": "bypass",
     "GET /api/tags": "caller",
     "GET /api/tags/collisions": "caller",
-    "GET /api/tags/for-files": "caller",
+    "GET /api/tags/for-files": "bypass",
     "GET /api/tags/impact": "bypass-scope",
     "GET /api/tags/unused": "caller",
     "GET /api/tags/{tag_uuid}/files": "bypass",

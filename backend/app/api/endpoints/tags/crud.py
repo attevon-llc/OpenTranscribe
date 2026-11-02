@@ -263,7 +263,8 @@ def add_tag_to_file(
     Authorized by ``get_file_by_uuid_with_permission``, which applies the sharing,
     takedown and tenant (``ctx.org_id``) gates in one place — ``editor`` access to
     the *file* is the whole requirement (the bulk rail's ``REQUIRED_PERMISSION``),
-    because tagging does not touch anyone else's vocabulary.
+    because tagging does not touch anyone else's vocabulary. A file the caller cannot
+    open at all is a 404 "File not found", the same answer as an unknown uuid.
 
     The body is a raw ``dict`` rather than a schema, so a missing ``name`` is
     rejected as 422 by hand. The tag is resolved in the **file's tenant**: on an
@@ -289,6 +290,7 @@ def add_tag_to_file(
         bypass=ctx.bypass,
         organization_id=ctx.org_id,
         min_permission=REQUIRED_PERMISSION,
+        conceal_inaccessible=True,
     )
     file_id = media_file.id  # Get internal ID for database operations
 
@@ -351,6 +353,7 @@ def remove_tag_from_file(
         bypass=ctx.bypass,
         organization_id=ctx.org_id,
         min_permission=REQUIRED_PERMISSION,
+        conceal_inaccessible=True,
     )
     file_id = media_file.id
 

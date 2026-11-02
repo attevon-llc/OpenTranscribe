@@ -52,6 +52,7 @@ from app.core.security import accepted_algorithms
 from app.core.security import signing_algorithm
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
+from app.utils.websocket_notify import publish_session_revocation
 
 logger = logging.getLogger(__name__)
 
@@ -374,23 +375,27 @@ class TokenService(RefreshTokenOps):
         (``is_revoked_from_database``), which reaches the same conclusion from
         the user's revoked refresh tokens.
 
+        Sockets already open were authenticated before the epoch existed, so every
+        API process is also asked to close the user's sockets opened by now
+        (``publish_session_revocation``). That is best-effort too: if it fails, an
+        open socket lasts until it reconnects, and the handshake then refuses it.
+
         Returns:
             True when the epoch was recorded.
         """
         if not user_uuid:
             return False
         ttl = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60 + 60
+        epoch = int(datetime.now(UTC).timestamp())
+        stamped = True
         try:
-            self.store.set(
-                f"{USER_REVOCATION_EPOCH_PREFIX}{user_uuid}",
-                str(int(datetime.now(UTC).timestamp())),
-                ex=ttl,
-            )
+            self.store.set(f"{USER_REVOCATION_EPOCH_PREFIX}{user_uuid}", str(epoch), ex=ttl)
         except Exception as exc:
             record_degradation("token_revocation", "database")
             logger.warning("Could not stamp revocation epoch for user %s: %s", user_uuid, exc)
-            return False
-        return True
+            stamped = False
+        publish_session_revocation(user_uuid, epoch)
+        return stamped
 
     def _issued_before_user_epoch(
         self,

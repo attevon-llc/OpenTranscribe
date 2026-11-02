@@ -5,6 +5,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.auth.token_service import token_service
 from app.core.exceptions import ConflictError
 from app.models.collection import Collection
 from app.models.collection import CollectionMember
@@ -428,6 +429,7 @@ def delete_user_account(db: Session, user: User) -> list[dict[str, Any]]:
         ConflictError: 409 when an owned file is under a legal hold.
     """
     user_id = int(user.id)
+    user_uuid = str(user.uuid)
 
     _assert_no_held_files(db, user_id)
 
@@ -446,5 +448,7 @@ def delete_user_account(db: Session, user: User) -> list[dict[str, Any]]:
         savepoint.rollback()
         raise
     db.commit()
+    # A deleted account's open sockets would otherwise outlive it.
+    token_service.stamp_user_revocation_epoch(user_uuid)
 
     return account_purge.purge_account_external_copies(purge_plan)

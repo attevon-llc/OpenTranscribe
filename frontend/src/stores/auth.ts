@@ -4,26 +4,24 @@ import { t } from '$stores/locale';
 import { clearUserState } from '$lib/session/clearUserState';
 import { isCloudEdition } from '$lib/edition';
 import { loadCapabilities } from '$stores/capabilities';
-import { retryAfterFromHeaders } from '$lib/utils/retryAfter';
 import { probeSessionWithRetry, SESSION_PROBE_TIMEOUT_MS } from '$lib/auth/sessionProbe';
+import { readAccountLifecycle, type AccountLifecycleState } from '$lib/auth/accountLifecycle';
+import {
+  asAuthError,
+  classifyEnrollmentError,
+  loginFailure,
+  mfaVerifyFailure,
+  passwordChangeFailure,
+  pkiLoginFailure,
+  registrationFailure,
+  type MfaEnrollmentError,
+} from '$lib/auth/authErrors';
+import { checkAuthorizationUrl } from '$lib/auth/oidcRedirect';
+import { failClosedAuthMethods, sharedFreshRequest, type AuthMethods } from '$lib/auth/authMethods';
 
-/**
- * Minimal shape of an axios error used for status- and detail-based message
- * extraction in this module. Mirrors the relevant subset of AxiosError.
- */
-interface AuthRequestError {
-  response?: {
-    status?: number;
-    headers?: unknown;
-    data?: { detail?: unknown; message?: unknown };
-  };
-  request?: unknown;
-  message?: string;
-}
-
-function asAuthError(error: unknown): AuthRequestError {
-  return (error ?? {}) as AuthRequestError;
-}
+export { readAccountLifecycle, type AccountLifecycleState } from '$lib/auth/accountLifecycle';
+export type { MfaEnrollmentError } from '$lib/auth/authErrors';
+export type { AuthMethods } from '$lib/auth/authMethods';
 
 // Certificate metadata lives with the endpoint that serves it
 // (`$lib/api/certificate`). It was declared here, and hung off the user type,
@@ -64,35 +62,6 @@ interface User {
   approved_at?: string | null;
   created_at: string;
   updated_at: string;
-}
-
-// Available authentication methods
-export interface AuthMethods {
-  methods: string[];
-  oidc_enabled: boolean;
-  /**
-   * @deprecated Duplicate of `oidc_enabled`, emitted by the backend for one
-   * minor release so a cached bundle of THIS file keeps working against an
-   * upgraded backend. Never read it in new code.
-   */
-  keycloak_enabled?: boolean;
-  pki_enabled: boolean;
-  ldap_enabled: boolean;
-  // Whether accounts holding a local password may sign in at all. Note this is
-  // NOT the same as "show the username/password form" — LDAP authenticates
-  // through that same form, so the form is gated on `local_enabled ||
-  // ldap_enabled`.
-  local_enabled: boolean;
-  // Whether anyone may create their own account via POST /auth/register.
-  allow_registration: boolean;
-  mfa_enabled: boolean;
-  mfa_required: boolean;
-  login_banner_enabled: boolean;
-  login_banner_text: string;
-  login_banner_classification: string;
-  /** Session limits in minutes (0 = off). Absent from an older backend. */
-  session_idle_timeout_minutes?: number;
-  session_absolute_timeout_minutes?: number;
 }
 
 // Define auth store interface
@@ -174,117 +143,14 @@ authStore.subscribe(($store) => {
   if ($store.isAuthenticated && get(sessionEndReason) !== null) sessionEndReason.set(null);
 });
 
-// ---------------------------------------------------------------------------
-// Account lifecycle (FedRAMP AC-2 / AC-8 / IA-5)
-//
-// `get_current_active_user` refuses five account states with a 403 whose
-// `detail` is an OBJECT, not the usual string:
-//
-//   {"detail": {"code": "password_change_required",       "message": "…"}}
-//   {"detail": {"code": "account_expired",                "message": "…"}}
-//   {"detail": {"code": "banner_acknowledgment_required", "message": "…",
-//               "reason": "never_acknowledged" | "banner_text_changed"}}
-//   {"detail": {"code": "account_pending_approval",       "message": "…"}}
-//   {"detail": {"code": "account_rejected",               "message": "…"}}
-//
-// The `code` is the contract; the prose is not. Anything that string-matches the
-// message breaks the moment it is reworded or translated, and every other 403
-// ("Not enough permissions") still carries a plain string and must keep its
-// ordinary error handling — hence the narrow classifier below rather than a
-// blanket "403 means locked out".
-//
-// The gates fire in the order expiry → banner → password change, so a caller
-// owing more than one clears them one 403 at a time; each remedy re-provokes the
-// next hold rather than trying to predict it.
-//
-// The approval pair (`v381`) has no in-app remedy at all — the decision is
-// somebody else's — and no route is exempt from it, so EVERY request answers 403.
-// That is exactly why these render as a blocking screen and never as a toast: a
-// toast would fire once per refused request, forever.
-// ---------------------------------------------------------------------------
-
-type AccountLifecycleCode =
-  | 'password_change_required'
-  | 'account_expired'
-  | 'banner_acknowledgment_required'
-  | 'account_pending_approval'
-  | 'account_rejected';
-
-/**
- * Why the banner gate fired. `banner_text_changed` means the user DID accept a
- * banner — different wording — so the UI must say the notice was updated rather
- * than present the refusal as a failure.
- */
-type BannerAcknowledgmentReason = 'never_acknowledged' | 'banner_text_changed';
-
-export interface AccountLifecycleState {
-  code: AccountLifecycleCode;
-  /** Server-supplied prose, rendered verbatim. May be empty. */
-  message: string;
-  /** Only carried by `banner_acknowledgment_required`; absent otherwise. */
-  reason?: BannerAcknowledgmentReason;
-}
-
-const ACCOUNT_LIFECYCLE_CODES: readonly AccountLifecycleCode[] = [
-  'password_change_required',
-  'account_expired',
-  'banner_acknowledgment_required',
-  'account_pending_approval',
-  'account_rejected',
-];
-
-const BANNER_ACKNOWLEDGMENT_REASONS: readonly BannerAcknowledgmentReason[] = [
-  'never_acknowledged',
-  'banner_text_changed',
-];
+// Account lifecycle (FedRAMP AC-2 / AC-8 / IA-5): the classifier and the code
+// contract live in $lib/auth/accountLifecycle; the hold and its teardown rules here.
 
 /**
  * The active lifecycle hold, or null. Non-null means the session is confined to
  * the corresponding screen: no other API call will succeed until it clears.
  */
 export const accountLifecycle = writable<AccountLifecycleState | null>(null);
-
-/**
- * Classify an axios error as an account-lifecycle refusal.
- *
- * Returns null for every other error — including a 403 with a string `detail`,
- * an array `detail` (Pydantic validation), and an object `detail` carrying an
- * unrecognised code. Callers must fall back to their normal error path then.
- */
-export function readAccountLifecycle(error: unknown): AccountLifecycleState | null {
-  const response = (
-    error as { response?: { status?: number; data?: { detail?: unknown } } } | undefined
-  )?.response;
-  if (response?.status !== 403) return null;
-
-  const detail = response?.data?.detail;
-  if (detail === null || typeof detail !== 'object' || Array.isArray(detail)) return null;
-
-  const { code, message, reason } = detail as {
-    code?: unknown;
-    message?: unknown;
-    reason?: unknown;
-  };
-  if (typeof code !== 'string') return null;
-  if (!ACCOUNT_LIFECYCLE_CODES.includes(code as AccountLifecycleCode)) return null;
-
-  const state: AccountLifecycleState = {
-    code: code as AccountLifecycleCode,
-    message: typeof message === 'string' ? message : '',
-  };
-
-  // An unrecognised `reason` is dropped rather than passed through: the UI
-  // switches copy on it, and inventing a branch for an unknown value would show
-  // the user nothing at all.
-  if (
-    typeof reason === 'string' &&
-    BANNER_ACKNOWLEDGMENT_REASONS.includes(reason as BannerAcknowledgmentReason)
-  ) {
-    state.reason = reason as BannerAcknowledgmentReason;
-  }
-
-  return state;
-}
 
 /**
  * Apply an account-lifecycle refusal, if this error is one.
@@ -451,7 +317,7 @@ export async function initAuth() {
     }
 
     authStore.reset();
-  } catch (error) {
+  } catch {
     authStore.reset();
   }
 }
@@ -614,46 +480,7 @@ export async function login(
 
     authStore.reset();
 
-    // Extract meaningful error message from backend response
-    let errorMessage = get(t)('auth.error.loginFailedCheckCredentials');
-    let retryAfter: number | null = null;
-
-    if (err.response) {
-      // Server responded with an error status
-      switch (err.response.status) {
-        case 401:
-          errorMessage =
-            (err.response.data?.detail as string) || get(t)('auth.error.invalidCredentials');
-          break;
-        case 400:
-          errorMessage =
-            (err.response.data?.detail as string) || get(t)('auth.error.invalidRequest');
-          break;
-        case 429:
-          retryAfter = retryAfterFromHeaders(err.response.headers);
-          errorMessage =
-            retryAfter !== null
-              ? get(t)('auth.error.tooManyLoginAttemptsWait', { seconds: retryAfter })
-              : get(t)('auth.error.tooManyLoginAttempts');
-          break;
-        case 500:
-        case 502:
-        case 503:
-          errorMessage = get(t)('auth.error.serverError');
-          break;
-        default:
-          errorMessage =
-            (err.response.data?.detail as string) ||
-            (err.response.data?.message as string) ||
-            get(t)('auth.error.loginFailed');
-      }
-    } else if (err.request) {
-      // Network error - no response received
-      errorMessage = get(t)('auth.error.networkUnreachable');
-    } else if (err.message) {
-      // Something else happened
-      errorMessage = get(t)('auth.error.unexpected');
-    }
+    const { message: errorMessage, retryAfter } = loginFailure(err, get(t));
 
     return {
       success: false,
@@ -687,19 +514,7 @@ export async function changeOwnPassword(
     await fetchUserInfo();
     return { success: true };
   } catch (rawError: unknown) {
-    const detail = asAuthError(rawError).response?.data?.detail;
-
-    if (typeof detail === 'string') return { success: false, message: detail };
-    if (Array.isArray(detail)) {
-      return {
-        success: false,
-        message: detail
-          .map((item: { msg?: string }) => item?.msg ?? String(item))
-          .filter(Boolean)
-          .join('. '),
-      };
-    }
-    return { success: false, message: get(t)('auth.forcedChange.failed') };
+    return { success: false, message: passwordChangeFailure(rawError, get(t)) };
   }
 }
 
@@ -716,29 +531,9 @@ export async function register(email: string, fullName: string, password: string
   } catch (error: unknown) {
     console.error('auth.ts: Registration error:', error);
 
-    // Handle validation errors (array) vs simple error messages (string)
-    let errorMessage = get(t)('auth.error.registrationFailed');
-    const detail = asAuthError(error).response?.data?.detail;
-
-    if (detail) {
-      if (typeof detail === 'string') {
-        errorMessage = detail;
-      } else if (Array.isArray(detail)) {
-        // Pydantic validation errors - extract messages
-        errorMessage = detail
-          .map(
-            (item: { msg?: string; message?: string }) => item.msg || item.message || String(item)
-          )
-          .join('. ');
-      } else if (typeof detail === 'object') {
-        const d = detail as { msg?: string; message?: string };
-        errorMessage = d.msg || d.message || JSON.stringify(detail);
-      }
-    }
-
     return {
       success: false,
-      message: errorMessage,
+      message: registrationFailure(error, get(t)),
     };
   }
 }
@@ -856,61 +651,26 @@ export async function logout(reason: SessionEndReason | null = null) {
 // share one request, and a successful answer stays fresh for a short window so the login page
 // mounting just after the layout's boot call does not ask again. Failures are never remembered.
 const AUTH_METHODS_FRESH_MS = 15_000;
-let authMethodsCache: { at: number; promise: Promise<AuthMethods> } | null = null;
+const authMethodsRequest = sharedFreshRequest(fetchAuthMethods, AUTH_METHODS_FRESH_MS);
 
 /** Drop the shared answer, e.g. after an admin edits the auth configuration. */
 export function invalidateAuthMethods(): void {
-  authMethodsCache = null;
+  authMethodsRequest.invalidate();
 }
 
 // Get available authentication methods
 export function getAuthMethods(): Promise<AuthMethods> {
-  if (authMethodsCache && Date.now() - authMethodsCache.at < AUTH_METHODS_FRESH_MS) {
-    return authMethodsCache.promise;
-  }
-  const request = fetchAuthMethods();
-  const entry = { at: Date.now(), promise: request.then((r) => r.methods) };
-  authMethodsCache = entry;
-  void request.then((r) => {
-    if (!r.ok && authMethodsCache === entry) authMethodsCache = null;
-  });
-  return entry.promise;
+  return authMethodsRequest.get();
 }
 
-async function fetchAuthMethods(): Promise<{ methods: AuthMethods; ok: boolean }> {
+async function fetchAuthMethods(): Promise<{ value: AuthMethods; ok: boolean }> {
   try {
     const response = await axiosInstance.get('/auth/methods');
-    return { methods: response.data, ok: true };
+    return { value: response.data, ok: true };
   } catch (error) {
     console.error('Failed to fetch auth methods:', error);
-    // Fail-closed defaults when the probe fails. The two new flags are
-    // deliberately ASYMMETRIC:
-    //   local_enabled: true  — "closed" here means "still reachable". A
-    //     self-hosted install whose /auth/methods probe fails (backend
-    //     restarting, proxy hiccup) must still render the sign-in form, or a
-    //     transient error locks every operator out of their own deployment.
-    //     The backend is the authority and rejects the login anyway if local
-    //     auth really is off.
-    //   allow_registration: false — "closed" here means "offer nothing". A
-    //     signup link we cannot confirm is enabled either 403s after the user
-    //     fills the whole form, or advertises an open-registration surface the
-    //     operator deliberately turned off. Both are worse than hiding it.
-    return {
-      ok: false,
-      methods: {
-        methods: ['local'],
-        oidc_enabled: false,
-        pki_enabled: false,
-        ldap_enabled: false,
-        local_enabled: true,
-        allow_registration: false,
-        mfa_enabled: false,
-        mfa_required: false,
-        login_banner_enabled: false,
-        login_banner_text: '',
-        login_banner_classification: 'UNCLASSIFIED',
-      },
-    };
+    // Fail-closed defaults ($lib/auth/authMethods explains the asymmetric flags).
+    return { ok: false, value: failClosedAuthMethods() };
   }
 }
 
@@ -930,24 +690,20 @@ export async function loginWithOIDC(): Promise<{
       };
     }
 
-    // Defense-in-depth: validate the authorization URL before redirecting.
-    // Even though this comes from our own backend, a misconfiguration or
-    // upstream compromise should not turn into an open redirect or
-    // javascript:/data: URL injection.
-    let parsed: URL;
-    try {
-      parsed = new URL(authorization_url);
-    } catch {
+    // Defense-in-depth: validate the authorization URL before redirecting
+    // ($lib/auth/oidcRedirect).
+    const checked = checkAuthorizationUrl(authorization_url);
+    if (!checked.ok && checked.reason === 'invalid') {
       console.error('OIDC login: invalid authorization_url format');
       return { success: false, message: get(t)('auth.error.oidcAuthUrlInvalid') };
     }
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-      console.error('OIDC login: non-http(s) protocol rejected', parsed.protocol);
+    if (!checked.ok) {
+      console.error('OIDC login: non-http(s) protocol rejected', checked.protocol);
       return { success: false, message: get(t)('auth.error.oidcAuthUrlProtocol') };
     }
 
     // Redirect to the identity provider's login page
-    window.location.href = parsed.toString();
+    window.location.href = checked.url;
     return { success: true };
   } catch (error: unknown) {
     console.error('OIDC login error:', error);
@@ -1050,17 +806,8 @@ export async function loginWithPKI(): Promise<{
       message: get(t)('auth.error.pkiInvalidResponse'),
     };
   } catch (rawError: unknown) {
-    const error = asAuthError(rawError);
     console.error('PKI login error:', rawError);
-
-    let message = get(t)('auth.error.pkiFailed');
-    if (error.response?.status === 401) {
-      message = get(t)('auth.error.pkiCertificateMissing');
-    } else if (error.response?.status === 400) {
-      message = (error.response?.data?.detail as string) || get(t)('auth.error.pkiNotEnabled');
-    }
-
-    return { success: false, message };
+    return { success: false, message: pkiLoginFailure(rawError, get(t)) };
   }
 }
 
@@ -1096,19 +843,8 @@ export async function verifyMFA(
       message: get(t)('auth.error.mfaInvalidResponse'),
     };
   } catch (rawError: unknown) {
-    const error = asAuthError(rawError);
     console.error('MFA verification error:', rawError);
-
-    let message = get(t)('auth.error.mfaFailed');
-    if (error.response?.status === 401) {
-      message = (error.response?.data?.detail as string) || get(t)('auth.error.mfaInvalidCode');
-    } else if (error.response?.status === 400) {
-      message = (error.response?.data?.detail as string) || get(t)('auth.error.mfaInvalidToken');
-    } else if (error.response?.status === 429) {
-      message = get(t)('auth.error.mfaTooManyAttempts');
-    }
-
-    return { success: false, message };
+    return { success: false, message: mfaVerifyFailure(rawError, get(t)) };
   }
 }
 
@@ -1133,62 +869,10 @@ export interface MfaSetupData {
   qr_code_base64: string;
 }
 
-/**
- * How the UI should react to a failed enrolment call.
- *
- * - `retry`       — wrong code (or an unclassified 4xx); the half-token is still
- *                   good, let the user try again in place.
- * - `expired`     — the half-token is spent or past its lifetime; only a fresh
- *                   login can mint another one.
- * - `restart`     — server state moved on (already enabled / setup not
- *                   initiated); re-run /mfa/setup.
- * - `unavailable` — this account can never enrol here (external IdP owns the
- *                   second factor, or MFA is off system-wide). Not a retry.
- */
-type MfaEnrollmentErrorKind = 'retry' | 'expired' | 'restart' | 'unavailable';
-
-export interface MfaEnrollmentError {
-  kind: MfaEnrollmentErrorKind;
-  message: string;
-}
-
 function enrollmentAuthConfig(mfaToken: string) {
   // An empty token means "use the ambient cookie session" — that is the path a
   // voluntary enrolment from Settings would take.
   return mfaToken ? { headers: { Authorization: `Bearer ${mfaToken}` } } : {};
-}
-
-function classifyEnrollmentError(rawError: unknown): MfaEnrollmentError {
-  const error = asAuthError(rawError);
-  const status = error.response?.status;
-  const detail = typeof error.response?.data?.detail === 'string' ? error.response.data.detail : '';
-
-  // 401 == the half-token was already claimed or has expired. (The axios
-  // response interceptor first attempts a cookie refresh, which cannot succeed
-  // during enrolment and rejects with its own 401 — either way we land here.)
-  if (status === 401) {
-    return { kind: 'expired', message: get(t)('auth.mfaEnroll.error.tokenExpired') };
-  }
-
-  if (status === 400) {
-    // The wire carries no error code, so the API's own English `detail` is the
-    // only signal separating "type the code again" from "this account can never
-    // enrol". Match narrowly and treat anything unrecognised as a retry — the
-    // safe default, since it leaves the user in the flow.
-    const lower = detail.toLowerCase();
-    if (
-      lower.includes('not available for your authentication type') ||
-      lower.includes('not enabled on this system')
-    ) {
-      return { kind: 'unavailable', message: get(t)('auth.mfaEnroll.error.unavailable') };
-    }
-    if (lower.includes('already enabled') || lower.includes('setup not initiated')) {
-      return { kind: 'restart', message: get(t)('auth.mfaEnroll.error.restart') };
-    }
-    return { kind: 'retry', message: get(t)('auth.mfaEnroll.error.invalidCode') };
-  }
-
-  return { kind: 'retry', message: detail || get(t)('auth.mfaEnroll.error.setupFailed') };
 }
 
 /**
@@ -1207,7 +891,7 @@ export async function setupMfaEnrollment(
     return { success: true, data: response.data };
   } catch (rawError: unknown) {
     console.error('auth.ts: MFA enrolment setup failed:', rawError);
-    return { success: false, error: classifyEnrollmentError(rawError) };
+    return { success: false, error: classifyEnrollmentError(rawError, get(t)) };
   }
 }
 
@@ -1242,6 +926,6 @@ export async function verifyMfaEnrollment(
     return { success: true, backupCodes: response.data?.backup_codes ?? [] };
   } catch (rawError: unknown) {
     console.error('auth.ts: MFA enrolment verification failed:', rawError);
-    return { success: false, error: classifyEnrollmentError(rawError) };
+    return { success: false, error: classifyEnrollmentError(rawError, get(t)) };
   }
 }

@@ -116,6 +116,10 @@ const EXEMPT: Record<string, string> = {
     'file-detail page mount gets its own manager and calls cleanup() from onDestroy, which ' +
     'closes every EventSource and clears every timer before the page (and any session) ends. ' +
     "No previous user's data can survive here between sessions.",
+  'stores/websocketNotifications':
+    'createNotificationActions() is a FACTORY bound to the websocket store; it holds no ' +
+    'module-level state. The list lives in websocketStore, whose clearAll() clearUserState ' +
+    'already calls.',
 
   // ── Deployment/system state, identical for every user ──
   'lib/services/llmService':

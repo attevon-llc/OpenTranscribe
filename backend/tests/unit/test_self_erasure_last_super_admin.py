@@ -41,6 +41,21 @@ def enabled(db_session):
     set_setting(db_session, GDPR_SELF_ERASURE_GRACE_DAYS_KEY, 14)
 
 
+@pytest.fixture(autouse=True)
+def only_this_super_admin(db_session, super_admin_user):
+    """Make ``super_admin_user`` the only active super administrator the rule can see.
+
+    A database that already holds one (the dev stack's seeded admin) would otherwise count as
+    "another active super administrator" and make every blocked-case assertion false. The
+    update lives in the test's own transaction and is rolled back with it; the rule and its
+    guard are untouched.
+    """
+    db_session.query(User).filter(
+        User.role == "super_admin", User.id != super_admin_user.id
+    ).update({User.is_active: False}, synchronize_session="fetch")
+    db_session.commit()
+
+
 @pytest.fixture
 def erased(monkeypatch) -> list[int]:
     """Stand-in for the destroy: records the call and leaves the user row in place, which is

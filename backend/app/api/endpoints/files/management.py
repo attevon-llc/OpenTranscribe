@@ -878,7 +878,7 @@ def _handle_summarize_action(
         return BulkActionResult(
             file_uuid=file_uuid,
             success=False,
-            message=str(unusable),
+            message=unusable.user_message,
             error="LLM_CONFIG_UNUSABLE",
         )
     except Exception:
@@ -950,7 +950,7 @@ def _handle_identify_speakers_action(
         return BulkActionResult(
             file_uuid=file_uuid,
             success=False,
-            message=str(unusable),
+            message=unusable.user_message,
             error="LLM_CONFIG_UNUSABLE",
         )
     except Exception:

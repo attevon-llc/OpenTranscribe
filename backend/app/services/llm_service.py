@@ -186,6 +186,11 @@ class LLMConfigurationError(Exception):
         self.reason = reason
         super().__init__(_LLM_CONFIG_FAILURE_MESSAGES[reason])
 
+    @property
+    def user_message(self) -> str:
+        """The fixed, user-safe sentence for this failure (never a caught exception's text)."""
+        return _LLM_CONFIG_FAILURE_MESSAGES[self.reason]
+
 
 class LLMEndpointBlockedError(Exception):
     """The configured LLM endpoint is not a permitted outbound target.

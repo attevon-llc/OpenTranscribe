@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 import uuid
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 from typing import cast
 
@@ -54,7 +55,9 @@ def _cosine(u: list[float], v: list[float]) -> float:
     return dot / (math.sqrt(sum(a * a for a in u)) * math.sqrt(sum(b * b for b in v)))
 
 
-def test_a_file_purge_removes_its_voiceprints_and_recomputes_the_profile(db_session, normal_user):
+def test_a_file_purge_removes_its_voiceprints_and_recomputes_the_profile(
+    db_session, normal_user, monkeypatch
+):
     from app.services.gdpr_erasure_service import delete_speaker_docs_by_ids
     from app.services.opensearch_service import add_speaker_embedding
     from app.services.opensearch_service import get_speaker_embedding
@@ -64,6 +67,17 @@ def test_a_file_purge_removes_its_voiceprints_and_recomputes_the_profile(db_sess
     clear_write_backstop_cache()
     db = db_session
     file_a, file_b = make_file(db, normal_user), make_file(db, normal_user)
+    # The uploader's recorded claim, as production sets it. The write backstop reads each file's
+    # consent from a session of its own, which cannot see this test's uncommitted rows (the
+    # savepoint harness); it fails closed on an unreadable file, so point it at the test session.
+    for media_file in (file_a, file_b):
+        media_file.voiceprint_consent = "granted"
+
+    @contextmanager
+    def _same_session():
+        yield db
+
+    monkeypatch.setattr("app.db.session_utils.session_scope", _same_session)
     profile = make_profile(db, normal_user, f"Pat {uuid.uuid4().hex[:6]}")
     sa = make_speaker(db, normal_user, file_a, profile_id=profile.id, display_name=profile.name)
     sb = make_speaker(db, normal_user, file_b, profile_id=profile.id, display_name=profile.name)

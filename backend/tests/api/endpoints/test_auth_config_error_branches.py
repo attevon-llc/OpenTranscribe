@@ -19,6 +19,11 @@ from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.services.auth_config_service import AuthConfigService
 
+# Every test here may insert auth_config rows (migrate_from_env seeds every absent key) in an
+# uncommitted transaction; two workers doing that deadlock on auth_config_config_key_key.
+# One group per overlapping key namespace keeps them on one worker (backend/tests/CLAUDE.md).
+pytestmark = pytest.mark.xdist_group("auth_config")
+
 BASE = "/api/admin/auth-config"
 INTERNAL_DETAIL = "An internal error occurred. Please try again."
 LEAKY_TEXT = "connection to db-host-7 refused: password=hunter2"

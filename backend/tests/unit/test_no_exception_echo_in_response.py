@@ -207,6 +207,36 @@ def _is_class_name_or_length_only(node: ast.AST) -> bool:
     return _is_class_name_only(node) or _is_length_only(node)
 
 
+#: Exception classes of ours whose ONE named attribute is a fixed sentence chosen from a
+#: constant table, never caught-exception text. ``LLMConfigurationError.user_message`` indexes
+#: ``_LLM_CONFIG_FAILURE_MESSAGES`` by an enum reason (llm_service.py); it is pinned by
+#: ``test_fixed_sentence_accessors_return_the_constant_table`` below. Keyed by the HANDLER's
+#: exception class, so ``.user_message`` on any other caught exception is still a finding.
+_FIXED_SENTENCE_ACCESSORS: dict[str, frozenset[str]] = {
+    "LLMConfigurationError": frozenset({"user_message"}),
+}
+
+
+def _only_fixed_sentence_uses(node: ast.ExceptHandler) -> bool:
+    """True when the handler binds a class in ``_FIXED_SENTENCE_ACCESSORS`` and the bound name
+    is used ONLY as one of that class's fixed-sentence attributes (``str(e)``/``e`` still taint)."""
+    if not node.name or not isinstance(node.type, ast.Name):
+        return False
+    allowed = _FIXED_SENTENCE_ACCESSORS.get(node.type.id)
+    if allowed is None:
+        return False
+    uses = [n for n in ast.walk(node) if isinstance(n, ast.Name) and n.id == node.name]
+    approved = {
+        id(n.value)
+        for n in ast.walk(node)
+        if isinstance(n, ast.Attribute)
+        and n.attr in allowed
+        and isinstance(n.value, ast.Name)
+        and n.value.id == node.name
+    }
+    return bool(uses) and all(id(u) in approved for u in uses)
+
+
 def _taint_from_except_handler(
     node: ast.ExceptHandler, inherited: frozenset[str]
 ) -> frozenset[str]:
@@ -220,7 +250,7 @@ def _taint_from_except_handler(
     unpacked (not needed by any real call site found in this codebase).
     """
     tainted: set[str] = set(inherited)
-    if node.name:
+    if node.name and not _only_fixed_sentence_uses(node):
         tainted.add(node.name)
 
     changed = True
@@ -632,12 +662,6 @@ def _scan_container_returns() -> dict[str, list[int]]:
 #: Every entry here raises/echoes OUR OWN authored message, never a caught library
 #: exception's raw text — verified against the real source, not copied blind.
 _RAISE_ALLOWLIST: dict[str, tuple[int, str]] = {
-    "api/endpoints/chat/messages.py::_resolve_chat_llm": (
-        1,
-        "our own LLMConfigurationError: __init__ takes only a LLMConfigFailure enum member and "
-        "sets a fixed sentence per reason from _LLM_CONFIG_FAILURE_MESSAGES; the underlying "
-        "exception is logged where it is raised and never carried (llm_service.py)",
-    ),
     "api/endpoints/admin_group_mappings.py::create_group_mapping": (
         1,
         "our own RoleNotGrantableError message (assert_grantable_role's refusal), "
@@ -1378,3 +1402,34 @@ def test_logging_is_not_a_finding() -> None:
     walker.visit(tree)
     assert walker.raise_findings == []
     assert walker.return_findings == []
+
+
+def test_fixed_sentence_accessors_return_the_constant_table():
+    """The exemption above is only honest while each accessor is a lookup in a constant table."""
+    from app.services.llm_service import _LLM_CONFIG_FAILURE_MESSAGES
+    from app.services.llm_service import LLMConfigFailure
+    from app.services.llm_service import LLMConfigurationError
+
+    assert {"LLMConfigurationError": frozenset({"user_message"})} == _FIXED_SENTENCE_ACCESSORS
+    assert set(_LLM_CONFIG_FAILURE_MESSAGES) == set(LLMConfigFailure)
+    for reason, sentence in _LLM_CONFIG_FAILURE_MESSAGES.items():
+        assert LLMConfigurationError(reason).user_message == sentence
+
+
+def _first_handler(src: str) -> ast.ExceptHandler:
+    tree = ast.parse(src)
+    return next(n for n in ast.walk(tree) if isinstance(n, ast.ExceptHandler))
+
+
+def test_a_fixed_sentence_accessor_is_exempt_only_on_its_own_class_and_only_as_that_attribute():
+    head = "try:\n  x()\nexcept "
+    ok = _first_handler(head + "LLMConfigurationError as e:\n  return e.user_message\n")
+    echo = _first_handler(head + "LLMConfigurationError as e:\n  return str(e)\n")
+    mixed = _first_handler(
+        head + "LLMConfigurationError as e:\n  return (e.user_message, e.args)\n"
+    )
+    other = _first_handler(head + "ValueError as e:\n  return e.user_message\n")
+    assert _only_fixed_sentence_uses(ok)
+    assert not _only_fixed_sentence_uses(echo)
+    assert not _only_fixed_sentence_uses(mixed)
+    assert not _only_fixed_sentence_uses(other)

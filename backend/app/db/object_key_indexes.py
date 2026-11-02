@@ -168,11 +168,21 @@ def _skip_for_duplicates(conn: Connection, index: KeyIndex) -> bool:
     return True
 
 
-def ensure_indexes_concurrently(conn: Connection) -> dict[str, str]:
+#: How long a concurrent build may wait for other sessions' open transactions, per statement.
+#: ``CREATE INDEX CONCURRENTLY`` waits for every transaction that could still see the table, so
+#: one forgotten idle-in-transaction session would otherwise hold startup (and a test run) for as
+#: long as it stays open. A timed-out build is reported ``failed`` and retried on the next start.
+BUILD_LOCK_TIMEOUT_SECONDS = 120
+
+
+def ensure_indexes_concurrently(
+    conn: Connection, *, lock_timeout_seconds: int = BUILD_LOCK_TIMEOUT_SECONDS
+) -> dict[str, str]:
     """Build every missing index with ``CREATE UNIQUE INDEX CONCURRENTLY``; never raise.
 
     ``conn`` must be an AUTOCOMMIT connection: a concurrent build cannot run in a transaction.
     An INVALID index left by an earlier failed build is dropped first (also concurrently).
+    Each statement waits at most ``lock_timeout_seconds`` for other transactions to finish.
 
     Returns:
         ``{index_name: "exists" | "built" | "skipped_duplicates" | "failed"}``.
@@ -185,6 +195,19 @@ def ensure_indexes_concurrently(conn: Connection) -> dict[str, str]:
     outcome: dict[str, str] = {}
     present = existing_indexes(conn)
     broken = invalid_indexes(conn)
+    if all(index.name in present for index in INDEXES):
+        return {index.name: "exists" for index in INDEXES}
+    conn.execute(text(f"SET lock_timeout = '{int(lock_timeout_seconds)}s'"))
+    try:
+        _build_missing(conn, present, broken, outcome)
+    finally:
+        conn.execute(text("RESET lock_timeout"))
+    return outcome
+
+
+def _build_missing(
+    conn: Connection, present: set[str], broken: set[str], outcome: dict[str, str]
+) -> None:
     for index in INDEXES:
         if index.name in present:
             outcome[index.name] = "exists"
@@ -207,7 +230,6 @@ def ensure_indexes_concurrently(conn: Connection) -> dict[str, str]:
             outcome[index.name] = "failed"
             logger.error("Could not build %s; startup continues", index.name, exc_info=True)
             _drop_invalid_leftover(conn, index)
-    return outcome
 
 
 def _drop_invalid_leftover(conn: Connection, index: KeyIndex) -> None:

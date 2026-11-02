@@ -94,6 +94,30 @@ def test_a_missing_index_is_built_and_valid_ones_are_left_alone():
         )
 
 
+def test_a_build_blocked_by_an_open_transaction_gives_up_instead_of_waiting_forever():
+    """CREATE INDEX CONCURRENTLY waits for every older transaction in the database; one idle
+    session must cost a bounded wait and a ``failed`` outcome, never an unbounded startup."""
+    import time
+
+    with _exclusive_autocommit() as conn:
+        _drop_index(conn, PLAYBACK.name)
+        with engine.connect().execution_options(isolation_level="REPEATABLE READ") as blocker:
+            # An open transaction holding a snapshot is exactly what the build has to wait out.
+            blocker.execute(text("SELECT count(*) FROM media_file"))
+            started = time.monotonic()
+            outcome = oki.ensure_indexes_concurrently(conn, lock_timeout_seconds=1)
+            waited = time.monotonic() - started
+            blocker.rollback()
+
+        assert outcome[PLAYBACK.name] == "failed"
+        assert waited < 30, f"the build waited {waited:.0f}s despite a 1s lock timeout"
+        # The session setting must not leak onto the (pooled) connection.
+        assert conn.execute(text("SHOW lock_timeout")).scalar_one() == "0"
+        # The failed build may leave an INVALID index (its cleanup waits on the same blocker); with
+        # the blocker gone the next call drops it and builds again.
+        assert oki.ensure_indexes_concurrently(conn)[PLAYBACK.name] == "built"
+
+
 def test_the_concurrent_build_is_refused_inside_a_transaction(db_session):
     with pytest.raises(ValueError, match="AUTOCOMMIT"):
         oki.ensure_indexes_concurrently(db_session.connection())

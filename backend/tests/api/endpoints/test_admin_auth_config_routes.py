@@ -37,6 +37,11 @@ from app.models.email_notification_config import EmailNotificationConfig
 from app.models.system_settings import SystemSettings
 from app.services import auth_mail_config_service as designation
 
+# Every test here may insert auth_config rows (migrate_from_env seeds every absent key) in an
+# uncommitted transaction; two workers doing that deadlock on auth_config_config_key_key.
+# One group per overlapping key namespace keeps them on one worker (backend/tests/CLAUDE.md).
+pytestmark = pytest.mark.xdist_group("auth_config")
+
 BASE = "/api/admin/auth-config"
 DESIGNATION = f"{BASE}/email/designation"
 MIGRATE = f"{BASE}/migrate"

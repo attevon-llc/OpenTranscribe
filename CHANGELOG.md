@@ -79,6 +79,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Building the object-key indexes at startup no longer waits indefinitely on another session.**
+  The background `CREATE UNIQUE INDEX CONCURRENTLY` waits for every open transaction in the
+  database; a single idle-in-transaction session could hold it, and startup, for as long as that
+  session stayed open. Each statement now waits at most two minutes, reports the index as not
+  built, and the next start retries.
+- **A slow local embedding-model registration no longer leaves a duplicate model.** When the
+  registration outlived its wait, startup registered the same model a second time from the remote
+  registry, leaving two models of one name. The name is now looked up again before registering
+  another, and a lookup by name prefers the deployed model over an undeployed duplicate.
+- **Schema migrations follow the database settings in force when they run.** The migration
+  connection was resolved once at import time, so a process that changed its `POSTGRES_*`
+  settings before calling Alembic still migrated the database it had started with. It is now
+  resolved on each call; an explicit `MIGRATION_DATABASE_URL` still takes precedence.
 - **"Open AI settings" from the summary dialog now shows the settings.** The link opened Settings
   behind the summary dialog, so nothing appeared to happen; it now closes the summary dialog first.
 - **A refused action in a support session shows one toast, in the user's language.** The same refusal

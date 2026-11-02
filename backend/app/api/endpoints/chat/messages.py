@@ -607,7 +607,7 @@ def _resolve_chat_llm(user_id: int, config_id: int | None) -> LLMService | None:
     except LLMConfigurationError as unusable:
         # A stable code so the client can tell "unusable" from "none configured"; the message
         # is a fixed sentence per failure reason and safe to show.
-        raise coded_error(400, "llm_config_unusable", str(unusable)) from None
+        raise coded_error(400, "llm_config_unusable", unusable.user_message) from None
 
 
 @router.post("/context/estimate", response_model=ContextEstimate)

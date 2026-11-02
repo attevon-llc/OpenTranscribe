@@ -35,6 +35,7 @@ from app.schemas.chat import ConversationDetail
 from app.schemas.chat import ConversationList
 from app.schemas.chat import ConversationUpdate
 from app.services.request_context import RequestContext
+from app.utils.sql_like import escape_like
 
 logger = logging.getLogger(__name__)
 
@@ -124,8 +125,7 @@ def list_conversations(
         else query.filter(ChatConversation.organization_id.is_(None))
     )
     if q:
-        escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        query = query.filter(ChatConversation.title.ilike(f"%{escaped}%"))
+        query = query.filter(ChatConversation.title.ilike(f"%{escape_like(q)}%", escape="\\"))
 
     total = query.count()
     # A conversation that has never been messaged has no last_message_at; sorting

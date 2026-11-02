@@ -12,6 +12,7 @@ from app.services.chat.prompt_sanitize import _sanitize_attribute
 from app.services.chat.prompt_sanitize import _sanitize_body_text
 from app.services.chat.prompt_sanitize import _sanitize_chunk_text
 from app.services.chat.redactor import MaskedChunk
+from app.utils.time_format import format_timestamp_simple
 
 _EXCERPT_HEADER = "Transcript excerpts:\n\n"
 _EXCERPT_CLOSE = "\n</excerpt>\n\n"
@@ -34,15 +35,6 @@ _TRUNCATION_MARK = " […]"
 _MIN_TRUNCATED_EXCERPT_CHARS = 240
 
 
-def _clock(seconds: float) -> str:
-    total = max(0, int(seconds))
-    hours, remainder = divmod(total, 3600)
-    minutes, secs = divmod(remainder, 60)
-    if hours:
-        return f"{hours:d}:{minutes:02d}:{secs:02d}"
-    return f"{minutes:d}:{secs:02d}"
-
-
 def _excerpt_open_tag(index: int, chunk: MaskedChunk, *, truncated: bool = False) -> str:
     """Build one excerpt's opening tag.
 
@@ -55,7 +47,7 @@ def _excerpt_open_tag(index: int, chunk: MaskedChunk, *, truncated: bool = False
     flag = ' truncated="true"' if truncated else ""
     return (
         f'<excerpt id="{index}" recording="{title}" '
-        f'speaker="{speaker}" time="{_clock(chunk.start_time)}"{flag}>\n'
+        f'speaker="{speaker}" time="{format_timestamp_simple(max(0.0, chunk.start_time))}"{flag}>\n'
     )
 
 

@@ -27,11 +27,11 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
+from app.core.task_config import RECOVERED_AFTER_STUCK
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
 from app.services import task_row_supersede
-from app.services.task_detection_post_transcription import RECOVERED_AFTER_STUCK
 from app.services.task_recovery_service import TaskRecoveryService
 from app.services.task_row_supersede import count_superseded_active_rows
 from app.services.task_row_supersede import is_active_row_conflict

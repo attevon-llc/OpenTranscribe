@@ -20,6 +20,7 @@ from app.models.speaker import SpeakerClusterMember
 from app.services.clustering.gender import compute_gender_composition
 from app.services.permission_service import org_scope_pred
 from app.services.privacy.redact_view import redact_speaker_rows
+from app.utils.sql_like import escape_like
 
 if TYPE_CHECKING:
     from app.services.speaker_clustering_service import SpeakerClusteringService
@@ -83,8 +84,7 @@ def list_clusters(
         query = query.filter(SpeakerCluster.label.is_(None))
 
     if search:
-        safe_search = search.replace("%", r"\%").replace("_", r"\_")
-        query = query.filter(SpeakerCluster.label.ilike(f"%{safe_search}%", escape="\\"))
+        query = query.filter(SpeakerCluster.label.ilike(f"%{escape_like(search)}%", escape="\\"))
 
     label_priority = case(
         (SpeakerCluster.label.isnot(None), 0),

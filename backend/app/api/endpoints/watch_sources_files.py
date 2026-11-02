@@ -27,6 +27,7 @@ from app.schemas.watch_source import WatchSourceFileActionResult
 from app.schemas.watch_source import WatchSourceFilesList
 from app.schemas.watch_source import WatchSourceStats
 from app.services.request_context import RequestContext
+from app.utils.sql_like import escape_like
 
 router = APIRouter()
 
@@ -71,7 +72,7 @@ def list_source_files(
     if q and q.strip():
         # ``ilike`` with the wildcards escaped, so a filename containing % or _ is
         # searched for literally rather than turning into a match-everything pattern.
-        needle = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        needle = escape_like(q.strip())
         query = query.filter(WatchSourceFile.filename.ilike(f"%{needle}%", escape="\\"))
     total = query.count()
     rows = (

@@ -35,6 +35,7 @@ from app.utils.speaker_identity_source import visible_profile_id
 from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABELS
 from app.utils.speaker_labels import canonical_speaker_label_for_row
+from app.utils.sql_like import escape_like
 
 logger = logging.getLogger(__name__)
 
@@ -146,12 +147,6 @@ def _group_speaker_rows(rows: Any, db: Session | PrivacyView) -> dict[str, dict[
     return grouped
 
 
-def _escape_like(value: str) -> str:
-    """Escape LIKE/ILIKE metacharacters so a candidate containing a literal
-    ``%``/``_``/``\\`` is matched literally, never as a wildcard."""
-    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-
 def _candidate_column_clause(column: Any, cand_norm: str) -> Any:
     """One SQL predicate bounding whether *column* could plausibly match the
     already-normalized *cand_norm* under ANY rung of :func:`match_candidate`'s
@@ -180,13 +175,13 @@ def _candidate_column_clause(column: Any, cand_norm: str) -> Any:
     """
     if not cand_norm:
         return None
-    escaped = _escape_like(cand_norm)
+    escaped = escape_like(cand_norm)
     clauses = [
         column.ilike(f"%{escaped}%", escape="\\"),  # cand_norm found INSIDE column
         func.strpos(cand_norm, func.lower(column)) > 0,  # column found INSIDE cand_norm
     ]
     if len(cand_norm) >= 2:
-        prefix = _escape_like(cand_norm[:2])
+        prefix = escape_like(cand_norm[:2])
         clauses.append(
             and_(
                 column.ilike(f"{prefix}%", escape="\\"),

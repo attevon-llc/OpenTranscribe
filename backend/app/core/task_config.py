@@ -18,6 +18,12 @@ from app.core.env import env_int
 
 logger = logging.getLogger(__name__)
 
+#: The message ``recover_stuck_task`` writes, and the prefix the post-transcription sweep
+#: matches on to find tasks that were already recovered once.
+RECOVERED_AFTER_STUCK = "Task recovered after being stuck in processing"
+#: Marks the recovery-attempt counter appended to that message.
+RECOVERY_ATTEMPT_MARKER = "recovery_attempt_"
+
 
 def _default_max_task_durations() -> dict[str, int]:
     return {

@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 
 from app.models.media import MediaFile
 from app.models.user import User
+from app.utils.uuid_parse import parse_uuid_or_none
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +155,7 @@ def is_notification_suppressed_for_uuid(
         True if the notification must be suppressed.
     """
     try:
-        normalized = _coerce_uuid(file_uuid)
+        normalized = parse_uuid_or_none(file_uuid)
         if normalized is None:
             return True  # malformed/unknown — cannot prove it's safe to send
 
@@ -217,7 +218,7 @@ def filter_suppressed_file_uuids(
             key = str(raw)
             if key in parsed:
                 continue
-            normalized = _coerce_uuid(raw)
+            normalized = parse_uuid_or_none(raw)
             if normalized is not None:
                 parsed[key] = normalized
 
@@ -253,16 +254,6 @@ def filter_suppressed_file_uuids(
             f"suppressing all as a precaution: {e}"
         )
         return []
-
-
-def _coerce_uuid(value: str | uuid_pkg.UUID) -> uuid_pkg.UUID | None:
-    """Best-effort parse to a ``UUID``; ``None`` on anything that doesn't parse."""
-    if isinstance(value, uuid_pkg.UUID):
-        return value
-    try:
-        return uuid_pkg.UUID(str(value))
-    except (ValueError, AttributeError, TypeError):
-        return None
 
 
 def is_review_admin(db: Session, user_id: int | None) -> bool:

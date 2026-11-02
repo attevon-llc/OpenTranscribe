@@ -15,7 +15,6 @@ second-guess the IdP.
 import hashlib
 import logging
 import secrets
-import uuid as uuid_pkg
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
@@ -31,6 +30,7 @@ from app.models.invitation import EmailVerificationToken
 from app.models.user import User
 from app.services.email_service import EmailDeliveryError
 from app.services.email_service import email_service
+from app.utils.uuid_parse import parse_uuid_or_none
 
 logger = logging.getLogger(__name__)
 
@@ -173,9 +173,8 @@ def assert_email_verified_for_local_login(db: Session, user_uuid: str) -> None:
     if not email_verification_required(db):
         return
 
-    try:
-        parsed = uuid_pkg.UUID(user_uuid)
-    except (ValueError, AttributeError, TypeError):
+    parsed = parse_uuid_or_none(user_uuid)
+    if parsed is None:
         return
 
     user = db.query(User).filter(User.uuid == parsed).first()

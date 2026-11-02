@@ -9,6 +9,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.core.task_config import RECOVERY_ATTEMPT_MARKER
 from app.core.task_config import TaskRecoveryConfig
 from app.models.media import Task
 from app.services.task_recovery_stuck import _recovery_attempts
@@ -266,7 +267,7 @@ class TaskRecoveryPostTranscriptionMixin:
                     task,
                     {
                         "status": "pending",
-                        "error_message": f"recovery_attempt_{current_attempts + 1}_reset",
+                        "error_message": f"{RECOVERY_ATTEMPT_MARKER}{current_attempts + 1}_reset",
                         "completed_at": None,
                         "updated_at": datetime.now(UTC),
                     },

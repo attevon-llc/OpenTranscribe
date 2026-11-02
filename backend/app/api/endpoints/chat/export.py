@@ -42,6 +42,7 @@ from app.services.content_audit import AuditedResource
 from app.services.content_audit import record_content_event
 from app.services.request_context import RequestContext
 from app.utils.content_disposition import attachment_header
+from app.utils.time_format import format_timestamp_simple
 
 logger = logging.getLogger(__name__)
 
@@ -76,15 +77,6 @@ class _ExportConversation:
     title: str | None
     created_at: datetime | None
     scope: dict
-
-
-def _clock(seconds: float | None) -> str:
-    total = max(0, int(seconds or 0))
-    hours, remainder = divmod(total, 3600)
-    minutes, secs = divmod(remainder, 60)
-    if hours:
-        return f"{hours}:{minutes:02d}:{secs:02d}"
-    return f"{minutes}:{secs:02d}"
 
 
 def _safe_filename(title: str | None, extension: str) -> str:
@@ -130,7 +122,7 @@ def _render_citation(citation: dict) -> list[str]:
         return lines
 
     speaker = citation.get("speaker") or "Unknown speaker"
-    stamp = _clock(citation.get("start_time"))
+    stamp = format_timestamp_simple(max(0.0, citation.get("start_time") or 0))
     link = f"/files/{file_uuid}?t={int(citation.get('start_time') or 0)}"
     lines = [f"- `[{cid}]` **{title}** — {speaker} at {stamp}", f"  {link}"]
     if snippet:

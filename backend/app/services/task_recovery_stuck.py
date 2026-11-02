@@ -9,6 +9,8 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.core.task_config import RECOVERED_AFTER_STUCK
+from app.core.task_config import RECOVERY_ATTEMPT_MARKER
 from app.core.task_liveness import TRANSCRIPTION_TASK_TYPE
 from app.core.task_liveness import RunState
 from app.core.task_liveness import probe_runs
@@ -28,18 +30,13 @@ from app.utils.task_utils import update_task_status
 
 logger = logging.getLogger(__name__)
 
-#: Kept in step with ``task_detection_post_transcription.RECOVERED_AFTER_STUCK``, which Step 5.7
-#: prefix-matches. Not imported from there: detection and recovery stay independent.
-_RECOVERED_AFTER_STUCK = "Task recovered after being stuck in processing"
-_ATTEMPT_MARKER = "recovery_attempt_"
-
 
 def _recovery_attempts(error_message: str | None) -> int:
     """The Step 5.7 reset counter recorded in a task's error message, or 0."""
-    if not error_message or _ATTEMPT_MARKER not in error_message:
+    if not error_message or RECOVERY_ATTEMPT_MARKER not in error_message:
         return 0
     try:
-        return int(error_message.split(_ATTEMPT_MARKER)[1].split("_")[0].rstrip(")"))
+        return int(error_message.split(RECOVERY_ATTEMPT_MARKER)[1].split("_")[0].rstrip(")"))
     except (ValueError, IndexError):
         return 0
 
@@ -88,9 +85,9 @@ class TaskRecoveryStuckMixin(TaskRecoveryRetryMixin):
             # Carry forward a Step 5.7 reset counter: overwriting it is what made the
             # stuck -> reset -> stuck cycle repeat forever (#1020).
             attempts = _recovery_attempts(task.error_message)
-            message = _RECOVERED_AFTER_STUCK
+            message = RECOVERED_AFTER_STUCK
             if attempts:
-                message = f"{message} ({_ATTEMPT_MARKER}{attempts})"
+                message = f"{message} ({RECOVERY_ATTEMPT_MARKER}{attempts})"
             _retire_if_transcription(task)
             update_task_status(
                 db=db,

@@ -53,6 +53,7 @@ from app.services.support_access_queries import find_grant
 from app.services.support_access_queries import list_grants
 from app.services.support_access_queries import list_uses
 from app.services.support_access_queries import to_out
+from app.utils.sql_like import escape_like
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +145,7 @@ def search_target_organizations(
     """Active organizations an admin may request access to (a platform operation)."""
     query = db.query(Organization).filter(Organization.is_active.is_(True))
     if q:
-        like = "%" + q.replace("%", r"\%").replace("_", r"\_") + "%"
+        like = f"%{escape_like(q)}%"
         query = query.filter(Organization.name.ilike(like, escape="\\"))
     rows = query.order_by(Organization.name).limit(limit).all()
     return [OrgTargetOut(uuid=str(o.uuid), name=str(o.name), slug=o.slug) for o in rows]

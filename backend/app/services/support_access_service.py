@@ -26,6 +26,7 @@ from app.models.support_access import SupportAccessUse
 from app.models.user import User
 from app.services.platform_bypass import SupportGrantView
 from app.utils.time_format import as_utc
+from app.utils.uuid_parse import parse_uuid_or_none
 
 logger = logging.getLogger(__name__)
 
@@ -92,10 +93,9 @@ def resolve_active_grant(db: Session, grant_uuid: str, user: User) -> SupportGra
             or ``support_grant_revoked``.
     """
     invalid = coded_error(403, "support_grant_invalid", "Support access grant is not valid.")
-    try:
-        parsed = uuid_pkg.UUID(grant_uuid)
-    except (ValueError, AttributeError, TypeError):
-        raise invalid from None
+    parsed = parse_uuid_or_none(grant_uuid)
+    if parsed is None:
+        raise invalid
     grant = db.query(SupportAccessGrant).filter(SupportAccessGrant.uuid == parsed).first()
     if grant is None or grant.grantee_user_id != user.id or not user.is_admin or not user.is_active:
         raise invalid

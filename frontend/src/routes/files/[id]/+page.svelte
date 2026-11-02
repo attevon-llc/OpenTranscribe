@@ -48,7 +48,7 @@
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
-  import SummaryModal from '$components/SummaryModal.svelte';
+  import FileSummary from '$components/fileDetail/FileSummary.svelte';
   import TranscriptViewModal from '$components/transcript/TranscriptViewModal.svelte';
   import TranscriptExportDialogs from '$components/fileDetail/TranscriptExportDialogs.svelte';
   import FileActionButtons from '$components/fileDetail/FileActionButtons.svelte';
@@ -60,8 +60,6 @@
   import { downloadStore } from '$stores/downloads';
   import { supportSessionGate } from '$stores/supportSession';
   import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
-  import type { SummarizeOptions } from '$lib/api/summarize';
-  import { fetchSummaryData, startSummary } from '$lib/fileDetail/summaryActions';
   import type { PlaybackMode } from '$lib/api/mediaUrl';
   import { createMediaStream } from '$lib/fileDetail/mediaStream';
   import { applyReprocessStart, reprocessRegeneratesSummary } from '$lib/fileDetail/reprocess';
@@ -147,8 +145,8 @@
   let commentCount = 0;
   let reprocessing = false;
   let showReprocessModal = false;
-  let summaryData: any = null;
-  let showSummaryModal = false;
+  // Summary modal, generate and the ?view=summary deep link: see FileSummary.
+  let fileSummary: FileSummary;
   let showTranscriptModal = false;
   let generatingSummary = false;
   let summaryGenerating = false; // WebSocket-driven summary generation status
@@ -682,44 +680,6 @@
     }
   }
 
-  async function handleGenerateSummary() {
-    if (!file?.uuid || !$isLLMAvailable) return;
-
-    try {
-      generatingSummary = true;
-      // No page refresh: websocket notifications drive the status (and preserve edits).
-      await startSummary(file.uuid);
-    } catch (error: unknown) {
-      console.error('Error generating summary:', error);
-      toastStore.error(getErrorMessage(error, $t('fileDetail.failedToGenerateSummary')), 5000);
-    } finally {
-      generatingSummary = false;
-    }
-  }
-
-  /** The summary modal's reprocess / regenerate-with-prompt actions. */
-  async function restartSummary(options: SummarizeOptions, failureLog: string) {
-    showSummaryModal = false;
-    // Spinner on the button, and no summary on the file, until the websocket says otherwise.
-    summaryGenerating = true;
-    if (file) {
-      file = { ...file, has_summary: false, summary_opensearch_id: null };
-    }
-
-    try {
-      await startSummary(file.uuid, options);
-    } catch (error) {
-      console.error(failureLog, error);
-      toastStore.error($t('fileDetail.failedToStartSummaryReprocess'), 5000);
-      summaryGenerating = false;
-    }
-  }
-
-  async function handleShowSummary() {
-    if (!summaryData && file?.uuid) summaryData = await fetchSummaryData(file.uuid);
-    if (summaryData) showSummaryModal = true;
-  }
-
   // Live updates: websocket notifications for this file, and the speaker CustomEvents.
   let wsUnsubscribe: () => void;
   let stopSpeakerEvents: () => void;
@@ -860,23 +820,6 @@
     }
   }
 
-  // Handle ?view=summary[&section=N] — the deep link a `kind: "summary"` chat
-  // citation points at (issue #464 amendment c). A summary citation labels
-  // machine-generated prose about the whole recording, never a moment in it —
-  // there is no timestamp to seek to, so this opens the summary modal instead
-  // of the player. `section` is accepted (forward-compatible with the
-  // citation's `digest_section`) but not yet used: `summary_data` has no
-  // per-section structure to scroll to or highlight, unlike the transcript's
-  // digest sections.
-  let hasSeenSummaryView = false;
-  $: if (!isLoading && file?.uuid && !hasSeenSummaryView) {
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('view') === 'summary') {
-      hasSeenSummaryView = true;
-      handleShowSummary();
-    }
-  }
-
   // Reactive statement to re-initialize player if videoUrl changes
   $: if (videoUrl && !playerInitialized && !isLoading) {
     // Video URL available but no player, scheduling initialization
@@ -935,8 +878,8 @@
             {generatingSummary}
             {reprocessing}
             on:viewTranscript={() => (showTranscriptModal = true)}
-            on:showSummary={handleShowSummary}
-            on:generateSummary={handleGenerateSummary}
+            on:showSummary={() => fileSummary.show()}
+            on:generateSummary={() => fileSummary.generate()}
             on:openReprocess={() => (showReprocessModal = true)}
           />
         </div>
@@ -1149,18 +1092,12 @@
 
 <!-- Summary Modal -->
 {#if file?.uuid}
-  <SummaryModal
-    bind:isOpen={showSummaryModal}
-    fileId={file.uuid}
-    fileName={file?.filename || 'Unknown File'}
-    on:close={() => showSummaryModal = false}
-    on:reprocessSummary={() =>
-      restartSummary({ forceRegenerate: true }, 'Failed to start reprocess:')}
-    on:regenerateWithPrompt={(event) =>
-      restartSummary(
-        { forceRegenerate: true, promptUuid: event.detail.promptUuid },
-        'Failed to start regeneration with prompt:'
-      )}
+  <FileSummary
+    bind:this={fileSummary}
+    bind:file
+    bind:summaryGenerating
+    bind:generatingSummary
+    {isLoading}
   />
 {/if}
 

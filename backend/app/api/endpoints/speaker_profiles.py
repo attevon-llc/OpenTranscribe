@@ -921,30 +921,27 @@ async def upload_profile_avatar(
         }
         ext = ext_map.get(file.content_type, "jpg")
 
-        # Delete old avatar if exists
-        if profile.avatar_path:
-            try:
-                from app.services.minio_service import delete_file
-
-                await run_in_threadpool(delete_file, profile.avatar_path)
-            except Exception:
-                logger.warning(f"Failed to delete old avatar for profile {profile.uuid}")
-
-        # Upload to MinIO
         import io
 
         from app.services.minio_service import get_file_url
         from app.services.minio_service import upload_file
+        from app.services.speaker_avatar_service import delete_avatar_object
+        from app.services.speaker_avatar_service import new_avatar_key
+        from app.services.speaker_avatar_service import swap_avatar_path
 
-        object_name = f"avatars/{current_user.id}/{profile.uuid}.{ext}"
+        # Upload under a key of this request's own, before any lock is taken.
+        object_name = new_avatar_key(int(current_user.id), profile.uuid, ext)
         await run_in_threadpool(
             upload_file, io.BytesIO(content), len(content), object_name, file.content_type
         )
 
-        # Update profile
-        profile.avatar_path = object_name  # type: ignore[assignment]
-        touch_profile_interaction(db, int(profile.id), "human_edit")
-        db.commit()
+        try:
+            previous = swap_avatar_path(db, int(profile.id), object_name)
+        except Exception:
+            db.rollback()
+            await run_in_threadpool(delete_avatar_object, object_name)
+            raise
+        await run_in_threadpool(delete_avatar_object, previous, current=object_name)
         db.refresh(profile)
 
         avatar_url = await run_in_threadpool(get_file_url, object_name, expires=3600)
@@ -972,16 +969,11 @@ def delete_profile_avatar(
         )
 
         if profile.avatar_path:
-            try:
-                from app.services.minio_service import delete_file
+            from app.services.speaker_avatar_service import delete_avatar_object
+            from app.services.speaker_avatar_service import swap_avatar_path
 
-                delete_file(profile.avatar_path)
-            except Exception:
-                logger.warning(f"Failed to delete avatar file for profile {profile.uuid}")
-
-            profile.avatar_path = None  # type: ignore[assignment]
-            touch_profile_interaction(db, int(profile.id), "human_edit")
-            db.commit()
+            previous = swap_avatar_path(db, int(profile.id), None)
+            delete_avatar_object(previous)
 
         return None
 

@@ -493,6 +493,7 @@ celery_app.conf.update(
         "migration.normalize_embeddings": {"queue": CeleryQueues.CPU},
         "generate_thumbnail": {"queue": CeleryQueues.CPU},
         "migrate_thumbnails_to_webp": {"queue": CeleryQueues.CPU},
+        "backfill_missing_thumbnails": {"queue": CeleryQueues.CPU},
         "reindex_transcripts": {"queue": CeleryQueues.CPU},
         "reindex_batch": {"queue": CeleryQueues.CPU},
         "search_index_maintenance": {"queue": CeleryQueues.CPU},

@@ -370,7 +370,9 @@ def _get_thumbnail_with_fallback(
         or None when the fallback generation was deferred (or both failed).
     """
     try:
-        thumbnail_path = media_service._download_media_thumbnail_sync(media_info, user_id)
+        thumbnail_path = media_service._download_media_thumbnail_sync(
+            media_info, user_id, media_file_id
+        )
         if thumbnail_path:
             logger.debug(f"Successfully downloaded media thumbnail: {thumbnail_path}")
             return thumbnail_path
@@ -1410,14 +1412,18 @@ class MediaDownloadService:
         return metadata
 
     def _download_media_thumbnail_sync(
-        self, media_info: dict[str, Any], user_id: int
+        self, media_info: dict[str, Any], user_id: int, media_file_id: int
     ) -> str | None:
         """
         Download media thumbnail and upload to storage (synchronous version).
 
+        The object is keyed by the media file, never by the source video, so two imports of the
+        same video own two distinct objects and a purge of one cannot touch the other's.
+
         Args:
             media_info: Media metadata from yt-dlp
             user_id: User ID for storage path
+            media_file_id: The importing ``MediaFile`` row's id (part of the storage key)
 
         Returns:
             Storage path of uploaded thumbnail or None if failed
@@ -1458,9 +1464,7 @@ class MediaDownloadService:
                 return None
 
             # Generate storage path and upload
-            video_id = media_info.get("id", "unknown")
-            source = media_info.get("extractor", "media").lower()
-            storage_path = f"user_{user_id}/{source}_{video_id}/thumbnail.jpg"
+            storage_path = f"user_{user_id}/file_{media_file_id}/thumbnail.jpg"
 
             upload_file(
                 file_content=io.BytesIO(thumbnail_data),
@@ -1883,12 +1887,6 @@ class MediaDownloadService:
     def _prepare_youtube_metadata(self, url: str, youtube_info: dict[str, Any]) -> dict[str, Any]:
         """Alias for _prepare_media_metadata for backward compatibility."""
         return self._prepare_media_metadata(url, youtube_info)
-
-    def _download_youtube_thumbnail_sync(
-        self, youtube_info: dict[str, Any], user_id: int
-    ) -> str | None:
-        """Alias for _download_media_thumbnail_sync for backward compatibility."""
-        return self._download_media_thumbnail_sync(youtube_info, user_id)
 
 
 # Backward compatibility alias

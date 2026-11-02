@@ -96,7 +96,7 @@ class TestThumbnailSsrfGuard:
         sent = _intercept(monkeypatch, _refuse_network)
 
         result = service._download_media_thumbnail_sync(
-            {"thumbnail": "http://169.254.169.254/latest/meta-data"}, user_id=1
+            {"thumbnail": "http://169.254.169.254/latest/meta-data"}, user_id=1, media_file_id=7
         )
         assert result is None
         assert sent == []
@@ -105,7 +105,7 @@ class TestThumbnailSsrfGuard:
         sent = _intercept(monkeypatch, _refuse_network)
 
         result = service._download_media_thumbnail_sync(
-            {"thumbnail": "http://127.0.0.1:6379/"}, user_id=1
+            {"thumbnail": "http://127.0.0.1:6379/"}, user_id=1, media_file_id=7
         )
         assert result is None
         assert sent == []
@@ -124,6 +124,7 @@ class TestThumbnailSsrfGuard:
                 ]
             },
             user_id=1,
+            media_file_id=7,
         )
         assert result is None
         assert sent == []
@@ -149,6 +150,7 @@ class TestThumbnailSsrfGuard:
                 "extractor": "generic",
             },
             user_id=1,
+            media_file_id=7,
         )
 
         assert len(sent) == 1
@@ -182,6 +184,7 @@ class TestThumbnailSsrfGuard:
         service._download_media_thumbnail_sync(
             {"thumbnail": "https://rebind.example.com/t.jpg", "id": "r1", "extractor": "generic"},
             user_id=1,
+            media_file_id=7,
         )
 
         assert dialled == [PUBLIC_TEST_ADDRESS]
@@ -199,13 +202,14 @@ class TestThumbnailSsrfGuard:
                 "extractor": "Youtube",
             },
             user_id=1,
+            media_file_id=7,
         )
 
-        assert result == "user_1/youtube_abc123/thumbnail.jpg"
+        assert result == "user_1/file_7/thumbnail.jpg"
         assert len(sent) == 1
         assert uploads == [
             {
-                "object_name": "user_1/youtube_abc123/thumbnail.jpg",
+                "object_name": "user_1/file_7/thumbnail.jpg",
                 "data": _THUMB_BYTES,
                 "size": len(_THUMB_BYTES),
             }

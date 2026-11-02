@@ -715,6 +715,16 @@ every difference between the two backends (issue #284 A1.11/A1.12):
   per-file objects must keep the `user_<uid>/file_<fid>/` prefix or the sweep cannot see it
   (and a file's objects would outlive it unnoticed).
 
+- **Object keys are one per row, enforced by the database (#1357).** `uq_media_file_storage_path`,
+  `_thumbnail_path` and `_playback_path` (v456, defined once in `app/db/object_key_indexes.py`)
+  make a second row naming a key an `IntegrityError`, so a delete can never remove another row's
+  object. That is why there is no shared-key check in the purge path any more. Key shapes: upload
+  `user_<uid>/file_<fid>/<name>`; URL import original `media/<uid>/<uuid>`; URL-import thumbnail
+  `user_<uid>/file_<fid>/thumbnail.jpg`; generated thumbnail `.../thumbnail.webp`; playback
+  `<storage_path>.playback...`; avatar `avatars/<uid>/<profile_uuid>/<random>.<ext>` (swap under a
+  profile row lock via `speaker_avatar_service`, delete only the key replaced). A NEW writer of a
+  stored key must derive it from the row's own id (or a uuid), never from external identity.
+
 ## LLM features (optional)
 
 `llm_service.py` is a **synchronous** client on purpose (Celery tasks; no asyncio conflicts).

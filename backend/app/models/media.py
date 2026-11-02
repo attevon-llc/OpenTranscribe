@@ -409,6 +409,26 @@ class MediaFile(Base):
     #   * ``ck_media_file_recorded_date_locked_is_manual`` stops a re-derivation from
     #     relabelling a hand-entered date as machine-derived while leaving it locked.
     __table_args__ = (
+        # One owning row per stored object key (v456, issue #1357). Same definitions as
+        # app.db.object_key_indexes, which builds them.
+        Index(
+            "uq_media_file_storage_path",
+            "storage_path",
+            unique=True,
+            postgresql_where=text("storage_path IS NOT NULL AND storage_path <> ''"),
+        ),
+        Index(
+            "uq_media_file_thumbnail_path",
+            "thumbnail_path",
+            unique=True,
+            postgresql_where=text("thumbnail_path IS NOT NULL AND thumbnail_path <> ''"),
+        ),
+        Index(
+            "uq_media_file_playback_path",
+            "playback_path",
+            unique=True,
+            postgresql_where=text("playback_path IS NOT NULL AND playback_path <> ''"),
+        ),
         CheckConstraint(
             "voiceprint_consent IN ('unspecified', 'granted', 'declined')",
             name="ck_media_file_voiceprint_consent",

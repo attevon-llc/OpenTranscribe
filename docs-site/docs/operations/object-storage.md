@@ -129,6 +129,26 @@ file purge or GDPR erasure records it as partial (`storage_unverified`), never c
 known to be versioned, a refused version listing is reported as a failed delete, because versions
 certainly remain. Deleting every version is irreversible, and that includes the orphan sweep.
 
+### One owning row per object key
+
+Every stored object key belongs to exactly one media file, and the database enforces it with
+partial unique indexes on `media_file.storage_path`, `thumbnail_path` and `playback_path`
+(placeholders and empty values are ignored). Thumbnails of imported URLs are stored per media file
+(`user_<id>/file_<id>/thumbnail.jpg`), so they are covered by the orphan sweep like every other
+per-file object. Each avatar upload has its own key.
+
+On upgrade the migration checks for duplicates first and never blocks startup. Legacy thumbnails
+that two files shared stay with one file and are regenerated for the others in the background. If
+two files share an original (`storage_path`), that index is skipped, an error is logged, and
+`GET /api/admin/data-integrity/storage/keys` reports the counts. Give each extra file its own copy
+with the dry-run-by-default script, then restart (or let the script build the index):
+
+```bash
+./opentr.sh shell backend
+python -m app.scripts.split_shared_storage_paths            # counts only
+python -m app.scripts.split_shared_storage_paths --apply    # copy, repoint, build the index
+```
+
 ### Complete IAM policy reference
 
 This section lists every S3 action the backend calls, derived from the code. A unit test

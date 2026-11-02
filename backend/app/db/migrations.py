@@ -18,6 +18,7 @@ from sqlalchemy import create_engine
 from sqlalchemy import inspect
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import SQLAlchemyError
 
 from alembic import command  # type: ignore[attr-defined]
 from app.db.migration_connection import migration_connect_args
@@ -755,6 +756,12 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE indexname = 'uq_erasure_ledger_open_self_request')"
     )
 
+    # v456: unique object keys (issue #1357). Keyed on the LAST index the revision builds, the
+    # playback one; the storage_path index can legitimately be absent (duplicates found).
+    has_unique_object_keys = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname = 'uq_media_file_playback_path')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -835,7 +842,19 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_task_active_unique
         and has_identity_source
     )
-    # v455: same as v454 plus the self-service erasure request. The top of the ladder.
+    # v456: same as v455 plus the unique object-key indexes. The top of the ladder.
+    if (
+        matches_v449
+        and has_legal_acceptance_context
+        and has_legal_acceptance_survival
+        and has_erasure_receipt
+        and has_audit_row_guard
+        and has_voiceprint_consent
+        and has_self_service_erasure
+        and has_unique_object_keys
+    ):
+        return "v456_unique_object_keys"
+    # v455: same as v454 plus the self-service erasure request.
     if (
         matches_v449
         and has_legal_acceptance_context
@@ -1795,6 +1814,24 @@ def _repair_skipped_v230(config) -> None:
         engine.dispose()
 
 
+def _retry_object_key_indexes() -> None:
+    """Build any object-key unique index v456 had to skip (duplicates since cleaned up).
+
+    Never raises: a database problem here is logged and must not stop the backend.
+    """
+    from app.db import object_key_indexes
+
+    engine = create_engine(migration_database_url(), connect_args=migration_connect_args())
+    try:
+        with engine.begin() as conn:
+            if inspect(conn).has_table("media_file"):
+                object_key_indexes.ensure_indexes(conn)
+    except SQLAlchemyError:
+        logger.error("Could not check the media_file object-key indexes", exc_info=True)
+    finally:
+        engine.dispose()
+
+
 def _check_column_exists(conn, table: str, column: str) -> bool:
     """Check if a column exists in a table."""
     result = conn.execute(
@@ -1963,6 +2000,8 @@ def run_migrations() -> None:
         # Post-migration repair: apply any idempotent schema changes from v230
         # that may have been skipped due to a branch merge ordering issue.
         _repair_skipped_v230(config)
+
+        _retry_object_key_indexes()
 
         # Layer 2 of audit protection: re-apply the app role's grants on EVERY start (this
         # also repairs a `--no-acl` restore). No-op unless the role split was requested.

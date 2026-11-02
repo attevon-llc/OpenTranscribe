@@ -6,7 +6,7 @@ import axiosInstance from '$lib/axios';
 import { generateId } from '$lib/utils/ids';
 import { reconnectDelayMs } from '$lib/utils/backoff';
 import { isCloudEdition } from '$lib/edition';
-import { SESSION_REVOKED_CLOSE_CODE, sessionSurvivesRevocation } from '$lib/auth/sessionRecheck';
+import { sessionSurvivesRevocation } from '$lib/auth/sessionRecheck';
 import { pruneNotifications } from '$lib/notifications/retention';
 import {
   advanceRunTiming,
@@ -23,6 +23,13 @@ import { showNotificationsPanel } from '$stores/notificationsPanel';
 import type { NotificationType, Notification } from '$lib/notifications/types';
 import { composeClientMessage, notificationTitle } from '$lib/notifications/titles';
 import { routeFrame } from '$lib/websocket/frameRouting';
+import {
+  closeAction,
+  uiConnectionStatus,
+  websocketUrl,
+  type ConnectionStatus,
+  type UiConnectionStatus,
+} from '$lib/websocket/connectionPolicy';
 import { frameKind, progressFields } from '$lib/notifications/progressFrame';
 import {
   recoverTask,
@@ -33,8 +40,7 @@ import {
 export { NOTIFICATION_TYPES } from '$lib/notifications/types';
 export type { NotificationType, NotificationData, Notification } from '$lib/notifications/types';
 
-// WebSocket connection status
-export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+export type { ConnectionStatus, UiConnectionStatus } from '$lib/websocket/connectionPolicy';
 
 // Store state interface
 interface WebSocketState {
@@ -143,14 +149,8 @@ function createWebSocketStore() {
       }
 
       try {
-        // Always construct WebSocket URL dynamically based on current location
-        // This ensures it works in dev, production, and when accessed from different computers
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
-        const wsUrl = `${protocol}//${host}/api/ws`;
-
         // Create new WebSocket — httpOnly cookies are sent automatically by the browser
-        const socket = new WebSocket(wsUrl);
+        const socket = new WebSocket(websocketUrl(window.location));
 
         state.status = 'connecting';
         state.socket = socket;
@@ -202,17 +202,15 @@ function createWebSocketStore() {
             s.status = 'disconnected';
             s.socket = null;
 
-            // Don't attempt to reconnect if closed cleanly or if page is hidden
-            const shouldReconnect =
-              event.code !== 1000 &&
-              event.code !== 1001 &&
-              (typeof document === 'undefined' || !document.hidden);
-
-            if (event.code === SESSION_REVOKED_CLOSE_CODE) {
+            const action = closeAction(
+              event.code,
+              typeof document !== 'undefined' && document.hidden
+            );
+            if (action === 'recheck-session') {
               void sessionSurvivesRevocation().then((live) => {
                 if (live) tryReconnect();
               });
-            } else if (shouldReconnect) {
+            } else if (action === 'reconnect') {
               tryReconnect();
             }
 
@@ -714,33 +712,10 @@ export const unreadCount = derived(websocketStore, ($websocketStore: WebSocketSt
   countUnreadItems($websocketStore.notifications)
 );
 
-/**
- * Simplified, UI-facing connection status.
- *
- * Collapses the store's internal {@link ConnectionStatus} into the states the UI
- * actually cares about for surfacing connection loss:
- *  - `connected`     — socket open, live updates flowing.
- *  - `connecting`    — the first attempt of a connect (sign-in, page load, tab shown) is
- *                      in flight and nothing has failed yet. Not a loss: show nothing.
- *  - `reconnecting`  — recovering after a non-clean close (backoff retries).
- *  - `disconnected`  — closed/errored with no reconnect in progress.
- *
- * Purely observational — it does not drive the reconnection logic, it only reflects it.
- */
-export type UiConnectionStatus = 'connected' | 'connecting' | 'reconnecting' | 'disconnected';
-
+// Collapsed for the UI ($lib/websocket/connectionPolicy); purely observational.
 export const connectionStatus = derived<typeof websocketStore, UiConnectionStatus>(
   websocketStore,
-  ($ws) => {
-    if ($ws.status === 'connected') return 'connected';
-    if ($ws.reconnectAttempts > 0) return 'reconnecting';
-    // A browser always follows `error` with `close`, which schedules the retry; until it
-    // arrives the socket is still ours, so don't flash "Connection lost" in between.
-    if ($ws.status === 'connecting' || ($ws.status === 'error' && $ws.socket)) {
-      return 'connecting';
-    }
-    return 'disconnected';
-  }
+  uiConnectionStatus
 );
 
 // Initialize WebSocket when auth changes (cookies sent automatically)

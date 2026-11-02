@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
+from typing import Any
 
 import numpy as np
 
@@ -335,7 +336,7 @@ def stopwords_for(language: str) -> frozenset[str]:
     return resolved
 
 
-def _stemmer(language: str):
+def _stemmer(language: str) -> Any:
     """Snowball stemmer for *language*, or ``None`` when Snowball has no such language."""
     if language in _stemmer_cache:
         return _stemmer_cache[language]

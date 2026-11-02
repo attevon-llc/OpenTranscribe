@@ -246,10 +246,10 @@ def _centroid_and_confidence(member_ids: list[int], emb_cache: dict[int, list[fl
 def _score_cluster(cluster: SpeakerCluster, geometry: _Geometry, member_ids: list[int]) -> None:
     """Set the cluster's quality score, tightest pair and representative speaker."""
     quality_score, min_similarity = cluster_geometry_scores(geometry.arr, geometry.centroid)
-    cluster.quality_score = quality_score  # type: ignore[assignment]
-    cluster.min_similarity = min_similarity  # type: ignore[assignment]
+    cluster.quality_score = quality_score
+    cluster.min_similarity = min_similarity
 
-    cluster.representative_speaker_id = member_ids[0]  # type: ignore[assignment]
+    cluster.representative_speaker_id = member_ids[0]
 
 
 def _store_centroid(

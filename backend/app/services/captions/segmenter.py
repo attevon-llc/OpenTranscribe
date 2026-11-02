@@ -29,6 +29,7 @@ dialogue cue — and never repeated on the continuation cues of one turn.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field
 from dataclasses import replace
@@ -117,7 +118,7 @@ def _cue_spans(
 
 
 def _split_sentence(
-    run: TokenRun, a: int, b: int, fits, rules: CaptionRules
+    run: TokenRun, a: int, b: int, fits: Callable[[int, int], bool], rules: CaptionRules
 ) -> list[tuple[int, int]]:
     """Cut ``tokens[a:b]`` into cue-sized ranges at the best break points."""
     # Sibling of sentence_splitter.split_into_sentences; this cuts timed tokens to cue width.
@@ -142,7 +143,9 @@ def _split_sentence(
     return out
 
 
-def _two_cue_split(run: TokenRun, s: int, b: int, fits, rules: CaptionRules) -> int | None:
+def _two_cue_split(
+    run: TokenRun, s: int, b: int, fits: Callable[[int, int], bool], rules: CaptionRules
+) -> int | None:
     """When ``tokens[s:b]`` fits in two cues, the most balanced natural split point."""
     total = run.length(s, b)
     if total > 2 * (rules.max_cue_chars + rules.max_lines):
@@ -175,7 +178,10 @@ def _greedy_break(run: TokenRun, s: int, e: int) -> int:
 
 
 def _merge_short(
-    run: TokenRun, pieces: list[tuple[int, int]], rules: CaptionRules, fits
+    run: TokenRun,
+    pieces: list[tuple[int, int]],
+    rules: CaptionRules,
+    fits: Callable[[int, int], bool],
 ) -> list[tuple[int, int]]:
     """Merge neighbouring pieces when one is too short to read alone and both fit."""
 

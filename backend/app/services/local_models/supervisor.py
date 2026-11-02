@@ -193,7 +193,9 @@ def _fail(progress: _Progress, code: str, done: int = 0, total: int | None = Non
     return "failed"
 
 
-def _resolve_plan(entry, token, endpoint, progress) -> downloader.DownloadPlan | None:
+def _resolve_plan(
+    entry: LocalWhisperModel, token: str | None, endpoint: str | None, progress: _Progress
+) -> downloader.DownloadPlan | None:
     """Ask the hub for the plan; on failure publish the classified code and return None."""
     try:
         return downloader.resolve_plan(entry, token, endpoint=endpoint)
@@ -203,7 +205,17 @@ def _resolve_plan(entry, token, endpoint, progress) -> downloader.DownloadPlan |
     return None
 
 
-def _run(entry, task_id, user_id, store, token, progress, endpoint, poll_seconds, deadline) -> str:
+def _run(
+    entry: LocalWhisperModel,
+    task_id: str,
+    user_id: int,
+    store: DownloadStore,
+    token: str | None,
+    progress: _Progress,
+    endpoint: str | None,
+    poll_seconds: float,
+    deadline: float,
+) -> str:
     if store.cancel_requested(task_id):
         progress.publish("cancelled", force=True)
         return "cancelled"
@@ -228,7 +240,15 @@ def _run(entry, task_id, user_id, store, token, progress, endpoint, poll_seconds
 
 
 def _supervise(
-    entry, plan, task_id, store, token, progress, endpoint, poll_seconds, deadline
+    entry: LocalWhisperModel,
+    plan: downloader.DownloadPlan,
+    task_id: str,
+    store: DownloadStore,
+    token: str | None,
+    progress: _Progress,
+    endpoint: str | None,
+    poll_seconds: float,
+    deadline: float,
 ) -> str:
     cmd = [sys.executable, "-m", "app.services.local_models.runner", "--model", entry.id]
     cmd += ["--revision", plan.revision]

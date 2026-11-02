@@ -156,7 +156,9 @@ def disable_if_owner_left_org(db: Session, source: WatchSource) -> bool:
     return True
 
 
-def _mark_skipped(db: Session, row: WatchSourceFile, reason: str, media_file_id: int | None = None):
+def _mark_skipped(
+    db: Session, row: WatchSourceFile, reason: str, media_file_id: int | None = None
+) -> None:
     row.status = "skipped_duplicate" if reason.startswith("duplicate") else f"skipped_{reason}"
     # Normalize: too_old → skipped_old, invalid → skipped_invalid
     if reason == "too_old":

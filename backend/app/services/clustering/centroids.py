@@ -104,11 +104,11 @@ def update_cluster_centroid(
         return
 
     quality_score, min_similarity = cluster_geometry_scores(arr, centroid)
-    cluster.quality_score = quality_score  # type: ignore[assignment]
-    cluster.min_similarity = min_similarity  # type: ignore[assignment]
+    cluster.quality_score = quality_score
+    cluster.min_similarity = min_similarity
 
     if best_speaker_id:
-        cluster.representative_speaker_id = best_speaker_id  # type: ignore[assignment]
+        cluster.representative_speaker_id = best_speaker_id
 
     # Store in OpenSearch
     try:

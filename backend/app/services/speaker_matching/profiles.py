@@ -59,12 +59,12 @@ def assign_speaker_to_profile(
     from app.services.speaker_identity_rules import lift_profile_blacklist
 
     lift_profile_blacklist(self.db, int(speaker_id), int(profile_id))
-    speaker.profile_id = profile_id  # type: ignore[assignment]
-    speaker.verified = True  # type: ignore[assignment]
+    speaker.profile_id = profile_id
+    speaker.verified = True
     # before the tracker computes the "after" label
     record_human_identity(speaker, user_id=user_id, origin=ORIGIN_PROFILE_ASSIGNED)
     if confidence is not None:
-        speaker.confidence = confidence  # type: ignore[assignment]
+        speaker.confidence = confidence
 
     self._rename_tracker.record(
         int(speaker.media_file_id) if speaker.media_file_id else None,
@@ -80,7 +80,7 @@ def assign_speaker_to_profile(
     # harmless no-op on an already-committed session.
     self.db.commit()
     self._rename_tracker.flush(self.db)
-    return speaker  # type: ignore[no-any-return]
+    return speaker
 
 
 def find_speaker_occurrences(

@@ -70,7 +70,7 @@ def promote_cluster_to_profile(
                 logger.info(
                     "Cluster %s already promoted to profile %s", cluster_uuid, existing.uuid
                 )
-                return existing  # type: ignore[no-any-return]
+                return existing
 
         # Fetch members first so the new profile can inherit their tenant
         # scope (batch-fetch speakers to avoid per-member queries).
@@ -119,9 +119,9 @@ def promote_cluster_to_profile(
         self.db.flush()
 
         # Link cluster and sync label
-        cluster.promoted_to_profile_id = profile.id  # type: ignore[assignment]
+        cluster.promoted_to_profile_id = profile.id
         if not cluster.label:
-            cluster.label = name  # type: ignore[assignment]
+            cluster.label = name
 
         # A member already linked elsewhere leaves that profile, whose embedding
         # still averages its voice until it is rebuilt (issue #1214).
@@ -135,7 +135,7 @@ def promote_cluster_to_profile(
         for member in members:
             speaker = speakers_by_id.get(int(member.speaker_id))
             if speaker:
-                speaker.profile_id = profile.id  # type: ignore[assignment]
+                speaker.profile_id = profile.id
                 # Members span every file the cluster reaches into, each with
                 # its own indexed label — record before the overwrite (#432).
                 self._rename_tracker.record(
@@ -143,8 +143,8 @@ def promote_cluster_to_profile(
                     canonical_speaker_label_for_row(speaker),
                     name,
                 )
-                speaker.display_name = name  # type: ignore[assignment]
-                speaker.verified = True  # type: ignore[assignment]
+                speaker.display_name = name
+                speaker.verified = True
                 # A person named the cluster: its members are theirs (issue #1280, Q2).
                 record_human_identity(speaker, user_id=user_id, origin=ORIGIN_CLUSTER_PROMOTED)
 

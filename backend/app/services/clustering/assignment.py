@@ -61,7 +61,7 @@ def find_or_create_cluster(
                 .filter(SpeakerCluster.id == speaker.cluster_id)
                 .first()
             )
-            return cluster  # type: ignore[no-any-return]
+            return cluster
 
         # Privacy policy (#1280): clustering stores a centroid per speaker, so a file
         # whose owner or organization has voiceprints off gets none (asked fresh).
@@ -140,13 +140,13 @@ def find_or_create_cluster(
                 # profile embedding and any cluster the speaker was dropped from are
                 # rebuilt by `_settle_assignments` once the caller commits (#1233).
                 self._join(speaker, cluster, candidate["similarity"], margin)
-                return cluster  # type: ignore[no-any-return]
+                return cluster
 
         # No match — create a new singleton cluster in the file's scope
         cluster = self._create_singleton_cluster(
             speaker, user_id, embedding, organization_id=organization_id
         )
-        return cluster  # type: ignore[no-any-return]
+        return cluster
 
     except Exception as e:
         logger.error("Error in find_or_create_cluster for speaker %s: %s", speaker_id, e)
@@ -265,10 +265,10 @@ def add_speaker_to_cluster(
         margin=margin,
     )
     self.db.add(member)
-    speaker.cluster_id = cluster.id  # type: ignore[assignment]
+    speaker.cluster_id = cluster.id
 
     self.db.flush()
-    cluster.member_count = (  # type: ignore[assignment]
+    cluster.member_count = (
         self.db.query(SpeakerClusterMember)
         .filter(SpeakerClusterMember.cluster_id == cluster.id)
         .count()
@@ -314,11 +314,11 @@ def bulk_add_speakers_to_cluster(
             confidence=conf,
         )
         self.db.add(member)
-        speaker.cluster_id = cluster.id  # type: ignore[assignment]
+        speaker.cluster_id = cluster.id
         count += 1
 
     self.db.flush()
-    cluster.member_count = (  # type: ignore[assignment]
+    cluster.member_count = (
         self.db.query(SpeakerClusterMember)
         .filter(SpeakerClusterMember.cluster_id == cluster.id)
         .count()
@@ -358,7 +358,7 @@ def create_singleton_cluster(
         confidence=1.0,
     )
     self.db.add(member)
-    speaker.cluster_id = cluster.id  # type: ignore[assignment]
+    speaker.cluster_id = cluster.id
     self.db.flush()
 
     # Validate embedding is not a zero or NaN vector

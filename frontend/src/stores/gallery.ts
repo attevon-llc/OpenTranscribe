@@ -284,9 +284,7 @@ function createGalleryStore() {
       addToCollectionTrigger.update((n) => n + 1);
     },
 
-    // Bulk tagging is two triggers, not one carrying a direction: the toolbar
-    // has two menu entries, and a single trigger would have to be reset between
-    // fires the way `exportTrigger` is.
+    // Direct add/remove entry points into the bulk tag dialog; no UI calls them today.
     triggerAddTags: () => {
       addTagsTrigger.update((n) => n + 1);
     },

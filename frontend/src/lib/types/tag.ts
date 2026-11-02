@@ -1,67 +1,38 @@
 /**
- * TypeScript types for tags and tag management.
+ * Tag wire shapes, mirroring `backend/app/schemas/tag.py` (the bulk-action
+ * envelope lives in `backend/app/api/endpoints/files/management.py`).
  *
- * Mirrors the Pydantic schemas in `backend/app/schemas/tag.py` (Tag,
- * TagWithCount, TagCollisionCluster, TagImpact*, TagMutationResult,
- * and the bulk tag envelope in
- * `backend/app/api/endpoints/files/management.py`.
+ * Field names and literal unions are the JSON contract; keep them snake_case and
+ * edit them by hand alongside the Pydantic models, since nothing generates them.
  */
 
-/**
- * Canonical tag shape, mirroring `backend/app/schemas/tag.py:Tag`.
- *
- * Import via `$lib/types/tag`. This is the **only** tag shape on the API:
- * `/tags`, `POST /tags/files/{uuid}/tags` and `MediaFileDetail.tags` all serve
- * it (#326). The gallery list endpoint `GET /files` sends no tags at all, which
- * is why `MediaFile` has no `tags` field — only `MediaFileDetail` does.
- *
- * `ownership` says what the caller may do with the tag — see `TagOwnership`.
- */
+/** How a tag relates to the caller, computed by the server per request. */
+type TagOwnership = 'mine' | 'system' | 'shared_with_me';
+
 export interface Tag {
   uuid: string;
   name: string;
-  /** How the tag was created — e.g. `auto_ai` for LLM-suggested tags. */
+  /** Origin of the tag: `manual`, `auto_ai`, `ai_accepted`, or null for built-in rows. */
   source?: string | null;
-  /** The caller's relationship to this tag, and therefore their rights over it. */
   ownership?: TagOwnership;
   /**
-   * Whether the server would accept this caller's rename, merge, delete, impact
-   * preview, list-shares and share/unshare of the tag. The single source for
-   * those gates — false under a support grant even for an owner-looking
-   * `ownership`. Promote is NOT covered: it keeps its own deployment-scope gate
-   * ({@link canWriteSystemTags}) plus `ownership === 'mine'`.
+   * The server's verdict on whether it would accept this caller's rename, merge,
+   * delete, impact preview and sharing of the tag. Every write control in the UI
+   * keys off this; never re-derive it from the role or the ownership label.
    */
   can_write: boolean;
 }
 
-/**
- * A tag plus the counts the list UI renders.
- *
- * `usage_count` is scoped to the files the caller can access — the `unused`
- * filter is its exact complement.
- */
 export interface TagWithCount extends Tag {
   usage_count: number;
 }
 
 /**
- * The caller's relationship to a tag, mirroring `tag_service.TAG_OWNERSHIPS`.
- *
- * - `mine` — they own it; full control.
- * - `system` — the shared vocabulary every account sees; admin-only to change.
- * - `shared_with_me` — another account's, visible only because it sits on a
- *   file shared with them. Read-only: every mutation answers 404, so the UI
- *   must not offer one.
- */
-type TagOwnership = 'mine' | 'system' | 'shared_with_me';
-
-/**
- * Whether the caller may write system tags and promote into the shared
- * vocabulary, mirroring the server's `deployment_scope_writable`: any admin in a
- * single-tenant deployment, only a `super_admin` in a multi-tenant one.
- *
- * A tenancy the capabilities fetch has not reported reads as multi-tenant, so a
- * plain admin is never offered a write the server would refuse.
+ * Client mirror of the server's deployment-scope check for system tags, used
+ * only to decide whether to offer promote. Any admin may write system tags in a
+ * single-tenant deployment; in a multi-tenant one only a super admin may. An
+ * unknown tenancy is treated as multi-tenant so a plain admin is never offered a
+ * write the server would refuse.
  */
 export function canWriteSystemTags(
   role: string | undefined,
@@ -71,30 +42,15 @@ export function canWriteSystemTags(
   return role === 'admin' && tenancyMode === 'single';
 }
 
-/**
- * Ownership scope for the tag list — `all`, or one `TagOwnership` value.
- *
- * Deliberately the same vocabulary the rows report: a scoped request returns
- * only rows whose `ownership` equals the scope, so the filter and the field it
- * filters on cannot drift. A separate axis from the three view filters below,
- * so "my unused tags" is expressible.
- */
+/** The values `GET /tags?scope=` accepts. */
 export type TagScope = 'all' | TagOwnership;
 
-/**
- * A tag carried by some or all of a selection of files.
- *
- * `file_count` vs `selection_size` is what distinguishes a tag on every
- * selected file from one on a few — and why a multi-file selection offers
- * add-only: removing a tag that sits on three of five files is ambiguous in a
- * way adding never is.
- */
+/** A tag carried by part of a file selection (`GET /tags/for-files`). */
 export interface TagOnSelection extends Tag {
   file_count: number;
   selection_size: number;
 }
 
-/** Who a tag is shared with — one user or one group. */
 export interface TagShareTarget {
   uuid: string;
   target_type: 'user' | 'group';
@@ -102,13 +58,12 @@ export interface TagShareTarget {
   shared_by?: string | null;
 }
 
-/** Grant a tag to a user or a group. Exactly one target. */
+/** Exactly one of the two targets is set. */
 export interface TagShareCreate {
   target_user_uuid?: string;
   target_group_uuid?: string;
 }
 
-/** A file carrying a tag, as the manager's "what it touches" list renders it. */
 export interface TaggedFile {
   uuid: string;
   display_title: string;
@@ -116,32 +71,30 @@ export interface TaggedFile {
   formatted_duration?: string | null;
 }
 
-/** The files a tag touches. `total` is the real count; `files` is capped. */
 export interface TagFileList {
   files: TaggedFile[];
+  /** Every accessible file carrying the tag, which may exceed `files.length`. */
   total: number;
 }
 
-/** Server-side filters for the tag list; they combine (AND). */
 export interface TagListFilters {
   unused?: boolean;
   colliding?: boolean;
   scope?: TagScope;
 }
 
-/** A tag sharing its normalized name with the rest of its cluster. */
 export interface TagClusterMember extends Tag {
   usage_count: number;
   suggested_survivor: boolean;
 }
 
-/** A near match offered beside a cluster — a prompt for a human, never a member. */
+/** A near match of a cluster, never one of its members. */
 export interface TagClusterSuggestion extends Tag {
   usage_count: number;
   similarity: number;
 }
 
-/** Tags that normalize to one name, with the merge the backend recommends. */
+/** Tags that normalize to the same name. */
 export interface TagCollisionCluster {
   normalized_name: string;
   members: TagClusterMember[];
@@ -149,15 +102,6 @@ export interface TagCollisionCluster {
   suggestions: TagClusterSuggestion[];
 }
 
-/**
- * File counts for a single tag in a pending rename / merge / delete.
- *
- * The two counts are deliberately separate: a shared tag reaches files you
- * cannot see, so `accessible_file_count` is what the caller can see while
- * `total_file_count` is what the operation actually changes. Carry both
- * through — a confirmation built from the accessible number alone would
- * read "3 files" in front of a delete that strips the tag from 500.
- */
 export interface TagImpactEntry {
   uuid: string;
   name: string;
@@ -165,47 +109,33 @@ export interface TagImpactEntry {
   total_file_count: number;
 }
 
-/** What a destructive tag operation would touch, before it acts. */
+/** What a mutation would touch: the files the caller sees, and all of them. */
 export interface TagImpact {
   tags: TagImpactEntry[];
   accessible_file_count: number;
   total_file_count: number;
 }
 
-/** Rename a tag; `confirm_merge` accepts the merge when the new name collides. */
 export interface TagRenameRequest {
   name: string;
   confirm_merge?: boolean;
 }
 
-/** Fold one or more tags into the tag named in the path. */
 export interface TagMergeRequest {
   source_uuids: string[];
 }
 
-/**
- * Outcome of a rename / merge / delete, always carrying the impact.
- *
- * A rename whose new name resolves to a different existing tag comes back
- * with `requires_confirmation` and applies nothing until the caller retries
- * with `confirm_merge`.
- */
 export interface TagMutationResult {
   tag: Tag | null;
   merged: boolean;
+  /** A rename onto another tag's name: nothing was applied, `impact` describes the merge. */
   requires_confirmation: boolean;
   deleted_uuids: string[];
   impact: TagImpact;
 }
 
-/** Bulk tagging rides the files rail (`/files/management/bulk-action`). */
 export type BulkTagAction = 'add_tag' | 'remove_tag';
 
-/**
- * What a bulk tag action did to one file. `already_present` / `not_present`
- * are *successful* no-ops — the file ends in the requested state without
- * having to change. Only `failed` means it did not get there.
- */
 export type BulkTagOutcome = 'added' | 'already_present' | 'removed' | 'not_present' | 'failed';
 
 export interface BulkTagActionResult {

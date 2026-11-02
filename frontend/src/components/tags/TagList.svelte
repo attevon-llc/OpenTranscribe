@@ -1,22 +1,15 @@
 <script context="module" lang="ts">
-  import type { Tag, TagCollisionCluster } from '$lib/types/tag';
+  import type { Tag } from '$lib/types/tag';
 
-  /**
-   * One selectable tag as the manager renders it.
-   *
-   * Deliberately looser than `TagWithCount`: collision-cluster members carry no
-   * usage-derived extras beyond the count.
-   */
+  /** A row of the tag manager: a tag plus how many files carry it. */
   export interface TagListEntry extends Tag {
     usage_count: number;
   }
 
   /**
-   * How a `select` event should change the coordinator's selection.
-   *
-   * `replace` — this row only. `toggle` — flip this row. `range` — the span
-   * from the keyboard/pointer anchor. `group` — a whole collision cluster.
-   * `add` — union (used by the "also similar" suggestions).
+   * How a `select` event should change the coordinator's selection:
+   * `replace` / `range` set it to exactly `uuids`, `toggle` flips each,
+   * `group` adds all unless all are selected (then removes all), `add` unions.
    */
   export type TagSelectMode = 'replace' | 'toggle' | 'range' | 'group' | 'add';
 
@@ -25,314 +18,262 @@
     uuids: string[];
   }
 
-  /**
-   * i18n key for a tag's origin. Shared with the detail and bulk panes so the
-   * three surfaces can never drift on what `auto_ai` is called.
-   */
+  const ORIGIN_KEYS: Record<string, string> = {
+    manual: 'tags.manager.origin.manual',
+    auto_ai: 'tags.manager.origin.auto',
+    ai_accepted: 'tags.manager.origin.aiAccepted',
+  };
+
+  /** The i18n key naming where a tag came from. */
   export function tagOriginKey(source?: string | null): string {
-    switch (source) {
-      case 'manual':
-        return 'tags.manager.origin.manual';
-      case 'auto_ai':
-        return 'tags.manager.origin.auto';
-      case 'ai_accepted':
-        return 'tags.manager.origin.aiAccepted';
-      default:
-        return 'tags.manager.origin.unknown';
-    }
-  }
-
-  type Row =
-    | { kind: 'cluster'; key: string; cluster: TagCollisionCluster; uuids: string[] }
-    | { kind: 'tag'; key: string; entry: TagListEntry; suggestedSurvivor: boolean };
-
-  interface ClusterBlock {
-    cluster: TagCollisionCluster;
-    headerIndex: number;
-    memberIndexes: number[];
+    return (source && ORIGIN_KEYS[source]) || 'tags.manager.origin.unknown';
   }
 </script>
 
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  /**
+   * The tag manager's listbox, flat or grouped into collision clusters.
+   *
+   * Presentational: it owns focus and the range anchor, never the selection.
+   * Every pointer or keyboard action is sent up as a `select` intent and the
+   * coordinator answers with new `selectedUuids`.
+   */
+  import { createEventDispatcher, tick } from 'svelte';
   import { t } from '$stores/locale';
   import Badge from '$components/ui/Badge.svelte';
   import ExpandableSection from '$components/ui/ExpandableSection.svelte';
+  import type { TagCollisionCluster } from '$lib/types/tag';
 
-  /** Flat list of tags. Ignored when `clusters` is non-empty. */
   export let tags: TagListEntry[] = [];
-  /** Collision clusters. Non-empty switches the list into cluster mode. */
+  /** A non-empty list switches to cluster mode; `tags` is then ignored. */
   export let clusters: TagCollisionCluster[] = [];
-  /** Currently selected tag uuids (owned by the route). */
   export let selectedUuids: string[] = [];
-  /** Tag uuids with a mutation in flight — dimmed and non-interactive. */
+  /** Tags with a mutation in flight: dimmed and inert. */
   export let pendingUuids: string[] = [];
-  /** Accessible name for the listbox(es). */
+  /** Accessible name of the flat listbox. */
   export let label = '';
 
   const dispatch = createEventDispatcher<{ select: TagSelectDetail }>();
 
+  /** One focusable row. A cluster header stands for every member of its cluster. */
+  interface Row {
+    key: string;
+    header: boolean;
+    uuids: string[];
+  }
+
+  /** Where each cluster's header sits in the shared row sequence. */
+  interface Section {
+    cluster: TagCollisionCluster;
+    start: number;
+  }
+
+  $: clustered = clusters.length > 0;
+
+  $: sections = clusters.reduce<Section[]>((acc, cluster) => {
+    const previous = acc[acc.length - 1];
+    const start = previous ? previous.start + previous.cluster.members.length + 1 : 0;
+    acc.push({ cluster, start });
+    return acc;
+  }, []);
+
+  $: rows = clustered
+    ? clusters.flatMap((cluster): Row[] => [
+        {
+          key: `cluster:${cluster.normalized_name}`,
+          header: true,
+          uuids: cluster.members.map((member) => member.uuid),
+        },
+        ...cluster.members.map((member) => ({
+          key: `member:${member.uuid}`,
+          header: false,
+          uuids: [member.uuid],
+        })),
+      ])
+    : tags.map((tag) => ({ key: `tag:${tag.uuid}`, header: false, uuids: [tag.uuid] }));
+
+  // Per-row state is computed here, not by a helper called from the markup: in
+  // legacy mode a function call in the template is not tracked, so the rows
+  // would keep their first-render state when the props change.
+  $: selectedSet = new Set(selectedUuids);
+  $: pendingSet = new Set(pendingUuids);
+  $: rowSelected = rows.map(
+    (row) => row.uuids.length > 0 && row.uuids.every((uuid) => selectedSet.has(uuid))
+  );
+  $: rowPending = rows.map((row) => row.uuids.some((uuid) => pendingSet.has(uuid)));
+
   let focusIndex = 0;
-  let anchorIndex = 0;
+  let anchorIndex: number | null = null;
   const rowEls: HTMLElement[] = [];
 
-  $: selected = new Set(selectedUuids);
-  $: pending = new Set(pendingUuids);
-  $: clusterMode = clusters.length > 0;
-
-  /**
-   * Flatten the data into one ordered row list plus the per-cluster blocks the
-   * markup iterates. Both come from a single pass so a row's global index (what
-   * roving tabindex and Shift+Arrow ranges use) always matches where it renders.
-   */
-  function buildModel(
-    flatTags: TagListEntry[],
-    tagClusters: TagCollisionCluster[]
-  ): { rows: Row[]; blocks: ClusterBlock[] } {
-    const rows: Row[] = [];
-    const blocks: ClusterBlock[] = [];
-
-    if (tagClusters.length > 0) {
-      for (const cluster of tagClusters) {
-        const headerIndex = rows.length;
-        rows.push({
-          kind: 'cluster',
-          key: `cluster:${cluster.normalized_name}`,
-          cluster,
-          uuids: cluster.members.map((member) => member.uuid),
-        });
-        const memberIndexes: number[] = [];
-        for (const member of cluster.members) {
-          memberIndexes.push(rows.length);
-          rows.push({
-            kind: 'tag',
-            key: `${cluster.normalized_name}:${member.uuid}`,
-            entry: {
-              uuid: member.uuid,
-              name: member.name,
-              source: member.source,
-              usage_count: member.usage_count,
-              // Carried through, or a cluster member would lose the badge and
-              // the write gate that the flat list gives the same tag.
-              ownership: member.ownership,
-              can_write: member.can_write,
-            },
-            suggestedSurvivor: member.suggested_survivor,
-          });
-        }
-        blocks.push({ cluster, headerIndex, memberIndexes });
-      }
-      return { rows, blocks };
-    }
-
-    for (const tag of flatTags) {
-      rows.push({ kind: 'tag', key: tag.uuid, entry: tag, suggestedSurvivor: false });
-    }
-    return { rows, blocks };
-  }
-
-  $: model = buildModel(tags, clusters);
-  $: rows = model.rows;
-  $: blocks = model.blocks;
-  // Keep the roving tabindex on a row that still exists after a refetch.
-  $: if (focusIndex > rows.length - 1) focusIndex = Math.max(0, rows.length - 1);
-
-  function rowUuids(row: Row | undefined): string[] {
-    if (!row) return [];
-    return row.kind === 'cluster' ? row.uuids : [row.entry.uuid];
-  }
-
-  function uuidsForRow(index: number): string[] {
-    return rowUuids(rows[index]);
-  }
-
-  // Per-row state as reactive arrays rather than helper calls in the markup:
-  // Svelte 5 runs a function call in a legacy template untracked, so a row
-  // would keep the state it had at mount when only `selectedUuids` or
-  // `pendingUuids` changed.
-  $: rowSelected = rows.map((row) => {
-    const uuids = rowUuids(row);
-    return uuids.length > 0 && uuids.every((uuid) => selected.has(uuid));
-  });
-  $: rowPending = rows.map((row) => rowUuids(row).some((uuid) => pending.has(uuid)));
-
-  function isRowPending(index: number): boolean {
-    return rowPending[index] ?? false;
-  }
+  // A refetch can shorten the list under the focused row.
+  $: if (focusIndex > Math.max(0, rows.length - 1)) focusIndex = Math.max(0, rows.length - 1);
 
   function emit(mode: TagSelectMode, uuids: string[]) {
     if (uuids.length === 0) return;
     dispatch('select', { mode, uuids });
   }
 
-  function activate(index: number, mode: TagSelectMode) {
-    if (isRowPending(index)) return;
-    emit(mode, uuidsForRow(index));
-  }
-
-  /** Every uuid between two row indexes, inclusive, clusters expanded. */
   function rangeUuids(from: number, to: number): string[] {
-    const low = Math.min(from, to);
-    const high = Math.max(from, to);
-    const uuids: string[] = [];
-    for (let i = low; i <= high; i++) uuids.push(...uuidsForRow(i));
-    return [...new Set(uuids)];
+    const [low, high] = from <= to ? [from, to] : [to, from];
+    const spanned = rows.slice(low, high + 1).flatMap((row) => row.uuids);
+    return spanned.filter((uuid, index) => spanned.indexOf(uuid) === index);
   }
 
-  function defaultMode(index: number): TagSelectMode {
-    return rows[index]?.kind === 'cluster' ? 'group' : 'replace';
-  }
-
-  function toggleMode(index: number): TagSelectMode {
-    return rows[index]?.kind === 'cluster' ? 'group' : 'toggle';
-  }
-
-  function onRowClick(event: MouseEvent, index: number) {
-    focusIndex = index;
-    if (event.shiftKey) {
-      if (!isRowPending(index)) emit('range', rangeUuids(anchorIndex, index));
-      return;
-    }
+  function activate(index: number, mode: 'replace' | 'toggle') {
+    const row = rows[index];
+    if (!row || rowPending[index]) return;
     anchorIndex = index;
-    if (event.ctrlKey || event.metaKey) activate(index, toggleMode(index));
-    else activate(index, defaultMode(index));
+    emit(row.header ? 'group' : mode, row.uuids);
   }
 
-  function moveFocus(next: number, extend: boolean) {
-    focusIndex = next;
-    rowEls[next]?.focus();
-    if (extend) emit('range', rangeUuids(anchorIndex, next));
+  function extendTo(index: number) {
+    if (rowPending[index]) return;
+    emit('range', rangeUuids(anchorIndex ?? index, index));
   }
 
-  function onRowKeydown(event: KeyboardEvent, index: number) {
-    switch (event.key) {
-      case 'ArrowDown':
-        event.preventDefault();
-        moveFocus(Math.min(index + 1, rows.length - 1), event.shiftKey);
-        break;
-      case 'ArrowUp':
-        event.preventDefault();
-        moveFocus(Math.max(index - 1, 0), event.shiftKey);
-        break;
-      case 'Home':
-        event.preventDefault();
-        moveFocus(0, event.shiftKey);
-        break;
-      case 'End':
-        event.preventDefault();
-        moveFocus(rows.length - 1, event.shiftKey);
-        break;
-      case ' ':
-        event.preventDefault();
-        anchorIndex = index;
-        activate(index, toggleMode(index));
-        break;
-      case 'Enter':
-        event.preventDefault();
-        anchorIndex = index;
-        activate(index, defaultMode(index));
-        break;
-      default:
-        break;
+  function handleClick(event: MouseEvent, index: number) {
+    if (rowPending[index]) return;
+    focusIndex = index;
+    if (event.shiftKey) extendTo(index);
+    else activate(index, event.ctrlKey || event.metaKey ? 'toggle' : 'replace');
+  }
+
+  async function moveFocus(from: number, to: number, extend: boolean) {
+    const target = Math.min(Math.max(to, 0), rows.length - 1);
+    if (target < 0) return;
+    if (extend) {
+      if (anchorIndex === null) anchorIndex = from;
+      extendTo(target);
+    }
+    focusIndex = target;
+    await tick();
+    rowEls[target]?.focus();
+  }
+
+  function handleKeydown(event: KeyboardEvent, index: number) {
+    const last = rows.length - 1;
+    const targets: Record<string, number> = {
+      ArrowDown: index + 1,
+      ArrowUp: index - 1,
+      Home: 0,
+      End: last,
+    };
+    if (event.key in targets) {
+      event.preventDefault();
+      void moveFocus(index, targets[event.key], event.shiftKey);
+    } else if (event.key === ' ' || event.key === 'Enter') {
+      event.preventDefault();
+      focusIndex = index;
+      activate(index, event.key === ' ' ? 'toggle' : 'replace');
     }
   }
 
-  function similarityPercent(similarity: number): number {
-    return Math.round(similarity * 100);
+  function addSuggestion(uuid: string) {
+    if (pendingSet.has(uuid)) return;
+    emit('add', [uuid]);
   }
 </script>
 
-<div class="tag-list-root">
-  {#if clusterMode}
-    {#each blocks as block (block.cluster.normalized_name)}
+<div class="tag-list">
+  {#if clustered}
+    {#each sections as section (section.cluster.normalized_name)}
+      {@const cluster = section.cluster}
       <section class="cluster">
         <div
-          class="cluster-rows"
+          class="listbox"
           role="listbox"
           aria-multiselectable="true"
-          aria-label={block.cluster.normalized_name}
+          aria-label={cluster.normalized_name}
         >
-          {#each [block.headerIndex, ...block.memberIndexes] as index (rows[index].key)}
-            {@const row = rows[index]}
+          <div
+            bind:this={rowEls[section.start]}
+            class="row cluster-header"
+            class:is-selected={rowSelected[section.start]}
+            class:is-pending={rowPending[section.start]}
+            role="option"
+            aria-selected={rowSelected[section.start] ?? false}
+            aria-disabled={rowPending[section.start] ?? false}
+            tabindex={focusIndex === section.start ? 0 : -1}
+            on:click={(event) => handleClick(event, section.start)}
+            on:keydown={(event) => handleKeydown(event, section.start)}
+          >
+            <span class="row-name">{cluster.normalized_name}</span>
+            <span class="tag-meta">
+              <span>
+                {$t('tags.manager.cluster.memberCount', { count: cluster.members.length })}
+              </span>
+              <span aria-hidden="true">·</span>
+              <span>{$t('tags.manager.cluster.select')}</span>
+            </span>
+          </div>
+          {#each cluster.members as member, offset (member.uuid)}
+            {@const index = section.start + offset + 1}
             <div
               bind:this={rowEls[index]}
-              class="tag-row"
-              class:cluster-header={row.kind === 'cluster'}
-              class:cluster-member={row.kind === 'tag'}
+              class="row cluster-member"
               class:is-selected={rowSelected[index]}
               class:is-pending={rowPending[index]}
               role="option"
-              tabindex={index === focusIndex ? 0 : -1}
-              aria-selected={rowSelected[index]}
-              aria-disabled={rowPending[index]}
-              on:click={(event) => onRowClick(event, index)}
-              on:keydown={(event) => onRowKeydown(event, index)}
+              aria-selected={rowSelected[index] ?? false}
+              aria-disabled={rowPending[index] ?? false}
+              tabindex={focusIndex === index ? 0 : -1}
+              on:click={(event) => handleClick(event, index)}
+              on:keydown={(event) => handleKeydown(event, index)}
             >
-              {#if row.kind === 'cluster'}
-                <span class="row-main">
-                  <span class="row-name">{row.cluster.normalized_name}</span>
-                  <span class="row-meta">
-                    {$t('tags.manager.cluster.memberCount', { count: row.cluster.members.length })}
-                  </span>
-                </span>
-                <span class="row-hint">{$t('tags.manager.cluster.select')}</span>
-              {:else}
-                <span class="row-main">
-                  <span class="row-name">{row.entry.name}</span>
-                  <span class="row-meta">
-                    <span class="row-usage"
-                      >{$t('tags.manager.usage', { count: row.entry.usage_count })}</span
-                    >
-                    <span class="row-origin">{$t(tagOriginKey(row.entry.source))}</span>
-                  </span>
-                </span>
-                {#if row.suggestedSurvivor}
+              <span class="row-head">
+                <span class="row-name">{member.name}</span>
+                {#if member.suggested_survivor}
                   <Badge variant="info">{$t('tags.manager.cluster.suggested')}</Badge>
                 {/if}
-                {#if row.entry.ownership === 'system'}
+                {#if member.ownership === 'system'}
                   <Badge variant="info" title={$t('tags.manager.sharedTooltip')}>
                     {$t('tags.manager.sharedBadge')}
                   </Badge>
-                {:else if row.entry.ownership === 'shared_with_me'}
+                {:else if member.ownership === 'shared_with_me'}
                   <Badge variant="default" title={$t('tags.manager.sharedWithMeTooltip')}>
                     {$t('tags.manager.sharedWithMeBadge')}
                   </Badge>
                 {/if}
-              {/if}
+              </span>
+              <span class="tag-meta">
+                <span>{$t('tags.manager.usage', { count: member.usage_count })}</span>
+                <span aria-hidden="true">·</span>
+                <span>{$t(tagOriginKey(member.source))}</span>
+              </span>
             </div>
           {/each}
         </div>
-
-        {#if block.cluster.suggestions.length > 0}
-          <div class="cluster-suggestions">
+        {#if cluster.suggestions.length > 0}
+          <div class="suggestions">
             <ExpandableSection
-              title={$t('tags.manager.cluster.alsoSimilar', {
-                count: block.cluster.suggestions.length,
-              })}
+              title={$t('tags.manager.cluster.alsoSimilar', { count: cluster.suggestions.length })}
             >
               <ul class="suggestion-list">
-                {#each block.cluster.suggestions as suggestion (suggestion.uuid)}
+                {#each cluster.suggestions as suggestion (suggestion.uuid)}
                   <li>
                     <button
                       type="button"
-                      class="suggestion-button"
-                      on:click={() => emit('add', [suggestion.uuid])}
+                      class="suggestion"
+                      disabled={pendingSet.has(suggestion.uuid)}
+                      on:click={() => addSuggestion(suggestion.uuid)}
                     >
-                      <span class="row-name">{suggestion.name}</span>
-                      <span class="row-meta">
-                        <span class="row-usage"
-                          >{$t('tags.manager.usage', { count: suggestion.usage_count })}</span
-                        >
-                        <span class="row-origin">{$t(tagOriginKey(suggestion.source))}</span>
-                        <span class="row-similarity">
+                      <span class="row-head">
+                        <span class="row-name">{suggestion.name}</span>
+                        <span class="similarity">
                           {$t('tags.manager.cluster.similarity', {
-                            percent: similarityPercent(suggestion.similarity),
+                            percent: Math.round(suggestion.similarity * 100),
                           })}
                         </span>
                       </span>
-                      <span class="suggestion-add"
-                        >{$t('tags.manager.cluster.addSuggestion', { name: suggestion.name })}</span
-                      >
+                      <span class="tag-meta">
+                        <span>{$t('tags.manager.usage', { count: suggestion.usage_count })}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>{$t(tagOriginKey(suggestion.source))}</span>
+                      </span>
+                      <span class="suggestion-action">
+                        {$t('tags.manager.cluster.addSuggestion', { name: suggestion.name })}
+                      </span>
                     </button>
                   </li>
                 {/each}
@@ -343,40 +284,37 @@
       </section>
     {/each}
   {:else}
-    <div class="flat-rows" role="listbox" aria-multiselectable="true" aria-label={label}>
-      {#each rows as row, index (row.key)}
+    <div class="listbox" role="listbox" aria-multiselectable="true" aria-label={label}>
+      {#each tags as tag, index (tag.uuid)}
         <div
           bind:this={rowEls[index]}
-          class="tag-row"
+          class="row"
           class:is-selected={rowSelected[index]}
           class:is-pending={rowPending[index]}
           role="option"
-          tabindex={index === focusIndex ? 0 : -1}
-          aria-selected={rowSelected[index]}
-          aria-disabled={rowPending[index]}
-          on:click={(event) => onRowClick(event, index)}
-          on:keydown={(event) => onRowKeydown(event, index)}
+          aria-selected={rowSelected[index] ?? false}
+          aria-disabled={rowPending[index] ?? false}
+          tabindex={focusIndex === index ? 0 : -1}
+          on:click={(event) => handleClick(event, index)}
+          on:keydown={(event) => handleKeydown(event, index)}
         >
-          <span class="row-main">
-            <span class="row-name">{row.kind === 'tag' ? row.entry.name : ''}</span>
-            <span class="row-meta">
-              {#if row.kind === 'tag'}
-                <span class="row-usage"
-                  >{$t('tags.manager.usage', { count: row.entry.usage_count })}</span
-                >
-                <span class="row-origin">{$t(tagOriginKey(row.entry.source))}</span>
-              {/if}
-            </span>
+          <span class="row-head">
+            <span class="row-name">{tag.name}</span>
+            {#if tag.ownership === 'system'}
+              <Badge variant="info" title={$t('tags.manager.sharedTooltip')}>
+                {$t('tags.manager.sharedBadge')}
+              </Badge>
+            {:else if tag.ownership === 'shared_with_me'}
+              <Badge variant="default" title={$t('tags.manager.sharedWithMeTooltip')}>
+                {$t('tags.manager.sharedWithMeBadge')}
+              </Badge>
+            {/if}
           </span>
-          {#if row.kind === 'tag' && row.entry.ownership === 'system'}
-            <Badge variant="info" title={$t('tags.manager.sharedTooltip')}>
-              {$t('tags.manager.sharedBadge')}
-            </Badge>
-          {:else if row.kind === 'tag' && row.entry.ownership === 'shared_with_me'}
-            <Badge variant="default" title={$t('tags.manager.sharedWithMeTooltip')}>
-              {$t('tags.manager.sharedWithMeBadge')}
-            </Badge>
-          {/if}
+          <span class="tag-meta">
+            <span>{$t('tags.manager.usage', { count: tag.usage_count })}</span>
+            <span aria-hidden="true">·</span>
+            <span>{$t(tagOriginKey(tag.source))}</span>
+          </span>
         </div>
       {/each}
     </div>
@@ -390,10 +328,130 @@
 </div>
 
 <style>
-  .tag-list-root {
+  .tag-list {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-3);
+  }
+
+  .listbox {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-0-5);
+  }
+
+  .cluster {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding-block-end: var(--space-2);
+    border-block-end: 1px solid var(--border-color);
+  }
+
+  .row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-0-5);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    color: var(--text-color);
+    cursor: pointer;
+    user-select: none;
+    transition: background-color var(--duration-fast) ease;
+  }
+
+  .row:hover {
+    background-color: var(--hover-color);
+  }
+
+  .row:focus-visible,
+  .suggestion:focus-visible {
+    outline: 2px solid var(--focus-ring-color);
+    outline-offset: 1px;
+  }
+
+  .row.is-selected {
+    background-color: rgba(var(--primary-color-rgb), 0.12);
+    border-color: rgba(var(--primary-color-rgb), 0.4);
+  }
+
+  .row.is-pending {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  .cluster-header {
+    background-color: var(--surface-secondary);
+  }
+
+  .cluster-header .row-name {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .cluster-member {
+    margin-inline-start: var(--space-6);
+  }
+
+  .row-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1-5);
+    min-width: 0;
+  }
+
+  .row-name {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
+    overflow-wrap: anywhere;
+  }
+
+  .tag-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+  }
+
+  .suggestions {
+    margin-inline-start: var(--space-6);
+  }
+
+  .suggestion-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .suggestion {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-0-5);
+    width: 100%;
+    padding-block: var(--space-2);
+    padding-inline: var(--space-3);
+    border: 1px dashed var(--border-color);
+    border-radius: var(--radius-md);
+    background-color: var(--surface-color);
+    color: var(--text-color);
+    text-align: start;
+    box-shadow: none;
+  }
+
+  .similarity {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+  }
+
+  .suggestion-action {
+    font-size: var(--font-size-xs);
+    color: var(--primary-on-surface);
   }
 
   .sr-only {
@@ -408,149 +466,10 @@
     border: 0;
   }
 
-  .flat-rows,
-  .cluster-rows {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .cluster {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 8px;
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    background: var(--background-color);
-  }
-
-  .tag-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 10px 12px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--surface-color);
-    cursor: pointer;
-    transition:
-      border-color 0.15s ease,
-      background 0.15s ease;
-  }
-
-  .tag-row:hover {
-    border-color: var(--primary-color);
-  }
-
-  .tag-row:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-  }
-
-  .tag-row.is-selected {
-    border-color: var(--primary-color);
-    background: rgba(var(--primary-color-rgb), 0.1);
-  }
-
-  .tag-row.is-pending {
-    opacity: 0.5;
-    pointer-events: none;
-    cursor: default;
-  }
-
-  .tag-row.cluster-header {
-    background: transparent;
-    border-style: dashed;
-    font-weight: 600;
-  }
-
-  .tag-row.cluster-member {
-    margin-inline-start: 20px;
-  }
-
-  .row-main {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-  }
-
-  .row-name {
-    font-size: 14px;
-    color: var(--text-color);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .row-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    font-size: 12px;
-    color: var(--text-secondary);
-  }
-
-  .row-hint {
-    font-size: 12px;
-    color: var(--text-secondary);
-  }
-
-  .cluster-suggestions {
-    padding-block: 0;
-    padding-inline: 20px 4px;
-  }
-
-  .suggestion-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .suggestion-button {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-    width: 100%;
-    padding: 8px 10px;
-    border: 1px dashed var(--border-color);
-    border-radius: 8px;
-    background: var(--surface-color);
-    color: var(--text-color);
-    text-align: start;
-    cursor: pointer;
-    box-shadow: none;
-  }
-
-  .suggestion-button:hover {
-    border-color: var(--primary-color);
-    transform: none;
-    box-shadow: none;
-  }
-
-  .suggestion-button:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-  }
-
-  .suggestion-add {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--primary-on-surface);
-  }
-
   @media (max-width: 768px) {
-    .tag-row.cluster-member {
-      margin-inline-start: 10px;
-    }
-    .cluster-suggestions {
-      padding-inline-start: 10px;
+    .cluster-member,
+    .suggestions {
+      margin-inline-start: var(--space-3);
     }
   }
 </style>

@@ -1,122 +1,128 @@
 <script context="module" lang="ts">
-  /** The three server-side views of the tag library. */
+  /** The manager's three views of the library. */
   export type TagFilterId = 'all' | 'unused' | 'colliding';
 </script>
 
 <script lang="ts">
+  /**
+   * View tabs (all / unused / colliding) and the ownership picker.
+   *
+   * The picker's values are the strings `GET /tags?scope=` accepts. The
+   * collisions endpoint takes no scope, so the picker is disabled in that view
+   * rather than appearing to filter something it cannot.
+   */
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
-  import Tabs from '$components/ui/Tabs.svelte';
-  import type { TabItem } from '$components/ui/Tabs.svelte';
+  import Tabs, { type TabItem } from '$components/ui/Tabs.svelte';
   import type { TagScope } from '$lib/types/tag';
 
   export let filter: TagFilterId = 'all';
-  /** Row count of the active view, shown as the active tab's badge. */
+  /** Rows currently shown; null hides the badge (loading or error). */
   export let count: number | null = null;
-  /** Ownership scope. A separate axis from the view, so "my unused tags" works. */
   export let scope: TagScope = 'all';
 
   const dispatch = createEventDispatcher<{ change: TagFilterId; scopeChange: TagScope }>();
 
-  $: tabs = [
-    { id: 'all', label: $t('tags.manager.filter.all') },
-    { id: 'unused', label: $t('tags.manager.filter.unused') },
-    { id: 'colliding', label: $t('tags.manager.filter.collisions') },
-  ].map((tab) => ({
-    ...tab,
-    badge: tab.id === filter && count !== null ? count : null,
-  })) satisfies TabItem[];
+  const FILTERS: { id: TagFilterId; key: string }[] = [
+    { id: 'all', key: 'tags.manager.filter.all' },
+    { id: 'unused', key: 'tags.manager.filter.unused' },
+    { id: 'colliding', key: 'tags.manager.filter.collisions' },
+  ];
 
-  function onChange(event: CustomEvent<string>) {
-    dispatch('change', event.detail as TagFilterId);
+  const SCOPES: { value: TagScope; key: string }[] = [
+    { value: 'all', key: 'tags.manager.scope.all' },
+    { value: 'mine', key: 'tags.manager.scope.mine' },
+    { value: 'system', key: 'tags.manager.scope.system' },
+    { value: 'shared_with_me', key: 'tags.manager.scope.shared_with_me' },
+  ];
+
+  const selectId = 'tag-scope-select';
+
+  $: tabs = FILTERS.map(
+    ({ id, key }): TabItem => ({
+      id,
+      label: $t(key),
+      badge: id === filter ? count : null,
+    })
+  );
+
+  function handleTabChange(event: CustomEvent<string>) {
+    const next = FILTERS.find(({ id }) => id === event.detail);
+    if (next) dispatch('change', next.id);
   }
 
-  function onScopeChange(event: Event) {
-    dispatch('scopeChange', (event.currentTarget as HTMLSelectElement).value as TagScope);
+  function handleScopeChange(event: Event) {
+    const value = (event.currentTarget as HTMLSelectElement).value;
+    const next = SCOPES.find((candidate) => candidate.value === value);
+    if (next) dispatch('scopeChange', next.value);
   }
 </script>
 
-<div class="tag-filter-row">
-  <div class="tag-filter-bar">
-    <Tabs {tabs} activeId={filter} ariaLabel={$t('tags.manager.filterLabel')} on:change={onChange} />
+<div class="tag-filter-bar">
+  <div class="filter-tabs">
+    <Tabs
+      {tabs}
+      activeId={filter}
+      ariaLabel={$t('tags.manager.filterLabel')}
+      on:change={handleTabChange}
+    />
   </div>
-
-  <label class="scope-picker">
-    <span class="scope-label">{$t('tags.manager.scopeLabel')}</span>
-    <!-- The collision clusters are not scoped (`GET /tags/collisions` takes no
-         scope), so the picker would change nothing there. -->
+  <div class="scope-picker">
+    <label for={selectId}>{$t('tags.manager.scopeLabel')}</label>
     <select
-      class="form-select scope-select"
+      id={selectId}
+      class="scope-select"
       value={scope}
       disabled={filter === 'colliding'}
-      on:change={onScopeChange}
+      on:change={handleScopeChange}
     >
-      <option value="all">{$t('tags.manager.scope.all')}</option>
-      <option value="mine">{$t('tags.manager.scope.mine')}</option>
-      <option value="system">{$t('tags.manager.scope.system')}</option>
-      <option value="shared_with_me">{$t('tags.manager.scope.shared_with_me')}</option>
+      {#each SCOPES as option (option.value)}
+        <option value={option.value}>{$t(option.key)}</option>
+      {/each}
     </select>
-  </label>
+  </div>
 </div>
 
 <style>
-  .tag-filter-row {
+  .tag-filter-bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--space-3);
   }
 
-  /* The shared Tabs primitive wraps its labels on narrow screens, which turns
-     "Collisions" into two lines. Scroll the strip instead — the convention the
-     speakers page already uses for its tab row. */
-  .tag-filter-bar {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
+  .filter-tabs {
+    flex: 1 1 auto;
     min-width: 0;
+    overflow-x: auto;
   }
 
-  .tag-filter-bar::-webkit-scrollbar {
-    display: none;
-  }
-
-  .tag-filter-bar :global(.tab) {
+  .filter-tabs :global(.tab-label) {
     white-space: nowrap;
-    flex-shrink: 0;
   }
 
   .scope-picker {
     display: flex;
+    flex: 0 0 auto;
     align-items: center;
-    gap: 0.5rem;
-    flex-shrink: 0;
+    gap: var(--space-2);
   }
 
-  .scope-label {
-    font-size: 0.8125rem;
+  .scope-picker label {
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
     white-space: nowrap;
   }
 
+  /* The global field rule already gives it the same height as the inputs above. */
   .scope-select {
-    /* Sized to its content rather than the form default, which is full-width.
-       Height and radius match the search/create inputs above it — the row read
-       as three mismatched controls otherwise. */
     width: auto;
-    min-width: 7rem;
-    height: 37.4px;
-    padding: 0.35rem 0.5rem;
-    font-size: 0.875rem;
   }
 
-  /* Below the tab strip's own breakpoint the row stacks, or the select squeezes
-     the tabs into a scroll on every screen. */
   @media (max-width: 640px) {
-    .tag-filter-row {
+    .tag-filter-bar {
       flex-direction: column;
       align-items: stretch;
-      gap: 0.5rem;
     }
 
     .scope-picker {

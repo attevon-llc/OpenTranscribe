@@ -1,142 +1,85 @@
+<script context="module" lang="ts">
+  let instance = 0;
+
+  function nextId(prefix: string): string {
+    instance += 1;
+    return `${prefix}-${instance}`;
+  }
+</script>
+
 <script lang="ts">
   /**
-   * Apply or strip one tag across the gallery selection.
+   * Adds or removes one tag across the gallery selection.
    *
-   * Two things this does that a plain "post and toast" would get wrong:
-   *
-   * 1. **A no-op is not a failure.** The backend reports a per-file `outcome`,
-   *    so a file that already carried the tag comes back `already_present` —
-   *    successful, unchanged. The summary keeps changed and unchanged apart and
-   *    only calls `failed` a failure, so one refused file never reads as a
-   *    failed batch.
-   * 2. **The applied name may not be the typed name.** Tags resolve by
-   *    normalized-exact match, so typing `Interview` applies the existing
-   *    `interview` — across the whole selection at once. The add path resolves
-   *    through `POST /tags` (the same resolver the bulk rail uses: existing tag
-   *    or a new one, never a near match) and the summary states the resolved
-   *    name *before* the counts whenever it differs from what was typed.
-   *
-   * The modal owns its own dialog-scoped async (tag list + the bulk call) and
-   * dispatches `applied` upward; the page stays the coordinator for gallery
-   * data and decides whether the listing has to be re-queried.
+   * `action` only seeds the direction each time the dialog opens; the Add /
+   * Remove tabs switch it from then on. The server decides which tag a typed
+   * name becomes, so the summary always names the tag actually applied, and a
+   * batch reports per-file outcomes: an unchanged file is a successful no-op,
+   * and one refused file never reads as a failed batch.
    */
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import BaseModal from '$components/ui/BaseModal.svelte';
-  import MetadataChips from '$components/ui/MetadataChips.svelte';
+  import Tabs, { type TabItem } from '$components/ui/Tabs.svelte';
   import SearchableSelect from '$components/ui/SearchableSelect.svelte';
+  import MetadataChips, { type MetadataChip } from '$components/ui/MetadataChips.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
-  import Tabs from '$components/ui/Tabs.svelte';
   import { bulkTagFiles, createTag, listTags, listTagsOnFiles } from '$lib/api/tags';
-  import type { TagOnSelection } from '$lib/types/tag';
   import { getErrorMessage } from '$lib/utils/apiError';
-  // The modal has to answer "which existing tag will this name resolve to?"
-  // *before* it can name the tag it is about to remove — the remove path
-  // deliberately never creates a tag, so it cannot ask the server.
   import { normalizeTagName } from '$lib/utils/tagName';
-  import type { BulkTagAction, BulkTagActionResult } from '$lib/types/tag';
+  import type { BulkTagAction, BulkTagActionResult, TagOnSelection } from '$lib/types/tag';
 
   export let isOpen = false;
-  /** The direction the dialog opens in; the user can switch it inside. */
+  /** The direction the dialog opens in. */
   export let action: BulkTagAction = 'add_tag';
-  /** UUIDs of the selected files, in selection order. */
   export let fileUuids: string[] = [];
-  /**
-   * Extra tag names the selected files are known to carry. The *remove*
-   * suggestions are scoped to these plus the tags the modal loads for the
-   * selection itself (`listTagsOnFiles`) — see `scopedToSelection`.
-   */
+  /** Names the selection is already known to carry; merged with what the dialog loads. */
   export let presentTagNames: string[] = [];
 
-  /**
-   * The tags the selection already carries, shown as chips.
-   *
-   * A single selected file gets the full editor — chips you can remove, plus
-   * the input to add — matching the file detail page. Several files get
-   * **add only**: removing a tag that sits on three of five is ambiguous in a
-   * way adding never is, so the chips render read-only with an "on N of M"
-   * count instead.
-   */
-  let currentTags: TagOnSelection[] = [];
-  let currentLoading = false;
-
-  $: isSingleFile = fileUuids.length === 1;
-
-  async function loadCurrentTags() {
-    if (fileUuids.length === 0) {
-      currentTags = [];
-      return;
-    }
-    currentLoading = true;
-    try {
-      currentTags = await listTagsOnFiles(fileUuids);
-    } catch {
-      // Non-fatal: the add path still works without the chips.
-      currentTags = [];
-    } finally {
-      currentLoading = false;
-    }
-  }
-
-  $: if (isOpen) loadCurrentTags();
-
-  async function removeChip(tag: TagOnSelection) {
-    if (!isSingleFile || busy) return;
-    busy = true;
-    errorMessage = '';
-    try {
-      const results = await bulkTagFiles(fileUuids, 'remove_tag', tag.name);
-      await loadCurrentTags();
-      // Same envelope and the same outcome rules as the submit path, so the
-      // gallery's listener does not need a second shape to understand.
-      const counts = summarize(results, tag.name, tag.name);
-      dispatch('applied', {
-        action: 'remove_tag',
-        name: tag.name,
-        changed: counts.changed,
-        unchanged: counts.unchanged,
-        failed: counts.failed,
-      });
-    } catch (err) {
-      errorMessage = getErrorMessage(err, $t('gallery.bulk.tagModal.requestFailed'));
-    } finally {
-      busy = false;
-    }
-  }
-
-  const dispatch = createEventDispatcher<{
-    applied: {
-      action: BulkTagAction;
-      name: string;
-      changed: number;
-      unchanged: number;
-      failed: number;
-    };
-    close: void;
-  }>();
-
-  interface Summary {
-    typedName: string;
-    resolvedName: string;
+  interface Counts {
     changed: number;
     unchanged: number;
     failed: number;
   }
 
-  let tagName = '';
-  let busy = false;
-  let errorMessage = '';
-  let summary: Summary | null = null;
-  let allTagNames: string[] = [];
-  let wasOpen = false;
-  /**
-   * The direction actually applied. The gallery offers one Tags entry, so the
-   * dialog is the only place a multi-file selection can choose to remove.
-   */
-  let mode: BulkTagAction = action;
+  interface Summary extends Counts {
+    action: BulkTagAction;
+    typed: string;
+    name: string;
+  }
 
-  $: isAdd = mode === 'add_tag';
-  $: modeTabs = [
+  const dispatch = createEventDispatcher<{
+    applied: { action: BulkTagAction; name: string } & Counts;
+    close: void;
+  }>();
+
+  const MAX_SUGGESTIONS = 25;
+  const formId = nextId('bulk-tag-form');
+
+  let mode: BulkTagAction = action;
+  let name = '';
+  let busy = false;
+  let error: string | null = null;
+  let summary: Summary | null = null;
+  let libraryNames: string[] = [];
+  let selectionTags: TagOnSelection[] = [];
+  let selectionLoading = false;
+  let selectionRequest = 0;
+  let wasOpen = false;
+
+  $: handleOpenChange(isOpen);
+  // Keyed by content: the page hands over a fresh array on every gallery update.
+  $: selectionKey = isOpen ? fileUuids.join('\n') : '';
+  $: void loadSelectionTags(selectionKey);
+
+  $: adding = mode === 'add_tag';
+  $: single = fileUuids.length === 1;
+  $: presentNames = uniqueNames([...presentTagNames, ...selectionTags.map((tag) => tag.name)]);
+  $: scoped = !adding && presentNames.length > 0;
+  $: pool = scoped ? presentNames : libraryNames;
+  $: canSubmit = name.trim() !== '' && fileUuids.length > 0 && !busy;
+
+  $: tabs = [
     {
       id: 'add_tag',
       label: $t('gallery.bulk.addTag'),
@@ -149,282 +92,267 @@
       title: $t('gallery.bulk.removeTagTooltip'),
       disabled: busy,
     },
-  ];
+  ] satisfies TabItem[];
 
-  function changeMode(event: CustomEvent<string>) {
-    const next = event.detail as BulkTagAction;
-    if (next === mode || busy) return;
-    mode = next;
-    // The summary and any error described the other direction.
-    summary = null;
-    errorMessage = '';
-  }
-  $: presentNames = Array.from(
-    new Set(
-      [...presentTagNames, ...currentTags.map((tag) => tag.name)].filter(
-        (name) => name.trim() !== ''
-      )
-    )
+  $: chips = selectionTags.map(
+    (tag): MetadataChip => ({
+      uuid: tag.uuid,
+      name: tag.name,
+      count: tag.file_count,
+      total: tag.selection_size,
+    })
   );
-  // Removing a tag nothing in the selection carries is a guaranteed no-op, so the
-  // remove suggestions are scoped to what the selection is known to carry. When
-  // nothing is known (no tags on the selection, or their fetch failed), every
-  // tag is offered instead — an empty picker would be worse than a wide one, and
-  // the hint says which.
-  $: scopedToSelection = !isAdd && presentNames.length > 0;
-  $: suggestionPool = scopedToSelection ? presentNames : allTagNames;
-  $: canSubmit = tagName.trim() !== '' && fileUuids.length > 0 && !busy;
 
-  // Reopening is the reset point: the page flips `action` before it opens the
-  // modal, so a stale summary from the previous run must never survive.
-  $: if (isOpen !== wasOpen) {
-    wasOpen = isOpen;
-    if (isOpen) void openReset();
+  $: hint = adding
+    ? $t('gallery.bulk.tagModal.addHint')
+    : scoped
+      ? $t('gallery.bulk.tagModal.removeHintScoped')
+      : $t('gallery.bulk.tagModal.removeHintAll');
+
+  function handleOpenChange(open: boolean) {
+    if (open && !wasOpen) {
+      mode = action;
+      name = '';
+      error = null;
+      summary = null;
+      busy = false;
+      void loadLibraryNames();
+    }
+    wasOpen = open;
   }
 
-  async function openReset() {
-    mode = action;
-    tagName = '';
-    errorMessage = '';
-    summary = null;
-    busy = false;
-    await loadTagNames();
-  }
-
-  async function loadTagNames() {
+  async function loadLibraryNames() {
     try {
-      allTagNames = (await listTags()).map((tag) => tag.name);
-    } catch (err) {
-      // Suggestions are a convenience: a failed list still leaves a usable
-      // free-text field, so this must not block the action.
-      console.error('[BulkTagModal] Could not load tags for suggestions:', err);
-      allTagNames = [];
+      libraryNames = (await listTags()).map((tag) => tag.name);
+    } catch (err: unknown) {
+      // The free-text field still works without suggestions.
+      console.error('[BulkTagModal] Failed to load tag names:', err);
+      libraryNames = [];
     }
   }
 
-  /** Local, case- and separator-insensitive match over the offered names. */
+  async function loadSelectionTags(key: string) {
+    const request = ++selectionRequest;
+    selectionTags = [];
+    if (!key) {
+      selectionLoading = false;
+      return;
+    }
+    selectionLoading = true;
+    try {
+      const tags = await listTagsOnFiles(fileUuids);
+      if (request === selectionRequest) selectionTags = tags;
+    } catch {
+      // Non-fatal: no chips, and remove offers every tag.
+    } finally {
+      if (request === selectionRequest) selectionLoading = false;
+    }
+  }
+
+  function uniqueNames(names: string[]): string[] {
+    return [...new Set(names.filter((candidate) => candidate.trim() !== ''))];
+  }
+
   async function suggest(query: string): Promise<string[]> {
-    const needle = normalizeTagName(query);
-    const matches = needle
-      ? suggestionPool.filter((name) => normalizeTagName(name).includes(needle))
-      : suggestionPool;
-    return matches.slice(0, 25);
+    const wanted = normalizeTagName(query);
+    return pool
+      .filter((candidate) => !wanted || normalizeTagName(candidate).includes(wanted))
+      .slice(0, MAX_SUGGESTIONS);
   }
 
-  function summarize(
-    results: BulkTagActionResult[],
-    typedName: string,
-    resolvedName: string
-  ): Summary {
-    let changed = 0;
-    let unchanged = 0;
-    let failed = 0;
+  function tally(results: BulkTagActionResult[]): Counts {
+    const counts: Counts = { changed: 0, unchanged: 0, failed: 0 };
     for (const result of results) {
-      if (!result.success || result.outcome === 'failed') {
-        failed += 1;
-      } else if (result.outcome === 'added' || result.outcome === 'removed') {
-        changed += 1;
-      } else {
-        unchanged += 1;
-      }
+      if (!result.success || result.outcome === 'failed') counts.failed++;
+      else if (result.outcome === 'added' || result.outcome === 'removed') counts.changed++;
+      else counts.unchanged++;
     }
-    return { typedName, resolvedName, changed, unchanged, failed };
+    return counts;
   }
 
-  /**
-   * Which tag the supplied name will actually be applied as.
-   *
-   * Add asks the server, because only the server can tell a new tag from an
-   * existing one; remove matches the offered names locally, because asking would
-   * mean creating the very tag the user wants gone.
-   */
-  async function resolveName(typed: string): Promise<string> {
-    if (isAdd) return (await createTag(typed)).name;
-    const normalized = normalizeTagName(typed);
-    return suggestionPool.find((name) => normalizeTagName(name) === normalized) ?? typed;
+  /** Removing never creates a tag, so the name is matched against the pool locally. */
+  function resolveRemoveName(typed: string): string {
+    const wanted = normalizeTagName(typed);
+    return pool.find((candidate) => normalizeTagName(candidate) === wanted) ?? typed;
+  }
+
+  function switchMode(event: CustomEvent<string>) {
+    if (busy) return;
+    const next: BulkTagAction = event.detail === 'remove_tag' ? 'remove_tag' : 'add_tag';
+    if (next === mode) return;
+    mode = next;
+    summary = null;
+    error = null;
   }
 
   async function submit() {
-    const typed = tagName.trim();
-    if (!canSubmit) return;
-
-    busy = true;
-    errorMessage = '';
+    const typed = name.trim();
+    if (!typed || fileUuids.length === 0 || busy) return;
+    const direction = mode;
+    error = null;
     summary = null;
+    busy = true;
     try {
-      const resolved = await resolveName(typed);
-      const results = await bulkTagFiles(fileUuids, mode, resolved);
-      summary = summarize(results, typed, resolved);
-      dispatch('applied', {
-        action: mode,
-        name: resolved,
-        changed: summary.changed,
-        unchanged: summary.unchanged,
-        failed: summary.failed,
-      });
-    } catch (err) {
-      errorMessage = getErrorMessage(err, $t('gallery.bulk.tagModal.requestFailed'));
+      const resolved =
+        direction === 'add_tag' ? (await createTag(typed)).name : resolveRemoveName(typed);
+      const counts = tally(await bulkTagFiles(fileUuids, direction, resolved));
+      summary = { action: direction, typed, name: resolved, ...counts };
+      dispatch('applied', { action: direction, name: resolved, ...counts });
+    } catch (err: unknown) {
+      error = getErrorMessage(err, $t('gallery.bulk.tagModal.requestFailed'));
     } finally {
       busy = false;
     }
   }
 
-  function close() {
-    dispatch('close');
+  async function removeChip(event: CustomEvent<MetadataChip>) {
+    if (busy || !single) return;
+    const chip = event.detail;
+    busy = true;
+    error = null;
+    try {
+      const counts = tally(await bulkTagFiles([fileUuids[0]], 'remove_tag', chip.name));
+      await loadSelectionTags(selectionKey);
+      dispatch('applied', { action: 'remove_tag', name: chip.name, ...counts });
+    } catch (err: unknown) {
+      error = getErrorMessage(err, $t('gallery.bulk.tagModal.requestFailed'));
+    } finally {
+      busy = false;
+    }
   }
 </script>
 
 <BaseModal
   {isOpen}
-  allowOverflow
-  size="sm"
-  title={isAdd
+  title={adding
     ? $t('gallery.bulk.tagModal.addTitle', { count: fileUuids.length })
     : $t('gallery.bulk.tagModal.removeTitle', { count: fileUuids.length })}
-  onClose={close}
+  size="sm"
+  allowOverflow
+  onClose={() => dispatch('close')}
 >
-  <form class="bulk-tag-form" on:submit|preventDefault={submit}>
+  <form id={formId} class="bulk-tag-form" on:submit|preventDefault={submit}>
     <Tabs
-      tabs={modeTabs}
+      {tabs}
       activeId={mode}
       ariaLabel={$t('gallery.bulk.addOrEditTags')}
-      on:change={changeMode}
+      on:change={switchMode}
     />
 
-    <!-- What the selection already has. Chips are removable for a single file
-         (the file detail page's editor, same shape) and read-only with an
-         "on N of M" count for several, because removing across a mixed
-         selection is ambiguous. -->
-    {#if currentLoading}
-      <div class="current-loading"><Spinner size="small" /></div>
-    {:else if currentTags.length > 0}
+    {#if selectionLoading}
+      <div class="selection-loading"><Spinner size="small" /></div>
+    {:else if chips.length > 0}
       <div class="current-tags">
         <span class="current-label">
-          {isSingleFile
+          {single
             ? $t('gallery.bulk.tagModal.currentSingle')
             : $t('gallery.bulk.tagModal.currentMulti')}
         </span>
         <MetadataChips
-          chips={currentTags.map((tag) => ({
-            uuid: tag.uuid,
-            name: tag.name,
-            count: tag.file_count,
-            total: tag.selection_size,
-          }))}
-          removable={isSingleFile}
+          {chips}
+          removable={single}
           disabled={busy}
-          removeLabel={(name) => $t('gallery.bulk.tagModal.removeChip', { name })}
-          coverageLabel={(count, total) =>
-            $t('gallery.bulk.tagModal.onCount', { count, total })}
+          removeLabel={(chipName) => $t('gallery.bulk.tagModal.removeChip', { name: chipName })}
+          coverageLabel={(count, total) => $t('gallery.bulk.tagModal.onCount', { count, total })}
           overflowLabel={(count) => $t('gallery.bulk.tagModal.moreTags', { count })}
-          maxVisible={isSingleFile ? 40 : 10}
-          on:remove={(event) => {
-            const match = currentTags.find((tag) => tag.uuid === event.detail.uuid);
-            if (match) removeChip(match);
-          }}
+          maxVisible={single ? 40 : 10}
+          on:remove={removeChip}
         />
       </div>
     {/if}
 
-    <!--
-      The label wraps the combobox so it names the input inside `SearchableSelect`
-      (which owns no id of its own) without reaching into that component.
-    -->
-    <label class="field">
+    <label class="name-field">
       <span class="field-label">{$t('gallery.bulk.tagModal.label')}</span>
       <SearchableSelect
-        bind:value={tagName}
+        bind:value={name}
         fetchFn={suggest}
-        getLabel={(name) => String(name)}
+        getLabel={(candidate) => candidate}
         minChars={0}
         debounceMs={120}
         emptyLabel={$t('gallery.bulk.tagModal.noSuggestions')}
-        placeholder={isAdd
+        placeholder={adding
           ? $t('gallery.bulk.tagModal.addPlaceholder')
           : $t('gallery.bulk.tagModal.removePlaceholder')}
-        on:select={(event) => (tagName = String(event.detail))}
+        on:select={(event) => (name = event.detail)}
       />
     </label>
+    <p class="hint">{hint}</p>
 
-    <p class="hint">
-      {#if isAdd}
-        {$t('gallery.bulk.tagModal.addHint')}
-      {:else if scopedToSelection}
-        {$t('gallery.bulk.tagModal.removeHintScoped')}
-      {:else}
-        {$t('gallery.bulk.tagModal.removeHintAll')}
-      {/if}
-    </p>
-
-    {#if errorMessage}
-      <p class="error" role="alert">{errorMessage}</p>
+    {#if error}
+      <p class="error" role="alert">{error}</p>
     {/if}
 
     {#if summary}
       <section class="result" role="status" aria-live="polite">
-        <h3 class="result-title">{$t('gallery.bulk.tagModal.resultTitle')}</h3>
-        {#if summary.resolvedName !== summary.typedName}
-          <p class="resolved">
-            {$t('gallery.bulk.tagModal.resolved', {
-              name: summary.resolvedName,
-              typed: summary.typedName,
+        <h3>{$t('gallery.bulk.tagModal.resultTitle')}</h3>
+        {#if summary.name !== summary.typed}
+          <p>
+            {$t('gallery.bulk.tagModal.resolved', { name: summary.name, typed: summary.typed })}
+          </p>
+        {/if}
+        {#if summary.action === 'add_tag'}
+          <p>
+            {$t('gallery.bulk.tagModal.addedCount', { count: summary.changed, name: summary.name })}
+          </p>
+        {:else}
+          <p>
+            {$t('gallery.bulk.tagModal.removedCount', {
+              count: summary.changed,
+              name: summary.name,
             })}
           </p>
         {/if}
-        <ul class="result-list">
-          <li>
-            {isAdd
-              ? $t('gallery.bulk.tagModal.addedCount', {
-                  count: summary.changed,
-                  name: summary.resolvedName,
-                })
-              : $t('gallery.bulk.tagModal.removedCount', {
-                  count: summary.changed,
-                  name: summary.resolvedName,
-                })}
-          </li>
-          {#if summary.unchanged > 0}
-            <li class="unchanged">
-              {isAdd
-                ? $t('gallery.bulk.tagModal.alreadyPresentCount', { count: summary.unchanged })
-                : $t('gallery.bulk.tagModal.notPresentCount', { count: summary.unchanged })}
-            </li>
-          {/if}
-          {#if summary.failed > 0}
-            <li class="failed">
-              {$t('gallery.bulk.tagModal.failedCount', { count: summary.failed })}
-            </li>
-          {/if}
-        </ul>
+        {#if summary.unchanged > 0}
+          <p>
+            {summary.action === 'add_tag'
+              ? $t('gallery.bulk.tagModal.alreadyPresentCount', { count: summary.unchanged })
+              : $t('gallery.bulk.tagModal.notPresentCount', { count: summary.unchanged })}
+          </p>
+        {/if}
+        {#if summary.failed > 0}
+          <p class="failed">{$t('gallery.bulk.tagModal.failedCount', { count: summary.failed })}</p>
+        {/if}
       </section>
     {/if}
   </form>
 
   <svelte:fragment slot="footer">
-    <button type="button" class="btn btn-ghost" on:click={close} disabled={busy}>
+    <button
+      type="button"
+      class="modal-button modal-cancel-button"
+      disabled={busy}
+      on:click={() => dispatch('close')}
+    >
       {summary ? $t('gallery.bulk.tagModal.done') : $t('gallery.bulk.tagModal.cancel')}
     </button>
-    <button type="button" class="btn btn-primary" on:click={submit} disabled={!canSubmit}>
+    <button
+      type="submit"
+      form={formId}
+      class="modal-button modal-primary-button"
+      disabled={!canSubmit}
+    >
       {#if busy}
         <Spinner size="small" />
-        <span>{$t('gallery.bulk.tagModal.applying')}</span>
+        {$t('gallery.bulk.tagModal.applying')}
       {:else}
-        <span>
-          {isAdd
-            ? $t('gallery.bulk.tagModal.addSubmit')
-            : $t('gallery.bulk.tagModal.removeSubmit')}
-        </span>
+        {adding ? $t('gallery.bulk.tagModal.addSubmit') : $t('gallery.bulk.tagModal.removeSubmit')}
       {/if}
     </button>
   </svelte:fragment>
 </BaseModal>
 
 <style>
+  .bulk-tag-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    color: var(--text-color);
+  }
+
   .current-tags {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    margin-bottom: 4px;
+    gap: var(--space-1-5);
   }
 
   .current-label {
@@ -433,128 +361,61 @@
     color: var(--text-secondary);
   }
 
-
-
-
-
-
-
-  .current-loading {
-    padding: 2px 0;
-  }
-
-  .bulk-tag-form {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .field {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
   .field-label {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-color);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    color: var(--text-secondary);
+  }
+
+  .selection-loading {
+    display: flex;
+    justify-content: center;
+  }
+
+  .name-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
   }
 
   .hint {
     margin: 0;
-    font-size: 12px;
-    line-height: 1.5;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
   .error {
     margin: 0;
-    padding: 8px 10px;
-    border: 1px solid var(--error-color, #dc2626);
-    border-radius: 8px;
-    background: rgba(var(--error-color-rgb, 239, 68, 68), 0.08);
-    font-size: 13px;
-    color: var(--text-color);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--error-border);
+    border-radius: var(--radius-md);
+    background-color: var(--error-bg);
+    color: var(--error-text);
+    font-size: var(--font-size-sm);
   }
 
   .result {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 10px 12px;
+    gap: var(--space-1);
+    padding: var(--space-3);
     border: 1px solid var(--border-color);
-    border-radius: 10px;
-    background: var(--surface-color);
+    border-radius: var(--radius-lg);
+    background-color: var(--surface-secondary);
+    font-size: var(--font-size-sm);
   }
 
-  .result-title {
+  .result h3 {
     margin: 0;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-color);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
   }
 
-  .resolved {
+  .result p {
     margin: 0;
-    font-size: 13px;
-    color: var(--text-color);
   }
 
-  .result-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-size: 13px;
-    color: var(--text-color);
-  }
-
-  .unchanged {
-    color: var(--text-secondary);
-  }
-
-  .failed {
-    color: var(--error-color, #dc2626);
-  }
-
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 7px 14px;
-    border-radius: 8px;
-    border: 1px solid transparent;
-    font-size: 13px;
-    font-weight: 500;
-    font-family: inherit;
-    cursor: pointer;
-  }
-
-  .btn:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-  }
-
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn-primary {
-    background: var(--primary-color);
-    color: #fff;
-  }
-
-  .btn-ghost {
-    background: transparent;
-    border-color: var(--border-color);
-    color: var(--text-color);
-  }
-
-  .btn-ghost:hover:not(:disabled) {
-    background: var(--button-hover);
+  .result .failed {
+    color: var(--warning-text);
   }
 </style>

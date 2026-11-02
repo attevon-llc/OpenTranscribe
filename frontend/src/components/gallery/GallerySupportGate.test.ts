@@ -14,10 +14,9 @@ vi.mock('$stores/supportSession', async () => {
   h.gate = writable({ active: false, readOnly: false });
   return { supportSessionGate: h.gate };
 });
-vi.mock('$stores/locale', async () => {
-  const { readable } = await import('svelte/store');
-  return { t: readable((k: string) => k) };
-});
+vi.mock('$stores/locale', async () =>
+  (await import('../../test-mocks/galleryToolbarMocks')).keyOnlyLocale()
+);
 vi.mock('$stores/toast', () => ({ toastStore: { info: vi.fn(), error: vi.fn() } }));
 vi.mock('$stores/chat', () => ({ chatStore: { setPendingContext: vi.fn() } }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));

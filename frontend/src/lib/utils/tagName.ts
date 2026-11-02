@@ -1,95 +1,70 @@
 /**
- * Tag-name normalization and near-match scoring, mirrored from the backend.
+ * Client-side mirror of the backend's tag name rules
+ * (`backend/app/services/tag_service.py`: `normalize_tag_name`,
+ * `clean_tag_name` and the fuzzy matcher).
  *
- * The backend owns tag resolution — every applied name goes through
- * `POST /tags` or `POST /files/{uuid}/tags` and the *server* decides which row
- * it becomes. These helpers exist only for the two questions a surface has to
- * answer **before** it is allowed to call the server:
+ * The server alone decides which tag row a name becomes. These helpers only let
+ * the UI ask, before a request, whether a typed name would land on a tag that is
+ * already present, or merely resembles one. Every function must agree with the
+ * backend for every input, so the two rules below follow Python, not JavaScript:
  *
- * 1. "Would this name resolve to a tag that is already here?" — asking the
- *    server would create the tag the caller may be about to decline, and on the
- *    bulk *remove* path would create the very tag the user wants gone.
- * 2. "Is this only a *near* match?" — a near match may never be applied on a
- *    human-supplied path (R18). At the backend's 0.85 threshold `q3-earnings`
- *    and `q4-earnings` score 0.909, and nothing in the product can split two
- *    tags back apart, so the user has to accept or decline it first.
- *
- * Both mirror `backend/app/services/tag_service.py` exactly:
- * `normalize_tag_name`, `clean_tag_name`, `names_are_similar`, and
- * `suggest_similar_tag`. If that module's rules change, change these with it.
+ * - whitespace is Python's `str.isspace` class (JavaScript's `\s` and `trim()`
+ *   also treat U+FEFF as whitespace and miss U+001C..U+001F and U+0085);
+ * - lengths are counted in code points, as Python counts them, so an emoji is
+ *   one character and is never split in half.
  */
 
-/**
- * Storage width of `tag.name` (`VARCHAR(50)`), mirroring
- * `tag_service.MAX_TAG_NAME_LENGTH`. The backend clamps rather than rejects.
- */
+/** Stored width of `tag.name` (`VARCHAR(50)`), in code points. */
 export const MAX_TAG_NAME_LENGTH = 50;
 
-/** Mirrors `app.core.constants.FUZZY_MATCH_THRESHOLD`. */
-const TAG_FUZZY_MATCH_THRESHOLD = 0.85;
+/** Backend `FUZZY_MATCH_THRESHOLD`. */
+const SIMILARITY_THRESHOLD = 0.85;
 
-/**
- * Python's whitespace class (`str.isspace`, which is also what `re`'s `\s` and
- * `str.strip()` use on `str`). JavaScript's `\s` and `trim()` include U+FEFF and
- * exclude U+001C..U+001F and U+0085, so a name containing one of those would
- * otherwise normalize differently on each side.
- */
+// Python's whitespace set: `[c for c in range(0x110000) if chr(c).isspace()]`.
 const PY_SPACE =
-  '\\t\\n\\v\\f\\r\\x1c-\\x20\\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000';
-const SPACE_RUN = new RegExp(`[${PY_SPACE}]+`, 'g');
-const LEADING_SPACE = new RegExp(`^[${PY_SPACE}]+`);
-const TRAILING_SPACE = new RegExp(`[${PY_SPACE}]+$`);
+  '\\u0009-\\u000d\\u001c-\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000';
+const SPACE_RUN = new RegExp(`[${PY_SPACE}]+`, 'gu');
+const EDGE_SPACE = new RegExp(`^[${PY_SPACE}]+|[${PY_SPACE}]+$`, 'gu');
+const SEPARATOR_RUN = /[-_]+/g;
 
-/** `str.strip()` with Python's whitespace class. */
-function pyStrip(value: string): string {
-  return value.replace(LEADING_SPACE, '').replace(TRAILING_SPACE, '');
+/** Python's `str.strip()`: removes only the Python whitespace class at both ends. */
+function stripPython(value: string): string {
+  return value.replace(EDGE_SPACE, '');
 }
 
-/**
- * The first `limit` characters of `value`, counted in code points as Python
- * counts them, so an astral character is never cut in half or counted twice.
- */
+/** The first `limit` code points of `value`. */
 function takeCodePoints(value: string, limit: number): string {
-  const chars = Array.from(value);
-  return chars.length > limit ? chars.slice(0, limit).join('') : value;
+  const points = Array.from(value);
+  return points.length <= limit ? value : points.slice(0, limit).join('');
 }
 
 /**
- * Normalize a tag name the way the backend does
- * (`tag_service.normalize_tag_name`): lowercase, hyphens and underscores become
- * spaces, whitespace runs collapse, ends trimmed. A name made only of
- * separators normalizes to the empty string — which is exactly the name the
- * backend refuses.
+ * The comparison key two names share when the server treats them as one tag:
+ * lower-cased, every run of hyphens/underscores and of whitespace collapsed to
+ * one space, then stripped. Nothing else is removed.
  */
 export function normalizeTagName(name: string): string {
   if (!name) return '';
-  return pyStrip(name.toLowerCase().replace(/[-_]+/g, ' ').replace(SPACE_RUN, ' '));
+  return stripPython(name.toLowerCase().replace(SEPARATOR_RUN, ' ').replace(SPACE_RUN, ' '));
 }
 
-/**
- * Trim a supplied name and clamp it to the stored column width, matching
- * `tag_service.clean_tag_name` — so the name a surface shows is the name that
- * will be stored, rather than the longer one that was typed.
- */
+/** The display name the server would store: stripped, cut to the column width, stripped again. */
 export function cleanTagName(name: string): string {
   if (!name) return '';
-  return pyStrip(takeCodePoints(pyStrip(name), MAX_TAG_NAME_LENGTH));
+  return stripPython(takeCodePoints(stripPython(name), MAX_TAG_NAME_LENGTH));
 }
 
-/**
- * Limit what a tag-name field holds to {@link MAX_TAG_NAME_LENGTH} code points,
- * without trimming, for use while the user types. A native `maxlength` counts
- * UTF-16 units, which stops an emoji-only name at half the stored width.
- */
+/** Cuts live input to the column width without trimming, so a typed space survives. */
 export function clampTagNameLength(value: string): string {
   return takeCodePoints(value, MAX_TAG_NAME_LENGTH);
 }
 
 /**
- * `input` handler for a tag-name field: clamps the field in place with
- * {@link clampTagNameLength} and returns the clamped value for the caller's
- * state. Writing the field back is needed because an unchanged state value
- * would not re-render the over-long text away.
+ * `on:input` handler for a tag-name field bound one way (`value={...}`).
+ *
+ * The clamped value has to be written back into the element: when the clamp
+ * leaves the caller's state unchanged, Svelte has nothing to re-render, and the
+ * over-long text would otherwise stay visible in the field.
  */
 export function clampTagNameInput(event: Event): string {
   const field = event.currentTarget as HTMLInputElement;
@@ -99,103 +74,84 @@ export function clampTagNameInput(event: Event): string {
 }
 
 /**
- * Total characters Python's `difflib.SequenceMatcher` would count as matching.
- *
- * The recursive longest-matching-block walk (Ratcliff/Obershelp) that
- * `get_matching_blocks` performs, with no junk heuristic: `SequenceMatcher`'s
- * autojunk only engages on sequences of 200+ elements and tag names are capped
- * at {@link MAX_TAG_NAME_LENGTH}, so it can never apply here.
+ * Longest common contiguous block of `a[aLo:aHi]` and `b[bLo:bHi]`, chosen the
+ * way difflib's `find_longest_match` chooses it when nothing is junk: the first
+ * maximum met while scanning `a` forward, and `b` forward within each position.
  */
-function matchingCount(
+function longestBlock(
   a: string[],
-  b2j: Map<string, number[]>,
-  alo: number,
-  ahi: number,
-  blo: number,
-  bhi: number
-): number {
-  let besti = alo;
-  let bestj = blo;
-  let bestsize = 0;
-  let j2len = new Map<number, number>();
-
-  for (let i = alo; i < ahi; i++) {
-    const newj2len = new Map<number, number>();
-    for (const j of b2j.get(a[i]) ?? []) {
-      if (j < blo) continue;
-      if (j >= bhi) break;
-      const k = (j2len.get(j - 1) ?? 0) + 1;
-      newj2len.set(j, k);
-      if (k > bestsize) {
-        besti = i - k + 1;
-        bestj = j - k + 1;
-        bestsize = k;
+  b: string[],
+  aLo: number,
+  aHi: number,
+  bLo: number,
+  bHi: number
+): [number, number, number] {
+  let bestA = aLo;
+  let bestB = bLo;
+  let bestSize = 0;
+  // Keyed by j: length of the common run ending at a[i - 1] and b[j].
+  let previous = new Map<number, number>();
+  for (let i = aLo; i < aHi; i++) {
+    const current = new Map<number, number>();
+    for (let j = bLo; j < bHi; j++) {
+      if (a[i] !== b[j]) continue;
+      const size = (previous.get(j - 1) ?? 0) + 1;
+      current.set(j, size);
+      if (size > bestSize) {
+        bestA = i - size + 1;
+        bestB = j - size + 1;
+        bestSize = size;
       }
     }
-    j2len = newj2len;
+    previous = current;
   }
-
-  if (bestsize === 0) return 0;
-  return (
-    bestsize +
-    matchingCount(a, b2j, alo, besti, blo, bestj) +
-    matchingCount(a, b2j, besti + bestsize, ahi, bestj + bestsize, bhi)
-  );
+  return [bestA, bestB, bestSize];
 }
 
 /**
- * Similarity of two strings on the same scale as Python's
- * `difflib.SequenceMatcher(None, a, b).ratio()` — `2 * matches / total length`,
- * so two empty strings score 1.
+ * Ratcliff/Obershelp similarity, equal to Python's
+ * `difflib.SequenceMatcher(None, a, b).ratio()` over code points.
  */
 export function similarityRatio(a: string, b: string): number {
-  // Python indexes strings by code point; UTF-16 units would let two different
-  // emoji "match" on their shared high surrogate.
   const left = Array.from(a);
   const right = Array.from(b);
   const total = left.length + right.length;
   if (total === 0) return 1;
 
-  const b2j = new Map<string, number[]>();
-  for (let j = 0; j < right.length; j++) {
-    const indices = b2j.get(right[j]);
-    if (indices) indices.push(j);
-    else b2j.set(right[j], [j]);
+  let matched = 0;
+  const pending: [number, number, number, number][] = [[0, left.length, 0, right.length]];
+  while (pending.length > 0) {
+    const [aLo, aHi, bLo, bHi] = pending.pop() as [number, number, number, number];
+    const [i, j, size] = longestBlock(left, right, aLo, aHi, bLo, bHi);
+    if (size === 0) continue;
+    matched += size;
+    if (aLo < i && bLo < j) pending.push([aLo, i, bLo, j]);
+    if (i + size < aHi && j + size < bHi) pending.push([i + size, aHi, j + size, bHi]);
   }
-
-  return (2 * matchingCount(left, b2j, 0, left.length, 0, right.length)) / total;
+  return (2 * matched) / total;
 }
 
-/**
- * Whether two names name the same topic, mirroring
- * `tag_service.names_are_similar`: normalized-equal, or scoring at or above
- * the threshold. A name that normalizes to nothing matches nothing.
- */
+/** Whether two names are the same tag or a near match of one another. */
 export function namesAreSimilar(
   a: string,
   b: string,
-  threshold: number = TAG_FUZZY_MATCH_THRESHOLD
+  threshold: number = SIMILARITY_THRESHOLD
 ): boolean {
-  const normA = normalizeTagName(a);
-  const normB = normalizeTagName(b);
-  if (!normA || !normB) return false;
-  if (normA === normB) return true;
-  return similarityRatio(normA, normB) >= threshold;
+  const left = normalizeTagName(a);
+  const right = normalizeTagName(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  return similarityRatio(left, right) >= threshold;
 }
 
 /**
- * The first candidate that is a near match for `name`, or null.
- *
- * Mirrors `tag_service.suggest_similar_tag`, including its "first hit wins"
- * behavior: fuzzy similarity is non-transitive, so there is no best answer to
- * pick — the result is only as stable as the candidate order, which is the
- * server's (`GET /tags` returns most-used first). Callers on a human-supplied
- * path must offer the result, never apply it (R18).
+ * The first candidate (in the given order, the server's most-used-first order)
+ * that `name` resembles, or `null`. First hit wins, not the closest.
  */
 export function findSimilarTagName(
   name: string,
   candidates: string[],
-  threshold: number = TAG_FUZZY_MATCH_THRESHOLD
+  threshold: number = SIMILARITY_THRESHOLD
 ): string | null {
   if (!normalizeTagName(name)) return null;
   return candidates.find((candidate) => namesAreSimilar(name, candidate, threshold)) ?? null;

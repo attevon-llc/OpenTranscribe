@@ -16,8 +16,10 @@ from app.db.audit_protection import all_protected_tables
 from app.db.audit_protection import trigger_arguments
 
 _REVISION = (
-    Path(__file__).resolve().parents[2] / "alembic" / "versions" / "v453_audit_row_immutability.py"
+    Path(__file__).resolve().parents[2] / "alembic" / "versions" / "v457_audit_guard_followups.py"
 )
+
+_V453 = "v453_audit_row_immutability.py"
 
 _AUDIT_SHAPED = ("%audit%", "%\\_use", "%ledger%", "%notification%", "%receipt%", "%takedown%")
 
@@ -89,14 +91,21 @@ def test_exemptions_carry_a_reason_and_do_not_overlap():
 
 
 def test_the_revision_constant_equals_the_registry():
-    spec = importlib.util.spec_from_file_location("v453", _REVISION)
+    spec = importlib.util.spec_from_file_location("v457", _REVISION)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     expected = {(t.name, *trigger_arguments(t)) for t in audit_protection.generic_guard_tables()}
-    assert set(module.GUARDED) == expected
-    assert module.GUARDED[-1][0] == "erasure_ledger", "the detection arm keys on the last trigger"
-    assert set(module.PRUNABLE) == {
+    # v457 holds the tables whose trigger arguments changed after v453 (or that v453 did not
+    # guard); the rest are still v453's frozen copy. Together they must equal the registry.
+    older = importlib.util.spec_from_file_location("v453", _REVISION.with_name(_V453))
+    assert older is not None and older.loader is not None
+    v453 = importlib.util.module_from_spec(older)
+    older.loader.exec_module(v453)
+    superseded = {name for name, _, _ in module.GUARDED}
+    remaining = {g for g in v453.GUARDED if g[0] not in superseded}
+    assert remaining | set(module.GUARDED) == expected
+    assert set(v453.PRUNABLE) == {
         (t.name, t.prune_column) for t in audit_protection.prunable_tables()
     }
 

@@ -23,11 +23,17 @@ def _module():
 
 
 def _guard_triggers(conn) -> set[str]:
-    return set(
+    """Guard triggers on v453's own tables (later revisions guard more tables)."""
+    found = set(
         conn.execute(
             text("SELECT tgname FROM pg_trigger WHERE tgname LIKE 'trg\\_audit\\_guard\\_%'")
         ).scalars()
     )
+    tables = [t for t, _, _ in _module().GUARDED]
+    own = {f"trg_audit_guard_{t}" for t in tables} | {
+        f"trg_audit_guard_truncate_{t}" for t in tables
+    }
+    return found & own
 
 
 def test_v453_revision_chain():
@@ -80,6 +86,14 @@ def test_upgrade_is_idempotent_and_downgrade_removes_the_guards(db_session):
         conn.execute(text(m.UPGRADE_SQL))
         conn.execute(text(m.UPGRADE_SQL))
         assert len(_guard_triggers(conn)) == 2 * len(m.GUARDED)
+        # Later revisions hang triggers on the same function; unwind them first, as the chain does.
+        spec = importlib.util.spec_from_file_location(
+            "v457_for_v453", _PATH.with_name("v457_audit_guard_followups.py")
+        )
+        assert spec is not None and spec.loader is not None
+        later = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(later)
+        conn.execute(text(later.DOWNGRADE_SQL))
         conn.execute(text(m.DOWNGRADE_SQL))
         conn.execute(text(m.DOWNGRADE_SQL))
         assert _guard_triggers(conn) == set()

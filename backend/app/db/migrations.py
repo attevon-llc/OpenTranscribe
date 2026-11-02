@@ -762,6 +762,16 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname = 'uq_media_file_playback_path')"
     )
 
+    # v457: audit guard follow-ups. Keyed on the LAST trigger the revision creates (the
+    # legal_acceptance TRUNCATE guard) plus the widened erasure_ledger lifecycle list.
+    has_audit_guard_followups = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_trigger "
+        "WHERE tgname = 'trg_audit_guard_truncate_legal_acceptance')"
+    ) and _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname = 'trg_audit_guard_erasure_ledger' "
+        "AND pg_get_triggerdef(oid) LIKE '%index_checked_at%')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -842,7 +852,20 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_task_active_unique
         and has_identity_source
     )
-    # v456: same as v455 plus the unique object-key indexes. The top of the ladder.
+    # v457: same as v456 plus the widened erasure_ledger guard and the receipt guard. The top.
+    if (
+        matches_v449
+        and has_legal_acceptance_context
+        and has_legal_acceptance_survival
+        and has_erasure_receipt
+        and has_audit_row_guard
+        and has_voiceprint_consent
+        and has_self_service_erasure
+        and has_unique_object_keys
+        and has_audit_guard_followups
+    ):
+        return "v457_audit_guard_followups"
+    # v456: same as v455 plus the unique object-key indexes.
     if (
         matches_v449
         and has_legal_acceptance_context

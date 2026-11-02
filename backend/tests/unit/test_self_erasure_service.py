@@ -17,6 +17,7 @@ from app.models.erasure import ErasureLedgerEntry
 from app.services import erasure_ledger_service as ledger
 from app.services import self_erasure_service as service
 from app.services.system_settings_service import set_setting
+from tests.audit_maintenance import audit_maintenance
 
 NOW = datetime(2026, 11, 1, 12, 0, tzinfo=UTC)
 
@@ -121,7 +122,10 @@ def test_cancelling_another_users_request_is_not_found(
 def test_db_restore_reopens_request_as_deferred(db_session, normal_user, enabled):
     entry = service.request_self_erasure(db_session, normal_user, now=NOW)
     original = (entry.uuid, entry.scheduled_for, entry.request_digest)
-    db_session.delete(entry)
+    # Simulate losing the row the way a restore would: only the owner may, under maintenance.
+    with audit_maintenance(db_session):
+        db_session.delete(entry)
+        db_session.flush()
     db_session.commit()
 
     assert ledger.restore_from_journal(db_session) == 1
@@ -137,7 +141,10 @@ def test_db_restore_does_not_revive_a_cancelled_request(db_session, normal_user,
     entry = service.request_self_erasure(db_session, normal_user, now=NOW)
     service.cancel_self_erasure(db_session, normal_user, entry.uuid, now=NOW)
     entry_uuid = entry.uuid
-    db_session.delete(entry)
+    # Simulate losing the row the way a restore would: only the owner may, under maintenance.
+    with audit_maintenance(db_session):
+        db_session.delete(entry)
+        db_session.flush()
     db_session.commit()
 
     ledger.restore_from_journal(db_session)
@@ -157,7 +164,10 @@ def test_an_ordinary_entry_still_restores_as_pending(db_session, normal_user):
     )
     assert entry is not None
     entry_uuid = entry.uuid
-    db_session.delete(entry)
+    # Simulate losing the row the way a restore would: only the owner may, under maintenance.
+    with audit_maintenance(db_session):
+        db_session.delete(entry)
+        db_session.flush()
     db_session.commit()
 
     ledger.restore_from_journal(db_session)

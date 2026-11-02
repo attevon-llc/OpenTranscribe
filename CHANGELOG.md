@@ -75,6 +75,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Withdrawing a self-service erasure request, and the index reconciliation cursor.** Two
+  columns added by the self-service erasure migration (`cancelled_at`, `index_checked_at`) were
+  missing from the audit trigger's list of lifecycle columns, so cancelling a request failed with
+  a permission error and the reconciliation sweep could not record which entries it had checked.
+  A new migration (v457) re-creates the trigger with both columns, and the optional restricted
+  database role is granted the same columns. The same revision makes `erasure_receipt` insert-only
+  and adds the missing `TRUNCATE` guard to `legal_acceptance`.
 - **AI feature availability with an invalid personal LLM setting.** A saved LLM configuration with a
   non-numeric temperature or context size is now reported as unavailable consistently, so
   background processing no longer queues AI work that can only be skipped, and a saved AWS Bedrock

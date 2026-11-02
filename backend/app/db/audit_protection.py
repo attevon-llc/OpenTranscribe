@@ -20,6 +20,11 @@ def guard_trigger_name(table: str) -> str:
     return f"trg_audit_guard_{table}"
 
 
+def truncate_trigger_name(table: str) -> str:
+    """Name of the statement-level TRUNCATE trigger on ``table``."""
+    return f"trg_audit_guard_truncate_{table}"
+
+
 @dataclass(frozen=True)
 class ProtectedTable:
     """One protected table.
@@ -94,9 +99,16 @@ PROTECTED_TABLES: tuple[ProtectedTable, ...] = (
             "counters",
             "resurrections_detected",
             "last_resurrection_at",
+            # v455 columns the application updates after insert; v457 widened the trigger.
+            "cancelled_at",
+            "index_checked_at",
         ),
         nullable_on_cascade=("actor_user_id",),
         reason="Art. 17/30 erasure ledger (evidence; never pruned)",
+    ),
+    ProtectedTable(
+        name="erasure_receipt",
+        reason="per-store measurement of what an erasure destroyed (insert-only evidence)",
     ),
     ProtectedTable(
         name="takedown_notice",

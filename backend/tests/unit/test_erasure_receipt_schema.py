@@ -18,6 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.models.erasure import RECEIPT_MAP_COLUMNS
+from tests.audit_maintenance import audit_maintenance
 
 ENUM_COLUMNS = {"phase", "outcome", "digest"}
 GOOD_DIGEST = "a" * 64
@@ -106,7 +107,8 @@ def test_a_ledger_entry_cannot_vanish_under_its_receipts(db_session):
     conn = db_session.connection()
     ledger_id = _ledger(conn)
     _insert(conn, ledger_id)
-    with pytest.raises(IntegrityError), conn.begin_nested():
+    # The audit guard also refuses this DELETE; switch it off so the foreign key is what is tested.
+    with audit_maintenance(db_session), pytest.raises(IntegrityError), conn.begin_nested():
         conn.execute(text("DELETE FROM erasure_ledger WHERE id = :i"), {"i": ledger_id})
 
 

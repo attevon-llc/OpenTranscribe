@@ -27,7 +27,6 @@ frontend/src/lib/services/uploadService.ts	1393	oversize: split by concern plann
 frontend/src/routes/+page.svelte::script	1459	oversize: split by concern planned
 frontend/src/routes/files/[id]/+page.svelte	2876	oversize: split by concern planned
 frontend/src/routes/files/[id]/+page.svelte::script	2355	oversize: split by concern planned
-frontend/src/routes/search/+page.svelte::script	628	oversize: split by concern planned
 frontend/src/stores/auth.ts	1247	oversize: split by concern planned
 frontend/src/stores/websocket.ts	1504	oversize: split by concern planned
 opentr.sh	4893	oversize: split by concern planned

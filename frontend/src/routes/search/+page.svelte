@@ -16,7 +16,17 @@
   import SearchAutocomplete from '$components/search/SearchAutocomplete.svelte';
   import SortDropdown, { type SortOption } from '$components/ui/SortDropdown.svelte';
   import FloatingPreviewPlayer from '$components/FloatingPreviewPlayer.svelte';
-  import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
+  import {
+    parseSearchUrl,
+    buildPageUrlParams,
+    buildApiParams,
+    serializeApiParams,
+    searchCacheKey,
+    applyFilterDetail,
+    resetStoreFilters
+  } from '$lib/mediaSearch/searchParams';
+  import { openPreviewMedia, speakerAtTime } from '$lib/mediaSearch/previewMedia';
+  import { watchPanelViewport } from '$lib/mediaSearch/viewport';
   import CardGridSkeleton from '../../components/ui/CardGridSkeleton.svelte';
 
   const searchSortOptions: SortOption[] = [
@@ -122,43 +132,20 @@
     // Find the matching file in results to get all occurrences
     const hit = $searchStore.results.find(r => r.file_uuid === previewData!.fileUuid);
     if (!hit) return previewData.speaker || '';
-    // Find the occurrence whose time range contains the current time
-    for (const occ of hit.occurrences) {
-      if (time >= occ.start_time && time <= occ.end_time) {
-        return occ.speaker || '';
-      }
-    }
-    return previewData.speaker || '';
+    return speakerAtTime(hit.occurrences, time, previewData.speaker || '');
   }
 
   // Read initial state from URL
-  $: urlQuery = $page.url.searchParams.get('q') || '';
-  $: urlPage = parseInt($page.url.searchParams.get('page') || '1');
-  $: urlSort = $page.url.searchParams.get('sort') || 'relevance';
-  $: urlSortOrder = ($page.url.searchParams.get('sort_order') || 'desc') as 'asc' | 'desc';
-  $: urlMode = $page.url.searchParams.get('mode') || 'hybrid';
-  // Issue #760: `sources=` (repeated) replaces the exclusive `type=` param.
-  // `null` means "no URL override" — keep the store's default (all four).
-  // The legacy `type=` param is still read so links already in history/docs
-  // resolve, mapped through the old two-value scheme.
-  $: urlSources = ((): SearchSource[] | null => {
-    const raw = $page.url.searchParams.getAll('sources');
-    if (raw.length) {
-      const valid = raw.filter((s): s is SearchSource =>
-        (SEARCH_SOURCES as readonly string[]).includes(s)
-      );
-      return valid.length ? valid : null;
-    }
-    const legacyType = $page.url.searchParams.get('type');
-    if (legacyType === 'summaries') return ['summary'];
-    if (legacyType === 'all') return [...SEARCH_SOURCES];
-    if (legacyType === 'transcripts') return ['content', 'title', 'speaker'];
-    return null;
-  })();
-  $: urlSpeakers = $page.url.searchParams.getAll('speakers');
-  $: urlTags = $page.url.searchParams.getAll('tags');
-  // A collection UUID, as the info card's collection chips link it.
-  $: urlCollection = $page.url.searchParams.get('collection');
+  $: urlState = parseSearchUrl($page.url.searchParams);
+  $: urlQuery = urlState.query;
+  $: urlPage = urlState.page;
+  $: urlSort = urlState.sort;
+  $: urlSortOrder = urlState.sortOrder;
+  $: urlMode = urlState.mode;
+  $: urlSources = urlState.sources;
+  $: urlSpeakers = urlState.speakers;
+  $: urlTags = urlState.tags;
+  $: urlCollection = urlState.collection;
 
   onMount(() => {
     // Restore search input: prefer URL param, fall back to store query
@@ -224,19 +211,10 @@
       sidebarMounted = true;
     });
 
-    const wideMq = window.matchMedia('(min-width: 1440px)');
-    const midMq = window.matchMedia('(min-width: 1180px)');
-    const syncViewport = () => {
-      wideViewport = wideMq.matches;
-      midViewport = midMq.matches;
-    };
-    syncViewport();
-    wideMq.addEventListener('change', syncViewport);
-    midMq.addEventListener('change', syncViewport);
-    removeViewportListeners = () => {
-      wideMq.removeEventListener('change', syncViewport);
-      midMq.removeEventListener('change', syncViewport);
-    };
+    removeViewportListeners = watchPanelViewport(({ wide, mid }) => {
+      wideViewport = wide;
+      midViewport = mid;
+    });
 
     // Check neural search availability
     axiosInstance.get('/search/models/neural').then((res) => {
@@ -247,13 +225,7 @@
   });
 
   function buildSearchParamsString(query: string, pageNum: number): string {
-    return JSON.stringify({
-      q: query, page: pageNum, sort: $searchStore.sortBy, sortOrder: $searchStore.sortOrder,
-      mode: $searchStore.searchMode, sources: [...$searchStore.selectedSources].sort(), speakers: $searchStore.selectedSpeakers,
-      tags: $searchStore.selectedTags, dateFrom: $searchStore.dateFrom, dateTo: $searchStore.dateTo,
-      fileTypes: $searchStore.selectedFileTypes, collectionId: $searchStore.selectedCollectionId,
-      durationRange: $searchStore.durationRange,
-    });
+    return searchCacheKey(query, pageNum, $searchStore);
   }
 
   async function performSearch(query: string, pageNum: number = 1) {
@@ -271,79 +243,15 @@
     searchStore.setLoading(true);
 
     // Update URL without navigation
-    const params = new URLSearchParams();
-    params.set('q', query);
-    if (pageNum > 1) params.set('page', String(pageNum));
-    if ($searchStore.sortBy !== 'relevance') params.set('sort', $searchStore.sortBy);
-    if ($searchStore.sortOrder !== 'desc') params.set('sort_order', $searchStore.sortOrder);
-    if ($searchStore.searchMode !== 'hybrid') params.set('mode', $searchStore.searchMode);
-    // Omit `sources=` when the selection equals the default (all four) — a
-    // reload with no override falls back to that same default (see urlSources).
-    const isDefaultSources =
-      $searchStore.selectedSources.length === SEARCH_SOURCES.length &&
-      SEARCH_SOURCES.every((s) => $searchStore.selectedSources.includes(s));
-    if (!isDefaultSources) {
-      $searchStore.selectedSources.forEach((s) => params.append('sources', s));
-    }
-    $searchStore.selectedSpeakers.forEach((s) => params.append('speakers', s));
-    $searchStore.selectedTags.forEach((tag) => params.append('tags', tag));
-    if ($searchStore.selectedCollectionId) params.set('collection', $searchStore.selectedCollectionId);
+    const params = buildPageUrlParams(query, pageNum, $searchStore);
 
     goto(`/search?${params.toString()}`, { replaceState: true, keepFocus: true });
 
     try {
-      const apiParams: Record<string, any> = {
-        q: query,
-        page: pageNum,
-        page_size: $searchStore.pageSize,
-        sort_by: $searchStore.sortBy,
-        sort_order: $searchStore.sortOrder,
-        search_mode: $searchStore.searchMode,
-        // Always sent explicitly (issue #760) — the UI default (all four) differs
-        // from `result_type`'s legacy default (transcripts only), so omitting this
-        // would silently drop the Summary section despite it showing selected.
-        sources: [...$searchStore.selectedSources],
-        speakers: $searchStore.selectedSpeakers.length ? $searchStore.selectedSpeakers : undefined,
-        tags: $searchStore.selectedTags.length ? $searchStore.selectedTags : undefined,
-        date_from: $searchStore.dateFrom || undefined,
-        date_to: $searchStore.dateTo || undefined,
-      };
-
-      // Gallery filter params
-      if ($searchStore.selectedFileTypes.length) {
-        apiParams.file_type = $searchStore.selectedFileTypes;
-      }
-      if ($searchStore.selectedLanguage) {
-        apiParams.language = $searchStore.selectedLanguage;
-      }
-
-      // The sidebar's collection ids are UUIDs: `collection_uuid`, never the integer
-      // `collection_id` (sending a UUID there answered 422 for every collection filter).
-      if ($searchStore.selectedCollectionId) {
-        apiParams.collection_uuid = $searchStore.selectedCollectionId;
-      }
-      if ($searchStore.durationRange.min !== null) {
-        apiParams.min_duration = $searchStore.durationRange.min;
-      }
-      if ($searchStore.durationRange.max !== null) {
-        apiParams.max_duration = $searchStore.durationRange.max;
-      }
-
       const res = await axiosInstance.get('/search', {
-        params: apiParams,
+        params: buildApiParams(query, pageNum, $searchStore),
         signal: controller.signal,
-        paramsSerializer: (params) => {
-          const searchParams = new URLSearchParams();
-          Object.entries(params).forEach(([key, value]) => {
-            if (value === undefined) return;
-            if (Array.isArray(value)) {
-              value.forEach((v) => searchParams.append(key, v));
-            } else {
-              searchParams.set(key, String(value));
-            }
-          });
-          return searchParams.toString();
-        },
+        paramsSerializer: serializeApiParams,
       });
 
       const searchData = res.data as SearchResponse;
@@ -428,33 +336,7 @@
     const detail = event.detail;
     if (!detail) return;
 
-    // Map FilterSidebar event to search store
-    if (detail.tags !== undefined) {
-      searchStore.setTags(detail.tags);
-    }
-    if (detail.speaker !== undefined) {
-      searchStore.setSpeakers(detail.speaker);
-    }
-    if (detail.collectionId !== undefined) {
-      searchStore.setCollectionId(detail.collectionId);
-    }
-    if (detail.language !== undefined) {
-      searchStore.setLanguage(detail.language);
-    }
-    if (detail.dates !== undefined) {
-      const dateFrom = detail.dates?.from ? detail.dates.from.toISOString().split('T')[0] : '';
-      const dateTo = detail.dates?.to ? detail.dates.to.toISOString().split('T')[0] : '';
-      searchStore.setDateRange(dateFrom, dateTo);
-    }
-    if (detail.durationRange !== undefined) {
-      searchStore.setDurationRange(detail.durationRange);
-    }
-    if (detail.fileTypes !== undefined) {
-      searchStore.setFileTypes(detail.fileTypes);
-    }
-    if (detail.statuses !== undefined) {
-      searchStore.setStatuses(detail.statuses);
-    }
+    applyFilterDetail(detail);
 
     // Re-run search with new filters
     if ($searchStore.query) {
@@ -479,14 +361,7 @@
   }
 
   function handleFilterReset() {
-    searchStore.setSpeakers([]);
-    searchStore.setTags([]);
-    searchStore.setDateRange('', '');
-    searchStore.setFileTypes([]);
-    searchStore.setCollectionId(null);
-    searchStore.setLanguage(null);
-    searchStore.setDurationRange({ min: null, max: null });
-    searchStore.setStatuses([]);
+    resetStoreFilters();
     filterSelectedTags = [];
     filterSelectedSpeakers = [];
     filterDateRange = { from: null, to: null };
@@ -530,29 +405,23 @@
     }
 
     // Fetch presigned URL before rendering the media element
-    let mediaUrl: string;
+    let media: Awaited<ReturnType<typeof openPreviewMedia>>;
     try {
-      clearMediaUrlCache(data.fileUuid);
-      mediaUrl = await getMediaStreamUrl(data.fileUuid, 'video');
+      media = await openPreviewMedia(data.fileUuid, (newUrl) => {
+        previewMediaUrl = newUrl;
+      });
     } catch (err) {
       console.error('Failed to get media stream URL:', err);
       if (request === previewRequest) activePreview = null;
       return;
     }
-    if (request !== previewRequest) return;
-    previewMediaUrl = mediaUrl;
-
-    // Set up automatic URL refresh to prevent 401 on long playback, using the URL's
-    // real expiry rather than a hardcoded interval.
-    const info = getCachedUrlInfo(data.fileUuid, 'video');
-    const expiresIn = info ? Math.max(60, Math.floor((info.expiresAt - Date.now()) / 1000)) : 300;
-    previewUrlRefresher = createUrlRefresher(
-      data.fileUuid,
-      (newUrl) => {
-        previewMediaUrl = newUrl;
-      },
-      expiresIn
-    );
+    if (request !== previewRequest) {
+      // A newer click won while the URL was in flight: don't leave its refresher running.
+      media.refresher.stop();
+      return;
+    }
+    previewMediaUrl = media.url;
+    previewUrlRefresher = media.refresher;
 
     previewData = data;
     previewCurrentTime = data.startTime;

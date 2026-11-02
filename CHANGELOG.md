@@ -75,6 +75,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Erasure receipt that could not be stored.** When the receipt row failed to insert, the erasure
+  still closed as complete with no stored receipt. The entry is now left deferred with an error so
+  the reconciliation sweep retries it, and the response reports the receipt outcome as unverified.
 - **Withdrawing a self-service erasure request, and the index reconciliation cursor.** Two
   columns added by the self-service erasure migration (`cancelled_at`, `index_checked_at`) were
   missing from the audit trigger's list of lifecycle columns, so cancelling a request failed with

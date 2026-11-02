@@ -14,6 +14,7 @@ patching this module's ``get_opensearch_client`` takes effect for all of them.
 import logging
 from typing import Any
 
+from app.core.exceptions import ServiceUnavailableError
 from app.services.opensearch_service import get_opensearch_client
 from app.services.search.ml_ingest_pipelines import MLIngestPipelineMixin
 from app.services.search.ml_model_deployment import MLModelDeploymentMixin
@@ -139,16 +140,23 @@ class OpenSearchMLModelService(
             logger.debug(f"Could not get model status for {model_id}: {e}")
             return {}
 
-    def list_models(self, deployed_only: bool = False) -> list[dict[str, Any]]:
+    def list_models(
+        self, deployed_only: bool = False, *, raise_on_error: bool = False
+    ) -> list[dict[str, Any]]:
         """List all registered models.
 
         Args:
             deployed_only: If True, only return deployed models.
+            raise_on_error: If True, an unreachable registry raises instead of reading
+                as an empty list. Lookups that act on "no such model" (registering a
+                duplicate, refusing a switch) must pass it.
 
         Returns:
             List of model info dicts.
         """
         if not self._ensure_client():
+            if raise_on_error:
+                raise ServiceUnavailableError("The ML model registry is unavailable.")
             return []
 
         try:
@@ -199,6 +207,8 @@ class OpenSearchMLModelService(
 
         except Exception as e:
             logger.error(f"Failed to list models: {e}")
+            if raise_on_error:
+                raise ServiceUnavailableError("The ML model registry is unavailable.") from e
             return []
 
     def find_model_by_name(self, model_name: str) -> str | None:
@@ -208,9 +218,13 @@ class OpenSearchMLModelService(
             model_name: The model name to search for.
 
         Returns:
-            Model ID if found, None otherwise.
+            Model ID if found, None when the registry was read and has no such model.
+
+        Raises:
+            ServiceUnavailableError: The registry could not be read, which says
+                nothing about whether the model exists.
         """
-        models = self.list_models()
+        models = self.list_models(raise_on_error=True)
         for model in models:
             if model.get("name") == model_name:
                 return model.get("model_id")

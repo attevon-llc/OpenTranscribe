@@ -67,20 +67,18 @@ def get_search_embedding_settings() -> tuple[str, int]:
     Returns:
         Tuple of (model_id, dimension).
     """
-    try:
-        from app.db.session_utils import session_scope
-        from app.models.system_settings import SystemSettings
+    from app.db.session_utils import session_scope
+    from app.models.system_settings import SystemSettings
 
-        with session_scope() as db:
-            rows = (
-                db.query(SystemSettings)
-                .filter(SystemSettings.key.in_([_KEY_EMBEDDING_MODEL, _KEY_EMBEDDING_DIMENSION]))
-                .all()
-            )
-            values = {row.key: row.value for row in rows}
-    except Exception as e:
-        logger.warning(f"Could not read search settings: {e}")
-        values = {}
+    # A database error propagates: falling back to the default model here would report
+    # (and let callers act on) a model the operator never chose.
+    with session_scope() as db:
+        rows = (
+            db.query(SystemSettings)
+            .filter(SystemSettings.key.in_([_KEY_EMBEDDING_MODEL, _KEY_EMBEDDING_DIMENSION]))
+            .all()
+        )
+        values = {row.key: row.value for row in rows}
 
     # Resolve model
     model_value = values.get(_KEY_EMBEDDING_MODEL)
@@ -105,17 +103,17 @@ def get_search_embedding_settings() -> tuple[str, int]:
 
 
 def _get_setting(key: str) -> str | None:
-    """Read a single setting from the database."""
-    try:
-        from app.db.session_utils import session_scope
-        from app.models.system_settings import SystemSettings
+    """Read a single setting from the database (``None`` only when it is unset).
 
-        with session_scope() as db:
-            row = db.query(SystemSettings).filter(SystemSettings.key == key).first()
-            return row.value if row else None
-    except Exception as e:
-        logger.warning(f"Could not read setting '{key}': {e}")
-        return None
+    A database error propagates, so an unreadable setting is never mistaken for an
+    unset one (which makes ``get_active_model_id`` adopt whichever model is deployed).
+    """
+    from app.db.session_utils import session_scope
+    from app.models.system_settings import SystemSettings
+
+    with session_scope() as db:
+        row = db.query(SystemSettings).filter(SystemSettings.key == key).first()
+        return row.value if row else None
 
 
 def _set_setting(key: str, value: str, description: str = "") -> None:

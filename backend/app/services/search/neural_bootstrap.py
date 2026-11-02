@@ -245,7 +245,7 @@ def ensure_neural_search_bootstrap(*, force: bool = False) -> BootstrapResult:
 # --- Redis-backed attempt bookkeeping (issue #625, mechanism 2d) -----------------------
 
 
-def _text_only_chunk_files_count() -> int:
+def _text_only_chunk_files_count() -> int | None:
     """Report-only count of FILES with at least one text-only (non-neural) chunk (#626).
 
     Report-only, deliberately — David's call: no auto re-embed here. A separate,
@@ -262,15 +262,16 @@ def _text_only_chunk_files_count() -> int:
     Counts distinct files (a cardinality agg over ``file_uuid``), not documents — a file with
     ten stranded chunks is one entry in the operator-facing number, matching how
     ``search_index_maintenance``'s own "unindexed files" count is framed.
+
+    Returns ``None`` when the count could not be taken (an outage), never ``0``: zero
+    means "no stranded files" and would hide exactly the gap this report exists to show.
     """
     try:
-        from opensearchpy.exceptions import OpenSearchException
-
         from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
         from app.services.opensearch_service import opensearch_client
 
         if not opensearch_client:
-            return 0
+            return None
 
         index = settings.OPENSEARCH_CHUNKS_INDEX
         if not opensearch_client.indices.exists(index=index):
@@ -290,12 +291,9 @@ def _text_only_chunk_files_count() -> int:
             },
         )
         return int(response.get("aggregations", {}).get("files", {}).get("value", 0))
-    except OpenSearchException as e:
-        logger.warning(f"Could not count text-only chunk files: {e}")
-        return 0
     except Exception as e:
-        logger.warning(f"Could not count text-only chunk files: {e}")
-        return 0
+        logger.warning(f"Could not count text-only chunk files: {e}", exc_info=True)
+        return None
 
 
 def bootstrap_status() -> dict[str, Any]:

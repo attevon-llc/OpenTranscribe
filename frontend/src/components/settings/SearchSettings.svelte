@@ -63,7 +63,7 @@
     attempts: number;
     last_error: string | null;
     retry_at: string | null;
-    text_only_chunk_files: number;
+    text_only_chunk_files: number | null;
   }
 
   interface DegradedPreview {
@@ -471,9 +471,9 @@
           {$t('settings.search.bootstrapRetryAt', { time: formatDateTime(bootstrapStatus.retry_at, '', $locale) })}
         </div>
       {/if}
-      {#if bootstrapStatus.text_only_chunk_files > 0}
+      {#if (bootstrapStatus.text_only_chunk_files ?? 0) > 0}
         <div class="banner-detail">
-          {$t('settings.search.bootstrapTextOnlyFiles', { count: bootstrapStatus.text_only_chunk_files })}
+          {$t('settings.search.bootstrapTextOnlyFiles', { count: bootstrapStatus.text_only_chunk_files ?? 0 })}
         </div>
       {/if}
     </div>

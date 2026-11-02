@@ -9,6 +9,8 @@ server-side embeddings.
 import logging
 from typing import Any
 
+from opensearchpy.exceptions import NotFoundError
+
 from app.core.config import settings
 from app.services.opensearch_service import opensearch_client
 
@@ -64,7 +66,9 @@ def ensure_search_pipeline_exists(fusion: FusionConfig | None = None) -> bool:
             opensearch_client.transport.perform_request(
                 "DELETE", f"/_search/pipeline/{pipeline_id}"
             )
-        except Exception:
+        except NotFoundError:
+            # Only an absent pipeline means "create it"; any other failure is an outage
+            # and falls to the outer handler, which reports the pipeline as unavailable.
             logger.debug(f"Search pipeline {pipeline_id} not found, will create it")
 
         # Create pipeline
@@ -170,7 +174,7 @@ def _check_existing_pipeline_config(pipeline_id: str, expected: dict[str, Any]) 
 
     try:
         response = opensearch_client.ingest.get_pipeline(id=pipeline_id)
-    except Exception:
+    except NotFoundError:
         logger.debug(f"Neural ingest pipeline {pipeline_id} not found, will create it")
         return None
 

@@ -61,6 +61,14 @@ SENSITIVE_NO_CHANGE_VALUES = frozenset(
     {SENSITIVE_SET_SENTINEL, "***REDACTED***", "***ENCRYPTED***", ""}
 )
 
+#: The no-change values that are markers, never a real secret. ``""`` is left out:
+#: storing an empty secret is how an unset env value migrates.
+SENSITIVE_PLACEHOLDER_VALUES = SENSITIVE_NO_CHANGE_VALUES - {""}
+
+
+class PlaceholderSecretError(ValueError):
+    """A write tried to store a placeholder marker as a secret value."""
+
 
 class AuthConfigService:
     """Service for managing authentication configuration.
@@ -284,7 +292,22 @@ class AuthConfigService:
 
         Returns:
             Updated or created AuthConfig object
+
+        Raises:
+            PlaceholderSecretError: *value* is one of the read-side placeholders for
+                a sensitive key. ``bulk_update_category`` skips those before calling
+                here; this guards every other write path, which would otherwise
+                encrypt the marker over the real credential.
         """
+        if (
+            (is_sensitive or key in SENSITIVE_KEYS)
+            and isinstance(value, str)
+            and value in SENSITIVE_PLACEHOLDER_VALUES
+        ):
+            raise PlaceholderSecretError(
+                f"{key}: refusing to store a placeholder as the secret value"
+            )
+
         # Auto-detect data type if not provided
         if data_type is None:
             data_type = DATA_TYPE_MAPPING.get(key, "string")
@@ -637,15 +660,25 @@ class AuthConfigService:
                 if env_value is not None:
                     is_sensitive = key in SENSITIVE_KEYS
 
-                    AuthConfigService.set_config(
-                        db=db,
-                        key=key,
-                        value=env_value,
-                        is_sensitive=is_sensitive,
-                        category=category,
-                        user_id=user_id,
-                        description=f"Migrated from environment variable {env_key}",
-                    )
+                    try:
+                        AuthConfigService.set_config(
+                            db=db,
+                            key=key,
+                            value=env_value,
+                            is_sensitive=is_sensitive,
+                            category=category,
+                            user_id=user_id,
+                            description=f"Migrated from environment variable {env_key}",
+                        )
+                    except PlaceholderSecretError:
+                        # Skipped like the category update skips it, so one stale
+                        # env value does not fail the keys after it.
+                        logger.warning(
+                            "Not migrating %s: %s holds a placeholder, not a secret",
+                            key,
+                            env_key,
+                        )
+                        continue
                     migrated += 1
                     logger.info(f"Migrated {key} from env to database")
 

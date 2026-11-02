@@ -161,3 +161,98 @@ class TestCrossFieldState:
             "password_max_length": coded_default("password_max_length"),
         }
         assert None not in state.values()
+
+
+_PLACEHOLDERS = (SENSITIVE_SET_SENTINEL, "***REDACTED***", "***ENCRYPTED***")
+
+
+class TestSetConfigRefusesPlaceholderSecret:
+    @pytest.mark.parametrize("placeholder", _PLACEHOLDERS)
+    @pytest.mark.parametrize("flagged", [True, False], ids=["flagged", "key_listed_only"])
+    def test_placeholder_is_refused_before_anything_is_written(
+        self, placeholder: str, flagged: bool
+    ) -> None:
+        db = MagicMock(spec=Session)
+        with (
+            patch("app.services.auth_config_service.encrypt_api_key") as encrypt,
+            patch("app.services.auth_config_service.prime_process_auth_settings"),
+            pytest.raises(ValueError, match="ldap_bind_password"),
+        ):
+            AuthConfigService.set_config(
+                db,
+                key="ldap_bind_password",
+                value=placeholder,
+                is_sensitive=flagged,
+                category="ldap",
+                user_id=1,
+            )
+        encrypt.assert_not_called()
+        db.add.assert_not_called()
+        db.commit.assert_not_called()
+
+    def test_refusal_is_a_value_error_so_the_update_route_answers_400(self) -> None:
+        from app.services.auth_config_service import PlaceholderSecretError
+
+        assert issubclass(PlaceholderSecretError, ValueError)
+
+    def test_a_real_secret_is_still_encrypted_and_written(self) -> None:
+        db = MagicMock(spec=Session)
+        db.query.return_value.filter.return_value.first.return_value = None
+        with (
+            patch("app.services.auth_config_service.encrypt_api_key", return_value="ct") as enc,
+            patch("app.services.auth_config_service.prime_process_auth_settings"),
+        ):
+            row = AuthConfigService.set_config(
+                db,
+                key="ldap_bind_password",
+                value="a-real-secret",
+                is_sensitive=True,
+                category="ldap",
+                user_id=1,
+            )
+        enc.assert_called_once_with("a-real-secret")
+        assert row.config_value == "ct"
+        db.commit.assert_called_once()
+
+    def test_a_placeholder_shaped_value_is_stored_for_a_non_secret_key(self) -> None:
+        db = MagicMock(spec=Session)
+        db.query.return_value.filter.return_value.first.return_value = None
+        with patch("app.services.auth_config_service.prime_process_auth_settings"):
+            row = AuthConfigService.set_config(
+                db,
+                key="ldap_server",
+                value=SENSITIVE_SET_SENTINEL,
+                is_sensitive=False,
+                category="ldap",
+                user_id=1,
+            )
+        assert row.config_value == SENSITIVE_SET_SENTINEL
+
+
+class TestMigrateFromEnvSkipsPlaceholderSecret:
+    def test_placeholder_env_secret_is_not_migrated_and_the_rest_are(self, monkeypatch) -> None:
+        from app.core.config import settings
+
+        monkeypatch.setattr(
+            settings, AuthConfigService.env_var_for("ldap_bind_password"), SENSITIVE_SET_SENTINEL
+        )
+        monkeypatch.setattr(
+            settings, AuthConfigService.env_var_for("ldap_server"), "ldaps://ad.example"
+        )
+        db = MagicMock(spec=Session)
+        db.query.return_value.filter.return_value.first.return_value = None
+        with (
+            patch("app.services.auth_config_service.encrypt_api_key", return_value="ct") as enc,
+            patch("app.services.auth_config_service.prime_process_auth_settings"),
+        ):
+            count = AuthConfigService.migrate_from_env(db, user_id=1)
+
+        written = {
+            c.args[0].config_key: c.args[0].config_value
+            for c in db.add.call_args_list
+            if isinstance(c.args[0], AuthConfig)
+        }
+        assert "ldap_bind_password" not in written
+        assert SENSITIVE_SET_SENTINEL not in [c.args[0] for c in enc.call_args_list]
+        assert written["ldap_server"] == "ldaps://ad.example"
+        assert count == len(written)

@@ -290,6 +290,11 @@ def _enforce_password_change(user: User, request: Request | None) -> None:
     )
 
 
+#: The last successful :func:`_banner_requirement` read in this process, for its
+#: failed-read path. Per process, like ``core/settings_cache.py``.
+_last_banner_read: tuple[bool, datetime | None] | None = None
+
+
 def _banner_requirement(db: Session | None) -> tuple[bool, datetime | None]:
     """Return ``(banner_enabled, text_last_changed_at)`` for this deployment.
 
@@ -309,8 +314,14 @@ def _banner_requirement(db: Session | None) -> tuple[bool, datetime | None]:
             this runs on every authenticated request.
 
     Returns:
-        Whether the banner is enabled, and when its text last changed.
+        Whether the banner is enabled, and when its text last changed. When the
+        read fails, the banner is required if ``.env`` enables it OR the last
+        successful read in this process did: an outage must not switch the gate
+        off for a banner enabled only in the admin UI, and a deployment that never
+        enabled it must not have its users held at a banner nobody can show them.
     """
+    global _last_banner_read
+
     if db is None or not hasattr(db, "query"):
         return settings.LOGIN_BANNER_ENABLED, None
 
@@ -324,7 +335,9 @@ def _banner_requirement(db: Session | None) -> tuple[bool, datetime | None]:
             .all()
         }
     except Exception:
-        logger.debug("Could not read banner configuration; using .env", exc_info=True)
+        logger.debug("Could not read banner configuration", exc_info=True)
+        if _last_banner_read is not None and _last_banner_read[0]:
+            return _last_banner_read
         return settings.LOGIN_BANNER_ENABLED, None
 
     enabled_row = rows.get("login_banner_enabled")
@@ -336,7 +349,8 @@ def _banner_requirement(db: Session | None) -> tuple[bool, datetime | None]:
         enabled = str(enabled_row.config_value).strip().lower() in BOOL_TRUE_VALUES
 
     text_row = rows.get("login_banner_text")
-    return enabled, getattr(text_row, "updated_at", None)
+    _last_banner_read = (enabled, getattr(text_row, "updated_at", None))
+    return _last_banner_read
 
 
 def _enforce_banner_acknowledgment(user: User, request: Request | None, db: Session) -> None:

@@ -46,3 +46,8 @@ backend/tests/e2e/test_collection_management.py:hashicorp-tf-password:39
 # disagreed and into this module's FixtureUser table, which is why the entry is here and
 # not in a test file.
 backend/tests/e2e/ldap_fixture_users.py:hashicorp-tf-password:36
+
+# False positive (hashicorp-tf-password): a boolean that records whether the update request
+# carries a password field; no secret value is present on these lines.
+backend/app/api/endpoints/users_admin_edit.py:hashicorp-tf-password:180
+backend/app/api/endpoints/users_self_service.py:hashicorp-tf-password:189

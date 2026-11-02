@@ -67,7 +67,7 @@ def admin_erase_user(
     # super_admin-gated, and the self guard above means the target is someone else,
     # so the caller always remains. Kept for the same reason as its twin on
     # DELETE /admin/users/{uuid} — it is the backstop if either premise changes.
-    from app.api.endpoints.users import _assert_not_last_super_admin
+    from app.api.endpoints.users_admin_edit import _assert_not_last_super_admin
 
     _assert_not_last_super_admin(db, target, ROLE_USER)
 

@@ -140,7 +140,9 @@ orm_call_in_api::backend/app/api/endpoints/user_settings_recording.py	3	layering
 orm_call_in_api::backend/app/api/endpoints/user_settings_speaker_attributes.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/user_settings_transcription.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/user_settings_transcription_validators.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/users.py	5	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/users.py	3	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/users_admin_edit.py	1	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/users_self_service.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/watch_sources.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/watch_sources_access.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/watch_sources_email_configs.py	4	layering: removal planned

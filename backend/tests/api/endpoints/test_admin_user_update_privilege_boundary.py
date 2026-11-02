@@ -316,11 +316,11 @@ def test_10_a_legitimate_email_change_still_completes_the_reset_chain(
 def test_11_a_denied_email_change_is_audited_naming_actor_and_subject(
     client, admin_token_headers, admin_user, normal_user, db_session, monkeypatch
 ):
-    from app.api.endpoints import users as users_module
+    from app.auth import refusal_audit
     from app.auth.audit_events import AuditOutcome
 
     captured: list[dict] = []
-    monkeypatch.setattr(users_module.audit_logger, "log", lambda **kwargs: captured.append(kwargs))
+    monkeypatch.setattr(refusal_audit.audit_logger, "log", lambda **kwargs: captured.append(kwargs))
 
     new_email = f"attacker-{uuid_pkg.uuid4().hex[:8]}@example.com"
     response = client.put(
@@ -499,7 +499,7 @@ def test_a_re_verification_link_is_mailed_when_the_deployment_requires_it(
     """When the deployment requires verification, a mailbox change must send a
     fresh link to the NEW address. Negative control: with verification not
     required, no link is sent at all."""
-    from app.api.endpoints import users as users_module
+    from app.api.endpoints import users_self_service as users_module
     from app.auth import email_verification as email_verification_module
 
     sent: list[str] = []

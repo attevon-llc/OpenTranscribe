@@ -577,7 +577,7 @@ class TestSelfServiceChangeClearsTheHold:
     @pytest.fixture
     def endpoint(self, monkeypatch):
         """``PUT /users/me`` with its collaborators stubbed, but its logic intact."""
-        from app.api.endpoints import users as users_module
+        from app.api.endpoints import users_self_service as users_module
 
         monkeypatch.setattr(users_module, "verify_password", lambda *a, **k: True)
         monkeypatch.setattr(users_module, "get_password_hash", lambda pw: f"hash::{pw}")
@@ -657,7 +657,7 @@ class TestSelfServiceChangeClearsTheHold:
         """The admin now knows a working credential for another account."""
         import inspect
 
-        from app.api.endpoints import users as users_module
+        from app.api.endpoints import users_admin_edit as users_module
 
         source = inspect.getsource(users_module.update_user)
         assert '"must_change_password"' in source

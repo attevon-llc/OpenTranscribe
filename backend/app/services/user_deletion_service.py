@@ -31,7 +31,7 @@ def _delete_user_speakers(db: Session, user_id: int) -> None:
     This used to remove each speaker's OpenSearch embedding itself, one round trip
     per speaker, from inside the caller's open transaction (``delete_admin_user``'s
     ``db.begin_nested()`` savepoint, or the bare request transaction in
-    ``users.delete_user``) — holding locks, including ``ACCESS SHARE`` on
+    ``users_admin_edit.delete_user``) — holding locks, including ``ACCESS SHARE`` on
     ``media_file`` taken moments later, for as long as OpenSearch took to answer. The
     caller now reads every speaker UUID via
     ``account_purge.load_account_purge_plans`` **before** this function runs

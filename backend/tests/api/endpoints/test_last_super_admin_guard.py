@@ -221,7 +221,7 @@ class TestTheGuardItself:
     def test_it_refuses_when_the_target_is_the_only_super_admin(self, db_session):
         from fastapi import HTTPException
 
-        from app.api.endpoints.users import _assert_not_last_super_admin
+        from app.api.endpoints.users_admin_edit import _assert_not_last_super_admin
         from app.auth.roles import ROLE_USER
 
         sole = _make_super_admin(db_session)
@@ -240,7 +240,7 @@ class TestTheGuardItself:
 
     def test_it_permits_the_change_when_another_super_admin_remains(self, db_session):
         """Positive control: the guard must not refuse unconditionally."""
-        from app.api.endpoints.users import _assert_not_last_super_admin
+        from app.api.endpoints.users_admin_edit import _assert_not_last_super_admin
         from app.auth.roles import ROLE_USER
         from tests.helpers import does_not_raise
 
@@ -257,7 +257,7 @@ class TestTheGuardItself:
         Re-affirming an existing super_admin's role must not trip the guard, or an
         idempotent role write would fail on a single-super_admin deployment.
         """
-        from app.api.endpoints.users import _assert_not_last_super_admin
+        from app.api.endpoints.users_admin_edit import _assert_not_last_super_admin
         from tests.helpers import does_not_raise
 
         sole = _make_super_admin(db_session)

@@ -378,7 +378,7 @@ def delete_admin_user(
         # caller always remains. This fires only if a future change relaxes either of
         # those, which is exactly when nobody would be looking. It lives here rather
         # than in _validate_user_deletion because that helper takes no Session.
-        from app.api.endpoints.users import _assert_not_last_super_admin
+        from app.api.endpoints.users_admin_edit import _assert_not_last_super_admin
 
         _assert_not_last_super_admin(db, user, ROLE_USER)
 

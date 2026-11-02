@@ -1,5 +1,7 @@
 """OpenSearch embedding model tiers, speaker-index names and embedding dimensions."""
 
+from app.core.config import settings
+
 
 def get_speaker_index() -> str:
     """Get the speaker index alias name.
@@ -8,8 +10,6 @@ def get_speaker_index() -> str:
     is currently active (speakers_v3 or speakers_v4). All reads should
     go through this alias. Writes should target the versioned index directly.
     """
-    from app.core.config import settings
-
     return settings.OPENSEARCH_SPEAKER_INDEX
 
 

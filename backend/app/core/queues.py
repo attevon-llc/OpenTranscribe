@@ -6,6 +6,8 @@ functions read the deployment environment at call time.
 
 import os as _os
 
+from app.core.config import settings
+
 # =============================================================================
 # Celery Task Queue Priorities
 # =============================================================================
@@ -100,8 +102,6 @@ def gpu_preferred_queue(deployment_mode: str | None = None) -> str:
     Returns:
         ``CeleryQueues.CPU`` in lite, otherwise ``CeleryQueues.GPU``.
     """
-    from app.core.config import settings
-
     mode = deployment_mode if deployment_mode is not None else settings.DEPLOYMENT_MODE
     return CeleryQueues.CPU if mode.strip().lower() == "lite" else CeleryQueues.GPU
 

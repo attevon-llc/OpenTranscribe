@@ -16,6 +16,7 @@ import {
   registrationFailure,
   type MfaEnrollmentError,
 } from '$lib/auth/authErrors';
+import { checkAuthorizationUrl } from '$lib/auth/oidcRedirect';
 import { failClosedAuthMethods, sharedFreshRequest, type AuthMethods } from '$lib/auth/authMethods';
 
 export { readAccountLifecycle, type AccountLifecycleState } from '$lib/auth/accountLifecycle';
@@ -689,24 +690,20 @@ export async function loginWithOIDC(): Promise<{
       };
     }
 
-    // Defense-in-depth: validate the authorization URL before redirecting.
-    // Even though this comes from our own backend, a misconfiguration or
-    // upstream compromise should not turn into an open redirect or
-    // javascript:/data: URL injection.
-    let parsed: URL;
-    try {
-      parsed = new URL(authorization_url);
-    } catch {
+    // Defense-in-depth: validate the authorization URL before redirecting
+    // ($lib/auth/oidcRedirect).
+    const checked = checkAuthorizationUrl(authorization_url);
+    if (!checked.ok && checked.reason === 'invalid') {
       console.error('OIDC login: invalid authorization_url format');
       return { success: false, message: get(t)('auth.error.oidcAuthUrlInvalid') };
     }
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-      console.error('OIDC login: non-http(s) protocol rejected', parsed.protocol);
+    if (!checked.ok) {
+      console.error('OIDC login: non-http(s) protocol rejected', checked.protocol);
       return { success: false, message: get(t)('auth.error.oidcAuthUrlProtocol') };
     }
 
     // Redirect to the identity provider's login page
-    window.location.href = parsed.toString();
+    window.location.href = checked.url;
     return { success: true };
   } catch (error: unknown) {
     console.error('OIDC login error:', error);

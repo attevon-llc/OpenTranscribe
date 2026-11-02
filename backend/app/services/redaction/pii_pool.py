@@ -30,8 +30,12 @@ import multiprocessing as mp
 import os
 import threading
 from concurrent.futures import ProcessPoolExecutor
+from typing import TYPE_CHECKING
 
 from app.utils.cpu_budget import effective_cpu_count
+
+if TYPE_CHECKING:
+    from multiprocessing.context import BaseContext
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +52,7 @@ _pool_failed = False
 _analyzer = None
 
 
-def _mp_context():
+def _mp_context() -> BaseContext:
     """A start method whose children are safe to create from a threaded Celery worker.
 
     ``forkserver`` is preferred; the server is forked once, before the children, so they carry

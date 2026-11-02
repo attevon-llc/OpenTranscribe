@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from typing import Any
 
 from app.core import redaction_defaults
 from app.services.redaction.detectors import DetectorUnavailableError
@@ -44,7 +45,7 @@ def _model_for_language(language: str | None) -> str:
     return redaction_defaults.REDACTION_TOXICITY_MODEL_EN
 
 
-def _get_pipe(model_name: str):
+def _get_pipe(model_name: str) -> Any:
     """Get the toxicity pipeline (loaded on CPU; moved to the live device per scan).
 
     Double-checked locking: the cache hit stays lock-free, while a **load** is
@@ -83,7 +84,7 @@ def _get_pipe(model_name: str):
             return None
 
 
-def _place_on_device(pipe, target: str) -> None:
+def _place_on_device(pipe: Any, target: str) -> None:
     """Move the pipeline to ``target`` ('cpu' or 'cuda:N') if it isn't already there.
 
     Cheap no-op when already on the right device. Called per scan so the model tracks
@@ -103,7 +104,7 @@ def _place_on_device(pipe, target: str) -> None:
         logger.warning("Could not move toxicity model to %s: %s", target, exc)
 
 
-def _run_pipe(model_name: str, pipe, payload, **kwargs):
+def _run_pipe(model_name: str, pipe: Any, payload: Any, **kwargs: Any) -> Any:
     """Place ``pipe`` on the live device and run it; survive a sticky CUDA fault.
 
     A CUDA context that faulted cannot even move the model back to CPU, so the cached
@@ -132,7 +133,7 @@ def preload() -> bool:
     return _get_pipe(redaction_defaults.REDACTION_TOXICITY_MODEL_EN) is not None
 
 
-def _normalize_scores(raw, model_name: str) -> dict:
+def _normalize_scores(raw: Any, model_name: str) -> dict:
     """Convert a transformers output into a {label: score} dict + a 'toxic' summary."""
     scores: dict[str, float] = {}
     # raw is typically list[list[{label,score}]] or list[{label,score}] for one input

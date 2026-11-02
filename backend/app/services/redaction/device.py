@@ -14,6 +14,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import threading
+from contextlib import AbstractContextManager
 
 from app.core.config import settings
 
@@ -126,7 +127,7 @@ def resolve_device() -> str:
         return "cpu"
 
 
-def inference_guard():
+def inference_guard() -> AbstractContextManager[object]:
     """Context manager: serialize on GPU (bounded VRAM), no-op on CPU."""
     if resolve_device().startswith("cuda"):
         return _gpu_inference_lock

@@ -11,10 +11,14 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+from typing import TYPE_CHECKING
 
 from app.services.redaction.spans import RedactionSpan
 from app.services.redaction.spans import build_word_offsets
 from app.services.redaction.spans import map_char_span_to_words
+
+if TYPE_CHECKING:
+    from app.services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +99,7 @@ def _report(failures: list[str] | None) -> None:
 
 
 def _detect_one(
-    service,
+    service: LLMService,
     text: str,
     words: list[dict] | None,
     max_chars: int,

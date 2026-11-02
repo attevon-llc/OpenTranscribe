@@ -75,6 +75,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **WebSocket sessions after sign-out everywhere.** The WebSocket handshake now applies the
+  per-user revocation time (sign out everywhere, password reset, administrator session
+  termination, role change) like the HTTP routes, so a token issued before it no longer opens a
+  socket.
+
 - **Tag permissions.** Attaching or removing a tag on a single file now needs `editor` access
   to the file, the same as the bulk tag action. Every tag-changing route (rename, merge, delete,
   promote, attach, detach, clean up) now refuses a support-access grant, as creating a tag

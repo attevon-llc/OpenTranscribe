@@ -325,47 +325,6 @@ def _build_media_file_response(
     return response  # type: ignore[no-any-return]
 
 
-def _load_detail_file(
-    db: Session,
-    file_uuid: str,
-    current_user: User,
-    *,
-    bypass: PlatformBypass,
-    organization_id: OrgScope,
-) -> MediaFile:
-    """Load the file a detail read is for, answering a forbidden file like a missing one.
-
-    Args:
-        db: Database session
-        file_uuid: File UUID
-        current_user: Current user
-        bypass: The request's platform bypass (``ctx.bypass``).
-        organization_id: The requester's active tenant scope.
-
-    Returns:
-        The MediaFile, with its heavy JSONB columns expired.
-
-    Raises:
-        HTTPException: 404 when the file is missing or the caller may not see it.
-    """
-    try:
-        db_file = get_media_file_by_uuid(
-            db, file_uuid, current_user.id, bypass=bypass, organization_id=organization_id
-        )
-    except (HTTPException, DomainError) as denied:
-        if denied.status_code != status.HTTP_403_FORBIDDEN:
-            raise
-        # A file the caller cannot see must answer like a missing one: 403 would
-        # confirm the UUID exists in another user's/tenant's scope.
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="File not found"
-        ) from None
-    # Expire heavy JSONB columns so they're not loaded unless explicitly accessed
-    # (waveform_data fetched via /waveform, summary via /summary, metadata_raw rarely needed)
-    db.expire(db_file, ["waveform_data", "metadata_raw"])
-    return db_file
-
-
 def _load_file_speakers(db: Session, file_id: int) -> list[Speaker]:
     """Load a file's speakers with their linked profiles.
 
@@ -446,9 +405,22 @@ def get_media_file_detail(
         MediaFileDetail object with all computed and formatted data
     """
     try:
-        db_file = _load_detail_file(
-            db, file_uuid, current_user, bypass=bypass, organization_id=organization_id
-        )
+        # The access gate: viewer permission or platform bypass, within the tenant scope.
+        try:
+            db_file = get_media_file_by_uuid(
+                db, file_uuid, current_user.id, bypass=bypass, organization_id=organization_id
+            )
+        except (HTTPException, DomainError) as denied:
+            if denied.status_code != status.HTTP_403_FORBIDDEN:
+                raise
+            # A file the caller cannot see must answer like a missing one: 403 would
+            # confirm the UUID exists in another user's/tenant's scope.
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="File not found"
+            ) from None
+        # Expire heavy JSONB columns so they're not loaded unless explicitly accessed
+        # (waveform_data fetched via /waveform, summary via /summary, metadata_raw rarely needed)
+        db.expire(db_file, ["waveform_data", "metadata_raw"])
         file_id = db_file.id
 
         # Get related data

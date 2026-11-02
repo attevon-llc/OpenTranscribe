@@ -17,34 +17,26 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import {
+  compositeOver,
+  contrastRatio as contrast,
+  declared,
+  hexToRgb,
+  loadThemeTokens,
+  resolveToken,
+} from './themeTokens';
 
-const css = fs.readFileSync(path.resolve(__dirname, 'theme.css'), 'utf8');
+// One parser for theme.css, shared with contrast-pairs.test.ts and token-parity.test.ts.
+const sets = loadThemeTokens();
 
-function hexToRgb(hex: string): [number, number, number] {
-  const h = hex.replace('#', '');
-  return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)) as [number, number, number];
-}
-
-function relativeLuminance([r, g, b]: [number, number, number]): number {
-  const f = (c: number) => {
-    const s = c / 255;
-    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-  };
-  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
-}
-
-function contrast(a: [number, number, number], b: [number, number, number]): number {
-  const [hi, lo] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);
-  return (hi + 0.05) / (lo + 0.05);
-}
-
-/** Reads a custom property out of a specific selector block. */
+/** Resolves a token to a `#rrggbb` hex under the theme named by its selector. */
 function token(selector: string, name: string): string {
-  const block = css.slice(css.indexOf(selector));
-  const m = block.match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6})`));
-  if (!m) throw new Error(`${name} not found under ${selector}`);
-  return m[1];
+  const value = resolveToken(sets, selector === ':root' ? 'light' : 'dark', name);
+  if (!/^#[0-9a-fA-F]{6}$/.test(value)) throw new Error(`${name} under ${selector} is ${value}`);
+  return value;
 }
+
+const blockOf = (selector: string) => (selector === ':root' ? 'root' : 'dark') as 'root' | 'dark';
 
 const WHITE: [number, number, number] = [255, 255, 255];
 const AA_NORMAL_TEXT = 4.5;
@@ -80,8 +72,7 @@ describe('primary blue carries white text at AA contrast', () => {
     // the triplet disagree, solid fills and tints of "the same" colour diverge —
     // the exact bug the status-colour triplets above them were added to fix.
     for (const selector of [':root', "[data-theme='dark']"]) {
-      const block = css.slice(css.indexOf(selector));
-      const triplet = block.match(/--primary-color-rgb:\s*([\d\s,]+);/)![1];
+      const triplet = declared(sets, blockOf(selector), '--primary-color-rgb')!;
       const parsed = triplet.split(',').map((n) => Number(n.trim()));
       expect(parsed).toEqual(hexToRgb(token(selector, '--primary-color')));
     }
@@ -93,9 +84,7 @@ describe('primary blue carries white text at AA contrast', () => {
     // "dark" resolves to a LIGHT blue. Two copies of one value drift; one of
     // them was already the reason this theme carried two primary blues.
     for (const selector of [':root', "[data-theme='dark']"]) {
-      const block = css.slice(css.indexOf(selector));
-      const m = block.match(/--primary-dark:\s*([^;]+);/)!;
-      expect(m[1].trim()).toBe('var(--primary-on-surface)');
+      expect(declared(sets, blockOf(selector), '--primary-dark')).toBe('var(--primary-on-surface)');
     }
   });
 
@@ -126,18 +115,6 @@ function rgbaWithAlpha(value: string): { rgb: [number, number, number]; alpha: n
     rgb: [Number(m[1]), Number(m[2]), Number(m[3])],
     alpha: m[4] !== undefined ? Number(m[4]) : 1,
   };
-}
-
-/** Alpha-composites `fg` (with its own alpha) over an opaque `bg`. */
-function compositeOver(
-  fg: { rgb: [number, number, number]; alpha: number },
-  bg: [number, number, number]
-): [number, number, number] {
-  return fg.rgb.map((c, i) => Math.round(bg[i] * (1 - fg.alpha) + c * fg.alpha)) as [
-    number,
-    number,
-    number,
-  ];
 }
 
 /**
@@ -273,7 +250,7 @@ describe('upload tray header counts clear AA on the primary-blue header (UX revi
     const hex = v.match(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
     if (!hex) throw new Error(`cannot resolve colour: ${value}`);
     const h = hex[1].length === 3 ? [...hex[1]].map((c) => c + c).join('') : hex[1];
-    return hexToRgb(h);
+    return hexToRgb('#' + h);
   }
 
   const headerBg = rule('.panel-header').match(/background:\s*([^;]+);/)![1];

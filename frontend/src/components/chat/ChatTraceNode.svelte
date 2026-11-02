@@ -198,7 +198,7 @@
     padding: 0.02rem 0.3rem;
     border: 1px solid var(--border-color);
     border-radius: 4px;
-    background: var(--surface-alt, var(--background-secondary));
+    background: var(--background-secondary);
     color: var(--text-secondary);
     font-size: 0.66rem;
     letter-spacing: 0.02em;

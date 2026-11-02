@@ -89,11 +89,11 @@ def _cleanup_opensearch_for_file(target: dict[str, Any], file_uuid: str) -> list
     the caller, the API and the audit log as a completed erasure, with the row
     that would identify what to re-delete already gone.
 
-    Two of the steps go through helpers that swallow their own errors and return
-    a value that cannot distinguish "absent" from "failed"
-    (``remove_speaker_embedding`` returns ``False`` for both;
-    ``delete_transcript_chunks`` returns ``0`` for both). For those, the
-    surviving-document count — not the helper's return value — is the evidence.
+    Two of the steps go through helpers whose return value is not proof:
+    ``remove_speaker_embedding`` returns ``False`` for "absent" and "failed" alike,
+    and ``delete_transcript_chunks`` raises on failure but cannot see documents
+    inside the refresh window. For those, the surviving-document count — not the
+    helper's return value — is the evidence.
 
     Args:
         target: The purge plan from :func:`_load_purge_plan` — ``file_id``,
@@ -140,7 +140,7 @@ def _erase_speaker_docs(speaker_uuids: list[str], fail: Callable[[str, object], 
             from app.services.opensearch_service import remove_speaker_embedding
 
             remove_speaker_embedding(speaker_uuid)
-        except Exception as e:  # noqa: BLE001 — it swallows its own; this is belt-and-braces
+        except Exception as e:  # noqa: BLE001 — any failure is a residual; the count still runs
             fail("speakers", e)
 
     from app.services.opensearch_service.speaker_maintenance import speaker_embedding_indices
@@ -173,7 +173,7 @@ def _erase_profile_docs(profile_uuids: list[str], fail: Callable[[str, object], 
             from app.services.opensearch_service import remove_profile_embedding
 
             remove_profile_embedding(profile_uuid)
-        except Exception as e:  # noqa: BLE001 — it swallows its own; this is belt-and-braces
+        except Exception as e:  # noqa: BLE001 — any failure is a residual; the count still runs
             fail("profiles", e)
 
     from app.services.opensearch_service.speaker_maintenance import speaker_embedding_indices
@@ -248,9 +248,9 @@ def _erase_transcript_doc(file_uuid: str, fail: Callable[[str, object], None]) -
 def _erase_transcript_chunks(file_uuid: str, fail: Callable[[str, object], None]) -> None:
     """Delete the file's documents from the RAG index, and verify none survive.
 
-    ``delete_transcript_chunks`` returns 0 for "no chunks", "index absent" AND
-    "the delete failed", so only the count is evidence. This index stores
-    transcript text UNREDACTED, so a survivor here is the raw content.
+    A failed delete is recorded even when the count then reads 0, and only the
+    count proves a delete that returned. This index stores transcript text
+    UNREDACTED, so a survivor here is the raw content.
 
     **Both of the index's planes are meant here, not the chunk plane** (index v6,
     #403 Stage 3). ``transcript_chunks`` also holds per-file ``doc_type: digest``
@@ -270,7 +270,7 @@ def _erase_transcript_chunks(file_uuid: str, fail: Callable[[str, object], None]
         from app.services.search.indexing_service import TranscriptIndexingService
 
         TranscriptIndexingService().delete_transcript_chunks(file_uuid)
-    except Exception as e:  # noqa: BLE001 — it swallows its own; this is belt-and-braces
+    except Exception as e:  # noqa: BLE001 — any failure is a residual; the count still runs
         fail("transcript_chunks", e)
 
     try:

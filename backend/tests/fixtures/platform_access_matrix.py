@@ -103,6 +103,12 @@ PLATFORM_OP_RULES: tuple[tuple[str, str, str], ...] = (
         "speaker or collection content",
     ),
     (
+        r"^\w+ /api/admin/gdpr/(erasures|erase-file|erasure-receipt)",
+        "platform-ops",
+        "erasure receipts are counts keyed by store name and a digest, never personal data or "
+        "content (issue #1353); erase-file destroys a named recording and returns the same",
+    ),
+    (
         r"^\w+ /api/(tasks/system/|tasks/recover-stuck-tasks|tasks/fix-inconsistent-files)",
         "state-repair",
         "pipeline-state repair by id or in bulk; returns counts and status, never content",

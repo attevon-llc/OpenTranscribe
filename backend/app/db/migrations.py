@@ -705,6 +705,11 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE conname = 'speaker_identity_source_user_id_fkey')"
     )
 
+    # v452: the erasure receipt (issue #1353). Keyed on the LAST CHECK the revision creates.
+    has_erasure_receipt = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_erasure_receipt_digest')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -774,8 +779,21 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_legal_acceptance
         and has_takedown_origin
     )
-    # v449: same as v448 plus speaker.identity_source. The newest revision on this chain, so
-    # this is the top of the ladder.
+    # v452: the v449 fingerprint plus the erasure receipt. The newest revision on this chain,
+    # so this is the top of the ladder.
+    if (
+        matches_v442
+        and has_takedown_notice
+        and has_takedown_notification
+        and has_organization_policy
+        and has_collection_visibility
+        and has_content_hold
+        and has_task_active_unique
+        and has_identity_source
+        and has_erasure_receipt
+    ):
+        return "v452_add_erasure_receipt"
+    # v449: same as v448 plus speaker.identity_source.
     if (
         matches_v442
         and has_takedown_notice

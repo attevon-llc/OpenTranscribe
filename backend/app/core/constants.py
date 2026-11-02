@@ -1889,3 +1889,6 @@ LEGAL_PROCESSING_ACCEPTANCE_SCOPES = ("user", "organization", "either")
 DEFAULT_LEGAL_PROCESSING_ACCEPTANCE_SCOPE = "either"
 #: How long a resolved gate configuration is trusted. Same window as the privacy backstop.
 LEGAL_PROCESSING_GATE_TTL_SECONDS = PRIVACY_WRITE_BACKSTOP_TTL_SECONDS
+
+#: Reads of the erasure receipts (``/admin/gdpr/erasures``, ``/org-admin/gdpr/erasures``).
+ERASURE_RECEIPT_READ_RATE_LIMIT = "120/minute"

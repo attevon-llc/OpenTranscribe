@@ -112,6 +112,13 @@ TEST_INDEX_SPECS: list[ArtifactSpec] = [
         TIER_A,
         'integration/test_knn_probe_live.py',
     ),
+    # integration/test_erasure_receipt_e2e.py: an index no erasure store classifies.
+    _spec(
+        'erasure-receipt-stray',
+        rf'test_erasure_receipt_stray_{_H12}',
+        TIER_A,
+        'integration/test_erasure_receipt_e2e.py',
+    ),
     # delres-absent-*: names a test points settings at so they must NOT exist; registered
     # anyway, so a regression that makes the code under test create one is still swept.
     _spec(

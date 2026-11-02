@@ -262,6 +262,7 @@ celery_app = Celery(
         "app.tasks.redaction_task",
         "app.tasks.chat_retention",
         "app.tasks.erasure_reconciliation",
+        "app.tasks.erasure_receipt_reverify",
         "app.tasks.privacy_purge_task",
         "app.tasks.privacy_label_resync_task",
         "app.tasks.thumbnail",
@@ -589,6 +590,7 @@ celery_app.conf.update(
         # GDPR Art. 17 reconciliation (issue #442): small DB reads plus, when there is
         # deferred work, object-storage and OpenSearch deletes. Utility — never gpu.
         "gdpr.erasure_reconcile": {"queue": CeleryQueues.UTILITY},
+        "erasure.receipt_reverify": {"queue": CeleryQueues.UTILITY},
         # FedRAMP AC-2 account-inactivity expiration: small DB reads/writes only.
         # Utility — never gpu.
         "account.inactivity_sweep": {"queue": CeleryQueues.UTILITY},

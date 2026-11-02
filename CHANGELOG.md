@@ -9,12 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Erasure receipts (GDPR Art. 17 / Art. 30).** Every erasure is now measured per store before
+  and after, in a fresh session, and stored as a numbers-only receipt (counts keyed by store name
+  and a sha256 digest, no personal data) in the new `erasure_receipt` table (`v452`). A store that
+  cannot be measured is `unverified`, never 0, and an OpenSearch index no store covers keeps the
+  receipt `unverified`. `complete` is true only for a `verified` receipt; anything else stays open
+  and is retried, and a re-check a minute later catches a late write. Super_admin and (for their
+  own organization's member and file erasures) organization admins read receipts through
+  `/api/admin/gdpr/erasures` and `/api/org-admin/gdpr/erasures`; the new single-recording erasure
+  is `POST /api/admin/gdpr/erase-file/{uuid}` and `POST /api/org-admin/gdpr/erase-file/{uuid}`.
+  Cloud seam version 13. See [GDPR Erasure and Receipts](docs-site/docs/operations/gdpr-erasure.md).
+
 ### Removed
 
 - `scripts/test-model-download.sh`, superseded by the scenario above (it ran `:latest` with
   `--gpus all` and was not wired into any gate).
 
 ### Fixed
+
+- **An erasure now removes what it used to leave behind:** the login-lockout record (keyed by the
+  address), noncurrent object versions and anything left under the account's object prefix,
+  unfinished multipart uploads, preprocessing temporary objects, the derived cache by prefix, and
+  the subject's keys on the media mirror. Erasures that used to report `complete: true` while a
+  store was unreachable or kept data now report `false` and are retried, so installs whose
+  OpenSearch is often down can see ledger overdue alarms.
 
 - **The model downloader's speaker-detection step no longer fails on every CPU run.**
   `scripts/download-models.py` transcribed synthetic sine-wave audio through whisperx before

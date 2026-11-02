@@ -472,6 +472,10 @@ erasure was requested, one row per request, with the SLA clock on it.
   the erased subject. A reconciliation task re-checks every completed ledger entry against the
   live schema after a restore and re-erases any subject it finds has come back.
 
+- **Erasure receipts.** Each erasure is measured per store afterwards and the result is kept as a
+  numbers-only receipt. An erasure is complete only when its receipt is `verified`. See
+  [GDPR Erasure and Receipts](./gdpr-erasure.md).
+
 ## Secrets Management
 
 ### Protecting the .env File

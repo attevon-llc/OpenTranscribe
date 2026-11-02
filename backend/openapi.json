@@ -6477,6 +6477,219 @@
         "title": "EngineSettingsResponse",
         "type": "object"
       },
+      "ErasureLedgerItem": {
+        "properties": {
+          "actor_kind": {
+            "title": "Actor Kind",
+            "type": "string"
+          },
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "latest_receipt_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Receipt Outcome"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "sla_due_at": {
+            "format": "date-time",
+            "title": "Sla Due At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "subject_type": {
+            "title": "Subject Type",
+            "type": "string"
+          },
+          "uuid": {
+            "format": "uuid",
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "subject_type",
+          "status",
+          "actor_kind",
+          "requested_at",
+          "sla_due_at",
+          "completed_at",
+          "attempts",
+          "latest_receipt_outcome"
+        ],
+        "title": "ErasureLedgerItem",
+        "type": "object"
+      },
+      "ErasureLedgerPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ErasureLedgerItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "per_page": {
+            "title": "Per Page",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "per_page"
+        ],
+        "title": "ErasureLedgerPage",
+        "type": "object"
+      },
+      "ErasureReceiptResponse": {
+        "properties": {
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "de_attributed": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "De Attributed",
+            "type": "object"
+          },
+          "deleted": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Deleted",
+            "type": "object"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "inventory_version": {
+            "title": "Inventory Version",
+            "type": "integer"
+          },
+          "ledger_uuid": {
+            "format": "uuid",
+            "title": "Ledger Uuid",
+            "type": "string"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          },
+          "phase": {
+            "title": "Phase",
+            "type": "string"
+          },
+          "residual": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Residual",
+            "type": "object"
+          },
+          "retained": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Retained",
+            "type": "object"
+          },
+          "retained_reasons": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Retained Reasons",
+            "type": "object"
+          },
+          "subject_type": {
+            "title": "Subject Type",
+            "type": "string"
+          },
+          "ttl": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Ttl",
+            "type": "object"
+          },
+          "unverified": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Unverified",
+            "type": "object"
+          },
+          "uuid": {
+            "format": "uuid",
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "ledger_uuid",
+          "subject_type",
+          "attempt",
+          "phase",
+          "generated_at",
+          "outcome",
+          "deleted",
+          "de_attributed",
+          "retained",
+          "ttl",
+          "residual",
+          "unverified",
+          "inventory_version",
+          "digest"
+        ],
+        "title": "ErasureReceiptResponse",
+        "type": "object"
+      },
       "ExtractTopicsRequest": {
         "description": "Request to extract AI suggestions from transcript\n\nAttributes:\n    force_regenerate: Force re-extraction even if suggestions exist",
         "properties": {
@@ -7721,6 +7934,21 @@
           }
         },
         "title": "HoldSummary",
+        "type": "object"
+      },
+      "IgnoredIndices": {
+        "description": "Index names an operator classified as holding no personal data (names only).",
+        "properties": {
+          "names": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Names",
+            "type": "array"
+          }
+        },
+        "title": "IgnoredIndices",
         "type": "object"
       },
       "InstancePrivacyPolicy": {
@@ -26408,6 +26636,57 @@
         ]
       }
     },
+    "/api/admin/gdpr/erase-file/{file_uuid}": {
+      "post": {
+        "description": "GDPR Art. 17 erasure of ONE recording, through the ledger, with a receipt.",
+        "operationId": "admin_erase_file_api_admin_gdpr_erase_file__file_uuid__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "File Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Erase File Api Admin Gdpr Erase File  File Uuid  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Admin Erase File",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/gdpr/erase-user/{user_uuid}": {
       "post": {
         "description": "GDPR Art. 17 erasure of a user — platform/super-admin scope.\n\nPermanently cascades object storage, OpenSearch transcript + voiceprint\n(biometric) docs, and the relational rows, then deletes the user. This is\nthe platform-staff / self-host-operator entry point to the same\n``erase_user`` service the cloud ``user.deleted`` webhook calls. Idempotent;\nSLA 30 days. The erasure is audit-logged by the service.",
@@ -26449,6 +26728,208 @@
           }
         ],
         "summary": "Admin Erase User",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/gdpr/erasure-receipt/ignored-indices": {
+      "get": {
+        "description": "OpenSearch indices an operator classified as holding no personal data.",
+        "operationId": "read_ignored_indices_api_admin_gdpr_erasure_receipt_ignored_indices_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IgnoredIndices"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Read Ignored Indices",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "description": "Replace the allow-list. Names only; without an entry an unclassified index keeps every\nerasure receipt ``unverified``. Audited with the count, not the names.",
+        "operationId": "write_ignored_indices_api_admin_gdpr_erasure_receipt_ignored_indices_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IgnoredIndices"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IgnoredIndices"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Write Ignored Indices",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/gdpr/erasures": {
+      "get": {
+        "description": "Ledger entries newest first, each with the outcome of its latest receipt.",
+        "operationId": "list_erasures_api_admin_gdpr_erasures_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "per_page",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Per Page",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErasureLedgerPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Erasures",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/gdpr/erasures/{ledger_uuid}/receipts": {
+      "get": {
+        "operationId": "read_receipts_api_admin_gdpr_erasures__ledger_uuid__receipts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ledger_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Ledger Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ErasureReceiptResponse"
+                  },
+                  "title": "Response Read Receipts Api Admin Gdpr Erasures  Ledger Uuid  Receipts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Read Receipts",
         "tags": [
           "admin"
         ]
@@ -41157,6 +41638,57 @@
         ]
       }
     },
+    "/api/org-admin/gdpr/erase-file/{file_uuid}": {
+      "post": {
+        "description": "The same, for a recording of the caller's own organization (404 for any other).",
+        "operationId": "org_erase_file_api_org_admin_gdpr_erase_file__file_uuid__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "File Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Org Erase File Api Org Admin Gdpr Erase File  File Uuid  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Org Erase File",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
     "/api/org-admin/gdpr/erase-organization": {
       "post": {
         "description": "GDPR erasure of the caller's ENTIRE organization (irreversible).\n\nErases org-stamped media, member-owned org data, the org's voiceprints, and\nthe organization row itself. Members keep their personal accounts. Requires\n``confirm=true``. Idempotent; SLA 30 days.",
@@ -41247,6 +41779,58 @@
           }
         ],
         "summary": "Erase Org Member",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/org-admin/gdpr/erasures/{ledger_uuid}/receipts": {
+      "get": {
+        "operationId": "read_org_receipts_api_org_admin_gdpr_erasures__ledger_uuid__receipts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ledger_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Ledger Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ErasureReceiptResponse"
+                  },
+                  "title": "Response Read Org Receipts Api Org Admin Gdpr Erasures  Ledger Uuid  Receipts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Read Org Receipts",
         "tags": [
           "org-admin"
         ]

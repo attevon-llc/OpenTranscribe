@@ -296,6 +296,24 @@ three are needed, and dropping any one reproduces a defect that shipped.
   never "fix" an unwritable `DATA_DIR` with an ephemeral mount; the journal would die
   with the pod.
 
+- **An erasure is complete only when its receipt is `verified`; every new store gets an inventory
+  entry** (issue #1353). `services/erasure_receipt/` counts every store before the destroy and
+  again after it in a fresh session (`flow.begin` / `flow.finish`, around the destroy in each
+  `erase_*`), stores the numbers-only `erasure_receipt` row (`receipt.persist_receipt`), schedules a
+  60 s re-check (`tasks/erasure_receipt_reverify.py`) and puts a non-`verified` outcome on
+  `summary["errors"]`, which is what keeps `complete` false and the ledger entry open. A store the
+  registry cannot count is `unverified`, never 0 (`measure.measure_all` maps a raise to `None`). A
+  new Postgres table reachable from a user, file, speaker or organization needs a `PgStore` in
+  `stores_pg.py` or an `EXEMPT_TABLES` reason (`tests/unit/test_erasure_inventory_coverage.py`
+  derives the foreign-key closure and fails otherwise); a new OpenSearch index needs a pattern in
+  `stores_external.INDEX_PATTERNS`; an edition's own stores use `register_erasure_store`. The
+  deletes the canonical per-file destroy never made (lockout record, noncurrent versions, the
+  account's whole object prefix, multipart uploads, temp objects, derived cache, mirror keys) are
+  `erasure_receipt/destroy_extras.py`; files under a legal hold are excluded from capture, so they
+  are `retained`, never `residual`. `ErasureScope` is the erasure's own scope type (it is not
+  `privacy.purge.PurgeScope`, whose `user` kind is one tenant); `Residual` and `GroupedCounts` live
+  in `privacy/measure.py` for both. Media-mirror deletes go through `media_mirror_erasure.py` only.
+
 Two judgement calls worth not re-litigating blindly:
 
 - **A legal hold retains the ACCOUNT, not just the file, and that is forced by the

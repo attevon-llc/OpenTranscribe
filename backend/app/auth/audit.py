@@ -114,6 +114,8 @@ class AuditEventType(StrEnum):
     ADMIN_USER_CREATE = "admin.user.create"
     ADMIN_USER_UPDATE = "admin.user.update"
     ADMIN_USER_DELETE = "admin.user.delete"
+    # A read of an erasure receipt (issue #1353): ids only, never the counts.
+    GDPR_RECEIPT_VIEW = "gdpr.receipt.view"
     ADMIN_ROLE_CHANGE = "admin.role.change"
     ADMIN_SETTINGS_CHANGE = "admin.settings.change"
 

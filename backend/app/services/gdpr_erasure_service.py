@@ -105,6 +105,9 @@ from app.models.prompt import UserSetting
 from app.models.user import User
 from app.models.watch_source import WatchSource
 from app.services import erasure_ledger_service as ledger
+from app.services.erasure_receipt import flow as receipt_flow
+from app.services.erasure_receipt.destroy_extras import erase_extras
+from app.services.erasure_receipt.types import ErasureScope
 from app.services.file_cleanup_service import purge_media_file
 from app.services.storage_versions import UNVERIFIED_VERSIONS_ERROR
 
@@ -668,6 +671,9 @@ def erase_user(
             actor_user_id=actor_user_id,
         )
 
+    scope = ErasureScope("user", user_id=user_id)
+    captured, before = receipt_flow.begin(db, scope)
+
     files = db.query(MediaFile).filter(MediaFile.user_id == user_id).all()
     _purge_files(db, files, summary)
     avatar_paths = _delete_owner_scoped_rows(db, user_id, summary)
@@ -722,6 +728,9 @@ def erase_user(
                     .filter(ErasureLedgerEntry.id == ledger_entry_id)
                     .first()
                 )
+
+    erase_extras(scope, captured, summary["errors"])
+    receipt_flow.finish(db, ledger_entry, scope, captured, before, summary)
 
     audit_logger.log(
         event_type=AuditEventType.ADMIN_USER_DELETE,
@@ -821,6 +830,9 @@ def erase_org_member_data(
             actor_user_id=actor_user_id,
         )
 
+    scope = ErasureScope("org_member", user_id=user_id, organization_id=org_id)
+    captured, before = receipt_flow.begin(db, scope)
+
     files = (
         db.query(MediaFile)
         .filter(MediaFile.user_id == user_id, MediaFile.organization_id == org_id)
@@ -891,6 +903,8 @@ def erase_org_member_data(
     summary["voiceprints_deleted"] = _erase_speaker_voiceprints(
         user_id=user_id, organization_id=org_id, errors=summary["errors"]
     )
+    erase_extras(scope, captured, summary["errors"])
+    receipt_flow.finish(db, ledger_entry, scope, captured, before, summary)
 
     audit_logger.log(
         event_type=AuditEventType.ADMIN_USER_DELETE,
@@ -970,6 +984,9 @@ def erase_organization(
             actor_kind=_actor_kind(actor_user_id, staff_role="org_admin"),
             actor_user_id=actor_user_id,
         )
+
+    scope = ErasureScope("organization", organization_id=org_id)
+    captured, before = receipt_flow.begin(db, scope)
 
     files = db.query(MediaFile).filter(MediaFile.organization_id == org_id).all()
     _purge_files(db, files, summary)
@@ -1060,6 +1077,8 @@ def erase_organization(
             )
 
     summary["memberships_removed"] = member_count
+    erase_extras(scope, captured, summary["errors"])
+    receipt_flow.finish(db, ledger_entry, scope, captured, before, summary)
 
     audit_logger.log(
         event_type=AuditEventType.ADMIN_USER_DELETE,
@@ -1096,4 +1115,70 @@ def erase_organization(
     if ledger_entry is not None:
         summary["ledger_uuid"] = str(ledger_entry.uuid)
     logger.info(f"erase_organization({org_id}) complete: {summary}")
+    return summary
+
+
+def erase_file(
+    db: Session,
+    file_uuid: Any,
+    *,
+    actor_user_id: int | None = None,
+    actor_email: str | None = None,
+    actor_role: str = "super_admin",
+    ledger_entry: ErasureLedgerEntry | None = None,
+) -> dict[str, Any]:
+    """Erase ONE recording on request (Art. 17 for a single file) and issue its receipt.
+
+    The canonical per-file destroy (:func:`purge_media_file`) run through the ledger, so the
+    request has the same evidence as an account erasure: a ledger entry (subject ``file``, the
+    file's surrogate uuid and its organization) and a measured receipt. A file under a legal hold
+    is skipped, reported, and retried by the sweep. Idempotent and never raises.
+    ``DELETE /files/{uuid}`` is unchanged; this is the erasure-request path.
+    """
+    media_file = db.query(MediaFile).filter(MediaFile.uuid == file_uuid).first()
+    summary = _new_summary("file", int(media_file.id) if media_file is not None else 0)
+    if media_file is None:
+        summary["already_erased"] = True
+        if ledger_entry is not None:
+            ledger.record_outcome(db, ledger_entry, summary)
+            summary["ledger_uuid"] = str(ledger_entry.uuid)
+        return summary
+
+    file_id = int(media_file.id)
+    owner_id = int(media_file.user_id)
+    org_id = int(media_file.organization_id) if media_file.organization_id is not None else None
+    org = db.query(Organization).filter(Organization.id == org_id).first() if org_id else None
+    if ledger_entry is None:
+        ledger_entry = ledger.record_request(
+            db,
+            subject_type="file",
+            subject_file_uuid=media_file.uuid,
+            subject_organization_id=org_id,
+            subject_organization_uuid=org.uuid if org else None,
+            actor_kind=_actor_kind(actor_user_id, staff_role=actor_role),
+            actor_user_id=actor_user_id,
+        )
+
+    scope = ErasureScope("file", file_ids=(file_id,))
+    captured, before = receipt_flow.begin(db, scope)
+    _purge_files(db, [media_file], summary)
+    erase_extras(scope, captured, summary["errors"])
+    receipt_flow.finish(db, ledger_entry, scope, captured, before, summary)
+
+    audit_logger.log(
+        event_type=AuditEventType.ADMIN_USER_DELETE,
+        outcome=_resolve_outcome(summary),
+        user_id=actor_user_id,
+        username=actor_email,
+        target_user_id=owner_id,
+        organization_id=org_id,
+        details={
+            "action": "gdpr_erasure_file",
+            **{k: summary[k] for k in ("media_files_deleted", "legal_holds_skipped")},
+        },
+    )
+    ledger.record_outcome(db, ledger_entry, summary)
+    if ledger_entry is not None:
+        summary["ledger_uuid"] = str(ledger_entry.uuid)
+    logger.info(f"erase_file({file_id}) complete")
     return summary

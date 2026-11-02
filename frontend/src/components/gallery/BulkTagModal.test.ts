@@ -256,3 +256,25 @@ describe('BulkTagModal chips on a single file', () => {
     expect(screen.getByRole('button', { name: 'Remove "roadmap" from this file' })).toBeEnabled();
   });
 });
+
+describe('BulkTagModal remove scope', () => {
+  it('scopes remove suggestions to the tags it loaded for the selection', async () => {
+    api.listTagsOnFiles.mockResolvedValue([
+      { uuid: 'b', name: 'roadmap', file_count: 3, selection_size: 50 },
+      { uuid: 'c', name: 'q3 review', file_count: 50, selection_size: 50 },
+    ]);
+    render(BulkTagModal, { props: { isOpen: true, action: 'remove_tag', fileUuids } });
+
+    expect(
+      await screen.findByText('Only tags the selected files carry are offered.')
+    ).toBeInTheDocument();
+
+    await type('r');
+    await waitFor(() =>
+      expect(screen.getByRole('option', { name: 'roadmap' })).toBeInTheDocument()
+    );
+    expect(screen.getByRole('option', { name: 'q3 review' })).toBeInTheDocument();
+    // In the library and matching the query, but on none of the selected files.
+    expect(screen.queryByRole('option', { name: 'interview' })).toBeNull();
+  });
+});

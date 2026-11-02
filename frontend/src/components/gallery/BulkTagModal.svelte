@@ -41,9 +41,9 @@
   /** UUIDs of the selected files, in selection order. */
   export let fileUuids: string[] = [];
   /**
-   * Tag names the selected files are known to carry, used to scope the *remove*
-   * suggestions. The gallery listing does not carry per-file tags today, so this
-   * is usually empty — see `scopedToSelection` for what happens then.
+   * Extra tag names the selected files are known to carry. The *remove*
+   * suggestions are scoped to these plus the tags the modal loads for the
+   * selection itself (`listTagsOnFiles`) — see `scopedToSelection`.
    */
   export let presentTagNames: string[] = [];
 
@@ -130,11 +130,18 @@
   let wasOpen = false;
 
   $: isAdd = action === 'add_tag';
-  $: presentNames = Array.from(new Set(presentTagNames.filter((name) => name.trim() !== '')));
+  $: presentNames = Array.from(
+    new Set(
+      [...presentTagNames, ...currentTags.map((tag) => tag.name)].filter(
+        (name) => name.trim() !== ''
+      )
+    )
+  );
   // Removing a tag nothing in the selection carries is a guaranteed no-op, so the
   // remove suggestions are scoped to what the selection is known to carry. When
-  // the selection carries no tag data at all, every tag is offered instead —
-  // an empty picker would be worse than a wide one, and the hint says which.
+  // nothing is known (no tags on the selection, or their fetch failed), every
+  // tag is offered instead — an empty picker would be worse than a wide one, and
+  // the hint says which.
   $: scopedToSelection = !isAdd && presentNames.length > 0;
   $: suggestionPool = scopedToSelection ? presentNames : allTagNames;
   $: canSubmit = tagName.trim() !== '' && fileUuids.length > 0 && !busy;

@@ -72,6 +72,11 @@ def auth_type_check_sql() -> str:
 # hooks, capability resolver, ExternalIdentity shape). Bump on ANY signature
 # change so the private cloud repo fails loudly instead of drifting silently.
 #
+# v13 (0.6.1): legal records outlive their user (the DB keeps a pseudonymised acceptance row after
+# account deletion), a server-side required-documents gate in the shared pre-dispatch check (new
+# refusal reason codes; cloud code that starts processing must call it), and a file-scoped
+# voiceprint purge (PurgeScope kind="files"). All inactive while the new settings are off.
+#
 # v12 (0.6.0): organization content governance (#1275-#1277). v11 is the privacy policy layer and
 # v10 the viewer-aware capabilities endpoint, both below.
 # File-read semantics changed: a member of an organization collection they may see now
@@ -196,7 +201,7 @@ def auth_type_check_sql() -> str:
 # candidate-window hook flipped from max to MIN override
 # (set_retention_resolver(resolver, min_resolver=...)), and
 # TenantUploadLimits.max_duration_seconds is now enforced at dispatch.
-CLOUD_SEAM_VERSION = 12
+CLOUD_SEAM_VERSION = 13
 
 # Auth types that support local password fallback (have local password capability)
 AUTH_TYPES_SUPPORT_LOCAL_FALLBACK = [AUTH_TYPE_PKI, AUTH_TYPE_OIDC]

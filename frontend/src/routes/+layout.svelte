@@ -420,7 +420,12 @@
      screens) is published as --support-banner-height, and every page that sizes itself from
      --content-top follows. */
   .app.has-support-banner {
-    --content-top: calc(var(--navbar-height) + env(safe-area-inset-top, 0px) + var(--support-banner-height, 0px));
+    --content-top: calc(var(--navbar-height) + env(safe-area-inset-top, 0px) + var(--support-banner-height, 0px) + var(--erasure-banner-height, 0px));
+  }
+
+  /* The erasure notice is fixed under the navbar too (and under a support banner when both show). */
+  .app:not(.has-support-banner) {
+    --content-top: calc(var(--navbar-height) + env(safe-area-inset-top, 0px) + var(--erasure-banner-height, 0px));
   }
 
   /* Push navbar down when banner is present */

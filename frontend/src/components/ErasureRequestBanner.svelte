@@ -5,12 +5,23 @@
    * opens the Settings card where the request can be cancelled. Reads once on mount; the
    * Settings card keeps `openErasureRequest` current after that.
    */
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { getSelfErasureStatus } from '$lib/api/selfErasure';
   import { locale, t } from '$stores/locale';
   import { lastErasureOutcome, openErasureRequest } from '$stores/selfErasure';
   import { settingsModalStore } from '$stores/settingsModalStore';
 
+  let height = 0;
+
+  // Keeps `height` equal to the rendered height (the notice wraps on narrow screens).
+  function measure(node: HTMLElement) {
+    const update = () => (height = node.offsetHeight);
+    update();
+    if (typeof ResizeObserver === 'undefined') return {};
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return { destroy: () => observer.disconnect() };
+  }
   $: request = $openErasureRequest ?? null;
   $: date = request?.scheduled_for
     ? new Intl.DateTimeFormat($locale, { dateStyle: 'long', timeStyle: 'short' }).format(
@@ -43,6 +54,18 @@
     if (document.visibilityState === 'visible') void refresh();
   }
 
+  // Fixed under the navbar (and a support banner), so the layout offsets its content by the
+  // measured height, as for the support-access banner. In normal flow it sat BEHIND the fixed navbar.
+  $: if (typeof document !== 'undefined') {
+    document.documentElement.style.setProperty('--erasure-banner-height', `${showBanner ? height : 0}px`);
+  }
+  onDestroy(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.style.removeProperty('--erasure-banner-height');
+    }
+  });
+  $: showBanner = Boolean(request) || showBlocked;
+
   onMount(() => {
     void refresh();
     document.addEventListener('visibilitychange', onVisibility);
@@ -50,8 +73,13 @@
   });
 </script>
 
-{#if request || showBlocked}
-  <div class="erasure-banner" role="status" data-testid="erasure-banner">
+{#if showBanner}
+  <div
+    class="erasure-banner"
+    role="status"
+    data-testid="erasure-banner"
+    use:measure
+  >
     <span>
       {request ? $t('banner.accountErasure.message', { date }) : $t('banner.accountErasure.blocked')}
     </span>
@@ -63,6 +91,10 @@
 
 <style>
   .erasure-banner {
+    position: fixed;
+    inset-inline: 0;
+    top: calc(var(--navbar-height) + env(safe-area-inset-top, 0px) + var(--support-banner-height, 0px));
+    z-index: 1150;
     display: flex;
     flex-wrap: wrap;
     align-items: center;

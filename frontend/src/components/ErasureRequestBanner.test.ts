@@ -102,4 +102,19 @@ describe('ErasureRequestBanner', () => {
     await screen.findByTestId('erasure-banner');
     expect(api.getSelfErasureStatus).toHaveBeenCalledTimes(2);
   });
+
+  it('publishes a height variable for the layout while shown, and removes it when gone', async () => {
+    api.getSelfErasureStatus.mockResolvedValue({
+      request: { scheduled_for: '2026-12-01T10:00:00Z' },
+    });
+    const { unmount } = render(ErasureRequestBanner);
+    await screen.findByTestId('erasure-banner');
+
+    // The banner is fixed under the navbar; the layout offsets its content by this variable.
+    // (jsdom measures 0, so the value itself is not asserted, only that it is published.)
+    expect(document.documentElement.style.getPropertyValue('--erasure-banner-height')).toBe('0px');
+
+    unmount();
+    expect(document.documentElement.style.getPropertyValue('--erasure-banner-height')).toBe('');
+  });
 });

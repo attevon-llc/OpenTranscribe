@@ -374,7 +374,7 @@ def purge_env(db_session, monkeypatch):
     tracker.install(monkeypatch)
     captured: dict = {}
 
-    def _storage(file_id, artifacts):
+    def _storage(file_id, artifacts, unverified=None):
         tracker.observe("storage_delete")
         captured["storage"] = (file_id, artifacts)
         return True

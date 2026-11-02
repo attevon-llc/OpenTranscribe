@@ -48,10 +48,34 @@ def test_a_thumbnail_another_import_still_uses_is_kept(db_session, normal_user):
     assert second.thumbnail_path == SHARED_THUMB
 
 
-def test_the_last_reference_deletes_the_shared_key(db_session, normal_user):
-    only = _row(db_session, normal_user, thumbnail_path=SHARED_THUMB + ".last")
+def test_the_last_reference_deletes_the_shared_key(db_session, normal_user, monkeypatch):
+    """Purge row A then row B on the SAME key: it survives A and is gone after B."""
+    from app.services import file_cleanup_service as fcs
 
-    plan = _load_purge_plan(db_session, only)
+    first = _row(db_session, normal_user, thumbnail_path=SHARED_THUMB)
+    second = _row(db_session, normal_user, thumbnail_path=SHARED_THUMB)
+    deleted: list[str] = []
 
-    assert plan["thumbnail_path"] == SHARED_THUMB + ".last"
-    assert plan["shared_paths"] == []
+    def _record(key: str) -> int:
+        deleted.append(key)
+        return 0
+
+    monkeypatch.setattr("app.services.minio_service.delete_file", _record)
+    monkeypatch.setattr(fcs, "_cleanup_opensearch_for_file", lambda plan, file_uuid: [])
+    monkeypatch.setattr(
+        "app.services.video_processing_service.VideoProcessingService.__init__",
+        lambda self, *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.services.video_processing_service.VideoProcessingService.clear_derived_cache",
+        lambda self, file_id, filename: 0,
+    )
+    first_original, second_original = first.storage_path, second.storage_path
+
+    assert fcs.purge_media_file(db_session, first)["deleted"] is True
+    assert SHARED_THUMB not in deleted, "row B still references it"
+    assert first_original in deleted
+
+    assert fcs.purge_media_file(db_session, second)["deleted"] is True
+    assert deleted.count(SHARED_THUMB) == 1, "the last row to go deletes it"
+    assert second_original in deleted

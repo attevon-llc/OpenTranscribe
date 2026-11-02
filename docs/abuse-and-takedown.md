@@ -401,12 +401,15 @@ survives (a legal hold or retention period). It never bypasses a lock.
 
 | Action | Needed for |
 |---|---|
-| `s3:GetBucketVersioning` | whether versions can exist (cached per bucket for 5 minutes) |
+| `s3:ListBucket` | finding the keys a delete selects and confirming they are gone |
+| `s3:DeleteObject` | deleting the current object |
+| `s3:GetBucketVersioning` | whether versions can exist (a versioned answer is cached per bucket for 5 minutes) |
 | `s3:ListBucketVersions` | listing every version and delete marker of a key |
 | `s3:DeleteObjectVersion` | removing each version |
 
-Missing the two reads is not a failure: the delete completes and an ERROR says old versions could
-not be checked. A refused version listing on a bucket known to be versioned IS a failure. A key
+Without the two version reads the delete runs but is **unverified**: an ERROR says old versions
+could not be checked and a purge or erasure records it as partial, never complete. Deleting every
+version is irreversible, including by the orphan sweep. A refused version listing on a bucket known to be versioned IS a failure. A key
 another media file still references (a URL import's per-video thumbnail) is never deleted with
 the first file; the last one to go deletes it.
 

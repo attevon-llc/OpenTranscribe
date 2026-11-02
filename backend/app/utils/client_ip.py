@@ -52,6 +52,22 @@ def _parse_networks(raw: str) -> list[ipaddress.IPv4Network | ipaddress.IPv6Netw
 _TRUSTED_NETWORKS = _parse_networks(settings.RATE_LIMIT_TRUSTED_PROXIES)
 
 
+def parse_ip(value: object) -> str | None:
+    """The stripped address when ``value`` is exactly one IP the audit ``ip`` field accepts.
+
+    ``ipaddress`` accepts an IPv6 zone id (``fe80::1%eth0``) which OpenSearch's ``ip`` type
+    rejects, so a scoped address is refused here. Returns ``None`` for anything else.
+    """
+    text = str(value).strip()
+    if "%" in text:
+        return None
+    try:
+        ipaddress.ip_address(text)
+    except ValueError:
+        return None
+    return text
+
+
 def is_trusted_proxy(ip: str) -> bool:
     """Whether *ip* is one of the configured trusted proxies."""
     if not _TRUSTED_NETWORKS:
@@ -97,12 +113,11 @@ def resolve_client_ip(request: Request | None) -> str:
         # Validated like an X-Forwarded-For entry: a value that is not one address (a list,
         # a hostname) would be recorded as the client and rejected by the audit index's
         # ``ip`` field.
-        real_ip = (request.headers.get("X-Real-IP") or "").strip()
-        try:
-            ipaddress.ip_address(real_ip)
-        except ValueError:
-            if real_ip:
-                logger.warning("Malformed X-Real-IP %r", real_ip)
+        raw_real_ip = (request.headers.get("X-Real-IP") or "").strip()
+        real_ip = parse_ip(raw_real_ip)
+        if real_ip is None:
+            if raw_real_ip:
+                logger.warning("Malformed X-Real-IP %r", raw_real_ip)
             return direct_ip
         return real_ip
 
@@ -112,9 +127,7 @@ def resolve_client_ip(request: Request | None) -> str:
     for candidate in (entry.strip() for entry in reversed(forwarded.split(","))):
         if not candidate:
             continue
-        try:
-            ipaddress.ip_address(candidate)
-        except ValueError:
+        if parse_ip(candidate) is None:
             logger.warning("Malformed X-Forwarded-For entry %r", candidate)
             return direct_ip
         if not is_trusted_proxy(candidate):

@@ -13,11 +13,18 @@ Rules it keeps:
 * **Success means verified gone.** On a versioned (or unknown) bucket the keys are listed again
   after the delete, and anything left is reported.
 * **A missing READ permission never fails a completed delete.** The bucket's versioning state
-  is read once per bucket and cached (:data:`VERSIONING_CACHE_SECONDS`, dropped on any error).
-  If ``GetBucketVersioning`` is refused the state is ``unknown`` and the version-aware path is
-  attempted; if ``ListBucketVersions`` is refused too, the plain delete runs and an ERROR names
-  the missing permissions, because whether versions remain cannot be known. On a bucket known
-  to be versioned, a refused version listing IS a failure: versions certainly remain.
+  is cached ONLY when it is ``on`` (:data:`VERSIONING_CACHE_SECONDS`, dropped on any error).
+  An ``off`` answer is never cached: an operator enabling versioning must not leave versions
+  behind for the length of a cache window. If ``GetBucketVersioning`` is refused the state is
+  ``unknown`` and the version-aware path is attempted; if ``ListBucketVersions`` is refused
+  too, the plain delete runs but the result is flagged :attr:`RemovalResult.unverified` (an
+  ERROR also names the missing permissions): whether versions remain cannot be known, and an
+  erasure caller must record that as partial, never complete. On a bucket known to be
+  versioned, a refused version listing IS a failure: versions certainly remain.
+* **A store without versioning is not a denial.** ``NotImplemented`` from the versioning read
+  means there are no versions to find: the state is ``off``, with no ERROR per delete.
+* **A missing bucket holds nothing.** ``NoSuchBucket`` is a result of 0, not a failure.
+* **Deleting every version is irreversible**, including for the orphan sweep.
 
 IAM actions this needs on native S3: ``s3:GetBucketVersioning``, ``s3:ListBucketVersions``,
 ``s3:DeleteObjectVersion`` (plus the ``s3:ListBucket`` / ``s3:DeleteObject`` a plain delete
@@ -42,8 +49,29 @@ VERSIONING_CACHE_SECONDS = 300
 
 ON, OFF, UNKNOWN = "on", "off", "unknown"
 _DENIED = {"AccessDenied", "AllAccessDisabled", "NotImplemented"}
+_NO_VERSIONING = "NotImplemented"
+
+UNVERIFIED_VERSIONS_ERROR = (
+    "deleted, but old object versions could not be checked for "
+    "(s3:GetBucketVersioning / s3:ListBucketVersions not permitted): erasure is unverified"
+)
 
 _versioning: dict[str, tuple[str, float]] = {}
+
+
+class RemovalResult(int):
+    """The count removed (an ``int``, so existing callers are unchanged) plus ``unverified``.
+
+    ``unverified`` is True when the delete ran but the bucket's versions could not be read, so
+    whether old versions remain is unknown. An erasure must record that as partial.
+    """
+
+    unverified: bool
+
+    def __new__(cls, count: int, unverified: bool = False) -> RemovalResult:
+        obj = super().__new__(cls, count)
+        obj.unverified = unverified
+        return obj
 
 
 class StorageDeleteIncompleteError(Exception):
@@ -75,8 +103,11 @@ def versioning_state(client: Any, bucket: str) -> str:
     except S3Error as e:
         if e.code not in _DENIED:
             raise
-        state = UNKNOWN
-    _versioning[bucket] = (state, time.monotonic())
+        state = OFF if e.code == _NO_VERSIONING else UNKNOWN
+    if state == ON:
+        _versioning[bucket] = (state, time.monotonic())
+    else:
+        _versioning.pop(bucket, None)
     return state
 
 
@@ -118,13 +149,14 @@ def remove_completely(
     *,
     names: Iterable[str] | None = None,
     prefix: str | None = None,
-) -> int:
+) -> RemovalResult:
     """Delete the named keys (or every key under ``prefix``), every version of each.
 
     Exactly one of ``names`` / ``prefix`` is required. Absent keys are not an error.
 
     Returns:
-        The number of objects (or object versions) removed.
+        The number of objects (or object versions) removed, as a :class:`RemovalResult`
+        whose ``unverified`` is True when old versions could not be checked for.
 
     Raises:
         StorageDeleteIncompleteError: Anything selected still exists afterwards, or could not
@@ -132,9 +164,11 @@ def remove_completely(
     """
     if (names is None) == (prefix is None):
         raise ValueError("pass exactly one of names= or prefix=")
+    if prefix is not None and not prefix:
+        raise ValueError("prefix must not be empty: it would select the whole bucket")
     wanted = None if names is None else {n for n in names if n}
     if wanted is not None and not wanted:
-        return 0
+        return RemovalResult(0)
     try:
         state = versioning_state(client, bucket)
         if state == OFF:
@@ -142,7 +176,7 @@ def remove_completely(
             errors = _remove(client, bucket, [DeleteObject(k) for k in keys])
             if errors:
                 raise StorageDeleteIncompleteError(bucket, errors, "objects could not be removed")
-            return len(keys)
+            return RemovalResult(len(keys))
         try:
             versions = _versions(client, bucket, wanted, prefix)
         except S3Error as e:
@@ -166,7 +200,7 @@ def remove_completely(
                 len(keys),
                 bucket,
             )
-            return len(keys)
+            return RemovalResult(len(keys), unverified=True)
         errors = _remove(
             client,
             bucket,
@@ -180,7 +214,9 @@ def remove_completely(
             raise StorageDeleteIncompleteError(
                 bucket, sorted(set(errors) | set(left)), "object versions remain"
             )
-        return len(versions)
-    except (S3Error, StorageDeleteIncompleteError):
+        return RemovalResult(len(versions))
+    except (S3Error, StorageDeleteIncompleteError) as e:
         forget_versioning_state(bucket)
+        if isinstance(e, S3Error) and e.code == "NoSuchBucket":
+            return RemovalResult(0)
         raise

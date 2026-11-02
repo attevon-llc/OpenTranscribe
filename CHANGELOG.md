@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bucket and cached; a missing read permission never fails a completed delete. New IAM actions:
   `s3:GetBucketVersioning`, `s3:ListBucketVersions`, `s3:DeleteObjectVersion` (see Object storage
   in the docs).
+- A re-upload no longer destroys a held failed duplicate: `cleanup_failed_duplicates` now goes
+  through the guarded purge (legal-hold refusal, shared-key check, thumbnail, playback and
+  derived-cache removal) instead of deleting the media object and row directly.
+- A delete whose object versions could not be checked (both versioning reads refused) is reported
+  `unverified`, and file purge and GDPR erasure record it as partial (`storage_unverified`) rather
+  than complete. "Versioning off" is no longer cached, a store without versioning
+  (`NotImplemented`) is not treated as a denial, a missing bucket is "nothing to delete", and an
+  empty prefix is rejected like `None`.
+- The audit `source_ip` and `X-Real-IP` are stored stripped, and IPv6 scope-id forms
+  (`fe80::1%eth0`) are rejected consistently.
 - A file purge no longer deletes an object key another media file still references (a URL
   import's per-video thumbnail, shared when the same video is imported twice).
 - A malformed `X-Real-IP` from a trusted proxy is no longer recorded as the client address.

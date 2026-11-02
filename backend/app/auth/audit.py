@@ -5,7 +5,6 @@ This module provides JSON-structured audit logging with optional OpenSearch inte
 Supports logging of authentication events, security events, and administrative actions.
 """
 
-import ipaddress
 import json
 import logging
 import os
@@ -23,21 +22,13 @@ from app.core.config import settings
 # empty here and every audit event invented a new uuid4 (see
 # app/core/request_context.py).
 from app.core.request_context import request_id_var
+from app.utils.client_ip import parse_ip
 
 #: Writer-client limits. Indexing runs synchronously inside the request that produced
 #: the event, so a slow OpenSearch must cost the request at most this long, once —
 #: not the library's 10 s default multiplied by its retries (issue #997). A write
 #: that misses the deadline goes to the fallback file like any other failure.
 _AUDIT_WRITE_TIMEOUT_SECONDS = 2
-
-
-def _is_ip(value: str) -> bool:
-    """True when ``value`` is an address the ``ip`` field type accepts."""
-    try:
-        ipaddress.ip_address(str(value).strip())
-    except ValueError:
-        return False
-    return True
 
 
 def _audit_index_name() -> str:
@@ -522,8 +513,12 @@ class AuditLogger:
         # a hostname, a test client's name) makes OpenSearch reject the WHOLE event, which then
         # never reaches the searchable trail. Keep the raw value in ``details`` instead.
         unparsed_source: str | None = None
-        if source_ip is not None and not _is_ip(source_ip):
-            unparsed_source, source_ip = str(source_ip)[:255], None
+        if source_ip is not None:
+            parsed_ip = parse_ip(source_ip)
+            if parsed_ip is None:
+                unparsed_source, source_ip = str(source_ip)[:255], None
+            else:
+                source_ip = parsed_ip
 
         event = {
             "timestamp": datetime.now(UTC).isoformat(),

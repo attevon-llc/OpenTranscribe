@@ -17,15 +17,26 @@ from urllib3.response import HTTPResponse
 from app.services import storage_versions as sv
 
 
-def _denied(op: str) -> S3Error:
-    return S3Error(HTTPResponse(status=403), "AccessDenied", f"{op} denied", "res", "req", "host")
+def _denied(op: str, code: str = "AccessDenied") -> S3Error:
+    return S3Error(HTTPResponse(status=403), code, f"{op} denied", "res", "req", "host")
 
 
 class FakeS3:
     """Objects as ``{key: [version ids]}``; each refusal is opt-in."""
 
-    def __init__(self, *, versioned: bool, deny_get=False, deny_list_versions=False, locked=()):
+    def __init__(
+        self,
+        *,
+        versioned: bool,
+        deny_get=False,
+        deny_list_versions=False,
+        locked=(),
+        get_code="AccessDenied",
+        missing_bucket=False,
+    ):
         self.versioned = versioned
+        self.get_code = get_code
+        self.missing_bucket = missing_bucket
         self.deny_get = deny_get
         self.deny_list_versions = deny_list_versions
         self.locked = set(locked)
@@ -39,8 +50,10 @@ class FakeS3:
 
     def get_bucket_versioning(self, bucket):
         self.versioning_reads += 1
+        if self.missing_bucket:
+            raise S3Error(HTTPResponse(status=404), "NoSuchBucket", "gone", "res", "req", "host")
         if self.deny_get:
-            raise _denied("GetBucketVersioning")
+            raise _denied("GetBucketVersioning", self.get_code)
         return SimpleNamespace(status="Enabled" if self.versioned else None)
 
     def list_objects(self, bucket, prefix=None, recursive=False, include_version=False):
@@ -100,11 +113,13 @@ def test_an_unreadable_versioning_state_still_takes_the_version_path():
     assert s3.objects == {}
 
 
-def test_both_reads_refused_is_a_completed_delete_with_an_error_log(caplog):
-    """Cannot know whether versions remain: never a failure, never silent."""
+def test_both_reads_refused_is_unverified_with_an_error_log(caplog):
+    """Cannot know whether versions remain: never a failure, never silent, never verified."""
     s3 = FakeS3(versioned=False, deny_get=True, deny_list_versions=True)
     s3.put("a")
-    assert sv.remove_completely(s3, "b", names=["a"]) == 1
+    result = sv.remove_completely(s3, "b", names=["a"])
+    assert result == 1
+    assert result.unverified is True
     assert s3.objects == {}
     assert "s3:ListBucketVersions" in caplog.text
 
@@ -124,6 +139,45 @@ def test_a_locked_version_fails_the_delete_and_is_named():
         sv.remove_completely(s3, "b", names=["a"])
     assert any("a@v1" in entry for entry in raised.value.remaining)
     assert s3.objects == {"a": ["v1"]}, "the unlocked version is still removed"
+
+
+def test_a_verified_delete_is_not_flagged_unverified():
+    for versioned in (False, True):
+        s3 = FakeS3(versioned=versioned)
+        s3.put("a")
+        assert sv.remove_completely(s3, "b", names=["a"]).unverified is False
+
+
+def test_an_off_answer_is_never_cached_so_enabling_versioning_is_seen():
+    s3 = FakeS3(versioned=False)
+    s3.put("x")
+    sv.remove_completely(s3, "b", names=["x"])
+    s3.versioned = True
+    s3.put("y", versions=2)
+    assert sv.remove_completely(s3, "b", names=["y"]) == 2
+    assert s3.objects == {}, "versions written after versioning was enabled are removed too"
+
+
+def test_a_store_without_versioning_is_not_a_denial(caplog):
+    s3 = FakeS3(versioned=False, deny_get=True, get_code="NotImplemented", deny_list_versions=True)
+    s3.put("a")
+    result = sv.remove_completely(s3, "b", names=["a"])
+    assert result == 1 and result.unverified is False
+    assert "cannot verify" not in caplog.text
+    assert not [r for r in caplog.records if r.levelname == "ERROR"]
+
+
+def test_a_missing_bucket_has_nothing_to_delete():
+    result = sv.remove_completely(FakeS3(versioned=False, missing_bucket=True), "b", prefix="d/")
+    assert result == 0 and result.unverified is False
+
+
+def test_an_empty_prefix_is_rejected_like_none():
+    s3 = FakeS3(versioned=True)
+    s3.put("keep")
+    with pytest.raises(ValueError):
+        sv.remove_completely(s3, "b", prefix="")
+    assert list(s3.objects) == ["keep"]
 
 
 def test_the_state_is_cached_and_dropped_on_failure():

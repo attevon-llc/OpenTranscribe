@@ -114,13 +114,17 @@ Grant the storage identity these actions on the media and cache buckets, in addi
 
 | Action | Why |
 |---|---|
-| `s3:GetBucketVersioning` | to know whether old versions can exist (read once per bucket, cached for five minutes) |
+| `s3:ListBucket` | to find the keys a delete selects and to confirm they are gone |
+| `s3:DeleteObject` | to delete the current object |
+| `s3:GetBucketVersioning` | to know whether old versions can exist (a versioned answer is cached for five minutes; "off" is never cached) |
 | `s3:ListBucketVersions` | to find every version and delete marker of a key |
 | `s3:DeleteObjectVersion` | to remove each version |
 
-Without the first two, deletes still complete and the server log carries an ERROR saying old
-versions could not be checked. On a bucket known to be versioned, a refused version listing is
-reported as a failed delete, because versions certainly remain.
+Without `s3:GetBucketVersioning` and `s3:ListBucketVersions` the delete still runs, but it is
+**unverified**: whether old versions remain cannot be known, the server log carries an ERROR, and a
+file purge or GDPR erasure records it as partial (`storage_unverified`), never complete. On a bucket
+known to be versioned, a refused version listing is reported as a failed delete, because versions
+certainly remain. Deleting every version is irreversible, and that includes the orphan sweep.
 
 ## Roadmap
 

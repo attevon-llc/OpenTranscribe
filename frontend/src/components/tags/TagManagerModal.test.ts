@@ -65,6 +65,12 @@ vi.mock('$stores/auth', async () => {
 });
 
 import TagManagerModal from './TagManagerModal.svelte';
+import { capabilities } from '$stores/capabilities';
+
+/** The deployment's tenancy, as `GET /system/capabilities` reported it. */
+function setTenancy(mode: 'single' | 'multi' | undefined) {
+  capabilities.update((state) => ({ ...state, tenancyMode: mode }));
+}
 
 const UUID_A = 'aaaaaaaa-0000-0000-0000-000000000001';
 const UUID_B = 'bbbbbbbb-0000-0000-0000-000000000002';
@@ -91,6 +97,7 @@ const allTags = [
 beforeEach(() => {
   vi.clearAllMocks();
   auth.role = 'admin';
+  setTenancy('single');
   api.listTags.mockResolvedValue(allTags);
   api.listTagCollisions.mockResolvedValue([]);
   api.getTagImpact.mockResolvedValue({
@@ -433,5 +440,50 @@ describe('cluster view gating', () => {
     expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
+  });
+});
+
+describe('system tag write gate follows the deployment scope', () => {
+  // The server writes a system tag only for `deployment_scope_writable`: any
+  // admin in a single-tenant deployment, only a super_admin in a multi-tenant one.
+  async function selectSystemTag() {
+    api.listTags.mockResolvedValue([{ ...allTags[0], ownership: 'system', name: 'sys-tag' }]);
+    render(TagManagerModal);
+    await waitFor(() => expect(tagRows()).toHaveLength(1));
+    await fireEvent.click(tagRows()[0]);
+  }
+
+  it('offers an admin of a single-tenant deployment the system tag writes', async () => {
+    await selectSystemTag();
+    expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+  });
+
+  it('offers an admin of a multi-tenant deployment no system tag writes', async () => {
+    setTenancy('multi');
+    await selectSystemTag();
+    expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+  });
+
+  it('offers a super_admin of a multi-tenant deployment the system tag writes', async () => {
+    setTenancy('multi');
+    auth.role = 'super_admin';
+    await selectSystemTag();
+    expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument();
+  });
+
+  it('offers a plain admin nothing while the tenancy is unknown', async () => {
+    setTenancy(undefined);
+    await selectSystemTag();
+    expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull();
+  });
+
+  it('hides promote from an admin of a multi-tenant deployment', async () => {
+    setTenancy('multi');
+    render(TagManagerModal);
+    await waitFor(() => expect(tagRows()).toHaveLength(2));
+    await fireEvent.click(tagRows()[0]);
+    expect(screen.queryByRole('button', { name: 'Share with everyone' })).toBeNull();
   });
 });

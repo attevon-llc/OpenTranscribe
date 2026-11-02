@@ -22,10 +22,13 @@
   /**
    * Whether the caller may publish this tag into the shared vocabulary.
    *
-   * Cosmetic — `POST /tags/promote` enforces the admin check itself.
+   * Cosmetic — `POST /tags/promote` enforces the same right itself.
    */
   export let canPromote = false;
-  /** Whether the caller is an admin — decides rights over a system tag. */
+  /**
+   * Whether the caller may write system tags (`canWriteSystemTags`), which is
+   * narrower than the admin role in a multi-tenant deployment.
+   */
   export let isAdmin = false;
 
   /**

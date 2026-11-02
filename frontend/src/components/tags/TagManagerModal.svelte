@@ -37,6 +37,8 @@
   import type { TagFilterId } from '$components/tags/TagFilterBar.svelte';
   import type { TagScope } from '$lib/types/tag';
   import { user } from '$stores/auth';
+  import { capabilities } from '$stores/capabilities';
+  import { canWriteSystemTags } from '$lib/types/tag';
   import TagList from '$components/tags/TagList.svelte';
   import TagShareModal from '$components/tags/TagShareModal.svelte';
   import type { TagListEntry, TagSelectDetail } from '$components/tags/TagList.svelte';
@@ -144,12 +146,11 @@
   // Ownership scope, a separate axis from the view above so "my unused tags"
   // is one request rather than an unreachable combination.
   let scope: TagScope = 'all';
-  // Cosmetic gate only: POST /tags/promote enforces the admin check server-side.
-  // `role` is the authorization truth in this app; `is_superuser` is its mirror.
-  $: isAdmin = $user?.role === 'admin' || $user?.role === 'super_admin';
-  // Promotion is admin-only, same gate — named separately because the button
-  // and the write-rights check answer different questions.
-  $: canPromote = isAdmin;
+  // Cosmetic gate only: the server re-checks every write. Writing a system tag
+  // and promoting into the shared vocabulary are one server right
+  // (`deployment_scope_writable`), so they share one gate here too.
+  $: canWriteSystem = canWriteSystemTags($user?.role, $capabilities.tenancyMode);
+  $: canPromote = canWriteSystem;
   let tags: TagListEntry[] = [];
   let clusters: TagCollisionCluster[] = [];
   let loading = true;
@@ -573,7 +574,7 @@
           {deletePreview}
           {renameMergeImpact}
           {canPromote}
-          {isAdmin}
+          isAdmin={canWriteSystem}
           files={tagFiles}
           fileTotal={tagFileTotal}
           filesLoading={tagFilesLoading}

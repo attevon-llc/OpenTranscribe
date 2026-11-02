@@ -151,7 +151,7 @@ class TaskDetectionStuckMixin:
         for media_file in processing_files:
             # task_last_update is non-None here: filtered on `< stuck_threshold` above
             assert media_file.task_last_update is not None
-            active_tasks = active_tasks_by_file.get(media_file.id, [])  # type: ignore[call-overload]
+            active_tasks = active_tasks_by_file.get(media_file.id, [])
 
             if not active_tasks:
                 # Before marking the file as stuck, try to reconcile its status from task history.
@@ -481,7 +481,7 @@ class TaskDetectionStuckMixin:
         """Find files that have been in PENDING state for too long."""
         stale_time = datetime.now(UTC) - timedelta(hours=1)
 
-        return (  # type: ignore[no-any-return]
+        return (
             db.query(MediaFile)
             .filter(
                 MediaFile.status == FileStatus.PENDING,

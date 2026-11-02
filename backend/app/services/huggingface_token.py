@@ -174,7 +174,7 @@ def save_token(db: Session, token: str) -> None:
             )
         )
     else:
-        row.value = encrypted  # type: ignore[assignment]
+        row.value = encrypted
     db.commit()
     invalidate_cache()
 

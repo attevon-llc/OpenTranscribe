@@ -250,10 +250,10 @@ class SpeakerStatusService:
             )
 
             # Update computed fields
-            speaker.computed_status = status_info["computed_status"]  # type: ignore[assignment]
-            speaker.status_text = status_info["status_text"]  # type: ignore[assignment]
-            speaker.status_color = status_info["status_color"]  # type: ignore[assignment]
-            speaker.resolved_display_name = status_info["resolved_display_name"]  # type: ignore[assignment]
+            speaker.computed_status = status_info["computed_status"]
+            speaker.status_text = status_info["status_text"]
+            speaker.status_color = status_info["status_color"]
+            speaker.resolved_display_name = status_info["resolved_display_name"]
 
             db.commit()
             logger.info(
@@ -321,5 +321,5 @@ class SpeakerStatusService:
             else:  # a plain object standing in for a row: nothing to dirty
                 setattr(speaker, field, status_info[field])
         # Not columns at all: plain response attributes.
-        speaker.profile_name = status_info["profile_name"]  # type: ignore[assignment,attr-defined]
-        speaker.profile_status = status_info["profile_status"]  # type: ignore[assignment,attr-defined]
+        speaker.profile_name = status_info["profile_name"]  # type: ignore[attr-defined]
+        speaker.profile_status = status_info["profile_status"]  # type: ignore[attr-defined]

@@ -237,7 +237,7 @@ def probe_users(db: Session, users: list[User]) -> Iterator[tuple[User, LdapProb
 # =============================================================================
 def _disable_user(db: Session, user: User, reason: str) -> int:
     """Disable *user*, revoke every session, audit it. Returns sessions revoked."""
-    user.is_active = False  # type: ignore[assignment]
+    user.is_active = False
     revoked = revoke_all_sessions(db, user, reason=f"directory_sync:{reason}")
     db.commit()
 

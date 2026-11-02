@@ -113,7 +113,7 @@ def verify_token(db: Session, raw_token: str | None) -> SCIMToken | None:
             logger.warning("Rejected an expired SCIM token (uuid=%s)", row.uuid)
             return None
 
-    row.last_used_at = datetime.now(UTC)  # type: ignore[assignment]
+    row.last_used_at = datetime.now(UTC)
     db.commit()
     return row
 
@@ -128,7 +128,7 @@ def revoke_token(db: Session, token_uuid: str) -> SCIMToken | None:
     if row is None:
         return None
     if row.revoked_at is None:
-        row.revoked_at = datetime.now(UTC)  # type: ignore[assignment]
+        row.revoked_at = datetime.now(UTC)
         db.commit()
         db.refresh(row)
         logger.info("Revoked SCIM token %r (uuid=%s)", row.name, row.uuid)

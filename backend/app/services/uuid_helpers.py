@@ -70,7 +70,7 @@ def get_by_uuid[T](
         message = error_message or f"{model_name} not found"
         raise ResourceNotFoundError(message)
 
-    return instance  # type: ignore[no-any-return]
+    return instance
 
 
 def get_by_uuid_optional[T](
@@ -99,7 +99,7 @@ def get_by_uuid_optional[T](
         except ValueError:
             return None
 
-    return db.query(model).filter(model.uuid == uuid).first()  # type: ignore[attr-defined, no-any-return]
+    return db.query(model).filter(model.uuid == uuid).first()  # type: ignore[attr-defined]
 
 
 def uuid_to_id[T](db: Session, model: type[T], uuid: UUID | str) -> int:

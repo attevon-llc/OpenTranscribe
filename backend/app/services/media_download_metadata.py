@@ -78,7 +78,7 @@ class MediaMetadataMixin:
             Dictionary with basic metadata
         """
         try:
-            import ffmpeg  # type: ignore[import-untyped]
+            import ffmpeg
 
             probe = ffmpeg.probe(file_path)
             format_info = probe.get("format", {})

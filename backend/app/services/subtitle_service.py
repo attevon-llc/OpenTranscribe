@@ -250,7 +250,7 @@ class SubtitleService:
                 lines = []
                 for segment in sorted(group, key=lambda s: float(s.start_time)):
                     s_name = (
-                        speaker_map.get(segment.speaker_id, "Unknown")  # type: ignore[call-overload]
+                        speaker_map.get(segment.speaker_id, "Unknown")
                         if segment.speaker_id
                         else "Unknown"
                     )
@@ -307,11 +307,7 @@ class SubtitleService:
                 texts.append(next_entry["text"])
                 j += 1
 
-            speaker_name = (
-                speaker_map.get(speaker_id, "Unknown")  # type: ignore[call-overload]
-                if speaker_id
-                else "Unknown"
-            )
+            speaker_name = speaker_map.get(speaker_id, "Unknown") if speaker_id else "Unknown"
             start_ts = SubtitleService.format_timestamp_simple(group_start)
             end_ts = SubtitleService.format_timestamp_simple(group_end)
             combined_text = " ".join(texts)

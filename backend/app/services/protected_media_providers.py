@@ -96,7 +96,7 @@ def _load_providers() -> list[ProtectedMediaProvider]:
     providers: list[ProtectedMediaProvider] = []
 
     try:
-        import app.services.protected_media_plugins as plugin_pkg  # type: ignore[import]
+        import app.services.protected_media_plugins as plugin_pkg
     except ImportError:
         logger.info("No protected media plugins package found")
         return providers

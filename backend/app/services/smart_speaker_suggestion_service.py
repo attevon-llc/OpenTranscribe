@@ -282,7 +282,7 @@ class SmartSpeakerSuggestionService:
             ):
                 result[sid].append(
                     ConsolidatedSuggestion(
-                        name=speaker.suggested_name,  # type: ignore[arg-type]
+                        name=speaker.suggested_name,
                         confidence=float(speaker.confidence),
                         suggestion_type="llm_analysis",
                         reason="AI identified from transcript context",

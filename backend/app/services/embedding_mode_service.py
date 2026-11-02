@@ -77,7 +77,7 @@ class EmbeddingModeService:
             if value is not None:
                 decoded = value.decode() if isinstance(value, bytes) else value
                 if decoded in (MODE_V3, MODE_V4):
-                    return decoded  # type: ignore[return-value]
+                    return decoded
 
         if cls._local_cache is not None:
             mode, cached_at = cls._local_cache

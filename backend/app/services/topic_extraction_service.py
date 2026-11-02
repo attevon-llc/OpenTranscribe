@@ -448,7 +448,7 @@ IMPORTANT GUIDELINES:
         try:
             # Keep status as "pending" so suggestions remain available
             # Track what user has accepted in user_decisions for analytics
-            existing_decisions: dict[str, list[str]] = suggestion.user_decisions or {}  # type: ignore[assignment]
+            existing_decisions: dict[str, list[str]] = suggestion.user_decisions or {}
             existing_decisions.setdefault("accepted_collections", []).extend(accepted_collections)
             existing_decisions.setdefault("accepted_tags", []).extend(accepted_tags)
 
@@ -458,7 +458,7 @@ IMPORTANT GUIDELINES:
             )
             existing_decisions["accepted_tags"] = list(set(existing_decisions["accepted_tags"]))
 
-            suggestion.user_decisions = existing_decisions  # type: ignore[assignment]
+            suggestion.user_decisions = existing_decisions
 
             db.commit()
 
@@ -710,9 +710,9 @@ IMPORTANT GUIDELINES:
 
             if existing:
                 # Update existing
-                existing.suggested_tags = suggested_tags  # type: ignore[assignment]
-                existing.suggested_collections = suggested_collections  # type: ignore[assignment]
-                existing.status = "pending"  # type: ignore[assignment]
+                existing.suggested_tags = suggested_tags
+                existing.suggested_collections = suggested_collections
+                existing.status = "pending"
                 suggestion = existing
             else:
                 # Create new suggestion
@@ -762,7 +762,7 @@ IMPORTANT GUIDELINES:
             except Exception as e:
                 logger.warning(f"Auto-apply failed for file {media_file.id}: {e}")
 
-            return suggestion  # type: ignore[no-any-return]
+            return suggestion
 
         except Exception as e:
             logger.error(f"Error storing suggestion: {e}")

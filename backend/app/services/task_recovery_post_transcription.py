@@ -200,10 +200,10 @@ class TaskRecoveryPostTranscriptionMixin:
                     f"stuck in progress for {stuck_for}"
                 )
 
-                task.status = "failed"  # type: ignore[assignment]
-                task.error_message = "Task timeout - stuck in progress for > 6 hours"  # type: ignore[assignment]
-                task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
-                task.updated_at = datetime.now(UTC)  # type: ignore[assignment]
+                task.status = "failed"
+                task.error_message = "Task timeout - stuck in progress for > 6 hours"
+                task.completed_at = datetime.now(UTC)
+                task.updated_at = datetime.now(UTC)
                 stats["tasks_marked_failed"] += 1
 
             except Exception as e:
@@ -255,7 +255,7 @@ class TaskRecoveryPostTranscriptionMixin:
                         f"marking as permanently failed"
                     )
                     task.error_message = (
-                        f"Permanently failed after {current_attempts} recovery attempts"  # type: ignore[assignment]
+                        f"Permanently failed after {current_attempts} recovery attempts"
                     )
                     continue
 

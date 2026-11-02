@@ -75,7 +75,9 @@ beforeEach(() => {
     total: 1,
   });
   http.get.mockImplementation(async (url: string) => ({
-    data: { ai_summary_enabled: url.includes('admin') ? systemEnabled : true },
+    data: url.includes('admin')
+      ? { ai_summary_enabled: systemEnabled }
+      : { ai_summary_enabled: true, system_enabled: systemEnabled },
   }));
   http.put.mockImplementation(
     async (url: string, _body: unknown, config?: { params?: { enabled?: boolean } }) => {
@@ -108,7 +110,6 @@ describe('auto-summary switches', () => {
     http.get.mockClear();
     const user = render(LLMSettings, { props: { isAdmin: false } });
     await waitFor(() => expect(switches(user.container)).toHaveLength(1));
-    expect(http.get).not.toHaveBeenCalledWith('/admin/system/ai-summary');
     expect(http.get).toHaveBeenCalledWith('/user-settings/ai-summary');
   });
 
@@ -141,5 +142,31 @@ describe('auto-summary switches', () => {
     await fireEvent.click(switches(container)[1]);
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
     expect(switches(container)[1].checked).toBe(true);
+  });
+
+  it('tells a plain user the deployment switch is off, and disables their own switch', async () => {
+    systemEnabled = false;
+    const { container } = render(LLMSettings, { props: { isAdmin: false } });
+    await waitFor(() => expect(switches(container)).toHaveLength(1));
+    await waitFor(() => expect(switches(container)[0].disabled).toBe(true));
+    expect(container.querySelector('.summary-hint.warning')?.textContent?.trim()).toBe(
+      'settings.llm.systemSummaryDisabledHint'
+    );
+    expect(http.get).toHaveBeenCalledWith('/user-settings/ai-summary');
+  });
+
+  it('leaves a plain user their switch while the deployment switch is on', async () => {
+    const { container } = render(LLMSettings, { props: { isAdmin: false } });
+    await waitFor(() => expect(switches(container)).toHaveLength(1));
+    expect(switches(container)[0].disabled).toBe(false);
+    expect(container.querySelector('.summary-hint.warning')).toBeNull();
+  });
+
+  it('keeps an admin able to switch their own preference when the deployment switch is off', async () => {
+    systemEnabled = false;
+    const { container } = render(LLMSettings, { props: { isAdmin: true } });
+    await waitFor(() => expect(switches(container)).toHaveLength(2));
+    await waitFor(() => expect(switches(container)[1].checked).toBe(false));
+    expect(switches(container)[0].disabled).toBe(false);
   });
 });

@@ -11,6 +11,7 @@ from app import models
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.user_settings_common import _upsert_user_setting
 from app.db.base import get_db
+from app.schemas.ai_summary_settings import AiSummaryPreference
 from app.schemas.topic import AutoLabelSettingsSchema
 
 router = APIRouter()
@@ -51,16 +52,20 @@ def update_auto_label_settings(
 def get_ai_summary_setting(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
-) -> dict[str, Any]:
-    """Get user's auto-summary preference.
+) -> AiSummaryPreference:
+    """Get the user's auto-summary preference and the deployment-wide switch.
 
     Returns:
-        Dict with ``ai_summary_enabled`` boolean.
+        ``ai_summary_enabled`` (the caller's preference) and ``system_enabled`` (the admin's
+        deployment-wide switch, read from the setting ``PUT /admin/system/ai-summary`` writes).
     """
     from app.utils.summary_settings import is_summary_enabled_for_user
+    from app.utils.summary_settings import is_summary_enabled_system
 
-    enabled = is_summary_enabled_for_user(db, current_user.id)
-    return {"ai_summary_enabled": enabled}
+    return AiSummaryPreference(
+        ai_summary_enabled=is_summary_enabled_for_user(db, current_user.id),
+        system_enabled=is_summary_enabled_system(db),
+    )
 
 
 @router.put("/ai-summary")

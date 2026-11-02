@@ -5,11 +5,9 @@ Split out of ``test_user_settings_routes.py`` to keep both files inside the repo
 
 * **``/auto-label``** — no test anywhere in the tree, in this suite or in
   ``test_topics.py`` (which covers the topic routes, not the per-user toggle).
-* **``/ai-summary``** — reachable only outside the SPA. ``LLMSettings.svelte`` calls
-  ``/settings/ai-summary`` and nothing is mounted at ``/settings``, so the GET 404s
-  into a ``console.warn`` and the PUT raises a toast. **The backend route is the
-  correct one and is what is pinned here**; the frontend path is the bug (see
-  ``backend/app/api/CLAUDE.md``). Fixing the SPA is out of scope for this module.
+* **``/ai-summary``** — the per-user preference plus the read-only deployment-wide
+  ``system_enabled`` flag, which the SPA (``UserSettingsApi.getAiSummaryPreference``)
+  uses to tell every user, not only admins, when auto-summaries are off.
 * **``*/system-defaults``** — these read coded constants in ``app/core/constants.py``
   and DB-backed ``SystemSettings``, never ``.env`` and never the caller's own rows.
   Each is asserted to be unmoved by a per-user PUT.
@@ -55,7 +53,7 @@ def test_ai_summary_round_trip_both_directions(client, user_token_headers):
 
     reread_on = client.get(f"{_BASE}/ai-summary", headers=user_token_headers)
     assert reread_on.status_code == status.HTTP_200_OK
-    assert reread_on.json() == {"ai_summary_enabled": True}
+    assert reread_on.json() == {"ai_summary_enabled": True, "system_enabled": True}
 
     off = client.put(f"{_BASE}/ai-summary", json={"enabled": False}, headers=user_token_headers)
     assert off.status_code == status.HTTP_200_OK
@@ -63,7 +61,38 @@ def test_ai_summary_round_trip_both_directions(client, user_token_headers):
 
     reread_off = client.get(f"{_BASE}/ai-summary", headers=user_token_headers)
     assert reread_off.status_code == status.HTTP_200_OK
-    assert reread_off.json() == {"ai_summary_enabled": False}
+    assert reread_off.json() == {"ai_summary_enabled": False, "system_enabled": True}
+
+
+def test_ai_summary_get_reports_the_deployment_switch_to_a_plain_user(
+    client, user_token_headers, admin_token_headers
+):
+    """A non-admin cannot read ``/admin/system/ai-summary``, so this reply is the only way the
+    settings panel can tell the user that an admin switched summaries off for everyone.
+
+    ``system_enabled`` is read from the same setting the admin route writes, and is
+    independent of the caller's own preference.
+    """
+    before = client.get(f"{_BASE}/ai-summary", headers=user_token_headers)
+    assert before.json()["system_enabled"] is True
+
+    off = client.put(
+        "/api/admin/system/ai-summary", params={"enabled": "false"}, headers=admin_token_headers
+    )
+    assert off.status_code == status.HTTP_200_OK
+
+    after = client.get(f"{_BASE}/ai-summary", headers=user_token_headers)
+    assert after.status_code == status.HTTP_200_OK
+    assert after.json() == {"ai_summary_enabled": True, "system_enabled": False}
+
+    on = client.put(
+        "/api/admin/system/ai-summary", params={"enabled": "true"}, headers=admin_token_headers
+    )
+    assert on.status_code == status.HTTP_200_OK
+    assert (
+        client.get(f"{_BASE}/ai-summary", headers=user_token_headers).json()["system_enabled"]
+        is True
+    )
 
 
 def test_ai_summary_put_missing_body_is_422(client, user_token_headers):

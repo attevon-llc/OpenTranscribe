@@ -27,6 +27,11 @@ export interface ResetResponse {
 /** The user's auto-summary preference (`GET`/`PUT /user-settings/ai-summary`). */
 export interface AiSummaryPreference {
   ai_summary_enabled: boolean;
+  /**
+   * The deployment-wide switch an admin controls; `GET` only. A plain user cannot read the admin
+   * route, so this is how the panel learns that summaries are off for everyone.
+   */
+  system_enabled?: boolean;
   /** Present on the `PUT` reply only. */
   message?: string;
 }

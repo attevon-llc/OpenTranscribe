@@ -68,14 +68,6 @@ export class AdminSettingsApi {
   }
 
   /**
-   * Get the deployment-wide auto-summary switch (admin only)
-   */
-  static async getSystemAiSummary(): Promise<SystemAiSummarySetting> {
-    const response = await axiosInstance.get(`${this.BASE_PATH}/system/ai-summary`);
-    return response.data;
-  }
-
-  /**
    * Set the deployment-wide auto-summary switch (admin only).
    *
    * `enabled` is a QUERY parameter on this route, not a body field: the handler declares a

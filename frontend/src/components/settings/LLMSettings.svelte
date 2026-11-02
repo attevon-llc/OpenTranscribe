@@ -61,11 +61,7 @@
 
   // Load initial data — parallelize independent calls
   onMount(async () => {
-    const loads: Promise<void>[] = [loadData(), loadAutoSummarySetting()];
-    if (isAdmin) {
-      loads.push(loadSystemSummarySetting());
-    }
-    await Promise.allSettled(loads);
+    await Promise.allSettled([loadData(), loadAutoSummarySetting()]);
   });
 
   onDestroy(() => {
@@ -145,6 +141,8 @@
     try {
       const res = await UserSettingsApi.getAiSummaryPreference();
       autoSummaryEnabled = res.ai_summary_enabled;
+      // Every user gets the deployment switch here; the admin route is for writing it.
+      systemSummaryEnabled = res.system_enabled ?? true;
     } catch (err) {
       console.warn('Failed to load auto-summary setting:', err);
     }
@@ -161,15 +159,6 @@
       autoSummaryEnabled = !autoSummaryEnabled; // rollback
     } finally {
       autoSummaryLoading = false;
-    }
-  }
-
-  async function loadSystemSummarySetting() {
-    try {
-      const res = await AdminSettingsApi.getSystemAiSummary();
-      systemSummaryEnabled = res.ai_summary_enabled;
-    } catch (err) {
-      console.warn('Failed to load system summary setting:', err);
     }
   }
 

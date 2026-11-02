@@ -61,7 +61,7 @@ export interface UserLLMSettingsCreate {
 
 export interface UserLLMSettingsUpdate {
   name?: string;
-  provider?: keyof LLMProvider;
+  provider?: LLMProvider;
   model_name?: string;
   api_key?: string;
   base_url?: string;

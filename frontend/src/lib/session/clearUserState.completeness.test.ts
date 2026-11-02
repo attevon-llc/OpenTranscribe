@@ -142,6 +142,17 @@ const EXEMPT: Record<string, string> = {
     'The module-level `toastStore` binding is an imported reference, not state; the recording ' +
     'blob and tracks ARE cleared via recordingManager, which is registered.',
 
+  // ── Stateless helpers whose names or calls merely resemble teardown ──
+  'lib/mediaSearch/previewMedia':
+    "Stateless: openPreviewMedia calls the media URL cache's clear for ONE file before fetching " +
+    'a fresh URL; it holds no cache of its own.',
+  'lib/mediaSearch/searchParams':
+    "Stateless: resetStoreFilters() empties the search store's filters, and searchStore is " +
+    'already cleared on session change through clearUserState.',
+  'lib/settings/llmConfigForm':
+    'Stateless: `clear_aws_credentials` is a field of the LLM config form payload, not a ' +
+    'teardown member; the form itself lives in the modal component.',
+
   // ── Self ──
   'lib/session/clearUserState':
     'The module under test. It holds no state of its own — it only orchestrates the others.',

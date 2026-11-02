@@ -1,9 +1,10 @@
 <script lang="ts">
   import { goto, preloadCode } from '$app/navigation';
   import { page } from '$app/stores';
-  import { login, loginWithExternalAuth, authStore, isAuthenticated, getAuthMethods, loginWithOIDC, handleOIDCCallback, loginWithPKI, verifyMFA, accountLifecycle, clearAccountLifecycle, changeOwnPassword, acknowledgeBanner, logout, sessionEndReason, type AuthMethods } from "$stores/auth";
+  import { login, getAuthMethods, loginWithPKI, verifyMFA, accountLifecycle, clearAccountLifecycle, changeOwnPassword, logout, sessionEndReason, type AuthMethods } from "$stores/auth";
   import { resendEmailVerification } from '$lib/api/invitations';
   import { onMount, onDestroy } from 'svelte';
+  import { get } from 'svelte/store';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { loadPasswordPolicy, buildPasswordRequirements, FALLBACK_PASSWORD_POLICY, type PasswordPolicy } from '$lib/passwordPolicy';
@@ -14,13 +15,23 @@
   import MfaEnrollment from '$components/mfa/MfaEnrollment.svelte';
   import Spinner from '../../components/ui/Spinner.svelte';
   import { createRetryCountdown } from '$lib/utils/retryAfter';
+  import { isValidLoginIdentifier, forcedChangeError } from '$lib/auth/loginIdentifier';
+  import { startOidcLogin } from '$lib/auth/oidcLogin';
+  import { runOidcCallback } from '$lib/auth/oidcCallback';
+  import { createExternalSignIn } from '$lib/auth/externalSignIn';
+  import { createLoginBanner } from '$lib/auth/loginBanner';
 
   // Cloud edition: the hosted sign-in component mounts into this node; an
   // auth-state listener hydrates our local user store once a session exists.
   let externalSignInNode: HTMLElement | null = null;
-  let externalUnmount: (() => void) | null = null;
-  let externalUnlisten: (() => void) | null = null;
   let externalAuthLoading = isCloudEdition;
+  const externalSignIn = createExternalSignIn({
+    getNode: () => externalSignInNode,
+    isSignedIn: () => loginSuccess,
+    onSettled: () => { externalAuthLoading = false; },
+    onSuccess: () => redirectHome(),
+    onFailure: (message) => toastStore.error(message || $t('auth.loginFailed'))
+  });
 
   // Import logo asset for proper Vite processing
   import logoBanner from '../../assets/logo-banner.png';
@@ -42,6 +53,12 @@
   // top of the login round trip for every sign-in; the gallery code is now preloaded while the
   // credentials are being verified, so a short beat is all the transition needs.
   const SIGNED_IN_REDIRECT_DELAY_MS = 250;
+
+  /** Show the "signing in" screen, then navigate home. */
+  function redirectHome() {
+    loginSuccess = true;
+    setTimeout(() => goto('/', { replaceState: true }), SIGNED_IN_REDIRECT_DELAY_MS);
+  }
 
   // MFA state. `mfaToken` is a short-lived half-token: memory only, never
   // localStorage/sessionStorage, and cleared on every exit from the MFA steps.
@@ -67,23 +84,16 @@
   let forcedConfirmPassword = "";
   let forcedChangeLoading = false;
 
-  // Login banner (FedRAMP AC-8).
-  //
-  // Consent is a SERVER record — `POST /auth/banner/acknowledge` — because
-  // `get_current_active_user` refuses every non-exempt route with
-  // `detail.code === "banner_acknowledgment_required"` until that timestamp
-  // exists and post-dates the current banner wording. The old
-  // `sessionStorage['banner_acknowledged']` flag never reached the server, so a
-  // deployment with the banner enabled was unusable after login.
-  //
-  // `bannerConsentPending` is in-memory ONLY, by design: it gates nothing but
-  // this page's own modal, and persisting it is what made the fake look real.
-  let bannerEnabled = false;
-  let bannerText = "";
-  let bannerClassification: 'UNCLASSIFIED' | 'CUI' | 'FOUO' | 'CONFIDENTIAL' | 'SECRET' | 'TOP SECRET' | 'TOP SECRET//SCI' = 'UNCLASSIFIED';
-  let bannerConsentPending = false;
-  let bannerAckPending = false;
-  let bannerAckError = "";
+  // Login banner (FedRAMP AC-8): consent is a server record, see $lib/auth/loginBanner.
+  const banner = createLoginBanner();
+  const {
+    enabled: bannerEnabled,
+    text: bannerText,
+    classification: bannerClassification,
+    consentPending: bannerConsentPending,
+    ackPending: bannerAckPending,
+    ackError: bannerAckError
+  } = banner;
 
   // A banner hold means we are ALREADY signed in and the gate bounced us here,
   // so acknowledging must hit the API rather than merely dismiss the modal.
@@ -96,16 +106,10 @@
   // account screen for a user whose account is perfectly fine.
   $: lifecyclePanel = $accountLifecycle && !bannerHold ? $accountLifecycle : null;
 
-  // A hold can land after mount (the banner text changed under a live session),
-  // so re-arm the modal rather than assuming onMount saw it. The hold itself is
-  // proof the banner is enabled — better evidence than the /auth/methods probe,
-  // whose fail-closed default reports it OFF and would leave a held user staring
-  // at a sign-in form that no longer works. LoginBanner fetches the current
-  // wording from /auth/banner regardless of what we hold here.
-  $: if (bannerHold && !bannerConsentPending) {
-    bannerEnabled = true;
-    bannerConsentPending = true;
-  }
+  // A hold can land after mount (the banner text changed under a live session), so re-arm the
+  // modal rather than assuming onMount saw it. LoginBanner fetches the current wording from
+  // /auth/banner regardless of what we hold here.
+  $: if (bannerHold && !$bannerConsentPending) banner.armForHold();
 
   // Authentication methods
   let authMethods: AuthMethods = {
@@ -165,7 +169,7 @@
       // its sign-in component and hydrate our store when it reports a session.
       // The community local-login / OIDC-callback flow below is skipped.
       if (isCloudEdition) {
-        await setupExternalSignIn();
+        await externalSignIn.setup();
         return;
       }
 
@@ -175,59 +179,20 @@
       const state = urlParams.get('state');
 
       if (code && state) {
-        // NOTHING in this block may escape.
-        //
-        // The auth-methods fetch below — and with it the `finally` that opens the
-        // `authMethodsLoaded` gate — is unreachable if an exception gets out here, so a throw
-        // pins the card to its spinner permanently: a user returning from the IdP is then left
-        // with no way in AT ALL, not even the local credential form. Before the gate existed
-        // the same throw was survivable, because the form had already been painted against the
-        // placeholder defaults; gating the render is what turned it into a lockout.
-        //
-        // `sessionStorage` is the concrete hazard, not a hypothetical one: in a browser
-        // configured to block site storage, merely *touching* it throws `SecurityError`, and
-        // `setItem` throws on quota. Neither is under our control. Falling through to the
-        // ordinary credential form is the recoverable outcome.
-        try {
-          // Clear URL parameters immediately to prevent double-processing on refresh
-          window.history.replaceState({}, document.title, window.location.pathname);
+        // runOidcCallback never throws: an exception escaping here would pin the card to its
+        // spinner (the auth-methods fetch below opens the gate), see $lib/auth/oidcCallback.
+        const outcome = await runOidcCallback(code, state, (value) => { oidcLoading = value; });
 
-          // Check if we already processed this callback (prevents double toast)
-          const processedKey = `oidc_callback_${state}`;
-          if (sessionStorage.getItem(processedKey)) {
-            // Already processed this callback, skip
-            window.location.href = "/";
-            return;
-          }
-          sessionStorage.setItem(processedKey, 'true');
-
-          // Handle the OIDC callback
-          oidcLoading = true;
-          const result = await handleOIDCCallback(code, state);
-          oidcLoading = false;
-
-          if (result.success) {
-            loginSuccess = true;
-            setTimeout(() => goto('/', { replaceState: true }), SIGNED_IN_REDIRECT_DELAY_MS);
-            return;
-          } else {
-            // Only show error if it's not a state-related issue (likely double-request)
-            if (!result.message?.includes('state')) {
-              toastStore.error(result.message || $t('auth.loginFailed'));
-            } else {
-              // State error but user might already be logged in, check and redirect
-              if ($isAuthenticated) {
-                window.location.href = "/";
-                return;
-              }
-              toastStore.error(result.message || $t('auth.loginFailed'));
-            }
-          }
-        } catch (err) {
-          console.error('OIDC callback handling failed; falling back to the sign-in form', err);
-          oidcLoading = false;
-          toastStore.error($t('auth.loginFailed'));
+        if (outcome.kind === 'redirect-home') {
+          window.location.href = "/";
+          return;
         }
+        if (outcome.kind === 'success') {
+          redirectHome();
+          return;
+        }
+        // Only an IdP failure carries a message of its own.
+        toastStore.error((outcome.kind === 'error' && outcome.message) || $t('auth.loginFailed'));
       }
 
       // Fetch available auth methods.
@@ -255,18 +220,11 @@
         authMethodsLoaded = true;
       }
 
-      // Check for banner settings. The notice is shown on every visit: there is
-      // no client-side "already acknowledged" shortcut any more, because the only
-      // acknowledgment that counts is the one recorded server-side after sign-in.
-      if (authMethods.login_banner_enabled) {
-        bannerEnabled = true;
-        bannerText = authMethods.login_banner_text || "";
-        bannerClassification = (authMethods.login_banner_classification as typeof bannerClassification) || "UNCLASSIFIED";
-        bannerConsentPending = true;
-      }
+      // Banner settings come with the auth methods.
+      banner.applyMethods(authMethods);
 
       const emailInput = document.getElementById('email');
-      if (emailInput && !bannerConsentPending) emailInput.focus();
+      if (emailInput && !get(bannerConsentPending)) emailInput.focus();
 
       // Handle page visibility change (user returns via back button)
       handleVisibilityChange = () => {
@@ -301,92 +259,16 @@
     };
   });
 
-  // Cloud edition: load the hosted auth SDK, mount its sign-in component, and
-  // hydrate the local store on session change. No-op in the community build
-  // (isCloudEdition gate above; $lib/cloud is an inert stub there).
-  async function setupExternalSignIn() {
-    try {
-      const { loadExternalAuth, mountSignIn, hasExternalSession, onAuthChange } =
-        await import('$lib/cloud');
-      const authHandle = await loadExternalAuth();
-      if (!authHandle) {
-        externalAuthLoading = false;
-        toastStore.error($t('auth.loginFailed'));
-        return;
-      }
-
-      // Already signed in (e.g. returning user) — hydrate and go.
-      if (await hasExternalSession()) {
-        await completeExternalLogin();
-        return;
-      }
-
-      // React to sign-in completion (the IdP handles the credential + MFA flow).
-      externalUnlisten = await onAuthChange(() => {
-        void (async () => {
-          if (!loginSuccess && (await hasExternalSession())) {
-            await completeExternalLogin();
-          }
-        })();
-      });
-
-      if (externalSignInNode) {
-        // afterSignInUrl/afterSignUpUrl keep the user in-app; the listener does
-        // the store hydration + navigation.
-        externalUnmount = await mountSignIn(externalSignInNode, {
-          afterSignInUrl: '/',
-          afterSignUpUrl: '/',
-          signUpUrl: '/register',
-        });
-      }
-      externalAuthLoading = false;
-    } catch (err) {
-      console.error('External sign-in setup failed:', err);
-      externalAuthLoading = false;
-      toastStore.error($t('auth.loginFailed'));
-    }
-  }
-
-  // Hydrate local user store from /auth/me after the IdP reports a session.
-  async function completeExternalLogin() {
-    const result = await loginWithExternalAuth();
-    if (result.success) {
-      loginSuccess = true;
-      setTimeout(() => goto('/', { replaceState: true }), SIGNED_IN_REDIRECT_DELAY_MS);
-    } else {
-      toastStore.error(result.message || $t('auth.loginFailed'));
-    }
-  }
-
   // Tear down the hosted component + listener on unmount (cloud only).
   onDestroy(() => {
     retryCountdown.stop();
-    if (externalUnmount) externalUnmount();
-    if (externalUnlisten) externalUnlisten();
+    externalSignIn.destroy();
   });
-
-  // Validate login identifier (email or username for LDAP)
-  /**
-   * Validates a login identifier - can be email or username
-   * @param {string} identifier - The email or username to validate
-   * @returns {boolean} True if the identifier is valid, false otherwise
-   */
-  function validateLoginIdentifier(identifier: string) {
-    // Accept either a valid email OR a username
-    // Username regex is permissive to support various LDAP naming conventions:
-    // - Alphanumeric, dots, underscores, hyphens
-    // - Backslashes for DOMAIN\username format
-    // - At signs for user@domain format (handled by email regex too)
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const usernameRegex = /^[a-zA-Z0-9._\\@-]{2,}$/;
-    const trimmed = String(identifier).trim();
-    return emailRegex.test(trimmed) || usernameRegex.test(trimmed);
-  }
 
   // Check form validity
   function validateForm() {
     formSubmitted = true;
-    emailValid = email.trim() !== '' && validateLoginIdentifier(email);
+    emailValid = email.trim() !== '' && isValidLoginIdentifier(email);
     passwordValid = password.trim() !== '';
 
     return emailValid && passwordValid;
@@ -403,7 +285,7 @@
       return;
     }
 
-    if (!validateLoginIdentifier(email.trim())) {
+    if (!isValidLoginIdentifier(email.trim())) {
       toastStore.error($t('auth.validIdentifierRequired'));
       document.getElementById('email')?.focus();
       return;
@@ -458,7 +340,7 @@
         // finally be recorded. Ahead of the forced-password-change branch below
         // because the server checks the banner FIRST — clearing the password
         // hold without this one would just produce a banner 403 next.
-        await recordBannerConsent();
+        await banner.recordConsent();
 
         // The account carries `must_change_password`: a session exists, but the
         // lifecycle gate refuses every route bar PUT /users/me until it clears.
@@ -471,11 +353,8 @@
           return;
         }
 
-        loginSuccess = true;
         loading = false;
-
-        // Brief delay so the success state is visible before navigation
-        setTimeout(() => goto('/', { replaceState: true }), SIGNED_IN_REDIRECT_DELAY_MS);
+        redirectHome();
       } else {
         console.error('Login.svelte: Login failed:', result.message);
         if (result.status === 429) retryCountdown.start(result.retry_after);
@@ -551,12 +430,9 @@
    * the next request goes through — so we proceed exactly as after a login.
    */
   async function handleForcedPasswordChange() {
-    if (!forcedCurrentPassword || !forcedNewPassword || !forcedConfirmPassword) {
-      toastStore.error($t('auth.allFieldsRequired'));
-      return;
-    }
-    if (forcedNewPassword !== forcedConfirmPassword) {
-      toastStore.error($t('auth.passwordsNoMatch'));
+    const invalid = forcedChangeError(forcedCurrentPassword, forcedNewPassword, forcedConfirmPassword);
+    if (invalid) {
+      toastStore.error($t(invalid));
       return;
     }
 
@@ -593,15 +469,7 @@
     oidcLoading = true;
 
     try {
-      // Add timeout to prevent infinite spinner if the provider is down
-      const timeoutPromise = new Promise<{ success: false; message: string }>((_, reject) =>
-        setTimeout(() => reject(new Error('Connection timeout')), 10000)
-      );
-
-      const result = await Promise.race([
-        loginWithOIDC(),
-        timeoutPromise
-      ]);
+      const result = await startOidcLogin();
 
       // If successful, the user is redirected to the identity provider
       // If failed, show error
@@ -623,9 +491,8 @@
     pkiLoading = false;
 
     if (result.success) {
-      await recordBannerConsent();
-      loginSuccess = true;
-      setTimeout(() => goto('/', { replaceState: true }), SIGNED_IN_REDIRECT_DELAY_MS);
+      await banner.recordConsent();
+      redirectHome();
     } else {
       toastStore.error(result.message || $t('auth.loginFailed'));
     }
@@ -644,9 +511,8 @@
       const result = await verifyMFA(mfaToken, mfaCode.trim(), useBackupCode);
 
       if (result.success) {
-        await recordBannerConsent();
-        loginSuccess = true;
-        setTimeout(() => goto('/', { replaceState: true }), SIGNED_IN_REDIRECT_DELAY_MS);
+        await banner.recordConsent();
+        redirectHome();
       } else {
         toastStore.error(result.message || $t('auth.mfaVerificationFailed'));
         mfaCode = "";
@@ -676,9 +542,8 @@
     mfaEnrollmentRequired = false;
     mfaToken = "";
     password = "";
-    await recordBannerConsent();
-    loginSuccess = true;
-    setTimeout(() => goto('/', { replaceState: true }), SIGNED_IN_REDIRECT_DELAY_MS);
+    await banner.recordConsent();
+    redirectHome();
   }
 
   // Half-token spent/expired, or the user backed out — drop it and show the
@@ -690,97 +555,34 @@
     setTimeout(() => document.getElementById('password')?.focus(), 0);
   }
 
-  /**
-   * Accept the login banner.
-   *
-   * Two situations reach this, and only one of them can talk to the API:
-   *
-   * - **Signed in** (a banner hold bounced us back here): the acknowledgment IS
-   *   the remedy, so it must reach `POST /auth/banner/acknowledge` before any
-   *   other route will answer. A failure is shown in place — dismissing the modal
-   *   would drop the user into an app where every request 403s.
-   * - **Anonymous**: there is no session to record against yet. The modal is the
-   *   AC-8 notice; the consent it captures is POSTed by `recordBannerConsent()`
-   *   the moment sign-in produces a session.
-   */
   async function handleBannerAcknowledge() {
-    bannerAckError = "";
-
-    if (bannerHold) {
-      bannerAckPending = true;
-      const result = await acknowledgeBanner();
-      bannerAckPending = false;
-
-      if (!result.success) {
-        bannerAckError = result.message || $t('loginBanner.acknowledgeFailed');
-        return;
-      }
-
-      bannerConsentPending = false;
-      loginSuccess = true;
-      setTimeout(() => goto('/', { replaceState: true }), SIGNED_IN_REDIRECT_DELAY_MS);
-      return;
-    }
-
-    bannerConsentPending = false;
-    setTimeout(() => document.getElementById('email')?.focus(), 100);
+    const outcome = await banner.acknowledge(bannerHold);
+    if (outcome === 'signed-in') redirectHome();
+    else if (outcome === 'dismissed') setTimeout(() => document.getElementById('email')?.focus(), 100);
   }
 
-  /**
-   * Refuse the banner.
-   *
-   * This used to be `window.location.href = 'about:blank'`, which modern
-   * browsers commonly block — leaving the user pinned to the banner with no
-   * feedback whatsoever. End the session and return to a clean sign-in page
-   * instead. The notice reappears because consent is a precondition for access,
-   * not a dismissible dialog.
-   */
-  async function handleBannerDecline() {
-    bannerAckError = "";
-    bannerAckPending = false;
-    email = "";
-    password = "";
-    emailNotVerified = false;
-    mfaRequired = false;
-    mfaEnrollmentRequired = false;
-    mfaToken = "";
-    mfaCode = "";
-
-    // Clears the hold, the cookies and every user store; also empties the toast
-    // queue, which is why the explanation below is raised afterwards.
-    await logout();
-
-    bannerConsentPending = bannerEnabled;
-    toastStore.info($t('loginBanner.mustAcknowledge'));
-  }
-
-  /**
-   * Record banner consent now that a session exists.
-   *
-   * Called from every path that produces one. Best-effort on purpose: if the
-   * write fails, the AC-8 gate refuses the next request, the lifecycle
-   * interceptor publishes the hold, and the user lands back here with the banner
-   * and a real error message — a strictly better outcome than blocking the
-   * sign-in on a transient failure.
-   */
-  async function recordBannerConsent() {
-    if (!bannerEnabled) return;
-    const result = await acknowledgeBanner();
-    if (!result.success) {
-      console.warn('Login.svelte: banner acknowledgment not recorded:', result.message);
-    }
+  function handleBannerDecline() {
+    return banner.decline(() => {
+      email = "";
+      password = "";
+      emailNotVerified = false;
+      mfaRequired = false;
+      mfaEnrollmentRequired = false;
+      mfaToken = "";
+      mfaCode = "";
+    });
   }
 </script>
 
 <!-- Classification Banner -->
-{#if bannerEnabled}
+{#if $bannerEnabled}
   <ClassificationBanner
-    classification={bannerClassification}
-    bannerText={bannerText}
-    requireAcknowledgment={bannerConsentPending}
+    classification={$bannerClassification}
+    bannerText={$bannerText}
+    requireAcknowledgment={$bannerConsentPending}
     position="top"
-    pending={bannerAckPending}
-    errorMessage={bannerAckError}
+    pending={$bannerAckPending}
+    errorMessage={$bannerAckError}
     noticeUpdated={bannerNoticeUpdated}
     on:acknowledge={handleBannerAcknowledge}
     on:decline={handleBannerDecline}
@@ -796,17 +598,17 @@
     <p class="login-success-text">{$t('auth.signingIn')}</p>
   </div>
 {:else}
-{#if bannerConsentPending}
+{#if $bannerConsentPending}
   <LoginBanner
-    pending={bannerAckPending}
-    errorMessage={bannerAckError}
+    pending={$bannerAckPending}
+    errorMessage={$bannerAckError}
     noticeUpdated={bannerNoticeUpdated}
     on:acknowledge={handleBannerAcknowledge}
     on:decline={handleBannerDecline}
   />
 {/if}
 
-<div class="auth-container" class:banner-offset={bannerEnabled}>
+<div class="auth-container" class:banner-offset={$bannerEnabled}>
   <div class="auth-card">
     <div class="auth-header">
       <div class="auth-logo">

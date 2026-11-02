@@ -6,12 +6,35 @@
     LLMSettingsApi,
     llmProviderDisplayName,
     type UserLLMSettings,
+    type LLMProvider,
     type ProviderDefaults,
     type LocalEndpointStatus
   } from '../../lib/api/llmSettings';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import {
+    SCHEMA_DEFAULT_MAX_TOKENS,
+    blankForm,
+    formFromConfig,
+    isBedrockPairIncomplete,
+    isFormValid as formIsValid,
+    isConnectionTestValid as connectionTestIsValid,
+    awsFields,
+    buildPayload,
+    formatModelSize,
+    showsDiscovery,
+    reconcileDiscovery,
+    type LLMFormData
+  } from '$lib/settings/llmConfigForm';
+  import {
+    discoverOllamaModels,
+    discoverOpenAIModels,
+    discoverAnthropicModels,
+    type OllamaModel,
+    type OpenAIModel,
+    type AnthropicModel
+  } from '$lib/settings/llmModelDiscovery';
   import { user } from '$stores/auth';
   import Spinner from '../ui/Spinner.svelte';
   import ConfirmationModal from '../ConfirmationModal.svelte';
@@ -25,87 +48,28 @@
 
   const dispatch = createEventDispatcher();
 
-  // Issue #873: a new configuration's context window must never be a bare
-  // literal. This mirrors the backend schema's own default
-  // (`UserLLMSettingsBase.max_tokens = 8192`) so an unrecognized/uncatalogued
-  // provider still gets a sane starting point instead of a value below what
-  // the server itself defaults to. The real fix is below — the provider-select
-  // handler overwrites this with `ProviderDefaults.max_context_length` from
-  // the server's catalog as soon as a provider with a known window is picked.
-  const SCHEMA_DEFAULT_MAX_TOKENS = 8192;
-
-  // Form data
-  let formData = {
-    name: '',
-    provider: '' as any,
-    model_name: '',
-    api_key: '',
-    base_url: '',
-    max_tokens: SCHEMA_DEFAULT_MAX_TOKENS,
-    temperature: '0.3',
-    is_active: true,
-    is_shared: false,
-    aws_region: '',
-    aws_access_key_id: '',
-    aws_secret_access_key: '',
-    aws_session_token: '',
-    clear_aws_credentials: false
-  };
+  // Form data (defaults and validation live in $lib/settings/llmConfigForm)
+  let formData: LLMFormData = blankForm();
 
   // Form state
   let saving = false;
   let testing = false;
   let showApiKey = false;
   let isDirty = false;
-  let originalFormData = {
-    name: '',
-    provider: '' as any,
-    model_name: '',
-    api_key: '',
-    base_url: '',
-    max_tokens: SCHEMA_DEFAULT_MAX_TOKENS,
-    temperature: '0.3',
-    is_active: true,
-    is_shared: false,
-    aws_region: '',
-    aws_access_key_id: '',
-    aws_secret_access_key: '',
-    aws_session_token: '',
-    clear_aws_credentials: false
-  };
+  let originalFormData: LLMFormData = blankForm();
 
-  // Ollama model discovery
+  // Model discovery (Ollama / OpenAI-compatible / Anthropic)
   let loadingOllamaModels = false;
-  let ollamaModels: Array<{
-    name: string;
-    size: number;
-    modified_at: string;
-    digest: string;
-    details: any;
-    display_name: string;
-  }> = [];
+  let ollamaModels: OllamaModel[] = [];
   let showModelSelector = false;
 
-  // OpenAI-compatible model discovery
   let loadingOpenAIModels = false;
-  let openaiCompatibleModels: Array<{
-    name: string;
-    id: string;
-    owned_by: string;
-    created: number;
-  }> = [];
+  let openaiCompatibleModels: OpenAIModel[] = [];
   let showOpenAIModelSelector = false;
 
-  // Anthropic model discovery
   let loadingAnthropicModels = false;
-  let anthropicModels: Array<{
-    id: string;
-    display_name: string;
-    created_at: string;
-    type: string;
-  }> = [];
+  let anthropicModels: AnthropicModel[] = [];
   let showAnthropicModelSelector = false;
-
 
   // Local endpoint discovery (issue #644) — a fixed-allowlist reachability probe over
   // this repo's own dev/test LLM overlay services, surfaced as one-click fill-ins.
@@ -156,34 +120,29 @@
     loadLocalEndpoints();
   }
 
-  // Local detection only helps for the providers that run on a local server, and before a
-  // provider is picked ("Use this" is what sets it).
-  const LOCAL_CAPABLE_PROVIDERS = ['ollama', 'vllm', 'custom'];
-  $: showDiscovery =
-    (!formData.provider || LOCAL_CAPABLE_PROVIDERS.includes(formData.provider)) &&
-    (loadingLocalEndpoints || localEndpoints.length > 0);
+  $: showDiscovery = showsDiscovery(formData.provider, loadingLocalEndpoints, localEndpoints);
 
-  // Expanded by default only when no provider is chosen and something reachable exists; a
-  // user's own toggle wins until the provider changes again.
+  // Disclosure state: see reconcileDiscovery for the expand-by-default rule.
   let discoveryExpanded = false;
   let discoveryTouched = false;
   let discoverySeenProvider = '';
-  function reconcileDiscovery(provider: string, endpoints: LocalEndpointStatus[]) {
-    if (provider !== discoverySeenProvider) {
-      discoverySeenProvider = provider;
-      discoveryTouched = false;
-    }
-    if (!discoveryTouched) {
-      discoveryExpanded = !provider && endpoints.some((e) => e.reachable);
-    }
+  function syncDiscovery(provider: string, endpoints: LocalEndpointStatus[]) {
+    ({
+      expanded: discoveryExpanded,
+      touched: discoveryTouched,
+      seenProvider: discoverySeenProvider
+    } = reconcileDiscovery(
+      { expanded: discoveryExpanded, touched: discoveryTouched, seenProvider: discoverySeenProvider },
+      provider,
+      endpoints
+    ));
   }
-  $: reconcileDiscovery(formData.provider, localEndpoints);
+  $: syncDiscovery(formData.provider, localEndpoints);
 
   // Bedrock account fields: any admin sees whether the server's own AWS credentials resolve.
   $: isAdmin = $user?.role === 'admin' || $user?.role === 'super_admin';
   $: bedrockDefaults = getProviderDefaults('bedrock');
-  $: bedrockPairIncomplete =
-    Boolean(formData.aws_access_key_id.trim()) !== Boolean(formData.aws_secret_access_key.trim());
+  $: bedrockPairIncomplete = isBedrockPairIncomplete(formData);
 
   // Unsaved changes modal
   let showUnsavedChangesModal = false;
@@ -209,76 +168,19 @@
   // Track form changes for dirty state
   $: isDirty = JSON.stringify(formData) !== JSON.stringify(originalFormData);
 
-  // Form validation
-  $: isFormValid = (() => {
-    if (!formData.name.trim() || !formData.provider || !formData.model_name.trim()) {
-      return false;
-    }
+  $: isFormValid = formIsValid(formData, getProviderDefaults(formData.provider), Boolean(editingConfig));
 
-    // Provider-specific validation
-    const providerConfig = getProviderDefaults(formData.provider);
-    if (!providerConfig) return false;
-
-    // Check if API key is required (only for new configurations)
-    if (providerConfig.requires_api_key && !formData.api_key.trim() && !editingConfig) {
-      return false;
-    }
-
-    // Check base URL for providers that support custom URLs
-    if (providerConfig.supports_custom_url && !formData.base_url.trim()) {
-      return false;
-    }
-
-    if (formData.provider === 'bedrock' && bedrockPairIncomplete) {
-      return false;
-    }
-
-    return true;
-  })();
-
-  // Connection test validation
-  $: isConnectionTestValid = (() => {
-    if (!formData.provider || !formData.model_name) {
-      return false;
-    }
-    if (formData.provider === 'ollama' && !formData.base_url) {
-      return false;
-    }
-    // Check if API key is required and present (for new configs or if no stored key)
-    const providerConfig = getProviderDefaults(formData.provider);
-    if (providerConfig?.requires_api_key) {
-      // In edit mode with stored key, allow test even without re-entering key
-      if (editingConfig?.has_api_key) {
-        return true;
-      }
-      // Otherwise require API key to be entered
-      if (!formData.api_key?.trim()) {
-        return false;
-      }
-    }
-    return true;
-  })();
+  $: isConnectionTestValid = connectionTestIsValid(
+    formData,
+    getProviderDefaults(formData.provider),
+    Boolean(editingConfig?.has_api_key)
+  );
 
   // Loading state for API key fetch
   let loadingApiKey = false;
 
   async function populateForm(config: UserLLMSettings) {
-    formData = {
-      name: config.name,
-      provider: config.provider as any,
-      model_name: config.model_name,
-      api_key: '', // Will be populated below if exists
-      base_url: config.base_url || '',
-      max_tokens: config.max_tokens,
-      temperature: config.temperature,
-      is_active: config.is_active,
-      is_shared: config.is_shared || false,
-      aws_region: config.aws_region || '',
-      aws_access_key_id: '',
-      aws_secret_access_key: '',
-      aws_session_token: '',
-      clear_aws_credentials: false
-    };
+    formData = formFromConfig(config);
 
     // Fetch the actual API key if one is stored
     if (config.has_api_key && config.uuid) {
@@ -301,22 +203,7 @@
   }
 
   function resetForm() {
-    formData = {
-      name: '',
-      provider: '' as any,
-      model_name: '',
-      api_key: '',
-      base_url: '',
-      max_tokens: SCHEMA_DEFAULT_MAX_TOKENS,
-      temperature: '0.3',
-      is_active: true,
-      is_shared: false,
-      aws_region: '',
-      aws_access_key_id: '',
-      aws_secret_access_key: '',
-      aws_session_token: '',
-      clear_aws_credentials: false
-    };
+    formData = blankForm();
     originalFormData = { ...formData };
     discoveryTouched = false;
     ollamaModels = [];
@@ -334,7 +221,7 @@
   }
 
 
-  function getProviderDefaults(provider: any): ProviderDefaults | undefined {
+  function getProviderDefaults(provider: string): ProviderDefaults | undefined {
     return supportedProviders.find(p => p.provider === provider);
   }
 
@@ -380,40 +267,6 @@
     pendingCloseAction = null;
   }
 
-  // The AWS fields belong to Bedrock only: every other provider's request carries none of
-  // them, and a blank credential is simply not sent ("leave blank to keep it").
-  function awsFields(): Record<string, string> {
-    if (formData.provider !== 'bedrock') return {};
-    const fields: Record<string, string> = {};
-    const entries: Array<[string, string]> = [
-      ['aws_access_key_id', formData.aws_access_key_id],
-      ['aws_secret_access_key', formData.aws_secret_access_key],
-      ['aws_session_token', formData.aws_session_token]
-    ];
-    for (const [key, value] of entries) {
-      if (value.trim()) fields[key] = value.trim();
-    }
-    return fields;
-  }
-
-  function buildPayload() {
-    const {
-      aws_region,
-      aws_access_key_id: _id,
-      aws_secret_access_key: _secret,
-      aws_session_token: _token,
-      clear_aws_credentials,
-      ...rest
-    } = formData;
-    if (formData.provider !== 'bedrock') return rest;
-    return {
-      ...rest,
-      aws_region,
-      ...awsFields(),
-      ...(editingConfig && clear_aws_credentials ? { clear_aws_credentials: true } : {})
-    };
-  }
-
   async function saveConfiguration() {
     if (!isFormValid) return;
 
@@ -422,10 +275,10 @@
     try {
       let savedConfig;
       if (editingConfig) {
-        savedConfig = await LLMSettingsApi.updateSettings(editingConfig.uuid, buildPayload());
+        savedConfig = await LLMSettingsApi.updateSettings(editingConfig.uuid, buildPayload(formData, Boolean(editingConfig)));
         toastStore.success($t('llm.configUpdated'), 5000);
       } else {
-        savedConfig = await LLMSettingsApi.createSettings(buildPayload());
+        savedConfig = await LLMSettingsApi.createSettings(buildPayload(formData, Boolean(editingConfig)));
         toastStore.success($t('llm.configCreated'), 5000);
       }
 
@@ -446,13 +299,13 @@
 
     try {
       const result = await LLMSettingsApi.testConnection({
-        provider: formData.provider,
+        provider: formData.provider as LLMProvider,
         model_name: formData.model_name,
         api_key: formData.api_key?.trim() || undefined,
         base_url: formData.base_url || undefined,
         config_id: editingConfig?.uuid, // Pass config UUID for edit mode to use stored key
         ...(formData.provider === 'bedrock'
-          ? { aws_region: formData.aws_region || undefined, ...awsFields() }
+          ? { aws_region: formData.aws_region || undefined, ...awsFields(formData) }
           : {})
       });
 
@@ -469,73 +322,40 @@
     }
   }
 
+  const discoveryCtx = (setLoading: (loading: boolean) => void) => ({ t: $t, setLoading });
+  const editingKey = () =>
+    editingConfig ? { uuid: editingConfig.uuid, hasApiKey: Boolean(editingConfig.has_api_key) } : null;
+
   async function loadOllamaModels() {
-    if (!formData.base_url) {
-      toastStore.error($t('llm.enterBaseUrlFirst'));
-      return;
-    }
-
-    loadingOllamaModels = true;
-
-    try {
-      const result = await LLMSettingsApi.getOllamaModels(formData.base_url);
-      if (result.success && result.models) {
-        ollamaModels = result.models;
-        showModelSelector = true;
-      } else {
-        toastStore.error(result.message);
-      }
-    } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('llm.ollamaLoadFailed')));
-    } finally {
-      loadingOllamaModels = false;
+    const models = await discoverOllamaModels(
+      discoveryCtx((v) => { loadingOllamaModels = v; }),
+      formData.base_url
+    );
+    if (models) {
+      ollamaModels = models;
+      showModelSelector = true;
     }
   }
 
-  function selectOllamaModel(modelName: string, model?: any) {
+  function selectOllamaModel(modelName: string, _model?: OllamaModel) {
     formData.model_name = modelName;
     formData = { ...formData }; // Force reactivity update
     showModelSelector = false;
   }
 
-  function formatModelSize(size: number): string {
-    if (size === 0) return '';
-    const gb = (size / (1024 ** 3)).toFixed(1);
-    return `${gb}GB`;
-  }
-
   async function loadOpenAICompatibleModels() {
-    if (!formData.base_url) {
-      toastStore.error($t('llm.enterBaseUrlFirst'));
-      return;
-    }
-
-    // Check if API key is required for this provider
-    const providerConfig = getProviderDefaults(formData.provider);
-    const hasStoredKey = editingConfig?.has_api_key;
-    if (providerConfig?.requires_api_key && !formData.api_key?.trim() && !hasStoredKey) {
-      toastStore.error($t('llm.enterApiKeyFirst'));
-      return;
-    }
-
-    loadingOpenAIModels = true;
-
-    try {
-      const result = await LLMSettingsApi.getOpenAICompatibleModels(
-        formData.base_url,
-        formData.api_key?.trim() || undefined,
-        editingConfig?.uuid  // Pass config UUID for edit mode to use stored key
-      );
-      if (result.success && result.models) {
-        openaiCompatibleModels = result.models;
-        showOpenAIModelSelector = true;
-      } else {
-        toastStore.error(result.message);
-      }
-    } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('llm.modelsLoadFailed')));
-    } finally {
-      loadingOpenAIModels = false;
+    const models = await discoverOpenAIModels(
+      discoveryCtx((v) => { loadingOpenAIModels = v; }),
+      {
+        baseUrl: formData.base_url,
+        apiKey: formData.api_key,
+        provider: getProviderDefaults(formData.provider)
+      },
+      editingKey()
+    );
+    if (models) {
+      openaiCompatibleModels = models;
+      showOpenAIModelSelector = true;
     }
   }
 
@@ -546,30 +366,14 @@
   }
 
   async function loadAnthropicModels() {
-    // In edit mode, we can use stored key if no new key is entered
-    const hasKey = formData.api_key?.trim() || editingConfig?.has_api_key;
-    if (!hasKey) {
-      toastStore.error($t('llm.enterApiKeyFirst'));
-      return;
-    }
-
-    loadingAnthropicModels = true;
-
-    try {
-      const result = await LLMSettingsApi.getAnthropicModels(
-        formData.api_key?.trim() || undefined,  // Only send if user typed a new key
-        editingConfig?.uuid  // Backend will use stored key if no api_key provided
-      );
-      if (result.success && result.models) {
-        anthropicModels = result.models;
-        showAnthropicModelSelector = true;
-      } else {
-        toastStore.error(result.message);
-      }
-    } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('llm.modelsLoadFailed')));
-    } finally {
-      loadingAnthropicModels = false;
+    const models = await discoverAnthropicModels(
+      discoveryCtx((v) => { loadingAnthropicModels = v; }),
+      formData.api_key,
+      editingKey()
+    );
+    if (models) {
+      anthropicModels = models;
+      showAnthropicModelSelector = true;
     }
   }
 

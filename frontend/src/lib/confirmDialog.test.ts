@@ -107,4 +107,21 @@ describe('createConfirmDialog', () => {
     a.request('t', 'm', vi.fn());
     expect(get(b.isOpen)).toBe(false);
   });
+
+  it('logs, rather than leaks, a rejection from an async confirm callback', async () => {
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const d = createConfirmDialog();
+      d.request('t', 'm', () => Promise.reject(new Error('boom')));
+      d.confirm();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(error).toHaveBeenCalledWith('Confirmed action failed:', expect.any(Error));
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+      error.mockRestore();
+    }
+  });
 });

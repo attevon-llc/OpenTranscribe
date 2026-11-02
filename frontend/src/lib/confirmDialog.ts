@@ -64,7 +64,11 @@ export function createConfirmDialog(): ConfirmDialog {
       onConfirm = null;
       onCancel = null;
       isOpen.set(false);
-      callback?.();
+      // An async callback's rejection would otherwise surface as an unhandled rejection.
+      const result = callback?.();
+      if (result instanceof Promise) {
+        result.catch((e) => console.error('Confirmed action failed:', e));
+      }
     },
     cancel() {
       const callback = onCancel;

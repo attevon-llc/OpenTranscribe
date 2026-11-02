@@ -61,30 +61,43 @@ APPROVAL_REJECTED = "rejected"
 VALID_APPROVAL_STATUSES = (APPROVAL_PENDING, APPROVAL_APPROVED, APPROVAL_REJECTED)
 
 
-def approval_required(db) -> bool:
+def approval_required(db) -> bool | None:
     """Whether this deployment holds new accounts for approval.
 
     Args:
-        db: Database session, or ``None``/anything unusable — in which case the
-            ``.env`` value is used. Resolution is the standard DB > .env > coded
-            default via ``DynamicAuthSettings``.
+        db: Database session. ``None`` or anything that is not a session resolves
+            from the process-level settings instead (DB > .env > coded default).
 
     Returns:
-        The effective ``require_account_approval`` value; ``False`` if it cannot
-        be resolved, which is the pre-existing behaviour rather than a lockout.
+        ``True`` / ``False`` for the effective ``require_account_approval`` value, or
+        ``None`` when the stored setting could not be read. ``None`` is a distinct
+        answer, not ``False``: callers must treat "unreadable" as neither "off"
+        nor "on" (see :func:`initial_approval_status` and the gate in
+        ``api/endpoints/auth/approval_gate.py``).
     """
+    if db is None or not hasattr(db, "query"):
+        from app.core.auth_settings import get_process_auth_settings
+
+        return bool(get_process_auth_settings().require_account_approval)
+
+    from app.services.auth_config_service import AuthConfigService
+
+    # Read inside a savepoint so a SQL error here cannot abort the caller's
+    # transaction (PostgreSQL refuses every later statement in an aborted one).
+    savepoint = db.begin_nested()
     try:
-        if db is None or not hasattr(db, "query"):
-            from app.core.auth_settings import get_process_auth_settings
-
-            return bool(get_process_auth_settings().require_account_approval)
-
-        from app.core.auth_settings import get_auth_settings
-
-        return bool(get_auth_settings(db).require_account_approval)
+        value = AuthConfigService.get_effective_config(db, "require_account_approval")
     except Exception:
-        logger.debug("Could not resolve require_account_approval; treating as off", exc_info=True)
-        return False
+        logger.warning("Could not read require_account_approval", exc_info=True)
+        try:
+            savepoint.rollback()
+        except Exception:
+            logger.debug("Savepoint rollback after a failed read also failed", exc_info=True)
+        return None
+    savepoint.commit()
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes", "on")
+    return bool(value)
 
 
 def initial_approval_status(db) -> str:
@@ -99,10 +112,12 @@ def initial_approval_status(db) -> str:
         db: Database session used to resolve the setting.
 
     Returns:
-        :data:`APPROVAL_PENDING` when approval is required, else
-        :data:`APPROVAL_APPROVED`.
+        :data:`APPROVAL_APPROVED` only when the setting was read and is off. When
+        approval is required, or the setting could not be read,
+        :data:`APPROVAL_PENDING`: a held account is released automatically once
+        the setting reads as off.
     """
-    return APPROVAL_PENDING if approval_required(db) else APPROVAL_APPROVED
+    return APPROVAL_APPROVED if approval_required(db) is False else APPROVAL_PENDING
 
 
 def is_pending(user) -> bool:

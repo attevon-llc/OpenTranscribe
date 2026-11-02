@@ -197,8 +197,11 @@ def _approval_refusal(user: User, db: Session) -> tuple[str, str] | None:
     An ``approval_status`` outside the closed set is refused as a rejection: it has
     no self-service remedy either.
 
+    Raises:
+        HTTPException: 503 ``auth_config_unavailable`` for a pending account when the
+            setting cannot be read.
     """
-    from app.auth.approval import approval_required
+    from app.api.endpoints.auth.approval_gate import approval_enforced
     from app.auth.approval import is_pending
     from app.auth.approval import is_rejected
     from app.auth.approval import is_unrecognised
@@ -208,7 +211,7 @@ def _approval_refusal(user: User, db: Session) -> tuple[str, str] | None:
             ERROR_CODE_ACCOUNT_REJECTED,
             "This account was not approved. Contact an administrator.",
         )
-    if is_pending(user) and approval_required(db):
+    if is_pending(user) and approval_enforced(db):
         return (
             ERROR_CODE_ACCOUNT_PENDING_APPROVAL,
             "This account is awaiting administrator approval.",
@@ -226,7 +229,10 @@ def admitted_on_optional_auth(user: User, db: Session) -> bool:
     """
     if _expired_at(user) is not None:
         return False
-    return _approval_refusal(user, db) is None
+    try:
+        return _approval_refusal(user, db) is None
+    except HTTPException:
+        return False
 
 
 def _enforce_approval(user: User, request: Request | None, db: Session) -> None:
@@ -252,7 +258,8 @@ def _enforce_approval(user: User, request: Request | None, db: Session) -> None:
 
     Raises:
         HTTPException: 403 with ``detail.code`` ``account_pending_approval`` or
-            ``account_rejected``.
+            ``account_rejected``; 503 ``auth_config_unavailable`` for a pending
+            account when the setting cannot be read.
     """
     refusal = _approval_refusal(user, db)
     if refusal is None:

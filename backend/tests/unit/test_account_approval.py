@@ -280,3 +280,126 @@ class TestTheConfigKeyIsLive:
         _require_approval(db_session, super_admin_user, False)
         assert get_auth_settings(db_session).require_account_approval is False
         db_session.rollback()
+
+
+def _unreadable_approval_setting(monkeypatch) -> None:
+    """Make only the account-approval read fail, as a dropped DB connection would."""
+    from sqlalchemy.exc import OperationalError
+
+    real = AuthConfigService.get_effective_config
+
+    def _read(db, key):
+        if key == "require_account_approval":
+            raise OperationalError("SELECT auth_config", {}, Exception("connection lost"))
+        return real(db, key)
+
+    monkeypatch.setattr(AuthConfigService, "get_effective_config", staticmethod(_read))
+
+
+def _failing_sql_approval_setting(monkeypatch) -> None:
+    """Make the approval read run a statement PostgreSQL rejects (aborts the transaction)."""
+    from sqlalchemy import text
+
+    real = AuthConfigService.get_effective_config
+
+    def _read(db, key):
+        if key == "require_account_approval":
+            db.execute(text("SELECT 1/0"))
+        return real(db, key)
+
+    monkeypatch.setattr(AuthConfigService, "get_effective_config", staticmethod(_read))
+
+
+class TestAFailedSqlReadDoesNotPoisonTheCallersTransaction:
+    """A real SQL error (not a Python-raised one) aborts the transaction in PostgreSQL."""
+
+    @pytest.mark.usefixtures("open_registration")
+    def test_self_registration_still_creates_a_pending_account(
+        self, client, db_session, monkeypatch
+    ):
+        _failing_sql_approval_setting(monkeypatch)
+        email = f"failsql-{uuid_pkg.uuid4().hex[:8]}@example.com"
+
+        response = client.post(
+            "/api/auth/register",
+            json={"email": email, "password": "Str0ng!Passphrase99", "full_name": "Held"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["approval_status"] == APPROVAL_PENDING
+        db_session.rollback()
+
+    def test_the_session_is_usable_after_the_failed_read(self, db_session, monkeypatch):
+        from sqlalchemy import text
+
+        from app.auth.approval import approval_required
+
+        _failing_sql_approval_setting(monkeypatch)
+        assert approval_required(db_session) is None
+        assert db_session.execute(text("SELECT 1")).scalar() == 1
+
+
+class TestAnUnreadableSettingHoldsNewAccounts:
+    """When the setting cannot be READ, a new account waits rather than being approved."""
+
+    def test_the_creation_status_is_pending(self, db_session, monkeypatch):
+        _unreadable_approval_setting(monkeypatch)
+        assert initial_approval_status(db_session) == APPROVAL_PENDING
+
+    def test_the_resolver_distinguishes_unreadable_from_off(self, db_session, monkeypatch):
+        from app.auth.approval import approval_required
+
+        assert approval_required(db_session) is False
+        _unreadable_approval_setting(monkeypatch)
+        assert approval_required(db_session) is None
+
+    @pytest.mark.usefixtures("open_registration")
+    def test_self_registration_lands_pending(self, client, db_session, monkeypatch):
+        _unreadable_approval_setting(monkeypatch)
+        email = f"unreadable-{uuid_pkg.uuid4().hex[:8]}@example.com"
+
+        response = client.post(
+            "/api/auth/register",
+            json={"email": email, "password": "Str0ng!Passphrase99", "full_name": "Held"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["approval_status"] == APPROVAL_PENDING
+        db_session.rollback()
+
+    def test_a_pending_account_gets_a_generic_503(
+        self, client, db_session, user_token_headers, normal_user, monkeypatch
+    ):
+        normal_user.approval_status = APPROVAL_PENDING
+        db_session.commit()
+        _unreadable_approval_setting(monkeypatch)
+
+        response = client.get("/api/users/me", headers=user_token_headers)
+
+        assert response.status_code == 503, response.text
+        detail = response.json()["detail"]
+        assert detail["code"] == "auth_config_unavailable"
+        assert "connection lost" not in response.text
+        assert "OperationalError" not in response.text
+        db_session.rollback()
+
+    def test_an_approved_account_is_unaffected(
+        self, client, db_session, user_token_headers, monkeypatch
+    ):
+        _unreadable_approval_setting(monkeypatch)
+        response = client.get("/api/users/me", headers=user_token_headers)
+        assert response.status_code == 200, response.text
+        db_session.rollback()
+
+    def test_a_rejected_account_is_still_refused(
+        self, client, db_session, user_token_headers, normal_user, monkeypatch
+    ):
+        normal_user.approval_status = APPROVAL_REJECTED
+        db_session.commit()
+        _unreadable_approval_setting(monkeypatch)
+
+        response = client.get("/api/users/me", headers=user_token_headers)
+
+        assert response.status_code == 403, response.text
+        assert response.json()["detail"]["code"] == ERROR_CODE_ACCOUNT_REJECTED
+        db_session.rollback()

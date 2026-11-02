@@ -142,6 +142,14 @@ class TestApproval:
 
         assert resolved is not None and resolved.id == approved.id
 
+    def test_an_unreadable_setting_makes_a_pending_account_anonymous(self, db_session, monkeypatch):
+        """The strict gate answers 503 here; the optional path must not read the
+        outage as "approval off"."""
+        pending = _account(db_session, approval_status=APPROVAL_PENDING)
+        monkeypatch.setattr("app.auth.approval.approval_required", lambda db: None)
+
+        assert _resolve(db_session, pending) is None
+
 
 class TestExpiry:
     def test_an_expired_account_is_anonymous(self, db_session):

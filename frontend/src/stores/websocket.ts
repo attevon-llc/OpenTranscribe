@@ -23,12 +23,12 @@ import { showNotificationsPanel } from '$stores/notificationsPanel';
 import type { NotificationType, Notification } from '$lib/notifications/types';
 import { composeClientMessage, notificationTitle } from '$lib/notifications/titles';
 import { routeFrame } from '$lib/websocket/frameRouting';
+import { frameKind, progressFields } from '$lib/notifications/progressFrame';
 import {
-  ADMIN_TASK_PROGRESS_IDS,
-  formatEtaSeconds,
-  frameKind,
-  progressFields,
-} from '$lib/notifications/progressFrame';
+  recoverTask,
+  recoveredNotification,
+  type ActiveTask,
+} from '$lib/notifications/activeTaskRecovery';
 
 export { NOTIFICATION_TYPES } from '$lib/notifications/types';
 export type { NotificationType, NotificationData, Notification } from '$lib/notifications/types';
@@ -635,104 +635,36 @@ function createWebSocketStore() {
   };
 
   // Recover active task progress from backend on connect/reconnect
+  // ($lib/notifications/activeTaskRecovery).
   const recoverActiveProgress = async () => {
     try {
-      const { data: activeTasks } = await axiosInstance.get<
-        Array<{
-          task_type: string;
-          user_id: number;
-          total: number;
-          processed: number;
-          status: string;
-          message: string;
-          eta_seconds: number | null;
-        }>
-      >('/tasks/progress/active');
+      const { data: activeTasks } = await axiosInstance.get<ActiveTask[]>('/tasks/progress/active');
 
       if (!activeTasks || activeTasks.length === 0) return;
 
-      // Task type to notification type mapping
-      const typeMap: Record<string, string> = {
-        reindex: 'reindex_progress',
-        migration: 'migration_progress',
-        attribute_migration: 'attribute_migration_progress',
-        clustering: 'clustering_progress',
-        auto_label: 'auto_label_status',
-        data_integrity: 'data_integrity_progress',
-        embedding_consistency: 'embedding_consistency_progress',
-      };
-
       for (const task of activeTasks) {
-        const notificationType = typeMap[task.task_type];
-        if (!notificationType) continue;
-
-        const progressId =
-          ADMIN_TASK_PROGRESS_IDS[notificationType] || `${notificationType}_retroactive_apply`;
-
-        const percentage = task.total > 0 ? Math.round((task.processed / task.total) * 100) : 0;
-        const etaDisplay = formatEtaSeconds(task.eta_seconds);
+        const recovered = recoverTask(task);
+        if (!recovered) continue;
 
         // Dispatch CustomEvent for settings components
-        if (typeof window !== 'undefined') {
-          const eventMap: Record<string, string> = {
-            reindex: 'reindex-progress',
-            migration: 'migration-progress',
-            attribute_migration: 'attribute-migration-progress',
-            clustering: 'clustering-progress',
-            auto_label: 'auto-label-status',
-            data_integrity: 'data-integrity-progress',
-            embedding_consistency: 'embedding-consistency-progress',
-          };
-          const eventName = eventMap[task.task_type];
-          if (eventName) {
-            window.dispatchEvent(
-              new CustomEvent(eventName, {
-                detail: {
-                  progress: task.total > 0 ? task.processed / task.total : 0,
-                  processed: task.processed,
-                  total: task.total,
-                  processed_files: task.processed,
-                  total_files: task.total,
-                  indexed_files: task.processed,
-                  message: task.message,
-                  eta_seconds: task.eta_seconds,
-                  running: true,
-                  status: 'processing',
-                },
-              })
-            );
-          }
+        if (typeof window !== 'undefined' && recovered.event) {
+          window.dispatchEvent(
+            new CustomEvent(recovered.event.name, { detail: recovered.event.detail })
+          );
         }
 
         // Create/update progressive notification
         update((s: WebSocketState) => {
-          const existingIndex = s.notifications.findIndex((n) => n.progressId === progressId);
+          const existingIndex = s.notifications.findIndex(
+            (n) => n.progressId === recovered.progressId
+          );
 
-          const notificationData: Notification = {
-            id: existingIndex !== -1 ? s.notifications[existingIndex].id : generateId('ws'),
-            progressId,
-            type: notificationType as NotificationType,
-            title: getNotificationTitle(notificationType),
-            message: task.message,
-            timestamp: new Date(),
-            read: false,
-            data: {
-              progress: percentage,
-              processed: task.processed,
-              total: task.total,
-              eta_seconds: task.eta_seconds,
-            },
-            currentStep: task.message,
-            progress: {
-              current: percentage,
-              total: 100,
-              percentage,
-              etaSeconds: task.eta_seconds,
-              etaDisplay,
-            },
-            status: 'processing',
-            dismissible: false,
-          };
+          const notificationData = recoveredNotification(
+            task,
+            recovered,
+            existingIndex !== -1 ? s.notifications[existingIndex].id : generateId('ws'),
+            getNotificationTitle(recovered.notificationType)
+          );
 
           if (existingIndex !== -1) {
             s.notifications[existingIndex] = notificationData;

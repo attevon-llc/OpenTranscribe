@@ -267,6 +267,27 @@
         "title": "AdminPurgeRequest",
         "type": "object"
       },
+      "AiSummaryPreference": {
+        "description": "The caller's auto-summary preference and the deployment-wide switch above it.",
+        "properties": {
+          "ai_summary_enabled": {
+            "description": "The caller's own preference for automatic summaries.",
+            "title": "Ai Summary Enabled",
+            "type": "boolean"
+          },
+          "system_enabled": {
+            "description": "The deployment-wide switch an admin controls (``ai.summary_enabled``). When false, no summary is generated whatever the caller's preference says. A plain user cannot read the admin route, so this is how the settings panel learns of it.",
+            "title": "System Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ai_summary_enabled",
+          "system_enabled"
+        ],
+        "title": "AiSummaryPreference",
+        "type": "object"
+      },
       "Analytics": {
         "description": "Analytics with UUID as public identifier",
         "properties": {
@@ -48274,16 +48295,14 @@
     },
     "/api/user-settings/ai-summary": {
       "get": {
-        "description": "Get user's auto-summary preference.\n\nReturns:\n    Dict with ``ai_summary_enabled`` boolean.",
+        "description": "Get the user's auto-summary preference and the deployment-wide switch.\n\nReturns:\n    ``ai_summary_enabled`` (the caller's preference) and ``system_enabled`` (the admin's\n    deployment-wide switch, read from the setting ``PUT /admin/system/ai-summary`` writes).",
         "operationId": "get_ai_summary_setting_api_user_settings_ai_summary_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Ai Summary Setting Api User Settings Ai Summary Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/AiSummaryPreference"
                 }
               }
             },

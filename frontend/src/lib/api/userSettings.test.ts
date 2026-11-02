@@ -120,8 +120,12 @@ describe('RecordingSettingsHelper.cleanupLocalStorage', () => {
 
 describe('auto-summary preference', () => {
   it('reads it and writes it as a JSON body', async () => {
-    mockInstance.get.mockResolvedValue({ data: { ai_summary_enabled: true } });
-    expect((await UserSettingsApi.getAiSummaryPreference()).ai_summary_enabled).toBe(true);
+    mockInstance.get.mockResolvedValue({
+      data: { ai_summary_enabled: true, system_enabled: false },
+    });
+    const preference = await UserSettingsApi.getAiSummaryPreference();
+    expect(preference.ai_summary_enabled).toBe(true);
+    expect(preference.system_enabled).toBe(false);
     expect(mockInstance.get).toHaveBeenCalledWith('/user-settings/ai-summary');
 
     mockInstance.put.mockResolvedValue({ data: { ai_summary_enabled: false, message: 'saved' } });

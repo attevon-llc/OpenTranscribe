@@ -55,11 +55,7 @@ describe('garbage cleanup config', () => {
 });
 
 describe('system auto-summary switch', () => {
-  it('reads it, and writes it as the query parameter the route reads (a body would be a 422)', async () => {
-    mockInstance.get.mockResolvedValue({ data: { ai_summary_enabled: true, scope: 'system' } });
-    expect((await AdminSettingsApi.getSystemAiSummary()).ai_summary_enabled).toBe(true);
-    expect(mockInstance.get).toHaveBeenCalledWith('/admin/system/ai-summary');
-
+  it('writes it as the query parameter the route reads (a body would be a 422)', async () => {
     mockInstance.put.mockResolvedValue({ data: { ai_summary_enabled: false, scope: 'system' } });
     const updated = await AdminSettingsApi.setSystemAiSummary(false);
     expect(mockInstance.put).toHaveBeenCalledWith('/admin/system/ai-summary', null, {

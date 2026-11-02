@@ -9,6 +9,11 @@
 import { get } from 'svelte/store';
 import axiosInstance from '$lib/axios';
 import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
+import {
+  getAISuggestions,
+  type CollectionSuggestion,
+  type TagSuggestion,
+} from '$lib/api/suggestions';
 import { t } from '$stores/locale';
 import { toastStore } from '$stores/toast';
 import { redactParams } from './segmentPaging';
@@ -143,4 +148,23 @@ export async function startRedactionScan(fileUuid: string): Promise<boolean> {
     );
   }
   return false;
+}
+
+/**
+ * Stored AI tag/collection suggestions, loaded whatever the current LLM configuration, so
+ * suggestions generated earlier stay usable after the LLM is switched off. `null` when there
+ * is nothing to show: rejected, none yet (a 404 is the normal answer), or the read failed.
+ */
+export async function fetchAISuggestions(
+  fileId: string
+): Promise<{ tags: TagSuggestion[]; collections: CollectionSuggestion[] } | null> {
+  try {
+    const suggestions = await getAISuggestions(fileId);
+    if (suggestions && suggestions.status !== 'rejected') {
+      return { tags: suggestions.tags || [], collections: suggestions.collections || [] };
+    }
+  } catch (error) {
+    console.error('Error loading AI suggestions:', error);
+  }
+  return null;
 }

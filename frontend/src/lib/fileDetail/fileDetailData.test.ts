@@ -3,6 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock('$lib/axios', () => ({ default: mockAxios }));
 
+const mockGetAISuggestions = vi.hoisted(() => vi.fn());
+vi.mock('$lib/api/suggestions', () => ({ getAISuggestions: mockGetAISuggestions }));
+
 const mockToast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock('$stores/toast', () => ({ toastStore: mockToast }));
 
@@ -17,6 +20,7 @@ vi.mock('$stores/locale', () => ({
 
 import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
 import {
+  fetchAISuggestions,
   fetchFileAnalytics,
   getFileDetail,
   mergeTranscriptRefresh,
@@ -140,5 +144,21 @@ describe('startRedactionScan', () => {
     mockAxios.post.mockResolvedValue({ data: [{ success: false }] });
     expect(await startRedactionScan('f1')).toBe(false);
     expect(mockToast.error).toHaveBeenCalledWith('settings.contentRedaction.redactTriggerFailed');
+  });
+});
+
+describe('fetchAISuggestions', () => {
+  it('returns stored suggestions with empty-list defaults', async () => {
+    mockGetAISuggestions.mockResolvedValue({ status: 'pending', tags: [{ name: 'x' }] });
+    expect(await fetchAISuggestions('f1')).toEqual({ tags: [{ name: 'x' }], collections: [] });
+  });
+
+  it('returns null for rejected, none, or a failed read', async () => {
+    mockGetAISuggestions.mockResolvedValueOnce({ status: 'rejected', tags: [{ name: 'x' }] });
+    expect(await fetchAISuggestions('f1')).toBeNull();
+    mockGetAISuggestions.mockResolvedValueOnce(null);
+    expect(await fetchAISuggestions('f1')).toBeNull();
+    mockGetAISuggestions.mockRejectedValueOnce(new Error('404'));
+    expect(await fetchAISuggestions('f1')).toBeNull();
   });
 });

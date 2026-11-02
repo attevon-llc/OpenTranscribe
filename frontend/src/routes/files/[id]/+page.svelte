@@ -9,6 +9,7 @@
   import { isForFile, latestNotificationForFile, notificationSignature } from '$lib/fileDetail/notificationSelect';
   import { createPageTimers } from '$lib/fileDetail/pageTimers';
   import {
+    fetchAISuggestions,
     fetchFileAnalytics,
     getFileDetail,
     mergeTranscriptRefresh,
@@ -57,7 +58,7 @@
   import { transcriptStore } from '$stores/transcriptStore';
   import { downloadStore } from '$stores/downloads';
   import { supportSessionGate } from '$stores/supportSession';
-  import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
+  import type { TagSuggestion, CollectionSuggestion } from '$lib/api/suggestions';
   import type { PlaybackMode } from '$lib/api/mediaUrl';
   import { createMediaStream } from '$lib/fileDetail/mediaStream';
   import { applyReprocessStart, reprocessRegeneratesSummary } from '$lib/fileDetail/reprocess';
@@ -365,26 +366,12 @@
     segmentPager.loadUpTo(event.detail.targetIndex, event.detail.segmentUuid);
   }
 
-  /**
-   * Load AI suggestions for tags and collections
-   *
-   * Always loads suggestions if they exist in the database, regardless of current LLM configuration.
-   * This ensures users can see and use previously generated suggestions even if LLM is no longer configured.
-   */
   async function loadAISuggestions(): Promise<void> {
     if (!fileId) return;
-
-    try {
-      const suggestions = await getAISuggestions(fileId);
-      // Load suggestions regardless of status or current LLM configuration
-      // The UI components will handle display logic based on status
-      if (suggestions && suggestions.status !== 'rejected') {
-        aiTagSuggestions = suggestions.tags || [];
-        aiCollectionSuggestions = suggestions.collections || [];
-      }
-    } catch (error) {
-      console.error('Error loading AI suggestions:', error);
-      // Silent fail - suggestions are optional (404 is expected if none exist)
+    const suggestions = await fetchAISuggestions(fileId);
+    if (suggestions) {
+      aiTagSuggestions = suggestions.tags;
+      aiCollectionSuggestions = suggestions.collections;
     }
   }
 

@@ -255,3 +255,44 @@ class TestUnrecoverableContentStillFailsGracefully:
 
         assert result["error"] == "JSON parsing failed"
         assert result["raw_response_preview"] == UNRECOVERABLE_GARBAGE
+
+
+class TestSectionSummaryFenceHandling:
+    """A section reply is unwrapped by the shared fence stripper before it is parsed."""
+
+    def _run(self, monkeypatch, content: str) -> dict:
+        service = _service()
+        monkeypatch.setattr(
+            service,
+            "chat_completion",
+            lambda *a, **k: LLMResponse(content=content, usage_tokens=1, finish_reason="stop"),
+        )
+
+        def _repair_must_not_run(_text):
+            raise AssertionError("json_repair ran on a reply that was valid JSON once unfenced")
+
+        monkeypatch.setattr("json_repair.loads", _repair_must_not_run)
+        return service._summarize_section(
+            chunk="stubbed",
+            section_num=1,
+            total_sections=2,
+            speaker_data=None,
+            prompt_template="{transcript}{speaker_data}",
+        )
+
+    def test_a_fenced_reply_with_trailing_prose_parses_without_repair(self, monkeypatch):
+        reply = '```json\n{"key_points": ["a point"]}\n```\nHope this helps!'
+
+        result = self._run(monkeypatch, reply)
+
+        assert result == {"key_points": ["a point"]}
+
+    def test_a_bare_fenced_reply_still_parses(self, monkeypatch):
+        result = self._run(monkeypatch, '```\n{"key_points": ["a point"]}\n```')
+
+        assert result == {"key_points": ["a point"]}
+
+    def test_an_unfenced_reply_is_untouched(self, monkeypatch):
+        result = self._run(monkeypatch, '{"key_points": ["a point"]}')
+
+        assert result == {"key_points": ["a point"]}

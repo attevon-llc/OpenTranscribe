@@ -91,6 +91,11 @@ const EXEMPT: Record<string, string> = {
     'store created per createAccountActions() call. UserManagementTable makes one per mount ' +
     'and it is discarded with the component, so nothing outlives the session. The detector ' +
     'matched the `resetUserMFA` action name, which is an HTTP POST, not a teardown API.',
+  'lib/users/invitationsController':
+    'Pure factory: the invitation list, form and flags are stores created per ' +
+    'createInvitationsController() call, one per UserManagementTable mount, discarded with ' +
+    'the component. The detector matched the `resetForm` method, which empties that ' +
+    "instance's own form; there is no module-level instance.",
 
   // ── Covered transitively by a registered module ──
   'lib/supportAccess/headers':

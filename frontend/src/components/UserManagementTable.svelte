@@ -5,12 +5,8 @@
   import { AdminApi } from '$lib/api/admin';
   import {
     AUTH_TYPES,
-    INVITE_EXPIRY_DEFAULT_HOURS,
     INVITE_EXPIRY_MIN_HOURS,
-    INVITE_EXPIRY_MAX_HOURS,
-    createInvitation,
-    listInvitations,
-    revokeInvitation
+    INVITE_EXPIRY_MAX_HOURS
   } from '$lib/api/invitations';
   import { user } from '../stores/auth';
   import { toastStore } from '../stores/toast';
@@ -21,7 +17,7 @@
   import PasswordResetModal from '$components/users/PasswordResetModal.svelte';
   import { t, locale } from '$stores/locale';
   import EmptyState from './ui/EmptyState.svelte';
-  import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import AuthMailNotice from './ui/AuthMailNotice.svelte';
   import {
     canAssignElevatedRoles,
@@ -31,6 +27,7 @@
   import { filterUsers } from '$lib/users/userSearch';
   import { toDateInputValue } from '$lib/users/accountExpiry';
   import { createAccountActions } from '$lib/users/accountActions';
+  import { createInvitationsController } from '$lib/users/invitationsController';
 
   /**
    * @typedef {Object} User
@@ -86,27 +83,8 @@
   // auth_type rather than storing a credential it will never accept.
   $: createNeedsPassword = newAuthType === 'local';
 
-  // ── invitations ───────────────────────────────────────────────────────────
   /** @type {boolean} */
   let showInviteForm = false;
-  /** @type {string} */
-  let inviteEmail = '';
-  /** @type {string} */
-  let inviteFullName = '';
-  /** @type {string} */
-  let inviteRole = 'user';
-  /** @type {import('$lib/api/invitations').AuthType} */
-  let inviteAuthType = 'local';
-  /** @type {number} */
-  let inviteExpiresInHours = INVITE_EXPIRY_DEFAULT_HOURS;
-  /** @type {boolean} */
-  let inviteSubmitting = false;
-  /** @type {Array<import('$lib/api/invitations').Invitation>} */
-  let invitations = [];
-  /** @type {boolean} */
-  let invitationsLoading = false;
-  /** @type {string|null} */
-  let pendingInviteUuid = null;
 
   // Confirmation modal state
   const confirmDialog = createConfirmDialog();
@@ -120,6 +98,15 @@
   const accountActions = createAccountActions(confirmDialog, () => onRefresh());
   /** UUID of the row with an account action in flight; its buttons are disabled. */
   const { pendingUuid: pendingActionUuid } = accountActions;
+
+  const invites = createInvitationsController(confirmDialog);
+  const {
+    form: inviteForm,
+    invitations,
+    loading: invitationsLoading,
+    submitting: inviteSubmitting,
+    revokingUuid: pendingInviteUuid
+  } = invites;
 
   // Server-owned password policy (GET /auth/password-policy). Hardcoding a
   // client-side minimum drifts from the backend's — it said 8 while the policy
@@ -137,7 +124,7 @@
       } catch (err) {
         console.warn('Could not load password policy; using default minimum', err);
       }
-      await refreshInvitations();
+      await invites.refresh();
     })();
   });
 
@@ -246,119 +233,10 @@
     }
   }
 
-  // ── invitations ───────────────────────────────────────────────────────────
-
-  /**
-   * Load the pending invitation list.
-   *
-   * Each row carries a server-computed `status`; render it, never re-derive it
-   * from `expires_at` / `used_at` (fat backend, thin frontend).
-   */
-  async function refreshInvitations() {
-    invitationsLoading = true;
-    try {
-      invitations = await listInvitations(false);
-    } catch (err) {
-      // A plain admin still sees the rest of the panel; the endpoint is admin-
-      // gated exactly like the user list, so a failure here is not fatal.
-      console.warn('Could not load invitations', err);
-      invitations = [];
-    } finally {
-      invitationsLoading = false;
-    }
-  }
-
-  /**
-   * Invite someone to create their own account.
-   *
-   * Preferred over {@link createUser}: the admin never sees or chooses the
-   * invitee's password, the invitee gets an email, and `auth_type` is carried
-   * through so an IdP-fronted deployment can pre-provision matching accounts.
-   */
-  async function sendInvitation() {
-    if (!inviteEmail.trim()) {
-      toastStore.error($t('userManagement.fillAllFields'));
-      return;
-    }
-
-    if (inviteRole === 'super_admin') {
-      confirmDialog.request(
-        $t('userManagement.confirmSuperAdminTitle'),
-        $t('userManagement.confirmSuperAdminInvite', { name: inviteFullName || inviteEmail }),
-        () => executeSendInvitation(),
-        $t('userManagement.confirmSuperAdminButton')
-      );
-      return;
-    }
-
-    await executeSendInvitation();
-  }
-
-  async function executeSendInvitation() {
-    inviteSubmitting = true;
-    const invitedAddress = inviteEmail.trim();
-    try {
-      await createInvitation({
-        email: invitedAddress,
-        full_name: inviteFullName.trim() || undefined,
-        role: inviteRole,
-        auth_type: inviteAuthType,
-        expires_in_hours: inviteExpiresInHours
-      });
-
-      inviteEmail = '';
-      inviteFullName = '';
-      inviteRole = 'user';
-      inviteAuthType = 'local';
-      inviteExpiresInHours = INVITE_EXPIRY_DEFAULT_HOURS;
+  function sendInvitation() {
+    return invites.send(() => {
       showInviteForm = false;
-
-      toastStore.success($t('userManagement.inviteSent', { email: invitedAddress }));
-      await refreshInvitations();
-    } catch (err) {
-      console.error('Error creating invitation:', err);
-      // 503 is the backend's "no mail transport" refusal. Its sentence is English and names no
-      // fix, so say what happened to the invitation (it IS saved, as pending) and where to
-      // fix it. The invitation list is refreshed so that pending row is actually visible.
-      if (getErrorStatus(err) === 503) {
-        toastStore.error($t('userManagement.inviteMailUnavailable'));
-        await refreshInvitations();
-      } else {
-        toastStore.error(getErrorMessage(err, $t('userManagement.inviteFailed')));
-      }
-    } finally {
-      inviteSubmitting = false;
-    }
-  }
-
-  /**
-   * Revoke a pending invitation.
-   * @param {import('$lib/api/invitations').Invitation} invitation
-   */
-  function revokeInvite(invitation) {
-    confirmDialog.request(
-      $t('userManagement.revokeInvitation'),
-      $t('userManagement.revokeInvitationConfirm', { email: invitation.email }),
-      () => executeRevokeInvite(invitation),
-      $t('userManagement.revokeInvitation')
-    );
-  }
-
-  /**
-   * @param {import('$lib/api/invitations').Invitation} invitation
-   */
-  async function executeRevokeInvite(invitation) {
-    pendingInviteUuid = invitation.uuid;
-    try {
-      await revokeInvitation(invitation.uuid);
-      toastStore.success($t('userManagement.inviteRevoked', { email: invitation.email }));
-      await refreshInvitations();
-    } catch (err) {
-      console.error('Error revoking invitation:', err);
-      toastStore.error(getErrorMessage(err, $t('userManagement.revokeInviteFailed')));
-    } finally {
-      pendingInviteUuid = null;
-    }
+    });
   }
 
   /**
@@ -368,11 +246,7 @@
     showInviteForm = !showInviteForm;
     if (showInviteForm) {
       showAddUserForm = false;
-      inviteEmail = '';
-      inviteFullName = '';
-      inviteRole = 'user';
-      inviteAuthType = 'local';
-      inviteExpiresInHours = INVITE_EXPIRY_DEFAULT_HOURS;
+      invites.resetForm();
     }
   }
 
@@ -536,9 +410,9 @@
         <input
           type="email"
           id="invite-email"
-          bind:value={inviteEmail}
+          bind:value={$inviteForm.email}
           placeholder={$t('userManagement.email')}
-          disabled={inviteSubmitting}
+          disabled={$inviteSubmitting}
           required
         />
       </div>
@@ -548,15 +422,15 @@
         <input
           type="text"
           id="invite-full-name"
-          bind:value={inviteFullName}
+          bind:value={$inviteForm.full_name}
           placeholder={$t('userManagement.fullName')}
-          disabled={inviteSubmitting}
+          disabled={$inviteSubmitting}
         />
       </div>
 
       <div class="form-group">
         <label for="invite-role">{$t('userManagement.role')}</label>
-        <select id="invite-role" bind:value={inviteRole} disabled={inviteSubmitting}>
+        <select id="invite-role" bind:value={$inviteForm.role} disabled={$inviteSubmitting}>
           <option value="user">{$t('userManagement.roleUser')}</option>
           {#if canElevate}
             <!-- An invitation is a deferred account creation, so it inherits the
@@ -566,14 +440,14 @@
             <option value="super_admin">{$t('userManagement.roleSuperAdmin')}</option>
           {/if}
         </select>
-        {#if canElevate && inviteRole === 'super_admin'}
+        {#if canElevate && $inviteForm.role === 'super_admin'}
           <span class="role-warning">{$t('userManagement.superAdminWarning')}</span>
         {/if}
       </div>
 
       <div class="form-group">
         <label for="invite-auth-type">{$t('userManagement.authType')}</label>
-        <select id="invite-auth-type" bind:value={inviteAuthType} disabled={inviteSubmitting}>
+        <select id="invite-auth-type" bind:value={$inviteForm.auth_type} disabled={$inviteSubmitting}>
           {#each AUTH_TYPES as authType (authType)}
             <option value={authType}>{authTypeLabels[authType] || authType}</option>
           {/each}
@@ -586,10 +460,10 @@
         <input
           type="number"
           id="invite-expiry"
-          bind:value={inviteExpiresInHours}
+          bind:value={$inviteForm.expires_in_hours}
           min={INVITE_EXPIRY_MIN_HOURS}
           max={INVITE_EXPIRY_MAX_HOURS}
-          disabled={inviteSubmitting}
+          disabled={$inviteSubmitting}
         />
         <span class="form-hint">
           {$t('userManagement.inviteExpiryHint', {
@@ -602,10 +476,10 @@
       <button
         on:click={sendInvitation}
         class="create-button"
-        disabled={inviteSubmitting}
+        disabled={$inviteSubmitting}
         title={$t('userManagement.inviteUserTitle')}
       >
-        {inviteSubmitting ? $t('userManagement.inviteSending') : $t('userManagement.sendInvite')}
+        {$inviteSubmitting ? $t('userManagement.inviteSending') : $t('userManagement.sendInvite')}
       </button>
     </div>
   {/if}
@@ -954,9 +828,9 @@
   <!-- Pending invitations. `status` is computed server-side; this renders it. -->
   <section class="invitations-section">
     <h3>{$t('userManagement.pendingInvitations')}</h3>
-    {#if invitationsLoading}
+    {#if $invitationsLoading}
       <div class="loading-state"><p>{$t('userManagement.loadingInvitations')}</p></div>
-    {:else if invitations.length === 0}
+    {:else if $invitations.length === 0}
       <EmptyState title={$t('userManagement.noPendingInvitations')} padding="1.5rem" />
     {:else}
       <div class="table-scroll-wrapper">
@@ -972,7 +846,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each invitations as invitation (invitation.uuid)}
+            {#each $invitations as invitation (invitation.uuid)}
               <tr>
                 <td>
                   {invitation.email}
@@ -992,8 +866,8 @@
                   <div class="table-actions">
                     <button
                       class="icon-button delete-button"
-                      disabled={pendingInviteUuid === invitation.uuid}
-                      on:click={() => revokeInvite(invitation)}
+                      disabled={$pendingInviteUuid === invitation.uuid}
+                      on:click={() => invites.revoke(invitation)}
                       title={$t('userManagement.revokeInvitationFor', { email: invitation.email })}
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

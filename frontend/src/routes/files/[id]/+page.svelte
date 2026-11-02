@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount, onDestroy, afterUpdate, tick } from 'svelte';
-  import type { TranscriptSegment } from '$lib/types/media';
   import type { Collection } from '$lib/types/collection';
   import type { Comment } from '$lib/types/comment';
   import type { Tag } from '$lib/types/tag';
@@ -11,7 +10,17 @@
   import { websocketStore } from '$stores/websocket';
   import { handleFileNotification } from '$lib/fileDetail/notificationHandler';
   import { createPageTimers } from '$lib/fileDetail/pageTimers';
-  import { createSegmentPager } from '$lib/fileDetail/segmentPaging';
+  import {
+    fetchFileAnalytics,
+    getFileDetail,
+    mergeTranscriptRefresh,
+    paginationFrom,
+    readRedactionState,
+    sawMaskedSpans,
+    startRedactionScan,
+    type FileDetailPayload,
+  } from '$lib/fileDetail/fileDetailData';
+  import { createSegmentPager, redactParams } from '$lib/fileDetail/segmentPaging';
   import { createSpeakerLoader, syncTranscriptStore } from '$lib/fileDetail/speakerLoader';
   import { createSpeakerSaveFlow } from '$lib/fileDetail/speakerSave';
   import {
@@ -52,7 +61,6 @@
   import { transcriptStore } from '$stores/transcriptStore';
   import { downloadStore } from '$stores/downloads';
   import { supportSessionGate } from '$stores/supportSession';
-  import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
   import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
   import { requestSummary, topicExtractionNoticeKey, type SummarizeResponse } from '$lib/api/summarize';
   import { getAppBaseUrl } from '$lib/utils/url';
@@ -241,12 +249,16 @@
     }
   }
 
-  /**
-   * Fetches file details from the API
-   */
-  /**
-   * Fetch transcript and related data to update the page without overwriting file state
-   */
+  /** Apply the redaction fields of a `GET /files/{id}` read. */
+  function applyRedactionState(data: FileDetailPayload): void {
+    const state = readRedactionState(data);
+    redactionPending = state.redactionPending;
+    redactionStatus = state.redactionStatus;
+    redactionEnabled = state.redactionEnabled;
+    if (sawMaskedSpans(data, showOriginal)) redactionActive = true;
+  }
+
+  /** `transcript_ready`: refresh the transcript without overwriting the rest of `file`. */
   async function fetchTranscriptData(): Promise<void> {
     if (!fileId) {
       console.error('FileDetail: No file ID provided to fetchTranscriptData');
@@ -257,57 +269,16 @@
       const response = await axiosInstance.get(`/files/${fileId}`);
 
       if (response.data && typeof response.data === 'object' && file) {
-        // Update all transcript and processing-related fields while preserving UI state flags.
-        // Both segment representations must be replaced together — the transcript renders
-        // from `grouped_segments`, so a stale copy keeps showing the old transcript (#352).
-        file.transcript_segments = response.data.transcript_segments || [];
-        file.grouped_segments = response.data.grouped_segments || [];
-        file.speakers = response.data.speakers || [];
-        file.waveform_data = response.data.waveform_data;
-        file.duration = response.data.duration;
-        file.duration_seconds = response.data.duration_seconds;
-
-        // Update metadata and processing info
-        file.processed_at = response.data.processed_at;
-        file.analytics = response.data.analytics;
-
-        // Persist ASR provider/model so MetadataDisplay can show them after
-        // transcription completes without requiring a full page refresh.
-        if (response.data.asr_provider !== undefined) {
-          file.asr_provider = response.data.asr_provider;
-        }
-        if (response.data.asr_model !== undefined) {
-          file.asr_model = response.data.asr_model;
-        }
-        if (response.data.language !== undefined) {
-          file.language = response.data.language;
-        }
-        if (response.data.diarization_disabled !== undefined) {
-          file.diarization_disabled = response.data.diarization_disabled;
-        }
-
-        // Update collections if they changed
         collections = response.data.collections || [];
-
-        // Update file object
-        file = { ...file };
-
-        // Process the new transcript data
+        file = mergeTranscriptRefresh(file, response.data);
         processTranscriptData();
-
-        // Analytics are pre-computed by the backend and included in the API response
-
       }
     } catch (error) {
       console.error('Error fetching transcript data:', error);
     }
   }
 
-  /**
-   * @param fromPrefetch First load of the page only. Joins (or consumes) the gallery's hover
-   *   prefetch of `GET /files/{id}` instead of issuing a second identical request; the entry
-   *   is dropped once read so a later reload (reprocess, retry) always hits the server.
-   */
+  /** @param fromPrefetch First load only: join the gallery's hover prefetch (see getFileDetail). */
   async function fetchFileDetails(fileIdOrEvent?: string, fromPrefetch = false): Promise<void> {
     const targetFileId = typeof fileIdOrEvent === 'string' ? fileIdOrEvent : fileId;
 
@@ -324,57 +295,28 @@
       fileNotFound = false;
       videoErrorMessage = '';
 
-      let response: { data: any };
-      if (fromPrefetch && !showOriginal) {
-        const key = cacheKey.fileDetail(targetFileId);
-        response = {
-          data: await apiCache.getOrFetch(
-            key,
-            () => axiosInstance.get(`/files/${targetFileId}`).then((r) => r.data),
-            CacheTTL.FILES
-          ),
-        };
-        apiCache.invalidate(key);
-      } else {
-        response = await axiosInstance.get(`/files/${targetFileId}`, {
-          params: showOriginal ? { redact: false } : {},
-        });
+      const data = await getFileDetail(targetFileId, { fromPrefetch, showOriginal });
+      if (!data || typeof data !== 'object') throw new Error('Invalid response format');
+
+      const detail = data as FileDetailPayload;
+      file = detail;
+      collections = (detail.collections as Collection[]) || [];
+      // The ONLY source of the caller's permission; every gate above derives from it.
+      myPermission = (detail.my_permission as string | null | undefined) ?? null;
+      applyRedactionState(detail);
+      const pagination = paginationFrom(detail);
+      totalSegments = pagination.totalSegments;
+      totalSpeakerSegments = pagination.totalSpeakerSegments;
+      segmentLimit = pagination.segmentLimit;
+      segmentOffset = pagination.segmentOffset;
+
+      // Set up video URL only if file might have media available
+      if (file.status !== 'error' && file.status !== 'cancelled') {
+        setupVideoUrl(targetFileId, fromPrefetch);
       }
 
-      if (response.data && typeof response.data === 'object') {
-        file = response.data;
-        collections = response.data.collections || [];
-        myPermission = response.data.my_permission ?? null;
-        // Content-redaction state: pending (transcript withheld) + whether masking applied.
-        redactionPending = response.data.redaction_pending || false;
-        redactionStatus = response.data.redaction_status || '';
-        redactionEnabled = response.data.redaction_enabled === true;
-        if (!showOriginal && Array.isArray(response.data.transcript_segments)) {
-          if (response.data.transcript_segments.some((s: TranscriptSegment) => s?.redactions?.length)) {
-            redactionActive = true;
-          }
-        }
-
-        // Track pagination metadata
-        totalSegments = response.data.total_segments || 0;
-        totalSpeakerSegments = response.data.total_speaker_segments || 0;
-        segmentLimit = response.data.segment_limit || 500;
-        segmentOffset = response.data.segment_offset || 0;
-
-        // Set up video URL only if file might have media available
-        if (file.status !== 'error' && file.status !== 'cancelled') {
-          setupVideoUrl(targetFileId, fromPrefetch);
-        }
-
-        // Process transcript data from the file response
-        processTranscriptData();
-
-        // Analytics are pre-computed by the backend and included in the API response
-
-        isLoading = false;
-      } else {
-        throw new Error('Invalid response format');
-      }
+      processTranscriptData();
+      isLoading = false;
     } catch (error) {
       console.error('Error fetching file details:', error);
       const status = getErrorStatus(error);
@@ -415,7 +357,7 @@
   async function refreshTranscriptOnly(): Promise<void> {
     try {
       const response = await axiosInstance.get(`/files/${fileId}`, {
-        params: showOriginal ? { redact: false } : {},
+        params: redactParams(showOriginal),
       });
       if (response.data && typeof response.data === 'object') {
         // Replace BOTH segment representations: TranscriptDisplay prefers the
@@ -426,14 +368,7 @@
           transcript_segments: response.data.transcript_segments,
           grouped_segments: response.data.grouped_segments
         };
-        redactionPending = response.data.redaction_pending || false;
-        redactionStatus = response.data.redaction_status || '';
-        redactionEnabled = response.data.redaction_enabled === true;
-        if (!showOriginal && Array.isArray(response.data.transcript_segments)) {
-          if (response.data.transcript_segments.some((s: TranscriptSegment) => s?.redactions?.length)) {
-            redactionActive = true;
-          }
-        }
+        applyRedactionState(response.data);
         processTranscriptData();
       }
     } catch (error) {
@@ -442,32 +377,11 @@
     }
   }
 
-  /**
-   * Trigger (or re-run) content-redaction detection for THIS file. Useful for old files
-   * processed before redaction was enabled, or to re-scan after changing settings.
-   */
   async function triggerRedaction(): Promise<void> {
     if (!file?.uuid) return;
-    try {
-      const response = await axiosInstance.post('/files/management/bulk-action', {
-        file_uuids: [file.uuid],
-        action: 'redact'
-      });
-      const result = (response.data || [])[0];
-      if (result && result.success) {
-        redactionPending = true;
-        redactionStatus = 'pending';
-        toastStore.success($t('settings.contentRedaction.redactStarted'));
-      } else {
-        toastStore.error(result?.message || $t('settings.contentRedaction.redactTriggerFailed'));
-      }
-    } catch (err) {
-      console.error('Trigger redaction error:', err);
-      // The 409 "redaction is not enabled" carries the reason; show it, not a generic failure.
-      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
-      toastStore.error(
-        typeof detail === 'string' ? detail : $t('settings.contentRedaction.redactTriggerFailed')
-      );
+    if (await startRedactionScan(file.uuid)) {
+      redactionPending = true;
+      redactionStatus = 'pending';
     }
   }
 
@@ -515,28 +429,10 @@
     }
   }
 
-  /**
-   * Process transcript data from the main file response
-   */
+  /** Reload the speakers for freshly loaded transcript data. */
   function processTranscriptData() {
-    // Use transcript_segments from backend (already sorted by backend)
-    let transcriptData = file?.transcript_segments;
-
-    if (!file || !transcriptData || !Array.isArray(transcriptData)) {
-      return;
-    }
-
-    try {
-      // Backend now provides pre-sorted transcript segments - no client-side sorting needed
-
-      // Update the file with sorted data
-      file.transcript_segments = transcriptData;
-
-      // Load speakers and update store after they're loaded
-      loadSpeakers();
-    } catch (error) {
-      console.error('Error processing transcript:', error);
-    }
+    if (!file || !Array.isArray(file.transcript_segments)) return;
+    loadSpeakers();
   }
 
   // URL refresher for long video playback
@@ -644,7 +540,7 @@
       // Honour the reveal flag, as refreshTranscriptOnly does — without it, merging
       // speakers while "show original" is on silently re-masks the transcript.
       const response = await axiosInstance.get(`/files/${file.uuid}`, {
-        params: showOriginal ? { redact: false } : {}
+        params: redactParams(showOriginal)
       });
 
       if (response.data && typeof response.data === 'object') {
@@ -684,19 +580,8 @@
   // Handle analytics refresh after segment speaker change (backend refreshes analytics, frontend fetches)
   async function handleAnalyticsRefreshNeeded() {
     if (!file?.uuid) return;
-
-    try {
-      // Fetch only analytics (lightweight, no full file detail)
-      const response = await axiosInstance.get(`/files/${file.uuid}/analytics`);
-
-      if (response.data && typeof response.data === 'object') {
-        // Update analytics from refreshed response
-        file.analytics = response.data.analytics;
-      }
-    } catch (error) {
-      console.error('Error refreshing analytics after speaker change:', error);
-      // Don't show error toast - analytics refresh is not critical to user workflow
-    }
+    const result = await fetchFileAnalytics(file.uuid);
+    if (result && file) file.analytics = result.analytics;
   }
 
   // Speaker renames: single, linked-profile decision, and the editor's bulk save.

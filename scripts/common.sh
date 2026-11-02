@@ -456,14 +456,49 @@ fix_pipeline_scratch_permissions() {
   return 1
 }
 
-# Backend image the deployment runs: OT_IMAGE_TAG from the environment, then .env, else latest.
-# Mirrors download-models.sh's resolve_downloader_image (which cannot be sourced from here).
+# Host CPU architecture, normalized to the names Docker/OCI manifests use
+# (amd64 / arm64), so a caller never has to know that `uname -m` says x86_64 on
+# one and aarch64 on the other. Anything else is echoed through unchanged.
+host_architecture() {
+    local machine
+    machine=$(uname -m 2>/dev/null || echo unknown)
+    case "$machine" in
+        x86_64|amd64)   echo "amd64" ;;
+        aarch64|arm64)  echo "arm64" ;;
+        *)              echo "$machine" ;;
+    esac
+}
+
+# The deployment mode this run will actually use, env var beating .env.
+# read_env_value only ever reads .env, so a preflight that exports
+# DEPLOYMENT_MODE (see arm64_deployment_preflight below) would otherwise be
+# invisible to every consumer that asks .env directly.
+effective_deployment_mode() {
+    local mode="${DEPLOYMENT_MODE:-}"
+    if [ -z "$mode" ]; then
+        mode=$(read_env_value DEPLOYMENT_MODE)
+    fi
+    echo "$mode" | tr '[:upper:]' '[:lower:]'
+}
+
+# Backend image the deployment runs: repository from the deployment mode / architecture, tag from
+# OT_IMAGE_TAG (environment, then .env), else latest.
+# Lite installs and arm64 hosts run opentranscribe-backend-lite (the CUDA repository has no
+# capability-matched arm64 leg; opentranscribe.sh's arm64_deployment_preflight defaults arm64 to
+# lite for the same reason, unless OPENTRANSCRIBE_FORCE_FULL_ON_ARM64=true). Same repository rule
+# as opentranscribe.sh's resolve_diar_native_downloader_image; download-models.sh's
+# resolve_downloader_image carries the tag rule.
 resolve_backend_image() {
   local tag="${OT_IMAGE_TAG:-}"
   if [ -z "$tag" ] && [ -f .env ]; then
     tag=$(read_env_value OT_IMAGE_TAG .env)
   fi
-  echo "${DOCKERHUB_USERNAME:-davidamacey}/opentranscribe-backend:${tag:-latest}"
+  local repo="opentranscribe-backend"
+  if [ "$(effective_deployment_mode)" = "lite" ] \
+      || { [ "$(host_architecture)" = "arm64" ] && [ "${OPENTRANSCRIBE_FORCE_FULL_ON_ARM64:-}" != "true" ]; }; then
+    repo="opentranscribe-backend-lite"
+  fi
+  echo "${DOCKERHUB_USERNAME:-davidamacey}/${repo}:${tag:-latest}"
 }
 
 # Ensure OpenSearch neural models are downloaded for offline capability

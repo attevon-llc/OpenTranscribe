@@ -20,6 +20,7 @@ from app.core.constants import CPUPriority
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
+from app.services.file_cleanup_service import _drop_shared_paths
 from app.services.minio_service import delete_file
 from app.services.minio_service import get_file_url
 from app.services.minio_service import upload_file
@@ -156,6 +157,17 @@ def _store_thumbnail_paths(new_paths: dict[int, str]) -> None:
         db.commit()
 
 
+def _is_shared_with_other_row(file_id: int, thumbnail_path: str) -> bool:
+    """Whether a media file other than ``file_id`` references ``thumbnail_path``.
+
+    Reuses the purge path's reference check (``_drop_shared_paths``) in one short session.
+    A lookup failure propagates to the caller, which keeps the object (cleanup is best-effort).
+    """
+    plan = {"file_id": file_id, "thumbnail_path": thumbnail_path}
+    with session_scope() as db:
+        return bool(_drop_shared_paths(db, plan))
+
+
 def _migrate_single_thumbnail(row: dict) -> tuple[str, str | None]:
     """
     Migrate a single thumbnail from JPEG to WebP.
@@ -209,9 +221,13 @@ def _migrate_single_thumbnail(row: dict) -> tuple[str, str | None]:
             content_type="image/webp",
         )
 
-        # Delete old JPEG thumbnail
+        # Delete old JPEG thumbnail, unless another row still names the same object (a URL
+        # import's thumbnail is keyed by its source video, so two rows can share one key).
         try:
-            delete_file(old_thumbnail_path)
+            if _is_shared_with_other_row(file_id, old_thumbnail_path):
+                logger.info(f"Keeping {old_thumbnail_path}: another media file still references it")
+            else:
+                delete_file(old_thumbnail_path)
         except Exception as e:
             # Log but don't fail - the migration succeeded even if cleanup failed
             logger.warning(f"Failed to delete old thumbnail {old_thumbnail_path}: {e}")

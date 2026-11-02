@@ -23,6 +23,7 @@ vi.mock('$stores/locale', async () => {
 
 const api = vi.hoisted(() => ({
   listTags: vi.fn(),
+  listTagsOnFiles: vi.fn(),
   createTag: vi.fn(),
   bulkTagFiles: vi.fn(),
 }));
@@ -58,6 +59,7 @@ const tagList = [
 beforeEach(() => {
   vi.clearAllMocks();
   api.listTags.mockResolvedValue(tagList);
+  api.listTagsOnFiles.mockResolvedValue([]);
   api.createTag.mockImplementation(async (name: string) => ({ uuid: 'a', name }));
   api.bulkTagFiles.mockResolvedValue(results(repeat('added', 50)));
 });
@@ -229,5 +231,28 @@ describe('BulkTagModal', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('tag rail exploded'));
     expect(screen.queryByRole('status')).toBeNull();
     expect(applied).not.toHaveBeenCalled();
+  });
+});
+
+describe('BulkTagModal chips on a single file', () => {
+  const chip = { uuid: 'b', name: 'roadmap', file_count: 1, selection_size: 1 };
+
+  it('shows a failed chip removal instead of dropping it', async () => {
+    api.listTagsOnFiles.mockResolvedValue([chip]);
+    api.bulkTagFiles.mockRejectedValue({ response: { data: { detail: 'remove refused' } } });
+    const applied = vi.fn();
+    render(BulkTagModal, {
+      props: { isOpen: true, action: 'add_tag', fileUuids: ['file-0'] },
+      events: { applied },
+    });
+
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Remove "roadmap" from this file' })
+    );
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('remove refused'));
+    expect(applied).not.toHaveBeenCalled();
+    // The busy state ends, so the chip can be tried again.
+    expect(screen.getByRole('button', { name: 'Remove "roadmap" from this file' })).toBeEnabled();
   });
 });

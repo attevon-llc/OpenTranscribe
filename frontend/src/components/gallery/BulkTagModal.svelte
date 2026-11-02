@@ -82,18 +82,22 @@
   async function removeChip(tag: TagOnSelection) {
     if (!isSingleFile || busy) return;
     busy = true;
+    errorMessage = '';
     try {
       const results = await bulkTagFiles(fileUuids, 'remove_tag', tag.name);
       await loadCurrentTags();
-      // Same envelope the submit path reports, so the gallery's listener does
-      // not need a second shape to understand.
+      // Same envelope and the same outcome rules as the submit path, so the
+      // gallery's listener does not need a second shape to understand.
+      const counts = summarize(results, tag.name, tag.name);
       dispatch('applied', {
         action: 'remove_tag',
         name: tag.name,
-        changed: results.filter((r) => r.outcome === 'removed').length,
-        unchanged: results.filter((r) => r.outcome === 'not_present').length,
-        failed: results.filter((r) => r.outcome === 'failed').length,
+        changed: counts.changed,
+        unchanged: counts.unchanged,
+        failed: counts.failed,
       });
+    } catch (err) {
+      errorMessage = getErrorMessage(err, $t('gallery.bulk.tagModal.requestFailed'));
     } finally {
       busy = false;
     }

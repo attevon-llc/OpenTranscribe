@@ -21,27 +21,78 @@ const D = 'dddddddd-0000-0000-0000-000000000004';
 const E = 'eeeeeeee-0000-0000-0000-000000000005';
 
 const flat: TagListEntry[] = [
-  { uuid: A, name: 'alpha', source: 'manual', usage_count: 3, ownership: 'mine' },
-  { uuid: B, name: 'bravo', source: 'auto_ai', usage_count: 2, ownership: 'system' },
-  { uuid: C, name: 'charlie', source: 'ai_accepted', usage_count: 1, ownership: 'shared_with_me' },
-  { uuid: D, name: 'delta', source: null, usage_count: 0 },
+  { uuid: A, name: 'alpha', source: 'manual', usage_count: 3, can_write: true, ownership: 'mine' },
+  {
+    uuid: B,
+    name: 'bravo',
+    source: 'auto_ai',
+    usage_count: 2,
+    can_write: true,
+    ownership: 'system',
+  },
+  {
+    uuid: C,
+    name: 'charlie',
+    source: 'ai_accepted',
+    usage_count: 1,
+    can_write: false,
+    ownership: 'shared_with_me',
+  },
+  { uuid: D, name: 'delta', source: null, usage_count: 0, can_write: true },
 ];
 
 const clusters: TagCollisionCluster[] = [
   {
     normalized_name: 'one',
     members: [
-      { uuid: A, name: 'One', source: 'manual', usage_count: 5, suggested_survivor: true },
-      { uuid: B, name: 'one', source: 'manual', usage_count: 1, suggested_survivor: false },
+      {
+        uuid: A,
+        name: 'One',
+        source: 'manual',
+        usage_count: 5,
+        can_write: true,
+        suggested_survivor: true,
+      },
+      {
+        uuid: B,
+        name: 'one',
+        source: 'manual',
+        usage_count: 1,
+        can_write: true,
+        suggested_survivor: false,
+      },
     ],
     suggested_survivor_uuid: A,
-    suggestions: [{ uuid: E, name: 'on e', source: 'auto_ai', usage_count: 4, similarity: 0.846 }],
+    suggestions: [
+      {
+        uuid: E,
+        name: 'on e',
+        source: 'auto_ai',
+        usage_count: 4,
+        can_write: true,
+        similarity: 0.846,
+      },
+    ],
   },
   {
     normalized_name: 'two',
     members: [
-      { uuid: C, name: 'Two', source: 'manual', usage_count: 2, suggested_survivor: false },
-      { uuid: D, name: 'two', source: 'manual', usage_count: 1, suggested_survivor: true },
+      {
+        uuid: C,
+        name: 'Two',
+        source: 'manual',
+        usage_count: 2,
+        can_write: true,
+        suggested_survivor: false,
+      },
+      {
+        uuid: D,
+        name: 'two',
+        source: 'manual',
+        usage_count: 1,
+        can_write: true,
+        suggested_survivor: true,
+      },
     ],
     suggested_survivor_uuid: D,
     suggestions: [],

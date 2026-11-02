@@ -35,20 +35,41 @@ const UUID_B = 'bbbbbbbb-0000-0000-0000-000000000002';
 const UUID_C = 'cccccccc-0000-0000-0000-000000000003';
 
 const tags = [
-  { uuid: UUID_A, name: 'interviews', source: 'manual', usage_count: 12 },
-  { uuid: UUID_B, name: 'roadmap', source: 'auto_ai', usage_count: 4 },
-  { uuid: UUID_C, name: 'archive', source: null, usage_count: 0 },
+  { uuid: UUID_A, name: 'interviews', source: 'manual', usage_count: 12, can_write: true },
+  { uuid: UUID_B, name: 'roadmap', source: 'auto_ai', usage_count: 4, can_write: true },
+  { uuid: UUID_C, name: 'archive', source: null, usage_count: 0, can_write: true },
 ];
 
 const cluster: TagCollisionCluster = {
   normalized_name: 'roadmap',
   members: [
-    { uuid: UUID_A, name: 'Roadmap', source: 'manual', usage_count: 9, suggested_survivor: true },
-    { uuid: UUID_B, name: 'roadmap', source: 'auto_ai', usage_count: 2, suggested_survivor: false },
+    {
+      uuid: UUID_A,
+      name: 'Roadmap',
+      source: 'manual',
+      usage_count: 9,
+      can_write: true,
+      suggested_survivor: true,
+    },
+    {
+      uuid: UUID_B,
+      name: 'roadmap',
+      source: 'auto_ai',
+      usage_count: 2,
+      can_write: true,
+      suggested_survivor: false,
+    },
   ],
   suggested_survivor_uuid: UUID_A,
   suggestions: [
-    { uuid: UUID_C, name: 'road-map', source: 'manual', usage_count: 1, similarity: 0.91 },
+    {
+      uuid: UUID_C,
+      name: 'road-map',
+      source: 'manual',
+      usage_count: 1,
+      can_write: true,
+      similarity: 0.91,
+    },
   ],
 };
 

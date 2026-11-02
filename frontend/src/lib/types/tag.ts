@@ -24,6 +24,14 @@ export interface Tag {
   source?: string | null;
   /** The caller's relationship to this tag, and therefore their rights over it. */
   ownership?: TagOwnership;
+  /**
+   * Whether the server would accept this caller's rename, merge, delete, impact
+   * preview, list-shares and share/unshare of the tag. The single source for
+   * those gates — false under a support grant even for an owner-looking
+   * `ownership`. Promote is NOT covered: it keeps its own deployment-scope gate
+   * ({@link canWriteSystemTags}) plus `ownership === 'mine'`.
+   */
+  can_write: boolean;
 }
 
 /**
@@ -46,19 +54,6 @@ export interface TagWithCount extends Tag {
  *   must not offer one.
  */
 export type TagOwnership = 'mine' | 'system' | 'shared_with_me';
-
-/**
- * True when the caller may rename / merge / delete this tag.
- *
- * `isAdmin` is the right to write the shared vocabulary — pass
- * {@link canWriteSystemTags}, not the bare role.
- */
-export function canMutateTag(tag: Tag, isAdmin: boolean): boolean {
-  const ownership = tag.ownership ?? 'mine';
-  if (ownership === 'shared_with_me') return false;
-  if (ownership === 'system') return isAdmin;
-  return true;
-}
 
 /**
  * Whether the caller may write system tags and promote into the shared

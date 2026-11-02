@@ -63,9 +63,30 @@ const A = 'aaaaaaaa-0000-0000-0000-000000000001';
 const B = 'bbbbbbbb-0000-0000-0000-000000000002';
 const C = 'cccccccc-0000-0000-0000-000000000003';
 
-const tagA = { uuid: A, name: 'Zebra', source: 'manual', usage_count: 12, ownership: 'mine' };
-const tagB = { uuid: B, name: 'apple', source: 'auto_ai', usage_count: 4, ownership: 'mine' };
-const tagC = { uuid: C, name: 'Mango', source: 'manual', usage_count: 1, ownership: 'mine' };
+const tagA = {
+  uuid: A,
+  name: 'Zebra',
+  source: 'manual',
+  usage_count: 12,
+  ownership: 'mine',
+  can_write: true,
+};
+const tagB = {
+  uuid: B,
+  name: 'apple',
+  source: 'auto_ai',
+  usage_count: 4,
+  ownership: 'mine',
+  can_write: true,
+};
+const tagC = {
+  uuid: C,
+  name: 'Mango',
+  source: 'manual',
+  usage_count: 1,
+  ownership: 'mine',
+  can_write: true,
+};
 const library = [tagA, tagB, tagC];
 
 const impact = { tags: [], accessible_file_count: 3, total_file_count: 500 };
@@ -313,6 +334,7 @@ describe('create', () => {
       source: 'manual',
       usage_count: 0,
       ownership: 'mine',
+      can_write: true,
     };
     api.createTag.mockResolvedValue(fresh);
     await loaded();
@@ -800,7 +822,7 @@ describe('delete, merge, promote', () => {
 });
 
 describe('who sees which write controls', () => {
-  const system = { ...tagA, ownership: 'system' };
+  const system = { ...tagA, ownership: 'system', can_write: true };
 
   // 7d3ea6437: system-tag writes follow the deployment scope. The beforeEach fixture is a
   // single-tenant deployment; the multi-tenant and unreported cases are pinned below.
@@ -818,7 +840,8 @@ describe('who sees which write controls', () => {
     'gives an admin nothing writable on a system tag when the tenancy is %s',
     async (mode) => {
       setTenancy(mode);
-      api.listTags.mockResolvedValue([system]);
+      // The server withholds the write (can_write false); promote stays gated by tenancy.
+      api.listTags.mockResolvedValue([{ ...system, can_write: false }]);
       await loaded(1);
       await fireEvent.click(rows()[0]);
       expect(btn('tags.manager.detail.rename')).toBeNull();
@@ -848,7 +871,7 @@ describe('who sees which write controls', () => {
 
   it('gives a plain user nothing writable on a system tag and no promote on their own', async () => {
     auth.role = 'user';
-    api.listTags.mockResolvedValue([system, tagB]);
+    api.listTags.mockResolvedValue([{ ...system, can_write: false }, tagB]);
     await loaded(2);
     await fireEvent.click(rows()[0]);
     expect(btn('tags.manager.detail.rename')).toBeNull();

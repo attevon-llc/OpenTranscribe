@@ -19,7 +19,7 @@ refuses to overwrite a non-empty baseline unless ``--force`` is given.
 
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -120,19 +120,14 @@ def tighten(path: Path, current: dict[str, int], baseline: dict[str, Entry]) -> 
 
 
 def _is_real_reason(reason: str) -> bool:
-    """Apply ``scripts/audit-tests.py``'s placeholder-reason rule, so every allowlist agrees."""
-    path = Path(__file__).resolve().parents[1] / 'audit-tests.py'
-    spec = importlib.util.spec_from_file_location('_guard_audit_tests_reuse', path)
-    if spec is None or spec.loader is None:
-        msg = f'cannot load {path}'
-        raise ScanError(msg)
-    module = sys.modules.get(spec.name)
-    if module is None:
-        module = importlib.util.module_from_spec(spec)
-        # Registered before exec: its dataclasses resolve string annotations via sys.modules.
-        sys.modules[spec.name] = module
-        spec.loader.exec_module(module)
-    return bool(module._is_real_reason(reason.strip()))
+    """Apply ``scripts/audit_tests``'s placeholder-reason rule, so every allowlist agrees."""
+    scripts_dir = str(Path(__file__).resolve().parents[1])
+    sys.path.insert(0, scripts_dir)
+    try:
+        module = importlib.import_module('audit_tests.allowlist')
+    finally:
+        sys.path.remove(scripts_dir)
+    return bool(module.is_real_reason(reason.strip()))
 
 
 def write_initial(path: Path, findings: dict[str, int], reason: str, *, force: bool = False) -> int:

@@ -14,7 +14,7 @@ from __future__ import annotations
 import csv
 import dataclasses
 import hashlib
-import importlib.util
+import importlib
 import io
 import json
 import re
@@ -380,15 +380,14 @@ def load_pip_report(path: Path) -> list[Package]:
 
 
 def _reason_checker() -> Callable[[str], bool]:
-    """The ``_is_real_reason`` primitive ``audit-tests.py`` owns, so the repo has one vocabulary."""
-    path = Path(__file__).resolve().parents[1] / 'audit-tests.py'
-    spec = importlib.util.spec_from_file_location('_license_gate_audit_tests', path)
-    if spec is None or spec.loader is None:
-        raise InputError(f'cannot load {path}')
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module  # its dataclasses resolve annotations through sys.modules
-    spec.loader.exec_module(module)
-    checker: Callable[[str], bool] = module._is_real_reason
+    """The ``is_real_reason`` primitive ``scripts/audit_tests`` owns, so the repo has one vocabulary."""
+    scripts_dir = str(Path(__file__).resolve().parents[1])
+    sys.path.insert(0, scripts_dir)
+    try:
+        module = importlib.import_module('audit_tests.allowlist')
+    finally:
+        sys.path.remove(scripts_dir)
+    checker: Callable[[str], bool] = module.is_real_reason
     return checker
 
 

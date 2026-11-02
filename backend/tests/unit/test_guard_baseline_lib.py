@@ -379,23 +379,18 @@ def test_tighten_only_touches_three_column_lines_even_for_a_known_key(tmp_path):
 
 
 def test_reason_check_loads_audit_tests_once_and_reuses_the_module(tmp_path):
-    name = "_guard_audit_tests_reuse"
+    name = "audit_tests.allowlist"
     bl.write_initial(tmp_path / "1.tsv", FINDINGS, REASON)
     first = sys.modules[name]
     bl.write_initial(tmp_path / "2.tsv", FINDINGS, REASON)
     assert sys.modules[name] is first
 
 
-@pytest.mark.parametrize("broken", ["no_spec", "no_loader"])
-def test_reason_check_fails_closed_when_audit_tests_cannot_be_loaded(tmp_path, monkeypatch, broken):
-    class _NoLoader:
-        loader = None
+def test_reason_check_fails_closed_when_audit_tests_cannot_be_loaded(tmp_path, monkeypatch):
+    def _unloadable(name, *_a, **_k):
+        raise ImportError(f"cannot load {name}")
 
-    monkeypatch.setattr(
-        bl.importlib.util,
-        "spec_from_file_location",
-        lambda *_a, **_k: None if broken == "no_spec" else _NoLoader(),
-    )
-    with pytest.raises(bl.ScanError, match="cannot load"):
+    monkeypatch.setattr(bl.importlib, "import_module", _unloadable)
+    with pytest.raises(ImportError, match="cannot load"):
         bl.write_initial(tmp_path / "g.tsv", FINDINGS, REASON)
     assert not (tmp_path / "g.tsv").exists()

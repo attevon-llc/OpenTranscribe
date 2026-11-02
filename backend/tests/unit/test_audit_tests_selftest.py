@@ -13,27 +13,40 @@ than behind a marker.
 
 from __future__ import annotations
 
-import importlib.util
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import SimpleNamespace
 
 import pytest
 
-_AUDITOR_PATH = Path(__file__).resolve().parents[3] / "scripts" / "audit-tests.py"
+_SCRIPTS_DIR = Path(__file__).resolve().parents[3] / "scripts"
 
 
-def _load_auditor() -> ModuleType:
-    """Import ``scripts/audit-tests.py``, whose hyphenated name blocks a normal import."""
-    spec = importlib.util.spec_from_file_location("audit_tests", _AUDITOR_PATH)
-    assert spec is not None and spec.loader is not None, f"cannot load {_AUDITOR_PATH}"
-    module = importlib.util.module_from_spec(spec)
-    # Register BEFORE exec_module: `@dataclass` on `Finding` resolves its `from __future__
-    # import annotations` string types through `sys.modules[cls.__module__]`, which is None
-    # for a module that is not registered yet — an AttributeError deep inside dataclasses.
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+def _load_auditor() -> SimpleNamespace:
+    """Gather the ``scripts/audit_tests`` package's public surface under one name."""
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+    try:
+        from audit_tests import allowlist
+        from audit_tests import findings
+        from audit_tests import scan
+        from audit_tests import selftest
+        from audit_tests import selftest_cases
+    finally:
+        sys.path.remove(str(_SCRIPTS_DIR))
+    return SimpleNamespace(
+        ALLOWLIST_SELFTEST_CASES=selftest.ALLOWLIST_SELFTEST_CASES,
+        AllowlistReasonError=allowlist.AllowlistReasonError,
+        CATEGORIES=findings.CATEGORIES,
+        Finding=findings.Finding,
+        SELFTEST_CASES=selftest_cases.SELFTEST_CASES,
+        SELFTEST_CLEAN=selftest_cases.SELFTEST_CLEAN,
+        SELFTEST_ONCE=selftest_cases.SELFTEST_ONCE,
+        SELFTEST_PATH_CASES=selftest_cases.SELFTEST_PATH_CASES,
+        SELFTEST_PATH_CLEAN=selftest_cases.SELFTEST_PATH_CLEAN,
+        apply_allowlist=allowlist.apply_allowlist,
+        load_allowlist=allowlist.load_allowlist,
+        scan_source=scan.scan_source,
+    )
 
 
 auditor = _load_auditor()

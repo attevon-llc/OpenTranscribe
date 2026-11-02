@@ -63,7 +63,8 @@
   import { downloadStore } from '$stores/downloads';
   import { supportSessionGate } from '$stores/supportSession';
   import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
-  import { requestSummary, topicExtractionNoticeKey, type SummarizeResponse } from '$lib/api/summarize';
+  import type { SummarizeOptions } from '$lib/api/summarize';
+  import { fetchSummaryData, startSummary } from '$lib/fileDetail/summaryActions';
   import { getAppBaseUrl } from '$lib/utils/url';
   import type { PlaybackMode } from '$lib/api/mediaUrl';
   import { createMediaStream } from '$lib/fileDetail/mediaStream';
@@ -724,72 +725,42 @@
     }
   }
 
-  /** Say what happened to tag/collection suggestions queued alongside a summary, if anything. */
-  function announceTopicExtraction(res: SummarizeResponse): void {
-    const key = topicExtractionNoticeKey(res.topic_extraction);
-    if (key) toastStore.info($t(key), 6000);
-  }
-
-  /**
-   * Generate summary for the transcript
-   */
   async function handleGenerateSummary() {
-    if (!file?.uuid) return;
-
-    // Check if LLM is available
-    if (!$isLLMAvailable) {
-      return;
-    }
+    if (!file?.uuid || !$isLLMAvailable) return;
 
     try {
       generatingSummary = true;
-
-      announceTopicExtraction(await requestSummary(file.uuid));
-
-      // Don't refresh page - let WebSocket notifications handle status updates
-      // This preserves user's editing state
-
-      // The WebSocket will update summaryGenerating = true when processing starts
+      // No page refresh: websocket notifications drive the status (and preserve edits).
+      await startSummary(file.uuid);
     } catch (error: unknown) {
       console.error('Error generating summary:', error);
-      const errorMessage = getErrorMessage(error, $t('fileDetail.failedToGenerateSummary'));
-
-      toastStore.error(errorMessage, 5000);
+      toastStore.error(getErrorMessage(error, $t('fileDetail.failedToGenerateSummary')), 5000);
     } finally {
       generatingSummary = false;
     }
   }
 
-  /**
-   * Load summary data from the backend
-   */
-  async function loadSummary() {
-    if (!file?.uuid) return;
+  /** The summary modal's reprocess / regenerate-with-prompt actions. */
+  async function restartSummary(options: SummarizeOptions, failureLog: string) {
+    showSummaryModal = false;
+    // Spinner on the button, and no summary on the file, until the websocket says otherwise.
+    summaryGenerating = true;
+    if (file) {
+      file = { ...file, has_summary: false, summary_opensearch_id: null };
+    }
 
     try {
-      const response = await axiosInstance.get(`/files/${file.uuid}/summary`);
-      summaryData = response.data.summary_data;
-    } catch (error: unknown) {
-      console.error('Error loading summary:', error);
-      if (getErrorStatus(error) !== 404) {
-        toastStore.error($t('fileDetail.failedToLoadSummary'), 5000);
-      }
+      await startSummary(file.uuid, options);
+    } catch (error) {
+      console.error(failureLog, error);
+      toastStore.error($t('fileDetail.failedToStartSummaryReprocess'), 5000);
+      summaryGenerating = false;
     }
   }
 
-  /**
-   * Show the summary modal
-   */
-  function handleShowSummary() {
-    if (summaryData) {
-      showSummaryModal = true;
-    } else {
-      loadSummary().then(() => {
-        if (summaryData) {
-          showSummaryModal = true;
-        }
-      });
-    }
+  async function handleShowSummary() {
+    if (!summaryData && file?.uuid) summaryData = await fetchSummaryData(file.uuid);
+    if (summaryData) showSummaryModal = true;
   }
 
   // WebSocket subscription for real-time updates
@@ -1329,54 +1300,13 @@
     fileId={file.uuid}
     fileName={file?.filename || 'Unknown File'}
     on:close={() => showSummaryModal = false}
-    on:reprocessSummary={async (_event) => {
-      // 1. Close modal immediately
-      showSummaryModal = false;
-
-      // 2. Update button to show spinner state
-      summaryGenerating = true;
-
-      // 3. Clear the summary from file object to trigger "generating" button state
-      if (file) {
-        file.has_summary = false;
-        file.summary_opensearch_id = null;
-        file = { ...file }; // Trigger reactivity
-      }
-
-      // 4. Trigger the API call for reprocessing
-      try {
-        announceTopicExtraction(await requestSummary(file.uuid, { forceRegenerate: true }));
-
-        // WebSocket will handle the rest of the status updates
-      } catch (error) {
-        console.error('Failed to start reprocess:', error);
-        toastStore.error($t('fileDetail.failedToStartSummaryReprocess'), 5000);
-        summaryGenerating = false;
-      }
-    }}
-    on:regenerateWithPrompt={async (event) => {
-      showSummaryModal = false;
-      summaryGenerating = true;
-
-      if (file) {
-        file.has_summary = false;
-        file.summary_opensearch_id = null;
-        file = { ...file };
-      }
-
-      try {
-        announceTopicExtraction(
-          await requestSummary(file.uuid, {
-            forceRegenerate: true,
-            promptUuid: event.detail.promptUuid,
-          })
-        );
-      } catch (error) {
-        console.error('Failed to start regeneration with prompt:', error);
-        toastStore.error($t('fileDetail.failedToStartSummaryReprocess'), 5000);
-        summaryGenerating = false;
-      }
-    }}
+    on:reprocessSummary={() =>
+      restartSummary({ forceRegenerate: true }, 'Failed to start reprocess:')}
+    on:regenerateWithPrompt={(event) =>
+      restartSummary(
+        { forceRegenerate: true, promptUuid: event.detail.promptUuid },
+        'Failed to start regeneration with prompt:'
+      )}
   />
 {/if}
 

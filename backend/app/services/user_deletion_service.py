@@ -32,11 +32,11 @@ def _delete_user_speakers(db: Session, user_id: int) -> None:
     """Delete all speakers for a user. Pure DB — no OpenSearch here (issue #715).
 
     This used to remove each speaker's OpenSearch embedding itself, one round trip
-    per speaker, from inside the caller's open transaction (``delete_admin_user``'s
-    ``db.begin_nested()`` savepoint, or the bare request transaction in
-    ``users_admin_edit.delete_user``) — holding locks, including ``ACCESS SHARE`` on
-    ``media_file`` taken moments later, for as long as OpenSearch took to answer. The
-    caller now reads every speaker UUID via
+    per speaker, from inside the caller's open transaction (the
+    ``db.begin_nested()`` savepoint :func:`delete_user_account` opens) — holding
+    locks, including ``ACCESS SHARE`` on ``media_file`` taken moments later, for as
+    long as OpenSearch took to answer. :func:`delete_user_account` now reads every
+    speaker UUID via
     ``account_purge.load_account_purge_plans`` **before** this function runs
     and removes the embeddings via ``purge_account_external_copies`` **after** its own
     transaction commits, with no session held — the same phase split
@@ -274,11 +274,12 @@ def _delete_user_media_files(db: Session, user_id: int) -> None:
 
     **A user owning any file under an active legal hold is REFUSED before anything is
     deleted** (:func:`_assert_no_held_files`, issue #689). The check runs
-    here as well as in each endpoint because a guard in one caller protects one caller;
-    the endpoints call it *first* so that the two earlier passes
+    here as well as in :func:`delete_user_account`, the single caller of the three
+    passes, which runs it *first* so that the two earlier passes
     (``_delete_user_owned_records``, ``_delete_user_speakers``) have not already
-    destroyed anything by the time the refusal is raised, and this call is the backstop
-    that a future caller inherits without having to remember.
+    destroyed anything by the time the refusal is raised. This call is the backstop a
+    future direct caller inherits without having to remember; a new caller should go
+    through :func:`delete_user_account` instead.
 
     **Why the children are deleted by hand here.** ``MediaFile`` declares
     ``cascade="all, delete-orphan"`` on eight relationships, but four of the

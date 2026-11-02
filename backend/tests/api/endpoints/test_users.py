@@ -262,11 +262,11 @@ def test_update_user_unauthorized(client, user_token_headers, admin_user):
 def test_delete_user(client, admin_token_headers, normal_user, db_session):
     """Deleting a user with real owned data removes ALL of it.
 
-    ``DELETE /api/users/{uuid}`` is a second entry point into the same three helpers
-    that ``DELETE /api/admin/users/{uuid}`` uses, and it differs in one way that
-    matters: there is no ``begin_nested()`` savepoint and no ``except Exception``
-    around the cascade, so a foreign-key failure here propagates as an unhandled 500
-    with a half-deleted account. Like its admin twin, this test used to delete the bare
+    ``DELETE /api/users/{uuid}`` is a second entry point into the same cascade
+    (``user_deletion_service.delete_user_account``) that ``DELETE /api/admin/users/{uuid}``
+    uses, and it differs in one way that matters: there is no ``except Exception``
+    around it, so a foreign-key failure here propagates as an unhandled 500 (the
+    cascade's savepoint rolls the passes back first). Like its admin twin, this test used to delete the bare
     ``normal_user`` fixture — an account owning nothing, so every ``if <ids>:`` branch
     in both helpers was skipped and the assertion held regardless of their contents.
     """

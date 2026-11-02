@@ -1305,6 +1305,8 @@ def clear_cache_now(
     logger.info(f"Manual derived-cache clear by admin {current_user.email}")
     try:
         deleted = cache_management_service.clear_derived_cache()
+    except HTTPException:
+        raise
     except StorageDeleteIncompleteError as e:
         logger.error(f"Derived-cache clear left objects behind: {e}")
         raise HTTPException(

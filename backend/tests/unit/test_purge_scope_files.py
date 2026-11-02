@@ -54,7 +54,7 @@ def _file(db, owner) -> MediaFile:
     row = MediaFile(
         uuid=str(uuid.uuid4()),
         filename="scope.wav",
-        storage_path="media/test/scope.wav",
+        storage_path=f"media/test/scope-{uuid.uuid4().hex}.wav",
         content_type="audio/wav",
         file_size=1,
         status="completed",

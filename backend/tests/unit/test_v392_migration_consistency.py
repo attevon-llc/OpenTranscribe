@@ -62,7 +62,7 @@ def _new_file(conn, user_id: int, coverage=None) -> int:
             text(
                 "INSERT INTO media_file (uuid, user_id, filename, storage_path, file_size, "
                 "content_type, redaction_coverage) "
-                "VALUES (:u, :uid, 'v391.wav', 'x/v391.wav', 1, 'audio/wav', :cov) RETURNING id"
+                "VALUES (:u, :uid, 'v391.wav', 'x/v391-' || :u || '.wav', 1, 'audio/wav', :cov) RETURNING id"
             ),
             {"u": str(uuid_pkg.uuid4()), "uid": user_id, "cov": coverage},
         ).scalar()

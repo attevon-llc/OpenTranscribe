@@ -1,8 +1,9 @@
 """thumbnail_migration must not delete a .jpg another media row references (issue #1357).
 
-A URL import's thumbnail is keyed by the source video, so two rows can name one object.
-The migration re-rendered one row to WebP and then deleted the shared .jpg, breaking the
-other row's thumbnail.
+Originally two URL-import rows could name one thumbnail object, and the migration deleted
+the shared .jpg out from under the other row. v456 made that state unrepresentable
+(``uq_media_file_thumbnail_path``), so the tests now pin the constraint and that a migration
+only ever deletes its own row's object.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import contextlib
 import uuid
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from app.models.media import MediaFile
 from app.tasks import thumbnail_migration as tm
@@ -50,18 +52,34 @@ def migration_env(monkeypatch, db_session):
     return deleted
 
 
-def test_shared_jpg_is_kept_when_another_row_references_it(db_session, normal_user, migration_env):
+def test_a_second_row_cannot_name_the_same_thumbnail_object(db_session, normal_user):
+    """The state the old shared-.jpg guard defended against is no longer representable.
+
+    Two rows naming one thumbnail object is what made the migration's delete break the other
+    row. ``uq_media_file_thumbnail_path`` rejects it at write time, so the guard was removed
+    from the migration and this pins the constraint it now relies on.
+    """
     shared = f"user_1/youtube_{uuid.uuid4().hex[:8]}/thumbnail.jpg"
-    mine = _row(db_session, normal_user, thumbnail_path=shared, source_url=None)
-    _row(db_session, normal_user, thumbnail_path=shared, source_url="https://example.com/v")
+    _row(db_session, normal_user, thumbnail_path=shared, source_url=None)
+
+    with pytest.raises(IntegrityError, match="uq_media_file_thumbnail_path"):
+        _row(db_session, normal_user, thumbnail_path=shared, source_url="https://example.com/v")
+    db_session.rollback()
+
+
+def test_another_rows_jpg_is_kept_when_this_row_migrates(db_session, normal_user, migration_env):
+    mine_path = f"user_1/file_{uuid.uuid4().hex[:8]}/thumbnail.jpg"
+    other_path = f"user_1/file_{uuid.uuid4().hex[:8]}/thumbnail.jpg"
+    mine = _row(db_session, normal_user, thumbnail_path=mine_path, source_url=None)
+    _row(db_session, normal_user, thumbnail_path=other_path, source_url="https://example.com/v")
 
     outcome, new_path = tm._migrate_single_thumbnail(
-        {"id": mine.id, "thumbnail_path": shared, "storage_path": mine.storage_path}
+        {"id": mine.id, "thumbnail_path": mine_path, "storage_path": mine.storage_path}
     )
 
     assert outcome == "migrated"
-    assert new_path == shared[:-4] + ".webp"
-    assert migration_env == [], "the shared .jpg was deleted while another row still names it"
+    assert new_path == mine_path[:-4] + ".webp"
+    assert migration_env == [mine_path], "the migration must delete only its own row's .jpg"
 
 
 def test_unshared_jpg_is_still_deleted(db_session, normal_user, migration_env):

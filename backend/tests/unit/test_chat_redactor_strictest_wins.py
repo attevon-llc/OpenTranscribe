@@ -166,9 +166,9 @@ def _new_file_with_segment(conn, owner_id: int, *, content: str = CONTENT) -> in
             text(
                 "INSERT INTO media_file (uuid, user_id, filename, storage_path, file_size, "
                 "content_type, redaction_status) VALUES "
-                "(:u, :uid, 'sw.wav', 'x/sw.wav', 1, 'audio/wav', 'done') RETURNING id"
+                "(:u, :uid, 'sw.wav', :sp, 1, 'audio/wav', 'done') RETURNING id"
             ),
-            {"u": str(uuid_pkg.uuid4()), "uid": owner_id},
+            {"u": str(uuid_pkg.uuid4()), "uid": owner_id, "sp": f"x/sw-{uuid_pkg.uuid4().hex}.wav"},
         ).scalar()
     )
     redactions = json.dumps(

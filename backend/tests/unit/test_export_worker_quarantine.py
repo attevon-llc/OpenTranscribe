@@ -40,7 +40,7 @@ def _make_file(db_session, owner, *, text: str) -> MediaFile:
     media_file = MediaFile(
         uuid=str(uuid.uuid4()),
         filename=f"export818-{uuid.uuid4().hex[:8]}.mp4",
-        storage_path="media/test/export818.mp4",
+        storage_path=f"media/test/export818-{uuid.uuid4().hex}.mp4",
         content_type="video/mp4",
         file_size=1024,
         user_id=owner.id,

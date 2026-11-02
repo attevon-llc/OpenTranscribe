@@ -15,6 +15,7 @@ from ldap3 import Connection
 from ldap3.core.exceptions import LDAPException
 
 from app.auth.ldap_auth import LdapConfig
+from app.auth.ldap_auth import _directory_username
 from app.auth.ldap_auth import _is_ldap_admin
 from app.auth.ldap_directory import _bind_service_account
 from app.auth.ldap_directory import _check_group_access
@@ -185,6 +186,10 @@ def probe_ldap_user(
         return LdapProbe(DIRECTORY_NOT_ENTITLED)
 
     is_admin = _is_ldap_admin(
-        cfg, ldap_username, user_groups, bind_conn=bind_conn, user_dn=user_entry.entry_dn
+        cfg,
+        _directory_username(cfg, user_entry, ldap_uid),
+        user_groups,
+        bind_conn=bind_conn,
+        user_dn=user_entry.entry_dn,
     )
     return LdapProbe(DIRECTORY_PRESENT, tuple(user_groups), is_admin)

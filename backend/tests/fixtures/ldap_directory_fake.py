@@ -60,6 +60,8 @@ class FakeDirectory:
     server_error: Exception | None = None
     rejected_attribute: str | None = None
     calls: list[tuple[Any, ...]] = field(default_factory=list)
+    #: Keyword options each ``Connection`` was built with, beyond user/password/auto_bind.
+    connection_options: list[dict[str, Any]] = field(default_factory=list)
 
     def add_user(self, entry: FakeEntry, password: str, filter_text: str | None = None) -> None:
         """Make ``entry`` the single answer to ``filter_text`` (default ``(uid=<uid>)``)."""
@@ -87,7 +89,13 @@ class _Server:
 
 class _Connection:
     def __init__(
-        self, directory: FakeDirectory, server: Any, user: str, password: str, auto_bind: bool
+        self,
+        directory: FakeDirectory,
+        server: Any,
+        user: str,
+        password: str,
+        auto_bind: bool,
+        **options: Any,
     ) -> None:
         self._dir = directory
         self.user = user
@@ -95,6 +103,7 @@ class _Connection:
         self.bound = False
         self.entries: list[Any] = []
         directory.calls.append(("connection", user, auto_bind))
+        directory.connection_options.append(options)
 
     def open(self) -> bool:
         self._dir.calls.append(("open", self.user))
@@ -137,8 +146,8 @@ def install(monkeypatch: Any, directory: FakeDirectory | None = None) -> FakeDir
     )
     monkeypatch.setattr(
         "app.auth.ldap_directory.Connection",
-        lambda server, user, password, auto_bind: _Connection(
-            directory, server, user, password, auto_bind
+        lambda server, user, password, auto_bind, **options: _Connection(
+            directory, server, user, password, auto_bind, **options
         ),
     )
     return directory

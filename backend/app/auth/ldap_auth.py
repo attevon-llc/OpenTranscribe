@@ -194,15 +194,24 @@ def _is_valid_email(email: str) -> bool:
     return bool(re.match(pattern, email))
 
 
-def _extract_user_attributes(cfg: LdapConfig, user_entry, ldap_username: str) -> dict | None:
-    """Extract and validate user attributes from LDAP entry."""
-    # Extract username
+def _directory_username(cfg: LdapConfig, user_entry, fallback: str) -> str:
+    """The account's username as the directory holds it: the username attribute, else *fallback*.
+
+    The one form stored as ``ldap_uid`` and compared against ``admin_users``, by login and by
+    the directory sweep alike. Comparing different forms (for example a ``userPrincipalName``
+    against its part before ``@``) makes the two paths disagree about who is an admin.
+    """
     attr_value = (
         getattr(user_entry, cfg.username_attr, None)
         if hasattr(user_entry, cfg.username_attr)
         else None
     )
-    username_value = str(attr_value) if attr_value is not None else ldap_username
+    return str(attr_value) if attr_value is not None else fallback
+
+
+def _extract_user_attributes(cfg: LdapConfig, user_entry, ldap_username: str) -> dict | None:
+    """Extract and validate user attributes from LDAP entry."""
+    username_value = _directory_username(cfg, user_entry, ldap_username)
 
     # Extract email
     email_value = user_entry[cfg.email_attr].value if cfg.email_attr in user_entry else None

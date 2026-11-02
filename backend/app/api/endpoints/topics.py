@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.core.constants import DEFAULT_AUTO_LABEL_CONFIDENCE_THRESHOLD
 from app.db.base import get_db
@@ -51,7 +52,11 @@ router = APIRouter()
 # =============================================================================
 
 
-@router.post("/batch-extract", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/batch-extract",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def batch_extract_topics(
     file_uuids: list[str] = Body(..., embed=True),
     force_regenerate: bool = Body(False, embed=True),
@@ -205,7 +210,11 @@ def get_retroactive_auto_label_status(
     }
 
 
-@router.post("/retroactive-auto-label", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/retroactive-auto-label",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def retroactive_auto_label(
     request_data: RetroactiveAutoLabelRequest = Body(
         default=RetroactiveAutoLabelRequest()  # type: ignore[call-arg]  # file_uuids defaults to None
@@ -234,7 +243,7 @@ def retroactive_auto_label(
 # =============================================================================
 
 
-@router.post("/{file_uuid}/auto-label")
+@router.post("/{file_uuid}/auto-label", dependencies=[Depends(refuse_under_support_grant)])
 def auto_label_single_file(
     file_uuid: str,
     db: Session = Depends(get_db),
@@ -368,7 +377,11 @@ def get_topic_suggestions(
     )
 
 
-@router.post("/{file_uuid}/extract", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/{file_uuid}/extract",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def extract_topics(
     file_uuid: str,
     request_data: ExtractTopicsRequest = Body(default=ExtractTopicsRequest(force_regenerate=False)),
@@ -444,7 +457,11 @@ def extract_topics(
     }
 
 
-@router.post("/{file_uuid}/apply", response_model=dict)
+@router.post(
+    "/{file_uuid}/apply",
+    response_model=dict,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def apply_topic_suggestions(
     file_uuid: str,
     request_data: ApplyTopicSuggestionsRequest,

@@ -9,27 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- **Voiceprint purges after a privacy switch-off leave held and quarantined files alone.** The
-  user, organization and instance purges deleted the voiceprints of files under a platform or
-  organization legal hold or in quarantine, although the per-file purge and the retention sweep
-  already excluded them. All three now skip those files, and a profile that still holds one of
-  their voices is kept (its embedding is recomputed) rather than reset. The purge status and audit
-  event report `files_skipped_held`, `files_skipped_quarantined` and `profiles_retained` as counts
-  only, never a hold identifier. Skipped data is purged by a later switch-off purge once the hold
-  is released; nothing schedules it automatically.
-- **Self-service erasure keeps at least one active super administrator.** The check that
-  refuses the last super administrator was made only when the request was filed. It is now
-  repeated when the request falls due, under a row lock on the active super administrators, so
-  two super administrators who both requested erasure (or one whose peer was since demoted or
-  deactivated) can no longer remove every one of them. A request that would do so is not run:
-  it is closed as `cancelled` and recorded in the audit trail as `gdpr_self_erasure_blocked`
-  with reason `last_super_admin`.
-- **Per-file voice identification opt-out respects legal holds and takedowns.** Turning voice
-  identification off for a file that is under a platform or organization legal hold is now
-  refused with `409 FILE_UNDER_LEGAL_HOLD` and changes nothing, so a held file keeps its
-  voiceprints until the hold is released. A quarantined (taken-down) file is treated as not
-  found by this route. The purge task re-checks the same rules when it runs and skips held and
-  quarantined files, so a hold placed after the request was queued is also honoured.
+
 - **Credential handling for protected media imports.** The site login supplied with a protected
   media URL import is no longer passed to the background worker as a task argument. It is held
   encrypted in Redis for a limited time under an opaque reference, read by the worker when it
@@ -96,6 +76,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Object-key unique indexes no longer block writes at startup.** The startup retry for the
+  indexes the v456 migration had to skip now uses `CREATE UNIQUE INDEX CONCURRENTLY`, drops an
+  invalid index left by a failed build before trying again, runs at most once per process, and
+  does nothing beyond one catalog query when all three indexes are valid. The migration itself
+  still builds inside its transaction (its lock on `media_file` is now documented).
+- **Erasure receipt that could not be stored.** When the receipt row failed to insert, the erasure
+  still closed as complete with no stored receipt. The entry is now left deferred with an error so
+  the reconciliation sweep retries it, and the response reports the receipt outcome as unverified.
+- **Withdrawing a self-service erasure request, and the index reconciliation cursor.** Two
+  columns added by the self-service erasure migration (`cancelled_at`, `index_checked_at`) were
+  missing from the audit trigger's list of lifecycle columns, so cancelling a request failed with
+  a permission error and the reconciliation sweep could not record which entries it had checked.
+  A new migration (v457) re-creates the trigger with both columns, and the optional restricted
+  database role is granted the same columns. The same revision makes `erasure_receipt` insert-only
+  and adds the missing `TRUNCATE` guard to `legal_acceptance`.
 - **AI feature availability with an invalid personal LLM setting.** A saved LLM configuration with a
   non-numeric temperature or context size is now reported as unavailable consistently, so
   background processing no longer queues AI work that can only be skipped, and a saved AWS Bedrock

@@ -46,6 +46,14 @@ def seed_audit_rows(conn, user_id: int) -> dict[str, int]:
         ),
         {"u": uuid_pkg.uuid4(), "uid": user_id},
     ).scalar()
+    ids["erasure_receipt"] = conn.execute(
+        text(
+            "INSERT INTO erasure_receipt (uuid, ledger_entry_id, attempt, phase, outcome,"
+            " inventory_version, digest) VALUES (:u, :l, 1, 'immediate', 'verified', 1, :d)"
+            " RETURNING id"
+        ),
+        {"u": uuid_pkg.uuid4(), "l": ids["erasure_ledger"], "d": "0" * 64},
+    ).scalar()
     notice = conn.execute(
         text(
             "INSERT INTO takedown_notice (uuid, notice_type, received_at, basis, requester_reference,"

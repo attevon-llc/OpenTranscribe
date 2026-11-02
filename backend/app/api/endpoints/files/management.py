@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.files.crud import delete_media_file
 from app.api.endpoints.files.crud import get_media_file_by_uuid
@@ -1221,6 +1222,9 @@ def bulk_file_action(
     is_tag_action = request.action in TAG_ACTIONS
     tag = None
     if is_tag_action:
+        # Tagging creates tenant vocabulary, which a support grant never does (same rule as the
+        # tag routes).
+        refuse_under_support_grant(ctx)
         try:
             tag = resolve_bulk_tag(
                 db,

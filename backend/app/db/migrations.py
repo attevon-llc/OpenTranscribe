@@ -762,6 +762,16 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname = 'uq_media_file_playback_path')"
     )
 
+    # v457: audit guard follow-ups. Keyed on the LAST trigger the revision creates (the
+    # legal_acceptance TRUNCATE guard) plus the widened erasure_ledger lifecycle list.
+    has_audit_guard_followups = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_trigger "
+        "WHERE tgname = 'trg_audit_guard_truncate_legal_acceptance')"
+    ) and _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname = 'trg_audit_guard_erasure_ledger' "
+        "AND pg_get_triggerdef(oid) LIKE '%index_checked_at%')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -842,7 +852,20 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_task_active_unique
         and has_identity_source
     )
-    # v456: same as v455 plus the unique object-key indexes. The top of the ladder.
+    # v457: same as v456 plus the widened erasure_ledger guard and the receipt guard. The top.
+    if (
+        matches_v449
+        and has_legal_acceptance_context
+        and has_legal_acceptance_survival
+        and has_erasure_receipt
+        and has_audit_row_guard
+        and has_voiceprint_consent
+        and has_self_service_erasure
+        and has_unique_object_keys
+        and has_audit_guard_followups
+    ):
+        return "v457_audit_guard_followups"
+    # v456: same as v455 plus the unique object-key indexes.
     if (
         matches_v449
         and has_legal_acceptance_context
@@ -1814,18 +1837,31 @@ def _repair_skipped_v230(config) -> None:
         engine.dispose()
 
 
+#: The retry below runs at most once per process. A dev hot reload starts a new process, but
+#: the common case (all three indexes valid) is one catalog query, so that costs nothing.
+_object_key_retry_done = False
+
+
 def _retry_object_key_indexes() -> None:
-    """Build any object-key unique index v456 had to skip (duplicates since cleaned up).
+    """Build any object-key unique index v456 had to skip, without blocking writers.
+
+    Uses ``CREATE UNIQUE INDEX CONCURRENTLY`` on an autocommit connection and first drops an
+    INVALID index a failed build left behind. v456 itself builds inside its transaction (and so
+    locks writes while it runs); this retry exists for the indexes it skipped or could not build.
 
     Never raises: a database problem here is logged and must not stop the backend.
     """
+    global _object_key_retry_done
+    if _object_key_retry_done:
+        return
+    _object_key_retry_done = True
     from app.db import object_key_indexes
 
     engine = create_engine(migration_database_url(), connect_args=migration_connect_args())
     try:
-        with engine.begin() as conn:
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
             if inspect(conn).has_table("media_file"):
-                object_key_indexes.ensure_indexes(conn)
+                object_key_indexes.ensure_indexes_concurrently(conn)
     except SQLAlchemyError:
         logger.error("Could not check the media_file object-key indexes", exc_info=True)
     finally:

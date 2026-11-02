@@ -39,6 +39,7 @@ from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
+from app.api.endpoints.files.reprocess import refuse_reprocess_if_held
 from app.api.endpoints.prompts import require_usable_prompt_uuid
 from app.auth.audit import AuditEventType
 from app.db.base import get_db
@@ -49,6 +50,7 @@ from app.schemas.summary import SpeakerIdentificationResponse
 from app.schemas.summary import SummaryResponse
 from app.schemas.summary import SummaryTaskRequest
 from app.services.content_audit import record_file_event
+from app.services.hold_guard import DESTROY_DERIVED_REFUSAL
 from app.services.llm_service import is_llm_available
 from app.services.platform_bypass import PlatformBypass
 from app.services.summary_export_service import VALID_SUMMARY_EXPORT_FORMATS
@@ -619,6 +621,11 @@ def delete_summary(
     )
     file_id = int(media_file.id)
     response_uuid = str(media_file.uuid)
+
+    # A held file's summary is only rebuilt by reprocessing, which the hold refuses.
+    refuse_reprocess_if_held(
+        db, file_id, actor=current_user, action="summary_delete", message=DESTROY_DERIVED_REFUSAL
+    )
 
     # ``dict[Any, Any]`` because ``Query.update`` accepts string OR column keys
     # and its parameter type is invariant in the key.

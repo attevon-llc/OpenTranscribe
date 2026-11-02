@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Legal hold and the summary and speakers of a held file.** Deleting a held file's summary or one
+  of its speakers (which also removes the stored voiceprint copies) was allowed even though
+  reprocessing the same file is refused, so the hold could be emptied piece by piece and the
+  record could not be rebuilt. Both now answer 409 `FILE_UNDER_LEGAL_HOLD` with the same body as
+  the reprocess refusal, and the refusal is audited. Editing the transcript is still allowed.
 - **Support access grants and LLM or tenant-content routes.** A write-level support access grant
   could still start summarization, speaker identification, topic extraction, auto-labelling or
   applying topic suggestions (each sends the tenant's transcript to the caller's own language

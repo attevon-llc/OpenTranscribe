@@ -13,26 +13,9 @@ from pydantic import field_validator
 from pydantic import model_validator
 
 from app.core.enums import ContextWindowStatus
+from app.core.enums import LLMProvider
 from app.core.enums import ReasoningOffSwitch
 from app.schemas.base import UUIDBaseSchema
-
-
-class LLMProvider(StrEnum):
-    """Supported LLM providers"""
-
-    OPENAI = "openai"
-    VLLM = "vllm"
-    OLLAMA = "ollama"
-    ANTHROPIC = "anthropic"
-    OPENROUTER = "openrouter"
-    #: AWS-native, reached through boto3's Converse API (see
-    #: ``services/llm_bedrock.py``). No ``base_url``. A configuration may carry its own
-    #: region and AWS credentials (write-only, stored encrypted); blank means the
-    #: server's region and boto3 credential chain (``services/bedrock_settings.py``).
-    BEDROCK = "bedrock"
-    CUSTOM = "custom"
-    # Legacy - kept for backward compatibility with existing database records
-    CLAUDE = "claude"  # Deprecated: use ANTHROPIC instead
 
 
 class ConnectionStatus(StrEnum):

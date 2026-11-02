@@ -9,23 +9,10 @@ Declaring them lets the type checker verify each mixin against the same contract
 
 from dataclasses import dataclass
 from dataclasses import field
-from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from app.core.enums import LLMProvider
 from app.services.bedrock_settings import BedrockConnection
-
-
-class LLMProvider(StrEnum):
-    OPENAI = "openai"
-    VLLM = "vllm"
-    OLLAMA = "ollama"
-    ANTHROPIC = "anthropic"
-    OPENROUTER = "openrouter"
-    BEDROCK = "bedrock"  # AWS-native; boto3 Converse API, credentials via the IAM chain
-    CUSTOM = "custom"
-    # Legacy - kept for backward compatibility
-    CLAUDE = "claude"  # Deprecated: use ANTHROPIC instead
-
 
 #: Providers that cannot authenticate without an API key, so a blank one is refused locally
 #: rather than sent as `Authorization: Bearer ` for the remote to reject. VLLM, OLLAMA, BEDROCK

@@ -311,3 +311,21 @@ class ContextWindowStatus(enum.StrEnum):
     UNREACHABLE = "unreachable"
     #: The endpoint reported the model's maximum context length.
     MEASURED = "measured"
+
+
+class LLMProvider(enum.StrEnum):
+    """Supported LLM providers"""
+
+    OPENAI = "openai"
+    VLLM = "vllm"
+    OLLAMA = "ollama"
+    ANTHROPIC = "anthropic"
+    OPENROUTER = "openrouter"
+    #: AWS-native, reached through boto3's Converse API (see
+    #: ``services/llm_bedrock.py``). No ``base_url``. A configuration may carry its own
+    #: region and AWS credentials (write-only, stored encrypted); blank means the
+    #: server's region and boto3 credential chain (``services/bedrock_settings.py``).
+    BEDROCK = "bedrock"
+    CUSTOM = "custom"
+    # Legacy - kept for backward compatibility with existing database records
+    CLAUDE = "claude"  # Deprecated: use ANTHROPIC instead

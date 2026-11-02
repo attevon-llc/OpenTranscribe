@@ -10,8 +10,9 @@ against Postgres immediately before anything is removed.
 What counts as an orphan: an object whose key matches ``user_<uid>/file_<fid>/...``
 (original, thumbnails, playback rendition, derived/masked caches, waveform — all of them
 live under that prefix) and whose ``<fid>`` is not a ``media_file.id``. Everything else
-is out of scope and never listed: ``media/...`` and ``user_<uid>/youtube_<id>/...`` keys,
-bulk exports, avatars, backups and every other bucket.
+is out of scope and never listed: ``media/...`` keys, legacy ``user_<uid>/<extractor>_<id>/...``
+URL-import thumbnails (new ones are per file and so are covered above), bulk exports,
+avatars, backups and every other bucket.
 
 Refusals, same semantics as the index sweep:
 

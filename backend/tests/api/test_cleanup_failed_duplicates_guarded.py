@@ -1,8 +1,8 @@
 """A re-upload's failed-duplicate cleanup goes through the guarded purge path.
 
 ``cleanup_failed_duplicates`` used to delete the media object and the row directly: no legal
-hold check, no shared-key check, and the thumbnail, playback rendition and derived cache were
-left behind. It now calls ``purge_media_file``, so those guards apply.
+hold check, and the thumbnail, playback rendition and derived cache were
+left behind. It now calls ``purge_media_file``, so that guard applies.
 """
 
 from __future__ import annotations
@@ -13,8 +13,6 @@ import pytest
 
 from app.models.media import MediaFile
 from app.utils.file_hash import cleanup_failed_duplicates
-
-SHARED_THUMB = "user_1/youtube_abcdefghijk/thumbnail.jpg"
 
 
 @pytest.fixture
@@ -75,19 +73,6 @@ def test_a_held_failed_duplicate_survives_a_reupload(db_session, normal_user, st
 
     assert db_session.get(MediaFile, row_id) is not None
     assert original not in storage.deleted
-
-
-def test_a_shared_thumbnail_survives_the_cleanup(db_session, normal_user, storage):
-    digest = uuid_pkg.uuid4().hex
-    failed = _failed(db_session, normal_user, digest, thumbnail_path=SHARED_THUMB)
-    other = _failed(db_session, normal_user, uuid_pkg.uuid4().hex, thumbnail_path=SHARED_THUMB)
-    other_id = other.id
-
-    assert cleanup_failed_duplicates(db_session, digest, normal_user.id) == 1
-
-    assert SHARED_THUMB not in storage.deleted
-    assert db_session.get(MediaFile, other_id) is not None
-    assert failed.storage_path in storage.deleted
 
 
 def test_thumbnail_playback_and_derived_residue_are_removed(db_session, normal_user, storage):

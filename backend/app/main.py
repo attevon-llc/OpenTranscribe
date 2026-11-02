@@ -599,10 +599,13 @@ async def _run_thumbnail_migration():
     """Schedule thumbnail migration from JPEG to WebP after a delay."""
     try:
         await asyncio.sleep(45)  # Wait for other startup tasks
+        from app.tasks.thumbnail_migration import backfill_missing_thumbnails
         from app.tasks.thumbnail_migration import migrate_thumbnails_to_webp
 
         result = migrate_thumbnails_to_webp.delay(batch_size=20)
         logger.info(f"Thumbnail migration task scheduled: {result.id}")
+        backfill = backfill_missing_thumbnails.delay()
+        logger.info(f"Thumbnail backfill task scheduled: {backfill.id}")
     except Exception as e:
         logger.error(f"Error scheduling thumbnail migration: {e}")
 

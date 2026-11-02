@@ -13,7 +13,6 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 from typing import Any
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.db.session_utils import session_scope
@@ -873,47 +872,7 @@ def _load_purge_plan(db: Session, file: MediaFile) -> dict[str, Any]:
             exc_info=True,
         )
         plan["cluster_read_failed"] = True
-    plan["shared_paths"] = _drop_shared_paths(db, plan)
     return plan
-
-
-_PATH_KEYS = ("storage_path", "thumbnail_path", "playback_path")
-
-
-def _drop_shared_paths(db: Session, plan: dict[str, Any]) -> list[str]:
-    """Remove from ``plan`` every object key ANOTHER media file still references.
-
-    Keys are per file by construction (``user_<uid>/file_<fid>/...``, ``media/<uid>/<uuid>``)
-    with one exception: a URL import's thumbnail is keyed by the source video
-    (``user_<uid>/<extractor>_<video_id>/thumbnail.jpg``, ``media_download_service``), so a
-    user who imports the same video twice has two rows naming one object. Deleting it (and,
-    since the delete removes every version, its whole history) with the first row would
-    destroy the second row's thumbnail. A key still referenced elsewhere is kept; the last
-    row to go deletes it.
-
-    Returns:
-        The keys kept because another row references them.
-    """
-    keys = {plan[k] for k in _PATH_KEYS if plan.get(k)}
-    if not keys:
-        return []
-    rows = (
-        db.query(MediaFile.storage_path, MediaFile.thumbnail_path, MediaFile.playback_path)
-        .filter(MediaFile.id != plan["file_id"])
-        .filter(
-            or_(
-                MediaFile.storage_path.in_(keys),
-                MediaFile.thumbnail_path.in_(keys),
-                MediaFile.playback_path.in_(keys),
-            )
-        )
-        .all()
-    )
-    shared = {value for row in rows for value in row if value in keys}
-    for k in _PATH_KEYS:
-        if plan.get(k) in shared:
-            plan[k] = None
-    return sorted(shared)
 
 
 def _speaker_impact_of_file(db: Session, file: MediaFile) -> "SpeakerImpact":

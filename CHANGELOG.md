@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- URL-import thumbnails are stored per media file, avatars under a per-upload key, and the
+  `media_file` object-key columns are unique (partial unique indexes, migration v456). The
+  migration never blocks startup: shared legacy thumbnails are regenerated, and shared originals
+  are reported by `GET /api/admin/data-integrity/storage/keys` and resolved with
+  `python -m app.scripts.split_shared_storage_paths`.
+
 - The OpenSearch voiceprint write guard now re-checks the recording's own consent state on every write
   when the document names a file, and consent hooks receive that file id there.
 - Fixed: the voiceprint retention sweep queued its purge with a `reason` argument the task does not
@@ -53,6 +59,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Purging a file can no longer delete another import's thumbnail or leave one behind; concurrent
+  avatar uploads no longer delete each other's image; a duplicate registration during storage
+  recovery is skipped instead of creating a second row for the same object.
 
 - **The model downloader's speaker-detection step no longer fails on every CPU run.**
   `scripts/download-models.py` transcribed synthetic sine-wave audio through whisperx before

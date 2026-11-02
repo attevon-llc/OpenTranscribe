@@ -2392,6 +2392,8 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
                 provider = LLMProvider(user_settings.provider)
             except ValueError:
                 raise LLMConfigurationError(LLMConfigFailure.UNKNOWN_PROVIDER) from None
+            if provider == LLMProvider.BEDROCK and not resolve_region(bedrock):
+                raise LLMConfigurationError(LLMConfigFailure.BEDROCK_REGION)
             config = LLMConfig(
                 provider=provider,
                 model=str(user_settings.model_name),
@@ -2487,6 +2489,15 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
                 "none either, refusing system fallback"
             )
             raise LLMConfigurationError(LLMConfigFailure.BEDROCK_REGION)
+
+        # The factory parses these; the DB-only answer must agree with it, or the
+        # recovery sweep dispatches tasks that can only skip.
+        try:
+            float(user_settings.temperature)
+            int(user_settings.max_tokens)
+        except (TypeError, ValueError):
+            logger.error(f"LLM temperature/max_tokens not numeric for user {user_id}")
+            raise LLMConfigurationError(LLMConfigFailure.INVALID) from None
 
         base_url = str(user_settings.base_url) if user_settings.base_url else None
         return _ResolvedUserLLM(user_settings, provider, api_key, base_url, bedrock)

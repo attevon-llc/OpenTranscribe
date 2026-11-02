@@ -52,6 +52,12 @@ vi.mock('$stores/auth', async () => {
 });
 
 import TagManagerModal from './TagManagerModal.svelte';
+import { capabilities } from '$stores/capabilities';
+
+/** The deployment's tenancy, as `GET /system/capabilities` reported it. */
+function setTenancy(mode: 'single' | 'multi' | undefined) {
+  capabilities.update((state) => ({ ...state, tenancyMode: mode }));
+}
 
 const A = 'aaaaaaaa-0000-0000-0000-000000000001';
 const B = 'bbbbbbbb-0000-0000-0000-000000000002';
@@ -89,6 +95,9 @@ function listArgs(call: number) {
 beforeEach(() => {
   vi.clearAllMocks();
   auth.role = 'admin';
+  // 7d3ea6437: an admin gets system-tag writes only in a single-tenant deployment, and an
+  // unreported tenancy reads as multi-tenant, so the fixture must say which deployment this is.
+  setTenancy('single');
   api.listTags.mockResolvedValue(library);
   api.listTagCollisions.mockResolvedValue([]);
   api.getTagImpact.mockResolvedValue(impact);
@@ -281,8 +290,15 @@ describe('create', () => {
 
   it('has a 50 character field and a disabled button until there is a non-blank name', async () => {
     await loaded();
-    expect(field()).toHaveAttribute('maxlength', '50');
+    // D16 (8f96d6e10): clamped to 50 code points by clampTagNameInput, not a native maxlength
+    // (which counts UTF-16 units).
+    expect(field()).not.toHaveAttribute('maxlength');
     expect(field()).toHaveAttribute('placeholder', 'tags.manager.create.placeholder');
+    await fireEvent.input(field(), { target: { value: 'x'.repeat(60) } });
+    expect(field().value).toBe('x'.repeat(50));
+    await fireEvent.input(field(), { target: { value: '\u{1F600}'.repeat(60) } });
+    expect(Array.from(field().value)).toHaveLength(50);
+    await fireEvent.input(field(), { target: { value: '' } });
     expect(submit()).toBeDisabled();
     await fireEvent.input(field(), { target: { value: '   ' } });
     expect(submit()).toBeDisabled();
@@ -618,6 +634,38 @@ describe('delete, merge, promote', () => {
     expect(api.listTags).toHaveBeenCalledTimes(2);
   });
 
+  it('reopens the single delete dialog after Cancel and still deletes on confirm', async () => {
+    await loaded();
+    await fireEvent.click(rows()[0]);
+    await fireEvent.click(btn('tags.manager.action.delete')!);
+    await waitFor(() => expect(document.querySelector('.modal-cancel-button')).not.toBeNull());
+    await fireEvent.click(document.querySelector('.modal-cancel-button') as HTMLElement);
+    await waitFor(() => expect(document.querySelector('.modal-cancel-button')).toBeNull());
+    expect(api.deleteTags).not.toHaveBeenCalled();
+
+    await fireEvent.click(btn('tags.manager.action.delete')!);
+    await waitFor(() => expect(api.getTagImpact).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(document.querySelector('.modal-delete-button')).not.toBeNull());
+    await fireEvent.click(document.querySelector('.modal-delete-button') as HTMLElement);
+    await waitFor(() => expect(api.deleteTags).toHaveBeenCalledWith([A]));
+  });
+
+  it('calls deleteTags once when a single delete is confirmed twice while it runs', async () => {
+    const pending = deferred<typeof mutationResult>();
+    api.deleteTags.mockReturnValueOnce(pending.promise);
+    await loaded();
+    await fireEvent.click(rows()[0]);
+    await fireEvent.click(btn('tags.manager.action.delete')!);
+    await waitFor(() => expect(document.querySelector('.modal-delete-button')).not.toBeNull());
+    const confirm = document.querySelector('.modal-delete-button') as HTMLElement;
+    await fireEvent.click(confirm);
+    await fireEvent.click(confirm);
+    await waitFor(() => expect(api.deleteTags).toHaveBeenCalledTimes(1));
+    pending.resolve(mutationResult);
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(api.deleteTags).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the selection and the preview when a delete fails', async () => {
     api.deleteTags.mockRejectedValue({ response: { data: { detail: 'nope' } } });
     await loaded();
@@ -641,23 +689,57 @@ describe('delete, merge, promote', () => {
     expect(api.deleteTags).not.toHaveBeenCalled();
   });
 
-  it('previews a bulk delete over every selected tag and deletes them all', async () => {
+  // D20 (0749fb73a): the bulk delete preview is the shared confirmation dialog, naming every
+  // selected tag and carrying both counts, not an inline panel with a second Delete button.
+  const bulkMessage =
+    'tags.manager.impact.deleteMessage {"name":"Zebra, Mango","accessible":3,"total":500}';
+
+  async function previewBulkDelete() {
     await loaded();
     await fireEvent.click(rows()[0]);
     await fireEvent.click(rows()[2], { ctrlKey: true });
     await fireEvent.click(btn('tags.manager.action.delete')!);
     await waitFor(() => expect(api.getTagImpact).toHaveBeenCalledWith([A, C]));
-    await fireEvent.click(
-      await screen.findByRole('button', { name: 'tags.manager.action.cancel' })
-    );
-    expect(screen.queryByText('tags.manager.impact.title')).toBeNull();
+    expect(await screen.findByText(bulkMessage)).toBeInTheDocument();
+  }
+
+  it('previews a bulk delete over every selected tag and deletes them all', async () => {
+    await previewBulkDelete();
+    expect(api.deleteTags).not.toHaveBeenCalled();
+    await fireEvent.click(document.querySelector('.modal-delete-button') as HTMLElement);
+    await waitFor(() => expect(api.deleteTags).toHaveBeenCalledWith([A, C]));
+  });
+
+  it('cancels a bulk delete preview without deleting anything', async () => {
+    await previewBulkDelete();
+    await fireEvent.click(document.querySelector('.modal-cancel-button') as HTMLElement);
+    await waitFor(() => expect(screen.queryByText(bulkMessage)).toBeNull());
+    expect(api.deleteTags).not.toHaveBeenCalled();
+  });
+
+  it('reopens the bulk delete dialog after Cancel and still deletes on confirm', async () => {
+    await previewBulkDelete();
+    await fireEvent.click(document.querySelector('.modal-cancel-button') as HTMLElement);
+    await waitFor(() => expect(screen.queryByText(bulkMessage)).toBeNull());
 
     await fireEvent.click(btn('tags.manager.action.delete')!);
-    await waitFor(() =>
-      expect(screen.getAllByRole('button', { name: 'tags.manager.action.delete' })).toHaveLength(2)
-    );
-    await fireEvent.click(screen.getAllByRole('button', { name: 'tags.manager.action.delete' })[1]);
+    await waitFor(() => expect(api.getTagImpact).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText(bulkMessage)).toBeInTheDocument();
+    await fireEvent.click(document.querySelector('.modal-delete-button') as HTMLElement);
     await waitFor(() => expect(api.deleteTags).toHaveBeenCalledWith([A, C]));
+  });
+
+  it('calls deleteTags once when the confirm is clicked twice while it runs', async () => {
+    const pending = deferred<typeof mutationResult>();
+    api.deleteTags.mockReturnValueOnce(pending.promise);
+    await previewBulkDelete();
+    const confirm = document.querySelector('.modal-delete-button') as HTMLElement;
+    await fireEvent.click(confirm);
+    await fireEvent.click(confirm);
+    await waitFor(() => expect(api.deleteTags).toHaveBeenCalledTimes(1));
+    pending.resolve(mutationResult);
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(api.deleteTags).toHaveBeenCalledTimes(1);
   });
 
   it('previews a merge over the non-survivors and merges into the survivor', async () => {
@@ -720,7 +802,9 @@ describe('delete, merge, promote', () => {
 describe('who sees which write controls', () => {
   const system = { ...tagA, ownership: 'system' };
 
-  it('gives an admin Rename and Delete, but not Share or Promote, on a system tag', async () => {
+  // 7d3ea6437: system-tag writes follow the deployment scope. The beforeEach fixture is a
+  // single-tenant deployment; the multi-tenant and unreported cases are pinned below.
+  it('gives an admin Rename and Delete, but not Share or Promote, on a system tag of a single-tenant deployment', async () => {
     api.listTags.mockResolvedValue([system]);
     await loaded(1);
     await fireEvent.click(rows()[0]);
@@ -728,6 +812,30 @@ describe('who sees which write controls', () => {
     expect(btn('tags.manager.action.delete')).not.toBeNull();
     expect(btn('tags.manager.share.button')).toBeNull();
     expect(btn('tags.manager.action.promote')).toBeNull();
+  });
+
+  it.each([['multi' as const], [undefined]])(
+    'gives an admin nothing writable on a system tag when the tenancy is %s',
+    async (mode) => {
+      setTenancy(mode);
+      api.listTags.mockResolvedValue([system]);
+      await loaded(1);
+      await fireEvent.click(rows()[0]);
+      expect(btn('tags.manager.detail.rename')).toBeNull();
+      expect(btn('tags.manager.action.delete')).toBeNull();
+      expect(btn('tags.manager.share.button')).toBeNull();
+      expect(btn('tags.manager.action.promote')).toBeNull();
+    }
+  );
+
+  it('still gives a super_admin the system tag writes in a multi-tenant deployment', async () => {
+    setTenancy('multi');
+    auth.role = 'super_admin';
+    api.listTags.mockResolvedValue([system]);
+    await loaded(1);
+    await fireEvent.click(rows()[0]);
+    expect(btn('tags.manager.detail.rename')).not.toBeNull();
+    expect(btn('tags.manager.action.delete')).not.toBeNull();
   });
 
   it('treats a super_admin as an admin', async () => {

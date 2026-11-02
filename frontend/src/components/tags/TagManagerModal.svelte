@@ -14,10 +14,11 @@
    * near matches, the suggested survivor) — those are
    * rendered as received.
    */
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { onMount } from 'svelte';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import { clampTagNameInput } from '$lib/utils/tagName';
   import {
     deleteTags,
     getTagImpact,
@@ -36,13 +37,13 @@
   import type { TagFilterId } from '$components/tags/TagFilterBar.svelte';
   import type { TagScope } from '$lib/types/tag';
   import { user } from '$stores/auth';
+  import { capabilities } from '$stores/capabilities';
+  import { canWriteSystemTags } from '$lib/types/tag';
   import TagList from '$components/tags/TagList.svelte';
   import TagShareModal from '$components/tags/TagShareModal.svelte';
   import type { TagListEntry, TagSelectDetail } from '$components/tags/TagList.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
   import ListRowSkeleton from '$components/ui/ListRowSkeleton.svelte';
-
-  const dispatch = createEventDispatcher<{ close: void }>();
 
   // Creating a tag here is the missing third of add/edit/delete. Until now a
   // tag could only be born by tagging a file, which meant the tool called "tag
@@ -110,11 +111,12 @@
     if (!name || creating) return;
     creating = true;
     try {
+      const known = await knownTagUuids();
       const tag = await createTag(name);
       // Resolution is normalized-exact, so a typed name may land on a tag that
-      // already exists. Say which one rather than reporting a create that was
-      // really a no-op.
-      const resolved = tag.name !== name;
+      // already exists — even one spelled exactly as typed. Say which one rather
+      // than reporting a create that was really a no-op.
+      const resolved = known.has(tag.uuid) || tag.name !== name;
       toastStore.success(
         resolved
           ? $t('tags.manager.create.resolved', { name: tag.name })
@@ -122,11 +124,26 @@
       );
       newTagName = '';
       await loadTags();
-      selectedUuids = [tag.uuid];
+      // A view or scope that hides the tag would leave the detail pane blank.
+      if (buildIndex(tags, clusters).has(tag.uuid)) selectedUuids = [tag.uuid];
     } catch (error: unknown) {
       toastStore.error(getErrorMessage(error, $t('tags.manager.create.failed')));
     } finally {
       creating = false;
+    }
+  }
+
+  /**
+   * Every tag a typed name could already resolve onto. The all/all view lists
+   * every tag the caller can see, which covers them; any other view may hide
+   * that row, so the unfiltered list is asked for instead.
+   */
+  async function knownTagUuids(): Promise<Set<string>> {
+    if (filter === 'all' && scope === 'all') return new Set(tagIndex.keys());
+    try {
+      return new Set((await listTags()).map((tag) => tag.uuid));
+    } catch {
+      return new Set(tagIndex.keys());
     }
   }
 
@@ -143,12 +160,11 @@
   // Ownership scope, a separate axis from the view above so "my unused tags"
   // is one request rather than an unreachable combination.
   let scope: TagScope = 'all';
-  // Cosmetic gate only: POST /tags/promote enforces the admin check server-side.
-  // `role` is the authorization truth in this app; `is_superuser` is its mirror.
-  $: isAdmin = $user?.role === 'admin' || $user?.role === 'super_admin';
-  // Promotion is admin-only, same gate — named separately because the button
-  // and the write-rights check answer different questions.
-  $: canPromote = isAdmin;
+  // Cosmetic gate only: the server re-checks every write. Writing a system tag
+  // and promoting into the shared vocabulary are one server right
+  // (`deployment_scope_writable`), so they share one gate here too.
+  $: canWriteSystem = canWriteSystemTags($user?.role, $capabilities.tenancyMode);
+  $: canPromote = canWriteSystem;
   let tags: TagListEntry[] = [];
   let clusters: TagCollisionCluster[] = [];
   let loading = true;
@@ -172,7 +188,10 @@
     .map((uuid) => tagIndex.get(uuid))
     .filter((entry): entry is TagListEntry => entry !== undefined);
   $: rowCount = clusters.length > 0 ? clusters.length : visibleTags.length;
-  $: isEmpty = !loading && !loadError && rowCount === 0;
+  // Emptiness is a property of what the server returned, not of the search: a
+  // query that matches nothing must not read as an empty library.
+  $: isEmpty = !loading && !loadError && clusters.length === 0 && tags.length === 0;
+  $: noMatches = !loading && !loadError && !isEmpty && rowCount === 0;
   $: suggestedSurvivorUuid = findSuggestedSurvivor(clusters, selectedUuids);
 
   function buildIndex(
@@ -188,6 +207,9 @@
           name: member.name,
           source: member.source,
           usage_count: member.usage_count,
+          // Without it a cluster member reads as `mine` to `canMutateTag`, and
+          // the detail pane offers writes the server refuses.
+          ownership: member.ownership,
         });
       }
     }
@@ -329,7 +351,7 @@
   // ── Mutations ────────────────────────────────────────────────────────────
 
   /**
-   * Merge and reject fan out a search-refresh task per affected file, so the
+   * A tag mutation fans out a search-refresh task per affected file, so the
    * gap between confirming and seeing a result is seconds. The affected rows
    * stay dimmed and non-interactive for the whole round trip — re-clicking
    * merge on a selection already merging is exactly the concurrent case the
@@ -424,8 +446,8 @@
         id="new-tag-name"
         type="text"
         class="create-input"
-        bind:value={newTagName}
-        maxlength="50"
+        value={newTagName}
+        on:input={(event) => (newTagName = clampTagNameInput(event))}
         placeholder={$t('tags.manager.create.placeholder')}
         disabled={creating}
         title={$t('tags.manager.create.tooltip')}
@@ -523,6 +545,10 @@
             <svg slot="icon" xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
           </EmptyState>
         {/if}
+      {:else if noMatches}
+        <EmptyState title={$t('search.noResults', { query: searchQuery.trim() })}>
+          <svg slot="icon" xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        </EmptyState>
       {:else}
         <TagList
           tags={visibleTags}
@@ -551,9 +577,9 @@
           {mergePreview}
           {deletePreview}
           {canPromote}
+          isAdmin={canWriteSystem}
           on:previewMerge={previewMerge}
           on:promote={promoteSelection}
-          on:share={() => (sharingTag = selectedEntries[0] ?? null)}
           on:confirmMerge={confirmMerge}
           on:cancelMerge={clearPreviews}
           on:previewDelete={previewDelete}
@@ -569,7 +595,7 @@
           {deletePreview}
           {renameMergeImpact}
           {canPromote}
-          {isAdmin}
+          isAdmin={canWriteSystem}
           files={tagFiles}
           fileTotal={tagFileTotal}
           filesLoading={tagFilesLoading}
@@ -635,7 +661,7 @@
 
   .create-icon {
     position: absolute;
-    left: 12px;
+    inset-inline-start: 12px;
     color: var(--text-secondary);
     pointer-events: none;
   }
@@ -645,7 +671,9 @@
   .create-input,
   .search-input {
     width: 100%;
-    padding: 0.5rem 2rem 0.5rem 2.25rem;
+    padding-block: 0.5rem;
+    /* Room for the leading icon at the start and the clear button at the end. */
+    padding-inline: 2.25rem 2rem;
     /* The app's input tokens, not --surface-color: the modal body is already
        surface-coloured, so a surface-coloured input read as a grey smear
        rather than a field. Matches form-elements.css and CollectionsPanel. */
@@ -692,7 +720,7 @@
 
   .search-icon {
     position: absolute;
-    left: 12px;
+    inset-inline-start: 12px;
     top: 50%;
     transform: translateY(-50%);
     color: var(--text-secondary);
@@ -706,7 +734,7 @@
 
   .search-clear {
     position: absolute;
-    right: 6px;
+    inset-inline-end: 6px;
     top: 50%;
     transform: translateY(-50%);
     display: flex;
@@ -788,7 +816,7 @@
     max-height: min(58vh, 520px);
     overflow-y: auto;
     /* Room for the scrollbar so rows do not shift under the cursor. */
-    padding-right: 4px;
+    padding-inline-end: 4px;
   }
 
   .detail-pane {

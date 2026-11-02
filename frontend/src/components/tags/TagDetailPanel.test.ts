@@ -31,7 +31,6 @@ const tag = {
   name: 'interviews',
   source: 'manual',
   usage_count: 12,
-  awaiting_review: false,
 };
 
 const impact: TagImpact = {
@@ -78,6 +77,7 @@ describe('TagDetailPanel', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
       const input = screen.getByLabelText('Tag name') as HTMLInputElement;
       await fireEvent.input(input, { target: { value: 'Interview' } });
+      await fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
 
       await rerender({ tag, renameMergeImpact: impact });
       expect(
@@ -129,5 +129,83 @@ describe('TagDetailPanel', () => {
       // which is what CollectionsPanel does for its own delete.
       expect(screen.getByRole('button', { name: 'Deleting…' })).toBeInTheDocument();
     });
+  });
+});
+
+describe('rename field rules', () => {
+  async function openRename(props: Record<string, unknown> = {}, events = {}) {
+    const result = render(TagDetailPanel, { props: { tag, ...props }, events });
+    await fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    return { ...result, input: screen.getByLabelText('Tag name') as HTMLInputElement };
+  }
+
+  it('holds no more than the stored width, like every other tag field', async () => {
+    const { input } = await openRename();
+
+    await fireEvent.input(input, { target: { value: 'x'.repeat(60) } });
+    expect(input.value).toBe('x'.repeat(50));
+    expect(input.hasAttribute('maxlength')).toBe(false);
+  });
+
+  it('refuses a name that is empty once normalized instead of sending it', async () => {
+    const rename = vi.fn();
+    const { input } = await openRename({}, { rename });
+
+    await fireEvent.input(input, { target: { value: ' -_- ' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+
+    expect(rename).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter a tag name.');
+    // The field stays open so the name can be corrected.
+    expect(screen.getByLabelText('Tag name')).toBeInTheDocument();
+
+    await fireEvent.input(input, { target: { value: 'renamed' } });
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
+
+describe('merge-on-rename confirmation', () => {
+  it('merges into the name that was previewed, not whatever the field holds now', async () => {
+    const rename = vi.fn();
+    const confirmRenameMerge = vi.fn();
+    const cancelRenameMerge = vi.fn();
+    const { rerender } = render(TagDetailPanel, {
+      props: { tag },
+      events: { rename, confirmRenameMerge, cancelRenameMerge },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    const input = screen.getByLabelText('Tag name') as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: 'Interview' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    expect(rename.mock.calls[0][0].detail).toEqual({ name: 'Interview' });
+    await rerender({ tag, renameMergeImpact: impact });
+
+    // Typing after the warning makes it stale: it described another target.
+    await fireEvent.input(input, { target: { value: 'Something else' } });
+    expect(cancelRenameMerge).toHaveBeenCalledTimes(1);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Merge into that tag' }));
+    expect(confirmRenameMerge.mock.calls[0][0].detail).toEqual({ name: 'Interview' });
+  });
+});
+
+describe('selection change', () => {
+  it('drops an open rename when another tag is selected', async () => {
+    const rename = vi.fn();
+    const other = { ...tag, uuid: 'bbbbbbbb-0000-0000-0000-000000000002', name: 'roadmap' };
+    const { rerender } = render(TagDetailPanel, { props: { tag }, events: { rename } });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    await fireEvent.input(screen.getByLabelText('Tag name'), { target: { value: 'typed' } });
+
+    await rerender({ tag: other });
+
+    // The typing belonged to the first tag; submitting it would rename the second.
+    expect(screen.queryByLabelText('Tag name')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'roadmap' })).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    expect((screen.getByLabelText('Tag name') as HTMLInputElement).value).toBe('roadmap');
+    expect(rename).not.toHaveBeenCalled();
   });
 });

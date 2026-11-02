@@ -1,5 +1,5 @@
 <script context="module" lang="ts">
-  /** The four server-side views of the tag library. */
+  /** The three server-side views of the tag library. */
   export type TagFilterId = 'all' | 'unused' | 'colliding';
 </script>
 
@@ -43,7 +43,14 @@
 
   <label class="scope-picker">
     <span class="scope-label">{$t('tags.manager.scopeLabel')}</span>
-    <select class="form-select scope-select" value={scope} on:change={onScopeChange}>
+    <!-- The collision clusters are not scoped (`GET /tags/collisions` takes no
+         scope), so the picker would change nothing there. -->
+    <select
+      class="form-select scope-select"
+      value={scope}
+      disabled={filter === 'colliding'}
+      on:change={onScopeChange}
+    >
       <option value="all">{$t('tags.manager.scope.all')}</option>
       <option value="mine">{$t('tags.manager.scope.mine')}</option>
       <option value="system">{$t('tags.manager.scope.system')}</option>

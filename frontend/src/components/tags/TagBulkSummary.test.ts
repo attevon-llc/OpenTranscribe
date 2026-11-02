@@ -29,9 +29,9 @@ const UUID_B = 'bbbbbbbb-0000-0000-0000-000000000002';
 const UUID_C = 'cccccccc-0000-0000-0000-000000000003';
 
 const tags = [
-  { uuid: UUID_A, name: 'roadmap', source: 'auto_ai', usage_count: 2, awaiting_review: true },
-  { uuid: UUID_B, name: 'Roadmap', source: 'manual', usage_count: 17, awaiting_review: false },
-  { uuid: UUID_C, name: 'road map', source: 'manual', usage_count: 5, awaiting_review: false },
+  { uuid: UUID_A, name: 'roadmap', source: 'auto_ai', usage_count: 2 },
+  { uuid: UUID_B, name: 'Roadmap', source: 'manual', usage_count: 17 },
+  { uuid: UUID_C, name: 'road map', source: 'manual', usage_count: 5 },
 ];
 
 const impact: TagImpact = {
@@ -95,5 +95,81 @@ describe('TagBulkSummary', () => {
     expect(screen.getByRole('button', { name: 'Merging…' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Clear selection' })).toBeDisabled();
     for (const radio of screen.getAllByRole('radio')) expect(radio).toBeDisabled();
+  });
+});
+
+describe('TagBulkSummary write gates', () => {
+  // One non-writable uuid makes the whole merge, delete or promote request 404,
+  // so the summary offers an action only when every selected tag allows it.
+  const mine = tags.map((tag) => ({ ...tag, ownership: 'mine' as const }));
+
+  it('offers no merge or delete when a selected tag is shared with me', () => {
+    const selection = [mine[0], mine[1], { ...mine[2], ownership: 'shared_with_me' as const }];
+    render(TagBulkSummary, { props: { tags: selection, isAdmin: true } });
+
+    expect(screen.queryByRole('button', { name: 'Merge' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+    expect(screen.queryAllByRole('radio')).toHaveLength(0);
+  });
+
+  it('offers merge and delete over a system tag only with the system write right', () => {
+    const selection = [mine[0], { ...mine[1], ownership: 'system' as const }];
+
+    const { unmount } = render(TagBulkSummary, { props: { tags: selection, isAdmin: false } });
+    expect(screen.queryByRole('button', { name: 'Merge' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+    unmount();
+
+    render(TagBulkSummary, { props: { tags: selection, isAdmin: true } });
+    expect(screen.getByRole('button', { name: 'Merge' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+  });
+
+  it('offers promote only when every selected tag is mine', () => {
+    const mixed = [mine[0], { ...mine[1], ownership: 'system' as const }];
+    const { unmount } = render(TagBulkSummary, {
+      props: { tags: mixed, isAdmin: true, canPromote: true },
+    });
+    expect(screen.queryByRole('button', { name: 'Share with everyone' })).toBeNull();
+    unmount();
+
+    render(TagBulkSummary, { props: { tags: mine, isAdmin: true, canPromote: true } });
+    expect(screen.getByRole('button', { name: 'Share with everyone' })).toBeInTheDocument();
+  });
+});
+
+describe('TagBulkSummary delete', () => {
+  it('confirms a multi-tag delete in the same dialog a single delete uses', async () => {
+    const previewDelete = vi.fn();
+    const confirmDelete = vi.fn();
+    const cancelDelete = vi.fn();
+    const { rerender } = render(TagBulkSummary, {
+      props: { tags },
+      events: { previewDelete, confirmDelete, cancelDelete },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(previewDelete).toHaveBeenCalledTimes(1);
+
+    await rerender({ tags, deletePreview: impact });
+    // The shared ConfirmationModal, naming every tag and carrying both counts.
+    expect(
+      screen.getByText(
+        /Delete "roadmap, Roadmap, road map"\? It is on 4 of your files, and 42 in total/
+      )
+    ).toBeInTheDocument();
+    const confirm = document.querySelector('.modal-delete-button') as HTMLButtonElement;
+    expect(confirm).toHaveTextContent('Delete');
+    await fireEvent.click(confirm);
+    expect(confirmDelete).toHaveBeenCalledTimes(1);
+    expect(cancelDelete).not.toHaveBeenCalled();
+  });
+
+  it('reports a cancelled multi-tag delete', async () => {
+    const cancelDelete = vi.fn();
+    render(TagBulkSummary, { props: { tags, deletePreview: impact }, events: { cancelDelete } });
+
+    await fireEvent.click(document.querySelector('.modal-cancel-button') as HTMLButtonElement);
+    expect(cancelDelete).toHaveBeenCalledTimes(1);
   });
 });

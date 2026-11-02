@@ -124,7 +124,9 @@ describe('what is shown', () => {
 
   it('configures the input', async () => {
     await mounted();
-    expect(input()).toHaveAttribute('maxlength', '50');
+    // D16 (8f96d6e10): the width is enforced by clampTagNameInput in code points, not a
+    // native maxlength, which counts UTF-16 units and stops an emoji name at half width.
+    expect(input()).not.toHaveAttribute('maxlength');
     expect(input()).toHaveAttribute('placeholder', 'tags.addTagPlaceholder');
     expect(input()).toHaveAttribute('title', 'tags.typeNewTagHint');
   });
@@ -143,8 +145,22 @@ describe('what is shown', () => {
 describe('typed names', () => {
   it('trims and clamps the name sent to the server', async () => {
     await mounted();
+    // D16 (8f96d6e10): the field clamps the raw text to 50 code points while typing, so the
+    // two leading spaces use up width before the trim: 2 spaces + 48 x -> 48 x.
     await submit(`  ${'x'.repeat(60)}  `);
+    await waitFor(() => expect(api.addTagToFile).toHaveBeenCalledWith('file-1', 'x'.repeat(48)));
+  });
+
+  it('clamps the field to 50 code points as the user types and sends exactly that', async () => {
+    await mounted();
+    await typeIn('x'.repeat(60));
+    expect(input().value).toBe('x'.repeat(50));
+    await fireEvent.keyDown(input(), { key: 'Enter' });
     await waitFor(() => expect(api.addTagToFile).toHaveBeenCalledWith('file-1', 'x'.repeat(50)));
+
+    // 50 astral characters are 100 UTF-16 units; a native maxlength would have cut them to 25.
+    await typeIn('\u{1F600}'.repeat(60));
+    expect(Array.from(input().value)).toHaveLength(50);
   });
 
   it('ignores Enter on a blank input and submits through the Add button', async () => {

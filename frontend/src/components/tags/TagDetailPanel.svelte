@@ -15,6 +15,7 @@
   import type { TagImpact } from '$lib/types/tag';
   import { canMutateTag } from '$lib/types/tag';
   import type { TaggedFile } from '$lib/types/tag';
+  import { clampTagNameInput, normalizeTagName } from '$lib/utils/tagName';
 
   export let tag: TagListEntry;
   /** Which mutation is in flight, if any. Disables the confirming control. */
@@ -22,10 +23,13 @@
   /**
    * Whether the caller may publish this tag into the shared vocabulary.
    *
-   * Cosmetic — `POST /tags/promote` enforces the admin check itself.
+   * Cosmetic — `POST /tags/promote` enforces the same right itself.
    */
   export let canPromote = false;
-  /** Whether the caller is an admin — decides rights over a system tag. */
+  /**
+   * Whether the caller may write system tags (`canWriteSystemTags`), which is
+   * narrower than the admin role in a multi-tenant deployment.
+   */
   export let isAdmin = false;
 
   /**
@@ -65,6 +69,26 @@
 
   let editing = false;
   let editName = tag.name;
+  /** Set when the typed name is one the server would refuse as empty. */
+  let nameError = '';
+  /**
+   * The name the last rename sent. A merge warning describes that target, so
+   * confirming it must merge into this name, not into later typing.
+   */
+  let submittedName = '';
+
+  // The coordinator reuses this component across single selections, so an open
+  // edit has to be dropped when the tag changes, or the first tag's typing
+  // would rename the second.
+  let shownUuid = tag.uuid;
+  function dropEditOnTagChange(uuid: string) {
+    if (uuid === shownUuid) return;
+    shownUuid = uuid;
+    editing = false;
+    nameError = '';
+    submittedName = '';
+  }
+  $: dropEditOnTagChange(tag.uuid);
 
   // Mirrors GroupDetailPanel: while not editing, the field tracks the tag.
   $: if (!editing) editName = tag.name;
@@ -77,6 +101,8 @@
   function cancelEdit() {
     editing = false;
     editName = tag.name;
+    nameError = '';
+    submittedName = '';
     if (renameMergeImpact) dispatch('cancelRenameMerge');
   }
 
@@ -86,11 +112,18 @@
       cancelEdit();
       return;
     }
+    // `---` is not blank but normalizes to nothing, which the server answers
+    // with a 422 the coordinator could only report as a generic failure.
+    if (!normalizeTagName(name)) {
+      nameError = $t('tags.nameRequired');
+      return;
+    }
+    submittedName = name;
     dispatch('rename', { name });
   }
 
   function confirmRenameMerge() {
-    dispatch('confirmRenameMerge', { name: editName.trim() });
+    if (submittedName) dispatch('confirmRenameMerge', { name: submittedName });
   }
 
   /**
@@ -101,9 +134,28 @@
     dispatch('cancelRenameMerge');
   }
 
+  function onNameInput(event: Event) {
+    editName = clampTagNameInput(event);
+    nameError = '';
+    // The warning previewed the merge for the submitted name; typing makes it
+    // describe a target that is no longer the one in the field.
+    if (renameMergeImpact) dispatch('cancelRenameMerge');
+  }
+
   function onNameKeydown(event: KeyboardEvent) {
     if (event.key === 'Enter') submitRename();
     else if (event.key === 'Escape') cancelEdit();
+  }
+
+  // The modal closes itself on confirm/cancel, which a prop derived from
+  // `deletePreview` would not survive: the next preview computes the same `true`
+  // and never reopens it. Own the open state here and reopen it per preview.
+  let deleteOpen: boolean;
+  $: deleteOpen = deletePreview !== null;
+
+  function confirmDelete() {
+    if (busy !== null) return;
+    dispatch('confirmDelete');
   }
 </script>
 
@@ -118,11 +170,16 @@
           id="tag-rename-input"
           type="text"
           class="edit-input"
-          bind:value={editName}
-          maxlength="255"
+          value={editName}
+          aria-invalid={nameError !== ''}
+          aria-describedby={nameError ? 'tag-rename-error' : undefined}
           disabled={busy === 'rename'}
+          on:input={onNameInput}
           on:keydown={onNameKeydown}
         />
+        {#if nameError}
+          <p id="tag-rename-error" class="edit-error" role="alert">{nameError}</p>
+        {/if}
         <div class="edit-actions">
           <button
             type="button"
@@ -291,7 +348,7 @@
        in the message: an accessible-only count would understate a shared
        tag's blast radius. -->
   <ConfirmationModal
-    isOpen={deletePreview !== null}
+    bind:isOpen={deleteOpen}
     title={$t('tags.manager.impact.title')}
     message={deletePreview
       ? $t('tags.manager.impact.deleteMessage', {
@@ -306,7 +363,7 @@
     cancelText={$t('tags.manager.action.cancel')}
     confirmButtonClass="modal-delete-button"
     cancelButtonClass="modal-cancel-button"
-    on:confirm={() => dispatch('confirmDelete')}
+    on:confirm={confirmDelete}
     on:cancel={() => dispatch('cancelDelete')}
   />
 
@@ -350,6 +407,12 @@
   .edit-input {
     width: 100%;
     box-sizing: border-box;
+  }
+
+  .edit-error {
+    margin: 0;
+    font-size: var(--font-size-xs);
+    color: var(--error-color);
   }
 
   .edit-actions,

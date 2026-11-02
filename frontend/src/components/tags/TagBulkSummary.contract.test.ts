@@ -235,6 +235,13 @@ describe('TagBulkSummary merge preview', () => {
 });
 
 describe('TagBulkSummary delete preview', () => {
+  // D20 (0749fb73a): the bulk delete preview is the shared ConfirmationModal, one message
+  // naming every selected tag and both counts, instead of an inline panel with a list.
+  const message =
+    'tags.manager.impact.deleteMessage {"name":"alpha, Bravo, charlie","accessible":4,"total":42}';
+  const modalConfirm = () => document.querySelector('.modal-delete-button') as HTMLButtonElement;
+  const modalCancel = () => document.querySelector('.modal-cancel-button') as HTMLButtonElement;
+
   it('shows the counts and emits confirmDelete and cancelDelete', async () => {
     const confirmDelete = vi.fn();
     const cancelDelete = vi.fn();
@@ -243,22 +250,65 @@ describe('TagBulkSummary delete preview', () => {
       events: { confirmDelete, cancelDelete },
     });
 
-    expect(
-      screen.getByRole('heading', { level: 3, name: 'tags.manager.impact.title' })
-    ).toBeInTheDocument();
-    expect(screen.getByText('tags.manager.impact.accessible {"count":4}')).toBeInTheDocument();
-    expect(screen.getByText('tags.manager.impact.total {"count":42}')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'tags.manager.impact.title' })).toBeInTheDocument();
+    expect(screen.getByText(message)).toBeInTheDocument();
     expect(screen.queryByText(/bulk\.mergeInto/)).toBeNull();
+    expect(modalConfirm()).toHaveTextContent('tags.manager.action.delete');
+    expect(modalCancel()).toHaveTextContent('tags.manager.action.cancel');
 
-    await fireEvent.click(screen.getAllByRole('button', { name: 'tags.manager.action.delete' })[1]);
+    await fireEvent.click(modalConfirm());
     expect(confirmDelete).toHaveBeenCalledTimes(1);
+    expect(cancelDelete).not.toHaveBeenCalled();
+  });
 
-    await fireEvent.click(btn('tags.manager.action.cancel')!);
+  it('emits cancelDelete, and not confirmDelete, from the cancel button', async () => {
+    const confirmDelete = vi.fn();
+    const cancelDelete = vi.fn();
+    render(TagBulkSummary, {
+      props: { tags, deletePreview: impact },
+      events: { confirmDelete, cancelDelete },
+    });
+
+    await fireEvent.click(modalCancel());
     expect(cancelDelete).toHaveBeenCalledTimes(1);
+    expect(confirmDelete).not.toHaveBeenCalled();
+  });
+
+  it('shows no dialog without a preview', () => {
+    render(TagBulkSummary, { props: { tags } });
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('swaps the confirm label to deleting while deleting', () => {
     render(TagBulkSummary, { props: { tags, deletePreview: impact, busy: 'delete' } });
-    expect(btn('tags.manager.action.deleting')).toBeDisabled();
+    expect(modalConfirm()).toHaveTextContent('tags.manager.action.deleting');
+    expect(modalConfirm()).not.toHaveTextContent(/^tags\.manager\.action\.delete$/);
+  });
+
+  it('shows the dialog again when a new preview arrives after Cancel', async () => {
+    const cancelDelete = vi.fn();
+    const view = render(TagBulkSummary, {
+      props: { tags, deletePreview: impact },
+      events: { cancelDelete },
+    });
+    await fireEvent.click(modalCancel());
+    expect(modalConfirm()).toBeNull();
+    // The coordinator answers cancelDelete by clearing the preview, then a later Delete
+    // click brings a fresh one.
+    await view.rerender({ tags, deletePreview: null });
+    await view.rerender({ tags, deletePreview: { ...impact } });
+    expect(modalConfirm()).not.toBeNull();
+    expect(screen.getByText(message)).toBeInTheDocument();
+  });
+
+  it('ignores a confirm while a delete is already running', async () => {
+    const confirmDelete = vi.fn();
+    render(TagBulkSummary, {
+      props: { tags, deletePreview: impact, busy: 'delete' },
+      events: { confirmDelete },
+    });
+    await fireEvent.click(modalConfirm());
+    expect(confirmDelete).not.toHaveBeenCalled();
   });
 });

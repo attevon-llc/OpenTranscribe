@@ -26,6 +26,7 @@
   import MetadataChips from '$components/ui/MetadataChips.svelte';
   import SearchableSelect from '$components/ui/SearchableSelect.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
+  import Tabs from '$components/ui/Tabs.svelte';
   import { bulkTagFiles, createTag, listTags, listTagsOnFiles } from '$lib/api/tags';
   import type { TagOnSelection } from '$lib/types/tag';
   import { getErrorMessage } from '$lib/utils/apiError';
@@ -36,14 +37,14 @@
   import type { BulkTagAction, BulkTagActionResult } from '$lib/types/tag';
 
   export let isOpen = false;
-  /** Which direction the Organize menu asked for. */
+  /** The direction the dialog opens in; the user can switch it inside. */
   export let action: BulkTagAction = 'add_tag';
   /** UUIDs of the selected files, in selection order. */
   export let fileUuids: string[] = [];
   /**
-   * Tag names the selected files are known to carry, used to scope the *remove*
-   * suggestions. The gallery listing does not carry per-file tags today, so this
-   * is usually empty — see `scopedToSelection` for what happens then.
+   * Extra tag names the selected files are known to carry. The *remove*
+   * suggestions are scoped to these plus the tags the modal loads for the
+   * selection itself (`listTagsOnFiles`) — see `scopedToSelection`.
    */
   export let presentTagNames: string[] = [];
 
@@ -82,18 +83,22 @@
   async function removeChip(tag: TagOnSelection) {
     if (!isSingleFile || busy) return;
     busy = true;
+    errorMessage = '';
     try {
       const results = await bulkTagFiles(fileUuids, 'remove_tag', tag.name);
       await loadCurrentTags();
-      // Same envelope the submit path reports, so the gallery's listener does
-      // not need a second shape to understand.
+      // Same envelope and the same outcome rules as the submit path, so the
+      // gallery's listener does not need a second shape to understand.
+      const counts = summarize(results, tag.name, tag.name);
       dispatch('applied', {
         action: 'remove_tag',
         name: tag.name,
-        changed: results.filter((r) => r.outcome === 'removed').length,
-        unchanged: results.filter((r) => r.outcome === 'not_present').length,
-        failed: results.filter((r) => r.outcome === 'failed').length,
+        changed: counts.changed,
+        unchanged: counts.unchanged,
+        failed: counts.failed,
       });
+    } catch (err) {
+      errorMessage = getErrorMessage(err, $t('gallery.bulk.tagModal.requestFailed'));
     } finally {
       busy = false;
     }
@@ -124,13 +129,48 @@
   let summary: Summary | null = null;
   let allTagNames: string[] = [];
   let wasOpen = false;
+  /**
+   * The direction actually applied. The gallery offers one Tags entry, so the
+   * dialog is the only place a multi-file selection can choose to remove.
+   */
+  let mode: BulkTagAction = action;
 
-  $: isAdd = action === 'add_tag';
-  $: presentNames = Array.from(new Set(presentTagNames.filter((name) => name.trim() !== '')));
+  $: isAdd = mode === 'add_tag';
+  $: modeTabs = [
+    {
+      id: 'add_tag',
+      label: $t('gallery.bulk.addTag'),
+      title: $t('gallery.bulk.addTagTooltip'),
+      disabled: busy,
+    },
+    {
+      id: 'remove_tag',
+      label: $t('gallery.bulk.removeTag'),
+      title: $t('gallery.bulk.removeTagTooltip'),
+      disabled: busy,
+    },
+  ];
+
+  function changeMode(event: CustomEvent<string>) {
+    const next = event.detail as BulkTagAction;
+    if (next === mode || busy) return;
+    mode = next;
+    // The summary and any error described the other direction.
+    summary = null;
+    errorMessage = '';
+  }
+  $: presentNames = Array.from(
+    new Set(
+      [...presentTagNames, ...currentTags.map((tag) => tag.name)].filter(
+        (name) => name.trim() !== ''
+      )
+    )
+  );
   // Removing a tag nothing in the selection carries is a guaranteed no-op, so the
   // remove suggestions are scoped to what the selection is known to carry. When
-  // the selection carries no tag data at all, every tag is offered instead —
-  // an empty picker would be worse than a wide one, and the hint says which.
+  // nothing is known (no tags on the selection, or their fetch failed), every
+  // tag is offered instead — an empty picker would be worse than a wide one, and
+  // the hint says which.
   $: scopedToSelection = !isAdd && presentNames.length > 0;
   $: suggestionPool = scopedToSelection ? presentNames : allTagNames;
   $: canSubmit = tagName.trim() !== '' && fileUuids.length > 0 && !busy;
@@ -143,6 +183,7 @@
   }
 
   async function openReset() {
+    mode = action;
     tagName = '';
     errorMessage = '';
     summary = null;
@@ -212,10 +253,10 @@
     summary = null;
     try {
       const resolved = await resolveName(typed);
-      const results = await bulkTagFiles(fileUuids, action, resolved);
+      const results = await bulkTagFiles(fileUuids, mode, resolved);
       summary = summarize(results, typed, resolved);
       dispatch('applied', {
-        action,
+        action: mode,
         name: resolved,
         changed: summary.changed,
         unchanged: summary.unchanged,
@@ -243,6 +284,13 @@
   onClose={close}
 >
   <form class="bulk-tag-form" on:submit|preventDefault={submit}>
+    <Tabs
+      tabs={modeTabs}
+      activeId={mode}
+      ariaLabel={$t('gallery.bulk.addOrEditTags')}
+      on:change={changeMode}
+    />
+
     <!-- What the selection already has. Chips are removable for a single file
          (the file detail page's editor, same shape) and read-only with an
          "on N of M" count for several, because removing across a mixed

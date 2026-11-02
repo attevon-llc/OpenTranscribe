@@ -9,8 +9,10 @@
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import Spinner from '$components/ui/Spinner.svelte';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import { tagOriginKey, type TagListEntry } from './TagList.svelte';
   import type { TagImpact } from '$lib/types/tag';
+  import { canMutateTag } from '$lib/types/tag';
 
   /** The selected tags, in list order. */
   export let tags: TagListEntry[] = [];
@@ -29,6 +31,8 @@
    * earn the right in this session, so a disabled control would only puzzle.
    */
   export let canPromote = false;
+  /** Whether the caller may write system tags (`canWriteSystemTags`). */
+  export let isAdmin = false;
   export let previewLoading = false;
   export let mergePreview: TagImpact | null = null;
   export let deletePreview: TagImpact | null = null;
@@ -44,10 +48,13 @@
     clear: void;
   }>();
 
-  // Only a tag you own can be promoted: a system tag is already shared, and a
-  // `shared_with_me` tag is someone else's to publish. A selection with none of
-  // them hides the button rather than offering a no-op that 404s.
-  $: promotableCount = tags.filter((tag) => (tag.ownership ?? 'mine') === 'mine').length;
+  // The server checks every uuid and refuses the whole request on the first it
+  // may not write, so an action is offered only when the entire selection
+  // allows it. Promotion additionally needs every tag to be your own: a system
+  // tag is already shared, and a `shared_with_me` tag is someone else's.
+  $: canWriteAll = tags.every((tag) => canMutateTag(tag, isAdmin));
+  $: canPromoteAll =
+    canPromote && tags.every((tag) => (tag.ownership ?? 'mine') === 'mine');
 
   let survivorUuid = '';
   let lastSelectionKey = '';
@@ -66,7 +73,18 @@
         : (byUsage[0]?.uuid ?? '');
   }
 
-  $: canMerge = tags.length > 1 && survivorUuid !== '';
+  $: canMerge = canWriteAll && tags.length > 1 && survivorUuid !== '';
+
+  // The modal closes itself on confirm/cancel, which a prop derived from
+  // `deletePreview` would not survive: the next preview computes the same `true`
+  // and never reopens it. Own the open state here and reopen it per preview.
+  let deleteOpen: boolean;
+  $: deleteOpen = deletePreview !== null;
+
+  function confirmDelete() {
+    if (busy !== null) return;
+    dispatch('confirmDelete');
+  }
 </script>
 
 <div class="bulk-summary">
@@ -82,39 +100,43 @@
     </button>
   </header>
 
-  <fieldset class="survivor">
-    <legend class="survivor-legend">{$t('tags.manager.bulk.survivorLegend')}</legend>
-    <p class="note">{$t('tags.manager.bulk.survivorHint')}</p>
-    <div class="survivor-options">
-      {#each byUsage as tag (tag.uuid)}
-        <label class="survivor-option" class:is-chosen={survivorUuid === tag.uuid}>
-          <input
-            type="radio"
-            name="tag-survivor"
-            value={tag.uuid}
-            bind:group={survivorUuid}
-            disabled={busy !== null}
-          />
-          <span class="survivor-name">{tag.name}</span>
-          <span class="survivor-meta">
-            <span>{$t('tags.manager.usage', { count: tag.usage_count })}</span>
-            <span>{$t(tagOriginKey(tag.source))}</span>
-          </span>
-        </label>
-      {/each}
-    </div>
-  </fieldset>
+  {#if canWriteAll}
+    <fieldset class="survivor">
+      <legend class="survivor-legend">{$t('tags.manager.bulk.survivorLegend')}</legend>
+      <p class="note">{$t('tags.manager.bulk.survivorHint')}</p>
+      <div class="survivor-options">
+        {#each byUsage as tag (tag.uuid)}
+          <label class="survivor-option" class:is-chosen={survivorUuid === tag.uuid}>
+            <input
+              type="radio"
+              name="tag-survivor"
+              value={tag.uuid}
+              bind:group={survivorUuid}
+              disabled={busy !== null}
+            />
+            <span class="survivor-name">{tag.name}</span>
+            <span class="survivor-meta">
+              <span>{$t('tags.manager.usage', { count: tag.usage_count })}</span>
+              <span>{$t(tagOriginKey(tag.source))}</span>
+            </span>
+          </label>
+        {/each}
+      </div>
+    </fieldset>
+  {/if}
 
   <div class="bulk-actions">
-    <button
-      type="button"
-      class="btn btn-primary"
-      on:click={() => dispatch('previewMerge', { survivorUuid })}
-      disabled={!canMerge || busy !== null}
-    >
-      {$t('tags.manager.action.merge')}
-    </button>
-    {#if canPromote && promotableCount > 0}
+    {#if canWriteAll}
+      <button
+        type="button"
+        class="btn btn-primary"
+        on:click={() => dispatch('previewMerge', { survivorUuid })}
+        disabled={!canMerge || busy !== null}
+      >
+        {$t('tags.manager.action.merge')}
+      </button>
+    {/if}
+    {#if canPromoteAll}
       <button
         type="button"
         class="btn btn-ghost"
@@ -127,14 +149,16 @@
           : $t('tags.manager.action.promote')}
       </button>
     {/if}
-    <button
-      type="button"
-      class="btn btn-danger-outline"
-      on:click={() => dispatch('previewDelete')}
-      disabled={busy !== null}
-    >
-      {$t('tags.manager.action.delete')}
-    </button>
+    {#if canWriteAll}
+      <button
+        type="button"
+        class="btn btn-danger-outline"
+        on:click={() => dispatch('previewDelete')}
+        disabled={busy !== null}
+      >
+        {$t('tags.manager.action.delete')}
+      </button>
+    {/if}
   </div>
 
   {#if previewLoading}
@@ -182,42 +206,27 @@
     </section>
   {/if}
 
-  {#if deletePreview}
-    <section class="panel panel-danger">
-      <h3 class="panel-title">{$t('tags.manager.impact.title')}</h3>
-      <ul class="impact-list">
-        <li>
-          {$t('tags.manager.impact.accessible', { count: deletePreview.accessible_file_count })}
-        </li>
-        <li class="impact-total">
-          {$t('tags.manager.impact.total', { count: deletePreview.total_file_count })}
-        </li>
-      </ul>
-      <p class="note">
-        {$t('tags.manager.impact.totalNote', { count: deletePreview.total_file_count })}
-      </p>
-      <div class="panel-actions">
-        <button
-          type="button"
-          class="btn btn-danger"
-          on:click={() => dispatch('confirmDelete')}
-          disabled={busy !== null}
-        >
-          {busy === 'delete'
-            ? $t('tags.manager.action.deleting')
-            : $t('tags.manager.action.delete')}
-        </button>
-        <button
-          type="button"
-          class="btn btn-ghost"
-          on:click={() => dispatch('cancelDelete')}
-          disabled={busy !== null}
-        >
-          {$t('tags.manager.action.cancel')}
-        </button>
-      </div>
-    </section>
-  {/if}
+  <!-- The same shared confirmation dialog a single-tag delete uses, so a
+       destructive action looks the same whatever the selection size. -->
+  <ConfirmationModal
+    bind:isOpen={deleteOpen}
+    title={$t('tags.manager.impact.title')}
+    message={deletePreview
+      ? $t('tags.manager.impact.deleteMessage', {
+          name: tags.map((tag) => tag.name).join(', '),
+          accessible: deletePreview.accessible_file_count,
+          total: deletePreview.total_file_count,
+        })
+      : ''}
+    confirmText={busy === 'delete'
+      ? $t('tags.manager.action.deleting')
+      : $t('tags.manager.action.delete')}
+    cancelText={$t('tags.manager.action.cancel')}
+    confirmButtonClass="modal-delete-button"
+    cancelButtonClass="modal-cancel-button"
+    on:confirm={confirmDelete}
+    on:cancel={() => dispatch('cancelDelete')}
+  />
 
 </div>
 
@@ -315,11 +324,6 @@
     border: 1px solid var(--border-color);
     border-radius: 10px;
     background: var(--surface-color);
-  }
-
-  .panel-danger {
-    border-color: var(--error-color, #dc2626);
-    background: rgba(var(--error-color-rgb, 239, 68, 68), 0.06);
   }
 
   .panel-warning {

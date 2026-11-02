@@ -65,7 +65,6 @@ frontend/src/components/SummaryModal.svelte::@typescript-eslint/no-explicit-any	
 frontend/src/components/SummaryModal.svelte::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/SummaryModal.svelte::no-useless-assignment	1	lint: burn-down planned
 frontend/src/components/SummaryModal.svelte::svelte/no-reactive-reassign	1	lint: burn-down planned
-frontend/src/components/TagsEditor.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
 frontend/src/components/TagsEditor.svelte::no-useless-assignment	2	lint: burn-down planned
 frontend/src/components/ThemeToggle.svelte::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/TopicsList.svelte::svelte/no-at-html-tags	3	lint: burn-down planned

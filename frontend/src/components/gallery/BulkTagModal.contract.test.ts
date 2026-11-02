@@ -87,6 +87,22 @@ describe('opening', () => {
     expect(screen.getByRole('heading', { name: `${T}.addTitle {"count":3}` })).toBeInTheDocument();
     expect(api.listTagsOnFiles).toHaveBeenCalledWith(files);
 
+    // D14 (6fbe1847e): `action` only seeds the direction when the dialog opens; changing it
+    // on an open dialog is ignored, and the user switches with the Remove tab instead.
+    await view.rerender({ isOpen: true, action: 'remove_tag', fileUuids: files });
+    expect(screen.getByRole('heading', { name: `${T}.addTitle {"count":3}` })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: `${T}.removeTitle {"count":3}` })).toBeNull();
+
+    await fireEvent.click(screen.getByRole('tab', { name: 'gallery.bulk.removeTag' }));
+    expect(
+      screen.getByRole('heading', { name: `${T}.removeTitle {"count":3}` })
+    ).toBeInTheDocument();
+
+    // Reopening re-seeds the direction from `action`.
+    await view.rerender({ isOpen: false, action: 'add_tag', fileUuids: files });
+    await view.rerender({ isOpen: true, action: 'add_tag', fileUuids: files });
+    expect(screen.getByRole('heading', { name: `${T}.addTitle {"count":3}` })).toBeInTheDocument();
+    await view.rerender({ isOpen: false, action: 'remove_tag', fileUuids: files });
     await view.rerender({ isOpen: true, action: 'remove_tag', fileUuids: files });
     expect(
       screen.getByRole('heading', { name: `${T}.removeTitle {"count":3}` })
@@ -99,16 +115,20 @@ describe('opening', () => {
     expect(field()).toHaveAttribute('placeholder', `${T}.addPlaceholder`);
     expect(screen.getByText(`${T}.addHint`)).toBeInTheDocument();
 
-    await view.rerender({ isOpen: true, action: 'remove_tag', fileUuids: files });
+    // D14 (6fbe1847e): the direction is the dialog's own state (the Remove tab), not the prop.
+    await fireEvent.click(screen.getByRole('tab', { name: 'gallery.bulk.removeTag' }));
     expect(field()).toHaveAttribute('placeholder', `${T}.removePlaceholder`);
     expect(screen.getByText(`${T}.removeHintAll`)).toBeInTheDocument();
+    expect(screen.queryByText(`${T}.addHint`)).toBeNull();
 
+    await view.rerender({ isOpen: false, fileUuids: files, presentTagNames: ['roadmap'] });
     await view.rerender({
       isOpen: true,
       action: 'remove_tag',
       fileUuids: files,
       presentTagNames: ['roadmap'],
     });
+    expect(field()).toHaveAttribute('placeholder', `${T}.removePlaceholder`);
     expect(screen.getByText(`${T}.removeHintScoped`)).toBeInTheDocument();
   });
 

@@ -199,6 +199,8 @@ def cleanup(world: World) -> None:
     ids = [world.user_id, world.other_user_id]
     db = _db()
     try:
+        # The audit tables refuse DELETE; this cleanup owns the rows it made (owner-only switch).
+        db.execute(text("SELECT set_config('opentranscribe.audit_maintenance', 'on', true)"))
         for stmt in (
             "DELETE FROM erasure_receipt WHERE ledger_entry_id IN "
             "(SELECT id FROM erasure_ledger WHERE subject_user_id = ANY(:ids))",

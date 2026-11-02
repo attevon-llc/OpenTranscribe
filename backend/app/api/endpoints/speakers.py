@@ -18,6 +18,7 @@ from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
+from app.api.endpoints.files.reprocess import refuse_reprocess_if_held
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.db.base import get_db
@@ -29,6 +30,7 @@ from app.models.user import User
 from app.schemas.media import Speaker as SpeakerSchema
 from app.schemas.media import SpeakerUpdate
 from app.schemas.media import split_attribute_confidence
+from app.services.hold_guard import DESTROY_DERIVED_REFUSAL
 from app.services.opensearch_service import update_speaker_display_name
 from app.services.permission_service import PermissionService
 from app.services.permission_service import file_ids_in_scope
@@ -2311,6 +2313,15 @@ def delete_speaker(
         min_permission="editor",
         forbidden_detail="Requires editor permission",
         bypass=ctx.bypass,
+    )
+
+    # Deleting the speaker removes every copy of its voice; a hold exists to keep exactly that.
+    refuse_reprocess_if_held(
+        db,
+        int(speaker.media_file_id),
+        actor=current_user,
+        action="speaker_delete",
+        message=DESTROY_DERIVED_REFUSAL,
     )
 
     # Read before the delete: the CASCADE forgets which clusters averaged this voice.

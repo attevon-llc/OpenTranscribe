@@ -35,7 +35,7 @@ def make_file(db, user) -> Any:
         uuid=uuid_pkg.uuid4(),
         filename="x.wav",
         user_id=user.id,
-        storage_path=f"user_{user.id}/{uuid_pkg.uuid4().hex}.wav",
+        storage_path=f"user_{user.id}/{uuid_pkg.uuid4().hex}/x.wav",
         file_size=10,
         content_type="audio/wav",
         status=FileStatus.COMPLETED,

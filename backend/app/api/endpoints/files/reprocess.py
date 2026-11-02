@@ -540,7 +540,12 @@ def dispatch_selective_tasks(
 
 
 def refuse_reprocess_if_held(
-    db: Session, file_id: int, *, actor: User | None = None, action: str = "reprocess"
+    db: Session,
+    file_id: int,
+    *,
+    actor: User | None = None,
+    action: str = "reprocess",
+    message: str | None = None,
 ) -> None:
     """409 ``FILE_UNDER_LEGAL_HOLD`` when the file is held by the platform or an organization.
 
@@ -570,7 +575,7 @@ def refuse_reprocess_if_held(
                 )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=refusal_detail(state, reveal_uuids=False, message=REPROCESS_REFUSAL),
+            detail=refusal_detail(state, reveal_uuids=False, message=message or REPROCESS_REFUSAL),
         )
 
 

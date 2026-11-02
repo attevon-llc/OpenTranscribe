@@ -156,5 +156,4 @@ def test_every_protected_table_has_a_guard_trigger(db_session):
     assert len(all_protected_tables()) >= 8
     for t in all_protected_tables():
         assert (t.own_guard or f"trg_audit_guard_{t.name}") in found
-        if not t.own_guard:
-            assert f"trg_audit_guard_truncate_{t.name}" in found
+        assert f"trg_audit_guard_truncate_{t.name}" in found

@@ -260,6 +260,15 @@ _REFUSED: list[tuple[str, str, dict[str, Any] | None]] = [
     ("post", "/api/files/bulk-export/prepare", {}),
     ("get", "/api/files/{file}/summary/export", None),
     ("get", "/api/admin/stats", None),
+    # Routes that send the tenant's transcript to an LLM, or write the result back as content.
+    ("post", "/api/files/{file}/summarize", {}),
+    ("post", "/api/files/{file}/retry-summary", {}),
+    ("post", "/api/files/{file}/identify-speakers", {}),
+    ("post", "/api/files/{file}/extract", {}),
+    ("post", "/api/files/{file}/auto-label", {}),
+    ("post", "/api/files/{file}/apply", {}),
+    ("post", "/api/files/batch-extract", {"file_uuids": []}),
+    ("post", "/api/files/retroactive-auto-label", {}),
 ]
 
 
@@ -274,6 +283,19 @@ def test_a_grant_is_refused_on_chat_search_upload_export_and_admin(
     kwargs = {"json": body} if body is not None else {}
     response = getattr(w.client, method)(
         path.replace("{file}", str(w.file.uuid)), headers=headers, **kwargs
+    )
+    assert response.status_code == 403
+    assert _code(response) == "support_grant_action_not_permitted"
+
+
+@pytest.mark.parametrize("action", ["add_tag", "remove_tag"])
+def test_a_grant_cannot_create_tags_through_the_bulk_action(support_world, action):
+    w = support_world
+    headers = w.with_grant(w.active_grant(level="write"))
+    response = w.client.post(
+        "/api/files/management/bulk-action",
+        headers=headers,
+        json={"file_uuids": [str(w.file.uuid)], "action": action, "tag_name": "grant-made"},
     )
     assert response.status_code == 403
     assert _code(response) == "support_grant_action_not_permitted"

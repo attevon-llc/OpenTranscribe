@@ -76,7 +76,14 @@ def finish(
     phase = "resurrection" if entry is not None and entry.resurrections_detected else "immediate"
     row = persist_receipt(db, entry, data, phase) if entry is not None else None
     summary["receipt"] = summary_receipt(row, data)
-    if data.outcome != "verified":
+    if entry is not None and row is None:
+        # No stored receipt means nothing proves the erasure: leave the entry open for the
+        # retry sweep instead of closing it as complete.
+        summary["receipt"]["outcome"] = "unverified"
+        summary["errors"].append(
+            {"stage": "receipt", "error": "erasure receipt could not be stored"}
+        )
+    elif data.outcome != "verified":
         # A fixed sentence: the ledger keeps only the count, and `complete` follows from it.
         summary["errors"].append(
             {"stage": "receipt", "error": f"erasure receipt is {data.outcome}, not verified"}

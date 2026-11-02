@@ -19,7 +19,8 @@ enforced mode.
 | `auth_config_audit` | insert; clear the actor when that user is deleted | no (see [Retention](#retention)) |
 | `support_access_use` | insert | no (see [Retention](#retention)) |
 | `support_access_grant` | insert; set the decision, validity window and revocation | yes |
-| `erasure_ledger` | insert; update status, attempt and counter columns | yes |
+| `erasure_ledger` | insert; update status, attempt and counter columns, the cancellation time and the index-check cursor | yes |
+| `erasure_receipt` | insert | yes |
 | `takedown_notice`, `takedown_notice_file`, `takedown_notification` | insert; update outcome and delivery columns | yes |
 | `legal_acceptance` | insert; pseudonymise on account deletion; delete through its own retention sweep | own sweep |
 

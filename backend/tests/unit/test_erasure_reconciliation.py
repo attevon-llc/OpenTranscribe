@@ -484,8 +484,8 @@ def test_the_sweep_is_a_no_op_on_an_empty_ledger(db_session, sweep):
     Also the guard against a sweep whose counters are computed from something other
     than the ledger — every number must be zero when there is nothing to do.
     """
-    db_session.query(ErasureReceipt).delete()
-    with audit_maintenance(db_session):  # start from an empty ledger
+    with audit_maintenance(db_session):  # start from an empty ledger (both tables are insert-only)
+        db_session.query(ErasureReceipt).delete()
         db_session.query(ErasureLedgerEntry).delete()
         db_session.commit()
 

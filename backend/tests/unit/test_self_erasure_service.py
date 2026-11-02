@@ -59,10 +59,12 @@ def test_request_creates_deferred_ledger_entry_with_schedule(db_session, normal_
 
 
 def test_disabled_by_default(db_session, normal_user):
+    # The ledger is append-only (v453): rows from other runs stay, so compare, don't count.
+    before = db_session.query(ErasureLedgerEntry).count()
     with pytest.raises(service.SelfErasureError) as caught:
         service.request_self_erasure(db_session, normal_user, now=NOW)
     assert caught.value.code == "disabled"
-    assert db_session.query(ErasureLedgerEntry).count() == 0
+    assert db_session.query(ErasureLedgerEntry).count() == before
 
 
 @pytest.mark.parametrize(("configured", "expected"), [(60, 21), (-3, 0), (7, 7)])
@@ -96,10 +98,11 @@ def _sole_super_admin(db, keep) -> None:
 
 def test_the_last_super_admin_is_refused(db_session, super_admin_user, enabled):
     _sole_super_admin(db_session, super_admin_user)
+    before = db_session.query(ErasureLedgerEntry).count()  # append-only: other runs' rows stay
     with pytest.raises(service.SelfErasureError) as caught:
         service.request_self_erasure(db_session, super_admin_user, now=NOW)
     assert caught.value.code == "last_super_admin"
-    assert db_session.query(ErasureLedgerEntry).count() == 0
+    assert db_session.query(ErasureLedgerEntry).count() == before
 
 
 def test_cancel_before_the_schedule_marks_cancelled(db_session, normal_user, enabled):

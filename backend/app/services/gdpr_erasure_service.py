@@ -92,6 +92,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
+from app.auth.token_service import token_service
 from app.models.chat import ChatConversation
 from app.models.collection import Collection
 from app.models.custom_vocabulary import CustomVocabulary
@@ -240,9 +241,12 @@ def erase_user(
     else:
         ledger_entry_id = ledger_entry.id if ledger_entry is not None else None
         try:
+            subject_uuid = str(user.uuid)
             db.delete(user)
             db.commit()
             summary["users_deleted"] = 1
+            # An erased account's open sockets would otherwise outlive it.
+            token_service.stamp_user_revocation_epoch(subject_uuid)
         except Exception as e:  # noqa: BLE001 — record, don't raise
             db.rollback()
             # `summary` is returned straight out of this function and becomes the

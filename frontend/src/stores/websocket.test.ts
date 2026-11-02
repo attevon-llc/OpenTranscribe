@@ -44,6 +44,12 @@ vi.mock('$stores/locale', async () => {
   };
 });
 
+const recheck = vi.hoisted(() => ({ survives: vi.fn<() => Promise<boolean>>() }));
+vi.mock('$lib/auth/sessionRecheck', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/auth/sessionRecheck')>()),
+  sessionSurvivesRevocation: recheck.survives,
+}));
+
 import { FakeWebSocket, installFakeWebSocket, restoreWebSocket } from '../test-mocks/fakeWebSocket';
 import { websocketStore, unreadCount, connectionStatus } from './websocket';
 import { apiCache, CacheTTL } from '$lib/apiCache';
@@ -170,6 +176,32 @@ describe('websocket connection lifecycle', () => {
 
     expect(get(websocketStore).status).toBe('error');
     expect(get(websocketStore).error).toBeTruthy();
+  });
+
+  it('a revoked-session close (4004) re-checks the session instead of retrying blindly', async () => {
+    recheck.survives.mockResolvedValueOnce(false);
+    openSocket().simulateServerClose(4004, 'Session revoked');
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(recheck.survives).toHaveBeenCalledTimes(1);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(get(websocketStore).reconnectAttempts).toBe(0);
+  });
+
+  it('reconnects after a 4004 close once the session is confirmed (it was reissued)', async () => {
+    recheck.survives.mockResolvedValueOnce(true);
+    openSocket().simulateServerClose(4004, 'Session revoked');
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(FakeWebSocket.instances.length).toBeGreaterThan(1);
+  });
+
+  it('an ordinary abnormal close does not consult the session re-check', () => {
+    recheck.survives.mockClear();
+    openSocket().simulateServerClose(1006);
+
+    expect(recheck.survives).not.toHaveBeenCalled();
+    expect(get(websocketStore).reconnectAttempts).toBe(1);
   });
 
   it('disconnect() closes cleanly with 1000 so no reconnect is scheduled', () => {

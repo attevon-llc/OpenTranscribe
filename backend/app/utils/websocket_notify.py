@@ -27,6 +27,27 @@ from app.core.redis import get_redis
 logger = logging.getLogger(__name__)
 
 
+#: Not forwarded to any client: tells every API process to close the sockets a
+#: revocation epoch has outdated (``api/websockets.py:ConnectionManager.close_revoked``).
+SESSION_REVOKED_EVENT = "session_revoked"
+
+
+def _publish(notification: dict, target: object, notification_type: str) -> bool:
+    """Publish one message on the channel every API process subscribes to."""
+    try:
+        get_redis().publish("websocket_notifications", json.dumps(notification))
+        logger.info("Published WS notification for user %s: %s", target, notification_type)
+        return True
+    except Exception as e:
+        logger.error(
+            "Failed to publish WS notification for user %s (%s): %s",
+            target,
+            notification_type,
+            e,
+        )
+        return False
+
+
 def send_ws_event(user_id: int, notification_type: str, data: dict) -> bool:
     """Publish a WebSocket notification to a specific user via Redis pub/sub.
 
@@ -38,28 +59,22 @@ def send_ws_event(user_id: int, notification_type: str, data: dict) -> bool:
     Returns:
         True on success, False on failure (errors are logged, never raised).
     """
-    try:
-        client = get_redis()
-        notification = {
-            "user_id": user_id,
-            "type": notification_type,
-            "data": data,
-        }
-        client.publish("websocket_notifications", json.dumps(notification))
-        logger.info(
-            "Published WS notification for user %s: %s",
-            user_id,
-            notification_type,
-        )
-        return True
-    except Exception as e:
-        logger.error(
-            "Failed to publish WS notification for user %s (%s): %s",
-            user_id,
-            notification_type,
-            e,
-        )
-        return False
+    notification = {"user_id": user_id, "type": notification_type, "data": data}
+    return _publish(notification, user_id, notification_type)
+
+
+def publish_session_revocation(user_uuid: str, epoch: int) -> bool:
+    """Ask every API process to close *user_uuid*'s sockets opened by ``epoch``.
+
+    Best-effort, like every publish here. When it fails, a socket already open stays
+    open until it reconnects, and that handshake is refused by the epoch check; nothing
+    the epoch revoked is accepted again.
+
+    Returns:
+        True on success, False on failure (errors are logged, never raised).
+    """
+    notification = {"type": SESSION_REVOKED_EVENT, "user_uuid": user_uuid, "data": {"epoch": epoch}}
+    return _publish(notification, user_uuid, SESSION_REVOKED_EVENT)
 
 
 def send_ws_event_for_file(

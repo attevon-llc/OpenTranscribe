@@ -21,7 +21,10 @@ configuration and concurrent-session ceiling live in ``auth/session_ceiling.py``
 
 import hashlib
 import logging
+import threading
+import time
 import uuid
+from collections.abc import Callable
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
@@ -36,6 +39,7 @@ from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.auth.bulk_revocation import PendingBulkRevocation
 from app.auth.degradation import record_degradation
+from app.auth.lockout_store import REDIS_REPROBE_SECONDS
 from app.auth.refresh_tokens import RefreshTokenOps
 from app.auth.revocation_error import RevocationError
 from app.auth.revocation_fallback import is_revoked_from_database
@@ -48,6 +52,7 @@ from app.core.security import accepted_algorithms
 from app.core.security import signing_algorithm
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
+from app.utils.websocket_notify import publish_session_revocation
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +87,13 @@ class TokenService(RefreshTokenOps):
         """Initialize the token service."""
         self._store = None
         self._degraded = False
+        # Re-probe timer, on the same interval as the lockout and OIDC state stores.
+        self._clock: Callable[[], float] = time.monotonic
+        self._last_redis_probe = 0.0
+        self._probe_lock = threading.Lock()
+        # Wall-clock second Redis came back, and when the tokens older than that expire.
+        self._recovered_at: int | None = None
+        self._recovery_window_ends = 0.0
 
     @property
     def degraded(self) -> bool:
@@ -90,7 +102,8 @@ class TokenService(RefreshTokenOps):
         True means Redis was unreachable and this process fell back to a
         per-process store. The blacklist is then neither shared across replicas
         nor durable across restarts, so it must not be trusted as the answer to
-        "is this token revoked?" — see :meth:`is_token_revoked`.
+        "is this token revoked?" — see :meth:`is_token_revoked`. It clears once a
+        re-probe (at most one per ``REDIS_REPROBE_SECONDS``) reaches Redis again.
         """
         return self._degraded
 
@@ -99,6 +112,7 @@ class TokenService(RefreshTokenOps):
         """Lazy-load storage backend (Redis or in-memory fallback)."""
         if self._store is None:
             redis_client = get_redis_client()
+            self._last_redis_probe = self._clock()
             if redis_client:
                 self._store = redis_client
                 self._degraded = False
@@ -117,7 +131,48 @@ class TokenService(RefreshTokenOps):
                     "on AWS use ElastiCache with Multi-AZ and automatic failover."
                 )
                 self._store = InMemoryStore()
+        elif self._degraded:
+            self._reprobe_redis()
         return self._store
+
+    def _mark_degraded(self) -> None:
+        """Enter degraded mode after a failed lookup; the next probe waits an interval."""
+        self._last_redis_probe = self._clock()
+        self._degraded = True
+
+    def _reprobe_redis(self) -> None:
+        """Adopt a reachable Redis again, probing at most once per interval.
+
+        The probe runs outside the lock so a hung connect delays only the caller that
+        spent it. Revocations recorded while degraded never reached Redis, so tokens
+        issued before the recovery keep the database verdict until they have expired
+        (:meth:`_predates_recovery`).
+        """
+        with self._probe_lock:
+            now = self._clock()
+            if now - self._last_redis_probe < REDIS_REPROBE_SECONDS:
+                return
+            self._last_redis_probe = now
+        recovered = get_redis_client()
+        if recovered is None:
+            return
+        recovered_at = int(datetime.now(UTC).timestamp())
+        self._recovery_window_ends = (
+            recovered_at + settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60 + 60
+        )
+        self._recovered_at = recovered_at
+        # Store before the flag: a reader that sees degraded=False must see Redis.
+        self._store = recovered
+        self._degraded = False
+        logger.info("Redis recovered; token revocation is shared across replicas again")
+
+    def _predates_recovery(self, issued_at: int | None) -> bool:
+        """Whether a token may have been revoked while Redis was unreachable."""
+        if self._recovered_at is None:
+            return False
+        if datetime.now(UTC).timestamp() > self._recovery_window_ends:
+            return False
+        return issued_at is None or issued_at <= self._recovered_at
 
     @staticmethod
     def _hash_token(token: str) -> str:
@@ -320,23 +375,27 @@ class TokenService(RefreshTokenOps):
         (``is_revoked_from_database``), which reaches the same conclusion from
         the user's revoked refresh tokens.
 
+        Sockets already open were authenticated before the epoch existed, so every
+        API process is also asked to close the user's sockets opened by now
+        (``publish_session_revocation``). That is best-effort too: if it fails, an
+        open socket lasts until it reconnects, and the handshake then refuses it.
+
         Returns:
             True when the epoch was recorded.
         """
         if not user_uuid:
             return False
         ttl = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60 + 60
+        epoch = int(datetime.now(UTC).timestamp())
+        stamped = True
         try:
-            self.store.set(
-                f"{USER_REVOCATION_EPOCH_PREFIX}{user_uuid}",
-                str(int(datetime.now(UTC).timestamp())),
-                ex=ttl,
-            )
+            self.store.set(f"{USER_REVOCATION_EPOCH_PREFIX}{user_uuid}", str(epoch), ex=ttl)
         except Exception as exc:
             record_degradation("token_revocation", "database")
             logger.warning("Could not stamp revocation epoch for user %s: %s", user_uuid, exc)
-            return False
-        return True
+            stamped = False
+        publish_session_revocation(user_uuid, epoch)
+        return stamped
 
     def _issued_before_user_epoch(
         self,
@@ -503,7 +562,7 @@ class TokenService(RefreshTokenOps):
             result = store.get(key)
         except Exception:
             # Redis was reachable at startup and died since.
-            self._degraded = True
+            self._mark_degraded()
             logger.critical(
                 "Redis lookup failed for token revocation (jti=%s...); falling back "
                 "to the database. Revocation is NOT shared across replicas while "
@@ -517,7 +576,26 @@ class TokenService(RefreshTokenOps):
         # A stateless access token has no JTI entry of its own; the per-user
         # epoch is what makes logout-all / password reset / admin termination
         # take effect on it immediately rather than at its natural expiry.
-        return self._issued_before_user_epoch(jti, db, user_uuid, issued_at)
+        if self._issued_before_user_epoch(jti, db, user_uuid, issued_at):
+            return True
+        if self._predates_recovery(issued_at):
+            return is_revoked_from_database(db, jti, user_uuid)
+        return False
+
+    def access_token_revoked(self, payload: dict, db: Session | None) -> bool:
+        """Revocation verdict for a decoded access token, shared by every verifier.
+
+        The one place that maps claims onto :meth:`is_token_revoked`: ``jti`` for the
+        blacklist, ``sub`` for the database fallback and ``iat`` for the per-user epoch.
+        The HTTP dependencies and the WebSocket handshake each used to spell this call
+        out, and the handshake's copy dropped ``iat``, so logout-all never reached it.
+        """
+        jti = payload.get("jti")
+        if not settings.TOKEN_REVOCATION_ENABLED or not jti:
+            return False
+        return self.is_token_revoked(
+            jti, db=db, user_uuid=payload.get("sub"), issued_at=payload.get("iat")
+        )
 
     def cleanup_expired_tokens(self, db: Session) -> int:
         """

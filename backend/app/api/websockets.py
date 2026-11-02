@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import time
 from typing import Any
 
 import redis.asyncio as redis
@@ -12,10 +13,12 @@ from redis.exceptions import RedisError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 from sqlalchemy.orm import Session
 
+from app.api.endpoints.auth.lifecycle_gates import admitted_on_optional_auth
 from app.auth.roles import ELEVATED_ROLES
 from app.auth.token_service import token_service
 from app.core.capabilities import capability_enabled
 from app.db.session_utils import session_scope
+from app.utils.websocket_notify import SESSION_REVOKED_EVENT
 
 from ..core.config import settings
 from ..core.security import verify_token
@@ -27,6 +30,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+#: Sent when an open socket is closed because its user's sessions were revoked. The SPA
+#: re-checks the session over HTTP before reconnecting rather than retrying blindly.
+SESSION_REVOKED_CLOSE = 4004
+
+
 # Connection manager to handle WebSocket connections
 class ConnectionManager:
     def __init__(self):
@@ -34,8 +42,16 @@ class ConnectionManager:
         self.active_connections: dict[int, list[WebSocket]] = {}
         # Sockets whose user held an admin tier when the connection was opened.
         self.admin_connections: set[WebSocket] = set()
+        # socket -> (user UUID, wall-clock second it authenticated), for close_revoked.
+        self.socket_owners: dict[WebSocket, tuple[str | None, int]] = {}
 
-    def connect(self, websocket: WebSocket, user_id: int, host_telemetry: bool = False):
+    def connect(
+        self,
+        websocket: WebSocket,
+        user_id: int,
+        host_telemetry: bool = False,
+        user_uuid: str | None = None,
+    ):
         """Register a WebSocket connection for a user (accept() must be called before this).
 
         Bookkeeping only — no I/O — so it is a plain function, mirroring ``disconnect``.
@@ -47,6 +63,7 @@ class ConnectionManager:
         self.active_connections[user_id].append(websocket)
         if host_telemetry:
             self.admin_connections.add(websocket)
+        self.socket_owners[websocket] = (user_uuid, int(time.time()))
         logger.info(f"User {user_id} connected. Total connections: {len(self.active_connections)}")
 
     async def drain(self, code: int = 1001) -> int:
@@ -77,12 +94,37 @@ class ConnectionManager:
                 await ws.close(code=code)
         self.active_connections.clear()
         self.admin_connections.clear()
+        self.socket_owners.clear()
         if sockets:
             logger.info("Drained %d WebSocket connection(s) on shutdown", len(sockets))
         return len(sockets)
 
+    async def close_revoked(self, user_uuid: str, epoch: int) -> int:
+        """Close *user_uuid*'s sockets authenticated at or before the revocation ``epoch``.
+
+        A socket opened in the same second may carry a token newer than the epoch; it
+        is closed anyway, which costs one reconnect. Later sockets passed the epoch
+        check at their handshake and are left alone. Bookkeeping is removed by each
+        connection's own coroutine when its receive loop sees the close.
+
+        Returns:
+            Number of sockets closed.
+        """
+        doomed = [
+            ws
+            for ws, (owner, authenticated_at) in self.socket_owners.items()
+            if owner == user_uuid and authenticated_at <= epoch
+        ]
+        for ws in doomed:
+            with contextlib.suppress(Exception):
+                await ws.close(code=SESSION_REVOKED_CLOSE, reason="Session revoked")
+        if doomed:
+            logger.info("Closed %d WebSocket(s) after a session revocation", len(doomed))
+        return len(doomed)
+
     def disconnect(self, websocket: WebSocket, user_id: int):
         self.admin_connections.discard(websocket)
+        self.socket_owners.pop(websocket, None)
         if user_id in self.active_connections:
             self.active_connections[user_id].remove(websocket)
             if not self.active_connections[user_id]:
@@ -158,6 +200,15 @@ async def _dispatch_notification(message: dict) -> None:
 
     user_id = notification_data.get("user_id")
     notification_type = notification_data.get("type")
+
+    if notification_type == SESSION_REVOKED_EVENT:
+        user_uuid = notification_data.get("user_uuid")
+        epoch = notification_data.get("data", {}).get("epoch")
+        if isinstance(user_uuid, str) and isinstance(epoch, int):
+            await manager.close_revoked(user_uuid, epoch)
+        else:
+            logger.warning("Ignoring malformed session revocation message")
+        return
     is_broadcast = notification_data.get("broadcast", False)
     data = notification_data.get("data", {})
 
@@ -242,7 +293,8 @@ def _try_authenticate_token(
     registered external verifier before the local-JWT path, mirroring
     ``get_current_user``. The community edition registers no verifier, so the
     external branch is skipped and behavior is identical (local JWT only). On any
-    failure (no match, invalid token, inactive user) the caller closes with 4003.
+    failure (no match, invalid token, inactive user, or an account the approval or
+    expiry gate refuses, as on optional-auth routes) the caller closes with 4003.
     """
     # Cloud-edition seam: offer the token to registered external verifiers first.
     try:
@@ -261,7 +313,7 @@ def _try_authenticate_token(
                 if external_session_expired(external_identity):
                     return None
                 external_user = sync_external_user_to_db(db, external_identity)
-                if not external_user.is_active:
+                if not external_user.is_active or not admitted_on_optional_auth(external_user, db):
                     return None
                 return external_user
     except Exception as e:
@@ -275,20 +327,16 @@ def _try_authenticate_token(
         if not user_identifier:
             return None
 
-        # Mirror the HTTP path's checks (endpoints/auth.py) — this branch used to skip
-        # BOTH, so a revoked token or a deactivated account still opened a socket and
-        # kept receiving that user's events (issue #284 A0.7).
-        token_jti = payload.get("jti")
-        if (
-            settings.TOKEN_REVOCATION_ENABLED
-            and token_jti
-            and token_service.is_token_revoked(token_jti, db=db, user_uuid=user_identifier)
-        ):
-            logger.warning("Rejected revoked token on WebSocket (jti=%s...)", token_jti[:8])
+        # Same revocation verdict as the HTTP dependencies — one function, not a copy:
+        # a copy here once dropped `iat`, so logout-all never reached the handshake.
+        if token_service.access_token_revoked(payload, db):
+            logger.warning(
+                "Rejected revoked token on WebSocket (jti=%s...)", str(payload.get("jti"))[:8]
+            )
             return None
 
         user = db.query(User).filter(User.uuid == user_identifier).first()
-        if user is None or not user.is_active:
+        if user is None or not user.is_active or not admitted_on_optional_auth(user, db):
             return None
         return user  # type: ignore[no-any-return]
     except Exception as e:
@@ -469,7 +517,12 @@ async def websocket_endpoint(websocket: WebSocket):
             return
 
     # Register the authenticated connection
-    manager.connect(websocket, user.id, host_telemetry=_may_receive_host_telemetry(user))
+    manager.connect(
+        websocket,
+        user.id,
+        host_telemetry=_may_receive_host_telemetry(user),
+        user_uuid=str(user.uuid),
+    )
 
     # Send initial connection status
     await websocket.send_text(

@@ -7,6 +7,7 @@ import { generateId } from '$lib/utils/ids';
 import { formatEta } from '$lib/utils/formatting';
 import { reconnectDelayMs } from '$lib/utils/backoff';
 import { isCloudEdition } from '$lib/edition';
+import { SESSION_REVOKED_CLOSE_CODE, sessionSurvivesRevocation } from '$lib/auth/sessionRecheck';
 import { pruneNotifications } from '$lib/notifications/retention';
 import {
   advanceRunTiming,
@@ -282,7 +283,6 @@ function createWebSocketStore() {
         state.socket.close();
       }
 
-      // Clear any previous reconnect timeout
       if (reconnectTimeout) {
         clearTimeout(reconnectTimeout);
         reconnectTimeout = null;
@@ -298,7 +298,6 @@ function createWebSocketStore() {
         // Create new WebSocket — httpOnly cookies are sent automatically by the browser
         const socket = new WebSocket(wsUrl);
 
-        // Set connecting status
         state.status = 'connecting';
         state.socket = socket;
         state.error = null;
@@ -355,7 +354,11 @@ function createWebSocketStore() {
               event.code !== 1001 &&
               (typeof document === 'undefined' || !document.hidden);
 
-            if (shouldReconnect) {
+            if (event.code === SESSION_REVOKED_CLOSE_CODE) {
+              void sessionSurvivesRevocation().then((live) => {
+                if (live) tryReconnect();
+              });
+            } else if (shouldReconnect) {
               tryReconnect();
             }
 
@@ -950,7 +953,6 @@ function createWebSocketStore() {
     }, reconnectDelayMs(getState().reconnectAttempts));
   };
 
-  // Disconnect
   const disconnect = () => {
     update((state: WebSocketState) => {
       if (state.socket) {
@@ -970,7 +972,6 @@ function createWebSocketStore() {
     });
   };
 
-  // Send message
   const send = (message: unknown) => {
     update((state: WebSocketState) => {
       if (state.socket && state.status === 'connected') {
@@ -1047,7 +1048,6 @@ function createWebSocketStore() {
     });
   };
 
-  // Clear all notifications
   const clearAll = () => {
     update((state: WebSocketState) => {
       state.notifications = [];

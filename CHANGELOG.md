@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Self-service erasure keeps at least one active super administrator.** The check that
+  refuses the last super administrator was made only when the request was filed. It is now
+  repeated when the request falls due, under a row lock on the active super administrators, so
+  two super administrators who both requested erasure (or one whose peer was since demoted or
+  deactivated) can no longer remove every one of them. A request that would do so is not run:
+  it is closed as `cancelled` and recorded in the audit trail as `gdpr_self_erasure_blocked`
+  with reason `last_super_admin`.
 - **Per-file voice identification opt-out respects legal holds and takedowns.** Turning voice
   identification off for a file that is under a platform or organization legal hold is now
   refused with `409 FILE_UNDER_LEGAL_HOLD` and changes nothing, so a held file keeps its

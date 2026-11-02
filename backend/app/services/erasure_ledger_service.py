@@ -738,6 +738,30 @@ def cancel_request(
     return entry
 
 
+def block_request(db: Session, entry: ErasureLedgerEntry, *, reason: str) -> ErasureLedgerEntry:
+    """Close a due self-service request that must not run, without erasing anything.
+
+    Recorded as ``cancelled`` (terminal, journalled so a restore cannot revive it, never retried
+    by the sweep): the ledger status set has no dedicated blocked value and adding one needs a
+    migration. The audit event ``gdpr_self_erasure_blocked`` carries the ``reason`` code, which
+    is what tells it apart from the subject's own cancellation (that one also stamps
+    ``cancelled_at``; this does not, because the append-only row guard only permits changing
+    the lifecycle columns it was installed with, and ``cancelled_at`` is not among them).
+    """
+    entry.status = "cancelled"
+    entry.deferred_reason = None
+    db.commit()
+    db.refresh(entry)
+    _append_journal(entry)
+    _audit(
+        entry,
+        action="gdpr_self_erasure_blocked",
+        outcome=AuditOutcome.FAILURE,
+        extra={"reason": reason},
+    )
+    return entry
+
+
 def _audit(
     entry: ErasureLedgerEntry,
     *,

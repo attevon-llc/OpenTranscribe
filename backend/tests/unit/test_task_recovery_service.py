@@ -199,7 +199,7 @@ def test_abandoned_file_with_a_finished_transcription_keeps_its_segments(
 
 
 def test_abandoned_file_with_an_unfinished_transcription_is_reset_and_cleaned(
-    service, db_session, normal_user
+    service, db_session, normal_user, monkeypatch
 ):
     """A partial transcript is deleted before the retry, or the retry duplicates it.
 
@@ -208,6 +208,9 @@ def test_abandoned_file_with_an_unfinished_transcription_is_reset_and_cleaned(
     retry appends a second copy of every segment, and the transcript view then
     renders each line twice with no way for the user to tell which is which.
     """
+    # The reset refuses a file whose media is gone (#872); this fixture's media is present.
+    monkeypatch.setattr("app.utils.task_utils.media_object_is_resolvable", lambda mf: True)
+    monkeypatch.setattr("app.tasks.search_indexing_task.index_file_summary.delay", lambda *a: None)
     media_file = _file(db_session, normal_user)
     _segments(db_session, media_file, count=3)
 

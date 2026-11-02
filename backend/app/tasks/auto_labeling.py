@@ -284,7 +284,13 @@ def auto_label_batch_task(
     progress_key = _PROGRESS_KEY.format(user_id=user_id)
     lock_key = _LOCK_KEY.format(user_id=user_id)
 
-    batch_result = {"processed": 0, "tags_applied": 0, "collections_applied": 0, "errors": 0}
+    batch_result = {
+        "processed": 0,
+        "tags_applied": 0,
+        "collections_applied": 0,
+        "errors": 0,
+        "label_failures": 0,
+    }
 
     with session_scope() as db:
         from app.models.media import MediaFile
@@ -337,6 +343,9 @@ def auto_label_batch_task(
                 batch_result["processed"] += 1
                 batch_result["tags_applied"] += len(apply_result["auto_applied_tags"])
                 batch_result["collections_applied"] += len(apply_result["auto_applied_collections"])
+                batch_result["label_failures"] += len(apply_result["failed_tags"]) + len(
+                    apply_result["failed_collections"]
+                )
 
                 # Notify frontend to refresh this specific file
                 send_file_cache_invalidation(user_id, str(media_file.uuid))
@@ -352,6 +361,7 @@ def auto_label_batch_task(
     redis.hincrby(progress_key, "tags_applied", batch_result["tags_applied"])
     redis.hincrby(progress_key, "collections_applied", batch_result["collections_applied"])
     redis.hincrby(progress_key, "errors", batch_result["errors"])
+    redis.hincrby(progress_key, "label_failures", batch_result["label_failures"])
     total = int(redis.hget(progress_key, "total") or 0)
 
     # Compute ETA
@@ -383,6 +393,7 @@ def auto_label_batch_task(
         tags = int(redis.hget(progress_key, "tags_applied") or 0)
         collections = int(redis.hget(progress_key, "collections_applied") or 0)
         errors = int(redis.hget(progress_key, "errors") or 0)
+        label_failures = int(redis.hget(progress_key, "label_failures") or 0)
 
         send_auto_label_notification(
             user_id=user_id,
@@ -395,6 +406,7 @@ def auto_label_batch_task(
                 "tags_applied": tags,
                 "collections_applied": collections,
                 "errors": errors,
+                "label_failures": label_failures,
             },
             file_id="retroactive_apply",
         )

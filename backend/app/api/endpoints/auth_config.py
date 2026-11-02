@@ -511,14 +511,32 @@ def migrate_from_env(
     except Exception as e:
         logger.error("Migration failed: %s", e, exc_info=True)
         db.rollback()
+        _audit_auth_config_event(
+            request,
+            actor_id,
+            actor_email,
+            action="auth_config_migrate_from_env",
+            outcome=AuditOutcome.FAILURE,
+            error_code="AUTH_CONFIG_MIGRATE_FAILED",
+            details={},
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An internal error occurred. Please try again.",
         ) from e
 
 
+_LDAP_TEST_FAILED = "LDAP connection failed. Please verify server address, port, and credentials."
+
+
 def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
     """Test LDAP connection with provided configuration.
+
+    Binds through login's own ``_connect_and_bind``, so the test negotiates
+    encryption exactly as a real login would: with ``ldap_use_tls`` it upgrades to
+    StartTLS and refuses to bind if that fails. A separate bind here once sent the
+    service-account password over plaintext on a StartTLS deployment, and could
+    report success for a configuration login then refused.
 
     Synchronous: ``ldap3`` binds are blocking with a 10 s connect timeout, so the
     caller must run this off the event loop (issue #320).
@@ -529,13 +547,26 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
     Returns:
         Test result with success status, message, and optional details
     """
+    # Imported in their own try: the except clauses below name LDAPException, which
+    # is unbound when the import is what failed.
     try:
-        import ldap3
         from ldap3.core.exceptions import LDAPException
 
+        from app.auth.ldap_auth import LdapConfig
+        from app.auth.ldap_auth import _close_connection
+        from app.auth.ldap_auth import _connect_and_bind
+        from app.auth.ldap_auth import _get_ldap_server
+    except ImportError:
+        return AuthMethodTestResponse(
+            success=False,
+            message="LDAP library (ldap3) is not installed",
+        )
+
+    try:
         server_address = config.get("ldap_server", "")
         port = config.get("ldap_port", 636)
         use_ssl = config.get("ldap_use_ssl", True)
+        use_tls = bool(config.get("ldap_use_tls", False))
 
         if not server_address:
             return AuthMethodTestResponse(
@@ -543,35 +574,29 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
                 message="LDAP server address is required",
             )
 
-        logger.info(f"Testing LDAP connection to {server_address}:{port} (SSL={use_ssl})")
-
-        server = ldap3.Server(
-            server_address,
-            port=port,
-            use_ssl=use_ssl,
-            get_info=ldap3.ALL,
-            connect_timeout=10,
+        logger.info(
+            f"Testing LDAP connection to {server_address}:{port} (SSL={use_ssl}, StartTLS={use_tls})"
         )
 
         bind_dn = config.get("ldap_bind_dn", "")
         bind_password = config.get("ldap_bind_password", "")
+        # Both or neither: a half-filled pair binds anonymously.
+        anonymous = not (bind_dn and bind_password)
 
-        if bind_dn and bind_password:
-            # Try authenticated bind
-            conn = ldap3.Connection(
-                server,
-                user=bind_dn,
-                password=bind_password,
-                auto_bind=True,
-                receive_timeout=10,
-            )
-        else:
-            # Try anonymous bind
-            conn = ldap3.Connection(
-                server,
-                auto_bind=True,
-                receive_timeout=10,
-            )
+        cfg = LdapConfig(
+            server=server_address,
+            port=port,
+            use_ssl=use_ssl,
+            use_tls=use_tls,
+            bind_dn="" if anonymous else bind_dn,
+            bind_password="" if anonymous else bind_password,
+            timeout=10,
+        )
+        server = _get_ldap_server(cfg)
+        conn = _connect_and_bind(cfg, server, cfg.bind_dn, cfg.bind_password)
+        if conn is None:
+            logger.warning("LDAP connection test failed: bind or StartTLS negotiation refused")
+            return AuthMethodTestResponse(success=False, message=_LDAP_TEST_FAILED)
 
         # Get server info
         server_info = {}
@@ -588,7 +613,7 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
                 ),
             }
 
-        conn.unbind()
+        _close_connection(conn, "connection-test")
 
         logger.info(f"LDAP connection test successful to {server_address}")
 
@@ -600,15 +625,7 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
 
     except LDAPException as e:
         logger.warning(f"LDAP connection test failed: {e}")
-        return AuthMethodTestResponse(
-            success=False,
-            message="LDAP connection failed. Please verify server address, port, and credentials.",
-        )
-    except ImportError:
-        return AuthMethodTestResponse(
-            success=False,
-            message="LDAP library (ldap3) is not installed",
-        )
+        return AuthMethodTestResponse(success=False, message=_LDAP_TEST_FAILED)
     except Exception as e:
         logger.exception(f"LDAP connection test error: {e}")
         return AuthMethodTestResponse(
@@ -657,9 +674,16 @@ async def _test_oidc_connection(config: dict[str, Any]) -> AuthMethodTestRespons
     Returns:
         Test result with success status, message, and optional details
     """
+    # Same reason as the LDAP test: ``except httpx.ConnectError`` needs httpx bound.
     try:
         import httpx
+    except ImportError:
+        return AuthMethodTestResponse(
+            success=False,
+            message="HTTP client library (httpx) is not installed",
+        )
 
+    try:
         from app.utils.url_validation import assert_safe_outbound_url
 
         server_url = config.get("oidc_server_url", "")

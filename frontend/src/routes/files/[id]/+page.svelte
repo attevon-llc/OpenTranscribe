@@ -7,7 +7,6 @@
   import { websocketStore, type Notification } from '$stores/websocket';
   import { handleFileNotification } from '$lib/fileDetail/notificationHandler';
   import { isForFile, latestNotificationForFile, notificationSignature } from '$lib/fileDetail/notificationSelect';
-  import { listenForSpeakerEvents } from '$lib/fileDetail/speakerEvents';
   import { createPageTimers } from '$lib/fileDetail/pageTimers';
   import {
     fetchFileAnalytics,
@@ -20,8 +19,8 @@
     type FileDetailPayload,
   } from '$lib/fileDetail/fileDetailData';
   import { createSegmentPager, redactParams } from '$lib/fileDetail/segmentPaging';
-  import { createSpeakerLoader, syncTranscriptStore } from '$lib/fileDetail/speakerLoader';
-  import { createSpeakerSaveFlow } from '$lib/fileDetail/speakerSave';
+  import { createFileSpeakers } from '$lib/fileDetail/fileSpeakers';
+  import { syncTranscriptStore } from '$lib/fileDetail/speakerLoader';
   import {
     hasUnsavedSpeakerNames,
     type SpeakerItem,
@@ -133,13 +132,30 @@
 
   let speakerList: SpeakerItem[] = [];
   let originalSpeakerNames: SpeakerNameBaseline = new Map(); // Last-saved names, for change detection
-  const { loadSpeakers } = createSpeakerLoader({
+  // Speaker list, renames (single, profile decision, bulk save), merges, live events.
+  const speakers = createFileSpeakers({
+    getFileId: () => fileId,
     getFile: () => file,
+    setFile: (f) => (file = f),
+    getShowOriginal: () => showOriginal,
     getSpeakerList: () => speakerList,
-    setSpeakerList: (speakers) => (speakerList = speakers),
+    setSpeakerList: (list) => (speakerList = list),
     getBaseline: () => originalSpeakerNames,
     setBaseline: (baseline) => (originalSpeakerNames = baseline),
+    setSavingSpeakers: (saving) => (savingSpeakers = saving),
+    setProfileConfirmation: (dialog) => (speakerProfileDialog = dialog),
+    closeSpeakerEditor: () => (isEditingSpeakers = false),
+    isDiarizationDisabled: () => diarizationDisabled,
+    refreshCaptionTrack,
+    refreshAnalytics: () => handleAnalyticsRefreshNeeded(),
+    applyReloadedFile: (data) => {
+      file = data;
+      collections = (data.collections as Collection[]) || [];
+      processTranscriptData();
+    },
+    refetchSegmentsAfterMerge: () => segmentPager.refetchAfterMerge(),
   });
+  const loadSpeakers = speakers.loadSpeakers;
   // Reported by CommentSection; the export flow reads it instead of refetching comments.
   let commentCount = 0;
   let reprocessing = false;
@@ -442,50 +458,11 @@
     speakerList = [...speakerList];
   }
 
-  // Handle speakers merged event - refresh all related data silently (no loading spinner)
-  async function handleSpeakersMerged() {
-    if (!file?.uuid) return;
-
-    try {
-      // Silently refresh file data without showing loading state.
-      // Honour the reveal flag, as refreshTranscriptOnly does — without it, merging
-      // speakers while "show original" is on silently re-masks the transcript.
-      const response = await axiosInstance.get(`/files/${file.uuid}`, {
-        params: redactParams(showOriginal)
-      });
-
-      if (response.data && typeof response.data === 'object') {
-        // Update file data (includes analytics and transcript segments)
-        file = response.data;
-        collections = response.data.collections || [];
-
-        // Process transcript data from the refreshed response
-        processTranscriptData();
-      }
-
-      // Reload speakers to get updated list
-      await loadSpeakers();
-    } catch (error) {
-      console.error('Error refreshing data after speaker merge:', error);
-      toastStore.error($t('fileDetail.dataRefreshFailed'));
-    }
-  }
-
-  // Handle new speaker created - just reload speakers without touching file/analytics
-  // The segment assignment will trigger analyticsRefreshNeeded which handles analytics
-  async function handleSpeakerCreated() {
-    await loadSpeakers();
-  }
-
-  // Handle speaker deletion after segment reassignment leaves a speaker with no segments
-  async function handleSpeakerDeleted(event: CustomEvent) {
-    const { speakerUuid } = event.detail;
-    if (!speakerUuid) return;
-
-    // Use the same comprehensive refresh as handleSpeakersMerged
-    // This ensures all speaker-related components (Edit Speakers, Merge Speakers, Analytics)
-    // stay in sync - just calling loadSpeakers() wasn't triggering proper reactivity
-    await handleSpeakersMerged();
+  // A deleted speaker (segment reassignment left it empty) needs the same full refresh as a
+  // merge, or the editor, merge panel and analytics drift apart.
+  async function handleSpeakerDeleted(event: CustomEvent<{ speakerUuid?: string }>) {
+    if (!event.detail.speakerUuid) return;
+    await speakers.refreshAfterMerge();
   }
 
   // Handle analytics refresh after segment speaker change (backend refreshes analytics, frontend fetches)
@@ -495,25 +472,8 @@
     if (result && file) file.analytics = result.analytics;
   }
 
-  // Speaker renames: single, linked-profile decision, and the editor's bulk save.
-  const speakerSave = createSpeakerSaveFlow({
-    getFile: () => file,
-    setFile: (f) => (file = f),
-    getSpeakerList: () => speakerList,
-    setSpeakerList: (speakers) => (speakerList = speakers),
-    getBaseline: () => originalSpeakerNames,
-    setBaseline: (baseline) => (originalSpeakerNames = baseline),
-    loadSpeakers,
-    setSavingSpeakers: (saving) => (savingSpeakers = saving),
-    setProfileConfirmation: (dialog) => (speakerProfileDialog = dialog),
-    closeSpeakerEditor: () => (isEditingSpeakers = false),
-    isDiarizationDisabled: () => diarizationDisabled,
-    refreshCaptionTrack,
-    refreshAnalytics: () => handleAnalyticsRefreshNeeded(),
-  });
-
   function handleSpeakerUpdate(event: CustomEvent<{ speakerId: string; newName: string }>) {
-    speakerSave.requestSpeakerRename(event.detail.speakerId, event.detail.newName);
+    speakers.requestSpeakerRename(event.detail.speakerId, event.detail.newName);
   }
 
   /** Re-fetch the player's caption track (server-built) after a committed change. */
@@ -679,14 +639,7 @@
   }
 
   onMount(() => {
-    stopSpeakerEvents = listenForSpeakerEvents({
-      getFileId: () => fileId,
-      getSpeakerList: () => speakerList,
-      loadSpeakers,
-      applySpeakerRename: speakerSave.applySpeakerRename,
-      refetchSegmentsAfterMerge: segmentPager.refetchAfterMerge,
-      refreshCaptionTrack,
-    });
+    stopSpeakerEvents = speakers.listen();
 
     if (id) {
       fileId = id;
@@ -832,8 +785,8 @@
             {savingSpeakers}
             on:speakerNameChanged={handleSpeakerNameChanged}
             on:speakerUpdate={handleSpeakerUpdate}
-            on:speakersMerged={handleSpeakersMerged}
-            on:saveSpeakerNames={speakerSave.saveAllSpeakerNames}
+            on:speakersMerged={speakers.refreshAfterMerge}
+            on:saveSpeakerNames={speakers.saveAllSpeakerNames}
             on:segmentClick={handleSegmentClick}
             on:loadUpTo={handleLoadUpTo}
           />
@@ -895,7 +848,7 @@
           on:saveSegment={handleSaveSegment}
           on:cancelEditSegment={handleCancelEditSegment}
           on:speakerUpdate={handleSpeakerUpdate}
-          on:speakerCreated={handleSpeakerCreated}
+          on:speakerCreated={loadSpeakers}
           on:speakerDeleted={handleSpeakerDeleted}
           on:analyticsRefreshNeeded={() => {
             // Fired after a committed segment-speaker change: the cues' names moved too.
@@ -980,9 +933,9 @@
   <SpeakerProfileConfirmModal
     title={speakerProfileDialog.title}
     message={speakerProfileDialog.message}
-    on:updateProfile={() => speakerSave.decideProfile('update_profile')}
-    on:createNewProfile={() => speakerSave.decideProfile('create_new_profile')}
-    on:cancel={speakerSave.cancelProfileDecision}
+    on:updateProfile={() => speakers.decideProfile('update_profile')}
+    on:createNewProfile={() => speakers.decideProfile('create_new_profile')}
+    on:cancel={speakers.cancelProfileDecision}
   />
 {/if}
 

@@ -37,7 +37,6 @@ opentr.sh	4893	oversize: split by concern planned
 opentranscribe.sh	2588	oversize: split by concern planned
 scripts/CLAUDE.md	1215	oversize: split by concern planned
 scripts/audit-session-lifetime.py	1068	oversize: split by concern planned
-scripts/audit-tests.py	2731	oversize: split by concern planned
 scripts/benchmark-pyannote-direct.py	1277	oversize: split by concern planned
 scripts/benchmark_e2e.py	1051	oversize: split by concern planned
 scripts/benchmark_parallel.py	1641	oversize: split by concern planned

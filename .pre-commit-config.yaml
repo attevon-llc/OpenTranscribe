@@ -425,13 +425,13 @@ repos:
         entry: python3 scripts/audit-tests.py --selftest
         language: system
         pass_filenames: false
-        files: ^(backend/tests/.*\.py|scripts/audit-tests\.py)$
+        files: ^(backend/tests/.*\.py|scripts/audit-tests\.py|scripts/audit_tests/.*\.py)$
       - id: audit-tests
         name: audit backend test quality (tests that cannot fail)
         entry: python3 scripts/audit-tests.py backend/tests
         language: system
         pass_filenames: false
-        files: ^(backend/tests/.*\.py|backend/tests/audit-allowlist\.txt|scripts/audit-tests\.py)$
+        files: ^(backend/tests/.*\.py|backend/tests/audit-allowlist\.txt|scripts/audit-tests\.py|scripts/audit_tests/.*\.py)$
 
   # DB session-lifetime gate (issue #440) — a session held across slow non-DB work keeps a
   # transaction open, and a plain SELECT holds ACCESS SHARE for its life. That QUEUES

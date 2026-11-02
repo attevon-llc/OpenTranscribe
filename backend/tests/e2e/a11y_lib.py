@@ -22,11 +22,9 @@ name) genuinely doesn't vary by ``data-theme``, so it earns one entry per theme 
 count; a colour-contrast rule is theme-specific by construction and must never be duplicated
 across themes with an unmeasured guess for the second one.
 
-``scripts/audit-tests.py``'s ``load_allowlist``/``apply_allowlist`` (~:1860-1925) is the design
-this reuses, and its reason-validation primitives (``_NOT_A_REAL_REASON``/``_is_real_reason``/
-``_BACKLOG_PREFIX``) are imported from there directly (via :func:`importlib`, the same
-technique ``backend/tests/unit/test_audit_tests_selftest.py`` already uses to load that
-hyphenated-named script) rather than copied — one vocabulary of "what counts as a real,
+``scripts/audit_tests/allowlist.py``'s ``load_allowlist``/``apply_allowlist`` is the design
+this reuses, and its reason-validation primitives (``NOT_A_REAL_REASON``/``is_real_reason``/
+``BACKLOG_PREFIX``) are imported from there directly (via :func:`importlib`) rather than copied — one vocabulary of "what counts as a real,
 written reason", never two that can drift apart. What is genuinely NOT reused is the finding
 container itself: ``audit-tests.py``'s allowlist counts occurrences by REPEATING a key (one
 line per occurrence), because its findings have no natural numeric count. An axe violation
@@ -38,7 +36,7 @@ third design "reuse the parser shape" was written to prevent.
 
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import sys
 from dataclasses import dataclass
 from dataclasses import field
@@ -89,34 +87,28 @@ KNOWN_SURFACES = frozenset(
 KNOWN_THEMES = frozenset({"light", "dark"})
 
 
-def _load_audit_tests_module() -> ModuleType:
-    """Import ``scripts/audit-tests.py`` for its reason-validation primitives.
+def _load_audit_tests_allowlist() -> ModuleType:
+    """Import ``scripts/audit_tests/allowlist.py`` for its reason-validation primitives.
 
-    Its name is hyphenated, which blocks a normal ``import`` — the same problem
-    ``test_audit_tests_selftest.py`` solves with ``importlib.util.spec_from_file_location``.
     Reused here rather than reinvented so both allowlists reject the exact same placeholder
     reasons under the exact same rule, forever, with one change site.
     """
-    path = Path(__file__).resolve().parents[3] / "scripts" / "audit-tests.py"
-    spec = importlib.util.spec_from_file_location("_a11y_audit_tests_reuse", path)
-    assert spec is not None and spec.loader is not None, f"cannot load {path}"
-    module = importlib.util.module_from_spec(spec)
-    # Register BEFORE exec_module: audit-tests.py's `@dataclass` classes resolve their
-    # `from __future__ import annotations` string types through `sys.modules[cls.__module__]`,
-    # which is None for an unregistered module — an AttributeError deep inside dataclasses.
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    scripts_dir = str(Path(__file__).resolve().parents[3] / "scripts")
+    sys.path.insert(0, scripts_dir)
+    try:
+        return importlib.import_module("audit_tests.allowlist")
+    finally:
+        sys.path.remove(scripts_dir)
 
 
-_audit_tests = _load_audit_tests_module()
+_audit_tests = _load_audit_tests_allowlist()
 
 #: Reason prefix marking an entry as DEFERRED WORK rather than an accepted pattern. Counted and
 #: reported separately on every run.
-BACKLOG_PREFIX: str = _audit_tests._BACKLOG_PREFIX
+BACKLOG_PREFIX: str = _audit_tests.BACKLOG_PREFIX
 
 #: Reasons that read as "no justification" rather than a real, written one.
-_is_real_reason = _audit_tests._is_real_reason
+_is_real_reason = _audit_tests.is_real_reason
 
 
 class AllowlistFormatError(ValueError):

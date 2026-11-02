@@ -9,7 +9,7 @@ reads as remote, so masking applies), and an admin's
 chunk plane and the digest plane get deliberately different dicts: see
 :func:`_build_digest_mask_kwargs`.
 
-Resolved once per turn by ``service._mask_evidence`` and handed to every masker call,
+Resolved once per turn by ``context_prep._mask_evidence`` and handed to every masker call,
 so the call sites cannot disagree about which provider the turn is using.
 """
 

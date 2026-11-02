@@ -7,7 +7,7 @@ that introduced them, and both are invisible at the point of failure:
    runs, and quietly performs no cancellation check at all. The default exists for the
    many tests that drive this function directly (masking, routing, the speaker map) and
    have no turn id to thread through — see the parameter's own docstring in
-   ``service.py``. It must never become how the *production* caller behaves, because
+   ``context_prep.py``. It must never become how the *production* caller behaves, because
    ``POST /cancel`` stopping the extra LLM calls mid-fan-out depends on the real id
    reaching ``_check_cancelled`` at every phase boundary and leg submission.
 
@@ -44,7 +44,7 @@ from app.services.llm_stream import LLMStreamEvent
 from app.services.search.chunk_retrieval import ChunkHit
 
 _BACKEND = Path(__file__).resolve().parents[2]
-_SERVICE = _BACKEND / "app" / "services" / "chat" / "service.py"
+_CONTEXT_PREP = _BACKEND / "app" / "services" / "chat" / "context_prep.py"
 _TESTS = _BACKEND / "tests"
 
 #: The turn id the production caller must thread through. Deliberately not the empty
@@ -221,7 +221,7 @@ def _real_return_arity() -> int:
     this guard skip rather than fail — the silent-zero shape ``scripts/audit-tests.py``
     exists to catch.
     """
-    tree = ast.parse(_SERVICE.read_text(encoding="utf-8"))
+    tree = ast.parse(_CONTEXT_PREP.read_text(encoding="utf-8"))
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name == "_prepare_context":
             annotation = node.returns
@@ -231,7 +231,7 @@ def _real_return_arity() -> int:
             elements = annotation.slice
             assert isinstance(elements, ast.Tuple), "return annotation is not a tuple[...]"
             return len(elements.elts)
-    raise AssertionError("_prepare_context not found in service.py")
+    raise AssertionError("_prepare_context not found in context_prep.py")
 
 
 def _doubles() -> list[tuple[str, int, int]]:

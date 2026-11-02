@@ -4,8 +4,8 @@ The quarantine drop for the ranked tiers, the read-time expansion count, the mer
 (digests lead) and the fail-closed filter that drops whatever masking emptied, plus
 the grounding diagnostics (languages, retrieval counters) written to ``meta``.
 
-``_drop_quarantined_hits`` is called through ``service.py``'s module globals (from
-``service._drop_quarantined``), which is where tests patch it.
+``_drop_quarantined_hits`` is called through ``context_prep.py``'s module globals (from
+``context_prep._drop_quarantined``), which is where tests patch it.
 """
 
 from __future__ import annotations

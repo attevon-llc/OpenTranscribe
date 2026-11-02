@@ -21,7 +21,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.services.chat import service as chat_service
+from app.services.chat import context_prep
 from app.services.chat.redactor import MaskedChunk
 from app.services.chat.retrieval import RetrievalResult
 from app.services.chat.settings import ChatSettings
@@ -101,11 +101,11 @@ def _drive_real_chunk_masking(monkeypatch, *, llm) -> list[str]:
         "app.services.chat.language.supported_rag_languages", lambda _db: frozenset({"en"})
     )
     monkeypatch.setattr(
-        chat_service,
+        context_prep,
         "retrieve_context",
         lambda **_kwargs: RetrievalResult(chunks=[_chunk()], digests=[_digest_hit()], retrieved=1),
     )
-    monkeypatch.setattr(chat_service, "_drop_quarantined_hits", lambda _db, hits: hits)
+    monkeypatch.setattr(context_prep, "_drop_quarantined_hits", lambda _db, hits: hits)
     monkeypatch.setattr(
         "app.services.redaction.config.resolve_effective_config",
         lambda *_a, **_k: SimpleNamespace(
@@ -121,7 +121,7 @@ def _drive_real_chunk_masking(monkeypatch, *, llm) -> list[str]:
     )
     monkeypatch.setattr("app.services.chat.redactor.mask_digests", _digest_masker)
 
-    masked, *_rest = chat_service._prepare_context(
+    masked, *_rest = context_prep._prepare_context(
         user_id=1,
         organization_id=None,
         question="What number did they give?",

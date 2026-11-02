@@ -6,8 +6,8 @@ that turn a mentioned (or planner-supplied) name into a validated speaker. A pla
 untrusted model output, so its names are re-validated against the roster here and
 never used raw.
 
-``_resolve_speaker_focus`` is called through ``service.py``'s module globals (from
-``service._apply_speaker_resolution``), which is where tests patch it.
+``_resolve_speaker_focus`` is called through ``context_prep.py``'s module globals (from
+``context_prep._apply_speaker_resolution``), which is where tests patch it.
 """
 
 from __future__ import annotations

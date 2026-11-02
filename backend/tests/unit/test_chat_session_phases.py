@@ -32,6 +32,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.services.chat import context_prep
 from app.services.chat import service as chat_service
 from app.services.chat.query_rewriter import RewriteResult
 from app.services.chat.redactor import MaskedChunk
@@ -153,7 +154,7 @@ async def _run_turn(monkeypatch, *, file_uuids=None, history=None) -> tuple[_Led
         seen["retrieval_file_uuids"] = kwargs["file_uuids"]
         return RetrievalResult(chunks=list(hits), retrieved=len(hits))
 
-    monkeypatch.setattr(chat_service, "retrieve_context", _retrieve)
+    monkeypatch.setattr(context_prep, "retrieve_context", _retrieve)
 
     # Quarantine dropping (phase 3.5) is a real Postgres query
     # (`app.models.media.MediaFile`), and this harness's session is a bare
@@ -162,7 +163,7 @@ async def _run_turn(monkeypatch, *, file_uuids=None, history=None) -> tuple[_Led
     # already a mocked identity pass-through for exactly that reason; this
     # one is no different. `_drop_quarantined_hits` itself is covered against
     # a real database in test_chat_permissions_quarantine.py.
-    monkeypatch.setattr(chat_service, "_drop_quarantined_hits", lambda _db, hits: hits)
+    monkeypatch.setattr(context_prep, "_drop_quarantined_hits", lambda _db, hits: hits)
 
     def _mask(session_factory, chunks, _user_id, **_kwargs):
         # The masker is handed the FACTORY, not a session (#83): it gathers its
@@ -177,7 +178,7 @@ async def _run_turn(monkeypatch, *, file_uuids=None, history=None) -> tuple[_Led
             ledger.sessions_seen.setdefault("masking", []).append(db)
         return [MaskedChunk(source=chunk, content=chunk.content) for chunk in chunks]
 
-    monkeypatch.setattr(chat_service, "mask_chunks", _mask)
+    monkeypatch.setattr(context_prep, "mask_chunks", _mask)
 
     # A disabled policy makes OutputRedactor a byte-identical pass-through. The
     # `None` this would otherwise resolve to means "mask everything", which runs
@@ -364,14 +365,14 @@ async def _run_fanout_turn(monkeypatch) -> tuple[_Ledger, dict]:
         return [_hit(call_count["n"])]
 
     monkeypatch.setattr("app.services.search.chunk_retrieval.retrieve_chunks", _retrieve_chunks)
-    monkeypatch.setattr(chat_service, "_drop_quarantined_hits", lambda _db, hits: hits)
+    monkeypatch.setattr(context_prep, "_drop_quarantined_hits", lambda _db, hits: hits)
 
     def _mask(session_factory, chunks, _user_id, **_kwargs):
         with session_factory() as db:
             ledger.sessions_seen.setdefault("masking", []).append(db)
         return [MaskedChunk(source=chunk, content=chunk.content) for chunk in chunks]
 
-    monkeypatch.setattr(chat_service, "mask_chunks", _mask)
+    monkeypatch.setattr(context_prep, "mask_chunks", _mask)
     monkeypatch.setattr(
         chat_service,
         "_resolve_output_policy",

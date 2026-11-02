@@ -296,12 +296,12 @@ def _resolution(*, matched, ambiguous=(), speaker_focus=None):
 
 
 def _resolve_names(monkeypatch, resolution, *, enabled=True):
-    from app.services.chat import service as chat_service
+    from app.services.chat import context_prep
 
     recorder = ListTraceRecorder()
-    monkeypatch.setattr(chat_service, "_resolve_speaker_focus", lambda **_k: resolution)
+    monkeypatch.setattr(context_prep, "_resolve_speaker_focus", lambda **_k: resolution)
     settings = _settings(speaker_resolver_enabled=enabled)
-    names = chat_service._apply_speaker_resolution(
+    names = context_prep._apply_speaker_resolution(
         settings=settings,
         question="what did Alice Chen say about layoffs",
         user_id=1,
@@ -400,10 +400,10 @@ class _Counted:
 
 def _run_counted(monkeypatch, counted):
     """Drive the SERIAL counted tier and return what it recorded."""
-    from app.services.chat import service as chat_service
+    from app.services.chat import context_prep
 
     recorder = ListTraceRecorder()
-    monkeypatch.setattr(chat_service, "retrieve_context", lambda **_k: RetrievalResult())
+    monkeypatch.setattr(context_prep, "retrieve_context", lambda **_k: RetrievalResult())
     monkeypatch.setattr(
         "app.services.chat.aggregation_service.answer_aggregation", lambda *a, **k: counted
     )
@@ -411,7 +411,7 @@ def _run_counted(monkeypatch, counted):
     decision = SimpleNamespace(
         wants_aggregate=True, wants_digest=False, wants_recurrence=False, intent="aggregate"
     )
-    chat_service._run_serial_pipeline(
+    context_prep._run_serial_pipeline(
         question="how many meetings discussed the migration",
         effective_query="how many meetings discussed the migration",
         decision=decision,

@@ -1,6 +1,6 @@
 """The #403 planned fan-out: parallel retrieval legs, enrichment and recurrence.
 
-Taken only when the planner produced a usable plan (``service._retrieve_or_fanout``).
+Taken only when the planner produced a usable plan (``context_prep._retrieve_or_fanout``).
 Every leg shares the turn's ALREADY-resolved scope (T9), and the enrichment call reads
 only evidence that has already been through ``mask_chunks``/``mask_digests``.
 """

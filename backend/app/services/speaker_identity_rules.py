@@ -20,14 +20,15 @@ A correction outlives a re-run of its file through ``speaker_correction_carryove
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
-if TYPE_CHECKING:
-    from app.models.speaker import Speaker
-    from app.models.speaker import SpeakerCluster
-
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCannotLink
+from app.models.speaker import SpeakerCluster
+from app.models.speaker import SpeakerClusterMember
+from app.models.speaker import SpeakerProfile
+from app.models.speaker import SpeakerProfileBlacklist
 
 #: ``reason`` written on the constraint rows a user's unassignment records.
 REASON_UNASSIGNED = "unassigned_by_user"
@@ -39,7 +40,6 @@ REASON_REJECTED = "rejected_by_user"
 
 def blacklisted_profile_ids(db: Session, speaker_ids: Iterable[int]) -> dict[int, set[int]]:
     """For each speaker, the profiles it was unassigned from (``speaker_profile_blacklist``)."""
-    from app.models.speaker import SpeakerProfileBlacklist
 
     ids = sorted({int(i) for i in speaker_ids})
     out: dict[int, set[int]] = {i: set() for i in ids}
@@ -62,8 +62,6 @@ def cannot_link_partners(db: Session, speaker_ids: Iterable[int]) -> dict[int, s
     one-directional row (older data, a hand edit) must still keep the pair apart.
     """
     from sqlalchemy import or_
-
-    from app.models.speaker import SpeakerCannotLink
 
     ids = sorted({int(i) for i in speaker_ids})
     out: dict[int, set[int]] = {i: set() for i in ids}
@@ -94,9 +92,6 @@ def blocked_profile_names(db: Session, speaker_ids: Iterable[int]) -> dict[int, 
     a voice-match suggestion copied from another speaker's label): the profiles it was
     unassigned from, and the profiles its cannot-link partners are linked to.
     """
-    from app.models.speaker import Speaker
-    from app.models.speaker import SpeakerProfile
-
     ids = sorted({int(i) for i in speaker_ids})
     out: dict[int, set[str]] = {i: set() for i in ids}
     if not ids:
@@ -139,7 +134,6 @@ def speaker_blocked_from_profile(db: Session, speaker_id: int, profile_id: int |
     """
     if profile_id is None:
         return False
-    from app.models.speaker import Speaker
 
     sid = int(speaker_id)
     if int(profile_id) in blacklisted_profile_ids(db, [sid])[sid]:
@@ -164,9 +158,6 @@ def speaker_blocked_from_cluster(db: Session, speaker_id: int, cluster: SpeakerC
     flushed new members may hold stale.
     """
     from sqlalchemy import or_
-
-    from app.models.speaker import Speaker
-    from app.models.speaker import SpeakerClusterMember
 
     if cluster.promoted_to_profile_id is not None and speaker_blocked_from_profile(
         db, speaker_id, int(cluster.promoted_to_profile_id)
@@ -198,7 +189,6 @@ def has_other_identity(db: Session, speaker: Speaker, profile_id: int) -> bool:
     that is not this profile's. A voice similarity never outranks an identity the speaker
     already has, so no automatic path takes such a speaker over (issue #1233).
     """
-    from app.models.speaker import SpeakerProfile
     from app.utils.speaker_labels import is_assigned_speaker_name
 
     if speaker.profile_id is not None:
@@ -221,9 +211,6 @@ def blocking_profile_ids_named(db: Session, speaker_id: int, name: str) -> set[i
     The id-level twin of :func:`blocked_profile_names`, for an explicit override that
     must lift exactly what blocked the name it is applying.
     """
-    from app.models.speaker import Speaker
-    from app.models.speaker import SpeakerProfile
-
     sid = int(speaker_id)
     candidates = set(blacklisted_profile_ids(db, [sid])[sid])
     partners = cannot_link_partners(db, [sid])[sid]
@@ -261,9 +248,6 @@ def record_unassignment(
     and a profile blacklist row when ``profile_id`` is set. Adds to the session; the
     caller commits with its own change.
     """
-    from app.models.speaker import SpeakerCannotLink
-    from app.models.speaker import SpeakerProfileBlacklist
-
     removed = sorted({int(i) for i in speaker_ids})
     others = sorted({int(i) for i in against_speaker_ids} - set(removed))
     if not removed:
@@ -305,10 +289,6 @@ def lift_profile_blacklist(db: Session, speaker_id: int, profile_id: int) -> Non
     from sqlalchemy import and_
     from sqlalchemy import or_
 
-    from app.models.speaker import Speaker
-    from app.models.speaker import SpeakerCannotLink
-    from app.models.speaker import SpeakerProfileBlacklist
-
     sid, pid = int(speaker_id), int(profile_id)
     db.query(SpeakerProfileBlacklist).filter(
         SpeakerProfileBlacklist.speaker_id == sid, SpeakerProfileBlacklist.profile_id == pid
@@ -340,8 +320,6 @@ def carry_blacklist(db: Session, source_id: int, target_id: int) -> None:
     target nothing forbids from becoming Bob. A profile the target is already linked to
     is not copied: the user merged into it, which is the explicit statement.
     """
-    from app.models.speaker import Speaker
-
     src, tgt = int(source_id), int(target_id)
     target_profile = db.query(Speaker.profile_id).filter(Speaker.id == tgt).scalar()
     for profile_id in sorted(blacklisted_profile_ids(db, [src])[src]):

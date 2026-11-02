@@ -114,7 +114,7 @@ source backend/venv/bin/activate
 pytest backend/tests/test_auth_config_integration.py -v
 
 # PKI auth tests (certificate parsing, endpoint integration)
-pytest backend/tests/test_pki_auth.py -v
+pytest backend/tests/pki_auth -v
 
 # MFA security tests
 RUN_MFA_TESTS=true pytest backend/tests/test_mfa_security.py -v

@@ -141,7 +141,7 @@ fi
 # them re-ran, byte for byte, tests phase 1 had just run. Measured on the 2026-09-07 gate's own
 # junit artifacts: all 394 ids in `gated-fips-off.xml` also appear in `unit.xml` — 0 missing —
 # so deleting that phase removed 394 duplicate EXECUTIONS and zero tests.
-FIPS_MODE_SUITES=(tests/test_pki_auth.py tests/test_mfa_security.py
+FIPS_MODE_SUITES=(tests/pki_auth tests/test_mfa_security.py
                   tests/test_llm_settings.py tests/test_fedramp_compliance.py
                   tests/test_fedramp_controls.py tests/test_fips_140_3.py
                   tests/test_auth_config_service.py tests/test_admin_security.py)

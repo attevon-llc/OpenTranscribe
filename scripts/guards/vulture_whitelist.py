@@ -40,7 +40,7 @@ WHITELIST = (
     # which vulture does not read as a use; ruff would flag removing the import.
     _.CursorResult,
     # Re-export kept for the PKI suite, which imports this name from app.auth.pki_auth
-    # (test_pki_auth.py and test_proxy_header_auth.py assert it is header_trust.ip_in_networks).
+    # (tests/pki_auth/ and test_proxy_header_auth.py assert it is header_trust.ip_in_networks).
     _._is_pki_trusted_proxy,
     # http.server.BaseHTTPRequestHandler dispatches do_GET, do_POST and log_message by name
     # (the mock LLM and mock ASR servers); nothing calls them directly.

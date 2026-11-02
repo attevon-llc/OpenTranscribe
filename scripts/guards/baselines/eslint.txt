@@ -194,7 +194,6 @@ frontend/src/components/settings/LLMConfigModal.contextWindow.test.ts::no-restri
 frontend/src/components/settings/LLMConfigModal.discovery.test.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/settings/LLMConfigModal.discoveryDisclosure.test.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/settings/LLMConfigModal.labels.test.ts::no-restricted-imports	1	lint: burn-down planned
-frontend/src/components/settings/LLMConfigModal.svelte::@typescript-eslint/no-explicit-any	7	lint: burn-down planned
 frontend/src/components/settings/LLMConfigModal.svelte::@typescript-eslint/no-unused-expressions	1	lint: burn-down planned
 frontend/src/components/settings/LLMConfigModal.svelte::no-restricted-imports	5	lint: burn-down planned
 frontend/src/components/settings/LLMConfigModal.svelte::no-useless-assignment	5	lint: burn-down planned

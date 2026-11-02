@@ -23,7 +23,6 @@ frontend/src/components/SettingsModal.svelte::script	998	oversize: split by conc
 frontend/src/components/UserManagementTable.svelte	2060	oversize: split by concern planned
 frontend/src/components/UserManagementTable.svelte::script	797	oversize: split by concern planned
 frontend/src/components/settings/CLAUDE.md	408	oversize: split by concern planned
-frontend/src/components/settings/LLMConfigModal.svelte::script	648	oversize: split by concern planned
 frontend/src/lib/services/uploadService.ts	1393	oversize: split by concern planned
 frontend/src/routes/+page.svelte::script	1459	oversize: split by concern planned
 frontend/src/routes/files/[id]/+page.svelte	2876	oversize: split by concern planned

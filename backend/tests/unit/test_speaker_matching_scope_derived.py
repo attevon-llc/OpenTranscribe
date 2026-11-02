@@ -109,9 +109,8 @@ def test_an_unknown_speaker_is_refused(db_session, normal_user, knn):
     [
         lambda svc, user: svc.match_speaker_to_known_speakers(VOICE, user.id),
         lambda svc, user: svc.match_speaker_to_profiles(VOICE, user.id),
-        lambda svc, user: svc.match_speaker_to_profile(VOICE, user.id),
     ],
-    ids=["known_speakers", "profiles", "profile"],
+    ids=["known_speakers", "profiles"],
 )
 def test_an_embedding_only_call_that_names_no_scope_is_refused(db_session, normal_user, knn, call):
     assert call(SpeakerMatchingService(db_session, None), normal_user) is None
@@ -121,7 +120,7 @@ def test_an_embedding_only_call_that_names_no_scope_is_refused(db_session, norma
 
 def test_an_embedding_only_call_that_states_personal_scope_still_runs(db_session, normal_user, knn):
     """The control: an explicit ``None`` is personal scope, which is a statement, not a gap."""
-    SpeakerMatchingService(db_session, None).match_speaker_to_profile(
+    SpeakerMatchingService(db_session, None).match_speaker_to_known_speakers(
         VOICE, normal_user.id, organization_id=None
     )
 

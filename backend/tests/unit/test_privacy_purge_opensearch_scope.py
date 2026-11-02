@@ -568,13 +568,9 @@ def test_every_personal_speaker_search_carries_the_organization_file_exclusion(
         np.array(embedding), normal_user.id, 5, None
     )
 
-    SpeakerMatchingService(db_session, None).find_unlabeled_speaker_matches(
-        np.array(embedding), normal_user.id, 987_654
-    )
-
     bodies = [c.kwargs["body"] for c in recording_cluster.search.call_args_list]
     bodies += [c.kwargs["body"] for c in recording_cluster.msearch.call_args_list]
     bodies.append(built)
-    assert len(bodies) == 6
+    assert len(bodies) == 5
     for body in bodies:
         assert '"media_file_id": [901, 902]' in _filters_of(body), body

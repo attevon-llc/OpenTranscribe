@@ -19,7 +19,7 @@ in the sibling speaker/voiceprint plane, none in this package):
   `batch_find_matching_speakers` · `msearch_speaker_similarities`
 - `../opensearch_service/profiles.py` — `msearch_profile_knn_batch` · `find_matching_profiles`
 - `../opensearch_service/clusters.py` — `find_matching_clusters`
-- `../speaker_matching/` — `match_queries.find_unlabeled_speaker_matches` · `match_storage.process_match_hit`
+- `../speaker_matching/` — `match_queries.match_speaker_to_known_speakers` · `match_storage.process_match_hit`
 - `../profile_embedding_service.py` · `../similarity_service.py`
 
 This package itself never reads a raw kNN score: transcript search ranks by **RRF**, whose

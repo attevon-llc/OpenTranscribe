@@ -214,10 +214,9 @@ backend/app/services/speaker_cleanup.py	1	ratchet: may only go down
 backend/app/services/speaker_embedding_service.py	5	ratchet: may only go down
 backend/app/api/endpoints/speaker_match_notify.py	1	ratchet: may only go down
 backend/app/services/speaker_matching/match_handling.py	1	ratchet: may only go down
-backend/app/services/speaker_matching/match_queries.py	2	ratchet: may only go down
-backend/app/services/speaker_matching/match_storage.py	3	ratchet: may only go down
+backend/app/services/speaker_matching/match_queries.py	1	ratchet: may only go down
+backend/app/services/speaker_matching/match_storage.py	2	ratchet: may only go down
 backend/app/services/speaker_matching/processing.py	1	ratchet: may only go down
-backend/app/services/speaker_matching/profiles.py	2	ratchet: may only go down
 backend/app/services/speaker_matching/propagation.py	1	ratchet: may only go down
 backend/app/services/speaker_rename_tracker.py	1	ratchet: may only go down
 backend/app/services/speaker_status_service.py	2	ratchet: may only go down

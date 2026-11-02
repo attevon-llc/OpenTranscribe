@@ -242,38 +242,6 @@ class TestSpeakerMatchingOrgGate:
         assert calls["find"] and all(org is None for org in calls["find"])
         assert calls["add"] == [None]
 
-    def test_unlabeled_matches_query_carries_file_org_gate(self, world, monkeypatch):
-        """The raw cross-video kNN body is gated by the reference speaker's
-        file org (term for org files, must_not-exists for personal ones)."""
-        from app.services.speaker_matching_service import SpeakerMatchingService
-
-        captured_bodies: list[dict] = []
-
-        class FakeClient:
-            def search(self, index=None, body=None):
-                captured_bodies.append(body)
-                return {"hits": {"hits": []}}
-
-        monkeypatch.setattr("app.services.opensearch_service.opensearch_client", FakeClient())
-
-        svc = SpeakerMatchingService(world.db, embedding_service=None)
-        svc.find_unlabeled_speaker_matches(
-            _unit_embedding(), int(world.user.id), int(world.org_speaker.id)
-        )
-        org_filters = captured_bodies[-1]["query"]["knn"]["embedding"]["filter"]["bool"]["filter"]
-        assert {"term": {"organization_id": world.org.id}} in org_filters
-
-        svc.find_unlabeled_speaker_matches(
-            _unit_embedding(), int(world.user.id), int(world.personal_speaker.id)
-        )
-        personal_filters = captured_bodies[-1]["query"]["knn"]["embedding"]["filter"]["bool"][
-            "filter"
-        ]
-        assert {"bool": {"must_not": {"exists": {"field": "organization_id"}}}} in personal_filters
-        assert not any(
-            "organization_id" in f.get("term", {}) for f in personal_filters if "term" in f
-        )
-
     def test_profile_propagation_scoped_to_profile_org(self, world, monkeypatch):
         """Propagating an org profile only searches that org's speaker docs;
         a personal profile only searches personal docs."""

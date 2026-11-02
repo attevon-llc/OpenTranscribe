@@ -1,4 +1,4 @@
-"""Speaker-to-speaker match records: the kNN query, the stored pairs, and reading them back."""
+"""Speaker-to-speaker match records: the kNN query and the stored pairs."""
 
 import logging
 from typing import TYPE_CHECKING
@@ -13,7 +13,6 @@ from app.core.tenancy import OrgScope
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerMatch
 from app.services.opensearch_service import find_matching_speaker
-from app.services.speaker_matching.thresholds import ConfidenceLevel
 from app.utils.cosine_space import raw_cosine_from_opensearch_score
 
 if TYPE_CHECKING:
@@ -275,80 +274,5 @@ def find_and_store_speaker_matches(
 
     except Exception as e:
         logger.error(f"Error finding and storing speaker matches: {e}")
-
-    return matches
-
-
-def get_speaker_matches(self: "SpeakerMatchingService", speaker_id: int) -> list[dict[str, Any]]:
-    """
-    Get all matches for a given speaker.
-
-    Args:
-        speaker_id: Speaker ID
-
-    Returns:
-        List of matched speakers with details
-    """
-    matches: list[dict[str, Any]] = []
-
-    try:
-        # Privacy policy (#1280): stored match pairs are voiceprint-derived, so they are
-        # hidden (not deleted) while the speaker's file scope has voiceprints off.
-        from app.services.privacy.redact_view import PrivacyView
-
-        owner = self.db.query(Speaker.media_file_id).filter(Speaker.id == speaker_id).scalar()
-        if owner is None or not PrivacyView(self.db).voiceprints(int(owner)).enabled:
-            return matches
-
-        # Query matches where speaker is either speaker1 or speaker2
-        speaker_matches = (
-            self.db.query(SpeakerMatch)
-            .filter(
-                (SpeakerMatch.speaker1_id == speaker_id) | (SpeakerMatch.speaker2_id == speaker_id)
-            )
-            .all()
-        )
-
-        # Collect matched IDs and batch-fetch (avoids N+1 per-match queries)
-        match_map: dict[int, float] = {}
-        for match in speaker_matches:
-            matched_speaker_id = (
-                match.speaker2_id if match.speaker1_id == speaker_id else match.speaker1_id
-            )
-            conf = float(match.confidence)
-            if conf >= ConfidenceLevel.HIGH:
-                match_map[int(matched_speaker_id)] = conf
-
-        if match_map:
-            from sqlalchemy.orm import joinedload
-
-            matched_speakers = (
-                self.db.query(Speaker)
-                .options(joinedload(Speaker.media_file))
-                .filter(Speaker.id.in_(match_map.keys()))
-                .all()
-            )
-            for matched_speaker in matched_speakers:
-                if matched_speaker.media_file:
-                    conf = match_map[int(matched_speaker.id)]
-                    matches.append(
-                        {
-                            "speaker_id": matched_speaker.id,
-                            "speaker_name": matched_speaker.name,
-                            "display_name": matched_speaker.display_name,
-                            "media_file_id": matched_speaker.media_file_id,
-                            "media_file_title": matched_speaker.media_file.title
-                            or matched_speaker.media_file.filename,
-                            "confidence": conf,
-                            "confidence_level": self.get_confidence_level(conf),
-                            "verified": matched_speaker.verified,
-                        }
-                    )
-
-        # Sort by confidence (highest first)
-        matches.sort(key=lambda x: x["confidence"], reverse=True)
-
-    except Exception as e:
-        logger.error(f"Error getting speaker matches: {e}")
 
     return matches

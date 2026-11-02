@@ -16,7 +16,6 @@ from typing import Any
 import numpy as np
 import pytest
 
-from app.models.speaker import SpeakerMatch
 from app.models.speaker import SpeakerProfile
 from app.services.profile_embedding_service import ProfileEmbeddingRecomputeError
 from app.services.profile_embedding_service import ProfileEmbeddingService
@@ -89,19 +88,6 @@ def test_matching_to_profiles_runs_the_profile_knn_only_when_allowed(
 
 
 @pytest.mark.parametrize("allowed", [True, False])
-def test_matching_to_a_single_profile_reads_the_index_only_when_allowed(
-    db_session, normal_user, knn, allowed
-):
-    org = make_org(db_session, voiceprints=allowed)
-
-    SpeakerMatchingService(db_session, None).match_speaker_to_profile(
-        VOICE, normal_user.id, organization_id=org.id
-    )
-
-    assert knn["speaker"] == (1 if allowed else 0)
-
-
-@pytest.mark.parametrize("allowed", [True, False])
 def test_storing_speaker_matches_reads_the_index_only_when_allowed(
     db_session, normal_user, knn, allowed
 ):
@@ -114,29 +100,6 @@ def test_storing_speaker_matches_reads_the_index_only_when_allowed(
 
     assert found == []
     assert knn["speaker"] == (1 if allowed else 0)
-
-
-@pytest.mark.parametrize("allowed", [True, False])
-def test_unlabeled_matches_run_the_knn_only_when_allowed(
-    db_session, normal_user, monkeypatch, allowed
-):
-    """The index is reached through ``opensearch_client``, which a recorder stands in for."""
-    searches: list[dict[str, Any]] = []
-
-    class Client:
-        def search(self, index, body):
-            searches.append(body)
-            return {"hits": {"hits": []}}
-
-    monkeypatch.setattr("app.services.opensearch_service.opensearch_client", Client())
-    org = make_org(db_session, voiceprints=allowed)
-    speaker = make_speaker(db_session, normal_user, file_in(db_session, normal_user, org))
-
-    SpeakerMatchingService(db_session, None).find_unlabeled_speaker_matches(
-        VOICE, normal_user.id, speaker.id
-    )
-
-    assert len(searches) == (1 if allowed else 0)
 
 
 @pytest.mark.parametrize("allowed", [True, False])
@@ -186,21 +149,6 @@ def test_a_single_speakers_voiceprint_is_never_stored_when_off(
 
 
 @pytest.mark.parametrize("allowed", [True, False])
-def test_stored_speaker_matches_are_listed_only_when_allowed(db_session, normal_user, allowed):
-    org = make_org(db_session, voiceprints=allowed)
-    a = make_speaker(db_session, normal_user, file_in(db_session, normal_user, org), name="A")
-    b = make_speaker(db_session, normal_user, file_in(db_session, normal_user, org), name="B")
-    db_session.add(SpeakerMatch(speaker1_id=a.id, speaker2_id=b.id, confidence=0.97))
-    db_session.commit()
-
-    matches = SpeakerMatchingService(db_session, None).get_speaker_matches(a.id)
-
-    assert [m["speaker_id"] for m in matches] == ([b.id] if allowed else [])
-    # Hidden, never deleted: the pair is still stored.
-    assert db_session.query(SpeakerMatch).filter(SpeakerMatch.speaker1_id == a.id).count() == 1
-
-
-@pytest.mark.parametrize("allowed", [True, False])
 def test_profile_assignment_is_propagated_to_look_alike_speakers_only_when_allowed(
     db_session, normal_user, monkeypatch, allowed
 ):
@@ -225,33 +173,6 @@ def test_profile_assignment_is_propagated_to_look_alike_speakers_only_when_allow
     )
 
     assert len(searches) == (1 if allowed else 0)
-
-
-@pytest.mark.parametrize("allowed", [True, False])
-def test_a_profile_reference_embedding_is_stored_only_when_allowed(
-    db_session, normal_user, monkeypatch, allowed
-):
-    org = make_org(db_session, voiceprints=allowed)
-    profile = SpeakerProfile(uuid=uuid_pkg.uuid4(), user_id=normal_user.id, name="P")
-    profile.organization_id = org.id
-    db_session.add(profile)
-    db_session.flush()
-    stored: list[str] = []
-    monkeypatch.setattr(
-        "app.services.opensearch_service.store_profile_embedding",
-        lambda **kwargs: _note(stored, kwargs["profile_uuid"], True),
-    )
-
-    class Extractor:
-        def extract_reference_embedding(self, paths):
-            return VOICE
-
-    ok = SpeakerMatchingService(db_session, Extractor()).update_speaker_embeddings(  # type: ignore[arg-type]
-        profile.id, ["a.wav"]
-    )
-
-    assert ok is allowed
-    assert stored == ([str(profile.uuid)] if allowed else [])
 
 
 # ---------------------------------------------------------------------------

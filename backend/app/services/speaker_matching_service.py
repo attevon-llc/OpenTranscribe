@@ -144,16 +144,10 @@ class SpeakerMatchingService:
 
     match_speaker_to_known_speakers = match_queries.match_speaker_to_known_speakers
     match_speaker_to_profiles = match_queries.match_speaker_to_profiles
-    find_unlabeled_speaker_matches = match_queries.find_unlabeled_speaker_matches
-    match_speaker_to_profile = match_queries.match_speaker_to_profile
 
-    create_speaker_profile = profiles.create_speaker_profile
     assign_speaker_to_profile = profiles.assign_speaker_to_profile
-    update_speaker_embeddings = profiles.update_speaker_embeddings
-    add_speaker_to_collection = profiles.add_speaker_to_collection
     find_speaker_occurrences = profiles.find_speaker_occurrences
 
-    process_speaker_segments = processing.process_speaker_segments
     process_speaker_embeddings_native = processing.process_speaker_embeddings_native
     _process_single_speaker = processing.process_single_speaker
 
@@ -177,4 +171,3 @@ class SpeakerMatchingService:
     _process_match_hit = match_storage.process_match_hit
     _perform_opensearch_query = match_storage.perform_opensearch_query
     find_and_store_speaker_matches = match_storage.find_and_store_speaker_matches
-    get_speaker_matches = match_storage.get_speaker_matches

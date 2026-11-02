@@ -16,6 +16,7 @@ from datetime import datetime
 
 import pytest
 from fixtures.summary_plane import sync_summary_plane
+from fixtures.tag_recorders import share_file
 
 from app.core.config import settings
 from app.models.collection import Collection
@@ -23,7 +24,6 @@ from app.models.collection import CollectionMember
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.models.prompt import UserSetting
-from app.models.sharing import CollectionShare
 from app.models.speaker import Speaker
 from app.models.tag import FileTag
 from app.models.tag import Tag
@@ -209,8 +209,9 @@ def _collect_file(db_session, user, media_file, name: str) -> Collection:
     """Put ``media_file`` in a new collection owned by ``user``."""
     collection = Collection(user_id=user.id, name=name, description="filter test")
     db_session.add(collection)
-    db_session.commit()
-    db_session.add(CollectionMember(collection_id=collection.id, media_file_id=media_file.id))
+    db_session.flush()
+    membership = CollectionMember(media_file_id=media_file.id, collection_id=collection.id)
+    db_session.add(membership)
     db_session.commit()
     sync_summary_plane(media_file)
     return collection
@@ -271,24 +272,7 @@ def _summary_search(client, headers, q: str, **params):
 
 
 def _share_with(db_session, owner, recipient, media_file, *, permission="viewer") -> None:
-    collection = Collection(
-        user_id=owner.id,
-        name=f"share-{uuid_pkg.uuid4().hex[:8]}",
-        description="result_type endpoint test",
-    )
-    db_session.add(collection)
-    db_session.commit()
-    db_session.add(CollectionMember(collection_id=collection.id, media_file_id=media_file.id))
-    db_session.add(
-        CollectionShare(
-            collection_id=collection.id,
-            shared_by_id=owner.id,
-            target_type="user",
-            target_user_id=recipient.id,
-            permission=permission,
-        )
-    )
-    db_session.commit()
+    share_file(db_session, owner, recipient, media_file, permission)
     sync_summary_plane(media_file)
 
 

@@ -8,6 +8,8 @@ into the lower id instead of failing part-way (D7).
 from __future__ import annotations
 
 import pytest
+from fixtures.tag_recorders import count_commits
+from fixtures.tag_recorders import record_hook
 from fixtures.tag_world import attach
 from fixtures.tag_world import build_org_world
 from fixtures.tag_world import make_file
@@ -16,40 +18,18 @@ from fixtures.tag_world import word
 
 from app.models.tag import FileTag
 from app.models.tag import Tag
-from app.services.tag_operations import TagNotFoundError
+from app.services import tag_operations
 from app.services.tag_operations import promote_tags_to_shared
-
-
-class _Hook:
-    """Stands in for ``on_tags_changed`` inside ``tag_operations``."""
-
-    def __init__(self) -> None:
-        self.calls: list[dict] = []
-
-    def __call__(self, db, file_ids=None, *, user_id=None, system_scope=False):
-        self.calls.append(
-            {"files": list(file_ids or []), "user_id": user_id, "system_scope": system_scope}
-        )
-        return list(file_ids or [])
 
 
 @pytest.fixture
 def hook(monkeypatch):
-    recorder = _Hook()
-    monkeypatch.setattr("app.services.tag_operations.on_tags_changed", recorder)
-    return recorder
+    return record_hook(monkeypatch, "app.services.tag_operations")
 
 
 @pytest.fixture
 def commits(monkeypatch, db_session) -> list[int]:
-    seen: list[int] = []
-    original = db_session.commit
-
-    def counting():
-        seen.append(1)
-        return original()
-
-    monkeypatch.setattr(db_session, "commit", counting)
+    seen: list[int] = count_commits(monkeypatch, db_session)
     return seen
 
 
@@ -210,7 +190,7 @@ def test_promote_with_cross_tenant_folding_folds_org_rows_too(db_session, normal
 
 def test_promote_of_a_vanished_tag_raises_without_the_internal_id(db_session, normal_user, hook):
     """D16: the message is a fixed literal; no integer id can reach a 404 detail."""
-    with pytest.raises(TagNotFoundError) as caught:
+    with pytest.raises(tag_operations.TagNotFoundError) as caught:
         promote_tags_to_shared(db_session, [2_000_000_000], user_id=normal_user.id)
 
     assert str(caught.value) == "Tag not found"

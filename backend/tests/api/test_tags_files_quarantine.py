@@ -13,9 +13,11 @@ from __future__ import annotations
 import uuid
 
 from fastapi import status
+from fixtures.tag_world import attach
+from fixtures.tag_world import make_tag
+from fixtures.tag_world import word
 
 from app.models.media import MediaFile
-from app.models.tag import FileTag
 from app.models.tag import Tag
 
 
@@ -39,16 +41,12 @@ def _make_tagged_file(db_session, owner, tag, **file_overrides) -> MediaFile:
     db_session.commit()
     db_session.refresh(media_file)
 
-    db_session.add(FileTag(media_file_id=media_file.id, tag_id=tag.id, source="manual"))
-    db_session.commit()
+    attach(db_session, media_file, tag)
     return media_file
 
 
 def _make_owned_tag(db_session, owner) -> Tag:
-    tag = Tag(uuid=uuid.uuid4(), name=f"probe-{uuid.uuid4().hex[:8]}", user_id=owner.id)
-    db_session.add(tag)
-    db_session.commit()
-    db_session.refresh(tag)
+    tag: Tag = make_tag(db_session, word("probe"), user_id=owner.id, source=None)
     return tag
 
 

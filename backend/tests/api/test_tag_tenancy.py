@@ -351,8 +351,7 @@ def test_upload_import_tags_land_in_the_files_tenant(org_world):
 
 def test_merge_refuses_to_fold_a_tag_across_tenants(org_world):
     """A system tag folded into an org tag would attach that org's row to every tenant's files."""
-    from app.services.tag_operations import TagTenantMismatchError
-    from app.services.tag_operations import merge_tags
+    from app.services import tag_operations
 
     w = org_world
     org_tag = Tag(name=_unique("Org Word"), user_id=w.alice.id, organization_id=w.org_a.id)
@@ -364,8 +363,8 @@ def test_merge_refuses_to_fold_a_tag_across_tenants(org_world):
     org_tag_id, system_id, personal_id = org_tag.id, system.id, personal.id
 
     for doomed_id in (system_id, personal_id):
-        with pytest.raises(TagTenantMismatchError):
-            merge_tags(
+        with pytest.raises(tag_operations.TagTenantMismatchError):
+            tag_operations.merge_tags(
                 w.db, org_tag_id, [doomed_id], user_id=w.alice.id, organization_id=w.org_a.id
             )
 

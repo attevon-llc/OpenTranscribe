@@ -17,6 +17,8 @@ from __future__ import annotations
 import uuid
 
 from fastapi import status
+from fixtures.tag_world import make_tag
+from fixtures.tag_world import word
 
 from app.models.group import UserGroup
 from app.models.group import UserGroupMember
@@ -25,11 +27,7 @@ from app.models.tag import Tag
 
 
 def _make_tag(db_session, owner, *, name: str | None = None) -> Tag:
-    name = name or f"tag-{uuid.uuid4().hex[:8]}"
-    tag = Tag(name=name, user_id=owner.id, source="manual", normalized_name=name.lower())
-    db_session.add(tag)
-    db_session.commit()
-    db_session.refresh(tag)
+    tag: Tag = make_tag(db_session, name or word("tag"), user_id=owner.id)
     return tag
 
 

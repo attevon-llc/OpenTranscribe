@@ -17,7 +17,7 @@ from app.models.organization import OrganizationMembership
 from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.models.user import User
-from app.services.tag_service import normalize_tag_name
+from app.services import tag_service
 
 
 def word(prefix: str = "tw") -> str:
@@ -87,7 +87,7 @@ def make_tag(
         user_id=user_id,
         organization_id=org_id,
         source=source,
-        normalized_name=normalize_tag_name(name),
+        normalized_name=tag_service.normalize_tag_name(name),
     )
     db.add(tag)
     db.commit()
@@ -96,7 +96,7 @@ def make_tag(
 
 
 def attach(db, media_file: MediaFile, tag: Tag, *, source: str | None = "manual") -> FileTag:
-    link = FileTag(media_file_id=media_file.id, tag_id=tag.id, source=source)
+    link = FileTag(tag_id=tag.id, media_file_id=media_file.id, source=source)
     db.add(link)
     db.commit()
     return link

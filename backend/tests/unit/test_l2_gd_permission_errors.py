@@ -47,8 +47,8 @@ def _file(db, owner, organization_id=None) -> MediaFile:
         filename=f"l2gd_{file_uuid.hex[:8]}.wav",
         storage_path=f"media/test/{file_uuid}.wav",
         content_type="audio/wav",
-        file_size=1024,
         status=FileStatus.COMPLETED,
+        file_size=2048,
     )
     db.add(row)
     db.commit()
@@ -341,7 +341,7 @@ def test_require_editor_returns_the_refusal_detail_as_a_failed_result(
 
 
 def test_bulk_tag_viewer_row_carries_the_editor_requirement_and_batch_continues(
-    client, other_user_auth_headers, other_user, normal_user, db_session
+    client, db_session, normal_user, other_user, other_user_auth_headers
 ):
     read_only = _file(db_session, normal_user)
     _share(
@@ -381,7 +381,7 @@ def test_bulk_tag_viewer_row_carries_the_editor_requirement_and_batch_continues(
 
 
 def test_bulk_delete_reports_forbidden_per_file_and_deletes_the_rest(
-    client, other_user_auth_headers, other_user, normal_user, db_session
+    client, db_session, normal_user, other_user, other_user_auth_headers
 ):
     mine_a = _file(db_session, other_user)
     theirs = _file(db_session, normal_user)
@@ -511,7 +511,7 @@ def test_bulk_export_prepare_skips_a_refused_file_and_exports_the_rest(
 
 
 def test_batch_extract_topics_skips_a_refused_file_and_keeps_the_rest(
-    client, other_user_auth_headers, other_user, normal_user, db_session
+    client, db_session, normal_user, other_user, other_user_auth_headers
 ):
     foreign = _file(db_session, normal_user)
     mine = _file(db_session, other_user)

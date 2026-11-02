@@ -11,6 +11,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from fixtures.tag_recorders import count_commits
 from fixtures.tag_world import acting_as
 from fixtures.tag_world import attach
 from fixtures.tag_world import build_org_world
@@ -229,23 +230,11 @@ def test_a_personal_request_through_the_context_override_is_cached(client, org_w
 # ---------------------------------------------------------------------------
 
 
-def _count_commits(monkeypatch, db_session) -> list[int]:
-    commits: list[int] = []
-    original = db_session.commit
-
-    def counting():
-        commits.append(1)
-        return original()
-
-    monkeypatch.setattr(db_session, "commit", counting)
-    return commits
-
-
 def _stale_system_tag(db_session) -> Tag:
-    tag = Tag(name=f"Sys Stale {uuid.uuid4().hex[:6]}", user_id=None, normalized_name="stale")
-    db_session.add(tag)
+    """A system row whose stored normalization no longer matches its name."""
+    tag: Tag = make_tag(db_session, f"Sys Stale {uuid.uuid4().hex[:6]}", user_id=None)
+    tag.normalized_name = "stale"
     db_session.commit()
-    db_session.refresh(tag)
     return tag
 
 
@@ -254,7 +243,7 @@ def test_collisions_get_repairs_a_system_tags_normalization_for_any_user_pins_cu
 ):
     """D4: a plain user's GET rewrites and commits a *system* row's stored normalization."""
     system = _stale_system_tag(db_session)
-    commits = _count_commits(monkeypatch, db_session)
+    commits = count_commits(monkeypatch, db_session)
 
     response = client.get("/api/tags/collisions", headers=user_token_headers)
 
@@ -269,7 +258,7 @@ def test_colliding_filter_also_commits_the_repair_pins_current_behaviour(
 ):
     """D4: ``GET /tags?colliding=true`` goes through the same repairing pass."""
     system = _stale_system_tag(db_session)
-    commits = _count_commits(monkeypatch, db_session)
+    commits = count_commits(monkeypatch, db_session)
 
     response = client.get("/api/tags", headers=user_token_headers, params={"colliding": "true"})
 
@@ -283,7 +272,7 @@ def test_a_plain_list_does_not_repair_or_commit(
     client, db_session, user_token_headers, monkeypatch
 ):
     system = _stale_system_tag(db_session)
-    commits = _count_commits(monkeypatch, db_session)
+    commits = count_commits(monkeypatch, db_session)
 
     assert client.get("/api/tags", headers=user_token_headers).status_code == 200
 
@@ -298,7 +287,7 @@ def test_a_collisions_call_with_nothing_to_repair_does_not_commit(
     make_tag(db_session, word("clean"), user_id=normal_user.id)
     first = client.get("/api/tags/collisions", headers=user_token_headers)
     assert first.status_code == 200
-    commits = _count_commits(monkeypatch, db_session)
+    commits = count_commits(monkeypatch, db_session)
 
     second = client.get("/api/tags/collisions", headers=user_token_headers)
 

@@ -13,11 +13,17 @@
   import { toastStore } from '$stores/toast';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import { portal } from '$lib/actions/portal';
+  import { isPlaceholderSpeakerName, nextPlaceholderSpeakerName } from '$lib/utils/speakerNames';
   import {
-    isPlaceholderSpeakerName,
-    nextPlaceholderSpeakerName,
-    placeholderSpeakerNumber
-  } from '$lib/utils/speakerNames';
+    confirmedSpeakerName,
+    inlineNameCheck,
+    matchingProfileNames,
+    partitionSpeakers,
+    pendingSuggestionOf,
+    speakerMenuLabel,
+    speakerNumberLabelOf,
+    uniqueProfileNames
+  } from '$lib/speakers/speakerMenu';
 
   export let segment: TranscriptSegment;
   export let speakers: Speaker[] = [];
@@ -45,32 +51,17 @@
   // guess.
   $: wireSpeaker = segment.speaker ?? null;
 
-  // `display_name` is the ONLY field that means "a human confirmed this name":
-  // `POST /speakers` and `PUT /speakers/{uuid}` both flip `verified` the moment it
-  // is set, and nothing else writes it without an affirmative click.
-  //
-  // Deliberately NOT part of this chain: `speaker.resolved_display_name` and
-  // `segment.resolved_speaker_name`. Both are `canonical_speaker_label(...)`, which
-  // returns a voiceprint-matched `suggested_name` (>= 0.75) as well as a typed one,
-  // so they cover "confirmed" and "matched by voice" in one string. An LLM guess
-  // never reaches them, but this chain is the one that shows a human-confirmed
-  // name only, so it stays on `display_name` (#741).
-  $: confirmedName = (wireSpeaker?.display_name ?? '').trim();
-  $: speakerNumberLabel = wireSpeaker?.name || segment.speaker_label || '';
+  // `display_name` is the only "a human confirmed this name" field; see `confirmedSpeakerName`
+  // for why the resolved_* fields are deliberately not part of this chain (#741).
+  $: confirmedName = confirmedSpeakerName(wireSpeaker);
+  $: speakerNumberLabel = speakerNumberLabelOf(wireSpeaker, segment.speaker_label);
   $: triggerLabel = translateSpeakerLabel(
     confirmedName || speakerNumberLabel || $t('common.unknown')
   );
 
   // An unconfirmed suggestion is surfaced as its own row in the menu, with the
   // confidence score, never as the speaker's name.
-  $: pendingSuggestion =
-    !confirmedName && wireSpeaker?.suggested_name && wireSpeaker.uuid
-      ? {
-          uuid: wireSpeaker.uuid,
-          name: wireSpeaker.suggested_name,
-          confidence: wireSpeaker.confidence ?? 0
-        }
-      : null;
+  $: pendingSuggestion = pendingSuggestionOf(wireSpeaker, confirmedName);
 
   // --- Name THIS speaker, inline (#1086) ---------------------------------------
   // The common case is "this SPEAKER_02 is Laura": a rename of the speaker the segment
@@ -89,17 +80,8 @@
   let inlineHint: HTMLElement | null = null;
   let inlineMatches: HTMLElement | null = null;
 
-  function inlineNameCheck(raw: string): 'ok' | 'empty' | 'placeholder' | 'unchanged' {
-    const name = raw.trim();
-    if (name === '') return 'empty';
-    // `SPEAKER_NN` is a diarization slot, not an identity -- same rule as "Add speaker".
-    if (isPlaceholderSpeakerName(name)) return 'placeholder';
-    if (name === confirmedName) return 'unchanged';
-    return 'ok';
-  }
-
   function submitInlineName(raw: string = inlineName) {
-    if (!wireSpeaker?.uuid || inlineNameCheck(raw) !== 'ok') return;
+    if (!wireSpeaker?.uuid || inlineNameCheck(raw, confirmedName) !== 'ok') return;
     dispatch('speakerUpdate', { speakerId: wireSpeaker.uuid, newName: raw.trim() });
     closeDropdown();
   }
@@ -110,7 +92,7 @@
     apiCache
       .getOrFetch('speakers:profiles', () => listProfiles(), CacheTTL.SPEAKERS)
       .then((profiles) => {
-        profileNames = [...new Set((profiles ?? []).map((p) => p.name).filter(Boolean))];
+        profileNames = uniqueProfileNames(profiles);
         if (isOpen) refreshInlineNameUi();
       })
       .catch(() => {
@@ -119,7 +101,7 @@
   }
 
   function refreshInlineNameUi() {
-    const check = inlineNameCheck(inlineName);
+    const check = inlineNameCheck(inlineName, confirmedName);
     if (inlineSaveButton) inlineSaveButton.disabled = check !== 'ok';
     if (inlineHint) {
       inlineHint.textContent = check === 'placeholder' ? $t('speaker.placeholderNameRejected') : '';
@@ -127,15 +109,7 @@
     }
     if (!inlineMatches) return;
 
-    const typed = inlineName.trim().toLowerCase();
-    const matches =
-      typed === ''
-        ? []
-        : profileNames
-            .filter((name) => name.toLowerCase().includes(typed))
-            // The API's order is unspecified; a stable one keeps the list from shuffling.
-            .sort((a, b) => a.localeCompare(b))
-            .slice(0, 5);
+    const matches = matchingProfileNames(profileNames, inlineName);
     inlineMatches.replaceChildren();
     inlineMatches.hidden = matches.length === 0;
     if (matches.length === 0) return;
@@ -614,25 +588,13 @@
     divider.className = 'dropdown-divider';
     menu.appendChild(divider);
 
-    // Split speakers: human-named first, then unidentified SPEAKER_## auto-labels.
-    // Classification uses the effective display name so that a speaker renamed to
-    // "John Smith" (display_name) is treated as named even though their internal
-    // name is still "SPEAKER_01".
-    const isAutoLabel = (s: Speaker) => isPlaceholderSpeakerName(s.display_name || s.name);
-    const namedSpeakers = speakers.filter((s) => !isAutoLabel(s));
-    const autoSpeakers = speakers.filter((s) => isAutoLabel(s));
+    // Human-named speakers first, then unidentified SPEAKER_## auto-labels.
+    const { named: namedSpeakers, auto: autoSpeakers } = partitionSpeakers(speakers);
 
     const renderSpeakerBtn = (speaker: Speaker) => {
       const isSelected = speaker.uuid === currentSpeakerUuid;
       const color = getSpeakerColor(speaker.name);
-      // If the speaker has a human name but the underlying id is SPEAKER_##,
-      // append the number so the user can see continuity in the ordered list.
-      const slotNumber = placeholderSpeakerNumber(speaker.name);
-      const effectiveName = translateSpeakerLabel(speaker.display_name || speaker.name);
-      const label =
-        slotNumber !== null && speaker.display_name
-          ? `${effectiveName} (${slotNumber.toString().padStart(2, '0')})`
-          : effectiveName;
+      const label = speakerMenuLabel(speaker, translateSpeakerLabel);
       const speakerBtn = createDropdownItem(
         speaker.uuid,
         label,

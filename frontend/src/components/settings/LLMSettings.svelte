@@ -437,7 +437,8 @@
   $: {
     const _anyOpen = showConfigModal || showDeleteConfigModal || showDeleteAllModal;
     if (_anyOpen !== _llmModalWasOpen) {
-      _anyOpen ? lockScroll() : unlockScroll();
+      if (_anyOpen) lockScroll();
+      else unlockScroll();
       _llmModalWasOpen = _anyOpen;
     }
   }
@@ -490,7 +491,7 @@
 
       {#if savedConfigurations.length > 0}
         <div class="config-list">
-          {#each savedConfigurations as config}
+          {#each savedConfigurations as config (config.uuid)}
             <div class="config-item" class:active={config.uuid === activeConfigurationId}>
               <div class="config-info">
                 <div class="config-name">
@@ -649,7 +650,7 @@
           </h4>
         </div>
         <div class="config-list">
-          {#each sharedConfigurations as config}
+          {#each sharedConfigurations as config (config.uuid)}
             <div class="config-item shared" class:active={config.uuid === activeConfigurationId}>
               <div class="config-info">
                 <div class="config-name">

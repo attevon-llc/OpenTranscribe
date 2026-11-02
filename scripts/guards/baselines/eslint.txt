@@ -193,8 +193,6 @@ frontend/src/components/settings/LLMConfigModal.svelte::no-restricted-imports	5	
 frontend/src/components/settings/LLMConfigModal.svelte::no-useless-assignment	5	lint: burn-down planned
 frontend/src/components/settings/LLMConfigModal.svelte::svelte/no-immutable-reactive-statements	1	lint: burn-down planned
 frontend/src/components/settings/LLMConfigModal.svelte::svelte/require-each-key	4	lint: burn-down planned
-frontend/src/components/settings/LLMSettings.svelte::@typescript-eslint/no-unused-expressions	1	lint: burn-down planned
-frontend/src/components/settings/LLMSettings.svelte::svelte/require-each-key	2	lint: burn-down planned
 frontend/src/components/settings/LanguageSettings.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/settings/LazySection.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
 frontend/src/components/settings/LocalAuthSettings.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned

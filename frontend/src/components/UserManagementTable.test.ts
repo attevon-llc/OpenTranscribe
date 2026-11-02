@@ -451,6 +451,25 @@ describe('password reset', () => {
   });
 });
 
+describe('password reset dialog lifecycle', () => {
+  it('starts empty every time it is opened, even after typing and cancelling', async () => {
+    const users = [makeUser({ uuid: 'u-1' })];
+    const { getByTitle, getByLabelText, getByText } = render(UserManagementTable, {
+      props: { users },
+    });
+
+    await fireEvent.click(getByTitle('userManagement.resetPasswordFor', { exact: false }));
+    await fireEvent.input(getByLabelText('userManagement.newPassword'), {
+      target: { value: 'typed-then-abandoned' },
+    });
+    await fireEvent.click(getByText('common.cancel'));
+
+    await fireEvent.click(getByTitle('userManagement.resetPasswordFor', { exact: false }));
+    expect((getByLabelText('userManagement.newPassword') as HTMLInputElement).value).toBe('');
+    expect(getByLabelText('userManagement.newPassword')).toHaveAttribute('type', 'password');
+  });
+});
+
 describe('lock / unlock: only lock refreshes the list', () => {
   it('locking posts with a reason, disables the row action while pending, and refreshes on success', async () => {
     let resolvePost!: (v: { data: { success: boolean } }) => void;

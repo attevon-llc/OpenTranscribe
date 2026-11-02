@@ -67,7 +67,7 @@ def admin_reset_user_password(
     request_body: AdminPasswordResetRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
-):
+) -> dict[str, bool]:
     """Admin-initiated password reset. Requires super_admin role.
 
     Security: Password is passed in request body (not query parameter) to prevent
@@ -115,7 +115,7 @@ def admin_unlock_account(
     user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> dict[str, bool]:
     """Admin unlock of a locked account — the true inverse of ``/lock``.
 
     Two different things can stop a user signing in, and this endpoint clears
@@ -304,7 +304,7 @@ def admin_lock_account(
     reason: str = Query("Admin action", description="Reason for locking the account"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> dict[str, bool]:
     """Admin lock of user account. Only a super_admin may lock a super_admin."""
     client_ip, user_agent = _get_client_info(request)
 
@@ -360,7 +360,7 @@ def admin_terminate_user_sessions(
     user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> dict[str, bool | int]:
     """Force logout user by terminating all sessions.
 
     Goes through ``revoke_all_sessions`` — i.e. ``token_service`` — like every
@@ -420,7 +420,7 @@ def admin_get_user_sessions(
     user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> dict[str, list[dict[str, str | None]]]:
     """View all active sessions for a user."""
     user = db.query(User).filter(User.uuid == user_uuid).first()
     if not user:
@@ -457,7 +457,7 @@ def admin_change_user_role(
     new_role: str = Query(..., description="New role for the user (user, admin, super_admin)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
-):
+) -> dict[str, bool | str]:
     """Change user role. Only super_admin can promote to super_admin."""
     client_ip, user_agent = _get_client_info(request)
     if new_role not in VALID_ROLES:

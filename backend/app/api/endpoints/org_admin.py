@@ -168,7 +168,7 @@ def get_org_audit_logs(
     offset: int = Query(default=0, ge=0, description="Offset for pagination"),
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(require_org_admin),
-):
+) -> dict[str, Any]:
     """Read audit events for the caller's OWN organization (org-admin only).
 
     Visibility (issue #262a): events STAMPED with this org's id — including
@@ -224,7 +224,7 @@ def erase_org_member(
     user_uuid: str,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(require_org_admin),
-):
+) -> dict[str, Any]:
     """GDPR Art. 17 erasure of a member's data WITHIN the caller's organization.
 
     The target must be a member of the caller's org (403 otherwise), and the
@@ -264,7 +264,7 @@ def erase_own_organization(
     confirm: bool = Query(False, description="Must be true to execute the irreversible erasure"),
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(require_org_admin),
-):
+) -> dict[str, Any]:
     """GDPR erasure of the caller's ENTIRE organization (irreversible).
 
     Erases org-stamped media, member-owned org data, the org's voiceprints, and

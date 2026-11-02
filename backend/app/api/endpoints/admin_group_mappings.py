@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -115,7 +116,7 @@ def _to_schema(mapping: GroupMapping, member_count: int = 0) -> GroupMappingSche
     )
 
 
-def _resolve_group(db: Session, group_uuid) -> UserGroup | None:
+def _resolve_group(db: Session, group_uuid: UUID | None) -> UserGroup | None:
     if group_uuid is None:
         return None
     return get_by_uuid(db, UserGroup, str(group_uuid), "Group not found")

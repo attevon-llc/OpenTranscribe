@@ -67,7 +67,7 @@ def export_org_audit_logs(
     resource_uuid: UUID | None = Query(None, description="Filter by resource uuid"),
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(require_org_admin),
-):
+) -> Response:
     """Download the caller's organization's audit events, newest first, up to 10,000 rows.
 
     A larger result is cut at the cap and says so in ``X-Export-Truncated``; narrow the dates or

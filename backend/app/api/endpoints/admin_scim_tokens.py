@@ -33,6 +33,7 @@ from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.db.base import get_db
+from app.models.scim_token import SCIMToken
 from app.models.user import User
 from app.services import scim_token_service
 
@@ -66,7 +67,7 @@ class SCIMTokenCreatedResponse(SCIMTokenResponse):
     token: str
 
 
-def _as_response(row) -> SCIMTokenResponse:
+def _as_response(row: SCIMToken) -> SCIMTokenResponse:
     return SCIMTokenResponse(
         uuid=str(row.uuid),
         name=str(row.name),

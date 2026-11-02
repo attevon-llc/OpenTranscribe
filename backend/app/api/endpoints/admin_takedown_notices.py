@@ -219,7 +219,7 @@ def export_takedown_notices(
     received_to: datetime | None = Query(None, alias="to"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Response:
     """Export one row per covered file for compliance reporting (does not need OpenSearch).
 
     Capped at ``TAKEDOWN_EXPORT_MAX_ROWS``; a partial export says so in

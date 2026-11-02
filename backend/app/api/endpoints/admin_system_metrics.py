@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 # System statistics utility functions
-def get_system_uptime():
+def get_system_uptime() -> str:
     """Get system uptime in a readable format"""
     try:
         # Get boot time and calculate uptime
@@ -118,7 +118,7 @@ def get_disk_usage() -> dict[str, Any]:
         }
 
 
-def get_gpu_usage():
+def get_gpu_usage() -> list[dict[str, Any]]:
     """Get GPU usage array from Redis cache, falling back to direct nvidia-smi query.
 
     Returns a list of GPU stat dicts — one per active GPU device.  In normal

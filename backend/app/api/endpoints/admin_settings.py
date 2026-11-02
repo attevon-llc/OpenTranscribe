@@ -137,7 +137,9 @@ def update_garbage_cleanup_configuration(
 # ============== File Retention Settings ==============
 
 
-def _get_retention_eligible_files(db: Session, retention_days: int, delete_error_files: bool):
+def _get_retention_eligible_files(
+    db: Session, retention_days: int, delete_error_files: bool
+) -> list[MediaFile]:
     """Query files eligible for deletion under the given retention parameters."""
     cutoff = datetime.now(UTC) - timedelta(days=retention_days)
     eligible_statuses = [FileStatus.COMPLETED]
@@ -305,16 +307,12 @@ def preview_retention_deletion(
     # Build preview list (cap at 100 rows for response size)
     preview_files = []
     for f in files[:100]:
-        if f.completed_at:
-            ref_dt = (
-                f.completed_at.replace(tzinfo=UTC)
-                if f.completed_at.tzinfo is None
-                else f.completed_at
-            )
-        else:
-            ref_dt = (
-                f.upload_time.replace(tzinfo=UTC) if f.upload_time.tzinfo is None else f.upload_time
-            )
+        ref_dt = f.completed_at or f.upload_time
+        if ref_dt is None:
+            # The eligibility query only matches rows where one of the two is set.
+            continue
+        if ref_dt.tzinfo is None:
+            ref_dt = ref_dt.replace(tzinfo=UTC)
         age_days = (now_utc - ref_dt).days
         preview_files.append(
             RetentionPreviewFile(

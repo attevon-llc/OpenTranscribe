@@ -1,6 +1,7 @@
 """Admin external-identity, MFA-reset and user-search routes."""
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -367,7 +368,7 @@ def admin_reset_user_mfa(
     user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
-):
+) -> dict[str, bool]:
     """Admin reset of user MFA (if user loses device). Requires super_admin role.
 
     The audit record reports what actually happened. It used to sit OUTSIDE the
@@ -434,7 +435,7 @@ def admin_search_users(
     offset: int = Query(default=0, ge=0, description="Offset for pagination"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> dict[str, Any]:
     """Advanced user search with filtering and pagination."""
     from app.utils.pagination import paginate
 

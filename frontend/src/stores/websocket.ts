@@ -4,7 +4,6 @@ import { downloadStore, type DownloadState } from './downloads';
 import { t } from '$stores/locale';
 import axiosInstance from '$lib/axios';
 import { generateId } from '$lib/utils/ids';
-import { formatEta } from '$lib/utils/formatting';
 import { reconnectDelayMs } from '$lib/utils/backoff';
 import { isCloudEdition } from '$lib/edition';
 import { SESSION_REVOKED_CLOSE_CODE, sessionSurvivesRevocation } from '$lib/auth/sessionRecheck';
@@ -24,6 +23,12 @@ import { showNotificationsPanel } from '$stores/notificationsPanel';
 import type { NotificationType, Notification } from '$lib/notifications/types';
 import { composeClientMessage, notificationTitle } from '$lib/notifications/titles';
 import { routeFrame } from '$lib/websocket/frameRouting';
+import {
+  ADMIN_TASK_PROGRESS_IDS,
+  formatEtaSeconds,
+  frameKind,
+  progressFields,
+} from '$lib/notifications/progressFrame';
 
 export { NOTIFICATION_TYPES } from '$lib/notifications/types';
 export type { NotificationType, NotificationData, Notification } from '$lib/notifications/types';
@@ -39,41 +44,6 @@ interface WebSocketState {
   reconnectAttempts: number;
   error: string | null;
 }
-
-// Notification ETA text; undefined (not '') when there is no ETA to show.
-function formatEtaSeconds(seconds: number | null | undefined): string | undefined {
-  return formatEta(seconds) || undefined;
-}
-
-// Admin task type to progressId mapping
-const ADMIN_TASK_PROGRESS_IDS: Record<string, string> = {
-  reindex_progress: 'admin_reindex',
-  reindex_complete: 'admin_reindex',
-  reindex_stopped: 'admin_reindex',
-  migration_progress: 'admin_migration',
-  migration_complete: 'admin_migration',
-  migration_finalized: 'admin_migration',
-  clustering_progress: 'admin_clustering',
-  clustering_complete: 'admin_clustering',
-  attribute_migration_progress: 'admin_attribute_migration',
-  attribute_migration_complete: 'admin_attribute_migration',
-  data_integrity_progress: 'admin_data_integrity',
-  data_integrity_complete: 'admin_data_integrity',
-  embedding_consistency_progress: 'admin_embedding_consistency',
-  embedding_consistency_complete: 'admin_embedding_consistency',
-};
-
-// Admin task completion types
-const ADMIN_COMPLETION_TYPES = new Set([
-  'reindex_complete',
-  'reindex_stopped',
-  'migration_complete',
-  'migration_finalized',
-  'clustering_complete',
-  'attribute_migration_complete',
-  'data_integrity_complete',
-  'embedding_consistency_complete',
-]);
 
 /**
  * Apply the retention policy (issue #1217) to a list. Pure policy lives in
@@ -272,137 +242,16 @@ function createWebSocketStore() {
             // Window events and cache invalidation ($lib/websocket/frameRouting).
             if (routeFrame(data)) return;
 
-            // Handle progressive notifications
-            const isProgressiveType =
-              data.type === 'transcription_status' ||
-              data.type === 'summarization_status' ||
-              data.type === 'redaction_status' ||
-              data.type === 'topic_extraction_status' ||
-              data.type === 'auto_label_status' ||
-              data.type === 'youtube_processing_status' ||
-              data.type === 'playlist_processing_status';
+            // Progress cards, post-processing, silent and regular notifications
+            // ($lib/notifications/progressFrame).
+            const kind = frameKind(data.type, data.data);
 
-            // Admin task types that should also appear in NotificationsPanel
-            const isAdminProgressType = data.type in ADMIN_TASK_PROGRESS_IDS;
-
-            // Handle silent notifications (gallery-only updates, internal state events)
-            const isSilentType =
-              data.type === 'file_created' ||
-              data.type === 'file_updated' ||
-              data.type === 'clustering_file_complete' ||
-              // Tells the open file view its transcript is readable; the reader sees the
-              // transcript appear, which is the point — a toast about it would be noise.
-              data.type === 'transcript_ready';
-
-            if (
-              (isProgressiveType &&
-                (data.data.file_id || data.type === 'playlist_processing_status')) ||
-              isAdminProgressType
-            ) {
-              // Determine progressId
-              let progressId: string;
-              if (isAdminProgressType) {
-                progressId = ADMIN_TASK_PROGRESS_IDS[data.type];
-              } else if (data.type === 'playlist_processing_status') {
-                progressId = `playlist_processing_${data.data.playlist_id || 'unknown'}`;
-              } else {
-                progressId = `${data.type}_${data.data.file_id}`;
-              }
-
-              // Determine status — admin completion types map to 'completed'
-              let status: string;
-              if (ADMIN_COMPLETION_TYPES.has(data.type)) {
-                status = 'completed';
-              } else if (isAdminProgressType) {
-                status = 'processing';
-              } else {
-                status = data.data.status || 'processing';
-              }
-
-              // Synthesize message for admin tasks that don't have one
-              const translate = get(t);
-              let currentStep = data.data.message || '';
-              if (!currentStep && isAdminProgressType) {
-                if (data.type.startsWith('reindex')) {
-                  const idx = data.data.indexed_files ?? data.data.stats?.indexed_files ?? 0;
-                  const tot = data.data.total_files ?? data.data.stats?.total_files ?? 0;
-                  currentStep =
-                    status === 'completed'
-                      ? translate('notifications.progress.indexedComplete', { count: idx })
-                      : translate('notifications.progress.indexedProgress', {
-                          count: idx,
-                          total: tot,
-                        });
-                } else if (data.type.startsWith('migration')) {
-                  const proc = data.data.processed_files ?? 0;
-                  const tot = data.data.total_files ?? 0;
-                  currentStep =
-                    status === 'completed'
-                      ? translate('notifications.progress.processedComplete', { count: proc })
-                      : translate('notifications.progress.processedProgress', {
-                          count: proc,
-                          total: tot,
-                        });
-                } else if (data.type.startsWith('clustering')) {
-                  const step = data.data.step ?? 0;
-                  const tot = data.data.total_steps ?? 0;
-                  currentStep =
-                    status === 'completed'
-                      ? translate('notifications.progress.clusteringComplete')
-                      : translate('notifications.progress.clusteringStep', { step, total: tot });
-                } else if (data.type.startsWith('attribute_migration')) {
-                  const proc = data.data.processed_files ?? 0;
-                  const tot = data.data.total_files ?? 0;
-                  currentStep =
-                    status === 'completed'
-                      ? translate('notifications.progress.processedComplete', { count: proc })
-                      : translate('notifications.progress.processedProgress', {
-                          count: proc,
-                          total: tot,
-                        });
-                } else if (data.type.startsWith('data_integrity')) {
-                  const proc = data.data.processed_files ?? data.data.processed ?? 0;
-                  const tot = data.data.total_files ?? data.data.total ?? 0;
-                  currentStep =
-                    status === 'completed'
-                      ? translate('notifications.progress.checkedComplete', { count: proc })
-                      : translate('notifications.progress.checkedProgress', {
-                          count: proc,
-                          total: tot,
-                        });
-                } else if (data.type.startsWith('embedding_consistency')) {
-                  const proc = data.data.processed_files ?? 0;
-                  const tot = data.data.total_files ?? 0;
-                  currentStep =
-                    status === 'completed'
-                      ? translate('notifications.progress.repairedComplete', {
-                          count: data.data.repaired ?? 0,
-                        })
-                      : translate('notifications.progress.repairingProgress', {
-                          count: proc,
-                          total: tot,
-                        });
-                }
-              }
-              if (!currentStep) currentStep = translate('notifications.progress.processing');
-
-              // Normalize progress: admin tasks send 0.0-1.0, others send 0-100
-              let rawProgress = data.data.progress || 0;
-              if (isAdminProgressType && rawProgress <= 1 && rawProgress > 0) {
-                rawProgress = rawProgress * 100;
-              }
-
-              // Read ETA from data
-              const etaRaw = data.data.eta_seconds ?? null;
-              const etaDisplay = formatEtaSeconds(etaRaw);
-
-              const progress = {
-                current: Math.floor(rawProgress),
-                total: 100,
-                percentage: Math.round(rawProgress),
-                etaSeconds: etaRaw,
-                etaDisplay,
-              };
+            if (kind === 'progress') {
+              const { progressId, status, currentStep, progress } = progressFields(
+                data.type,
+                data.data,
+                get(t)
+              );
 
               update((s: WebSocketState) => {
                 // Find existing progressive notification
@@ -470,9 +319,9 @@ function createWebSocketStore() {
                 saveNotificationsToStorage(s.notifications);
                 return s;
               });
-            } else if (data.type === 'post_processing_status') {
+            } else if (kind === 'post_processing') {
               applyPostProcessing(data.data);
-            } else if (isSilentType) {
+            } else if (kind === 'silent') {
               // Create a silent notification for gallery updates only
               const notification: Notification = {
                 id: generateId('ws'),

@@ -30,7 +30,7 @@ function fileWithTags(): MediaFileDetail {
     filename: 'alpha.mp4',
     status: 'completed',
     upload_time: '2026-01-01T00:00:00Z',
-    tags: [{ uuid: 'tag-uuid-1', name: 'alpha' }],
+    tags: [{ uuid: 'tag-uuid-1', name: 'alpha', can_write: true }],
   };
 }
 
@@ -69,7 +69,7 @@ describe('TagsSection (#335 tag update forwarding)', () => {
     await fireEvent.click(container.querySelector('.tag-remove') as HTMLButtonElement);
 
     await waitFor(() => expect(axiosMock.delete).toHaveBeenCalledTimes(1));
-    expect(file.tags).toEqual([{ uuid: 'tag-uuid-1', name: 'alpha' }]);
+    expect(file.tags).toEqual([{ uuid: 'tag-uuid-1', name: 'alpha', can_write: true }]);
   });
 });
 

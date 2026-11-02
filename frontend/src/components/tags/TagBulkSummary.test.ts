@@ -29,9 +29,9 @@ const UUID_B = 'bbbbbbbb-0000-0000-0000-000000000002';
 const UUID_C = 'cccccccc-0000-0000-0000-000000000003';
 
 const tags = [
-  { uuid: UUID_A, name: 'roadmap', source: 'auto_ai', usage_count: 2 },
-  { uuid: UUID_B, name: 'Roadmap', source: 'manual', usage_count: 17 },
-  { uuid: UUID_C, name: 'road map', source: 'manual', usage_count: 5 },
+  { uuid: UUID_A, name: 'roadmap', source: 'auto_ai', usage_count: 2, can_write: true },
+  { uuid: UUID_B, name: 'Roadmap', source: 'manual', usage_count: 17, can_write: true },
+  { uuid: UUID_C, name: 'road map', source: 'manual', usage_count: 5, can_write: true },
 ];
 
 const impact: TagImpact = {
@@ -101,39 +101,58 @@ describe('TagBulkSummary', () => {
 describe('TagBulkSummary write gates', () => {
   // One non-writable uuid makes the whole merge, delete or promote request 404,
   // so the summary offers an action only when every selected tag allows it.
-  const mine = tags.map((tag) => ({ ...tag, ownership: 'mine' as const }));
+  const mine = tags.map((tag) => ({ ...tag, ownership: 'mine' as const, can_write: true }));
 
   it('offers no merge or delete when a selected tag is shared with me', () => {
-    const selection = [mine[0], mine[1], { ...mine[2], ownership: 'shared_with_me' as const }];
-    render(TagBulkSummary, { props: { tags: selection, isAdmin: true } });
+    const selection = [
+      mine[0],
+      mine[1],
+      { ...mine[2], ownership: 'shared_with_me' as const, can_write: false },
+    ];
+    render(TagBulkSummary, { props: { tags: selection } });
 
     expect(screen.queryByRole('button', { name: 'Merge' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
     expect(screen.queryAllByRole('radio')).toHaveLength(0);
   });
 
-  it('offers merge and delete over a system tag only with the system write right', () => {
-    const selection = [mine[0], { ...mine[1], ownership: 'system' as const }];
-
-    const { unmount } = render(TagBulkSummary, { props: { tags: selection, isAdmin: false } });
+  it('offers merge and delete over a system tag only when the server allows its write', () => {
+    const { unmount } = render(TagBulkSummary, {
+      props: { tags: [mine[0], { ...mine[1], ownership: 'system' as const, can_write: false }] },
+    });
     expect(screen.queryByRole('button', { name: 'Merge' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
     unmount();
 
-    render(TagBulkSummary, { props: { tags: selection, isAdmin: true } });
+    render(TagBulkSummary, {
+      props: { tags: [mine[0], { ...mine[1], ownership: 'system' as const, can_write: true }] },
+    });
     expect(screen.getByRole('button', { name: 'Merge' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+  });
+
+  it('offers merge and delete over colleague tags an org admin may write', () => {
+    const colleagues = mine.map((tag) => ({ ...tag, ownership: 'shared_with_me' as const }));
+    render(TagBulkSummary, { props: { tags: colleagues } });
+    expect(screen.getByRole('button', { name: 'Merge' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+  });
+
+  it('offers no merge or delete when one owner-looking tag has can_write false', () => {
+    render(TagBulkSummary, { props: { tags: [mine[0], { ...mine[1], can_write: false }] } });
+    expect(screen.queryByRole('button', { name: 'Merge' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
   });
 
   it('offers promote only when every selected tag is mine', () => {
     const mixed = [mine[0], { ...mine[1], ownership: 'system' as const }];
     const { unmount } = render(TagBulkSummary, {
-      props: { tags: mixed, isAdmin: true, canPromote: true },
+      props: { tags: mixed, canPromote: true },
     });
     expect(screen.queryByRole('button', { name: 'Share with everyone' })).toBeNull();
     unmount();
 
-    render(TagBulkSummary, { props: { tags: mine, isAdmin: true, canPromote: true } });
+    render(TagBulkSummary, { props: { tags: mine, canPromote: true } });
     expect(screen.getByRole('button', { name: 'Share with everyone' })).toBeInTheDocument();
   });
 });

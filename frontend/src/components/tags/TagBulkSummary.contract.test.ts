@@ -30,6 +30,7 @@ const mine = (
   source,
   usage_count,
   ownership: 'mine',
+  can_write: true,
 });
 
 const tags: TagListEntry[] = [
@@ -155,8 +156,8 @@ describe('TagBulkSummary actions', () => {
 
   it('treats a missing ownership as mine for the promote control', () => {
     const unset: TagListEntry[] = [
-      { uuid: A, name: 'a', usage_count: 1 },
-      { uuid: B, name: 'b', usage_count: 1 },
+      { uuid: A, name: 'a', usage_count: 1, can_write: true },
+      { uuid: B, name: 'b', usage_count: 1, can_write: true },
     ];
     render(TagBulkSummary, { props: { tags: unset, canPromote: true } });
     expect(btn('tags.manager.action.promote')).toBeInTheDocument();

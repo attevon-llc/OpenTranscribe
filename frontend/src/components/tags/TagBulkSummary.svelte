@@ -12,7 +12,6 @@
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import { tagOriginKey, type TagListEntry } from './TagList.svelte';
   import type { TagImpact } from '$lib/types/tag';
-  import { canMutateTag } from '$lib/types/tag';
 
   /** The selected tags, in list order. */
   export let tags: TagListEntry[] = [];
@@ -31,8 +30,6 @@
    * earn the right in this session, so a disabled control would only puzzle.
    */
   export let canPromote = false;
-  /** Whether the caller may write system tags (`canWriteSystemTags`). */
-  export let isAdmin = false;
   export let previewLoading = false;
   export let mergePreview: TagImpact | null = null;
   export let deletePreview: TagImpact | null = null;
@@ -52,7 +49,7 @@
   // may not write, so an action is offered only when the entire selection
   // allows it. Promotion additionally needs every tag to be your own: a system
   // tag is already shared, and a `shared_with_me` tag is someone else's.
-  $: canWriteAll = tags.every((tag) => canMutateTag(tag, isAdmin));
+  $: canWriteAll = tags.every((tag) => tag.can_write);
   $: canPromoteAll =
     canPromote && tags.every((tag) => (tag.ownership ?? 'mine') === 'mine');
 

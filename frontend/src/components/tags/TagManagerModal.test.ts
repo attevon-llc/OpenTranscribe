@@ -82,6 +82,7 @@ const allTags = [
     source: 'manual',
     usage_count: 12,
     ownership: 'mine',
+    can_write: true,
   },
   {
     uuid: UUID_B,
@@ -89,6 +90,7 @@ const allTags = [
     source: 'auto_ai',
     usage_count: 4,
     ownership: 'system',
+    can_write: true,
   },
 ];
 
@@ -322,7 +324,7 @@ describe('tag manager modal', () => {
   describe('ownership gating', () => {
     it('offers no write controls for a tag shared with me', async () => {
       api.listTags.mockResolvedValue([
-        { ...allTags[0], ownership: 'shared_with_me', name: 'their-tag' },
+        { ...allTags[0], ownership: 'shared_with_me', can_write: false, name: 'their-tag' },
       ]);
       render(TagManagerModal);
       await waitFor(() => expect(tagRows()).toHaveLength(1));
@@ -339,7 +341,9 @@ describe('tag manager modal', () => {
     });
 
     it('offers write controls for a system tag only to an admin', async () => {
-      api.listTags.mockResolvedValue([{ ...allTags[0], ownership: 'system', name: 'sys-tag' }]);
+      api.listTags.mockResolvedValue([
+        { ...allTags[0], ownership: 'system', can_write: false, name: 'sys-tag' },
+      ]);
       auth.role = 'user';
       render(TagManagerModal);
       await waitFor(() => expect(tagRows()).toHaveLength(1));
@@ -409,6 +413,7 @@ describe('cluster view gating', () => {
             usage_count: 9,
             suggested_survivor: true,
             ownership: 'mine',
+            can_write: true,
           },
           {
             uuid: UUID_B,
@@ -417,6 +422,7 @@ describe('cluster view gating', () => {
             usage_count: 2,
             suggested_survivor: false,
             ownership: 'shared_with_me',
+            can_write: false,
           },
         ],
         suggested_survivor_uuid: UUID_A,
@@ -442,8 +448,10 @@ describe('cluster view gating', () => {
 describe('system tag write gate follows the deployment scope', () => {
   // The server writes a system tag only for `deployment_scope_writable`: any
   // admin in a single-tenant deployment, only a super_admin in a multi-tenant one.
-  async function selectSystemTag() {
-    api.listTags.mockResolvedValue([{ ...allTags[0], ownership: 'system', name: 'sys-tag' }]);
+  async function selectSystemTag(canWrite = true) {
+    api.listTags.mockResolvedValue([
+      { ...allTags[0], ownership: 'system', can_write: canWrite, name: 'sys-tag' },
+    ]);
     render(TagManagerModal);
     await waitFor(() => expect(tagRows()).toHaveLength(1));
     await fireEvent.click(tagRows()[0]);
@@ -457,7 +465,7 @@ describe('system tag write gate follows the deployment scope', () => {
 
   it('offers an admin of a multi-tenant deployment no system tag writes', async () => {
     setTenancy('multi');
-    await selectSystemTag();
+    await selectSystemTag(false);
     expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
   });
@@ -471,7 +479,7 @@ describe('system tag write gate follows the deployment scope', () => {
 
   it('offers a plain admin nothing while the tenancy is unknown', async () => {
     setTenancy(undefined);
-    await selectSystemTag();
+    await selectSystemTag(false);
     expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull();
   });
 
@@ -561,5 +569,33 @@ describe('create', () => {
     await waitFor(() => expect(tagRows()).toHaveLength(1));
     expect(screen.getByRole('status')).toHaveTextContent('No tags selected');
     expect(screen.queryByRole('button', { name: 'Back to tags' })).toBeNull();
+  });
+});
+
+describe('colleague tags an org admin may write', () => {
+  it('offers Rename, Delete and Share on a shared_with_me tag whose can_write is true', async () => {
+    api.listTags.mockResolvedValue([
+      { ...allTags[0], ownership: 'shared_with_me', can_write: true, name: 'colleague-tag' },
+    ]);
+    render(TagManagerModal);
+    await waitFor(() => expect(tagRows()).toHaveLength(1));
+
+    await fireEvent.click(tagRows()[0]);
+
+    expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Share…' })).toBeInTheDocument();
+  });
+
+  it('hides them on an owner-looking tag whose can_write is false', async () => {
+    api.listTags.mockResolvedValue([{ ...allTags[0], ownership: 'mine', can_write: false }]);
+    render(TagManagerModal);
+    await waitFor(() => expect(tagRows()).toHaveLength(1));
+
+    await fireEvent.click(tagRows()[0]);
+
+    expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
   });
 });

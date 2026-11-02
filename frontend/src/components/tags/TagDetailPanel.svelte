@@ -13,7 +13,6 @@
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import { tagOriginKey, type TagListEntry } from './TagList.svelte';
   import type { TagImpact } from '$lib/types/tag';
-  import { canMutateTag } from '$lib/types/tag';
   import type { TaggedFile } from '$lib/types/tag';
   import { clampTagNameInput, normalizeTagName } from '$lib/utils/tagName';
 
@@ -27,19 +26,11 @@
    */
   export let canPromote = false;
   /**
-   * Whether the caller may write system tags (`canWriteSystemTags`), which is
-   * narrower than the admin role in a multi-tenant deployment.
+   * Whether to offer the destructive controls at all — the server's verdict for
+   * this caller, so a tag it would refuse with a 404 never gets a button that
+   * can only fail.
    */
-  export let isAdmin = false;
-
-  /**
-   * Whether to offer the destructive controls at all.
-   *
-   * Mirrors `endpoints/tags.py:_writable_tag_ids`. A `shared_with_me` tag is
-   * refused with a 404, so rendering Rename/Delete for it would offer an action
-   * that can only fail — the badge and hint explain the absence instead.
-   */
-  $: canMutate = canMutateTag(tag, isAdmin);
+  $: canMutate = tag.can_write;
 
   /**
    * The files this tag is on. The pane's whole promise — the empty state says
@@ -298,7 +289,7 @@
   </section>
 
   <div class="detail-actions">
-    {#if tag.ownership === 'mine'}
+    {#if tag.can_write && tag.ownership !== 'system'}
       <button
         type="button"
         class="btn btn-ghost"

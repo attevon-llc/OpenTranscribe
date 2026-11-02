@@ -115,6 +115,7 @@
               // Carried through, or a cluster member would lose the badge and
               // the write gate that the flat list gives the same tag.
               ownership: member.ownership,
+              can_write: member.can_write,
             },
             suggestedSurvivor: member.suggested_survivor,
           });

@@ -163,8 +163,7 @@
   // Cosmetic gate only: the server re-checks every write. Writing a system tag
   // and promoting into the shared vocabulary are one server right
   // (`deployment_scope_writable`), so they share one gate here too.
-  $: canWriteSystem = canWriteSystemTags($user?.role, $capabilities.tenancyMode);
-  $: canPromote = canWriteSystem;
+  $: canPromote = canWriteSystemTags($user?.role, $capabilities.tenancyMode);
   let tags: TagListEntry[] = [];
   let clusters: TagCollisionCluster[] = [];
   let loading = true;
@@ -207,9 +206,10 @@
           name: member.name,
           source: member.source,
           usage_count: member.usage_count,
-          // Without it a cluster member reads as `mine` to `canMutateTag`, and
-          // the detail pane offers writes the server refuses.
+          // Without `can_write` the detail pane would offer no write on a
+          // tag the server accepts one for (or the reverse).
           ownership: member.ownership,
+          can_write: member.can_write,
         });
       }
     }
@@ -577,7 +577,6 @@
           {mergePreview}
           {deletePreview}
           {canPromote}
-          isAdmin={canWriteSystem}
           on:previewMerge={previewMerge}
           on:promote={promoteSelection}
           on:confirmMerge={confirmMerge}
@@ -595,7 +594,6 @@
           {deletePreview}
           {renameMergeImpact}
           {canPromote}
-          isAdmin={canWriteSystem}
           files={tagFiles}
           fileTotal={tagFileTotal}
           filesLoading={tagFilesLoading}

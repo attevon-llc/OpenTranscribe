@@ -17,7 +17,14 @@ import type { TagImpact, TaggedFile } from '$lib/types/tag';
 const UUID = 'aaaaaaaa-0000-0000-0000-000000000001';
 
 function tagWith(extra: Partial<TagListEntry> = {}): TagListEntry {
-  return { uuid: UUID, name: 'interviews', source: 'manual', usage_count: 12, ...extra };
+  return {
+    uuid: UUID,
+    name: 'interviews',
+    source: 'manual',
+    usage_count: 12,
+    can_write: true,
+    ...extra,
+  };
 }
 
 const impact: TagImpact = {
@@ -69,23 +76,25 @@ describe('TagDetailPanel write controls', () => {
     { rename: boolean; share: boolean; promote: boolean; del: boolean },
   ];
   const matrix: Row[] = [
-    // ownership, isAdmin, canPromote, expected controls
-    ['mine', false, false, { rename: true, share: true, promote: false, del: true }],
-    ['mine', true, true, { rename: true, share: true, promote: true, del: true }],
+    // ownership, can_write, canPromote, expected controls
     ['mine', true, false, { rename: true, share: true, promote: false, del: true }],
+    ['mine', true, true, { rename: true, share: true, promote: true, del: true }],
     ['system', false, false, { rename: false, share: false, promote: false, del: false }],
     ['system', true, true, { rename: true, share: false, promote: false, del: true }],
-    ['shared_with_me', true, true, { rename: false, share: false, promote: false, del: false }],
-    [undefined, false, true, { rename: true, share: false, promote: false, del: true }],
+    ['shared_with_me', false, true, { rename: false, share: false, promote: false, del: false }],
+    [undefined, true, true, { rename: true, share: true, promote: false, del: true }],
+    // An org admin's colleague tag: not mine, yet the server accepts the write.
+    ['shared_with_me', true, false, { rename: true, share: true, promote: false, del: true }],
+    // A support grant: an owner-looking tag the server would refuse.
+    ['mine', false, true, { rename: false, share: false, promote: true, del: false }],
   ];
 
   it.each(matrix)(
-    'ownership %s, admin %s, canPromote %s',
-    (ownership, isAdmin, canPromote, want) => {
+    'ownership %s, can_write %s, canPromote %s',
+    (ownership, can_write, canPromote, want) => {
       render(TagDetailPanel, {
         props: {
-          tag: tagWith({ ownership: ownership as TagListEntry['ownership'] }),
-          isAdmin,
+          tag: tagWith({ ownership: ownership as TagListEntry['ownership'], can_write }),
           canPromote,
         },
       });

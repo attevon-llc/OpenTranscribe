@@ -1,109 +1,33 @@
-import { writable, derived, get, type Writable } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import * as authStore from './auth';
 import { downloadStore, type DownloadState } from './downloads';
 import { t } from '$stores/locale';
 import axiosInstance from '$lib/axios';
-import { generateId } from '$lib/utils/ids';
 import { reconnectDelayMs } from '$lib/utils/backoff';
 import { isCloudEdition } from '$lib/edition';
 import { sessionSurvivesRevocation } from '$lib/auth/sessionRecheck';
-import { pruneNotifications } from '$lib/notifications/retention';
-import {
-  advanceRunTiming,
-  isTerminalState,
-  taskStateFromStatus,
-} from '$lib/notifications/runTiming';
 import { countUnreadItems } from '$lib/notifications/jobGrouping';
-import {
-  upsertPostProcessingRecord,
-  type PostProcessingFrame,
-} from '$lib/notifications/postProcessing';
-import { notificationRetention, clearedNotice } from '$stores/notificationRetention';
+import type { PostProcessingFrame } from '$lib/notifications/postProcessing';
 import { showNotificationsPanel } from '$stores/notificationsPanel';
-import type { NotificationType, Notification } from '$lib/notifications/types';
-import { composeClientMessage, notificationTitle } from '$lib/notifications/titles';
 import { routeFrame } from '$lib/websocket/frameRouting';
 import {
   closeAction,
   uiConnectionStatus,
   websocketUrl,
-  type ConnectionStatus,
   type UiConnectionStatus,
 } from '$lib/websocket/connectionPolicy';
 import { frameKind, progressFields } from '$lib/notifications/progressFrame';
+import { recoverTask, type ActiveTask } from '$lib/notifications/activeTaskRecovery';
 import {
-  recoverTask,
-  recoveredNotification,
-  type ActiveTask,
-} from '$lib/notifications/activeTaskRecovery';
+  createNotificationActions,
+  loadNotificationsFromStorage,
+  type WebSocketState,
+} from './websocketNotifications';
 
 export { NOTIFICATION_TYPES } from '$lib/notifications/types';
 export type { NotificationType, NotificationData, Notification } from '$lib/notifications/types';
 
 export type { ConnectionStatus, UiConnectionStatus } from '$lib/websocket/connectionPolicy';
-
-// Store state interface
-interface WebSocketState {
-  socket: WebSocket | null;
-  status: ConnectionStatus;
-  notifications: Notification[];
-  reconnectAttempts: number;
-  error: string | null;
-}
-
-/**
- * Apply the retention policy (issue #1217) to a list. Pure policy lives in
- * `$lib/notifications/retention`; this only supplies the clock, the user's
- * setting and the panel state, and tells the user later what was removed.
- * While the panel is open it removes nothing, so rows never vanish mid-read.
- */
-function retain(list: Notification[]): Notification[] {
-  const { kept, removedVisible } = pruneNotifications(list, {
-    now: Date.now(),
-    retention: get(notificationRetention),
-    panelOpen: get(showNotificationsPanel),
-  });
-  clearedNotice.add(removedVisible);
-  return kept;
-}
-
-// Load notifications from localStorage if available
-const loadNotificationsFromStorage = (): Notification[] => {
-  if (typeof window !== 'undefined') {
-    try {
-      const stored = localStorage.getItem('notifications');
-      if (stored) {
-        const parsed: Array<Notification & { timestamp: string; readAt?: string }> =
-          JSON.parse(stored);
-        // Convert timestamp strings back to Date objects. A read item saved before
-        // `readAt` existed starts its retention clock now rather than being
-        // judged against a read time nobody recorded.
-        const loadedAt = new Date();
-        return retain(
-          parsed.map((n) => ({
-            ...n,
-            timestamp: new Date(n.timestamp),
-            readAt: n.readAt ? new Date(n.readAt) : n.read ? loadedAt : undefined,
-          }))
-        );
-      }
-    } catch (error) {
-      console.warn('Failed to load notifications from localStorage:', error);
-    }
-  }
-  return [];
-};
-
-// Save notifications to localStorage
-const saveNotificationsToStorage = (notifications: Notification[]) => {
-  if (typeof window !== 'undefined') {
-    try {
-      localStorage.setItem('notifications', JSON.stringify(notifications));
-    } catch (error) {
-      console.warn('Failed to save notifications to localStorage:', error);
-    }
-  }
-};
 
 // Initial state
 const initialState: WebSocketState = {
@@ -116,7 +40,8 @@ const initialState: WebSocketState = {
 
 // Create the store
 function createWebSocketStore() {
-  const { subscribe, set, update } = writable<WebSocketState>(initialState);
+  const { subscribe, update } = writable<WebSocketState>(initialState);
+  const notifications = createNotificationActions(update);
 
   // Keep track of reconnect timeout
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -245,122 +170,15 @@ function createWebSocketStore() {
             const kind = frameKind(data.type, data.data);
 
             if (kind === 'progress') {
-              const { progressId, status, currentStep, progress } = progressFields(
-                data.type,
-                data.data,
-                get(t)
-              );
+              const fields = progressFields(data.type, data.data, get(t));
 
-              update((s: WebSocketState) => {
-                // Find existing progressive notification
-                const existingIndex = s.notifications.findIndex((n) => n.progressId === progressId);
-
-                const existing = existingIndex !== -1 ? s.notifications[existingIndex] : undefined;
-                // Any finished state, including 'done' (redaction) and 'disabled' /
-                // 'not_configured' (LLM tasks), may be dismissed; the two creation and
-                // update paths used to disagree, leaving a first-frame skip undismissable.
-                const dismissible =
-                  isTerminalState(taskStateFromStatus(status)) ||
-                  (data.type === 'youtube_processing_status' && status === 'pending');
-                const { timing } = advanceRunTiming(
-                  existing,
-                  existing ? existing.data?.status ?? existing.status : undefined,
-                  status,
-                  progress.percentage,
-                  Date.now(),
-                  typeof data.data.stage === 'string' ? data.data.stage : undefined
-                );
-
-                if (existing) {
-                  // Update existing notification with new data (important for summary completion)
-                  const updatedNotification: Notification = {
-                    ...existing,
-                    ...timing,
-                    message: currentStep,
-                    timestamp: new Date(),
-                    currentStep,
-                    progress,
-                    status: status as 'processing' | 'completed' | 'error',
-                    dismissible,
-                    read: false, // Mark as unread for updates
-                    readAt: undefined,
-                    data: {
-                      ...existing.data,
-                      ...data.data,
-                    }, // Merge old and new data
-                  };
-
-                  // Remove from current position and add to front to maintain most-recent-first ordering
-                  s.notifications.splice(existingIndex, 1);
-                  s.notifications.unshift(updatedNotification);
-                } else {
-                  // Create new progressive notification
-                  const notification: Notification = {
-                    id: generateId('ws'),
-                    progressId,
-                    type: data.type as NotificationType,
-                    title: getNotificationTitle(data.type),
-                    message: currentStep,
-                    timestamp: new Date(),
-                    read: false,
-                    data: data.data,
-                    ...timing,
-                    currentStep,
-                    progress,
-                    status: status as 'processing' | 'completed' | 'error',
-                    dismissible,
-                  };
-
-                  s.notifications = retain([notification, ...s.notifications]);
-                }
-
-                saveNotificationsToStorage(s.notifications);
-                return s;
-              });
+              notifications.foldProgressFrame(data.type, data.data, fields);
             } else if (kind === 'post_processing') {
-              applyPostProcessing(data.data);
+              notifications.applyPostProcessing(data.data);
             } else if (kind === 'silent') {
-              // Create a silent notification for gallery updates only
-              const notification: Notification = {
-                id: generateId('ws'),
-                type: data.type as NotificationType,
-                title: getNotificationTitle(data.type),
-                message: data.data.message || get(t)('notifications.galleryUpdate'),
-                timestamp: new Date(),
-                read: false,
-                data: data.data,
-                dismissible: true,
-                silent: true, // This prevents it from showing in notification panel
-              };
-
-              // Add notification (MediaLibrary will see it, but NotificationsPanel will filter it out)
-              update((s: WebSocketState) => {
-                s.notifications = retain([notification, ...s.notifications]);
-                // Don't save silent notifications to localStorage to keep it clean
-                return s;
-              });
+              notifications.addSilentFrame(data.type, data.data);
             } else {
-              // Create a regular notification for other non-progressive types
-              const notification: Notification = {
-                id: generateId('ws'),
-                type: data.type as NotificationType,
-                title: getNotificationTitle(data.type),
-                message:
-                  composeClientMessage(data.type, data.data, get(t)) ||
-                  data.data.message ||
-                  get(t)('notifications.noMessage'),
-                timestamp: new Date(),
-                read: false,
-                data: data.data,
-                dismissible: true,
-              };
-
-              // Add notification
-              update((s: WebSocketState) => {
-                s.notifications = retain([notification, ...s.notifications]);
-                saveNotificationsToStorage(s.notifications);
-                return s;
-              });
+              notifications.addRegularFrame(data.type, data.data);
             }
           } catch (error) {
             console.error('Error processing WebSocket message:', error);
@@ -424,80 +242,6 @@ function createWebSocketStore() {
     });
   };
 
-  // Mark notification as read (with auto-regeneration for processing notifications)
-  const markAsRead = (id: string) => {
-    update((state: WebSocketState) => {
-      const index = state.notifications.findIndex((n: Notification) => n.id === id);
-      if (index !== -1) {
-        const notification = state.notifications[index];
-
-        // If it's a processing notification, auto-regenerate it
-        if (notification.status === 'processing' && !notification.dismissible) {
-          // Mark as read but keep the notification
-          state.notifications[index].read = true;
-          state.notifications[index].readAt = new Date();
-          // Re-add as unread after a short delay (simulated by creating a duplicate)
-          setTimeout(() => {
-            update((s: WebSocketState) => {
-              const stillExists = s.notifications.find(
-                (n) => n.id === id && n.status === 'processing'
-              );
-              if (stillExists) {
-                stillExists.read = false;
-                stillExists.readAt = undefined;
-                saveNotificationsToStorage(s.notifications);
-              }
-              return s;
-            });
-          }, 100);
-        } else {
-          // Regular dismissal for completed/error notifications
-          state.notifications[index].read = true;
-          state.notifications[index].readAt = new Date();
-        }
-
-        saveNotificationsToStorage(state.notifications);
-      }
-      return state;
-    });
-  };
-
-  // Apply retention now (on panel close, the moment deferred pruning is allowed)
-  const prune = () => {
-    update((state: WebSocketState) => {
-      const kept = retain(state.notifications);
-      if (kept.length !== state.notifications.length) {
-        state.notifications = kept;
-        saveNotificationsToStorage(state.notifications);
-      }
-      return state;
-    });
-  };
-
-  // Mark all notifications as read
-  const markAllAsRead = () => {
-    update((state: WebSocketState) => {
-      const readAt = new Date();
-      state.notifications = state.notifications.map((n: Notification) => ({
-        ...n,
-        read: true,
-        // Keep the original read time of items that were already read.
-        readAt: n.read && n.readAt ? n.readAt : readAt,
-      }));
-      saveNotificationsToStorage(state.notifications);
-      return state;
-    });
-  };
-
-  const clearAll = () => {
-    update((state: WebSocketState) => {
-      state.notifications = [];
-      clearedNotice.reset();
-      saveNotificationsToStorage(state.notifications);
-      return state;
-    });
-  };
-
   // Handle download progress messages (legacy/global). Media downloads initiated
   // from the file page are delivered over a dedicated SSE stream — see
   // TranscriptDisplay's EventSource — so this only mirrors status into the store.
@@ -514,122 +258,6 @@ function createWebSocketStore() {
     if (file_id) {
       downloadStore.updateStatus(file_id, status, progress, error);
     }
-  };
-
-  // Titles and the takedown notice text live in $lib/notifications/titles.
-  const getNotificationTitle = (type: string): string => notificationTitle(type, get(t));
-
-  // Add a notification manually (for client-side events like audio extraction)
-  const addNotification = (notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
-    update((state: WebSocketState) => {
-      const newNotification: Notification = {
-        ...notification,
-        id: generateId('ws'),
-        timestamp: new Date(),
-        read: false,
-      };
-
-      // If this is a progressive notification, check if we should update existing one
-      if (notification.progressId) {
-        const existingIndex = state.notifications.findIndex(
-          (n) => n.progressId === notification.progressId
-        );
-        if (existingIndex !== -1) {
-          // Update existing notification
-          state.notifications[existingIndex] = {
-            ...state.notifications[existingIndex],
-            ...newNotification,
-            readAt: undefined,
-            id: state.notifications[existingIndex].id, // Keep original ID
-            timestamp: state.notifications[existingIndex].timestamp, // Keep original timestamp
-          };
-        } else {
-          // Add new notification at the beginning. Capped like every WS-delivered
-          // path (`:782`/`:836`/`:858`/`:1288`) — this one was the odd one out
-          // (issue #569's currency review), so a client-originated source (audio
-          // extraction, download bridge) with a fresh `progressId` per item could
-          // grow the list without bound.
-          state.notifications = retain([newNotification, ...state.notifications]);
-        }
-      } else {
-        // Add new notification at the beginning
-        state.notifications = retain([newNotification, ...state.notifications]);
-      }
-
-      saveNotificationsToStorage(state.notifications);
-      return state;
-    });
-  };
-
-  // Update an existing notification (for progressive updates)
-  const updateNotification = (progressId: string, updates: Partial<Notification>) => {
-    update((state: WebSocketState) => {
-      const existingIndex = state.notifications.findIndex((n) => n.progressId === progressId);
-      if (existingIndex !== -1) {
-        state.notifications[existingIndex] = {
-          ...state.notifications[existingIndex],
-          ...updates,
-        };
-        saveNotificationsToStorage(state.notifications);
-      }
-      return state;
-    });
-  };
-
-  // Remove notification (with auto-regeneration for processing notifications)
-  const removeNotification = (id: string) => {
-    update((state: WebSocketState) => {
-      const notification = state.notifications.find((n) => n.id === id);
-
-      if (notification && notification.status === 'processing' && !notification.dismissible) {
-        // Auto-regenerate processing notifications
-        setTimeout(() => {
-          update((s: WebSocketState) => {
-            // Only re-add if it doesn't already exist
-            const exists = s.notifications.find(
-              (n) => n.progressId === notification.progressId && n.status === 'processing'
-            );
-            if (!exists) {
-              const regenerated: Notification = {
-                ...notification,
-                id: generateId('ws'),
-                timestamp: new Date(),
-                read: false,
-                readAt: undefined,
-              };
-              s.notifications = [regenerated, ...s.notifications];
-              saveNotificationsToStorage(s.notifications);
-            }
-            return s;
-          });
-        }, 100);
-      }
-
-      // Remove the notification
-      state.notifications = state.notifications.filter((n) => n.id !== id);
-      saveNotificationsToStorage(state.notifications);
-      return state;
-    });
-  };
-
-  // Fold a post_processing_status frame, or a REST snapshot the card asked for (`force`),
-  // into the file's post-processing record ($lib/notifications/postProcessing).
-  const applyPostProcessing = (frame: PostProcessingFrame, force = false) => {
-    update((s: WebSocketState) => {
-      const next = upsertPostProcessingRecord(
-        s.notifications,
-        frame,
-        Date.now(),
-        () => generateId('ws'),
-        getNotificationTitle('post_processing_status'),
-        force
-      );
-      if (next) {
-        s.notifications = retain(next);
-        saveNotificationsToStorage(s.notifications);
-      }
-      return s;
-    });
   };
 
   // Recover active task progress from backend on connect/reconnect
@@ -652,27 +280,7 @@ function createWebSocketStore() {
         }
 
         // Create/update progressive notification
-        update((s: WebSocketState) => {
-          const existingIndex = s.notifications.findIndex(
-            (n) => n.progressId === recovered.progressId
-          );
-
-          const notificationData = recoveredNotification(
-            task,
-            recovered,
-            existingIndex !== -1 ? s.notifications[existingIndex].id : generateId('ws'),
-            getNotificationTitle(recovered.notificationType)
-          );
-
-          if (existingIndex !== -1) {
-            s.notifications[existingIndex] = notificationData;
-          } else {
-            s.notifications = retain([notificationData, ...s.notifications]);
-          }
-
-          saveNotificationsToStorage(s.notifications);
-          return s;
-        });
+        notifications.upsertRecoveredTask(task, recovered);
       }
     } catch {
       // Recovery is best-effort; don't break WebSocket on failure
@@ -684,15 +292,15 @@ function createWebSocketStore() {
     connect,
     disconnect,
     send,
-    markAsRead,
-    markAllAsRead,
-    clearAll,
-    prune,
-    removeNotification,
-    addNotification,
-    updateNotification,
+    markAsRead: notifications.markAsRead,
+    markAllAsRead: notifications.markAllAsRead,
+    clearAll: notifications.clearAll,
+    prune: notifications.prune,
+    removeNotification: notifications.removeNotification,
+    addNotification: notifications.addNotification,
+    updateNotification: notifications.updateNotification,
     applyPostProcessingSnapshot: (snapshot: PostProcessingFrame) =>
-      applyPostProcessing(snapshot, true),
+      notifications.applyPostProcessing(snapshot, true),
   };
 }
 

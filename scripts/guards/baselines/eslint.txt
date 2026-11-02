@@ -427,6 +427,5 @@ frontend/src/stores/search.ts::@typescript-eslint/no-explicit-any	2	lint: burn-d
 frontend/src/stores/supportSession.ts::svelte/no-navigation-without-resolve	2	lint: burn-down planned
 frontend/src/stores/uploads.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/stores/websocket.test.ts::no-restricted-imports	1	lint: burn-down planned
-frontend/src/stores/websocket.ts::@typescript-eslint/no-unused-vars	2	lint: burn-down planned
 frontend/src/svelte.d.ts::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
 frontend/src/svelte.d.ts::@typescript-eslint/no-unused-vars	1	lint: burn-down planned

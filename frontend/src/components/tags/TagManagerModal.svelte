@@ -111,11 +111,12 @@
     if (!name || creating) return;
     creating = true;
     try {
+      const known = await knownTagUuids();
       const tag = await createTag(name);
       // Resolution is normalized-exact, so a typed name may land on a tag that
-      // already exists. Say which one rather than reporting a create that was
-      // really a no-op.
-      const resolved = tag.name !== name;
+      // already exists — even one spelled exactly as typed. Say which one rather
+      // than reporting a create that was really a no-op.
+      const resolved = known.has(tag.uuid) || tag.name !== name;
       toastStore.success(
         resolved
           ? $t('tags.manager.create.resolved', { name: tag.name })
@@ -123,11 +124,26 @@
       );
       newTagName = '';
       await loadTags();
-      selectedUuids = [tag.uuid];
+      // A view or scope that hides the tag would leave the detail pane blank.
+      if (buildIndex(tags, clusters).has(tag.uuid)) selectedUuids = [tag.uuid];
     } catch (error: unknown) {
       toastStore.error(getErrorMessage(error, $t('tags.manager.create.failed')));
     } finally {
       creating = false;
+    }
+  }
+
+  /**
+   * Every tag a typed name could already resolve onto. The all/all view lists
+   * every tag the caller can see, which covers them; any other view may hide
+   * that row, so the unfiltered list is asked for instead.
+   */
+  async function knownTagUuids(): Promise<Set<string>> {
+    if (filter === 'all' && scope === 'all') return new Set(tagIndex.keys());
+    try {
+      return new Set((await listTags()).map((tag) => tag.uuid));
+    } catch {
+      return new Set(tagIndex.keys());
     }
   }
 

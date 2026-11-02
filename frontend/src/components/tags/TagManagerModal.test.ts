@@ -32,6 +32,8 @@ vi.mock('$stores/locale', async () => {
 });
 
 const api = vi.hoisted(() => ({
+  createTag: vi.fn(),
+  listFilesForTag: vi.fn(),
   listTags: vi.fn(),
   listTagCollisions: vi.fn(),
   getTagImpact: vi.fn(),
@@ -66,6 +68,7 @@ vi.mock('$stores/auth', async () => {
 
 import TagManagerModal from './TagManagerModal.svelte';
 import { capabilities } from '$stores/capabilities';
+import { toastStore } from '$stores/toast';
 
 /** The deployment's tenancy, as `GET /system/capabilities` reported it. */
 function setTenancy(mode: 'single' | 'multi' | undefined) {
@@ -100,6 +103,7 @@ beforeEach(() => {
   setTenancy('single');
   api.listTags.mockResolvedValue(allTags);
   api.listTagCollisions.mockResolvedValue([]);
+  api.listFilesForTag.mockResolvedValue({ files: [], total: 0 });
   api.getTagImpact.mockResolvedValue({
     tags: [],
     accessible_file_count: 3,
@@ -498,5 +502,72 @@ describe('search', () => {
     expect(await screen.findByText('No results found for "zzz"')).toBeInTheDocument();
     expect(screen.queryByText('No tags yet')).toBeNull();
     expect(api.listTags).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('create', () => {
+  async function create(name: string) {
+    const field = screen.getByLabelText('New tag');
+    await fireEvent.input(field, { target: { value: name } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    await waitFor(() => expect(api.createTag).toHaveBeenCalledWith(name));
+  }
+
+  it('reports a name that matched an existing tag exactly as resolved, not created', async () => {
+    const success = vi.spyOn(toastStore, 'success');
+    api.createTag.mockResolvedValue({ uuid: UUID_A, name: 'interviews', ownership: 'mine' });
+    render(TagManagerModal);
+    await waitFor(() => expect(tagRows()).toHaveLength(2));
+
+    await create('interviews');
+
+    await waitFor(() =>
+      expect(success).toHaveBeenCalledWith('That name resolved to the existing tag "interviews"')
+    );
+    expect(success).not.toHaveBeenCalledWith('Created "interviews"');
+  });
+
+  it('reports a new tag as created and selects it', async () => {
+    const success = vi.spyOn(toastStore, 'success');
+    const fresh = {
+      uuid: 'fresh-uuid',
+      name: 'fresh',
+      source: 'manual',
+      usage_count: 0,
+      ownership: 'mine',
+    };
+    api.createTag.mockResolvedValue({ uuid: fresh.uuid, name: fresh.name, ownership: 'mine' });
+    render(TagManagerModal);
+    await waitFor(() => expect(tagRows()).toHaveLength(2));
+    api.listTags.mockResolvedValue([...allTags, fresh]);
+
+    await create('fresh');
+
+    await waitFor(() => expect(success).toHaveBeenCalledWith('Created "fresh"'));
+    expect(await screen.findByRole('heading', { name: 'fresh' })).toBeInTheDocument();
+  });
+
+  it('knows an existing tag the current view hides, and does not select it', async () => {
+    const success = vi.spyOn(toastStore, 'success');
+    api.createTag.mockResolvedValue({ uuid: UUID_A, name: 'interviews', ownership: 'mine' });
+    render(TagManagerModal);
+    await waitFor(() => expect(tagRows()).toHaveLength(2));
+    // The unused view does not list a tag that is on files.
+    api.listTags.mockImplementation(async (filters?: { unused?: boolean }) =>
+      filters?.unused ? [allTags[1]] : allTags
+    );
+    await fireEvent.click(screen.getByRole('tab', { name: /Unused/ }));
+    await waitFor(() => expect(tagRows()).toHaveLength(1));
+
+    await create('interviews');
+
+    await waitFor(() =>
+      expect(success).toHaveBeenCalledWith('That name resolved to the existing tag "interviews"')
+    );
+    // Selecting a row the view cannot show would leave the detail pane blank
+    // (and, below 768px, hide the list behind a "back" button).
+    await waitFor(() => expect(tagRows()).toHaveLength(1));
+    expect(screen.getByRole('status')).toHaveTextContent('No tags selected');
+    expect(screen.queryByRole('button', { name: 'Back to tags' })).toBeNull();
   });
 });

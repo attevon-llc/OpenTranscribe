@@ -1,14 +1,14 @@
 /**
  * TypeScript types for tags and tag management.
  *
- * Mirrors the Pydantic schemas in `backend/app/schemas/media.py` (Tag,
+ * Mirrors the Pydantic schemas in `backend/app/schemas/tag.py` (Tag,
  * TagWithCount, TagCollisionCluster, TagImpact*, TagMutationResult,
  * and the bulk tag envelope in
  * `backend/app/api/endpoints/files/management.py`.
  */
 
 /**
- * Canonical tag shape, mirroring `backend/app/schemas/media.py:Tag`.
+ * Canonical tag shape, mirroring `backend/app/schemas/tag.py:Tag`.
  *
  * Import via `$lib/types/tag`. This is the **only** tag shape on the API:
  * `/tags`, `POST /tags/files/{uuid}/tags` and `MediaFileDetail.tags` all serve

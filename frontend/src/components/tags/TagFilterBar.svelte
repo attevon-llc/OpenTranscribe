@@ -1,5 +1,5 @@
 <script context="module" lang="ts">
-  /** The four server-side views of the tag library. */
+  /** The three server-side views of the tag library. */
   export type TagFilterId = 'all' | 'unused' | 'colliding';
 </script>
 

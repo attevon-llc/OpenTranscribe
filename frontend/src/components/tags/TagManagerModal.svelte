@@ -351,7 +351,7 @@
   // ── Mutations ────────────────────────────────────────────────────────────
 
   /**
-   * Merge and reject fan out a search-refresh task per affected file, so the
+   * A tag mutation fans out a search-refresh task per affected file, so the
    * gap between confirming and seeing a result is seconds. The affected rows
    * stay dimmed and non-interactive for the whole round trip — re-clicking
    * merge on a selection already merging is exactly the concurrent case the

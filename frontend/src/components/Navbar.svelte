@@ -390,7 +390,7 @@
           <button
             class="recording-indicator {recordingStatusClass}"
             on:click={toggleRecordingControls}
-            title={$t('nav.recordingTooltip', { status: getRecordingStatusTitle(), duration: formatDuration(recordingDuration) })}
+            title={$t('nav.recordingTooltip', { status: getRecordingStatusTitle(), duration: formatDuration(recordingDuration, { padHours: true }) })}
           >
             <div class="recording-pulse {recordingStatusClass}"></div>
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mic-icon">
@@ -399,7 +399,7 @@
               <line x1="12" y1="19" x2="12" y2="23"></line>
               <line x1="8" y1="23" x2="16" y2="23"></line>
             </svg>
-            <span class="recording-time">{formatDuration(recordingDuration)}</span>
+            <span class="recording-time">{formatDuration(recordingDuration, { padHours: true })}</span>
           </button>
 
           {#if showRecordingControls}
@@ -409,11 +409,11 @@
                   {#if isRecording}
                     <div class="status-dot {isPaused ? 'paused' : 'recording'}"></div>
                     <span>{isPaused ? $t('nav.paused') : $t('nav.recording')}</span>
-                    <span class="duration">{formatDuration(recordingDuration)}</span>
+                    <span class="duration">{formatDuration(recordingDuration, { padHours: true })}</span>
                   {:else if recordedBlob}
                     <div class="status-dot completed"></div>
                     <span>{$t('nav.recordingCompleteStatus')}</span>
-                    <span class="duration">{formatDuration(recordingDuration)}</span>
+                    <span class="duration">{formatDuration(recordingDuration, { padHours: true })}</span>
                   {:else}
                     <div class="status-dot idle"></div>
                     <span>{$t('nav.readyToRecord')}</span>

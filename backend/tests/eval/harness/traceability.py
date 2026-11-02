@@ -35,7 +35,7 @@ same as :mod:`tests.eval.harness.probe_metrics`):
    outside scope is a LEAK: retrieval reached past the boundary the user set, not a formatting
    slip. Checked against ``record["offered_citations"]`` when the probe captured it (the full
    ``sources`` SSE frame, stripped to ``id``/``file_uuid`` — see
-   ``scripts/probe_chat_rag.py::_offered_citation_refs``), because that is everything the model
+   ``scripts/chat_probe/conversation.py::_offered_citation_refs``), because that is everything the model
    was shown, not only what the answer went on to cite. Records captured before that field
    existed fall back to ``record["citations"]`` (the rendered/used subset) — a real but narrower
    check, since a leaked-but-uncited excerpt still reached the model and just never produced a

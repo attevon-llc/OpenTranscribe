@@ -27,7 +27,6 @@ scripts/docker-build-push.sh	1562	oversize: split by concern planned
 scripts/download-models.py	1173	oversize: split by concern planned
 scripts/e2e/update-visual-baselines.sh	1326	oversize: split by concern planned
 scripts/fetch-rag-eval-data.sh	1282	oversize: split by concern planned
-scripts/probe_chat_rag.py	1003	cohesive: one live chat-RAG probe (login, send, collect, render); needs a stack and LLM to prove behaviour
 scripts/release-tests/lib/guardrails.sh	1281	oversize: split by concern planned
 scripts/release-tests/test-upgrade.sh	2967	oversize: split by concern planned
 scripts/run-mutation-tests.sh	1173	oversize: split by concern planned

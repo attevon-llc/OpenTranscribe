@@ -378,7 +378,13 @@
           </span>
         {/if}
         {tag.name}
-        <button class="tag-remove" on:click={() => removeTag(tag.uuid)} title={$t('tags.removeTag')}>×</button>
+        <button
+          type="button"
+          class="tag-remove"
+          on:click={() => removeTag(tag.uuid)}
+          title={$t('tags.removeTag')}
+          aria-label={$t('gallery.bulk.tagModal.removeChip', { name: tag.name })}
+        ><span aria-hidden="true">×</span></button>
       </span>
     {/each}
 

@@ -272,3 +272,16 @@ describe('TagsEditor create errors', () => {
     expect(toast.error).not.toHaveBeenCalledWith(expect.stringContaining('[object Object]'));
   });
 });
+
+describe('TagsEditor chip remove control', () => {
+  it('names the tag it removes, not the glyph it shows', async () => {
+    api.removeTagFromFile.mockResolvedValue(undefined);
+    await mounted({ tags: [{ uuid: 'a', name: 'interview', source: 'manual' }] });
+
+    const remove = screen.getByRole('button', { name: 'Remove "interview" from this file' });
+    await fireEvent.click(remove);
+
+    await waitFor(() => expect(api.removeTagFromFile).toHaveBeenCalledWith('file-1', 'interview'));
+    expect(screen.queryByRole('button', { name: '×' })).toBeNull();
+  });
+});

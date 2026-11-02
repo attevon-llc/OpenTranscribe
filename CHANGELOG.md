@@ -75,6 +75,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **AI feature availability with an invalid personal LLM setting.** A saved LLM configuration with a
+  non-numeric temperature or context size is now reported as unavailable consistently, so
+  background processing no longer queues AI work that can only be skipped, and a saved AWS Bedrock
+  model without a region is refused when chosen for a chat.
 - **WebSocket sign-in for accounts that are not admitted.** The WebSocket handshake now applies
   the account approval and expiry checks, so a rejected, expired or (while approval is required)
   pending account no longer opens a socket.

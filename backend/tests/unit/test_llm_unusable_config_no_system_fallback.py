@@ -227,3 +227,41 @@ class TestTaskPathsSendNothing:
         ):
             assert sit._create_llm_service(1) is None
         system.assert_not_called()
+
+
+class TestDescribeAgreesWithFactory:
+    @pytest.mark.parametrize(
+        "bad", [{"temperature": "hot"}, {"max_tokens": "lots"}, {"max_tokens": None}]
+    )
+    def test_unparseable_numbers_are_unconfigured_everywhere(self, bad, cloud_system_provider):
+        def rows():
+            return (_pointer("7"), _config(**bad))
+
+        assert LLMService.describe_for_user(_db(*rows()), 1) is None
+        assert LLMService.is_configured_for_user(_db(*rows()), 1) is False
+        with patch("app.db.base.SessionLocal", return_value=_db(*rows())):
+            with pytest.raises(LLMConfigurationError):
+                LLMService.create_from_user_settings(user_id=1)
+
+    def test_control_parseable_numbers_stay_configured(self, cloud_system_provider):
+        db = _db(_pointer("7"), _config(temperature="0.7", max_tokens=2048))
+        assert LLMService.is_configured_for_user(db, 1) is True
+
+
+class TestConfigIdBedrockRegion:
+    def test_no_region_refused(self, cloud_system_provider, monkeypatch):
+        monkeypatch.setattr("app.services.llm_service.resolve_region", lambda _b: None)
+        row = _config(provider="bedrock", base_url=None, api_key=None)
+        with patch("app.db.base.SessionLocal", return_value=_db(row)):
+            with pytest.raises(LLMConfigurationError) as caught:
+                LLMService.create_from_config_id(user_id=1, config_id=7)
+        assert caught.value.reason == LLMConfigFailure.BEDROCK_REGION
+
+    def test_control_with_region_not_refused_for_region(self, cloud_system_provider, monkeypatch):
+        monkeypatch.setattr("app.services.llm_service.resolve_region", lambda _b: "us-east-1")
+        row = _config(provider="bedrock", base_url=None, api_key=None)
+        with patch("app.db.base.SessionLocal", return_value=_db(row)):
+            try:
+                LLMService.create_from_config_id(user_id=1, config_id=7)
+            except LLMConfigurationError as err:
+                assert err.reason != LLMConfigFailure.BEDROCK_REGION

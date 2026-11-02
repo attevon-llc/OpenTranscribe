@@ -18,6 +18,7 @@
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import { clampTagNameInput } from '$lib/utils/tagName';
   import {
     deleteTags,
     getTagImpact,
@@ -424,8 +425,8 @@
         id="new-tag-name"
         type="text"
         class="create-input"
-        bind:value={newTagName}
-        maxlength="50"
+        value={newTagName}
+        on:input={(event) => (newTagName = clampTagNameInput(event))}
         placeholder={$t('tags.manager.create.placeholder')}
         disabled={creating}
         title={$t('tags.manager.create.tooltip')}

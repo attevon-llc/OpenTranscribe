@@ -29,6 +29,32 @@ export const MAX_TAG_NAME_LENGTH = 50;
 const TAG_FUZZY_MATCH_THRESHOLD = 0.85;
 
 /**
+ * Python's whitespace class (`str.isspace`, which is also what `re`'s `\s` and
+ * `str.strip()` use on `str`). JavaScript's `\s` and `trim()` include U+FEFF and
+ * exclude U+001C..U+001F and U+0085, so a name containing one of those would
+ * otherwise normalize differently on each side.
+ */
+const PY_SPACE =
+  '\\t\\n\\v\\f\\r\\x1c-\\x20\\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000';
+const SPACE_RUN = new RegExp(`[${PY_SPACE}]+`, 'g');
+const LEADING_SPACE = new RegExp(`^[${PY_SPACE}]+`);
+const TRAILING_SPACE = new RegExp(`[${PY_SPACE}]+$`);
+
+/** `str.strip()` with Python's whitespace class. */
+function pyStrip(value: string): string {
+  return value.replace(LEADING_SPACE, '').replace(TRAILING_SPACE, '');
+}
+
+/**
+ * The first `limit` characters of `value`, counted in code points as Python
+ * counts them, so an astral character is never cut in half or counted twice.
+ */
+function takeCodePoints(value: string, limit: number): string {
+  const chars = Array.from(value);
+  return chars.length > limit ? chars.slice(0, limit).join('') : value;
+}
+
+/**
  * Normalize a tag name the way the backend does
  * (`tag_service.normalize_tag_name`): lowercase, hyphens and underscores become
  * spaces, whitespace runs collapse, ends trimmed. A name made only of
@@ -37,7 +63,7 @@ const TAG_FUZZY_MATCH_THRESHOLD = 0.85;
  */
 export function normalizeTagName(name: string): string {
   if (!name) return '';
-  return name.toLowerCase().replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return pyStrip(name.toLowerCase().replace(/[-_]+/g, ' ').replace(SPACE_RUN, ' '));
 }
 
 /**
@@ -47,7 +73,29 @@ export function normalizeTagName(name: string): string {
  */
 export function cleanTagName(name: string): string {
   if (!name) return '';
-  return name.trim().slice(0, MAX_TAG_NAME_LENGTH).trim();
+  return pyStrip(takeCodePoints(pyStrip(name), MAX_TAG_NAME_LENGTH));
+}
+
+/**
+ * Limit what a tag-name field holds to {@link MAX_TAG_NAME_LENGTH} code points,
+ * without trimming, for use while the user types. A native `maxlength` counts
+ * UTF-16 units, which stops an emoji-only name at half the stored width.
+ */
+export function clampTagNameLength(value: string): string {
+  return takeCodePoints(value, MAX_TAG_NAME_LENGTH);
+}
+
+/**
+ * `input` handler for a tag-name field: clamps the field in place with
+ * {@link clampTagNameLength} and returns the clamped value for the caller's
+ * state. Writing the field back is needed because an unchanged state value
+ * would not re-render the over-long text away.
+ */
+export function clampTagNameInput(event: Event): string {
+  const field = event.currentTarget as HTMLInputElement;
+  const clamped = clampTagNameLength(field.value);
+  if (clamped !== field.value) field.value = clamped;
+  return clamped;
 }
 
 /**
@@ -59,8 +107,7 @@ export function cleanTagName(name: string): string {
  * at {@link MAX_TAG_NAME_LENGTH}, so it can never apply here.
  */
 function matchingCount(
-  a: string,
-  b: string,
+  a: string[],
   b2j: Map<string, number[]>,
   alo: number,
   ahi: number,
@@ -91,8 +138,8 @@ function matchingCount(
   if (bestsize === 0) return 0;
   return (
     bestsize +
-    matchingCount(a, b, b2j, alo, besti, blo, bestj) +
-    matchingCount(a, b, b2j, besti + bestsize, ahi, bestj + bestsize, bhi)
+    matchingCount(a, b2j, alo, besti, blo, bestj) +
+    matchingCount(a, b2j, besti + bestsize, ahi, bestj + bestsize, bhi)
   );
 }
 
@@ -102,17 +149,21 @@ function matchingCount(
  * so two empty strings score 1.
  */
 export function similarityRatio(a: string, b: string): number {
-  const total = a.length + b.length;
+  // Python indexes strings by code point; UTF-16 units would let two different
+  // emoji "match" on their shared high surrogate.
+  const left = Array.from(a);
+  const right = Array.from(b);
+  const total = left.length + right.length;
   if (total === 0) return 1;
 
   const b2j = new Map<string, number[]>();
-  for (let j = 0; j < b.length; j++) {
-    const indices = b2j.get(b[j]);
+  for (let j = 0; j < right.length; j++) {
+    const indices = b2j.get(right[j]);
     if (indices) indices.push(j);
-    else b2j.set(b[j], [j]);
+    else b2j.set(right[j], [j]);
   }
 
-  return (2 * matchingCount(a, b, b2j, 0, a.length, 0, b.length)) / total;
+  return (2 * matchingCount(left, b2j, 0, left.length, 0, right.length)) / total;
 }
 
 /**

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  clampTagNameLength,
   cleanTagName,
   findSimilarTagName,
   namesAreSimilar,
@@ -77,5 +78,86 @@ describe('findSimilarTagName', () => {
 
   it('returns null when nothing is close enough', () => {
     expect(findSimilarTagName('budget', ['roadmap', 'interview'])).toBeNull();
+  });
+});
+
+/**
+ * Parity with the backend's `normalize_tag_name` / `clean_tag_name`. Every
+ * expected value was computed by the backend functions themselves (Python
+ * `str.lower`, `re` `\s`, `str.strip`, and code-point slicing), so a row that
+ * fails here is a name the SPA and the server would resolve differently.
+ */
+describe('backend name-rule parity', () => {
+  const x = (n: number) => 'x'.repeat(n);
+  const grin = '\u{1F600}';
+
+  it.each([
+    ['Interview', 'interview', 'Interview'],
+    ['Q3_Earnings', 'q3 earnings', 'Q3_Earnings'],
+    ['  Foo__Bar--baz  ', 'foo bar baz', 'Foo__Bar--baz'],
+    ['  team   alpha ', 'team alpha', 'team   alpha'],
+    ['-foo-', 'foo', '-foo-'],
+    ['a - b', 'a b', 'a - b'],
+    ['A_b-C d', 'a b c d', 'A_b-C d'],
+    ['-', '', '-'],
+    ['__', '', '__'],
+    ['  --__  ', '', '--__'],
+    [' - _ ', '', '- _'],
+    ['', '', ''],
+    ['a\tb\nc', 'a b c', 'a\tb\nc'],
+    ['a\u00a0b', 'a b', 'a\u00a0b'],
+    ['ÉCOLE', 'école', 'ÉCOLE'],
+    ['ΟΔΟΣ', 'οδος', 'ΟΔΟΣ'],
+    ['İstanbul', 'i\u0307stanbul', 'İstanbul'],
+    ['#tag/one!', '#tag/one!', '#tag/one!'],
+    [x(60), x(60), x(50)],
+    [`${x(49)} tail`, `${x(49)} tail`, x(49)],
+    // Python's whitespace class includes the information separators and NEL...
+    ['a\u001fb', 'a b', 'a\u001fb'],
+    ['a\u001cb', 'a b', 'a\u001cb'],
+    ['a\u0085b', 'a b', 'a\u0085b'],
+    // ...and excludes the byte-order mark, which JavaScript's `\s` and trim() include.
+    ['\ufeffabc', '\ufeffabc', '\ufeffabc'],
+    // Lengths are code points: an emoji is one character, never two.
+    [grin.repeat(30), grin.repeat(30), grin.repeat(30)],
+    [`${x(49)}${grin}y`, `${x(49)}${grin}y`, `${x(49)}${grin}`],
+  ])('%j normalizes to %j and cleans to %j', (input, normalized, cleaned) => {
+    expect(normalizeTagName(input)).toBe(normalized);
+    expect(cleanTagName(input)).toBe(cleaned);
+  });
+
+  it('treats exactly the code points Python calls whitespace as whitespace', () => {
+    // `[c for c in range(0x110000) if chr(c).isspace()]`, from Python 3.12.
+    const python = [
+      0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x85, 0xa0, 0x1680, 0x2000,
+      0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a, 0x2028,
+      0x2029, 0x202f, 0x205f, 0x3000,
+    ];
+    const seen: number[] = [];
+    for (let code = 0; code <= 0xffff; code++) {
+      if (code >= 0xd800 && code <= 0xdfff) continue;
+      if (normalizeTagName(`a${String.fromCodePoint(code)}b`) === 'a b') seen.push(code);
+    }
+    // Hyphen-minus and underscore become spaces too, by the separator rule.
+    expect(seen).toEqual([...python, 0x2d, 0x5f].sort((p, q) => p - q));
+  });
+
+  it.each([
+    [`${grin}a`, `${grin}b`, 0.5],
+    [`ab${grin}`, 'ab\u{1F601}', 0.666667],
+    [`${grin}${grin} earnings`, `${grin}${grin} earning`, 0.952381],
+  ])('scores %s against %s over code points like difflib', (a, b, expected) => {
+    expect(similarityRatio(a, b)).toBeCloseTo(expected, 6);
+  });
+});
+
+describe('clampTagNameLength', () => {
+  it('keeps at most the stored width in code points without trimming', () => {
+    expect(clampTagNameLength('x'.repeat(60))).toBe('x'.repeat(50));
+    expect(clampTagNameLength('  spaced  ')).toBe('  spaced  ');
+    expect(clampTagNameLength('\u{1F600}'.repeat(30))).toBe('\u{1F600}'.repeat(30));
+    expect(clampTagNameLength(`${'x'.repeat(49)}\u{1F600}\u{1F600}`)).toBe(
+      `${'x'.repeat(49)}\u{1F600}`
+    );
   });
 });

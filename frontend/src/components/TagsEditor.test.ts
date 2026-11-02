@@ -171,3 +171,33 @@ describe('TagsEditor resolved-name feedback', () => {
     expect(toast.error).toHaveBeenCalledWith(strings['tags.nameRequired']);
   });
 });
+
+describe('TagsEditor name length', () => {
+  function field(): HTMLInputElement {
+    return screen.getByPlaceholderText(strings['tags.addTagPlaceholder']) as HTMLInputElement;
+  }
+
+  it('holds at most the stored width, counted in characters rather than UTF-16 units', async () => {
+    await mounted();
+
+    await fireEvent.input(field(), { target: { value: 'x'.repeat(60) } });
+    expect(field().value).toBe('x'.repeat(50));
+
+    // A native maxlength counts UTF-16 units and would stop this at 25 emoji,
+    // although the server stores all 30.
+    const emoji = '\u{1F600}'.repeat(30);
+    await fireEvent.input(field(), { target: { value: emoji } });
+    expect(field().value).toBe(emoji);
+    expect(field().hasAttribute('maxlength')).toBe(false);
+  });
+
+  it('applies an emoji name of the full stored width unshortened', async () => {
+    const emoji = '\u{1F600}'.repeat(30);
+    resolvesTo({ [emoji]: { uuid: 'e', name: emoji } });
+    await mounted();
+
+    await submit(emoji);
+
+    await waitFor(() => expect(api.addTagToFile).toHaveBeenCalledWith('file-1', emoji));
+  });
+});

@@ -5,7 +5,7 @@
   import { getErrorStatus, getErrorCode } from '$lib/utils/apiError';
   import { addTagToFile, listTags, removeTagFromFile } from '$lib/api/tags';
   import {
-    MAX_TAG_NAME_LENGTH,
+    clampTagNameInput,
     cleanTagName,
     findSimilarTagName,
     normalizeTagName,
@@ -375,11 +375,11 @@
       <input
         type="text"
         placeholder={$t('tags.addTagPlaceholder')}
-        bind:value={newTagInput}
+        value={newTagInput}
+        on:input={(event) => (newTagInput = clampTagNameInput(event))}
         on:keydown={handleInputKeydown}
         class="tag-input"
         disabled={loading}
-        maxlength={MAX_TAG_NAME_LENGTH}
         title={$t('tags.typeNewTagHint')}
       >
       {#if newTagInput.trim()}

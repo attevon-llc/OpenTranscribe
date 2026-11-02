@@ -376,3 +376,19 @@ describe('tag manager modal', () => {
     });
   });
 });
+
+describe('create field', () => {
+  it('holds at most the stored width, counted in characters rather than UTF-16 units', async () => {
+    render(TagManagerModal);
+    await waitFor(() => expect(tagRows()).toHaveLength(2));
+    const field = screen.getByLabelText('New tag') as HTMLInputElement;
+
+    await fireEvent.input(field, { target: { value: 'x'.repeat(60) } });
+    expect(field.value).toBe('x'.repeat(50));
+
+    const emoji = '\u{1F600}'.repeat(30);
+    await fireEvent.input(field, { target: { value: emoji } });
+    expect(field.value).toBe(emoji);
+    expect(field.hasAttribute('maxlength')).toBe(false);
+  });
+});

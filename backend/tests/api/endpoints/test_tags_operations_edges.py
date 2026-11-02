@@ -1,8 +1,8 @@
 """Characterization of the rename / merge / delete / cleanup routes' edges.
 
 Written before the tags backend rewrite. Tests whose name says ``pins_current_behaviour``
-pin behaviour the owner has decided to change: D8 (merge silently drops share grants).
-A 404 detail never carries an internal integer id (D16).
+pin behaviour the owner has decided to change. Merge moves the doomed tags' share grants
+to the survivor (D8), and a 404 detail never carries an internal integer id (D16).
 """
 
 from __future__ import annotations
@@ -208,14 +208,19 @@ def test_delete_removes_the_tags_share_grants(
     assert _shares(db_session, tag) == 0
 
 
-def test_merge_drops_the_doomed_tags_grants_without_moving_them_pins_current_behaviour(
-    client, db_session, normal_user, other_user, user_token_headers
+def _grants_of(db, tag: Tag) -> list[TagShare]:
+    db.expire_all()
+    rows: list[TagShare] = db.query(TagShare).filter(TagShare.tag_id == tag.id).all()
+    return rows
+
+
+def test_merge_moves_the_doomed_tags_grants_to_the_survivor(
+    client, db_session, normal_user, other_user, user_token_headers, other_user_auth_headers
 ):
-    """D8: the recipient of the doomed tag's grant silently loses access, and the survivor
-    gains no grant."""
+    """D8: the recipient keeps the word, now as the survivor, with the original attribution."""
     survivor = make_tag(db_session, word("survivor"), user_id=normal_user.id)
     doomed = make_tag(db_session, word("doomed"), user_id=normal_user.id)
-    _grant(db_session, doomed, normal_user, other_user)
+    grant = _grant(db_session, doomed, normal_user, other_user)
 
     response = client.post(
         f"/api/tags/{survivor.uuid}/merge",
@@ -224,8 +229,79 @@ def test_merge_drops_the_doomed_tags_grants_without_moving_them_pins_current_beh
     )
 
     assert response.status_code == 200, response.text
-    assert _shares(db_session, doomed) == 0
-    assert _shares(db_session, survivor) == 0
+    (moved,) = _grants_of(db_session, survivor)
+    assert (moved.uuid, moved.target_user_id, moved.shared_by_id) == (
+        grant.uuid,
+        other_user.id,
+        normal_user.id,
+    )
+    listed = client.get("/api/tags", headers=other_user_auth_headers).json()
+    assert str(survivor.uuid) in {row["uuid"] for row in listed}
+
+
+def test_merge_keeps_one_grant_when_the_survivor_already_holds_it(
+    client, db_session, normal_user, other_user, user_token_headers
+):
+    """A grantee on both sides keeps exactly the survivor's own grant."""
+    survivor = make_tag(db_session, word("survivor"), user_id=normal_user.id)
+    first = make_tag(db_session, word("doomed-a"), user_id=normal_user.id)
+    second = make_tag(db_session, word("doomed-b"), user_id=normal_user.id)
+    kept = _grant(db_session, survivor, normal_user, other_user)
+    _grant(db_session, first, normal_user, other_user)
+    _grant(db_session, second, normal_user, other_user)
+
+    response = client.post(
+        f"/api/tags/{survivor.uuid}/merge",
+        headers=user_token_headers,
+        json={"source_uuids": [str(first.uuid), str(second.uuid)]},
+    )
+
+    assert response.status_code == 200, response.text
+    assert [g.uuid for g in _grants_of(db_session, survivor)] == [kept.uuid]
+    assert db_session.query(TagShare).filter(TagShare.target_user_id == other_user.id).count() == 1
+
+
+def test_merge_drops_a_grant_to_the_survivors_own_owner(client, org_world):
+    """Moving it would grant bob his own tag, which ``share_tag`` refuses to create."""
+    w = org_world
+    survivor = make_tag(w.db, word("bobs"), user_id=w.bob.id, org_id=w.org_a.id)
+    doomed = make_tag(w.db, word("alices"), user_id=w.alice.id, org_id=w.org_a.id)
+    _grant(w.db, doomed, w.alice, w.bob)
+
+    with acting_as(w.alice, w.org_a.id, "org:admin"):
+        response = client.post(
+            f"/api/tags/{survivor.uuid}/merge", json={"source_uuids": [str(doomed.uuid)]}
+        )
+
+    assert response.status_code == 200, response.text
+    assert _grants_of(w.db, survivor) == []
+    assert w.db.query(TagShare).filter(TagShare.target_user_id == w.bob.id).count() == 0
+
+
+def test_merge_into_a_system_tag_drops_the_grants(
+    client, db_session, admin_user, other_user, admin_token_headers, monkeypatch
+):
+    """A grant on the shared vocabulary confers nothing (every account sees it), so none moves."""
+    from app.core.config import settings
+    from app.services.platform_access import reset_tenancy_mode_cache
+
+    monkeypatch.setattr(settings, "TENANCY_MODE", "single")
+    reset_tenancy_mode_cache()
+    try:
+        survivor = make_tag(db_session, word("system"), user_id=None)
+        doomed = make_tag(db_session, word("private"), user_id=admin_user.id)
+        _grant(db_session, doomed, admin_user, other_user)
+
+        response = client.post(
+            f"/api/tags/{survivor.uuid}/merge",
+            headers=admin_token_headers,
+            json={"source_uuids": [str(doomed.uuid)]},
+        )
+    finally:
+        reset_tenancy_mode_cache()
+
+    assert response.status_code == 200, response.text
+    assert _grants_of(db_session, survivor) == []
     assert db_session.query(TagShare).filter(TagShare.target_user_id == other_user.id).count() == 0
 
 

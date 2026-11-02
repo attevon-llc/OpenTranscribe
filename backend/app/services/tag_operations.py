@@ -53,6 +53,7 @@ from app.core.constants import TAG_SOURCE_AI_ACCEPTED
 from app.core.constants import TAG_SOURCE_AUTO_AI
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.core.exceptions import OpenTranscribeError
+from app.models.sharing import TagShare
 from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.models.watch_source import WatchSource
@@ -527,6 +528,40 @@ def _reassign_associations(db: Session, target: Tag, doomed_ids: Sequence[int]) 
     db.flush()
 
 
+def _move_share_grants(db: Session, target: Tag, doomed_ids: Sequence[int]) -> None:
+    """Repoint the doomed tags' ``tag_share`` grants at the survivor, never widening reach.
+
+    A merge folds only tags of one tenant (or anything into the system vocabulary), so a
+    moved grant stays inside the tenant its owner granted it in. The rules:
+
+    * survivor is a system tag: nothing moves. Every account already sees it, so a grant
+      there confers nothing, and it would gather grantees from several tenants on one row;
+    * the grantee already holds a grant on the survivor: the survivor's own grant is kept
+      (grants carry no permission level, so neither is stronger);
+    * the grantee is the survivor's owner: dropped, as ``tag_sharing.share_tag`` refuses
+      a grant on one's own tag;
+    * otherwise the grant row itself moves, keeping its uuid and its ``shared_by``.
+
+    Grants not moved stay on the doomed rows and go with them by the FK cascade.
+    """
+    if is_system_tag(target) or not doomed_ids:
+        return
+    held = {
+        (share.target_user_id, share.target_group_id)
+        for share in db.query(TagShare).filter(TagShare.tag_id == target.id)
+    }
+    grants = db.query(TagShare).filter(TagShare.tag_id.in_(doomed_ids)).order_by(TagShare.id)
+    for share in grants.all():
+        grantee = (share.target_user_id, share.target_group_id)
+        if grantee in held or (
+            share.target_user_id is not None and share.target_user_id == target.user_id
+        ):
+            continue
+        share.tag_id = target.id
+        held.add(grantee)
+    db.flush()
+
+
 def merge_tags(
     db: Session,
     target_id: int,
@@ -539,7 +574,8 @@ def merge_tags(
 
     A merge is a human act, so the survivor is endorsed: an auto-labeled tag
     becomes ``ai_accepted``; a manual (or legacy NULL) tag is already human and
-    is left alone.
+    is left alone. Share grants on the folded tags move to the survivor
+    (:func:`_move_share_grants`), so a recipient keeps the word.
 
     Args:
         db: Database session. Committed on success.
@@ -587,6 +623,7 @@ def merge_tags(
     affected_file_ids = _affected_file_ids(db, doomed_ids)
 
     _reassign_associations(db, target, doomed_ids)
+    _move_share_grants(db, target, doomed_ids)
 
     if target.source == TAG_SOURCE_AUTO_AI:
         target.source = TAG_SOURCE_AI_ACCEPTED

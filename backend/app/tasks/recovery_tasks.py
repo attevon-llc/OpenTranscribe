@@ -339,6 +339,7 @@ def media_duration_backfill(self, user_id: int | None = None, dry_run: bool = Tr
                 metadata_important=row.metadata_important or {},
             )
             for row in query.all()
+            if row.duration is not None  # the abs() filter above already excludes NULL
         ]
 
     summary["examined"] = len(candidates)

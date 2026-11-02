@@ -43,6 +43,7 @@ from app.auth.session import OIDCStateStore
 from app.auth.token_service import token_service
 from app.core.config import settings
 from app.db.base import get_db
+from app.models.refresh_token import RefreshToken
 
 router = APIRouter()
 
@@ -61,7 +62,9 @@ _OIDC_STATE_EXPIRY_SECONDS = 600
 
 @router.get("/oidc/login")
 @limiter.limit(get_auth_rate_limit())
-async def oidc_login(request: Request, response: Response, db: Session = Depends(get_db)):
+async def oidc_login(
+    request: Request, response: Response, db: Session = Depends(get_db)
+) -> JSONResponse:
     """
     Initiate the OIDC login flow.
 
@@ -135,7 +138,7 @@ def _hash_binding(secret: str) -> str:
     return hashlib.sha256(secret.encode()).hexdigest()
 
 
-def _store_session_id_token(db: Session, session_row, id_token: str) -> None:
+def _store_session_id_token(db: Session, session_row: RefreshToken, id_token: str) -> None:
     """Persist the ID token on the session row it belongs to.
 
     RP-initiated logout (OIDC RP-Initiated Logout 1.0) needs ``id_token_hint``, so the
@@ -165,7 +168,7 @@ async def oidc_callback(
     code: str = Query(..., description="Authorization code from the identity provider"),
     state: str = Query(..., description="State parameter for CSRF protection"),
     db: Session = Depends(get_db),
-):
+) -> JSONResponse:
     """
     Handle the OIDC callback.
 

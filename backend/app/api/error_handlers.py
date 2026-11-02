@@ -1,6 +1,7 @@
 import logging
 from collections.abc import Callable
 from functools import wraps
+from typing import Any
 
 from fastapi import HTTPException
 from fastapi import status
@@ -21,7 +22,7 @@ def handle_not_found(resource_name: str = "Resource") -> Callable:
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             result = func(*args, **kwargs)
             if result is None:
                 raise HTTPException(

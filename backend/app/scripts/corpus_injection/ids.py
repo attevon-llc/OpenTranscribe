@@ -17,6 +17,9 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from collections.abc import Iterable
+
+from app.scripts.corpus_injection.model import Turn
 
 # Fixed namespace for OpenTranscribe RAG-eval corpus injection. Generated once
 # and frozen: changing it renumbers every corpus ever injected.
@@ -50,7 +53,7 @@ def speaker_uuid(corpus: str, meeting_id: str, seed: str, speaker_name: str) -> 
     )
 
 
-def content_sha256(turns) -> str:  # noqa: ANN001 — Iterable[Turn], typed loosely to avoid a cycle
+def content_sha256(turns: Iterable[Turn]) -> str:
     """Fingerprint the exact transcript content injected for a meeting.
 
     Covers speaker label and text for every turn in order. Timings are

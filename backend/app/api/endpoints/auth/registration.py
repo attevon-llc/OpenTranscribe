@@ -175,7 +175,7 @@ def register(
 
 
 @router.get("/password-policy")
-def get_password_policy():
+def get_password_policy() -> dict[str, Any]:
     """
     Get the current password policy requirements.
 
@@ -197,7 +197,7 @@ def request_password_reset_endpoint(
     response: Response,
     body: "PasswordResetRequestBody",
     db: Session = Depends(get_db),
-):
+) -> dict[str, str]:
     """Request a password reset link.
 
     Always returns 200 regardless of whether the email exists to prevent
@@ -232,7 +232,7 @@ def confirm_password_reset_endpoint(
     response: Response,
     body: "PasswordResetConfirmBody",
     db: Session = Depends(get_db),
-):
+) -> dict[str, str]:
     """Confirm a password reset with token and new password.
 
     Validates the token and sets the new password. Returns 400 if the

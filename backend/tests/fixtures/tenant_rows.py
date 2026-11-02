@@ -6,20 +6,15 @@ import uuid
 
 from app.models.tag import Tag
 from app.models.watch_source import WatchSource
-from app.services.tag_service import normalize_tag_name
+from fixtures import tag_world
 
 
 def make_tag(db, *, name: str, user_id: int | None, org_id: int | None) -> Tag:
-    """A tag of one tenant: ``org_id`` for an organization's, else the user's, else system."""
-    tag = Tag(
-        name=name,
-        normalized_name=normalize_tag_name(name),
-        user_id=user_id,
-        organization_id=org_id,
-    )
-    db.add(tag)
-    db.commit()
-    db.refresh(tag)
+    """A tag of one tenant: ``org_id`` for an organization's, else the user's, else system.
+
+    The row carries no origin, like a tag written before origins were recorded.
+    """
+    tag: Tag = tag_world.make_tag(db, name, user_id=user_id, org_id=org_id, source=None)
     return tag
 
 

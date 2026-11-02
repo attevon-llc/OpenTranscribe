@@ -10,6 +10,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from fixtures.tag_recorders import record_reindex
 from fixtures.tag_world import acting_as
 from fixtures.tag_world import attach
 from fixtures.tag_world import build_org_world
@@ -22,21 +23,9 @@ from app.models.tag import FileTag
 from app.models.tag import Tag
 
 
-class _RecordingTask:
-    def __init__(self) -> None:
-        self.calls: list[list[int]] = []
-
-    def delay(self, file_ids):
-        self.calls.append(list(file_ids))
-
-
 @pytest.fixture
 def reindex(monkeypatch):
-    from app.tasks import search_file_field_tasks
-
-    recorder = _RecordingTask()
-    monkeypatch.setattr(search_file_field_tasks, "update_file_tags_index", recorder)
-    return recorder
+    return record_reindex(monkeypatch)
 
 
 @pytest.fixture
@@ -82,7 +71,7 @@ def test_rename_to_a_blank_name_is_a_422_and_changes_nothing(
     )
 
     assert response.status_code == 422
-    assert response.json()["detail"] == "Tag name is required"
+    assert response.json() == {"detail": "Tag name is required"}
     db_session.refresh(tag)
     assert tag.name.startswith("keepname")
 
@@ -152,9 +141,11 @@ def test_merge_naming_only_the_target_is_a_no_op(
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["merged"] is False
-    assert body["requires_confirmation"] is False
-    assert body["deleted_uuids"] == []
+    assert (body["merged"], body["requires_confirmation"], body["deleted_uuids"]) == (
+        False,
+        False,
+        [],
+    )
     assert body["tag"]["uuid"] == str(target.uuid)
     assert body["impact"] == {"tags": [], "accessible_file_count": 0, "total_file_count": 0}
     assert _exists(db_session, target)
@@ -167,14 +158,13 @@ def test_merge_with_an_unknown_source_uuid_is_a_404(
 ):
     target = make_tag(db_session, word("t"), user_id=normal_user.id)
 
+    unknown_source = {"source_uuids": [str(uuid.uuid4())]}
     response = client.post(
-        f"/api/tags/{target.uuid}/merge",
-        headers=user_token_headers,
-        json={"source_uuids": [str(uuid.uuid4())]},
+        f"/api/tags/{target.uuid}/merge", json=unknown_source, headers=user_token_headers
     )
 
     assert response.status_code == 404
-    assert response.json()["detail"] == "Tag not found"
+    assert response.json() == {"detail": "Tag not found"}
 
 
 def test_merge_with_an_empty_source_list_is_a_422(

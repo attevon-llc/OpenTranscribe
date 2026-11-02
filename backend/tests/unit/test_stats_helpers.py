@@ -5,9 +5,8 @@ Every function here runs a FILTER-based aggregate over a WHOLE table
 (``user``/``media_file``/``task``), and these tests run against the shared dev
 Postgres. That makes the counts they return a piece of **globally mutable state**:
 the suite runs under ``-n auto --dist loadgroup``, and several tests elsewhere
-deliberately commit rows on a *second* connection — ``test_tag_service.py``'s
-``_commit_user_on_other_connection`` (it needs a real FK target for a genuine
-insert race), ``test_redaction_task_tracking.py``'s ``SessionLocal()`` setup, and
+deliberately commit rows on a *second* connection — insert-race tests that need a
+real committed FK target, ``test_redaction_task_tracking.py``'s ``SessionLocal()`` setup, and
 the ~20 app paths that open their own ``SessionLocal()`` inside a ``TestClient``
 request. ``db_session``'s savepoint hides *our* writes from *them*, but it cannot
 hide *their* commits from *us*: the session reads at READ COMMITTED, so a row

@@ -7,6 +7,8 @@ duplicated id yields a duplicated impact entry) which the rewrite may change.
 from __future__ import annotations
 
 import pytest
+from fixtures.tag_recorders import count_commits
+from fixtures.tag_recorders import record_hook
 from fixtures.tag_world import attach
 from fixtures.tag_world import build_org_world
 from fixtures.tag_world import make_file
@@ -15,40 +17,17 @@ from fixtures.tag_world import word
 
 from app.models.tag import FileTag
 from app.models.tag import Tag
-from app.services.tag_operations import cleanup_unreferenced_tags
-from app.services.tag_operations import merge_tags
-from app.services.tag_operations import preview_tag_impact
-from app.services.tag_operations import rename_tag
-
-
-class _Hook:
-    def __init__(self) -> None:
-        self.calls: list[dict] = []
-
-    def __call__(self, db, file_ids=None, *, user_id=None, system_scope=False):
-        self.calls.append(
-            {"files": list(file_ids or []), "user_id": user_id, "system_scope": system_scope}
-        )
-        return list(file_ids or [])
+from app.services import tag_operations
 
 
 @pytest.fixture
 def hook(monkeypatch):
-    recorder = _Hook()
-    monkeypatch.setattr("app.services.tag_operations.on_tags_changed", recorder)
-    return recorder
+    return record_hook(monkeypatch, "app.services.tag_operations")
 
 
 @pytest.fixture
 def commits(monkeypatch, db_session) -> list[int]:
-    seen: list[int] = []
-    original = db_session.commit
-
-    def counting():
-        seen.append(1)
-        return original()
-
-    monkeypatch.setattr(db_session, "commit", counting)
+    seen: list[int] = count_commits(monkeypatch, db_session)
     return seen
 
 
@@ -77,7 +56,9 @@ def test_personal_tag_renamed_onto_a_system_name_is_held(db_session, normal_user
     commits.clear()
     old_name = mine.name
 
-    outcome = rename_tag(db_session, mine.id, system.name.upper(), user_id=normal_user.id)
+    outcome = tag_operations.rename_tag(
+        db_session, mine.id, system.name.upper(), user_id=normal_user.id
+    )
 
     assert outcome.requires_confirmation is True
     assert outcome.merged is False
@@ -96,7 +77,7 @@ def test_personal_tag_renamed_onto_a_system_name_and_confirmed_folds_into_the_sy
     attach(db_session, media_file, mine)
     mine_uuid, mine_id = mine.uuid, mine.id
 
-    outcome = rename_tag(
+    outcome = tag_operations.rename_tag(
         db_session, mine_id, system.name, confirm_merge=True, user_id=normal_user.id
     )
 
@@ -116,12 +97,12 @@ def test_system_tag_renamed_onto_another_system_name_is_held_then_merged(
     moving = make_tag(db_session, word("sys-moving"), user_id=None)
     moving_id, moving_uuid = moving.id, moving.uuid
 
-    held = rename_tag(db_session, moving_id, keeper.name, user_id=normal_user.id)
+    held = tag_operations.rename_tag(db_session, moving_id, keeper.name, user_id=normal_user.id)
     assert held.requires_confirmation is True and held.tag is not None
     assert held.tag.id == keeper.id
     assert _row(db_session, moving_id) is not None
 
-    confirmed = rename_tag(
+    confirmed = tag_operations.rename_tag(
         db_session, moving_id, keeper.name, confirm_merge=True, user_id=normal_user.id
     )
     assert confirmed.merged is True
@@ -137,7 +118,7 @@ def test_system_tag_renamed_onto_a_word_only_a_tenant_owns_is_a_plain_rename(
     owned_word = word("only-mine")
     personal = make_tag(db_session, owned_word, user_id=normal_user.id)
 
-    outcome = rename_tag(db_session, system.id, owned_word, user_id=normal_user.id)
+    outcome = tag_operations.rename_tag(db_session, system.id, owned_word, user_id=normal_user.id)
 
     assert outcome.requires_confirmation is False and outcome.merged is False
     assert outcome.tag is not None and outcome.tag.id == system.id
@@ -153,7 +134,9 @@ def test_rename_to_its_own_case_variant_is_a_plain_rename_with_no_confirmation(
     media_file = make_file(db_session, normal_user)
     attach(db_session, media_file, tag)
 
-    outcome = rename_tag(db_session, tag.id, tag.name.upper(), user_id=normal_user.id)
+    outcome = tag_operations.rename_tag(
+        db_session, tag.id, tag.name.upper(), user_id=normal_user.id
+    )
 
     assert (outcome.merged, outcome.requires_confirmation) == (False, False)
     assert _stored(db_session, tag.id).name == tag.name.upper()
@@ -170,7 +153,7 @@ def test_rename_collision_is_resolved_in_the_renamed_tags_tenant_not_the_callers
     make_tag(db_session, word_mine, user_id=normal_user.id)
     theirs = make_tag(db_session, word("theirs"), user_id=other_user.id)
 
-    outcome = rename_tag(db_session, theirs.id, word_mine, user_id=normal_user.id)
+    outcome = tag_operations.rename_tag(db_session, theirs.id, word_mine, user_id=normal_user.id)
 
     assert (outcome.merged, outcome.requires_confirmation) == (False, False)
     assert _stored(db_session, theirs.id).name == word_mine
@@ -185,7 +168,9 @@ def test_merge_of_the_target_into_itself_does_nothing(db_session, normal_user, h
     target = make_tag(db_session, word("self"), user_id=normal_user.id, source="auto_ai")
     commits.clear()
 
-    outcome = merge_tags(db_session, target.id, [target.id, target.id], user_id=normal_user.id)
+    outcome = tag_operations.merge_tags(
+        db_session, target.id, [target.id, target.id], user_id=normal_user.id
+    )
 
     assert (outcome.merged, outcome.deleted_uuids) == (False, [])
     assert outcome.tag is not None and outcome.tag.id == target.id
@@ -201,7 +186,7 @@ def test_merge_of_the_target_into_itself_does_nothing(db_session, normal_user, h
 
 
 def test_impact_of_no_ids_is_an_empty_report(db_session, normal_user):
-    report = preview_tag_impact(db_session, [], user_id=normal_user.id)
+    report = tag_operations.preview_tag_impact(db_session, [], user_id=normal_user.id)
 
     assert (report.tags, report.accessible_file_count, report.total_file_count) == ([], 0, 0)
 
@@ -209,7 +194,9 @@ def test_impact_of_no_ids_is_an_empty_report(db_session, normal_user):
 def test_impact_skips_ids_that_do_not_exist(db_session, normal_user):
     real = make_tag(db_session, word("real"), user_id=normal_user.id)
 
-    report = preview_tag_impact(db_session, [2_000_000_000, real.id], user_id=normal_user.id)
+    report = tag_operations.preview_tag_impact(
+        db_session, [2_000_000_000, real.id], user_id=normal_user.id
+    )
 
     assert [e.uuid for e in report.tags] == [real.uuid]
 
@@ -218,7 +205,9 @@ def test_impact_entries_follow_the_supplied_order(db_session, normal_user):
     first = make_tag(db_session, word("a"), user_id=normal_user.id)
     second = make_tag(db_session, word("b"), user_id=normal_user.id)
 
-    report = preview_tag_impact(db_session, [second.id, first.id], user_id=normal_user.id)
+    report = tag_operations.preview_tag_impact(
+        db_session, [second.id, first.id], user_id=normal_user.id
+    )
 
     assert [e.uuid for e in report.tags] == [second.uuid, first.uuid]
 
@@ -229,7 +218,7 @@ def test_impact_duplicates_a_duplicated_id_pins_current_behaviour(db_session, no
     media_file = make_file(db_session, normal_user)
     attach(db_session, media_file, tag)
 
-    report = preview_tag_impact(db_session, [tag.id, tag.id], user_id=normal_user.id)
+    report = tag_operations.preview_tag_impact(db_session, [tag.id, tag.id], user_id=normal_user.id)
 
     assert [e.uuid for e in report.tags] == [tag.uuid, tag.uuid]
     assert (report.accessible_file_count, report.total_file_count) == (1, 1)
@@ -243,7 +232,9 @@ def test_impact_union_counts_a_file_carrying_two_tags_once(db_session, normal_us
         attach(db_session, both, tag)
     attach(db_session, only_first, first)
 
-    report = preview_tag_impact(db_session, [first.id, second.id], user_id=normal_user.id)
+    report = tag_operations.preview_tag_impact(
+        db_session, [first.id, second.id], user_id=normal_user.id
+    )
 
     assert [(e.total_file_count) for e in report.tags] == [2, 1]
     assert (report.accessible_file_count, report.total_file_count) == (2, 2)
@@ -255,7 +246,7 @@ def test_impact_separates_accessible_from_total(db_session, normal_user, other_u
     attach(db_session, mine, tag)
     attach(db_session, theirs, tag)
 
-    report = preview_tag_impact(db_session, [tag.id], user_id=normal_user.id)
+    report = tag_operations.preview_tag_impact(db_session, [tag.id], user_id=normal_user.id)
 
     assert [(e.accessible_file_count, e.total_file_count) for e in report.tags] == [(1, 2)]
     assert (report.accessible_file_count, report.total_file_count) == (1, 2)
@@ -267,8 +258,8 @@ def test_impact_none_organization_means_personal_scope_not_unscoped(db_session):
     org_file = make_file(db_session, world.alice, world.org_a.id)
     attach(db_session, org_file, tag)
 
-    personal = preview_tag_impact(db_session, [tag.id], user_id=world.alice.id)
-    in_org = preview_tag_impact(
+    personal = tag_operations.preview_tag_impact(db_session, [tag.id], user_id=world.alice.id)
+    in_org = tag_operations.preview_tag_impact(
         db_session, [tag.id], user_id=world.alice.id, organization_id=world.org_a.id
     )
 
@@ -283,11 +274,11 @@ def test_impact_association_source_filter_counts_only_matching_origins(db_sessio
     attach(db_session, human, tag, source="manual")
     attach(db_session, legacy, tag, source=None)
 
-    everything = preview_tag_impact(db_session, [tag.id], user_id=normal_user.id)
-    only_ai = preview_tag_impact(
+    everything = tag_operations.preview_tag_impact(db_session, [tag.id], user_id=normal_user.id)
+    only_ai = tag_operations.preview_tag_impact(
         db_session, [tag.id], user_id=normal_user.id, association_source="auto_ai"
     )
-    only_manual = preview_tag_impact(
+    only_manual = tag_operations.preview_tag_impact(
         db_session, [tag.id], user_id=normal_user.id, association_source="manual"
     )
 
@@ -299,7 +290,7 @@ def test_impact_association_source_filter_counts_only_matching_origins(db_sessio
 
 
 # ---------------------------------------------------------------------------
-# cleanup_unreferenced_tags in an organization
+# tag_operations.cleanup_unreferenced_tags in an organization
 # ---------------------------------------------------------------------------
 
 
@@ -317,7 +308,7 @@ def test_cleanup_in_an_org_removes_only_the_actors_unreferenced_tags_of_that_org
     ids = {t.id for t in (colleague, other_org, personal, system, used)}
     mine_id = mine.id
 
-    deleted = cleanup_unreferenced_tags(
+    deleted = tag_operations.cleanup_unreferenced_tags(
         db_session, acting_user_id=world.alice.id, organization_id=world.org_a.id
     )
 
@@ -332,7 +323,7 @@ def test_cleanup_that_deletes_nothing_skips_commit_and_hook(db_session, normal_u
     attach(db_session, make_file(db_session, normal_user), used)
     commits.clear()
 
-    deleted = cleanup_unreferenced_tags(db_session, acting_user_id=normal_user.id)
+    deleted = tag_operations.cleanup_unreferenced_tags(db_session, acting_user_id=normal_user.id)
 
     assert deleted == 0
     assert commits == [] and hook.calls == []
@@ -344,7 +335,7 @@ def test_cleanup_that_deletes_commits_and_runs_the_hook_without_files(
     make_tag(db_session, word("unused"), user_id=normal_user.id)
     commits.clear()
 
-    deleted = cleanup_unreferenced_tags(db_session, acting_user_id=normal_user.id)
+    deleted = tag_operations.cleanup_unreferenced_tags(db_session, acting_user_id=normal_user.id)
 
     assert deleted == 1
     assert commits
@@ -359,7 +350,9 @@ def test_cleanup_all_users_sweeps_everyone_but_system_and_uses_the_global_cache_
     system = make_tag(db_session, word("system"), user_id=None)
     mine_id, theirs_id = mine.id, theirs.id
 
-    deleted = cleanup_unreferenced_tags(db_session, acting_user_id=normal_user.id, all_users=True)
+    deleted = tag_operations.cleanup_unreferenced_tags(
+        db_session, acting_user_id=normal_user.id, all_users=True
+    )
 
     assert deleted >= 2
     assert _row(db_session, mine_id) is None and _row(db_session, theirs_id) is None

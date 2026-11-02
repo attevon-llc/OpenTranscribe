@@ -232,7 +232,6 @@ noqa::backend/tests/unit/test_session_survivor_mutants.py	1	suppression: reason 
 noqa::backend/tests/unit/test_settings_cache.py	1	suppression: reason to be added
 noqa::backend/tests/unit/test_speaker_attribute_memory_bounds.py	5	suppression: reason to be added
 noqa::backend/tests/unit/test_storage_recovery.py	1	suppression: reason to be added
-noqa::backend/tests/unit/test_tag_operations.py	1	suppression: reason to be added
 noqa::backend/tests/unit/test_testrun_registry.py	1	suppression: reason to be added
 noqa::backend/tests/unit/test_transcription_storage.py	1	suppression: reason to be added
 noqa::backend/tests/unit/test_upload_batch_race.py	1	suppression: reason to be added

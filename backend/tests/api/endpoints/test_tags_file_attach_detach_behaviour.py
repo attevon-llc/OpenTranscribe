@@ -11,6 +11,8 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from fixtures.tag_recorders import record_reindex
+from fixtures.tag_recorders import share_file
 from fixtures.tag_world import acting_as
 from fixtures.tag_world import attach
 from fixtures.tag_world import build_org_world
@@ -18,51 +20,18 @@ from fixtures.tag_world import make_file
 from fixtures.tag_world import make_tag
 from fixtures.tag_world import word
 
-from app.models.collection import Collection
-from app.models.collection import CollectionMember
-from app.models.sharing import CollectionShare
 from app.models.tag import FileTag
 from app.models.tag import Tag
 
 
-class _RecordingTask:
-    def __init__(self) -> None:
-        self.calls: list[list[int]] = []
-
-    def delay(self, file_ids):
-        self.calls.append(list(file_ids))
-
-
 @pytest.fixture
 def reindex(monkeypatch):
-    from app.tasks import search_file_field_tasks
-
-    recorder = _RecordingTask()
-    monkeypatch.setattr(search_file_field_tasks, "update_file_tags_index", recorder)
-    return recorder
+    return record_reindex(monkeypatch)
 
 
 @pytest.fixture
 def org_world(db_session):
     return build_org_world(db_session)
-
-
-def _share(db, owner, target, media_file, permission: str) -> None:
-    collection = Collection(name=word("coll"), user_id=owner.id)
-    db.add(collection)
-    db.commit()
-    db.refresh(collection)
-    db.add(CollectionMember(collection_id=collection.id, media_file_id=media_file.id))
-    db.add(
-        CollectionShare(
-            collection_id=collection.id,
-            shared_by_id=owner.id,
-            target_type="user",
-            target_user_id=target.id,
-            permission=permission,
-        )
-    )
-    db.commit()
 
 
 def _links(db, media_file) -> list[FileTag]:
@@ -79,25 +48,15 @@ def _attach_url(media_file) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_attach_without_a_name_key_is_a_422(client, db_session, normal_user, user_token_headers):
+@pytest.mark.parametrize("body", [{"other": "x"}, {}], ids=["other-key", "empty-object"])
+def test_attach_without_a_name_is_a_422(client, db_session, normal_user, user_token_headers, body):
     media_file = make_file(db_session, normal_user)
 
-    response = client.post(_attach_url(media_file), headers=user_token_headers, json={"other": "x"})
+    response = client.post(_attach_url(media_file), headers=user_token_headers, json=body)
 
     assert response.status_code == 422
-    assert response.json()["detail"] == "Tag name is required"
+    assert response.json() == {"detail": "Tag name is required"}
     assert _links(db_session, media_file) == []
-
-
-def test_attach_with_an_empty_body_object_is_a_422(
-    client, db_session, normal_user, user_token_headers
-):
-    media_file = make_file(db_session, normal_user)
-
-    response = client.post(_attach_url(media_file), headers=user_token_headers, json={})
-
-    assert response.status_code == 422
-    assert response.json()["detail"] == "Tag name is required"
 
 
 @pytest.mark.parametrize("blank", ["", "   ", "-", "__"])
@@ -111,7 +70,7 @@ def test_attach_with_a_name_that_normalizes_to_nothing_is_a_422(
     )
 
     assert response.status_code == 422
-    assert response.json()["detail"] == "Tag name is required"
+    assert response.json() == {"detail": "Tag name is required"}
     assert _links(db_session, media_file) == []
 
 
@@ -203,7 +162,7 @@ def test_viewer_shared_file_cannot_be_tagged(
 ):
     """A read-only share is refused with the bulk rail's editor-gate status and detail."""
     media_file = make_file(db_session, other_user)
-    _share(db_session, other_user, normal_user, media_file, "viewer")
+    share_file(db_session, other_user, normal_user, media_file, "viewer")
     name = word("viewer")
 
     response = client.post(_attach_url(media_file), headers=user_token_headers, json={"name": name})
@@ -222,7 +181,7 @@ def test_viewer_shared_file_cannot_be_detached(
     media_file = make_file(db_session, other_user)
     tag = make_tag(db_session, word("v-detach"), user_id=other_user.id)
     attach(db_session, media_file, tag)
-    _share(db_session, other_user, normal_user, media_file, "viewer")
+    share_file(db_session, other_user, normal_user, media_file, "viewer")
 
     response = client.delete(f"{_attach_url(media_file)}/{tag.name}", headers=user_token_headers)
 
@@ -237,7 +196,7 @@ def test_editor_shared_file_can_be_tagged(
 ):
     """Control: an editor share still tags, resolving the caller's own personal row."""
     media_file = make_file(db_session, other_user)
-    _share(db_session, other_user, normal_user, media_file, "editor")
+    share_file(db_session, other_user, normal_user, media_file, "editor")
 
     response = client.post(
         _attach_url(media_file), headers=user_token_headers, json={"name": word("editor")}
@@ -257,7 +216,7 @@ def test_editor_shared_file_can_be_detached(
     media_file = make_file(db_session, other_user)
     tag = make_tag(db_session, word("e-detach"), user_id=other_user.id)
     attach(db_session, media_file, tag)
-    _share(db_session, other_user, normal_user, media_file, "editor")
+    share_file(db_session, other_user, normal_user, media_file, "editor")
 
     response = client.delete(f"{_attach_url(media_file)}/{tag.name}", headers=user_token_headers)
 

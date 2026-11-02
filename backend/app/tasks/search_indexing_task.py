@@ -55,51 +55,39 @@ def resolve_chunk_speaker_name(speaker: Any, *, voiceprint_names: bool) -> str:
 
 
 def extract_file_index_metadata(db: Any, media_file: Any, file_id: int) -> dict[str, Any]:
-    """Collect the per-file metadata a search document carries.
+    """Collect the per-file fields every search document of a file carries.
 
-    Must run while the caller's session is still open — every field below is
-    read off attached ORM state.
-
-    Tags and collections are read through the **association rows** that
-    ``MediaFile`` actually declares (``file_tags`` / ``collection_memberships``).
-    There is no ``.tags`` or ``.collections`` relationship: reading those names
-    yields nothing at all, which is how every transcript came to be indexed with
-    an empty tags array and no collection ids. ``reindex_task`` has always read
-    the association rows — this is the same extraction, so a live index and a
-    rebuilt one now agree.
+    Reads relationships, so the session that loaded ``media_file`` must still
+    be open. Tag names come through the ``file_tags`` association rows: the
+    model has no direct ``tags`` relationship.
 
     Args:
-        db: Open database session owning ``media_file``.
-        media_file: The attached :class:`~app.models.media.MediaFile`.
-        file_id: Its integer primary key.
+        db: The open session that owns ``media_file``.
+        media_file: The ``MediaFile`` row being indexed.
+        file_id: Integer id of that file.
 
     Returns:
-        Dict with ``title``, ``tag_names``, ``upload_time``, ``language``,
-        ``content_type``, ``duration``, ``file_size``, ``collection_ids``,
-        ``accessible_user_ids`` and ``organization_id``.
+        Dict with ``title``, ``tag_names``, ``upload_time`` (ISO string or
+        None), ``language``, ``content_type``, ``duration``, ``file_size``,
+        ``collection_ids``, ``accessible_user_ids`` and ``organization_id``
+        (None for a personal file).
     """
     from app.services.permission_service import PermissionService
 
-    tag_names: list[str] = [ft.tag.name for ft in media_file.file_tags if ft.tag]
-    collection_ids: list[int] = [int(cm.collection_id) for cm in media_file.collection_memberships]
-
-    upload_time = (
-        (media_file.creation_date or media_file.upload_time).isoformat()
-        if media_file.creation_date or media_file.upload_time
-        else None
-    )
-
+    tag_names = [link.tag.name for link in media_file.file_tags if link.tag is not None]
+    # The container's own date describes the recording better than the upload.
+    when = media_file.creation_date or media_file.upload_time
     return {
         "title": media_file.title or media_file.filename or f"File {file_id}",
         "tag_names": tag_names,
-        "upload_time": upload_time,
+        "upload_time": when.isoformat() if when else None,
         "language": media_file.language or "en",
         "content_type": media_file.content_type or "",
         "duration": media_file.duration,
         "file_size": media_file.file_size,
-        "collection_ids": collection_ids,
+        "collection_ids": [int(m.collection_id) for m in media_file.collection_memberships],
         "accessible_user_ids": PermissionService.get_users_with_file_access(db, file_id),
-        "organization_id": media_file.organization_id,  # tenant scope (None = personal)
+        "organization_id": media_file.organization_id,
     }
 
 

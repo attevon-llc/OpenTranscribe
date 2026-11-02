@@ -1,8 +1,8 @@
-"""Create, list and attach/detach — the everyday tag surface.
+"""Create and list tags, sweep unused ones, and attach or detach a tag on one file."""
 
-Shared helpers and the visibility rules live in ``_common``.
-"""
+from __future__ import annotations
 
+import logging
 from typing import Any
 from typing import Literal
 
@@ -10,102 +10,94 @@ from fastapi import Body
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
-from fastapi import Request
 from fastapi import status
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
-from app.api.endpoints.tags._common import _resolve_tag
+from app.api.endpoints.tags._common import _invalid_name
+from app.api.endpoints.tags._common import _tag_not_found
 from app.api.endpoints.tags._common import _tag_response
-from app.api.endpoints.tags._common import logger
 from app.api.endpoints.tags._common import router
-from app.api.error_handlers import ErrorHandler
-from app.core.constants import TAG_SOURCE_MANUAL
+from app.core.config import settings
 from app.core.exceptions import DomainError
 from app.db.base import get_db
-from app.models.tag import FileTag
-from app.models.tag import Tag
 from app.models.user import User
 from app.schemas.tag import Tag as TagSchema
 from app.schemas.tag import TagBase
 from app.schemas.tag import TagWithCount
+from app.services.redis_cache_service import TTL_TAGS
+from app.services.redis_cache_service import redis_cache
 from app.services.request_context import RequestContext
 from app.services.tag_bulk import REQUIRED_PERMISSION
+from app.services.tag_collisions import SCOPE_ALL
 from app.services.tag_collisions import list_tags_filtered
 from app.services.tag_collisions import list_unused_tag_rows
+from app.services.tag_files import add_file_tag
+from app.services.tag_files import attached_tag_named
+from app.services.tag_files import remove_file_tag
 from app.services.tag_operations import cleanup_unreferenced_tags
+from app.services.tag_service import InvalidTagNameError
 from app.services.tag_service import on_tags_changed
+from app.services.tag_service import resolve_or_create_tag
+from app.services.uuid_helpers import get_file_by_uuid_with_permission
+
+logger = logging.getLogger(__name__)
+
+CLEANUP_FAILED = "Could not clean up unused tags."
 
 
 @router.post("", response_model=TagSchema, dependencies=[Depends(refuse_under_support_grant)])
 def create_tag(
-    tag_data: TagBase,
+    tag_in: TagBase,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Create a tag in the request's tenant, or return the tenant's existing one.
+    """Create a tag in the request tenant, or return the one the name already resolves to.
 
-    In an organization the tag is the org's — every member sees and reuses it —
-    and is attributed to the caller; in personal scope it is the caller's own.
+    Case, ``-``/``_`` and spacing variants resolve onto the existing tag; a
+    merely similar name creates a new one. Names are clamped to 50 characters.
     """
-    tag = _resolve_tag(db, tag_data.name, current_user.id, ctx.org_id)
+    try:
+        tag = resolve_or_create_tag(
+            db, tag_in.name, user_id=current_user.id, organization_id=ctx.org_id
+        )
+    except InvalidTagNameError as exc:
+        raise _invalid_name() from exc
     db.commit()
     db.refresh(tag)
-    # No file carries it yet, so there is nothing to reindex — but the new row
-    # joins the caller's read-through tag list, so that key has to go.
     on_tags_changed(db, user_id=current_user.id)
     return _tag_response(tag, current_user.id)
 
 
 @router.get("", response_model=list[TagWithCount])
 def list_tags(
-    unused: bool = Query(False, description="Only tags no accessible file carries"),
+    unused: bool = Query(False, description="Only tags on none of your accessible files."),
     colliding: bool = Query(
-        False, description="Only tags sharing a normalized name with another tag"
+        False, description="Only tags whose name normalizes like another tag's."
     ),
     scope: Literal["all", "mine", "system", "shared_with_me"] = Query(
-        "all",
-        description=(
-            "Ownership scope. `all` is everything visible; the other three are the "
-            "`ownership` values a tag can carry, so a scoped request returns only rows "
-            "reporting that same ownership."
-        ),
+        "all", description="Narrow to one ownership kind."
     ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """List the tags visible to the caller with usage counts, most used first.
+    """The tags you can see, most used first, with how many of your files carry each.
 
-    Visible = system tags + the request tenant's tags (in an organization, every
-    member's) + tags shared with the caller or attached to a file the caller can
-    access — every arm bounded to the request's tenant, so a tag never lists in
-    another tenant (issue #1050). Usage counts only count accessible
-    files, so a shared tag never reveals how often its owner uses it.
-
-    Filtering, counting, and clustering live in ``services/tag_collisions.py``;
-    the filters combine (AND). Errors propagate — this used to return ``[]`` on
-    any exception, rendering a broken query as an install with no tags.
-
-    Read-through cached in Redis (``cache:tags:{user_id}``) behind
-    ``READ_CACHE_ENABLED`` **only for the unfiltered personal-scope request**:
-    the key carries neither the filters nor the scope, so caching either variant
-    would serve one request's answer to another. Every tag/file-tag mutation
-    path busts this key, so reads are always fresh.
+    The unfiltered personal list is served from a short-lived cache.
     """
-    from app.core.config import settings as app_settings
-    from app.services.redis_cache_service import TTL_TAGS
-    from app.services.redis_cache_service import redis_cache
-
-    filtered = unused or colliding or scope != "all"
+    cacheable = (
+        settings.READ_CACHE_ENABLED
+        and ctx.org_id is None
+        and not unused
+        and not colliding
+        and scope == SCOPE_ALL
+    )
     cache_key = f"cache:tags:{current_user.id}"
-    use_cache = app_settings.READ_CACHE_ENABLED and ctx.org_id is None and not filtered
-
-    if use_cache:
+    if cacheable:
         cached = redis_cache.get(cache_key)
         if cached is not None:
             return cached
@@ -118,15 +110,10 @@ def list_tags(
         colliding=colliding,
         scope=scope,
     )
-    tags_with_counts = [TagWithCount.model_validate(entry) for entry in entries]
-
-    if use_cache:
-        # Cache the post-Pydantic dicts (never ORM objects).
-        redis_cache.set(
-            cache_key, [t.model_dump(mode="json") for t in tags_with_counts], ttl=TTL_TAGS
-        )
-
-    return tags_with_counts
+    rows = [TagWithCount.model_validate(entry, from_attributes=True) for entry in entries]
+    if cacheable:
+        redis_cache.set(cache_key, [row.model_dump(mode="json") for row in rows], ttl=TTL_TAGS)
+    return rows
 
 
 @router.get("/unused", response_model=list[TagSchema])
@@ -135,78 +122,38 @@ def list_unused_tags(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """List tags no file the caller can see is carrying.
-
-    Scoped to the caller's accessible files, exactly like ``usage_count`` on the
-    tag list — the two used to disagree because this one counted usage globally.
-    Errors propagate rather than degrading to an empty list.
-    """
-    return list_unused_tag_rows(db, user_id=current_user.id, organization_id=ctx.org_id)
+    """Your tenant's tags and system tags that none of your accessible files carry."""
+    rows = list_unused_tag_rows(db, user_id=current_user.id, organization_id=ctx.org_id)
+    return [_tag_response(tag, current_user.id) for tag in rows]
 
 
 @router.delete(
-    "/cleanup", response_model=dict[str, Any], dependencies=[Depends(refuse_under_support_grant)]
+    "/cleanup",
+    response_model=dict[str, Any],
+    dependencies=[Depends(refuse_under_support_grant)],
 )
 def cleanup_unused_tags(
     scope: Literal["mine", "all_users"] = Query(
-        "mine",
-        description=(
-            "Whose unused tags to delete. `mine` is the caller's own tags — the "
-            "default, because it is the only scope the caller can inspect first. "
-            "`all_users` sweeps every account and requires `confirm=true`."
-        ),
+        "mine", description="Your own tags in this workspace, or every account's."
     ),
-    confirm: bool = Query(
-        False, description="Required acknowledgement for `scope=all_users`. Ignored otherwise."
-    ),
+    confirm: bool = Query(False, description="Required for scope=all_users."),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Delete owned tags no file anywhere carries (admin only).
-
-    **Defaults to the caller's own tags.** This used to be unconditionally
-    deployment-wide while its inspection sibling ``GET /tags/unused`` is
-    caller-scoped, so an admin who read the list and then called this deleted
-    rows they were never shown — irreversibly, with no impact preview and no
-    parameter that could have warned them. The wide sweep is still available, but
-    only by naming it (``scope=all_users``) *and* acknowledging it
-    (``confirm=true``), the same shape as ``POST /org-admin/gdpr/erase-organization``.
-
-    "Unused" is measured against every ``file_tag`` row in the deployment, not
-    the caller's accessible files, so a tag still attached to a file the caller
-    can no longer see survives: ``GET /tags/unused`` may therefore list a tag
-    this endpoint declines to delete. That gap is deliberate — the alternative is
-    stripping a tag off another account's file. System tags (no owner, no tenant)
-    are exempt in both scopes; being unattached is their normal state. ``mine`` is
-    the caller's tags in the request's tenant only.
-
-    Args:
-        scope: ``mine`` (default) or ``all_users``.
-        confirm: Must be true for ``scope=all_users``.
-
-    Returns:
-        ``deleted_count``, the ``scope`` that was applied, and a message.
-
-    Raises:
-        HTTPException: 403 for a non-admin caller (and, in a multi-tenant deployment,
-        for ``all_users`` from anyone but a super_admin), 400 for ``all_users``
-        without ``confirm``, 500 if the sweep fails.
-    """
-    # Only allow admin users to perform this operation
+    """Delete tags that no file carries. Admin only; system tags are always kept."""
     if not ctx.bypass.user_is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admin users can clean up unused tags",
         )
-
-    if scope == "all_users" and not ctx.bypass.deployment_scope_writable:
+    all_users = scope == "all_users"
+    if all_users and not ctx.bypass.deployment_scope_writable:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Deployment-wide tag cleanup is not available to this account",
         )
-
-    if scope == "all_users" and not confirm:
+    if all_users and not confirm:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -214,32 +161,26 @@ def cleanup_unused_tags(
                 "undone. Retry with confirm=true, or use scope=mine."
             ),
         )
-
     try:
-        count = cleanup_unreferenced_tags(
+        deleted = cleanup_unreferenced_tags(
             db,
             acting_user_id=current_user.id,
             organization_id=ctx.org_id,
-            all_users=scope == "all_users",
+            all_users=all_users,
         )
-        if count:
-            logger.info(f"Deleted {count} unused tags (scope={scope})")
-
-        return {
-            "deleted_count": count,
-            "scope": scope,
-            "message": f"{count} unused tags deleted successfully",
-        }
     except (HTTPException, DomainError):
-        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
-        # anything it catches into a 500, which would report a deliberate 401/403/404/422
-        # raised inside this block as an internal server error (issue #431).
         raise
-    except Exception as e:
-        # The real SQL failure is logged, never returned (#859).
-        logger.exception("Error in cleanup_unused_tags")
+    except Exception as exc:
+        logger.exception(f"Unused tag cleanup failed: {exc}")
         db.rollback()
-        raise ErrorHandler.internal_error("Could not clean up unused tags.") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=CLEANUP_FAILED
+        ) from exc
+    return {
+        "deleted_count": deleted,
+        "scope": scope,
+        "message": f"{deleted} unused tags deleted successfully",
+    }
 
 
 @router.post(
@@ -248,42 +189,17 @@ def cleanup_unused_tags(
     dependencies=[Depends(refuse_under_support_grant)],
 )
 def add_tag_to_file(
-    request: Request,
     file_uuid: str,
-    tag_data: dict = Body(...),
+    tag_data: dict[str, Any] = Body(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Attach one tag to a media file, creating the tag if the caller lacks it.
+    """Attach a tag to a file by name, creating the tag in the file's tenant if needed.
 
-    Consumed by the file-detail and gallery tag pickers; also the single-tag entry
-    point for a script or agent labelling an imported library (bulk paths must use
-    the batched resolver instead — see ``prepare_upload.add_tags_to_file``).
-
-    Authorized by ``get_file_by_uuid_with_permission``, which applies the sharing,
-    takedown and tenant (``ctx.org_id``) gates in one place — ``editor`` access to
-    the *file* is the whole requirement (the bulk rail's ``REQUIRED_PERMISSION``),
-    because tagging does not touch anyone else's vocabulary. A file the caller cannot
-    open at all is a 404 "File not found", the same answer as an unknown uuid.
-
-    The body is a raw ``dict`` rather than a schema, so a missing ``name`` is
-    rejected as 422 by hand. The tag is resolved in the **file's tenant**: on an
-    organization file it is the org's tag (a colleague's row is reused, not
-    duplicated); on a personal file it is the caller's own — tagging a file shared
-    with you adds the word to your personal vocabulary, and the owner still sees it
-    because it is now attached to a file they can access.
-    ``_resolve_tag`` is race-safe and resolves normalized-exact against that
-    tenant's vocabulary plus the system one; it does **not** pass ``file_id``, so it does
-    not take ``resolve_or_create_tag``'s "already on this file" branch. The
-    duplicate-suppression here is by tag *id* on ``FileTag``, which makes a repeat
-    post by the same user idempotent (no second row, no second ``on_tags_changed``)
-    but lets two users attach same-named personal rows of their own to one shared
-    personal file (on an organization file both resolve to the org's one row).
+    Needs editor rights on the file. A file you cannot open is answered like an
+    unknown uuid. Attaching a tag the file already carries changes nothing.
     """
-    from app.services.uuid_helpers import get_file_by_uuid_with_permission
-
-    # Get file by UUID and verify permission (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
         db,
         file_uuid,
@@ -293,42 +209,26 @@ def add_tag_to_file(
         min_permission=REQUIRED_PERMISSION,
         conceal_inaccessible=True,
     )
-    file_id = media_file.id  # Get internal ID for database operations
-
-    # Log detailed information about the request for debugging
-    logger.info(f"Received add_tag_to_file request for file_uuid={file_uuid}, tag_data={tag_data}")
-
-    # Handle the raw dictionary and extract the name
-    if not tag_data or "name" not in tag_data:
-        logger.error(f"Invalid tag data received: {tag_data}")
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Tag name is required",
+    if "name" not in tag_data:
+        raise _invalid_name()
+    requested = TagBase(name=tag_data["name"])
+    try:
+        tag = resolve_or_create_tag(
+            db,
+            requested.name,
+            user_id=current_user.id,
+            organization_id=media_file.organization_id,
         )
+    except InvalidTagNameError as exc:
+        raise _invalid_name() from exc
 
-    # Convert to proper TagBase object
-    tag_base = TagBase(name=tag_data["name"])
-
-    # Resolve in the FILE's tenant (issue #1050). The permission check above has
-    # already tenant-gated the file, so for an org file this is ctx.org_id; for a
-    # personal file shared with the caller it is the caller's personal space.
-    tag = _resolve_tag(db, tag_base.name, current_user.id, media_file.organization_id)
-    logger.info(f"Using tag: {tag.id}:{tag.name} for file_id={file_id}")
-
-    # Check if file already has this tag
-    existing_tag = (
-        db.query(FileTag).filter(FileTag.media_file_id == file_id, FileTag.tag_id == tag.id).first()
-    )
-
-    if not existing_tag:
-        # Add tag to file
-        file_tag = FileTag(media_file_id=file_id, tag_id=tag.id, source=TAG_SOURCE_MANUAL)
-        db.add(file_tag)
-        db.commit()
-
+    file_id = media_file.id
+    added = add_file_tag(db, file_id, tag.id)
+    response = _tag_response(tag, current_user.id)
+    db.commit()
+    if added:
         on_tags_changed(db, [file_id], user_id=current_user.id)
-
-    return _tag_response(tag, current_user.id)
+    return response
 
 
 @router.delete(
@@ -343,10 +243,11 @@ def remove_tag_from_file(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Remove a tag from a media file; needs ``editor`` on the file, like attaching."""
-    # Get file by UUID with permission check (tenant-gated via ctx.org_id)
-    from app.services.uuid_helpers import get_file_by_uuid_with_permission
+    """Detach the tag with exactly this stored name from a file; the tag itself is kept.
 
+    Needs editor rights on the file. A file you cannot open is answered like an
+    unknown uuid.
+    """
     media_file = get_file_by_uuid_with_permission(
         db,
         file_uuid,
@@ -357,44 +258,10 @@ def remove_tag_from_file(
         conceal_inaccessible=True,
     )
     file_id = media_file.id
-
-    # Resolve the tag through the file's own attachments. Names are only unique
-    # per owner now, so a bare `Tag.name == tag_name` lookup could pick another
-    # user's identically-named tag and silently detach nothing.
-    tag = (
-        db.query(Tag)
-        .join(FileTag, FileTag.tag_id == Tag.id)
-        .filter(FileTag.media_file_id == file_id, Tag.name == tag_name)
-        .first()
-    )
-    if not tag:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag not found")
-
-    # Remove the association
-    file_tag = (
-        db.query(FileTag).filter(FileTag.media_file_id == file_id, FileTag.tag_id == tag.id).first()
-    )
-
-    if file_tag:
-        db.delete(file_tag)
-        db.commit()
-
-        # Detach is a tag change like any other: the file's indexed tag array
-        # has to lose this name or search keeps matching it.
-        on_tags_changed(db, [file_id], user_id=current_user.id)
-
-    # Also check if this tag is now unused and should be removed
-    # Count how many files still use this tag
-    tag_use_count = db.query(func.count(FileTag.tag_id)).filter(FileTag.tag_id == tag.id).scalar()
-
-    # If the tag is no longer used by any files, we can optionally delete it
-    # We're choosing to keep unused tags in the database for now, as they may be useful for auto-completion
-    # and tag suggestions. This ensures a good UX where users don't have to recreate common tags.
-
-    # Log the tag usage status for monitoring
-    if tag_use_count == 0:
-        logger.info(
-            f"Tag '{tag_name}' (ID: {tag.id}) is now unused but still preserved in the database"
-        )
-
-    return None
+    tag = attached_tag_named(db, file_id, tag_name)
+    if tag is None:
+        raise _tag_not_found()
+    logger.info(f"Detaching tag {tag.uuid} from file {media_file.uuid}; the tag row is kept")
+    remove_file_tag(db, file_id, tag.id)
+    db.commit()
+    on_tags_changed(db, [file_id], user_id=current_user.id)

@@ -2052,7 +2052,7 @@
         "type": "object"
       },
       "BulkTagOutcome": {
-        "description": "What a bulk tag action did to one file.\n\n``ALREADY_PRESENT`` / ``NOT_PRESENT`` are *successful* no-ops: the file ends\nin the requested state, it simply did not have to change to get there. Only\n``FAILED`` means the file did not reach that state.",
+        "description": "What happened to one file of the selection.",
         "enum": [
           "added",
           "already_present",
@@ -18439,7 +18439,7 @@
         "type": "object"
       },
       "Tag": {
-        "description": "Tag with UUID as public identifier.\n\nThe single tag shape on the API: served by ``GET /api/tags`` (as\n``TagWithCount``), ``POST /api/tags``, ``POST /api/tags/files/{uuid}/tags``,\nand — since issue #326 — ``MediaFileDetail.tags``. Tag names are unique only\nper owner (``v374_add_tag_user_id``), so ``uuid`` is the stable identifier.",
+        "description": "A tag as served by every tag-carrying response.",
         "properties": {
           "name": {
             "title": "Name",
@@ -18447,7 +18447,7 @@
           },
           "ownership": {
             "default": "mine",
-            "description": "The caller's relationship to this tag, and therefore what they may do with it. `mine` — they own it, full control. `system` — the shared vocabulary (`user_id IS NULL`) every account sees; admin-only to rename, merge, delete or promote. `shared_with_me` — owned by another account and visible only because it sits on a file shared with the caller; read-only, and any mutation answers 404. These are the same values `GET /tags?scope=` accepts, so a scoped request returns rows carrying that ownership. Derived per request, never stored.",
+            "description": "The tag's relation to the caller: their own, system vocabulary, or someone else's that they can see.",
             "enum": [
               "mine",
               "system",
@@ -18465,7 +18465,7 @@
                 "type": "null"
               }
             ],
-            "description": "How the tag was applied: 'manual' for a user action, 'auto_ai' for the auto-labeling LLM. Null on tags created before this field existed.",
+            "description": "How the tag came about: manual, auto_ai or ai_accepted (null = legacy manual).",
             "title": "Source"
           },
           "uuid": {
@@ -18482,6 +18482,7 @@
         "type": "object"
       },
       "TagBase": {
+        "description": "A tag name as supplied by a client.",
         "properties": {
           "name": {
             "title": "Name",
@@ -18495,7 +18496,7 @@
         "type": "object"
       },
       "TagClusterMember": {
-        "description": "A tag sharing its normalized name with the rest of its cluster.\n\n``suggested_survivor`` marks the highest-usage member, preselected by the\nbackend so the merge dialog opens on a decision rather than a blank choice.",
+        "description": "A tag in a cluster of rows that share one normalized name.",
         "properties": {
           "name": {
             "title": "Name",
@@ -18503,7 +18504,7 @@
           },
           "ownership": {
             "default": "mine",
-            "description": "The caller's relationship to this tag, and therefore what they may do with it. `mine` — they own it, full control. `system` — the shared vocabulary (`user_id IS NULL`) every account sees; admin-only to rename, merge, delete or promote. `shared_with_me` — owned by another account and visible only because it sits on a file shared with the caller; read-only, and any mutation answers 404. These are the same values `GET /tags?scope=` accepts, so a scoped request returns rows carrying that ownership. Derived per request, never stored.",
+            "description": "The tag's relation to the caller: their own, system vocabulary, or someone else's that they can see.",
             "enum": [
               "mine",
               "system",
@@ -18521,11 +18522,12 @@
                 "type": "null"
               }
             ],
-            "description": "How the tag was applied: 'manual' for a user action, 'auto_ai' for the auto-labeling LLM. Null on tags created before this field existed.",
+            "description": "How the tag came about: manual, auto_ai or ai_accepted (null = legacy manual).",
             "title": "Source"
           },
           "suggested_survivor": {
             "default": false,
+            "description": "The member a merge of this cluster should keep.",
             "title": "Suggested Survivor",
             "type": "boolean"
           },
@@ -18548,7 +18550,7 @@
         "type": "object"
       },
       "TagClusterSuggestion": {
-        "description": "A near match offered beside a cluster, never inside it.\n\nFuzzy similarity is non-transitive, so a suggestion is a prompt for a human,\nnot evidence of membership.",
+        "description": "A near-match tag offered next to a cluster; never a member of it.",
         "properties": {
           "name": {
             "title": "Name",
@@ -18556,7 +18558,7 @@
           },
           "ownership": {
             "default": "mine",
-            "description": "The caller's relationship to this tag, and therefore what they may do with it. `mine` — they own it, full control. `system` — the shared vocabulary (`user_id IS NULL`) every account sees; admin-only to rename, merge, delete or promote. `shared_with_me` — owned by another account and visible only because it sits on a file shared with the caller; read-only, and any mutation answers 404. These are the same values `GET /tags?scope=` accepts, so a scoped request returns rows carrying that ownership. Derived per request, never stored.",
+            "description": "The tag's relation to the caller: their own, system vocabulary, or someone else's that they can see.",
             "enum": [
               "mine",
               "system",
@@ -18567,6 +18569,7 @@
           },
           "similarity": {
             "default": 0.0,
+            "description": "Name similarity ratio, 0 to 1.",
             "title": "Similarity",
             "type": "number"
           },
@@ -18579,7 +18582,7 @@
                 "type": "null"
               }
             ],
-            "description": "How the tag was applied: 'manual' for a user action, 'auto_ai' for the auto-labeling LLM. Null on tags created before this field existed.",
+            "description": "How the tag came about: manual, auto_ai or ai_accepted (null = legacy manual).",
             "title": "Source"
           },
           "usage_count": {
@@ -18601,7 +18604,7 @@
         "type": "object"
       },
       "TagCollisionCluster": {
-        "description": "Tags that normalize to one name, with the merge the backend recommends.\n\nGrouping is exact equality on the stored normalization, so repeated requests\nover unchanged data return the same clusters in the same order.",
+        "description": "Tags whose names normalize to the same form.",
         "properties": {
           "members": {
             "default": [],
@@ -18643,7 +18646,7 @@
         "type": "object"
       },
       "TagFileList": {
-        "description": "The files a tag touches, and how many there are in total.\n\n`total` is the real count while `files` is capped, so the UI can say\n\"and N more\" instead of silently truncating.",
+        "description": "A page of the files carrying one tag.",
         "properties": {
           "files": {
             "default": [],
@@ -18655,6 +18658,7 @@
           },
           "total": {
             "default": 0,
+            "description": "Every accessible file carrying the tag.",
             "title": "Total",
             "type": "integer"
           }
@@ -18663,10 +18667,11 @@
         "type": "object"
       },
       "TagImpact": {
-        "description": "What a destructive tag operation would touch, before it acts.\n\nTags are **global** rows (no ``user_id``/``organization_id``, globally unique\nname), so the two counts are deliberately separate: ``accessible_*`` is what\nthe caller can see, ``total_*`` is what the operation actually changes. A\nconfirmation built only from the accessible number would read \"3 files\" in\nfront of a delete that strips the tag from 500.",
+        "description": "What a destructive tag operation would touch, before it runs.",
         "properties": {
           "accessible_file_count": {
             "default": 0,
+            "description": "Distinct files the caller can open that carry any of the tags.",
             "title": "Accessible File Count",
             "type": "integer"
           },
@@ -18680,6 +18685,7 @@
           },
           "total_file_count": {
             "default": 0,
+            "description": "Distinct files carrying any of the tags, across all accounts.",
             "title": "Total File Count",
             "type": "integer"
           }
@@ -18688,7 +18694,7 @@
         "type": "object"
       },
       "TagImpactEntry": {
-        "description": "File counts for a single tag in a pending rename / merge / delete.",
+        "description": "How many files one tag is on, for the caller and overall.",
         "properties": {
           "accessible_file_count": {
             "title": "Accessible File Count",
@@ -18718,7 +18724,7 @@
         "type": "object"
       },
       "TagMergeRequest": {
-        "description": "Fold one or more tags into the tag named in the path.",
+        "description": "Tags to fold into the target tag.",
         "properties": {
           "source_uuids": {
             "items": {
@@ -18737,7 +18743,7 @@
         "type": "object"
       },
       "TagMutationResult": {
-        "description": "Outcome of a rename / merge / delete, always carrying the impact.",
+        "description": "Outcome of a rename, merge, delete or promote.",
         "properties": {
           "deleted_uuids": {
             "default": [],
@@ -18758,6 +18764,7 @@
           },
           "requires_confirmation": {
             "default": false,
+            "description": "Nothing was changed: the new name belongs to another tag, which is returned in ``tag``. Repeat with confirm_merge to fold into it.",
             "title": "Requires Confirmation",
             "type": "boolean"
           },
@@ -18779,10 +18786,11 @@
         "type": "object"
       },
       "TagOnSelection": {
-        "description": "A tag carried by some or all of a set of selected files.\n\nThe bulk apply surface needs to show what the selection **already** has, not\njust offer to add: `file_count` is how many of the selected files carry this\ntag, so the UI can distinguish a tag on every file from one on a few. `GET\n/api/files` deliberately carries no per-file tags (#326), so this is the only\nway that surface can know.",
+        "description": "A tag carried by at least one file of a gallery selection.",
         "properties": {
           "file_count": {
             "default": 0,
+            "description": "Selected files that carry the tag.",
             "title": "File Count",
             "type": "integer"
           },
@@ -18792,7 +18800,7 @@
           },
           "ownership": {
             "default": "mine",
-            "description": "The caller's relationship to this tag, and therefore what they may do with it. `mine` — they own it, full control. `system` — the shared vocabulary (`user_id IS NULL`) every account sees; admin-only to rename, merge, delete or promote. `shared_with_me` — owned by another account and visible only because it sits on a file shared with the caller; read-only, and any mutation answers 404. These are the same values `GET /tags?scope=` accepts, so a scoped request returns rows carrying that ownership. Derived per request, never stored.",
+            "description": "The tag's relation to the caller: their own, system vocabulary, or someone else's that they can see.",
             "enum": [
               "mine",
               "system",
@@ -18803,6 +18811,7 @@
           },
           "selection_size": {
             "default": 0,
+            "description": "Distinct files in the selection.",
             "title": "Selection Size",
             "type": "integer"
           },
@@ -18815,7 +18824,7 @@
                 "type": "null"
               }
             ],
-            "description": "How the tag was applied: 'manual' for a user action, 'auto_ai' for the auto-labeling LLM. Null on tags created before this field existed.",
+            "description": "How the tag came about: manual, auto_ai or ai_accepted (null = legacy manual).",
             "title": "Source"
           },
           "uuid": {
@@ -18832,7 +18841,7 @@
         "type": "object"
       },
       "TagPromoteRequest": {
-        "description": "Publish one or more owned tags into the shared vocabulary.\n\nAdmin-only: a shared tag appears in every account's picker, and same-named\ntags owned by other users are folded into the promoted row, so this changes\nwhat every account sees.",
+        "description": "Tags to move into the shared system vocabulary.",
         "properties": {
           "tag_uuids": {
             "items": {
@@ -18851,10 +18860,11 @@
         "type": "object"
       },
       "TagRenameRequest": {
-        "description": "Rename a tag; ``confirm_merge`` accepts the merge when the name collides.",
+        "description": "New name for a tag.",
         "properties": {
           "confirm_merge": {
             "default": false,
+            "description": "Fold the tag into an existing one when the new name already exists.",
             "title": "Confirm Merge",
             "type": "boolean"
           },
@@ -18870,7 +18880,7 @@
         "type": "object"
       },
       "TagShareCreate": {
-        "description": "Grant a tag to a user or a group. Exactly one target.",
+        "description": "Grant a tag to exactly one user or one group.",
         "properties": {
           "target_group_uuid": {
             "anyOf": [
@@ -18901,7 +18911,7 @@
         "type": "object"
       },
       "TagShareTarget": {
-        "description": "Who a tag is shared with — one user or one group, never both.",
+        "description": "One grant of a tag to a user or a group.",
         "properties": {
           "display_name": {
             "title": "Display Name",
@@ -18941,7 +18951,7 @@
         "type": "object"
       },
       "TagWithCount": {
-        "description": "Tag with usage count for filtering UI.\n\n``usage_count`` is scoped to the files the caller can access, and the unused\nfilter is its exact complement — both read the same count, so a tag can\nnever report ``0`` here while being absent from ``/tags/unused``.",
+        "description": "A tag in the caller's list, with how many of their files carry it.",
         "properties": {
           "name": {
             "title": "Name",
@@ -18949,7 +18959,7 @@
           },
           "ownership": {
             "default": "mine",
-            "description": "The caller's relationship to this tag, and therefore what they may do with it. `mine` — they own it, full control. `system` — the shared vocabulary (`user_id IS NULL`) every account sees; admin-only to rename, merge, delete or promote. `shared_with_me` — owned by another account and visible only because it sits on a file shared with the caller; read-only, and any mutation answers 404. These are the same values `GET /tags?scope=` accepts, so a scoped request returns rows carrying that ownership. Derived per request, never stored.",
+            "description": "The tag's relation to the caller: their own, system vocabulary, or someone else's that they can see.",
             "enum": [
               "mine",
               "system",
@@ -18967,11 +18977,12 @@
                 "type": "null"
               }
             ],
-            "description": "How the tag was applied: 'manual' for a user action, 'auto_ai' for the auto-labeling LLM. Null on tags created before this field existed.",
+            "description": "How the tag came about: manual, auto_ai or ai_accepted (null = legacy manual).",
             "title": "Source"
           },
           "usage_count": {
             "default": 0,
+            "description": "Accessible files carrying the tag.",
             "title": "Usage Count",
             "type": "integer"
           },
@@ -18989,7 +19000,7 @@
         "type": "object"
       },
       "TaggedFile": {
-        "description": "A file carrying a tag, as the manager's \"what it touches\" list renders it.\n\nDeliberately thin: the manager needs a name to show and a uuid to link\nthrough on, not the full detail payload. `display_title` is pre-resolved\nhere rather than in the SPA, matching the fat-backend rule the rest of the\nAPI follows.",
+        "description": "A file carrying a tag, as listed from the tag's side.",
         "properties": {
           "display_title": {
             "title": "Display Title",
@@ -46512,14 +46523,16 @@
     },
     "/api/tags": {
       "delete": {
-        "description": "Delete one or more tags, returning the impact the delete realized.",
+        "description": "Delete tags. Their files lose them and their share grants go too.",
         "operationId": "delete_tags_endpoint_api_tags_delete",
         "parameters": [
           {
+            "description": "The tags to delete.",
             "in": "query",
             "name": "tag_uuids",
             "required": true,
             "schema": {
+              "description": "The tags to delete.",
               "items": {
                 "format": "uuid",
                 "type": "string"
@@ -46563,41 +46576,41 @@
         ]
       },
       "get": {
-        "description": "List the tags visible to the caller with usage counts, most used first.\n\nVisible = system tags + the request tenant's tags (in an organization, every\nmember's) + tags shared with the caller or attached to a file the caller can\naccess — every arm bounded to the request's tenant, so a tag never lists in\nanother tenant (issue #1050). Usage counts only count accessible\nfiles, so a shared tag never reveals how often its owner uses it.\n\nFiltering, counting, and clustering live in ``services/tag_collisions.py``;\nthe filters combine (AND). Errors propagate — this used to return ``[]`` on\nany exception, rendering a broken query as an install with no tags.\n\nRead-through cached in Redis (``cache:tags:{user_id}``) behind\n``READ_CACHE_ENABLED`` **only for the unfiltered personal-scope request**:\nthe key carries neither the filters nor the scope, so caching either variant\nwould serve one request's answer to another. Every tag/file-tag mutation\npath busts this key, so reads are always fresh.",
+        "description": "The tags you can see, most used first, with how many of your files carry each.\n\nThe unfiltered personal list is served from a short-lived cache.",
         "operationId": "list_tags_api_tags_get",
         "parameters": [
           {
-            "description": "Only tags no accessible file carries",
+            "description": "Only tags on none of your accessible files.",
             "in": "query",
             "name": "unused",
             "required": false,
             "schema": {
               "default": false,
-              "description": "Only tags no accessible file carries",
+              "description": "Only tags on none of your accessible files.",
               "title": "Unused",
               "type": "boolean"
             }
           },
           {
-            "description": "Only tags sharing a normalized name with another tag",
+            "description": "Only tags whose name normalizes like another tag's.",
             "in": "query",
             "name": "colliding",
             "required": false,
             "schema": {
               "default": false,
-              "description": "Only tags sharing a normalized name with another tag",
+              "description": "Only tags whose name normalizes like another tag's.",
               "title": "Colliding",
               "type": "boolean"
             }
           },
           {
-            "description": "Ownership scope. `all` is everything visible; the other three are the `ownership` values a tag can carry, so a scoped request returns only rows reporting that same ownership.",
+            "description": "Narrow to one ownership kind.",
             "in": "query",
             "name": "scope",
             "required": false,
             "schema": {
               "default": "all",
-              "description": "Ownership scope. `all` is everything visible; the other three are the `ownership` values a tag can carry, so a scoped request returns only rows reporting that same ownership.",
+              "description": "Narrow to one ownership kind.",
               "enum": [
                 "all",
                 "mine",
@@ -46646,7 +46659,7 @@
         ]
       },
       "post": {
-        "description": "Create a tag in the request's tenant, or return the tenant's existing one.\n\nIn an organization the tag is the org's — every member sees and reuses it —\nand is attributed to the caller; in personal scope it is the caller's own.",
+        "description": "Create a tag in the request tenant, or return the one the name already resolves to.\n\nCase, ``-``/``_`` and spacing variants resolve onto the existing tag; a\nmerely similar name creates a new one. Names are clamped to 50 characters.",
         "operationId": "create_tag_api_tags_post",
         "requestBody": {
           "content": {
@@ -46693,17 +46706,17 @@
     },
     "/api/tags/cleanup": {
       "delete": {
-        "description": "Delete owned tags no file anywhere carries (admin only).\n\n**Defaults to the caller's own tags.** This used to be unconditionally\ndeployment-wide while its inspection sibling ``GET /tags/unused`` is\ncaller-scoped, so an admin who read the list and then called this deleted\nrows they were never shown — irreversibly, with no impact preview and no\nparameter that could have warned them. The wide sweep is still available, but\nonly by naming it (``scope=all_users``) *and* acknowledging it\n(``confirm=true``), the same shape as ``POST /org-admin/gdpr/erase-organization``.\n\n\"Unused\" is measured against every ``file_tag`` row in the deployment, not\nthe caller's accessible files, so a tag still attached to a file the caller\ncan no longer see survives: ``GET /tags/unused`` may therefore list a tag\nthis endpoint declines to delete. That gap is deliberate — the alternative is\nstripping a tag off another account's file. System tags (no owner, no tenant)\nare exempt in both scopes; being unattached is their normal state. ``mine`` is\nthe caller's tags in the request's tenant only.\n\nArgs:\n    scope: ``mine`` (default) or ``all_users``.\n    confirm: Must be true for ``scope=all_users``.\n\nReturns:\n    ``deleted_count``, the ``scope`` that was applied, and a message.\n\nRaises:\n    HTTPException: 403 for a non-admin caller (and, in a multi-tenant deployment,\n    for ``all_users`` from anyone but a super_admin), 400 for ``all_users``\n    without ``confirm``, 500 if the sweep fails.",
+        "description": "Delete tags that no file carries. Admin only; system tags are always kept.",
         "operationId": "cleanup_unused_tags_api_tags_cleanup_delete",
         "parameters": [
           {
-            "description": "Whose unused tags to delete. `mine` is the caller's own tags — the default, because it is the only scope the caller can inspect first. `all_users` sweeps every account and requires `confirm=true`.",
+            "description": "Your own tags in this workspace, or every account's.",
             "in": "query",
             "name": "scope",
             "required": false,
             "schema": {
               "default": "mine",
-              "description": "Whose unused tags to delete. `mine` is the caller's own tags — the default, because it is the only scope the caller can inspect first. `all_users` sweeps every account and requires `confirm=true`.",
+              "description": "Your own tags in this workspace, or every account's.",
               "enum": [
                 "mine",
                 "all_users"
@@ -46713,13 +46726,13 @@
             }
           },
           {
-            "description": "Required acknowledgement for `scope=all_users`. Ignored otherwise.",
+            "description": "Required for scope=all_users.",
             "in": "query",
             "name": "confirm",
             "required": false,
             "schema": {
               "default": false,
-              "description": "Required acknowledgement for `scope=all_users`. Ignored otherwise.",
+              "description": "Required for scope=all_users.",
               "title": "Confirm",
               "type": "boolean"
             }
@@ -46762,7 +46775,7 @@
     },
     "/api/tags/collisions": {
       "get": {
-        "description": "Group duplicate tags into clusters, each with a preselected survivor.\n\nGrouping is exact equality on the stored normalization, so repeated requests\nover unchanged data return the same clusters in the same order; fuzzy near\nmatches come back as a separately ranked suggestion list and are never\ncluster members. The pass calls ``refresh_stored_normalization`` first, so\nthis GET **does write** — deliberately, and by name.",
+        "description": "Groups of tags whose names differ only by case, separators or spacing.\n\nEach group names the member a merge should keep, and lists similar but\ndistinct names as suggestions. Repairs stale stored normalizations first.",
         "operationId": "list_tag_collisions_api_tags_collisions_get",
         "responses": {
           "200": {
@@ -46793,7 +46806,7 @@
     },
     "/api/tags/files/{file_uuid}/tags": {
       "post": {
-        "description": "Attach one tag to a media file, creating the tag if the caller lacks it.\n\nConsumed by the file-detail and gallery tag pickers; also the single-tag entry\npoint for a script or agent labelling an imported library (bulk paths must use\nthe batched resolver instead — see ``prepare_upload.add_tags_to_file``).\n\nAuthorized by ``get_file_by_uuid_with_permission``, which applies the sharing,\ntakedown and tenant (``ctx.org_id``) gates in one place — ``editor`` access to\nthe *file* is the whole requirement (the bulk rail's ``REQUIRED_PERMISSION``),\nbecause tagging does not touch anyone else's vocabulary. A file the caller cannot\nopen at all is a 404 \"File not found\", the same answer as an unknown uuid.\n\nThe body is a raw ``dict`` rather than a schema, so a missing ``name`` is\nrejected as 422 by hand. The tag is resolved in the **file's tenant**: on an\norganization file it is the org's tag (a colleague's row is reused, not\nduplicated); on a personal file it is the caller's own — tagging a file shared\nwith you adds the word to your personal vocabulary, and the owner still sees it\nbecause it is now attached to a file they can access.\n``_resolve_tag`` is race-safe and resolves normalized-exact against that\ntenant's vocabulary plus the system one; it does **not** pass ``file_id``, so it does\nnot take ``resolve_or_create_tag``'s \"already on this file\" branch. The\nduplicate-suppression here is by tag *id* on ``FileTag``, which makes a repeat\npost by the same user idempotent (no second row, no second ``on_tags_changed``)\nbut lets two users attach same-named personal rows of their own to one shared\npersonal file (on an organization file both resolve to the org's one row).",
+        "description": "Attach a tag to a file by name, creating the tag in the file's tenant if needed.\n\nNeeds editor rights on the file. A file you cannot open is answered like an\nunknown uuid. Attaching a tag the file already carries changes nothing.",
         "operationId": "add_tag_to_file_api_tags_files__file_uuid__tags_post",
         "parameters": [
           {
@@ -46853,7 +46866,7 @@
     },
     "/api/tags/files/{file_uuid}/tags/{tag_name}": {
       "delete": {
-        "description": "Remove a tag from a media file; needs ``editor`` on the file, like attaching.",
+        "description": "Detach the tag with exactly this stored name from a file; the tag itself is kept.\n\nNeeds editor rights on the file. A file you cannot open is answered like an\nunknown uuid.",
         "operationId": "remove_tag_from_file_api_tags_files__file_uuid__tags__tag_name__delete",
         "parameters": [
           {
@@ -46903,14 +46916,16 @@
     },
     "/api/tags/for-files": {
       "get": {
-        "description": "The tags a set of selected files already carries.\n\nThe bulk apply surface has to show what a selection *has* before offering to\nchange it, and ``GET /api/files`` deliberately carries no per-file tags\n(#326) — so nothing else can answer this.\n\n``file_count`` is how many of the selected files carry the tag, which is\nwhat lets one selected file offer a full chip editor while several offer\nadd-only: removing a tag that sits on three of five files is ambiguous in a\nway adding never is.\n\nEvery uuid must name a file the caller can open (the same gate as the file detail\npage); one that does not is a 404 \"File not found\" whether it is unknown or merely\nsomeone else's, so the route reveals nothing about files outside the caller's reach.\n\nRegistered before ``/{tag_uuid}`` so the literal path is not swallowed.",
+        "description": "The tags a selection of files carries, and on how many of them.\n\nAny file in the selection you cannot open fails the whole request exactly\nlike an unknown uuid.",
         "operationId": "list_tags_on_files_api_tags_for_files_get",
         "parameters": [
           {
+            "description": "The selected files; repeat the parameter for each.",
             "in": "query",
             "name": "file_uuids",
             "required": true,
             "schema": {
+              "description": "The selected files; repeat the parameter for each.",
               "items": {
                 "format": "uuid",
                 "type": "string"
@@ -46960,14 +46975,16 @@
     },
     "/api/tags/impact": {
       "get": {
-        "description": "Report what renaming, merging, or deleting these tags would touch.\n\nReturns the caller-visible count **and** the global count separately: tags\nare global rows, so an operation confirmed against the accessible number\nalone would understate its own blast radius.",
+        "description": "How many files a rename, merge or delete of these tags would touch.\n\nReports the files you can open and the deployment-wide total separately.",
         "operationId": "get_tag_impact_api_tags_impact_get",
         "parameters": [
           {
+            "description": "The tags to measure.",
             "in": "query",
             "name": "tag_uuids",
             "required": true,
             "schema": {
+              "description": "The tags to measure.",
               "items": {
                 "format": "uuid",
                 "type": "string"
@@ -47013,7 +47030,7 @@
     },
     "/api/tags/promote": {
       "post": {
-        "description": "Publish owned tags into the shared vocabulary (admin only).\n\nIn a multi-tenant deployment this needs a ``super_admin``: the result is visible to every\ntenant. Only same-named tags of the promoted tag's own tenant are folded into it.\n\nThe consolidation lever for a multi-user deployment: ownership keeps one\naccount from renaming another's tag, but it also lets four private\n\"Interview\" rows accumulate with nothing to point at. Promoting one makes it\nthe row every account resolves onto, and folds the same-named private rows\ninto it so their file associations are preserved rather than orphaned.\n\nRegistered **before** ``PATCH /{tag_uuid}`` and the other path-parameter\nroutes for the usual FastAPI reason — ``/promote`` would otherwise be\nswallowed by ``/{tag_uuid}``.",
+        "description": "Publish tags to the shared vocabulary every account sees.\n\nSame-named tags are folded into the published one: across every tenant in\na single-tenant deployment, otherwise only within the tag's own tenant.",
         "operationId": "promote_tags_endpoint_api_tags_promote_post",
         "requestBody": {
           "content": {
@@ -47060,7 +47077,7 @@
     },
     "/api/tags/unused": {
       "get": {
-        "description": "List tags no file the caller can see is carrying.\n\nScoped to the caller's accessible files, exactly like ``usage_count`` on the\ntag list — the two used to disagree because this one counted usage globally.\nErrors propagate rather than degrading to an empty list.",
+        "description": "Your tenant's tags and system tags that none of your accessible files carry.",
         "operationId": "list_unused_tags_api_tags_unused_get",
         "responses": {
           "200": {
@@ -47091,7 +47108,7 @@
     },
     "/api/tags/{tag_uuid}": {
       "patch": {
-        "description": "Rename a tag.\n\nA new name that resolves to a *different* existing tag is a merge; the\nresponse comes back with ``requires_confirmation`` and an impact preview and\nnothing is applied until the caller retries with ``confirm_merge``. A case\nvariant of the tag's own name is a plain rename.",
+        "description": "Rename a tag.\n\nWhen the new name already belongs to another tag nothing changes and\n``requires_confirmation`` is set, with that tag and the files affected;\nrepeat with ``confirm_merge`` to fold this tag into it.",
         "operationId": "rename_tag_endpoint_api_tags__tag_uuid__patch",
         "parameters": [
           {
@@ -47150,7 +47167,7 @@
     },
     "/api/tags/{tag_uuid}/files": {
       "get": {
-        "description": "List the accessible files carrying this tag — what the tag *touches*.\n\nGated on ``_visible_to`` rather than the writable scope: seeing which of\nyour own files a tag sits on is a read, and a tag reaches you precisely\nbecause it is on a file you can access.\n\nRegistered before ``PATCH /{tag_uuid}`` for the usual FastAPI ordering\nreason, and after the fixed-path routes so ``/impact`` and friends are not\nswallowed by ``/{tag_uuid}``.",
+        "description": "Your accessible files that carry a tag, newest first, with the true total.",
         "operationId": "list_files_for_tag_api_tags__tag_uuid__files_get",
         "parameters": [
           {
@@ -47164,11 +47181,13 @@
             }
           },
           {
+            "description": "Most files to return.",
             "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
               "default": 50,
+              "description": "Most files to return.",
               "maximum": 200,
               "minimum": 1,
               "title": "Limit",
@@ -47211,7 +47230,7 @@
     },
     "/api/tags/{tag_uuid}/merge": {
       "post": {
-        "description": "Fold the listed tags into the tag in the path, which survives.",
+        "description": "Fold the source tags into this tag; their files and grants move to it.",
         "operationId": "merge_tags_endpoint_api_tags__tag_uuid__merge_post",
         "parameters": [
           {

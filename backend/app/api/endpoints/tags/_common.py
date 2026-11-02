@@ -1,62 +1,43 @@
-import logging
-from typing import Literal
+"""Pieces every tag route module shares: the router, the write gate, response helpers.
+
+All route modules register onto the one :data:`router`; the package
+``__init__`` imports them in the order their paths must be matched.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from contextlib import contextmanager
 from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy.orm import Session
-from sqlalchemy.sql.elements import ColumnElement
 
-from app.core.constants import TAG_SOURCE_MANUAL
+from app.models.sharing import TagShare
 from app.models.tag import Tag
 from app.schemas.tag import Tag as TagSchema
 from app.schemas.tag import TagMutationResult
 from app.schemas.tag import TagShareTarget
 from app.services.tag_operations import TAG_NOT_FOUND
+from app.services.tag_operations import TagMutationOutcome
 from app.services.tag_operations import TagNotFoundError
 from app.services.tag_operations import TagTenantMismatchError
 from app.services.tag_scope import is_system_tag
 from app.services.tag_scope import tag_in_tenant
 from app.services.tag_scope import tag_ownership
-from app.services.tag_scope import visible_to
 from app.services.tag_service import InvalidTagNameError
-from app.services.tag_service import resolve_or_create_tag
-from app.services.uuid_helpers import get_by_uuid
+from app.services.tag_service import tags_by_uuid
 
-logger = logging.getLogger(__name__)
+router = APIRouter()
 
-
-def _visible_to(db: Session, user_id: int, organization_id: int | None) -> ColumnElement[bool]:
-    """Predicate for the tags ``user_id`` may see in the request's tenant.
-
-    Delegates to ``tag_scope.visible_to`` — the single definition, bounded to
-    the tenant on every arm (issue #1050). This used to be a second, hand-kept
-    copy that lacked the share arm; two answers to "can I see this tag" is the
-    drift that copy invited.
-    """
-    return visible_to(db, user_id, organization_id)
+TAG_NAME_REQUIRED = "Tag name is required"
+TENANT_MISMATCH = "Tags from different tenants cannot be merged"
 
 
-def _resolve_tag(db: Session, name: str, user_id: int, organization_id: int | None) -> Tag:
-    """Resolve a user-supplied name to a tag of the tenant, mapping a blank name to a 422.
-
-    Resolution is normalized-exact (``app/services/tag_service.py``) and scoped
-    to ``organization_id``'s vocabulary plus the system one, so a typed name can
-    never resolve onto another tenant's row — and in an organization it resolves
-    onto a colleague's row rather than coining a duplicate. A near match is never
-    applied here — a person typed this name, so a fuzzy hit may only ever be
-    offered as a suggestion.
-    """
-    try:
-        return resolve_or_create_tag(
-            db, name, user_id=user_id, organization_id=organization_id, source=TAG_SOURCE_MANUAL
-        )
-    except InvalidTagNameError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Tag name is required",
-        ) from exc
+def _tag_not_found() -> HTTPException:
+    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=TAG_NOT_FOUND)
 
 
 def _writable_tag_ids(
@@ -68,97 +49,92 @@ def _writable_tag_ids(
     organization_id: int | None,
     is_org_admin: bool = False,
 ) -> list[int]:
-    """Resolve public tag UUIDs to internal ids the caller may **mutate**.
+    """Resolve tag uuids to ids the caller may rename, merge, delete or share.
 
-    Reading a tag and rewriting it are different rights. ``_visible_to`` admits
-    tags shared with you, on files shared with you, and — in an organization —
-    every colleague's tag, but renaming or deleting one rewrites it for everyone
-    who uses it, so mutation is narrower:
+    A system tag needs ``can_write_system``. Any other tag must be in the request
+    tenant and be the caller's own, or an organization tag with the caller an
+    org admin. Anything else answers 404, never 403, so probing cannot tell
+    another tenant's tag from an unknown uuid.
 
-    * your own tag, **in the request's tenant** — a tag you made in another
-      organization is not reachable from this one (issue #1050);
-    * any tag of the request's organization, for an **org admin** — the org's
-      vocabulary is theirs to curate;
-    * a system tag, when ``can_write_system`` (``ctx.bypass.deployment_scope_writable``:
-      any admin in a single-tenant deployment, a super_admin in a multi-tenant one). They
-      are the shared vocabulary every account's picker shows, which is why
-      ``cleanup_unused_tags`` is admin-gated and skips them.
+    Returns:
+        Ids in input order, duplicates kept.
 
-    A tag that exists but is not writable 404s rather than 403s — the same answer
-    an unknown UUID gets, so probing this endpoint cannot enumerate other
-    accounts' or tenants' tags.
+    Raises:
+        HTTPException: 404 "Tag not found" for any unknown or non-writable uuid.
     """
+    rows = tags_by_uuid(db, tag_uuids)
     ids: list[int] = []
     for tag_uuid in tag_uuids:
-        tag = get_by_uuid(db, Tag, tag_uuid, error_message="Tag not found")
+        tag = rows.get(tag_uuid)
+        if tag is None:
+            raise _tag_not_found()
         if is_system_tag(tag):
             allowed = can_write_system
-        elif not tag_in_tenant(tag, user_id, organization_id):
-            allowed = False
         else:
-            allowed = tag.user_id == user_id or (tag.organization_id is not None and is_org_admin)
+            allowed = tag_in_tenant(tag, user_id, organization_id) and (
+                tag.user_id == user_id or (tag.organization_id is not None and is_org_admin)
+            )
         if not allowed:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag not found")
+            raise _tag_not_found()
         ids.append(tag.id)
     return ids
 
 
-def _share_target(share) -> TagShareTarget:
-    """Project a grant onto the wire, naming the target rather than its id."""
-    kind: Literal["user", "group"]
-    if share.target_user_id is not None:
-        target = share.target_user
-        name = getattr(target, "full_name", None) or getattr(target, "email", "") or "user"
-        kind = "user"
-    else:
-        target = share.target_group
-        name = getattr(target, "name", "") or "group"
-        kind = "group"
-    shared_by = getattr(share.shared_by_user, "full_name", None) or getattr(
-        share.shared_by_user, "email", None
+def _share_target(share: TagShare) -> TagShareTarget:
+    """Wire form of one tag grant, named for display."""
+    sharer = share.shared_by_user
+    shared_by = (sharer.full_name or sharer.email or None) if sharer is not None else None
+    if share.target_type == "user":
+        user = share.target_user
+        name = (user.full_name or user.email) if user is not None else None
+        return TagShareTarget(
+            uuid=share.uuid, target_type="user", display_name=name or "user", shared_by=shared_by
+        )
+    group = share.target_group
+    return TagShareTarget(
+        uuid=share.uuid,
+        target_type="group",
+        display_name=(group.name if group is not None else None) or "group",
+        shared_by=shared_by,
     )
-    return TagShareTarget(uuid=share.uuid, target_type=kind, display_name=name, shared_by=shared_by)
 
 
 def _tag_response(tag: Tag, user_id: int) -> TagSchema:
-    """A tag on the wire, its ``ownership`` classified exactly as ``GET /tags`` classifies it.
-
-    The schema's own fallback can only read ``user_id``, which calls a colleague's org
-    tag ``mine`` and an org tag whose creator was deleted ``system``.
-    """
-    return TagSchema(
-        uuid=tag.uuid, name=tag.name, source=tag.source, ownership=tag_ownership(tag, user_id)
+    """A tag as the caller sees it, ownership included, exactly as ``GET /tags`` labels it."""
+    return TagSchema.model_validate(
+        {
+            "uuid": tag.uuid,
+            "name": tag.name,
+            "source": tag.source,
+            "ownership": tag_ownership(tag, user_id),
+        }
     )
 
 
-def _apply(operation, *args, result_model=TagMutationResult, **kwargs):
-    """Run a tag operation, translating its service errors into HTTP ones.
-
-    ``kwargs["user_id"]`` is the acting user every operation takes; the result's ``tag``
-    is labelled relative to them.
-    """
-    try:
-        outcome = operation(*args, **kwargs)
-    except TagNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=TAG_NOT_FOUND) from exc
-    except TagTenantMismatchError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Tags from different tenants cannot be merged",
-        ) from exc
-    except InvalidTagNameError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Tag name is required",
-        ) from exc
-    result = result_model.model_validate(outcome)
-    if getattr(outcome, "tag", None) is not None:
-        result.tag = _tag_response(outcome.tag, kwargs["user_id"])
+def _mutation_response(outcome: TagMutationOutcome, user_id: int) -> TagMutationResult:
+    """Serialize an operation's outcome, labelling its tag for the acting user."""
+    result = TagMutationResult.model_validate(outcome)
+    if outcome.tag is not None:
+        result.tag = _tag_response(outcome.tag, user_id)
     return result
 
 
-#: The single router every module registers onto.
-#: Sub-routers were tried and rejected: FastAPI refuses an empty path when a
-#: router is included without a prefix, and `POST ""` / `GET ""` are real routes
-#: here (the prefix is applied once, at mount time in api/router.py).
-router = APIRouter()
+@contextmanager
+def _translated_tag_errors() -> Iterator[None]:
+    """Map the tag services' refusals onto fixed HTTP answers (never their text)."""
+    try:
+        yield
+    except TagNotFoundError as exc:
+        raise _tag_not_found() from exc
+    except TagTenantMismatchError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=TENANT_MISMATCH
+        ) from exc
+    except InvalidTagNameError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=TAG_NAME_REQUIRED
+        ) from exc
+
+
+def _invalid_name() -> HTTPException:
+    return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=TAG_NAME_REQUIRED)

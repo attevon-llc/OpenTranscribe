@@ -1,4 +1,11 @@
-"""Tag wire schemas: the one tag shape, its sharing, cluster, impact and mutation bodies."""
+"""Wire shapes for the tag API.
+
+A tag is identified on the wire by its ``uuid``; the integer id never leaves the
+server. ``ownership`` is always computed for the caller by
+``tag_scope.tag_ownership`` and passed in explicitly.
+"""
+
+from __future__ import annotations
 
 from typing import Any
 from typing import Literal
@@ -11,87 +18,53 @@ from pydantic import model_validator
 
 from app.schemas.base import UUIDBaseSchema
 
+OwnershipLabel = Literal["mine", "system", "shared_with_me"]
+
 
 class TagBase(BaseModel):
+    """A tag name as supplied by a client."""
+
     name: str
 
 
 class Tag(TagBase, UUIDBaseSchema):
-    """Tag with UUID as public identifier.
-
-    The single tag shape on the API: served by ``GET /api/tags`` (as
-    ``TagWithCount``), ``POST /api/tags``, ``POST /api/tags/files/{uuid}/tags``,
-    and — since issue #326 — ``MediaFileDetail.tags``. Tag names are unique only
-    per owner (``v374_add_tag_user_id``), so ``uuid`` is the stable identifier.
-    """
+    """A tag as served by every tag-carrying response."""
 
     source: str | None = Field(
         default=None,
-        description=(
-            "How the tag was applied: 'manual' for a user action, 'auto_ai' for the "
-            "auto-labeling LLM. Null on tags created before this field existed."
-        ),
+        description="How the tag came about: manual, auto_ai or ai_accepted (null = legacy manual).",
     )
-    ownership: Literal["mine", "system", "shared_with_me"] = Field(
+    ownership: OwnershipLabel = Field(
         default="mine",
-        description=(
-            "The caller's relationship to this tag, and therefore what they may do "
-            "with it. `mine` — they own it, full control. `system` — the shared "
-            "vocabulary (`user_id IS NULL`) every account sees; admin-only to "
-            "rename, merge, delete or promote. `shared_with_me` — owned by another "
-            "account and visible only because it sits on a file shared with the "
-            "caller; read-only, and any mutation answers 404. These are the same "
-            "values `GET /tags?scope=` accepts, so a scoped request returns rows "
-            "carrying that ownership. Derived per request, never stored."
-        ),
+        description="The tag's relation to the caller: their own, system vocabulary, "
+        "or someone else's that they can see.",
     )
 
     @model_validator(mode="before")
     @classmethod
-    def _default_ownership(cls, data: Any) -> Any:
-        """Project ownership onto the wire without exposing the owner's id.
+    def _from_orm_row(cls, data: Any) -> Any:
+        """Read the declared fields off an ORM row.
 
-        ``user_id`` is deliberately never serialized — which account owns a tag
-        is nobody else's business, and the SPA only needs to know what it may do.
-
-        This validator cannot see the **caller**, so its fallback only reads
-        ``user_id``: it would call a colleague's org tag ``mine`` and an org tag
-        whose creator was deleted ``system``. Every endpoint therefore computes
-        ownership with ``tag_scope.tag_ownership(tag, user_id)`` and passes it in
-        (the list, the collision clusters, the file-detail payload, and through
-        ``tags._common._tag_response`` the create, attach and mutation responses),
-        which this then leaves alone.
-
-        Runs **before** ``UUIDBaseSchema.prepare_uuid_response`` (a subclass's
-        before-validator is the outer one), so it takes the raw ORM row and
-        hands back a plain dict, which the base validator then passes through
-        untouched. Fields are read from ``cls.model_fields`` rather than listed,
-        so ``TagWithCount``/``TagClusterMember``/``TagClusterSuggestion`` keep
-        their own extra fields without this needing to know about them.
+        A row without an explicit ``ownership`` gets a caller-blind guess from
+        its owner column. Responses never rely on it: an organization tag needs
+        the caller to classify, so endpoints always pass ``ownership`` in.
         """
         if isinstance(data, dict) or not hasattr(data, "user_id"):
             return data
-        values: dict[str, Any] = {
-            name: getattr(data, name) for name in cls.model_fields if hasattr(data, name)
-        }
+        values = {name: getattr(data, name) for name in cls.model_fields if hasattr(data, name)}
         if "ownership" not in values:
             values["ownership"] = "system" if data.user_id is None else "mine"
         return values
 
 
 class TagWithCount(Tag):
-    """Tag with usage count for filtering UI.
+    """A tag in the caller's list, with how many of their files carry it."""
 
-    ``usage_count`` is scoped to the files the caller can access, and the unused
-    filter is its exact complement — both read the same count, so a tag can
-    never report ``0`` here while being absent from ``/tags/unused``.
-    """
-
-    usage_count: int = 0
+    usage_count: int = Field(default=0, description="Accessible files carrying the tag.")
 
 
 class TagShareTarget(BaseModel):
-    """Who a tag is shared with — one user or one group, never both."""
+    """One grant of a tag to a user or a group."""
 
     uuid: UUID
     target_type: Literal["user", "group"]
@@ -100,155 +73,122 @@ class TagShareTarget(BaseModel):
 
 
 class TagShareCreate(BaseModel):
-    """Grant a tag to a user or a group. Exactly one target."""
+    """Grant a tag to exactly one user or one group."""
 
     target_user_uuid: UUID | None = None
     target_group_uuid: UUID | None = None
 
 
 class TaggedFile(BaseModel):
-    """A file carrying a tag, as the manager's "what it touches" list renders it.
+    """A file carrying a tag, as listed from the tag's side."""
 
-    Deliberately thin: the manager needs a name to show and a uuid to link
-    through on, not the full detail payload. `display_title` is pre-resolved
-    here rather than in the SPA, matching the fat-backend rule the rest of the
-    API follows.
-    """
+    model_config = ConfigDict(from_attributes=True)
 
     uuid: UUID
     display_title: str
     status: str | None = None
     formatted_duration: str | None = None
 
-    model_config = ConfigDict(from_attributes=True)
-
 
 class TagFileList(BaseModel):
-    """The files a tag touches, and how many there are in total.
-
-    `total` is the real count while `files` is capped, so the UI can say
-    "and N more" instead of silently truncating.
-    """
+    """A page of the files carrying one tag."""
 
     files: list[TaggedFile] = []
-    total: int = 0
+    total: int = Field(default=0, description="Every accessible file carrying the tag.")
 
 
 class TagOnSelection(Tag):
-    """A tag carried by some or all of a set of selected files.
+    """A tag carried by at least one file of a gallery selection."""
 
-    The bulk apply surface needs to show what the selection **already** has, not
-    just offer to add: `file_count` is how many of the selected files carry this
-    tag, so the UI can distinguish a tag on every file from one on a few. `GET
-    /api/files` deliberately carries no per-file tags (#326), so this is the only
-    way that surface can know.
-    """
-
-    file_count: int = 0
-    selection_size: int = 0
-
-    @property
-    def on_every_file(self) -> bool:
-        """Whether removing it would clear the tag from the whole selection."""
-        return self.selection_size > 0 and self.file_count == self.selection_size
+    file_count: int = Field(default=0, description="Selected files that carry the tag.")
+    selection_size: int = Field(default=0, description="Distinct files in the selection.")
 
 
 class TagClusterMember(Tag):
-    """A tag sharing its normalized name with the rest of its cluster.
-
-    ``suggested_survivor`` marks the highest-usage member, preselected by the
-    backend so the merge dialog opens on a decision rather than a blank choice.
-    """
+    """A tag in a cluster of rows that share one normalized name."""
 
     usage_count: int = 0
-    suggested_survivor: bool = False
+    suggested_survivor: bool = Field(
+        default=False, description="The member a merge of this cluster should keep."
+    )
 
 
 class TagClusterSuggestion(Tag):
-    """A near match offered beside a cluster, never inside it.
-
-    Fuzzy similarity is non-transitive, so a suggestion is a prompt for a human,
-    not evidence of membership.
-    """
+    """A near-match tag offered next to a cluster; never a member of it."""
 
     usage_count: int = 0
-    similarity: float = 0.0
+    similarity: float = Field(default=0.0, description="Name similarity ratio, 0 to 1.")
 
 
 class TagCollisionCluster(BaseModel):
-    """Tags that normalize to one name, with the merge the backend recommends.
+    """Tags whose names normalize to the same form."""
 
-    Grouping is exact equality on the stored normalization, so repeated requests
-    over unchanged data return the same clusters in the same order.
-    """
+    model_config = ConfigDict(from_attributes=True)
 
     normalized_name: str
     members: list[TagClusterMember] = []
     suggested_survivor_uuid: UUID | None = None
     suggestions: list[TagClusterSuggestion] = []
 
-    model_config = ConfigDict(from_attributes=True)
-
 
 class TagImpactEntry(BaseModel):
-    """File counts for a single tag in a pending rename / merge / delete."""
+    """How many files one tag is on, for the caller and overall."""
+
+    model_config = ConfigDict(from_attributes=True)
 
     uuid: UUID
     name: str
     accessible_file_count: int
     total_file_count: int
 
-    model_config = ConfigDict(from_attributes=True)
-
 
 class TagImpact(BaseModel):
-    """What a destructive tag operation would touch, before it acts.
-
-    Tags are **global** rows (no ``user_id``/``organization_id``, globally unique
-    name), so the two counts are deliberately separate: ``accessible_*`` is what
-    the caller can see, ``total_*`` is what the operation actually changes. A
-    confirmation built only from the accessible number would read "3 files" in
-    front of a delete that strips the tag from 500.
-    """
-
-    tags: list[TagImpactEntry] = []
-    accessible_file_count: int = 0
-    total_file_count: int = 0
+    """What a destructive tag operation would touch, before it runs."""
 
     model_config = ConfigDict(from_attributes=True)
+
+    tags: list[TagImpactEntry] = []
+    accessible_file_count: int = Field(
+        default=0, description="Distinct files the caller can open that carry any of the tags."
+    )
+    total_file_count: int = Field(
+        default=0, description="Distinct files carrying any of the tags, across all accounts."
+    )
 
 
 class TagRenameRequest(BaseModel):
-    """Rename a tag; ``confirm_merge`` accepts the merge when the name collides."""
+    """New name for a tag."""
 
     name: str
-    confirm_merge: bool = False
+    confirm_merge: bool = Field(
+        default=False,
+        description="Fold the tag into an existing one when the new name already exists.",
+    )
 
 
 class TagMergeRequest(BaseModel):
-    """Fold one or more tags into the tag named in the path."""
+    """Tags to fold into the target tag."""
 
-    source_uuids: list[UUID] = Field(..., min_length=1)
-
-
-class TagMutationResult(BaseModel):
-    """Outcome of a rename / merge / delete, always carrying the impact."""
-
-    tag: Tag | None = None
-    merged: bool = False
-    requires_confirmation: bool = False
-    deleted_uuids: list[UUID] = []
-    impact: TagImpact
-
-    model_config = ConfigDict(from_attributes=True)
+    source_uuids: list[UUID] = Field(min_length=1)
 
 
 class TagPromoteRequest(BaseModel):
-    """Publish one or more owned tags into the shared vocabulary.
+    """Tags to move into the shared system vocabulary."""
 
-    Admin-only: a shared tag appears in every account's picker, and same-named
-    tags owned by other users are folded into the promoted row, so this changes
-    what every account sees.
-    """
+    tag_uuids: list[UUID] = Field(min_length=1)
 
-    tag_uuids: list[UUID] = Field(..., min_length=1)
+
+class TagMutationResult(BaseModel):
+    """Outcome of a rename, merge, delete or promote."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    tag: Tag | None = None
+    merged: bool = False
+    requires_confirmation: bool = Field(
+        default=False,
+        description="Nothing was changed: the new name belongs to another tag, which "
+        "is returned in ``tag``. Repeat with confirm_merge to fold into it.",
+    )
+    deleted_uuids: list[UUID] = []
+    impact: TagImpact

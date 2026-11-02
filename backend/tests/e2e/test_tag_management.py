@@ -20,7 +20,7 @@ teardown's name filter still matches.
 Collision-cluster rendering is deliberately **not** exercised here. A collision
 needs two rows sharing a normalized name within one vocabulary, which the
 resolver now makes unreachable through the API by construction — they only
-arise from rows predating normalization. `tests/unit/test_tag_collisions.py`
+arise from rows predating normalization. `tests/unit/test_tag_collision_clusters.py`
 stages those directly and is the right home for that case.
 """
 

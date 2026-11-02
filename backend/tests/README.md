@@ -140,7 +140,7 @@ pytest tests/api/endpoints/test_auth_comprehensive.py -v
 pytest tests/test_asr_settings.py -v
 pytest tests/api/endpoints/test_admin.py -v
 pytest tests/api/endpoints/test_users.py -v
-pytest tests/api/endpoints/test_tags.py -v
+pytest tests/api/endpoints/test_tags_routes.py -v
 
 pytest -n0 -x -s tests/unit/test_something.py      # serial, stop on first failure, show prints
 pytest -m integration                               # the live-stack tests (stack must be up)

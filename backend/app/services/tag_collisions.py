@@ -1,53 +1,27 @@
-"""Collision clustering and the narrowing filters over the tag list.
+"""Read surfaces of the tag plane: the list, usage counts, collisions, selections.
 
-A third sibling of :mod:`app.services.tag_operations` (rename / merge / delete)
-split off because
-those are already at the size limit. This module is the **read** half of tag
-management: it decides which tags are duplicates of each other, which are
-awaiting review, and which nobody is using — everything ``GET /tags`` and
-``GET /tags/collisions`` need in order to ship a finished answer.
+Usage is always counted over the caller's **accessible** files
+(:func:`accessible_usage_counts`), so ``usage_count``, the ``unused`` filter,
+``/tags/unused`` and the collision members agree on one definition.
 
-Three rules hold it together:
-
-* **Clusters group on the stored normalization — exact equality, never fuzzy.**
-  The fuzzy matcher is ``difflib.SequenceMatcher`` at
-  :data:`~app.core.constants.FUZZY_MATCH_THRESHOLD` (0.85), which is
-  **non-transitive**: ``a ≈ b`` and ``b ≈ c`` with ``a ≉ c`` is ordinary, and
-  :func:`~app.services.tag_service.suggest_similar_tag` returns the *first* hit
-  in unordered scan order. Clusters built on that would reshuffle between two
-  page loads of the same data. Fuzzy hits are returned as a ranked *secondary*
-  suggestion per cluster and are never folded into the cluster.
-* **The stored normalization is repaired first, on purpose and by name.**
-  Migration v230 backfilled ``normalized_name`` and the resolver maintains it,
-  but the bootstrap seed tags predate both and a hand-written ``UPDATE tag SET
-  name`` leaves it stale. Grouping on a column nothing keeps true would miss
-  exactly the legacy rows this exists to find, so
-  :func:`refresh_stored_normalization` runs first. It is idempotent and callable
-  on its own — a read handler that silently wrote to a globally shared table
-  would be a trap.
-* **Usage is counted once, through the caller's accessible-file gate.**
-  ``usage_count`` and the unused filter both come from
-  :func:`accessible_usage_counts`, so they cannot disagree. They used to: the
-  list scoped its count while ``/tags/unused`` counted globally, and a tag whose
-  only files belonged to someone else reported ``0`` in one place while being
-  absent from the other.
-
-Errors are allowed to propagate. The old handlers wrapped their queries in
-``try/except`` and returned ``[]``, which renders a broken read as an empty tag
-page — indistinguishable from an install with no tags.
+Collisions are tags whose stored normalized names are equal. Fuzzy similarity
+is not transitive, so it never makes a tag a member; near matches are offered
+as ranked suggestions next to a cluster instead.
 """
 
 from __future__ import annotations
 
-import difflib
 import logging
-import uuid as uuid_pkg
 from collections.abc import Sequence
 from dataclasses import dataclass
 from dataclasses import field
+from difflib import SequenceMatcher
+from typing import Final
+from uuid import UUID
 
 from sqlalchemy import distinct
 from sqlalchemy import func
+from sqlalchemy import not_
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -57,10 +31,6 @@ from app.core.tenancy import OrgScope
 from app.models.media import MediaFile
 from app.models.tag import FileTag
 from app.models.tag import Tag
-from app.services.tag_scope import OWNERSHIP_MINE
-from app.services.tag_scope import OWNERSHIP_SHARED_WITH_ME
-from app.services.tag_scope import OWNERSHIP_SYSTEM
-from app.services.tag_scope import TAG_OWNERSHIPS
 from app.services.tag_scope import accessible_file_ids_subquery
 from app.services.tag_scope import owned_or_system
 from app.services.tag_scope import system_tag
@@ -71,224 +41,113 @@ from app.services.takedown_service import exclude_quarantined
 
 logger = logging.getLogger(__name__)
 
-#: Ownership scopes for the tag list. ``all`` is everything the caller can see;
-#: the other three are exactly the ``ownership`` values a row can carry, and
-#: partition ``all`` between them. Sharing the vocabulary with
-#: ``tag_scope.TAG_OWNERSHIPS`` is the point: a scoped request returns rows
-#: whose ``ownership`` equals the scope asked for, which is a single testable
-#: invariant instead of two lists to keep in step by hand.
-SCOPE_ALL = "all"
-TAG_SCOPES = (SCOPE_ALL, *TAG_OWNERSHIPS)
+SCOPE_ALL: Final = "all"
+#: Values of the list's ``scope`` filter: ``all`` plus the three ownership labels.
+TAG_SCOPES: Final = (SCOPE_ALL, "mine", "system", "shared_with_me")
 
 
 @dataclass(frozen=True)
 class TagListEntry:
-    """One row of the tag list, with everything the SPA renders already decided.
+    """One row of the caller's tag list."""
 
-    Attributes:
-        uuid: Public identifier.
-        name: Stored name.
-        source: Origin, ``None`` for rows predating auto-labeling.
-        usage_count: Files **the caller can see** carrying this tag.
-        ownership: The caller's relationship to the tag — ``mine``, ``system``
-            or ``shared_with_me``. Computed here because it needs the caller;
-            ``user_id`` itself never reaches the wire.
-    """
-
-    uuid: uuid_pkg.UUID
+    uuid: UUID
     name: str
     source: str | None
     usage_count: int
-    ownership: str = OWNERSHIP_MINE
+    ownership: str = "mine"
 
 
 @dataclass(frozen=True)
 class TagClusterMember:
-    """A tag that shares its normalized name with the rest of its cluster."""
+    """A tag inside a collision cluster."""
 
-    uuid: uuid_pkg.UUID
+    uuid: UUID
     name: str
     source: str | None
     usage_count: int
     suggested_survivor: bool
-    ownership: str = OWNERSHIP_MINE
+    ownership: str = "mine"
 
 
 @dataclass(frozen=True)
 class TagClusterSuggestion:
-    """A tag that is merely *similar* to a cluster, offered beside it.
+    """A near-match tag offered beside a cluster."""
 
-    Never a cluster member: similarity is non-transitive, so treating it as one
-    would make the cluster depend on scan order.
-    """
-
-    uuid: uuid_pkg.UUID
+    uuid: UUID
     name: str
     source: str | None
     usage_count: int
     similarity: float
-    ownership: str = OWNERSHIP_MINE
+    ownership: str = "mine"
 
 
-@dataclass(frozen=True)
+@dataclass
 class TagCollisionCluster:
-    """Tags that normalize to one name, plus the merge the backend recommends.
-
-    Attributes:
-        normalized_name: The shared normalized form the cluster is grouped on.
-        members: Cluster members, highest usage first.
-        suggested_survivor_uuid: The member to keep — the highest-usage one.
-        suggestions: Ranked near matches from *outside* the cluster.
-    """
+    """Tags sharing one normalized name, most used first."""
 
     normalized_name: str
     members: list[TagClusterMember] = field(default_factory=list)
-    suggested_survivor_uuid: uuid_pkg.UUID | None = None
+    suggested_survivor_uuid: UUID | None = None
     suggestions: list[TagClusterSuggestion] = field(default_factory=list)
 
 
 def refresh_stored_normalization(db: Session, *, user_id: int, organization_id: int | None) -> int:
-    """Correct the caller's tags whose stored ``normalized_name`` is missing or stale.
+    """Correct NULL or stale ``normalized_name`` values in the tenant and system scope.
 
-    Idempotent by construction: it writes :func:`normalize_tag_name` of the
-    current name and only when the column disagrees, so a second run changes
-    nothing. Committed here rather than left to the caller — the repair is a
-    real, independently useful write, and a read request's session is closed
-    without a commit, which would silently discard it.
-
-    Scoped to ``owned_or_system`` like every other read here. The repair
-    discloses nothing on its own, but running it deployment-wide from a per-user
-    GET would have one user's page take row locks on every other tenant's tags.
-
-    Args:
-        db: Database session. Committed when anything changed.
-        user_id: The acting user.
-        organization_id: The request's tenant, whose vocabulary is repaired.
+    Commits when something changed: it runs on read requests, whose session
+    closes without a commit.
 
     Returns:
         The number of rows corrected.
     """
-    changed = 0
-    for tag in db.query(Tag).filter(owned_or_system(user_id, organization_id)).all():
+    corrected = 0
+    for tag in db.query(Tag).filter(owned_or_system(user_id, organization_id)):
         expected = normalize_tag_name(tag.name)
         if tag.normalized_name != expected:
             tag.normalized_name = expected
-            changed += 1
-
-    if changed:
+            corrected += 1
+    if corrected:
         db.flush()
         db.commit()
-        logger.info("Repaired stored normalization on %d tag(s)", changed)
-    return changed
+        logger.info(f"Corrected the stored normalization of {corrected} tags")
+    return corrected
 
 
 def accessible_usage_counts(
     db: Session, *, user_id: int, organization_id: OrgScope = UNSCOPED
 ) -> dict[int, int]:
-    """Count each tag's files **within the caller's accessible set**.
-
-    The single definition of tag usage for every read surface: the list's
-    ``usage_count``, the unused filter, and the cluster members all call this,
-    so none of them can contradict another.
-
-    Args:
-        db: Database session.
-        user_id: The acting user.
-        organization_id: Tenant scope, matching ``GET /tags``.
-
-    Returns:
-        ``{tag_id: file_count}``, omitting tags with no accessible file.
-    """
-    accessible_sq = select(accessible_file_ids_subquery(db, user_id, organization_id))
+    """Distinct accessible files per tag id; tags with none are absent."""
+    accessible = select(accessible_file_ids_subquery(db, user_id, organization_id))
     rows = (
         db.query(FileTag.tag_id, func.count(distinct(FileTag.media_file_id)))
-        .filter(FileTag.media_file_id.in_(accessible_sq))
+        .filter(FileTag.tag_id.is_not(None), FileTag.media_file_id.in_(accessible))
         .group_by(FileTag.tag_id)
-        .all()
     )
-    return {int(tag_id): int(count) for tag_id, count in rows if tag_id is not None}
+    return {int(tag_id): int(count) for tag_id, count in rows}
 
 
-def _clustered_tags(
-    db: Session, *, user_id: int, organization_id: int | None
-) -> tuple[dict[str, list[Tag]], list[Tag]]:
-    """Group tags by stored normalized name, keeping only the collisions.
-
-    Repairs the stored normalization first — grouping on a column nothing keeps
-    true would miss the legacy rows this pass exists to surface.
-
-    Returns:
-        The collision clusters, and the full tag list the grouping was built
-        from (in ``Tag.id`` order). The list is handed back rather than
-        discarded because the suggestions pass needs exactly the same rows in
-        exactly the same order, and re-querying it was a third full-table scan
-        per request.
-    """
+def _scope_tags(db: Session, user_id: int, organization_id: int | None) -> list[Tag]:
+    """Repair stored normalization, then load the tenant and system tags by id."""
     refresh_stored_normalization(db, user_id=user_id, organization_id=organization_id)
-
-    all_tags = (
-        db.query(Tag).filter(owned_or_system(user_id, organization_id)).order_by(Tag.id).all()
-    )
-    grouped: dict[str, list[Tag]] = {}
-    for tag in all_tags:
-        normalized = tag.normalized_name or ""
-        if not normalized:
-            # A name with no usable characters cannot name a duplicate of
-            # anything; grouping the empties together would invent a cluster.
-            continue
-        grouped.setdefault(normalized, []).append(tag)
-    return (
-        {normalized: tags for normalized, tags in grouped.items() if len(tags) > 1},
-        all_tags,
-    )
+    return db.query(Tag).filter(owned_or_system(user_id, organization_id)).order_by(Tag.id).all()
 
 
-def _member_sort_key(tag: Tag, usage: dict[int, int]) -> tuple[int, str, int]:
-    """Order cluster members: most used first, then by name, then by id.
+def _group_collisions(tags: list[Tag]) -> dict[str, list[Tag]]:
+    groups: dict[str, list[Tag]] = {}
+    for tag in tags:
+        if tag.normalized_name:
+            groups.setdefault(tag.normalized_name, []).append(tag)
+    return {form: members for form, members in groups.items() if len(members) > 1}
 
-    Fully determined, so the preselected survivor cannot change between two
-    requests over unchanged data.
-    """
-    return (-usage.get(tag.id, 0), tag.name, tag.id)
 
-
-def _suggestions_for(
-    normalized: str,
-    member_ids: set[int],
-    candidates: list[Tag],
-    usage: dict[int, int],
-    *,
-    user_id: int,
-    threshold: float,
-) -> list[TagClusterSuggestion]:
-    """Rank the near matches for one cluster, most similar first.
-
-    Ties break on usage and then on name so the order survives a page reload —
-    ``SequenceMatcher`` ratios collide often between names of the same shape.
-    """
-    scored: list[tuple[float, Tag]] = []
-    for candidate in candidates:
-        if candidate.id in member_ids:
-            continue
-        candidate_normalized = candidate.normalized_name or ""
-        if not candidate_normalized or candidate_normalized == normalized:
-            continue
-        ratio = difflib.SequenceMatcher(None, normalized, candidate_normalized).ratio()
-        if ratio >= threshold:
-            scored.append((ratio, candidate))
-
-    scored.sort(key=lambda pair: (-pair[0], -usage.get(pair[1].id, 0), pair[1].name, pair[1].id))
-    return [
-        TagClusterSuggestion(
-            uuid=tag.uuid,
-            name=tag.name,
-            source=tag.source,
-            usage_count=usage.get(tag.id, 0),
-            similarity=round(ratio, 4),
-            ownership=tag_ownership(tag, user_id),
-        )
-        for ratio, tag in scored
-    ]
+def _similarity(a: str, b: str, threshold: float) -> float | None:
+    """``SequenceMatcher(None, a, b).ratio()`` when it reaches ``threshold``, else None."""
+    matcher = SequenceMatcher(None, a, b)
+    # The quick bounds are cheap upper limits on ratio(); most pairs stop here.
+    if matcher.real_quick_ratio() < threshold or matcher.quick_ratio() < threshold:
+        return None
+    ratio = matcher.ratio()
+    return ratio if ratio >= threshold else None
 
 
 def find_tag_collisions(
@@ -298,70 +157,70 @@ def find_tag_collisions(
     organization_id: int | None,
     threshold: float = FUZZY_MATCH_THRESHOLD,
 ) -> list[TagCollisionCluster]:
-    """Group duplicate tags into clusters and recommend a survivor for each.
+    """Cluster the tenant's and system tags by stored normalized name.
 
-    Grouping is **exact equality on the stored normalization**, so the same data
-    yields the same clusters on every request. Near matches are attached as
-    ranked suggestions instead of being merged in — see the module docstring for
-    why fuzzy clusters are unstable.
-
-    Args:
-        db: Database session. Committed if the normalization repair changed rows.
-        user_id: The acting user, used to scope the member usage counts.
-        organization_id: The request's tenant — whose tags are clustered, and
-            the scope of those counts.
-        threshold: Minimum similarity for a near-match suggestion.
-
-    Returns:
-        Clusters ordered by normalized name, each with its members ordered by
-        usage and its highest-usage member preselected as the survivor.
+    Runs :func:`refresh_stored_normalization` first, so this may commit.
+    Clusters are ordered by normalized name and members by usage, then name,
+    then id; the first member is the suggested survivor. The result is
+    identical across calls on unchanged data.
     """
-    clusters, all_tags = _clustered_tags(db, user_id=user_id, organization_id=organization_id)
-    if not clusters:
+    tags = _scope_tags(db, user_id, organization_id)
+    groups = _group_collisions(tags)
+    if not groups:
         return []
-
     usage = accessible_usage_counts(db, user_id=user_id, organization_id=organization_id)
 
-    built: list[TagCollisionCluster] = []
-    for normalized in sorted(clusters):
-        members = sorted(clusters[normalized], key=lambda tag: _member_sort_key(tag, usage))
-        survivor = members[0]
-        built.append(
+    def rank(tag: Tag) -> tuple[int, str, int]:
+        return (-usage.get(tag.id, 0), tag.name, tag.id)
+
+    clusters: list[TagCollisionCluster] = []
+    for form in sorted(groups):
+        members = sorted(groups[form], key=rank)
+        member_ids = {tag.id for tag in members}
+        scored: list[tuple[float, Tag]] = []
+        for candidate in tags:
+            other = candidate.normalized_name
+            if candidate.id in member_ids or not other or other == form:
+                continue
+            ratio = _similarity(form, other, threshold)
+            if ratio is not None:
+                scored.append((ratio, candidate))
+        scored.sort(key=lambda pair: (-pair[0], *rank(pair[1])))
+        clusters.append(
             TagCollisionCluster(
-                normalized_name=normalized,
+                normalized_name=form,
                 members=[
                     TagClusterMember(
                         uuid=tag.uuid,
                         name=tag.name,
                         source=tag.source,
                         usage_count=usage.get(tag.id, 0),
-                        suggested_survivor=tag.id == survivor.id,
+                        suggested_survivor=index == 0,
                         ownership=tag_ownership(tag, user_id),
                     )
-                    for tag in members
+                    for index, tag in enumerate(members)
                 ],
-                suggested_survivor_uuid=survivor.uuid,
-                suggestions=_suggestions_for(
-                    normalized,
-                    {tag.id for tag in members},
-                    all_tags,
-                    usage,
-                    user_id=user_id,
-                    threshold=threshold,
-                ),
+                suggested_survivor_uuid=members[0].uuid,
+                suggestions=[
+                    TagClusterSuggestion(
+                        uuid=tag.uuid,
+                        name=tag.name,
+                        source=tag.source,
+                        usage_count=usage.get(tag.id, 0),
+                        similarity=round(ratio, 4),
+                        ownership=tag_ownership(tag, user_id),
+                    )
+                    for ratio, tag in scored
+                ],
             )
         )
-    return built
+    return clusters
 
 
 def colliding_tag_ids(db: Session, *, user_id: int, organization_id: int | None) -> set[int]:
-    """Return the ids of every tag that shares its normalized name with another.
-
-    The same pass :func:`find_tag_collisions` uses, so the ``colliding`` list
-    filter and the cluster view can never disagree about who is a duplicate.
-    """
-    clusters, _all_tags = _clustered_tags(db, user_id=user_id, organization_id=organization_id)
-    return {tag.id for tags in clusters.values() for tag in tags}
+    """Ids of every tag that belongs to some collision cluster (may commit a repair)."""
+    groups = _group_collisions(_scope_tags(db, user_id, organization_id))
+    return {tag.id for members in groups.values() for tag in members}
 
 
 def list_tags_filtered(
@@ -373,128 +232,102 @@ def list_tags_filtered(
     colliding: bool = False,
     scope: str = SCOPE_ALL,
 ) -> list[TagListEntry]:
-    """List tags with usage counts, optionally narrowed.
-
-    Filters **combine** (logical AND) rather than replacing one another, so
-    "auto-labeled tags nobody uses" is one request.
+    """The caller's tag list: every tag :func:`visible_to` them, optionally narrowed.
 
     Args:
-        db: Database session.
-        user_id: The acting user; usage is scoped to files they can access.
-        organization_id: Tenant scope for that gate.
-        unused: Keep only tags with no accessible file — the exact complement of
-            ``usage_count > 0``, from the same count.
-        colliding: Keep only tags sharing a normalized name with another tag.
-        scope: ``all`` (default) or one of :data:`~app.services.tag_scope.
-            TAG_OWNERSHIPS` — ``mine``, ``system``, ``shared_with_me``. Ownership
-            is a different axis from the other three filters, which is why it is
-            a separate parameter rather than a fourth boolean: "my unused tags"
-            has to be expressible.
-
-    Note:
-        The base scope here is ``visible_to``, not ``owned_or_system``: a tag
-        attached to a file shared with the caller belongs in their list, or they
-        cannot filter by a tag they can see on screen. The narrower scope is for
-        the *write* surfaces and for ``/unused``, where the shared-file arm is
-        vacuous by definition.
+        db: Session.
+        user_id: The caller.
+        organization_id: The request tenant (None = personal).
+        unused: Keep only tags on none of the caller's accessible files.
+        colliding: Keep only collision-cluster members (commits the
+            normalization repair when there is one).
+        scope: One of :data:`TAG_SCOPES`; each ownership value keeps exactly
+            the rows that report it.
 
     Returns:
-        Entries ordered by usage (descending) then name, matching the order the
-        list has always shipped in.
+        Entries ordered by usage descending, then name.
+
+    Raises:
+        ValueError: ``scope`` is not one of :data:`TAG_SCOPES`.
     """
-    usage = accessible_usage_counts(db, user_id=user_id, organization_id=organization_id)
-    collision_ids = (
+    if scope not in TAG_SCOPES:
+        raise ValueError(f"Unknown tag scope: {scope}")
+    # Before loading the list: the repair may commit, which would expire the rows.
+    keep_ids = (
         colliding_tag_ids(db, user_id=user_id, organization_id=organization_id)
         if colliding
-        else set()
+        else None
     )
 
-    entries: list[TagListEntry] = []
-    # Each branch is the SQL form of the matching `tag_ownership` arm, so the
-    # filter and the field it filters on cannot disagree.
     query = db.query(Tag).filter(visible_to(db, user_id, organization_id))
-    if scope == OWNERSHIP_MINE:
+    if scope == "mine":
         query = query.filter(Tag.user_id == user_id)
-    elif scope == OWNERSHIP_SYSTEM:
+    elif scope == "system":
         query = query.filter(system_tag())
-    elif scope == OWNERSHIP_SHARED_WITH_ME:
-        # An org tag whose creator is gone has a NULL user_id and is still not
-        # system, hence IS DISTINCT FROM rather than `!=`.
-        query = query.filter(~system_tag(), Tag.user_id.is_distinct_from(user_id))
+    elif scope == "shared_with_me":
+        query = query.filter(not_(system_tag()), Tag.user_id.is_distinct_from(user_id))
+    tags = query.all()
 
-    for tag in query.order_by(Tag.name).all():
-        count = usage.get(tag.id, 0)
-        if unused and count:
-            continue
-        if colliding and tag.id not in collision_ids:
-            continue
-        entries.append(
-            TagListEntry(
-                uuid=tag.uuid,
-                name=tag.name,
-                source=tag.source,
-                usage_count=count,
-                ownership=tag_ownership(tag, user_id),
-            )
+    usage = accessible_usage_counts(db, user_id=user_id, organization_id=organization_id)
+    entries = [
+        TagListEntry(
+            uuid=tag.uuid,
+            name=tag.name,
+            source=tag.source,
+            usage_count=usage.get(tag.id, 0),
+            ownership=tag_ownership(tag, user_id),
         )
-
+        for tag in tags
+        if (not unused or not usage.get(tag.id)) and (keep_ids is None or tag.id in keep_ids)
+    ]
     entries.sort(key=lambda entry: (-entry.usage_count, entry.name))
     return entries
 
 
 def list_unused_tag_rows(db: Session, *, user_id: int, organization_id: int | None) -> list[Tag]:
-    """Return the tag rows no accessible file carries.
+    """Tenant and system tags on none of the caller's accessible files, by name.
 
-    Reads the same counts as :func:`list_tags_filtered`, so ``/tags/unused`` and
-    a ``usage_count`` of 0 always name the same set of tags.
-
-    Args:
-        db: Database session.
-        user_id: The acting user.
-        organization_id: Tenant scope.
-
-    Returns:
-        The unused rows, ordered by name.
+    A tag may appear here and still be kept by ``DELETE /tags/cleanup``, which
+    counts references deployment-wide.
     """
-    usage = accessible_usage_counts(db, user_id=user_id, organization_id=organization_id)
-    rows = db.query(Tag).filter(owned_or_system(user_id, organization_id)).order_by(Tag.name).all()
-    return [tag for tag in rows if not usage.get(tag.id, 0)]
+    accessible = select(accessible_file_ids_subquery(db, user_id, organization_id))
+    in_use = select(FileTag.tag_id).where(
+        FileTag.tag_id.is_not(None), FileTag.media_file_id.in_(accessible)
+    )
+    rows: list[Tag] = (
+        db.query(Tag)
+        .filter(owned_or_system(user_id, organization_id), Tag.id.not_in(in_use))
+        .order_by(Tag.name)
+        .all()
+    )
+    return rows
 
 
 def tags_on_files(
-    db: Session, file_ids: Sequence[int], *, user_id: int, organization_id: OrgScope = UNSCOPED
+    db: Session,
+    file_ids: Sequence[int],
+    *,
+    user_id: int,
+    organization_id: OrgScope = UNSCOPED,
 ) -> list[tuple[Tag, int]]:
-    """Return the tags carried by ``file_ids``, with how many carry each.
+    """Tags carried by the given files, with how many of them carry each.
 
-    Powers the bulk apply surface, which has to show what a selection already
-    has before offering to change it — ``GET /api/files`` carries no per-file
-    tags (#326), so nothing else can answer this.
-
-    The file set is intersected with the caller's accessible files first: a
-    selection cannot be used to read tags off a file the caller could not open
-    directly.
-
-    Args:
-        db: Database session.
-        file_ids: Internal ids of the selected files.
-        user_id: The acting user.
-        organization_id: Tenant scope.
+    Only files the caller may open are counted, so a selection never reads tags
+    off a file it could not open.
 
     Returns:
-        ``(tag, file_count)`` pairs, most-carried first then by name, so a tag
-        on every selected file sorts above one on a single file.
+        ``(tag, file_count)`` pairs, most carried first, then by name.
     """
-    wanted = sorted({int(f) for f in file_ids})
-    if not wanted:
+    if not file_ids:
         return []
-
     accessible = select(accessible_file_ids_subquery(db, user_id, organization_id))
+    carried = func.count(distinct(FileTag.media_file_id))
     rows = (
-        db.query(Tag, func.count(distinct(FileTag.media_file_id)).label("file_count"))
+        db.query(Tag, carried)
         .join(FileTag, FileTag.tag_id == Tag.id)
-        .filter(FileTag.media_file_id.in_(wanted), FileTag.media_file_id.in_(accessible))
+        .filter(FileTag.media_file_id.in_(list(file_ids)), FileTag.media_file_id.in_(accessible))
         .group_by(Tag.id)
-        .order_by(func.count(distinct(FileTag.media_file_id)).desc(), Tag.name)
+        .order_by(carried.desc(), Tag.name)
         .all()
     )
     return [(tag, int(count)) for tag, count in rows]
@@ -509,41 +342,22 @@ def files_for_tag(
     limit: int = 50,
     is_admin: bool = False,
 ) -> tuple[list[MediaFile], int]:
-    """Return the accessible files carrying ``tag_id``, newest first.
+    """The accessible files carrying a tag, newest first, and their true total.
 
-    The manager's empty state promises "select a tag to see what it touches"
-    and, until this existed, showed a count and nothing else — which also made
-    the AI-review flow unjudgeable, since you cannot tell whether a tag fits a
-    recording you cannot see.
-
-    Scoped to the caller's accessible files, so a tag visible via one shared
-    file never lists its owner's other media. Mirrors ``_visible_to``'s own
-    quarantine clause (``tags/_common.py``) — that predicate already drops a
-    quarantined file's id from tag *visibility*; this is the matching exclusion
-    for the *file-listing* half, which was missed when that fix landed.
-
-    Args:
-        db: Database session.
-        tag_id: The tag whose files to list.
-        user_id: The acting user.
-        organization_id: Tenant scope.
-        limit: Most rows to return; the caller gets the true total separately so
-            it can say "and N more" rather than silently truncating.
-        is_admin: Admin "see all" — skip the takedown exclusion below.
+    Quarantined files are left out unless ``is_admin``.
 
     Returns:
-        ``(files, total)`` — at most ``limit`` files, and how many there are.
+        At most ``limit`` files, and the count of all matching files.
     """
     accessible = select(accessible_file_ids_subquery(db, user_id, organization_id))
-    base = (
-        db.query(MediaFile)
-        .join(FileTag, FileTag.media_file_id == MediaFile.id)
-        .filter(FileTag.tag_id == tag_id, MediaFile.id.in_(accessible))
+    carrying = select(FileTag.media_file_id).where(FileTag.tag_id == tag_id)
+    query = exclude_quarantined(
+        db.query(MediaFile).filter(MediaFile.id.in_(carrying), MediaFile.id.in_(accessible)),
+        include_quarantined=is_admin,
     )
-    base = exclude_quarantined(base, include_quarantined=is_admin)
-    total = base.count()
+    total = query.count()
     files = (
-        base.order_by(MediaFile.upload_time.desc().nullslast(), MediaFile.id.desc())
+        query.order_by(MediaFile.upload_time.desc().nulls_last(), MediaFile.id.desc())
         .limit(limit)
         .all()
     )

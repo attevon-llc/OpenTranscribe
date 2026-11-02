@@ -1,24 +1,22 @@
-"""Read-only questions about tags: duplicates, what a selection carries, what a tag touches.
+"""Read-only tag questions: name collisions, what a selection carries, what a tag is on."""
 
-Shared helpers and the visibility rules live in ``_common``.
-"""
+from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
 from fastapi import Depends
-from fastapi import HTTPException
 from fastapi import Query
-from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
-from app.api.endpoints.tags._common import _visible_to
+from app.api.endpoints.tags._common import _tag_not_found
 from app.api.endpoints.tags._common import router
 from app.db.base import get_db
 from app.models.tag import Tag
 from app.models.user import User
-from app.schemas.tag import TagCollisionCluster as TagCollisionClusterSchema
+from app.schemas.tag import TagCollisionCluster
 from app.schemas.tag import TagFileList
 from app.schemas.tag import TaggedFile
 from app.schemas.tag import TagOnSelection
@@ -28,52 +26,40 @@ from app.services.tag_collisions import files_for_tag
 from app.services.tag_collisions import find_tag_collisions
 from app.services.tag_collisions import tags_on_files
 from app.services.tag_scope import tag_ownership
-from app.services.uuid_helpers import get_by_uuid
+from app.services.tag_scope import visible_to
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
 
-@router.get("/collisions", response_model=list[TagCollisionClusterSchema])
+@router.get("/collisions", response_model=list[TagCollisionCluster])
 def list_tag_collisions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Group duplicate tags into clusters, each with a preselected survivor.
+    """Groups of tags whose names differ only by case, separators or spacing.
 
-    Grouping is exact equality on the stored normalization, so repeated requests
-    over unchanged data return the same clusters in the same order; fuzzy near
-    matches come back as a separately ranked suggestion list and are never
-    cluster members. The pass calls ``refresh_stored_normalization`` first, so
-    this GET **does write** — deliberately, and by name.
+    Each group names the member a merge should keep, and lists similar but
+    distinct names as suggestions. Repairs stale stored normalizations first.
     """
     clusters = find_tag_collisions(db, user_id=current_user.id, organization_id=ctx.org_id)
-    return [TagCollisionClusterSchema.model_validate(cluster) for cluster in clusters]
+    return [TagCollisionCluster.model_validate(cluster) for cluster in clusters]
 
 
 @router.get("/for-files", response_model=list[TagOnSelection])
 def list_tags_on_files(
-    file_uuids: list[UUID] = Query(..., min_length=1),
+    file_uuids: list[UUID] = Query(
+        ..., min_length=1, description="The selected files; repeat the parameter for each."
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """The tags a set of selected files already carries.
+    """The tags a selection of files carries, and on how many of them.
 
-    The bulk apply surface has to show what a selection *has* before offering to
-    change it, and ``GET /api/files`` deliberately carries no per-file tags
-    (#326) — so nothing else can answer this.
-
-    ``file_count`` is how many of the selected files carry the tag, which is
-    what lets one selected file offer a full chip editor while several offer
-    add-only: removing a tag that sits on three of five files is ambiguous in a
-    way adding never is.
-
-    Every uuid must name a file the caller can open (the same gate as the file detail
-    page); one that does not is a 404 "File not found" whether it is unknown or merely
-    someone else's, so the route reveals nothing about files outside the caller's reach.
-
-    Registered before ``/{tag_uuid}`` so the literal path is not swallowed.
+    Any file in the selection you cannot open fails the whole request exactly
+    like an unknown uuid.
     """
+    selected = list(dict.fromkeys(file_uuids))
     file_ids = [
         get_file_by_uuid_with_permission(
             db,
@@ -83,9 +69,8 @@ def list_tags_on_files(
             organization_id=ctx.org_id,
             conceal_inaccessible=True,
         ).id
-        for file_uuid in dict.fromkeys(file_uuids)
+        for file_uuid in selected
     ]
-    selection_size = len(file_ids)
     rows = tags_on_files(db, file_ids, user_id=current_user.id, organization_id=ctx.org_id)
     return [
         TagOnSelection(
@@ -94,38 +79,37 @@ def list_tags_on_files(
             source=tag.source,
             ownership=tag_ownership(tag, current_user.id),
             file_count=count,
-            selection_size=selection_size,
+            selection_size=len(file_ids),
         )
         for tag, count in rows
     ]
 
 
+def _status_text(value: Any) -> str | None:
+    """A status enum's wire value; a raw string passes through."""
+    text: str | None = getattr(value, "value", value)
+    return text
+
+
 @router.get("/{tag_uuid}/files", response_model=TagFileList)
 def list_files_for_tag(
     tag_uuid: UUID,
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=200, description="Most files to return."),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """List the accessible files carrying this tag — what the tag *touches*.
-
-    Gated on ``_visible_to`` rather than the writable scope: seeing which of
-    your own files a tag sits on is a read, and a tag reaches you precisely
-    because it is on a file you can access.
-
-    Registered before ``PATCH /{tag_uuid}`` for the usual FastAPI ordering
-    reason, and after the fixed-path routes so ``/impact`` and friends are not
-    swallowed by ``/{tag_uuid}``.
-    """
-    tag = get_by_uuid(db, Tag, tag_uuid, error_message="Tag not found")
-    visible = db.query(Tag).filter(Tag.id == tag.id, _visible_to(db, current_user.id, ctx.org_id))
-    if visible.first() is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag not found")
-
+    """Your accessible files that carry a tag, newest first, with the true total."""
+    tag_id = (
+        db.query(Tag.id)
+        .filter(Tag.uuid == tag_uuid, visible_to(db, current_user.id, ctx.org_id))
+        .scalar()
+    )
+    if tag_id is None:
+        raise _tag_not_found()
     files, total = files_for_tag(
         db,
-        tag.id,
+        tag_id,
         user_id=current_user.id,
         organization_id=ctx.org_id,
         limit=limit,
@@ -137,9 +121,7 @@ def list_files_for_tag(
             TaggedFile(
                 uuid=media_file.uuid,
                 display_title=media_file.title or media_file.filename or str(media_file.uuid),
-                status=media_file.status.value
-                if hasattr(media_file.status, "value")
-                else media_file.status,
+                status=_status_text(media_file.status),
                 formatted_duration=FormattingService.format_duration(media_file.duration),
             )
             for media_file in files

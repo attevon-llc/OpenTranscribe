@@ -264,6 +264,30 @@ cost for it — a confident wrong number would be worse than none. See
 [AWS Bedrock pricing](https://aws.amazon.com/bedrock/pricing/).
 :::
 
+## Token usage
+
+Every LLM-backed run records its token usage in the usage event table, not only chat
+turns. Chat writes `chat.tokens` (one per assistant message); the background features
+write one event per task run:
+
+| Feature | Event type |
+|---|---|
+| Summarization | `summary.tokens` |
+| Topic and tag suggestions | `topics.tokens` |
+| Speaker identification suggestions | `speaker_id.tokens` |
+| LLM redaction detector | `redaction.tokens` |
+
+Each event carries the total in `quantity` (unit `tokens`) and, in its metadata, the
+prompt and completion split, cache tokens, provider, model, number of provider calls and
+whether the run succeeded. The owner and organization come from the file the run worked
+on. A long recording that is summarized in several sections is still one event.
+
+Events are keyed on the task run (`llm:<stage>:<file id>:<task id>`), so a Celery
+retry or redelivery of the same task does not add a second row. A run that fails after
+spending tokens still records what was spent. When a provider reports no usage, the
+prompt and reply are estimated at about four characters per token and the event is
+flagged `tokens_estimated`. A failure to record usage is logged and never fails the task.
+
 ### Anthropic
 
 Claude models with automatic model discovery:

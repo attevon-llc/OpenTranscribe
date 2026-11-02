@@ -46,6 +46,7 @@ from app.services.file_provenance import llm_facts
 from app.services.file_provenance import record_stage
 from app.services.ingest_artifacts.service import source_fingerprint
 from app.services.llm_service import LLMService
+from app.services.llm_usage import llm_usage_run
 from app.services.post_processing_status import announce_started
 from app.services.post_processing_status import report as report_post_processing
 from app.services.post_processing_status import tracks_post_processing
@@ -557,14 +558,15 @@ def _generate_llm_summary(
     logger.info(f"User context window: {llm_service.user_context_window} tokens")
 
     try:
-        summary_data = llm_service.generate_summary(
-            transcript=full_transcript,
-            speaker_data=inputs["speaker_stats"],
-            user_id=user_id,
-            output_language=output_language,
-            organization_context=inputs["organization_context"],
-            prompt_uuid=prompt_uuid,
-        )
+        with llm_usage_run("summary", file_id=file_id):
+            summary_data = llm_service.generate_summary(
+                transcript=full_transcript,
+                speaker_data=inputs["speaker_stats"],
+                user_id=user_id,
+                output_language=output_language,
+                organization_context=inputs["organization_context"],
+                prompt_uuid=prompt_uuid,
+            )
     except Exception as e:
         _handle_llm_error(e, file_id, user_id, full_transcript, llm_provider, llm_model)
         return None  # unreachable — _handle_llm_error always raises

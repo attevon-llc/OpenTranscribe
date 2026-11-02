@@ -282,3 +282,79 @@ def test_a_platform_admin_bypass_may_tag_any_users_file(db_session, admin_user, 
 
     assert result.outcome is BulkTagOutcome.ADDED
     assert _tag_ids_on(db_session, theirs) == [tag.id]
+
+
+def test_an_add_where_every_file_fails_leaves_no_new_tag(
+    client, db_session, normal_user, other_user, user_token_headers, monkeypatch
+):
+    reindex = record_reindex(monkeypatch)
+    viewer_file = make_file(db_session, other_user)
+    strangers_file = make_file(db_session, other_user)
+    share_file(db_session, other_user, normal_user, viewer_file, "viewer")
+    name = word("All Fail")
+
+    rows = _bulk(client, user_token_headers, [viewer_file, strangers_file], "add_tag", name)
+
+    assert [r["outcome"] for r in rows] == ["failed", "failed"]
+    db_session.expire_all()
+    assert db_session.query(Tag).filter(Tag.name == name).count() == 0
+    assert reindex.calls == []
+
+
+def test_an_add_where_some_files_fail_keeps_the_one_new_tag(
+    client, db_session, normal_user, other_user, user_token_headers, monkeypatch
+):
+    record_reindex(monkeypatch)
+    viewer_file = make_file(db_session, other_user)
+    own_file = make_file(db_session, normal_user)
+    share_file(db_session, other_user, normal_user, viewer_file, "viewer")
+    name = word("Some Fail")
+
+    rows = _bulk(client, user_token_headers, [viewer_file, own_file], "add_tag", name)
+
+    assert [r["outcome"] for r in rows] == ["failed", "added"]
+    db_session.expire_all()
+    created = db_session.query(Tag).filter(Tag.name == name).all()
+    assert len(created) == 1
+    assert _tag_ids_on(db_session, own_file) == [created[0].id]
+
+
+def test_an_add_of_an_existing_name_where_every_file_fails_keeps_that_tag(
+    client, db_session, normal_user, other_user, user_token_headers, monkeypatch
+):
+    record_reindex(monkeypatch)
+    tag = make_tag(db_session, word("Kept"), user_id=normal_user.id)
+    strangers_file = make_file(db_session, other_user)
+
+    rows = _bulk(client, user_token_headers, [strangers_file], "add_tag", tag.name)
+
+    assert [r["outcome"] for r in rows] == ["failed"]
+    db_session.expire_all()
+    assert db_session.query(Tag).filter(Tag.id == tag.id).count() == 1
+
+
+def test_a_lost_creation_race_never_deletes_the_winning_tag(
+    client, db_session, normal_user, other_user, user_token_headers, monkeypatch
+):
+    """The batch's lookup misses a row another request just committed; that row is not ours."""
+    from app.services import tag_bulk
+
+    record_reindex(monkeypatch)
+    winner = make_tag(db_session, word("Race Won"), user_id=normal_user.id)
+    strangers_file = make_file(db_session, other_user)
+    real_lookup = tag_bulk.lookup_existing_tag
+    lookups: list[int] = []
+
+    def miss_once(*args, **kwargs):
+        lookups.append(1)
+        return None if len(lookups) == 1 else real_lookup(*args, **kwargs)
+
+    monkeypatch.setattr(tag_bulk, "lookup_existing_tag", miss_once)
+
+    rows = _bulk(client, user_token_headers, [strangers_file], "add_tag", winner.name)
+
+    assert lookups == [1]
+    assert [r["outcome"] for r in rows] == ["failed"]
+    db_session.expire_all()
+    assert db_session.query(Tag).filter(Tag.id == winner.id).count() == 1
+    assert db_session.query(Tag).filter(Tag.name == winner.name).count() == 1

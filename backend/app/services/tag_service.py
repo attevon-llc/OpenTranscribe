@@ -195,7 +195,7 @@ def _prepare_name(name: str | None) -> tuple[str, str]:
     return cleaned, normalize_tag_name(cleaned)
 
 
-def _insert_tag(
+def insert_tag_or_reread(
     db: Session,
     cleaned: str,
     normalized: str,
@@ -203,11 +203,15 @@ def _insert_tag(
     user_id: int,
     organization_id: int | None,
     source: str,
-) -> Tag:
+) -> tuple[Tag, bool]:
     """Create the row in a savepoint; on a lost race return the winning row.
 
     The insert must go through the ORM: the race tests inject a competing
     commit from a ``before_flush`` hook that looks for this row in ``session.new``.
+
+    Returns:
+        The row, and whether this call inserted it (False: another request's
+        row, re-read after the insert collided).
 
     Raises:
         IntegrityError: The insert collided and no winning row is visible.
@@ -229,9 +233,9 @@ def _insert_tag(
         winner = lookup_existing_tag(db, normalized, cleaned, user_id, organization_id)
         if winner is None:
             raise
-        return winner
+        return winner, False
     savepoint.commit()
-    return tag
+    return tag, True
 
 
 def resolve_or_create_tag(
@@ -271,15 +275,14 @@ def resolve_or_create_tag(
     existing = lookup_existing_tag(db, normalized, cleaned, user_id, organization_id)
     if existing is not None:
         return existing
-    created = _insert_tag(
+    return insert_tag_or_reread(
         db,
         cleaned,
         normalized,
         user_id=user_id,
         organization_id=organization_id,
         source=source,
-    )
-    return created
+    )[0]
 
 
 def resolve_or_create_tags(
@@ -342,14 +345,14 @@ def resolve_or_create_tags(
             continue
         try:
             resolved.append(
-                _insert_tag(
+                insert_tag_or_reread(
                     db,
                     cleaned,
                     norm,
                     user_id=user_id,
                     organization_id=organization_id,
                     source=source,
-                )
+                )[0]
             )
         except IntegrityError:
             logger.warning(f"Tag '{cleaned}' lost a creation race and could not be re-read")

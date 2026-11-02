@@ -48,6 +48,9 @@ router = APIRouter()
 
 logger = logging.getLogger(__name__)
 
+#: The values ``schemas/auth_config.py`` admits for ``concurrent_session_policy``.
+CONCURRENT_SESSION_POLICIES = frozenset({"reject", "terminate_oldest"})
+
 
 def _perform_authentication(
     db: Session, username: str, password: str
@@ -243,7 +246,8 @@ def _enforce_concurrent_session_limit(
         db: Database session
         user_db: The authenticated user row
         max_concurrent_sessions: The enforced cap (the caller only calls when > 0)
-        concurrent_session_policy: ``reject`` or ``terminate_oldest``
+        concurrent_session_policy: ``reject`` or ``terminate_oldest``; any other
+            value is enforced as ``reject`` (and logged)
         client_ip: Client IP address, for the audit record
         user_agent: Client user agent, for the audit record
 
@@ -268,6 +272,14 @@ def _enforce_concurrent_session_limit(
     active_sessions = len(active_session_rows)
 
     if active_sessions >= max_concurrent_sessions:
+        if concurrent_session_policy not in CONCURRENT_SESSION_POLICIES:
+            # The admin API validates this value; a row written another way or a
+            # mistyped .env value does not pass through it. The stricter policy wins.
+            logger.warning(
+                "Unrecognised concurrent_session_policy %r; enforcing 'reject'",
+                concurrent_session_policy,
+            )
+            concurrent_session_policy = "reject"
         if concurrent_session_policy == "reject":
             # AC-10 refusal is an event in its own right; it was previously
             # invisible to the audit log, so a user repeatedly blocked at the

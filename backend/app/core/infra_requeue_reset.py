@@ -26,12 +26,17 @@ the entry, which is harmless: no transcription run of that file is in flight the
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from sqlalchemy import event
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import UOWTransaction
 
 from app.core.enums import FileStatus
+
+if TYPE_CHECKING:
+    from app.models.media import MediaFile
 
 logger = logging.getLogger(__name__)
 
@@ -44,12 +49,12 @@ _PENDING_KEY = "infra_requeue_clear_file_uuids"
 _registered = False
 
 
-def _terminal_status_written(obj) -> bool:
+def _terminal_status_written(obj: MediaFile) -> bool:
     added = inspect(obj).attrs.status.history.added
     return any(value in TERMINAL_FILE_STATUSES for value in added)
 
 
-def _collect(session: Session, _flush_context) -> None:
+def _collect(session: Session, _flush_context: UOWTransaction) -> None:
     from app.models.media import MediaFile
 
     for obj in list(session.new) + list(session.dirty):

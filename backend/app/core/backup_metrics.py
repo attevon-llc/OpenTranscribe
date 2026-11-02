@@ -29,9 +29,11 @@ import json
 import logging
 import threading
 import time
+from collections.abc import Iterable
 from datetime import datetime
 
 from prometheus_client import REGISTRY
+from prometheus_client import Counter
 from sqlalchemy.orm import Session
 
 from app.core.metrics import backup_last_status
@@ -53,7 +55,12 @@ _refresh_lock = threading.Lock()
 _last_refresh_at: float | None = None
 
 
-def _sync_counter_to_db(counter, metric_name: str, pairs, vals: dict[str, str | None]) -> None:
+def _sync_counter_to_db(
+    counter: Counter,
+    metric_name: str,
+    pairs: Iterable[tuple[str, str]],
+    vals: dict[str, str | None],
+) -> None:
     """Increment a labelled Counter up to DB-persisted cumulative counts.
 
     ``pairs`` is ``((label_value, settings_key), ...)``. A DB value below the live

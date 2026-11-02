@@ -30,7 +30,7 @@ class SummaryPromptBase(BaseModel):
 
     @field_validator("content_type")
     @classmethod
-    def validate_content_type(cls, v):
+    def validate_content_type(cls, v: str | None) -> str | None:
         if v is not None:
             valid_types = {
                 "meeting",
@@ -48,7 +48,7 @@ class SummaryPromptBase(BaseModel):
 
     @field_validator("tags")
     @classmethod
-    def validate_tags(cls, v):
+    def validate_tags(cls, v: list[str]) -> list[str]:
         if len(v) > 20:
             raise ValueError("Maximum 20 tags allowed per prompt")
         cleaned = []
@@ -78,7 +78,7 @@ class SummaryPromptUpdate(BaseModel):
 
     @field_validator("content_type")
     @classmethod
-    def validate_content_type(cls, v):
+    def validate_content_type(cls, v: str | None) -> str | None:
         if v is not None:
             valid_types = {
                 "meeting",
@@ -96,7 +96,7 @@ class SummaryPromptUpdate(BaseModel):
 
     @field_validator("tags")
     @classmethod
-    def validate_tags(cls, v):
+    def validate_tags(cls, v: list[str] | None) -> list[str] | None:
         if v is None:
             return v
         if len(v) > 20:

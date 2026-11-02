@@ -154,7 +154,7 @@ class TaskRecoveryConfig:
     OOM_RETRY_ENABLED: bool = True  # Enable/disable OOM auto-retry
     OOM_BACKOFF_BASE_MINUTES: int = 10  # Base delay for exponential backoff (2^n * this value)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.MAX_TASK_DURATIONS is None:
             self.MAX_TASK_DURATIONS = _default_max_task_durations()
         if self.TRANSCRIPTION_HEARTBEAT_TTL <= self.TRANSCRIPTION_HEARTBEAT_INTERVAL:

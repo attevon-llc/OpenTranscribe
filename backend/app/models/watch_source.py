@@ -176,7 +176,7 @@ class WatchSource(Base):
         return bool(self.encrypted_smb_password)
 
     @property
-    def resolved_local_path(self):
+    def resolved_local_path(self) -> Path:
         """Absolute, traversal-guarded path for a local source.
 
         Returns the resolved ``WATCH_FOLDER_PATH / local_path`` and raises

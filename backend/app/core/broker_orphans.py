@@ -356,7 +356,7 @@ def classify(
 # --- broker operations ------------------------------------------------------------------------
 
 
-def _broker_connection():
+def _broker_connection() -> Any:
     """A connection to the broker that gives up quickly instead of retrying forever.
 
     The app's own retry policy (``broker_connection_max_retries=None``) is right for a worker

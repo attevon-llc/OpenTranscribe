@@ -138,7 +138,7 @@ def _validate_fips_cryptographic_configuration() -> None:
         raise
 
 
-def _validate_production_secrets():
+def _validate_production_secrets() -> None:
     """Validate that production secrets are properly configured.
 
     Gated on ``settings.is_hardened`` (fail-closed): every check below applies unless

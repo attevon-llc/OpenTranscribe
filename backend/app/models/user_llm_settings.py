@@ -125,5 +125,5 @@ class UserLLMSettings(Base):
 
         return public_view(str(self.api_key))
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<UserLLMSettings(user_id={self.user_id}, name={self.name}, provider={self.provider}, model={self.model_name})>"

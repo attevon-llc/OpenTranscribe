@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
+from types import ModuleType
 from typing import TYPE_CHECKING
 
 from sqlalchemy import text
@@ -29,7 +30,7 @@ if TYPE_CHECKING:
     from app.db.schema_detect.ladder import SchemaFacts
 
 
-def _revision_module(revision: str):
+def _revision_module(revision: str) -> ModuleType:
     """Load one revision file by path (its module-level constants are the source of truth)."""
     import importlib.util
 
@@ -42,7 +43,7 @@ def _revision_module(revision: str):
     return module
 
 
-def _has_unusable_pyannote_source(conn, tables: list[str]) -> bool:
+def _has_unusable_pyannote_source(conn: Connection, tables: list[str]) -> bool:
     """v434's data marker: a stored pyannote.ai choice with no key and local transcription.
 
     The predicate is read from the revision itself, so detection and the reset it detects
@@ -55,7 +56,7 @@ def _has_unusable_pyannote_source(conn, tables: list[str]) -> bool:
     return bool(conn.execute(detect, {"env_local": module.env_asr_is_local()}).scalar())
 
 
-def _has_lite_local_source_with_speakers(conn, tables: list[str]) -> bool:
+def _has_lite_local_source_with_speakers(conn: Connection, tables: list[str]) -> bool:
     """v436's data marker: on lite, a stored "this server" choice Automatic would keep.
 
     Always False on the full image, where the revision is a no-op. The predicate is read
@@ -69,7 +70,7 @@ def _has_lite_local_source_with_speakers(conn, tables: list[str]) -> bool:
     return bool(conn.execute(text(module.DETECT_SQL)).scalar())
 
 
-def _has_unstamped_voiceprint_suggestion(conn, tables: list[str]) -> bool:
+def _has_unstamped_voiceprint_suggestion(conn: Connection, tables: list[str]) -> bool:
     """v439's data marker: a legacy suggestion that provably came from a voiceprint match.
 
     The predicate is read from the revision itself, so detection and the stamp it detects

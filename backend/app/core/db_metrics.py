@@ -33,6 +33,10 @@ from contextvars import ContextVar
 from contextvars import Token
 from typing import Any
 
+from sqlalchemy.engine import Connection
+from sqlalchemy.engine.interfaces import DBAPICursor
+from sqlalchemy.engine.interfaces import ExecutionContext
+
 from app.core.config import settings
 from app.core.metrics import db_queries_per_request
 from app.core.metrics import db_query_duration_seconds
@@ -65,12 +69,26 @@ def reset(token: Token) -> None:
     _query_counter.reset(token)
 
 
-def _before_cursor_execute(conn, cursor, statement, parameters, context, executemany) -> None:
+def _before_cursor_execute(
+    conn: Connection,
+    cursor: DBAPICursor,
+    statement: str,
+    parameters: Any,
+    context: ExecutionContext | None,
+    executemany: bool,
+) -> None:
     """Stash a high-resolution start time on the execution context."""
     setattr(context, _START_ATTR, time.perf_counter())
 
 
-def _after_cursor_execute(conn, cursor, statement, parameters, context, executemany) -> None:
+def _after_cursor_execute(
+    conn: Connection,
+    cursor: DBAPICursor,
+    statement: str,
+    parameters: Any,
+    context: ExecutionContext | None,
+    executemany: bool,
+) -> None:
     """Observe duration, bump the per-request counter, emit slow-query warnings."""
     start = getattr(context, _START_ATTR, None)
     duration = time.perf_counter() - start if start is not None else 0.0

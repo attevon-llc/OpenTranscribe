@@ -346,7 +346,6 @@ backend/app/services/thumbnail.py	3	ratchet: may only go down
 backend/app/utils/vram_profiler.py	1	ratchet: may only go down
 backend/app/utils/websocket_notify.py	1	ratchet: may only go down
 scripts/benchmark-diarization.py	1	ratchet: may only go down
-scripts/benchmark-pyannote-direct.py	9	ratchet: may only go down
 scripts/benchmark-thorough.py	2	ratchet: may only go down
 scripts/benchmark_concurrent_uploads.py	2	ratchet: may only go down
 scripts/benchmark_e2e.py	2	ratchet: may only go down
@@ -377,3 +376,7 @@ scripts/vram-probe-diarization.py	8	ratchet: may only go down
 scripts/whole-stack-vram-probe.py	3	ratchet: may only go down
 scripts/release-tests/lib/os-probe.py	4	diagnostic probe for the release rehearsal: every failure is the payload and is reported as data to a release check, never swallowed (new in v0.6.0 master)
 scripts/bench_parallel/monitors.py	2	ratchet: may only go down
+scripts/pyannote_direct/audio_io.py	2	ratchet: may only go down
+scripts/pyannote_direct/driver.py	2	ratchet: may only go down
+scripts/pyannote_direct/pipeline.py	2	ratchet: may only go down
+scripts/pyannote_direct/vram.py	3	ratchet: may only go down

@@ -53,7 +53,7 @@ export interface TagWithCount extends Tag {
  *   file shared with them. Read-only: every mutation answers 404, so the UI
  *   must not offer one.
  */
-export type TagOwnership = 'mine' | 'system' | 'shared_with_me';
+type TagOwnership = 'mine' | 'system' | 'shared_with_me';
 
 /**
  * Whether the caller may write system tags and promote into the shared

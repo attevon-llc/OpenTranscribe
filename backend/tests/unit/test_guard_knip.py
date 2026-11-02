@@ -166,12 +166,15 @@ def test_write_baseline_records_both_tools_with_reasons(tmp_path):
 
 
 def test_committed_baselines_are_well_formed_and_reasoned():
-    for path in (_KNIP_BASELINE, _MADGE_BASELINE):
-        for key, entry in guard.bl.load(path).items():
-            assert "::" in key
-            assert entry.value >= 1
-            assert len(entry.reason.split()) >= 3
-    assert f"cycle::{CYCLE}" in guard.bl.load(_MADGE_BASELINE)
+    knip = guard.bl.load(_KNIP_BASELINE)
+    madge = guard.bl.load(_MADGE_BASELINE)
+    # The knip baseline still holds pre-existing debt; an empty load means the file
+    # was not parsed, not that the debt is gone. The madge baseline may be empty.
+    assert knip, f"{_KNIP_BASELINE} loaded no entries"
+    for key, entry in [*knip.items(), *madge.items()]:
+        assert "::" in key
+        assert entry.value >= 1
+        assert len(entry.reason.split()) >= 3
 
 
 @pytest.mark.skipif(
@@ -199,3 +202,58 @@ def test_real_repo_with_planted_export_fails(tmp_path, capsys):
     (frontend / "src" / "lib" / "_probe.ts").write_text("export const plantedUnused = 1;\n")
     assert guard.main(["--root", str(tmp_path)]) == 1
     assert "exports::src/lib/_probe.ts::plantedUnused" in capsys.readouterr().out
+
+
+_HAS_MADGE = (_REPO / "frontend" / "node_modules" / ".bin" / "madge").exists()
+
+
+def _madge_fixture(tmp_path: Path, files: dict[str, str]) -> Path:
+    """A throwaway frontend with the real madge config and the given ``src`` files."""
+    frontend = tmp_path / "frontend"
+    for name in (".madgerc", "madge.webpack.cjs"):
+        shutil.copy(_REPO / "frontend" / name, frontend_file(frontend, name))
+    scripts = json.loads((_REPO / "frontend" / "package.json").read_text())["scripts"]
+    (frontend / "package.json").write_text(json.dumps({"scripts": {"cycles": scripts["cycles"]}}))
+    (frontend / "node_modules").symlink_to(_REPO / "frontend" / "node_modules")
+    for rel, text in files.items():
+        frontend_file(frontend, f"src/{rel}").write_text(text)
+    return frontend
+
+
+def frontend_file(frontend: Path, rel: str) -> Path:
+    path = frontend / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+@pytest.mark.skipif(not _HAS_MADGE, reason="frontend dependencies are not installed")
+def test_madge_sees_a_cycle_that_only_exists_through_sveltekit_aliases(tmp_path):
+    """Every edge below is a ``$lib`` / ``$stores`` alias; madge must resolve them to see the loop."""
+    frontend = _madge_fixture(
+        tmp_path,
+        {
+            "lib/a.ts": "import { b } from '$lib/b';\nexport const a = () => b;\n",
+            "lib/b.ts": "import { c } from '$stores/c';\nexport const b = () => c;\n",
+            "stores/c.ts": "import { a } from '$lib/a';\nexport const c = () => a;\n",
+        },
+    )
+    cycles = guard.parse_madge(guard.run_madge(frontend))
+    assert cycles == {"cycle::lib/a.ts > lib/b.ts > stores/c.ts": 1}
+
+
+@pytest.mark.skipif(not _HAS_MADGE, reason="frontend dependencies are not installed")
+def test_madge_ignores_lazy_and_type_only_alias_edges(tmp_path):
+    """A dynamic ``import()`` or ``import type`` is not a load-time cycle."""
+    frontend = _madge_fixture(
+        tmp_path,
+        {
+            "lib/a.ts": "import { b } from '$lib/b';\nexport const a = () => b;\n",
+            "lib/b.ts": (
+                "import type { T } from '$stores/c';\n"
+                "export const b = async (x?: T) => (await import('$stores/c')).c(x);\n"
+            ),
+            "stores/c.ts": "import { a } from '$lib/a';\nexport type T = number;\nexport const c = (_x?: T) => a;\n",
+            "stores/d.svelte": "<script>\n  import { a } from '$lib/a';\n</script>\n",
+        },
+    )
+    assert guard.parse_madge(guard.run_madge(frontend)) == {}

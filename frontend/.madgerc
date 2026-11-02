@@ -1,16 +1,8 @@
 {
   "fileExtensions": ["ts", "js", "svelte"],
-  "tsConfig": "tsconfig.json",
+  "webpackConfig": "madge.webpack.cjs",
   "detectiveOptions": {
-    "ts": { "skipTypeImports": true },
-    "es6": { "skipTypeImports": true }
-  },
-  "webpackConfig": null,
-  "resolve": {
-    "alias": {
-      "$lib": "./src/lib",
-      "$components": "./src/components",
-      "$stores": "./src/stores"
-    }
+    "ts": { "skipTypeImports": true, "skipAsyncImports": true },
+    "es6": { "skipTypeImports": true, "skipAsyncImports": true }
   }
 }

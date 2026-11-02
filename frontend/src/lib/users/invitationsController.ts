@@ -27,7 +27,7 @@ import { t } from '$stores/locale';
 import { toastStore } from '$stores/toast';
 import { ROLE_SUPER_ADMIN } from './rowPermissions';
 
-export interface InviteForm {
+interface InviteForm {
   email: string;
   full_name: string;
   role: string;
@@ -35,7 +35,7 @@ export interface InviteForm {
   expires_in_hours: number;
 }
 
-export function emptyInviteForm(): InviteForm {
+function emptyInviteForm(): InviteForm {
   return {
     email: '',
     full_name: '',

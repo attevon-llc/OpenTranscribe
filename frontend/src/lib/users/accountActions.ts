@@ -20,7 +20,7 @@ import { toastStore } from '$stores/toast';
 import { ROLE_SUPER_ADMIN } from './rowPermissions';
 import { toEndOfDayTimestamp } from './accountExpiry';
 
-export interface AccountRow {
+interface AccountRow {
   uuid: string;
   email: string;
   full_name?: string;

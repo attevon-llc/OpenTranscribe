@@ -15,7 +15,7 @@ import type {
 export const SCHEMA_DEFAULT_MAX_TOKENS = 8192;
 
 /** Local detection only helps for providers that run on a local server. */
-export const LOCAL_CAPABLE_PROVIDERS = ['ollama', 'vllm', 'custom'];
+const LOCAL_CAPABLE_PROVIDERS = ['ollama', 'vllm', 'custom'];
 
 export interface LLMFormData {
   name: string;

@@ -1,6 +1,6 @@
 import type { SpeakerMediaPreviewData } from '$lib/api/speakerClusters';
 
-export const PREVIEW_CACHE_TTL_MS = 5 * 60 * 1000;
+const PREVIEW_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /** Short-lived cache of speaker media previews, filled on hover and read on play. */
 export function createPreviewCache(

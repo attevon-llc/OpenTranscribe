@@ -16,7 +16,6 @@ types::src/lib/api/directorySyncApi.ts::DirectorySyncResult	1	pre-existing unuse
 types::src/lib/api/hfToken.ts::HfTokenSource	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 types::src/lib/api/llmSettings.ts::BedrockCredentialSource	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 types::src/lib/api/llmSettings.ts::ConnectionStatus	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
-types::src/lib/api/llmSettings.ts::LLMProvider	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 types::src/lib/api/llmSettings.ts::SetActiveConfigRequest	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 types::src/lib/api/localModels.ts::DownloadStatus	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 types::src/lib/api/privacy.ts::PurgeAuditRef	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
@@ -54,3 +53,4 @@ types::src/lib/types/tag.ts::TagClusterMember	1	pre-existing unused exports and 
 types::src/lib/types/tag.ts::TagClusterSuggestion	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 types::src/lib/types/tag.ts::TagImpactEntry	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 types::src/lib/types/tag.ts::TagMergeRequest	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
+exports::src/lib/api/speakerClusters.ts::deleteProfileAvatar	1	pre-existing: client for DELETE /speaker-profiles avatar; master only imported it unused; a remove-avatar control needs new i18n copy (post-v0.6.1)

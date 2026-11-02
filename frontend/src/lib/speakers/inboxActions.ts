@@ -1,6 +1,5 @@
 import { batchVerifySpeakers } from '$lib/api/speakerClusters';
 
-export type InboxActionType = 'accept' | 'assign' | 'skip';
 export type InboxActionOutcome = 'accepted' | 'assigned' | 'skipped' | 'ignored';
 
 /**

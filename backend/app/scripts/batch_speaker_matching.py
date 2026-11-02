@@ -71,7 +71,7 @@ def batch_process_speaker_matches():
                 continue
 
             # Get embedding from OpenSearch
-            embedding = get_speaker_embedding(speaker.id)
+            embedding = get_speaker_embedding(str(speaker.uuid))
 
             if embedding:
                 # Find and store matches

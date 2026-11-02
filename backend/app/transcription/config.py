@@ -8,6 +8,7 @@ import hashlib
 import logging
 import os
 from dataclasses import dataclass
+from typing import Any
 from typing import ClassVar
 
 from app.core.config import settings
@@ -130,7 +131,7 @@ class TranscriptionConfig:
         return hashlib.md5(key.encode(), usedforsecurity=False).hexdigest()[:12]
 
     @classmethod
-    def from_environment(cls, **overrides) -> "TranscriptionConfig":
+    def from_environment(cls, **overrides: Any) -> "TranscriptionConfig":
         """Build config from env vars + hardware detection, with task-level overrides."""
         from app.services.huggingface_token import get_hf_token
         from app.utils.hardware_detection import detect_hardware
@@ -264,7 +265,7 @@ class TranscriptionConfig:
         _CPU_MODE_WARNING_EMITTED = True
 
     @classmethod
-    def for_cpu_lightweight(cls, **overrides) -> "TranscriptionConfig":
+    def for_cpu_lightweight(cls, **overrides: Any) -> "TranscriptionConfig":
         """Config for CPU-based lightweight transcription (base/tiny models).
 
         Uses int8 quantization for optimal CPU throughput. Diarization is

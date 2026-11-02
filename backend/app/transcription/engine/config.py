@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass
 from dataclasses import field
 from typing import TYPE_CHECKING
+from typing import Any
 
 from app.core.env import env_bool
 from app.core.env import is_truthy
@@ -14,6 +15,8 @@ from app.core.scratch_paths import ENGINE_SHARED_VOLUME_DEFAULT
 from app.core.scratch_paths import resolve_engine_shared_volume_path
 
 if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
     from app.transcription.config import TranscriptionConfig
 
 
@@ -47,7 +50,7 @@ class EngineConfig:
     _transcription_config: TranscriptionConfig | None = field(default=None, repr=False)
 
     @staticmethod
-    def _db_env_float(db, key: str, env: str, default: float) -> float:
+    def _db_env_float(db: Session | None, key: str, env: str, default: float) -> float:
         """Resolve a float engine setting from DB → env → default (no crash on junk).
 
         ``db=None`` (e.g. from_environment / no session) skips the DB read.
@@ -67,7 +70,7 @@ class EngineConfig:
             return default
 
     @classmethod
-    def from_db_with_env_fallback(cls, db) -> EngineConfig:
+    def from_db_with_env_fallback(cls, db: Session) -> EngineConfig:
         """Read engine settings from SystemSettings DB, fall back to env vars."""
         from app.services.system_settings_service import get_settings_map
 
@@ -136,12 +139,12 @@ class EngineConfig:
         )
 
     @classmethod
-    def from_environment(cls, **overrides) -> EngineConfig:
+    def from_environment(cls, **overrides: Any) -> EngineConfig:
         """Build EngineConfig from env vars, wrapping TranscriptionConfig."""
         from app.transcription.config import TranscriptionConfig
 
         # Extract TranscriptionConfig overrides (keys that TranscriptionConfig knows about)
-        tc_keys = {f.name for f in TranscriptionConfig.__dataclass_fields__.values()}  # type: ignore[attr-defined]
+        tc_keys = {f.name for f in TranscriptionConfig.__dataclass_fields__.values()}
         tc_overrides = {k: v for k, v in overrides.items() if k in tc_keys}
         engine_overrides = {k: v for k, v in overrides.items() if k not in tc_keys}
 

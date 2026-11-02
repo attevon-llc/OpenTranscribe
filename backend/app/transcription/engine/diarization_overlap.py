@@ -12,10 +12,21 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from typing import TYPE_CHECKING
+from typing import Any
 
 from app.core import stage_timing
 from app.core.enums import TranscriptionStage
 from app.core.worker_shutdown import shutdown_requested
+
+if TYPE_CHECKING:
+    import numpy as np
+
+    from app.transcription.config import TranscriptionConfig
+    from app.transcription.engine.progress import ProgressCallback
+    from app.transcription.model_manager import ModelManager
+    from app.utils.hardware_detection import HardwareConfig
+    from app.utils.vram_profiler import VRAMProfiler
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +67,7 @@ def _shutdown_join_timeout() -> float | None:
     return _SHUTDOWN_JOIN_BUDGET_S if shutdown_requested() else None
 
 
-def _overlap_diarization_enabled(tc) -> bool:
+def _overlap_diarization_enabled(tc: TranscriptionConfig) -> bool:
     """True when diarization should run alongside transcription instead of after it.
 
     Requires the sidecar to actually be REACHABLE, not merely configured
@@ -87,7 +98,13 @@ def _overlap_diarization_enabled(tc) -> bool:
     return sidecar_ready()
 
 
-def _make_room_for_local_diarizer(manager, hw, profiler, tc, total_vram_mb: int) -> None:
+def _make_room_for_local_diarizer(
+    manager: ModelManager,
+    hw: HardwareConfig,
+    profiler: VRAMProfiler,
+    tc: TranscriptionConfig,
+    total_vram_mb: int,
+) -> None:
     """Free VRAM for a diarizer that shares this process, and wait until there is enough.
 
     Only meaningful for the in-process engine: the sidecar holds its own memory, so a caller
@@ -107,13 +124,13 @@ def _make_room_for_local_diarizer(manager, hw, profiler, tc, total_vram_mb: int)
 
 
 def _run_diarize(
-    diarizer,
-    audio,
+    diarizer: Any,
+    audio: np.ndarray,
     wav_path: str | None,
     *,
     allow_local_fallback: bool = True,
     skip_sidecar: bool = False,
-    tc=None,
+    tc: TranscriptionConfig | None = None,
 ):
     """Call diarizer.diarize(), handing NativeSpeakerDiarizer a pre-existing WAV when we have one.
 
@@ -158,7 +175,14 @@ def _run_diarize(
 
 
 def _collect_diarization(
-    audio, tc, manager, hw, profiler, callback, async_diarization, wav_path: str | None = None
+    audio: np.ndarray,
+    tc: TranscriptionConfig,
+    manager: ModelManager,
+    hw: HardwareConfig,
+    profiler: VRAMProfiler,
+    callback: ProgressCallback | None,
+    async_diarization: _AsyncDiarization | None,
+    wav_path: str | None = None,
 ):
     """Diarize, taking the overlapped result when one is in flight.
 
@@ -197,7 +221,7 @@ def _collect_diarization(
     with stage_timing.stage("diarization"), profiler.step("diarization"):
         if async_diarization is not None:
             overlapped = async_diarization.result()
-        if overlapped is not None:
+        if async_diarization is not None and overlapped is not None:
             result = overlapped
             provider, model = async_diarization.served_by
         else:
@@ -230,7 +254,14 @@ class _AsyncDiarization:
     working job into a failed one.
     """
 
-    def __init__(self, audio, tc, manager, task_id: str | None, wav_path: str | None = None):
+    def __init__(
+        self: Any,
+        audio: np.ndarray,
+        tc: TranscriptionConfig,
+        manager: ModelManager,
+        task_id: str | None,
+        wav_path: str | None = None,
+    ) -> None:
         from app.utils.benchmark_timing import mark
 
         self._value: tuple | None = None

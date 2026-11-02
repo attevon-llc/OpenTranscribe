@@ -27,12 +27,18 @@ from app.transcription.engine.diarization_overlap import _overlap_diarization_en
 from app.transcription.engine.diarization_overlap import _shutdown_join_timeout
 
 if TYPE_CHECKING:
+    import pandas as pd
+
+    from app.transcription.config import TranscriptionConfig
     from app.transcription.engine.config import EngineConfig
     from app.transcription.engine.job import JobResult
     from app.transcription.engine.job import JobSpec
     from app.transcription.engine.job import PreprocessResult
     from app.transcription.engine.job import RawInferenceResult
     from app.transcription.engine.progress import ProgressCallback
+    from app.transcription.model_manager import ModelManager
+    from app.utils.hardware_detection import HardwareConfig
+    from app.utils.vram_profiler import VRAMProfiler
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +84,7 @@ class _GpuStage:
         audio_result: list = [None]
         audio_error: list = [None]
 
-        def _load_audio():
+        def _load_audio() -> None:
             try:
                 from app.transcription.audio import load_audio
 
@@ -183,11 +189,11 @@ class _GpuStage:
     @staticmethod
     def _finalize_job_result(
         result_dict: dict,
-        diarize_df,
-        audio,
-        hw,
-        tc,
-        profiler,
+        diarize_df: pd.DataFrame,
+        audio: np.ndarray,
+        hw: HardwareConfig,
+        tc: TranscriptionConfig,
+        profiler: VRAMProfiler,
         job: JobSpec,
         pipeline_start: float,
     ) -> JobResult:
@@ -243,15 +249,15 @@ class _GpuStage:
         )
 
     def _run_diarization(
-        self,
-        audio,
-        transcript,
-        profiler,
-        hw,
-        tc,
-        manager,
-        progress_callback,
-        config=None,
+        self: Any,
+        audio: np.ndarray,
+        transcript: dict[str, Any],
+        profiler: VRAMProfiler,
+        hw: HardwareConfig,
+        tc: TranscriptionConfig,
+        manager: ModelManager,
+        progress_callback: ProgressCallback | None,
+        config: EngineConfig | None = None,
         async_diarization: _AsyncDiarization | None = None,
     ) -> tuple[dict, Any]:
         from app.transcription.engine.progress import emit
@@ -328,7 +334,7 @@ class _GpuStage:
         return result, diarize_df
 
     @staticmethod
-    def _skip_diarization(transcript: dict, tc) -> tuple[dict, None]:
+    def _skip_diarization(transcript: dict, tc: TranscriptionConfig) -> tuple[dict, None]:
         from app.utils.segment_dedup import clean_segments
 
         logger.info("Diarization disabled — assigning SPEAKER_00 to all segments")

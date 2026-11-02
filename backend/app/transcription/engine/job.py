@@ -109,7 +109,7 @@ class PreprocessResult:
     def deserialize(cls, payload: dict) -> PreprocessResult:
         vad = payload.get("vad_regions")
         if vad is not None:
-            vad = [tuple(r) for r in vad]  # type: ignore[assignment]
+            vad = [tuple(r) for r in vad]
         return cls(
             task_id=payload["task_id"],
             file_id=payload["file_id"],

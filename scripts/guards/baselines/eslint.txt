@@ -221,7 +221,6 @@ frontend/src/components/settings/ProcessingDetailsModal.svelte::@typescript-esli
 frontend/src/components/settings/ProcessingDetailsModal.svelte::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/settings/ProcessingDetailsModal.svelte::svelte/require-each-key	2	lint: burn-down planned
 frontend/src/components/settings/PromptSettings.svelte::no-restricted-imports	6	lint: burn-down planned
-frontend/src/components/settings/PromptSettings.svelte::prefer-const	1	lint: burn-down planned
 frontend/src/components/settings/PromptSettings.svelte::svelte/require-each-key	9	lint: burn-down planned
 frontend/src/components/settings/QuarantinePanel.svelte::svelte/no-navigation-without-resolve	1	lint: burn-down planned
 frontend/src/components/settings/RetentionSettings.svelte::@typescript-eslint/no-unused-expressions	5	lint: burn-down planned

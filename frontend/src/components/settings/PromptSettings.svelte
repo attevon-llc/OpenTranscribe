@@ -7,7 +7,7 @@
   import ConfirmationModal from '../ConfirmationModal.svelte';
   import Spinner from '../ui/Spinner.svelte';
   import TagInput from '../ui/TagInput.svelte';
-  import { copyToClipboard } from '$lib/utils/clipboard';
+  import PromptCopyButton from './PromptCopyButton.svelte';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
@@ -385,29 +385,6 @@
     tooltip.style.setProperty('--tooltip-left', `${rect.left + rect.width / 2}px`);
     tooltip.style.setProperty('--tooltip-top', `${rect.bottom}px`);
   }
-
-  // Copy functionality - matches SummaryModal pattern
-  let copyButtonText = 'Copy';
-  let isCopied = false;
-
-  function copyPromptText(text: string) {
-    if (!text) return;
-
-    copyToClipboard(
-      text,
-      () => {
-        isCopied = true;
-        setTimeout(() => {
-          isCopied = false;
-        }, 2000);
-      },
-      (error) => {
-        // Failed - just keep default state
-      }
-    );
-  }
-
-
 </script>
 
 <div class="prompt-settings">
@@ -840,27 +817,7 @@
         <div class="textarea-header">
           <label for="prompt_text">{$t('prompts.promptText')}</label>
           {#if formData.prompt_text.trim()}
-            <button
-              type="button"
-              class="copy-button-header"
-              class:copied={isCopied}
-              on:click={() => copyPromptText(formData.prompt_text)}
-              aria-label={$t('prompts.copy')}
-              title={isCopied ? $t('prompts.copiedToClipboard') : $t('prompts.copy')}
-            >
-              {#if isCopied}
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/>
-                </svg>
-                {$t('prompts.copied')}
-              {:else}
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
-                  <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
-                </svg>
-                {$t('prompts.copy')}
-              {/if}
-            </button>
+            <PromptCopyButton text={formData.prompt_text} />
           {/if}
         </div>
         <textarea
@@ -941,27 +898,7 @@
       <div class="prompt-text-container">
         <div class="prompt-text-header">
           <strong>{$t('prompts.promptTextLabel')}:</strong>
-          <button
-            type="button"
-            class="copy-button-header"
-            class:copied={isCopied}
-            on:click={() => copyPromptText(viewingPrompt?.prompt_text ?? '')}
-            aria-label={$t('prompts.copy')}
-            title={isCopied ? $t('prompts.copiedToClipboard') : $t('prompts.copy')}
-          >
-            {#if isCopied}
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/>
-              </svg>
-              {$t('prompts.copied')}
-            {:else}
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
-                <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
-              </svg>
-              {$t('prompts.copy')}
-            {/if}
-          </button>
+          <PromptCopyButton text={viewingPrompt?.prompt_text ?? ''} />
         </div>
         <div class="prompt-text-display">{viewingPrompt.prompt_text}</div>
       </div>
@@ -1359,7 +1296,6 @@
     transform: scale(1);
   }
 
-  /* Copy button styles - matches SummaryModal */
   .textarea-header {
     display: flex;
     justify-content: space-between;
@@ -1372,38 +1308,6 @@
     justify-content: space-between;
     align-items: center;
     margin-bottom: 0.75rem;
-  }
-
-  .copy-button-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    color: var(--text-secondary);
-    padding: 0.5rem 0.75rem;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    font-size: 0.8125rem;
-  }
-
-  .copy-button-header:hover {
-    background-color: var(--hover-bg);
-    color: var(--primary-on-surface);
-    border-color: var(--primary-color);
-  }
-
-  .copy-button-header.copied {
-    background-color: var(--success-bg);
-    border-color: var(--success-color);
-    color: var(--success-color);
-  }
-
-  .copy-button-header.copied:hover {
-    background-color: var(--success-bg);
-    border-color: var(--success-color);
-    color: var(--success-color);
   }
 
   .prompt-form {

@@ -157,3 +157,23 @@ def test_a_blocked_request_is_not_picked_up_again(db_session, super_admin_user, 
     assert ledger.due_grace_entries(db_session, limit=10, now=DUE) == []
     assert service._execute_one(db_session, int(entry.id), DUE) is False
     assert erased == []
+
+
+def test_a_blocked_request_is_what_get_last_blocked_request_reports(
+    db_session, super_admin_user, erased
+):
+    other = _super_admin(db_session)
+    entry = _entry(db_session, super_admin_user)
+    other.is_active = False
+    db_session.commit()
+    service._execute_one(db_session, int(entry.id), DUE)
+    db_session.expire_all()
+
+    blocked = service.get_last_blocked_request(db_session, int(super_admin_user.id))
+
+    assert blocked is not None
+    assert blocked.id == entry.id
+    # The subject's own cancellation stamps cancelled_at; a block does not, which is what tells
+    # the two apart.
+    assert blocked.cancelled_at is None
+    assert service.get_open_request(db_session, int(super_admin_user.id)) is None

@@ -67,6 +67,7 @@ from app.services.chat.settings import get_chat_settings
 from app.services.llm_service import LLMConfigurationError
 from app.services.llm_service import LLMService
 from app.services.redaction.llm_guard import is_local_provider
+from app.services.support_access_service import coded_error
 from app.utils.db_helpers import org_stamp_is
 
 logger = logging.getLogger(__name__)
@@ -602,9 +603,11 @@ def _resolve_chat_llm(user_id: int, config_id: int | None) -> LLMService | None:
     try:
         if config_id is not None:
             return LLMService.create_from_config_id(user_id, config_id)
-        return LLMService.create_from_settings(user_id=user_id)
+        return LLMService.create_from_settings(user_id=user_id, raise_on_unusable=True)
     except LLMConfigurationError as unusable:
-        raise HTTPException(status_code=400, detail=str(unusable)) from None
+        # A stable code so the client can tell "unusable" from "none configured"; the message
+        # is a fixed sentence per failure reason and safe to show.
+        raise coded_error(400, "llm_config_unusable", str(unusable)) from None
 
 
 @router.post("/context/estimate", response_model=ContextEstimate)

@@ -859,11 +859,12 @@ def _handle_summarize_action(
     import os
 
     from app.models.media import MediaFile
+    from app.services.llm_service import LLMConfigurationError
     from app.services.llm_service import LLMService
 
     # Check if LLM is configured
     try:
-        llm_service = LLMService.create_from_settings(user_id=user_id)
+        llm_service = LLMService.create_from_settings(user_id=user_id, raise_on_unusable=True)
         if llm_service is None:
             return BulkActionResult(
                 file_uuid=file_uuid,
@@ -872,6 +873,13 @@ def _handle_summarize_action(
                 error="LLM_NOT_AVAILABLE",
             )
         llm_service.close()
+    except LLMConfigurationError as unusable:
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message=str(unusable),
+            error="LLM_CONFIG_UNUSABLE",
+        )
     except Exception:
         # Bulk actions report per-file outcomes instead of aborting the batch,
         # so an unconstructable LLM client becomes this file's failure result.
@@ -920,6 +928,7 @@ def _handle_identify_speakers_action(
     import os
 
     from app.models.media import MediaFile
+    from app.services.llm_service import LLMConfigurationError
     from app.services.llm_service import LLMService
 
     # Via the `speaker_tasks` re-export shim, as every other caller does — it keeps the
@@ -927,7 +936,7 @@ def _handle_identify_speakers_action(
     from app.tasks.speaker_tasks import identify_speakers_llm_task
 
     try:
-        llm_service = LLMService.create_from_settings(user_id=user_id)
+        llm_service = LLMService.create_from_settings(user_id=user_id, raise_on_unusable=True)
         if llm_service is None:
             return BulkActionResult(
                 file_uuid=file_uuid,
@@ -936,6 +945,13 @@ def _handle_identify_speakers_action(
                 error="LLM_NOT_AVAILABLE",
             )
         llm_service.close()
+    except LLMConfigurationError as unusable:
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message=str(unusable),
+            error="LLM_CONFIG_UNUSABLE",
+        )
     except Exception:
         # Bulk actions report per-file outcomes instead of aborting the batch.
         logger.exception(f"Could not construct an LLM client for file {file_uuid}")

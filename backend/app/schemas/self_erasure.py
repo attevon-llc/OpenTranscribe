@@ -3,6 +3,9 @@
 ``GET|POST /users/me/erasure-request``, ``DELETE /users/me/erasure-request/{ledger_uuid}`` for the
 account holder, and ``GET|PUT /admin/self-erasure`` for the two instance settings (super_admin).
 
+``GET`` also reports ``last_outcome`` when the account holder's latest request was closed by the
+system without erasing (``blocked`` / ``last_super_admin``).
+
 Error bodies carry ``detail = {"code": ..., "message": ...}``: ``last_super_admin``,
 ``request_exists``, ``reauth_required``, ``reauth_unavailable``, ``already_executing``,
 ``not_cancellable``, ``ledger_unavailable``. A disabled feature answers 404 on POST and DELETE so
@@ -35,12 +38,24 @@ class SelfErasureRequestReceipt(BaseModel):
     cancelled_at: datetime | None = None
 
 
+class SelfErasureOutcome(BaseModel):
+    """A request the system closed without erasing anything. Codes only, no personal data."""
+
+    status: Literal["blocked"]
+    reason: Literal["last_super_admin"]
+    ledger_uuid: UUID
+    #: When the blocked request fell due (its ``scheduled_for``).
+    at: datetime | None = None
+
+
 class SelfErasureStatus(BaseModel):
     enabled: bool
     grace_days: int
     #: Whether this account can re-authenticate (password or MFA), so the UI can say so up front.
     can_reauthenticate: bool
     request: SelfErasureRequestReceipt | None = None
+    #: Set only when there is no open request and the latest one was blocked by the system.
+    last_outcome: SelfErasureOutcome | None = None
 
 
 class SelfErasureCreate(BaseModel):

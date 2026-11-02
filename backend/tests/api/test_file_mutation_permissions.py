@@ -20,13 +20,11 @@ import uuid
 from collections import Counter
 
 import pytest
+from fixtures.tag_recorders import share_file
 
 from app.core.enums import FileStatus
-from app.models.collection import Collection
-from app.models.collection import CollectionMember
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
-from app.models.sharing import CollectionShare
 from app.services.minio_bucket_admin import MinIOService
 from app.services.video_processing_service import VideoProcessingService
 
@@ -74,35 +72,11 @@ def _make_file(
     return media_file
 
 
-def _share_file(db_session, media_file, owner, viewer, *, permission: str) -> Collection:
-    """Put ``media_file`` in a collection shared with ``viewer`` at ``permission``.
-
-    The same grant shape as ``fixtures/tag_recorders.share_file``.
-    """
-    collection = Collection(
-        user_id=owner.id, name=f"shared-{_suffix()}", description="mutation perm share"
-    )
-    db_session.add(collection)
-    db_session.commit()
-    db_session.add(CollectionMember(collection_id=collection.id, media_file_id=media_file.id))
-    db_session.add(
-        CollectionShare(
-            collection_id=collection.id,
-            shared_by_id=owner.id,
-            target_type="user",
-            target_user_id=viewer.id,
-            permission=permission,
-        )
-    )
-    db_session.commit()
-    return collection
-
-
 def test_viewer_cannot_reprocess_shared_file(
     client, other_user_auth_headers, other_user, normal_user, db_session
 ):
     media_file = _make_file(db_session, normal_user)
-    _share_file(db_session, media_file, normal_user, other_user, permission="viewer")
+    share_file(db_session, normal_user, other_user, media_file, permission="viewer")
 
     response = client.post(
         f"/api/files/{media_file.uuid}/reprocess",
@@ -117,7 +91,7 @@ def test_viewer_cannot_summarize_shared_file(
     client, other_user_auth_headers, other_user, normal_user, db_session
 ):
     media_file = _make_file(db_session, normal_user, with_segment=True)
-    _share_file(db_session, media_file, normal_user, other_user, permission="viewer")
+    share_file(db_session, normal_user, other_user, media_file, permission="viewer")
 
     response = client.post(
         f"/api/files/{media_file.uuid}/summarize",
@@ -132,7 +106,7 @@ def test_editor_can_reprocess_shared_file(
     client, other_user_auth_headers, other_user, normal_user, db_session
 ):
     media_file = _make_file(db_session, normal_user)
-    _share_file(db_session, media_file, normal_user, other_user, permission="editor")
+    share_file(db_session, normal_user, other_user, media_file, permission="editor")
 
     response = client.post(
         f"/api/files/{media_file.uuid}/reprocess",
@@ -161,7 +135,7 @@ def test_viewer_cannot_retry_shared_file(
     client, other_user_auth_headers, other_user, normal_user, db_session
 ):
     media_file = _make_file(db_session, normal_user)
-    _share_file(db_session, media_file, normal_user, other_user, permission="viewer")
+    share_file(db_session, normal_user, other_user, media_file, permission="viewer")
 
     response = client.post(
         f"/api/my-files/{media_file.uuid}/retry",
@@ -175,7 +149,7 @@ def test_viewer_cannot_retry_summary_shared_file(
     client, other_user_auth_headers, other_user, normal_user, db_session
 ):
     media_file = _make_file(db_session, normal_user, with_segment=True)
-    _share_file(db_session, media_file, normal_user, other_user, permission="viewer")
+    share_file(db_session, normal_user, other_user, media_file, permission="viewer")
 
     response = client.post(
         f"/api/files/{media_file.uuid}/retry-summary",
@@ -189,7 +163,7 @@ def test_viewer_cannot_auto_label_shared_file(
     client, other_user_auth_headers, other_user, normal_user, db_session
 ):
     media_file = _make_file(db_session, normal_user, with_segment=True)
-    _share_file(db_session, media_file, normal_user, other_user, permission="viewer")
+    share_file(db_session, normal_user, other_user, media_file, permission="viewer")
 
     response = client.post(
         f"/api/files/{media_file.uuid}/auto-label",
@@ -404,7 +378,7 @@ def test_viewer_cannot_update_shared_file(
     client, other_user_auth_headers, other_user, normal_user, db_session
 ):
     media_file = _make_file(db_session, normal_user)
-    _share_file(db_session, media_file, normal_user, other_user, permission="viewer")
+    share_file(db_session, normal_user, other_user, media_file, permission="viewer")
 
     response = client.put(
         f"/api/files/{media_file.uuid}",
@@ -419,7 +393,7 @@ def test_editor_can_update_shared_file(
     client, other_user_auth_headers, other_user, normal_user, db_session
 ):
     media_file = _make_file(db_session, normal_user)
-    _share_file(db_session, media_file, normal_user, other_user, permission="editor")
+    share_file(db_session, normal_user, other_user, media_file, permission="editor")
 
     response = client.put(
         f"/api/files/{media_file.uuid}",
@@ -447,7 +421,7 @@ def test_viewer_cannot_delete_shared_file(
     client, other_user_auth_headers, other_user, normal_user, db_session
 ):
     media_file = _make_file(db_session, normal_user)
-    _share_file(db_session, media_file, normal_user, other_user, permission="viewer")
+    share_file(db_session, normal_user, other_user, media_file, permission="viewer")
 
     response = client.delete(f"/api/files/{media_file.uuid}", headers=other_user_auth_headers)
 
@@ -467,7 +441,7 @@ def test_editor_cannot_delete_shared_file(
     the file's organization, or a platform admin may delete. Full matrix in
     ``test_delete_permissions.py``."""
     media_file = _make_file(db_session, normal_user)
-    _share_file(db_session, media_file, normal_user, other_user, permission="editor")
+    share_file(db_session, normal_user, other_user, media_file, permission="editor")
 
     response = client.delete(f"/api/files/{media_file.uuid}", headers=other_user_auth_headers)
 
@@ -480,7 +454,7 @@ def test_viewer_cannot_edit_transcript_segment(
     client, other_user_auth_headers, other_user, normal_user, db_session
 ):
     media_file = _make_file(db_session, normal_user, with_segment=True)
-    _share_file(db_session, media_file, normal_user, other_user, permission="viewer")
+    share_file(db_session, normal_user, other_user, media_file, permission="viewer")
     segment = (
         db_session.query(TranscriptSegment)
         .filter(TranscriptSegment.media_file_id == media_file.id)
@@ -500,7 +474,7 @@ def test_editor_can_edit_transcript_segment(
     client, other_user_auth_headers, other_user, normal_user, db_session
 ):
     media_file = _make_file(db_session, normal_user, with_segment=True)
-    _share_file(db_session, media_file, normal_user, other_user, permission="editor")
+    share_file(db_session, normal_user, other_user, media_file, permission="editor")
     segment = (
         db_session.query(TranscriptSegment)
         .filter(TranscriptSegment.media_file_id == media_file.id)
@@ -520,7 +494,7 @@ def test_viewer_cannot_cancel_processing_shared_file(
     client, other_user_auth_headers, other_user, normal_user, db_session
 ):
     media_file = _make_file(db_session, normal_user, status=FileStatus.PROCESSING)
-    _share_file(db_session, media_file, normal_user, other_user, permission="viewer")
+    share_file(db_session, normal_user, other_user, media_file, permission="viewer")
 
     response = client.post(f"/api/files/{media_file.uuid}/cancel", headers=other_user_auth_headers)
 
@@ -536,7 +510,7 @@ def test_editor_can_cancel_processing_shared_file(
         status=FileStatus.PROCESSING,
         active_task_id="11111111-1111-1111-1111-111111111111",
     )
-    _share_file(db_session, media_file, normal_user, other_user, permission="editor")
+    share_file(db_session, normal_user, other_user, media_file, permission="editor")
 
     # cancel_active_task calls celery_app.control.revoke(), a real broker round trip
     # that SKIP_CELERY does not stub (only .delay()/.apply_async() are patched). Stub
@@ -557,7 +531,7 @@ def test_viewer_cannot_retry_shared_file_via_files_route(
     """The management-router ``POST /files/{uuid}/retry`` — distinct from the
     already-fixed ``POST /my-files/{uuid}/retry``."""
     media_file = _make_file(db_session, normal_user, status=FileStatus.ERROR)
-    _share_file(db_session, media_file, normal_user, other_user, permission="viewer")
+    share_file(db_session, normal_user, other_user, media_file, permission="viewer")
 
     response = client.post(f"/api/files/{media_file.uuid}/retry", headers=other_user_auth_headers)
 
@@ -568,7 +542,7 @@ def test_editor_can_retry_shared_file_via_files_route(
     client, other_user_auth_headers, other_user, normal_user, db_session
 ):
     media_file = _make_file(db_session, normal_user, status=FileStatus.ERROR)
-    _share_file(db_session, media_file, normal_user, other_user, permission="editor")
+    share_file(db_session, normal_user, other_user, media_file, permission="editor")
 
     response = client.post(f"/api/files/{media_file.uuid}/retry", headers=other_user_auth_headers)
 
@@ -579,7 +553,7 @@ def test_viewer_cannot_recover_shared_file(
     client, other_user_auth_headers, other_user, normal_user, db_session
 ):
     media_file = _make_file(db_session, normal_user, status=FileStatus.ERROR)
-    _share_file(db_session, media_file, normal_user, other_user, permission="viewer")
+    share_file(db_session, normal_user, other_user, media_file, permission="viewer")
 
     response = client.post(f"/api/files/{media_file.uuid}/recover", headers=other_user_auth_headers)
 
@@ -590,7 +564,7 @@ def test_editor_can_recover_shared_file(
     client, other_user_auth_headers, other_user, normal_user, db_session
 ):
     media_file = _make_file(db_session, normal_user, status=FileStatus.ERROR)
-    _share_file(db_session, media_file, normal_user, other_user, permission="editor")
+    share_file(db_session, normal_user, other_user, media_file, permission="editor")
 
     response = client.post(f"/api/files/{media_file.uuid}/recover", headers=other_user_auth_headers)
 
@@ -604,7 +578,7 @@ def test_viewer_cannot_clear_video_cache(
     client, other_user_auth_headers, other_user, normal_user, db_session
 ):
     media_file = _make_file(db_session, normal_user)
-    _share_file(db_session, media_file, normal_user, other_user, permission="viewer")
+    share_file(db_session, normal_user, other_user, media_file, permission="viewer")
 
     response = client.delete(f"/api/files/{media_file.uuid}/cache", headers=other_user_auth_headers)
 
@@ -629,7 +603,7 @@ def test_editor_can_clear_video_cache(
     client, other_user_auth_headers, other_user, normal_user, db_session, _stub_object_storage
 ):
     media_file = _make_file(db_session, normal_user)
-    _share_file(db_session, media_file, normal_user, other_user, permission="editor")
+    share_file(db_session, normal_user, other_user, media_file, permission="editor")
 
     response = client.delete(f"/api/files/{media_file.uuid}/cache", headers=other_user_auth_headers)
 
@@ -640,7 +614,7 @@ def test_viewer_cannot_refresh_analytics(
     client, other_user_auth_headers, other_user, normal_user, db_session
 ):
     media_file = _make_file(db_session, normal_user)
-    _share_file(db_session, media_file, normal_user, other_user, permission="viewer")
+    share_file(db_session, normal_user, other_user, media_file, permission="viewer")
 
     response = client.post(
         f"/api/files/{media_file.uuid}/analytics/refresh", headers=other_user_auth_headers
@@ -653,7 +627,7 @@ def test_editor_can_refresh_analytics(
     client, other_user_auth_headers, other_user, normal_user, db_session
 ):
     media_file = _make_file(db_session, normal_user)
-    _share_file(db_session, media_file, normal_user, other_user, permission="editor")
+    share_file(db_session, normal_user, other_user, media_file, permission="editor")
 
     response = client.post(
         f"/api/files/{media_file.uuid}/analytics/refresh", headers=other_user_auth_headers
@@ -669,7 +643,7 @@ def test_viewer_cannot_generate_waveform(
     client, other_user_auth_headers, other_user, normal_user, db_session
 ):
     media_file = _make_file(db_session, normal_user)
-    _share_file(db_session, media_file, normal_user, other_user, permission="viewer")
+    share_file(db_session, normal_user, other_user, media_file, permission="viewer")
 
     response = client.post(
         f"/api/files/{media_file.uuid}/waveform/generate", headers=other_user_auth_headers
@@ -682,7 +656,7 @@ def test_editor_can_generate_waveform(
     client, other_user_auth_headers, other_user, normal_user, db_session
 ):
     media_file = _make_file(db_session, normal_user)
-    _share_file(db_session, media_file, normal_user, other_user, permission="editor")
+    share_file(db_session, normal_user, other_user, media_file, permission="editor")
 
     response = client.post(
         f"/api/files/{media_file.uuid}/waveform/generate", headers=other_user_auth_headers
@@ -724,7 +698,7 @@ def test_viewer_cannot_bulk_act_on_shared_file(
     checked_actions = []
     for action in BULK_ACTIONS:
         media_file = _make_file(db_session, normal_user, with_segment=True)
-        _share_file(db_session, media_file, normal_user, other_user, permission="viewer")
+        share_file(db_session, normal_user, other_user, media_file, permission="viewer")
 
         body = {"file_uuids": [str(media_file.uuid)], "action": action}
         if action in ("add_tag", "remove_tag"):

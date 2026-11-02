@@ -123,6 +123,16 @@ def _audit_lifecycle_denial(
     )
 
 
+def _expired_at(user: User) -> datetime | None:
+    """``account_expires_at`` (timezone-aware) when it has passed, else ``None``."""
+    expires_at = getattr(user, "account_expires_at", None)
+    if expires_at is None:
+        return None
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    return expires_at if datetime.now(UTC) >= expires_at else None
+
+
 def _enforce_account_expiry(user: User, request: Request | None) -> None:
     """Refuse a time-boxed account past its ``account_expires_at``.
 
@@ -132,13 +142,8 @@ def _enforce_account_expiry(user: User, request: Request | None) -> None:
     Raises:
         HTTPException: 403 with ``detail.code == account_expired``.
     """
-    expires_at = getattr(user, "account_expires_at", None)
+    expires_at = _expired_at(user)
     if expires_at is None:
-        return
-
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=UTC)
-    if datetime.now(UTC) < expires_at:
         return
 
     _audit_lifecycle_denial(
@@ -162,6 +167,50 @@ def _enforce_account_expiry(user: User, request: Request | None) -> None:
             ),
         },
     )
+
+
+def _approval_refusal(user: User, db: Session) -> tuple[str, str] | None:
+    """``(detail.code, message)`` when the approval gate refuses *user*, else ``None``.
+
+    An ``approval_status`` outside the closed set is refused as a rejection: it has
+    no self-service remedy either.
+
+    Raises:
+        HTTPException: 503 ``auth_config_unavailable`` for a pending account when the
+            setting cannot be read.
+    """
+    from app.api.endpoints.auth.approval_gate import approval_enforced
+    from app.auth.approval import is_pending
+    from app.auth.approval import is_rejected
+    from app.auth.approval import is_unrecognised
+
+    if is_rejected(user) or is_unrecognised(user):
+        return (
+            ERROR_CODE_ACCOUNT_REJECTED,
+            "This account was not approved. Contact an administrator.",
+        )
+    if is_pending(user) and approval_enforced(db):
+        return (
+            ERROR_CODE_ACCOUNT_PENDING_APPROVAL,
+            "This account is awaiting administrator approval.",
+        )
+    return None
+
+
+def admitted_on_optional_auth(user: User, db: Session) -> bool:
+    """Whether an optional-auth route may treat *user* as signed in.
+
+    Applies only the approval and expiry gates, without raising or auditing: the
+    caller is served as anonymous rather than refused, and these routes run on
+    every page load. The banner and password-change gates are left out because
+    both have a self-service remedy whose screens run in that state.
+    """
+    if _expired_at(user) is not None:
+        return False
+    try:
+        return _approval_refusal(user, db) is None
+    except HTTPException:
+        return False
 
 
 def _enforce_approval(user: User, request: Request | None, db: Session) -> None:
@@ -189,22 +238,10 @@ def _enforce_approval(user: User, request: Request | None, db: Session) -> None:
             ``account_rejected``; 503 ``auth_config_unavailable`` for a pending
             account when the setting cannot be read.
     """
-    from app.api.endpoints.auth.approval_gate import approval_enforced
-    from app.auth.approval import is_pending
-    from app.auth.approval import is_rejected
-
-    if is_rejected(user):
-        code, message = (
-            ERROR_CODE_ACCOUNT_REJECTED,
-            "This account was not approved. Contact an administrator.",
-        )
-    elif is_pending(user) and approval_enforced(db):
-        code, message = (
-            ERROR_CODE_ACCOUNT_PENDING_APPROVAL,
-            "This account is awaiting administrator approval.",
-        )
-    else:
+    refusal = _approval_refusal(user, db)
+    if refusal is None:
         return
+    code, message = refusal
 
     # Audited, unlike the banner gate: it fires only for individually flagged
     # accounts, so volume is bounded, and an operator reviewing the queue wants it.
@@ -253,6 +290,11 @@ def _enforce_password_change(user: User, request: Request | None) -> None:
     )
 
 
+#: The last successful :func:`_banner_requirement` read in this process, for its
+#: failed-read path. Per process, like ``core/settings_cache.py``.
+_last_banner_read: tuple[bool, datetime | None] | None = None
+
+
 def _banner_requirement(db: Session | None) -> tuple[bool, datetime | None]:
     """Return ``(banner_enabled, text_last_changed_at)`` for this deployment.
 
@@ -272,8 +314,14 @@ def _banner_requirement(db: Session | None) -> tuple[bool, datetime | None]:
             this runs on every authenticated request.
 
     Returns:
-        Whether the banner is enabled, and when its text last changed.
+        Whether the banner is enabled, and when its text last changed. When the
+        read fails, the banner is required if ``.env`` enables it OR the last
+        successful read in this process did: an outage must not switch the gate
+        off for a banner enabled only in the admin UI, and a deployment that never
+        enabled it must not have its users held at a banner nobody can show them.
     """
+    global _last_banner_read
+
     if db is None or not hasattr(db, "query"):
         return settings.LOGIN_BANNER_ENABLED, None
 
@@ -287,7 +335,9 @@ def _banner_requirement(db: Session | None) -> tuple[bool, datetime | None]:
             .all()
         }
     except Exception:
-        logger.debug("Could not read banner configuration; using .env", exc_info=True)
+        logger.debug("Could not read banner configuration", exc_info=True)
+        if _last_banner_read is not None and _last_banner_read[0]:
+            return _last_banner_read
         return settings.LOGIN_BANNER_ENABLED, None
 
     enabled_row = rows.get("login_banner_enabled")
@@ -299,7 +349,8 @@ def _banner_requirement(db: Session | None) -> tuple[bool, datetime | None]:
         enabled = str(enabled_row.config_value).strip().lower() in BOOL_TRUE_VALUES
 
     text_row = rows.get("login_banner_text")
-    return enabled, getattr(text_row, "updated_at", None)
+    _last_banner_read = (enabled, getattr(text_row, "updated_at", None))
+    return _last_banner_read
 
 
 def _enforce_banner_acknowledgment(user: User, request: Request | None, db: Session) -> None:

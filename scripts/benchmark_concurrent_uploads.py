@@ -25,21 +25,17 @@ import csv
 import os
 import statistics
 import subprocess
-import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# Reuse helpers from benchmark_e2e so we stay in lockstep with its upload path.
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from benchmark_e2e import (  # noqa: E402
-    DEFAULT_BACKEND_URL,
-    DEFAULT_REDIS_URL,
-    POLL_TIMEOUT,
-    _fmt_duration,
+# Reuse the e2e_bench helpers (the package behind benchmark_e2e.py): same upload path.
+from e2e_bench.backend_api import (
     get_auth_token,
     poll_task_completion,
     upload_file_via_api,
 )
+from e2e_bench.config import DEFAULT_BACKEND_URL, DEFAULT_REDIS_URL, POLL_TIMEOUT
+from e2e_bench.formatting import fmt_duration
 
 DB_CONTAINER = 'opentranscribe-postgres'
 DB_USER = 'postgres'
@@ -223,11 +219,11 @@ def main() -> None:
             summaries.append(s)
             tag = s.get('file_uuid', s.get('status', ''))
             elapsed = s.get('elapsed_s', 0)
-            print(f'  worker done: {tag} in {_fmt_duration(elapsed)}')
+            print(f'  worker done: {tag} in {fmt_duration(elapsed)}')
     batch_elapsed = time.time() - batch_start
 
     successes = [s for s in summaries if s.get('status') == 'ok']
-    print(f'\nBatch complete: {len(successes)}/{args.n} ok in {_fmt_duration(batch_elapsed)}')
+    print(f'\nBatch complete: {len(successes)}/{args.n} ok in {fmt_duration(batch_elapsed)}')
 
     # Give the postprocess flush a beat to write the DB rows
     time.sleep(5)

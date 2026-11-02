@@ -348,7 +348,6 @@ backend/app/utils/websocket_notify.py	1	ratchet: may only go down
 scripts/benchmark-diarization.py	1	ratchet: may only go down
 scripts/benchmark-thorough.py	2	ratchet: may only go down
 scripts/benchmark_concurrent_uploads.py	2	ratchet: may only go down
-scripts/benchmark_e2e.py	2	ratchet: may only go down
 scripts/benchmark_engine_compare.py	3	ratchet: may only go down
 scripts/benchmark_engine_queue.py	9	ratchet: may only go down
 scripts/benchmark_engine_single.py	2	ratchet: may only go down
@@ -380,3 +379,5 @@ scripts/pyannote_direct/audio_io.py	2	ratchet: may only go down
 scripts/pyannote_direct/driver.py	2	ratchet: may only go down
 scripts/pyannote_direct/pipeline.py	2	ratchet: may only go down
 scripts/pyannote_direct/vram.py	3	ratchet: may only go down
+scripts/e2e_bench/backend_api.py	1	ratchet: may only go down
+scripts/e2e_bench/cli.py	1	ratchet: may only go down

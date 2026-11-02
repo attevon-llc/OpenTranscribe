@@ -51,6 +51,9 @@ class RetrievalResult:
     #: caller with an empty ``chunks`` list distinguish "your library has
     #: nothing about this" from "search was down" (issue #438's open half).
     retrieval_failed: bool = False
+    #: True when the digest-plane search failed. Separate from ``retrieval_failed``: the
+    #: chunk leg still answers, so this must not become the "search was down" message.
+    digest_retrieval_failed: bool = False
     #: How many hits the parallel speaker-focus leg (see
     #: ``retrieve_context``'s ``speaker_focus_names``) contributed that the
     #: main leg had not already found. ``0`` both when the leg was not run and
@@ -179,6 +182,7 @@ def retrieve_context(
             plane="digest",
             source="opensearch",
         )
+        digest_diagnostics: dict[str, Any] = {}
         result.digests = retrieve_digests(
             query,
             user_id=user_id,
@@ -186,17 +190,24 @@ def retrieve_context(
             file_uuids=file_uuids,
             size=digest_size,
             search_mode=search_mode,
+            diagnostics=digest_diagnostics,
         )
+        result.digest_retrieval_failed = bool(digest_diagnostics.get("digest_retrieval_failed"))
         result.timings_ms["digest"] = int((time.monotonic() - digest_started) * 1000)
+        if result.digest_retrieval_failed:
+            digest_outcome = Outcome.FAILED
+        else:
+            digest_outcome = Outcome.OK if result.digests else Outcome.EMPTY
         emit(
             recorder,
             QueryStage.FOUND,
-            Outcome.OK if result.digests else Outcome.EMPTY,
+            digest_outcome,
             parent=parent,
             node_id="digest",
             plane="digest",
             count=len(result.digests),
             ms=result.timings_ms["digest"],
+            **({"reason": "search_failed"} if result.digest_retrieval_failed else {}),
         )
     else:
         emit(

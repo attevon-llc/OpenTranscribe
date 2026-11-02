@@ -174,6 +174,8 @@ def _record_retrieval_diagnostics(
     # growing a permanent "search worked fine" marker on every ordinary turn.
     if result.retrieval_failed:
         meta["retrieval_failed"] = True
+    if result.digest_retrieval_failed:
+        meta["digest_retrieval_failed"] = True
     meta["files_searched"] = "all" if file_uuids is None else len(file_uuids)
     if speakers:
         meta["speakers_filtered"] = list(speakers)

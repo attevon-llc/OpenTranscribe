@@ -40,11 +40,7 @@ frontend/src/components/PlyrMiniPlayer.svelte::svelte/infinite-reactive-loop	3	l
 frontend/src/components/PlyrMiniPlayer.svelte::svelte/no-unused-svelte-ignore	2	lint: burn-down planned
 frontend/src/components/RetrievalQualityNotice.svelte::svelte/no-navigation-without-resolve	1	lint: burn-down planned
 frontend/src/components/RetrievalQualityNotice.svelte::svelte/no-reactive-reassign	1	lint: burn-down planned
-frontend/src/components/SelectiveReprocessModal.svelte::@typescript-eslint/no-explicit-any	4	lint: burn-down planned
-frontend/src/components/SelectiveReprocessModal.svelte::no-restricted-imports	3	lint: burn-down planned
 frontend/src/components/SelectiveReprocessModal.svelte::svelte/infinite-reactive-loop	8	lint: burn-down planned
-frontend/src/components/SelectiveReprocessModal.svelte::svelte/prefer-svelte-reactivity	2	lint: burn-down planned
-frontend/src/components/SelectiveReprocessModal.svelte::svelte/require-each-key	2	lint: burn-down planned
 frontend/src/components/SettingsModal.lazySections.test.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/SettingsModal.orgContext.test.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/SettingsModal.orgPrivacy.test.ts::no-restricted-imports	1	lint: burn-down planned

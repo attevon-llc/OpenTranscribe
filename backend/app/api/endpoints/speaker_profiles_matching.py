@@ -378,7 +378,7 @@ def get_speaker_profile_suggestions(
         ]
 
         # Sort suggestions by confidence (highest first) and source priority
-        def sort_key(suggestion):
+        def sort_key(suggestion: dict[str, Any]) -> tuple[int, float]:
             source_priority = 0 if suggestion["source"] == "voice_embedding" else 1
             return (source_priority, -suggestion["confidence"])
 

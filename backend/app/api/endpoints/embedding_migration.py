@@ -5,6 +5,7 @@ Includes safeguards against concurrent migrations and progress tracking.
 """
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -16,6 +17,7 @@ from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.user import User
 from app.services.embedding_mode_service import EmbeddingModeService
+from app.services.migration_progress_service import MigrationStatus
 from app.services.migration_progress_service import migration_progress
 from app.services.privacy.migration_scope import summarize_migration_scopes
 from app.services.privacy.redact_view import VOICEPRINTS_DISABLED_CODE
@@ -76,7 +78,7 @@ def _compute_ground_truth_status(db: Session) -> dict | None:
 def get_migration_status(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """
     Get the current speaker embedding migration status.
 
@@ -169,7 +171,7 @@ def get_migration_status(
 def get_migration_progress(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
-):
+) -> MigrationStatus:
     """
     Get detailed migration progress information.
 
@@ -203,7 +205,7 @@ def start_migration(
     force: bool = False,
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Start the speaker embedding migration from v3 to v4.
 
     This is an async operation - it dispatches Celery tasks and returns immediately.
@@ -295,7 +297,7 @@ def start_migration(
 def stop_migration(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """
     Force stop a running migration.
 
@@ -393,7 +395,7 @@ def stop_migration(
 def finalize_migration(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """
     Finalize the v4 migration by swapping indices.
 
@@ -448,7 +450,7 @@ def finalize_migration(
 def clear_progress(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """
     Clear the migration progress tracking from Redis.
 
@@ -494,7 +496,7 @@ def clear_progress(
 def retry_failed_files(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """
     Retry migration for files that were not successfully migrated.
 
@@ -580,7 +582,7 @@ def retry_failed_files(
 def force_complete_migration(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """
     Force-mark the migration as complete, skipping any unprocessed files.
 
@@ -645,7 +647,7 @@ def force_complete_migration(
 def get_embedding_mode(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
-):
+) -> dict[str, str | int]:
     """
     Get detailed information about the current embedding mode.
     """

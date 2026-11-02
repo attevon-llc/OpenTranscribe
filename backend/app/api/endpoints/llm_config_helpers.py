@@ -59,7 +59,9 @@ def _encrypt_bedrock_fields(
     return encrypted
 
 
-def _enrich_with_owner(config, owner, is_own: bool) -> dict:
+def _enrich_with_owner(
+    config: models.UserLLMSettings, owner: models.User | None, is_own: bool
+) -> dict:
     """Build a UserLLMSettingsPublic-compatible dict with owner attribution."""
     return {
         "uuid": config.uuid,

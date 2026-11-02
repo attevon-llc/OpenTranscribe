@@ -7,6 +7,7 @@ embedding extraction and gender detection in a single pass.
 
 import json
 import logging
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 @router.get("/status")
 def get_combined_migration_status(
     current_user: User = Depends(get_current_active_superuser),
-):
+) -> dict[str, Any]:
     """Get the current combined speaker migration status."""
     try:
         progress = combined_migration_progress.get_status()
@@ -56,7 +57,7 @@ def get_combined_migration_status(
 def start_combined_migration(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Start combined speaker analysis for all completed files."""
     from app.tasks.combined_speaker_analysis_task import migrate_speakers_combined_task
 
@@ -92,7 +93,7 @@ def start_combined_migration(
 def stop_combined_migration(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Stop a running combined speaker migration."""
     try:
         if not combined_migration_progress.is_running():
@@ -171,7 +172,7 @@ def stop_combined_migration(
 def clear_combined_progress(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Clear stale combined migration progress data."""
     try:
         if combined_migration_progress.is_running():

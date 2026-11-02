@@ -11,19 +11,16 @@
   import { websocketStore } from '$stores/websocket';
   import { handleFileNotification } from '$lib/fileDetail/notificationHandler';
   import { createPageTimers } from '$lib/fileDetail/pageTimers';
-  import { createSpeakerLoader } from '$lib/fileDetail/speakerLoader';
+  import { createSegmentPager } from '$lib/fileDetail/segmentPaging';
+  import { createSpeakerLoader, syncTranscriptStore } from '$lib/fileDetail/speakerLoader';
   import { createSpeakerSaveFlow } from '$lib/fileDetail/speakerSave';
   import {
     hasUnsavedSpeakerNames,
     type SpeakerItem,
     type SpeakerNameBaseline,
   } from '$lib/fileDetail/speakerNames';
-  import { markActiveSegment, scrollToAndHighlight, scrollToSegmentAtTime } from '$lib/fileDetail/segmentDom';
-  import {
-    appendSegmentPage,
-    patchSegmentInFile,
-    MAX_SEGMENT_PAGE_SIZE
-  } from '$lib/fileDetail/segmentSync';
+  import { markActiveSegment, scrollToSegmentAtTime } from '$lib/fileDetail/segmentDom';
+  import { patchSegmentInFile } from '$lib/fileDetail/segmentSync';
 
   // Import new components
   import VideoPlayer from '$components/VideoPlayer.svelte';
@@ -474,101 +471,25 @@
     }
   }
 
-  /**
-   * Load more transcript segments for large transcripts
-   */
-  async function loadMoreSegments(): Promise<void> {
-    if (!fileId || loadingMoreSegments || !hasMoreSegments) return;
+  const segmentPager = createSegmentPager({
+    getFileId: () => fileId,
+    getFile: () => file,
+    setFile: (f) => (file = f),
+    getShowOriginal: () => showOriginal,
+    getSegmentLimit: () => segmentLimit,
+    getTotalSegments: () => totalSegments,
+    setTotalSegments: (total) => (totalSegments = total),
+    isLoadingMore: () => loadingMoreSegments,
+    setLoadingMore: (loading) => (loadingMoreSegments = loading),
+    hasMoreSegments: () => hasMoreSegments,
+    syncTranscriptStore: () => syncTranscriptStore(file, speakerList),
+    schedule: scheduleTimeout,
+    notifyError: (key) => toastStore.error($t(key)),
+  });
+  const loadMoreSegments = segmentPager.loadMore;
 
-    try {
-      loadingMoreSegments = true;
-      const currentCount = file?.transcript_segments?.length || 0;
-      const nextOffset = currentCount;
-
-      const response = await axiosInstance.get(`/files/${fileId}/segments`, {
-        params: {
-          segment_limit: segmentLimit,
-          segment_offset: nextOffset,
-          ...(showOriginal ? { redact: false } : {})
-        }
-      });
-
-      if (response.data && response.data.transcript_segments) {
-        // Both representations advance together — the transcript renders from the
-        // grouping, so appending segments alone loads rows that never display (#352).
-        file = appendSegmentPage(file, response.data);
-
-        // Update pagination state
-        totalSegments = response.data.total_segments || totalSegments;
-
-        // Update transcript store so TranscriptModal gets the new segments
-        if (file?.uuid && file.transcript_segments && speakerList) {
-          transcriptStore.loadTranscriptData(file.uuid, file.transcript_segments, speakerList);
-        }
-      }
-    } catch (error) {
-      console.error('Error loading more segments:', error);
-      toastStore.error($t('fileDetail.failedToLoadMoreSegments'));
-    } finally {
-      loadingMoreSegments = false;
-    }
-  }
-
-  /**
-   * Load segments up to a target index for jump-to-timestamp navigation.
-   * Makes a single API call to fetch all segments from current offset to target + buffer.
-   */
-  async function handleLoadUpTo(event: any): Promise<void> {
-    const { targetIndex, segmentUuid, startTime } = event.detail;
-    if (!fileId || loadingMoreSegments) return;
-
-    const currentCount = file?.transcript_segments?.length || 0;
-    if (targetIndex < currentCount) {
-      // Already loaded - just scroll and highlight
-      scrollToAndHighlight(segmentUuid, scheduleTimeout);
-      return;
-    }
-
-    try {
-      loadingMoreSegments = true;
-      const buffer = 50;
-
-      // Page in a loop: the endpoint caps a single page, so a jump to the end of a long
-      // transcript can't be satisfied by one request. The guard bounds the loop if the
-      // server stops making progress.
-      for (let page = 0; page < 50; page++) {
-        const loaded = file?.transcript_segments?.length || 0;
-        if (loaded > targetIndex) break;
-
-        const response = await axiosInstance.get(`/files/${fileId}/segments`, {
-          params: {
-            segment_limit: Math.min(targetIndex - loaded + buffer + 1, MAX_SEGMENT_PAGE_SIZE),
-            segment_offset: loaded,
-            ...(showOriginal ? { redact: false } : {})
-          }
-        });
-
-        const fetched = response.data?.transcript_segments;
-        if (!Array.isArray(fetched) || fetched.length === 0) break;
-
-        file = appendSegmentPage(file, response.data);
-        totalSegments = response.data.total_segments || totalSegments;
-
-        if ((file?.transcript_segments?.length || 0) >= totalSegments) break;
-      }
-
-      if (file?.uuid && file.transcript_segments && speakerList) {
-        transcriptStore.loadTranscriptData(file.uuid, file.transcript_segments, speakerList);
-      }
-
-      // Wait for DOM update then scroll to target segment
-      scheduleTimeout(() => scrollToAndHighlight(segmentUuid, scheduleTimeout), 300);
-    } catch (error) {
-      console.error('Error loading segments up to target:', error);
-      toastStore.error($t('fileDetail.failedToLoadMoreSegments'));
-    } finally {
-      loadingMoreSegments = false;
-    }
+  function handleLoadUpTo(event: CustomEvent<{ targetIndex: number; segmentUuid: string }>) {
+    segmentPager.loadUpTo(event.detail.targetIndex, event.detail.segmentUuid);
   }
 
   /**
@@ -1138,47 +1059,6 @@
   }
 
   /**
-   * Re-fetch segments after a speaker merge (issue #603).
-   *
-   * A merge deletes the SOURCE speaker's Postgres row and re-labels its segments under
-   * the TARGET speaker. `speaker_processing_complete` for a merge carries only the target
-   * uuid, so `applySpeakerRename` — which patches segments that still hold a KNOWN uuid —
-   * has no old-to-new mapping and can't find the segments still holding the now-dead
-   * source uuid client-side. Merges are rare enough that refetching is the honest fix:
-   * reset to empty and replay the same paging path `loadMoreSegments`/`handleLoadUpTo`
-   * use (`appendSegmentPage`, which skips already-seen uuids — starting from empty is
-   * what turns that into a full replace), preserving however many segments were already
-   * loaded rather than force-loading the rest of a not-yet-fully-loaded transcript.
-   */
-  async function refetchSegmentsAfterMerge(): Promise<void> {
-    if (!fileId || !file) return;
-
-    const targetCount = file.transcript_segments?.length || 0;
-    file = { ...file, transcript_segments: [], grouped_segments: [] };
-    if (targetCount === 0) return;
-
-    try {
-      for (let offset = 0; offset < targetCount; offset += segmentLimit) {
-        const response = await axiosInstance.get(`/files/${fileId}/segments`, {
-          params: {
-            segment_limit: Math.min(segmentLimit, targetCount - offset),
-            segment_offset: offset,
-            ...(showOriginal ? { redact: false } : {})
-          }
-        });
-        if (!response.data?.transcript_segments) break;
-        file = appendSegmentPage(file, response.data);
-      }
-
-      if (file?.uuid && file.transcript_segments && speakerList) {
-        transcriptStore.loadTranscriptData(file.uuid, file.transcript_segments, speakerList);
-      }
-    } catch (error) {
-      console.error('Error refetching segments after speaker merge:', error);
-    }
-  }
-
-  /**
    * Eventual-consistency backstop for a speaker rename or merge.
    *
    * Renaming a speaker kicks off a background task that projects the change into
@@ -1193,8 +1073,8 @@
     if (detail.reason === 'speaker_merged') {
       // The merged-away speaker's uuid is gone from Postgres; there is no rename mapping
       // to patch segments in place with, so refetch rather than trying to guess. See
-      // `refetchSegmentsAfterMerge`'s docstring.
-      refetchSegmentsAfterMerge();
+      // `segmentPager.refetchAfterMerge`'s docstring.
+      segmentPager.refetchAfterMerge();
     } else if (detail.speaker_uuid && detail.display_name) {
       // Repaint the renamed speaker directly: loadSpeakers() refreshes the speaker list but
       // touches neither the segments nor the transcript store.

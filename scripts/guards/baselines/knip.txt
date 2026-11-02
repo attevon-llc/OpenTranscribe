@@ -54,4 +54,3 @@ types::src/lib/types/tag.ts::TagClusterMember	1	pre-existing unused exports and 
 types::src/lib/types/tag.ts::TagClusterSuggestion	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 types::src/lib/types/tag.ts::TagImpactEntry	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 types::src/lib/types/tag.ts::TagMergeRequest	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
-types::src/lib/types/tag.ts::TagOwnership	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched

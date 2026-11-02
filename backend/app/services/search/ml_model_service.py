@@ -36,7 +36,7 @@ class OpenSearchMLModelService(
     - Query model status
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._client = get_opensearch_client()
         self._ml_settings_configured = False
 

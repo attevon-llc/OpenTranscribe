@@ -1,7 +1,10 @@
 """Non-embedding speaker document metadata updates and lookups."""
 
+from __future__ import annotations
+
 import datetime
 import logging
+from typing import TYPE_CHECKING
 from typing import Any
 
 from app.core.config import settings
@@ -9,6 +12,9 @@ from app.core.embedding_models import get_speaker_index
 from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.indices import ensure_indices_exist
 from app.services.search.tenant_scope import org_filter_clauses
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +135,9 @@ def update_speaker_segment_count(speaker_uuid: str, segment_count: int) -> bool:
         return False
 
 
-def update_speaker_display_name(speaker_uuid: str, display_name: str | None):
+def update_speaker_display_name(
+    speaker_uuid: str, display_name: str | None
+) -> dict[str, Any] | None:
     """
     Update the display name of a speaker in OpenSearch
 
@@ -139,7 +147,7 @@ def update_speaker_display_name(speaker_uuid: str, display_name: str | None):
     """
     if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized")
-        return
+        return None
 
     try:
         # Update the speaker document with new display name using UUID
@@ -150,7 +158,7 @@ def update_speaker_display_name(speaker_uuid: str, display_name: str | None):
             }
         }
 
-        response = _client.opensearch_client.update(
+        response: dict[str, Any] = _client.opensearch_client.update(
             index=get_speaker_index(),
             id=str(speaker_uuid),
             body=update_body,
@@ -162,6 +170,7 @@ def update_speaker_display_name(speaker_uuid: str, display_name: str | None):
 
     except Exception as e:
         logger.error(f"Error updating speaker display name: {e}")
+        return None
 
 
 def update_speaker_profile(
@@ -170,7 +179,7 @@ def update_speaker_profile(
     profile_uuid: str | None,
     verified: bool = False,
     display_name: str | None = None,
-):
+) -> dict[str, Any] | None:
     """
     Update the profile assignment of a speaker in OpenSearch
 
@@ -183,7 +192,7 @@ def update_speaker_profile(
     """
     if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized")
-        return
+        return None
 
     try:
         # Update the speaker document with new profile assignment using UUID
@@ -197,7 +206,7 @@ def update_speaker_profile(
             doc["display_name"] = display_name
         update_body = {"doc": doc}
 
-        response = _client.opensearch_client.update(
+        response: dict[str, Any] = _client.opensearch_client.update(
             index=get_speaker_index(),
             id=str(speaker_uuid),
             body=update_body,
@@ -210,9 +219,10 @@ def update_speaker_profile(
 
     except Exception as e:
         logger.error(f"Error updating speaker profile assignment: {e}")
+        return None
 
 
-def sync_speaker_profiles_to_opensearch(db) -> dict:
+def sync_speaker_profiles_to_opensearch(db: Session) -> dict:
     """Bulk-sync speaker profile_id, display_name, and verified from PostgreSQL to OpenSearch.
 
     Finds all speakers that have a profile_id or display_name in PostgreSQL and

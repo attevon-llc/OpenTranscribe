@@ -60,7 +60,7 @@ _nltk_tokenizers: dict[str, Any] = {}
 _nltk_load_failed: bool = False
 
 
-def _get_nltk_tokenizer(language: str = "english"):
+def _get_nltk_tokenizer(language: str = "english") -> Any:
     """Load the NLTK punkt sentence tokenizer for the given language.
 
     Tokenizers are cached after first load. Falls back to English if the

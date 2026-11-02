@@ -136,7 +136,7 @@ def ensure_model_downloaded(model_name: str, cache_dir: Path | None = None) -> P
 
     try:
         # Download the model with progress indication
-        def progress_hook(block_num: int, block_size: int, total_size: int):
+        def progress_hook(block_num: int, block_size: int, total_size: int) -> None:
             """Simple progress indicator."""
             if total_size > 0 and block_num % 50 == 0:  # Log every ~5MB for 100KB blocks
                 downloaded = block_num * block_size

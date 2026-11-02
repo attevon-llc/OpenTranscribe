@@ -201,7 +201,7 @@ def ensure_transcript_tenant_mapping(client: Any, index_name: str) -> str:
     return f"present_as_{field_type}"
 
 
-def ensure_indices_exist():
+def ensure_indices_exist() -> None:
     """
     Ensure the transcript and speaker indices exist, creating them if necessary.
 

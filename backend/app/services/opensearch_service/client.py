@@ -12,11 +12,14 @@ unreachable cluster indistinguishable from an empty one — and callers use
 these answers to decide whether to create, alias, or *delete* an index.
 """
 
+from __future__ import annotations
+
 import logging
 import time
 from collections.abc import Callable
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from typing import Any
 
 from opensearchpy import OpenSearch
@@ -30,6 +33,9 @@ from opensearchpy.exceptions import TransportError
 
 from app.core.config import settings
 from app.core.opensearch_auth import opensearch_connection_kwargs
+
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +83,7 @@ else:
 
 
 # Lazy singleton for SentenceTransformer model (~80MB) — loaded once.
-_sentence_transformer_model = None
+_sentence_transformer_model: SentenceTransformer | None = None
 
 
 #: How long a user's list of organization files is reused by the personal-scope kNN gate.
@@ -166,7 +172,7 @@ def _speaker_org_filter_clauses(
 _SENTENCE_TRANSFORMER_LOAD_TIMEOUT_S = 30.0
 
 
-def _get_sentence_transformer():
+def _get_sentence_transformer() -> SentenceTransformer:
     """Lazy singleton for SentenceTransformer model."""
     global _sentence_transformer_model
     if _sentence_transformer_model is None:
@@ -187,7 +193,7 @@ def _get_sentence_transformer():
     return _sentence_transformer_model
 
 
-def get_opensearch_client() -> "OpenSearch | None":
+def get_opensearch_client() -> OpenSearch | None:
     """Get the OpenSearch client, attempting lazy initialization if None.
 
     If the client was not initialized at module load time (e.g., OpenSearch

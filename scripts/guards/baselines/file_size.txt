@@ -18,8 +18,6 @@ frontend/src/components/SettingsModal.svelte::script	998	oversize: split by conc
 frontend/src/components/settings/CLAUDE.md	408	oversize: split by concern planned
 frontend/src/lib/services/uploadService.ts	1393	oversize: split by concern planned
 frontend/src/routes/+page.svelte::script	1459	oversize: split by concern planned
-frontend/src/routes/files/[id]/+page.svelte	2876	oversize: split by concern planned
-frontend/src/routes/files/[id]/+page.svelte::script	2355	oversize: split by concern planned
 opentr.sh	4893	oversize: split by concern planned
 opentranscribe.sh	2588	oversize: split by concern planned
 scripts/CLAUDE.md	1215	oversize: split by concern planned

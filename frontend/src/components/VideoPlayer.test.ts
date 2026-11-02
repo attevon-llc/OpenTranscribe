@@ -7,7 +7,7 @@
  * That is a race, not a safety check. `player` is set by this component's
  * OWN reactive statement (`$: if (videoUrl && mediaElement && !player)
  * initializePlyr()`), which is independent of — and can resolve AFTER — the
- * `?t=` deep-link handler in `routes/files/[id]/+page.svelte`, which calls
+ * `?t=` deep-link handler in `components/fileDetail/FilePlayer.svelte`, which calls
  * `videoPlayerComponent.seekToTime(...)` as soon as `videoPlayerComponent`
  * is bound. Once #649 removed the artificial 500ms sleep that used to sit in
  * front of that call (because the wait was itself the #645 bug), the two

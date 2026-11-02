@@ -90,7 +90,7 @@ vi.mock('$components/fileDetail/RedactionPendingPanel.svelte', () => ({
 vi.mock('$components/fileDetail/SpeakerProfileConfirmModal.svelte', () => ({
   default: noopComponent(),
 }));
-vi.mock('../../../components/ui/Spinner.svelte', () => ({ default: noopComponent() }));
+vi.mock('$components/ui/Spinner.svelte', () => ({ default: noopComponent() }));
 // Not stubbed: it's a pure presentational component (only depends on the
 // already-mocked `$t`), and it doubles as the "still loading" DOM signal.
 

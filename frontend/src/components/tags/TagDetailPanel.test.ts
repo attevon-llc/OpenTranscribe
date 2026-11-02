@@ -78,6 +78,7 @@ describe('TagDetailPanel', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
       const input = screen.getByLabelText('Tag name') as HTMLInputElement;
       await fireEvent.input(input, { target: { value: 'Interview' } });
+      await fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
 
       await rerender({ tag, renameMergeImpact: impact });
       expect(
@@ -161,5 +162,31 @@ describe('rename field rules', () => {
 
     await fireEvent.input(input, { target: { value: 'renamed' } });
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
+
+describe('merge-on-rename confirmation', () => {
+  it('merges into the name that was previewed, not whatever the field holds now', async () => {
+    const rename = vi.fn();
+    const confirmRenameMerge = vi.fn();
+    const cancelRenameMerge = vi.fn();
+    const { rerender } = render(TagDetailPanel, {
+      props: { tag },
+      events: { rename, confirmRenameMerge, cancelRenameMerge },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    const input = screen.getByLabelText('Tag name') as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: 'Interview' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    expect(rename.mock.calls[0][0].detail).toEqual({ name: 'Interview' });
+    await rerender({ tag, renameMergeImpact: impact });
+
+    // Typing after the warning makes it stale: it described another target.
+    await fireEvent.input(input, { target: { value: 'Something else' } });
+    expect(cancelRenameMerge).toHaveBeenCalledTimes(1);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Merge into that tag' }));
+    expect(confirmRenameMerge.mock.calls[0][0].detail).toEqual({ name: 'Interview' });
   });
 });

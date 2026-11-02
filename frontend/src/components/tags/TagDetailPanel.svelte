@@ -71,6 +71,11 @@
   let editName = tag.name;
   /** Set when the typed name is one the server would refuse as empty. */
   let nameError = '';
+  /**
+   * The name the last rename sent. A merge warning describes that target, so
+   * confirming it must merge into this name, not into later typing.
+   */
+  let submittedName = '';
 
   // Mirrors GroupDetailPanel: while not editing, the field tracks the tag.
   $: if (!editing) editName = tag.name;
@@ -84,6 +89,7 @@
     editing = false;
     editName = tag.name;
     nameError = '';
+    submittedName = '';
     if (renameMergeImpact) dispatch('cancelRenameMerge');
   }
 
@@ -99,11 +105,12 @@
       nameError = $t('tags.nameRequired');
       return;
     }
+    submittedName = name;
     dispatch('rename', { name });
   }
 
   function confirmRenameMerge() {
-    dispatch('confirmRenameMerge', { name: editName.trim() });
+    if (submittedName) dispatch('confirmRenameMerge', { name: submittedName });
   }
 
   /**
@@ -117,6 +124,9 @@
   function onNameInput(event: Event) {
     editName = clampTagNameInput(event);
     nameError = '';
+    // The warning previewed the merge for the submitted name; typing makes it
+    // describe a target that is no longer the one in the field.
+    if (renameMergeImpact) dispatch('cancelRenameMerge');
   }
 
   function onNameKeydown(event: KeyboardEvent) {

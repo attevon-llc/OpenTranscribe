@@ -31,10 +31,7 @@ from app.schemas.user import UserCreate
 from app.services.account_security_service import DeletedUser
 from app.services.account_security_service import assert_not_last_super_admin
 from app.services.account_security_service import audit_user_deleted
-from app.services.user_deletion_service import _assert_no_held_files
-from app.services.user_deletion_service import _delete_user_media_files
-from app.services.user_deletion_service import _delete_user_owned_records
-from app.services.user_deletion_service import _delete_user_speakers
+from app.services.user_deletion_service import delete_user_account
 
 # No basicConfig here — this module is imported via the API router before
 # configure_logging() runs; a default root handler would double every log line.
@@ -334,7 +331,8 @@ def delete_admin_user(
 ):
     """Delete a user and all their data (admin only).
 
-    **Phase boundary (issue #695).** The three cascade helpers below delete
+    **Phase boundary (issue #695).** The three cascade helpers that
+    ``user_deletion_service.delete_user_account`` runs delete
     ``media_file`` (and every table hanging off it) via **bulk** SQL — one statement,
     no instances loaded, no cascade — which never reaches ``file_cleanup_service``'s
     object-storage/OpenSearch destroy. Left alone, every deleted account's recordings
@@ -359,8 +357,6 @@ def delete_admin_user(
     Raises:
         HTTPException: If user not found or deletion not allowed
     """
-    from app.services.account_purge import load_account_purge_plans
-    from app.services.account_purge import purge_account_external_copies
     from app.services.uuid_helpers import get_user_by_uuid
 
     logger.info(f"Admin deleting user with UUID: {user_uuid}")
@@ -381,38 +377,15 @@ def delete_admin_user(
         # than in _validate_user_deletion because that helper takes no Session.
         assert_not_last_super_admin(db, user, ROLE_USER)
 
-        # Legally-held evidence outranks the deletion, and the refusal has to land
-        # BEFORE the first of the three cascade passes: a partial destroy followed by a
-        # 409 is worse than either outcome on its own (issue #689).
-        _assert_no_held_files(db, int(user_id))
-
-        # Phase 0 — read the storage/OpenSearch plan while the rows still exist and the
-        # transaction is open. Postgres reads only; no object storage touched yet.
-        purge_plan = load_account_purge_plans(db, int(user_id))
-
         # Capture what the audit record needs before the row is gone: after the commit
         # the ORM object is expired, so reading user.email would re-query a deleted row.
         deleted_snapshot = DeletedUser.of(user)
         client_ip, user_agent = _get_client_info(request)
 
-        # Phase 1 — delete all user data atomically using a savepoint
-        savepoint = db.begin_nested()
-        try:
-            _delete_user_owned_records(db, int(user_id))
-            _delete_user_speakers(db, int(user_id))
-            _delete_user_media_files(db, int(user_id))
-            logger.info(f"Deleting user with ID {user_id} and email {user.email}")
-            db.delete(user)
-            savepoint.commit()
-        except Exception:
-            savepoint.rollback()
-            raise
-        db.commit()
-
-        # Phase 2 — object storage + OpenSearch. NO transaction is held here. The rows
-        # are already gone, so a failure here is NOT retryable: it must be visible
-        # (residual_errors -> PARTIAL audit outcome + ERROR log), never swallowed.
-        residual_errors = purge_account_external_copies(purge_plan)
+        # The held-file refusal (before any pass, issue #689), the purge plan, the
+        # savepoint-wrapped passes, the commit and the external purge. A non-empty
+        # residual_errors becomes a PARTIAL audit outcome + ERROR log, never swallowed.
+        residual_errors = delete_user_account(db, user)
 
         # This endpoint destroys a user, their files and their transcripts irreversibly
         # and recorded NOTHING — while its twin, DELETE /api/users/{uuid}, performs the

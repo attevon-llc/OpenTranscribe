@@ -42,6 +42,7 @@ from app.services.account_security_service import audit_role_change
 from app.services.account_security_service import audit_user_deleted
 from app.services.account_security_service import enforce_password_policy
 from app.services.account_security_service import revoke_all_sessions
+from app.services.user_deletion_service import delete_user_account
 from app.services.uuid_helpers import get_user_by_uuid
 
 logger = logging.getLogger(__name__)
@@ -311,38 +312,9 @@ def delete_user(
     # Capture what the audit record needs before the row is gone.
     deleted_snapshot = DeletedUser.of(user)
 
-    # Use the comprehensive cleanup shared with the admin endpoint to avoid orphaned records.
-    from app.services.account_purge import load_account_purge_plans
-    from app.services.account_purge import purge_account_external_copies
-    from app.services.user_deletion_service import _assert_no_held_files
-    from app.services.user_deletion_service import _delete_user_media_files
-    from app.services.user_deletion_service import _delete_user_owned_records
-    from app.services.user_deletion_service import _delete_user_speakers
-
-    user_id = user.id
-
-    # Before the first pass, not inside the third: this handler has no savepoint, so a
-    # refusal raised after _delete_user_owned_records would leave the session holding
-    # deletes of rows the caller was told were not deleted (issue #689).
-    _assert_no_held_files(db, user_id)
-
-    # Phase 0 — read the storage/OpenSearch plan while the rows still exist (issue
-    # #695). See admin.delete_admin_user's docstring for the full phase-boundary
-    # rationale; this handler has no savepoint, so the read happens before any bulk
-    # delete runs at all.
-    purge_plan = load_account_purge_plans(db, user_id)
-
-    _delete_user_owned_records(db, user_id)
-    _delete_user_speakers(db, user_id)
-    _delete_user_media_files(db, user_id)
-
-    db.delete(user)
-    db.commit()
-
-    # Phase 2 — object storage + OpenSearch. NO transaction is held here. The rows are
-    # already gone, so a failure here is NOT retryable: it must be visible, never
-    # swallowed.
-    residual_errors = purge_account_external_copies(purge_plan)
+    # The cascade shared with DELETE /admin/users/{uuid}: held-file refusal, purge
+    # plan, the savepoint-wrapped passes, commit, then the external purge.
+    residual_errors = delete_user_account(db, user)
 
     # ADMIN_USER_DELETE existed as an event type with no emitter anywhere.
     audit_user_deleted(deleted_snapshot, current_user, client_ip, user_agent, residual_errors)

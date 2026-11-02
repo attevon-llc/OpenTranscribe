@@ -157,7 +157,7 @@ def purge_account_external_copies(plan: AccountPurgePlan) -> list[dict[str, Any]
     """Destroy every external copy an ACCOUNT owned. **Takes no Session, never raises.**
 
     Runs after the account's rows are already committed (see
-    ``admin.delete_admin_user`` / ``users_admin_edit.delete_user``): the rows are gone, so a
+    ``user_deletion_service.delete_user_account``): the rows are gone, so a
     failure here is not retryable and must be visible, never swallowed. Reuses
     :func:`_purge_external_copies` per file rather than open-coding a second artifact
     list, which is what gives this call thumbnail + derived-cache (including listed

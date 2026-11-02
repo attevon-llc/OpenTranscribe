@@ -1,6 +1,7 @@
 """Cascade helpers for permanently deleting a user account and everything it owns."""
 
 import logging
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -19,6 +20,8 @@ from app.models.speaker import SpeakerCollectionMember
 from app.models.speaker import SpeakerProfile
 from app.models.tag import FileTag
 from app.models.tag import Tag
+from app.models.user import User
+from app.services import account_purge
 
 # No basicConfig here — this module is imported via the API router before
 # configure_logging() runs; a default root handler would double every log line.
@@ -392,3 +395,54 @@ def _delete_user_media_files(db: Session, user_id: int) -> None:
         # Now delete the media files
         db.query(MediaFile).filter(MediaFile.user_id == user_id).delete(synchronize_session=False)
         logger.info(f"Deleted {media_count} media files for user {user_id}")
+
+
+def delete_user_account(db: Session, user: User) -> list[dict[str, Any]]:
+    """Delete an account and everything it owns, then destroy its external copies.
+
+    The one cascade both ``DELETE /admin/users/{uuid}`` and ``DELETE /users/{uuid}``
+    run. Authorization, the self/last-super_admin checks and the audit record stay in
+    the handlers; this owns only the sequence, which had drifted between two copies
+    (only the admin one rolled a failed pass back).
+
+    1. Refuse the whole deletion if any owned file is legally held, before the first
+       pass, so a refusal never follows a partial destroy (issue #689).
+    2. Phase 0: read the storage/OpenSearch plan while the rows still exist. Postgres
+       reads only (issue #695).
+    3. Phase 1: the three bulk passes and the ``user`` delete inside one savepoint, so
+       a failure in any pass leaves the session as it was.
+    4. Commit.
+    5. Phase 2: object storage and OpenSearch, with NO transaction held. The rows are
+       gone, so a failure here is not retryable: it is returned, never swallowed.
+
+    Args:
+        db: Database session; committed by this function.
+        user: The account to delete.
+
+    Returns:
+        Per-object failures from ``account_purge.purge_account_external_copies``;
+        empty when every external copy was confirmed gone.
+
+    Raises:
+        ConflictError: 409 when an owned file is under a legal hold.
+    """
+    user_id = int(user.id)
+
+    _assert_no_held_files(db, user_id)
+
+    purge_plan = account_purge.load_account_purge_plans(db, user_id)
+
+    savepoint = db.begin_nested()
+    try:
+        _delete_user_owned_records(db, user_id)
+        _delete_user_speakers(db, user_id)
+        _delete_user_media_files(db, user_id)
+        logger.info(f"Deleting user with ID {user_id} and email {user.email}")
+        db.delete(user)
+        savepoint.commit()
+    except Exception:
+        savepoint.rollback()
+        raise
+    db.commit()
+
+    return account_purge.purge_account_external_copies(purge_plan)

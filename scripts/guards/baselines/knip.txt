@@ -52,5 +52,4 @@ types::src/lib/types/summary.ts::SummaryMetadata	1	pre-existing unused exports a
 types::src/lib/types/tag.ts::TagClusterMember	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 types::src/lib/types/tag.ts::TagClusterSuggestion	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 types::src/lib/types/tag.ts::TagImpactEntry	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
-types::src/lib/types/tag.ts::TagMergeRequest	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 exports::src/lib/api/speakerClusters.ts::deleteProfileAvatar	1	pre-existing: client for DELETE /speaker-profiles avatar; master only imported it unused; a remove-avatar control needs new i18n copy (post-v0.6.1)

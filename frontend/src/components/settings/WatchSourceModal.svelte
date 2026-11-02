@@ -114,10 +114,10 @@
   onMount(() => {
     (async () => {
       try {
-        const [colRes, tags] = await Promise.all([axiosInstance.get('/collections'), listTags()]);
+        const [colRes, libraryTags] = await Promise.all([axiosInstance.get('/collections'), listTags()]);
         availableCollections = colRes.data ?? [];
         colOptions = availableCollections.map((c) => ({ label: c.name, value: c.uuid }));
-        tagNames = (tags ?? []).map((t) => t.name);
+        tagNames = libraryTags.map((tag) => tag.name);
         mapEditingCollections();
       } catch {
         // Non-fatal: organize step still works with create-new.

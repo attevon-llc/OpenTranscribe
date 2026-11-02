@@ -1,50 +1,40 @@
+<script context="module" lang="ts">
+  let instance = 0;
+
+  function nextId(prefix: string): string {
+    instance += 1;
+    return `${prefix}-${instance}`;
+  }
+</script>
+
 <script lang="ts">
   /**
-   * Everything one selected tag touches, plus the operations that change it.
+   * The tag manager's pane for one selected tag: rename (with the merge
+   * warning a rename onto an existing name triggers), facts, the files that
+   * carry it, and share / promote / delete.
    *
-   * Presentational: it owns only its inline-edit field. Fetching the impact
-   * previews and applying the mutations belongs to the route coordinator, which
-   * feeds the results back in as props.
+   * Every write control follows `tag.can_write`, the server's verdict for this
+   * caller; promote follows `canPromote` plus ownership. Nothing is applied
+   * here: the panel emits intent and the coordinator calls the API.
    */
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, tick } from 'svelte';
   import { t } from '$stores/locale';
   import Badge from '$components/ui/Badge.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
-  import { tagOriginKey, type TagListEntry } from './TagList.svelte';
-  import type { TagImpact } from '$lib/types/tag';
-  import type { TaggedFile } from '$lib/types/tag';
   import { clampTagNameInput, normalizeTagName } from '$lib/utils/tagName';
+  import type { TagImpact, TaggedFile } from '$lib/types/tag';
+  import { tagOriginKey, type TagListEntry } from './TagList.svelte';
 
   export let tag: TagListEntry;
-  /** Which mutation is in flight, if any. Disables the confirming control. */
   export let busy: 'rename' | 'delete' | 'promote' | null = null;
-  /**
-   * Whether the caller may publish this tag into the shared vocabulary.
-   *
-   * Cosmetic — `POST /tags/promote` enforces the same right itself.
-   */
   export let canPromote = false;
-  /**
-   * Whether to offer the destructive controls at all — the server's verdict for
-   * this caller, so a tag it would refuse with a 404 never gets a button that
-   * can only fail.
-   */
-  $: canMutate = tag.can_write;
-
-  /**
-   * The files this tag is on. The pane's whole promise — the empty state says
-   * "see what it touches" — and previously it showed a count and nothing else.
-   */
   export let files: TaggedFile[] = [];
   export let fileTotal = 0;
   export let filesLoading = false;
-  $: hiddenFileCount = Math.max(0, fileTotal - files.length);
-  /** An impact preview is being fetched. */
   export let previewLoading = false;
-  /** Impact of deleting this tag, once previewed. */
   export let deletePreview: TagImpact | null = null;
-  /** Set when the submitted rename resolved to a different existing tag. */
+  /** Set when the last rename would merge into another tag; nothing has been applied. */
   export let renameMergeImpact: TagImpact | null = null;
 
   const dispatch = createEventDispatcher<{
@@ -58,53 +48,76 @@
     share: void;
   }>();
 
+  const fieldId = nextId('tag-rename');
+  const errorId = `${fieldId}-error`;
+
+  $: canMutate = tag.can_write;
+  $: canShare = tag.can_write && tag.ownership !== 'system';
+  $: showPromote = canPromote && tag.ownership === 'mine';
+  $: renaming = busy === 'rename';
+  $: moreFiles = Math.max(0, fileTotal - files.length);
+
   let editing = false;
-  let editName = tag.name;
-  /** Set when the typed name is one the server would refuse as empty. */
-  let nameError = '';
-  /**
-   * The name the last rename sent. A merge warning describes that target, so
-   * confirming it must merge into this name, not into later typing.
-   */
-  let submittedName = '';
+  let draft = '';
+  let nameError: string | null = null;
+  /** The name the last `rename` carried: what a merge warning describes. */
+  let submittedName: string | null = null;
+  let field: HTMLInputElement | undefined;
 
-  // The coordinator reuses this component across single selections, so an open
-  // edit has to be dropped when the tag changes, or the first tag's typing
-  // would rename the second.
-  let shownUuid = tag.uuid;
-  function dropEditOnTagChange(uuid: string) {
-    if (uuid === shownUuid) return;
-    shownUuid = uuid;
-    editing = false;
-    nameError = '';
-    submittedName = '';
+  // The coordinator reuses this component across single selections, so typing
+  // for one tag must never survive into another and rename it.
+  let trackedUuid: string | null = null;
+  $: followTag(tag.uuid);
+
+  $: if (!editing) draft = tag.name;
+
+  // The modal closes itself on confirm and cancel, so its open flag is owned
+  // here and re-derived from each new preview; a one-way prop would stay true
+  // and never reopen after a Cancel.
+  let deleteOpen: boolean;
+  $: deleteOpen = deletePreview !== null;
+
+  function followTag(uuid: string) {
+    if (trackedUuid !== null && uuid !== trackedUuid) resetEditor();
+    trackedUuid = uuid;
   }
-  $: dropEditOnTagChange(tag.uuid);
 
-  // Mirrors GroupDetailPanel: while not editing, the field tracks the tag.
-  $: if (!editing) editName = tag.name;
+  function resetEditor() {
+    editing = false;
+    draft = tag.name;
+    nameError = null;
+    submittedName = null;
+  }
 
-  function startEdit() {
-    editName = tag.name;
+  async function startEditing() {
     editing = true;
+    draft = tag.name;
+    nameError = null;
+    await tick();
+    field?.focus();
+    field?.select();
   }
 
-  function cancelEdit() {
-    editing = false;
-    editName = tag.name;
-    nameError = '';
-    submittedName = '';
+  function cancelEditing() {
+    const warningUp = renameMergeImpact !== null;
+    resetEditor();
+    if (warningUp) dispatch('cancelRenameMerge');
+  }
+
+  function handleInput(event: Event) {
+    draft = clampTagNameInput(event);
+    nameError = null;
+    // The warning described the submitted name, not this new text.
     if (renameMergeImpact) dispatch('cancelRenameMerge');
   }
 
   function submitRename() {
-    const name = editName.trim();
+    if (renaming || renameMergeImpact) return;
+    const name = draft.trim();
     if (!name || name === tag.name) {
-      cancelEdit();
+      resetEditor();
       return;
     }
-    // `---` is not blank but normalizes to nothing, which the server answers
-    // with a 422 the coordinator could only report as a generic failure.
     if (!normalizeTagName(name)) {
       nameError = $t('tags.nameRequired');
       return;
@@ -113,88 +126,71 @@
     dispatch('rename', { name });
   }
 
-  function confirmRenameMerge() {
-    if (submittedName) dispatch('confirmRenameMerge', { name: submittedName });
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      submitRename();
+    } else if (event.key === 'Escape') {
+      // Escape here leaves the editor, not the dialog around the manager.
+      event.preventDefault();
+      event.stopPropagation();
+      cancelEditing();
+    }
   }
 
-  /**
-   * Cancelling the merge returns to the editable field with the typed name
-   * intact — a near miss must not cost the user their typing.
-   */
-  function cancelRenameMerge() {
-    dispatch('cancelRenameMerge');
+  function confirmMerge() {
+    if (renaming || !submittedName) return;
+    dispatch('confirmRenameMerge', { name: submittedName });
   }
 
-  function onNameInput(event: Event) {
-    editName = clampTagNameInput(event);
-    nameError = '';
-    // The warning previewed the merge for the submitted name; typing makes it
-    // describe a target that is no longer the one in the field.
-    if (renameMergeImpact) dispatch('cancelRenameMerge');
-  }
-
-  function onNameKeydown(event: KeyboardEvent) {
-    if (event.key === 'Enter') submitRename();
-    else if (event.key === 'Escape') cancelEdit();
-  }
-
-  // The modal closes itself on confirm/cancel, which a prop derived from
-  // `deletePreview` would not survive: the next preview computes the same `true`
-  // and never reopens it. Own the open state here and reopen it per preview.
-  let deleteOpen: boolean;
-  $: deleteOpen = deletePreview !== null;
-
-  function confirmDelete() {
-    if (busy !== null) return;
+  function handleConfirmDelete() {
+    if (busy) return;
     dispatch('confirmDelete');
   }
 </script>
 
 <div class="tag-detail">
-  <header class="detail-head">
+  <header class="detail-header">
     {#if editing}
-      <div class="edit-inline">
-        <label class="edit-label" for="tag-rename-input">
-          {$t('tags.manager.detail.renameLabel')}
-        </label>
-        <input
-          id="tag-rename-input"
-          type="text"
-          class="edit-input"
-          value={editName}
-          aria-invalid={nameError !== ''}
-          aria-describedby={nameError ? 'tag-rename-error' : undefined}
-          disabled={busy === 'rename'}
-          on:input={onNameInput}
-          on:keydown={onNameKeydown}
-        />
-        {#if nameError}
-          <p id="tag-rename-error" class="edit-error" role="alert">{nameError}</p>
-        {/if}
-        <div class="edit-actions">
+      <div class="rename-editor">
+        <label class="rename-label" for={fieldId}>{$t('tags.manager.detail.renameLabel')}</label>
+        <div class="rename-row">
+          <input
+            bind:this={field}
+            id={fieldId}
+            type="text"
+            value={draft}
+            disabled={renaming}
+            aria-invalid={nameError ? 'true' : undefined}
+            aria-describedby={nameError ? errorId : undefined}
+            on:input={handleInput}
+            on:keydown={handleKeydown}
+          />
           <button
             type="button"
             class="btn btn-primary"
+            disabled={renaming || renameMergeImpact !== null}
             on:click={submitRename}
-            disabled={busy === 'rename' || renameMergeImpact !== null}
           >
-            {busy === 'rename'
-              ? $t('tags.manager.detail.renaming')
-              : $t('tags.manager.detail.rename')}
+            {renaming ? $t('tags.manager.detail.renaming') : $t('tags.manager.detail.rename')}
           </button>
-          <button type="button" class="btn btn-ghost" on:click={cancelEdit}>
+          <button type="button" class="btn btn-secondary" on:click={cancelEditing}>
             {$t('tags.manager.action.cancel')}
           </button>
         </div>
+        {#if nameError}
+          <p id={errorId} class="field-error" role="alert">{nameError}</p>
+        {/if}
       </div>
     {:else}
-      <h2 class="detail-name">{tag.name}</h2>
+      <h2 class="tag-title">{tag.name}</h2>
       {#if canMutate}
         <button
           type="button"
-          class="btn btn-ghost"
-          on:click={startEdit}
+          class="btn btn-secondary btn-small"
           title={$t('tags.manager.detail.renameTooltip')}
+          disabled={busy !== null}
+          on:click={startEditing}
         >
           {$t('tags.manager.detail.rename')}
         </button>
@@ -203,76 +199,74 @@
   </header>
 
   {#if renameMergeImpact}
-    <section class="panel panel-warning">
-      <h3 class="panel-title">{$t('tags.manager.detail.mergeOnRenameTitle')}</h3>
-      <p class="panel-text">{$t('tags.manager.detail.mergeOnRenameDescription')}</p>
-      <ul class="impact-list">
-        <li>
+    <section class="merge-warning">
+      <h3>{$t('tags.manager.detail.mergeOnRenameTitle')}</h3>
+      <p>{$t('tags.manager.detail.mergeOnRenameDescription')}</p>
+      <div class="impact-counts">
+        <span>
           {$t('tags.manager.impact.accessible', {
             count: renameMergeImpact.accessible_file_count,
           })}
-        </li>
-        <li class="impact-total">
+        </span>
+        <span>
           {$t('tags.manager.impact.total', { count: renameMergeImpact.total_file_count })}
-        </li>
-      </ul>
-      <p class="panel-note">
+        </span>
+      </div>
+      <p class="impact-note">
         {$t('tags.manager.impact.totalNote', { count: renameMergeImpact.total_file_count })}
       </p>
-      <div class="panel-actions">
-        <button
-          type="button"
-          class="btn btn-danger"
-          on:click={confirmRenameMerge}
-          disabled={busy === 'rename'}
-        >
-          {busy === 'rename'
+      <div class="warning-actions">
+        <button type="button" class="btn btn-danger" disabled={renaming} on:click={confirmMerge}>
+          {renaming
             ? $t('tags.manager.action.merging')
             : $t('tags.manager.detail.confirmMergeRename')}
         </button>
-        <button type="button" class="btn btn-ghost" on:click={cancelRenameMerge}>
+        <button
+          type="button"
+          class="btn btn-secondary"
+          on:click={() => dispatch('cancelRenameMerge')}
+        >
           {$t('tags.manager.detail.keepEditing')}
         </button>
       </div>
     </section>
   {/if}
 
-  <dl class="detail-facts">
+  <div class="facts">
     <div class="fact">
-      <dt>{$t('tags.manager.detail.usageLabel')}</dt>
-      <dd>{$t('tags.manager.usage', { count: tag.usage_count })}</dd>
+      <span class="fact-label">{$t('tags.manager.detail.usageLabel')}</span>
+      <span class="fact-value">{$t('tags.manager.usage', { count: tag.usage_count })}</span>
     </div>
     <div class="fact">
-      <dt>{$t('tags.manager.detail.originLabel')}</dt>
-      <dd>{$t(tagOriginKey(tag.source))}</dd>
+      <span class="fact-label">{$t('tags.manager.detail.originLabel')}</span>
+      <span class="fact-value">{$t(tagOriginKey(tag.source))}</span>
     </div>
-  </dl>
-
+  </div>
 
   {#if tag.ownership === 'system'}
-    <div class="review-flag">
+    <p class="ownership-note">
       <Badge variant="info">{$t('tags.manager.sharedBadge')}</Badge>
-      <span class="panel-note">{$t('tags.manager.detail.sharedHint')}</span>
-    </div>
+      <span>{$t('tags.manager.detail.sharedHint')}</span>
+    </p>
   {:else if tag.ownership === 'shared_with_me'}
-    <div class="review-flag">
+    <p class="ownership-note">
       <Badge variant="default">{$t('tags.manager.sharedWithMeBadge')}</Badge>
-      <span class="panel-note">{$t('tags.manager.detail.sharedWithMeHint')}</span>
-    </div>
+      <span>{$t('tags.manager.detail.sharedWithMeHint')}</span>
+    </p>
   {/if}
 
-  <section class="touches">
-    <h3 class="touches-title">{$t('tags.manager.detail.filesTitle')}</h3>
+  <section class="files">
+    <h3 class="section-title">{$t('tags.manager.detail.filesTitle')}</h3>
     {#if filesLoading}
-      <div class="touches-loading"><Spinner size="small" /></div>
+      <div class="files-loading"><Spinner size="small" /></div>
     {:else if files.length === 0}
-      <p class="panel-note">{$t('tags.manager.detail.noFiles')}</p>
+      <p class="muted">{$t('tags.manager.detail.noFiles')}</p>
     {:else}
       <ul class="touches-list">
         {#each files as file (file.uuid)}
           <li>
             <a class="touches-link" href={`/files/${file.uuid}`} title={file.display_title}>
-              <span class="touches-name">{file.display_title}</span>
+              <span class="touches-title">{file.display_title}</span>
               {#if file.formatted_duration}
                 <span class="touches-meta">{file.formatted_duration}</span>
               {/if}
@@ -280,33 +274,38 @@
           </li>
         {/each}
       </ul>
-      {#if hiddenFileCount > 0}
-        <p class="panel-note">
-          {$t('tags.manager.detail.moreFiles', { count: hiddenFileCount })}
-        </p>
+      {#if moreFiles > 0}
+        <p class="muted">{$t('tags.manager.detail.moreFiles', { count: moreFiles })}</p>
       {/if}
     {/if}
   </section>
 
-  <div class="detail-actions">
-    {#if tag.can_write && tag.ownership !== 'system'}
+  {#if previewLoading}
+    <div class="preview-loading">
+      <Spinner size="small" />
+      <span>{$t('tags.manager.impact.loading')}</span>
+    </div>
+  {/if}
+
+  <div class="actions">
+    {#if canShare}
       <button
         type="button"
-        class="btn btn-ghost"
-        on:click={() => dispatch('share')}
-        disabled={busy !== null}
+        class="btn btn-secondary"
         title={$t('tags.manager.share.buttonTooltip')}
+        disabled={busy !== null}
+        on:click={() => dispatch('share')}
       >
         {$t('tags.manager.share.button')}
       </button>
     {/if}
-    {#if canPromote && tag.ownership === 'mine'}
+    {#if showPromote}
       <button
         type="button"
-        class="btn btn-ghost"
-        on:click={() => dispatch('promote')}
-        disabled={busy !== null}
+        class="btn btn-secondary"
         title={$t('tags.manager.promote.description')}
+        disabled={busy !== null}
+        on:click={() => dispatch('promote')}
       >
         {busy === 'promote'
           ? $t('tags.manager.action.promoting')
@@ -316,138 +315,211 @@
     {#if canMutate}
       <button
         type="button"
-        class="btn btn-danger-outline"
-        on:click={() => dispatch('previewDelete')}
-        disabled={busy !== null}
+        class="btn danger-outline"
         title={$t('tags.manager.detail.deleteTooltip')}
+        disabled={busy !== null}
+        on:click={() => dispatch('previewDelete')}
       >
         {$t('tags.manager.action.delete')}
       </button>
     {/if}
   </div>
-
-  {#if previewLoading}
-    <div class="preview-loading">
-      <Spinner size="small" />
-      <span>{$t('tags.manager.impact.loading')}</span>
-    </div>
-  {/if}
-
-  <!-- Deletes go through the app's shared confirmation dialog, the same one
-       CollectionsPanel uses, so a destructive tag action looks and behaves
-       like every other destructive action in the app. The impact numbers ride
-       in the message: an accessible-only count would understate a shared
-       tag's blast radius. -->
-  <ConfirmationModal
-    bind:isOpen={deleteOpen}
-    title={$t('tags.manager.impact.title')}
-    message={deletePreview
-      ? $t('tags.manager.impact.deleteMessage', {
-          name: tag.name,
-          accessible: deletePreview.accessible_file_count,
-          total: deletePreview.total_file_count,
-        })
-      : ''}
-    confirmText={busy === 'delete'
-      ? $t('tags.manager.action.deleting')
-      : $t('tags.manager.action.delete')}
-    cancelText={$t('tags.manager.action.cancel')}
-    confirmButtonClass="modal-delete-button"
-    cancelButtonClass="modal-cancel-button"
-    on:confirm={confirmDelete}
-    on:cancel={() => dispatch('cancelDelete')}
-  />
-
 </div>
+
+<ConfirmationModal
+  bind:isOpen={deleteOpen}
+  title={$t('tags.manager.impact.title')}
+  message={deletePreview
+    ? $t('tags.manager.impact.deleteMessage', {
+        name: tag.name,
+        accessible: deletePreview.accessible_file_count,
+        total: deletePreview.total_file_count,
+      })
+    : ''}
+  confirmText={busy === 'delete'
+    ? $t('tags.manager.action.deleting')
+    : $t('tags.manager.action.delete')}
+  cancelText={$t('tags.manager.action.cancel')}
+  confirmButtonClass="modal-delete-button"
+  cancelButtonClass="modal-cancel-button"
+  on:confirm={handleConfirmDelete}
+  on:cancel={() => dispatch('cancelDelete')}
+  on:close={() => dispatch('cancelDelete')}
+/>
 
 <style>
   .tag-detail {
     display: flex;
     flex-direction: column;
-    gap: 14px;
-  }
-
-  .detail-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
-  .detail-name {
-    margin: 0;
-    font-size: 20px;
-    font-weight: 600;
+    gap: var(--space-4);
     color: var(--text-color);
-    word-break: break-word;
   }
 
-  .edit-inline {
+  .detail-header {
     display: flex;
-    flex-direction: column;
-    gap: 8px;
-    width: 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
   }
 
-  .edit-label {
-    font-size: 12px;
-    font-weight: 600;
+  .tag-title {
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    overflow-wrap: anywhere;
+  }
+
+  .rename-editor {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .rename-label,
+  .fact-label {
+    font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
 
-  .edit-input {
-    width: 100%;
-    box-sizing: border-box;
-  }
-
-  .edit-error {
-    margin: 0;
-    font-size: var(--font-size-xs);
-    color: var(--error-color);
-  }
-
-  .edit-actions,
-  .panel-actions,
-  .touches {
+  .rename-row {
     display: flex;
-    flex-direction: column;
-    gap: 6px;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .rename-row input {
+    flex: 1 1 12rem;
     min-width: 0;
   }
 
-  .touches-title {
+  .field-error {
     margin: 0;
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-sm);
+    color: var(--error-text);
+  }
+
+  .merge-warning {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid var(--warning-border);
+    border-radius: var(--radius-lg);
+    background-color: var(--warning-bg);
+  }
+
+  .merge-warning h3,
+  .merge-warning p {
+    margin: 0;
+  }
+
+  .merge-warning h3 {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    color: var(--warning-text);
+  }
+
+  .impact-counts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
     font-weight: var(--font-weight-medium);
+  }
+
+  .impact-note,
+  .muted {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+  }
+
+  .warning-actions,
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-6);
+  }
+
+  .fact {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-0-5);
+  }
+
+  .fact-value {
+    font-size: var(--font-size-md);
+  }
+
+  .ownership-note {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+  }
+
+  .files {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .section-title {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-secondary);
+  }
+
+  .files-loading,
+  .preview-loading {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
   .touches-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-0-5);
     margin: 0;
     padding: 0;
     list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
   }
 
   .touches-link {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: 8px;
-    padding: 4px 6px;
-    border-radius: 4px;
+    gap: var(--space-3);
+    padding: var(--space-1-5) var(--space-2);
+    border-radius: var(--radius-md);
     color: var(--text-color);
     text-decoration: none;
-    font-size: 13px;
   }
 
   .touches-link:hover {
-    background: var(--hover-color, rgba(127, 127, 127, 0.12));
+    background-color: var(--hover-color);
   }
 
-  .touches-name {
+  .touches-link:focus-visible {
+    outline: 2px solid var(--focus-ring-color);
+    outline-offset: 1px;
+  }
+
+  .touches-title {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -455,153 +527,17 @@
 
   .touches-meta {
     flex-shrink: 0;
-    font-size: 11px;
-    color: var(--text-secondary);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .touches-loading {
-    padding: 4px 0;
-  }
-
-  .detail-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .detail-facts {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 20px;
-    margin: 0;
-  }
-
-  .fact dt {
     font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
 
-  .fact dd {
-    margin: 2px 0 0;
-    font-size: 14px;
-    color: var(--text-color);
+  .danger-outline {
+    border: 1px solid var(--error-border);
+    background-color: transparent;
+    color: var(--error-text);
   }
 
-  .review-flag {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .panel {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 12px 14px;
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    background: var(--surface-color);
-  }
-
-
-  .panel-warning {
-    border-color: var(--warning-color, #d97706);
-    background: rgba(var(--warning-color-rgb, 245, 158, 11), 0.08);
-  }
-
-  .panel-title {
-    margin: 0;
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text-color);
-  }
-
-  .panel-text {
-    margin: 0;
-    font-size: 13px;
-    color: var(--text-color);
-  }
-
-  .panel-note {
-    margin: 0;
-    font-size: 12px;
-    color: var(--text-secondary);
-  }
-
-  .impact-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-size: 13px;
-    color: var(--text-color);
-  }
-
-  .impact-total {
-    font-weight: 600;
-  }
-
-  .preview-loading {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 13px;
-    color: var(--text-secondary);
-  }
-
-  .btn {
-    padding: 7px 14px;
-    border-radius: 8px;
-    border: 1px solid transparent;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    box-shadow: none;
-  }
-
-  .btn:hover:not(:disabled) {
-    transform: none;
-    box-shadow: none;
-  }
-
-  .btn:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-  }
-
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn-primary {
-    background: var(--primary-color);
-    color: #fff;
-  }
-
-  .btn-ghost {
-    background: transparent;
-    border-color: var(--border-color);
-    color: var(--text-color);
-  }
-
-  .btn-ghost:hover:not(:disabled) {
-    background: var(--button-hover);
-  }
-
-  .btn-danger {
-    background: var(--error-color, #dc2626);
-    color: #fff;
-  }
-
-  .btn-danger-outline {
-    background: transparent;
-    border-color: var(--error-color, #dc2626);
-    color: var(--error-color, #dc2626);
+  .danger-outline:hover:not(:disabled) {
+    background-color: rgba(var(--error-color-rgb), 0.08);
   }
 </style>

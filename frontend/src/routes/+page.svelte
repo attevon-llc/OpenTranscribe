@@ -48,9 +48,9 @@
     message: confirmMessage,
   } = confirmDialog;
 
-  // Bulk tag modal state
   let showBulkTagModal = false;
   let bulkTagAction: BulkTagAction = 'add_tag';
+
   let showQuarantineModal = false;
   let quarantineTargetFiles: MediaFile[] = [];
 
@@ -749,8 +749,6 @@
   // is not possible from here. BulkTagModal's documented fallback — offer every
   // tag — is the behavior, and reading `f.tags` only ever produced an empty list
   // while reading as though it did something.
-  $: bulkTagFileUuids = Array.from(selectedFiles);
-
   function openBulkTagModal(action: BulkTagAction) {
     if ($galleryState.selectedFiles.size === 0) return;
     bulkTagAction = action;
@@ -777,15 +775,13 @@
     files = files.map((f) => (changed.has(f.uuid) ? { ...f, is_quarantined: true } : f));
   }
 
+  // Rows carry no tags, so only an active tag filter can change; a refetch resets pagination.
   function handleBulkTagApplied(event: CustomEvent<{ changed: number }>) {
-    // Nothing the gallery renders depends on tags, so a re-query is only owed
-    // when a tag filter is active — files can enter or leave that filtered set.
-    // Refetching unconditionally would reset pagination and lose the user's
-    // scroll position for no visible gain.
     if (event.detail.changed > 0 && selectedTags.length > 0) {
       throttledRefresh('bulk-tag', 300);
     }
   }
+
 
   // Bulk summarize selected files
   async function bulkSummarize() {
@@ -1387,6 +1383,7 @@
       openBulkTagModal('add_tag');
     });
 
+
     // One Tags button, two modes — the same contract CollectionsPanel uses:
     // a selection means "apply to these", no selection means "manage the
     // library". Keeping it on one control avoids a second entry point that
@@ -1402,6 +1399,7 @@
     const unsubscribeRemoveTags = galleryStore.onRemoveTagsTrigger(() => {
       openBulkTagModal('remove_tag');
     });
+
 
     const unsubscribeQuarantine = galleryStore.onQuarantineTrigger(() => {
       openQuarantineModal();
@@ -1608,14 +1606,15 @@
   on:close={confirmDialog.cancel}
 />
 
-<!-- Bulk Tag Modal -->
+<!-- Add or remove one tag across the selection; a Set iterates in the order files were picked -->
 <BulkTagModal
   isOpen={showBulkTagModal}
   action={bulkTagAction}
-  fileUuids={bulkTagFileUuids}
+  fileUuids={Array.from($galleryState.selectedFiles)}
   on:applied={handleBulkTagApplied}
   on:close={() => (showBulkTagModal = false)}
 />
+
 
 <!-- Quarantine (takedown) Modal — admin-only (issue #576) -->
 <QuarantineModal

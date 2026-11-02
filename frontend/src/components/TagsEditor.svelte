@@ -1,441 +1,310 @@
 <script lang="ts">
+  /**
+   * The file detail page's tag editor: the file's tags as removable chips, a
+   * free-text field, the most used library tags, the full library, and AI
+   * suggestions.
+   *
+   * The server decides which row a typed name becomes. Before asking it, the
+   * editor checks only whether the name already resolves to a library tag and,
+   * if not, whether it is a near match of one; a near match is put to the user
+   * as a question and never substituted silently. Nothing is optimistic: only
+   * the tag the server returned is appended.
+   */
   import { createEventDispatcher, onMount } from 'svelte';
-  import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
-  import { getErrorStatus, getErrorCode, getErrorMessage } from '$lib/utils/apiError';
+  import { toastStore } from '$stores/toast';
   import { addTagToFile, listTags, removeTagFromFile } from '$lib/api/tags';
+  import { getErrorCode, getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
   import {
     clampTagNameInput,
     cleanTagName,
     findSimilarTagName,
     normalizeTagName,
   } from '$lib/utils/tagName';
+  import type { Tag, TagWithCount } from '$lib/types/tag';
   import AISuggestionsDropdown from './AISuggestionsDropdown.svelte';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
 
-  import type { Tag, TagWithCount } from '$lib/types/tag';
-
   type AISuggestion = { name: string; confidence: number; rationale?: string };
 
-  export let fileId = "";
+  /** The file uuid. */
+  export let fileId = '';
   export let tags: Tag[] = [];
   export let aiSuggestions: AISuggestion[] = [];
 
-  // Duplicate filtering matches the backend's normalization, not exact
-  // lowercase: hyphens, underscores, and whitespace runs collapse too, so a
-  // suggestion for `Q3-Review` resolves onto a `q3 review` already on the file.
-  // Lowercase alone would still offer it, and the click would be swallowed by
-  // the "already present" guard with no feedback at all.
-  $: appliedNormalizedNames = new Set(tags.map(tag => normalizeTagName(tag.name)));
-
-  $: filteredAISuggestions = aiSuggestions.filter(suggestion =>
-    !appliedNormalizedNames.has(normalizeTagName(suggestion.name))
-  );
-
-  $: autoAppliedTagNames = tags
-    .filter(tag => tag.source === 'auto_ai')
-    .map(tag => tag.name);
-
-  let allTags: TagWithCount[] = [];
-  let newTagInput = '';
-  let loading = false;
-
-  /**
-   * Which tag the last applied name actually became, when it was not the name
-   * that was typed. Mirrored into an `aria-live` region beside the toast.
-   */
-  let resolvedNotice = '';
-
-  /**
-   * A near match waiting on the user. Never applied on its own (R18): at the
-   * backend's 0.85 threshold `q3-earnings` and `q4-earnings` score 0.909, and
-   * nothing in the product can split two tags back apart afterwards.
-   */
-  let nearMatch: { typed: string; name: string; suggestion?: AISuggestion } | null = null;
-
-  // Event dispatcher
   const dispatch = createEventDispatcher<{
     tagsUpdated: { tags: Tag[] };
     aiSuggestionAccepted: { suggestion: AISuggestion };
   }>();
 
-  // Fetch all available tags
-  async function fetchAllTags() {
-    try {
-      const fetched = await listTags();
+  const SUGGESTED_COUNT = 5;
 
-      // Ensure all tags have valid IDs before adding them to the allTags array
-      allTags = (fetched || []).filter(
-        (tag) => tag && typeof tag === 'object' && !!tag.uuid && !!tag.name
-      );
-    } catch (err: unknown) {
-      console.error('[TagsEditor] Error fetching tags:', err);
-      const status = getErrorStatus(err);
-      if (status === 401) {
-        toastStore.error($t('tags.unauthorizedLogin'));
-      } else if (getErrorCode(err) === 'ERR_NETWORK') {
-        toastStore.error($t('tags.networkError'));
-      } else {
-        toastStore.error($t('tags.failedToLoad'));
-      }
+  let library: TagWithCount[] = [];
+  let input = '';
+  let busy = false;
+  let notice = '';
+  /** A typed name that resembles a library tag, waiting for the user's choice. */
+  let nearMatch: { typed: string; name: string; suggestion: AISuggestion | null } | null = null;
+
+  $: fileNames = new Set(tags.map((tag) => normalizeTagName(tag.name)));
+  $: fileUuids = new Set(tags.map((tag) => tag.uuid));
+  $: offeredAi = aiSuggestions.filter(
+    (suggestion) => !fileNames.has(normalizeTagName(suggestion.name))
+  );
+  $: offeredAiNames = new Set(offeredAi.map((suggestion) => normalizeTagName(suggestion.name)));
+  $: offerable = library.filter((tag) => {
+    const key = normalizeTagName(tag.name);
+    return !fileUuids.has(tag.uuid) && !fileNames.has(key) && !offeredAiNames.has(key);
+  });
+  $: suggested = [...offerable]
+    .sort((a, b) => b.usage_count - a.usage_count)
+    .slice(0, SUGGESTED_COUNT);
+  $: dropdownOptions = offerable.map((tag) => ({
+    id: tag.uuid,
+    name: tag.name,
+    count: tag.usage_count,
+  }));
+  $: autoAppliedTags = tags.filter((tag) => tag.source === 'auto_ai').map((tag) => tag.name);
+  $: trimmedInput = input.trim();
+
+  onMount(() => {
+    void loadLibrary();
+  });
+
+  async function loadLibrary() {
+    try {
+      const rows: (TagWithCount | null)[] = await listTags();
+      library = rows.filter((row): row is TagWithCount => !!row && !!row.uuid && !!row.name);
+    } catch (error: unknown) {
+      console.error('[TagsEditor] Failed to load tags:', error);
+      if (getErrorStatus(error) === 401) toastStore.error($t('tags.unauthorizedLogin'));
+      else if (getErrorCode(error) === 'ERR_NETWORK') toastStore.error($t('tags.networkError'));
+      else toastStore.error($t('tags.failedToLoad'));
     }
   }
 
-  // Add a tag to the file
-  async function addTag(tagId: string) {
-    // The notice describes one applied name; another action makes it stale.
-    resolvedNotice = '';
-    loading = true;
-    try {
-      // Adding tag to file
+  /** Sets the polite live region and mirrors it as an info toast; empty text shows nothing. */
+  function announce(text: string) {
+    notice = text;
+    if (text) toastStore.info(text);
+  }
 
-      // Get the tag name by ID and send tag_data with name field as required by backend
-      const tagToAdd = allTags.find(t => t.uuid === tagId);
-      if (!tagToAdd) {
-        console.error(`[TagsEditor] Tag with ID ${tagId} not found in allTags`);
-        throw new Error('Tag not found');
-      }
+  function addToFile(tag: Tag) {
+    tags = [...tags, tag];
+    dispatch('tagsUpdated', { tags });
+  }
 
-      // Use the response from add_tag_to_file as the final tag object
-      const finalTag = await addTagToFile(fileId, tagToAdd.name);
-
-      // Ensure the tag has a valid UUID and name
-      if (!finalTag || !finalTag.uuid || !finalTag.name) {
-        console.error('[TagsEditor] Invalid tag received from server:', finalTag);
-        throw new Error('Server returned an invalid tag');
-      }
-
-      // Only add the tag if it's not already present
-      if (!tags.some(t => t.uuid === finalTag.uuid)) {
-        tags = [...tags, finalTag];
-        dispatch('tagsUpdated', { tags });
-      }
-    } catch (err: unknown) {
-      if (getErrorStatus(err) === 401) {
-        toastStore.error($t('tags.unauthorizedLogin'));
-      } else {
-        toastStore.error($t('tags.failedToAdd'));
-      }
-      console.error('[TagsEditor] Error adding tag:', err);
-    } finally {
-      loading = false;
+  function rememberInLibrary(tag: Tag) {
+    if (!library.some((row) => row.uuid === tag.uuid)) {
+      library = [...library, { ...tag, usage_count: 0 }];
     }
   }
 
-  /** Announce a resolved name through the toast store and the live region. */
-  function announce(message: string) {
-    resolvedNotice = message;
-    if (message) toastStore.info(message);
-  }
-
-  /**
-   * Apply one name to the file and report which tag it actually became.
-   *
-   * The server is the authority on resolution: `POST /files/{uuid}/tags`
-   * resolves the supplied name by normalized-exact match and returns the tag it
-   * landed on, so typing `Interview` comes back as the existing `interview`.
-   * That name is compared against what was typed and announced rather than
-   * applied silently (R2) — the editor never decides which row a name is.
-   *
-   * @param name - The name to send. Either what the user typed, or the name of
-   *   a near match they accepted.
-   * @param typed - What the user actually typed, for the announcement.
-   * @returns Whether the file now carries the tag.
-   */
-  async function applyTagName(name: string, typed: string): Promise<boolean> {
-    loading = true;
-    try {
-      const finalTag = await addTagToFile(fileId, name);
-      if (!finalTag || !finalTag.uuid || !finalTag.name) {
-        console.error('[TagsEditor] Invalid tag received after adding to file:', finalTag);
-        throw new Error('Server returned an invalid tag after adding to file');
-      }
-
-      if (!allTags.some(t => t.uuid === finalTag.uuid)) {
-        // `addTagToFile` returns the bare `Tag` shape — the attach endpoint has
-        // no count to report. The placeholder counts are never rendered: the
-        // tag is on the file now, so `availableTags` filters it out of both the
-        // suggestion chips and the dropdown, which are the only readers of
-        // these two fields. A real count arrives with the next `listTags()`.
-        allTags = [...allTags, { ...finalTag, usage_count: 0 }];
-      }
-
-      if (tags.some(t => t.uuid === finalTag.uuid)) {
-        // The name resolved onto a tag the file already carries. That is a
-        // successful no-op, but it must not be a silent one — name the tag that
-        // absorbed it, or the click looks broken.
-        announce($t('tags.alreadyOnFile', { name: finalTag.name }));
-      } else {
-        tags = [...tags, finalTag];
-        dispatch('tagsUpdated', { tags });
-        announce(
-          finalTag.name === typed ? '' : $t('tags.resolvedTo', { name: finalTag.name, typed })
-        );
-      }
-      newTagInput = '';
-      return true;
-    } catch (err: unknown) {
-      if (getErrorStatus(err) === 401) {
-        toastStore.error($t('tags.unauthorizedLogin'));
-      } else {
-        const detail = serverDetailText(err);
-        toastStore.error(
-          detail ? $t('tags.failedToCreateWithDetail', { detail }) : $t('tags.failedToCreate')
-        );
-      }
-      console.error('[TagsEditor] Error creating tag:', err);
-      return false;
-    } finally {
-      loading = false;
-    }
-  }
-
-  /**
-   * The server's `detail` as readable text, or `''` when it sent none. A 422
-   * carries a list of validation objects, which interpolated raw would read
-   * "[object Object]"; `getErrorMessage` already knows every detail shape.
-   * Only the detail is passed on, so axios' own "Request failed…" never shows.
-   */
-  function serverDetailText(err: unknown): string {
-    const detail = (err as { response?: { data?: { detail?: unknown } } } | null)?.response?.data
+  /** The server's `detail`, rendered as `getErrorMessage` renders it, ignoring axios' own text. */
+  function detailText(error: unknown): string {
+    const detail = (error as { response?: { data?: { detail?: unknown } } } | null)?.response?.data
       ?.detail;
     if (detail === undefined || detail === null) return '';
     return getErrorMessage({ response: { data: { detail } } }, '');
   }
 
-  /**
-   * Decide what the typed name may do before anything is sent.
-   *
-   * A normalized-exact hit (or no match at all) goes straight to the server,
-   * which resolves it. A name that only *nearly* matches an existing tag is
-   * offered instead of applied — accepting it is the user's call, and declining
-   * creates the tag they actually typed (R18).
-   *
-   * @param suggestion - The AI suggestion this name came from, if any; it is
-   *   reported as accepted only once its tag is actually applied.
-   * @returns Whether the name was applied now (false while a near match waits).
-   */
-  async function submitTypedName(suggestion?: AISuggestion): Promise<boolean> {
-    if (loading) return false;
+  /** Attaches `name`; resolves true when the tag is (now or already) on the file. */
+  async function apply(name: string, typed: string): Promise<boolean> {
+    busy = true;
+    try {
+      const tag: Tag | null = await addTagToFile(fileId, name);
+      if (!tag || !tag.uuid || !tag.name) throw new Error('tag response without uuid or name');
+      rememberInLibrary(tag);
+      if (tags.some((existing) => existing.uuid === tag.uuid)) {
+        announce($t('tags.alreadyOnFile', { name: tag.name }));
+      } else {
+        addToFile(tag);
+        announce(tag.name !== typed ? $t('tags.resolvedTo', { name: tag.name, typed }) : '');
+      }
+      input = '';
+      return true;
+    } catch (error: unknown) {
+      console.error('[TagsEditor] Failed to add tag:', error);
+      const detail = detailText(error);
+      if (getErrorStatus(error) === 401) toastStore.error($t('tags.unauthorizedLogin'));
+      else if (detail) toastStore.error($t('tags.failedToCreateWithDetail', { detail }));
+      else toastStore.error($t('tags.failedToCreate'));
+      return false;
+    } finally {
+      busy = false;
+    }
+  }
 
-    // Mirror the server's own rule rather than inventing a client allowlist:
-    // it clamps to the stored column width and rejects a name that is empty
-    // once normalized.
-    const cleaned = cleanTagName(newTagInput);
+  /**
+   * Submits the typed name. Resolves true only when the name was applied now;
+   * a near-match question is not an application.
+   */
+  async function submitTyped(suggestion: AISuggestion | null = null): Promise<boolean> {
+    if (busy) return false;
+    const cleaned = cleanTagName(input);
     if (!normalizeTagName(cleaned)) {
       toastStore.error($t('tags.nameRequired'));
       return false;
     }
-
-    resolvedNotice = '';
+    notice = '';
     nearMatch = null;
-
-    const normalized = normalizeTagName(cleaned);
-    const resolvesExactly = allTags.some(tag => normalizeTagName(tag.name) === normalized);
-    if (!resolvesExactly) {
-      const similar = findSimilarTagName(cleaned, allTags.map(tag => tag.name));
+    const key = normalizeTagName(cleaned);
+    if (!library.some((tag) => normalizeTagName(tag.name) === key)) {
+      const similar = findSimilarTagName(
+        cleaned,
+        library.map((tag) => tag.name)
+      );
       if (similar) {
         nearMatch = { typed: cleaned, name: similar, suggestion };
         return false;
       }
     }
-
-    return applyTagName(cleaned, cleaned);
+    return apply(cleaned, cleaned);
   }
 
-  /** Report an AI suggestion as accepted, once the tag it led to is on the file. */
-  function reportSuggestion(suggestion: AISuggestion | undefined, applied: boolean) {
-    if (suggestion && applied) dispatch('aiSuggestionAccepted', { suggestion });
+  async function resolveNearMatch(useExisting: boolean) {
+    if (!nearMatch || busy) return;
+    const { typed, name, suggestion } = nearMatch;
+    const applied = await apply(useExisting ? name : typed, typed);
+    if (applied) {
+      nearMatch = null;
+      if (suggestion) dispatch('aiSuggestionAccepted', { suggestion });
+    }
   }
 
-  /** Take the offered near match: the existing tag is applied, and announced. */
-  async function acceptNearMatch() {
-    const pending = nearMatch;
-    if (!pending) return;
-    nearMatch = null;
-    reportSuggestion(pending.suggestion, await applyTagName(pending.name, pending.typed));
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    if (input.trim()) void submitTyped();
   }
 
-  /** Decline the offered near match: the typed name becomes its own tag. */
-  async function declineNearMatch() {
-    const pending = nearMatch;
-    if (!pending) return;
-    nearMatch = null;
-    reportSuggestion(pending.suggestion, await applyTagName(pending.typed, pending.typed));
-  }
-
-  // Remove a tag from the file
-  async function removeTag(tagId: string) {
-    resolvedNotice = '';
-    nearMatch = null;
-    loading = true;
+  async function addExisting(uuid: string) {
+    const tag = library.find((row) => row.uuid === uuid);
+    if (!tag || busy) return;
+    busy = true;
     try {
-      // Removing tag from file
-
-      // Find the tag by ID to get its name - the backend needs tag name, not ID
-      const tagToRemove = tags.find(t => t.uuid === tagId);
-      if (!tagToRemove) {
-        console.error(`[TagsEditor] Tag with ID ${tagId} not found in tags list`);
-        throw new Error('Tag not found');
-      }
-
-      await removeTagFromFile(fileId, tagToRemove.name);
-
-      // Update the local tags array
-      // Filter out the removed tag using a safe comparison
-      const updatedTags = tags.filter(t =>
-        t.uuid !== undefined && t.uuid !== null && t.uuid !== tagId
+      const added: Tag = await addTagToFile(fileId, tag.name);
+      if (!tags.some((existing) => existing.uuid === added.uuid)) addToFile(added);
+    } catch (error: unknown) {
+      console.error('[TagsEditor] Failed to add existing tag:', error);
+      toastStore.error(
+        getErrorStatus(error) === 401 ? $t('tags.unauthorizedLogin') : $t('tags.failedToAdd')
       );
+    } finally {
+      busy = false;
+    }
+  }
 
-      // Only update if something actually changed
-      if (updatedTags.length !== tags.length) {
-        tags = updatedTags;
+  async function removeTag(tag: Tag) {
+    if (busy) return;
+    notice = '';
+    nearMatch = null;
+    busy = true;
+    try {
+      await removeTagFromFile(fileId, tag.name);
+      const remaining = tags.filter((existing) => existing.uuid !== tag.uuid);
+      if (remaining.length !== tags.length) {
+        tags = remaining;
         dispatch('tagsUpdated', { tags });
       }
-    } catch (err: unknown) {
-      console.error('[TagsEditor] Error removing tag:', err);
-      if (getErrorStatus(err) === 401) {
-        toastStore.error($t('tags.unauthorizedLogin'));
-      } else if (getErrorCode(err) === 'ERR_NETWORK') {
-        toastStore.error($t('tags.networkError'));
-      } else {
-        toastStore.error($t('tags.failedToRemove'));
-      }
+    } catch (error: unknown) {
+      console.error('[TagsEditor] Failed to remove tag:', error);
+      if (getErrorStatus(error) === 401) toastStore.error($t('tags.unauthorizedLogin'));
+      else if (getErrorCode(error) === 'ERR_NETWORK') toastStore.error($t('tags.networkError'));
+      else toastStore.error($t('tags.failedToRemove'));
     } finally {
-      loading = false;
+      busy = false;
     }
   }
 
-  // Handle keydown event in the input field
-  function handleInputKeydown(event: KeyboardEvent) {
-    if (event.key === 'Enter' && newTagInput.trim()) {
-      event.preventDefault();
-      submitTypedName();
-    }
-  }
-
-  let suggestedTags: TagWithCount[] = [];
-  let dropdownTags: Array<{ id: string; name: string; count: number }> = []; // All available tags for dropdown
-
-  $: aiSuggestionNormalizedNames = new Set(
-    filteredAISuggestions.map(suggestion => normalizeTagName(suggestion.name))
-  );
-
-  // Everything offerable: neither already on the file nor already offered above
-  // as an AI suggestion. Both comparisons use the backend's normalization, so a
-  // tag that a name would merely resolve onto is treated as already applied.
-  $: availableTags = allTags.filter(tag => {
-    const normalized = normalizeTagName(tag.name);
-    if (tag.uuid && tags.some(t => t.uuid === tag.uuid)) return false;
-    if (appliedNormalizedNames.has(normalized)) return false;
-    return !aiSuggestionNormalizedNames.has(normalized);
-  });
-
-  // Get top 5 suggested tags as chips (most used)
-  $: suggestedTags = [...availableTags]
-    .sort((a, b) => (b.usage_count || 0) - (a.usage_count || 0)) // Sort by usage count
-    .slice(0, 5); // Top 5 most used
-
-  // Get all available tags for dropdown (excluding already assigned and AI suggestions)
-  $: dropdownTags = availableTags.map(tag => ({
-    id: tag.uuid,
-    name: tag.name,
-    count: tag.usage_count || 0
-  }));
-
-  // Handle multiselect tag selection
-  async function handleTagSelect(event: CustomEvent<{ id: string | number }>) {
-    const { id } = event.detail;
-    await addTag(String(id));
-  }
-
-  // Handle AI suggestion acceptance
-  async function handleAcceptAISuggestion(event: CustomEvent<{ suggestion: AISuggestion }>) {
+  async function acceptAiSuggestion(event: CustomEvent<{ suggestion: AISuggestion }>) {
     const { suggestion } = event.detail;
-    // A person accepted this name, so it takes the same path a typed name does:
-    // a near match is offered, never substituted (R18).
-    newTagInput = suggestion.name;
-    // Don't remove from aiSuggestions - let reactive filtering handle it
-    // This allows suggestions to reappear if the tag is later removed
-    reportSuggestion(suggestion, await submitTypedName(suggestion));
+    input = suggestion.name;
+    if (await submitTyped(suggestion)) dispatch('aiSuggestionAccepted', { suggestion });
   }
-
-  onMount(() => {
-    fetchAllTags();
-  });
 </script>
 
 <div class="tags-editor">
-  <div class="tags-list">
-    {#if tags.length === 0}
-      <span class="no-tags">{$t('tags.noTagsYet')}</span>
-    {/if}
-    {#each tags.filter(t => t && t.uuid !== undefined) as tag (tag.uuid)}
-      <span class="tag" class:ai-tag={tag.source === 'auto_ai'}>
-        {#if tag.source === 'auto_ai'}
-          <span class="ai-icon" title={$t('autoLabel.autoAppliedTag')}>
-            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-          </span>
-        {/if}
-        {tag.name}
-        <button
-          type="button"
-          class="tag-remove"
-          on:click={() => removeTag(tag.uuid)}
-          title={$t('tags.removeTag')}
-          aria-label={$t('gallery.bulk.tagModal.removeChip', { name: tag.name })}
-        ><span aria-hidden="true">×</span></button>
-      </span>
-    {/each}
-
-    <div class="tag-input-container">
-      <input
-        type="text"
-        placeholder={$t('tags.addTagPlaceholder')}
-        value={newTagInput}
-        on:input={(event) => (newTagInput = clampTagNameInput(event))}
-        on:keydown={handleInputKeydown}
-        class="tag-input"
-        disabled={loading}
-        title={$t('tags.typeNewTagHint')}
-      >
-      {#if newTagInput.trim()}
-        <button
-          class="tag-add-button"
-          on:click={() => submitTypedName()}
-          disabled={loading}
-          title={$t('tags.createAndAddHint', { tagName: newTagInput.trim() })}
-        >
-          {$t('tags.add')}
-        </button>
-      {/if}
+  {#if tags.length === 0}
+    <p class="no-tags">{$t('tags.noTagsYet')}</p>
+  {:else}
+    <div class="tags-list">
+      {#each tags as tag (tag.uuid)}
+        <span class="tag" class:ai-tag={tag.source === 'auto_ai'}>
+          {#if tag.source === 'auto_ai'}
+            <span class="ai-icon" title={$t('autoLabel.autoAppliedTag')}>
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4z" />
+              </svg>
+            </span>
+          {/if}
+          <span class="tag-text">{tag.name}</span>
+          <button
+            type="button"
+            class="tag-remove"
+            title={$t('tags.removeTag')}
+            aria-label={$t('gallery.bulk.tagModal.removeChip', { name: tag.name })}
+            disabled={busy}
+            on:click={() => removeTag(tag)}
+          >
+            <span aria-hidden="true">×</span>
+          </button>
+        </span>
+      {/each}
     </div>
+  {/if}
+
+  {#if notice}
+    <p class="notice" role="status" aria-live="polite">{notice}</p>
+  {/if}
+
+  <div class="input-row">
+    <input
+      type="text"
+      class="tag-input"
+      value={input}
+      placeholder={$t('tags.addTagPlaceholder')}
+      title={$t('tags.typeNewTagHint')}
+      disabled={busy}
+      on:input={(event) => (input = clampTagNameInput(event))}
+      on:keydown={handleKeydown}
+    />
+    {#if trimmedInput}
+      <button
+        type="button"
+        class="btn btn-primary btn-small tag-add-button"
+        title={$t('tags.createAndAddHint', { tagName: trimmedInput })}
+        disabled={busy}
+        on:click={() => void submitTyped()}
+      >
+        {$t('tags.add')}
+      </button>
+    {/if}
   </div>
 
-  <!--
-    A near match is a question, never an application. Both answers are plain
-    buttons so the prompt is keyboard-operable, and the whole panel is a live
-    region so it is announced when it appears.
-  -->
   {#if nearMatch}
     <div class="near-match" role="status" aria-live="polite">
-      <p class="near-match-question">
-        {$t('tags.nearMatch.question', { name: nearMatch.name, typed: nearMatch.typed })}
-      </p>
+      <p>{$t('tags.nearMatch.question', { name: nearMatch.name, typed: nearMatch.typed })}</p>
       <div class="near-match-actions">
         <button
           type="button"
-          class="near-match-accept"
-          on:click={acceptNearMatch}
-          disabled={loading}
+          class="btn btn-secondary btn-small"
+          disabled={busy}
+          on:click={() => resolveNearMatch(true)}
         >
           {$t('tags.nearMatch.accept', { name: nearMatch.name })}
         </button>
         <button
           type="button"
-          class="near-match-decline"
-          on:click={declineNearMatch}
-          disabled={loading}
+          class="btn btn-secondary btn-small"
+          disabled={busy}
+          on:click={() => resolveNearMatch(false)}
         >
           {$t('tags.nearMatch.decline', { typed: nearMatch.typed })}
         </button>
@@ -443,44 +312,40 @@
     </div>
   {/if}
 
-  {#if resolvedNotice}
-    <p class="resolved-notice" role="status" aria-live="polite">{resolvedNotice}</p>
+  {#if offeredAi.length > 0}
+    <AISuggestionsDropdown
+      suggestions={offeredAi}
+      type="tag"
+      loading={busy}
+      {autoAppliedTags}
+      on:accept={acceptAiSuggestion}
+    />
   {/if}
 
-  <!-- AI Suggestions Dropdown -->
-  <AISuggestionsDropdown
-    suggestions={filteredAISuggestions}
-    type="tag"
-    {loading}
-    autoAppliedTags={autoAppliedTagNames}
-    on:accept={handleAcceptAISuggestion}
-  />
-
-  {#if suggestedTags.length > 0}
-    <div class="suggested-tags">
-      <span class="suggested-label">{$t('tags.suggested')}</span>
-      {#each suggestedTags.filter(t => t && t.uuid !== undefined) as tag (tag.uuid)}
-        <button
-          class="suggested-tag"
-          on:click={() => addTag(tag.uuid)}
-          disabled={loading}
-          title={$t('tags.addExistingTagHint', { tagName: tag.name })}
-        >
-          {tag.name}
-        </button>
-      {/each}
-    </div>
-  {/if}
-
-  {#if dropdownTags.length > 0}
-    <div class="dropdown-section">
-      <span class="dropdown-label">{$t('tags.selectFromAllTags')}</span>
+  {#if offerable.length > 0}
+    <div class="library">
+      <span class="section-label">{$t('tags.suggested')}</span>
+      <div class="suggested-list">
+        {#each suggested as tag (tag.uuid)}
+          <button
+            type="button"
+            class="suggested-tag"
+            title={$t('tags.addExistingTagHint', { tagName: tag.name })}
+            disabled={busy}
+            on:click={() => addExisting(tag.uuid)}
+          >
+            {tag.name}
+          </button>
+        {/each}
+      </div>
+      <span class="section-label">{$t('tags.selectFromAllTags')}</span>
       <SearchableMultiSelect
-        options={dropdownTags}
+        options={dropdownOptions}
         selectedIds={[]}
         placeholder={$t('tags.addFromLibraryPlaceholder')}
-        showCounts={true}
-        on:select={handleTagSelect}
+        showCounts
+        disabled={busy}
+        on:select={(event) => addExisting(String(event.detail.id))}
       />
     </div>
   {/if}
@@ -490,217 +355,146 @@
   .tags-editor {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
+    color: var(--text-color);
   }
 
   .no-tags {
+    margin: 0;
+    font-size: var(--font-size-sm);
     color: var(--text-secondary);
-    font-size: 0.85rem;
-    font-style: italic;
-    padding: 0.5rem 0;
   }
 
-  .tags-list {
+  .tags-list,
+  .suggested-list {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    align-items: center;
+    gap: var(--space-1-5);
   }
 
   .tag {
-    background-color: rgba(59, 130, 246, 0.1);
-    color: var(--primary-on-surface);
-    padding: 0.35rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.8rem;
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--space-1);
+    padding-block: var(--space-0-5);
+    padding-inline: var(--space-2-5) var(--space-1);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-pill);
+    background-color: var(--surface-secondary);
+    font-size: var(--font-size-sm);
+  }
+
+  .tag.ai-tag {
+    border-color: rgba(var(--primary-color-rgb), 0.35);
+    background-color: rgba(var(--primary-color-rgb), 0.08);
+  }
+
+  /* The light tint washes out on the dark card, so the AI tint is stronger there. */
+  :global([data-theme='dark']) .tag.ai-tag {
+    border-color: rgba(var(--primary-color-rgb), 0.55);
+    background-color: rgba(var(--primary-color-rgb), 0.2);
+  }
+
+  .ai-icon {
+    display: inline-flex;
+    color: var(--primary-on-surface);
+  }
+
+  .tag-text {
+    overflow-wrap: anywhere;
   }
 
   .tag-remove {
-    background: none;
-    border: none;
-    color: var(--text-light);
-    font-size: 1rem;
-    cursor: pointer;
-    padding: 0;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 16px;
-    height: 16px;
+    padding: 0 var(--space-1);
+    border: none;
+    border-radius: var(--radius-round);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: var(--font-size-md);
+    line-height: var(--line-height-none);
+    box-shadow: none;
   }
 
-  .tag-remove:hover {
-    color: var(--error-color);
+  .tag-remove:hover:not(:disabled) {
+    background-color: var(--hover-color);
+    color: var(--error-text);
   }
 
-  .tag-input-container {
+  .notice {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+  }
+
+  .input-row {
     display: flex;
     align-items: center;
   }
 
   .tag-input {
-    background: transparent;
-    border: none;
-    border-bottom: 1px dashed var(--border-color);
-    padding: 0.35rem 0;
-    font-size: 0.8rem;
-    width: 100px;
-    color: var(--text-color);
-  }
-
-  .tag-input:focus {
-    border-bottom-color: var(--primary-color);
-    outline: none;
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   .tag-add-button {
-    background-color: var(--primary-color);
-    color: white;
-    border: none;
-    border-radius: 4px;
-    padding: 0.25rem 0.5rem;
-    font-size: 0.8rem;
-    cursor: pointer;
-    margin-inline-start: 0.5rem;
+    flex-shrink: 0;
+    margin-inline-start: var(--space-2);
   }
 
-  .tag-add-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  /*
-   * The near-match prompt and the resolved-name notice both theme off custom
-   * properties only, so light and dark follow `styles/theme.css` with no
-   * per-theme override of their own.
-   */
   .near-match {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    padding: 0.5rem 0.65rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: rgba(var(--primary-color-rgb), 0.06);
+    gap: var(--space-2);
+    padding: var(--space-2-5) var(--space-3);
+    border: 1px solid var(--warning-border);
+    border-radius: var(--radius-lg);
+    background-color: var(--warning-bg);
+    font-size: var(--font-size-sm);
   }
 
-  .near-match-question {
+  .near-match p {
     margin: 0;
-    font-size: 0.8rem;
-    line-height: 1.45;
-    color: var(--text-color);
   }
 
   .near-match-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
-  .near-match-accept,
-  .near-match-decline {
-    border-radius: 4px;
-    padding: 0.25rem 0.6rem;
-    font-size: 0.8rem;
-    font-family: inherit;
-    cursor: pointer;
+  .library {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1-5);
   }
 
-  .near-match-accept {
-    border: 1px solid var(--primary-color);
-    background-color: var(--primary-color);
-    color: var(--surface-color);
-  }
-
-  .near-match-decline {
-    border: 1px solid var(--border-color);
-    background-color: transparent;
-    color: var(--text-color);
-  }
-
-  .near-match-decline:hover:not(:disabled) {
-    background-color: var(--button-hover);
-  }
-
-  .near-match-accept:focus-visible,
-  .near-match-decline:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-  }
-
-  .near-match-accept:disabled,
-  .near-match-decline:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .resolved-notice {
-    margin: 0;
-    font-size: 0.8rem;
-    line-height: 1.45;
+  .section-label {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     color: var(--text-secondary);
   }
 
-  .suggested-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    align-items: center;
-    font-size: 0.8rem;
-  }
-
-  .suggested-label {
-    color: var(--text-light);
-  }
-
   .suggested-tag {
-    background: none;
+    padding: var(--space-0-5) var(--space-2-5);
     border: 1px dashed var(--border-color);
-    border-radius: 4px;
-    padding: 0.25rem 0.5rem;
-    font-size: 0.8rem;
-    cursor: pointer;
-    color: var(--text-light);
+    border-radius: var(--radius-pill);
+    background-color: var(--surface-color);
+    color: var(--text-color);
+    font-size: var(--font-size-sm);
+    box-shadow: none;
   }
 
-  .suggested-tag:hover {
+  .suggested-tag:hover:not(:disabled) {
     border-color: var(--primary-color);
-    color: var(--primary-on-surface);
-    background-color: rgba(59, 130, 246, 0.05);
+    background-color: var(--hover-color);
   }
 
-  .suggested-tag:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .dropdown-section {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .dropdown-label {
-    color: var(--text-light);
-    font-size: 0.8rem;
-  }
-
-  .ai-tag {
-    background-color: rgba(59, 130, 246, 0.08);
-    border: 1px solid rgba(59, 130, 246, 0.25);
-  }
-
-  .ai-icon {
-    color: var(--ai-accent-color, var(--primary-color, #3b82f6));
-    display: flex;
-    align-items: center;
-  }
-
-  :global([data-theme='dark']) .ai-tag {
-    background-color: rgba(96, 165, 250, 0.12);
-    border-color: rgba(96, 165, 250, 0.3);
+  .suggested-tag:focus-visible,
+  .tag-remove:focus-visible {
+    outline: 2px solid var(--focus-ring-color);
+    outline-offset: 1px;
   }
 </style>

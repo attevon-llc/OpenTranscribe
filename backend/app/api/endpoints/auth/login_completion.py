@@ -55,7 +55,7 @@ def record_successful_login(db: Session, user: User) -> None:
         user: The authenticated user row
     """
     try:
-        user.last_login_at = datetime.now(UTC)  # type: ignore[assignment]
+        user.last_login_at = datetime.now(UTC)
         db.commit()
     except Exception:
         # Bookkeeping must never cost the caller the session they just earned.
@@ -127,7 +127,7 @@ def _apply_password_expiry(
         return
 
     if not user.must_change_password:
-        user.must_change_password = True  # type: ignore[assignment]
+        user.must_change_password = True
         db.commit()
 
     audit_logger.log(

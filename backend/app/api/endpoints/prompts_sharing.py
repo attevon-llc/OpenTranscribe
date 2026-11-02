@@ -188,15 +188,15 @@ def share_prompt(
     if prompt.is_system_default:
         raise HTTPException(status_code=400, detail="Cannot share system prompts")
 
-    prompt.is_shared = share_data.is_shared  # type: ignore[assignment]
+    prompt.is_shared = share_data.is_shared
     if share_data.is_shared:
         if not prompt.shared_at:
-            prompt.shared_at = datetime.now(UTC)  # type: ignore[assignment]
+            prompt.shared_at = datetime.now(UTC)
         # Record who flipped sharing on (may differ from the creator)
-        prompt.shared_by = current_user.id  # type: ignore[assignment]
+        prompt.shared_by = current_user.id
     else:
-        prompt.shared_at = None  # type: ignore[assignment]
-        prompt.shared_by = None  # type: ignore[assignment]
+        prompt.shared_at = None
+        prompt.shared_by = None
         # Clean up other users who had this prompt set as active
         db.query(models.UserSetting).filter(
             models.UserSetting.setting_key == "active_summary_prompt_id",

@@ -161,7 +161,7 @@ def _complete_mfa_verification(
         logger.debug(f"MFA token claimed for single use (jti={mfa_jti[:8]}...)")
 
     # Update last verified timestamp
-    user_mfa.last_verified_at = dt.now(UTC)  # type: ignore[assignment]
+    user_mfa.last_verified_at = dt.now(UTC)
     db.commit()
 
     # Log MFA verification success (and backup code usage if applicable)

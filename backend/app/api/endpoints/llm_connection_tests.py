@@ -274,9 +274,9 @@ def test_active_configuration(
 
     # Only write back test status if the current user owns the config
     if user_config.user_id == current_user.id:
-        user_config.test_status = result.status.value  # type: ignore[assignment]
-        user_config.test_message = result.message  # type: ignore[assignment]
-        user_config.last_tested = datetime.now(UTC)  # type: ignore[assignment]
+        user_config.test_status = result.status.value
+        user_config.test_message = result.message
+        user_config.last_tested = datetime.now(UTC)
 
         db.add(user_config)
         db.commit()
@@ -312,9 +312,9 @@ def test_specific_configuration(
 
     # Only write back test status if the current user owns the config
     if user_config.user_id == current_user.id:
-        user_config.test_status = result.status.value  # type: ignore[assignment]
-        user_config.test_message = result.message  # type: ignore[assignment]
-        user_config.last_tested = datetime.now(UTC)  # type: ignore[assignment]
+        user_config.test_status = result.status.value
+        user_config.test_message = result.message
+        user_config.last_tested = datetime.now(UTC)
 
         db.add(user_config)
         db.commit()

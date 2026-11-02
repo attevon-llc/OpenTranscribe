@@ -187,7 +187,7 @@ def claim_and_dispatch_redaction_scan(
     """
     previous_status = db_file.redaction_status
     try:
-        db_file.redaction_status = redaction_defaults.REDACTION_STATUS_PENDING  # type: ignore[assignment]
+        db_file.redaction_status = redaction_defaults.REDACTION_STATUS_PENDING
         db.commit()
     except Exception as e:  # noqa: BLE001
         db.rollback()

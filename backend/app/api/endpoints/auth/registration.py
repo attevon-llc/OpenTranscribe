@@ -2,6 +2,7 @@
 
 import logging
 from datetime import UTC
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -53,7 +54,7 @@ class PasswordResetConfirmBody(PydanticBaseModel):
 @limiter.limit(get_auth_rate_limit())
 def register(
     request: Request, response: Response, user_in: UserCreate, db: Session = Depends(get_db)
-):
+) -> Any:
     """
     Register a new user.
 

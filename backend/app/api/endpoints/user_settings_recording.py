@@ -153,7 +153,7 @@ def update_recording_settings(
         )
 
         if existing_setting:
-            existing_setting.setting_value = db_value  # type: ignore[assignment]
+            existing_setting.setting_value = db_value
             db.add(existing_setting)
         else:
             new_setting = models.UserSetting(

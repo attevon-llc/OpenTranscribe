@@ -3,6 +3,7 @@
 import logging
 from datetime import UTC
 from datetime import datetime
+from typing import Any
 
 import psutil
 
@@ -38,7 +39,7 @@ def get_system_uptime():
         return "Unknown"
 
 
-def get_memory_usage():
+def get_memory_usage() -> dict[str, Any]:
     """Get system memory usage"""
     try:
         # Get virtual memory statistics
@@ -61,7 +62,7 @@ def get_memory_usage():
         }
 
 
-def get_cpu_usage():
+def get_cpu_usage() -> dict[str, Any]:
     """Get CPU usage information.
 
     Uses interval=None (non-blocking) which returns CPU usage since the last call.
@@ -95,7 +96,7 @@ def get_cpu_usage():
 psutil.cpu_percent(interval=None)
 
 
-def get_disk_usage():
+def get_disk_usage() -> dict[str, Any]:
     """Get disk usage information"""
     try:
         # Get disk usage for the root directory

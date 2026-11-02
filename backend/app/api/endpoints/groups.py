@@ -3,6 +3,7 @@
 import logging
 from datetime import UTC
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -163,7 +164,7 @@ def _build_group_response(db: Session, group: UserGroup, current_user_id: int) -
 def list_groups(
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """List groups the current user belongs to (owned + member)."""
     current_user = ctx.user
     # Membership already limits this to the caller's own groups; the tenant term (v388)
@@ -234,7 +235,7 @@ def create_group(
     group_in: GroupCreate,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Create a new group. Creator is automatically added as owner."""
     current_user = ctx.user
     # Duplicate check stays scoped to (owner, name) and deliberately NOT to the tenant,
@@ -290,7 +291,7 @@ def get_group(
     group_uuid: str,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Get group detail with member list. Must be a member."""
     current_user = ctx.user
     group = _get_group_in_scope(db, group_uuid, ctx)
@@ -350,7 +351,7 @@ def update_group(
     group_update: GroupUpdate,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Update group name/description. Requires owner or admin role."""
     current_user = ctx.user
     group = _get_group_in_scope(db, group_uuid, ctx)
@@ -389,7 +390,7 @@ def delete_group(
     group_uuid: str,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> None:
     """Delete a group. Only the group owner can delete it."""
     current_user = ctx.user
     group = _get_group_in_scope(db, group_uuid, ctx)
@@ -421,7 +422,7 @@ def add_member(
     request: Request,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Add a member to a group. Requires owner or admin role."""
     current_user = ctx.user
     group = _get_group_in_scope(db, group_uuid, ctx)
@@ -506,7 +507,7 @@ def update_member_role(
     request: Request,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Update a member's role. Requires owner or admin role."""
     current_user = ctx.user
     group = _get_group_in_scope(db, group_uuid, ctx)
@@ -584,7 +585,7 @@ def remove_member(
     request: Request,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> None:
     """Remove a member from a group.
 
     Owner/admin can remove others. Any member can remove themselves (leave).

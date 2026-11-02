@@ -2,6 +2,8 @@
 
 import logging
 
+from sqlalchemy.orm import Session
+
 from app.core.env import env_bool
 
 logger = logging.getLogger(__name__)
@@ -15,7 +17,7 @@ def start_reprocessing_task(
     downstream_tasks: list[str] | None = None,
     whisper_model: str | None = None,
     user_id: int | None = None,
-    db=None,
+    db: Session | None = None,
     disable_diarization: bool | None = None,
 ) -> None:
     """

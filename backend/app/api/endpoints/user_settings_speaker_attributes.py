@@ -89,7 +89,7 @@ def update_speaker_attribute_settings(
     update_data = settings_data.model_dump(exclude_none=True)
 
     if not update_data:
-        return get_speaker_attribute_settings(db=db, current_user=current_user, ctx=ctx)  # type: ignore[no-any-return]
+        return get_speaker_attribute_settings(db=db, current_user=current_user, ctx=ctx)
 
     setting_mappings = {
         "detection_enabled": "speaker_attribute_detection_enabled",
@@ -104,7 +104,7 @@ def update_speaker_attribute_settings(
 
     db.commit()
 
-    return get_speaker_attribute_settings(db=db, current_user=current_user, ctx=ctx)  # type: ignore[no-any-return]
+    return get_speaker_attribute_settings(db=db, current_user=current_user, ctx=ctx)
 
 
 @router.delete("/speaker-attributes")

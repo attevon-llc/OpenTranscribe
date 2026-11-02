@@ -462,7 +462,7 @@ def _verify_mfa_code(
         if is_valid and matched_hash:
             # Remove used backup code
             backup_codes_list: list[str] = list(user_mfa.backup_codes)
-            user_mfa.backup_codes = [c for c in backup_codes_list if c != matched_hash]  # type: ignore[assignment]
+            user_mfa.backup_codes = [c for c in backup_codes_list if c != matched_hash]
             used_backup_code = True
             db.commit()
             logger.info(

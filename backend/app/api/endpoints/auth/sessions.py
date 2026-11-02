@@ -4,6 +4,7 @@ import logging
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -58,7 +59,7 @@ def refresh_access_token(
     response: Response,
     body: TokenRefreshRequest,
     db: Session = Depends(get_db),
-):
+) -> Any:
     """
     Exchange a refresh token for new access and refresh tokens.
 

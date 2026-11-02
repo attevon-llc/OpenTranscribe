@@ -3,6 +3,7 @@
 import logging
 from datetime import UTC
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -94,9 +95,9 @@ def admin_reset_user_password(
         )
 
     new_hash = get_password_hash(request_body.new_password)
-    user.hashed_password = new_hash  # type: ignore[assignment]
-    user.must_change_password = request_body.force_change  # type: ignore[assignment]
-    user.password_changed_at = datetime.now(UTC)  # type: ignore[assignment]
+    user.hashed_password = new_hash
+    user.must_change_password = request_body.force_change
+    user.password_changed_at = datetime.now(UTC)
     add_password_to_history(db, user.id, new_hash)
     revoke_all_sessions(db, user, reason="admin password reset")
     db.commit()
@@ -139,7 +140,7 @@ def admin_unlock_account(
 
     was_disabled = not bool(user.is_active)
     if was_disabled:
-        user.is_active = True  # type: ignore[assignment]
+        user.is_active = True
         db.commit()
 
     audit_logger.log(
@@ -180,7 +181,7 @@ def admin_list_locked_accounts(
     ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Any:
     """List locked accounts (issue #570), cursor-paginated over the lockout store.
 
     A **read**, and deliberately not audited per request -- the write below
@@ -235,7 +236,7 @@ def admin_reset_lockout_counter(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Any:
     """Reset an account's progressive lockout counter (issue #570).
 
     Distinct from ``POST /admin/users/{uuid}/unlock`` (T8): this clears the
@@ -328,7 +329,7 @@ def admin_lock_account(
             detail="Only a super_admin can lock a super_admin account",
         )
 
-    user.is_active = False  # type: ignore[assignment]
+    user.is_active = False
     # Locking an account that keeps a live refresh token is not a lock: token
     # rotation would carry the session past the lock for its full lifetime.
     revoke_all_sessions(db, user, reason="account locked by admin")
@@ -472,7 +473,7 @@ def admin_change_user_role(
     assert_not_last_super_admin(db, user, new_role)
 
     old_role = user.role
-    user.role = new_role  # type: ignore[assignment]
+    user.role = new_role
     # Keep is_superuser in sync with role (derived; v369 CHECK enforces it).
     user.is_superuser = role_implies_superuser(new_role)
     # A role change is usually a reaction to something; the target's existing

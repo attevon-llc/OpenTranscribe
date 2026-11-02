@@ -1,6 +1,7 @@
 """MFA setup / verification / disable endpoints."""
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -52,7 +53,7 @@ logger = logging.getLogger(__name__)
 def get_mfa_status(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
-):
+) -> Any:
     """
     Get MFA status for the current user.
 
@@ -83,7 +84,7 @@ def setup_mfa(
     response: Response,
     enrollment: EnrollmentContext = Depends(get_user_for_enrollment),
     db: Session = Depends(get_db),
-):
+) -> Any:
     """
     Initiate MFA setup for the current user.
 
@@ -144,9 +145,9 @@ def setup_mfa(
 
     # Store or update the MFA record (not yet enabled)
     if existing_mfa:
-        existing_mfa.totp_secret = encrypted_secret  # type: ignore[assignment]
-        existing_mfa.totp_enabled = False  # type: ignore[assignment]
-        existing_mfa.backup_codes = []  # type: ignore[assignment]
+        existing_mfa.totp_secret = encrypted_secret
+        existing_mfa.totp_enabled = False
+        existing_mfa.backup_codes = []
     else:
         new_mfa = UserMFA(
             user_id=current_user.id,
@@ -186,7 +187,7 @@ def verify_mfa_setup(
     request_body: MFAVerifySetupRequest,
     enrollment: EnrollmentContext = Depends(get_user_for_enrollment),
     db: Session = Depends(get_db),
-):
+) -> Any:
     """
     Verify MFA setup with the initial TOTP code.
 
@@ -270,8 +271,8 @@ def verify_mfa_setup(
     hashed_backup_codes = MFAService.hash_backup_codes(backup_codes)
 
     # Enable MFA and store hashed backup codes
-    user_mfa.totp_enabled = True  # type: ignore[assignment]
-    user_mfa.backup_codes = hashed_backup_codes  # type: ignore[assignment]
+    user_mfa.totp_enabled = True
+    user_mfa.backup_codes = hashed_backup_codes
     db.commit()
 
     # Log MFA setup complete
@@ -316,7 +317,7 @@ def verify_mfa(
     response: Response,
     request_body: MFAVerifyRequest,
     db: Session = Depends(get_db),
-):
+) -> Any:
     """
     Verify MFA code during login.
 
@@ -449,7 +450,7 @@ def disable_mfa(
             # removing it left the code valid forever, so a single leaked code could
             # keep disabling MFA every time it was re-enabled. Mirrors
             # mfa_tokens._verify_mfa_code, which has always consumed the match.
-            user_mfa.backup_codes = [c for c in backup_codes_list if c != matched_hash]  # type: ignore[assignment]
+            user_mfa.backup_codes = [c for c in backup_codes_list if c != matched_hash]
             db.commit()
             logger.info(
                 f"Backup code consumed for MFA disable by user: {str(current_user.email)}. "

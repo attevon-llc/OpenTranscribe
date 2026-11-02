@@ -31,7 +31,7 @@ def list_speaker_collections(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """List the caller's speaker collections in the active tenant."""
     try:
         # Speaker collections are owner-scoped: the caller's own, in this tenant.
@@ -102,7 +102,7 @@ def create_speaker_collection(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Create a new speaker collection (stamped with the active tenant)."""
     try:
         # Check for name conflicts

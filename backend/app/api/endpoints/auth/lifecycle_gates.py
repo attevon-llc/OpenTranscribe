@@ -97,7 +97,7 @@ def _lifecycle_client_info(request: Request | None) -> tuple[str, str]:
     an unusual request object degrades to "unknown" instead of a 500.
     """
     try:
-        return _get_client_info(request)  # type: ignore[arg-type]
+        return _get_client_info(request)
     except Exception:
         logger.debug("Could not resolve client info for lifecycle audit", exc_info=True)
         return "unknown", "unknown"

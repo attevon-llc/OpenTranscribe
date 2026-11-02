@@ -43,7 +43,7 @@ def merge_speakers(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Merge two speakers into one (target absorbs source).
 
     Both speakers need editor or better in the active tenant, must belong to the

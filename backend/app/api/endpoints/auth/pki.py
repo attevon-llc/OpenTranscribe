@@ -2,6 +2,7 @@
 
 import logging
 from datetime import timedelta
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -36,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 @router.post("/pki/authenticate", response_model=Token)
 @limiter.limit(get_auth_rate_limit())
-def pki_login(request: Request, response: Response, db: Session = Depends(get_db)):
+def pki_login(request: Request, response: Response, db: Session = Depends(get_db)) -> Any:
     """
     Authenticate via X.509 client certificate.
 

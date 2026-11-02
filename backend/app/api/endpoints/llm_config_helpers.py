@@ -115,7 +115,7 @@ def _get_accessible_config(db: Session, config_uuid: UUID | str, ctx: RequestCon
 
 def _clear_shared_active_references(
     db: Session, config_id: int, setting_key: str, *, exclude_user_id: int | None = None
-):
+) -> None:
     """Remove UserSetting rows pointing to a deleted/unshared config (for non-owners)."""
     q = db.query(models.UserSetting).filter(
         models.UserSetting.setting_key == setting_key,
@@ -164,7 +164,7 @@ def _set_active_configuration(db: Session, user_id: int, config_id: int) -> None
     )
 
     if existing_setting:
-        existing_setting.setting_value = str(config_id)  # type: ignore[assignment]
+        existing_setting.setting_value = str(config_id)
         db.add(existing_setting)
     else:
         new_setting = models.UserSetting(

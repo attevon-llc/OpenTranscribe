@@ -12,6 +12,7 @@ invitation is a deferred account creation, so it inherits the same gate as
 """
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -73,7 +74,7 @@ def create_invitation_endpoint(
     body: InvitationCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Any:
     """Invite someone to create an account (admin; super_admin for elevated roles).
 
     The admin never sees or chooses a password. For an external ``auth_type`` no
@@ -127,7 +128,7 @@ def list_invitations(
     include_inactive: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Any:
     """List invitations (admin). Pending only unless ``include_inactive``."""
     query = db.query(UserInvitation)
     if not include_inactive:
@@ -142,7 +143,7 @@ def revoke_invitation_endpoint(
     invitation_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> None:
     """Revoke a pending invitation (admin). Idempotent."""
     # Validates the UUID format (400) and 404s a miss, like every other route.
     invitation = get_by_uuid(db, UserInvitation, invitation_uuid, "Invitation not found")
@@ -167,7 +168,7 @@ def lookup_invitation_endpoint(
     response: Response,
     body: InvitationLookupRequest,
     db: Session = Depends(get_db),
-):
+) -> Any:
     """What the accept page needs, for the holder of a valid invite token.
 
     Public and rate-limited. Discloses nothing to a caller who does not already
@@ -194,7 +195,7 @@ def accept_invitation_endpoint(
     response: Response,
     body: InvitationAcceptRequest,
     db: Session = Depends(get_db),
-):
+) -> Any:
     """Redeem an invitation and activate the account.
 
     Public and rate-limited. The account is created with the role and auth_type

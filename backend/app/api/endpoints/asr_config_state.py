@@ -52,7 +52,7 @@ def _set_active_asr_configuration(db: Session, user_id: int, config_id: int) -> 
         .first()
     )
     if existing:
-        existing.setting_value = str(config_id)  # type: ignore[assignment]
+        existing.setting_value = str(config_id)
         db.add(existing)
     else:
         db.add(
@@ -131,7 +131,7 @@ def _get_config_or_404(
     With ``shared_in``, a config shared within that request's active tenant also
     qualifies; another tenant's shared config answers like a missing one.
     """
-    from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
+    from app.models.user_asr_settings import UserASRSettings
 
     filters = [UserASRSettings.uuid == config_uuid]
     if shared_in is not None:
@@ -150,7 +150,7 @@ def _get_config_or_404(
 
 def _clear_asr_shared_active_references(
     db: Session, config_id: int, *, exclude_user_id: int | None = None
-):
+) -> None:
     """Remove UserSetting rows pointing to a deleted/unshared ASR config."""
     q = db.query(models.UserSetting).filter(
         models.UserSetting.setting_key == "active_asr_config_id",

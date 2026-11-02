@@ -98,7 +98,7 @@ def list_asr_settings(
 ) -> Any:
     """List the current user's ASR configurations and those shared within their tenant."""
     current_user = ctx.user
-    from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
+    from app.models.user_asr_settings import UserASRSettings
 
     configs = (
         db.query(UserASRSettings)
@@ -169,7 +169,7 @@ def create_asr_config(
     ``pipeline_issues`` describes the pipeline in effect afterwards. On lite a ``local``
     config is refused (409 ``local_asr_unavailable``, #1228): it could never transcribe.
     """
-    from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
+    from app.models.user_asr_settings import UserASRSettings
 
     if settings_in.provider.value == "local":
         refuse_on_lite("local_asr_unavailable")
@@ -272,7 +272,7 @@ def update_asr_config(  # noqa: C901
     active pointer names it (the owner, or a member of a shared one) would fall back to a
     default the stored speaker detection or the deployment cannot run (#1225, #1228).
     """
-    from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
+    from app.models.user_asr_settings import UserASRSettings
 
     if settings_in.provider is not None and settings_in.provider.value == "local":
         refuse_on_lite("local_asr_unavailable")
@@ -325,7 +325,7 @@ def update_asr_config(  # noqa: C901
                     status_code=409,
                     detail=f"Configuration named '{new_name}' already exists",
                 )
-        config.name = new_name  # type: ignore[assignment]
+        config.name = new_name
 
     if "provider" in settings_in.model_fields_set:
         new_provider = settings_in.provider.value  # type: ignore[union-attr]
@@ -333,15 +333,15 @@ def update_asr_config(  # noqa: C901
             # Provider change invalidates the existing API key (it belongs to the old
             # provider's account).  Clear the stored key so the user is prompted to
             # supply a new one rather than inadvertently inheriting a stale credential.
-            config.api_key = None  # type: ignore[assignment]
-        config.provider = new_provider  # type: ignore[assignment]
+            config.api_key = None
+        config.provider = new_provider
         # Reset test status when provider changes
-        config.test_status = None  # type: ignore[assignment]
-        config.test_message = None  # type: ignore[assignment]
-        config.last_tested = None  # type: ignore[assignment]
+        config.test_status = None
+        config.test_message = None
+        config.last_tested = None
 
     if "model_name" in settings_in.model_fields_set:
-        config.model_name = settings_in.model_name  # type: ignore[assignment]
+        config.model_name = settings_in.model_name
 
     if "api_key" in settings_in.model_fields_set:
         new_key = settings_in.api_key
@@ -358,9 +358,9 @@ def update_asr_config(  # noqa: C901
             encrypted = encrypt_api_key(new_key)
             if not encrypted:
                 raise HTTPException(status_code=500, detail="Failed to encrypt API key")
-            config.api_key = encrypted  # type: ignore[assignment]
+            config.api_key = encrypted
             # Reset test status only when key actually changes
-            config.test_status = None  # type: ignore[assignment]
+            config.test_status = None
 
     if "access_key_id" in settings_in.model_fields_set:
         new_akid = settings_in.access_key_id
@@ -374,27 +374,27 @@ def update_asr_config(  # noqa: C901
             encrypted_akid = encrypt_api_key(new_akid)
             if not encrypted_akid:
                 raise HTTPException(status_code=500, detail="Failed to encrypt access key ID")
-            config.access_key_id = encrypted_akid  # type: ignore[assignment]
-            config.test_status = None  # type: ignore[assignment]
+            config.access_key_id = encrypted_akid
+            config.test_status = None
 
     if "base_url" in settings_in.model_fields_set:
-        config.base_url = settings_in.base_url  # type: ignore[assignment]
+        config.base_url = settings_in.base_url
 
     if "region" in settings_in.model_fields_set:
-        config.region = settings_in.region  # type: ignore[assignment]
+        config.region = settings_in.region
 
     if "is_active" in settings_in.model_fields_set:
-        config.is_active = settings_in.is_active  # type: ignore[assignment]
+        config.is_active = settings_in.is_active
 
     # Handle is_shared toggle with shared_at timestamp
     if "is_shared" in settings_in.model_fields_set:
         new_shared = settings_in.is_shared
         if new_shared and not config.is_shared:
-            config.is_shared = True  # type: ignore[assignment]
-            config.shared_at = datetime.now(UTC)  # type: ignore[assignment]
+            config.is_shared = True
+            config.shared_at = datetime.now(UTC)
         elif not new_shared and config.is_shared:
-            config.is_shared = False  # type: ignore[assignment]
-            config.shared_at = None  # type: ignore[assignment]
+            config.is_shared = False
+            config.shared_at = None
             _clear_asr_shared_active_references(db, config.id, exclude_user_id=current_user.id)
 
     db.add(config)
@@ -464,7 +464,7 @@ def delete_asr_config(
     the remaining state cannot run comes back in ``pipeline_issues`` (as for
     ``set-active``), with ``config_uuid`` naming the config now active (``null``: none).
     """
-    from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
+    from app.models.user_asr_settings import UserASRSettings
     from app.services.asr_switch_plan import active_delete_refusal
     from app.services.asr_switch_plan import choose_after_active_delete
 
@@ -559,7 +559,7 @@ def delete_all_asr_configs(
     and nothing is deleted, if any member would be stranded), and the members' active
     pointers are cleared with it.
     """
-    from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
+    from app.models.user_asr_settings import UserASRSettings
 
     owned = db.query(UserASRSettings).filter(UserASRSettings.user_id == current_user.id)
     rows = owned.all()

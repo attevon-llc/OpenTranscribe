@@ -211,7 +211,7 @@ def _get_or_compute_analytics(
     # against "completed" and was always True, so the on-demand computation
     # below never ran (issue #272).
     if analytics or file_status != FileStatus.COMPLETED:
-        return analytics  # type: ignore[no-any-return]
+        return analytics
 
     # Compute analytics on-demand for completed files
     from app.services.analytics_service import AnalyticsService
@@ -221,7 +221,7 @@ def _get_or_compute_analytics(
     if success:
         analytics = db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
 
-    return analytics  # type: ignore[no-any-return]
+    return analytics
 
 
 def _add_error_info_to_response(response: MediaFileDetail, db_file: MediaFile) -> None:
@@ -319,10 +319,10 @@ def _build_media_file_response(
     formatted_segments = _format_transcript_segments(
         transcript_segments, speakers, redaction_cfg, reveal_categories
     )
-    response.transcript_segments = formatted_segments  # type: ignore[assignment]
+    response.transcript_segments = formatted_segments
 
     # Pre-grouped view (overlap groups kept together) for the frontend to render directly.
-    response.grouped_segments = _build_grouped_segments(  # type: ignore[assignment]
+    response.grouped_segments = _build_grouped_segments(
         formatted_segments, index_offset=segment_offset
     )
 
@@ -332,7 +332,7 @@ def _build_media_file_response(
     response.segment_limit = segment_limit
     response.segment_offset = segment_offset
 
-    return response  # type: ignore[no-any-return]
+    return response
 
 
 def _load_file_speakers(db: Session, file_id: int) -> list[Speaker]:

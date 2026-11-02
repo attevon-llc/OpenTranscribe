@@ -18,6 +18,7 @@ hold through the product. The reason is read by this organization's administrato
 
 import logging
 from collections.abc import Iterable
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -154,7 +155,7 @@ def list_org_holds(
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(require_org_admin),
-):
+) -> Any:
     """This organization's holds, newest first."""
     org_id = org_id_of(ctx)
     rows, total = list_holds(db, org_id, active_only=active_only, limit=limit, offset=offset)
@@ -166,7 +167,7 @@ def get_org_hold(
     hold_uuid: UUID,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(require_org_admin),
-):
+) -> Any:
     """One hold of this organization, with the files it covers (up to 500)."""
     org_id = org_id_of(ctx)
     return _serialize(db, org_id, [_find_hold(db, org_id, hold_uuid)], with_files=True)[0]
@@ -180,7 +181,7 @@ def place_org_hold(
     body: HoldCreate,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(require_org_admin),
-):
+) -> Any:
     """Place a hold on named files, or on a whole collection (its files now and later)."""
     org_id = org_id_of(ctx)
     try:
@@ -236,7 +237,7 @@ def release_org_hold(
     body: HoldRelease,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(require_org_admin),
-):
+) -> Any:
     """Release a hold. Files another hold or the platform still covers stay held."""
     org_id = org_id_of(ctx)
     hold = _find_hold(db, org_id, hold_uuid)

@@ -95,7 +95,7 @@ def update_download_settings(
     update_data = settings_data.model_dump(exclude_none=True)
 
     if not update_data:
-        return get_download_settings(db=db, current_user=current_user)  # type: ignore[no-any-return]
+        return get_download_settings(db=db, current_user=current_user)
 
     _validate_video_quality(update_data.get("video_quality"))
     _validate_audio_quality(update_data.get("audio_quality"))
@@ -117,7 +117,7 @@ def update_download_settings(
 
     db.commit()
 
-    return get_download_settings(db=db, current_user=current_user)  # type: ignore[no-any-return]
+    return get_download_settings(db=db, current_user=current_user)
 
 
 @router.delete("/download")

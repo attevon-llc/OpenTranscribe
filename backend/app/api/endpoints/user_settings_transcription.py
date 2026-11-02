@@ -262,7 +262,7 @@ def update_transcription_settings(
             del update_data[field]
 
     if not update_data:
-        return get_transcription_settings(request=request, db=db, current_user=current_user)  # type: ignore[no-any-return]
+        return get_transcription_settings(request=request, db=db, current_user=current_user)
 
     # Get current settings only if needed for validation
     needs_current = ("min_speakers" in update_data) != ("max_speakers" in update_data)
@@ -323,7 +323,7 @@ def update_transcription_settings(
 
     db.commit()
 
-    return get_transcription_settings(request=request, db=db, current_user=current_user)  # type: ignore[no-any-return]
+    return get_transcription_settings(request=request, db=db, current_user=current_user)
 
 
 @router.delete("/transcription")

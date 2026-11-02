@@ -87,7 +87,7 @@ def assign_speaker_to_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Assign a speaker instance to a profile (own or shared).
 
     Linking feeds the speaker's voiceprint into the profile's consolidated
@@ -222,7 +222,7 @@ def _get_embedding_suggestions(
 
         for match in profile_matches:
             confidence = match["similarity"]
-            matching_service = SpeakerMatchingService(db, None)  # type: ignore[arg-type]
+            matching_service = SpeakerMatchingService(db, None)
             confidence_level = matching_service.get_confidence_level(float(confidence))
             auto_accept = confidence >= SPEAKER_CONFIDENCE_HIGH
 
@@ -280,7 +280,7 @@ def _get_llm_suggestions(
             profile_query = profile_query.filter(SpeakerProfile.user_id == current_user.id)
         suggested_profile = profile_query.first()
 
-        matching_service = SpeakerMatchingService(db, None)  # type: ignore[arg-type]
+        matching_service = SpeakerMatchingService(db, None)
         confidence_level = matching_service.get_confidence_level(float(speaker.confidence))
 
         if suggested_profile:
@@ -323,7 +323,7 @@ def get_speaker_profile_suggestions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Get profile suggestions for a speaker based on both embeddings and LLM analysis."""
     try:
         speaker = require_speaker_access(

@@ -36,11 +36,11 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
     """
     try:
         # Clear transcript-related fields that exist on the MediaFile model
-        media_file.summary_data = None  # type: ignore[assignment]
-        media_file.summary_opensearch_id = None  # type: ignore[assignment]  # Clear OpenSearch summary ID for regeneration
-        media_file.summary_status = "pending"  # type: ignore[assignment]  # Reset summary status for regeneration
-        media_file.translated_text = None  # type: ignore[assignment]
-        media_file.waveform_data = None  # type: ignore[assignment]  # Clear waveform data for regeneration
+        media_file.summary_data = None
+        media_file.summary_opensearch_id = None  # Clear OpenSearch summary ID for regeneration
+        media_file.summary_status = "pending"  # Reset summary status for regeneration
+        media_file.translated_text = None
+        media_file.waveform_data = None  # Clear waveform data for regeneration
 
         # Clear existing transcript segments
         from app.models.media import Analytics

@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import uuid as uuid_pkg
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -80,7 +81,7 @@ def _as_response(row) -> SCIMTokenResponse:
 def list_scim_tokens(
     db: Session = Depends(get_db),
     _admin: User = Depends(get_current_active_superuser),
-):
+) -> Any:
     """List every SCIM token, including revoked ones (they explain past events)."""
     return [_as_response(row) for row in scim_token_service.list_tokens(db)]
 
@@ -91,7 +92,7 @@ def create_scim_token(
     request: Request,
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_active_superuser),
-):
+) -> Any:
     """Issue a token and return its plaintext exactly once."""
     row, plaintext = scim_token_service.issue_token(
         db,
@@ -119,7 +120,7 @@ def revoke_scim_token(
     request: Request,
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_active_superuser),
-):
+) -> Any:
     """Revoke a token. Idempotent, and never reversible.
 
     Raises:

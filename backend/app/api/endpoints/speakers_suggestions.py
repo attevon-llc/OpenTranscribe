@@ -144,8 +144,8 @@ def confirm_speaker_gender(
         bypass=ctx.bypass,
     )
 
-    speaker.predicted_gender = gender  # type: ignore[assignment]
-    speaker.gender_confirmed_by_user = True  # type: ignore[assignment]
+    speaker.predicted_gender = gender
+    speaker.gender_confirmed_by_user = True
 
     # Captured before commit: the session default is `expire_on_commit=True`, so a
     # post-commit read of a relationship/column re-queries instead of reusing the
@@ -200,8 +200,8 @@ def _accept_speaker_profile_match(
     # Accepting this profile for this one speaker overrides an earlier unassignment (#1233).
     lift_profile_blacklist(db, int(speaker_id), int(profile_id))
     # Assign speaker to profile - cast to int for assignment
-    speaker.profile_id = profile_id  # type: ignore[assignment]
-    speaker.verified = True  # type: ignore[assignment]
+    speaker.profile_id = profile_id
+    speaker.verified = True
     record_human_identity(speaker, user_id=current_user.id, origin=ORIGIN_ACCEPTED_SUGGESTION)
     db.commit()
 
@@ -331,9 +331,9 @@ def _reject_speaker_suggestion(speaker: Speaker, speaker_id: int, db: Session) -
         )
 
     # Mark as verified but don't assign to profile - use setattr for proper type handling
-    speaker.profile_id = None  # type: ignore[assignment]
+    speaker.profile_id = None
     after_unlink(speaker)  # idempotent after unlink_from_profile; covers a speaker with no link
-    speaker.verified = True  # type: ignore[assignment]
+    speaker.verified = True
     clear_suggestion(speaker)
     after = canonical_speaker_label_for_row(speaker)
     db.commit()
@@ -392,8 +392,8 @@ def _create_new_speaker_profile(
 
     old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
     # Assign speaker to new profile - use setattr for proper type handling
-    speaker.profile_id = new_profile.id  # type: ignore[assignment]
-    speaker.verified = True  # type: ignore[assignment]
+    speaker.profile_id = new_profile.id
+    speaker.verified = True
     record_human_identity(speaker, user_id=current_user.id, origin=ORIGIN_PROFILE_CREATED)
     db.commit()
 

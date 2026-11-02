@@ -95,7 +95,7 @@ def _get_cached_waveform(db_file: MediaFile, cache_key: str) -> dict | None:
     result = cached_data.copy()
     result["file_id"] = str(db_file.uuid)
     result["cached"] = True
-    return result  # type: ignore[no-any-return]
+    return result
 
 
 def _download_media_to_temp_file(storage_path: str) -> str:
@@ -154,7 +154,7 @@ def _generate_and_cache_waveform(
 
         # Cache the waveform data in database
         if not db_file.waveform_data:
-            db_file.waveform_data = {}  # type: ignore[assignment]
+            db_file.waveform_data = {}
         db_file.waveform_data[cache_key] = waveform_data.copy()
         db.commit()
 
@@ -406,7 +406,7 @@ def generate_waveforms_for_files(
             }
 
         # Trigger the background task
-        task_id = trigger_waveform_generation(file_uuid=None, skip_existing=not force_regenerate)  # type: ignore[arg-type]
+        task_id = trigger_waveform_generation(file_uuid=None, skip_existing=not force_regenerate)
 
         logger.info(
             f"User {current_user.id} triggered waveform generation for {len(files_to_process)} files"

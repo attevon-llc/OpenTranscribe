@@ -11,6 +11,8 @@ response model has no field for the internal basis, the requester reference or t
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import Query
@@ -39,7 +41,7 @@ def list_my_takedowns(
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Takedowns of the caller's own files: why, when, the status, and where to dispute."""
     takedowns, total = owner_takedowns(db, ctx.user.uuid, limit=limit, offset=offset)
     return OwnerTakedownList(takedowns=takedowns, total=total)

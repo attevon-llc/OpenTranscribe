@@ -26,7 +26,7 @@ def cancel_upload(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> None:
     """
     Cancel an in-progress upload, or delete a completed file.
 

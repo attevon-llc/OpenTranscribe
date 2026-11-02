@@ -189,7 +189,7 @@ def _mark_upload_dispatch_failed(db: Session, file_id: int, user_id: int, exc: E
         media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
         if media_file is None:
             return
-        media_file.last_error_message = message  # type: ignore[assignment]
+        media_file.last_error_message = message
         update_media_file_status(db, file_id, FileStatus.ERROR)  # takedown-aware writer, #824
     except Exception:
         logger.exception("Could not mark file %s ERROR after a dispatch failure", file_id)

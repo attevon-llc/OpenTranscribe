@@ -365,7 +365,7 @@ def _handle_update_profile_action(
     if not profile:
         return None
 
-    profile.name = new_name  # type: ignore[assignment]
+    profile.name = new_name
     logger.info(f"Updated profile {profile.id} name to '{new_name}' globally")
 
     return apply_profile_name_to_speakers(

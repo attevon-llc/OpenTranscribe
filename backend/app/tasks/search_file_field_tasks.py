@@ -149,12 +149,13 @@ def update_file_access_index(file_ids: list[int]) -> dict[str, Any]:
 
 
 @celery_app.task(
+    bind=True,
     name="update_file_tags_index",
     priority=UtilityPriority.ROUTINE,
     max_retries=3,
     default_retry_delay=10,
 )
-def update_file_tags_index(file_ids: list[int]) -> dict[str, Any]:
+def update_file_tags_index(self, file_ids: list[int]) -> dict[str, Any]:
     """Overwrite the ``tags`` field on the search documents for the given files.
 
     Dispatched by ``services/tag_service.on_tags_changed`` from every path that
@@ -171,6 +172,11 @@ def update_file_tags_index(file_ids: list[int]) -> dict[str, Any]:
 
     An empty tag list is written as an empty array rather than skipped —
     detaching a file's last tag has to clear the indexed value.
+
+    A failed tag lookup is retried (``self.retry``, the declared ``max_retries``
+    and delay) and, once those are spent, fails the task: writing nothing and
+    reporting ``success`` would leave every document's tags stale with no sign.
+    The rewrite is idempotent, so a retry is always safe.
 
     Args:
         file_ids: Media file integer IDs whose tags changed.
@@ -207,19 +213,15 @@ def update_file_tags_index(file_ids: list[int]) -> dict[str, Any]:
                 .filter(FileTag.media_file_id.in_(file_ids))
                 .all()
             )
-        for tagged_file_id, name in rows:
-            if tagged_file_id is None:
-                continue
-            tags_by_file.setdefault(int(tagged_file_id), []).append(name)
-        pending_ids = file_ids
     except Exception as e:
-        # The per-file version counted a failed lookup as that file's error and
-        # carried on; with one query the whole batch fails together.
         logger.error(f"Failed to load tag names for {len(file_ids)} file(s): {e}")
-        errors = len(file_ids)
-        pending_ids = []
+        raise self.retry(exc=e) from e
+    for tagged_file_id, name in rows:
+        if tagged_file_id is None:
+            continue
+        tags_by_file.setdefault(int(tagged_file_id), []).append(name)
 
-    for file_id in pending_ids:
+    for file_id in file_ids:
         try:
             tag_names = tags_by_file.get(int(file_id), [])
             response = client.update_by_query(

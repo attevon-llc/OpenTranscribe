@@ -64,7 +64,8 @@
   import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
   import { requestSummary, topicExtractionNoticeKey, type SummarizeResponse } from '$lib/api/summarize';
   import { getAppBaseUrl } from '$lib/utils/url';
-  import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache, type PlaybackMode } from '$lib/api/mediaUrl';
+  import type { PlaybackMode } from '$lib/api/mediaUrl';
+  import { createMediaStream } from '$lib/fileDetail/mediaStream';
   import Spinner from '../../../components/ui/Spinner.svelte';
   import FileDetailSkeleton from '../../../components/FileDetailSkeleton.svelte';
 
@@ -435,53 +436,16 @@
     loadSpeakers();
   }
 
-  // URL refresher for long video playback
-  let urlRefresher: { stop: () => void } | null = null;
+  // Presigned media URL, refreshed before it expires during long playback.
+  const mediaStream = createMediaStream((newUrl) => (videoUrl = newUrl));
 
-  /**
-   * Set up the video URL for streaming using secure presigned URLs.
-   *
-   * This follows AWS/GCS best practices:
-   * - Short-lived presigned URLs (5 minutes default)
-   * - Automatic refresh before expiration for long playback
-   * - Cryptographically signed by MinIO
-   */
-  async function setupVideoUrl(fileId: string, keepCached = false) {
+  async function setupVideoUrl(targetFileId: string, keepCached = false) {
     try {
-      // Stop any existing URL refresher
-      if (urlRefresher) {
-        urlRefresher.stop();
-        urlRefresher = null;
-      }
-
-      // Clear cached URL to ensure fresh presigned URL, except on the first load, where the
-      // only entry can be the gallery's hover prefetch (seconds old, and getMediaStreamUrl
-      // already refuses one near expiry); clearing it made a second identical request.
-      if (!keepCached) clearMediaUrlCache(fileId);
-
-      // Get presigned URL from backend (authenticated, time-limited)
-      const url = await getMediaStreamUrl(fileId, 'video');
-
-      // What the URL serves can differ from the upload: a converted copy of audio no
-      // browser decodes, or only the audio track of a video no browser shows. Set before
-      // videoUrl so the player picks <audio> vs <video> from the right type.
-      const info = getCachedUrlInfo(fileId, 'video');
-      streamContentType = info?.contentType ?? '';
-      playbackMode = info?.playback ?? null;
-      videoUrl = url;
-
-      // Set up automatic URL refresh for long videos, using the URL's real expiry
-      // (MEDIA_URL_EXPIRE_SECONDS) rather than a hardcoded interval — avoids needlessly
-      // re-fetching and re-setting the video src mid-playback.
-      const expiresIn = info ? Math.max(60, Math.floor((info.expiresAt - Date.now()) / 1000)) : 300;
-      urlRefresher = createUrlRefresher(
-        fileId,
-        (newUrl) => {
-          videoUrl = newUrl;
-        },
-        expiresIn
-      );
-
+      const stream = await mediaStream.open(targetFileId, keepCached);
+      // Content type and mode first, so the player picks <audio> vs <video> correctly.
+      streamContentType = stream.contentType;
+      playbackMode = stream.playbackMode;
+      videoUrl = stream.url;
       // Reset video element check flag to prompt afterUpdate to try initialization
       videoElementChecked = false;
     } catch (error) {
@@ -490,14 +454,6 @@
       videoErrorMessage = 'Video not available for this file';
     }
   }
-
-
-
-
-
-  /**
-   * Refresh subtitle track when transcript changes (debounced)
-   */
 
   /**
    * Initialize the video player with enhanced streaming capabilities
@@ -1102,11 +1058,7 @@
     // Player cleanup is now handled by VideoPlayer component
     playerInitialized = false;
 
-    // Stop URL refresher for presigned URLs
-    if (urlRefresher) {
-      urlRefresher.stop();
-      urlRefresher = null;
-    }
+    mediaStream.stop();
 
     // LLM status cleanup is handled by the Settings component
 

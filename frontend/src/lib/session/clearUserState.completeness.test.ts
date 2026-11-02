@@ -120,6 +120,10 @@ const EXEMPT: Record<string, string> = {
     'createPageTimers() is a FACTORY: the pending timer handles live in its closure, one per ' +
     'file-detail page mount, and destroy() (called from that page’s onDestroy) cancels them. ' +
     '`clearTimeout` is the global, not a reset of module state. No user data is held.',
+  'lib/fileDetail/mediaStream':
+    'createMediaStream() is a FACTORY: its only state is the URL refresher handle, stopped by ' +
+    'the page’s onDestroy. `clearMediaUrlCache` is a call INTO lib/api/mediaUrl, which owns ' +
+    'that cache; this module holds no URL itself.',
   'lib/fileDetail/speakerSave':
     'createSpeakerSaveFlow() is a FACTORY: the profile-decision queue and bulk decisions live ' +
     'in its closure, one per file-detail page mount, and die with the page. resetBulkState() ' +

@@ -81,3 +81,30 @@ def test_no_request_at_all_has_no_outcome(client, user_token_headers, enabled):
 
     assert body["request"] is None
     assert body["last_outcome"] is None
+
+
+def test_a_user_cancelled_self_erasure_is_not_reported_as_a_system_block(
+    client, user_token_headers, enabled
+):
+    receipt = client.post(URL, json=GOOD, headers=user_token_headers).json()
+    cancelled = client.delete(f"{URL}/{receipt['ledger_uuid']}", headers=user_token_headers)
+    assert cancelled.status_code == 200, cancelled.text
+
+    body = client.get(URL, headers=user_token_headers).json()
+
+    assert body["request"] is None
+    assert body["last_outcome"] is None
+
+
+def test_a_user_cancellation_after_an_older_block_is_not_reported_as_a_block(
+    client, user_token_headers, enabled, db_session
+):
+    first = client.post(URL, json=GOOD, headers=user_token_headers).json()
+    ledger.block_request(
+        db_session, _entry(db_session, first["ledger_uuid"]), reason="last_super_admin"
+    )
+    second = client.post(URL, json=GOOD, headers=user_token_headers).json()
+    cancelled = client.delete(f"{URL}/{second['ledger_uuid']}", headers=user_token_headers)
+    assert cancelled.status_code == 200, cancelled.text
+
+    assert client.get(URL, headers=user_token_headers).json()["last_outcome"] is None

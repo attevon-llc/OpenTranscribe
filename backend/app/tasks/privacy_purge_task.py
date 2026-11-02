@@ -116,6 +116,7 @@ def privacy_purge_task(
     if guarded_scope is None and wanted and not blocked:
         logger.warning("privacy purge %s aborted: every file is held or quarantined", task_id)
         audit(f"pass_{phase}_aborted", AuditOutcome.FAILURE, reason="files_protected")
+        purge.write_record(task_id, actor_user_id, {}, targets=wanted, reason="files_protected")
         _set_status(task_id, TASK_STATUS_FAILED, completed=True)
         return {"status": "aborted", "reason": "files_protected"}
     if guarded_scope is not None:

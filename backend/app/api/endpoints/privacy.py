@@ -256,6 +256,7 @@ def get_purge_status(
             PurgeAuditRef(event_type=str(event_type.value), task_id=task_id)
             for event_type in purge_audit_event_types(record.get("targets"))
         ],
+        reason=record.get("reason") if isinstance(record.get("reason"), str) else None,
     )
 
 

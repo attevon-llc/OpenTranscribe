@@ -112,7 +112,7 @@ describe('AutoLabelSettings: automatic suggestions switch', () => {
     expect(toggle.disabled).toBe(false);
   });
 
-  it('shows the server reason when retroactive auto-label is refused', async () => {
+  it('shows the translated support-session sentence when retroactive auto-label is refused', async () => {
     vi.mocked(axiosInstance.post).mockRejectedValue({
       response: {
         status: 403,
@@ -131,7 +131,7 @@ describe('AutoLabelSettings: automatic suggestions switch', () => {
     );
 
     await waitFor(() =>
-      expect(toastStore.error).toHaveBeenCalledWith('Refused during support access.')
+      expect(toastStore.error).toHaveBeenCalledWith('supportAccess.error.notPermitted')
     );
   });
 });

@@ -21,6 +21,22 @@ describe('getErrorMessage', () => {
     await initI18n('en');
   });
 
+  it('translates a support-access refusal instead of showing the server English sentence', () => {
+    const error = {
+      response: {
+        status: 403,
+        data: {
+          detail: {
+            code: 'support_grant_action_not_permitted',
+            message: 'This action is not available under a support access grant.',
+          },
+        },
+      },
+    };
+
+    expect(getErrorMessage(error)).toBe('This action is not available during a support session.');
+  });
+
   it('prefers the FastAPI response.data.detail', () => {
     expect(getErrorMessage({ response: { data: { detail: 'Not authorized' } } })).toBe(
       'Not authorized'

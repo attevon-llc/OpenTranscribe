@@ -19,7 +19,14 @@
     generateSummary: void;
     retrySummary: void;
     regenerateWithPrompt: { promptUuid: string | null };
+    openSettings: void;
   }>();
+
+  // The summary dialog sits above Settings, so it has to be closed for the page to be seen.
+  function openAiSettings() {
+    settingsModalStore.open('llm-provider');
+    dispatch('openSettings');
+  }
 
   let availablePrompts: any[] = [];
   let selectedPromptUuid: string | null = null;
@@ -94,7 +101,7 @@
       type="button"
       class="hint-link"
       data-testid="open-ai-settings"
-      on:click={() => settingsModalStore.open('llm-provider')}
+      on:click={openAiSettings}
     >
       {$t('chat.setup.openSettings')}
     </button>

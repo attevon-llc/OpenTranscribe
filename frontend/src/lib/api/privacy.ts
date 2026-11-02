@@ -92,7 +92,12 @@ export interface PurgeStatus {
   residual_ok: boolean | null;
   residual_unverified: string[];
   audit: PurgeAuditRef[];
+  /** Why a purge ended without running; `files_protected` = every recording was held or taken down. */
+  reason?: string | null;
 }
+
+/** The abort code for a purge whose every recording is under a legal hold or has been taken down. */
+export const PURGE_REASON_FILES_PROTECTED = 'files_protected';
 
 export type PurgeScope = 'personal' | 'all';
 

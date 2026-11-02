@@ -263,6 +263,24 @@ describe('PurgeConfirmDialog', () => {
       );
     });
 
+    it('says nothing was deleted when every recording was protected', async () => {
+      status.mockResolvedValue(
+        done(null, {
+          status: 'failed',
+          reason: 'files_protected',
+          residual: null,
+          residual_ok: null,
+          audit: [],
+        })
+      );
+      await runToTheEnd();
+
+      expect(await screen.findByTestId('purge-all-protected')).toHaveTextContent(
+        'Nothing was deleted: every recording in scope is under a legal hold or has been taken down.'
+      );
+      expect(screen.getByRole('dialog')).not.toHaveTextContent('The deletion failed');
+    });
+
     it('behaves as before when the skip counters are zero', async () => {
       status.mockResolvedValue(
         done({

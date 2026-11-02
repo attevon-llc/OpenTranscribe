@@ -6,9 +6,11 @@ task both ask ``hold_guard``; a held file keeps its voiceprints, a normal file i
 
 from __future__ import annotations
 
+import json
 from contextlib import contextmanager
 from datetime import UTC
 from datetime import datetime
+from types import SimpleNamespace
 
 import pytest
 from fastapi import status
@@ -182,3 +184,53 @@ def test_task_aborts_without_purging_when_every_file_is_held(db_session, normal_
 
     assert result == {"status": "aborted", "reason": "files_protected"}
     assert ran == []
+
+
+def test_the_all_protected_abort_is_readable_from_the_status_record(
+    db_session, normal_user, monkeypatch
+):
+    mf = make_file(db_session, normal_user)
+    mf.legal_hold = True
+    db_session.commit()
+    store: dict[str, str] = {}
+
+    @contextmanager
+    def scope():
+        yield db_session
+
+    monkeypatch.setattr(purge, "targets_still_enabled", lambda *a, **k: [])
+    monkeypatch.setattr("app.tasks.privacy_purge_task.session_scope", scope)
+    monkeypatch.setattr(
+        "app.core.redis.get_redis",
+        lambda: SimpleNamespace(
+            set=lambda key, value, ex=None: store.__setitem__(key, value), get=store.get
+        ),
+    )
+
+    privacy_purge_task.run(
+        {"kind": "files", "file_ids": [mf.id]}, ["voiceprints"], None, purge_reason="opt_out"
+    )
+
+    assert [json.loads(v)["reason"] for v in store.values()] == ["files_protected"]
+
+
+def test_the_status_endpoint_exposes_the_abort_reason(
+    client, user_token_headers, db_session, normal_user, monkeypatch
+):
+    from app.models.media import Task
+    from app.tasks.privacy_purge_task import TASK_TYPE
+
+    task_id = "purge-reason-test"
+    db_session.add(Task(id=task_id, user_id=normal_user.id, task_type=TASK_TYPE, status="failed"))
+    db_session.commit()
+    store = {
+        f"privacy_purge:{task_id}": json.dumps(
+            {"user_id": 1, "counts": {}, "reason": "files_protected"}
+        )
+    }
+    monkeypatch.setattr("app.core.redis.get_redis", lambda: SimpleNamespace(get=store.get))
+
+    body = client.get(f"/api/privacy/purge/{task_id}", headers=user_token_headers).json()
+
+    assert body["status"] == "failed"
+    assert body["reason"] == "files_protected"

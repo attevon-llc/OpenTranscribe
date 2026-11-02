@@ -21,6 +21,7 @@
   import {
     PrivacyApi,
     PURGE_CONFIRM_WORD,
+    PURGE_REASON_FILES_PROTECTED,
     isTerminalPurgeState,
     type PurgeAccepted,
     type PurgeStatus,
@@ -197,6 +198,8 @@
       <div class="progress" aria-live="polite">
         {#if status.status === 'completed'}
           <p>{$t('privacy.purge.completed', { total: purgeCountTotal(status.counts) })}</p>
+        {:else if status.status === 'failed' && status.reason === PURGE_REASON_FILES_PROTECTED}
+          <p role="status" data-testid="purge-all-protected">{$t('privacy.purge.allProtected')}</p>
         {:else if status.status === 'failed'}
           <p class="error" role="alert">{$t('privacy.purge.failed')}</p>
         {:else if status.status === 'skipped'}

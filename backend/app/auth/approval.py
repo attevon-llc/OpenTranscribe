@@ -118,3 +118,14 @@ def is_pending(user) -> bool:
 def is_rejected(user) -> bool:
     """Whether *user* was refused by an administrator."""
     return str(getattr(user, "approval_status", APPROVAL_APPROVED) or "") == APPROVAL_REJECTED
+
+
+def is_unrecognised(user) -> bool:
+    """Whether *user* carries an ``approval_status`` outside the closed set.
+
+    The ``ck_user_approval_status_valid`` CHECK keeps such a value out of the table;
+    this keeps the gate from reading one as approved should it ever appear. A missing
+    value is not unrecognised, for the reason :func:`is_pending` gives.
+    """
+    value = getattr(user, "approval_status", None)
+    return value is not None and str(value) not in VALID_APPROVAL_STATUSES

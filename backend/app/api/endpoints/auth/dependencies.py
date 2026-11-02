@@ -145,6 +145,16 @@ def _audit_lifecycle_denial(
     )
 
 
+def _expired_at(user: User) -> datetime | None:
+    """``account_expires_at`` (timezone-aware) when it has passed, else ``None``."""
+    expires_at = getattr(user, "account_expires_at", None)
+    if expires_at is None:
+        return None
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    return expires_at if datetime.now(UTC) >= expires_at else None
+
+
 def _enforce_account_expiry(user: User, request: Request | None) -> None:
     """Refuse a time-boxed account past its ``account_expires_at``.
 
@@ -154,13 +164,8 @@ def _enforce_account_expiry(user: User, request: Request | None) -> None:
     Raises:
         HTTPException: 403 with ``detail.code == account_expired``.
     """
-    expires_at = getattr(user, "account_expires_at", None)
+    expires_at = _expired_at(user)
     if expires_at is None:
-        return
-
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=UTC)
-    if datetime.now(UTC) < expires_at:
         return
 
     _audit_lifecycle_denial(
@@ -184,6 +189,44 @@ def _enforce_account_expiry(user: User, request: Request | None) -> None:
             ),
         },
     )
+
+
+def _approval_refusal(user: User, db: Session) -> tuple[str, str] | None:
+    """``(detail.code, message)`` when the approval gate refuses *user*, else ``None``.
+
+    An ``approval_status`` outside the closed set is refused as a rejection: it has
+    no self-service remedy either.
+
+    """
+    from app.auth.approval import approval_required
+    from app.auth.approval import is_pending
+    from app.auth.approval import is_rejected
+    from app.auth.approval import is_unrecognised
+
+    if is_rejected(user) or is_unrecognised(user):
+        return (
+            ERROR_CODE_ACCOUNT_REJECTED,
+            "This account was not approved. Contact an administrator.",
+        )
+    if is_pending(user) and approval_required(db):
+        return (
+            ERROR_CODE_ACCOUNT_PENDING_APPROVAL,
+            "This account is awaiting administrator approval.",
+        )
+    return None
+
+
+def admitted_on_optional_auth(user: User, db: Session) -> bool:
+    """Whether an optional-auth route may treat *user* as signed in.
+
+    Applies only the approval and expiry gates, without raising or auditing: the
+    caller is served as anonymous rather than refused, and these routes run on
+    every page load. The banner and password-change gates are left out because
+    both have a self-service remedy whose screens run in that state.
+    """
+    if _expired_at(user) is not None:
+        return False
+    return _approval_refusal(user, db) is None
 
 
 def _enforce_approval(user: User, request: Request | None, db: Session) -> None:
@@ -211,22 +254,10 @@ def _enforce_approval(user: User, request: Request | None, db: Session) -> None:
         HTTPException: 403 with ``detail.code`` ``account_pending_approval`` or
             ``account_rejected``.
     """
-    from app.auth.approval import approval_required
-    from app.auth.approval import is_pending
-    from app.auth.approval import is_rejected
-
-    if is_rejected(user):
-        code, message = (
-            ERROR_CODE_ACCOUNT_REJECTED,
-            "This account was not approved. Contact an administrator.",
-        )
-    elif is_pending(user) and approval_required(db):
-        code, message = (
-            ERROR_CODE_ACCOUNT_PENDING_APPROVAL,
-            "This account is awaiting administrator approval.",
-        )
-    else:
+    refusal = _approval_refusal(user, db)
+    if refusal is None:
         return
+    code, message = refusal
 
     # Audited, unlike the banner gate: this fires for individually flagged
     # accounts rather than for every session of every user, so the volume is
@@ -363,6 +394,11 @@ def _enforce_password_change(user: User, request: Request | None) -> None:
     )
 
 
+#: The last successful :func:`_banner_requirement` read in this process, for its
+#: failed-read path. Per process, like ``core/settings_cache.py``.
+_last_banner_read: tuple[bool, datetime | None] | None = None
+
+
 def _banner_requirement(db: Session | None) -> tuple[bool, datetime | None]:
     """Return ``(banner_enabled, text_last_changed_at)`` for this deployment.
 
@@ -382,8 +418,14 @@ def _banner_requirement(db: Session | None) -> tuple[bool, datetime | None]:
             this runs on every authenticated request.
 
     Returns:
-        Whether the banner is enabled, and when its text last changed.
+        Whether the banner is enabled, and when its text last changed. When the
+        read fails, the banner is required if ``.env`` enables it OR the last
+        successful read in this process did: an outage must not switch the gate
+        off for a banner enabled only in the admin UI, and a deployment that never
+        enabled it must not have its users held at a banner nobody can show them.
     """
+    global _last_banner_read
+
     if db is None or not hasattr(db, "query"):
         return settings.LOGIN_BANNER_ENABLED, None
 
@@ -397,7 +439,9 @@ def _banner_requirement(db: Session | None) -> tuple[bool, datetime | None]:
             .all()
         }
     except Exception:
-        logger.debug("Could not read banner configuration; using .env", exc_info=True)
+        logger.debug("Could not read banner configuration", exc_info=True)
+        if _last_banner_read is not None and _last_banner_read[0]:
+            return _last_banner_read
         return settings.LOGIN_BANNER_ENABLED, None
 
     enabled_row = rows.get("login_banner_enabled")
@@ -409,7 +453,8 @@ def _banner_requirement(db: Session | None) -> tuple[bool, datetime | None]:
         enabled = str(enabled_row.config_value).strip().lower() in BOOL_TRUE_VALUES
 
     text_row = rows.get("login_banner_text")
-    return enabled, getattr(text_row, "updated_at", None)
+    _last_banner_read = (enabled, getattr(text_row, "updated_at", None))
+    return _last_banner_read
 
 
 def _enforce_banner_acknowledgment(user: User, request: Request | None, db: Session) -> None:
@@ -790,6 +835,9 @@ def get_optional_current_user(
     Used for endpoints that support both authenticated and unauthenticated
     access (e.g., public files can be accessed without auth, private files require auth).
 
+    A pending, rejected or expired account is anonymous here, as it is refused at
+    ``get_current_active_user``; see ``admitted_on_optional_auth``.
+
     Returns:
         User object if valid token provided, None otherwise
     """
@@ -825,7 +873,7 @@ def get_optional_current_user(
                 if external_session_expired(external_identity):
                     return None
                 external_user = sync_external_user_to_db(db, external_identity)
-                if not external_user.is_active:
+                if not external_user.is_active or not admitted_on_optional_auth(external_user, db):
                     return None
                 # Stash for resolve_org_context()/get_current_context() so org
                 # scoping (e.g. thumbnail org-resolution) works for external
@@ -881,7 +929,7 @@ def get_optional_current_user(
 
         # Look up user by UUID
         user = db.query(User).filter(User.uuid == user_uuid).first()
-        if user is None or not user.is_active:
+        if user is None or not user.is_active or not admitted_on_optional_auth(user, db):
             return None
 
         return user  # type: ignore[no-any-return]

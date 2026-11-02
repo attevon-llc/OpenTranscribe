@@ -2,7 +2,6 @@
   import { onMount, onDestroy, afterUpdate, tick } from 'svelte';
   import type { Collection } from '$lib/types/collection';
   import type { Tag } from '$lib/types/tag';
-  import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { guardUnsavedChanges } from '$lib/navigation/unsavedChangesGuard';
   import axiosInstance from '$lib/axios';
   import { websocketStore, type Notification } from '$stores/websocket';
@@ -229,16 +228,6 @@
 
   // Update-globally / create-new dialog for a renamed speaker linked to a profile
   let speakerProfileDialog: { title: string; message: string } | null = null;
-  $: showSpeakerProfileConfirmation = speakerProfileDialog !== null;
-
-  // Scroll lock for the speaker-profile dialog's custom .modal-overlay
-  let _prevSpeakerConfirm = false;
-  $: {
-    if (showSpeakerProfileConfirmation !== _prevSpeakerConfirm) {
-      showSpeakerProfileConfirmation ? lockScroll() : unlockScroll();
-      _prevSpeakerConfirm = showSpeakerProfileConfirmation;
-    }
-  }
 
   /** Apply the redaction fields of a `GET /files/{id}` read. */
   function applyRedactionState(data: FileDetailPayload): void {
@@ -826,9 +815,6 @@
 
     // Clear the transcript store when leaving the page
     transcriptStore.clear();
-
-    // Release the scroll lock held by the speaker-profile dialog
-    if (_prevSpeakerConfirm) unlockScroll();
   });
 
   afterUpdate(() => {

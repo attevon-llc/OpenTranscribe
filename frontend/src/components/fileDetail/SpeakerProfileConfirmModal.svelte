@@ -4,11 +4,18 @@
    * global profile or become a new one.
    *
    * The page owns visibility, so this component is rendered inside the page's
-   * `{#if}` and only reports the chosen action.
+   * `{#if}` and only reports the chosen action. Being mounted IS being shown, so it
+   * holds a scroll lock for exactly its lifetime (the page used to sequence this).
    */
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onMount } from 'svelte';
   import BaseModal from '$components/ui/BaseModal.svelte';
+  import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { t } from '$stores/locale';
+
+  onMount(() => {
+    lockScroll();
+    return unlockScroll;
+  });
 
   export let title = '';
   export let message = '';

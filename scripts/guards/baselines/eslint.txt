@@ -387,7 +387,6 @@ frontend/src/routes/chat/[[conversationId]]/+page.svelte::svelte/no-navigation-w
 frontend/src/routes/file-status/+page.svelte::svelte/no-navigation-without-resolve	1	lint: burn-down planned
 frontend/src/routes/file-status/page.test.ts::no-restricted-imports	2	lint: burn-down planned
 frontend/src/routes/files/[id]/+page.svelte::@typescript-eslint/no-explicit-any	7	lint: burn-down planned
-frontend/src/routes/files/[id]/+page.svelte::@typescript-eslint/no-unused-expressions	1	lint: burn-down planned
 frontend/src/routes/files/[id]/+page.svelte::no-useless-assignment	2	lint: burn-down planned
 frontend/src/routes/files/[id]/+page.svelte::svelte/no-navigation-without-resolve	1	lint: burn-down planned
 frontend/src/routes/forgot-password/+page.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned

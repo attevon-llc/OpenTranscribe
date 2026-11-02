@@ -7,6 +7,7 @@ files it skipped (counts only; an organization hold's uuid is never in a respons
 
 from __future__ import annotations
 
+import importlib
 import json
 import uuid as uuid_pkg
 from contextlib import contextmanager
@@ -229,7 +230,7 @@ def task_seams(db_session, monkeypatch):
         return purge.Residual(counts={key: 0 for key in purge.VOICEPRINT_RESIDUAL_KEYS})
 
     replaced: dict[Any, dict[str, Any]] = {
-        "app.tasks.privacy_purge_task": {
+        importlib.import_module("app.tasks.privacy_purge_task"): {
             "session_scope": session_scope,
             "SessionLocal": lambda: _KeepOpen(db_session),
         },

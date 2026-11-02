@@ -20,6 +20,7 @@
   import { copyToClipboard } from '$lib/utils/clipboard';
   import { websocketStore } from '$stores/websocket';
   import { handleFileNotification } from '$lib/fileDetail/notificationHandler';
+  import { createPageTimers } from '$lib/fileDetail/pageTimers';
   import {
     appendSegmentPage,
     patchSegmentInFile,
@@ -93,40 +94,9 @@
   let videoElementChecked = false;
   let collections: Collection[] = [];
 
-  /**
-   * Timers owned by this page.
-   *
-   * Every deferred callback below touches the DOM (`document.querySelector`, a
-   * `scrollIntoView`, a `classList` mutation). An uncancelled one keeps running
-   * against a page the user has already navigated away from: in the browser it
-   * scrolls or restyles a detached node, and under jsdom the environment is torn
-   * down first, so the callback throws `ReferenceError: document is not defined`
-   * as an *unhandled* error — an intermittent red run with no failing test.
-   *
-   * Schedule through `scheduleTimeout` rather than calling `setTimeout`
-   * directly: it refuses to schedule once the component is gone (a late-resolving
-   * fetch can still reach this code after destroy) and `onDestroy` cancels
-   * whatever is still pending.
-   */
-  let pageDestroyed = false;
-  let pendingTimers: ReturnType<typeof setTimeout>[] = [];
-
-  function scheduleTimeout(callback: () => void, delayMs: number): void {
-    if (pageDestroyed) return;
-    const handle = setTimeout(() => {
-      pendingTimers = pendingTimers.filter((pending) => pending !== handle);
-      if (pageDestroyed) return;
-      callback();
-    }, delayMs);
-    pendingTimers.push(handle);
-  }
-
-  function cancelPendingTimers(): void {
-    for (const handle of pendingTimers) {
-      clearTimeout(handle);
-    }
-    pendingTimers = [];
-  }
+  // DOM-touching deferred work goes through this so onDestroy can cancel it (see pageTimers).
+  const pageTimers = createPageTimers();
+  const scheduleTimeout = pageTimers.schedule;
 
   // UI state
   let showMetadata = false;
@@ -2233,11 +2203,9 @@
   });
 
   onDestroy(() => {
-    // Cancel every deferred DOM callback FIRST — see `scheduleTimeout`. `pageDestroyed`
-    // also stops anything still in flight (a late fetch resolution) from scheduling a
-    // new one after this teardown has run.
-    pageDestroyed = true;
-    cancelPendingTimers();
+    // Cancel every deferred DOM callback FIRST; it also stops anything still in flight
+    // (a late fetch resolution) from scheduling a new one after this teardown has run.
+    pageTimers.destroy();
     downloadManager.cleanup();
 
     // Player cleanup is now handled by VideoPlayer component

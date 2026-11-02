@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.legal.processing_gate import require_processing_allowed_for_file
@@ -91,7 +92,7 @@ async def get_summary_status(
     }
 
 
-@router.post("/{file_uuid}/retry-summary")
+@router.post("/{file_uuid}/retry-summary", dependencies=[Depends(refuse_under_support_grant)])
 async def retry_summary(
     file_uuid: str,
     db: Session = Depends(get_db),

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Support access grants and LLM or tenant-content routes.** A write-level support access grant
+  could still start summarization, speaker identification, topic extraction, auto-labelling or
+  applying topic suggestions (each sends the tenant's transcript to the caller's own language
+  model configuration or writes the result back), and could create or attach tags through the
+  bulk file action. These routes now refuse a grant with the same 403 as the tag routes, and the
+  platform access matrix is regenerated. Support access to read, edit and retry is unchanged.
 - **Credential handling for protected media imports.** The site login supplied with a protected
   media URL import is no longer passed to the background worker as a task argument. It is held
   encrypted in Redis for a limited time under an opaque reference, read by the worker when it

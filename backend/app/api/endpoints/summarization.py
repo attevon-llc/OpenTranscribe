@@ -63,7 +63,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/{file_uuid}/summarize", response_model=dict[str, Any])
+@router.post(
+    "/{file_uuid}/summarize",
+    response_model=dict[str, Any],
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 async def trigger_summarization(
     file_uuid: str = Path(..., description="UUID of the media file to summarize"),
     request: SummaryTaskRequest = SummaryTaskRequest(),
@@ -500,7 +504,11 @@ def _redacted_summary(
 # ``transcript_summaries`` index and went with it (#67).
 
 
-@router.post("/{file_uuid}/identify-speakers", response_model=SpeakerIdentificationResponse)
+@router.post(
+    "/{file_uuid}/identify-speakers",
+    response_model=SpeakerIdentificationResponse,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 async def identify_speakers(
     file_uuid: str = Path(..., description="UUID of the media file"),
     current_user: User = Depends(get_current_active_user),

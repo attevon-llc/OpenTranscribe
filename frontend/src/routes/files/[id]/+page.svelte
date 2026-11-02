@@ -1,18 +1,24 @@
 <script lang="ts">
   import { onMount, onDestroy, afterUpdate, tick } from 'svelte';
-  import type { Speaker } from '$lib/types/speaker';
   import type { TranscriptSegment } from '$lib/types/media';
   import type { Collection } from '$lib/types/collection';
   import type { Comment } from '$lib/types/comment';
   import type { Tag } from '$lib/types/tag';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { guardUnsavedChanges } from '$lib/navigation/unsavedChangesGuard';
-  import { get } from 'svelte/store';
   import axiosInstance from '$lib/axios';
   import { formatDuration } from '$lib/utils/formatting';
   import { websocketStore } from '$stores/websocket';
   import { handleFileNotification } from '$lib/fileDetail/notificationHandler';
   import { createPageTimers } from '$lib/fileDetail/pageTimers';
+  import { createSpeakerLoader } from '$lib/fileDetail/speakerLoader';
+  import {
+    hasUnsavedSpeakerNames,
+    speakerHasUnsavedChange,
+    validateSpeakerName,
+    type SpeakerItem,
+    type SpeakerNameBaseline,
+  } from '$lib/fileDetail/speakerNames';
   import { markActiveSegment, scrollToAndHighlight, scrollToSegmentAtTime } from '$lib/fileDetail/segmentDom';
   import {
     appendSegmentPage,
@@ -48,7 +54,7 @@
   import SpeakerProfileConfirmModal from '$components/fileDetail/SpeakerProfileConfirmModal.svelte';
   import { isLLMAvailable } from '$stores/llmStatus';
   import { authStore } from '$stores/auth';
-  import { transcriptStore, type SpeakerInfo } from '$stores/transcriptStore';
+  import { transcriptStore } from '$stores/transcriptStore';
   import { downloadStore } from '$stores/downloads';
   import { supportSessionGate } from '$stores/supportSession';
   import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
@@ -131,16 +137,15 @@
     }
   }
 
-  interface SpeakerItem extends SpeakerInfo {
-    profile?: { uuid: string; name: string } | null;
-    profile_suggestions?: Array<Record<string, any>>;
-    [key: string]: any;
-  }
   let speakerList: SpeakerItem[] = [];
-  let originalSpeakerNames: Map<string, string> = new Map(); // Track original names for change detection
-  // Generation counter for loadSpeakers. Renames, websocket events and the initial load
-  // can all be in flight at once; a stale response must not overwrite a newer one.
-  let speakerLoadSeq = 0;
+  let originalSpeakerNames: SpeakerNameBaseline = new Map(); // Last-saved names, for change detection
+  const { loadSpeakers } = createSpeakerLoader({
+    getFile: () => file,
+    getSpeakerList: () => speakerList,
+    setSpeakerList: (speakers) => (speakerList = speakers),
+    getBaseline: () => originalSpeakerNames,
+    setBaseline: (baseline) => (originalSpeakerNames = baseline),
+  });
   // Reported by CommentSection; the export flow reads it instead of refetching comments.
   let commentCount = 0;
   let speakerNamesChanged = false; // Track if any speaker names have been modified
@@ -196,11 +201,7 @@
   $: diarizationDisabled = file?.diarization_disabled === true;
 
   // Detect changes in speaker names - depends on speaker display_name values
-  $: speakerNamesChanged = speakerList.length > 0 && speakerList.some(speaker => {
-    const originalName = originalSpeakerNames.get(speaker.uuid) || '';
-    const currentName = (speaker.display_name || '').trim();
-    return originalName !== currentName;
-  });
+  $: speakerNamesChanged = hasUnsavedSpeakerNames(speakerList, originalSpeakerNames);
 
   // An open segment editor only counts as unsaved once the text actually differs — opening
   // one and closing the tab must not prompt. Trimmed on both sides so trailing whitespace
@@ -633,162 +634,6 @@
     }
   }
 
-  // Speaker sorting is now handled by the backend
-
-  /**
-   * Load cross-media appearances ("appears in N other videos") for labeled speakers.
-   *
-   * Runs in the background: this is one request per already-labeled speaker, and it feeds
-   * only the chips in the speaker editor. Awaiting it used to gate the transcript repaint
-   * and the success toast behind N round trips, which is what made renaming feel frozen.
-   *
-   * `seq` is the generation of the `loadSpeakers` call that started this; results from a
-   * superseded generation are dropped.
-   */
-  async function loadCrossMediaDataForLabeledSpeakers(seq: number): Promise<void> {
-    if (!speakerList || speakerList.length === 0) return;
-    if (file?.diarization_disabled) return; // Skip cross-media for monologue files
-
-    // Find speakers that need cross-media data (labeled speakers without individual matches)
-    const speakersNeedingCrossMedia = speakerList.filter(speaker => speaker.needsCrossMediaCall);
-    if (speakersNeedingCrossMedia.length === 0) return;
-
-    // Collect into a map rather than writing onto the captured speaker objects: by the
-    // time these resolve, `loadSpeakers` may have replaced `speakerList` wholesale and
-    // those writes would land on orphaned objects, silently losing the chips.
-    const matchesByUuid = new Map<string, any[]>();
-
-    await Promise.allSettled(
-      speakersNeedingCrossMedia.map(async (speaker) => {
-        try {
-          const response = await axiosInstance.get(`/speakers/${speaker.uuid}/cross-media`);
-          matchesByUuid.set(speaker.uuid, response.data || []);
-        } catch (error) {
-          console.error(`Error loading cross-media data for speaker ${speaker.uuid}:`, error);
-          matchesByUuid.set(speaker.uuid, []);
-        }
-      })
-    );
-
-    if (seq !== speakerLoadSeq) return; // A newer load won — discard.
-
-    speakerList = speakerList.map(speaker =>
-      matchesByUuid.has(speaker.uuid)
-        ? { ...speaker, cross_video_matches: matchesByUuid.get(speaker.uuid) }
-        : speaker
-    );
-
-    // Update transcript store with the new cross-media data
-    if (file?.uuid && file.transcript_segments) {
-      transcriptStore.loadTranscriptData(file.uuid, file.transcript_segments, speakerList);
-    }
-  }
-
-  /**
-   * Load speakers for the current file
-   */
-  async function loadSpeakers(): Promise<void> {
-    if (!file?.uuid) return;
-    const seq = ++speakerLoadSeq;
-
-    try {
-      // Load speakers from the backend API
-      const response = await axiosInstance.get(`/speakers`, {
-        params: { file_uuid: file.uuid }  // Use file_uuid parameter (file.uuid contains UUID)
-      });
-      if (seq !== speakerLoadSeq) return; // Superseded by a newer load.
-
-      if (response.data && Array.isArray(response.data)) {
-        // A websocket event or a sibling rename can land while the user is typing in
-        // another speaker's field, and this assignment replaces the whole list. Carry
-        // unsaved edits across so they aren't silently wiped mid-keystroke.
-        const unsavedNames = new Map<string, string>();
-        for (const speaker of speakerList) {
-          const baseline = originalSpeakerNames.get(speaker.uuid);
-          const current = (speaker.display_name || '').trim();
-          if (baseline !== undefined && baseline !== current) {
-            unsavedNames.set(speaker.uuid, speaker.display_name || '');
-          }
-        }
-
-        // Use pre-processed data directly from backend - no frontend business logic
-        speakerList = response.data.map((speaker: Speaker) => ({
-            ...speaker,
-            verified: speaker.verified ?? false,
-            display_name: unsavedNames.has(speaker.uuid)
-              ? unsavedNames.get(speaker.uuid)
-              : speaker.display_name,
-            showMatches: false,  // Only UI state, not business logic
-            showSuggestions: false  // Only UI state, not business logic
-          }));
-
-        // Store original speaker names for change detection (trimmed for consistent
-        // comparison). Built from SERVER values, so a preserved edit above still reads
-        // as unsaved.
-        originalSpeakerNames = new Map(
-          response.data.map((speaker: Speaker) => [speaker.uuid, (speaker.display_name || '').trim()])
-        );
-
-        // Speakers are now pre-sorted by the backend
-
-        // Load data into the transcript store for reactive updates
-        if (file?.uuid && file.transcript_segments) {
-          transcriptStore.loadTranscriptData(file.uuid, file.transcript_segments, speakerList);
-        }
-
-        // Cross-media feeds a secondary panel only — fetch it after the render above,
-        // and don't make callers wait for it.
-        void loadCrossMediaDataForLabeledSpeakers(seq);
-
-      } else {
-        // Fallback: extract from transcript data
-        const transcriptData = file?.transcript_segments;
-        if (transcriptData) {
-          const speakers = new Map();
-          transcriptData.forEach((segment: TranscriptSegment) => {
-            const speakerLabel = segment.speaker_label || segment.speaker?.name || $t('fileDetail.unknownSpeaker');
-            if (!speakers.has(speakerLabel)) {
-              speakers.set(speakerLabel, {
-                name: speakerLabel,
-                display_name: segment.speaker?.display_name || speakerLabel
-              });
-            }
-          });
-          speakerList = Array.from(speakers.values());
-          // Backend provides pre-sorted speakers
-
-          // Load data into the transcript store for fallback case
-          if (file?.uuid && file.transcript_segments) {
-            transcriptStore.loadTranscriptData(file.uuid, file.transcript_segments, speakerList);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error loading speakers:', error);
-      // Fallback: extract from transcript data
-      const transcriptData = file?.transcript_segments;
-      if (transcriptData) {
-        const speakers = new Map();
-        transcriptData.forEach((segment: TranscriptSegment) => {
-          const speakerLabel = segment.speaker_label || segment.speaker?.name || get(t)('fileDetail.unknownSpeaker');
-          if (!speakers.has(speakerLabel)) {
-            speakers.set(speakerLabel, {
-              name: speakerLabel,
-              display_name: segment.speaker?.display_name || speakerLabel
-            });
-          }
-        });
-        speakerList = Array.from(speakers.values());
-        // Backend provides pre-sorted speakers
-
-        // Load data into the transcript store for error fallback case
-        if (file?.uuid && file.transcript_segments) {
-          transcriptStore.loadTranscriptData(file.uuid, file.transcript_segments, speakerList);
-        }
-      }
-    }
-  }
-
   // URL refresher for long video playback
   let urlRefresher: { stop: () => void } | null = null;
 
@@ -878,44 +723,6 @@
   }
 
 
-  // Validate speaker name
-  function validateSpeakerName(name: string, speakerId: string | number): { isValid: boolean; error?: string } {
-    if (!name || typeof name !== 'string') {
-      return { isValid: false, error: $t('speakerValidation.nameRequired') };
-    }
-
-    const trimmedName = name.trim();
-    if (trimmedName.length === 0) {
-      return { isValid: false, error: $t('speakerValidation.nameEmpty') };
-    }
-
-    if (trimmedName.length > 100) {
-      return { isValid: false, error: $t('speakerValidation.nameTooLong') };
-    }
-
-    // Allow duplicate display names - users can label multiple speakers with the same name
-    // and merge them later using the Speaker Merge feature when confident they're the same person
-    return { isValid: true };
-  }
-
-  /**
-   * Whether this speaker's display name differs from the last-saved baseline —
-   * including a change TO empty, which is the supported way to clear a label back
-   * to the raw diarizer name (`PUT /speakers/{uuid}` accepts `display_name: ""`;
-   * `canonical_speaker_label` on the backend falls back to the raw `SPEAKER_XX`
-   * name whenever `display_name` is empty/unset). Filtering on the CURRENT
-   * value's shape — empty or `SPEAKER_`-prefixed — instead of on whether it
-   * actually changed was the bug: it silently dropped exactly the "clear a
-   * label" case from the save payload, while the bulk save still reported
-   * "saved successfully" for it.
-   */
-  function speakerHasUnsavedChange(speaker: SpeakerItem): boolean {
-    if (!speaker.uuid) return false;
-    const originalName = originalSpeakerNames.get(speaker.uuid) ?? '';
-    const currentName = (speaker.display_name ?? '').trim();
-    return originalName !== currentName;
-  }
-
   // Handle speaker name input changes (for reactivity)
   function handleSpeakerNameChanged(event: CustomEvent) {
     // Trigger reactivity by reassigning the speakerList array
@@ -992,7 +799,7 @@
     const { speakerId, newName } = event.detail;
 
     // Validate the speaker name
-    const validation = validateSpeakerName(newName, speakerId);
+    const validation = validateSpeakerName(newName, $t);
     if (!validation.isValid) {
       toastStore.error(validation.error ?? $t('speakerValidation.nameRequired'));
       return;
@@ -1275,7 +1082,7 @@
       // including a change to empty (see speakerHasUnsavedChange). The old filter
       // dropped both empty and SPEAKER_-prefixed CURRENT values regardless of
       // whether they had changed, so "clear a label" issued no PUT at all.
-      const speakersToUpdate = speakerList.filter(speakerHasUnsavedChange);
+      const speakersToUpdate = speakerList.filter((speaker) => speakerHasUnsavedChange(speaker, originalSpeakerNames));
 
       if (speakersToUpdate.length === 0) {
         savingSpeakers = false;
@@ -1287,7 +1094,7 @@
       for (const speaker of speakersToUpdate) {
         const trimmed = (speaker.display_name ?? '').trim();
         if (trimmed === '') continue;
-        const validation = validateSpeakerName(trimmed, speaker.uuid);
+        const validation = validateSpeakerName(trimmed, $t);
         if (!validation.isValid) {
           toastStore.error(`${speaker.name}: ${validation.error}`);
           savingSpeakers = false;
@@ -1329,7 +1136,7 @@
   // Perform bulk save with confirmation decisions
   async function performBulkSaveWithDecisions() {
     try {
-      const speakersToUpdate = speakerList.filter(speakerHasUnsavedChange);
+      const speakersToUpdate = speakerList.filter((speaker) => speakerHasUnsavedChange(speaker, originalSpeakerNames));
 
       await performBulkSave(speakersToUpdate, bulkSaveDecisions);
 

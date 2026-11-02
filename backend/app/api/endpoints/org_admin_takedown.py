@@ -46,7 +46,7 @@ from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.organization import OrganizationMembership
 from app.models.user import User
-from app.schemas.admin import QuarantineActionResponse
+from app.schemas.admin import OrgQuarantineActionResponse
 from app.schemas.org_takedown import OrgQuarantinedFile
 from app.schemas.org_takedown import OrgQuarantinedFilesList
 from app.schemas.org_takedown import OrgQuarantineRequest
@@ -230,7 +230,7 @@ def list_org_quarantined_files(
 # One budget shared by both POSTs, keyed by scope rather than by URL: the limiter's default
 # bucket includes the request path, and these paths carry a file uuid, so a per-route limit
 # would hand every distinct uuid its own fresh allowance and never limit anything.
-@router.post("/{file_uuid}/quarantine", response_model=QuarantineActionResponse)
+@router.post("/{file_uuid}/quarantine", response_model=OrgQuarantineActionResponse)
 @limiter.shared_limit(ORG_TAKEDOWN_RATE_LIMIT, scope="org_takedown", key_func=user_or_ip_key)
 def quarantine_org_file(
     file_uuid: str,
@@ -263,17 +263,10 @@ def quarantine_org_file(
         )
     except TakedownRefusedError as refusal:
         raise _refusal_to_http(refusal) from None
-    return QuarantineActionResponse(
-        uuid=str(file.uuid),
-        is_quarantined=bool(file.is_quarantined),
-        legal_hold=bool(file.legal_hold),
-        status=str(file.status.value if hasattr(file.status, "value") else file.status),
-        presign_revoked=bool(getattr(file, "presign_revoked", False)),
-        takedown_origin=file.takedown_origin,
-    )
+    return OrgQuarantineActionResponse.from_action(file)
 
 
-@router.post("/{file_uuid}/release", response_model=QuarantineActionResponse)
+@router.post("/{file_uuid}/release", response_model=OrgQuarantineActionResponse)
 @limiter.shared_limit(ORG_TAKEDOWN_RATE_LIMIT, scope="org_takedown", key_func=user_or_ip_key)
 def release_org_file(
     file_uuid: str,
@@ -308,11 +301,4 @@ def release_org_file(
         )
     except TakedownRefusedError as refusal:
         raise _refusal_to_http(refusal) from None
-    return QuarantineActionResponse(
-        uuid=str(file.uuid),
-        is_quarantined=bool(file.is_quarantined),
-        legal_hold=bool(file.legal_hold),
-        status=str(file.status.value if hasattr(file.status, "value") else file.status),
-        presign_tag_cleared=bool(getattr(file, "presign_tag_cleared", True)),
-        takedown_origin=file.takedown_origin,
-    )
+    return OrgQuarantineActionResponse.from_action(file)

@@ -50,6 +50,7 @@ import hashlib
 import hmac
 import logging
 from typing import TYPE_CHECKING
+from typing import Literal
 from typing import Protocol
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -63,7 +64,7 @@ logger = logging.getLogger(__name__)
 
 #: The value the presign identity's policy Deny checks for with StringEquals.
 #: ⚠️ MEASURED: StringEquals is CASE-SENSITIVE — "TRUE" does NOT trigger the Deny.
-#: Every tagger (``minio_service.set_object_quarantine_tag``) must write exactly
+#: Every tagger (``minio_service.write_object_quarantine_tag``) must write exactly
 #: this lowercase string; do not "normalize" it to a bool-ish value elsewhere.
 QUARANTINE_TAG_VALUE = "true"
 
@@ -201,7 +202,7 @@ def ensure_presign_identity() -> bool:
     No-op — returns ``False`` immediately, with no admin call attempted — when
     ``STORAGE_PRESIGN_IDENTITY_ENABLED`` is off or the configured backend is native S3
     (:func:`storage_backend.is_native_s3`): there is no MinIO admin API on AWS, so the
-    quarantine tag is still written by ``minio_service.set_object_quarantine_tag`` (harmless)
+    quarantine tag is still written by ``minio_service.write_object_quarantine_tag`` (harmless)
     but nothing here can enforce it. An operator on native S3 attaches the equivalent
     bucket-policy JSON by hand — see ``docs/abuse-and-takedown.md``.
 
@@ -279,12 +280,42 @@ def ensure_presign_identity() -> bool:
         _ensure_result = True
         return True
     except Exception as e:  # noqa: BLE001 — must never break presigning
+        # The credentials are derived, so every process agrees on the identity. If another
+        # process provisioned it, this one can sign with it even though its own admin call
+        # failed; otherwise this process would sign with root while another process reported
+        # the takedown as enforced by the identity.
+        if _derived_identity_works():
+            logger.warning(
+                f"Could not refresh the presign identity's policy ({e}); the existing identity "
+                f"answers, so presigned media URLs are still signed with it."
+            )
+            _ensure_result = True
+            return True
         logger.error(
             f"Could not provision the restricted presign identity — falling back to the "
             f"root client for presigned media URLs (quarantine will not revoke "
             f"already-minted URLs while this persists): {e}"
         )
         _ensure_result = False
+        return False
+
+
+def _derived_identity_works() -> bool:
+    """Whether the derived presign credentials are accepted by storage right now.
+
+    Presigning the media bucket makes minio-py resolve the bucket's region with those
+    credentials (``GetBucketLocation``, which the identity's policy allows), so an identity
+    that does not exist fails here. Never raises.
+    """
+    try:
+        from minio import Minio
+
+        endpoint, secure = storage_backend.storage_endpoint()
+        access_key, secret_key = derive_presign_credentials()
+        client = Minio(endpoint, access_key=access_key, secret_key=secret_key, secure=secure)
+        client.presigned_get_object(settings.MEDIA_BUCKET_NAME, "_opentranscribe/probes/identity")
+        return True
+    except Exception:  # noqa: BLE001 — "does not answer" is the answer
         return False
 
 
@@ -333,68 +364,150 @@ def presign_client() -> Minio:
     return _restricted_client
 
 
-def bucket_policy_denies_quarantined_reads(policy_json: str | None, bucket: str) -> bool:
-    """Whether a bucket policy carries the quarantine Deny from ``docs/abuse-and-takedown.md``.
+#: Object keys shaped like every kind of media the app presigns from the media bucket (an
+#: original, a thumbnail, a playback rendition). A Deny counts as covering the app's URLs only
+#: when its Resource matches ALL of them; a resource wildcard narrower than that (one prefix,
+#: one extension) is not proof.
+_SAMPLE_MEDIA_KEYS = (
+    "user_1/file_1/original.mp4",
+    "user_1/file_1/thumbnail.jpg",
+    "user_1/file_1/original.aiff.playback.m4a",
+    # Older uploads and imports use other shapes (the orphan sweep lists ``media/...``), so a
+    # Deny scoped to the ``user_`` prefix does not cover every presignable object.
+    "media/00000000-0000-0000-0000-000000000000/original.mp4",
+)
 
-    Looks for a statement that Denies ``s3:GetObject`` to every principal on the bucket's
-    objects when ``s3:ExistingObjectTag/<STORAGE_QUARANTINE_TAG_KEY>`` equals
-    :data:`QUARANTINE_TAG_VALUE`. On native S3 a bucket-policy Deny applies whichever
-    principal signed the request, so it revokes already-minted presigned URLs the same way
-    the MinIO presign identity does. Deliberately strict — a statement scoped to specific
-    principals or a different condition operator is not counted, so a WARNING errs toward
-    "not enforced" rather than toward a false all-clear.
+PolicyVerdict = Literal["enforced", "missing", "unknown"]
 
-    Args:
-        policy_json: The bucket policy document as returned by ``get_bucket_policy``.
-        bucket: Bucket whose object ARNs the Deny must cover.
 
-    Returns:
-        True if a matching Deny statement is present.
+def classify_quarantine_policy(policy_json: str | None, bucket: str) -> PolicyVerdict:
+    """Whether a bucket policy carries the quarantine Deny, decided conservatively.
+
+    ``enforced`` only for a statement this code can PROVE stops every principal from reading
+    a tagged media object: ``Effect: Deny``; ``Principal`` ``*`` (or ``{"AWS": "*"}`` /
+    ``{"AWS": ["*"]}``); an ``Action`` covering ``s3:GetObject`` (``s3:GetObject``,
+    ``s3:Get*``, ``s3:*``, ``*``); a ``Resource`` covering every sample media key; and a
+    ``Condition`` that is EXACTLY ``StringEquals {s3:ExistingObjectTag/<key>: "true"}``.
+
+    ``unknown`` for anything that could narrow it in ways this code does not evaluate: a
+    second condition operator or key (an ``aws:PrincipalArn`` / ``aws:SourceVpce`` /
+    ``aws:userid`` exemption is exactly such a narrowing), any ``Not*`` element
+    (``NotPrincipal``, ``NotAction``, ``NotResource``), a resource covering only some media
+    keys, or a document that does not parse. ``missing`` only when no statement Denies reads
+    on the quarantine tag at all.
     """
-    import fnmatch
     import json
 
     if not policy_json:
-        return False
+        return "missing"
     try:
         policy = json.loads(policy_json)
     except (TypeError, ValueError):
-        return False
-
-    statements = policy.get("Statement", []) if isinstance(policy, dict) else []
+        return "unknown"
+    statements = policy.get("Statement", []) if isinstance(policy, dict) else None
     if isinstance(statements, dict):
         statements = [statements]
-
-    def _as_list(value) -> list:
-        return value if isinstance(value, list) else [value]
-
-    probe_arn = f"arn:aws:s3:::{bucket}/probe-object"
-    condition_key = f"s3:existingobjecttag/{STORAGE_QUARANTINE_TAG_KEY}".lower()
-
+    if not isinstance(statements, list):
+        return "unknown"
+    verdict: PolicyVerdict = "missing"
     for stmt in statements:
-        if not isinstance(stmt, dict) or stmt.get("Effect") != "Deny":
-            continue
-        principal = stmt.get("Principal")
-        if not (principal == "*" or (isinstance(principal, dict) and principal.get("AWS") == "*")):
-            continue
-        actions = [str(a).lower() for a in _as_list(stmt.get("Action", []))]
-        if not any(a in ("s3:getobject", "s3:*", "*") for a in actions):
-            continue
-        resources = [str(r) for r in _as_list(stmt.get("Resource", []))]
-        if not any(fnmatch.fnmatchcase(probe_arn, r) for r in resources):
-            continue
-        string_equals = (stmt.get("Condition") or {}).get("StringEquals") or {}
-        for key, value in string_equals.items():
-            # Condition key names are case-insensitive on S3; values are not.
-            if key.lower() == condition_key and QUARANTINE_TAG_VALUE in _as_list(value):
-                return True
-    return False
+        found = _statement_verdict(stmt, bucket)
+        if found == "enforced":
+            return "enforced"
+        if found == "unknown":
+            verdict = "unknown"
+    return verdict
+
+
+def _as_list(value) -> list:
+    return value if isinstance(value, list) else [value]
+
+
+def _statement_verdict(stmt: object, bucket: str) -> PolicyVerdict | None:
+    """One statement: ``enforced``, ``unknown`` (about the tag, unprovable) or None (not about it)."""
+    import fnmatch
+    import json
+
+    if not isinstance(stmt, dict) or stmt.get("Effect") != "Deny":
+        return None
+    tag_key = f"s3:existingobjecttag/{STORAGE_QUARANTINE_TAG_KEY}".lower()
+    if tag_key not in json.dumps(stmt.get("Condition", {})).lower():
+        return None
+    # About the quarantine tag from here on: unprovable means "unknown", never "missing".
+    if any(k in stmt for k in ("NotPrincipal", "NotAction", "NotResource")):
+        return "unknown"
+    principal = stmt.get("Principal")
+    everyone = principal == "*" or (
+        isinstance(principal, dict)
+        and set(principal) == {"AWS"}
+        and _as_list(principal["AWS"]) == ["*"]
+    )
+    actions = [str(a).lower() for a in _as_list(stmt.get("Action", []))]
+    covers_get = any(fnmatch.fnmatchcase("s3:getobject", a) for a in actions)
+    resources = [str(r) for r in _as_list(stmt.get("Resource", []))]
+    covers_media = all(
+        any(fnmatch.fnmatchcase(f"arn:aws:s3:::{bucket}/{key}", r) for r in resources)
+        for key in _SAMPLE_MEDIA_KEYS
+    )
+    condition = stmt.get("Condition")
+    equals = condition.get("StringEquals") if isinstance(condition, dict) else None
+    exact = (
+        isinstance(condition, dict)
+        and set(condition) == {"StringEquals"}
+        and isinstance(equals, dict)
+        and len(equals) == 1
+    )
+    if not (everyone and covers_get and covers_media and exact and isinstance(equals, dict)):
+        return "unknown"
+    ((key, value),) = equals.items()
+    # Condition key names are case-insensitive on S3; values are not.
+    if key.lower() == tag_key and _as_list(value) == [QUARANTINE_TAG_VALUE]:
+        return "enforced"
+    return "unknown"
+
+
+def bucket_policy_denies_quarantined_reads(policy_json: str | None, bucket: str) -> bool:
+    """True only when :func:`classify_quarantine_policy` proves the Deny (``enforced``)."""
+    return classify_quarantine_policy(policy_json, bucket) == "enforced"
 
 
 class BucketPolicyReader(Protocol):
     """The one storage-client call the revocation-posture check makes (``Minio`` satisfies it)."""
 
     def get_bucket_policy(self, bucket_name: str) -> str: ...
+
+
+#: The storage action the app identity needs to read the media bucket's policy.
+BUCKET_POLICY_READ_ACTION = "s3:GetBucketPolicy"
+
+
+def read_native_s3_revocation_policy(
+    client: BucketPolicyReader,
+) -> tuple[Literal["enforced", "missing", "unknown", "unreadable"], str | None]:
+    """Read the media bucket's policy and say whether it carries the quarantine Deny.
+
+    The single reader behind both the startup posture log and the per-takedown
+    ``enforcement`` field (``media_revocation``), so the two can never disagree about what
+    counts as "revocation is enforced". Never raises.
+
+    Args:
+        client: The storage client (``minio_service.minio_client``).
+
+    Returns:
+        ``(state, error_code)``: ``enforced`` / ``missing`` / ``unknown`` (a quarantine Deny
+        this code cannot prove covers the app's URLs) with no code, or ``unreadable``
+        with the storage error code (``AccessDenied`` when the identity lacks
+        :data:`BUCKET_POLICY_READ_ACTION`).
+    """
+    bucket = settings.MEDIA_BUCKET_NAME
+    try:
+        policy_json: str | None = client.get_bucket_policy(bucket)
+    except Exception as e:  # noqa: BLE001 — no policy, or no permission to read it
+        code = getattr(e, "code", None) or type(e).__name__
+        if code != "NoSuchBucketPolicy":
+            return "unreadable", str(code)
+        policy_json = None
+    return classify_quarantine_policy(policy_json, bucket), None
 
 
 def report_native_s3_revocation_posture(client: BucketPolicyReader) -> bool:
@@ -405,7 +518,11 @@ def report_native_s3_revocation_posture(client: BucketPolicyReader) -> bool:
     media bucket's policy and logs INFO if the quarantine Deny is present, otherwise a
     single WARNING naming the exposure window (``MEDIA_URL_EXPIRE_SECONDS``) — replacing a
     MinIO-worded ERROR that used to fire from every process on its first presign (#1005).
-    Never raises.
+    A policy the identity may not read is reported with the missing action by name
+    (:data:`BUCKET_POLICY_READ_ACTION`). Never raises.
+
+    Whether the identity can WRITE the quarantine tag at all is a separate check,
+    ``media_revocation.report_native_s3_tagging_posture``.
 
     Args:
         client: The storage client (``minio_service.minio_client``).
@@ -421,21 +538,30 @@ def report_native_s3_revocation_posture(client: BucketPolicyReader) -> bool:
         f"quarantine Deny bucket policy from docs/abuse-and-takedown.md to revoke such URLs "
         f"immediately, or lower MEDIA_URL_EXPIRE_SECONDS to shorten the window."
     )
-    try:
-        policy_json = client.get_bucket_policy(bucket)
-    except Exception as e:  # noqa: BLE001 — no policy, or no permission to read it
-        code = getattr(e, "code", None) or type(e).__name__
-        if code == "NoSuchBucketPolicy":
-            policy_json = None
-        else:
-            logger.warning(
-                f"STORAGE_BACKEND=s3: could not read the bucket policy of '{bucket}' ({code}) "
-                f"to confirm presigned-URL revocation on quarantine; assuming it is not "
-                f"enforced — {exposure}"
-            )
-            return False
+    state, code = read_native_s3_revocation_policy(client)
+    if state == "unreadable":
+        missing = (
+            f" — the app identity is missing {BUCKET_POLICY_READ_ACTION} on arn:aws:s3:::{bucket}"
+            if code == "AccessDenied"
+            else ""
+        )
+        logger.warning(
+            f"STORAGE_BACKEND=s3: could not read the bucket policy of '{bucket}' ({code}{missing}) "
+            f"to confirm presigned-URL revocation on quarantine; assuming it is not "
+            f"enforced — {exposure}"
+        )
+        return False
 
-    if bucket_policy_denies_quarantined_reads(policy_json, bucket):
+    if state == "unknown":
+        logger.warning(
+            f"STORAGE_BACKEND=s3: the bucket policy on '{bucket}' has a quarantine Deny this "
+            f"backend cannot confirm covers its presigned URLs (an extra condition, a Not* "
+            f"element, a principal or resource narrower than all media); treating revocation as "
+            f"unverified — {exposure}"
+        )
+        return False
+
+    if state == "enforced":
         logger.info(
             f"STORAGE_BACKEND=s3: bucket policy on '{bucket}' denies reads of quarantined "
             f"objects — quarantine revokes already-minted presigned media URLs."

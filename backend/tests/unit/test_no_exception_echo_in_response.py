@@ -810,6 +810,26 @@ _RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
 #: every entry names the real consumer(s) traced by hand so a reason can go
 #: stale visibly rather than silently ("internal" alone is not a reason).
 _SERVICE_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
+    "services/minio_service.py::write_object_quarantine_tag": (
+        1,
+        "the S3 error CODE only (S3Error.code, e.g. AccessDenied / NoSuchKey), never its message: a short identifier from the storage API's fixed vocabulary, falling back to type(e).__name__. It reaches the platform-admin quarantine response (media_revocation.objects[].error_code) and the server log; the organization route's OrgMediaRevocation and the org-visible audit event drop it (test_org_takedown_endpoints::test_the_org_audit_read_and_export_carry_no_storage_detail)",
+    ),
+    "services/minio_service.py::remove_object_reported": (
+        1,
+        "the S3 error CODE only (S3Error.code, e.g. AccessDenied / NoSuchKey), never its message: a short identifier from the storage API's fixed vocabulary, falling back to type(e).__name__. It reaches the platform-admin quarantine response (media_revocation.objects[].error_code) and the server log; the organization route's OrgMediaRevocation and the org-visible audit event drop it (test_org_takedown_endpoints::test_the_org_audit_read_and_export_carry_no_storage_detail)",
+    ),
+    "services/media_revocation_probe.py::_run": (
+        2,
+        "internal-only: the startup probe's error string is the S3 error CODE (or "
+        "type(e).__name__) plus the action and bucket name; its only consumer is "
+        "report_native_s3_tagging_posture's log line at startup, never a response",
+    ),
+    "services/storage_presign_identity.py::read_native_s3_revocation_policy": (
+        1,
+        "internal-only: returns the S3 error CODE of a refused GetBucketPolicy; consumed by "
+        "media_revocation.resolve_enforcement (only compares it to 'AccessDenied') and the "
+        "startup posture WARNING log, never a response body",
+    ),
     "services/llm_bedrock.py::check_connection": (
         1,
         "dial result the user asked for, and NOT echo: the exception only SELECTS a key of "
@@ -945,6 +965,10 @@ _SERVICE_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
 #: §4c — internal-only. The container never reaches an HTTP response body; every
 #: entry names the real consumer(s), traced by hand to a terminating read.
 _CONTAINER_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
+    "services/media_revocation_cache.py::remove_cache_copies": (
+        2,
+        "the S3 error CODE only (S3Error.code, e.g. AccessDenied / NoSuchKey), never its message: a short identifier from the storage API's fixed vocabulary, falling back to type(e).__name__. It reaches the platform-admin quarantine response (media_revocation.objects[].error_code) and the server log; the organization route's OrgMediaRevocation and the org-visible audit event drop it (test_org_takedown_endpoints::test_the_org_audit_read_and_export_carry_no_storage_detail)",
+    ),
     "api/endpoints/asr_settings.py::test_saved_asr_config": (
         1,
         "dial result, and the SAME finding _RETURN_ALLOWLIST already carries for this "

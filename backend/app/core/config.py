@@ -632,6 +632,13 @@ class Settings(BaseSettings):
     STORAGE_PRESIGN_IDENTITY_ENABLED: bool = (
         os.getenv("STORAGE_PRESIGN_IDENTITY_ENABLED", "true").lower() == "true"
     )
+    # STORAGE_BACKEND=s3 only: at startup, write a throwaway object to the media and cache
+    # buckets and tag/list/delete it, to find a missing takedown permission at boot instead of
+    # at the first takedown (app/services/media_revocation_probe.py). Turn off for buckets
+    # where a write per boot is unwanted (tight IAM, versioning, Object Lock).
+    STORAGE_TAG_PROBE_ENABLED: bool = (
+        os.getenv("STORAGE_TAG_PROBE_ENABLED", "true").lower() == "true"
+    )
     # Redis settings (for Celery)
     REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
     REDIS_PORT: str = os.getenv("REDIS_PORT", "6379")

@@ -425,19 +425,29 @@ def _export_error_frame(data: dict) -> str:
     return sse("error", {"code": "export_failed", "message": data.get("message", "Export failed.")})
 
 
-def _cached_outcome_frame(cached: bytes | str) -> str:
+def _cached_outcome_frame(cached: bytes | str, requester_id: int) -> str:
     """The frame for a cached outcome: ``ready`` for a result, ``error`` for a failure.
 
     A document export can fail before the browser has opened the stream (a pending redaction
     scan is refused in milliseconds), so a failure is cached exactly like a result and a late
     subscriber is told, instead of waiting on an event that was already sent.
+
+    A cached RESULT carries a presigned URL, so it is replayed only after the files it holds
+    are re-checked: one taken down since the export finished (``hidden_from_requester``) is
+    refused, and so is a result that does not say which files it holds (fail closed). Runs
+    synchronously; the caller hands it to a worker thread.
     """
     import json as _json
+
+    from app.services.media_revocation_cache import hidden_from_requester
 
     outcome = _json.loads(cached)
     if outcome.get("status") == "error":
         return _export_error_frame(outcome)
-    return sse("ready", outcome)
+    file_ids = outcome.get("file_ids")
+    if not isinstance(file_ids, list) or hidden_from_requester(file_ids, requester_id):
+        return _export_error_frame({"reason": "unavailable"})
+    return sse("ready", {k: v for k, v in outcome.items() if k != "file_ids"})
 
 
 @router.get("/bulk-export-stream", dependencies=[Depends(refuse_under_support_grant)])
@@ -480,7 +490,9 @@ def bulk_export_stream(
         async def ready_frame() -> str | None:
             """SSE frame if the worker already cached an outcome (result or error), else None."""
             cached = await client.get(f"bulk_export_result:{job}")
-            return _cached_outcome_frame(cached) if cached else None
+            if not cached:
+                return None
+            return await asyncio.to_thread(_cached_outcome_frame, cached, current_user.id)
 
         try:
             # 1. Already finished? deliver immediately (covers reconnects after completion).

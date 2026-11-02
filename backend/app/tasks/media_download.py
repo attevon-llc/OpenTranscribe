@@ -58,11 +58,12 @@ def prepare_media_download_task(
         # Phase 1 — read (short, DB only). Plain scalars, no ORM instance
         # escapes: the scope closes before any MinIO/ffmpeg work starts.
         with session_scope() as db:
+            review_admin = is_review_admin(db, user_id)
             row = exclude_quarantined(
                 db.query(MediaFile.uuid, MediaFile.filename, MediaFile.storage_path).filter(
                     MediaFile.id == file_id
                 ),
-                include_quarantined=is_review_admin(db, user_id),
+                include_quarantined=review_admin,
             ).first()
             if not row:
                 # A quarantined file falls into this branch too — deliberately
@@ -124,6 +125,15 @@ def prepare_media_download_task(
                 audio_format=audio_format,
             )
             download_filename = f"{base_name}.{ext}"
+
+        # A takedown that landed during the render listed this file's derived copies before
+        # this one existed; delete it again rather than hand out a URL that outlives it.
+        # Answered like a deleted file, matching the read above.
+        if not review_admin:
+            from app.services.media_revocation_cache import remove_if_quarantined
+
+            if remove_if_quarantined([file_id], cache_key):
+                return {"status": "error", "message": "File not found"}
 
         url = service.presigned_download_url(cache_key, download_filename, content_type)
 
@@ -255,7 +265,18 @@ def prepare_bulk_subtitles_task(
         key = f"bulk/{job_id}.zip"
         # Instantiating VideoProcessingService ensures the processed-videos bucket exists.
         service = VideoProcessingService(MinIOService())
+        # Markers BEFORE the upload, so a takedown of any file in the archive finds it; the
+        # re-check AFTER it catches a takedown that ran before the archive existed
+        # (``media_revocation_cache``).
+        from app.services.media_revocation_cache import record_bulk_export
+        from app.services.media_revocation_cache import remove_if_quarantined
+
+        exported_ids = [int(fid) for fid, _name in file_specs]
+        record_bulk_export(service.minio_service, service.cache_bucket, exported_ids, key)
         service.minio_service.upload_bytes(service.cache_bucket, key, zip_bytes, "application/zip")
+        if remove_if_quarantined(exported_ids, key, requester_id=user_id):
+            publish_bulk_event(job_id, status="error", message="Failed to build export.")
+            return {"status": "error", "message": "A file was taken down during the export"}
         filename = f"transcripts_{fmt}.zip"
         url = get_presigned_download_url(
             key,
@@ -269,7 +290,14 @@ def prepare_bulk_subtitles_task(
             f"bulk_export_result:{job_id}",
             900,
             json.dumps(
-                {"url": url, "filename": filename, "exported": exported, "skipped": skipped}
+                {
+                    "url": url,
+                    "filename": filename,
+                    "exported": exported,
+                    "skipped": skipped,
+                    # Re-checked on every replay of this cached result (bulk-export-stream).
+                    "file_ids": exported_ids,
+                }
             ),
         )
         publish_bulk_event(

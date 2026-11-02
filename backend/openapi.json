@@ -11141,6 +11141,136 @@
         "title": "MediaMirrorSettingsUpdate",
         "type": "object"
       },
+      "MediaRevocation": {
+        "description": "What a quarantine/release did to the file's already-issued media URLs.\n\nThe database action always happens; this reports the storage plane, which can fail on\nits own (see ``services/media_revocation.py``). ``complete`` is false whenever an issued\nURL may still work after a quarantine, or may still 403 after a release.",
+        "properties": {
+          "action": {
+            "enum": [
+              "revoke",
+              "restore"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "enforcement": {
+            "anyOf": [
+              {
+                "enum": [
+                  "presign_identity",
+                  "bucket_policy",
+                  "none",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enforcement"
+          },
+          "exposure_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exposure Seconds"
+          },
+          "missing_permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Permissions",
+            "type": "array"
+          },
+          "objects": {
+            "items": {
+              "$ref": "#/components/schemas/MediaRevocationObject"
+            },
+            "title": "Objects",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "action",
+          "complete"
+        ],
+        "title": "MediaRevocation",
+        "type": "object"
+      },
+      "MediaRevocationObject": {
+        "description": "The quarantine-tag write for one of the file's objects.",
+        "properties": {
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "failed_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed Action"
+          },
+          "outcome": {
+            "enum": [
+              "applied",
+              "removed",
+              "absent",
+              "failed"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "original",
+              "thumbnail",
+              "playback",
+              "derived",
+              "bulk_export"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "outcome"
+        ],
+        "title": "MediaRevocationObject",
+        "type": "object"
+      },
       "MediaSource": {
         "description": "A single protected media source configuration.",
         "properties": {
@@ -11898,6 +12028,51 @@
         "title": "OrgEffectivePrivacy",
         "type": "object"
       },
+      "OrgMediaRevocation": {
+        "description": "What an organization admin is told about the media URLs.\n\nNo storage permissions, enforcer or per-object error: those describe the operator's\ninfrastructure, which a tenant must not see. The operator gets them on the platform route,\nin the audit event and in the log.",
+        "properties": {
+          "action": {
+            "enum": [
+              "revoke",
+              "restore"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "exposure_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exposure Seconds"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "action",
+          "complete"
+        ],
+        "title": "OrgMediaRevocation",
+        "type": "object"
+      },
       "OrgPolicy": {
         "description": "``GET|PATCH /org-admin/policy``: the caller's own organization, never another.",
         "properties": {
@@ -11990,6 +12165,78 @@
           }
         },
         "title": "OrgPolicyUpdate",
+        "type": "object"
+      },
+      "OrgQuarantineActionResponse": {
+        "description": "Result of an organization admin's quarantine/release action.",
+        "properties": {
+          "is_quarantined": {
+            "title": "Is Quarantined",
+            "type": "boolean"
+          },
+          "legal_hold": {
+            "title": "Legal Hold",
+            "type": "boolean"
+          },
+          "media_revocation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrgMediaRevocation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "presign_revoked": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Presign Revoked"
+          },
+          "presign_tag_cleared": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Presign Tag Cleared"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "takedown_origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Takedown Origin"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "is_quarantined",
+          "legal_hold",
+          "status"
+        ],
+        "title": "OrgQuarantineActionResponse",
         "type": "object"
       },
       "OrgQuarantineRequest": {
@@ -14189,6 +14436,16 @@
           "legal_hold": {
             "title": "Legal Hold",
             "type": "boolean"
+          },
+          "media_revocation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MediaRevocation"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "presign_revoked": {
             "anyOf": [
@@ -40633,7 +40890,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/QuarantineActionResponse"
+                  "$ref": "#/components/schemas/OrgQuarantineActionResponse"
                 }
               }
             },
@@ -40698,7 +40955,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/QuarantineActionResponse"
+                  "$ref": "#/components/schemas/OrgQuarantineActionResponse"
                 }
               }
             },

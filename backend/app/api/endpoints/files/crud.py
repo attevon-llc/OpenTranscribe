@@ -247,34 +247,43 @@ def set_file_urls(db_file: MediaFile, bypass: PlatformBypass = PlatformBypass.no
     """
     from app.core.config import settings
     from app.services.minio_service import get_file_url
+    from app.services.takedown_service import is_hidden_for
+
+    # Fail closed: a taken-down file gets no media URLs here, whoever called. Callers filter
+    # quarantined rows first, but this is the one place a thumbnail URL is minted for a list
+    # or detail response, so the check lives here too and a new caller cannot forget it.
+    if is_hidden_for(db_file, is_admin=bypass.user_is_admin):
+        db_file.download_url = None
+        db_file.thumbnail_url = None
+        return
 
     if db_file.storage_path:
         # Skip S3 operations in test environment
         if os.environ.get("SKIP_S3", "False").lower() == "true":
             # download_url/thumbnail_url are response-only fields stapled onto the ORM
             # instance for serialization (declared on schemas.media.MediaFile, not the model)
-            db_file.download_url = f"/api/files/{db_file.uuid}/prepare-download"  # type: ignore[attr-defined]
+            db_file.download_url = f"/api/files/{db_file.uuid}/prepare-download"
             if db_file.thumbnail_path:
-                db_file.thumbnail_url = f"/api/files/{db_file.uuid}/thumbnail"  # type: ignore[attr-defined]
+                db_file.thumbnail_url = f"/api/files/{db_file.uuid}/thumbnail"
             return
 
         # download_url is a presence/availability gate for the frontend download dropdown,
         # which performs the actual download via the async prepare-download + presigned-URL
         # flow (see TranscriptDisplay.downloadMedia). It is not a byte-proxy endpoint.
-        db_file.download_url = f"/api/files/{db_file.uuid}/prepare-download"  # type: ignore[attr-defined]
+        db_file.download_url = f"/api/files/{db_file.uuid}/prepare-download"
 
         # Set thumbnail URL as presigned URL (industry standard)
         # This allows <img> tags to load without auth headers
         if db_file.thumbnail_path:
             try:
-                db_file.thumbnail_url = get_file_url(  # type: ignore[attr-defined]
+                db_file.thumbnail_url = get_file_url(
                     str(db_file.thumbnail_path),
                     expires=bypass.presign_ttl(settings.THUMBNAIL_URL_EXPIRE_SECONDS),
                 )
             except Exception as e:
                 logger.warning(f"Failed to generate presigned thumbnail URL: {e}")
                 # Fallback to API endpoint (requires auth)
-                db_file.thumbnail_url = f"/api/files/{db_file.uuid}/thumbnail"  # type: ignore[attr-defined]
+                db_file.thumbnail_url = f"/api/files/{db_file.uuid}/thumbnail"
 
 
 def _get_or_compute_analytics(

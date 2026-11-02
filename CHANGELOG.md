@@ -74,6 +74,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `backend/.dockerignore` excludes each denylisted name at any depth (for example
   `app/.pytest_cache`), not only at the context root.
 
+- `presign_revoked` reported `true` when only the original's tag landed (a failed thumbnail or
+  playback-rendition tag was ignored) or when nothing enforced the tag (no MinIO presign
+  identity, no S3 bucket-policy Deny). It is now true only when every object is tagged and the
+  tag is enforced; `presign_tag_cleared` likewise covers every object.
+- Cache key hardening: extracted-audio cache keys now start with the file id. Keys written
+  before this are removed when their file is deleted, erased or taken down, and swept once at
+  startup (`derived/` keys of the old audio shape only, every version on a versioned bucket, at
+  most 5,000 per start, rerun until a pass completes; counts are logged).
+- The startup storage probe no longer reports a refused delete of its own probe object in the
+  media bucket as a missing takedown permission (a takedown never deletes there); it is logged
+  as a leftover object instead.
+- A MinIO presign identity cached as working is re-checked by presigning with it when the
+  provisioning probe fails, so a stale per-process cache cannot report revocation as enforced.
+- The startup quarantine-tag backfill resolves enforcement once and logs one summary line
+  instead of one line per file.
+- The quarantine dialog shows a success only for files whose links were revoked, and only the
+  warning for the rest.
+
+### Security
+
+- Quarantine hardening for media URLs: list and detail responses no longer mint a thumbnail
+  or download URL for a quarantined file (the check lives in `set_file_urls`, with a guard
+  test against a second writer); the thumbnail route applies the same platform-bypass rule as
+  the other media routes, so an admin the bypass does not reach no longer sees a quarantined
+  public file of another tenant; a cached bulk or document export result is re-checked
+  against quarantine on replay, and a takedown drops that cached result.
+- Test isolation: a fixture that patched the OpenSearch client re-export left its fake on the
+  package for the rest of the worker, which made a tenancy test order-dependent; the pinned
+  entry is now removed after every test.
+- Quarantine no longer reports a clean success when storage refuses to revoke already-issued
+  media URLs. On `STORAGE_BACKEND=s3` an app identity without `s3:PutObjectTagging` logged a
+  single WARNING while the API answered 200, and issued URLs kept working for
+  `MEDIA_URL_EXPIRE_SECONDS`. The file is still quarantined in the database (that is what every
+  read surface gates on); quarantine and release responses now carry `media_revocation`
+  (`complete`, `reason`, `enforcement`, `missing_permissions`, `exposure_seconds`, per-object
+  outcomes), the audit event is recorded with outcome `partial`, the log is an ERROR naming the
+  missing actions, and the admin UI shows a warning (all 12 locales).
+- On S3, startup now probes whether the app identity can read and write object tags and list
+  and delete in the cache bucket, and logs an ERROR naming each missing action and its bucket; an
+  unreadable bucket policy names `s3:GetBucketPolicy`. The probe uses a per-boot key and the
+  bounded no-retry client, never blocks startup, and can be turned off with
+  `STORAGE_TAG_PROBE_ENABLED=false`.
+- A takedown now deletes the file's copies in the cache bucket (download renders under
+  `derived/`, and bulk ZIP and DOCX/PDF exports, found through per-file markers) and reports
+  them; a copy it cannot list or delete makes the revocation incomplete
+  (`copy_removal_failed`). An export or render finishing during a takedown is deleted after its
+  upload.
+- The S3 bucket-policy check is conservative: a Deny narrowed by an extra condition, a `Not*`
+  element, a named principal or a prefix resource reads as `enforcement_unverified` instead of
+  enforced. The `{"AWS": ["*"]}` principal, `s3:Get*` and a `*` resource are recognised.
+- A quarantine and a release that race now leave storage matching whichever committed last,
+  and each tag write reads the tag set back so a concurrent overwrite is reported, not counted
+  as applied. A playback rendition that finishes during a takedown is tagged through the same
+  path, and a refused tag is an ERROR.
+- Organization-admin quarantine and release responses carry only `action`, `complete`,
+  `exposure_seconds` and a generic `reason`; storage permissions and the enforcer stay on the
+  platform route and in the server log.
+- The audit event of a quarantine or release of an organization's file records only
+  `complete` and a generic `reason` under `media_revocation` (and a generic error code), so the
+  organization's audit read and export carry no storage permissions, enforcer or failed
+  objects. Events on personal files, which only platform admins read, keep the full detail.
+- Quarantine and release no longer hold a database transaction open across their storage
+  calls, use a bounded storage client with no transport retries, and stop re-applying after
+  `TAKEDOWN_SETTLE_DEADLINE_SECONDS`; when the database changed again after the last state
+  that could be applied the result is reported incomplete (`state_changed`), never complete.
+- A watch source's import history no longer links a quarantined file.
+
+### Documentation
+
+- S3 permissions quarantine needs (`s3:GetObjectTagging`, `s3:PutObjectTagging`,
+  `s3:GetBucketPolicy`, optional `s3:PutObjectLegalHold`, and the probe's `s3:PutObject` /
+  `s3:DeleteObject` on both buckets) and an operator recipe to verify an
+  issued URL goes 206 → 403 → 206: Production Deployment, Object Storage, environment variables,
+  upgrading to 0.6.0, `docs/abuse-and-takedown.md`.
+
 
 ## [0.6.0] - 2026-10-31
 

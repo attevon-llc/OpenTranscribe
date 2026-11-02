@@ -301,6 +301,12 @@ SPEAKER_CONFIDENCE_LOW = 0.0  # Requires user input (red)
 # (no Redis socket timeout, minio-py's 300 s + 5 retries) let one slow dependency
 # outlast the prober's own timeout and pull a healthy instance from service.
 DEPENDENCY_PROBE_TIMEOUT_SECONDS = 2.0
+# Takedown storage calls (quarantine tags, cache-copy deletes) use their own bounded client:
+# the shared one waits up to 5 minutes and retries 5 times, which inside a quarantine request
+# turns one unreachable storage endpoint into a request that hangs for half an hour.
+TAKEDOWN_STORAGE_TIMEOUT_SECONDS = 10.0
+# Wall-clock budget for media_revocation.settle_file's re-read-and-reapply rounds.
+TAKEDOWN_SETTLE_DEADLINE_SECONDS = 60.0
 
 # Cache control settings
 CACHE_CONTROL_MEDIA_MAX_AGE = 86400  # 1 day for media files
@@ -1775,7 +1781,7 @@ FILE_TYPE_MIME_PREFIXES: dict[str, str] = {"audio": "audio/", "video": "video/"}
 # s3:GetObject on (StringEquals, value STORAGE_QUARANTINE_TAG_VALUE — see
 # storage_presign_identity.QUARANTINE_TAG_VALUE for the case-sensitivity note).
 # Both the policy builder (storage_presign_identity.build_presign_policy) and
-# the tagger (minio_service.set_object_quarantine_tag) import this ONE constant
+# the tagger (minio_service.write_object_quarantine_tag) import this ONE constant
 # rather than hardcoding the string twice.
 STORAGE_QUARANTINE_TAG_KEY = "ot-quarantine"
 

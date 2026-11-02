@@ -26,6 +26,7 @@ import redis.asyncio as redis
 from app.core.config import settings
 from app.core.constants import VIDEO_CHUNK_SIZE
 from app.db.session_utils import session_scope
+from app.services.media_revocation_cache import legacy_audio_keys
 from app.services.minio_service import MinIOService
 from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.redaction.config import resolve_effective_config
@@ -859,21 +860,28 @@ class VideoProcessingService:
             original_filename.rsplit(".", 1)[0] if "." in original_filename else original_filename
         )
 
-    def audio_cache_key(self, original_filename: str, audio_format: str) -> str:
+    def audio_cache_key(self, file_id: int, original_filename: str, audio_format: str) -> str:
         """Deterministic cache key for an extracted audio file.
 
         ``mp3``/``wav`` carry their extension; ``original`` uses an extension-less key
         because the real extension depends on the (later-probed) source codec — it is
         recovered from the cached object's stored content type.
+
+        ``file_id`` leads, exactly as in :meth:`generate_cache_key` (cache key hardening), so
+        a key belongs to exactly one file and ``derived/{file_id}_`` is the complete set of a
+        file's current derived objects, which a takedown relies on to remove them
+        (``media_revocation_cache``). Keys written before that carried no id; they are never
+        read, are removed with their file (:meth:`derived_cache_keys`) and are swept once by
+        ``cache_management_service.reclaim_legacy_audio_cache``.
         """
         base = self._audio_base(original_filename)
         if audio_format == "original":
-            return f"{self.DERIVED_CACHE_PREFIX}{base}_audio_original"
+            return f"{self.DERIVED_CACHE_PREFIX}{file_id}_{base}_audio_original"
         ext = "mp3" if audio_format == "mp3" else "wav"
-        return f"{self.DERIVED_CACHE_PREFIX}{base}_audio_{audio_format}.{ext}"
+        return f"{self.DERIVED_CACHE_PREFIX}{file_id}_{base}_audio_{audio_format}.{ext}"
 
     def peek_cached_audio(
-        self, original_filename: str, audio_format: str
+        self, file_id: int, original_filename: str, audio_format: str
     ) -> tuple[str, str, str] | None:
         """Return ``(cache_key, ext, content_type)`` if already cached, else None.
 
@@ -883,7 +891,7 @@ class VideoProcessingService:
         normalized = audio_format.lower()
         if normalized not in ("mp3", "wav", "original"):
             normalized = "mp3"
-        cache_key = self.audio_cache_key(original_filename, normalized)
+        cache_key = self.audio_cache_key(file_id, original_filename, normalized)
         if not self.is_video_cached(cache_key):
             return None
         if normalized in _AUDIO_ENCODE_PRESETS:
@@ -940,12 +948,12 @@ class VideoProcessingService:
             normalized = "mp3"
 
         # Fast path: already cached (no download, no ffmpeg).
-        cached = self.peek_cached_audio(original_filename, normalized)
+        cached = self.peek_cached_audio(file_id, original_filename, normalized)
         if cached:
             logger.info(f"Using cached audio for file {file_id} ({cached[0]})")
             return cached
 
-        cache_key = self.audio_cache_key(original_filename, normalized)
+        cache_key = self.audio_cache_key(file_id, original_filename, normalized)
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
@@ -998,9 +1006,11 @@ class VideoProcessingService:
     def derived_cache_keys(self, file_id: int, filename: str) -> list[str]:
         """Every derived-cache key a media file can own **at a known name**. Pure.
 
-        Both subtitle-embedded video variants and all three audio-extract
-        variants. Shared by the delete paths so the list cannot drift between
-        them.
+        Both subtitle-embedded video variants, all three audio-extract variants,
+        and the three pre-hardening audio keys that carry no file id
+        (``media_revocation_cache.legacy_audio_keys``): a file deleted after an
+        upgrade must not leave its old extracted audio behind. Shared by the delete
+        paths so the list cannot drift between them.
 
         ⚠️ This list is no longer exhaustive on its own. Since #85 a burned-in
         render is keyed by the redaction policy it was rendered under, so one file
@@ -1023,9 +1033,10 @@ class VideoProcessingService:
             self.generate_cache_key(
                 file_id, filename, include_speakers=False, redaction_fingerprint=""
             ),
-            self.audio_cache_key(filename, "mp3"),
-            self.audio_cache_key(filename, "wav"),
-            self.audio_cache_key(filename, "original"),
+            self.audio_cache_key(file_id, filename, "mp3"),
+            self.audio_cache_key(file_id, filename, "wav"),
+            self.audio_cache_key(file_id, filename, "original"),
+            *legacy_audio_keys(filename),
         ]
 
     def _masked_video_cache_keys(self, file_id: int, filename: str) -> list[str]:

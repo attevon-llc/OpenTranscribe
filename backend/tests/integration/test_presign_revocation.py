@@ -124,7 +124,7 @@ def bystander_key():
 class TestPresignRevocation:
     def test_a_presigned_url_minted_before_takedown_stops_working(self, object_key):
         from app.services.minio_service import get_file_url
-        from app.services.minio_service import set_object_quarantine_tag
+        from app.services.minio_service import write_object_quarantine_tag
 
         _upload_test_object(object_key)
 
@@ -136,7 +136,7 @@ class TestPresignRevocation:
             f"{control.text[:500]}"
         )
 
-        assert set_object_quarantine_tag(object_key, True) is True
+        assert write_object_quarantine_tag(object_key, True).outcome == "applied"
 
         revoked = requests.get(url, timeout=_HTTP_TIMEOUT_S)
         assert revoked.status_code == 403, (
@@ -144,7 +144,7 @@ class TestPresignRevocation:
             f"{revoked.status_code}: {revoked.text[:500]}"
         )
 
-        assert set_object_quarantine_tag(object_key, False) is True
+        assert write_object_quarantine_tag(object_key, False).outcome == "applied"
 
         restored = requests.get(url, timeout=_HTTP_TIMEOUT_S)
         assert restored.status_code == 200, (
@@ -154,14 +154,14 @@ class TestPresignRevocation:
 
     def test_quarantining_one_object_does_not_revoke_another(self, object_key, bystander_key):
         from app.services.minio_service import get_file_url
-        from app.services.minio_service import set_object_quarantine_tag
+        from app.services.minio_service import write_object_quarantine_tag
 
         _upload_test_object(object_key)
         _upload_test_object(bystander_key)
 
         bystander_url = get_file_url(bystander_key, expires=300)
 
-        assert set_object_quarantine_tag(object_key, True) is True
+        assert write_object_quarantine_tag(object_key, True).outcome == "applied"
 
         bystander_response = requests.get(bystander_url, timeout=_HTTP_TIMEOUT_S)
         assert bystander_response.status_code == 200, (
@@ -174,10 +174,10 @@ class TestPresignRevocation:
         from minio.error import S3Error
 
         from app.services import storage_presign_identity as pid
-        from app.services.minio_service import set_object_quarantine_tag
+        from app.services.minio_service import write_object_quarantine_tag
 
         _upload_test_object(object_key)
-        assert set_object_quarantine_tag(object_key, True) is True
+        assert write_object_quarantine_tag(object_key, True).outcome == "applied"
 
         client = pid.presign_client()
         # Least-privilege containment (measured): the restricted identity has no
@@ -191,7 +191,7 @@ class TestPresignRevocation:
     def test_a_ranged_get_is_revoked_too(self, object_key):
         """The real <video> player request shape: a 206 Partial Content, not a bare 200."""
         from app.services.minio_service import get_file_url
-        from app.services.minio_service import set_object_quarantine_tag
+        from app.services.minio_service import write_object_quarantine_tag
 
         _upload_test_object(object_key, body=b"0123456789" * 10)
         url = get_file_url(object_key, expires=300)
@@ -202,7 +202,7 @@ class TestPresignRevocation:
             f"{ranged_before.status_code}: {ranged_before.text[:500]}"
         )
 
-        assert set_object_quarantine_tag(object_key, True) is True
+        assert write_object_quarantine_tag(object_key, True).outcome == "applied"
 
         ranged_after = requests.get(url, headers={"Range": "bytes=0-9"}, timeout=_HTTP_TIMEOUT_S)
         assert ranged_after.status_code == 403, (

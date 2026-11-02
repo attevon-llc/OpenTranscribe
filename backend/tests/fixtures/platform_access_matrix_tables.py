@@ -226,11 +226,6 @@ INLINE_ROLE_ROUTES: dict[str, tuple[str, str]] = {
         "settings",
         "the role only decides which cloud providers the catalog lists; no tenant content",
     ),
-    "GET /api/files/{file_uuid}/thumbnail": (
-        "content-optional-auth",
-        "optional-auth route; the role only decides takedown-review visibility, and the file is "
-        "decided by the chokepoint (see this handler's allows and grant-resolver site rows)",
-    ),
     "POST /api/legal/acknowledgments": (
         "settings",
         "only a super_admin may accept the operator acknowledgment; deployment-level record",

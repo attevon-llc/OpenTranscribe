@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any
 
 import pytest
 
@@ -49,11 +50,42 @@ def test_the_bulk_zip_error_keeps_its_original_shape() -> None:
     assert _data(frame) == {"code": "export_failed", "message": "No files could be exported."}
 
 
-def test_a_result_is_still_a_ready_frame() -> None:
-    result = {"url": "https://storage.test/x.docx", "filename": "x.docx", "exported": 1}
-    frame = subtitles._cached_outcome_frame(json.dumps(result))
+RESULT: dict[str, Any] = {"url": "https://storage.test/x.docx", "filename": "x.docx", "exported": 1}
+
+
+@pytest.fixture
+def hidden(monkeypatch):
+    """What the replay's quarantine re-check answers, recorded with its arguments."""
+    answer: dict[str, Any] = {"hidden": False, "calls": []}
+
+    def _check(file_ids, requester_id):
+        answer["calls"].append((list(file_ids), requester_id))
+        return answer["hidden"]
+
+    monkeypatch.setattr("app.services.media_revocation_cache.hidden_from_requester", _check)
+    return answer
+
+
+def test_a_result_is_still_a_ready_frame(hidden) -> None:
+    frame = subtitles._cached_outcome_frame(json.dumps({**RESULT, "file_ids": [7]}), 1278)
     assert frame.startswith("event: ready\n")
-    assert _data(frame) == result
+    assert _data(frame) == RESULT  # the file ids are not sent to the browser
+    assert hidden["calls"] == [([7], 1278)]
+
+
+def test_a_result_holding_a_file_taken_down_since_is_not_replayed(hidden) -> None:
+    hidden["hidden"] = True
+    frame = subtitles._cached_outcome_frame(json.dumps({**RESULT, "file_ids": [7]}), 1278)
+    assert frame.startswith("event: error\n")
+    assert _data(frame)["reason"] == "unavailable"
+    assert RESULT["url"] not in frame
+
+
+def test_a_result_that_does_not_name_its_files_is_not_replayed(hidden) -> None:
+    frame = subtitles._cached_outcome_frame(json.dumps(RESULT), 1278)
+    assert frame.startswith("event: error\n")
+    assert RESULT["url"] not in frame
+    assert hidden["calls"] == []
 
 
 class _CachedRedis:

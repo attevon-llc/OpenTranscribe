@@ -878,8 +878,16 @@ def list_source_files(
         .limit(page_size)
         .all()
     )
+    from app.services.takedown_service import is_hidden_for
+
     files = []
     for r in rows:
+        # A taken-down file's uuid is not handed out here, to anyone: this is the source
+        # owner's import history, not a review surface (admins review through
+        # /admin/files/quarantined), and every surface the uuid would open 404s anyway.
+        linked = r.media_file
+        if linked is not None and is_hidden_for(linked, is_admin=False):
+            linked = None
         files.append(
             {
                 "uuid": str(r.uuid),
@@ -888,7 +896,7 @@ def list_source_files(
                 "file_size": r.file_size,
                 "file_modified_at": r.file_modified_at,
                 "imohash": r.imohash,
-                "media_file_uuid": str(r.media_file.uuid) if r.media_file else None,
+                "media_file_uuid": str(linked.uuid) if linked else None,
                 "status": r.status,
                 "skip_reason": r.skip_reason,
                 "part_group": r.part_group,

@@ -112,9 +112,17 @@ class TestDerivedCachePrefix:
 
     def test_audio_cache_keys_are_prefixed(self):
         svc = self._svc()
-        assert svc.audio_cache_key("meeting.mp4", "mp3") == "derived/meeting_audio_mp3.mp3"
-        assert svc.audio_cache_key("meeting.mp4", "wav") == "derived/meeting_audio_wav.wav"
-        assert svc.audio_cache_key("meeting.mp4", "original") == "derived/meeting_audio_original"
+        assert svc.audio_cache_key(7, "meeting.mp4", "mp3") == "derived/7_meeting_audio_mp3.mp3"
+        assert svc.audio_cache_key(7, "meeting.mp4", "wav") == "derived/7_meeting_audio_wav.wav"
+        assert (
+            svc.audio_cache_key(7, "meeting.mp4", "original") == "derived/7_meeting_audio_original"
+        )
+
+    def test_two_files_with_one_filename_never_share_extracted_audio(self):
+        svc = self._svc()
+        assert svc.audio_cache_key(7, "meeting.mp4", "mp3") != svc.audio_cache_key(
+            8, "meeting.mp4", "mp3"
+        )
 
 
 class TestRetentionResolution:
@@ -231,7 +239,7 @@ class TestClearCacheOnDelete:
         assert all(k.startswith("derived/") for k in deleted)
         assert f"derived/{fid}_talk_with_speakers.mp4" in deleted
         assert f"derived/{fid}_talk_no_speakers.mp4" in deleted
-        assert "derived/talk_audio_mp3.mp3" in deleted
+        assert f"derived/{fid}_talk_audio_mp3.mp3" in deleted
         # ...plus every masked render, or a deleted file leaves a video of its
         # transcript behind in object storage.
         assert f"derived/{fid}_talk_with_speakers_rdeadbeef1234.mp4" in deleted
@@ -242,8 +250,8 @@ class TestClearCacheOnDelete:
         assert f"derived/{fid}9_talk_with_speakers_rcafebabe9999.mp4" not in deleted, (
             "the sweep must not reach into a file whose ID shares a numeric prefix"
         )
-        assert "derived/talk_audio_wav.wav" in deleted
-        assert "derived/talk_audio_original" in deleted
+        assert f"derived/{fid}_talk_audio_wav.wav" in deleted
+        assert f"derived/{fid}_talk_audio_original" in deleted
 
 
 class TestCanonicalDestroy:
@@ -306,6 +314,37 @@ class TestCanonicalDestroy:
         crud.delete_media_file(db_session, str(f.uuid), sample_user, force=True)
         assert called.get("hit") is True
         assert db_session.query(MediaFile).filter(MediaFile.id == fid).first() is None
+
+
+class TestLegacyAudioReclaimOnce:
+    """The startup wrapper sets its flag only after a complete pass."""
+
+    def _result(self, complete: bool):
+        return cache_management_service.LegacyAudioReclaim(10, 2, 2 if complete else 1, 0, complete)
+
+    def test_an_incomplete_pass_runs_again_and_a_complete_one_does_not(
+        self, db_session, monkeypatch
+    ):
+        from app.services import system_settings_service
+
+        key = cache_management_service.LEGACY_AUDIO_RECLAIM_KEY
+        passes = iter([self._result(False), self._result(True)])
+        calls: list[int] = []
+
+        def _reclaim():
+            calls.append(1)
+            return next(passes)
+
+        monkeypatch.setattr(cache_management_service, "reclaim_legacy_audio_cache", _reclaim)
+
+        first = cache_management_service.reclaim_legacy_audio_cache_once(db_session)
+        assert first is not None and first.complete is False
+        assert system_settings_service.get_setting_bool(db_session, key, False) is False
+        second = cache_management_service.reclaim_legacy_audio_cache_once(db_session)
+        assert second is not None and second.complete is True
+        assert system_settings_service.get_setting_bool(db_session, key, False) is True
+        assert cache_management_service.reclaim_legacy_audio_cache_once(db_session) is None
+        assert len(calls) == 2
 
 
 class TestLegacyReclaim:

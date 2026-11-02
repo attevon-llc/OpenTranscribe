@@ -120,6 +120,50 @@ describe('QuarantineModal', () => {
     );
   });
 
+  it('warns, rather than calling it a clean success, when issued links were not revoked', async () => {
+    const { toastStore } = await import('$stores/toast');
+    const revocation = (complete: boolean) => ({
+      uuid: 'x',
+      is_quarantined: true,
+      legal_hold: true,
+      status: 'quarantined',
+      presign_revoked: complete,
+      media_revocation: {
+        action: 'revoke',
+        complete,
+        reason: complete ? null : 'tag_write_failed',
+        enforcement: 'bucket_policy',
+        missing_permissions: complete ? [] : ['s3:PutObjectTagging'],
+        exposure_seconds: complete ? null : 21600,
+        objects: [],
+      },
+    });
+    api.AdminApi.quarantineFile
+      .mockResolvedValueOnce(revocation(false))
+      .mockResolvedValueOnce(revocation(true));
+    const { container, getByPlaceholderText, getByText } = render(QuarantineModal, {
+      props: {
+        isOpen: true,
+        files: [makeFile(), makeFile({ uuid: 'f-2', filename: 'other.mp4' })],
+      },
+    });
+    await fireEvent.input(
+      getByPlaceholderText(/gallery\.quarantine\.reasonPlaceholder|DMCA notice reference/i),
+      { target: { value: 'DMCA notice #42' } }
+    );
+    await chooseOperatorAction(container, 'routine review');
+
+    await fireEvent.click(getByText(/Quarantine 2 file\(s\)/i).closest('button')!);
+
+    await waitFor(() => expect(toastStore.warning).toHaveBeenCalledTimes(1));
+    const warning = vi.mocked(toastStore.warning).mock.calls[0][0];
+    expect(warning).toContain('1 file(s) quarantined, but');
+    expect(warning).toContain('could not be revoked');
+    // Only the cleanly revoked file is reported as a success.
+    expect(toastStore.success).toHaveBeenCalledTimes(1);
+    expect(toastStore.success).toHaveBeenCalledWith('1 file(s) quarantined');
+  });
+
   it('the legal-hold checkbox is checked on mount', () => {
     const { container } = render(QuarantineModal, {
       props: { isOpen: true, files: [makeFile()] },

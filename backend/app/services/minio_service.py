@@ -1,9 +1,11 @@
+import dataclasses
 import datetime
 import functools
 import io
 import logging
 import os
 from typing import BinaryIO
+from typing import Literal
 
 import certifi
 import urllib3
@@ -39,6 +41,26 @@ def get_probe_client() -> Minio:
     TLS verification mirrors minio-py's own default pool (``SSL_CERT_FILE`` or certifi).
     """
     bound = DEPENDENCY_PROBE_TIMEOUT_SECONDS
+    http_client = urllib3.PoolManager(
+        timeout=urllib3.Timeout(connect=bound, read=bound),
+        retries=urllib3.Retry(total=0),
+        cert_reqs="CERT_REQUIRED",
+        ca_certs=os.environ.get("SSL_CERT_FILE") or certifi.where(),
+    )
+    return storage_backend.build_storage_client(http_client=http_client)
+
+
+@functools.lru_cache(maxsize=1)
+def get_takedown_client() -> Minio:
+    """The storage client for quarantine tags and cache-copy deletes: bounded, no retries.
+
+    Same backend and credentials as :data:`minio_client`, with
+    ``TAKEDOWN_STORAGE_TIMEOUT_SECONDS`` to connect and to read and no transport retries
+    (the untag on release retries on its own, with a backoff).
+    """
+    from app.core.constants import TAKEDOWN_STORAGE_TIMEOUT_SECONDS
+
+    bound = TAKEDOWN_STORAGE_TIMEOUT_SECONDS
     http_client = urllib3.PoolManager(
         timeout=urllib3.Timeout(connect=bound, read=bound),
         retries=urllib3.Retry(total=0),
@@ -263,56 +285,154 @@ def set_object_legal_hold(object_name: str, hold: bool) -> bool:
         return False
 
 
-def set_object_quarantine_tag(
-    object_name: str, quarantined: bool, *, bucket_name: str | None = None
-) -> bool:
-    """Set (or clear) the object tag the presign identity's policy Denies GET on — best-effort.
+#: The storage action each step of the quarantine tag read-modify-write needs. An
+#: ``AccessDenied`` is reported against the step that raised it, so an operator is told
+#: the exact IAM action the app identity is missing (on native S3 the role needs both).
+TAG_READ_ACTION = "s3:GetObjectTagging"
+TAG_WRITE_ACTION = "s3:PutObjectTagging"
+
+
+@dataclasses.dataclass(frozen=True)
+class QuarantineTagWrite:
+    """What happened when one object's quarantine tag was written.
+
+    Attributes:
+        outcome: ``applied`` (storage accepted the change), ``removed`` (the object was
+            deleted instead, see :func:`remove_object_reported`), ``absent`` (the object does
+            not exist, so there is nothing a URL could serve) or ``failed`` (the object is NOT
+            in the state that was asked for).
+        error_code: The storage error code of a failure (``AccessDenied``, ...), else None.
+        failed_action: The storage action that failed (:data:`TAG_READ_ACTION`,
+            :data:`TAG_WRITE_ACTION`, :data:`DELETE_ACTION`, :data:`LIST_ACTION`), else None.
+    """
+
+    outcome: Literal["applied", "removed", "absent", "failed"]
+    error_code: str | None = None
+    failed_action: str | None = None
+
+    @property
+    def denied_action(self) -> str | None:
+        """The storage action refused for lack of permission, if that is why it failed."""
+        return self.failed_action if self.error_code == "AccessDenied" else None
+
+
+def write_object_quarantine_tag(
+    object_name: str,
+    quarantined: bool,
+    *,
+    bucket_name: str | None = None,
+    client: Minio | None = None,
+) -> QuarantineTagWrite:
+    """Set (or clear) the quarantine tag on one object and say exactly what happened.
 
     This is the storage-plane mechanism behind presigned-URL revocation on takedown (issue
     #907): the restricted presign identity's policy (``storage_presign_identity.
-    build_presign_policy``) Denies ``s3:GetObject`` on any object carrying
-    ``STORAGE_QUARANTINE_TAG_KEY=true``, so tagging an object here revokes an
-    already-minted presigned URL for it immediately — same URL, same signature, no new mint.
+    build_presign_policy``) on MinIO, or the operator's bucket-policy Deny on S3, refuses
+    ``s3:GetObject`` on any object carrying ``STORAGE_QUARANTINE_TAG_KEY=true``, so tagging an
+    object revokes an already-minted presigned URL for it immediately.
 
     Object tags are REPLACED WHOLESALE by ``set_object_tags`` (not merged), so this is a
-    read-modify-write: fetch the existing tag set, mutate only the quarantine key, write the
-    whole set back. Uses the ROOT client deliberately, never the restricted presign
-    identity — the identity a Deny is keyed on must not be able to clear its own key
-    (least-privilege containment, measured).
+    read-modify-write that changes only the quarantine key. It uses the ROOT client, never
+    the restricted presign identity: the identity a Deny is keyed on must not be able to clear
+    its own key. The outcome is returned, never shrugged off: a refused write leaves every
+    issued URL working, and on native S3 the usual cause is an identity without
+    ``s3:GetObjectTagging`` / ``s3:PutObjectTagging``, so the failing action is reported.
 
     Args:
         object_name: Object key in the media bucket.
         quarantined: True to set the tag (revoke), False to remove it (restore).
         bucket_name: Bucket holding the object (defaults to the media bucket).
+        client: Storage client to write with (defaults to the shared ``minio_client``; the
+            live permission test passes a deliberately under-privileged identity).
 
     Returns:
-        True if the storage backend accepted the change, False if the object is missing or
-        any other S3 error occurred. Never raises — the caller treats this as best-effort,
-        matching ``set_object_legal_hold`` above.
+        The outcome. Never raises.
     """
-    from minio.commonconfig import Tags
-
+    storage = client or minio_client
     bucket = bucket_name or settings.MEDIA_BUCKET_NAME
     action = "set" if quarantined else "clear"
+    step = TAG_READ_ACTION
     try:
-        existing = minio_client.get_object_tags(bucket, object_name)
-        new_tags = Tags.new_object_tags()
-        if existing:
-            for key, value in existing.items():
-                if key != STORAGE_QUARANTINE_TAG_KEY:
-                    new_tags[key] = value
-        if quarantined:
-            new_tags[STORAGE_QUARANTINE_TAG_KEY] = storage_presign_identity.QUARANTINE_TAG_VALUE
-        minio_client.set_object_tags(bucket, object_name, new_tags)
-        return True
+        # S3 has no conditional PutObjectTagging, so a concurrent writer (a release racing a
+        # quarantine, a rendition finishing during a takedown) can land between the read and
+        # the write. Read the tag back and redo the read-modify-write when the quarantine key
+        # is not what this call asked for; the callers' convergence loop re-reads the DB too.
+        for _attempt in range(_TAG_WRITE_ATTEMPTS):
+            step = TAG_READ_ACTION
+            new_tags = _tags_with_quarantine(
+                storage.get_object_tags(bucket, object_name), quarantined
+            )
+            step = TAG_WRITE_ACTION
+            storage.set_object_tags(bucket, object_name, new_tags)
+            step = TAG_READ_ACTION
+            if _carries_quarantine_tag(storage.get_object_tags(bucket, object_name)) == quarantined:
+                return QuarantineTagWrite("applied")
+        logger.warning(
+            f"Quarantine tag {action} for {object_name} was overwritten by a concurrent writer"
+        )
+        return QuarantineTagWrite("failed", error_code="ConcurrentTagWrite", failed_action=step)
     except S3Error as e:
         if e.code == "NoSuchKey":
-            return False
-        logger.warning(f"Quarantine tag {action} failed for {object_name}: {e}")
-        return False
-    except Exception as e:  # noqa: BLE001 — advisory; never break takedown/release
-        logger.warning(f"Quarantine tag {action} failed for {object_name}: {e}")
-        return False
+            return QuarantineTagWrite("absent")
+        logger.warning(f"Quarantine tag {action} failed for {object_name} ({step}): {e}")
+        return QuarantineTagWrite("failed", error_code=e.code, failed_action=step)
+    except Exception as e:  # noqa: BLE001 — reported to the caller, never raised into a takedown
+        logger.warning(f"Quarantine tag {action} failed for {object_name} ({step}): {e}")
+        return QuarantineTagWrite("failed", error_code=type(e).__name__, failed_action=step)
+
+
+_TAG_WRITE_ATTEMPTS = 2
+
+
+def _tags_with_quarantine(existing, quarantined: bool):
+    """The object's tag set with only the quarantine key changed (tags are replaced whole)."""
+    from minio.commonconfig import Tags
+
+    new_tags = Tags.new_object_tags()
+    if existing:
+        for key, value in existing.items():
+            if key != STORAGE_QUARANTINE_TAG_KEY:
+                new_tags[key] = value
+    if quarantined:
+        new_tags[STORAGE_QUARANTINE_TAG_KEY] = storage_presign_identity.QUARANTINE_TAG_VALUE
+    return new_tags
+
+
+def _carries_quarantine_tag(tags) -> bool:
+    return bool(tags) and tags.get(STORAGE_QUARANTINE_TAG_KEY) == (
+        storage_presign_identity.QUARANTINE_TAG_VALUE
+    )
+
+
+#: The storage action an object delete needs (reported by name when refused).
+DELETE_ACTION = "s3:DeleteObject"
+#: The storage action a prefix listing needs.
+LIST_ACTION = "s3:ListBucket"
+
+
+def remove_object_reported(
+    bucket_name: str, object_name: str, *, client: Minio | None = None
+) -> QuarantineTagWrite:
+    """Delete one object and say what happened (``removed`` or ``failed``). Never raises.
+
+    The takedown's way of revoking a REGENERABLE or ephemeral copy (a derived render, a
+    bulk export): deleting it kills every URL issued for it, and nothing needs restoring
+    on release because it is rebuilt on demand.
+    """
+    storage = client or minio_client
+    try:
+        storage.remove_object(bucket_name, object_name)
+        return QuarantineTagWrite("removed")
+    except S3Error as e:
+        if e.code == "NoSuchKey":
+            return QuarantineTagWrite("absent")
+        logger.warning(f"Could not delete {bucket_name}/{object_name}: {e}")
+        return QuarantineTagWrite("failed", error_code=e.code, failed_action=DELETE_ACTION)
+    except Exception as e:  # noqa: BLE001 — reported to the caller, never raised into a takedown
+        logger.warning(f"Could not delete {bucket_name}/{object_name}: {e}")
+        return QuarantineTagWrite(
+            "failed", error_code=type(e).__name__, failed_action=DELETE_ACTION
+        )
 
 
 TEMP_PREPROCESS_PREFIX = "temp/preprocess"

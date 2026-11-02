@@ -431,6 +431,25 @@ def _clear_process_auth_cache():
 
 
 @pytest.fixture(autouse=True)
+def _unpin_opensearch_client_reexport():
+    """Keep ``app.services.opensearch_service.opensearch_client`` forwarding to the client module.
+
+    The package resolves that name through a module ``__getattr__`` (it is rebound at run
+    time). ``monkeypatch.setattr`` on it records the forwarded value and, on undo, SETS it as
+    a real package attribute, which then shadows ``__getattr__`` for the rest of the worker.
+    A test that patched the client module first and the package second therefore left its
+    fake client pinned there, and a later test reading the package got a ``MagicMock``
+    (``test_owner_listing_tenancy::test_reindex_status_counts_only_the_active_tenant`` after
+    ``test_voiceprint_document_stamps_by_writer``). Removing the pinned entry after every test
+    restores the forwarding, whichever test pinned it.
+    """
+    yield
+    import app.services.opensearch_service as package
+
+    vars(package).pop("opensearch_client", None)
+
+
+@pytest.fixture(autouse=True)
 def _clear_sidecar_readiness_cache():
     """Isolate the diar-native readiness/liveness TTL caches between tests.
 

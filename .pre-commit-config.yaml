@@ -293,6 +293,13 @@ repos:
         language: system
         pass_filenames: false
         files: ^(backend/|scripts/|frontend/(src|scripts)/|docs-site/src/|[^/]+\.sh$)|(^|/)CLAUDE\.md$
+      - id: guard-size-report
+        name: file size report (per-group stats; fails only if lines above the hard cap grow)
+        entry: python3 scripts/guards/size_report.py
+        language: system
+        pass_filenames: false
+        verbose: true
+        files: ^(backend/|scripts/|frontend/(src|scripts)/|docs-site/src/|[^/]+\.sh$)|(^|/)CLAUDE\.md$
       - id: guard-process-ids
         name: no wave, round or work-package ids in comments or test names
         entry: python3 scripts/guards/check_process_ids.py

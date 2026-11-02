@@ -556,6 +556,7 @@
           {mergePreview}
           {deletePreview}
           {canPromote}
+          isAdmin={canWriteSystem}
           on:previewMerge={previewMerge}
           on:promote={promoteSelection}
           on:share={() => (sharingTag = selectedEntries[0] ?? null)}

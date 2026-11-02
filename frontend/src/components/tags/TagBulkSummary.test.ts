@@ -97,3 +97,43 @@ describe('TagBulkSummary', () => {
     for (const radio of screen.getAllByRole('radio')) expect(radio).toBeDisabled();
   });
 });
+
+describe('TagBulkSummary write gates', () => {
+  // One non-writable uuid makes the whole merge, delete or promote request 404,
+  // so the summary offers an action only when every selected tag allows it.
+  const mine = tags.map((tag) => ({ ...tag, ownership: 'mine' as const }));
+
+  it('offers no merge or delete when a selected tag is shared with me', () => {
+    const selection = [mine[0], mine[1], { ...mine[2], ownership: 'shared_with_me' as const }];
+    render(TagBulkSummary, { props: { tags: selection, isAdmin: true } });
+
+    expect(screen.queryByRole('button', { name: 'Merge' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+    expect(screen.queryAllByRole('radio')).toHaveLength(0);
+  });
+
+  it('offers merge and delete over a system tag only with the system write right', () => {
+    const selection = [mine[0], { ...mine[1], ownership: 'system' as const }];
+
+    const { unmount } = render(TagBulkSummary, { props: { tags: selection, isAdmin: false } });
+    expect(screen.queryByRole('button', { name: 'Merge' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+    unmount();
+
+    render(TagBulkSummary, { props: { tags: selection, isAdmin: true } });
+    expect(screen.getByRole('button', { name: 'Merge' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+  });
+
+  it('offers promote only when every selected tag is mine', () => {
+    const mixed = [mine[0], { ...mine[1], ownership: 'system' as const }];
+    const { unmount } = render(TagBulkSummary, {
+      props: { tags: mixed, isAdmin: true, canPromote: true },
+    });
+    expect(screen.queryByRole('button', { name: 'Share with everyone' })).toBeNull();
+    unmount();
+
+    render(TagBulkSummary, { props: { tags: mine, isAdmin: true, canPromote: true } });
+    expect(screen.getByRole('button', { name: 'Share with everyone' })).toBeInTheDocument();
+  });
+});

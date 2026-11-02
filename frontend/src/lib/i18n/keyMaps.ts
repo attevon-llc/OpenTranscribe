@@ -68,6 +68,7 @@ export const CHAT_STATE_ERROR_KEYS: Record<
   string
 > = {
   llm_unconfigured: 'chat.errors.llm_unconfigured',
+  llm_config_unusable: 'chat.errors.llm_config_unusable',
   quota_exceeded: 'chat.errors.quota_exceeded',
   rate_limited: 'chat.errors.rate_limited',
   provider_error: 'chat.errors.provider_error',

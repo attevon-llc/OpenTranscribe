@@ -2318,12 +2318,17 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
             return False
 
     @staticmethod
-    def create_from_settings(user_id: int | None = None) -> Optional["LLMService"]:
+    def create_from_settings(
+        user_id: int | None = None, *, raise_on_unusable: bool = False
+    ) -> Optional["LLMService"]:
         """
         Create LLMService from user-specific settings only
 
         Args:
             user_id: If provided, attempts to load user-specific settings
+            raise_on_unusable: Raise :class:`LLMConfigurationError` for an active but unusable
+                configuration instead of returning ``None``, so a caller that talks to the
+                person can say "unusable" rather than "none configured".
 
         Returns:
             LLMService configured with user settings, or None if no user LLM is configured
@@ -2336,6 +2341,8 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
                     return user_service
             except LLMConfigurationError as e:
                 logger.warning(f"Unusable LLM configuration for user {user_id}: {e.reason}")
+                if raise_on_unusable:
+                    raise
                 return None
 
         # No fallback - users must explicitly configure LLM settings

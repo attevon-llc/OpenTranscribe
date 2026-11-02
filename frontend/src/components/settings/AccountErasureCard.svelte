@@ -19,7 +19,7 @@
     type SelfErasureStatus,
   } from '$lib/api/selfErasure';
   import { locale, t } from '$stores/locale';
-  import { openErasureRequest } from '$stores/selfErasure';
+  import { lastErasureOutcome, openErasureRequest } from '$stores/selfErasure';
   import { toastStore } from '$stores/toast';
 
   let status: SelfErasureStatus | null = null;
@@ -59,6 +59,7 @@
     try {
       status = await getSelfErasureStatus();
       openErasureRequest.set(status.request);
+      lastErasureOutcome.set(status.request ? null : (status.last_outcome ?? null));
     } catch (error) {
       console.error('Failed to read the erasure request status:', error);
       loadFailed = true;
@@ -168,6 +169,11 @@
         {/if}
       </div>
     {:else}
+      {#if status.last_outcome?.reason === 'last_super_admin'}
+        <p class="notice" role="status" data-testid="erasure-blocked">
+          {$t('settings.accountErasure.blockedLastSuperAdmin')}
+        </p>
+      {/if}
       <p class="intro">{$t('settings.accountErasure.intro')}</p>
       <p class="hint">{$t('settings.accountErasure.graceInfo', { days: status.grace_days })}</p>
       <p class="hint">{$t('settings.accountErasure.heldNote')}</p>
@@ -331,6 +337,22 @@
   .btn-danger:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .notice {
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8125rem;
+    border-radius: 6px;
+    background: #fef3c7;
+    color: #78350f;
+    border: 1px solid #f59e0b;
+  }
+
+  :global([data-theme='dark']) .notice {
+    background: #422006;
+    color: #fde68a;
+    border-color: #b45309;
   }
 
   .error {

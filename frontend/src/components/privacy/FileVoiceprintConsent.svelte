@@ -14,6 +14,7 @@
   import { resetEffectivePrivacy } from '$stores/privacyPolicy';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
 
   export let fileUuid: string;
@@ -68,7 +69,21 @@
       }
     } catch (error) {
       console.error('Could not change the voice identification choice:', error);
-      toastStore.error($t('file.voiceprintConsent.saveFailed'));
+      const status = getErrorStatus(error);
+      const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data
+        ?.detail;
+      if (status === 409 && (detail as { error?: unknown } | undefined)?.error === 'FILE_UNDER_LEGAL_HOLD') {
+        toastStore.error($t('file.voiceprintConsent.heldRefusal'));
+      } else if (status === 404) {
+        toastStore.error($t('file.voiceprintConsent.unavailable'));
+      } else if (status === 503 && next === 'declined') {
+        // The server saved the choice; only deleting the existing voiceprints could not be queued.
+        state = 'declined';
+        resetEffectivePrivacy();
+        toastStore.error($t('file.voiceprintConsent.purgePending'));
+      } else {
+        toastStore.error(getErrorMessage(error, $t('file.voiceprintConsent.saveFailed')));
+      }
     } finally {
       busy = false;
       confirming = false;

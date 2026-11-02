@@ -366,6 +366,48 @@ describe('streamChatMessage', () => {
     expect((events[0] as { code: string }).code).toBe('quota_exceeded');
     vi.unstubAllGlobals();
   });
+
+  async function send400(detail: unknown): Promise<ChatStreamEvent> {
+    const { streamChatMessage } = await import('./chatStream');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status: 400, json: async () => ({ detail }) })
+    );
+    const events: ChatStreamEvent[] = [];
+    await streamChatMessage(
+      'c',
+      { content: 'hi' },
+      (e) => events.push(e),
+      new AbortController().signal
+    );
+    vi.unstubAllGlobals();
+    return events[0];
+  }
+
+  it('maps a coded llm_config_unusable 400 to its own code', async () => {
+    const event = await send400({
+      code: 'llm_config_unusable',
+      message: 'Your selected LLM configuration was not found.',
+    });
+
+    expect(event).toEqual({
+      type: 'error',
+      code: 'llm_config_unusable',
+      message: 'Your selected LLM configuration was not found.',
+    });
+  });
+
+  it('still maps the plain "No LLM is configured" 400 to llm_unconfigured', async () => {
+    const event = await send400('No LLM is configured. Add a provider in Settings.');
+
+    expect((event as { code: string }).code).toBe('llm_unconfigured');
+  });
+
+  it('never renders an object detail as [object Object]', async () => {
+    const event = await send400({ code: 'something_else', message: 'Readable sentence.' });
+
+    expect((event as { message: string }).message).toBe('Readable sentence.');
+  });
 });
 
 /** A 200 response whose body is one `done` frame. */

@@ -39,6 +39,7 @@ from app.core.constants import MAX_GDPR_SELF_ERASURE_GRACE_DAYS
 from app.db.base import get_db
 from app.models.erasure import ErasureLedgerEntry
 from app.schemas.self_erasure import SelfErasureCreate
+from app.schemas.self_erasure import SelfErasureOutcome
 from app.schemas.self_erasure import SelfErasureRequestReceipt
 from app.schemas.self_erasure import SelfErasureSettings
 from app.schemas.self_erasure import SelfErasureSettingsUpdate
@@ -84,11 +85,24 @@ def get_self_erasure_status(
 ) -> SelfErasureStatus:
     """Whether the feature is on, the grace period, and the caller's open request (if any)."""
     open_request = service.get_open_request(db, int(ctx.user.id))
+    blocked = (
+        service.get_last_blocked_request(db, int(ctx.user.id)) if open_request is None else None
+    )
     return SelfErasureStatus(
         enabled=service.is_enabled(db),
         grace_days=service.grace_days(db),
         can_reauthenticate=can_reauthenticate(db, ctx.user),
         request=_receipt(open_request) if open_request is not None else None,
+        last_outcome=(
+            SelfErasureOutcome(
+                status="blocked",
+                reason="last_super_admin",
+                ledger_uuid=blocked.uuid,
+                at=blocked.scheduled_for,
+            )
+            if blocked is not None
+            else None
+        ),
     )
 
 

@@ -83,6 +83,30 @@ def request_digest(
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def get_last_blocked_request(db: Session, user_id: int) -> ErasureLedgerEntry | None:
+    """The caller's most recent self-service request, if the system closed it without erasing.
+
+    A blocked request (``erasure_ledger_service.block_request``) is ``cancelled`` with no
+    ``cancelled_at``; the subject's own cancellation stamps it. The reason cannot be stored on
+    the row (``deferred_reason`` is CHECK-limited and widening that needs a migration), and
+    ``block_request`` is called for exactly one reason today, the last super administrator.
+    Only the LATEST row counts: a newer request, cancellation or erasure hides an older block.
+    """
+    latest = (
+        db.query(ErasureLedgerEntry)
+        .filter(
+            ErasureLedgerEntry.subject_type == "user",
+            ErasureLedgerEntry.subject_user_id == user_id,
+            ErasureLedgerEntry.actor_kind == "data_subject",
+        )
+        .order_by(ErasureLedgerEntry.requested_at.desc(), ErasureLedgerEntry.id.desc())
+        .first()
+    )
+    if latest is None or latest.status != "cancelled" or latest.cancelled_at is not None:
+        return None
+    return latest
+
+
 def get_open_request(db: Session, user_id: int) -> ErasureLedgerEntry | None:
     return (
         db.query(ErasureLedgerEntry)

@@ -42,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The storage-key uniqueness check (`GET /api/admin/data-integrity/storage/keys`) and the erasure
+  ledger and receipts (`/api/admin/gdpr/erasures`, `/api/admin/gdpr/erasure-receipt/...`) are
+  API-only in this release; there is no admin screen for them yet.
 - URL-import thumbnails are stored per media file, avatars under a per-upload key, and the
   `media_file` object-key columns are unique (partial unique indexes, migration v456). The
   migration never blocks startup: shared legacy thumbnails are regenerated, and shared originals
@@ -76,21 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Object-key unique indexes no longer block writes at startup.** The startup retry for the
-  indexes the v456 migration had to skip now uses `CREATE UNIQUE INDEX CONCURRENTLY`, drops an
-  invalid index left by a failed build before trying again, runs at most once per process, and
-  does nothing beyond one catalog query when all three indexes are valid. The migration itself
-  still builds inside its transaction (its lock on `media_file` is now documented).
-- **Erasure receipt that could not be stored.** When the receipt row failed to insert, the erasure
-  still closed as complete with no stored receipt. The entry is now left deferred with an error so
-  the reconciliation sweep retries it, and the response reports the receipt outcome as unverified.
-- **Withdrawing a self-service erasure request, and the index reconciliation cursor.** Two
-  columns added by the self-service erasure migration (`cancelled_at`, `index_checked_at`) were
-  missing from the audit trigger's list of lifecycle columns, so cancelling a request failed with
-  a permission error and the reconciliation sweep could not record which entries it had checked.
-  A new migration (v457) re-creates the trigger with both columns, and the optional restricted
-  database role is granted the same columns. The same revision makes `erasure_receipt` insert-only
-  and adds the missing `TRUNCATE` guard to `legal_acceptance`.
+
 - **AI feature availability with an invalid personal LLM setting.** A saved LLM configuration with a
   non-numeric temperature or context size is now reported as unavailable consistently, so
   background processing no longer queues AI work that can only be skipped, and a saved AWS Bedrock

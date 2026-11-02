@@ -44,6 +44,7 @@
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
+  import { restoreAfterFailedRegenerate, saveSummaryState } from '$lib/summary/regenerateFailure';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import SummaryModal from '$components/SummaryModal.svelte';
   import TranscriptViewModal from '$components/transcript/TranscriptViewModal.svelte';
@@ -539,11 +540,8 @@
       }
     } catch (err) {
       console.error('Trigger redaction error:', err);
-      // The 409 "redaction is not enabled" carries the reason; show it, not a generic failure.
-      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
-      toastStore.error(
-        typeof detail === 'string' ? detail : $t('settings.contentRedaction.redactTriggerFailed')
-      );
+      // The server's reason (the 409 "redaction is not enabled", a support-session refusal) beats a generic failure.
+      toastStore.error(getErrorMessage(err, $t('settings.contentRedaction.redactTriggerFailed')));
     }
   }
 
@@ -2671,6 +2669,7 @@
       summaryGenerating = true;
 
       // 3. Clear the summary from file object to trigger "generating" button state
+      const savedSummary = saveSummaryState(file ?? {});
       if (file) {
         file.has_summary = false;
         file.summary_opensearch_id = null;
@@ -2684,7 +2683,8 @@
         // WebSocket will handle the rest of the status updates
       } catch (error) {
         console.error('Failed to start reprocess:', error);
-        toastStore.error($t('fileDetail.failedToStartSummaryReprocess'), 5000);
+        toastStore.error(getErrorMessage(error, $t('fileDetail.failedToStartSummaryReprocess')), 5000);
+        if (file) file = restoreAfterFailedRegenerate(file, savedSummary);
         summaryGenerating = false;
       }
     }}
@@ -2692,6 +2692,7 @@
       showSummaryModal = false;
       summaryGenerating = true;
 
+      const savedSummary = saveSummaryState(file ?? {});
       if (file) {
         file.has_summary = false;
         file.summary_opensearch_id = null;
@@ -2707,7 +2708,8 @@
         );
       } catch (error) {
         console.error('Failed to start regeneration with prompt:', error);
-        toastStore.error($t('fileDetail.failedToStartSummaryReprocess'), 5000);
+        toastStore.error(getErrorMessage(error, $t('fileDetail.failedToStartSummaryReprocess')), 5000);
+        if (file) file = restoreAfterFailedRegenerate(file, savedSummary);
         summaryGenerating = false;
       }
     }}

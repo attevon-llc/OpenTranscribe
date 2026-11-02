@@ -111,7 +111,6 @@ backend/app/services/chat/reranker_threads.py	2	ratchet: may only go down
 backend/app/services/chat/retrieval_cache.py	8	ratchet: may only go down
 backend/app/services/chat/settings.py	1	ratchet: may only go down
 backend/app/services/clustering/admin_ops.py	2	ratchet: may only go down
-backend/app/services/clustering/assignment.py	1	ratchet: may only go down
 backend/app/services/clustering/cluster_identity.py	1	ratchet: may only go down
 backend/app/services/clustering/queries.py	1	ratchet: may only go down
 backend/app/services/clustering/recluster.py	3	ratchet: may only go down

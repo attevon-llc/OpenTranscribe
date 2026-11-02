@@ -147,6 +147,24 @@ def test_an_empty_centroid_search_still_creates_the_singleton(
     assert list(speaker_os_seams["clusters"]) == [str(cluster.uuid)]
 
 
+@pytest.mark.usefixtures("production_rollback")
+def test_a_new_cluster_whose_centroid_was_not_stored_is_not_kept(
+    db_session, normal_user, index, speaker_os_seams
+):
+    """A cluster with no centroid can never be found again, so the next file makes another."""
+    org = make_org(db_session)
+    sp = _speaker(db_session, normal_user, org, index, VOICE)
+    db_session.commit()
+    speaker_os_seams["store_ok"] = False
+
+    with pytest.raises(OpenSearchUnavailableError):
+        SpeakerClusteringService(db_session).find_or_create_cluster(sp.id, normal_user.id, VOICE)
+
+    db_session.expire_all()
+    assert _clusters_of(db_session, normal_user) == 0
+    assert db_session.get(Speaker, sp.id).cluster_id is None
+
+
 # ---------------------------------------------------------------------------
 # cluster_speakers_for_file: the voiceprint lookup
 # ---------------------------------------------------------------------------

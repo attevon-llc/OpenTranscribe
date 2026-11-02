@@ -21,6 +21,7 @@
   import { websocketStore } from '$stores/websocket';
   import { handleFileNotification } from '$lib/fileDetail/notificationHandler';
   import { createPageTimers } from '$lib/fileDetail/pageTimers';
+  import { markActiveSegment, scrollToAndHighlight, scrollToSegmentAtTime } from '$lib/fileDetail/segmentDom';
   import {
     appendSegmentPage,
     patchSegmentInFile,
@@ -568,7 +569,7 @@
     const currentCount = file?.transcript_segments?.length || 0;
     if (targetIndex < currentCount) {
       // Already loaded - just scroll and highlight
-      scrollToAndHighlight(segmentUuid);
+      scrollToAndHighlight(segmentUuid, scheduleTimeout);
       return;
     }
 
@@ -605,7 +606,7 @@
       }
 
       // Wait for DOM update then scroll to target segment
-      scheduleTimeout(() => scrollToAndHighlight(segmentUuid), 300);
+      scheduleTimeout(() => scrollToAndHighlight(segmentUuid, scheduleTimeout), 300);
     } catch (error) {
       console.error('Error loading segments up to target:', error);
       toastStore.error($t('fileDetail.failedToLoadMoreSegments'));
@@ -613,19 +614,6 @@
       loadingMoreSegments = false;
     }
   }
-
-  /**
-   * Scroll to a segment by UUID and apply a highlight flash animation.
-   */
-  function scrollToAndHighlight(segmentUuid: string): void {
-    const el = document.querySelector(`[data-segment-id="${segmentUuid}"]`);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.classList.add('highlight-flash');
-      scheduleTimeout(() => el.classList.remove('highlight-flash'), 2000);
-    }
-  }
-
 
   /**
    * Load AI suggestions for tags and collections
@@ -910,31 +898,6 @@
 
     // Mark as initialized - all player initialization is now handled by VideoPlayer component
     playerInitialized = true;
-  }
-
-  /**
-   * Update current segment highlighting without auto-scrolling
-   */
-  function updateCurrentSegment(currentPlaybackTime: number): void {
-    const transcriptData = file?.transcript_segments;
-    if (!file || !transcriptData || !Array.isArray(transcriptData)) return;
-
-    const allSegments = document.querySelectorAll('.transcript-segment');
-    allSegments.forEach(segment => {
-      segment.classList.remove('active-segment');
-    });
-
-    const currentSegment = transcriptData.find((segment: TranscriptSegment) => {
-      return currentPlaybackTime >= segment.start_time && currentPlaybackTime <= segment.end_time;
-    });
-
-    if (currentSegment) {
-      const segmentElement = document.querySelector(`[data-segment-id="${currentSegment.uuid || currentSegment.id || `${currentSegment.start_time}-${currentSegment.end_time}`}"]`);
-      if (segmentElement) {
-        segmentElement.classList.add('active-segment');
-        // Remove auto-scroll to allow manual scrolling
-      }
-    }
   }
 
   // Event handlers for components
@@ -1808,7 +1771,7 @@
   function handleTimeUpdate(event: CustomEvent) {
     currentTime = event.detail.currentTime;
     duration = event.detail.duration;
-    updateCurrentSegment(currentTime);
+    markActiveSegment(file?.transcript_segments, currentTime);
   }
 
   function handlePlay(_event: CustomEvent) {
@@ -2276,7 +2239,7 @@
           currentTime = targetTime;
         }
         // Scroll the transcript segment into view
-        scrollToSegmentAtTime(targetTime);
+        scrollToSegmentAtTime(file?.transcript_segments, targetTime, scheduleTimeout);
       }
     }
   }
@@ -2296,21 +2259,6 @@
       hasSeenSummaryView = true;
       handleShowSummary();
     }
-  }
-
-  function scrollToSegmentAtTime(time: number) {
-    const transcriptData = file?.transcript_segments;
-    if (!transcriptData || !Array.isArray(transcriptData)) return;
-    const segment = transcriptData.find((s: TranscriptSegment) => time >= s.start_time && time <= s.end_time);
-    if (!segment) return;
-    const segId = segment.uuid || segment.id || `${segment.start_time}-${segment.end_time}`;
-    // Wait for DOM to update with the active-segment class
-    scheduleTimeout(() => {
-      const el = document.querySelector(`[data-segment-id="${segId}"]`);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }, 300);
   }
 
   // Reactive statement to re-initialize player if videoUrl changes

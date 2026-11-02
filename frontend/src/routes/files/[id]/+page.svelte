@@ -30,6 +30,7 @@
   } from '$lib/fileDetail/speakerNames';
   import { markActiveSegment, scrollToSegmentAtTime } from '$lib/fileDetail/segmentDom';
   import { patchSegmentInFile } from '$lib/fileDetail/segmentSync';
+  import { clearProcessedVideoCache, saveSegmentText, segmentSaveErrorKey } from '$lib/fileDetail/segmentEdit';
 
   // Import new components
   import VideoPlayer from '$components/VideoPlayer.svelte';
@@ -576,40 +577,26 @@
   }
 
 
-  async function handleSaveSegment(event: any) {
+  async function handleSaveSegment(event: CustomEvent<{ segment: { uuid: string } }>) {
     const segment = event.detail.segment;
     if (!segment || !editingSegmentText) return;
 
     try {
       savingTranscript = true;
-
-      // Call backend API to update the specific segment
-      const segmentUpdate = {
-        text: editingSegmentText
-      };
-
       const segmentUuid = segment.uuid;
-      const response = await axiosInstance.put(`/files/${fileId}/transcript/segments/${segmentUuid}`, segmentUpdate);
+      const saved = await saveSegmentText(fileId, segmentUuid, editingSegmentText);
 
-      if (response.data) {
-        // Update the transcript store FIRST for reactivity (feeds TranscriptModal)
+      if (saved) {
+        // Update the transcript store FIRST for reactivity (its readers do not read `file`)
         transcriptStore.updateSegmentText(segmentUuid, editingSegmentText);
 
-        // Patch only `text`. The old code merged the whole response and then restored the
-        // speaker fields it had just clobbered; a targeted patch can't clobber them.
-        file = patchSegmentInFile(file, segmentUuid, { text: response.data.text ?? editingSegmentText });
+        // Patch only `text`, so the segment's speaker fields cannot be clobbered.
+        file = patchSegmentInFile(file, segmentUuid, { text: saved.text ?? editingSegmentText });
 
         // The write is committed — close the editor now. Everything below only affects
         // future downloads and the subtitle track, so it must not hold the UI open.
-        editingSegmentId = null;
-        editingSegmentText = '';
-        editingSegmentOriginalText = '';
-
-        // Clear cached processed videos so downloads use the updated transcript.
-        axiosInstance.delete(`/files/${file.uuid}/cache`).catch((error: unknown) => {
-          console.warn('Could not clear video cache:', error);
-        });
-
+        handleCancelEditSegment();
+        clearProcessedVideoCache(file.uuid);
         refreshCaptionTrack('segment edit');
 
         // Word counts and talk-time are derived from segment text; refresh them.
@@ -617,18 +604,7 @@
       }
     } catch (error: unknown) {
       console.error('Error saving segment:', error);
-
-      // Show error as toast notification for consistency
-      const status = getErrorStatus(error);
-      if (status === 405) {
-        toastStore.error($t('fileDetail.transcriptEditingNotSupported'));
-      } else if (status === 404) {
-        toastStore.error($t('fileDetail.transcriptSegmentNotFound'));
-      } else if (status === 422) {
-        toastStore.error($t('fileDetail.invalidSegmentData'));
-      } else {
-        toastStore.error($t('fileDetail.failedToSaveSegment'));
-      }
+      toastStore.error($t(segmentSaveErrorKey(getErrorStatus(error))));
     } finally {
       savingTranscript = false;
     }

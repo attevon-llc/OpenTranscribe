@@ -124,6 +124,9 @@ const EXEMPT: Record<string, string> = {
     'createMediaStream() is a FACTORY: its only state is the URL refresher handle, stopped by ' +
     'the page’s onDestroy. `clearMediaUrlCache` is a call INTO lib/api/mediaUrl, which owns ' +
     'that cache; this module holds no URL itself.',
+  'lib/fileDetail/segmentEdit':
+    'clearProcessedVideoCache() is an HTTP DELETE of the server’s processed-video cache, not ' +
+    'module state; the module holds no state of its own (editor state is the page’s).',
   'lib/fileDetail/speakerSave':
     'createSpeakerSaveFlow() is a FACTORY: the profile-decision queue and bulk decisions live ' +
     'in its closure, one per file-detail page mount, and die with the page. resetBulkState() ' +

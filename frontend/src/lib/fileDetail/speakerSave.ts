@@ -12,6 +12,7 @@ import { getErrorStatus } from '$lib/utils/apiError';
 import { t } from '$stores/locale';
 import { toastStore } from '$stores/toast';
 import { transcriptStore } from '$stores/transcriptStore';
+import { clearProcessedVideoCache } from './segmentEdit';
 import { renameSpeakersInFile, type SegmentBearingFile } from './segmentSync';
 import type { SpeakerLoaderContext } from './speakerLoader';
 import {
@@ -55,12 +56,6 @@ export function createSpeakerSaveFlow(ctx: SpeakerSaveContext) {
     speakerConfirmationQueue = [];
     currentConfirmationIndex = 0;
     bulkSaveDecisions.clear();
-  }
-
-  function clearFileVideoCache(fileUuid: unknown): void {
-    axiosInstance.delete(`/files/${fileUuid}/cache`).catch((error: unknown) => {
-      console.warn('Could not clear video cache:', error);
-    });
   }
 
   /**
@@ -433,7 +428,7 @@ export function createSpeakerSaveFlow(ctx: SpeakerSaveContext) {
 
     // Update captions and clear cache (async, don't block)
     ctx.refreshCaptionTrack('saving speaker names');
-    clearFileVideoCache(file.uuid);
+    clearProcessedVideoCache(file.uuid);
   }
 
   return {

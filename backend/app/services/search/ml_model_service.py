@@ -850,17 +850,29 @@ class OpenSearchMLModelService:
     def find_model_by_name(self, model_name: str) -> str | None:
         """Find a model ID by its name.
 
+        Several registrations can share a name (a registration whose task outlived its wait is
+        followed by a second one). The DEPLOYED one wins, then one still being registered or
+        deployed, then any other; the first match alone could be an undeployed duplicate.
+
         Args:
             model_name: The model name to search for.
 
         Returns:
             Model ID if found, None otherwise.
         """
-        models = self.list_models()
-        for model in models:
-            if model.get("name") == model_name:
-                return model.get("model_id")
-        return None
+        matches = [m for m in self.list_models() if m.get("name") == model_name]
+        if not matches:
+            return None
+
+        def _rank(model: dict[str, Any]) -> int:
+            state = str(model.get("state", "")).upper()
+            if state == "DEPLOYED":
+                return 0
+            return 1 if state in _IN_FLIGHT_STATES else 2
+
+        best = min(matches, key=_rank)  # min() is stable: ties keep search order
+        model_id: str | None = best.get("model_id")
+        return model_id
 
     def _await_deployable_state(
         self,
@@ -891,6 +903,36 @@ class OpenSearchMLModelService:
             state = str(self.get_model_status(model_id).get("state", "")).upper()
         return state
 
+    def _deploy_registered(self, model_name: str, model_id: str) -> str | None:
+        """Bring an already-registered model to DEPLOYED (waiting out an in-flight actor)."""
+        status = self.get_model_status(model_id)
+        if status.get("deployed"):
+            logger.info(f"Model {model_name} already deployed: {model_id}")
+            return self._verified_or_none(model_name, model_id)
+
+        # `find_model_by_name` matches the moment ML Commons creates the model's
+        # meta document -- state REGISTERING, long before there is anything to
+        # deploy. Wait it out rather than deploying into it (see
+        # _DEPLOYABLE_STATES's docstring for why that is destructive, not just
+        # wrong).
+        state = self._await_deployable_state(model_id)
+        if state == "DEPLOYED":
+            # Finished registering AND deploying while we waited.
+            return self._verified_or_none(model_name, model_id)
+        if state not in _DEPLOYABLE_STATES:
+            logger.warning(
+                f"Model {model_name} ({model_id}) is in state {state!r}, which is "
+                "not deployable. Not deploying -- doing so would delete the "
+                "registration cache of an in-flight register. The bootstrap "
+                "self-heal will retry."
+            )
+            return None
+
+        # Deploy if registered but not deployed
+        if self.deploy_model(model_id):
+            return self._verified_or_none(model_name, model_id)
+        return None
+
     def ensure_model_deployed(self, model_name: str) -> str | None:
         """Ensure a model is registered and deployed.
 
@@ -907,33 +949,7 @@ class OpenSearchMLModelService:
         model_id = self.find_model_by_name(model_name)
 
         if model_id:
-            status = self.get_model_status(model_id)
-            if status.get("deployed"):
-                logger.info(f"Model {model_name} already deployed: {model_id}")
-                return self._verified_or_none(model_name, model_id)
-
-            # `find_model_by_name` matches the moment ML Commons creates the model's
-            # meta document -- state REGISTERING, long before there is anything to
-            # deploy. Wait it out rather than deploying into it (see
-            # _DEPLOYABLE_STATES's docstring for why that is destructive, not just
-            # wrong).
-            state = self._await_deployable_state(model_id)
-            if state == "DEPLOYED":
-                # Finished registering AND deploying while we waited.
-                return self._verified_or_none(model_name, model_id)
-            if state not in _DEPLOYABLE_STATES:
-                logger.warning(
-                    f"Model {model_name} ({model_id}) is in state {state!r}, which is "
-                    "not deployable. Not deploying -- doing so would delete the "
-                    "registration cache of an in-flight register. The bootstrap "
-                    "self-heal will retry."
-                )
-                return None
-
-            # Deploy if registered but not deployed
-            if self.deploy_model(model_id):
-                return self._verified_or_none(model_name, model_id)
-            return None
+            return self._deploy_registered(model_name, model_id)
 
         # Not registered - try local first (for offline deployments)
         local_path = self.get_local_model_path(model_name)
@@ -942,6 +958,15 @@ class OpenSearchMLModelService:
             model_id = self.register_model_from_local(model_name)
             if model_id and self.deploy_model(model_id):
                 return self._verified_or_none(model_name, model_id)
+            # A registration whose task outlived its wait still completes on the server. Look
+            # the name up again before registering a second, duplicate model.
+            late_id = self.find_model_by_name(model_name)
+            if late_id:
+                logger.warning(
+                    f"Local registration of {model_name} reported failure but {late_id} "
+                    "exists; adopting it instead of registering a duplicate"
+                )
+                return self._deploy_registered(model_name, late_id)
             # Local registration failed, continue to try remote
             logger.warning(f"Local model registration failed for {model_name}, trying remote")
 

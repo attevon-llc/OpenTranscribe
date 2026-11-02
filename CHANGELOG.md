@@ -79,6 +79,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A slow local embedding-model registration no longer leaves a duplicate model.** When the
+  registration outlived its wait, startup registered the same model a second time from the remote
+  registry, leaving two models of one name. The name is now looked up again before registering
+  another, and a lookup by name prefers the deployed model over an undeployed duplicate.
 - **Schema migrations follow the database settings in force when they run.** The migration
   connection was resolved once at import time, so a process that changed its `POSTGRES_*`
   settings before calling Alembic still migrated the database it had started with. It is now

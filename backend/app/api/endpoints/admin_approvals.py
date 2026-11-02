@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -122,7 +123,7 @@ def list_pending_accounts(
     offset: int = Query(0, ge=0, description="Number of accounts to skip"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Any:
     """List accounts awaiting administrator approval, oldest first.
 
     Oldest first because this is a queue: the person who has been waiting longest
@@ -147,7 +148,7 @@ def approve_account(
     payload: ApprovalDecisionRequest | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Any:
     """Admit a pending account.
 
     No session handling is needed: a pending account's credential already worked,
@@ -175,7 +176,7 @@ def reject_account(
     payload: ApprovalDecisionRequest | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Any:
     """Refuse a pending account, keeping the row.
 
     Sessions are revoked even though the lifecycle gate already refuses every

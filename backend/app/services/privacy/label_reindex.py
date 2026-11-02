@@ -231,7 +231,7 @@ def read_pending(db: Session) -> list[dict[str, Any]]:
 def _write_pending(row: SystemSettings, records: list[dict[str, Any]]) -> None:
     import json
 
-    row.value = json.dumps(records, sort_keys=True)  # type: ignore[assignment]
+    row.value = json.dumps(records, sort_keys=True)
 
 
 # --- requesting and running a resync ------------------------------------------------------

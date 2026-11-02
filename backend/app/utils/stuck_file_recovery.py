@@ -43,10 +43,10 @@ def check_for_stuck_files(db: Session, stuck_threshold_hours: float = 2.0) -> li
         db.query(MediaFile)
         .options(
             load_only(
-                MediaFile.id,  # type: ignore[arg-type]
-                MediaFile.status,  # type: ignore[arg-type]
-                MediaFile.active_task_id,  # type: ignore[arg-type]
-                MediaFile.retry_count,  # type: ignore[arg-type]
+                MediaFile.id,
+                MediaFile.status,
+                MediaFile.active_task_id,
+                MediaFile.retry_count,
             )
         )
         .filter(
@@ -85,9 +85,9 @@ def check_for_stuck_files(db: Session, stuck_threshold_hours: float = 2.0) -> li
                     stuck_file_ids.append(int(file.id))
                 elif task_result.state == "SUCCESS":
                     # Task completed but file status wasn't updated
-                    file.status = FileStatus.COMPLETED  # type: ignore[assignment]
-                    file.active_task_id = None  # type: ignore[assignment]
-                    file.task_started_at = None  # type: ignore[assignment]
+                    file.status = FileStatus.COMPLETED
+                    file.active_task_id = None
+                    file.task_started_at = None
                     db.commit()
             except Exception as e:
                 logger.warning(f"Could not check task status for {active_task_id}: {e}")
@@ -163,9 +163,9 @@ def _recover_orphaned_file(db: Session, media_file: MediaFile) -> bool:
     logger.info(f"File {media_file.id} orphaned, attempting recovery restart")
 
     # Reset status to pending and try again
-    media_file.status = FileStatus.PENDING  # type: ignore[assignment]
-    media_file.active_task_id = None  # type: ignore[assignment]
-    media_file.task_started_at = None  # type: ignore[assignment]
+    media_file.status = FileStatus.PENDING
+    media_file.active_task_id = None
+    media_file.task_started_at = None
     db.commit()
 
     _start_transcription_task(str(media_file.uuid), int(media_file.id), "orphaned")
@@ -183,9 +183,9 @@ def _update_recovery_tracking(db: Session, media_file: MediaFile) -> None:
     # row written by raw SQL, a migration backfill or an explicit UPDATE holds NULL and a
     # bare `+= 1` is a TypeError. Normalize on read the way every other counter read here does.
     media_file.recovery_attempts = int(media_file.recovery_attempts or 0) + 1
-    media_file.last_recovery_attempt = datetime.now(UTC)  # type: ignore[assignment]
-    media_file.active_task_id = None  # type: ignore[assignment]
-    media_file.task_started_at = None  # type: ignore[assignment]
+    media_file.last_recovery_attempt = datetime.now(UTC)
+    media_file.active_task_id = None
+    media_file.task_started_at = None
     db.commit()
 
 

@@ -156,7 +156,7 @@ def set_active_local_model(
 
     setting = db.query(SystemSettings).filter(SystemSettings.key == "asr.local_model").first()
     if setting:
-        setting.value = model_name  # type: ignore[assignment]
+        setting.value = model_name
     else:
         setting = SystemSettings(
             key="asr.local_model",

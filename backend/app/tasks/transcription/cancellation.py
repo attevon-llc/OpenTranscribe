@@ -186,12 +186,12 @@ def finalize_cancelled_run(task_id: str, file_id: int, file_uuid: str, user_id: 
     with session_scope() as db:
         task = db.query(Task).filter(Task.id == task_id).first()
         if task is not None:
-            task.status = TASK_STATUS_FAILED  # type: ignore[assignment]
-            task.error_message = CANCELLED_BY_USER  # type: ignore[assignment]
+            task.status = TASK_STATUS_FAILED
+            task.error_message = CANCELLED_BY_USER
             # The confirmed-stop timestamp: this row is written only once the run has
             # actually stopped, so "when did it really stop" is answerable rather than inferred.
-            task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
-            task.updated_at = datetime.now(UTC)  # type: ignore[assignment]
+            task.completed_at = datetime.now(UTC)
+            task.updated_at = datetime.now(UTC)
 
         media_file = get_refreshed_object(db, MediaFile, file_id)
         if media_file is not None:
@@ -202,7 +202,7 @@ def finalize_cancelled_run(task_id: str, file_id: int, file_uuid: str, user_id: 
                 media_file.cancellation_requested = False
                 # A transient failure retried earlier in this run left its category behind;
                 # a cancelled file carries none.
-                media_file.error_category = None  # type: ignore[assignment]
+                media_file.error_category = None
         db.commit()
 
         if media_file is not None and write_status:
@@ -311,10 +311,10 @@ def reconcile_cancellation(file_id: int, task_id: str) -> dict:
 
         task = db.query(Task).filter(Task.id == task_id).first()
         if task is not None and task.completed_at is None:
-            task.status = TASK_STATUS_FAILED  # type: ignore[assignment]
-            task.error_message = CANCELLED_BY_USER  # type: ignore[assignment]
-            task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
-            task.updated_at = datetime.now(UTC)  # type: ignore[assignment]
+            task.status = TASK_STATUS_FAILED
+            task.error_message = CANCELLED_BY_USER
+            task.completed_at = datetime.now(UTC)
+            task.updated_at = datetime.now(UTC)
 
         media_file.active_task_id = None
         media_file.task_started_at = None

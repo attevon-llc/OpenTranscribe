@@ -6,6 +6,8 @@ and caches the verdict per serial number. ``_check_ocsp`` is the entry point, ca
 ``auth/pki_revocation.py``'s ``_check_revocation`` before the CRL fallback.
 """
 
+from __future__ import annotations
+
 import logging
 import threading
 import time
@@ -13,6 +15,7 @@ from collections import OrderedDict
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
+from typing import TYPE_CHECKING
 
 import httpx
 from cryptography import x509
@@ -25,6 +28,10 @@ from cryptography.x509.oid import ExtensionOID
 
 from app.core.config import settings
 from app.core.process_auth_settings import get_process_auth_settings
+
+if TYPE_CHECKING:
+    from cryptography.hazmat.primitives.asymmetric.types import PublicKeyTypes
+    from cryptography.x509 import ObjectIdentifier
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +140,7 @@ def _get_ocsp_responder_cert(
         return None
 
 
-def _get_hash_algorithm_for_sig_oid(sig_alg_oid) -> hashes.HashAlgorithm | None:
+def _get_hash_algorithm_for_sig_oid(sig_alg_oid: ObjectIdentifier) -> hashes.HashAlgorithm | None:
     """
     Get the hash algorithm for a signature algorithm OID.
 
@@ -160,7 +167,7 @@ def _get_hash_algorithm_for_sig_oid(sig_alg_oid) -> hashes.HashAlgorithm | None:
 
 
 def _verify_signature_by_key_type(
-    public_key,
+    public_key: PublicKeyTypes,
     signature: bytes,
     tbs_data: bytes,
     hash_algorithm: hashes.HashAlgorithm,
@@ -292,7 +299,7 @@ def _get_ocsp_url(cert: x509.Certificate) -> str | None:
     try:
         aia = cert.extensions.get_extension_for_oid(ExtensionOID.AUTHORITY_INFORMATION_ACCESS)
         ocsp_urls = [
-            desc.access_location.value  # type: ignore[attr-defined]
+            desc.access_location.value
             for desc in aia.value  # type: ignore[attr-defined]
             if desc.access_method == AuthorityInformationAccessOID.OCSP
         ]
@@ -352,7 +359,7 @@ def _send_ocsp_request(ocsp_url: str, ocsp_request_data: bytes) -> bytes | None:
             if response.status_code != 200:
                 logger.warning(f"OCSP responder returned status {response.status_code}")
                 return None
-            return response.content  # type: ignore[no-any-return]
+            return response.content
     except httpx.TimeoutException:
         logger.warning(f"OCSP request timed out after {timeout_seconds}s")
         return None

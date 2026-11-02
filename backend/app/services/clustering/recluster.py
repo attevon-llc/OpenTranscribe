@@ -168,9 +168,7 @@ def _apply_separation_scores(
         np.fill_diagonal(c_sim, -1.0)  # Exclude self-similarity
         for i, cr in enumerate(all_clusters_for_sep):
             max_neighbor_sim = float(np.max(c_sim[i]))
-            cr.separation_score = round(  # type: ignore[assignment]
-                1.0 - max_neighbor_sim, 4
-            )
+            cr.separation_score = round(1.0 - max_neighbor_sim, 4)
 
 
 def _recluster_status(

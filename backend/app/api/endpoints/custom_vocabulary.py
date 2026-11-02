@@ -46,7 +46,7 @@ _MAX_BULK_IMPORT_ITEMS = 1000
 
 def _get_vocab_model():
     """Lazily import CustomVocabulary model to avoid early import errors."""
-    from app.models.custom_vocabulary import CustomVocabulary  # type: ignore[import]
+    from app.models.custom_vocabulary import CustomVocabulary
 
     return CustomVocabulary
 
@@ -77,7 +77,7 @@ def _shared_terms(vocab: Any, org_id: int | None) -> Any:
 
 def _get_term_in_tenant(db: Session, term_id: int, ctx: RequestContext) -> Any:
     """Fetch a term visible in the active tenant, else 404."""
-    from app.models.custom_vocabulary import CustomVocabulary  # type: ignore[import]
+    from app.models.custom_vocabulary import CustomVocabulary
 
     term = db.query(CustomVocabulary).filter(CustomVocabulary.id == term_id).first()
     if not term:
@@ -137,7 +137,7 @@ def list_vocabulary(
     Returns the user's own terms in the active tenant and the shared terms
     (user_id IS NULL) visible there. Optionally filter by domain.
     """
-    from app.models.custom_vocabulary import CustomVocabulary  # type: ignore[import]
+    from app.models.custom_vocabulary import CustomVocabulary
 
     # User's own terms
     user_q = db.query(CustomVocabulary).filter(_own_terms(CustomVocabulary, ctx))
@@ -175,7 +175,7 @@ def create_vocabulary_term(
     ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """Create a new custom vocabulary term for the current user in the active tenant."""
-    from app.models.custom_vocabulary import CustomVocabulary  # type: ignore[import]
+    from app.models.custom_vocabulary import CustomVocabulary
 
     current_user = ctx.user
 
@@ -264,7 +264,7 @@ def update_vocabulary_term(  # noqa: C901
                 status_code=400,
                 detail=f"'term' must not exceed {_MAX_TERM_LEN} characters",
             )
-        term.term = new_text  # type: ignore[assignment]
+        term.term = new_text
 
     if "domain" in body:
         new_domain = body["domain"]
@@ -273,7 +273,7 @@ def update_vocabulary_term(  # noqa: C901
                 status_code=400,
                 detail=f"Invalid domain '{new_domain}'. Supported: {', '.join(SUPPORTED_DOMAINS)}",
             )
-        term.domain = new_domain  # type: ignore[assignment]
+        term.domain = new_domain
 
     if "category" in body:
         new_cat = body["category"]
@@ -282,10 +282,10 @@ def update_vocabulary_term(  # noqa: C901
                 status_code=400,
                 detail=f"'category' must not exceed {_MAX_CATEGORY_LEN} characters",
             )
-        term.category = new_cat  # type: ignore[assignment]
+        term.category = new_cat
 
     if "is_active" in body:
-        term.is_active = bool(body["is_active"])  # type: ignore[assignment]
+        term.is_active = bool(body["is_active"])
 
     if "term" in body or "domain" in body:
         vocab = _get_vocab_model()
@@ -319,7 +319,7 @@ def delete_all_user_vocabulary(
     ctx: RequestContext = Depends(get_current_context),
 ) -> None:
     """Delete the current user's terms in the active tenant (optionally filter by domain)."""
-    from app.models.custom_vocabulary import CustomVocabulary  # type: ignore[import]
+    from app.models.custom_vocabulary import CustomVocabulary
 
     q = db.query(CustomVocabulary).filter(_own_terms(CustomVocabulary, ctx))
     if domain:
@@ -371,7 +371,7 @@ def bulk_import_vocabulary(  # noqa: C901
     Duplicate terms (same term + domain for this user) are silently skipped.
     Returns counts of created and skipped terms.
     """
-    from app.models.custom_vocabulary import CustomVocabulary  # type: ignore[import]
+    from app.models.custom_vocabulary import CustomVocabulary
 
     current_user = ctx.user
     raw_terms = body.get("terms", [])
@@ -484,7 +484,7 @@ def export_vocabulary(
     ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """Export the user's custom vocabulary terms in the active tenant as JSON."""
-    from app.models.custom_vocabulary import CustomVocabulary  # type: ignore[import]
+    from app.models.custom_vocabulary import CustomVocabulary
 
     current_user = ctx.user
     q = db.query(CustomVocabulary).filter(_own_terms(CustomVocabulary, ctx))

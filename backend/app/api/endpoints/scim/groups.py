@@ -202,7 +202,7 @@ def replace_group(
     member_ids = _resolve_member_ids(db, {m.value for m in payload.members if m.value})
 
     if new_name != str(group.name):
-        group.name = new_name  # type: ignore[assignment]
+        group.name = new_name
         try:
             db.commit()
         except IntegrityError as exc:
@@ -230,7 +230,7 @@ def patch_group(
     for operation in payload.Operations:
         kind, value = parse_group_operation(operation)
         if kind == "display_name":
-            group.name = value  # type: ignore[assignment]
+            group.name = value
             db.commit()
         elif kind == "members_add":
             scim_group_service.add_group_members(

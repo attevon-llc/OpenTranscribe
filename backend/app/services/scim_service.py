@@ -197,15 +197,15 @@ def update_user(
         _assert_not_super_admin(user, "change the userName of")
         old_email = str(user.email)
         changed["email"] = email
-        user.email = email  # type: ignore[assignment]
+        user.email = email
 
     if full_replace:
         if display_name != str(user.full_name or ""):
             changed["full_name"] = display_name
-            user.full_name = display_name  # type: ignore[assignment]
+            user.full_name = display_name
         if external_id != user.external_id:
             changed["external_id"] = external_id
-            user.external_id = external_id  # type: ignore[assignment]
+            user.external_id = external_id
         if active is None and not user.is_active:
             # Omitted `active` on a PUT normally defaults to True (RFC 7643
             # §4.1.1's "absent means active"), but the account is currently
@@ -226,10 +226,10 @@ def update_user(
     else:
         if display_name is not None and display_name != str(user.full_name or ""):
             changed["full_name"] = display_name
-            user.full_name = display_name  # type: ignore[assignment]
+            user.full_name = display_name
         if external_id is not None and external_id != user.external_id:
             changed["external_id"] = external_id
-            user.external_id = external_id  # type: ignore[assignment]
+            user.external_id = external_id
         active_value = active  # None means "not mentioned" under a merge
 
     deactivating = active_value is not None and bool(active_value) != bool(user.is_active)
@@ -237,7 +237,7 @@ def update_user(
         if not active_value:
             _assert_not_super_admin(user, "deactivate")
         changed["is_active"] = bool(active_value)
-        user.is_active = bool(active_value)  # type: ignore[assignment]
+        user.is_active = bool(active_value)
 
     if not changed:
         return user

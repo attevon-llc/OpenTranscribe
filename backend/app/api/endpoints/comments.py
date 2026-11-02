@@ -1,5 +1,6 @@
 """API endpoints for media file comments with sharing-aware permissions."""
 
+from typing import Any
 from typing import Literal
 
 from fastapi import APIRouter
@@ -60,7 +61,7 @@ def get_comments_for_file_nested(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Get all comments for a specific media file (nested route).
 
     Requires viewer+ permission on the file (via ownership or sharing).
@@ -87,7 +88,7 @@ def create_comment_for_file_nested(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Create a comment for a specific media file (nested route).
 
     Requires viewer+ permission on the file (commenting is collaborative).
@@ -126,7 +127,7 @@ def get_comments_for_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """List all comments for a media file using query parameter.
 
     Accepts the file's public UUID as ``media_file_id`` (what the frontend
@@ -162,7 +163,7 @@ def create_comment_standalone(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Add a comment to a media file referenced by UUID in the request body.
 
     Fallback route used by the frontend when the nested
@@ -261,7 +262,7 @@ def get_comment(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Get a single comment by UUID.
 
     Requires viewer+ permission on the comment's file.
@@ -288,7 +289,7 @@ def update_comment(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Update a comment. Only the comment author can edit, within their tenant."""
     comment = get_comment_by_uuid(db, comment_uuid)
 
@@ -338,7 +339,7 @@ def delete_comment(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> None:
     """Delete a comment. Admin, comment author, or file owner — within their tenant.
 
     The scope gate runs before all three branches on purpose: author and file

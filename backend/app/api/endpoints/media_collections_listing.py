@@ -5,6 +5,7 @@ empty-prefix sub-router cannot hold. Handlers are plain ``def`` on purpose: see 
 ``media_collections`` module docstring (issue #284 A2.5).
 """
 
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -103,7 +104,7 @@ def list_shared_collections(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """List collections shared with the current user (not owned by them).
 
     Tenant-gated like ``GET /collections``: only collections of the active tenant,
@@ -198,7 +199,7 @@ def list_collections_on_files(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Which collections a set of selected files already belongs to.
 
     The mirror of ``GET /tags/for-files``, so the gallery's two organizing

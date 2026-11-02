@@ -43,7 +43,7 @@ _CLOUD_PROVIDERS = {
 def _get_provider_catalog() -> dict:
     """Return the ASR provider catalog, or empty dict if not yet available."""
     try:
-        from app.services.asr.catalog import ASR_PROVIDER_CATALOG  # type: ignore[import]
+        from app.services.asr.catalog import ASR_PROVIDER_CATALOG
 
         return ASR_PROVIDER_CATALOG
     except ImportError:
@@ -101,7 +101,7 @@ def get_asr_status(
 ) -> Any:
     """Get ASR configuration status summary for the current user."""
     current_user = ctx.user
-    from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
+    from app.models.user_asr_settings import UserASRSettings
 
     # Single query: fetch all configs + active_config_id setting in 2 queries total.
     # Resolve active_config from the already-fetched list (no 3rd DB round-trip).

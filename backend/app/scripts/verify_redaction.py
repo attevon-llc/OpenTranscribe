@@ -144,9 +144,9 @@ def main() -> int:  # noqa: C901
     finally:
         if file_id is not None:
             with session_scope() as db:
-                mf = db.query(MediaFile).filter(MediaFile.id == file_id).first()
-                if mf:
-                    db.delete(mf)
+                leftover = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+                if leftover:
+                    db.delete(leftover)
                     db.commit()
 
 

@@ -111,9 +111,9 @@ class TaskFilteringService:
         }
 
         if age_filter in age_thresholds:
-            return diff_hours <= age_thresholds[age_filter]  # type: ignore[no-any-return]
+            return diff_hours <= age_thresholds[age_filter]
         elif age_filter == "older":
-            return diff_hours > 24 * 30  # type: ignore[no-any-return]
+            return diff_hours > 24 * 30
 
         return True
 

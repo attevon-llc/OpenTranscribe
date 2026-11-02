@@ -150,7 +150,7 @@ def create_takedown_notice(
     response: Response,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Any:
     """Record a legal notice. No file is touched; cite it when quarantining."""
     notice = create_notice(
         db,
@@ -186,7 +186,7 @@ def list_takedown_notices(
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Any:
     """List notices, newest received first, with each notice's derived status."""
     rows, total = list_notices(
         db,
@@ -274,7 +274,7 @@ def get_takedown_notice(
     response: Response,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Any:
     """One notice with every file it covers."""
     try:
         notice = find_notice(db, notice_uuid)
@@ -300,7 +300,7 @@ def update_takedown_notice_file(
     response: Response,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Any:
     """Record a counter-notice or an upheld decision. The file's state does not change.
 
     ``released`` is not accepted: only the release action sets it, so the record cannot say
@@ -339,7 +339,7 @@ def notify_takedown_notice(
     body: NotifyRequest | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Any:
     """Email each affected owner once about this notice. Recipients come from the record.
 
     Idempotent: an owner already told about this event is skipped. The request carries no

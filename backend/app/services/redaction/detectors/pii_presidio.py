@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from typing import Any
 
 from app.core import redaction_defaults
 from app.core.config import settings
@@ -60,7 +61,7 @@ _load_failed = False
 _analyzer_lock = threading.Lock()
 
 
-def _build_analyzer(use_gliner: bool):
+def _build_analyzer(use_gliner: bool) -> Any:
     """Build the Presidio AnalyzerEngine with en_core_web_sm + optional GLiNER."""
     from presidio_analyzer import AnalyzerEngine
     from presidio_analyzer.nlp_engine import NlpEngineProvider
@@ -130,7 +131,7 @@ def _build_analyzer(use_gliner: bool):
     return analyzer
 
 
-def _cached(use_gliner: bool):
+def _cached(use_gliner: bool) -> Any:
     """The usable cached analyzer, or None if one must be built.
 
     Split out only so the fast path and the post-lock re-check cannot drift apart.
@@ -142,7 +143,7 @@ def _cached(use_gliner: bool):
     return None
 
 
-def _get_analyzer(use_gliner: bool):
+def _get_analyzer(use_gliner: bool) -> Any:
     """Return the analyzer, rebuilding it if the GLiNER mode changed (admin toggle).
 
     Double-checked locking: the cache hit stays lock-free (measured at ~2 us, and
@@ -230,7 +231,7 @@ def detect_pii(text: str, words: list[dict] | None, cfg: dict) -> list[Redaction
 def _spans_from_raw(
     raw: list[tuple],
     base: int,
-    word_offsets,
+    word_offsets: list[tuple[int, int]],
     keep_entities: set,
     min_score: float,
 ) -> list[RedactionSpan]:

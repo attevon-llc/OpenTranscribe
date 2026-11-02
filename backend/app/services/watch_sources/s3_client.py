@@ -11,6 +11,7 @@ import logging
 import os
 from datetime import datetime
 from pathlib import PurePosixPath
+from typing import Any
 
 from app.services.watch_sources.base import BaseWatchSourceClient
 from app.services.watch_sources.base import RemoteFileInfo
@@ -46,7 +47,7 @@ class S3WatchClient(BaseWatchSourceClient):
         self._use_ssl = use_ssl
         self._cached_client = None
 
-    def _client(self):
+    def _client(self) -> Any:
         if self._cached_client is None:
             import boto3
             from botocore.config import Config

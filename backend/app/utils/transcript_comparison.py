@@ -10,8 +10,10 @@ import json
 import logging
 from datetime import UTC
 from datetime import datetime
+from typing import Any
 
 import numpy as np
+from sqlalchemy.orm import Session
 
 from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
@@ -19,7 +21,7 @@ from app.models.speaker import Speaker
 logger = logging.getLogger(__name__)
 
 
-def export_baseline(db, file_id: int, output_path: str) -> dict:
+def export_baseline(db: Session, file_id: int, output_path: str) -> dict[str, Any]:
     """Export transcript segments and speakers as a JSON baseline snapshot.
 
     Args:
@@ -88,11 +90,11 @@ def export_baseline(db, file_id: int, output_path: str) -> dict:
 
 
 def export_word_reference(
-    db,
+    db: Session,
     file_id: int,
     out_words_json: str,
     out_rttm: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Export a word-level diarization REFERENCE from a hand-corrected transcript (issue #193).
 
     Each word inherits its (human-corrected) segment speaker, producing the parallel

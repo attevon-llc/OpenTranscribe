@@ -39,7 +39,7 @@ def write_wav_to_shared_volume(
         os.makedirs(shared_volume_path, exist_ok=True)
         safe_id = re.sub(r"[^a-zA-Z0-9\-]", "_", task_id)
         wav_path = os.path.join(shared_volume_path, f"{safe_id}.wav")
-        import scipy.io.wavfile as wavfile  # type: ignore[import]
+        import scipy.io.wavfile as wavfile
 
         # Convert float32 [-1, 1] to int16 for standard WAV
         audio_int16 = (audio * 32767).clip(-32768, 32767).astype(np.int16)
@@ -99,7 +99,7 @@ def load_from_shared_volume(wav_path: str) -> np.ndarray | None:
     if not wav_path or not os.path.exists(wav_path):
         return None
     try:
-        import scipy.io.wavfile as wavfile  # type: ignore[import]
+        import scipy.io.wavfile as wavfile
 
         _, data = wavfile.read(wav_path, mmap=True)
         n_samples = data.shape[0]

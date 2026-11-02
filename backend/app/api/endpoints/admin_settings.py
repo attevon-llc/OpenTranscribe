@@ -509,7 +509,7 @@ def delete_media_source(
     return {"success": True}
 
 
-def _reload_protected_media_providers():
+def _reload_protected_media_providers() -> None:
     """Reload the protected media provider registry after config changes."""
     try:
         from app.services import protected_media_providers

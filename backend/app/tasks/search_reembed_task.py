@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 REEMBED_LOCK_KEY = "search_reembed_degraded"
 
 
-def _reembed_degraded_files(self, triggered_by: int, limit: int = 500) -> dict[str, Any]:
+def _reembed_degraded_files(self: Any, triggered_by: int, limit: int = 500) -> dict[str, Any]:
     """Enumerate text-only chunk-plane documents and dispatch a reindex per owner.
 
     Undecorated so tests can call it directly with a stand-in ``self`` — see
@@ -114,6 +114,6 @@ def _reembed_degraded_files(self, triggered_by: int, limit: int = 500) -> dict[s
 
 @celery_app.task(bind=True, name="search.reembed_degraded", priority=CPUPriority.MAINTENANCE)
 @with_task_lock(REEMBED_LOCK_KEY, timeout=300)
-def reembed_degraded_files_task(self, triggered_by: int, limit: int = 500) -> dict[str, Any]:
+def reembed_degraded_files_task(self: Any, triggered_by: int, limit: int = 500) -> dict[str, Any]:
     """Celery entry point: ``_reembed_degraded_files`` under the redis dispatch lock."""
     return _reembed_degraded_files(self, triggered_by, limit=limit)

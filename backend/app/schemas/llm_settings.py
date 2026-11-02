@@ -5,6 +5,8 @@ Pydantic schemas for user LLM settings
 import re
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
+from typing import Self
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -56,38 +58,40 @@ class BedrockCredentialFields(BaseModel):
 
     @field_validator("aws_region", mode="before")
     @classmethod
-    def _valid_region(cls, v):
-        v = _blank_to_none(v)
-        if v is not None and not AWS_REGION_PATTERN.fullmatch(v):
+    def _valid_region(cls, v: Any) -> str | None:
+        value = _blank_to_none(v)
+        if value is not None and not AWS_REGION_PATTERN.fullmatch(value):
             raise ValueError("aws_region must look like us-east-1")
-        return v
+        return value
 
     @field_validator("aws_access_key_id", mode="before")
     @classmethod
-    def _valid_key_id(cls, v):
-        v = _blank_to_none(v)
-        if v is not None and not AWS_ACCESS_KEY_ID_PATTERN.fullmatch(v):
+    def _valid_key_id(cls, v: Any) -> str | None:
+        value = _blank_to_none(v)
+        if value is not None and not AWS_ACCESS_KEY_ID_PATTERN.fullmatch(value):
             raise ValueError("aws_access_key_id is not a valid access key id")
-        return v
+        return value
 
     @field_validator("aws_secret_access_key", mode="before")
     @classmethod
-    def _valid_secret(cls, v):
-        v = _blank_to_none(v)
-        if v is not None and not AWS_SECRET_PATTERN.fullmatch(v):
+    def _valid_secret(cls, v: Any) -> str | None:
+        value = _blank_to_none(v)
+        if value is not None and not AWS_SECRET_PATTERN.fullmatch(value):
             raise ValueError("aws_secret_access_key is not a valid secret access key")
-        return v
+        return value
 
     @field_validator("aws_session_token", mode="before")
     @classmethod
-    def _valid_token(cls, v):
-        v = _blank_to_none(v)
-        if v is not None and (len(v) > AWS_SESSION_TOKEN_MAX or any(c.isspace() for c in v)):
+    def _valid_token(cls, v: Any) -> str | None:
+        value = _blank_to_none(v)
+        if value is not None and (
+            len(value) > AWS_SESSION_TOKEN_MAX or any(c.isspace() for c in value)
+        ):
             raise ValueError("aws_session_token is not a valid session token")
-        return v
+        return value
 
     @model_validator(mode="after")
-    def _key_pair_together(self):
+    def _key_pair_together(self) -> Self:
         if bool(self.aws_access_key_id) != bool(self.aws_secret_access_key):
             raise ValueError("aws_access_key_id and aws_secret_access_key must be given together")
         if self.aws_session_token and not self.aws_access_key_id:
@@ -126,14 +130,14 @@ class UserLLMSettingsBase(BaseModel):
 
     @field_validator("max_tokens")
     @classmethod
-    def validate_max_tokens(cls, v):
+    def validate_max_tokens(cls, v: int) -> int:
         if v < 512 or v > 2000000:
             raise ValueError("max_tokens must be between 512 and 2,000,000")
         return v
 
     @field_validator("temperature")
     @classmethod
-    def validate_temperature(cls, v):
+    def validate_temperature(cls, v: str) -> str:
         try:
             temp_float = float(v)
         except ValueError as e:
@@ -167,14 +171,14 @@ class UserLLMSettingsUpdate(BedrockCredentialFields):
 
     @field_validator("max_tokens")
     @classmethod
-    def validate_max_tokens(cls, v):
+    def validate_max_tokens(cls, v: int | None) -> int | None:
         if v is not None and (v < 512 or v > 2000000):
             raise ValueError("max_tokens must be between 512 and 2,000,000")
         return v
 
     @field_validator("temperature")
     @classmethod
-    def validate_temperature(cls, v):
+    def validate_temperature(cls, v: str | None) -> str | None:
         if v is not None:
             try:
                 temp_float = float(v)

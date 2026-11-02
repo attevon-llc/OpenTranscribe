@@ -80,9 +80,9 @@ def _move_members_to_target(
         if int(member.speaker_id) in existing_speaker_ids:
             self.db.delete(member)
         else:
-            member.cluster_id = target.id  # type: ignore[assignment]
+            member.cluster_id = target.id
         if speaker:
-            speaker.cluster_id = target.id  # type: ignore[assignment]
+            speaker.cluster_id = target.id
             moved.append(speaker)
     return blocked, moved
 
@@ -274,9 +274,9 @@ def split_cluster(
                 confidence=0.0,
             )
             self.db.add(member)
-            speaker.cluster_id = new_cluster.id  # type: ignore[assignment]
+            speaker.cluster_id = new_cluster.id
 
-        new_cluster.member_count = len(speakers_to_move)  # type: ignore[assignment]
+        new_cluster.member_count = len(speakers_to_move)
         impact.cluster_uuids.add(str(new_cluster.uuid))
         impact.owner_ids.add(user_id)
         self.db.commit()

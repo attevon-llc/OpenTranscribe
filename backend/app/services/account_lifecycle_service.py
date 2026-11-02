@@ -58,7 +58,7 @@ def _disable_inactive_user(db: Session, user: User, *, last_login_at: datetime) 
     revoke -> commit -> audit -> log), the established precedent for a
     no-human-actor deactivation in this codebase. Returns sessions revoked.
     """
-    user.is_active = False  # type: ignore[assignment]
+    user.is_active = False
     revoked = revoke_all_sessions(db, user, reason="account_inactivity_sweep")
     db.commit()
 

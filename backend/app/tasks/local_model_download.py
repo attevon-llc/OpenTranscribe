@@ -13,6 +13,7 @@ to do unasked. The administrator presses Download again.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from app.core import local_whisper_catalog
 from app.core.celery import celery_app
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__)
     soft_time_limit=DOWNLOAD_DEADLINE_SECONDS + 600,
     time_limit=DOWNLOAD_DEADLINE_SECONDS + 1500,
 )
-def download_local_model_task(self, model_id: str, user_id: int) -> dict:
+def download_local_model_task(self: Any, model_id: str, user_id: int) -> dict:
     """Download ``model_id`` and tell the starting administrator how it went.
 
     Args:

@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 def update_speaker_collections(
     speaker_uuid: str, profile_id: int, profile_uuid: str, collection_ids: list[int]
-):
+) -> dict[str, Any] | None:
     """
     Update speaker embedding collections when a speaker is labeled/assigned to profile
 
@@ -25,7 +25,7 @@ def update_speaker_collections(
     """
     if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized")
-        return
+        return None
 
     try:
         # Update the speaker document in OpenSearch using UUID
@@ -38,7 +38,7 @@ def update_speaker_collections(
             }
         }
 
-        response = _client.opensearch_client.update(
+        response: dict[str, Any] = _client.opensearch_client.update(
             index=get_speaker_index(),
             id=str(speaker_uuid),
             body=update_body,
@@ -49,6 +49,7 @@ def update_speaker_collections(
 
     except Exception as e:
         logger.error(f"Error updating speaker collections: {e}")
+        return None
 
 
 def move_speaker_to_profile_collection(
@@ -56,7 +57,7 @@ def move_speaker_to_profile_collection(
     target_profile_id: int,
     target_profile_uuid: str,
     target_collection_ids: list[int],
-):
+) -> dict[str, Any] | None:
     """
     Move an unlabeled speaker embedding to a profile's collection
 
@@ -68,7 +69,7 @@ def move_speaker_to_profile_collection(
     """
     if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized")
-        return
+        return None
 
     try:
         # Update the speaker's profile and collection assignments using UUID
@@ -81,7 +82,7 @@ def move_speaker_to_profile_collection(
             }
         }
 
-        response = _client.opensearch_client.update(
+        response: dict[str, Any] = _client.opensearch_client.update(
             index=get_speaker_index(),
             id=str(unlabeled_speaker_uuid),
             body=update_body,
@@ -92,9 +93,10 @@ def move_speaker_to_profile_collection(
 
     except Exception as e:
         logger.error(f"Error moving speaker to profile collection: {e}")
+        return None
 
 
-def bulk_update_collection_assignments(updates: list[dict[str, Any]]):
+def bulk_update_collection_assignments(updates: list[dict[str, Any]]) -> dict[str, Any] | None:
     """
     Bulk update collection assignments for multiple speakers
 
@@ -103,7 +105,7 @@ def bulk_update_collection_assignments(updates: list[dict[str, Any]]):
     """
     if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized")
-        return
+        return None
 
     try:
         # Prepare bulk update operations
@@ -133,7 +135,7 @@ def bulk_update_collection_assignments(updates: list[dict[str, Any]]):
             bulk_body.append(doc_update)
 
         # Execute bulk operation
-        response = _client.opensearch_client.bulk(body=bulk_body)
+        response: dict[str, Any] = _client.opensearch_client.bulk(body=bulk_body)
 
         if response["errors"]:
             logger.error(f"Bulk collection update had errors: {response}")
@@ -144,6 +146,7 @@ def bulk_update_collection_assignments(updates: list[dict[str, Any]]):
 
     except Exception as e:
         logger.error(f"Error bulk updating collection assignments: {e}")
+        return None
 
 
 def get_speakers_in_collection(collection_id: int, user_id: int) -> list[dict[str, Any]]:

@@ -9,9 +9,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from app.auth.header_trust import TrustedNetwork
 from app.auth.header_trust import parse_trusted_proxies
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +67,7 @@ class ProxyConfig:
         return parse_trusted_proxies(self.trusted_proxies, label="proxy trusted proxy")
 
     @classmethod
-    def from_db(cls, db) -> ProxyConfig:
+    def from_db(cls, db: Session) -> ProxyConfig:
         """Resolve every key through ``DynamicAuthSettings`` (DB > .env > default).
 
         Args:

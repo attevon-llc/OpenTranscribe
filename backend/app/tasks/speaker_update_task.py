@@ -18,6 +18,7 @@ and ``tasks/CLAUDE.md`` documents the rule.
 """
 
 import logging
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.queues import CPUPriority
@@ -163,7 +164,7 @@ def _run_matching_step(
     bind=True, name="process_speaker_update_background", priority=CPUPriority.USER_TRIGGERED
 )
 def process_speaker_update_background(
-    self,
+    self: Any,
     speaker_uuid: str,
     user_id: int,
     display_name: str,
@@ -174,7 +175,7 @@ def process_speaker_update_background(
     display_name_changed: bool,
     media_file_id: int,
     renamed_profile_id: int | None = None,
-):
+) -> dict[str, Any]:
     """
     Background processing for speaker updates.
 

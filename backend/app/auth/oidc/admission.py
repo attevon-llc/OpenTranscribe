@@ -47,12 +47,17 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.core.auth_types import AUTH_TYPE_OIDC
 from app.core.exceptions import AuthenticationError
+
+if TYPE_CHECKING:
+    from app.auth.oidc.claims import OIDCUserData
+    from app.auth.oidc.config import OIDCConfig
 
 logger = logging.getLogger(__name__)
 
@@ -135,8 +140,8 @@ def check_group_admission(
 
 
 def assert_oidc_admission_permitted(
-    oidc_data,
-    cfg,
+    oidc_data: OIDCUserData,
+    cfg: OIDCConfig,
     *,
     failure_detail: str,
 ) -> None:

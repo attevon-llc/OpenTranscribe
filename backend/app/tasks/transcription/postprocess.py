@@ -11,8 +11,12 @@ background work — they each send their own WebSocket events when done.
 Part of the 3-stage chain: preprocess (CPU) → transcribe (GPU) → postprocess (CPU)
 """
 
+from __future__ import annotations
+
 import logging
 import time
+from typing import TYPE_CHECKING
+from typing import Any
 
 import numpy as np
 
@@ -38,6 +42,9 @@ from .notifications import send_completion_notification
 from .notifications import send_progress_notification
 from .run_ownership import SUPERSEDED
 
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
 # How long to wait before folding the enrichment tail into the timing row. Long enough for
 # indexing, clustering, summary and redaction to finish on a normal file; the upsert merges,
 # so an early flush simply records less rather than corrupting anything.
@@ -58,7 +65,7 @@ logger = logging.getLogger(__name__)
     retry_backoff_max=60,
     retry_jitter=True,
 )
-def finalize_transcription(self, gpu_result: dict) -> dict:
+def finalize_transcription(self: Any, gpu_result: dict) -> dict:
     """Stage 3 of the pipeline: :func:`_finalize`, run under the run's lease.
 
     Like every other stage it holds the run lease while it works, so a worker killed here is
@@ -435,7 +442,7 @@ def _dispatch_embedding_stage(gpu_result: dict) -> bool:
 
 
 def _fire_completion_metering(
-    db, file_id: int, run_id: str, provider: str, success: bool = True
+    db: Session, file_id: int, run_id: str, provider: str, success: bool = True
 ) -> None:
     """Fire the transcription-complete hook (cloud-edition metering seam).
 

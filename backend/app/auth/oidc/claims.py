@@ -8,6 +8,7 @@ bearer credential against ``userinfo`` — which is what it is for.
 """
 
 import logging
+from collections.abc import Iterable
 from typing import Any
 from typing import TypedDict
 
@@ -38,7 +39,7 @@ ID_TOKEN_SIGNING_ALGORITHMS: tuple[str, ...] = ("RS256",)
 _ASYMMETRIC_ALG_PREFIXES = ("RS", "ES", "PS", "EdDSA")
 
 
-def safe_signing_algorithms(candidates) -> list[str]:
+def safe_signing_algorithms(candidates: Iterable[object] | None) -> list[str]:
     """Filter *candidates* down to algorithms that are safe to accept.
 
     The gate, not a formatting helper: ``none`` means an unsigned token is accepted,

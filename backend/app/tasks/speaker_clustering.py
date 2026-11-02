@@ -2,6 +2,7 @@
 
 import contextlib
 import logging
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_CLUSTERING_COMPLETE
@@ -27,7 +28,7 @@ def _send_clustering_progress(
     progress: float,
     running: bool = True,
     eta_seconds: float | None = None,
-):
+) -> None:
     """Send clustering progress via WebSocket notification."""
     data: dict = {
         "step": step,
@@ -41,12 +42,12 @@ def _send_clustering_progress(
     send_ws_event(user_id, NOTIFICATION_TYPE_CLUSTERING_PROGRESS, data)
 
 
-def _send_clustering_complete(user_id: int, result: dict):
+def _send_clustering_complete(user_id: int, result: dict) -> None:
     """Send clustering complete notification via WebSocket."""
     send_ws_event(user_id, NOTIFICATION_TYPE_CLUSTERING_COMPLETE, result)
 
 
-def _send_clustering_file_complete(user_id: int, file_uuid: str, clusters_assigned: int):
+def _send_clustering_file_complete(user_id: int, file_uuid: str, clusters_assigned: int) -> None:
     """Send per-file clustering complete notification via WebSocket."""
     send_ws_event_for_file(
         user_id,
@@ -59,7 +60,7 @@ def _send_clustering_file_complete(user_id: int, file_uuid: str, clusters_assign
     )
 
 
-def _send_clustering_error(user_id: int, error_message: str):
+def _send_clustering_error(user_id: int, error_message: str) -> None:
     """Send clustering error notification via WebSocket."""
     send_ws_event(
         user_id,
@@ -82,7 +83,7 @@ def _send_clustering_error(user_id: int, error_message: str):
     reject_on_worker_lost=True,
 )
 @tracks_post_processing(PostProcessingTask.SPEAKER_CLUSTERING, file_param="file_uuid")
-def cluster_speakers_for_file(self, file_uuid: str, user_id: int):
+def cluster_speakers_for_file(self: Any, file_uuid: str, user_id: int) -> dict[str, Any]:
     """Cluster speakers in a media file after transcription.
 
     Called as part of the post-transcription pipeline.
@@ -158,7 +159,9 @@ def cluster_speakers_for_file(self, file_uuid: str, user_id: int):
     acks_late=True,
     reject_on_worker_lost=True,
 )
-def recluster_all_speakers(self, user_id: int, threshold: float | None = None):
+def recluster_all_speakers(
+    self: Any, user_id: int, threshold: float | None = None
+) -> dict[str, Any]:
     """Full re-clustering of all speakers for a user.
 
     Triggered manually from the UI. Uses a per-user Redis lock to prevent
@@ -191,7 +194,7 @@ def recluster_all_speakers(self, user_id: int, threshold: float | None = None):
                 )
                 clustering_tracker.start(message="Starting speaker clustering...")
 
-                def progress_cb(step: int, total: int, message: str, progress: float):
+                def progress_cb(step: int, total: int, message: str, progress: float) -> None:
                     # Update tracker total on first call (maps step/total_steps)
                     if clustering_tracker.total != total:
                         clustering_tracker.total = total

@@ -45,6 +45,7 @@ import logging
 import os
 import threading
 import time
+from collections.abc import Callable
 from collections.abc import Iterable
 from typing import Any
 
@@ -274,7 +275,7 @@ def _task_row_is_terminal(task_id: str) -> bool:
         return row is not None and row[0] not in ("pending", "in_progress")
 
 
-def reclaim_lost_tasks(send_task=None) -> dict[str, int]:
+def reclaim_lost_tasks(send_task: Callable[..., Any] | None = None) -> dict[str, int]:
     """Re-send every recorded run whose heartbeat has lapsed. Returns counts by outcome.
 
     ``send_task`` defaults to ``celery_app.send_task`` and is injectable for tests.

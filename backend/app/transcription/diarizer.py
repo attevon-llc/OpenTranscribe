@@ -145,7 +145,7 @@ class SpeakerDiarizer:
 
         # Move to diarization device (may differ from transcription device in hybrid mode)
         device = torch.device(self.config.diarization_device)
-        self._pipeline = self._pipeline.to(device)  # type: ignore[attr-defined]
+        self._pipeline = self._pipeline.to(device)
 
         # Configure segmentation batch_size based on GPU VRAM or env override.
         # PyAnnote defaults to 32 which causes OOM on GPUs with ≤12GB VRAM.
@@ -299,7 +299,7 @@ class SpeakerDiarizer:
         # Sub-stage timing via hook callback
         stage_timing: dict[str, dict[str, float]] = {}
 
-        def timing_hook(step_name, step_artefact, **kwargs):
+        def timing_hook(step_name, step_artefact, **kwargs: Any) -> None:
             now = time.perf_counter()
             if step_name not in stage_timing:
                 stage_timing[step_name] = {"start": now, "last": now}
@@ -431,7 +431,9 @@ class SpeakerDiarizer:
             logger.debug("embed_window failed (%s); skipping acoustic re-check for window", exc)
             return None
 
-    def _run_pipeline_with_oom_retry(self, audio_input: dict, pipeline_kwargs: dict, hook=None):
+    def _run_pipeline_with_oom_retry(
+        self: Any, audio_input: dict, pipeline_kwargs: dict, hook=None
+    ):
         """Run the diarization pipeline with automatic batch_size reduction on OOM.
 
         If the segmentation model hits an OOM error due to batch_size being too
@@ -451,7 +453,7 @@ class SpeakerDiarizer:
                 call_kwargs = dict(pipeline_kwargs)
                 if hook is not None:
                     call_kwargs["hook"] = hook
-                raw_output = self._pipeline(audio_input, **call_kwargs)  # type: ignore[misc]
+                raw_output = self._pipeline(audio_input, **call_kwargs)
                 if batch_size != current_batch:
                     logger.info(
                         f"Diarization succeeded with reduced batch_size={batch_size} "
@@ -493,7 +495,7 @@ class SpeakerDiarizer:
             self._pipeline = None
         logger.info("Diarizer model unloaded")
 
-    def _extract_diarization(self, output, prefer_exclusive: bool = True):
+    def _extract_diarization(self: Any, output, prefer_exclusive: bool = True):
         """Extract diarization annotation from PyAnnote output."""
         if prefer_exclusive and hasattr(output, "exclusive_speaker_diarization"):
             return output.exclusive_speaker_diarization

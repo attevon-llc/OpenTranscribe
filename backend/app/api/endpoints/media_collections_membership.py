@@ -6,6 +6,7 @@ the membership audit event. Handlers are plain ``def`` on purpose: see the
 """
 
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -107,7 +108,7 @@ def add_media_to_collection(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Add media files to a collection. Requires editor+ permission. Tenant-gated (#262d)."""
     collection, permission = get_collection_by_uuid_with_sharing(
         db, collection_uuid, current_user.id, min_permission="editor", organization_id=ctx.org_id
@@ -202,7 +203,7 @@ def remove_media_from_collection(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Remove media files from a collection. Requires editor+ permission. Tenant-gated (#262d)."""
     collection, permission = get_collection_by_uuid_with_sharing(
         db, collection_uuid, current_user.id, min_permission="editor", organization_id=ctx.org_id
@@ -304,7 +305,7 @@ def get_collection_media(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Get media files in a collection with filtering, sorting, and pagination."""
     # Verify collection exists and user has access (tenant-gated, #262d)
     collection = get_collection_by_uuid_with_permission(
@@ -315,9 +316,9 @@ def get_collection_media(
     # Eager-loading strategy matching the main list endpoint
     list_options = [
         joinedload(MediaFile.user),
-        selectinload(MediaFile.speakers).load_only(*LIST_SPEAKER_COLUMNS),  # type: ignore[arg-type]
-        defer(MediaFile.metadata_raw),  # type: ignore[arg-type]
-        defer(MediaFile.waveform_data),  # type: ignore[arg-type]
+        selectinload(MediaFile.speakers).load_only(*LIST_SPEAKER_COLUMNS),
+        defer(MediaFile.metadata_raw),
+        defer(MediaFile.waveform_data),
     ]
 
     # Build base query scoped to this collection
@@ -391,9 +392,9 @@ def get_collection_media(
 
     # Apply sort order
     if sort_order.lower() == "asc":
-        filtered_query = filtered_query.order_by(sort_field.asc())  # type: ignore[attr-defined]
+        filtered_query = filtered_query.order_by(sort_field.asc())
     else:
-        filtered_query = filtered_query.order_by(sort_field.desc())  # type: ignore[attr-defined]
+        filtered_query = filtered_query.order_by(sort_field.desc())
 
     # Apply pagination
     offset = (page - 1) * page_size

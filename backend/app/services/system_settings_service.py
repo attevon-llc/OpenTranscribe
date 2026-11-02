@@ -149,9 +149,9 @@ def set_setting(
         setting = SystemSettings(key=key, value=str_value, description=description)
         db.add(setting)
     else:
-        setting.value = str_value  # type: ignore[assignment]
+        setting.value = str_value
         if description is not None:
-            setting.description = description  # type: ignore[assignment]
+            setting.description = description
 
     db.commit()
     db.refresh(setting)
@@ -161,7 +161,7 @@ def set_setting(
     from app.core import settings_cache
 
     settings_cache.invalidate(key)
-    return setting  # type: ignore[no-any-return]
+    return setting
 
 
 def _set_settings_batch(db: Session, updates: dict[str, tuple[Any, str | None]]) -> None:
@@ -182,9 +182,9 @@ def _set_settings_batch(db: Session, updates: dict[str, tuple[Any, str | None]])
     for key, (value, description) in updates.items():
         str_value = str(value).lower() if isinstance(value, bool) else str(value)
         if key in existing:
-            existing[key].value = str_value  # type: ignore[assignment]
+            existing[key].value = str_value
             if description is not None:
-                existing[key].description = description  # type: ignore[assignment]
+                existing[key].description = description
         else:
             db.add(SystemSettings(key=key, value=str_value, description=description))
     db.commit()

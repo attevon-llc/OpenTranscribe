@@ -316,9 +316,9 @@ class TaskRecoveryRetryMixin:
                 # Update recovery tracking fields. Both counters are nullable Integers
                 # whose 0 is a default rather than a constraint, so `+= 1` on a NULL row
                 # raises TypeError — normalize the same way every other read here does.
-                media_file.retry_count = int(media_file.retry_count or 0) + 1  # type: ignore[assignment]
-                media_file.recovery_attempts = int(media_file.recovery_attempts or 0) + 1  # type: ignore[assignment]
-                media_file.last_recovery_attempt = datetime.now(UTC)  # type: ignore[assignment]
+                media_file.retry_count = int(media_file.retry_count or 0) + 1
+                media_file.recovery_attempts = int(media_file.recovery_attempts or 0) + 1
+                media_file.last_recovery_attempt = datetime.now(UTC)
                 db.commit()
 
                 # Reset status to PENDING for retry
@@ -391,17 +391,17 @@ class TaskRecoveryRetryMixin:
                 # for the same reason the log line above reads `retry_count or 0`.
                 media_file.retry_count = int(media_file.retry_count or 0) + 1
                 media_file.recovery_attempts = int(media_file.recovery_attempts or 0) + 1
-                media_file.last_recovery_attempt = datetime.now(UTC)  # type: ignore[assignment]
+                media_file.last_recovery_attempt = datetime.now(UTC)
 
                 # Clear old task records and reset to PENDING
                 stale_tasks = db.query(Task).filter(Task.media_file_id == media_file.id).all()
                 for task in stale_tasks:
-                    task.status = "failed"  # type: ignore[assignment]
-                    task.error_message = "Reset for automatic retry"  # type: ignore[assignment]
-                    task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
+                    task.status = "failed"
+                    task.error_message = "Reset for automatic retry"
+                    task.completed_at = datetime.now(UTC)
 
-                media_file.active_task_id = None  # type: ignore[assignment]
-                media_file.task_started_at = None  # type: ignore[assignment]
+                media_file.active_task_id = None
+                media_file.task_started_at = None
                 update_media_file_status(db, int(media_file.id), FileStatus.PENDING)
 
                 # Schedule the appropriate retry task

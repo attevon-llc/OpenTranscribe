@@ -40,7 +40,7 @@ async def upload_profile_avatar(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Upload an avatar image for a speaker profile."""
     try:
         profile = require_profile_in_scope(
@@ -89,7 +89,7 @@ async def upload_profile_avatar(
         )
 
         # Update profile
-        profile.avatar_path = object_name  # type: ignore[assignment]
+        profile.avatar_path = object_name
         db.commit()
         db.refresh(profile)
 
@@ -110,7 +110,7 @@ def delete_profile_avatar(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> None:
     """Remove a speaker profile's avatar."""
     try:
         profile = require_profile_in_scope(
@@ -125,7 +125,7 @@ def delete_profile_avatar(
             except Exception:
                 logger.warning(f"Failed to delete avatar file for profile {profile.uuid}")
 
-            profile.avatar_path = None  # type: ignore[assignment]
+            profile.avatar_path = None
             db.commit()
 
         return None
@@ -145,7 +145,7 @@ def confirm_profile_gender(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Confirm the gender for a profile and the caller's own linked speakers.
 
     Only the caller's speakers in the active tenant are rewritten: other users'
@@ -160,7 +160,7 @@ def confirm_profile_gender(
     profile = require_profile_in_scope(db, profile_uuid, current_user, organization_id=ctx.org_id)
 
     # Update profile DB column for consistency
-    profile.predicted_gender = gender  # type: ignore[assignment]
+    profile.predicted_gender = gender
 
     # Bulk-update the caller's linked speakers in this tenant
     updated_count = (

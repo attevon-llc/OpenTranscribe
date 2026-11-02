@@ -49,7 +49,7 @@ def _check_existing_youtube_video(
         .params(youtube_id=video_id)
         .first()
     )
-    return result  # type: ignore[no-any-return]
+    return result
 
 
 def _process_playlist_videos(

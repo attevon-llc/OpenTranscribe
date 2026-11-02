@@ -180,4 +180,4 @@ def _cleanup_old_history(db: Session, user_id: int) -> int:
     if deleted > 0:
         logger.debug(f"Cleaned up {deleted} old password history entries for user {user_id}")
 
-    return deleted  # type: ignore[no-any-return]
+    return deleted

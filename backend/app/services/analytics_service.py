@@ -244,9 +244,9 @@ class AnalyticsService:
 
             if existing_analytics:
                 # Update existing analytics
-                existing_analytics.overall_analytics = analytics_data  # type: ignore[assignment]
-                existing_analytics.computed_at = datetime.now(UTC)  # type: ignore[assignment]
-                existing_analytics.version = "1.0"  # type: ignore[assignment]
+                existing_analytics.overall_analytics = analytics_data
+                existing_analytics.computed_at = datetime.now(UTC)
+                existing_analytics.version = "1.0"
             else:
                 # Create new analytics record
                 new_analytics = Analytics(

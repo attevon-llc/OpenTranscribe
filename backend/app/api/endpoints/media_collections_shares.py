@@ -5,6 +5,8 @@ search access reindex and the share audit events. Handlers are plain ``def`` on 
 the ``media_collections`` module docstring (issue #284 A2.5).
 """
 
+from typing import Any
+
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
@@ -175,7 +177,7 @@ def list_collection_shares(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """List all shares on a collection. Requires direct collection ownership. Tenant-gated (#262d)."""
     collection = get_collection_by_uuid_with_permission(
         db, collection_uuid, current_user.id, organization_id=ctx.org_id
@@ -340,7 +342,7 @@ def create_collection_share(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Share a collection with a user or group. Requires direct collection ownership. Tenant-gated (#262d)."""
     collection = get_collection_by_uuid_with_permission(
         db, collection_uuid, current_user.id, organization_id=ctx.org_id
@@ -430,7 +432,7 @@ def update_collection_share(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Update a share's permission level. Requires direct collection ownership. Tenant-gated (#262d)."""
     collection = get_collection_by_uuid_with_permission(
         db, collection_uuid, current_user.id, organization_id=ctx.org_id
@@ -514,7 +516,7 @@ def delete_collection_share(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> None:
     """Revoke a share on a collection. Requires direct collection ownership. Tenant-gated (#262d)."""
     collection = get_collection_by_uuid_with_permission(
         db, collection_uuid, current_user.id, organization_id=ctx.org_id

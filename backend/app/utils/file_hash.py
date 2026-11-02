@@ -27,19 +27,28 @@ imohash is a sampling fingerprint and is NOT collision-resistant — never use t
 helpers for security-sensitive equality.
 """
 
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
 from typing import Any
+
+from sqlalchemy.orm import Query
+from sqlalchemy.orm import Session
 
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
 from app.utils.db_helpers import org_stamp_is
 
+if TYPE_CHECKING:
+    from app.models.media import MediaFile
+
 logger = logging.getLogger(__name__)
 
 
 def import_tenant_predicate(
-    db_session, org_col: Any, owner_col: Any, organization_id: int | None, owner_id: int
+    db_session: Session, org_col: Any, owner_col: Any, organization_id: int | None, owner_id: int
 ) -> Any:
     """SQL predicate: a row (``org_col``/``owner_col``) lives in an importer's tenant.
 
@@ -71,7 +80,7 @@ def import_tenant_predicate(
     return and_(org_col.is_(None), owner_in_tenant(owner_col, None))
 
 
-def _only_live_files(query):
+def _only_live_files(query: Query[MediaFile]) -> Query[MediaFile]:
     """Restrict a ``MediaFile`` query to rows a duplicate may legitimately point at.
 
     Excludes failed/cancelled/orphaned rows and PENDING rows with no
@@ -101,7 +110,7 @@ def _only_live_files(query):
 
 
 def check_duplicate_by_fingerprint(
-    db_session,
+    db_session: Session,
     fingerprint: str,
     user_id: int | None = None,
     *,
@@ -162,13 +171,13 @@ def check_duplicate_by_fingerprint(
 
 
 def check_duplicate_by_imohash(
-    db_session,
+    db_session: Session,
     imohash: str,
     exclude_file_id: int | None = None,
     *,
     organization_id: OrgScope = UNSCOPED,
     owner_id: int | None = None,
-):
+) -> MediaFile | None:
     """Check whether a file with the same imohash fingerprint already exists.
 
     This is the server-side, cross-pipeline dedup layer (manual upload, URL
@@ -222,7 +231,7 @@ def check_duplicate_by_imohash(
 
 
 def cleanup_failed_duplicates(
-    db_session, fingerprint: str, user_id: int, *, organization_id: OrgScope = UNSCOPED
+    db_session: Session, fingerprint: str, user_id: int, *, organization_id: OrgScope = UNSCOPED
 ) -> int:
     """
     Clean up any failed or incomplete files with the same content fingerprint.

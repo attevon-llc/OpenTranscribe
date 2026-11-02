@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import contextlib
 import datetime
 import json
@@ -6,9 +8,13 @@ import math
 import os
 import subprocess
 import sys
+from typing import TYPE_CHECKING
 from typing import Any
 
 from app.core.enums import DurationSource
+
+if TYPE_CHECKING:
+    from app.models.media import MediaFile
 
 logger = logging.getLogger(__name__)
 
@@ -492,7 +498,7 @@ def extract_media_metadata(file_path: str) -> dict[str, Any] | None:
     return extracted_metadata if extracted_metadata else None
 
 
-def _set_video_metadata(media_file, important_metadata: dict[str, Any]) -> None:
+def _set_video_metadata(media_file: MediaFile, important_metadata: dict[str, Any]) -> None:
     """Set video-specific metadata fields on media_file."""
     media_file.resolution_width = important_metadata.get("VideoWidth") or important_metadata.get(
         "ImageWidth"
@@ -511,14 +517,14 @@ def _set_video_metadata(media_file, important_metadata: dict[str, Any]) -> None:
         media_file.aspect_ratio = important_metadata.get("AspectRatio")
 
 
-def _set_audio_metadata(media_file, important_metadata: dict[str, Any]) -> None:
+def _set_audio_metadata(media_file: MediaFile, important_metadata: dict[str, Any]) -> None:
     """Set audio-specific metadata fields on media_file."""
     media_file.audio_channels = important_metadata.get("AudioChannels")
     media_file.audio_sample_rate = important_metadata.get("AudioSampleRate")
     media_file.audio_bit_depth = important_metadata.get("AudioBitsPerSample")
 
 
-def _set_duration(media_file, important_metadata: dict[str, Any]) -> None:
+def _set_duration(media_file: MediaFile, important_metadata: dict[str, Any]) -> None:
     """Parse and set duration from metadata. The container's claim (issue #969)."""
     duration = important_metadata.get("Duration")
     if not duration:
@@ -530,7 +536,9 @@ def _set_duration(media_file, important_metadata: dict[str, Any]) -> None:
         logger.warning(f"Could not parse duration: {duration}")
 
 
-def _try_parse_creation_date_from_fields(media_file, important_metadata: dict[str, Any]) -> None:
+def _try_parse_creation_date_from_fields(
+    media_file: MediaFile, important_metadata: dict[str, Any]
+) -> None:
     """Try to parse creation date from metadata fields."""
     creation_date_fields = ["CreateDate", "DateTimeOriginal", "ModifyDate"]
     for field_name in creation_date_fields:
@@ -547,7 +555,7 @@ def _try_parse_creation_date_from_fields(media_file, important_metadata: dict[st
             logger.warning(f"Could not parse {field_name}: {field_value} - {e}")
 
 
-def _set_modification_date(media_file, important_metadata: dict[str, Any]) -> None:
+def _set_modification_date(media_file: MediaFile, important_metadata: dict[str, Any]) -> None:
     """Parse and set modification date from metadata."""
     modify_date = important_metadata.get("ModifyDate")
     if not modify_date:
@@ -558,7 +566,7 @@ def _set_modification_date(media_file, important_metadata: dict[str, Any]) -> No
         logger.warning(f"Could not parse modification date: {modify_date} - {e}")
 
 
-def _set_content_info(media_file, important_metadata: dict[str, Any]) -> None:
+def _set_content_info(media_file: MediaFile, important_metadata: dict[str, Any]) -> None:
     """Set device and content information fields."""
     media_file.device_make = important_metadata.get("DeviceManufacturer")
     media_file.device_model = important_metadata.get("DeviceModel")
@@ -572,7 +580,7 @@ def _set_content_info(media_file, important_metadata: dict[str, Any]) -> None:
 
 
 def update_media_file_metadata(
-    media_file,
+    media_file: MediaFile,
     extracted_metadata: dict[str, Any],
     content_type: str,
     file_path: str,
@@ -639,7 +647,3 @@ def update_media_file_metadata(
 
     # Device and content information
     _set_content_info(media_file, important_metadata)
-
-    # Store both important and full metadata
-    media_file.important_metadata = important_metadata
-    media_file.metadata = extracted_metadata

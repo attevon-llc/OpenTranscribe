@@ -33,7 +33,7 @@ router = APIRouter()
 def recover_all_stuck_tasks(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),  # Only admins can recover tasks
-):
+) -> Any:
     """
     Attempt to recover all stuck tasks
 
@@ -122,7 +122,7 @@ def trigger_startup_recovery(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Any:
     """
     Manually trigger startup recovery for files interrupted by system crashes.
 
@@ -131,7 +131,7 @@ def trigger_startup_recovery(
     """
     try:
         # Schedule startup recovery in background
-        def run_recovery():
+        def run_recovery() -> None:
             try:
                 from app.tasks.recovery import startup_recovery_task
 
@@ -164,7 +164,7 @@ def trigger_all_user_file_recovery(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Any:
     """
     Manually trigger file recovery for all users.
 
@@ -172,7 +172,7 @@ def trigger_all_user_file_recovery(
     """
     try:
         # Schedule recovery for all users in background
-        def run_all_user_recovery():
+        def run_all_user_recovery() -> None:
             try:
                 from app.tasks.recovery import recover_user_files_task
 
@@ -203,7 +203,7 @@ def trigger_user_file_recovery(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Any:
     """
     Manually trigger file recovery for a specific user.
 
@@ -216,7 +216,7 @@ def trigger_user_file_recovery(
         # Schedule user file recovery in background using internal integer ID
         user_id = target_user.id
 
-        def run_user_recovery():
+        def run_user_recovery() -> None:
             try:
                 from app.tasks.recovery import recover_user_files_task
 
@@ -247,7 +247,7 @@ def recover_task(
     task_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),  # Only admins can recover tasks
-):
+) -> Any:
     """
     Attempt to recover a stuck task
 

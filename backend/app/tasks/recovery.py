@@ -8,6 +8,7 @@ separated from other utility tasks for better organization.
 import logging
 from datetime import UTC
 from datetime import datetime
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.queues import UtilityPriority
@@ -34,7 +35,7 @@ logger = logging.getLogger(__name__)
     reject_on_worker_lost=True,
 )
 @with_task_lock("system_startup_recovery", timeout=900)
-def startup_recovery_task(self):
+def startup_recovery_task(self: Any) -> dict[str, Any]:
     """
     Recovery task to run on system startup to handle files/tasks interrupted by
     system crashes, power outages, or Docker shutdowns.
@@ -75,9 +76,9 @@ def startup_recovery_task(self):
                     # beside the retry dispatched below.
                     if task.task_type == TRANSCRIPTION_TASK_TYPE:
                         supersede_run(str(task.id))
-                    task.status = "failed"  # type: ignore[assignment]
-                    task.error_message = "Celery task lost after system restart"  # type: ignore[assignment]
-                    task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
+                    task.status = "failed"
+                    task.error_message = "Celery task lost after system restart"
+                    task.completed_at = datetime.now(UTC)
             if stale_task_ids:
                 db.flush()
 
@@ -128,11 +129,11 @@ def startup_recovery_task(self):
     reject_on_worker_lost=True,
 )
 def recover_user_files_task(
-    self,
+    self: Any,
     user_id: int | None = None,
     tenant_scoped: bool = False,
     organization_id: int | None = None,
-):
+) -> dict[str, Any]:
     """
     Task to recover files for a specific user or all users.
     Useful when a user reports missing/stuck files.
@@ -198,7 +199,7 @@ def recover_user_files_task(
     time_limit=110,
 )
 @with_task_lock("system.reclaim_lost_tasks", timeout=120)
-def reclaim_lost_tasks_task(self):
+def reclaim_lost_tasks_task(self: Any) -> dict[str, Any]:
     """Replay idempotent tasks whose worker died mid-run (issue #1067).
 
     See ``app/core/task_replay.py``. Runs every two minutes; a run lost to a dead worker is
@@ -220,7 +221,7 @@ def reclaim_lost_tasks_task(self):
     time_limit=60,
 )
 @with_task_lock("system.reclaim_orphaned_deliveries", timeout=60)
-def reclaim_orphaned_deliveries_task(self):
+def reclaim_orphaned_deliveries_task(self: Any) -> dict[str, Any]:
     """Requeue transcription stages that a dead worker took with it.
 
     See ``app/core/broker_orphans.py``. Runs every ``BROKER_ORPHAN_SWEEP_INTERVAL_SECONDS``;
@@ -271,7 +272,7 @@ def _check_opensearch_health(summary: dict) -> None:
     time_limit=task_recovery_config.HEALTH_CHECK_MAX_RUNTIME,
 )
 @with_task_lock("system.health_check", timeout=task_recovery_config.HEALTH_CHECK_MAX_RUNTIME)
-def periodic_health_check_task(self):
+def periodic_health_check_task(self: Any) -> dict[str, Any]:
     """
     Periodic task to check for stuck tasks and inconsistent media files.
 
@@ -501,7 +502,7 @@ def periodic_health_check_task(self):
 
     except Exception as e:
         logger.error(f"Error in periodic health check: {str(e)}")
-        summary["error"] = str(e)  # type: ignore[assignment]
+        summary["error"] = str(e)
 
     # Step 7: Check and repair OpenSearch indices (corrupted HNSW vector segments)
     _check_opensearch_health(summary)

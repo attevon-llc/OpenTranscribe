@@ -26,6 +26,9 @@ from .types import ASRResult
 from .types import ASRSegment
 from .types import ASRWord
 
+if TYPE_CHECKING:
+    import requests
+
 if TYPE_CHECKING:  # pragma: no cover - import cost is paid only by type checkers
     import requests
 
@@ -120,7 +123,7 @@ class GladiaProvider(ASRProvider):
                 detail = f"{detail} — {body[:500]}"
         return self._sanitize_error(detail, self._api_key)
 
-    def _raise_if_rate_limited(self, resp, context: str) -> None:
+    def _raise_if_rate_limited(self, resp: requests.Response, context: str) -> None:
         """Raise ASRRateLimitedError when *resp* is a 429, else no-op.
 
         Gladia's responses have no dedicated exception type (this provider uses plain

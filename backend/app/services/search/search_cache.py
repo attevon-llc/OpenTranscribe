@@ -12,6 +12,7 @@ import threading
 import time
 from collections import OrderedDict
 from typing import TYPE_CHECKING
+from typing import Any
 
 from app.core.constants import SEARCH_CACHE_MAX_SIZE
 from app.core.constants import SEARCH_CACHE_TTL_SECONDS
@@ -29,7 +30,7 @@ _search_cache: OrderedDict[str, tuple[float, SearchResponse]] = OrderedDict()
 _search_cache_lock = threading.Lock()
 
 
-def _make_cache_key(**kwargs) -> str:
+def _make_cache_key(**kwargs: Any) -> str:
     """Create a deterministic cache key from search params."""
     serializable = {k: v for k, v in sorted(kwargs.items()) if v is not None}
     raw = json.dumps(serializable, sort_keys=True, default=str)

@@ -28,13 +28,16 @@ from app.core import redaction_defaults
 from app.services.redaction.config import blocking_detector_failures
 from app.services.redaction.config import detector_language_support
 
+if TYPE_CHECKING:
+    pass
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from app.services.redaction.config import EffectiveRedactionConfig
 
 logger = logging.getLogger(__name__)
 
 
-def uncovered_detectors(media_file, cfg: EffectiveRedactionConfig) -> set[str]:
+def uncovered_detectors(media_file: object, cfg: EffectiveRedactionConfig) -> set[str]:
     """Detectors this policy relies on whose findings the cached spans do NOT contain.
 
     Composed from the two functions that already own the two halves of the question,
@@ -118,7 +121,7 @@ def uncovered_detectors(media_file, cfg: EffectiveRedactionConfig) -> set[str]:
     return blocking_detector_failures(relied_on - set(covered), cfg.enabled_categories)
 
 
-def describe_gap(media_file, gap: set[str]) -> str:
+def describe_gap(media_file: object, gap: set[str]) -> str:
     """One operator-facing sentence naming the file, the gap and the remedy."""
     return (
         f"file {getattr(media_file, 'id', '?')} was scanned without detectors "

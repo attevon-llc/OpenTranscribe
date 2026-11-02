@@ -4,9 +4,12 @@ Boundary smoothing is applied at the ``finalize_segments()`` chokepoint
 here (issue #193); see ``app/transcription/CLAUDE.md``.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 import time
+from typing import TYPE_CHECKING
 
 from app.core import stage_timing
 from app.core.config import settings
@@ -27,6 +30,9 @@ from .speaker_processor import mark_overlapping_segments
 from .speaker_processor import process_segments_with_speakers
 from .storage import save_transcript_segments
 from .storage import update_media_file_transcription_status
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +121,7 @@ def clean_garbage_words(segments: list, max_word_length: int = 50) -> tuple[list
     return cleaned_segments, garbage_count
 
 
-def apply_garbage_cleanup(db, user_id: int, segments: list) -> tuple[list, int]:
+def apply_garbage_cleanup(db: Session, user_id: int, segments: list) -> tuple[list, int]:
     """Run garbage-word cleanup with the owner's effective setting.
 
     The setting is user pref > system default > constant

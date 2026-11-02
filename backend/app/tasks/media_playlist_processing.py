@@ -6,7 +6,11 @@ Creates placeholder MediaFile records for each playlist entry and dispatches
 delays. Split out of ``youtube_processing`` so each module holds one task.
 """
 
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
+from typing import Any
 from typing import TypedDict
 
 from app.core.celery import celery_app
@@ -21,6 +25,9 @@ from app.tasks.youtube_processing import process_youtube_url_task
 from app.utils.error_classification import categorize_error
 from app.utils.task_utils import update_media_file_status
 from app.utils.websocket_notify import send_ws_event_for_file
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +103,7 @@ def _notify_playlist_file_created(user_id: int, media_file: MediaFile) -> None:
             "id": str(media_file.uuid),
             "filename": str(media_file.filename),
             "status": media_file.status.value if media_file.status else "processing",
-            "display_status": FormattingService.format_status(media_file.status)  # type: ignore[arg-type]
+            "display_status": FormattingService.format_status(media_file.status)
             if media_file.status
             else "Processing",
             "content_type": str(media_file.content_type),
@@ -123,7 +130,7 @@ def _notify_playlist_file_created(user_id: int, media_file: MediaFile) -> None:
 def _dispatch_playlist_video_task(
     media_file: MediaFile,
     user_id: int,
-    db,
+    db: Session,
     countdown: int = 0,
     collection_ids: list[str] | None = None,
     tag_names: list[str] | None = None,
@@ -170,8 +177,8 @@ def _dispatch_playlist_video_task(
     except Exception as e:
         logger.error(f"Failed to dispatch task for video {media_file.title}: {e}")
         error_msg = f"Failed to start processing: {str(e)}"
-        media_file.last_error_message = error_msg  # type: ignore[assignment]
-        media_file.error_category = categorize_error(error_msg).value  # type: ignore[assignment]
+        media_file.last_error_message = error_msg
+        media_file.error_category = categorize_error(error_msg).value
         db.flush()
         update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
         return False
@@ -179,7 +186,7 @@ def _dispatch_playlist_video_task(
 
 @celery_app.task(name="download.media_playlist", bind=True, priority=DownloadPriority.PLAYLIST)
 def process_youtube_playlist_task(
-    self,
+    self: Any,
     url: str,
     user_id: int,
     collection_ids: list[str] | None = None,
@@ -278,7 +285,7 @@ def _process_playlist_with_db(
             logger.error(f"User {user_id} not found")
             return _create_playlist_error_result("User not found")
 
-        def progress_callback(progress, message, data):
+        def progress_callback(progress, message, data) -> None:
             _send_playlist_notification(user_id, "processing", message, progress, data)
 
         try:
@@ -311,7 +318,7 @@ def _process_playlist_with_db(
 def _handle_playlist_result(
     result: dict,
     user_id: int,
-    db,
+    db: Session,
     collection_ids: list[str] | None = None,
     tag_names: list[str] | None = None,
     video_quality: str | None = None,

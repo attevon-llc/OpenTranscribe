@@ -13,8 +13,10 @@ import logging
 import secrets
 
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+from starlette.responses import Response
 
 from app.auth.cookies import ACCESS_COOKIE
 from app.auth.cookies import CSRF_COOKIE
@@ -83,7 +85,7 @@ def _is_exempt(path: str) -> bool:
 class CSRFMiddleware(BaseHTTPMiddleware):
     """Validates CSRF double-submit token on non-safe, cookie-authenticated requests."""
 
-    async def dispatch(self, request: Request, call_next):  # noqa: ANN201
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         # Safe methods never need CSRF
         if request.method in _SAFE_METHODS:
             return await call_next(request)

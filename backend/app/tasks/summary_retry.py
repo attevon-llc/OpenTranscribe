@@ -49,9 +49,9 @@ def reset_summary_for_retry(db: Session, file_uuid: str) -> bool:
 
     try:
         # Reset summary fields
-        media_file.summary_data = None  # type: ignore[assignment]
-        media_file.summary_opensearch_id = None  # type: ignore[assignment]
-        media_file.summary_status = "pending"  # type: ignore[assignment]
+        media_file.summary_data = None
+        media_file.summary_opensearch_id = None
+        media_file.summary_status = "pending"
 
         db.commit()
 
@@ -146,9 +146,9 @@ async def retry_summary_if_available(db: Session, file_uuid: str) -> bool:
     except Exception as e:
         logger.error(f"Error queuing summary retry for file {file_id}: {e}")
         try:
-            media_file.summary_data = previous_summary_data  # type: ignore[assignment]
-            media_file.summary_opensearch_id = previous_summary_opensearch_id  # type: ignore[assignment]
-            media_file.summary_status = previous_summary_status  # type: ignore[assignment]
+            media_file.summary_data = previous_summary_data
+            media_file.summary_opensearch_id = previous_summary_opensearch_id
+            media_file.summary_status = previous_summary_status
             db.commit()
 
             from app.tasks.search_file_field_tasks import index_file_summary

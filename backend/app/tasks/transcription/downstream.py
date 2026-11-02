@@ -45,7 +45,7 @@ def _dispatch_automatic_summary(
 
         disable_reason = get_summary_disable_reason(db, int(media_file.user_id))
         if disable_reason:
-            media_file.summary_status = "disabled"  # type: ignore[assignment]
+            media_file.summary_status = "disabled"
             db.commit()
             reason_msg = (
                 "AI summary generation has been disabled by the system administrator"

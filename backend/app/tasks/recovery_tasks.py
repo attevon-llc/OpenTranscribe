@@ -74,7 +74,7 @@ def _load_sidecar_or_retry(task: Any, svc: Any) -> dict[str, dict[str, Any]]:
     max_retries=3,
     priority=CPUPriority.ADMIN_BATCH,
 )
-def youtube_metadata_fetch(self, user_id: int, limit: int | None = None) -> dict:
+def youtube_metadata_fetch(self: Any, user_id: int, limit: int | None = None) -> dict:
     """Harvest title/duration for thumbnail-surfaced YouTube ids (resumable).
 
     Args:
@@ -144,7 +144,7 @@ def youtube_metadata_fetch(self, user_id: int, limit: int | None = None) -> dict
     max_retries=3,
     priority=CPUPriority.ADMIN_BATCH,
 )
-def youtube_metadata_backfill(self, user_id: int) -> dict:
+def youtube_metadata_backfill(self: Any, user_id: int) -> dict:
     """Fill titles/source_url on recovered rows via unique duration matching.
 
     No-op unless the metadata sidecar already holds records (populated by
@@ -252,7 +252,7 @@ def _tier_b_probe_duration(storage_path: str) -> float | None:
     bind=True,
     priority=CPUPriority.ADMIN_BATCH,
 )
-def media_duration_backfill(self, user_id: int | None = None, dry_run: bool = True) -> dict:
+def media_duration_backfill(self: Any, user_id: int | None = None, dry_run: bool = True) -> dict:
     """Restore container duration on rows corrupted by issue #969.
 
     Targets rows with ``duration_source IS NULL`` (written before the fix, provenance
@@ -339,6 +339,7 @@ def media_duration_backfill(self, user_id: int | None = None, dry_run: bool = Tr
                 metadata_important=row.metadata_important or {},
             )
             for row in query.all()
+            if row.duration is not None  # the abs() filter above already excludes NULL
         ]
 
     summary["examined"] = len(candidates)

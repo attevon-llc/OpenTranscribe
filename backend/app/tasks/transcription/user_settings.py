@@ -4,12 +4,18 @@ Per-file overrides supplied at dispatch time win over these values; see
 ``app/services/CLAUDE.md``.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from app.core.config import settings
 
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
-def _get_user_language_settings(db, user_id: int) -> dict:
+
+def _get_user_language_settings(db: Session, user_id: int) -> dict:
     """
     Retrieve user's language settings from the database.
 
@@ -37,7 +43,10 @@ def _get_user_language_settings(db, user_id: int) -> dict:
         .all()
     )
 
-    settings_map = {s.setting_key: s.setting_value for s in user_settings}
+    # A NULL value means "not set": the default below applies.
+    settings_map = {
+        s.setting_key: s.setting_value for s in user_settings if s.setting_value is not None
+    }
 
     return {
         "source_language": settings_map.get(
@@ -50,7 +59,7 @@ def _get_user_language_settings(db, user_id: int) -> dict:
     }
 
 
-def _get_user_transcription_settings(db, user_id: int) -> dict:
+def _get_user_transcription_settings(db: Session, user_id: int) -> dict:
     """Retrieve user's transcription tuning settings from the database."""
     from app import models
     from app.core.constants import DEFAULT_HALLUCINATION_SILENCE_THRESHOLD
@@ -84,7 +93,9 @@ def _get_user_transcription_settings(db, user_id: int) -> dict:
 
     locked_keys = locked_transcription_db_keys()
     settings_map = {
-        s.setting_key: s.setting_value for s in user_settings if s.setting_key not in locked_keys
+        s.setting_key: s.setting_value
+        for s in user_settings
+        if s.setting_key not in locked_keys and s.setting_value is not None
     }
 
     hal_raw = settings_map.get("transcription_hallucination_silence_threshold", "")
@@ -116,7 +127,7 @@ def _get_user_transcription_settings(db, user_id: int) -> dict:
     }
 
 
-def load_vocabulary_terms(db, user_id: int, file_id: int) -> list[str]:
+def load_vocabulary_terms(db: Session, user_id: int, file_id: int) -> list[str]:
     """Active custom vocabulary for a file, in the file's tenant.
 
     The owner's terms stamped with the file's organization (none = personal) plus

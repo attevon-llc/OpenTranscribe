@@ -11,6 +11,7 @@ import logging
 import socket
 from dataclasses import dataclass
 from dataclasses import field
+from typing import Any
 
 from redis import Redis
 
@@ -44,7 +45,7 @@ class MetricsCollector:
         self._redis: Redis | None = None
         self._stage_times: list[tuple[str, float]] = []
 
-    def _get_redis(self):
+    def _get_redis(self: Any):
         if self._redis is None:
             try:
                 from app.core.redis import get_redis
@@ -54,7 +55,7 @@ class MetricsCollector:
                 logger.debug(f"MetricsCollector: Redis unavailable: {e}")
         return self._redis
 
-    def _hset(self, field_name: str, value) -> None:
+    def _hset(self: Any, field_name: str, value) -> None:
         r = self._get_redis()
         if r is None:
             return

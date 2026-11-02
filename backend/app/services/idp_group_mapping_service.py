@@ -296,9 +296,9 @@ def _apply_role(
     if dry_run:
         return current, desired, 0
 
-    user.role = desired  # type: ignore[assignment]
+    user.role = desired
     # Never written independently — v369's ck_user_superuser_matches_role rejects it.
-    user.is_superuser = role_implies_superuser(desired)  # type: ignore[assignment]
+    user.is_superuser = role_implies_superuser(desired)
     revoked = revoke_all_sessions(db, user, reason=f"{reason}:role_change")
     db.commit()
 

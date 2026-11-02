@@ -1,6 +1,7 @@
 """Admin abuse / DMCA / safe-harbor takedown (quarantine) routes."""
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -57,7 +58,7 @@ def list_quarantined_files(
     ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Any:
     """List taken-down files for admin review (abuse/DMCA queue).
 
     Quarantined files are hidden from every normal read surface, so this is the
@@ -145,7 +146,7 @@ def quarantine_media_file(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Any:
     """Take a file down (abuse/DMCA). Hides it from all read surfaces + audits.
 
     The original media/transcript are NOT deleted — the takedown is reversible
@@ -197,7 +198,7 @@ def release_media_file(
     request_body: ReleaseRequest | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Any:
     """Release a quarantined file: restore access, lift the legal-hold, audit.
 
     J-B7 (issue #576/#689): ``release(clear_legal_hold=False)`` produces a file

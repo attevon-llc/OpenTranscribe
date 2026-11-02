@@ -180,7 +180,7 @@ def process_match_hit(
     if existing_match:
         if score > existing_match.confidence:
             existing_match.confidence = score
-            existing_match.updated_at = func.now()  # type: ignore[assignment]
+            existing_match.updated_at = func.now()
         return None
 
     if not self._create_speaker_match_record(speaker1_id, speaker2_id, score):

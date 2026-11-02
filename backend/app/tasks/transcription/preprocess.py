@@ -12,6 +12,7 @@ import re
 import shutil
 import tempfile
 import time
+from typing import Any
 
 from app.core import stage_timing
 from app.core.celery import celery_app
@@ -130,7 +131,7 @@ def stage_engine_shared_volume_wav(file_uuid: str, task_id: str, temp_audio_path
     retry_jitter=True,
 )
 def preprocess_for_transcription(
-    self,
+    self: Any,
     file_uuid: str,
     task_id: str,
     pipeline_plan: dict,

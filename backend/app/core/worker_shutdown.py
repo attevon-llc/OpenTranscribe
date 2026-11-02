@@ -35,6 +35,7 @@ import os
 import sys
 import threading
 import time
+from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +198,7 @@ def _final_cuda_sweep() -> None:
         logger.exception("worker shutdown: final CUDA sweep failed")
 
 
-def _step(name: str, fn, results: dict[str, object]) -> None:
+def _step(name: str, fn: Callable[[], object], results: dict[str, object]) -> None:
     """Run one release step, isolated: an exception here must not skip the others."""
     try:
         results[name] = fn()

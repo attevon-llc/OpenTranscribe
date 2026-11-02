@@ -134,7 +134,7 @@ class MinIOService:
     def bucket_exists(self, bucket_name: str) -> bool:
         """Check if bucket exists."""
         try:
-            return self.client.bucket_exists(bucket_name)  # type: ignore[no-any-return]
+            return self.client.bucket_exists(bucket_name)
         except Exception as e:
             raise Exception(f"Error checking bucket existence: {e}") from e
 

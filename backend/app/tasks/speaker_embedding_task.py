@@ -8,8 +8,12 @@ Embedding updates when segments are manually reassigned to different speakers
 live in ``speaker_embedding_reassignment_task``.
 """
 
+from __future__ import annotations
+
 import contextlib
 import logging
+from typing import TYPE_CHECKING
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.queues import GPUPriority
@@ -21,6 +25,9 @@ from app.services.file_provenance import voiceprint_facts
 from app.services.opensearch_service.client import OpenSearchUnavailableError
 from app.services.privacy.gates import voiceprints_allowed
 from app.utils import benchmark_timing
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -260,7 +267,9 @@ def _match_and_finalize_embeddings(
     return len(speaker_results) if speaker_results else 0
 
 
-def _complete_and_meter_parent(db, file_id: int, task_id: str, pipeline_task_id: str | None):
+def _complete_and_meter_parent(
+    db: Session, file_id: int, task_id: str, pipeline_task_id: str | None
+) -> None:
     """Complete the parent transcription task this stage was delegated, and meter it once.
 
     A still-in_progress parent means ``finalize_transcription`` deferred completion to us,
@@ -283,7 +292,6 @@ def _complete_and_meter_parent(db, file_id: int, task_id: str, pipeline_task_id:
         return
     parent_task.status = "completed"
     parent_task.progress = 1.0
-    parent_task.completed = True
     db.commit()
 
     from app.tasks.rediarize_task import _resolve_asr_provider
@@ -343,11 +351,11 @@ _INDEX_RETRY_COUNTDOWN_S = 30
     max_retries=3,
 )
 def extract_speaker_embeddings_task(
-    self,
+    self: Any,
     file_uuid: str,
     pipeline_task_id: str | None = None,
     closes_pipeline: bool = True,
-):
+) -> dict[str, Any]:
     """The voiceprint stage: per-speaker vectors for a saved transcript, then matching.
 
     Runs after ANY speaker detection that did not already hand back vectors (a cloud

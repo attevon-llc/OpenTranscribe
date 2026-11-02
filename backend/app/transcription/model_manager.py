@@ -9,6 +9,7 @@ Pattern matches speaker_embedding_service.py::get_cached_embedding_service().
 
 import logging
 import threading
+from typing import Any
 from typing import ClassVar
 from typing import cast
 
@@ -33,7 +34,7 @@ class ModelManager:
 
     _instance: ClassVar["ModelManager | None"] = None
 
-    def __init__(self):
+    def __init__(self: Any) -> None:
         self._transcriber: Transcriber | None = None
         self._diarizer: SpeakerDiarizer | None = None
         self._transcriber_hash: str | None = None

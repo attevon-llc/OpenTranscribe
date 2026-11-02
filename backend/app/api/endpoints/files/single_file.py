@@ -3,6 +3,7 @@
 """
 
 import logging
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -75,7 +76,7 @@ def get_media_file(
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
-):
+) -> Any:
     """Get a specific media file with transcript details.
 
     For large transcripts, use segment_limit and segment_offset for pagination.
@@ -115,7 +116,7 @@ def get_media_file_info(
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
-):
+) -> Any:
     """Get lightweight file metadata without transcript or summary data.
 
     Returns core identity, status, and technical metadata fields only.
@@ -155,7 +156,7 @@ def update_media_file_endpoint(
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
-):
+) -> Any:
     """Update a media file's metadata"""
     return update_media_file(
         db,

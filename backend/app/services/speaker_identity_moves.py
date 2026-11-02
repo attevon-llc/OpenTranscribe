@@ -61,10 +61,10 @@ def unlink_from_profile(
         if speaker.profile_id is None or int(speaker.profile_id) != int(profile_id):
             continue
         indexed_as = canonical_speaker_label_for_row(speaker)
-        speaker.profile_id = None  # type: ignore[assignment]
-        speaker.verified = False  # type: ignore[assignment]
+        speaker.profile_id = None
+        speaker.verified = False
         if name is not None and speaker.display_name == name:
-            speaker.display_name = None  # type: ignore[assignment]
+            speaker.display_name = None
         if name is not None and speaker.suggested_name == name:
             clear_suggestion(speaker)
         # Settle who made what is left, before the "after" label below depends on it (#1280).
@@ -117,9 +117,9 @@ def join_cluster_identity(
     old = int(speaker.profile_id) if speaker.profile_id is not None else None
     indexed_as = canonical_speaker_label_for_row(speaker)
     previous_display_name = speaker.display_name
-    speaker.profile_id = int(profile_id)  # type: ignore[assignment]
-    speaker.display_name = name  # type: ignore[assignment]
-    speaker.verified = True  # type: ignore[assignment]
+    speaker.profile_id = int(profile_id)
+    speaker.display_name = name
+    speaker.verified = True
     if source == "voiceprint":
         from app.services.embedding_mode_service import voiceprint_model_id
 
@@ -173,7 +173,7 @@ def detach_from_cluster(
     ).delete(synchronize_session="fetch")
     for speaker in speakers:
         if speaker.cluster_id is not None and int(speaker.cluster_id) == int(cluster.id):
-            speaker.cluster_id = None  # type: ignore[assignment]
+            speaker.cluster_id = None
 
     profile_id = (
         int(cluster.promoted_to_profile_id) if cluster.promoted_to_profile_id is not None else None
@@ -185,5 +185,5 @@ def detach_from_cluster(
             impact.relabel_speaker_ids |= unlinked
     if blacklist:
         record_unassignment(db, remove_ids, against_speaker_ids=remaining, profile_id=profile_id)
-    cluster.member_count = len(remaining)  # type: ignore[assignment]
+    cluster.member_count = len(remaining)
     return impact

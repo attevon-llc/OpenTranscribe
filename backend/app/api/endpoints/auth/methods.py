@@ -1,6 +1,7 @@
 """Auth-method discovery and login-banner endpoints."""
 
 from datetime import UTC
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -28,7 +29,7 @@ router = APIRouter()
 
 @router.get("/methods", response_model=AuthMethodsResponse)
 @limiter.limit(get_auth_methods_rate_limit())
-def get_auth_methods(request: Request, response: Response, db: Session = Depends(get_db)):
+def get_auth_methods(request: Request, response: Response, db: Session = Depends(get_db)) -> Any:
     """
     Get available authentication methods.
 
@@ -109,7 +110,7 @@ def get_auth_methods(request: Request, response: Response, db: Session = Depends
 
 
 @router.get("/banner", response_model=LoginBannerResponse)
-def get_login_banner(db: Session = Depends(get_db)):
+def get_login_banner(db: Session = Depends(get_db)) -> Any:
     """
     PUBLIC endpoint - returns banner text without authentication.
     Called before login to display classification banner.
@@ -161,7 +162,7 @@ def acknowledge_banner(
     # A bare "now" is all the gate needs: it compares this against the
     # login_banner_text row's updated_at, so acknowledging always lands after the
     # wording currently on screen.
-    current_user.banner_acknowledged_at = datetime.now(UTC)  # type: ignore[assignment]
+    current_user.banner_acknowledged_at = datetime.now(UTC)
     db.commit()
 
     # Audit log

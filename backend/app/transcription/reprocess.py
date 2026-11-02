@@ -131,7 +131,7 @@ def print_summary(result: dict, num_lines: int = 20) -> None:
         logger.info(f"  {sp}: {count} segments")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Reprocess saved pipeline data")
     parser.add_argument(
         "debug_dir", help="Directory with raw_transcript.json and raw_diarization.json"

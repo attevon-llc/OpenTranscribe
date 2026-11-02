@@ -28,11 +28,11 @@ class WaveformGenerator:
     # Sample rate used for waveform extraction
     WAVEFORM_SAMPLE_RATE = 22050
 
-    def __init__(self):
+    def __init__(self: Any) -> None:
         """Initialize the waveform generator."""
         self._check_dependencies()
 
-    def _check_dependencies(self):
+    def _check_dependencies(self: Any) -> None:
         """Check that required dependencies (FFmpeg) are available."""
         try:
             # Using hardcoded ffmpeg/ffprobe commands, not user input
@@ -256,8 +256,8 @@ class WaveformGenerator:
             Waveform dict (same shape as generate_waveform_data), or None on failure.
         """
         try:
-            import scipy.io.wavfile as wavfile  # type: ignore[import]
-            from scipy.signal import resample_poly  # type: ignore[import]
+            import scipy.io.wavfile as wavfile
+            from scipy.signal import resample_poly
 
             source_rate, data = wavfile.read(wav_path)
             if data.ndim > 1:

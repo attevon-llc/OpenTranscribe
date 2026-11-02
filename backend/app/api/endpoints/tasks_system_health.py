@@ -34,7 +34,7 @@ router = APIRouter()
 def task_system_health(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),  # Only admins can access this endpoint
-):
+) -> Any:
     """
     Get health information about the task system
 

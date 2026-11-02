@@ -163,7 +163,9 @@ def _worker(args: argparse.Namespace) -> dict[str, Any]:
         results: list[list[float]] = [[] for _ in range(concurrency)]
         durations = [0.0] * concurrency
 
-        def one(i: int, results: list[list[float]] = results, durations: list[float] = durations):
+        def one(
+            i: int, results: list[list[float]] = results, durations: list[float] = durations
+        ) -> None:
             started = time.perf_counter()
             results[i] = call()
             durations[i] = time.perf_counter() - started

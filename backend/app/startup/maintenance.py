@@ -49,7 +49,7 @@ def _backfill_quarantine_tags() -> None:
         db.close()
 
 
-def _setup_minio():
+def _setup_minio() -> None:
     """Initialize the media bucket on startup.
 
     Creates the media bucket if it doesn't exist and ensures the bucket
@@ -160,7 +160,7 @@ def _setup_minio():
         logger.error(f"Error setting up media bucket: {e}")
 
 
-def _clear_stale_task_state():
+def _clear_stale_task_state() -> None:
     """Clear ALL stale task state from Redis on startup.
 
     Any task state from the previous process lifetime is stale — the
@@ -255,7 +255,7 @@ def _clear_stale_task_state():
         logger.info("Cleared %d stale task keys on startup", len(cleared))
 
 
-async def _run_startup_recovery():
+async def _run_startup_recovery() -> None:
     """Schedule startup recovery task after a delay."""
     try:
         await asyncio.sleep(10)
@@ -267,7 +267,7 @@ async def _run_startup_recovery():
         logger.error(f"Error scheduling startup recovery: {e}")
 
 
-async def _run_search_maintenance():
+async def _run_search_maintenance() -> None:
     """Schedule search index maintenance after a delay, once per boot window.
 
     Elected like ``opensearch_repair_indices`` below, and for the same reason:
@@ -304,7 +304,7 @@ def _repair_tag_tenancy() -> None:
         db.close()
 
 
-async def _run_tag_tenant_repair():
+async def _run_tag_tenant_repair() -> None:
     """Repoint tags attached to a file of another tenant, once per boot window.
 
     A startup pass rather than an Alembic data revision; ``services/tag_tenant_repair``
@@ -322,7 +322,7 @@ async def _run_tag_tenant_repair():
         logger.error(f"Tag tenant repair failed (non-fatal, retried next boot): {e}")
 
 
-async def _run_thumbnail_migration():
+async def _run_thumbnail_migration() -> None:
     """Schedule thumbnail migration from JPEG to WebP after a delay."""
     try:
         await asyncio.sleep(45)  # Wait for other startup tasks
@@ -334,7 +334,7 @@ async def _run_thumbnail_migration():
         logger.error(f"Error scheduling thumbnail migration: {e}")
 
 
-async def _run_imohash_recompute():
+async def _run_imohash_recompute() -> None:
     """One-time recompute of every media_file.imohash after the package switch.
 
     The server-side fingerprint moved from a hand-rolled blake2b stand-in to the
@@ -368,7 +368,7 @@ async def _run_imohash_recompute():
         logger.error(f"Error scheduling imohash recompute: {e}")
 
 
-async def _run_one_time_embedding_normalization():
+async def _run_one_time_embedding_normalization() -> None:
     """One-time migration: normalize legacy embeddings for users upgrading.
 
     Checks a DB flag first — if already done, returns immediately.

@@ -73,7 +73,7 @@ def _create_asr_provider(
     access_key_id: str | None = None,
 ):
     """Create an ASR provider instance via the factory."""
-    from app.services.asr.factory import ASRProviderFactory  # type: ignore[import]
+    from app.services.asr.factory import ASRProviderFactory
 
     return ASRProviderFactory.create_from_config(
         provider=provider,
@@ -171,9 +171,9 @@ def test_saved_asr_config(
 
     # Persist test result only if the current user owns the config
     if config.user_id == current_user.id:
-        config.test_status = "success" if success else "failed"  # type: ignore[assignment]
-        config.test_message = _sanitize_message(message, api_key)  # type: ignore[assignment]
-        config.last_tested = datetime.now(UTC)  # type: ignore[assignment]
+        config.test_status = "success" if success else "failed"
+        config.test_message = _sanitize_message(message, api_key)
+        config.last_tested = datetime.now(UTC)
         db.add(config)
         db.commit()
 

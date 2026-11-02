@@ -56,7 +56,7 @@ class _PreprocessStage:
         emit(callback, 0.10, "Decoding audio", TranscriptionStage.PREPARE)
         t0 = time.perf_counter()
 
-        from faster_whisper.audio import decode_audio  # type: ignore[import]
+        from faster_whisper.audio import decode_audio
 
         audio = decode_audio(job.audio_path, sampling_rate=16000)
         elapsed_decode = time.perf_counter() - t0

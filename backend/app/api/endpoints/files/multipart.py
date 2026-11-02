@@ -70,7 +70,7 @@ def _load_pending_file(db: Session, file_id: str, user: User) -> MediaFile:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No prepared upload {file_id} for this user",
         )
-    return db_file  # type: ignore[return-value]
+    return db_file
 
 
 @router.post(

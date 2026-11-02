@@ -253,10 +253,10 @@ def _get_or_create_file_record(
         return create_media_file_record(db, file, current_user, file_size, organization_id)
 
     logger.info(f"Using existing file record with UUID={existing_file_uuid}")
-    db_file_result.status = FileStatus.PENDING  # type: ignore[assignment]
+    db_file_result.status = FileStatus.PENDING
     # Commit deferred to the outer transaction (Phase 2 PR #7, item E18).
     db.flush()
-    return db_file_result  # type: ignore[no-any-return]
+    return db_file_result
 
 
 async def _read_first_chunk(file: UploadFile) -> tuple[bytearray, int]:
@@ -336,7 +336,7 @@ def _update_file_hash(db_file: MediaFile, client_file_hash: str | None, filename
         # Remove 0x prefix if present for database consistency
         if client_file_hash.startswith("0x"):
             client_file_hash = client_file_hash[2:]
-        db_file.file_hash = client_file_hash  # type: ignore[assignment]
+        db_file.file_hash = client_file_hash
     elif not db_file.file_hash:
         logger.warning(f"No file hash provided for {filename} - duplicate detection may not work")
 
@@ -475,9 +475,7 @@ async def process_file_upload(
             # Stream-based: imohash samples 3x128KiB regardless of size, so this never
             # materializes the file (which is the whole point of spooling it).
             file_content.seek(0)
-            db_file.imohash = compute_from_stream(  # type: ignore[assignment]
-                file_content, size=file_size
-            )
+            db_file.imohash = compute_from_stream(file_content, size=file_size)
             file_content.seek(0)
             benchmark_timing.mark(task_id, "imohash_end")
         except Exception as im_err:
@@ -501,12 +499,12 @@ async def process_file_upload(
         # file_updated WebSocket event.
 
         # Update storage path, file size, and thumbnail path in database
-        db_file.storage_path = storage_path  # type: ignore[assignment]
-        db_file.file_size = file_size  # type: ignore[assignment]
+        db_file.storage_path = storage_path
+        db_file.file_size = file_size
 
         # Per-file skip summary: mark as disabled before pipeline starts
         if skip_summary:
-            db_file.summary_status = "disabled"  # type: ignore[assignment]
+            db_file.summary_status = "disabled"
 
         with benchmark_timing.stage(task_id, "db_commit"):
             db.commit()

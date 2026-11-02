@@ -1,5 +1,8 @@
+from collections.abc import Iterator
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
@@ -64,7 +67,7 @@ class Base(DeclarativeBase):
 
 
 # Dependency for database session
-def get_db():
+def get_db() -> Iterator[Session]:
     db = SessionLocal()
     try:
         yield db

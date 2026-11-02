@@ -119,7 +119,7 @@ def _apply_auto_accept(
     logger.info(f"Auto-accepting match for speaker {int(speaker.id)} -> {match['suggested_name']}")
     previous_display_name = speaker.display_name
     speaker.display_name = match["suggested_name"]
-    speaker.verified = True  # type: ignore[assignment]
+    speaker.verified = True
     # Assign to profile if this match came from a profile
     if match.get("profile_id"):
         speaker.profile_id = match["profile_id"]
@@ -203,8 +203,8 @@ def _blend_into_profile_centroid(
     count = max(linked_count, 1)
     if fold_in:
         _store_blended_centroid(profile, aggregated_embedding, prior_count, count)
-        profile.last_embedding_update = datetime.now(UTC)  # type: ignore[assignment]
-    profile.embedding_count = count  # type: ignore[assignment]
+        profile.last_embedding_update = datetime.now(UTC)
+    profile.embedding_count = count
     self.db.commit()
 
 

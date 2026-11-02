@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 import time
 from typing import TYPE_CHECKING
+from typing import Any
 
 # The ONE cooperative checkpoint, consulted at every stage boundary below. It answers both
 # stand-down triggers — worker shutdown (#809, requeue) and a user cancel of THIS file (#823,
@@ -18,6 +19,10 @@ from app.core.task_cancellation import stand_down_if_requested
 from app.transcription.engine.diarization_overlap import _run_diarize
 
 if TYPE_CHECKING:
+    import numpy as np
+    import pandas as pd
+
+    from app.transcription.config import TranscriptionConfig
     from app.transcription.engine.config import EngineConfig
     from app.transcription.engine.job import PreprocessResult
     from app.transcription.engine.job import RawInferenceResult
@@ -239,14 +244,14 @@ class _DiarizerOnlyStage:
 
     @staticmethod
     def _acoustic_recheck_overrides(
-        audio,
-        transcript,
-        diarize_df,
+        audio: np.ndarray,
+        transcript: RawTranscriptResult,
+        diarize_df: pd.DataFrame,
         overlap_info: dict,
-        native_embeddings,
-        diarizer,
-        tc,
-        config,
+        native_embeddings: dict[str, Any],
+        diarizer: Any,
+        tc: TranscriptionConfig,
+        config: EngineConfig,
     ) -> dict[str, str] | None:
         """Phase 3 acoustic re-check for the gpu-split path (issue #1205).
 

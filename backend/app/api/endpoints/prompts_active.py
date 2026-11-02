@@ -157,7 +157,7 @@ def set_active_prompt(
     )
 
     if setting:
-        setting.setting_value = str(prompt.id)  # type: ignore[assignment]
+        setting.setting_value = str(prompt.id)
     else:
         setting = models.UserSetting(
             user_id=current_user.id,

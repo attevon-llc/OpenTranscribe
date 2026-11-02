@@ -17,6 +17,7 @@ import logging
 import os
 import tempfile
 import time
+from typing import Any
 
 from celery import chain
 
@@ -378,7 +379,7 @@ def _finish_failed_or_aborted(
     retry_backoff=True,
     retry_backoff_max=30,
 )
-def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
+def transcribe_gpu_task(self: Any, preprocess_context: dict) -> dict:
     """GPU-only: Whisper transcription + PyAnnote diarization + save to DB.
 
     Stage 2 of the 3-stage pipeline chain. Receives context from

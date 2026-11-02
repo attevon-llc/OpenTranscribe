@@ -7,6 +7,7 @@ before ``GET /users/{user_uuid}`` would capture it.
 import logging
 from datetime import UTC
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -47,7 +48,7 @@ router = APIRouter()
 
 
 @router.get("/me", response_model=UserSchema)
-def get_current_user_info(current_user: User = Depends(get_current_active_user)):
+def get_current_user_info(current_user: User = Depends(get_current_active_user)) -> Any:
     """The caller's own account record.
 
     The SPA's identity call after a successful login, and the canonical "who am I"
@@ -129,7 +130,7 @@ def update_current_user(
     user_update: UserUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
-):
+) -> Any:
     """Update the caller's own profile.
 
     A password or email change revokes every session (AC-12) and then re-issues

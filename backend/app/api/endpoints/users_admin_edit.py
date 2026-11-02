@@ -6,6 +6,7 @@ Included into ``users.router`` after ``get_user``, preserving registration order
 import logging
 from datetime import UTC
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -113,7 +114,7 @@ def update_user(
     user_update: UserUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Any:
     """
     Update user by UUID (admin only).
 
@@ -285,7 +286,7 @@ def delete_user(
     user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> None:
     """
     Delete user by UUID (admin only)
     """

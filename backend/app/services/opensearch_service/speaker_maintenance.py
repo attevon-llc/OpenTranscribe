@@ -2,6 +2,7 @@
 
 import datetime
 import logging
+from typing import Any
 
 from opensearchpy.exceptions import NotFoundError
 
@@ -40,7 +41,7 @@ def speaker_embedding_indices() -> list[str]:
 
 def merge_speaker_embeddings(
     source_speaker_uuid: str, target_speaker_uuid: str, new_collection_ids: list[int]
-):
+) -> dict[str, Any] | None:
     """
     Merge two speaker embeddings (used when combining speakers)
 
@@ -51,7 +52,7 @@ def merge_speaker_embeddings(
     """
     if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized")
-        return
+        return None
 
     try:
         # Delete the source speaker document from main index
@@ -73,7 +74,7 @@ def merge_speaker_embeddings(
             }
         }
 
-        response = _client.opensearch_client.update(
+        response: dict[str, Any] = _client.opensearch_client.update(
             index=get_speaker_index(),
             id=str(target_speaker_uuid),
             body=update_body,
@@ -84,6 +85,7 @@ def merge_speaker_embeddings(
 
     except Exception as e:
         logger.error(f"Error merging speaker embeddings: {e}")
+        return None
 
 
 def remove_speaker_embedding(speaker_uuid: str) -> bool:

@@ -98,7 +98,7 @@ def update_speakers_in_opensearch(
 
 def propagate_profile_assignment(
     self: "SpeakerMatchingService", matched_speaker_id: int, profile_id: int, user_id: int
-):
+) -> None:
     """
     When a speaker is assigned to a profile, find and update other similar speakers
     with the same profile assignment.
@@ -173,8 +173,8 @@ def propagate_profile_assignment(
                 continue
 
             similarity = match_by_id[int(speaker.id)]
-            speaker.profile_id = profile_id  # type: ignore[assignment]
-            speaker.verified = True  # type: ignore[assignment]
+            speaker.profile_id = profile_id
+            speaker.verified = True
             # the name was already there; only the link is new
             record_machine_link(
                 speaker,

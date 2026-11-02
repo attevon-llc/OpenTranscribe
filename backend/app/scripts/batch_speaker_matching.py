@@ -34,7 +34,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def batch_process_speaker_matches():
+def batch_process_speaker_matches() -> None:
     """Process all speakers to find and store matches."""
     db = next(get_db())
 
@@ -71,7 +71,7 @@ def batch_process_speaker_matches():
                 continue
 
             # Get embedding from OpenSearch
-            embedding = get_speaker_embedding(speaker.id)
+            embedding = get_speaker_embedding(str(speaker.uuid))
 
             if embedding:
                 # Find and store matches

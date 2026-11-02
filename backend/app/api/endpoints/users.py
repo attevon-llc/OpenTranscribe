@@ -1,6 +1,7 @@
 import logging
 from datetime import UTC
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -142,7 +143,7 @@ def list_users(
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Any:
     """
     List users (admin only) with optional pagination.
     """
@@ -162,7 +163,7 @@ def search_users(
     response: Response = None,  # type: ignore[assignment]  # required by slowapi
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """Search users by name or email for sharing autocomplete.
 
     Returns up to 20 results, excluding the caller.
@@ -238,7 +239,7 @@ def get_user(
     user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Any:
     """
     Get user by UUID (admin only)
     """

@@ -18,6 +18,7 @@ import contextlib
 import datetime
 import logging
 import random
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.config import settings
@@ -293,7 +294,7 @@ def _store_gender_results(
 @post_processing_status.tracks_post_processing(
     PostProcessingTask.SPEAKER_ATTRIBUTES, file_param="file_uuid"
 )
-def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
+def detect_speaker_attributes_task(self: Any, file_uuid: str, user_id: int) -> dict[str, Any]:
     """Predict gender/age for all speakers in a media file.
 
     Uses presigned URL + ffmpeg segment seeking to avoid downloading the
@@ -494,7 +495,7 @@ def _skip_gender(task_id: str, file_uuid: str, user_id: int, locked_by: str | No
     }
 
 
-def _detect_speaker_attributes(file_uuid: str, user_id: int, task_id: str):
+def _detect_speaker_attributes(file_uuid: str, user_id: int, task_id: str) -> dict[str, Any]:
     """Inner implementation of detect_speaker_attributes_task.
 
     Runs in three phases, and the split is load-bearing: the DB session is open

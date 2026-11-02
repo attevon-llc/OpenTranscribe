@@ -130,7 +130,7 @@ def apply_profile_name_to_speakers(
         file_uuid = file_uuids.get(int(speaker.media_file_id or 0))
         if file_uuid and old_chunk_name:
             renames.append((file_uuid, old_chunk_name))
-        speaker.display_name = new_name  # type: ignore[assignment]
+        speaker.display_name = new_name
 
     logger.info(
         f"Applied profile {profile_id} name '{new_name}' to {len(linked_speakers)} speaker(s)"

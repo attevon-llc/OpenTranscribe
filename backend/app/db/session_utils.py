@@ -1,5 +1,7 @@
 import contextlib
 import logging
+from collections.abc import Iterator
+from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -10,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 @contextlib.contextmanager
-def session_scope():
+def session_scope() -> Iterator[Session]:
     """Provide a transactional scope around a series of operations.
 
     Usage:
@@ -31,7 +33,7 @@ def session_scope():
         session.close()
 
 
-def get_refreshed_object(db: Session, model_class, obj_id: int):
+def get_refreshed_object(db: Session, model_class: type[Any], obj_id: int) -> Any:
     """Get a fresh copy of an object from the database.
 
     Useful for celery tasks that need to get a fresh instance of a model

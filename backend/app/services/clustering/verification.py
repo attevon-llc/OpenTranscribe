@@ -207,8 +207,8 @@ def _apply_name(
         for blocking in blocking_profile_ids_named(self.db, int(speaker.id), str(name)):
             lift_profile_blacklist(self.db, int(speaker.id), blocking)
     self._rename_tracker.record(int(speaker.media_file_id), indexed_as, str(name))
-    speaker.display_name = str(name)  # type: ignore[assignment]
-    speaker.verified = True  # type: ignore[assignment]
+    speaker.display_name = str(name)
+    speaker.verified = True
     record_human_identity(
         speaker,
         user_id=b.user_id,
@@ -238,10 +238,10 @@ def _apply_assign(
     b.assigned.add(int(speaker.id))
     if speaker.profile_id:
         b.touched.profile_ids.add(int(speaker.profile_id))
-    speaker.profile_id = profile.id  # type: ignore[assignment]
+    speaker.profile_id = profile.id
     self._rename_tracker.record(int(speaker.media_file_id), indexed_as, str(profile.name))
-    speaker.display_name = profile.name  # type: ignore[assignment]
-    speaker.verified = True  # type: ignore[assignment]
+    speaker.display_name = profile.name
+    speaker.verified = True
     record_human_identity(
         speaker,
         user_id=b.user_id,
@@ -252,7 +252,7 @@ def _apply_assign(
 
 def _apply_skip(b: _Batch, speaker: Speaker) -> None:
     # Mark as verified (reviewed) so it doesn't reappear in inbox
-    speaker.verified = True  # type: ignore[assignment]
+    speaker.verified = True
     # Only stamp provenance when there is none to destroy. "user_skipped"
     # has no reader anywhere (backend or frontend), so overwriting a real
     # "llm_analysis" here only ever erased the historical marker

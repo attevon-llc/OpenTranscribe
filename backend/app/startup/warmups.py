@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # No need to load them into runtime config - they're read directly from DB when needed.
 
 
-async def _initialize_neural_search():
+async def _initialize_neural_search() -> None:
     """Startup fast path for the neural-search bootstrap (issue #625).
 
     Waits for OpenSearch to come up, then runs the same idempotent

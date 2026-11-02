@@ -91,10 +91,10 @@ def _retire_run(db, task_id: str, file_uuid: str, message: str) -> None:
     task = db.query(Task).filter(Task.id == task_id).first()
     if task is not None and task.status in ("pending", "in_progress"):
         now = datetime.now(UTC)
-        task.status = "failed"  # type: ignore[assignment]
-        task.error_message = message  # type: ignore[assignment]
-        task.completed_at = now  # type: ignore[assignment]
-        task.updated_at = now  # type: ignore[assignment]
+        task.status = "failed"
+        task.error_message = message
+        task.completed_at = now
+        task.updated_at = now
     db.commit()
 
 
@@ -134,8 +134,8 @@ def _fail_file(
     file_uuid = str(media_file.uuid)
     update_task_status(db, task_id, "failed", error_message=message, completed=True)
     update_media_file_status(db, file_id, FileStatus.ERROR)
-    media_file.last_error_message = message  # type: ignore[assignment]
-    media_file.error_category = category.value  # type: ignore[assignment]
+    media_file.last_error_message = message
+    media_file.error_category = category.value
     db.commit()
     supersede_run(task_id, file_uuid)
     clear_infra_requeues(file_uuid)
@@ -168,8 +168,8 @@ def _retry_file(
     file_id = int(media_file.id)
     file_uuid = str(media_file.uuid)
     _retire_run(db, task_id, file_uuid, task_message)
-    media_file.error_category = category.value  # type: ignore[assignment]
-    media_file.last_recovery_attempt = datetime.now(UTC)  # type: ignore[assignment]
+    media_file.error_category = category.value
+    media_file.last_recovery_attempt = datetime.now(UTC)
     update_media_file_status(db, file_id, FileStatus.PENDING)
     _release_reservation(media_file, task_id)
 
@@ -294,7 +294,7 @@ def _finish(
             else user_message
         )
         return _fail_file(db, media_file, task_id, ErrorCategory.RETRIES_EXHAUSTED, message)
-    media_file.retry_count = retry_count + 1  # type: ignore[assignment]
+    media_file.retry_count = retry_count + 1
     return _retry_file(
         db,
         media_file,

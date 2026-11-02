@@ -217,7 +217,7 @@ def _count_profile_docs(
 
 
 @celery_app.task(bind=True, name="finalize_v4_migration", priority=UtilityPriority.BACKGROUND)
-def finalize_v4_migration_task(self, user_id: int = 1):
+def finalize_v4_migration_task(self: Any, user_id: int = 1) -> dict[str, Any]:
     """Finalize the v4 migration by swapping indices.
 
     Safety checks:

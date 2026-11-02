@@ -37,6 +37,8 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+from typing import TYPE_CHECKING
+from typing import Any
 from urllib.parse import urlparse
 
 from sqlalchemy.orm import Session
@@ -46,6 +48,9 @@ from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.redaction.config import resolve_effective_config
 from app.services.redaction.coverage import describe_gap
 from app.services.redaction.coverage import uncovered_detectors
+
+if TYPE_CHECKING:
+    from app.models.media import MediaFile
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +97,7 @@ class RedactionNotReadyError(Exception):
         self.never_started = never_started
 
 
-def resolve_llm_masking(db: Session, media_file) -> EffectiveRedactionConfig | None:
+def resolve_llm_masking(db: Session, media_file: MediaFile) -> EffectiveRedactionConfig | None:
     """Decide how to mask a file's transcript before it goes to an LLM provider.
 
     Args:
@@ -162,7 +167,7 @@ def resolve_llm_masking(db: Session, media_file) -> EffectiveRedactionConfig | N
     )
 
 
-def defer_for_redaction(task, exc: RedactionNotReadyError, *, countdown: int = 60) -> None:
+def defer_for_redaction(task: Any, exc: RedactionNotReadyError, *, countdown: int = 60) -> None:
     """Re-queue a bound Celery task until detection lands, or give up safely.
 
     Args:

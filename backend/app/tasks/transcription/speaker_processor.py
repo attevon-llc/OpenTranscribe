@@ -151,7 +151,7 @@ def create_or_get_speaker(
                 db.add(speaker)
                 db.flush()
 
-    return speaker  # type: ignore[no-any-return]
+    return speaker
 
 
 def create_speaker_mapping(

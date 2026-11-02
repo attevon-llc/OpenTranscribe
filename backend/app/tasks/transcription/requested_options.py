@@ -44,11 +44,11 @@ def store_requested_options(
     ``None`` overwrites on purpose: a reprocess that asks for the default model must not leave
     an older "tiny" behind for the next retry to replay.
     """
-    media_file.requested_whisper_model = whisper_model  # type: ignore[assignment]
-    media_file.requested_min_speakers = min_speakers  # type: ignore[assignment]
-    media_file.requested_max_speakers = max_speakers  # type: ignore[assignment]
-    media_file.requested_num_speakers = num_speakers  # type: ignore[assignment]
-    media_file.requested_disable_diarization = disable_diarization  # type: ignore[assignment]
+    media_file.requested_whisper_model = whisper_model
+    media_file.requested_min_speakers = min_speakers
+    media_file.requested_max_speakers = max_speakers
+    media_file.requested_num_speakers = num_speakers
+    media_file.requested_disable_diarization = disable_diarization
 
 
 def resolve_dispatch_options(

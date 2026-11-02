@@ -2,11 +2,14 @@
 Celery tasks for file cleanup and system maintenance.
 """
 
+from __future__ import annotations
+
 import logging
 import math
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
+from typing import TYPE_CHECKING
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -15,6 +18,9 @@ from app.core.queues import UtilityPriority
 from app.db.session_utils import session_scope
 from app.services.file_cleanup_cycle import cleanup_service
 from app.utils.time_format import age_seconds
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +40,7 @@ _DEFAULT_RETENTION_HOUR = 2
 
 
 @celery_app.task(bind=True, name="cleanup.run_periodic_cleanup", priority=UtilityPriority.ROUTINE)
-def run_periodic_cleanup(self):
+def run_periodic_cleanup(self: Any) -> dict[str, Any]:
     """
     Periodic task to clean up stuck files and maintain system health.
 
@@ -74,7 +80,7 @@ def run_periodic_cleanup(self):
 
 
 @celery_app.task(bind=True, name="cleanup.deep_cleanup", priority=UtilityPriority.BACKGROUND)
-def run_deep_cleanup(self, dry_run: bool = False):
+def run_deep_cleanup(self: Any, dry_run: bool = False) -> dict[str, Any]:
     """
     Deep cleanup task for removing orphaned files (admin-triggered).
 
@@ -106,7 +112,7 @@ def run_deep_cleanup(self, dry_run: bool = False):
 
 
 @celery_app.task(bind=True, name="cleanup.health_check", priority=UtilityPriority.OPERATIONAL)
-def system_health_check(self):
+def system_health_check(self: Any) -> dict[str, Any]:
     """
     Generate a system health report.
     """
@@ -138,7 +144,7 @@ def system_health_check(self):
 
 
 @celery_app.task(bind=True, name="cleanup.emergency_recovery", priority=UtilityPriority.EMERGENCY)
-def emergency_file_recovery(self, file_uuids: list):
+def emergency_file_recovery(self: Any, file_uuids: list) -> dict[str, Any]:
     """
     Emergency recovery task for specific files (admin-triggered).
 
@@ -212,7 +218,7 @@ def _upload_grace_minutes(file_size: int | None, base_minutes: int) -> int:
 
 
 @celery_app.task(bind=True, name="cleanup.orphan_upload_sweeper", priority=UtilityPriority.ROUTINE)
-def orphan_upload_sweeper(self, max_age_minutes: int = 30) -> dict[str, int]:
+def orphan_upload_sweeper(self: Any, max_age_minutes: int = 30) -> dict[str, int]:
     """Delete PENDING MediaFile rows abandoned before MinIO finished storing.
 
     A client disconnect mid-upload (or a prepare_upload call that never
@@ -374,7 +380,7 @@ def orphan_upload_sweeper(self, max_age_minutes: int = 30) -> dict[str, int]:
 
 
 @celery_app.task(bind=True, name="cleanup.scratch_janitor", priority=UtilityPriority.ROUTINE)
-def scratch_janitor(self, ttl_seconds: int | None = None) -> dict[str, int]:
+def scratch_janitor(self: Any, ttl_seconds: int | None = None) -> dict[str, int]:
     """Purge stale per-file directories from the shared scratch volume.
 
     A crashed pipeline (OOM, worker restart, SIGKILL) can leave the
@@ -423,7 +429,7 @@ def _scheduled_retention_hour(run_time: Any) -> int:
 
 
 def _select_expired_files(
-    db,
+    db: Session,
     config: dict,
     cutoff: datetime,
     query_cutoff: datetime,
@@ -541,7 +547,7 @@ def _purge_expired_files(expired: list[tuple[int, str]]) -> tuple[int, int]:
 
 
 @celery_app.task(name="cleanup_expired_files", priority=UtilityPriority.ROUTINE)
-def cleanup_expired_files(force: bool = False):
+def cleanup_expired_files(force: bool = False) -> dict[str, Any]:
     """
     Delete media files that have exceeded the configured retention window.
 

@@ -13,7 +13,9 @@ deliberately public instance (issue #628's demo); nothing here should stop that.
 from __future__ import annotations
 
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import RequestResponseEndpoint
 from starlette.requests import Request
+from starlette.responses import Response
 from starlette.types import ASGIApp
 
 from app.core.config import settings
@@ -26,7 +28,7 @@ class RobotsHeaderMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self._prefix = settings.API_PREFIX
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         response = await call_next(request)
         if request.url.path.startswith(self._prefix):
             response.headers["X-Robots-Tag"] = "noindex, nofollow"

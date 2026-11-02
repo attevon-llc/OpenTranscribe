@@ -90,7 +90,7 @@ def get_prompts(
     # Filter by ownership
     ownership_conditions = []
     if include_system:
-        ownership_conditions.append(models.SummaryPrompt.is_system_default)  # type: ignore[arg-type]
+        ownership_conditions.append(models.SummaryPrompt.is_system_default)
     if include_user:
         ownership_conditions.append(
             and_(  # type: ignore[arg-type]
@@ -290,9 +290,9 @@ def get_prompts_by_content_type(
 
     return schemas.ContentTypePromptsResponse(
         content_type=content_type,
-        system_prompts=cast(list[schemas.SummaryPrompt], system_prompts),  # type: ignore[arg-type]
-        user_prompts=cast(list[schemas.SummaryPrompt], user_prompts),  # type: ignore[arg-type]
-        shared_prompts=cast(list[schemas.SummaryPrompt], shared_prompts),  # type: ignore[arg-type]
+        system_prompts=cast(list[schemas.SummaryPrompt], system_prompts),
+        user_prompts=cast(list[schemas.SummaryPrompt], user_prompts),
+        shared_prompts=cast(list[schemas.SummaryPrompt], shared_prompts),
         active_prompt_id=active_prompt_uuid,  # type: ignore[arg-type]
     )
 

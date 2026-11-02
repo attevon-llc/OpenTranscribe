@@ -45,7 +45,7 @@ def fix_inconsistent_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),  # Only admins can fix files
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """
     Attempt to fix a media file with inconsistent state
     """
@@ -83,7 +83,7 @@ def fix_inconsistent_file(
 def fix_all_inconsistent_files(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> Any:
     """
     Attempt to fix all media files with inconsistent state
     """
@@ -128,7 +128,7 @@ def retry_file_processing(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),  # Any user can retry their own files
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Any:
     """
     Retry processing for a file that failed or got stuck
 
@@ -191,9 +191,9 @@ def retry_file_processing(
         )
 
         for task in old_tasks:
-            task.status = TASK_STATUS_FAILED  # type: ignore[assignment]
-            task.error_message = "Task marked as failed for retry"  # type: ignore[assignment]
-            task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
+            task.status = TASK_STATUS_FAILED
+            task.error_message = "Task marked as failed for retry"
+            task.completed_at = datetime.now(UTC)
 
         db.commit()
 

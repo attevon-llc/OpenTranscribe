@@ -188,7 +188,7 @@ def _extract_file_metadata(db: Any, media_file: Any) -> dict[str, Any] | None:
 
 @celery_app.task(bind=True, name="reindex_transcripts", priority=CPUPriority.MAINTENANCE)
 def reindex_transcripts_task(
-    self,
+    self: Any,
     user_id: int,
     file_uuids: list[str] | None = None,
     model_id: str | None = None,

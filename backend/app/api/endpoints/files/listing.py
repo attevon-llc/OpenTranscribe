@@ -6,6 +6,7 @@ empty-prefix sub-router cannot hold.
 
 import logging
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -57,9 +58,9 @@ def _list_load_options() -> list:
     # - defer heavy JSON columns not required by the list Pydantic schema
     list_options = [
         joinedload(MediaFile.user),
-        selectinload(MediaFile.speakers).load_only(*LIST_SPEAKER_COLUMNS),  # type: ignore[arg-type]
-        defer(MediaFile.metadata_raw),  # type: ignore[arg-type]
-        defer(MediaFile.waveform_data),  # type: ignore[arg-type]
+        selectinload(MediaFile.speakers).load_only(*LIST_SPEAKER_COLUMNS),
+        defer(MediaFile.metadata_raw),
+        defer(MediaFile.waveform_data),
     ]
     return list_options
 
@@ -91,9 +92,9 @@ def _sort_and_page(
 
     # Apply sort order (only for the data query, not the count)
     if sort_order.lower() == "asc":
-        filtered_query = filtered_query.order_by(sort_field.asc())  # type: ignore[attr-defined]
+        filtered_query = filtered_query.order_by(sort_field.asc())
     else:
-        filtered_query = filtered_query.order_by(sort_field.desc())  # type: ignore[attr-defined]
+        filtered_query = filtered_query.order_by(sort_field.desc())
 
     # Apply pagination
     offset = (page - 1) * page_size
@@ -292,7 +293,7 @@ def get_metadata_filters_endpoint(
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
-):
+) -> Any:
     """Get available metadata filters like formats, codecs, etc."""
     return get_metadata_filters(
         db,
@@ -312,7 +313,7 @@ def list_file_owners(
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
-):
+) -> Any:
     """List the owners of files visible to the caller, for the gallery's
     ownership filter (issue #966).
 

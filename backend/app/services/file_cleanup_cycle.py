@@ -114,8 +114,8 @@ class FileCleanupService:
                 f"File {file_id} has exceeded max recovery attempts ({self.max_recovery_attempts})"
             )
             # Mark as permanently orphaned
-            media_file.status = FileStatus.ORPHANED  # type: ignore[assignment]
-            media_file.force_delete_eligible = True  # type: ignore[assignment]
+            media_file.status = FileStatus.ORPHANED
+            media_file.force_delete_eligible = True
             db.commit()
             return False
 
@@ -145,7 +145,7 @@ class FileCleanupService:
 
         for file in old_orphaned_files:
             # Mark as eligible for force deletion
-            file.force_delete_eligible = True  # type: ignore[assignment]
+            file.force_delete_eligible = True
             logger.warning(
                 f"File {file.id} has been orphaned for over {self.orphan_threshold_hours} hours"
             )

@@ -6,6 +6,7 @@ Provides shared utilities used by the transcription pipeline's diarizer:
 """
 
 import logging
+from typing import Any
 
 import numpy as np
 
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def build_native_embeddings(
-    diarization,
+    diarization: Any,
     centroids: np.ndarray | None,
 ) -> dict[str, np.ndarray]:
     """Build speaker label -> L2-normalized centroid mapping from PyAnnote output.
@@ -77,7 +78,7 @@ def build_native_embeddings(
 
 
 def extract_overlap_regions(
-    diarization,
+    diarization: Any,
     min_duration: float = 0.25,
 ) -> list[dict[str, float]]:
     """Extract overlapping speech regions from a PyAnnote diarization annotation.

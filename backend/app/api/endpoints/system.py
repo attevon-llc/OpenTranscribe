@@ -126,7 +126,7 @@ def get_system_stats(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     _capability: None = Depends(require_capability("system.hardware_stats")),
-):
+) -> Any:
     """
     Get system statistics accessible to all authenticated users, where the
     ``system.hardware_stats`` capability is enabled.
@@ -262,7 +262,7 @@ def get_system_stats(
 
 
 @router.get("/config/protected-media-auth", response_model=list[dict[str, Any]])
-def get_protected_media_auth(current_user: User = Depends(get_current_active_user)):
+def get_protected_media_auth(current_user: User = Depends(get_current_active_user)) -> Any:
     """Return public auth configuration for protected media providers.
 
     Used by the frontend to decide when to prompt for username/password

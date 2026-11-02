@@ -16,6 +16,7 @@ upstream IdP and back in as a different person left the old app session live.
 
 import logging
 from datetime import timedelta
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -51,7 +52,7 @@ logger = logging.getLogger(__name__)
 
 @router.post("/proxy/authenticate", response_model=Token)
 @limiter.limit(get_auth_rate_limit())
-def proxy_login(request: Request, response: Response, db: Session = Depends(get_db)):
+def proxy_login(request: Request, response: Response, db: Session = Depends(get_db)) -> Any:
     """Establish a session from an identity a trusted reverse proxy asserted.
 
     Rate limited and lockout-tracked like every other credential endpoint: it mints

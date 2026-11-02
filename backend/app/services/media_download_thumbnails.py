@@ -28,7 +28,7 @@ def _resolve_thumbnail_url(media_info: dict[str, Any]) -> str | None:
 
     # Fallback to single thumbnail URL if no thumbnails list
     if not thumbnails:
-        return media_info.get("thumbnail")  # type: ignore[return-value]
+        return media_info.get("thumbnail")
 
     # Find the highest quality thumbnail
     max_width = 0

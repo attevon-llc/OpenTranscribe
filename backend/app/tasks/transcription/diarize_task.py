@@ -5,6 +5,7 @@ Runs when ``ENGINE_GPU_SPLIT=true``.
 
 import contextlib
 import logging
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.enums import TranscriptionStage
@@ -51,7 +52,7 @@ logger = logging.getLogger(__name__)
     # resolves it per call, and a decorator default would silently send any other
     # dispatch to gpu-diarize, which non-split deployments never drain (#703, #1268).
 )
-def diarize_gpu_task(self, transcript_data: dict, preprocess_context: dict) -> dict:
+def diarize_gpu_task(self: Any, transcript_data: dict, preprocess_context: dict) -> dict:
     """Stage 2b (GPU-diarize): diarization only for the Phase 4 multi-GPU split.
 
     Receives a serialized RawTranscriptResult from transcribe_gpu_task,

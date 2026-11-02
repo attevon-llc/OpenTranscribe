@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.queues import UtilityPriority
@@ -16,7 +17,7 @@ BENCHMARKS_DIR = os.environ.get("BENCHMARKS_DIR", "/tmp/benchmarks")  # noqa: S1
 
 
 @celery_app.task(name="export_transcript_baseline", priority=UtilityPriority.DEV_TOOLS)
-def export_baseline_task(file_uuid: str, label: str = "baseline"):
+def export_baseline_task(file_uuid: str, label: str = "baseline") -> dict[str, Any]:
     """Export current transcript data as a baseline snapshot."""
     os.makedirs(BENCHMARKS_DIR, exist_ok=True)
 
@@ -44,7 +45,9 @@ def export_baseline_task(file_uuid: str, label: str = "baseline"):
 
 
 @celery_app.task(name="compare_transcript_baseline", priority=UtilityPriority.DEV_TOOLS)
-def compare_baseline_task(file_uuid: str, baseline_label: str, current_label: str):
+def compare_baseline_task(
+    file_uuid: str, baseline_label: str, current_label: str
+) -> dict[str, Any]:
     """Compare two transcript snapshots and log results."""
     short_uuid = file_uuid[:8]
     baseline_path = os.path.join(BENCHMARKS_DIR, f"{short_uuid}_{baseline_label}.json")

@@ -14,7 +14,10 @@ and its own ``admin_group`` -> role rule, evaluated here directly. Full group-ma
 UI integration for SAML is future work.
 """
 
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
 
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.roles import ROLE_ADMIN
@@ -22,6 +25,12 @@ from app.auth.roles import ROLE_USER
 from app.auth.roles import role_implies_superuser
 from app.auth.saml.assertion import SAMLUserData
 from app.core.auth_types import AUTH_TYPE_SAML
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from app.auth.saml.config import SAMLConfig
+    from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +40,7 @@ logger = logging.getLogger(__name__)
 LINK_REFUSED_DETAIL = "Invalid SAML assertion"  # noqa: S105 # nosec B105
 
 
-def _create_saml_user(db, saml_data: SAMLUserData, *, is_admin: bool):
+def _create_saml_user(db: Session, saml_data: SAMLUserData, *, is_admin: bool) -> User:
     """Create a new user from a verified SAML assertion."""
     from sqlalchemy.exc import IntegrityError
 
@@ -67,15 +76,15 @@ def _create_saml_user(db, saml_data: SAMLUserData, *, is_admin: bool):
     except IntegrityError:
         db.rollback()
         logger.info(f"User {subject} was created by concurrent request, fetching existing user")
-        user = db.query(User).filter(User.saml_subject == subject).first()
-        if not user:
-            user = db.query(User).filter(User.email == email).first()
-        if not user:
+        existing = db.query(User).filter(User.saml_subject == subject).first()
+        if not existing:
+            existing = db.query(User).filter(User.email == email).first()
+        if not existing:
             raise ValueError(f"Failed to create or find SAML user: {subject}") from None
-        return user
+        return existing
 
 
-def _update_saml_user(db, user, saml_data: SAMLUserData, *, is_admin: bool):
+def _update_saml_user(db: Session, user: User, saml_data: SAMLUserData, *, is_admin: bool) -> User:
     """Update an existing SAML user's identity and role from a fresh assertion."""
     subject = saml_data["saml_subject"]
     email = saml_data["email"]
@@ -105,7 +114,9 @@ def _update_saml_user(db, user, saml_data: SAMLUserData, *, is_admin: bool):
     return user
 
 
-def _convert_local_user_to_saml(db, user, saml_data: SAMLUserData, *, is_admin: bool):
+def _convert_local_user_to_saml(
+    db: Session, user: User, saml_data: SAMLUserData, *, is_admin: bool
+) -> User:
     """Convert an existing local user to SAML authentication."""
     subject = saml_data["saml_subject"]
     email = saml_data["email"]
@@ -132,7 +143,9 @@ def _convert_local_user_to_saml(db, user, saml_data: SAMLUserData, *, is_admin: 
     return user
 
 
-def sync_saml_user_to_db(db, saml_data: SAMLUserData, cfg=None):
+def sync_saml_user_to_db(
+    db: Session, saml_data: SAMLUserData, cfg: SAMLConfig | None = None
+) -> User:
     """Create or update a user in the database from a verified SAML assertion.
 
     Admission is decided first, against ``saml_allowed_groups``/``saml_blocked_groups``

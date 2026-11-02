@@ -11,6 +11,7 @@ so a second implementation here would only be a second place for the two to drif
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
@@ -19,6 +20,9 @@ from app.auth.oidc.admission import check_group_admission
 from app.auth.saml.assertion import SAMLUserData
 from app.core.auth_types import AUTH_TYPE_SAML
 from app.core.exceptions import AuthenticationError
+
+if TYPE_CHECKING:
+    from app.auth.saml.config import SAMLConfig
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +33,7 @@ ADMISSION_REFUSED_ERROR_CODE = "SAML_ADMISSION_REFUSED"
 
 def assert_saml_admission_permitted(
     saml_data: SAMLUserData,
-    cfg,
+    cfg: SAMLConfig,
     *,
     failure_detail: str,
 ) -> None:

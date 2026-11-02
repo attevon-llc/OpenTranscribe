@@ -181,10 +181,10 @@ class TaskRecoveryStuckMixin(TaskRecoveryRetryMixin):
                 logger.info(f"Marking orphaned task {task.id} as failed")
 
                 _retire_if_transcription(task)
-                task.status = "failed"  # type: ignore[assignment]
-                task.error_message = "Task interrupted by system restart"  # type: ignore[assignment]
-                task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
-                task.updated_at = datetime.now(UTC)  # type: ignore[assignment]
+                task.status = "failed"
+                task.error_message = "Task interrupted by system restart"
+                task.completed_at = datetime.now(UTC)
+                task.updated_at = datetime.now(UTC)
 
                 recovered_count += 1
 
@@ -271,7 +271,7 @@ class TaskRecoveryStuckMixin(TaskRecoveryRetryMixin):
             try:
                 # The category the failure site stored — never re-derived from prose (#959)
                 error_category = stored_category(media_file.error_category)
-                media_file.error_category = error_category.value  # type: ignore[assignment]
+                media_file.error_category = error_category.value
 
                 # Enforce retry delay based on error category
                 if media_file.completed_at:
@@ -371,7 +371,7 @@ class TaskRecoveryStuckMixin(TaskRecoveryRetryMixin):
         if active_tasks == 0 and media_file.status == FileStatus.PROCESSING:
             # Decide from the category the failure site stored — never from prose (#959)
             error_category = stored_category(media_file.error_category)
-            media_file.error_category = error_category.value  # type: ignore[assignment]
+            media_file.error_category = error_category.value
 
             if should_retry(error_category, int(media_file.retry_count or 0)):
                 logger.info(
@@ -388,7 +388,7 @@ class TaskRecoveryStuckMixin(TaskRecoveryRetryMixin):
                     )
                     update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
                     media_file.last_error_message = (
-                        "Retry dispatch failed - Celery may be unavailable"  # type: ignore[assignment]
+                        "Retry dispatch failed - Celery may be unavailable"
                     )
                     db.commit()
             else:

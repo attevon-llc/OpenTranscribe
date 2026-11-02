@@ -102,7 +102,7 @@ def get_user_files_query(
 
 
 def get_or_create[T](
-    db: Session, model: type[T], defaults: dict | None = None, **kwargs
+    db: Session, model: type[T], defaults: dict | None = None, **kwargs: Any
 ) -> tuple[T, bool]:
     """
     Get an object or create it if it doesn't exist.
@@ -157,7 +157,7 @@ def safe_get_by_id[T](
         if user_id and hasattr(model, "user_id"):
             query = query.filter(model.user_id == user_id)  # type: ignore[attr-defined]
 
-        return query.first()  # type: ignore[no-any-return]
+        return query.first()
     except SQLAlchemyError as e:
         logger.error(f"Error getting {model.__name__} by ID {obj_id}: {e}")
         db.rollback()
@@ -228,7 +228,7 @@ def get_user_speakers(db: Session, user_id: int) -> list[Speaker]:
     Returns:
         List of Speaker objects
     """
-    return db.query(Speaker).filter(Speaker.user_id == user_id).all()  # type: ignore[no-any-return]
+    return db.query(Speaker).filter(Speaker.user_id == user_id).all()
 
 
 def get_unique_speakers_for_file(db: Session, file_id: int) -> list[Speaker]:
@@ -243,7 +243,7 @@ def get_unique_speakers_for_file(db: Session, file_id: int) -> list[Speaker]:
         List of unique Speaker objects
     """
     result = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
-    return result  # type: ignore[no-any-return]
+    return result
 
 
 def get_files_by_status(db: Session, user_id: int, status: str) -> list[MediaFile]:
@@ -263,7 +263,7 @@ def get_files_by_status(db: Session, user_id: int, status: str) -> list[MediaFil
         .filter(and_(MediaFile.user_id == user_id, MediaFile.status == status))
         .all()
     )
-    return result  # type: ignore[no-any-return]
+    return result
 
 
 def get_user_file_stats(db: Session, user_id: int) -> dict:

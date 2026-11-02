@@ -12,11 +12,15 @@ import argparse
 import logging
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from app.scripts.corpus_injection.env import LiveStackRefusedError
 from app.scripts.corpus_injection.env import bootstrap
 from app.scripts.corpus_injection.env import describe_target
 from app.scripts.corpus_injection.env import guard_live_stack
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 TOOL_VERSION = "1.0.0"
 DEFAULT_DATA_DIR = "/mnt/nas/opentranscribe-benchmarks"
@@ -93,7 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _resolve_user(db, email: str) -> int:  # noqa: ANN001 — Session, imported lazily
+def _resolve_user(db: Session, email: str) -> int:  # noqa: ANN001 — Session, imported lazily
     from sqlalchemy import select
 
     from app.models.user import User

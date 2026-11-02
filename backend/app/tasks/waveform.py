@@ -9,6 +9,7 @@ import contextlib
 import logging
 import os
 import tempfile
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.queues import CPUPriority
@@ -35,7 +36,7 @@ def _get_storage_path(file_id: int) -> str | None:
         if not media_file.storage_path:
             logger.error(f"No storage path for file {file_id}")
             return None
-        return str(media_file.storage_path)  # type: ignore[no-any-return]
+        return str(media_file.storage_path)
 
 
 def _download_temp_audio_safe(file_uuid: str) -> str | None:
@@ -103,13 +104,13 @@ def _cleanup_temp_file(temp_file_path: str | None) -> None:
     priority=CPUPriority.PIPELINE_CRITICAL,
 )
 def generate_waveform_task(
-    self,
+    self: Any,
     file_id: int,
     file_uuid: str,
     task_id: str | None = None,
     prefer_temp_audio: bool = True,
     local_wav_path: str | None = None,
-):
+) -> dict[str, Any]:
     """
     Generate waveform visualization data for a media file.
 

@@ -20,11 +20,16 @@ response shape is decided.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 from typing import Any
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
+
+if TYPE_CHECKING:
+    from app.models.group import UserGroup
+    from app.models.user import User
 
 #: Schema URIs, as RFC 7643 defines them. These strings appear verbatim in every
 #: response and are what an IdP's connector matches on.
@@ -137,7 +142,9 @@ class SCIMPatchRequest(_Lenient):
     Operations: list[SCIMPatchOperation] = Field(default_factory=list)  # noqa: N815 - SCIM
 
 
-def _meta(resource_type: str, resource_id: str, created: datetime | None, updated: datetime | None):
+def _meta(
+    resource_type: str, resource_id: str, created: datetime | None, updated: datetime | None
+) -> dict[str, Any]:
     """Build the ``meta`` sub-attribute (RFC 7643 §3.1)."""
     meta: dict[str, Any] = {
         "resourceType": resource_type,
@@ -150,7 +157,7 @@ def _meta(resource_type: str, resource_id: str, created: datetime | None, update
     return meta
 
 
-def user_resource(user, *, groups: list[dict[str, str]] | None = None) -> dict[str, Any]:
+def user_resource(user: User, *, groups: list[dict[str, str]] | None = None) -> dict[str, Any]:
     """Render a ``User`` row as a SCIM User resource.
 
     ``id`` is the account's **UUID**, never its integer primary key — the same
@@ -184,7 +191,9 @@ def user_resource(user, *, groups: list[dict[str, str]] | None = None) -> dict[s
     }
 
 
-def group_resource(group, *, members: list[dict[str, str]] | None = None) -> dict[str, Any]:
+def group_resource(
+    group: UserGroup, *, members: list[dict[str, str]] | None = None
+) -> dict[str, Any]:
     """Render a ``UserGroup`` row as a SCIM Group resource."""
     return {
         "schemas": [SCHEMA_GROUP],
@@ -195,7 +204,9 @@ def group_resource(group, *, members: list[dict[str, str]] | None = None) -> dic
     }
 
 
-def list_response(resources: list[dict[str, Any]], *, total: int, start_index: int):
+def list_response(
+    resources: list[dict[str, Any]], *, total: int, start_index: int
+) -> dict[str, Any]:
     """Wrap resources in a SCIM ListResponse (RFC 7644 §3.4.2).
 
     ``startIndex`` is 1-based in SCIM. ``itemsPerPage`` reports what was actually

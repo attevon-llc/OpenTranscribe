@@ -19,6 +19,8 @@ from ldap3.core.exceptions import LDAPBindError
 from ldap3.core.exceptions import LDAPException
 
 if TYPE_CHECKING:
+    from ldap3 import Entry
+
     from app.auth.ldap_auth import LdapConfig
 
 logger = logging.getLogger(__name__)
@@ -113,7 +115,7 @@ def _search_ldap_user(
     username: str,
     ldap_username: str,
     extra_attributes: list[str] | None = None,
-):
+) -> Entry | None:
     """Search for user in LDAP by username or email.
 
     Handles LDAP servers that don't support certain attributes (e.g., memberOf)
@@ -158,7 +160,7 @@ def _search_ldap_user(
                 return bool(bind_conn.entries)
             raise
 
-    def _single_entry(search_filter: str, label: str):
+    def _single_entry(search_filter: str, label: str) -> Entry | None:
         """Return the one matching entry, or None — never an arbitrary pick.
 
         A search filter that is too loose (or genuine directory duplicates) can
@@ -192,7 +194,7 @@ def _search_ldap_user(
     return None
 
 
-def _get_user_groups(cfg: LdapConfig, user_entry) -> list[str]:
+def _get_user_groups(cfg: LdapConfig, user_entry: Entry) -> list[str]:
     """Extract group DNs from LDAP user entry."""
     if not cfg.group_attr:
         return []

@@ -7,6 +7,7 @@ for media files, including both individual files and bulk operations.
 
 import logging
 import os
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.queues import CPUPriority
@@ -23,7 +24,9 @@ logger = logging.getLogger(__name__)
 @celery_app.task(
     bind=True, name="media.generate_waveform_data", priority=CPUPriority.PIPELINE_CRITICAL
 )
-def generate_waveform_data_task(self, file_uuid: str | None = None, skip_existing: bool = True):
+def generate_waveform_data_task(
+    self: Any, file_uuid: str | None = None, skip_existing: bool = True
+) -> dict[str, Any]:
     """
     Generate waveform data for media files.
 

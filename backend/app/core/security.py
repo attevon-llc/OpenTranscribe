@@ -336,7 +336,7 @@ def get_password_hash(password: str) -> str:
     """
     Hash a password for storing
     """
-    return pwd_context.hash(normalize_password(password))  # type: ignore[no-any-return]
+    return pwd_context.hash(normalize_password(password))
 
 
 def authenticate_user(db: Session, email: str, password: str) -> User | None:
@@ -376,7 +376,7 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
 
     if not verify_password(password, str(user.hashed_password)):
         return None
-    return user  # type: ignore[no-any-return]
+    return user
 
 
 def verify_token(token: str, expected_type: str | None = TOKEN_TYPE_ACCESS) -> dict[str, Any]:

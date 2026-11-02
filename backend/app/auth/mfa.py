@@ -32,6 +32,8 @@ import hashlib
 import io
 import logging
 import secrets
+from collections.abc import Callable
+from typing import Any
 
 import pyotp
 import qrcode
@@ -114,7 +116,7 @@ def _create_backup_code_context() -> CryptContext:
 backup_code_context = _create_backup_code_context()
 
 
-def get_totp_algorithm():
+def get_totp_algorithm() -> Callable[..., Any]:
     """
     Get TOTP hash algorithm based on configuration.
 
@@ -283,7 +285,7 @@ class MFAService:
             interval=MFAService.TOTP_INTERVAL,
             digest=algorithm,
         )
-        uri: str = totp.provisioning_uri(name=email, issuer_name=issuer)  # type: ignore[no-any-return]
+        uri: str = totp.provisioning_uri(name=email, issuer_name=issuer)
         logger.debug(
             f"Generated provisioning URI for user: {email[:3]}*** (algorithm: {algorithm})"
         )
@@ -397,7 +399,7 @@ class MFAService:
                 digest=algorithm,
             )
             # verify() accepts valid_window parameter for clock drift tolerance
-            is_valid: bool = totp.verify(code, valid_window=settings.TOTP_VALID_WINDOW)  # type: ignore[no-any-return]
+            is_valid: bool = totp.verify(code, valid_window=settings.TOTP_VALID_WINDOW)
 
             if not is_valid:
                 logger.debug("TOTP verification failed - invalid code")
@@ -467,7 +469,7 @@ class MFAService:
         # Normalize: remove formatting, uppercase
         normalized = code.replace("-", "").replace(" ", "").upper()
         # Hash with the configured algorithm (PBKDF2-SHA256 or bcrypt)
-        return backup_code_context.hash(normalized)  # type: ignore[no-any-return]
+        return backup_code_context.hash(normalized)
 
     @staticmethod
     def verify_backup_code(code: str, hashed_codes: list[str]) -> tuple[bool, str | None]:

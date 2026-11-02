@@ -24,7 +24,9 @@ from sqlalchemy import Text
 from sqlalchemy import event
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import Mapper
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -127,7 +129,9 @@ class ContentHoldFile(Base):
 
 
 @event.listens_for(CollectionMember, "after_insert")
-def _cover_new_member_with_collection_holds(mapper, connection, target) -> None:
+def _cover_new_member_with_collection_holds(
+    mapper: Mapper[CollectionMember], connection: Connection, target: CollectionMember
+) -> None:
     """A file that joins a held collection is held from that moment (issue #1276).
 
     Every path that adds a collection member (the collection routes, an upload that names a

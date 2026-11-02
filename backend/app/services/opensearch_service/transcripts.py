@@ -39,6 +39,7 @@ this index's mapping should go on the next index version bump.
 
 import datetime
 import logging
+from typing import Any
 
 from app.core.config import settings
 from app.services.opensearch_service import client as _client
@@ -58,7 +59,7 @@ def index_transcript(
     embedding: list[float] | None = None,
     *,
     organization_id: int | None,
-):
+) -> dict[str, Any] | None:
     """
     Index a transcript in OpenSearch
 
@@ -77,7 +78,7 @@ def index_transcript(
     """
     if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized, skipping indexing")
-        return
+        return None
 
     try:
         ensure_indices_exist()
@@ -108,7 +109,7 @@ def index_transcript(
             doc["embedding"] = embedding
 
         # Index the document using UUID as document ID
-        response = _client.call_idempotent_write(
+        response: dict[str, Any] = _client.call_idempotent_write(
             _client.opensearch_client.index,
             index=settings.OPENSEARCH_TRANSCRIPT_INDEX,
             body=doc,
@@ -120,9 +121,10 @@ def index_transcript(
 
     except Exception as e:
         logger.error(f"Error indexing transcript for file {file_uuid} (ID: {file_id}): {e}")
+        return None
 
 
-def update_transcript_title(file_uuid: str, new_title: str):
+def update_transcript_title(file_uuid: str, new_title: str) -> dict[str, Any] | None:
     """
     Update the title of an indexed transcript in OpenSearch
 
@@ -132,13 +134,13 @@ def update_transcript_title(file_uuid: str, new_title: str):
     """
     if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized, skipping title update")
-        return
+        return None
 
     try:
         # Update the document with the new title
         update_body = {"doc": {"title": new_title}}
 
-        response = _client.opensearch_client.update(
+        response: dict[str, Any] = _client.opensearch_client.update(
             index=settings.OPENSEARCH_TRANSCRIPT_INDEX,
             id=str(file_uuid),
             body=update_body,
@@ -155,3 +157,4 @@ def update_transcript_title(file_uuid: str, new_title: str):
             )
         else:
             logger.error(f"Error updating transcript title for file {file_uuid}: {e}")
+        return None

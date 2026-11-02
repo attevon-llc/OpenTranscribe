@@ -12,6 +12,7 @@ same redaction policy, resolved the same fail-closed way.
 import logging
 from datetime import UTC
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -79,7 +80,7 @@ def _markdown_meta(
 
 
 def _resolve_export_redaction(
-    db,
+    db: Session,
     media_file,
     current_user,
     redact: bool,
@@ -145,7 +146,7 @@ def export_transcript(
     comment_type_label: str = Query("COMMENT"),
     csv_header_default: str = Query("Start Time,End Time,Speaker,Text"),
     csv_header_with_comments: str = Query("Start Time,End Time,Speaker,Text,Comment Type"),
-):
+) -> Any:
     """Generate and download a full transcript export.
 
     Supports: txt, json, csv, srt, vtt, md. The label/header query params let the frontend

@@ -1,5 +1,7 @@
 """Current-user endpoints: ``/me``, ``/session``, ``/me/certificate``."""
 
+from typing import Any
+
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
@@ -19,7 +21,7 @@ router = APIRouter()
 
 
 @router.get("/me", response_model=UserSchema, summary="Get current user")
-def read_users_me(current_user: User = Depends(get_current_user)):
+def read_users_me(current_user: User = Depends(get_current_user)) -> Any:
     """
     Get current user using the current_user dependency
     """

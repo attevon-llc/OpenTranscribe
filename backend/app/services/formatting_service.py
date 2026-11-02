@@ -208,26 +208,18 @@ class FormattingService:
         # that renders only these pre-formatted fields, which is this repo's norm.
         is_quarantined = bool(getattr(media_file, "is_quarantined", False))
         effective_status = FileStatus.QUARANTINED if is_quarantined else media_file.status
-        effective_status_value = (
-            "quarantined" if is_quarantined else media_file.status.value  # type: ignore[union-attr]
-        )
+        effective_status_value = "quarantined" if is_quarantined else media_file.status.value
 
         updates: dict[str, Any] = {
             "formatted_duration": FormattingService.format_duration(
                 float(media_file.duration) if media_file.duration is not None else None
             ),
-            "formatted_upload_date": FormattingService.format_upload_date(
-                media_file.upload_time  # type: ignore[arg-type]
-            ),
-            "formatted_file_age": FormattingService.format_file_age(
-                media_file.upload_time  # type: ignore[arg-type]
-            ),
+            "formatted_upload_date": FormattingService.format_upload_date(media_file.upload_time),
+            "formatted_file_age": FormattingService.format_file_age(media_file.upload_time),
             "formatted_file_size": FormattingService.format_bytes_detailed(
                 int(media_file.file_size) if media_file.file_size is not None else None
             ),
-            "display_status": FormattingService.format_status(
-                effective_status  # type: ignore[arg-type]
-            ),
+            "display_status": FormattingService.format_status(effective_status),
             "status_badge_class": FormattingService.get_status_badge_class(effective_status_value),
         }
 
@@ -240,7 +232,7 @@ class FormattingService:
         if speakers:
             updates["speaker_summary"] = FormattingService.create_speaker_summary(speakers, privacy)
 
-        return validated.model_copy(update=updates)  # type: ignore[no-any-return]
+        return validated.model_copy(update=updates)
 
     @staticmethod
     def format_transcript_segment(
@@ -334,7 +326,7 @@ class FormattingService:
             segment_dict["resolved_speaker_name"] = UNKNOWN_SPEAKER_LABEL
 
         # Create a new schema instance from the enriched dict
-        return TranscriptSegment.model_validate(segment_dict)  # type: ignore[no-any-return]
+        return TranscriptSegment.model_validate(segment_dict)
 
     @staticmethod
     def _apply_redaction(

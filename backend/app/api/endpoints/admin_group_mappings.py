@@ -20,6 +20,7 @@ Surface:
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -143,7 +144,7 @@ def list_group_mappings(
     source: str | None = Query(None, pattern="^(ldap|oidc)$"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
-):
+) -> Any:
     """List every configured mapping, newest last."""
     query = db.query(GroupMapping)
     if source:
@@ -162,7 +163,7 @@ def create_group_mapping(
     payload: GroupMappingCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
-):
+) -> Any:
     """Create a mapping. ``super_admin`` is refused here as well as by the DB CHECK."""
     try:
         grants_role = assert_grantable_role(payload.grants_role)
@@ -205,7 +206,7 @@ def update_group_mapping(
     payload: GroupMappingUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
-):
+) -> Any:
     """Update a mapping. The "grants something" rule is re-checked after the patch."""
     mapping = get_by_uuid(db, GroupMapping, mapping_uuid, "Mapping not found")
     fields = payload.model_dump(exclude_unset=True)
@@ -243,7 +244,7 @@ def delete_group_mapping(
     mapping_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
-):
+) -> None:
     """Delete a mapping.
 
     Memberships it produced are NOT removed here — they carry the directory
@@ -294,7 +295,7 @@ def test_group_mapping(
     payload: MappingTestRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
-):
+) -> Any:
     """Show what a claim list — or a real LDAP account — would resolve to.
 
     Nothing is written. ``username`` is LDAP-only: an OIDC provider asserts group

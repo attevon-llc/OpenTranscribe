@@ -260,7 +260,7 @@ def cleanup_failed_duplicates(
 
     from app.models.media import FileStatus
     from app.models.media import MediaFile
-    from app.services.minio_service import delete_file
+    from app.services.file_cleanup_service import purge_media_file
 
     # Strip 0x prefix if present
     if fingerprint and fingerprint.startswith("0x"):
@@ -291,26 +291,31 @@ def cleanup_failed_duplicates(
 
     cleanup_count = 0
     for file in failed_files:
-        try:
-            # Delete from storage if exists
-            if file.storage_path:
-                try:
-                    delete_file(file.storage_path)
-                    logger.info(f"Cleaned up failed file storage: {file.storage_path}")
-                except Exception as e:
-                    logger.warning(f"Could not delete storage for failed file {file.id}: {e}")
-
-            # Delete from database (cascade will handle related records)
-            db_session.delete(file)
-            cleanup_count += 1
-            logger.info(f"Cleaned up failed duplicate file {file.id} ({file.filename})")
-
-        except Exception as e:
-            logger.error(f"Error cleaning up failed file {file.id}: {e}")
-            # Continue with other files even if one fails
+        # The canonical destroy: refuses a held file, keeps object keys another row still
+        # references, and removes thumbnail / playback / derived-cache / index residue.
+        # Deleting only the media object and the row here used to destroy held evidence on
+        # a re-upload and leave the rest of the file's data behind.
+        file_id = int(file.id)
+        result = purge_media_file(db_session, file)
+        if result.get("refused_legal_hold"):
+            logger.warning(
+                f"Kept failed duplicate file {file_id}: it is under a legal hold, so a "
+                "re-upload does not remove it"
+            )
+            continue
+        if not result.get("deleted"):
+            logger.error(
+                f"Could not clean up failed duplicate file {file_id}: {result.get('error')}"
+            )
+            continue
+        cleanup_count += 1
+        if result.get("residual_errors"):
+            logger.warning(
+                f"Cleaned up failed duplicate file {file_id} with residue: "
+                f"{result['residual_errors']}"
+            )
 
     if cleanup_count > 0:
-        db_session.commit()
         logger.info(
             f"Cleaned up {cleanup_count} failed duplicate files with fingerprint {fingerprint}"
         )

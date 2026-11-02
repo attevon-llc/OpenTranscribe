@@ -104,6 +104,31 @@ and server-side encryption at rest is your provider's responsibility. Read
 [environment variable reference](../configuration/environment-variables.md#object-storage) before
 switching. Switching an existing install means copying its objects into the new store yourself.
 
+### Versioned buckets and deletion permissions
+
+If your bucket has versioning on (object lock, which a legal hold uses, requires it), deleting a
+recording has to remove every version of it, not only the current one: a plain delete leaves the
+old versions retrievable. OpenTranscribe does this for every delete, erasure, cache purge and
+orphan sweep, and reports a delete as failed (naming what is left) when a version survives, for
+example one under a legal hold or a retention period. It never sends a governance-bypass header.
+
+Grant the storage identity these actions on the media and cache buckets, in addition to the
+`s3:ListBucket`, `s3:GetObject`, `s3:PutObject` and `s3:DeleteObject` it already needs:
+
+| Action | Why |
+|---|---|
+| `s3:ListBucket` | to find the keys a delete selects and to confirm they are gone |
+| `s3:DeleteObject` | to delete the current object |
+| `s3:GetBucketVersioning` | to know whether old versions can exist (a versioned answer is cached for five minutes; "off" is never cached) |
+| `s3:ListBucketVersions` | to find every version and delete marker of a key |
+| `s3:DeleteObjectVersion` | to remove each version |
+
+Without `s3:GetBucketVersioning` and `s3:ListBucketVersions` the delete still runs, but it is
+**unverified**: whether old versions remain cannot be known, the server log carries an ERROR, and a
+file purge or GDPR erasure records it as partial (`storage_unverified`), never complete. On a bucket
+known to be versioned, a refused version listing is reported as a failed delete, because versions
+certainly remain. Deleting every version is irreversible, and that includes the orphan sweep.
+
 ## Roadmap
 
 These are plans, not part of 0.6.0:

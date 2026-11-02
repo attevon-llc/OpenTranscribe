@@ -374,7 +374,7 @@ def purge_env(db_session, monkeypatch):
     tracker.install(monkeypatch)
     captured: dict = {}
 
-    def _storage(file_id, artifacts):
+    def _storage(file_id, artifacts, unverified=None):
         tracker.observe("storage_delete")
         captured["storage"] = (file_id, artifacts)
         return True
@@ -522,9 +522,12 @@ def test_clear_derived_cache_opens_no_session_and_targets_all_variants(
     )
 
     deleted: list[str] = []
-    service = vps.VideoProcessingService(
-        SimpleNamespace(delete_object=lambda b, k: deleted.append(k))
-    )
+
+    def _record_delete(bucket: str, keys: list[str]) -> int:
+        deleted.extend(keys)
+        return len(keys)
+
+    service = vps.VideoProcessingService(SimpleNamespace(delete_objects=_record_delete))
     service.clear_derived_cache(int(media_file.id), "talk.mp4")
 
     assert tracker.opened == 0, (

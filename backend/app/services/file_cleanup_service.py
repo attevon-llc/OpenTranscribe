@@ -13,6 +13,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 from typing import Any
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.db.session_utils import session_scope
@@ -20,6 +21,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.services.hold_guard import LEGAL_HOLD_REFUSAL
 from app.services.hold_guard import hold_state
+from app.services.storage_versions import UNVERIFIED_VERSIONS_ERROR
 from app.utils.task_utils import check_for_stuck_files
 from app.utils.task_utils import recover_stuck_file
 
@@ -654,7 +656,9 @@ def _erase_summary_docs(file_id: int, fail: Callable[[str, object], None]) -> No
         fail("transcript_summaries", e)
 
 
-def delete_file_storage_artifacts(file_id: int, artifacts: dict[str, Any]) -> bool:
+def delete_file_storage_artifacts(
+    file_id: int, artifacts: dict[str, Any], unverified: list[str] | None = None
+) -> bool:
     """Delete every object-storage artifact for a media file.
 
     Covers the original, its thumbnail, its playback rendition, and the regenerable
@@ -676,6 +680,10 @@ def delete_file_storage_artifacts(file_id: int, artifacts: dict[str, Any]) -> bo
         file_id: Internal media file id — the derived-cache keys are keyed on it.
         artifacts: Plain values read in the caller's DB phase —
             ``filename``, ``storage_path``, ``thumbnail_path`` and ``playback_path``.
+        unverified: Out-list. Each artifact whose delete ran but whose old object versions
+            could not be checked for (``GetBucketVersioning`` / ``ListBucketVersions``
+            refused) is appended, so the caller can record an erasure as unverified rather
+            than complete. Those artifacts do not make the return value False.
 
     Returns:
         True when every artifact this file has was deleted or was already
@@ -693,8 +701,10 @@ def delete_file_storage_artifacts(file_id: int, artifacts: dict[str, Any]) -> bo
         if not path:
             continue
         try:
-            delete_file(str(path))
+            removed = delete_file(str(path))
             logger.info(f"Deleted MinIO object {path}")
+            if getattr(removed, "unverified", False) and unverified is not None:
+                unverified.append(path_key)
         except Exception as minio_err:  # noqa: BLE001 — one artifact never blocks the rest
             all_deleted = False
             logger.warning(f"Could not delete MinIO object {path}: {minio_err}")
@@ -708,7 +718,11 @@ def delete_file_storage_artifacts(file_id: int, artifacts: dict[str, Any]) -> bo
             from app.services.minio_service import MinIOService
             from app.services.video_processing_service import VideoProcessingService
 
-            VideoProcessingService(MinIOService()).clear_derived_cache(int(file_id), str(filename))
+            cleared = VideoProcessingService(MinIOService()).clear_derived_cache(
+                int(file_id), str(filename)
+            )
+            if getattr(cleared, "unverified", False) and unverified is not None:
+                unverified.append("derived_cache")
         except Exception as cache_err:  # noqa: BLE001
             all_deleted = False
             logger.warning(f"Derived-cache cleanup failed for file {file_id}: {cache_err}")
@@ -859,7 +873,47 @@ def _load_purge_plan(db: Session, file: MediaFile) -> dict[str, Any]:
             exc_info=True,
         )
         plan["cluster_read_failed"] = True
+    plan["shared_paths"] = _drop_shared_paths(db, plan)
     return plan
+
+
+_PATH_KEYS = ("storage_path", "thumbnail_path", "playback_path")
+
+
+def _drop_shared_paths(db: Session, plan: dict[str, Any]) -> list[str]:
+    """Remove from ``plan`` every object key ANOTHER media file still references.
+
+    Keys are per file by construction (``user_<uid>/file_<fid>/...``, ``media/<uid>/<uuid>``)
+    with one exception: a URL import's thumbnail is keyed by the source video
+    (``user_<uid>/<extractor>_<video_id>/thumbnail.jpg``, ``media_download_service``), so a
+    user who imports the same video twice has two rows naming one object. Deleting it (and,
+    since the delete removes every version, its whole history) with the first row would
+    destroy the second row's thumbnail. A key still referenced elsewhere is kept; the last
+    row to go deletes it.
+
+    Returns:
+        The keys kept because another row references them.
+    """
+    keys = {plan[k] for k in _PATH_KEYS if plan.get(k)}
+    if not keys:
+        return []
+    rows = (
+        db.query(MediaFile.storage_path, MediaFile.thumbnail_path, MediaFile.playback_path)
+        .filter(MediaFile.id != plan["file_id"])
+        .filter(
+            or_(
+                MediaFile.storage_path.in_(keys),
+                MediaFile.thumbnail_path.in_(keys),
+                MediaFile.playback_path.in_(keys),
+            )
+        )
+        .all()
+    )
+    shared = {value for row in rows for value in row if value in keys}
+    for k in _PATH_KEYS:
+        if plan.get(k) in shared:
+            plan[k] = None
+    return sorted(shared)
 
 
 def _speaker_impact_of_file(db: Session, file: MediaFile) -> "SpeakerImpact":
@@ -895,6 +949,7 @@ def _purge_external_copies(plan: dict[str, Any]) -> list[dict[str, Any]]:
     file_uuid = plan["file_uuid"]
     residual: list[dict[str, Any]] = []
 
+    unverified: list[str] = []
     storage_ok = delete_file_storage_artifacts(
         plan["file_id"],
         {
@@ -903,6 +958,7 @@ def _purge_external_copies(plan: dict[str, Any]) -> list[dict[str, Any]]:
             "thumbnail_path": plan["thumbnail_path"],
             "playback_path": plan.get("playback_path"),
         },
+        unverified,
     )
     if not storage_ok:
         residual.append(
@@ -910,6 +966,15 @@ def _purge_external_copies(plan: dict[str, Any]) -> list[dict[str, Any]]:
                 "stage": "storage",
                 "file_uuid": file_uuid,
                 "error": "one or more object-storage artifacts could not be deleted",
+            }
+        )
+
+    if unverified:
+        residual.append(
+            {
+                "stage": "storage_unverified",
+                "file_uuid": file_uuid,
+                "error": UNVERIFIED_VERSIONS_ERROR,
             }
         )
 
@@ -1101,7 +1166,14 @@ def purge_account_external_copies(plan: AccountPurgePlan) -> list[dict[str, Any]
         try:
             from app.services.minio_service import delete_file
 
-            delete_file(avatar_path)
+            if getattr(delete_file(avatar_path), "unverified", False):
+                residual.append(
+                    {
+                        "stage": "storage_unverified",
+                        "avatar_path": avatar_path,
+                        "error": UNVERIFIED_VERSIONS_ERROR,
+                    }
+                )
         except Exception as e:  # noqa: BLE001 — one avatar must never block the rest
             residual.append({"stage": "avatar", "avatar_path": avatar_path, "error": str(e)})
 

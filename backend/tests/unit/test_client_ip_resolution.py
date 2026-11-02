@@ -134,6 +134,31 @@ def test_real_ip_honored_only_from_trusted_proxy(monkeypatch):
     assert mod.resolve_client_ip(req) == "203.0.113.9"
 
 
+@pytest.mark.parametrize(
+    "bad",
+    ["not-an-ip", "1.2.3.4, 5.6.7.8", "fe80::1%eth0", "203.0.113.9:443", "999.1.1.1"],
+)
+def test_malformed_real_ip_falls_back_to_peer(monkeypatch, bad):
+    mod = _module_with_proxies(monkeypatch, "10.0.0.0/8")
+    req = _request("10.0.0.5", X_Real_IP=bad)
+
+    assert mod.resolve_client_ip(req) == "10.0.0.5"
+
+
+def test_real_ip_is_returned_stripped(monkeypatch):
+    mod = _module_with_proxies(monkeypatch, "10.0.0.0/8")
+    req = _request("10.0.0.5", X_Real_IP="  203.0.113.9  ")
+
+    assert mod.resolve_client_ip(req) == "203.0.113.9"
+
+
+def test_scoped_ipv6_forwarded_entry_falls_back_to_peer(monkeypatch):
+    mod = _module_with_proxies(monkeypatch, "10.0.0.0/8")
+    req = _request("10.0.0.5", X_Forwarded_For="fe80::1%eth0")
+
+    assert mod.resolve_client_ip(req) == "10.0.0.5"
+
+
 def test_malformed_forwarded_entry_falls_back_to_peer(monkeypatch):
     mod = _module_with_proxies(monkeypatch, "10.0.0.0/8")
     req = _request("10.0.0.5", X_Forwarded_For="not-an-ip")
@@ -195,3 +220,35 @@ def test_rate_limiter_uses_shared_resolver():
     from app.auth import rate_limit
 
     assert "resolve_client_ip" in inspect.getsource(rate_limit._get_key_func)
+
+
+@pytest.mark.parametrize(
+    ("given", "indexed", "unparsed"),
+    [
+        ("  203.0.113.9 ", "203.0.113.9", None),
+        ("fe80::1%eth0", None, "fe80::1%eth0"),
+        ("unknown", None, "unknown"),
+        ("2606:4700::1111", "2606:4700::1111", None),
+    ],
+)
+def test_audit_source_ip_is_stored_stripped_and_scope_ids_are_rejected(
+    monkeypatch, given, indexed, unparsed
+):
+    """The audit index maps ``source_ip`` as ``ip``: a zone id would reject the whole event."""
+    from app.auth.audit import AuditEventType
+    from app.auth.audit import AuditLogger
+    from app.auth.audit import AuditOutcome
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "AUDIT_LOG_ENABLED", True)
+    monkeypatch.setattr(settings, "AUDIT_LOG_TO_OPENSEARCH", True)
+    logger = AuditLogger()
+    events: list[dict] = []
+    monkeypatch.setattr(logger, "_index_to_opensearch", events.append)
+
+    logger.log(
+        event_type=AuditEventType.AUTH_LOGIN_SUCCESS, outcome=AuditOutcome.SUCCESS, source_ip=given
+    )
+
+    assert events[0]["source_ip"] == indexed
+    assert events[0]["details"].get("source_unparsed") == unparsed

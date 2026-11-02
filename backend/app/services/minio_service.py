@@ -4,6 +4,7 @@ import functools
 import io
 import logging
 import os
+from typing import TYPE_CHECKING
 from typing import BinaryIO
 from typing import Literal
 
@@ -20,6 +21,9 @@ from app.services import storage_presign_identity
 from app.services.storage_backend import clamp_presigned_expiry
 from app.services.storage_backend import rewrite_public_host
 from app.utils.content_disposition import attachment_header
+
+if TYPE_CHECKING:
+    from app.services.storage_versions import RemovalResult
 
 logger = logging.getLogger(__name__)
 
@@ -236,16 +240,26 @@ def get_file_url(object_name: str, expires: int = 0, content_type: str | None = 
         raise Exception(f"Error getting file URL: {e}") from e
 
 
-def delete_file(object_name: str):
-    """
-    Delete a file from MinIO
+def delete_file(object_name: str) -> "RemovalResult":
+    """Delete a media object completely: every version of it on a versioned bucket.
 
     Args:
-        object_name: Object name in MinIO
+        object_name: Object name in the media bucket.
+
+    Returns:
+        The removal count; its ``unverified`` is True when the bucket's versions could not
+        be read, so whether old versions remain is unknown (an erasure records that partial).
+
+    Raises:
+        Exception: Some version survived (a legal hold or retention, a refused call); the
+            message names what remains.
     """
+    from app.services.storage_versions import StorageDeleteIncompleteError
+    from app.services.storage_versions import remove_completely
+
     try:
-        minio_client.remove_object(bucket_name=settings.MEDIA_BUCKET_NAME, object_name=object_name)
-    except S3Error as e:
+        return remove_completely(minio_client, settings.MEDIA_BUCKET_NAME, names=[object_name])
+    except (S3Error, StorageDeleteIncompleteError) as e:
         raise Exception(f"Error deleting file: {e}") from e
 
 
@@ -934,24 +948,24 @@ class MinIOService:
             logger.warning(f"Could not compute prefix stats for {bucket_name}/{prefix}: {e}")
         return count, total
 
-    def delete_prefix(self, bucket_name: str, prefix: str) -> int:
-        """Delete every object under a prefix. Returns the number deleted. Best-effort."""
-        from minio.deleteobjects import DeleteObject
+    def delete_prefix(self, bucket_name: str, prefix: str) -> "RemovalResult":
+        """Delete every object under a prefix, every version of each. Returns the count removed.
 
-        deleted = 0
-        try:
-            names = [
-                obj.object_name
-                for obj in self.client.list_objects(bucket_name, prefix=prefix, recursive=True)
-            ]
-            if not names:
-                return 0
-            errors = self.client.remove_objects(bucket_name, (DeleteObject(n) for n in names))
-            failed = 0
-            for err in errors:
-                failed += 1
-                logger.warning(f"Failed to delete {err.name}: {err.code} {err.message}")
-            deleted = len(names) - failed
-        except Exception as e:
-            logger.warning(f"Could not delete prefix {bucket_name}/{prefix}: {e}")
-        return deleted
+        Raises:
+            storage_versions.StorageDeleteIncompleteError: Something under the prefix survived
+                (named in the error). It used to log and return a smaller count, so a purge of
+                burned-in video and extracted audio read as done with the bytes still stored.
+        """
+        from app.services.storage_versions import remove_completely
+
+        return remove_completely(self.client, bucket_name, prefix=prefix)
+
+    def delete_objects(self, bucket_name: str, names: list[str]) -> "RemovalResult":
+        """Delete the named objects, every version of each. Absent keys are not an error.
+
+        Raises:
+            storage_versions.StorageDeleteIncompleteError: A named object survived.
+        """
+        from app.services.storage_versions import remove_completely
+
+        return remove_completely(self.client, bucket_name, names=names)

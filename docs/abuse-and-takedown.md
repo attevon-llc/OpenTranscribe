@@ -488,6 +488,29 @@ instead), rotating the signing credential (invalidates every other user's unrela
 URLs, not just the taken-down file's), and renaming/moving the object key (conflicts with
 `legal_hold` blocking deletes, and isn't cleanly reversible on release).
 
+## Deleting from a versioned bucket (object lock): permissions
+
+Separate from the quarantine permissions above. Object lock, the storage half of a legal hold,
+only works on a versioned bucket, and on a versioned bucket a plain delete leaves every old
+version retrievable. Every delete path (file delete, GDPR erasure, derived-cache purge, storage
+orphan sweep) therefore goes through `services/storage_versions.remove_completely`, which removes
+every version and delete marker of a key and reports failure, naming what is left, when a version
+survives (a legal hold or retention period). It never bypasses a lock.
+
+| Action | Needed for |
+|---|---|
+| `s3:ListBucket` | finding the keys a delete selects and confirming they are gone |
+| `s3:DeleteObject` | deleting the current object |
+| `s3:GetBucketVersioning` | whether versions can exist (a versioned answer is cached per bucket for 5 minutes) |
+| `s3:ListBucketVersions` | listing every version and delete marker of a key |
+| `s3:DeleteObjectVersion` | removing each version |
+
+Without the two version reads the delete runs but is **unverified**: an ERROR says old versions
+could not be checked and a purge or erasure records it as partial, never complete. Deleting every
+version is irreversible, including by the orphan sweep. A refused version listing on a bucket known to be versioned IS a failure. A key
+another media file still references (a URL import's per-video thumbnail) is never deleted with
+the first file; the last one to go deletes it.
+
 ## Configuration reference
 
 | Setting | Default | Purpose |

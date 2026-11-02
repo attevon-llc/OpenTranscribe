@@ -1300,9 +1300,20 @@ def clear_cache_now(
     """
     ctx.bypass.require_deployment_scope("Clearing the derived cache")
     from app.services import cache_management_service
+    from app.services.storage_versions import StorageDeleteIncompleteError
 
     logger.info(f"Manual derived-cache clear by admin {current_user.email}")
-    deleted = cache_management_service.clear_derived_cache()
+    try:
+        deleted = cache_management_service.clear_derived_cache()
+    except StorageDeleteIncompleteError as e:
+        logger.error(f"Derived-cache clear left objects behind: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                f"{len(e.remaining)} cached object(s) could not be removed (a storage lock or "
+                "a refused delete). The server log names them; try again after resolving it."
+            ),
+        ) from e
     return CacheClearResponse(deleted=deleted)
 
 

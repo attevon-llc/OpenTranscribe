@@ -130,31 +130,18 @@ def reclaim_legacy_derived_cache() -> int:
     the bucket root (no ``/`` in the key), leaving the managed ``derived/`` and
     ``bulk/`` prefixes intact. Safe: these are regenerable. Returns the count removed.
     """
-    from minio.deleteobjects import DeleteObject
+    from app.services.storage_versions import remove_completely
 
     service = VideoProcessingService(MinIOService())
     client = service.minio_service.client
     bucket = service.cache_bucket
-    try:
-        legacy = [
-            obj.object_name
-            for obj in client.list_objects(bucket, recursive=True)
-            if "/" not in (obj.object_name or "")
-        ]
-    except Exception as e:
-        logger.warning(f"Could not list legacy cache objects in {bucket}: {e}")
-        return 0
-    if not legacy:
-        return 0
-    failed = 0
-    try:
-        for err in client.remove_objects(bucket, (DeleteObject(n) for n in legacy)):
-            failed += 1
-            logger.warning(f"Failed to reclaim legacy object {err.name}: {err.code} {err.message}")
-    except Exception as e:
-        logger.warning(f"Legacy cache reclaim error in {bucket}: {e}")
-        return 0
-    deleted = len(legacy) - failed
+    legacy = [
+        obj.object_name
+        for obj in client.list_objects(bucket, recursive=True)
+        if "/" not in (obj.object_name or "")
+    ]
+    # Raises on any survivor; the caller leaves the one-time flag unset so the next start retries.
+    deleted = remove_completely(client, bucket, names=legacy)
     logger.info(f"Reclaimed {deleted} legacy root-level derived cache object(s) from {bucket}")
     return deleted
 

@@ -106,6 +106,7 @@ from app.models.user import User
 from app.models.watch_source import WatchSource
 from app.services import erasure_ledger_service as ledger
 from app.services.file_cleanup_service import purge_media_file
+from app.services.storage_versions import UNVERIFIED_VERSIONS_ERROR
 
 logger = logging.getLogger(__name__)
 
@@ -411,7 +412,8 @@ def _erase_avatar_objects(avatar_paths: list[str], errors: list[dict[str, Any]])
 
     for path in avatar_paths:
         try:
-            delete_file(path)
+            if getattr(delete_file(path), "unverified", False):
+                errors.append({"stage": "storage_unverified", "error": UNVERIFIED_VERSIONS_ERROR})
         except Exception as e:  # noqa: BLE001 — record, don't raise; one avatar never blocks the rest
             errors.append(
                 {"stage": "avatar", "error": f"avatar delete failed ({type(e).__name__})"}

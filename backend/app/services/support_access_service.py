@@ -178,6 +178,10 @@ def record_use(
         user_id=actor_user_id,
         organization_id=organization_id,
         target_user_id=owner_user_id,
+        # Typed top-level as well as in ``details`` (#1277): "everything that happened to this
+        # file" is a ``resource_uuid`` filter, and a staff access through a grant must answer it.
+        resource_type=resource_type,
+        resource_uuid=str(resource_uuid) if resource_uuid else None,
         details={
             "grant_uuid": grant.uuid,
             "access_level": grant.access_level,

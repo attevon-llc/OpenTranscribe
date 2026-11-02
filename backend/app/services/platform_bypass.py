@@ -253,6 +253,8 @@ class PlatformBypass:
             user_id=self.user.id,
             organization_id=org_id,
             target_user_id=owner_id,
+            resource_type=resource_type,
+            resource_uuid=str(resource_uuid) if resource_uuid else None,
             details={"resource_type": resource_type, "resource_uuid": resource_uuid, "need": need},
         )
 

@@ -22,6 +22,7 @@ from app.core.config import settings
 # empty here and every audit event invented a new uuid4 (see
 # app/core/request_context.py).
 from app.core.request_context import request_id_var
+from app.utils.client_ip import parse_ip
 
 #: Writer-client limits. Indexing runs synchronously inside the request that produced
 #: the event, so a slow OpenSearch must cost the request at most this long, once —
@@ -368,7 +369,15 @@ class AuditLogger:
             # Forget the index: if it was deleted underneath us, the next write
             # re-creates it with the proper mapping instead of trusting the cache.
             self._known_indices.discard(index_name)
-            self._logger.warning(f"Failed to index audit event to OpenSearch: {e}")
+            # A 400 is the document itself being refused (a field type clash): it will never
+            # index, so the event is OUT of the searchable trail for good, not delayed. That is
+            # an ERROR an operator must see, not a transient WARNING.
+            rejected = getattr(e, "status_code", None) == 400
+            log = self._logger.error if rejected else self._logger.warning
+            log(
+                f"Failed to index audit event {event.get('event_type')} to OpenSearch"
+                f"{' (document rejected; it is only in the fallback file)' if rejected else ''}: {e}"
+            )
             # Use fallback logging if enabled
             if settings.AUDIT_LOG_FALLBACK_ENABLED:
                 self._logger.warning("Using fallback file logging for audit event")
@@ -500,6 +509,17 @@ class AuditLogger:
         if not settings.AUDIT_LOG_ENABLED:
             return
 
+        # ``source_ip`` is mapped as an ``ip``: a value that is not one ("unknown" from a proxy,
+        # a hostname, a test client's name) makes OpenSearch reject the WHOLE event, which then
+        # never reaches the searchable trail. Keep the raw value in ``details`` instead.
+        unparsed_source: str | None = None
+        if source_ip is not None:
+            parsed_ip = parse_ip(source_ip)
+            if parsed_ip is None:
+                unparsed_source, source_ip = str(source_ip)[:255], None
+            else:
+                source_ip = parsed_ip
+
         event = {
             "timestamp": datetime.now(UTC).isoformat(),
             "request_id": request_id_var.get() or str(uuid.uuid4()),
@@ -513,7 +533,11 @@ class AuditLogger:
             "source_ip": source_ip,
             "user_agent": user_agent,
             "error_code": error_code,
-            "details": details or {},
+            "details": (
+                {**(details or {}), "source_unparsed": unparsed_source}
+                if unparsed_source is not None
+                else details or {}
+            ),
         }
 
         # Omitted rather than written as null when unset: `details` is a dynamic

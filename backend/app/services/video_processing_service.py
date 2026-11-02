@@ -20,6 +20,7 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import redis.asyncio as redis
 
@@ -34,6 +35,9 @@ from app.services.redaction.export_policy import ExportRedactionNotReadyError
 from app.services.redaction.export_policy import export_masking_is_pending
 from app.services.redaction.export_policy import export_policy_fingerprint
 from app.services.subtitle_service import SubtitleService
+
+if TYPE_CHECKING:
+    from app.services.storage_versions import RemovalResult
 
 logger = logging.getLogger(__name__)
 
@@ -1070,7 +1074,7 @@ class VideoProcessingService:
             logger.warning(f"Could not list masked derived renders for {filename}: {e}")
             return []
 
-    def clear_derived_cache(self, file_id: int, filename: str) -> None:
+    def clear_derived_cache(self, file_id: int, filename: str) -> "RemovalResult":
         """Delete a file's derived-cache objects. **Takes no DB session.**
 
         Five MinIO round trips plus one listing, so callers must not be holding a
@@ -1082,19 +1086,21 @@ class VideoProcessingService:
         Args:
             file_id: Internal media file id.
             filename: The file's original filename.
+
+        Returns:
+            The removal count; ``unverified`` is True when old versions could not be checked.
+
+        Raises:
+            storage_versions.StorageDeleteIncompleteError: A cached copy survived (named). This
+                used to be logged at DEBUG and dropped, so an erasure that left a burned-in
+                video of the transcript in storage still audited as complete.
         """
         keys = self.derived_cache_keys(file_id, filename) + self._masked_video_cache_keys(
             file_id, filename
         )
-        for cache_key in keys:
-            try:
-                self.minio_service.delete_object(self.cache_bucket, cache_key)
-                logger.info(f"Cleared cache for {cache_key}")
-            except Exception as cache_error:
-                # Cache file might not exist, which is fine, but we should log for debugging
-                logger.debug(
-                    f"Cache file {cache_key} not found or could not be deleted: {cache_error}"
-                )
+        removed = self.minio_service.delete_objects(self.cache_bucket, keys)
+        logger.info(f"Cleared {removed} derived cache object(s) for file {file_id}")
+        return removed
 
     def check_ffmpeg_availability(self) -> bool:
         """Check if ffmpeg is available on the system."""

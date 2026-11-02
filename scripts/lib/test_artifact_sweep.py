@@ -88,7 +88,7 @@ TEST_INDEX_SPECS: list[ArtifactSpec] = [
         rf'test_(search_filters_quarantine|kw_latency|chat_cache_revoke|digest_plane'
         rf'|label_drift|summary_plane|summary_plane_semantic|completeness|fusion|chunk_prune'
         rf'|rename_chunks|rename_sites|speaker_id_fields|reindex666_chunks'
-        rf'|reindex666_transcripts|org_collection_retrieval|audit_org_scope|priv_chunks)_{_H12}',
+        rf'|reindex666_transcripts|org_collection_retrieval|audit_org_scope|compliance_audit|priv_chunks)_{_H12}',
         TIER_A,
         'integration/test_*_opensearch.py and siblings (one throwaway chunks index each)',
     ),
@@ -173,6 +173,12 @@ TEST_BUCKET_SPECS: list[ArtifactSpec] = [
         rf'e2e-legacy-audio-{_H12}',
         TIER_A,
         'integration/test_legacy_audio_cache_reclaim_live.py',
+    ),
+    _spec(
+        'versioned-erasure',
+        rf'e2e-versioned-erasure-{_H12}',
+        TIER_A,
+        'integration/test_versioned_bucket_erasure.py',
     ),
 ]
 

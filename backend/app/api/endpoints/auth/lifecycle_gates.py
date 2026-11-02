@@ -123,6 +123,16 @@ def _audit_lifecycle_denial(
     )
 
 
+def _expired_at(user: User) -> datetime | None:
+    """``account_expires_at`` (timezone-aware) when it has passed, else ``None``."""
+    expires_at = getattr(user, "account_expires_at", None)
+    if expires_at is None:
+        return None
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    return expires_at if datetime.now(UTC) >= expires_at else None
+
+
 def _enforce_account_expiry(user: User, request: Request | None) -> None:
     """Refuse a time-boxed account past its ``account_expires_at``.
 
@@ -132,13 +142,8 @@ def _enforce_account_expiry(user: User, request: Request | None) -> None:
     Raises:
         HTTPException: 403 with ``detail.code == account_expired``.
     """
-    expires_at = getattr(user, "account_expires_at", None)
+    expires_at = _expired_at(user)
     if expires_at is None:
-        return
-
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=UTC)
-    if datetime.now(UTC) < expires_at:
         return
 
     _audit_lifecycle_denial(
@@ -162,6 +167,50 @@ def _enforce_account_expiry(user: User, request: Request | None) -> None:
             ),
         },
     )
+
+
+def _approval_refusal(user: User, db: Session) -> tuple[str, str] | None:
+    """``(detail.code, message)`` when the approval gate refuses *user*, else ``None``.
+
+    An ``approval_status`` outside the closed set is refused as a rejection: it has
+    no self-service remedy either.
+
+    Raises:
+        HTTPException: 503 ``auth_config_unavailable`` for a pending account when the
+            setting cannot be read.
+    """
+    from app.api.endpoints.auth.approval_gate import approval_enforced
+    from app.auth.approval import is_pending
+    from app.auth.approval import is_rejected
+    from app.auth.approval import is_unrecognised
+
+    if is_rejected(user) or is_unrecognised(user):
+        return (
+            ERROR_CODE_ACCOUNT_REJECTED,
+            "This account was not approved. Contact an administrator.",
+        )
+    if is_pending(user) and approval_enforced(db):
+        return (
+            ERROR_CODE_ACCOUNT_PENDING_APPROVAL,
+            "This account is awaiting administrator approval.",
+        )
+    return None
+
+
+def admitted_on_optional_auth(user: User, db: Session) -> bool:
+    """Whether an optional-auth route may treat *user* as signed in.
+
+    Applies only the approval and expiry gates, without raising or auditing: the
+    caller is served as anonymous rather than refused, and these routes run on
+    every page load. The banner and password-change gates are left out because
+    both have a self-service remedy whose screens run in that state.
+    """
+    if _expired_at(user) is not None:
+        return False
+    try:
+        return _approval_refusal(user, db) is None
+    except HTTPException:
+        return False
 
 
 def _enforce_approval(user: User, request: Request | None, db: Session) -> None:
@@ -189,22 +238,10 @@ def _enforce_approval(user: User, request: Request | None, db: Session) -> None:
             ``account_rejected``; 503 ``auth_config_unavailable`` for a pending
             account when the setting cannot be read.
     """
-    from app.api.endpoints.auth.approval_gate import approval_enforced
-    from app.auth.approval import is_pending
-    from app.auth.approval import is_rejected
-
-    if is_rejected(user):
-        code, message = (
-            ERROR_CODE_ACCOUNT_REJECTED,
-            "This account was not approved. Contact an administrator.",
-        )
-    elif is_pending(user) and approval_enforced(db):
-        code, message = (
-            ERROR_CODE_ACCOUNT_PENDING_APPROVAL,
-            "This account is awaiting administrator approval.",
-        )
-    else:
+    refusal = _approval_refusal(user, db)
+    if refusal is None:
         return
+    code, message = refusal
 
     # Audited, unlike the banner gate: it fires only for individually flagged
     # accounts, so volume is bounded, and an operator reviewing the queue wants it.

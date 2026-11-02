@@ -22,6 +22,7 @@ from app.services.task_recovery_retry import TaskRecoveryRetryMixin
 from app.utils.error_classification import get_retry_delay
 from app.utils.error_classification import should_retry
 from app.utils.error_classification import stored_category
+from app.utils.file_retry import reset_file_for_retry
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
 
@@ -210,7 +211,8 @@ class TaskRecoveryStuckMixin(TaskRecoveryRetryMixin):
 
         For files stuck in PROCESSING:
         - If transcription completed: Mark as COMPLETED (no segment deletion)
-        - If transcription incomplete: Reset to PENDING and delete segments
+        - If transcription incomplete: Reset to PENDING through ``reset_file_for_retry``, which
+          leaves a held file or an unregenerable transcript untouched
 
         Args:
             db: Database session
@@ -239,8 +241,10 @@ class TaskRecoveryStuckMixin(TaskRecoveryRetryMixin):
                         f"{media_file.filename}"
                     )
 
-                    # Delete existing transcript segments to prevent duplicates on retry
-                    self._cleanup_transcript_segments(db, int(media_file.id))
+                    # The guarded reset refuses a held file or an unregenerable transcript;
+                    # the file then stays as found.
+                    if not reset_file_for_retry(db, int(media_file.id)):
+                        continue
 
                     update_media_file_status(db, int(media_file.id), FileStatus.PENDING)
                     stats["files_reset"] += 1

@@ -35,6 +35,8 @@ from app.services.protected_media_providers import PROTECTED_MEDIA_PROVIDERS
 from app.services.protected_media_providers import ProtectedMediaProvider
 from app.utils.thumbnail import generate_and_upload_thumbnail
 from app.utils.url_validation import is_safe_url
+from app.utils.url_validation import pinned_requests_session
+from app.utils.url_validation import resolve_pinned_target
 
 logger = logging.getLogger(__name__)
 
@@ -1427,21 +1429,28 @@ class MediaDownloadService:
                 logger.warning("No thumbnail URL found in media metadata")
                 return None
 
-            # `is_safe_url` above (`:846`) only validates the SUBMITTED page URL — this is
-            # yt-dlp's EXTRACTED metadata for that page, which a malicious page (via a
-            # generic extractor) can point at an arbitrary internal/link-local target. Same
-            # SSRF class as the submitted-URL check; same guard, applied to what is actually
-            # fetched.
-            safe, reason = is_safe_url(thumbnail_url)
-            if not safe:
+            # `is_valid_media_url` only validates the SUBMITTED page URL — this is yt-dlp's
+            # EXTRACTED metadata for that page, which the page (via a generic extractor) can
+            # point at an arbitrary internal/link-local target. The address checked is the
+            # address dialled, and a redirect is not followed: a pin covers one hop.
+            target, reason = resolve_pinned_target(thumbnail_url)
+            if target is None:
                 logger.warning(
                     "SSRF blocked: %s for thumbnail URL: %s", reason, thumbnail_url[:200]
                 )
                 return None
 
-            # Download the thumbnail
-            response = requests.get(thumbnail_url, timeout=30)
-            response.raise_for_status()
+            with pinned_requests_session(target) as session:
+                response = session.get(
+                    target.url, headers=target.headers, timeout=30, allow_redirects=False
+                )
+            if response.status_code != 200:
+                logger.warning(
+                    "Thumbnail fetch returned HTTP %s for: %s",
+                    response.status_code,
+                    thumbnail_url[:200],
+                )
+                return None
             thumbnail_data = response.content
 
             if not thumbnail_data:

@@ -101,7 +101,7 @@ def test_create_resolves_variants_onto_one_row_and_a_near_match_onto_another(
     again = [create(n)["uuid"] for n in (f"{stem}-q3-earnings", f"{stem.upper()}_Q3 EARNINGS")]
     near = create(f"{stem}-q4-earnings")
 
-    assert set(first) == {"uuid", "name", "source", "ownership"}
+    assert set(first) == {"uuid", "name", "source", "ownership", "can_write"}
     assert (first["name"], first["source"], first["ownership"]) == (
         f"{stem}-q3-earnings",
         "manual",
@@ -265,6 +265,7 @@ def test_rename_route_plain_held_and_confirmed(
         "name": new_name,
         "source": "manual",
         "ownership": "mine",
+        "can_write": True,
     }
     assert (plain.json()["merged"], plain.json()["requires_confirmation"]) == (False, False)
 

@@ -108,7 +108,7 @@ def test_list_row_shape(client, db_session, normal_user, user_token_headers):
     rows = client.get("/api/tags", headers=user_token_headers).json()
 
     (row,) = [r for r in rows if r["uuid"] == str(tag.uuid)]
-    assert set(row) == {"uuid", "name", "source", "ownership", "usage_count"}
+    assert set(row) == {"uuid", "name", "source", "ownership", "can_write", "usage_count"}
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +138,7 @@ def test_unfiltered_personal_list_is_stored_in_the_cache_as_json_dicts(
             "name": tag.name,
             "source": "manual",
             "ownership": "mine",
+            "can_write": True,
             "usage_count": 0,
         }
     ]
@@ -303,8 +304,9 @@ def test_a_collisions_call_with_nothing_to_repair_does_not_commit(
 def test_create_in_personal_scope_reports_mine(client, user_token_headers):
     body = client.post("/api/tags", headers=user_token_headers, json={"name": word("own")}).json()
 
-    assert set(body) == {"uuid", "name", "source", "ownership"}
+    assert set(body) == {"uuid", "name", "source", "ownership", "can_write"}
     assert body["ownership"] == "mine"
+    assert body["can_write"] is True
 
 
 def test_create_returning_a_colleagues_org_tag_reports_what_the_list_reports(client, org_world):

@@ -15,6 +15,7 @@ both are needed, so the two can never disagree.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 from typing import Final
 from typing import Literal
@@ -81,6 +82,34 @@ def tag_in_tenant(tag: Any, user_id: int, organization_id: int | None) -> bool:
     if organization_id is not None:
         return bool(tag.organization_id == organization_id)
     return tag.organization_id is None and tag.user_id == user_id
+
+
+@dataclass(frozen=True)
+class TagWriteRights:
+    """Who may rename, merge, delete or share which tag, for one request.
+
+    The one rule the write routes enforce and the read routes report as
+    ``can_write``. A system tag needs ``can_write_system``. Any other tag must
+    be in the request tenant and be the caller's own, or an organization tag
+    with the caller an org admin. ``refused`` turns every write off (a support
+    grant, whose requests may not change tenant content).
+    """
+
+    user_id: int
+    organization_id: int | None
+    can_write_system: bool
+    is_org_admin: bool = False
+    refused: bool = False
+
+    def permits(self, tag: Any) -> bool:
+        """Whether the caller may change ``tag``."""
+        if self.refused:
+            return False
+        if is_system_tag(tag):
+            return self.can_write_system
+        return tag_in_tenant(tag, self.user_id, self.organization_id) and (
+            tag.user_id == self.user_id or (tag.organization_id is not None and self.is_org_admin)
+        )
 
 
 def tenant_first() -> tuple[InstrumentedAttribute[int | None], InstrumentedAttribute[int | None]]:

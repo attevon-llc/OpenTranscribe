@@ -5,6 +5,11 @@ file by file (:func:`apply_tag_to_file`), and refreshes caches and the search
 index once for the files that changed (:func:`refresh_tagged_files`). Each file
 gets its own outcome: a refusal or a database error on one file never fails the
 batch, and earlier files keep their change.
+
+A tag the batch itself inserted is committed up front, so a later per-file
+rollback cannot take it away, and its id is noted on the session. The closing
+:func:`refresh_tagged_files` deletes it again when no file ended up carrying
+it, so a batch where every file failed leaves no unused tag behind.
 """
 
 from __future__ import annotations
@@ -14,11 +19,14 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
 
+from sqlalchemy import exists
 from sqlalchemy.orm import Session
 
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.core.exceptions import AccessDeniedError
 from app.models.media import MediaFile
+from app.models.sharing import TagShare
+from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.services.permission_service import PermissionService
 from app.services.platform_bypass import PlatformBypass
@@ -27,10 +35,10 @@ from app.services.tag_files import remove_file_tag
 from app.services.tag_scope import is_system_tag
 from app.services.tag_service import InvalidTagNameError
 from app.services.tag_service import clean_tag_name
+from app.services.tag_service import insert_tag_or_reread
 from app.services.tag_service import lookup_existing_tag
 from app.services.tag_service import normalize_tag_name
 from app.services.tag_service import on_tags_changed
-from app.services.tag_service import resolve_or_create_tag
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +53,9 @@ PERMISSION_ERROR: Final = "PERMISSION_DENIED"
 MUTATION_ERROR: Final = "TAG_UPDATE_FAILED"
 TENANT_MISMATCH_ERROR: Final = "TAG_TENANT_MISMATCH"
 TENANT_MISMATCH_MESSAGE: Final = "This tag belongs to a different organization than the file"
+
+#: ``Session.info`` key holding the id of the tag the current batch created.
+_CREATED_TAG_KEY: Final = "tag_bulk.created_tag_id"
 
 
 class BulkTagOutcome(StrEnum):
@@ -87,7 +98,8 @@ def resolve_bulk_tag(
 
     Removing only looks the name up, so a typo leaves no new row and may yield
     None. Adding resolves or creates, then commits so the row survives a later
-    per-file rollback.
+    per-file rollback; a row this request inserted is noted for
+    :func:`refresh_tagged_files`.
 
     Raises:
         InvalidTagNameError: The name is missing or empty once normalized.
@@ -96,16 +108,24 @@ def resolve_bulk_tag(
     normalized = normalize_tag_name(cleaned)
     if not normalized:
         raise InvalidTagNameError("Tag name is required")
+    existing = lookup_existing_tag(db, normalized, cleaned, user_id, organization_id)
     if action == REMOVE_TAG_ACTION:
-        return lookup_existing_tag(db, normalized, cleaned, user_id, organization_id)
-    tag = resolve_or_create_tag(
-        db,
-        cleaned,
-        user_id=user_id,
-        organization_id=organization_id,
-        source=TAG_SOURCE_MANUAL,
-    )
+        return existing
+    inserted = False
+    tag = existing
+    if tag is None:
+        tag, inserted = insert_tag_or_reread(
+            db,
+            cleaned,
+            normalized,
+            user_id=user_id,
+            organization_id=organization_id,
+            source=TAG_SOURCE_MANUAL,
+        )
     db.commit()
+    # Only a row this request inserted; a race winner belongs to the request that won.
+    if inserted:
+        db.info[_CREATED_TAG_KEY] = tag.id
     return tag
 
 
@@ -217,8 +237,27 @@ def apply_tag_to_file(
     return result
 
 
+def _discard_unattached_created_tag(db: Session) -> None:
+    """Delete the tag this batch created if no file carries it and nobody shares it."""
+    tag_id = db.info.pop(_CREATED_TAG_KEY, None)
+    if tag_id is None:
+        return
+    unattached = (
+        db.query(Tag)
+        .filter(
+            Tag.id == tag_id,
+            ~exists().where(FileTag.tag_id == Tag.id),
+            ~exists().where(TagShare.tag_id == Tag.id),
+        )
+        .delete(synchronize_session="fetch")
+    )
+    db.commit()
+    if unattached:
+        logger.info(f"Bulk tag batch attached tag {tag_id} to no file; removed it")
+
+
 def refresh_tagged_files(db: Session, changed_file_uuids: list[str], *, user_id: int) -> list[int]:
-    """Run the change hook once for the batch's changed files.
+    """Close the batch: drop an unused created tag, then run the change hook once.
 
     Called even with no changed files: a tag created for the batch still needs
     the caller's cached tag list dropped. Unknown uuids are ignored.
@@ -226,6 +265,7 @@ def refresh_tagged_files(db: Session, changed_file_uuids: list[str], *, user_id:
     Returns:
         The internal ids handed to the reindex.
     """
+    _discard_unattached_created_tag(db)
     ids: list[int] = []
     if changed_file_uuids:
         rows = db.query(MediaFile.uuid, MediaFile.id).filter(MediaFile.uuid.in_(changed_file_uuids))

@@ -18441,6 +18441,12 @@
       "Tag": {
         "description": "A tag as served by every tag-carrying response.",
         "properties": {
+          "can_write": {
+            "default": false,
+            "description": "Whether the caller may rename, merge, delete or share this tag. Computed by the tag endpoints with the rule their write routes enforce; false where a response does not compute it.",
+            "title": "Can Write",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -18498,6 +18504,12 @@
       "TagClusterMember": {
         "description": "A tag in a cluster of rows that share one normalized name.",
         "properties": {
+          "can_write": {
+            "default": false,
+            "description": "Whether the caller may rename, merge, delete or share this tag. Computed by the tag endpoints with the rule their write routes enforce; false where a response does not compute it.",
+            "title": "Can Write",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -18552,6 +18564,12 @@
       "TagClusterSuggestion": {
         "description": "A near-match tag offered next to a cluster; never a member of it.",
         "properties": {
+          "can_write": {
+            "default": false,
+            "description": "Whether the caller may rename, merge, delete or share this tag. Computed by the tag endpoints with the rule their write routes enforce; false where a response does not compute it.",
+            "title": "Can Write",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -18788,6 +18806,12 @@
       "TagOnSelection": {
         "description": "A tag carried by at least one file of a gallery selection.",
         "properties": {
+          "can_write": {
+            "default": false,
+            "description": "Whether the caller may rename, merge, delete or share this tag. Computed by the tag endpoints with the rule their write routes enforce; false where a response does not compute it.",
+            "title": "Can Write",
+            "type": "boolean"
+          },
           "file_count": {
             "default": 0,
             "description": "Selected files that carry the tag.",
@@ -18953,6 +18977,12 @@
       "TagWithCount": {
         "description": "A tag in the caller's list, with how many of their files carry it.",
         "properties": {
+          "can_write": {
+            "default": false,
+            "description": "Whether the caller may rename, merge, delete or share this tag. Computed by the tag endpoints with the rule their write routes enforce; false where a response does not compute it.",
+            "title": "Can Write",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"

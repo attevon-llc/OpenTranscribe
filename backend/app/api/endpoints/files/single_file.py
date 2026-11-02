@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
+from app.api.endpoints.tags._common import _write_rights
 from app.api.error_handlers import ErrorHandler
 from app.auth.audit_events import AuditEventType
 from app.core.env import env_bool
@@ -92,6 +93,7 @@ def get_media_file(
         organization_id=ctx.org_id,
         bypass=ctx.bypass,
         reveal_hold_uuids=ctx.is_org_admin,
+        tag_rights=_write_rights(ctx, ctx.user.id),
     )
     # After the read succeeded, so a refused or missing file is never recorded as viewed.
     # Thumbnails, captions, the waveform and segment pages are part of this view.

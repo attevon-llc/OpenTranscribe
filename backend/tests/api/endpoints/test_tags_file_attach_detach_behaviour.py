@@ -139,7 +139,7 @@ def test_attach_records_a_manual_association_and_a_manual_tag(
     assert (tag.source, tag.user_id) == ("manual", normal_user.id)
 
 
-def test_attach_response_carries_only_uuid_name_source_ownership(
+def test_attach_response_carries_only_the_canonical_tag_fields(
     client, db_session, normal_user, user_token_headers, reindex
 ):
     media_file = make_file(db_session, normal_user)
@@ -148,8 +148,9 @@ def test_attach_response_carries_only_uuid_name_source_ownership(
         _attach_url(media_file), headers=user_token_headers, json={"name": word("shape")}
     ).json()
 
-    assert set(body) == {"uuid", "name", "source", "ownership"}
+    assert set(body) == {"uuid", "name", "source", "ownership", "can_write"}
     assert body["ownership"] == "mine"
+    assert body["can_write"] is True
 
 
 # ---------------------------------------------------------------------------

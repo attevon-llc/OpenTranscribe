@@ -36,6 +36,7 @@ from app.services.formatting_service import FormattingService
 from app.services.platform_bypass import PlatformBypass
 from app.services.speaker_provenance_view import ProvenanceViewer
 from app.services.speaker_status_service import SpeakerStatusService
+from app.services.tag_scope import TagWriteRights
 from app.services.tag_scope import tag_ownership
 from app.services.tag_scope import tenant_bound_or_system
 
@@ -52,11 +53,15 @@ logger = logging.getLogger(__name__)
 
 
 def get_file_tags(
-    db: Session, file_id: int, user_id: int, organization_id: int | None
+    db: Session,
+    file_id: int,
+    user_id: int,
+    organization_id: int | None,
+    rights: TagWriteRights | None = None,
 ) -> list[TagSchema]:
     """Get the tags attached to a media file as full tag objects.
 
-    Returns the same ``{uuid, name, source, ownership}`` shape ``/api/tags`` serves, so
+    Returns the same ``{uuid, name, source, ownership, can_write}`` shape ``/api/tags`` serves, so
     the file-detail payload and the tag endpoints agree on one definition of a tag.
 
     Only tags bound to ``organization_id`` (the request tenant) or system tags are
@@ -79,6 +84,8 @@ def get_file_tags(
         file_id: Internal media file ID.
         user_id: The caller, for the ownership classification.
         organization_id: The request tenant (None = personal).
+        rights: The request's tag write rights, for ``can_write``; without
+            them every tag reports false.
 
     Returns:
         Tag schemas for the file.
@@ -96,6 +103,7 @@ def get_file_tags(
                 "name": tag.name,
                 "source": tag.source,
                 "ownership": tag_ownership(tag, user_id),
+                "can_write": rights is not None and rights.permits(tag),
             }
         )
         for tag in tags
@@ -389,6 +397,7 @@ def get_media_file_detail(
     organization_id: OrgScope = UNSCOPED,
     bypass: PlatformBypass = PlatformBypass.none(),
     reveal_hold_uuids: bool = False,
+    tag_rights: TagWriteRights | None = None,
 ) -> MediaFileDetail:
     """
     Get detailed media file information including tags, analytics, and formatted fields.
@@ -402,6 +411,7 @@ def get_media_file_detail(
         bypass: The request's platform bypass (``ctx.bypass``).
         reveal_hold_uuids: Include the organization hold uuids in ``hold`` (the caller
             administers the file's organization). Who holds the file is shown to everyone.
+        tag_rights: The request's tag write rights, reported as each tag's ``can_write``.
 
     Returns:
         MediaFileDetail object with all computed and formatted data
@@ -430,7 +440,7 @@ def get_media_file_detail(
         tag_tenant = (
             db_file.organization_id if isinstance(organization_id, _Unscoped) else organization_id
         )
-        tags = get_file_tags(db, file_id, current_user.id, tag_tenant)
+        tags = get_file_tags(db, file_id, current_user.id, tag_tenant, tag_rights)
         collections = get_file_collections(
             db, file_id, current_user.id, organization_id=organization_id
         )

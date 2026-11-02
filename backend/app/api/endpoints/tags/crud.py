@@ -19,6 +19,8 @@ from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.tags._common import _invalid_name
 from app.api.endpoints.tags._common import _tag_not_found
 from app.api.endpoints.tags._common import _tag_response
+from app.api.endpoints.tags._common import _writable_uuids
+from app.api.endpoints.tags._common import _write_rights
 from app.api.endpoints.tags._common import router
 from app.core.config import settings
 from app.core.exceptions import DomainError
@@ -69,7 +71,7 @@ def create_tag(
     db.commit()
     db.refresh(tag)
     on_tags_changed(db, user_id=current_user.id)
-    return _tag_response(tag, current_user.id)
+    return _tag_response(tag, _write_rights(ctx, current_user.id))
 
 
 @router.get("", response_model=list[TagWithCount])
@@ -89,12 +91,15 @@ def list_tags(
 
     The unfiltered personal list is served from a short-lived cache.
     """
+    rights = _write_rights(ctx, current_user.id)
     cacheable = (
         settings.READ_CACHE_ENABLED
         and ctx.org_id is None
         and not unused
         and not colliding
         and scope == SCOPE_ALL
+        # Rows carry the request's write rights; refused ones must not reach the user's cache.
+        and not rights.refused
     )
     cache_key = f"cache:tags:{current_user.id}"
     if cacheable:
@@ -110,7 +115,10 @@ def list_tags(
         colliding=colliding,
         scope=scope,
     )
+    writable = _writable_uuids(db, [entry.uuid for entry in entries], rights)
     rows = [TagWithCount.model_validate(entry, from_attributes=True) for entry in entries]
+    for row in rows:
+        row.can_write = row.uuid in writable
     if cacheable:
         redis_cache.set(cache_key, [row.model_dump(mode="json") for row in rows], ttl=TTL_TAGS)
     return rows
@@ -124,7 +132,8 @@ def list_unused_tags(
 ):
     """Your tenant's tags and system tags that none of your accessible files carry."""
     rows = list_unused_tag_rows(db, user_id=current_user.id, organization_id=ctx.org_id)
-    return [_tag_response(tag, current_user.id) for tag in rows]
+    rights = _write_rights(ctx, current_user.id)
+    return [_tag_response(tag, rights) for tag in rows]
 
 
 @router.delete(
@@ -224,7 +233,7 @@ def add_tag_to_file(
 
     file_id = media_file.id
     added = add_file_tag(db, file_id, tag.id)
-    response = _tag_response(tag, current_user.id)
+    response = _tag_response(tag, _write_rights(ctx, current_user.id))
     db.commit()
     if added:
         on_tags_changed(db, [file_id], user_id=current_user.id)

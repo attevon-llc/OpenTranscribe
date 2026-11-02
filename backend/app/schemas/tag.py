@@ -2,7 +2,8 @@
 
 A tag is identified on the wire by its ``uuid``; the integer id never leaves the
 server. ``ownership`` is always computed for the caller by
-``tag_scope.tag_ownership`` and passed in explicitly.
+``tag_scope.tag_ownership`` and passed in explicitly; ``can_write`` likewise by
+``tag_scope.TagWriteRights``.
 """
 
 from __future__ import annotations
@@ -38,6 +39,12 @@ class Tag(TagBase, UUIDBaseSchema):
         default="mine",
         description="The tag's relation to the caller: their own, system vocabulary, "
         "or someone else's that they can see.",
+    )
+    can_write: bool = Field(
+        default=False,
+        description="Whether the caller may rename, merge, delete or share this tag. "
+        "Computed by the tag endpoints with the rule their write routes enforce; "
+        "false where a response does not compute it.",
     )
 
     @model_validator(mode="before")

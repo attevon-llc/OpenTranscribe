@@ -20,6 +20,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.tags._common import _mutation_response
 from app.api.endpoints.tags._common import _translated_tag_errors
 from app.api.endpoints.tags._common import _writable_tag_ids
+from app.api.endpoints.tags._common import _write_rights
 from app.api.endpoints.tags._common import router
 from app.db.base import get_db
 from app.models.user import User
@@ -97,7 +98,7 @@ def promote_tags_endpoint(
             organization_id=ctx.org_id,
             fold_across_tenants=ctx.bypass.mode is TenancyMode.SINGLE,
         )
-    return _mutation_response(outcome, current_user.id)
+    return _mutation_response(outcome, _write_rights(ctx, current_user.id))
 
 
 @router.patch(
@@ -135,7 +136,7 @@ def rename_tag_endpoint(
             user_id=current_user.id,
             organization_id=ctx.org_id,
         )
-    return _mutation_response(outcome, current_user.id)
+    return _mutation_response(outcome, _write_rights(ctx, current_user.id))
 
 
 @router.post(
@@ -171,7 +172,7 @@ def merge_tags_endpoint(
         outcome = merge_tags(
             db, target_id, source_ids, user_id=current_user.id, organization_id=ctx.org_id
         )
-    return _mutation_response(outcome, current_user.id)
+    return _mutation_response(outcome, _write_rights(ctx, current_user.id))
 
 
 @router.delete(
@@ -196,4 +197,4 @@ def delete_tags_endpoint(
     )
     with _translated_tag_errors():
         outcome = delete_tags(db, tag_ids, user_id=current_user.id, organization_id=ctx.org_id)
-    return _mutation_response(outcome, current_user.id)
+    return _mutation_response(outcome, _write_rights(ctx, current_user.id))

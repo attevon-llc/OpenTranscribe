@@ -108,6 +108,10 @@ jobs:
       # hook is assigned to has no CI invocation.
       - name: Run pre-commit (pre-push stage)
         run: pre-commit run --all-files --hook-stage pre-push --show-diff-on-failure
+        env:
+          # Needs the backend venv's torch; the backend-tests job runs the same
+          # `generate-openapi.py --check` as a required step.
+          SKIP: openapi-snapshot
 
       # Negative control for the mypy hook (issue #1271). The hook runs in an isolated virtualenv;
       # a typed package missing from its additional_dependencies makes mypy treat it as Any and

@@ -33,7 +33,9 @@ EXTERNAL_ID_COLUMN = "external_id"
 EXTERNAL_ORG_ID_COLUMN: str | None = "external_org_id"
 
 
-def _apply_identity(user: User, identity: ExternalIdentity, id_col: str, org_col: str | None):
+def _apply_identity(
+    user: User, identity: ExternalIdentity, id_col: str, org_col: str | None
+) -> None:
     """Stamp provider identity + profile fields onto a user row."""
     setattr(user, id_col, identity.external_id)
     if org_col is not None and identity.org_id is not None:
@@ -155,7 +157,7 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
         _apply_identity(user, identity, id_col, org_col)
         db.commit()
         db.refresh(user)
-        return user  # type: ignore[no-any-return]
+        return user
 
     logger.info(f"Creating new user from {identity.provider}: {identity.external_id} ({email})")
     # Product metric: external/JIT signup. The single point ALL external methods
@@ -200,4 +202,4 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
             raise ValueError(
                 f"Failed to create or find {identity.provider} user: {identity.external_id}"
             ) from None
-        return user  # type: ignore[no-any-return]
+        return user

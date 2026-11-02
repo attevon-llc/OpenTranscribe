@@ -6,11 +6,18 @@ saving the auth tab cannot change the issuer an in-flight login is validating
 against.
 """
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+from typing import Any
 
 from app.core.config import settings as env_settings
 from app.core.env import is_truthy
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +73,7 @@ class OIDCConfig:
     blocked_groups: str = ""
 
     @classmethod
-    def from_env(cls) -> "OIDCConfig":
+    def from_env(cls) -> OIDCConfig:
         """Create config from environment variables only."""
         return cls(
             enabled=env_settings.OIDC_ENABLED,
@@ -91,7 +98,7 @@ class OIDCConfig:
         )
 
     @classmethod
-    def from_db(cls, db) -> "OIDCConfig":
+    def from_db(cls, db: Session) -> OIDCConfig:
         """Create config from database with env fallback.
 
         Uses ``DynamicAuthSettings``, which checks DB > .env > coded default.
@@ -100,7 +107,7 @@ class OIDCConfig:
 
         auth = get_auth_settings(db)
 
-        def _get(key: str, default):
+        def _get(key: str, default: Any) -> Any:
             val = auth.get(key)
             return val if val is not None else default
 

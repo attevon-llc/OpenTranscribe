@@ -1,7 +1,10 @@
 """Just-in-time provisioning of OIDC identities into the ``user`` table."""
 
+from __future__ import annotations
+
 import logging
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.oidc.claims import OIDCUserData
@@ -9,6 +12,12 @@ from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import role_implies_superuser
 from app.core.auth_types import AUTH_TYPE_OIDC
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from app.auth.oidc.config import OIDCConfig
+    from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +57,7 @@ def _parse_cert_timestamp(value: str | None, field: str) -> datetime | None:
         return None
 
 
-def _apply_cert_metadata(user, oidc_data: OIDCUserData) -> None:
+def _apply_cert_metadata(user: User, oidc_data: OIDCUserData) -> None:
     """Copy any certificate claims the IdP brokered onto the user row."""
     for claim, attribute in (
         ("cert_dn", "pki_subject_dn"),
@@ -73,7 +82,7 @@ def _apply_cert_metadata(user, oidc_data: OIDCUserData) -> None:
         user.pki_fingerprint_sha256 = fingerprint.replace(":", "")
 
 
-def _create_oidc_user(db, oidc_data: OIDCUserData, *, is_admin: bool):
+def _create_oidc_user(db: Session, oidc_data: OIDCUserData, *, is_admin: bool) -> User:
     """Create a new user from OIDC claims.
 
     Args:
@@ -126,15 +135,15 @@ def _create_oidc_user(db, oidc_data: OIDCUserData, *, is_admin: bool):
     except IntegrityError:
         db.rollback()
         logger.info(f"User {subject} was created by concurrent request, fetching existing user")
-        user = db.query(User).filter(User.oidc_subject == subject).first()
-        if not user:
-            user = db.query(User).filter(User.email == email).first()
-        if not user:
+        existing = db.query(User).filter(User.oidc_subject == subject).first()
+        if not existing:
+            existing = db.query(User).filter(User.email == email).first()
+        if not existing:
             raise ValueError(f"Failed to create or find OIDC user: {subject}") from None
-        return user
+        return existing
 
 
-def _update_oidc_user(db, user, oidc_data: OIDCUserData):
+def _update_oidc_user(db: Session, user: User, oidc_data: OIDCUserData) -> User:
     """Update an existing user's OIDC identity and certificate metadata.
 
     Privilege is deliberately NOT decided here — see the same note on
@@ -164,7 +173,7 @@ def _update_oidc_user(db, user, oidc_data: OIDCUserData):
     return user
 
 
-def _convert_local_user_to_oidc(db, user, oidc_data: OIDCUserData):
+def _convert_local_user_to_oidc(db: Session, user: User, oidc_data: OIDCUserData) -> User:
     """Convert an existing local user to OIDC authentication."""
     subject = oidc_data["oidc_subject"]
     email = oidc_data["email"]
@@ -189,7 +198,9 @@ def _convert_local_user_to_oidc(db, user, oidc_data: OIDCUserData):
     return user
 
 
-def sync_oidc_user_to_db(db, oidc_data: OIDCUserData, cfg=None):
+def sync_oidc_user_to_db(
+    db: Session, oidc_data: OIDCUserData, cfg: OIDCConfig | None = None
+) -> User:
     """Create or update a user in the database from verified OIDC claims.
 
     Handles creating new users, updating existing OIDC users, converting local users

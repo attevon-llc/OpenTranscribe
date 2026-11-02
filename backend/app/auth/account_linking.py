@@ -95,13 +95,19 @@ still legitimately does (a SCIM-provisioned account is ``local`` + ``external_id
 by design, and that pairing is not touched by either narrowing).
 """
 
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
 
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.core.exceptions import AuthenticationError
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +135,7 @@ def emails_agree(asserted: str | None, stored: str | None) -> bool:
 
 
 def assert_email_link_permitted(
-    user,
+    user: User,
     *,
     provider: str,
     source_identifier: str,
@@ -192,7 +198,7 @@ def assert_email_link_permitted(
 
 
 def assert_provider_id_link_permitted(
-    user,
+    user: User,
     *,
     provider: str,
     source_identifier: str,

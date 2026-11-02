@@ -6,10 +6,13 @@ absent, disabled or no longer entitled, using the same search, entitlement and a
 login uses (``auth/ldap_directory.py``, ``auth/ldap_auth.py``).
 """
 
+from __future__ import annotations
+
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from ldap3 import Connection
 from ldap3.core.exceptions import LDAPException
@@ -23,6 +26,9 @@ from app.auth.ldap_directory import _close_connection
 from app.auth.ldap_directory import _get_ldap_server
 from app.auth.ldap_directory import _get_user_groups
 from app.auth.ldap_directory import _search_ldap_user
+
+if TYPE_CHECKING:
+    from ldap3 import Entry
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +124,7 @@ def ldap_directory_session(cfg: LdapConfig) -> Iterator[Connection]:
         _close_connection(conn, "directory-sync")
 
 
-def _is_ad_account_disabled(user_entry) -> bool:
+def _is_ad_account_disabled(user_entry: Entry) -> bool:
     """Return True only when AD positively reports the ACCOUNTDISABLE bit.
 
     An absent or unparseable ``userAccountControl`` means "this server doesn't

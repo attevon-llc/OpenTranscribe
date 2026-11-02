@@ -41,9 +41,25 @@ from __future__ import annotations
 import hmac
 import ipaddress
 import logging
+from collections.abc import Mapping
 from collections.abc import Sequence
+from typing import Protocol
 
 logger = logging.getLogger(__name__)
+
+
+class RequestLike(Protocol):
+    """The request attributes the header-trust and identity-header code reads.
+
+    A Starlette/FastAPI ``Request`` satisfies it structurally; this layer does not import the
+    web framework.
+    """
+
+    @property
+    def headers(self) -> Mapping[str, str]: ...
+    @property
+    def client(self) -> object | None: ...
+
 
 #: What a parsed allowlist entry is. Single addresses are widened to /32 or /128 so
 #: membership is one uniform ``in`` test.
@@ -107,7 +123,7 @@ def ip_in_networks(ip: str, networks: Sequence[TrustedNetwork]) -> bool:
     return any(parsed in network for network in networks)
 
 
-def immediate_peer_ip(request) -> str:
+def immediate_peer_ip(request: RequestLike) -> str:
     """Return the address of the host that opened this connection.
 
     Deliberately NOT ``utils/client_ip.resolve_client_ip`` — see rule 1 in the
@@ -125,7 +141,7 @@ def immediate_peer_ip(request) -> str:
     return UNKNOWN_PEER
 
 
-def header_source_is_trusted(request, networks: Sequence[TrustedNetwork]) -> bool:
+def header_source_is_trusted(request: RequestLike, networks: Sequence[TrustedNetwork]) -> bool:
     """Whether the peer that delivered *request* may assert identity headers.
 
     One rule, with no environment-dependent relaxation: the immediate peer must be
@@ -137,7 +153,7 @@ def header_source_is_trusted(request, networks: Sequence[TrustedNetwork]) -> boo
 
 
 def header_assertion_permitted(
-    request,
+    request: RequestLike,
     networks: Sequence[TrustedNetwork],
     *,
     asserted: bool,

@@ -7,17 +7,24 @@ policy itself (``auth/lockout.py``) and the admin read/reset surface
 (``auth/lockout_admin.py``) both obtain their store through :func:`_get_store`.
 """
 
+from __future__ import annotations
+
 import logging
 import threading
 import time
 from collections.abc import Callable
+from typing import TYPE_CHECKING
+from typing import Any
 
 from app.core.config import settings
+
+if TYPE_CHECKING:
+    import redis
 
 logger = logging.getLogger(__name__)
 
 
-def _get_redis_client():
+def _get_redis_client() -> redis.Redis | None:
     """
     Get a Redis client connection for lockout storage.
 
@@ -53,7 +60,7 @@ class InMemoryLockoutStore:
         in distributed deployments. Use Redis for production.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._data: dict[str, str] = {}  # key -> JSON string
         self._lock = threading.Lock()
 
@@ -93,7 +100,7 @@ _last_redis_probe: float = 0.0
 REDIS_REPROBE_SECONDS = 30.0
 
 
-def _get_store(*, clock: Callable[[], float] | None = None):
+def _get_store(*, clock: Callable[[], float] | None = None) -> Any:
     """Get the storage backend (Redis, or the in-memory fallback while it is down).
 
     Re-probes Redis instead of latching (issue #284 A1.16). The fallback used to be

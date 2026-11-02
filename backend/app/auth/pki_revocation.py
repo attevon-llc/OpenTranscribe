@@ -191,7 +191,7 @@ def _download_crl(crl_url: str) -> bytes | None:
             if response.status_code != 200:
                 logger.warning(f"CRL download failed for {crl_url}: status {response.status_code}")
                 return None
-            return response.content  # type: ignore[no-any-return]
+            return response.content
     except httpx.TimeoutException:
         logger.warning(f"CRL download timed out for {crl_url}")
         return None

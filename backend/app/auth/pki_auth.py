@@ -14,8 +14,11 @@ certificate and DN parsing in ``auth/pki_certificate.py``, and user provisioning
 ``auth/pki_provisioning.py``.
 """
 
+from __future__ import annotations
+
 import logging
 from datetime import UTC
+from typing import TYPE_CHECKING
 from urllib.parse import unquote
 
 from cryptography import x509
@@ -36,6 +39,9 @@ from app.auth.pki_certificate import parse_certificate
 from app.auth.pki_revocation import _check_revocation
 from app.core.config import settings
 from app.core.process_auth_settings import get_process_auth_settings
+
+if TYPE_CHECKING:
+    from app.auth.header_trust import RequestLike
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +70,9 @@ def _parse_pki_trusted_proxies(trusted_proxies_str: str) -> list:
 _pki_trusted_proxy_networks = _parse_pki_trusted_proxies(settings.PKI_TRUSTED_PROXIES)
 
 
-def extract_certificate_from_headers(request, cert_header: str | None = None) -> str | None:
+def extract_certificate_from_headers(
+    request: RequestLike, cert_header: str | None = None
+) -> str | None:
     """
     Extract client certificate from request headers.
 
@@ -89,7 +97,7 @@ def extract_certificate_from_headers(request, cert_header: str | None = None) ->
     return unquote(cert_value)
 
 
-def extract_dn_from_headers(request, cert_dn_header: str | None = None) -> str | None:
+def extract_dn_from_headers(request: RequestLike, cert_dn_header: str | None = None) -> str | None:
     """
     Extract Distinguished Name from headers (if Nginx provides it).
 
@@ -136,7 +144,7 @@ def _is_pki_admin(subject_dn: str, admin_dns_config: str | None = None) -> bool:
     return normalized_subject in admin_dns
 
 
-def _pki_header_source_is_trusted(request, networks: list | None = None) -> bool:
+def _pki_header_source_is_trusted(request: RequestLike, networks: list | None = None) -> bool:
     """
     Whether the peer that delivered this request may assert PKI headers.
 
@@ -159,7 +167,7 @@ def _pki_header_source_is_trusted(request, networks: list | None = None) -> bool
 
 
 def _validate_pki_headers_source(
-    request,
+    request: RequestLike,
     networks: list | None = None,
     cert_header: str | None = None,
     cert_dn_header: str | None = None,
@@ -232,7 +240,7 @@ def _handle_revocation_check(cert: x509.Certificate | None) -> bool | None:
 
 
 def _extract_user_info_from_request(
-    request,
+    request: RequestLike,
     cert: x509.Certificate | None,
     cert_pem: str | None,
     require_certificate: bool = False,
@@ -331,7 +339,7 @@ PKI_ASSERTS_EMAIL_VERIFIED = False
 
 
 def pki_authenticate(
-    request,
+    request: RequestLike,
     admin_dns_config: str | None = None,
     pki_mode: str | None = None,
     trusted_proxies_config: str | None = None,

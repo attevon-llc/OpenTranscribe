@@ -26,6 +26,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+from typing import Any
 
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
@@ -38,6 +40,9 @@ from app.auth.proxy.config import ProxyConfig
 from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_USER
 from app.core.auth_types import AUTH_TYPE_PROXY
+
+if TYPE_CHECKING:
+    from app.auth.header_trust import RequestLike
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +129,7 @@ def _role_from_header(raw: str | None) -> str | None:
     return None
 
 
-def _audit_refusal(request, error_code: str, username: str, **details) -> None:
+def _audit_refusal(request: RequestLike, error_code: str, username: str, **details: Any) -> None:
     """Record a refused assertion as an ordinary login failure."""
     audit_logger.log(
         event_type=AuditEventType.AUTH_LOGIN_FAILURE,
@@ -136,7 +141,7 @@ def _audit_refusal(request, error_code: str, username: str, **details) -> None:
     )
 
 
-def extract_proxy_assertion(request, cfg: ProxyConfig) -> ProxyAssertion | None:
+def extract_proxy_assertion(request: RequestLike, cfg: ProxyConfig) -> ProxyAssertion | None:
     """Read and validate the identity a proxy asserted on *request*.
 
     Args:

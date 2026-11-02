@@ -9,6 +9,7 @@ from ``PKI_ASSERTS_EMAIL_VERIFIED``: see :data:`PROXY_ASSERTS_EMAIL_VERIFIED`.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.proxy.assertion import REFUSAL_DETAIL
@@ -18,6 +19,11 @@ from app.auth.roles import ROLE_USER
 from app.auth.roles import role_implies_superuser
 from app.core.auth_types import AUTH_TYPE_PROXY
 from app.core.exceptions import AuthenticationError
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +44,7 @@ PROXY_ASSERTS_EMAIL_VERIFIED = True
 REFUSED_NO_ACCOUNT = "PROXY_JIT_DISABLED"
 
 
-def _create_proxy_user(db, assertion: ProxyAssertion):
+def _create_proxy_user(db: Session, assertion: ProxyAssertion) -> User:
     """Create a new account from a proxy assertion.
 
     Raises:
@@ -94,7 +100,7 @@ def _refuse(email: str, error_code: str, reason: str) -> None:
     raise AuthenticationError(REFUSAL_DETAIL)
 
 
-def sync_proxy_user_to_db(db, assertion: ProxyAssertion, cfg: ProxyConfig):
+def sync_proxy_user_to_db(db: Session, assertion: ProxyAssertion, cfg: ProxyConfig) -> User:
     """Create or update the account a proxy assertion names, then reconcile it.
 
     Group membership and privilege go through
@@ -154,10 +160,10 @@ def sync_proxy_user_to_db(db, assertion: ProxyAssertion, cfg: ProxyConfig):
                 "password is cleared.",
                 assertion.email,
             )
-            user.hashed_password = EXTERNAL_AUTH_NO_PASSWORD  # type: ignore[assignment]
-        user.auth_type = AUTH_TYPE_PROXY  # type: ignore[assignment]
+            user.hashed_password = EXTERNAL_AUTH_NO_PASSWORD
+        user.auth_type = AUTH_TYPE_PROXY
         if assertion.full_name:
-            user.full_name = assertion.full_name  # type: ignore[assignment]
+            user.full_name = assertion.full_name
         db.commit()
 
     reconcile_user(

@@ -28,6 +28,7 @@ from collections.abc import Callable
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
+from typing import Any
 
 from joserfc import jwt
 from joserfc.errors import JoseError
@@ -83,9 +84,10 @@ class TokenService(RefreshTokenOps):
     Falls back to in-memory storage when Redis is unavailable.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the token service."""
-        self._store = None
+        # Either a redis.Redis or an InMemoryStore: structural, like the other auth stores.
+        self._store: Any = None
         self._degraded = False
         # Re-probe timer, on the same interval as the lockout and OIDC state stores.
         self._clock: Callable[[], float] = time.monotonic
@@ -108,7 +110,7 @@ class TokenService(RefreshTokenOps):
         return self._degraded
 
     @property
-    def store(self):
+    def store(self) -> Any:
         """Lazy-load storage backend (Redis or in-memory fallback)."""
         if self._store is None:
             redis_client = get_redis_client()
@@ -323,7 +325,7 @@ class TokenService(RefreshTokenOps):
             owner_id = None
             if refresh_token:
                 owner_id = refresh_token.user_id
-                refresh_token.revoked_at = datetime.now(UTC)  # type: ignore[assignment]
+                refresh_token.revoked_at = datetime.now(UTC)
                 db.commit()
         except Exception as exc:
             logger.error("Could not record revocation for token (jti=%s...)", jti[:8])
@@ -504,7 +506,7 @@ class TokenService(RefreshTokenOps):
                 )
 
             # Update database record
-            token.revoked_at = now  # type: ignore[assignment]
+            token.revoked_at = now
             count += 1
 
         # Access tokens have no rows to revoke — kill them by epoch instead.
@@ -619,7 +621,7 @@ class TokenService(RefreshTokenOps):
             )
             db.commit()
             logger.info(f"Cleaned up {result} expired refresh tokens")
-            return result  # type: ignore[no-any-return]
+            return result
         except Exception as e:
             logger.error(f"Error cleaning up expired tokens: {e}")
             db.rollback()

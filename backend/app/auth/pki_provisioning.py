@@ -5,8 +5,11 @@ email (gated by ``auth/account_linking.py``), and creates, updates, or converts 
 account, deriving the role from ``PKIUserData["is_admin"]``.
 """
 
+from __future__ import annotations
+
 import hashlib
 import logging
+from typing import TYPE_CHECKING
 
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.pki_auth import PKI_ASSERTS_EMAIL_VERIFIED
@@ -18,10 +21,15 @@ from app.auth.roles import role_implies_superuser
 from app.core.auth_types import AUTH_TYPE_PKI
 from app.core.exceptions import AuthenticationError
 
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from app.models.user import User
+
 logger = logging.getLogger(__name__)
 
 
-def _create_pki_user(db, pki_data: PKIUserData):
+def _create_pki_user(db: Session, pki_data: PKIUserData) -> User:
     """
     Create a new user from PKI certificate data.
 
@@ -98,8 +106,8 @@ def _create_pki_user(db, pki_data: PKIUserData):
         # Only a concurrent login of THIS certificate identity may be returned. Adopting
         # whichever account holds the colliding email bypassed every link guard (an
         # account takeover), so any other collision refuses the login.
-        user = db.query(User).filter(User.pki_subject_dn == subject_dn).first()
-        if user is None or not _same_issuer(user, pki_data):
+        existing = db.query(User).filter(User.pki_subject_dn == subject_dn).first()
+        if existing is None or not _same_issuer(existing, pki_data):
             logger.warning(
                 f"SECURITY: PKI account creation for {subject_dn} collided with an account "
                 "not linked to this certificate identity; refusing the login"
@@ -109,7 +117,7 @@ def _create_pki_user(db, pki_data: PKIUserData):
                 headers={"WWW-Authenticate": "Certificate"},
             ) from None
         logger.info(f"User with DN {subject_dn} was created by a concurrent request")
-        return user
+        return existing
 
 
 def _placeholder_email(pki_data: PKIUserData) -> str:
@@ -122,14 +130,14 @@ def _placeholder_email(pki_data: PKIUserData) -> str:
     return f"pki-{hashlib.sha256(identity.encode()).hexdigest()[:32]}@pki.local"
 
 
-def _same_issuer(user, pki_data: PKIUserData) -> bool:
+def _same_issuer(user: User, pki_data: PKIUserData) -> bool:
     """False only when both sides name an issuer and they differ."""
     stored = getattr(user, "pki_issuer_dn", None)
     presented = pki_data.get("issuer_dn")
     return not (stored and presented and stored != presented)
 
 
-def _update_pki_user(db, user, pki_data: PKIUserData):
+def _update_pki_user(db: Session, user: User, pki_data: PKIUserData) -> User:
     """
     Update an existing user's PKI data and certificate metadata.
 
@@ -201,7 +209,7 @@ def _update_pki_user(db, user, pki_data: PKIUserData):
     return user
 
 
-def _convert_local_user_to_pki(db, user, pki_data: PKIUserData):
+def _convert_local_user_to_pki(db: Session, user: User, pki_data: PKIUserData) -> User:
     """
     Convert an existing local user to PKI authentication.
 
@@ -273,7 +281,7 @@ def _convert_local_user_to_pki(db, user, pki_data: PKIUserData):
     return user
 
 
-def sync_pki_user_to_db(db, pki_data: PKIUserData):
+def sync_pki_user_to_db(db: Session, pki_data: PKIUserData) -> User:
     """
     Create or update a user in the database from PKI certificate data.
 

@@ -5,14 +5,20 @@ the query and its tenant-isolation clause live in exactly one place.
 Rendering an export is ``auth/audit_export.py``; writing events is ``auth/audit.py``.
 """
 
+from __future__ import annotations
+
 import logging
 from datetime import datetime
+from typing import TYPE_CHECKING
 from typing import Any
 
 from app.core.config import settings
 
+if TYPE_CHECKING:
+    from opensearchpy import OpenSearch
 
-def _build_audit_opensearch_client():
+
+def _build_audit_opensearch_client() -> OpenSearch | None:
     """Construct an OpenSearch client for audit-log reads (None on failure)."""
     try:
         from opensearchpy import OpenSearch

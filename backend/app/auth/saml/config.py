@@ -5,11 +5,18 @@ same frozen-per-request shape so an admin saving the auth tab mid-flow cannot ch
 what an in-flight login validates against.
 """
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+from typing import Any
 
 from app.core.config import settings as env_settings
 from app.core.env import is_truthy
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +48,7 @@ class SAMLConfig:
     blocked_groups: str = ""
 
     @classmethod
-    def from_env(cls) -> "SAMLConfig":
+    def from_env(cls) -> SAMLConfig:
         """Create config from environment variables only."""
         return cls(
             enabled=env_settings.SAML_ENABLED,
@@ -66,7 +73,7 @@ class SAMLConfig:
         )
 
     @classmethod
-    def from_db(cls, db) -> "SAMLConfig":
+    def from_db(cls, db: Session) -> SAMLConfig:
         """Create config from database with env fallback.
 
         Uses ``DynamicAuthSettings``, which checks DB > .env > coded default.
@@ -75,7 +82,7 @@ class SAMLConfig:
 
         auth = get_auth_settings(db)
 
-        def _get(key: str, default):
+        def _get(key: str, default: Any) -> Any:
             val = auth.get(key)
             return val if val is not None else default
 

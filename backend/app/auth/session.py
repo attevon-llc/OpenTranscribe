@@ -19,6 +19,8 @@ is a cache here, not the system of record. See
 ``plans/session-ownership-decision.md``.
 """
 
+from __future__ import annotations
+
 import builtins
 import json
 import logging
@@ -27,10 +29,14 @@ import time
 from collections.abc import Callable
 from datetime import UTC
 from datetime import datetime
+from typing import TYPE_CHECKING
 from typing import Any
 
 from app.auth.degradation import record_degradation
 from app.core.config import settings
+
+if TYPE_CHECKING:
+    import redis
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +45,7 @@ logger = logging.getLogger(__name__)
 OIDC_STATE_PREFIX = "oidc:state:"
 
 
-def get_redis_client():
+def get_redis_client() -> redis.Redis | None:
     """
     Get a Redis client connection.
 
@@ -79,7 +85,7 @@ class InMemoryStore:
         in distributed deployments. Use Redis for production.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._data: dict[str, tuple[str, float | None]] = {}  # key -> (value, expire_at)
         self._lock = threading.Lock()
 
@@ -153,7 +159,7 @@ class InMemoryStore:
             existing = self._data.get(key)
             if not existing:
                 return set()  # builtin set() call is fine
-            return set(json.loads(existing[0]))  # type: ignore[arg-type]
+            return set(json.loads(existing[0]))
 
 
 # Singleton stores. Mirrors app/auth/lockout_store.py: the Redis client is cached rather
@@ -166,7 +172,7 @@ _store_lock = threading.Lock()
 _last_redis_probe: float = 0.0
 
 
-def _get_store(*, clock: Callable[[], float] | None = None):
+def _get_store(*, clock: Callable[[], float] | None = None) -> Any:
     """Get the storage backend (Redis, or the in-memory fallback while it is down).
 
     Two problems this replaces, both on an **unauthenticated** endpoint:
@@ -252,13 +258,14 @@ class OIDCStateStore:
         Args:
             max_states: Maximum number of active states allowed (default: 10000)
         """
-        # Either a redis.Redis or an InMemoryStore — deliberately structural, since
-        # the fallback only implements the subset of the Redis API used here.
+        # Either a redis.Redis or an InMemoryStore, deliberately structural: the fallback only
+        # implements the subset of the Redis API used here, and redis-py's return types depend
+        # on its ``decode_responses`` setting, which no static signature can express.
         self._store: Any = None
         self._max_states = max_states if max_states is not None else self.MAX_STATES
 
     @property
-    def store(self):
+    def store(self) -> Any:
         """Lazy-load storage backend."""
         if self._store is None:
             self._store = _get_store()
@@ -409,7 +416,7 @@ class OIDCStateStore:
             # Delete after retrieval (single-use)
             self.store.delete(key)
             logger.debug(f"Retrieved and deleted OIDC state: {state[:8]}...")
-            return dict(json.loads(value))  # type: ignore[arg-type]
+            return dict(json.loads(value))
         logger.warning(f"OIDC state not found or expired: {state[:8]}...")
         return None
 

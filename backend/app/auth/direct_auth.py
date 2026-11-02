@@ -3,10 +3,13 @@ Direct database authentication module for troubleshooting purposes.
 This bypasses the SQLAlchemy ORM relationships to ensure login works.
 """
 
+from __future__ import annotations
+
 import logging
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
+from typing import TYPE_CHECKING
 
 import psycopg2
 from joserfc import jwt
@@ -18,8 +21,12 @@ from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.config import settings
 from app.core.security import verify_and_update_password
 
+if TYPE_CHECKING:
+    from psycopg2.extensions import connection
+    from psycopg2.extensions import cursor
 
-def get_db_connection():
+
+def get_db_connection() -> connection:
     """Get a direct database connection."""
     conn = psycopg2.connect(
         host=settings.POSTGRES_HOST,
@@ -88,7 +95,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
 logger = logging.getLogger(__name__)
 
 
-def _fetch_user_by_email(conn, cursor, email: str) -> tuple | None:
+def _fetch_user_by_email(conn: connection, cursor: cursor, email: str) -> tuple | None:
     """Fetch user record from database by email.
 
     Args:
@@ -131,7 +138,12 @@ def _validate_user_can_authenticate(user_tuple: tuple, masked_email: str) -> boo
 
 
 def _verify_and_upgrade_password(
-    conn, cursor, user_id: str, password: str, hashed_password: str, masked_email: str
+    conn: connection,
+    cursor: cursor,
+    user_id: str,
+    password: str,
+    hashed_password: str,
+    masked_email: str,
 ) -> bool:
     """Verify password and upgrade hash if needed for FIPS compliance.
 

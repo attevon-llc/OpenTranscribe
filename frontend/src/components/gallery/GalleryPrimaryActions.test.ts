@@ -10,10 +10,9 @@ vi.mock('$stores/supportSession', async () => {
   const { readable } = await import('svelte/store');
   return { supportSessionGate: readable({ active: false, readOnly: false }) };
 });
-vi.mock('$stores/locale', async () => {
-  const { readable } = await import('svelte/store');
-  return { t: readable((k: string) => k) };
-});
+vi.mock('$stores/locale', async () =>
+  (await import('../../test-mocks/galleryToolbarMocks')).keyOnlyLocale()
+);
 
 import GalleryPrimaryActions from './GalleryPrimaryActions.svelte';
 import { galleryStore } from '$stores/gallery';

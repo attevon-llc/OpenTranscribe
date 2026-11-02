@@ -353,3 +353,11 @@ class PurgeStatus(BaseModel):
         default_factory=list,
         description="The audit events (one per target) that record this purge, with its counts.",
     )
+    reason: str | None = Field(
+        default=None,
+        description=(
+            "Why a purge ended without running, as a neutral code. `files_protected`: every "
+            "recording in scope is under a legal hold or has been taken down, so nothing was "
+            "deleted. Absent otherwise."
+        ),
+    )

@@ -185,4 +185,28 @@ describe('FileVoiceprintConsent', () => {
       expect(toast.error).toHaveBeenCalledWith('Not permitted during support access.')
     );
   });
+
+  it('says voiceprints were kept when the purge aborts for protected recordings', async () => {
+    api.setFileVoiceprintConsent.mockResolvedValue({
+      state: 'declined',
+      previous_state: 'granted',
+      changed: true,
+      purge_task_id: 't-3',
+      reprocess_to_create_voiceprints: false,
+    });
+    api.getPurgeStatus.mockResolvedValue({
+      task_id: 't-3',
+      status: 'failed',
+      reason: 'files_protected',
+      residual_ok: null,
+    });
+    render(FileVoiceprintConsent, { props: { fileUuid: 'f-1', state: 'granted', isOwner: true } });
+
+    await optOut();
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(enMessages['file.voiceprintConsent.purgeProtected'])
+    );
+    expect(toast.error).not.toHaveBeenCalledWith(enMessages['file.voiceprintConsent.purgeFailed']);
+  });
 });

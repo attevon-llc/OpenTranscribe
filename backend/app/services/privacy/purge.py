@@ -685,8 +685,12 @@ def write_record(
     residual: dict[str, int] | None = None,
     residual_ok: bool | None = None,
     residual_unverified: list[str] | None = None,
+    reason: str | None = None,
 ) -> None:
-    """Remember a purge's initiator, running counts and residual, for ``GET /privacy/purge/{id}``."""
+    """Remember a purge's initiator, running counts and residual, for ``GET /privacy/purge/{id}``.
+
+    ``reason`` is a neutral code for a purge that ended without running (``files_protected``).
+    """
     try:
         from app.core.redis import get_redis
 
@@ -697,6 +701,8 @@ def write_record(
             record["residual"] = residual
             record["residual_ok"] = bool(residual_ok)
             record["residual_unverified"] = list(residual_unverified or [])
+        if reason is not None:
+            record["reason"] = reason
         get_redis().set(
             _RECORD_KEY.format(task_id=task_id), json.dumps(record), ex=_RECORD_TTL_SECONDS
         )

@@ -10,7 +10,11 @@
 -->
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { PrivacyApi, isTerminalPurgeState, type FileVoiceprintConsentState } from '$lib/api/privacy';
+  import {
+    PrivacyApi,
+    PURGE_REASON_FILES_PROTECTED,
+    isTerminalPurgeState,
+    type FileVoiceprintConsentState } from '$lib/api/privacy';
   import { resetEffectivePrivacy } from '$stores/privacyPolicy';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
@@ -45,6 +49,8 @@
         purging = false;
         if (status.status === 'completed' && status.residual_ok !== false) {
           toastStore.success($t('file.voiceprintConsent.purgeDone'));
+        } else if (status.reason === PURGE_REASON_FILES_PROTECTED) {
+          toastStore.error($t('file.voiceprintConsent.purgeProtected'));
         } else {
           toastStore.error($t('file.voiceprintConsent.purgeFailed'));
         }

@@ -79,7 +79,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-
+- **A deletion that skipped every recording now says so.** When each recording in a purge was under
+  a legal hold or taken down, the purge status carried no reason and the dialog and the per-recording
+  voice identification toast read as a failure. The status now has an optional neutral `reason`
+  (`files_protected`), and both screens say nothing was deleted because the recordings are kept.
+  Strings added in all 12 locales.
 - **AI feature availability with an invalid personal LLM setting.** A saved LLM configuration with a
   non-numeric temperature or context size is now reported as unavailable consistently, so
   background processing no longer queues AI work that can only be skipped, and a saved AWS Bedrock

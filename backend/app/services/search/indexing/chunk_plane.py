@@ -3,7 +3,10 @@
 import logging
 
 from app.core.config import settings
+from app.core.exceptions import SearchIndexError
 from app.services.opensearch_service import opensearch_client
+from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
+from app.services.opensearch_service.client import OpenSearchUnavailableError
 
 from ..plane_queries import chunk_plane_query
 from ..plane_queries import file_plane_query
@@ -26,14 +29,26 @@ class ChunkPlaneMixin(OrphanProbeMixin):
         plane over). Hence :func:`file_plane_query`, not
         :func:`chunk_plane_query`.
 
+        A failure **raises**: both callers would otherwise go on as if the file's
+        documents were gone (an erasure audited complete, a rebuild layered over a
+        stale digest plane). Only the cluster answering "no such index" is 0.
+
         Args:
             file_uuid: UUID of the file to delete documents for.
 
         Returns:
             Number of documents deleted.
+
+        Raises:
+            OpenSearchUnavailableError: The cluster could not be reached or answer.
+            SearchIndexError: The delete ran but reported per-document failures.
         """
+        from opensearchpy.exceptions import NotFoundError
+
         if not opensearch_client:
-            return 0
+            if not settings.OPENSEARCH_ENABLED:
+                return 0
+            raise OpenSearchUnavailableError("OpenSearch client unavailable")
 
         index_name = settings.OPENSEARCH_CHUNKS_INDEX
         try:
@@ -45,17 +60,25 @@ class ChunkPlaneMixin(OrphanProbeMixin):
                 body={"query": file_plane_query(file_uuid)},
                 refresh=True,
             )
-            deleted: int = response.get("deleted", 0)
-            logger.info(f"Deleted {deleted} chunks for file {file_uuid}")
-            if deleted:
-                # Function-local: chat.retrieval_cache imports search.chunk_retrieval at top level.
-                from app.services.chat.retrieval_cache import bump_corpus_version
-
-                bump_corpus_version()
-            return deleted
-        except Exception as e:
-            logger.error(f"Error deleting chunks for file {file_uuid}: {e}")
+        except NotFoundError:
             return 0
+        except CLUSTER_UNAVAILABLE_ERRORS as e:
+            logger.error(f"Error deleting chunks for file {file_uuid}: {e}")
+            raise OpenSearchUnavailableError(f"Could not delete chunks for {file_uuid}: {e}") from e
+
+        deleted: int = response.get("deleted", 0)
+        logger.info(f"Deleted {deleted} chunks for file {file_uuid}")
+        if deleted:
+            # Function-local: chat.retrieval_cache imports search.chunk_retrieval at top level.
+            from app.services.chat.retrieval_cache import bump_corpus_version
+
+            bump_corpus_version()
+        failures = response.get("failures") or []
+        if failures:
+            raise SearchIndexError(
+                f"Chunk delete for file {file_uuid} reported {len(failures)} failure(s)"
+            )
+        return deleted
 
     def count_file_documents(self, file_uuid: str) -> int:
         """Count this file's still-indexed documents — **every plane**.
@@ -63,8 +86,9 @@ class ChunkPlaneMixin(OrphanProbeMixin):
         The verification half of :meth:`delete_transcript_chunks`, and it lives
         here rather than at the caller so the two share one predicate: a survivor
         count built from a *different* predicate than the delete it checks is not
-        a check. ``delete_transcript_chunks`` returns 0 for "no chunks", "index
-        absent" and "the delete failed" alike, so this count — never that return
+        a check. ``delete_transcript_chunks`` raises when it fails, but a delete that
+        returned is still not proof (it reads a searcher, and documents written
+        inside the refresh window escape it), so this count — never that return
         value — is what proves an erasure complete.
 
         **Both planes, deliberately** (index v6, #403 Stage 3). A

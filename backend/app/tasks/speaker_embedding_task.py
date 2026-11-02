@@ -18,6 +18,7 @@ from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
 from app.services.file_provenance import record_stage
 from app.services.file_provenance import voiceprint_facts
+from app.services.opensearch_service.client import OpenSearchUnavailableError
 from app.services.privacy.gates import voiceprints_allowed
 from app.utils import benchmark_timing
 
@@ -331,7 +332,16 @@ def _skip_for_policy(
     return {"status": "skipped", "reason": "voiceprints_disabled_by_policy"}
 
 
-@celery_app.task(bind=True, name="extract_speaker_embeddings", priority=GPUPriority.NEAR_REALTIME)
+#: First retry delay after the voiceprint index could not answer; doubles per attempt.
+_INDEX_RETRY_COUNTDOWN_S = 30
+
+
+@celery_app.task(
+    bind=True,
+    name="extract_speaker_embeddings",
+    priority=GPUPriority.NEAR_REALTIME,
+    max_retries=3,
+)
 def extract_speaker_embeddings_task(
     self,
     file_uuid: str,
@@ -416,15 +426,37 @@ def extract_speaker_embeddings_task(
             "speakers_processed": speakers_processed,
         }
 
+    except OpenSearchUnavailableError as e:
+        # The speaker whose lookup failed was not recorded as a new voice; a failed task
+        # would leave it (and those after it) unmatched for good, so wait for the index.
+        if self.request.retries < self.max_retries:
+            countdown = _INDEX_RETRY_COUNTDOWN_S * 2**self.request.retries
+            logger.warning(f"Voiceprint index unavailable for {file_uuid}; retry in {countdown}s")
+            raise self.retry(exc=e, countdown=countdown) from e
+        logger.error(f"Error in speaker embedding task for {file_uuid}: {str(e)}", exc_info=True)
+        return _fail_embedding_task(file_uuid, task_id, pipeline_task_id, close_id, e)
     except Exception as e:
-        logger.error(f"Error in speaker embedding task for {file_uuid}: {str(e)}")
-        logger.error("Full traceback:", exc_info=True)
-        with contextlib.suppress(Exception), session_scope() as db:
-            update_task_status(db, task_id, "failed", error_message=str(e), completed=True)
-        benchmark_timing.mark(pipeline_task_id, "speaker_upsert_end")
-        try:
-            cleanup_temp_audio(file_uuid)
-        except Exception as cleanup_err:
-            logger.debug(f"Temp audio cleanup after embedding error failed: {cleanup_err}")
-        _close_pipeline_task(close_id, error=str(e))
-        return {"status": "error", "message": str(e)}
+        logger.error(f"Error in speaker embedding task for {file_uuid}: {str(e)}", exc_info=True)
+        return _fail_embedding_task(file_uuid, task_id, pipeline_task_id, close_id, e)
+
+
+def _fail_embedding_task(
+    file_uuid: str,
+    task_id: str,
+    pipeline_task_id: str | None,
+    close_id: str | None,
+    e: Exception,
+) -> dict:
+    """Record the voiceprint stage as failed, release its temp WAV and close the run."""
+    from app.services.minio_service import cleanup_temp_audio
+    from app.utils.task_utils import update_task_status
+
+    with contextlib.suppress(Exception), session_scope() as db:
+        update_task_status(db, task_id, "failed", error_message=str(e), completed=True)
+    benchmark_timing.mark(pipeline_task_id, "speaker_upsert_end")
+    try:
+        cleanup_temp_audio(file_uuid)
+    except Exception as cleanup_err:
+        logger.debug(f"Temp audio cleanup after embedding error failed: {cleanup_err}")
+    _close_pipeline_task(close_id, error=str(e))
+    return {"status": "error", "message": str(e)}

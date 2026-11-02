@@ -9,6 +9,7 @@ from sqlalchemy.orm import joinedload
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCluster
 from app.models.speaker import SpeakerClusterMember
+from app.services.opensearch_service.client import OpenSearchUnavailableError
 
 if TYPE_CHECKING:
     from app.services.speaker_clustering_service import SpeakerClusteringService
@@ -68,24 +69,15 @@ def update_cluster_centroid(
         .all()
     )
 
-    embeddings: list[list[float]] = []
-    valid_members: list = []
-    best_quality = -1.0
-    best_speaker_id = None
-
-    for m in members:
-        speaker = m.speaker
-        if not speaker:
-            continue
-
-        emb = self._get_speaker_embedding(speaker)
-        if emb is not None:
-            embeddings.append(emb)
-            valid_members.append(m)
-            quality = float(m.confidence) if m.confidence else 0.0
-            if quality > best_quality:
-                best_quality = quality
-                best_speaker_id = int(speaker.id)
+    try:
+        embeddings, valid_members, best_speaker_id = _member_voiceprints(self, members)
+    except OpenSearchUnavailableError as e:
+        # A centroid rebuilt from the members that happened to answer is a different
+        # voice; leave the stored one as it is.
+        logger.warning("Centroid for cluster %s not rebuilt: %s", cluster.uuid, e)
+        if strict:
+            raise CentroidRecomputeError(str(e)) from e
+        return
 
     if not embeddings:
         if strict:
@@ -143,12 +135,41 @@ def update_cluster_centroid(
             )
 
 
-def get_speaker_embedding(self: "SpeakerClusteringService", speaker: Speaker) -> list[float] | None:
-    """Get embedding for a speaker from the active index."""
-    try:
-        from app.services.opensearch_service import get_speaker_embedding as opensearch_embedding
+def _member_voiceprints(
+    self: "SpeakerClusteringService", members: list[SpeakerClusterMember]
+) -> tuple[list[list[float]], list[SpeakerClusterMember], int | None]:
+    """The members that have a voiceprint, their vectors, and the most confident one's id.
 
-        return opensearch_embedding(str(speaker.uuid))
-    except Exception as e:
-        logger.warning("Could not get embedding for speaker %s: %s", speaker.uuid, e)
-        return None
+    Raises:
+        OpenSearchUnavailableError: A member's voiceprint could not be read.
+    """
+    embeddings: list[list[float]] = []
+    valid_members: list[SpeakerClusterMember] = []
+    best_quality = -1.0
+    best_speaker_id = None
+    for m in members:
+        speaker = m.speaker
+        if not speaker:
+            continue
+        emb = self._get_speaker_embedding(speaker)
+        if emb is not None:
+            embeddings.append(emb)
+            valid_members.append(m)
+            quality = float(m.confidence) if m.confidence else 0.0
+            if quality > best_quality:
+                best_quality = quality
+                best_speaker_id = int(speaker.id)
+    return embeddings, valid_members, best_speaker_id
+
+
+def get_speaker_embedding(self: "SpeakerClusteringService", speaker: Speaker) -> list[float] | None:
+    """Get embedding for a speaker from the active index; None only when it has none.
+
+    Raises:
+        OpenSearchUnavailableError: The index could not answer. Every caller acts on
+            None (skips the speaker, or rebuilds a centroid without it), so an outage
+            must not read as "no voiceprint".
+    """
+    from app.services.opensearch_service import get_speaker_embedding as opensearch_embedding
+
+    return opensearch_embedding(str(speaker.uuid), strict=True)

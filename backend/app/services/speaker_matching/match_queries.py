@@ -11,6 +11,7 @@ from app.core.tenancy import OrgScope
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerProfile
 from app.services.opensearch_service import find_matching_speaker
+from app.services.opensearch_service.client import OpenSearchUnavailableError
 from app.services.speaker_matching.thresholds import ConfidenceLevel
 
 if TYPE_CHECKING:
@@ -43,6 +44,9 @@ def match_speaker_to_known_speakers(
 
     Returns:
         Dictionary with speaker info and confidence, or None
+
+    Raises:
+        OpenSearchUnavailableError: Either kNN could not answer (never read as "no match").
     """
     allowed, organization_id = self._scope_gate(user_id, organization_id)
     if not allowed:
@@ -65,6 +69,7 @@ def match_speaker_to_known_speakers(
         user_id,
         threshold=ConfidenceLevel.MEDIUM,  # Minimum threshold
         organization_id=organization_id,
+        strict=True,
     )
 
     if not match:
@@ -121,6 +126,9 @@ def match_speaker_to_profiles(
 
     Returns:
         Dictionary with profile match info and confidence, or None
+
+    Raises:
+        OpenSearchUnavailableError: The profile kNN could not answer.
     """
     allowed, organization_id = self._scope_gate(user_id, organization_id)
     if not allowed:
@@ -136,6 +144,7 @@ def match_speaker_to_profiles(
             threshold=ConfidenceLevel.LOW,
             accessible_profile_ids=accessible_profile_ids,
             organization_id=organization_id,
+            strict=True,
         )
 
         if not profile_matches:
@@ -197,6 +206,8 @@ def match_speaker_to_profiles(
             "embedding_count": best_match["embedding_count"],
         }
 
+    except OpenSearchUnavailableError:
+        raise
     except Exception as e:
         logger.error(f"Error matching speaker to profiles: {e}")
         return None

@@ -173,7 +173,7 @@ def stage_seams(db_session, monkeypatch):
     def _counted(real):
         def run(*args, **kwargs):
             seen["inline"].append(args)
-            real(*args, **kwargs)
+            return real(*args, **kwargs)
 
         return run
 

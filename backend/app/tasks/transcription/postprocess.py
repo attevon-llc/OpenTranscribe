@@ -235,10 +235,14 @@ def _finalize(gpu_result: dict) -> dict:
                 "Processing speaker identification",
                 stage=TranscriptionStage.SPEAKERS,
             )
-            if use_native and native_embeddings:
-                _process_native_embeddings(
+            if (
+                use_native
+                and native_embeddings
+                and not _process_native_embeddings(
                     file_id, user_id, task_id, native_embeddings, speaker_mapping
                 )
+            ):
+                handed_off = "voiceprint_stage" if _dispatch_embedding_stage(gpu_result) else None
             if native_embeddings and not use_native:
                 _store_v4_centroids(file_id, file_uuid, user_id, native_embeddings, speaker_mapping)
         else:
@@ -522,14 +526,22 @@ def _process_native_embeddings(
     task_id: str,
     native_embeddings_serialized: dict,
     speaker_mapping: dict,
-) -> None:
-    """Process speaker embeddings using native PyAnnote centroids (no GPU)."""
+) -> bool:
+    """Process speaker embeddings using native PyAnnote centroids (no GPU).
+
+    Returns:
+        False when the voiceprint index could not answer: matching stopped without
+        recording the speaker it failed on, and the caller hands the file to the voiceprint
+        stage, which retries. Read as "no match", the outage would store every speaker as a
+        new voice.
+    """
+    from app.services.opensearch_service.client import OpenSearchUnavailableError
     from app.services.permission_service import PermissionService
     from app.services.speaker_matching_service import SpeakerMatchingService
 
     if not voiceprints_allowed(file_id):
         logger.info("Voiceprints are off by policy for file %s; no speaker matching", file_id)
-        return
+        return True
 
     step_start = time.perf_counter()
 
@@ -540,27 +552,34 @@ def _process_native_embeddings(
             db_embeddings[db_id] = np.array(emb_list)
 
     if not db_embeddings:
-        return
+        return True
 
-    with session_scope() as db:
-        accessible_ids = PermissionService.get_accessible_profile_ids_for_file(db, user_id, file_id)
-        matching_service = SpeakerMatchingService(db, embedding_service=None)
-        logger.info(
-            f"Starting native speaker matching for {len(db_embeddings)} speakers "
-            f"(dim={next(iter(db_embeddings.values())).shape[0]})"
-        )
-        matching_service.process_speaker_embeddings_native(
-            media_file_id=file_id,
-            user_id=user_id,
-            native_embeddings=db_embeddings,
-            accessible_profile_ids=accessible_ids,
-        )
-        record_inline_voiceprints(db, file_id, next(iter(db_embeddings.values())).shape[0])
-        update_task_status(db, task_id, "in_progress", progress=0.85)
+    try:
+        with session_scope() as db:
+            accessible_ids = PermissionService.get_accessible_profile_ids_for_file(
+                db, user_id, file_id
+            )
+            matching_service = SpeakerMatchingService(db, embedding_service=None)
+            logger.info(
+                f"Starting native speaker matching for {len(db_embeddings)} speakers "
+                f"(dim={next(iter(db_embeddings.values())).shape[0]})"
+            )
+            matching_service.process_speaker_embeddings_native(
+                media_file_id=file_id,
+                user_id=user_id,
+                native_embeddings=db_embeddings,
+                accessible_profile_ids=accessible_ids,
+            )
+            record_inline_voiceprints(db, file_id, next(iter(db_embeddings.values())).shape[0])
+            update_task_status(db, task_id, "in_progress", progress=0.85)
+    except OpenSearchUnavailableError as e:
+        logger.warning(f"Inline speaker matching for file {file_id} deferred: {e}")
+        return False
 
     logger.info(
         f"TIMING: native speaker matching completed in {time.perf_counter() - step_start:.3f}s"
     )
+    return True
 
 
 def _store_v4_centroids(

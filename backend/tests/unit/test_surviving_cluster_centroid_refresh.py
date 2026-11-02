@@ -76,7 +76,7 @@ def os_seams(monkeypatch):
     monkeypatch.setattr(fcs, "_purge_external_copies", lambda plan: [])
     monkeypatch.setattr(
         "app.services.opensearch_service.get_speaker_embedding",
-        lambda speaker_uuid: rec["voiceprints"].get(str(speaker_uuid)),
+        lambda speaker_uuid, strict=False: rec["voiceprints"].get(str(speaker_uuid)),
     )
 
     def fake_store(cluster_uuid, user_id, embedding, **kwargs):

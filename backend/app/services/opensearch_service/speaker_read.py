@@ -4,9 +4,11 @@ import logging
 from collections.abc import Generator
 from typing import Any
 
+from app.core.config import settings
 from app.core.embedding_models import get_speaker_index
 from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.aliases import get_active_speaker_index
+from app.services.opensearch_service.client import OpenSearchUnavailableError
 from app.services.opensearch_service.client import _is_index_corruption_error
 from app.services.opensearch_service.indices import ensure_indices_exist
 from app.services.opensearch_service.repair import _repair_index
@@ -50,7 +52,7 @@ def get_speaker_document(speaker_uuid: str) -> dict[str, Any] | None:
         return None
 
 
-def get_speaker_embedding(speaker_uuid: str) -> list[float] | None:
+def get_speaker_embedding(speaker_uuid: str, *, strict: bool = False) -> list[float] | None:
     """Get the embedding vector for a speaker from the active index.
 
     Queries only the active speaker index (v3 or v4, whichever holds the
@@ -59,11 +61,19 @@ def get_speaker_embedding(speaker_uuid: str) -> list[float] | None:
 
     Args:
         speaker_uuid: UUID of the speaker
+        strict: Raise instead of returning None when the cluster could not
+            answer. Callers that act on "this speaker has no voiceprint"
+            (clustering, centroid rebuilds) must pass it.
 
     Returns:
         Embedding vector or None if not found
+
+    Raises:
+        OpenSearchUnavailableError: ``strict`` and the lookup failed.
     """
     if not _client.opensearch_client:
+        if strict and settings.OPENSEARCH_ENABLED:
+            raise OpenSearchUnavailableError("OpenSearch client unavailable")
         logger.warning("OpenSearch client not initialized")
         return None
 
@@ -99,10 +109,16 @@ def get_speaker_embedding(speaker_uuid: str) -> list[float] | None:
                     logger.error(
                         f"Retry after repair failed for speaker {speaker_uuid}: {retry_err}"
                     )
+                    if strict:
+                        raise OpenSearchUnavailableError(str(retry_err)) from retry_err
+            if strict:
+                raise OpenSearchUnavailableError(f"speaker index unreadable: {e}") from e
             return None
         # NotFoundError is expected for speakers not in active index
         if "NotFoundError" not in type(e).__name__:
             logger.error(f"Error getting speaker embedding: {e}")
+            if strict:
+                raise OpenSearchUnavailableError(f"speaker embedding lookup failed: {e}") from e
         return None
 
 

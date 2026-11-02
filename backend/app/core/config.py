@@ -123,7 +123,7 @@ def _validate_ldap_settings(settings: "Settings") -> None:
 
     if settings.LDAP_USE_SSL and settings.LDAP_USE_TLS:
         _config_logger.warning(
-            "LDAP_USE_SSL and LDAP_USE_TLS are mutually exclusive. Preferring TLS (StartTLS)."
+            "LDAP_USE_SSL and LDAP_USE_TLS are mutually exclusive; using LDAPS, not StartTLS."
         )
 
 

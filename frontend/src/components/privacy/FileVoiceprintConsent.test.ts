@@ -182,7 +182,9 @@ describe('FileVoiceprintConsent', () => {
     await optOut();
 
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith('Not permitted during support access.')
+      expect(toast.error).toHaveBeenCalledWith(
+        'This action is not available during a support session.'
+      )
     );
   });
 

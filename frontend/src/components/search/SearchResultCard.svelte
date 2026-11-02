@@ -10,7 +10,7 @@
    */
   import { createEventDispatcher } from 'svelte';
   import type { SearchHit, SearchOccurrence as SearchOccurrenceType } from '$stores/search';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import { prefetchFileDetails, cancelPrefetch } from '$lib/prefetch';
   import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import { formatClock, formatDate } from '$lib/utils/formatting';
@@ -115,7 +115,7 @@
       >
     </a>
     <p class="result-meta">
-      {#if hit.upload_time}<span>{formatDate(hit.upload_time)}</span>{/if}
+      {#if hit.upload_time}<span>{formatDate(hit.upload_time, $locale)}</span>{/if}
       {#if hit.duration > 0}<span>{formatClock(hit.duration)}</span>{/if}
       {#if hit.relevance_percent > 0}
         <span

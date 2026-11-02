@@ -3,7 +3,8 @@
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { anchoredPanel } from '$lib/actions/anchoredPanel';
   import { getSpeakerColor } from '$lib/utils/speakerColors';
-  import type { Speaker, Segment } from '$lib/types/speaker';
+  import type { Speaker } from '$lib/types/speaker';
+  import type { TranscriptSegment } from '$lib/types/media';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
   import axiosInstance from '$lib/axios';
@@ -18,7 +19,7 @@
     placeholderSpeakerNumber
   } from '$lib/utils/speakerNames';
 
-  export let segment: Segment;
+  export let segment: TranscriptSegment;
   export let speakers: Speaker[] = [];
   export let mediaFileUuid: string = '';
   // Issue #837 — a transcript search match on the speaker's name/label is counted
@@ -39,10 +40,9 @@
   let isCreatingSpeaker = false;
 
   // The full wire shape (`suggested_name` / `suggestion_source` / `confidence` /
-  // `verified`) is declared on `Segment['speaker']` in `$lib/types/speaker.ts`,
+  // `verified`) is declared on `TranscriptSegment['speaker']` in `$lib/types/media.ts`,
   // which is what lets this component tell a human's label apart from a machine's
-  // guess. This file used to carry a local copy of that interface; the copy is
-  // deleted rather than left alongside the shared one.
+  // guess.
   $: wireSpeaker = segment.speaker ?? null;
 
   // `display_name` is the ONLY field that means "a human confirmed this name":

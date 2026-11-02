@@ -4,7 +4,7 @@
   import { GroupsApi } from '$lib/api/groups';
   import { groupsStore, myGroups, memberGroups } from '$stores/groups';
   import { toastStore } from '$stores/toast';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { formatDate } from '$lib/utils/formatting';
   import GroupRoleBadge from './GroupRoleBadge.svelte';
@@ -202,7 +202,7 @@
                     </svg>
                     {group.member_count}
                   </span>
-                  <span class="card-date">{formatDate(group.created_at)}</span>
+                  <span class="card-date">{formatDate(group.created_at, $locale)}</span>
                 </div>
               </button>
             {/each}

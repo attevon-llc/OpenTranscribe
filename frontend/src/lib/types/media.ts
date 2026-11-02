@@ -251,32 +251,66 @@ export interface GroupedTranscriptSegment {
 }
 
 /**
- * One transcript segment as the segment list, the playhead lookup and the in-transcript search all
- * see it. This is the single declaration: `transcriptStore` and `scrollbarCalculations` each used to
- * carry their own, one strict and one loose, and the two drifted. The fields are the union; the
- * optional ones are optional because older payloads and search hits omit them.
+ * One transcript segment as the segment list, the playhead lookup, the in-transcript search and
+ * the speaker editors all see it. This is the single declaration: `transcriptStore`,
+ * `scrollbarCalculations` and a speaker-typed `Segment` each used to carry their own, and the
+ * copies drifted. The fields are the union; the optional ones are optional because older
+ * payloads and search hits omit them.
  */
 export interface TranscriptSegment {
-  uuid: string;
-  id?: string | number;
+  uuid: string; // Public UUID identifier (required)
+  id?: number | string; // Legacy fallback (optional)
   start_time: number;
   end_time: number;
   text: string;
-  confidence?: number; // ASR confidence score (0.0 - 1.0)
   speaker_id?: string; // UUID
   speaker_label?: string;
   resolved_speaker_name?: string;
+  /**
+   * The backend serialises the FULL speaker onto every segment, not just an
+   * identity triple. This used to declare only `uuid`/`name`/`display_name`,
+   * which is the type-level reason nothing stopped an unverified LLM guess
+   * being rendered in the name slot (#741) — the suggestion fields were
+   * invisible to the compiler, so reaching for a "better looking" field was
+   * never flagged.
+   *
+   * ⚠️ `display_name` is the ONLY field meaning "a human confirmed this name":
+   * `POST /speakers` and `PUT /speakers/{uuid}` both flip `verified` the moment
+   * it is set. `suggested_name` + `confidence` + `suggestion_source` are the
+   * machine guess and must be surfaced AS a suggestion, never as the name.
+   * Note `resolved_speaker_name` above (and `Speaker.resolved_display_name`)
+   * come from `canonical_speaker_label()`, which returns a typed `display_name`
+   * or a VOICEPRINT-matched `suggested_name` (`suggestion_source` `voice_match` /
+   * `profile_match`, confidence >= 0.75) — never an LLM one (`llm_analysis`).
+   * They still mix "confirmed" and "matched by voice", so do not key
+   * "has a human confirmed a name" off either of them.
+   */
   speaker?: {
-    uuid: string;
+    uuid: string; // Public UUID identifier
     name: string;
     display_name?: string;
+    suggested_name?: string;
+    suggestion_source?: string;
+    confidence?: number;
+    verified?: boolean;
   };
   formatted_timestamp?: string;
   display_timestamp?: string;
+  /** ASR confidence for the segment, when the provider reports one. */
+  confidence?: number;
+  /**
+   * Redaction spans applied to `text`, present only when the redaction pipeline
+   * has run. The frontend only ever checks whether the array is non-empty (to
+   * decide whether to offer the show-original toggle), so the element shape is
+   * deliberately left open — see `backend/app/services/redaction/`.
+   */
+  redactions?: unknown[];
   // Overlap fields for simultaneous speech display
   is_overlap?: boolean;
   overlap_group_id?: string;
   overlap_confidence?: number;
+  overlap_index?: number; // Position within group (computed client-side)
+  overlap_count?: number; // Total in group (computed client-side)
 }
 
 /**

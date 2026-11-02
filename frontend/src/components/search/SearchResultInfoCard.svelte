@@ -12,7 +12,7 @@
    */
   import { createEventDispatcher } from 'svelte';
   import type { SearchHit } from '$stores/search';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import { formatClock, formatDate, formatFileSize, formatLanguageNames } from '$lib/utils/formatting';
   import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
@@ -107,7 +107,7 @@
       <div class="fact"><dt>{$t('common.duration')}</dt><dd><bdi>{formatClock(hit.duration)}</bdi></dd></div>
     {/if}
     {#if hit.upload_time}
-      <div class="fact"><dt>{$t('search.infoUploaded')}</dt><dd><bdi>{formatDate(hit.upload_time)}</bdi></dd></div>
+      <div class="fact"><dt>{$t('search.infoUploaded')}</dt><dd><bdi>{formatDate(hit.upload_time, $locale)}</bdi></dd></div>
     {/if}
     {#if hit.file_size > 0}
       <div class="fact"><dt>{$t('common.size')}</dt><dd><bdi>{formatFileSize(hit.file_size)}</bdi></dd></div>

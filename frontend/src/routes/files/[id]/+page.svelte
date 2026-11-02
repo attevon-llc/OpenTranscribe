@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, afterUpdate, tick } from 'svelte';
-  import type { Segment, Speaker } from '$lib/types/speaker';
+  import type { Speaker } from '$lib/types/speaker';
+  import type { TranscriptSegment } from '$lib/types/media';
   import type { Collection } from '$lib/types/collection';
   import type { Comment } from '$lib/types/comment';
   import type { Tag } from '$lib/types/tag';
@@ -147,9 +148,8 @@
   // flag outright with no prop-forwarding indirection to lose it in.
   let isEditingSpeakers = false;
 
-  // Issue #748 J5: the download SSE stream lives with the other `$lib/fileDetail/*`
-  // orchestration modules now that `TranscriptActionsBar` (which triggers it) renders
-  // directly on this page rather than inside `TranscriptDisplay`.
+  // The download SSE stream lives with the other `$lib/fileDetail/*` orchestration
+  // modules; `TranscriptActionsBar`, which triggers it, renders on this page.
   const downloadManager = createDownloadStreamManager();
   $: downloadState = $downloadStore;
   $: currentDownload = downloadState[file?.uuid];
@@ -426,7 +426,7 @@
         redactionStatus = response.data.redaction_status || '';
         redactionEnabled = response.data.redaction_enabled === true;
         if (!showOriginal && Array.isArray(response.data.transcript_segments)) {
-          if (response.data.transcript_segments.some((s: Segment) => s?.redactions?.length)) {
+          if (response.data.transcript_segments.some((s: TranscriptSegment) => s?.redactions?.length)) {
             redactionActive = true;
           }
         }
@@ -506,7 +506,7 @@
         redactionStatus = response.data.redaction_status || '';
         redactionEnabled = response.data.redaction_enabled === true;
         if (!showOriginal && Array.isArray(response.data.transcript_segments)) {
-          if (response.data.transcript_segments.some((s: Segment) => s?.redactions?.length)) {
+          if (response.data.transcript_segments.some((s: TranscriptSegment) => s?.redactions?.length)) {
             redactionActive = true;
           }
         }
@@ -816,7 +816,7 @@
         const transcriptData = file?.transcript_segments;
         if (transcriptData) {
           const speakers = new Map();
-          transcriptData.forEach((segment: Segment) => {
+          transcriptData.forEach((segment: TranscriptSegment) => {
             const speakerLabel = segment.speaker_label || segment.speaker?.name || $t('fileDetail.unknownSpeaker');
             if (!speakers.has(speakerLabel)) {
               speakers.set(speakerLabel, {
@@ -840,7 +840,7 @@
       const transcriptData = file?.transcript_segments;
       if (transcriptData) {
         const speakers = new Map();
-        transcriptData.forEach((segment: Segment) => {
+        transcriptData.forEach((segment: TranscriptSegment) => {
           const speakerLabel = segment.speaker_label || segment.speaker?.name || get(t)('fileDetail.unknownSpeaker');
           if (!speakers.has(speakerLabel)) {
             speakers.set(speakerLabel, {
@@ -954,7 +954,7 @@
       segment.classList.remove('active-segment');
     });
 
-    const currentSegment = transcriptData.find((segment: Segment) => {
+    const currentSegment = transcriptData.find((segment: TranscriptSegment) => {
       return currentPlaybackTime >= segment.start_time && currentPlaybackTime <= segment.end_time;
     });
 
@@ -2333,7 +2333,7 @@
   function scrollToSegmentAtTime(time: number) {
     const transcriptData = file?.transcript_segments;
     if (!transcriptData || !Array.isArray(transcriptData)) return;
-    const segment = transcriptData.find((s: Segment) => time >= s.start_time && time <= s.end_time);
+    const segment = transcriptData.find((s: TranscriptSegment) => time >= s.start_time && time <= s.end_time);
     if (!segment) return;
     const segId = segment.uuid || segment.id || `${segment.start_time}-${segment.end_time}`;
     // Wait for DOM to update with the active-segment class

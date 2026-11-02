@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Segment } from '$lib/types/speaker';
+  import type { TranscriptSegment } from '$lib/types/media';
   import { createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
   import { mergeSpeakers } from '$lib/api/speakerClusters';
@@ -13,7 +13,7 @@
   import Spinner from './ui/Spinner.svelte';
 
   export let speakers: Speaker[] = [];
-  export let transcriptSegments: Segment[] = []; // Transcript segments for live segment counting
+  export let transcriptSegments: TranscriptSegment[] = []; // Transcript segments for live segment counting
 
   const dispatch = createEventDispatcher();
 

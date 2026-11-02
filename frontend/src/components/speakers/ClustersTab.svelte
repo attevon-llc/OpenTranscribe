@@ -1,8 +1,8 @@
 <script lang="ts">
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { createEventDispatcher } from 'svelte';
-  import { t } from '$stores/locale';
-  import { formatRelativeTime } from '$lib/utils/formatting';
+  import { t, locale } from '$stores/locale';
+  import { formatDateTime, formatRelativeTime } from '$lib/utils/formatting';
   import SpeakerClusterCard from '$components/speakers/SpeakerClusterCard.svelte';
   import ClusterMemberList from '$components/speakers/ClusterMemberList.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
@@ -71,7 +71,7 @@
       {reclustering ? $t('speakers.clusters.reclustering') : $t('speakers.clusters.recluster')}
     </button>
     {#if lastClusteredAt}
-      <span class="last-clustered-chip" title={new Date(lastClusteredAt).toLocaleString()}>
+      <span class="last-clustered-chip" title={formatDateTime(lastClusteredAt, '', $locale)}>
         {$t('speakers.clusters.lastRun')}: {formatRelativeTime(new Date(lastClusteredAt), Date.now(), $t)}
       </span>
     {/if}

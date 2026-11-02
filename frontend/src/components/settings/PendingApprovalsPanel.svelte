@@ -1,7 +1,7 @@
 <script lang="ts">
   import { formatDateTime } from '$lib/utils/formatting';
   import { createEventDispatcher, onMount } from 'svelte';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
   import Badge from '../ui/Badge.svelte';
@@ -106,7 +106,7 @@
                 {/if}
               </td>
               <td><Badge variant="default">{account.auth_type}</Badge></td>
-              <td class="requested">{formatDateTime(account.created_at)}</td>
+              <td class="requested">{formatDateTime(account.created_at, '', $locale)}</td>
               <td class="actions-col">
                 <button
                   type="button"

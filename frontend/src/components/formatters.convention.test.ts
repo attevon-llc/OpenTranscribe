@@ -19,7 +19,7 @@ const sources = import.meta.glob(
 const HOME = '/src/lib/utils/formatting.ts';
 
 const SHARED_NAME =
-  '(?:formatDate|formatDateTime|formatTimestamp|formatBytes|formatFileSize|formatDuration|formatRelative\\w*)';
+  '(?:formatDate|formatDateTime|formatTimestamp|formatBytes|formatFileSize|formatDuration|formatEta|formatElapsed|formatTime|formatAuditTimestamp|formatRelative\\w*)';
 
 /** A definition: `function name`, or `const|let|var name` (arrow or function expression). */
 const DEFINITION = new RegExp(`\\b(?:function\\s+|(?:const|let|var)\\s+)(${SHARED_NAME})\\b`, 'g');
@@ -67,6 +67,10 @@ describe('shared formatters are defined only in lib/utils/formatting.ts', () => 
       'formatBytes',
       'formatFileSize',
       'formatDuration',
+      'formatEta',
+      'formatElapsed',
+      'formatTime',
+      'formatAuditTimestamp',
       'formatRelative',
     ]) {
       expect(findDefinitions(`function ${name}(x) {}`)).toEqual([`${name}@1`]);
@@ -90,6 +94,28 @@ describe('shared formatters are defined only in lib/utils/formatting.ts', () => 
     const offenders = Object.entries(sources)
       .filter(([path]) => path !== HOME)
       .flatMap(([path, src]) => findDefinitions(src).map((d) => `${path}::${d}`));
+    expect(offenders).toEqual([]);
+  });
+});
+
+/** Inline `new Date(x).toLocale*String()` formatting, which ignores the app locale. */
+const INLINE_LOCALE_FORMAT = /new Date\([^)]*\)\s*\.toLocale(?:Date|Time)?String\(/;
+
+describe('dates are formatted through the shared helpers', () => {
+  it('fires on an inline toLocale call', () => {
+    expect(INLINE_LOCALE_FORMAT.test('{new Date(x.at).toLocaleDateString()}')).toBe(true);
+    expect(INLINE_LOCALE_FORMAT.test('new Date(iso).toLocaleString()')).toBe(true);
+  });
+
+  it('stays clean for the helpers', () => {
+    expect(INLINE_LOCALE_FORMAT.test('{formatDate(x.at, $locale)}')).toBe(false);
+  });
+
+  it('finds no inline toLocale call outside formatting.ts', () => {
+    const offenders = Object.entries(sources)
+      .filter(([path]) => path !== HOME)
+      .filter(([, src]) => INLINE_LOCALE_FORMAT.test(stripComments(src)))
+      .map(([path]) => path);
     expect(offenders).toEqual([]);
   });
 });

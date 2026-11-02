@@ -8,6 +8,7 @@
  * so `keyMaps.test.ts` can prove it resolves in every locale, and `Record<Union, …>`
  * makes the compiler reject a union member added without an entry.
  */
+import type { Translate } from '$lib/i18n';
 import type { ChatErrorCode, SearchMode } from '$lib/types/chat';
 import type { DerivedSource } from '$lib/types/media';
 import type { ContextWindowStatus, ReasoningOffSwitch } from '$lib/api/llmSettings';
@@ -24,7 +25,6 @@ import type {
 } from '$lib/notifications/processingJob';
 
 type KeyMap = Readonly<Record<string, string>>;
-type Translate = (key: string, options?: Record<string, unknown>) => string;
 
 const has = (map: object, value: string) => Object.prototype.hasOwnProperty.call(map, value);
 

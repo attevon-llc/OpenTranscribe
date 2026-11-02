@@ -2,7 +2,7 @@
   import { formatDateTime } from '$lib/utils/formatting';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount } from 'svelte';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { ScimTokensApi, type ScimToken } from '$lib/api/scimTokens';
@@ -147,9 +147,9 @@
           {#each tokens as token (token.uuid)}
             <tr>
               <td>{token.name}</td>
-              <td>{formatDateTime(token.created_at, '—')}</td>
-              <td>{token.expires_at ? formatDateTime(token.expires_at, '—') : $t('settings.scimTokens.neverExpires')}</td>
-              <td>{token.last_used_at ? formatDateTime(token.last_used_at, '—') : $t('settings.scimTokens.neverUsed')}</td>
+              <td>{formatDateTime(token.created_at, '—', $locale)}</td>
+              <td>{token.expires_at ? formatDateTime(token.expires_at, '—', $locale) : $t('settings.scimTokens.neverExpires')}</td>
+              <td>{token.last_used_at ? formatDateTime(token.last_used_at, '—', $locale) : $t('settings.scimTokens.neverUsed')}</td>
               <td>
                 {#if token.revoked_at}
                   <Badge variant="error">{$t('settings.scimTokens.revoked')}</Badge>

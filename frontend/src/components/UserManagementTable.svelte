@@ -18,7 +18,7 @@
   import { createConfirmDialog } from '$lib/confirmDialog';
   import BaseModal from './ui/BaseModal.svelte';
   import LinkIdentityModal from './LinkIdentityModal.svelte';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import EmptyState from './ui/EmptyState.svelte';
   import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
   import AuthMailNotice from './ui/AuthMailNotice.svelte';
@@ -1067,7 +1067,7 @@
                 <span class="current-role">{roleLabels[currentUser.role] || currentUser.role}</span>
               {/if}
             </td>
-            <td>{formatDateTime(currentUser.created_at, $t('userManagement.notAvailable'))}</td>
+            <td>{formatDateTime(currentUser.created_at, $t('userManagement.notAvailable'), $locale)}</td>
             <td>
               <div class="table-actions">
                 {#if currentUser.uuid !== currentUserId}
@@ -1210,7 +1210,7 @@
                     class:active={currentUser.account_expires_at}
                     on:click={() => openExpirationEditor(currentUser)}
                     title={currentUser.account_expires_at
-                      ? $t('userManagement.editExpirationFor', { name: currentUser.full_name || currentUser.email, date: formatDateTime(currentUser.account_expires_at, $t('userManagement.notAvailable')) })
+                      ? $t('userManagement.editExpirationFor', { name: currentUser.full_name || currentUser.email, date: formatDateTime(currentUser.account_expires_at, $t('userManagement.notAvailable'), $locale) })
                       : $t('userManagement.setExpirationFor', { name: currentUser.full_name || currentUser.email })}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1294,7 +1294,7 @@
                     {invitationStatusLabels[invitation.status] || invitation.status}
                   </span>
                 </td>
-                <td>{formatDateTime(invitation.expires_at, $t('userManagement.notAvailable'))}</td>
+                <td>{formatDateTime(invitation.expires_at, $t('userManagement.notAvailable'), $locale)}</td>
                 <td>
                   <div class="table-actions">
                     <button

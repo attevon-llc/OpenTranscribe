@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
+  formatDate,
+  formatEta,
+  formatElapsed,
+  formatAuditTimestamp,
   formatDuration,
   getInitials,
   formatClock,
@@ -279,5 +283,66 @@ describe('formatRelativeTime', () => {
     [86400, 'notifications.daysAgo:1'],
   ])('%s seconds ago -> %s', (seconds, expected) => {
     expect(formatRelativeTime(ago(seconds), now, t)).toBe(expected);
+  });
+});
+
+describe('app-locale date formatting', () => {
+  const iso = '2026-10-29T12:00:00Z';
+
+  it('formatDate and formatDateTime honour an explicit locale', () => {
+    expect(formatDate(iso, 'de')).toMatch(/29\.10\.2026/);
+    expect(formatDateTime(iso, '', 'de')).toMatch(/29\.10\.2026/);
+  });
+
+  it('defaults to the app locale, not the browser locale', () => {
+    const spy = vi.spyOn(navigator, 'language', 'get').mockReturnValue('de-DE');
+    try {
+      expect(formatDate(iso)).toBe(new Date(iso).toLocaleDateString('en'));
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+describe('formatDuration padHours', () => {
+  it('always emits the hour part when asked, so a live timer keeps one width', () => {
+    expect(formatDuration(303, { padHours: true })).toBe('00:05:03');
+    expect(formatDuration(3723, { padHours: true })).toBe('01:02:03');
+    expect(formatDuration(303)).toBe('05:03');
+  });
+});
+
+describe('formatEta / formatElapsed', () => {
+  it('formatEta is empty when there is no ETA to show', () => {
+    expect(formatEta(null)).toBe('');
+    expect(formatEta(undefined)).toBe('');
+    expect(formatEta(0)).toBe('');
+    expect(formatEta(125)).toBe('2m 5s');
+    expect(formatEta(3600)).toBe('1h');
+  });
+
+  it('formatElapsed keeps every unit below the largest', () => {
+    expect(formatElapsed(0)).toBe('0s');
+    expect(formatElapsed(65)).toBe('1m 5s');
+    expect(formatElapsed(3605)).toBe('1h 0m 5s');
+  });
+});
+
+describe('formatAuditTimestamp', () => {
+  const iso = '2026-10-29T13:04:05Z';
+
+  it('is one string with Latin digits and no bidi marks in Arabic', () => {
+    const out = formatAuditTimestamp(iso, 'ar');
+    expect(out).not.toMatch(/[\u200e\u200f]/);
+    expect(out).toMatch(/^[0-9/:،, ]+$/);
+  });
+
+  it('adds a two-digit year on request', () => {
+    expect(formatAuditTimestamp(iso, 'en', { withYear: true })).toMatch(/\/26/);
+    expect(formatAuditTimestamp(iso, 'en')).not.toMatch(/\/26/);
+  });
+
+  it('returns an unparseable value unchanged', () => {
+    expect(formatAuditTimestamp('nope', 'en')).toBe('nope');
   });
 });

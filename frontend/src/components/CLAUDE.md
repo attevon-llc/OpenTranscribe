@@ -11,6 +11,9 @@ sharing, etc.) that the routes compose. Primitives live in `ui/`.
 - `TranscriptDisplay.svelte`, `VideoPlayer.svelte`, `Navbar.svelte`, `SettingsModal.svelte`,
   `FileUploader.svelte`, `UserFileStatus.svelte`, `CollectionsPanel.svelte` — coordinators
   that own data + state and delegate rendering to thin children.
+- `ConfirmationModal.svelte` — state for it comes from `createConfirmDialog()` in
+  `$lib/confirmDialog` (`request(title, message, onConfirm)`; bind the stores), never a native
+  `confirm()` and not hand-rolled `isOpen` + pending-target variables.
 - `RetrievalQualityNotice.svelte` — the honest "results may be imperfect" note, shared by chat,
   search, and (issue #756) the speakers page. **The `surface` prop is not cosmetic**: the
   cross-encoder reranker runs only on the chat retrieval path, so the chat copy names it and the

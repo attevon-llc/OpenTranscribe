@@ -1,4 +1,5 @@
 <script context="module" lang="ts">
+  import { formatDateTime, formatElapsed } from '$lib/utils/formatting';
   export interface SearchIndexStatus {
     indexed_files: number;
     total_files: number;
@@ -14,7 +15,7 @@
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { taskStatusIcon } from '$lib/ui/menuIcons';
   import { createEventDispatcher } from 'svelte';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import Spinner from '$components/ui/Spinner.svelte';
 
   export let stats: any;
@@ -53,19 +54,6 @@
 
   function openProcessingDetails(section: string) {
     dispatch('openDetails', section);
-  }
-
-  // Helper function for formatting time
-  function formatTime(seconds: number): string {
-    if (!seconds) return '0s';
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-    let result = '';
-    if (hours > 0) result += `${hours}h `;
-    if (minutes > 0 || hours > 0) result += `${minutes}m `;
-    result += `${secs}s`;
-    return result;
   }
 
   // Narrow screens show a status glyph (named for screen readers) instead of the word.
@@ -172,10 +160,10 @@
       <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div class="stat-card stat-card-clickable" on:click={() => openProcessingDetails('performance')}>
         <h4>{$t('settings.statistics.performance')}</h4>
-        <div class="stat-detail">{$t('settings.statistics.avgProcessTime')}: {formatTime(stats.tasks?.avg_processing_time || 0)}</div>
-        <div class="stat-detail">{$t('settings.statistics.fileTimingAvg')}: {formatTime(stats.file_timing?.avg_secs || 0)}</div>
-        <div class="stat-detail">{$t('settings.statistics.fileTimingMin')}: {formatTime(stats.file_timing?.min_secs || 0)}</div>
-        <div class="stat-detail">{$t('settings.statistics.fileTimingMax')}: {formatTime(stats.file_timing?.max_secs || 0)}</div>
+        <div class="stat-detail">{$t('settings.statistics.avgProcessTime')}: {formatElapsed(stats.tasks?.avg_processing_time || 0)}</div>
+        <div class="stat-detail">{$t('settings.statistics.fileTimingAvg')}: {formatElapsed(stats.file_timing?.avg_secs || 0)}</div>
+        <div class="stat-detail">{$t('settings.statistics.fileTimingMin')}: {formatElapsed(stats.file_timing?.min_secs || 0)}</div>
+        <div class="stat-detail">{$t('settings.statistics.fileTimingMax')}: {formatElapsed(stats.file_timing?.max_secs || 0)}</div>
         <div class="stat-detail">{$t('settings.statistics.speakers')}: {stats.speakers?.total || 0}</div>
         <div class="stat-detail stat-detail-hint">{$t('settings.statistics.viewDetails')}</div>
       </div>
@@ -413,8 +401,8 @@
                   <td>
                     <span class="status-badge status-{task.status}">{#if isMobileView && taskStatusIcon(task.status)}<span class="status-glyph" role="img" aria-label={formatStatus(task.status)} title={formatStatus(task.status)}><MenuIcon name={taskStatusIcon(task.status) ?? 'status-queued'} size="xs" /></span>{:else}{formatStatus(task.status)}{/if}</span>
                   </td>
-                  <td>{new Date(task.created_at).toLocaleString()}</td>
-                  <td>{formatTime(task.elapsed)}</td>
+                  <td>{formatDateTime(task.created_at, '', $locale)}</td>
+                  <td>{formatElapsed(task.elapsed)}</td>
                 </tr>
               {/each}
             </tbody>

@@ -9,6 +9,7 @@
   import { toastStore } from '$stores/toast';
   import { t, locale } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import { formatAuditTimestamp } from '$lib/utils/formatting';
   import EmptyState from '$components/ui/EmptyState.svelte';
 
   /**
@@ -89,17 +90,6 @@
     loadEntries();
   }
 
-  function authAuditTimestamp(iso: string): string {
-    const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) return iso;
-    const currentLocale = $locale || 'en';
-    return `${date.toLocaleDateString(currentLocale, {
-      year: '2-digit',
-      month: '2-digit',
-      day: '2-digit',
-    })} ${date.toLocaleTimeString(currentLocale, { hour12: false })}`;
-  }
-
   function changeTypeLabel(changeType: string): string {
     const key = `settings.authAudit.changeType.${changeType}`;
     const label = $t(key);
@@ -157,7 +147,7 @@
         <tbody>
           {#each entries as entry (entry.uuid)}
             <tr>
-              <td class="mono">{authAuditTimestamp(entry.created_at)}</td>
+              <td class="mono" dir="ltr">{formatAuditTimestamp(entry.created_at, $locale, { withYear: true })}</td>
               <td class="mono">{entry.config_key}</td>
               <td>
                 <span class="change-type {entry.change_type}">

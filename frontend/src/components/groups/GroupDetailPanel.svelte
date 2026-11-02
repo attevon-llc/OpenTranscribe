@@ -3,7 +3,7 @@
   import type { GroupDetail } from '$lib/types/groups';
   import { GroupsApi } from '$lib/api/groups';
   import { toastStore } from '$stores/toast';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { formatDate } from '$lib/utils/formatting';
   import GroupRoleBadge from './GroupRoleBadge.svelte';
@@ -260,7 +260,7 @@
     </span>
     <span class="meta-separator">-</span>
     <span class="meta-item">
-      {$t('groups.createdOn')} {formatDate(group.created_at)}
+      {$t('groups.createdOn')} {formatDate(group.created_at, $locale)}
     </span>
     <span class="meta-separator">-</span>
     <span class="meta-item">

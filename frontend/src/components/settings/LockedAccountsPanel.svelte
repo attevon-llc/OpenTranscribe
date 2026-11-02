@@ -15,6 +15,8 @@
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
   import Spinner from '$components/ui/Spinner.svelte';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import { createConfirmDialog } from '$lib/confirmDialog';
   import { AdminApi, type LockedAccount } from '$lib/api/admin';
 
   let accounts: LockedAccount[] = [];
@@ -46,10 +48,18 @@
     loadPage();
   });
 
-  async function resetCounter(account: LockedAccount) {
-    if (!confirm($t('settings.lockedAccounts.confirmReset', { identifier: account.identifier }))) {
-      return;
-    }
+  const confirmDialog = createConfirmDialog();
+  const { isOpen: confirmOpen, title: confirmTitle, message: confirmMessage } = confirmDialog;
+
+  function resetCounter(account: LockedAccount) {
+    confirmDialog.request(
+      $t('settings.lockedAccounts.resetCounter'),
+      $t('settings.lockedAccounts.confirmReset', { identifier: account.identifier }),
+      () => doResetCounter(account)
+    );
+  }
+
+  async function doResetCounter(account: LockedAccount) {
     resettingIdentifier = account.identifier;
     try {
       await AdminApi.resetLockoutCounter(account.identifier);
@@ -62,11 +72,17 @@
     }
   }
 
-  async function unlockNow(account: LockedAccount) {
+  function unlockNow(account: LockedAccount) {
     if (!account.user_uuid) return;
-    if (!confirm($t('settings.lockedAccounts.confirmUnlock', { identifier: account.identifier }))) {
-      return;
-    }
+    confirmDialog.request(
+      $t('settings.lockedAccounts.unlockNow'),
+      $t('settings.lockedAccounts.confirmUnlock', { identifier: account.identifier }),
+      () => doUnlock(account)
+    );
+  }
+
+  async function doUnlock(account: LockedAccount) {
+    if (!account.user_uuid) return;
     resettingIdentifier = account.identifier;
     try {
       await AdminApi.unlockAccount(account.user_uuid);
@@ -163,6 +179,15 @@
     {/if}
   {/if}
 </div>
+
+<ConfirmationModal
+  bind:isOpen={$confirmOpen}
+  title={$confirmTitle}
+  message={$confirmMessage}
+  on:confirm={confirmDialog.confirm}
+  on:cancel={confirmDialog.cancel}
+  on:close={confirmDialog.cancel}
+/>
 
 <style>
   .locked-accounts-panel {

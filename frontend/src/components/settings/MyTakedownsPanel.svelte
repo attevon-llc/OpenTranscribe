@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/utils/formatting';
   /**
    * The signed-in user's own takedowns (issue #1254). A taken-down file 404s for its owner
    * everywhere, and the live in-app notice only reaches a session that happened to be open,
@@ -6,7 +7,7 @@
    * It shows what the owner was told, never the operator's internal basis or the requester.
    */
   import { onMount } from 'svelte';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
   import Spinner from '$components/ui/Spinner.svelte';
@@ -69,10 +70,10 @@
             <dt>{$t('takedown.mine.type')}</dt>
             <dd>{labelFor($t, TAKEDOWN_NOTICE_TYPE_KEYS, item.notice_type)}</dd>
             <dt>{$t('takedown.mine.takenDownOn')}</dt>
-            <dd>{new Date(item.quarantined_at).toLocaleString()}</dd>
+            <dd>{formatDateTime(item.quarantined_at, '', $locale)}</dd>
             {#if item.outcome_at}
               <dt>{$t('takedown.mine.outcomeOn')}</dt>
-              <dd>{new Date(item.outcome_at).toLocaleString()}</dd>
+              <dd>{formatDateTime(item.outcome_at, '', $locale)}</dd>
             {/if}
             <dt>{$t('takedown.mine.reason')}</dt>
             <dd class="reason">{item.owner_reason}</dd>

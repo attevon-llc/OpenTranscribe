@@ -10,7 +10,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import type { Speaker, Segment } from '$lib/types/speaker';
+import type { Speaker } from '$lib/types/speaker';
+import type { TranscriptSegment } from '$lib/types/media';
 
 const mockScrollLock = vi.hoisted(() => ({ lockScroll: vi.fn(), unlockScroll: vi.fn() }));
 vi.mock('$lib/scrollLock', () => mockScrollLock);
@@ -47,14 +48,14 @@ function speaker(overrides: Partial<Speaker> = {}): Speaker {
   return { uuid: 'spk-1', name: 'SPEAKER_00', ...overrides };
 }
 
-function segment(overrides: Partial<Segment> = {}): Segment {
+function segment(overrides: Partial<TranscriptSegment> = {}): TranscriptSegment {
   return {
     uuid: 'seg-1',
     start_time: 0,
     end_time: 1,
     text: 'hello',
     ...overrides,
-  } as Segment;
+  } as TranscriptSegment;
 }
 
 function portalMenu(): HTMLElement | null {

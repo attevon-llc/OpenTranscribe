@@ -11,6 +11,7 @@ vi.mock('$stores/locale', async () => {
   const { readable } = await import('svelte/store');
   const en = (await import('$lib/i18n/locales/en.json')).default as Record<string, string>;
   return {
+    locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
     t: readable((key: string, opts?: Record<string, unknown>) => {
       let out = en[key] ?? key;
       for (const [name, value] of Object.entries(opts ?? {})) {

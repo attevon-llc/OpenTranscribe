@@ -4,7 +4,7 @@
   import { createEventDispatcher, onMount } from 'svelte';
   import Spinner from '../ui/Spinner.svelte';
   import { toastStore } from '../../stores/toast';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import {
     getMediaMirrorSettings,
     updateMediaMirrorSettings,
@@ -374,7 +374,7 @@
     <div class="status-block">
       <div class="status-item">
         <span class="status-label">{$t('settings.backup.mirror.lastRunSection')}:</span>
-        <span class="status-value">{formatDateTime(lastRunAt, $t('settings.backup.mirror.lastRunNever'))}</span>
+        <span class="status-value">{formatDateTime(lastRunAt, $t('settings.backup.mirror.lastRunNever'), $locale)}</span>
         {#if running}
           <span class="status-badge running">{$t('settings.backup.mirror.runningBadge')}</span>
         {/if}

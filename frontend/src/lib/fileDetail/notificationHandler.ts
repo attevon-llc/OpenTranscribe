@@ -1,10 +1,5 @@
+import type { Translate } from '$lib/i18n';
 import type { Notification } from '$stores/websocket';
-
-/**
- * Translation function shape — matches the value of the `t` derived store
- * (`$t` inside the page): `(key, options?) => string`.
- */
-type TranslateFn = (key: string, options?: Record<string, unknown>) => string;
 
 /**
  * Context object the file-detail page passes into {@link handleFileNotification}.
@@ -44,7 +39,7 @@ export interface FileNotificationContext {
   fetchFileDetails: () => void | Promise<void>;
 
   // --- side-effect helpers ---
-  t: TranslateFn;
+  t: Translate;
   toastError: (message: string, durationMs?: number) => void;
   toastInfo: (message: string) => void;
 }

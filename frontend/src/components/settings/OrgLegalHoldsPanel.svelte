@@ -195,7 +195,7 @@
               </td>
               <td dir="auto">{hold.matter_ref ?? '-'}</td>
               <td>
-                {formatDate(hold.placed_at)}
+                {formatDate(hold.placed_at, $locale)}
                 {#if hold.placed_by_display}
                   <div class="sub">{$t('holds.placedBy', { name: hold.placed_by_display })}</div>
                 {/if}
@@ -220,7 +220,7 @@
                   {hold.active ? $t('holds.status.active') : $t('holds.status.released')}
                 </Badge>
                 {#if hold.released_at}
-                  <div class="sub">{$t('holds.releasedAt', { date: formatDate(hold.released_at) })}</div>
+                  <div class="sub">{$t('holds.releasedAt', { date: formatDate(hold.released_at, $locale) })}</div>
                 {/if}
               </td>
               <td>

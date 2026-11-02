@@ -1,9 +1,9 @@
 <script lang="ts">
   import type { MediaFileDetail } from '$lib/types/media';
   import { slide } from 'svelte/transition';
-  import { formatDuration } from '$lib/utils/formatting';
+  import { formatDate, formatDuration } from '$lib/utils/formatting';
   import { authStore } from '$stores/auth';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import axiosInstance from '../lib/axios';
   import ProvenanceField from './ProvenanceField.svelte';
 
@@ -15,10 +15,6 @@
 
   function toggleMetadata() {
     showMetadata = !showMetadata;
-  }
-
-  function formatDateOnly(raw: string): string {
-    return new Date(raw).toLocaleDateString();
   }
 
   /**
@@ -71,7 +67,7 @@
 
         <div class="metadata-item">
           <span class="metadata-label">{$t('metadata.uploadDate')}:</span>
-          <span class="metadata-value">{file && 'upload_time' in file && file.upload_time ? new Date(file.upload_time).toLocaleDateString() : $t('metadata.unknown')}</span>
+          <span class="metadata-value">{file && 'upload_time' in file && file.upload_time ? formatDate(file.upload_time, $locale) : $t('metadata.unknown')}</span>
         </div>
 
         <div class="metadata-item">
@@ -159,7 +155,7 @@
             label={$t('metadata.recordedDate')}
             value={file?.recorded_date}
             provenance={file?.recorded_date_provenance}
-            format={formatDateOnly}
+            format={(raw) => formatDate(raw, $locale)}
             on:save={saveRecordedDate}
           />
           {#if savingRecordedDate}
@@ -172,7 +168,7 @@
 
         <div class="metadata-item">
           <span class="metadata-label">{$t('metadata.createdDate')}:</span>
-          <span class="metadata-value">{file && 'creation_date' in file && file.creation_date ? new Date(file.creation_date).toLocaleDateString() : $t('metadata.unknown')}</span>
+          <span class="metadata-value">{file && 'creation_date' in file && file.creation_date ? formatDate(file.creation_date, $locale) : $t('metadata.unknown')}</span>
         </div>
 
         <!-- Tech Specs -->

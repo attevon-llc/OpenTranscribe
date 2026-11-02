@@ -13,7 +13,10 @@ import { render, screen, waitFor } from '@testing-library/svelte';
  */
 vi.mock('$stores/locale', async () => {
   const { readable } = await import('svelte/store');
-  return { t: readable((key: string) => key) };
+  return {
+    locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
+    t: readable((key: string) => key),
+  };
 });
 
 const api = vi.hoisted(() => ({ getCertificateInfo: vi.fn() }));

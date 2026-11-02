@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { formatDateTime } from '$lib/utils/formatting';
+  import { formatDateTime, formatElapsed } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { QUEUE_NAME_KEYS } from '$lib/i18n/keyMaps';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import BaseModal from '../ui/BaseModal.svelte';
 
   export let isOpen = false;
@@ -11,18 +11,6 @@
 
   function close() {
     isOpen = false;
-  }
-
-  function formatTime(seconds: number): string {
-    if (!seconds) return '0s';
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-    let result = '';
-    if (hours > 0) result += `${hours}h `;
-    if (minutes > 0 || hours > 0) result += `${minutes}m `;
-    result += `${secs}s`;
-    return result.trim();
   }
 
   const queueDescriptions: Record<string, string> = {
@@ -57,19 +45,19 @@
             <div class="detail-grid">
               <div class="detail-row">
                 <span class="detail-label">{$t('settings.statistics.avgProcessTime')}</span>
-                <span class="detail-value">{formatTime(stats.tasks?.avg_processing_time || 0)}</span>
+                <span class="detail-value">{formatElapsed(stats.tasks?.avg_processing_time || 0)}</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">{$t('settings.statistics.fileTimingAvg')}</span>
-                <span class="detail-value">{formatTime(stats.file_timing?.avg_secs || 0)}</span>
+                <span class="detail-value">{formatElapsed(stats.file_timing?.avg_secs || 0)}</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">{$t('settings.statistics.fileTimingMin')}</span>
-                <span class="detail-value">{formatTime(stats.file_timing?.min_secs || 0)}</span>
+                <span class="detail-value">{formatElapsed(stats.file_timing?.min_secs || 0)}</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">{$t('settings.statistics.fileTimingMax')}</span>
-                <span class="detail-value">{formatTime(stats.file_timing?.max_secs || 0)}</span>
+                <span class="detail-value">{formatElapsed(stats.file_timing?.max_secs || 0)}</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">{$t('settings.statistics.completedFiles')}</span>
@@ -133,7 +121,7 @@
                 {#if stats.eta.est_completion}
                   <div class="detail-row">
                     <span class="detail-label">{$t('settings.statistics.estimatedCompletion')}</span>
-                    <span class="detail-value">{formatDateTime(stats.eta.est_completion, $t('common.notAvailable'))}</span>
+                    <span class="detail-value">{formatDateTime(stats.eta.est_completion, $t('common.notAvailable'), $locale)}</span>
                   </div>
                 {/if}
               </div>

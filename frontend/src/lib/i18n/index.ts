@@ -113,6 +113,9 @@ export async function initI18n(savedLanguage?: string): Promise<typeof i18next> 
   return i18next;
 }
 
+/** Shape of the `t` derived store value: `(key, options?) => string`. */
+export type Translate = (key: string, options?: Record<string, unknown>) => string;
+
 /**
  * Translate speaker labels from SPEAKER_XX format to localized format.
  * Used to display speaker names in the user's preferred UI language.

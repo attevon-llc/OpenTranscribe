@@ -1,6 +1,5 @@
 import type { SupportGrant, UserRef } from '$lib/api/supportAccess';
-
-type Translate = (key: string, options?: Record<string, unknown>) => string;
+import type { Translate } from '$lib/i18n';
 
 /** `15 min` / `2 h`. Units, not plurals, because `ar` has six plural forms. */
 export function durationLabel(minutes: number, t: Translate): string {

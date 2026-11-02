@@ -8,6 +8,7 @@ export async function enLocaleMock() {
   const { readable } = await import('svelte/store');
   const en = (await import('$lib/i18n/locales/en.json')).default as Record<string, string>;
   return {
+    locale: readable('en'),
     t: readable((key: string, vars?: Record<string, unknown>) => {
       const template = en[key] ?? key;
       if (!vars) return template;

@@ -18,7 +18,10 @@ import { render } from '@testing-library/svelte';
 vi.mock('$stores/locale', async () => {
   const { readable } = await import('svelte/store');
   const en = (await import('$lib/i18n/locales/en.json')).default as Record<string, string>;
-  return { t: readable((key: string) => en[key] ?? key) };
+  return {
+    locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
+    t: readable((key: string) => en[key] ?? key),
+  };
 });
 
 import FileDetailModal from './FileDetailModal.svelte';

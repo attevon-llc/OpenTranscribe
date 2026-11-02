@@ -27,6 +27,7 @@
     isSuperAdmin as viewerIsSuperAdmin,
     permittedRowActions
   } from '$lib/users/rowPermissions';
+  import { filterUsers } from '$lib/users/userSearch';
 
   /**
    * @typedef {Object} User
@@ -173,9 +174,6 @@
   /** @type {string} */
   let searchTerm = '';
 
-  /** @type {Array<User>} */
-  let filteredUsers = [];
-
   $: currentUserId = $user ? $user.uuid : null;
 
   $: isSuperAdmin = viewerIsSuperAdmin($user);
@@ -184,18 +182,8 @@
   // super_admin-only server-side.
   $: canElevate = canAssignElevatedRoles($user);
 
-  // Reactively update filtered users when users prop or search term changes
-  $: {
-    if (!searchTerm.trim()) {
-      filteredUsers = [...users];
-    } else {
-      const term = searchTerm.toLowerCase();
-      filteredUsers = users.filter(user =>
-        (user.full_name && user.full_name.toLowerCase().includes(term)) ||
-        (user.email && user.email.toLowerCase().includes(term))
-      );
-    }
-  }
+  /** @type {Array<User>} */
+  $: filteredUsers = filterUsers(users, searchTerm);
 
   /**
    * Create a new user

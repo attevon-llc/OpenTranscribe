@@ -75,7 +75,6 @@ backend/app/services/interfaces.py::class::NotificationService	1	residual after 
 backend/app/services/interfaces.py::class::SearchService	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/interfaces.py::class::StorageService	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/media_download_errors.py::function::create_user_friendly_error	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/services/media_download_service.py::method::_download_youtube_thumbnail_sync	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/media_download_service.py::method::_prepare_youtube_metadata	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/media_download_service.py::method::is_valid_youtube_url	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/media_download_service.py::method::is_youtube_url	1	residual after the dead-code pass; delete or whitelist when touched

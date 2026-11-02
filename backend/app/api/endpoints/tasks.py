@@ -43,6 +43,7 @@ from app.services import system_settings_service
 from app.services.permission_service import org_scope_pred
 from app.services.platform_bypass import PlatformBypass
 from app.services.takedown_service import exclude_quarantined
+from app.services.takedown_service import quarantine_list_exempt
 from app.services.task_detection_service import task_detection_service
 from app.services.task_filtering_service import TaskFilteringService
 from app.services.task_recovery_service import task_recovery_service
@@ -121,7 +122,7 @@ def _get_user_media_files(
     # A quarantined file must 404 everywhere under `files/`, so it must not surface
     # in the task list either — the two are the same "does this file exist for you"
     # question. Admin "see all" keeps every row (review needs the quarantined ones).
-    query = exclude_quarantined(query, include_quarantined=bypass.user_is_admin)
+    query = exclude_quarantined(query, include_quarantined=quarantine_list_exempt(bypass))
     return query.all()
 
 
@@ -161,7 +162,7 @@ def _latest_task_by_file(
     )
     # Same quarantine exclusion as `_get_user_media_files` — this query is joined
     # through `MediaFile` independently, so it needs its own copy of the filter.
-    query = exclude_quarantined(query, include_quarantined=bypass.user_is_admin)
+    query = exclude_quarantined(query, include_quarantined=quarantine_list_exempt(bypass))
     if file_id is not None:
         query = query.filter(TaskModel.media_file_id == file_id)
 
@@ -1036,7 +1037,9 @@ def _get_media_file_by_id(
     )
     # A quarantined file must 404 on this surface too — see the matching
     # exclusion on `_get_user_media_files`/`_latest_task_by_file` above.
-    media_file = exclude_quarantined(query, include_quarantined=bypass.user_is_admin).first()
+    media_file = exclude_quarantined(
+        query, include_quarantined=quarantine_list_exempt(bypass)
+    ).first()
 
     if not media_file:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")

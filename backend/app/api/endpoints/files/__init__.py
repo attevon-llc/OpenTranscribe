@@ -66,6 +66,7 @@ from app.services.formatting_service import FormattingService
 from app.services.playback_rendition import resolve_playback
 from app.services.privacy.redact_view import PrivacyView
 from app.services.storage_versions import StorageDeleteIncompleteError
+from app.services.takedown_service import quarantine_list_exempt
 from app.utils.error_handlers import ErrorHandler
 from app.utils.media_types import normalize_media_content_type
 from app.utils.whisper_model_choice import require_servable_whisper_model
@@ -361,7 +362,9 @@ def list_media_files(
         effective_user_id = None
 
     # Abuse/DMCA: hide taken-down files from the gallery for non-admins.
-    base_query = exclude_quarantined(base_query, include_quarantined=ctx.bypass.user_is_admin)
+    base_query = exclude_quarantined(
+        base_query, include_quarantined=quarantine_list_exempt(ctx.bypass)
+    )
 
     # Prepare filters dictionary
     filters = {
@@ -470,7 +473,7 @@ def get_metadata_filters_endpoint(
         ctx.user.id,
         ownership=ownership,
         organization_id=ctx.org_id,
-        include_quarantined=ctx.bypass.user_is_admin,
+        include_quarantined=quarantine_list_exempt(ctx.bypass),
         owner_user_ids=resolve_owner_user_ids(db, owner),
     )
 

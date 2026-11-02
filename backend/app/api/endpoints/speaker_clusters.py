@@ -35,6 +35,7 @@ from app.services.speaker_cleanup import SpeakerImpact
 from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact
 from app.services.speaker_clustering_service import SpeakerClusteringService
+from app.services.takedown_service import quarantine_list_exempt
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +181,7 @@ def get_unverified_inbox(
         user_id=current_user.id,
         page=page,
         per_page=per_page,
-        include_quarantined=ctx.bypass.user_is_admin,
+        include_quarantined=quarantine_list_exempt(ctx.bypass),
         organization_id=ctx.org_id,
     )
 
@@ -252,9 +253,9 @@ def get_speaker_media_preview(
     # and title. Same class as the thumbnail gate (issue #817), worse payload. Mirrors
     # `speakers.get_speaker_cross_media_occurrences`, which already does this.
     # 404 not 403: "it exists but you may not see it" is itself a disclosure.
-    from app.services.takedown_service import is_hidden_for
+    from app.services.takedown_service import is_quarantine_hidden
 
-    if is_hidden_for(media_file, is_admin=ctx.bypass.user_is_admin):
+    if is_quarantine_hidden(ctx.bypass, media_file):
         raise HTTPException(status_code=404, detail="Speaker not found")
 
     # Presigned URL for source media (shared media-streaming TTL)

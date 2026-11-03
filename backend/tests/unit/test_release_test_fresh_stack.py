@@ -65,18 +65,24 @@ def test_name_is_derived_from_the_version_and_overridable() -> None:
 
 def test_ports_come_from_opentr_and_move_with_the_offset() -> None:
     real = REAL_OPENTR.read_text(encoding="utf-8")
-    stock: dict[str, str] = {}
-    for arr in ("FRESH_PORT_VARS", "FRESH_MOCK_LLM_PORT_VARS", "FRESH_MOCK_ASR_PORT_VARS"):
+
+    def stock_of(arr: str) -> dict[str, str]:
         block = re.search(rf"^{arr}=\((.*?)^\)", real, re.S | re.M).group(1)  # type: ignore[union-attr]
-        stock.update(re.findall(r'"([A-Z_]+)=(\d+)"', block))
-    assert {"MOCK_LLM_PORT", "MOCK_ASR_PORT"} <= set(stock)
-    assert "POSTGRES_PORT" in stock and len(stock) >= 8
+        return dict(re.findall(r'"([A-Z_]+)=(\d+)"', block))
+
+    main = stock_of("FRESH_PORT_VARS")
+    mocks = {**stock_of("FRESH_MOCK_LLM_PORT_VARS"), **stock_of("FRESH_MOCK_ASR_PORT_VARS")}
+    assert "POSTGRES_PORT" in main and len(main) >= 8
+    assert {"MOCK_LLM_PORT", "MOCK_ASR_PORT"} == set(mocks)
     for offset in (0, 400, 1234):
         got = dict(
             line.split("=")
             for line in _bash(f"fresh_stack_port_exports {offset}", REPO_ROOT).split()
         )
-        assert got == {k: str(int(v) + offset) for k, v in stock.items()}
+        expected = {k: str(int(v) + offset) for k, v in main.items()}
+        # opentr.sh re-offsets any exported <NAME>_PORT, so mocks must NOT be exported under it.
+        expected.update({f"OT_RESOLVED_{k}": str(int(v) + offset) for k, v in mocks.items()})
+        assert got == expected
 
 
 def test_up_destroys_stale_state_first_and_is_isolated(tmp_path: Path) -> None:
@@ -364,4 +370,27 @@ def test_library_is_seeded_after_start_through_the_stacks_own_backend_port(tmp_p
 def test_mock_provider_probe_follows_the_exported_port_variables() -> None:
     """A fresh stack publishes the mocks at an offset; a literal 5198/5199 probe skips 7 tests."""
     src = (REPO_ROOT / "backend/tests/integration/test_lite_mode_mocked_providers.py").read_text()
-    assert 'os.environ.get("MOCK_ASR_PORT"' in src and 'os.environ.get("MOCK_LLM_PORT"' in src
+    assert "OT_RESOLVED_MOCK_ASR_PORT" in src and "OT_RESOLVED_MOCK_LLM_PORT" in src
+
+
+def test_first_run_wizard_is_completed_with_the_seeded_admin(tmp_path: Path) -> None:
+    """A brand-new admin gets a modal wizard whose backdrop blocks every click (30 e2e timeouts)."""
+    curl = r"""
+case "$*" in
+  *api/auth/token*) echo '{"access_token":"tok123"}' ;;
+  *first-run-wizard/complete*) echo "complete auth=$(echo "$*" | grep -o 'Bearer [a-z0-9]*')" >> "$STUB_LOG" ;;
+esac
+"""
+    log = tmp_path / "calls.log"
+    rc, _ = _run(
+        "fresh_stack_complete_first_run",
+        tmp_path,
+        {"curl": curl},
+        {"STUB_LOG": str(log), "BACKEND_PORT": "5574"},
+    )
+    assert rc == 0 and log.read_text().strip() == "complete auth=Bearer tok123"
+    # A failed login is a warning, not a crash.
+    rc, err = _run(
+        "fresh_stack_complete_first_run", tmp_path, {"curl": "exit 22"}, {"STUB_LOG": str(log)}
+    )
+    assert rc == 0 and "first-run wizard" in err

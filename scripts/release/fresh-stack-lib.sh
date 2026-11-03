@@ -40,11 +40,18 @@ fresh_stack_name() {
 fresh_stack_port_exports() {
     local offset="$1" repo="${REPO_ROOT:-.}" name base
     # Entries look like:  "POSTGRES_PORT=5176"          # postgres → :5432
-    # Main stack + the mock LLM/ASR overlays the gate starts (run-dev-tests.sh).
-    sed -n '/^FRESH_\(MOCK_LLM_\|MOCK_ASR_\)\{0,1\}PORT_VARS=(/,/^)/p' "$repo/opentr.sh" \
+    sed -n '/^FRESH_PORT_VARS=(/,/^)/p' "$repo/opentr.sh" \
         | sed -n 's/^[[:space:]]*"\([A-Z_]*\)=\([0-9]*\)".*/\1 \2/p' \
         | while read -r name base; do
             echo "${name}=$((base + offset))"
+        done
+    # The mock overlays are started LATER by run-dev-tests.sh, through opentr.sh, which treats an
+    # exported <NAME>_PORT as the BASE it then offsets again (5598 became 5998). So the resolved
+    # mock ports travel under a different name that opentr.sh does not read; the tests read it.
+    sed -n '/^FRESH_MOCK_\(LLM\|ASR\)_PORT_VARS=(/,/^)/p' "$repo/opentr.sh" \
+        | sed -n 's/^[[:space:]]*"\([A-Z_]*\)=\([0-9]*\)".*/\1 \2/p' \
+        | while read -r name base; do
+            echo "OT_RESOLVED_${name}=$((base + offset))"
         done
 }
 
@@ -114,6 +121,24 @@ fresh_stack_seed_library() {
     local repo="${REPO_ROOT:-.}"
     [[ -f "$repo/scripts/seed-fresh-deployment.sh" ]] || return 0
     BACKEND_URL="http://localhost:${BACKEND_PORT:-5174}" bash "$repo/scripts/seed-fresh-deployment.sh" >&2 || true
+    fresh_stack_complete_first_run
+}
+
+# fresh_stack_complete_first_run: a brand-new admin gets the first-run setup wizard, a modal whose
+# backdrop intercepts every click, so 30 of 69 e2e smoke tests timed out on it. The e2e fixtures
+# dismiss it the same way (POST /api/admin/first-run-wizard/complete); do it once here so every
+# phase starts from a configured deployment. Idempotent; a failure is reported, not fatal.
+fresh_stack_complete_first_run() {
+    local base="http://localhost:${BACKEND_PORT:-5174}" token
+    token="$(curl -fsS --max-time 30 -X POST "$base/api/auth/token" \
+        -H 'Content-Type: application/x-www-form-urlencoded' \
+        --data-urlencode "username=${SEED_EMAIL:-admin@example.com}" \
+        --data-urlencode "password=${SEED_PASSWORD:-password}" 2>/dev/null \
+        | sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+    if [[ -z "$token" ]] || ! curl -fsS --max-time 30 -X POST "$base/api/admin/first-run-wizard/complete" \
+        -H "Authorization: Bearer $token" >/dev/null 2>&1; then
+        echo "warning: could not complete the first-run wizard; browser tests may be blocked by it" >&2
+    fi
 }
 
 # ── Preflight ────────────────────────────────────────────────────────────────────────────────

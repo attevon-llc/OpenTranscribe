@@ -34,11 +34,15 @@ import requests
 # integration test only needs the two literal values, not the whole module.
 TERMINAL_FAILURE_STATUSES = frozenset({"error", "cancelled"})
 
-# Host ports the mocks are published on. Stock 5198/5199, but a --fresh stack publishes them at
-# an offset (opentr.sh FRESH_MOCK_*_PORT_VARS) and the harness exports the same variable names, so
-# read them rather than assuming the stock stack.
-MOCK_ASR_PORT = int(os.environ.get("MOCK_ASR_PORT", "5198"))
-MOCK_LLM_PORT = int(os.environ.get("MOCK_LLM_PORT", "5199"))
+# Host ports the mocks are published on. Stock 5198/5199, but a --fresh stack publishes them at an
+# offset (opentr.sh FRESH_MOCK_*_PORT_VARS). The release harness reports the resolved port as
+# OT_RESOLVED_<NAME>, because opentr.sh re-offsets any exported <NAME> itself.
+MOCK_ASR_PORT = int(
+    os.environ.get("OT_RESOLVED_MOCK_ASR_PORT") or os.environ.get("MOCK_ASR_PORT", "5198")
+)
+MOCK_LLM_PORT = int(
+    os.environ.get("OT_RESOLVED_MOCK_LLM_PORT") or os.environ.get("MOCK_LLM_PORT", "5199")
+)
 SAMPLE_WAV = Path(__file__).resolve().parents[1] / "fixtures" / "media" / "sample_short.wav"
 CANNED_SEGMENT_COUNT = 7
 CANNED_SPEAKER_COUNT = 2

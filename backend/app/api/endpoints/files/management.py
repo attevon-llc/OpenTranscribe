@@ -12,6 +12,7 @@ from fastapi import status
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic import model_validator
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
@@ -34,6 +35,7 @@ from app.models.user import User
 from app.services import system_settings_service
 from app.services.delete_permissions import DELETE_FORBIDDEN_DETAIL
 from app.services.error_categorization_service import ErrorCategorizationService
+from app.services.llm_settings_outage import LLM_SETTINGS_UNREADABLE_MESSAGE
 from app.services.platform_bypass import PlatformBypass
 from app.services.request_context import RequestContext
 from app.services.tag_bulk import CHANGED_OUTCOMES
@@ -852,43 +854,44 @@ def _handle_reprocess_action(
     return BulkActionResult(file_uuid=file_uuid, success=True, message=message)
 
 
+def _llm_unavailable(file_uuid: str, user_id: int | None) -> BulkActionResult | None:
+    """None when the caller's LLM client builds, else this file's failure row.
+
+    Bulk actions report per-file outcomes instead of aborting the batch. Each message is a
+    fixed sentence, never the exception text.
+    """
+    from app.services.llm_service import LLMConfigurationError
+    from app.services.llm_service import LLMService
+
+    def refused(message: str, error: str) -> BulkActionResult:
+        return BulkActionResult(file_uuid=file_uuid, success=False, message=message, error=error)
+
+    try:
+        llm_service = LLMService.create_from_settings(user_id=user_id, raise_on_unusable=True)
+    except LLMConfigurationError as unusable:
+        return refused(unusable.user_message, "LLM_CONFIG_UNUSABLE")
+    except SQLAlchemyError:
+        logger.exception(f"LLM settings could not be read for file {file_uuid}")
+        return refused(LLM_SETTINGS_UNREADABLE_MESSAGE, "LLM_SETTINGS_UNAVAILABLE")
+    except Exception:
+        logger.exception(f"Could not construct an LLM client for file {file_uuid}")
+        return refused("LLM provider is not configured", "LLM_NOT_AVAILABLE")
+    if llm_service is None:
+        return refused("LLM provider is not configured", "LLM_NOT_AVAILABLE")
+    llm_service.close()
+    return None
+
+
 def _handle_summarize_action(
     db: Session, file_uuid: str, file_id: int, user_id: int | None = None
 ) -> BulkActionResult:
     """Handle summarize action for bulk operations."""
 
     from app.models.media import MediaFile
-    from app.services.llm_service import LLMConfigurationError
-    from app.services.llm_service import LLMService
 
-    # Check if LLM is configured
-    try:
-        llm_service = LLMService.create_from_settings(user_id=user_id, raise_on_unusable=True)
-        if llm_service is None:
-            return BulkActionResult(
-                file_uuid=file_uuid,
-                success=False,
-                message="LLM provider is not configured",
-                error="LLM_NOT_AVAILABLE",
-            )
-        llm_service.close()
-    except LLMConfigurationError as unusable:
-        return BulkActionResult(
-            file_uuid=file_uuid,
-            success=False,
-            message=unusable.user_message,
-            error="LLM_CONFIG_UNUSABLE",
-        )
-    except Exception:
-        # Bulk actions report per-file outcomes instead of aborting the batch,
-        # so an unconstructable LLM client becomes this file's failure result.
-        logger.exception(f"Could not construct an LLM client for file {file_uuid}")
-        return BulkActionResult(
-            file_uuid=file_uuid,
-            success=False,
-            message="LLM provider is not configured",
-            error="LLM_NOT_AVAILABLE",
-        )
+    unavailable = _llm_unavailable(file_uuid, user_id)
+    if unavailable is not None:
+        return unavailable
 
     # Check file status - must be completed
     db_file = db.query(MediaFile).filter_by(id=file_id).first()
@@ -926,39 +929,14 @@ def _handle_identify_speakers_action(
     """
 
     from app.models.media import MediaFile
-    from app.services.llm_service import LLMConfigurationError
-    from app.services.llm_service import LLMService
 
     # Via the `speaker_tasks` re-export shim, as every other caller does — it keeps the
     # legacy task-name routing alive.
     from app.tasks.speaker_tasks import identify_speakers_llm_task
 
-    try:
-        llm_service = LLMService.create_from_settings(user_id=user_id, raise_on_unusable=True)
-        if llm_service is None:
-            return BulkActionResult(
-                file_uuid=file_uuid,
-                success=False,
-                message="LLM provider is not configured",
-                error="LLM_NOT_AVAILABLE",
-            )
-        llm_service.close()
-    except LLMConfigurationError as unusable:
-        return BulkActionResult(
-            file_uuid=file_uuid,
-            success=False,
-            message=unusable.user_message,
-            error="LLM_CONFIG_UNUSABLE",
-        )
-    except Exception:
-        # Bulk actions report per-file outcomes instead of aborting the batch.
-        logger.exception(f"Could not construct an LLM client for file {file_uuid}")
-        return BulkActionResult(
-            file_uuid=file_uuid,
-            success=False,
-            message="LLM provider is not configured",
-            error="LLM_NOT_AVAILABLE",
-        )
+    unavailable = _llm_unavailable(file_uuid, user_id)
+    if unavailable is not None:
+        return unavailable
 
     db_file = db.query(MediaFile).filter_by(id=file_id).first()
     if not db_file or db_file.status != FileStatus.COMPLETED:

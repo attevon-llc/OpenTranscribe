@@ -18,7 +18,6 @@ frontend/src/lib/services/uploadService.ts	1400	v0.6.1 merge: release growth; sp
 frontend/src/routes/+page.svelte::script	1464	v0.6.1 merge: release growth; split by concern planned
 opentr.sh	4905	v0.6.1 merge: release growth; split by concern planned
 opentranscribe.sh	2597	v0.6.1 merge: release growth; split by concern planned
-scripts/CLAUDE.md	1254	v0.6.1 merge: release growth; split by concern planned
 scripts/cleanup-test-data.py	1158	cohesive: one signature-scoped sweep (cutoff, shapes, finders, API deletes, planes) sharing one safety model
 scripts/common.sh	1932	v0.6.1 merge: release growth; split by concern planned
 scripts/docker-build-push.sh	1562	oversize: split by concern planned

@@ -233,3 +233,5 @@ uvloop==0.23.0  # via uvicorn[standard]
 watchfiles==1.3.0  # via uvicorn[standard]
 weasel==1.0.1  # via spacy
 wrapt==2.5.1  # via deprecated, smart-open; pinned to prod's version (2.5.2 drifted the lite/CI resolves, 2026-11-01)
+amqp==5.4.1  # via kombu; pinned to prod's version (5.4.2 drifted the CI resolve, 2026-11-03)
+cython==3.3.0  # via meeteval; pinned to prod's version (3.3.1 drifted the CI resolve, 2026-11-03)

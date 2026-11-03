@@ -41,7 +41,9 @@ STREAM_TIMEOUT_MS = 90_000
 #: stack's mock-llm, so the precondition passed on a container these tests never
 #: touched. Same trap `conftest` documents for MINIO_PORT/OPENSEARCH_PORT —
 #: probe and use must agree.
-MOCK_LLM_PORT = int(os.environ.get("MOCK_LLM_PORT", "5199"))
+MOCK_LLM_PORT = int(
+    os.environ.get("OT_RESOLVED_MOCK_LLM_PORT") or os.environ.get("MOCK_LLM_PORT", "5199")
+)
 #: CONTAINER-side port, which never moves: the offset republishes the host port,
 #: it does not change what the process listens on inside the network.
 MOCK_LLM_URL_FOR_BACKEND = "http://mock-llm:5199/v1"

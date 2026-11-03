@@ -394,3 +394,18 @@ esac
         "fresh_stack_complete_first_run", tmp_path, {"curl": "exit 22"}, {"STUB_LOG": str(log)}
     )
     assert rc == 0 and "first-run wizard" in err
+
+
+def test_every_mock_port_read_in_tests_honours_the_resolved_variable() -> None:
+    """A read of MOCK_*_PORT that ignores OT_RESOLVED_* skips (or probes the wrong port) on a fresh stack."""
+    offenders = []
+    for path in (REPO_ROOT / "backend" / "tests").rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        for m in re.finditer(r'environ\.get\("MOCK_(ASR|LLM)_PORT"', text):
+            window = text[max(0, m.start() - 120) : m.start()]
+            if (
+                f"OT_RESOLVED_MOCK_{m.group(1)}_PORT" not in window
+                and path.name != "test_release_test_fresh_stack.py"
+            ):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}")
+    assert not offenders, offenders

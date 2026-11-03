@@ -45,7 +45,9 @@ from pathlib import Path
 import pytest
 import requests
 
-CONTAINER_PORT = int(os.environ.get("MOCK_LLM_PORT", "5199"))
+CONTAINER_PORT = int(
+    os.environ.get("OT_RESOLVED_MOCK_LLM_PORT") or os.environ.get("MOCK_LLM_PORT", "5199")
+)
 CONTAINER_HOSTNAME = "mock-llm"
 SERVER = Path(__file__).resolve().parents[3] / "scripts" / "mock-llm-server.py"
 

@@ -53,7 +53,9 @@ import pytest
 
 # Never a bare literal — the `readiness-probe-target` audit detector requires
 # the probe port to be derived from the env var, not a hardcoded constant.
-CONTAINER_PORT = int(os.environ.get("MOCK_ASR_PORT", "5198"))
+CONTAINER_PORT = int(
+    os.environ.get("OT_RESOLVED_MOCK_ASR_PORT") or os.environ.get("MOCK_ASR_PORT", "5198")
+)
 CONTAINER_HOSTNAME = "mock-asr"
 SERVER = Path(__file__).resolve().parents[3] / "scripts" / "mock-asr-server.py"
 

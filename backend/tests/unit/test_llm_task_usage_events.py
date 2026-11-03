@@ -20,6 +20,7 @@ import pytest
 from app.core.enums import FileStatus
 from app.models.media import MediaFile
 from app.models.organization import Organization
+from app.models.prompt import SummaryPrompt
 from app.models.usage_event import UsageEvent
 from app.services import llm_usage
 from app.services.llm_service import LLMConfig
@@ -97,6 +98,48 @@ def org_file(db_session, normal_user):
     db_session.commit()
     db_session.refresh(mf)
     return mf
+
+
+@pytest.fixture(autouse=True)
+def _system_default_summary_prompt(db_session, monkeypatch):
+    """Guarantee the system default summary prompt the summary task resolves.
+
+    Production seeds it at startup (``initial_data``); a database that only ran
+    ``alembic upgrade head`` (CI) has none, and the summary task then raises before it
+    reaches the LLM. A seeded database already has one, so only create it when absent.
+    The row is rolled back with the test, so ``prompt_manager`` (which opens its own
+    ``SessionLocal`` when handed no session) is pointed at the test session, otherwise it
+    could not see a row this test has not committed to the real database.
+    """
+    exists = (
+        db_session.query(SummaryPrompt)
+        .filter(SummaryPrompt.is_system_default, SummaryPrompt.is_active)
+        .first()
+    )
+    if exists is None:
+        db_session.add(
+            SummaryPrompt(
+                name="Universal Summary (test)",
+                prompt_text="Summarize the transcript.",
+                is_system_default=True,
+                is_active=True,
+                content_type="general",
+                user_id=None,
+            )
+        )
+        db_session.commit()
+
+    class _NonClosing:
+        def __init__(self) -> None:
+            self._session = db_session
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(self._session, name)
+
+        def close(self) -> None:  # the caller closes a session it opened; this one is ours
+            pass
+
+    monkeypatch.setattr("app.utils.prompt_manager.SessionLocal", _NonClosing)
 
 
 class _SavepointSession:

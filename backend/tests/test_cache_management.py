@@ -6,6 +6,7 @@ them. Retention is DB-over-env so admin UI changes apply with no redeploy.
 """
 
 import uuid
+from types import SimpleNamespace
 
 import pytest
 from fastapi import status
@@ -377,6 +378,14 @@ class TestLegacyReclaim:
                 removed.append(d.name)
             return iter([])  # no errors
 
+        # remove_completely first asks the bucket whether it is versioned; unanswered, that is a
+        # real network call (only a developer's local MinIO ever answered it). An unversioned
+        # bucket takes the plain-delete path this test is about.
+        monkeypatch.setattr(
+            minio_mod.minio_client,
+            "get_bucket_versioning",
+            lambda bucket: SimpleNamespace(status=None),
+        )
         monkeypatch.setattr(minio_mod.minio_client, "list_objects", fake_list)
         monkeypatch.setattr(minio_mod.minio_client, "remove_objects", fake_remove)
 

@@ -456,6 +456,85 @@
         "title": "ApproveBody",
         "type": "object"
       },
+      "AuditIntegrityStatus": {
+        "description": "Measured audit-record protection.",
+        "properties": {
+          "enforced": {
+            "title": "Enforced",
+            "type": "boolean"
+          },
+          "runtime_role_is_superuser": {
+            "title": "Runtime Role Is Superuser",
+            "type": "boolean"
+          },
+          "runtime_role_owns_tables": {
+            "title": "Runtime Role Owns Tables",
+            "type": "boolean"
+          },
+          "split_requested": {
+            "title": "Split Requested",
+            "type": "boolean"
+          },
+          "tables": {
+            "items": {
+              "$ref": "#/components/schemas/AuditTableIntegrity"
+            },
+            "title": "Tables",
+            "type": "array"
+          }
+        },
+        "required": [
+          "split_requested",
+          "enforced",
+          "runtime_role_is_superuser",
+          "runtime_role_owns_tables",
+          "tables"
+        ],
+        "title": "AuditIntegrityStatus",
+        "type": "object"
+      },
+      "AuditTableIntegrity": {
+        "description": "Measured privileges of the runtime role on one protected table.",
+        "properties": {
+          "delete": {
+            "title": "Delete",
+            "type": "boolean"
+          },
+          "guard_trigger_present": {
+            "title": "Guard Trigger Present",
+            "type": "boolean"
+          },
+          "insert": {
+            "title": "Insert",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "truncate": {
+            "title": "Truncate",
+            "type": "boolean"
+          },
+          "update_columns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Update Columns",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "insert",
+          "update_columns",
+          "delete",
+          "truncate",
+          "guard_trigger_present"
+        ],
+        "title": "AuditTableIntegrity",
+        "type": "object"
+      },
       "AuthConfigAuditResponse": {
         "description": "Schema for authentication configuration audit log response.",
         "properties": {
@@ -4040,6 +4119,22 @@
             "description": "Multipart upload_id from /prepare",
             "title": "Upload Id"
           },
+          "voiceprint_consent": {
+            "anyOf": [
+              {
+                "enum": [
+                  "granted",
+                  "declined"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Restrict-only: 'declined' is applied, 'granted' never widens what /files/prepare recorded (ignored, not an error, because clients retry this call).",
+            "title": "Voiceprint Consent"
+          },
           "whisper_model": {
             "anyOf": [
               {
@@ -6844,6 +6939,78 @@
         "title": "FileStatusDetail",
         "type": "object"
       },
+      "FileVoiceprintConsent": {
+        "description": "The file's recorded state and what the change did.",
+        "properties": {
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "previous_state": {
+            "enum": [
+              "unspecified",
+              "granted",
+              "declined"
+            ],
+            "title": "Previous State",
+            "type": "string"
+          },
+          "purge_task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set when voiceprints are being deleted; poll GET /privacy/purge/{id}.",
+            "title": "Purge Task Id"
+          },
+          "reprocess_to_create_voiceprints": {
+            "default": false,
+            "description": "True after a move to 'granted' from 'declined'.",
+            "title": "Reprocess To Create Voiceprints",
+            "type": "boolean"
+          },
+          "state": {
+            "enum": [
+              "unspecified",
+              "granted",
+              "declined"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "previous_state",
+          "changed"
+        ],
+        "title": "FileVoiceprintConsent",
+        "type": "object"
+      },
+      "FileVoiceprintConsentUpdate": {
+        "additionalProperties": false,
+        "description": "``PATCH /files/{uuid}/voiceprint-consent``.",
+        "properties": {
+          "state": {
+            "description": "'declined' stops voiceprints for this file and deletes the ones it has. 'granted' records that the uploader states the speakers agreed; it creates nothing by itself (reprocess speakers to create voiceprints).",
+            "enum": [
+              "granted",
+              "declined"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "FileVoiceprintConsentUpdate",
+        "type": "object"
+      },
       "FsEventsMode": {
         "description": "Observer a source actually ended up with (issue #294).",
         "enum": [
@@ -7961,6 +8128,12 @@
           "voiceprint_matching_enabled": {
             "title": "Voiceprint Matching Enabled",
             "type": "boolean"
+          },
+          "voiceprint_upload_consent_required": {
+            "default": false,
+            "description": "When on, a file is treated as opted out of voice identification unless its uploader recorded 'granted'. Existing files are 'unspecified', so turning this on hides their voiceprints; nothing is deleted.",
+            "title": "Voiceprint Upload Consent Required",
+            "type": "boolean"
           }
         },
         "required": [
@@ -7994,6 +8167,17 @@
               }
             ],
             "title": "Voiceprint Matching Enabled"
+          },
+          "voiceprint_upload_consent_required": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voiceprint Upload Consent Required"
           }
         },
         "title": "InstancePrivacyPolicyUpdate",
@@ -8314,8 +8498,42 @@
             "title": "Accepted At",
             "type": "string"
           },
+          "erased": {
+            "default": false,
+            "title": "Erased",
+            "type": "boolean"
+          },
           "key": {
             "title": "Key",
+            "type": "string"
+          },
+          "organization_uuid": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Uuid"
+          },
+          "retain_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retain Until"
+          },
+          "scope": {
+            "default": "user",
+            "title": "Scope",
             "type": "string"
           },
           "sha256": {
@@ -8323,8 +8541,15 @@
             "type": "string"
           },
           "user_email": {
-            "title": "User Email",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Email"
           },
           "version": {
             "title": "Version",
@@ -8335,8 +8560,7 @@
           "key",
           "version",
           "sha256",
-          "accepted_at",
-          "user_email"
+          "accepted_at"
         ],
         "title": "LegalAcknowledgmentAdminRecord",
         "type": "object"
@@ -8351,6 +8575,23 @@
           },
           "key": {
             "title": "Key",
+            "type": "string"
+          },
+          "organization_uuid": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Uuid"
+          },
+          "scope": {
+            "default": "user",
+            "title": "Scope",
             "type": "string"
           },
           "sha256": {
@@ -8378,6 +8619,28 @@
             "maxLength": 128,
             "minLength": 1,
             "title": "Key",
+            "type": "string"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "maxLength": 35,
+                "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
+          "scope": {
+            "default": "user",
+            "enum": [
+              "user",
+              "organization"
+            ],
+            "title": "Scope",
             "type": "string"
           },
           "sha256": {
@@ -8466,6 +8729,23 @@
           "key": {
             "title": "Key",
             "type": "string"
+          },
+          "organization_acknowledged": {
+            "default": false,
+            "title": "Organization Acknowledged",
+            "type": "boolean"
+          },
+          "organization_acknowledged_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Acknowledged At"
           },
           "requires_acknowledgment": {
             "title": "Requires Acknowledgment",
@@ -10785,6 +11065,28 @@
             "format": "uuid",
             "title": "Uuid",
             "type": "string"
+          },
+          "voiceprint_consent": {
+            "default": "unspecified",
+            "enum": [
+              "unspecified",
+              "granted",
+              "declined"
+            ],
+            "title": "Voiceprint Consent",
+            "type": "string"
+          },
+          "voiceprint_consent_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voiceprint Consent At"
           },
           "whisper_model": {
             "anyOf": [
@@ -13699,6 +14001,22 @@
             "description": "When true, the prepare response includes a presigned PUT URL so the browser can upload bytes directly to MinIO, bypassing the API container. Requires a follow-up call to /files/complete. Defaults to the legacy multipart-form upload flow.",
             "title": "Use Presigned"
           },
+          "voiceprint_consent": {
+            "anyOf": [
+              {
+                "enum": [
+                  "granted",
+                  "declined"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The uploader's statement about voice identification for this recording: 'granted' = the speakers agreed (the uploader's claim, recorded and not verified), 'declined' = no voiceprints for this file. Omit for 'unspecified'.",
+            "title": "Voiceprint Consent"
+          },
           "whisper_model": {
             "anyOf": [
               {
@@ -13740,7 +14058,8 @@
                   "instance",
                   "organization",
                   "user",
-                  "consent"
+                  "consent",
+                  "file"
                 ],
                 "type": "string"
               },
@@ -14533,6 +14852,18 @@
             ],
             "description": "What was deleted, once the purge has started, grouped per store (`postgres`, `opensearch`). Counts only, never a name. OpenSearch counts are what the store reported as deleted. A purge runs twice (the second pass about a minute later, to catch a write that raced the switch), so status stays in_progress until the second pass ends and the counts add both passes.",
             "title": "Counts"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why a purge ended without running, as a neutral code. `files_protected`: every recording in scope is under a legal hold or has been taken down, so nothing was deleted. Absent otherwise.",
+            "title": "Reason"
           },
           "residual": {
             "anyOf": [
@@ -16743,6 +17074,248 @@
           }
         },
         "title": "SegmentSpeakerUpdate",
+        "type": "object"
+      },
+      "SelfErasureCreate": {
+        "properties": {
+          "confirm": {
+            "const": "ERASE",
+            "title": "Confirm",
+            "type": "string"
+          },
+          "mfa_code": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mfa Code"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 1024,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "title": "SelfErasureCreate",
+        "type": "object"
+      },
+      "SelfErasureOutcome": {
+        "description": "A request the system closed without erasing anything. Codes only, no personal data.",
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "ledger_uuid": {
+            "format": "uuid",
+            "title": "Ledger Uuid",
+            "type": "string"
+          },
+          "reason": {
+            "const": "last_super_admin",
+            "title": "Reason",
+            "type": "string"
+          },
+          "status": {
+            "const": "blocked",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "reason",
+          "ledger_uuid"
+        ],
+        "title": "SelfErasureOutcome",
+        "type": "object"
+      },
+      "SelfErasureRequestReceipt": {
+        "description": "The request receipt: ids and times only, no personal data.",
+        "properties": {
+          "cancelled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At"
+          },
+          "ledger_uuid": {
+            "format": "uuid",
+            "title": "Ledger Uuid",
+            "type": "string"
+          },
+          "request_digest": {
+            "title": "Request Digest",
+            "type": "string"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "scheduled_for": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled For"
+          },
+          "sla_due_at": {
+            "format": "date-time",
+            "title": "Sla Due At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "scheduled",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ledger_uuid",
+          "requested_at",
+          "sla_due_at",
+          "request_digest",
+          "status"
+        ],
+        "title": "SelfErasureRequestReceipt",
+        "type": "object"
+      },
+      "SelfErasureSettings": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "grace_days": {
+            "maximum": 21.0,
+            "minimum": 0.0,
+            "title": "Grace Days",
+            "type": "integer"
+          },
+          "max_grace_days": {
+            "default": 21,
+            "title": "Max Grace Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "grace_days"
+        ],
+        "title": "SelfErasureSettings",
+        "type": "object"
+      },
+      "SelfErasureSettingsUpdate": {
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "grace_days": {
+            "anyOf": [
+              {
+                "maximum": 21.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grace Days"
+          }
+        },
+        "title": "SelfErasureSettingsUpdate",
+        "type": "object"
+      },
+      "SelfErasureStatus": {
+        "properties": {
+          "can_reauthenticate": {
+            "title": "Can Reauthenticate",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "grace_days": {
+            "title": "Grace Days",
+            "type": "integer"
+          },
+          "last_outcome": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SelfErasureOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SelfErasureRequestReceipt"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "enabled",
+          "grace_days",
+          "can_reauthenticate"
+        ],
+        "title": "SelfErasureStatus",
         "type": "object"
       },
       "SetActiveASRConfigRequest": {
@@ -21150,7 +21723,7 @@
                 "type": "null"
               }
             ],
-            "description": "Optional password for protected media sources (never stored, only used for this request)",
+            "description": "Optional password for protected media sources. Held encrypted with a short expiry only until the import finishes or fails, then deleted; never returned and never written to the database",
             "title": "Media Password"
           },
           "media_username": {
@@ -25946,6 +26519,35 @@
         ]
       }
     },
+    "/api/admin/data-integrity/storage/keys": {
+      "get": {
+        "description": "Whether every stored object key has exactly one owning row.\n\nReports, per object-key column of ``media_file``, whether its unique index exists and how\nmany keys and rows still share a value (counts only). ``healthy`` is false while any index\nis missing, which happens when the v456 revision found duplicate ``storage_path`` rows and\nskipped that index; ``python -m app.scripts.split_shared_storage_paths`` resolves them.",
+        "operationId": "get_storage_key_uniqueness_api_admin_data_integrity_storage_keys_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Storage Key Uniqueness Api Admin Data Integrity Storage Keys Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Storage Key Uniqueness",
+        "tags": [
+          "admin-storage-integrity"
+        ]
+      }
+    },
     "/api/admin/data-integrity/storage/status": {
       "get": {
         "description": "Whether a storage sweep is running, and the result of the last one.",
@@ -28227,6 +28829,105 @@
         "summary": "Revoke Scim Token",
         "tags": [
           "scim-tokens"
+        ]
+      }
+    },
+    "/api/admin/security/audit-integrity": {
+      "get": {
+        "description": "Measured state of audit-record protection for this connection's role.",
+        "operationId": "get_audit_integrity_api_admin_security_audit_integrity_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditIntegrityStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Audit Integrity",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/self-erasure": {
+      "get": {
+        "description": "The self-service erasure switch and grace period (super_admin).",
+        "operationId": "get_self_erasure_settings_api_admin_self_erasure_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfErasureSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Self Erasure Settings",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "description": "Partial update (super_admin). Audited as admin.settings.change; keys and values only.",
+        "operationId": "put_self_erasure_settings_api_admin_self_erasure_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelfErasureSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfErasureSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Put Self Erasure Settings",
+        "tags": [
+          "admin"
         ]
       }
     },
@@ -39000,6 +39701,75 @@
         ]
       }
     },
+    "/api/files/{file_uuid}/voiceprint-consent": {
+      "patch": {
+        "description": "Record the owner's choice for one file; ``declined`` also deletes its voiceprints.",
+        "operationId": "set_file_voiceprint_consent_api_files__file_uuid__voiceprint_consent_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "File Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileVoiceprintConsentUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileVoiceprintConsent"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such file, or not the caller's, or the file is quarantined."
+          },
+          "409": {
+            "description": "The file is under a legal hold; its voiceprints are kept."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "The state was saved but the purge could not be queued."
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Set File Voiceprint Consent",
+        "tags": [
+          "files",
+          "files"
+        ]
+      }
+    },
     "/api/files/{file_uuid}/waveform": {
       "get": {
         "description": "Generate waveform visualization data for an audio or video file.\nUses caching to improve performance for repeated requests.\n\nArgs:\n    file_uuid: UUID of the media file\n    samples: Number of waveform samples to return (100-10000)\n    refresh_cache: Force refresh of cached waveform data\n\nReturns:\n    JSON response with waveform data and metadata",
@@ -39599,8 +40369,27 @@
     },
     "/api/legal/acknowledgments": {
       "get": {
-        "description": "Every stored acceptance, newest first, with the accepting user's email.",
+        "description": "Stored acceptances, newest first, with the accepting user's email.\n\nWithout ``organization`` this is the instance-wide list (platform admins). With\n``organization=current`` an org admin sees the rows recorded in their organization.\nThe join is OUTER: a record can outlive the account that made it.",
         "operationId": "list_legal_acknowledgments_api_legal_acknowledgments_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "organization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^current$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Organization"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -39615,6 +40404,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -39628,7 +40427,7 @@
         ]
       },
       "post": {
-        "description": "Record that the caller accepted the exact text now served for ``key``.\n\nOnly a super_admin may acknowledge the operator acknowledgment. The request must carry\nthe version and hash the server serves now (409 otherwise), so a stale page cannot\naccept text it never showed. Repeating the same acceptance returns the stored record.",
+        "description": "Record that the caller accepted the exact text now served for ``key``.\n\nOnly a super_admin may acknowledge the operator acknowledgment. The request must carry\nthe version and hash the server serves now (409 otherwise), so a stale page cannot\naccept text it never showed. Repeating the same acceptance returns the stored record.\n\n``scope='organization'``: an org admin accepts on behalf of the organization the request\nis acting in. Not available for the operator acknowledgment, nor under a support grant.",
         "operationId": "acknowledge_legal_document_api_legal_acknowledgments_post",
         "requestBody": {
           "content": {
@@ -39675,7 +40474,7 @@
     },
     "/api/legal/documents": {
       "get": {
-        "description": "Every served document with the caller's acknowledgment state for its current text.",
+        "description": "Every served document with the caller's (and the caller's org's) acknowledgment state.",
         "operationId": "list_legal_documents_api_legal_documents_get",
         "responses": {
           "200": {
@@ -47796,7 +48595,7 @@
     },
     "/api/tags/files/{file_uuid}/tags": {
       "post": {
-        "description": "Attach one tag to a media file, creating the tag if the caller lacks it.\n\nConsumed by the file-detail and gallery tag pickers; also the single-tag entry\npoint for a script or agent labelling an imported library (bulk paths must use\nthe batched resolver instead — see ``prepare_upload.add_tags_to_file``).\n\nAuthorized by ``get_file_by_uuid_with_permission``, which applies the sharing,\ntakedown and tenant (``ctx.org_id``) gates in one place — write access to the\n*file* is the whole requirement, because tagging does not touch anyone else's\nvocabulary.\n\nThe body is a raw ``dict`` rather than a schema, so a missing ``name`` is\nrejected as 422 by hand. The tag is resolved in the **file's tenant**: on an\norganization file it is the org's tag (a colleague's row is reused, not\nduplicated); on a personal file it is the caller's own — tagging a file shared\nwith you adds the word to your personal vocabulary, and the owner still sees it\nbecause it is now attached to a file they can access.\n``_resolve_tag`` is race-safe and resolves normalized-exact against that\ntenant's vocabulary plus the system one; it does **not** pass ``file_id``, so it does\nnot take ``resolve_or_create_tag``'s \"already on this file\" branch. The\nduplicate-suppression here is by tag *id* on ``FileTag``, which makes a repeat\npost by the same user idempotent (no second row, no second ``on_tags_changed``)\nbut lets two users attach same-named personal rows of their own to one shared\npersonal file (on an organization file both resolve to the org's one row).",
+        "description": "Attach one tag to a media file, creating the tag if the caller lacks it.\n\nConsumed by the file-detail and gallery tag pickers; also the single-tag entry\npoint for a script or agent labelling an imported library (bulk paths must use\nthe batched resolver instead — see ``prepare_upload.add_tags_to_file``).\n\nAuthorized by ``get_file_by_uuid_with_permission``, which applies the sharing,\ntakedown and tenant (``ctx.org_id``) gates in one place — ``editor`` access to the\n*file* (the bulk rail's ``REQUIRED_PERMISSION``) is the whole requirement, because tagging does not touch anyone else's\nvocabulary.\n\nThe body is a raw ``dict`` rather than a schema, so a missing ``name`` is\nrejected as 422 by hand. The tag is resolved in the **file's tenant**: on an\norganization file it is the org's tag (a colleague's row is reused, not\nduplicated); on a personal file it is the caller's own — tagging a file shared\nwith you adds the word to your personal vocabulary, and the owner still sees it\nbecause it is now attached to a file they can access.\n``_resolve_tag`` is race-safe and resolves normalized-exact against that\ntenant's vocabulary plus the system one; it does **not** pass ``file_id``, so it does\nnot take ``resolve_or_create_tag``'s \"already on this file\" branch. The\nduplicate-suppression here is by tag *id* on ``FileTag``, which makes a repeat\npost by the same user idempotent (no second row, no second ``on_tags_changed``)\nbut lets two users attach same-named personal rows of their own to one shared\npersonal file (on an organization file both resolve to the org's one row).",
         "operationId": "add_tag_to_file_api_tags_files__file_uuid__tags_post",
         "parameters": [
           {
@@ -47906,7 +48705,7 @@
     },
     "/api/tags/for-files": {
       "get": {
-        "description": "The tags a set of selected files already carries.\n\nThe bulk apply surface has to show what a selection *has* before offering to\nchange it, and ``GET /api/files`` deliberately carries no per-file tags\n(#326) — so nothing else can answer this.\n\n``file_count`` is how many of the selected files carry the tag, which is\nwhat lets one selected file offer a full chip editor while several offer\nadd-only: removing a tag that sits on three of five files is ambiguous in a\nway adding never is.\n\nRegistered before ``/{tag_uuid}`` so the literal path is not swallowed.",
+        "description": "The tags a set of selected files already carries.\n\nThe bulk apply surface has to show what a selection *has* before offering to\nchange it, and ``GET /api/files`` deliberately carries no per-file tags\n(#326) — so nothing else can answer this.\n\n``file_count`` is how many of the selected files carry the tag, which is\nwhat lets one selected file offer a full chip editor while several offer\nadd-only: removing a tag that sits on three of five files is ambiguous in a\nway adding never is.\n\nEvery uuid must name a file the caller can open; one that does not is a 404\n\"File not found\" whether it is unknown or merely out of reach, so the route is no\nexistence signal.\n\nRegistered before ``/{tag_uuid}`` so the literal path is not swallowed.",
         "operationId": "list_tags_on_files_api_tags_for_files_get",
         "parameters": [
           {
@@ -50884,6 +51683,127 @@
         "summary": "Update Current User",
         "tags": [
           "users"
+        ]
+      }
+    },
+    "/api/users/me/erasure-request": {
+      "get": {
+        "description": "Whether the feature is on, the grace period, and the caller's open request (if any).",
+        "operationId": "get_self_erasure_status_api_users_me_erasure_request_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfErasureStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Self Erasure Status",
+        "tags": [
+          "privacy"
+        ]
+      },
+      "post": {
+        "description": "Ask for the caller's own account to be erased after the grace period.",
+        "operationId": "request_erasure_api_users_me_erasure_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelfErasureCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfErasureRequestReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Request Erasure",
+        "tags": [
+          "privacy"
+        ]
+      }
+    },
+    "/api/users/me/erasure-request/{ledger_uuid}": {
+      "delete": {
+        "description": "Withdraw the caller's own request. Another user's uuid is a 404.",
+        "operationId": "cancel_erasure_api_users_me_erasure_request__ledger_uuid__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ledger_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Ledger Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfErasureRequestReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Cancel Erasure",
+        "tags": [
+          "privacy"
         ]
       }
     },

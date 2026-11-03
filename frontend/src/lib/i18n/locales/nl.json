@@ -3779,6 +3779,8 @@
   "settings.dataIntegrity.pgFiles": "{{completed}} voltooid ({{active}} actieve bestanden)",
   "settings.dataIntegrity.pgSpeakers": "{{count}} sprekers in database",
   "settings.dataIntegrity.indexNotCreated": "Index niet aangemaakt",
+  "settings.dataIntegrity.indexUnreadable": "Deze index ({{name}}) kon niet worden gelezen. Het aantal documenten is niet beschikbaar; probeer het opnieuw.",
+  "settings.dataIntegrity.overviewUnavailable": "De indexgegevens zijn niet beschikbaar omdat OpenSearch niet bereikbaar was.",
   "settings.dataIntegrity.docSpeakers": "Sprekers",
   "settings.dataIntegrity.docProfiles": "Profielen",
   "settings.dataIntegrity.docClusters": "Clusters",

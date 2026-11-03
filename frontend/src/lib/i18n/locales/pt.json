@@ -3741,6 +3741,8 @@
   "settings.dataIntegrity.pgFiles": "{{completed}} concluídos ({{active}} arquivos ativos)",
   "settings.dataIntegrity.pgSpeakers": "{{count}} locutores no banco de dados",
   "settings.dataIntegrity.indexNotCreated": "Índice não criado",
+  "settings.dataIntegrity.indexUnreadable": "Não foi possível ler este índice ({{name}}). A contagem de documentos está indisponível; tente novamente.",
+  "settings.dataIntegrity.overviewUnavailable": "Os detalhes dos índices estão indisponíveis porque não foi possível alcançar o OpenSearch.",
   "settings.dataIntegrity.docSpeakers": "Locutores",
   "settings.dataIntegrity.docProfiles": "Perfis",
   "settings.dataIntegrity.docClusters": "Clusters",

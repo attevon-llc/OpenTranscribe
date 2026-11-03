@@ -3741,6 +3741,8 @@
   "settings.dataIntegrity.pgFiles": "{{completed}} abgeschlossen ({{active}} aktive Dateien)",
   "settings.dataIntegrity.pgSpeakers": "{{count}} Sprecher in der Datenbank",
   "settings.dataIntegrity.indexNotCreated": "Index nicht erstellt",
+  "settings.dataIntegrity.indexUnreadable": "Dieser Index ({{name}}) konnte nicht gelesen werden. Die Dokumentanzahl ist nicht verfügbar; versuchen Sie es erneut.",
+  "settings.dataIntegrity.overviewUnavailable": "Die Indexdetails sind nicht verfügbar, weil OpenSearch nicht erreicht werden konnte.",
   "settings.dataIntegrity.docSpeakers": "Sprecher",
   "settings.dataIntegrity.docProfiles": "Profile",
   "settings.dataIntegrity.docClusters": "Cluster",

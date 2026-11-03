@@ -3779,6 +3779,8 @@
   "settings.dataIntegrity.pgFiles": "{{completed}}건 완료(활성 파일 {{active}}개)",
   "settings.dataIntegrity.pgSpeakers": "데이터베이스에 화자 {{count}}명",
   "settings.dataIntegrity.indexNotCreated": "인덱스가 생성되지 않았습니다",
+  "settings.dataIntegrity.indexUnreadable": "이 인덱스({{name}})를 읽을 수 없습니다. 문서 수를 확인할 수 없으니 다시 시도해 주세요.",
+  "settings.dataIntegrity.overviewUnavailable": "OpenSearch에 연결할 수 없어 인덱스 세부 정보를 표시할 수 없습니다.",
   "settings.dataIntegrity.docSpeakers": "화자",
   "settings.dataIntegrity.docProfiles": "프로필",
   "settings.dataIntegrity.docClusters": "클러스터",

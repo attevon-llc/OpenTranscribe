@@ -3741,6 +3741,8 @@
   "settings.dataIntegrity.pgFiles": "{{completed}} 已完成 ({{active}} 个活跃文件)",
   "settings.dataIntegrity.pgSpeakers": "数据库中 {{count}} 个说话人",
   "settings.dataIntegrity.indexNotCreated": "索引未创建",
+  "settings.dataIntegrity.indexUnreadable": "无法读取此索引（{{name}}）。文档数量不可用，请重试。",
+  "settings.dataIntegrity.overviewUnavailable": "无法连接到 OpenSearch，因此索引详情不可用。",
   "settings.dataIntegrity.docSpeakers": "说话人",
   "settings.dataIntegrity.docProfiles": "配置文件",
   "settings.dataIntegrity.docClusters": "聚类",

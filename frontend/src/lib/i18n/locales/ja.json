@@ -3741,6 +3741,8 @@
   "settings.dataIntegrity.pgFiles": "{{completed}} 完了 ({{active}} アクティブファイル)",
   "settings.dataIntegrity.pgSpeakers": "データベース内 {{count}} スピーカー",
   "settings.dataIntegrity.indexNotCreated": "インデックス未作成",
+  "settings.dataIntegrity.indexUnreadable": "このインデックス（{{name}}）を読み取れませんでした。ドキュメント数を取得できません。もう一度お試しください。",
+  "settings.dataIntegrity.overviewUnavailable": "OpenSearch に接続できなかったため、インデックスの詳細を表示できません。",
   "settings.dataIntegrity.docSpeakers": "スピーカー",
   "settings.dataIntegrity.docProfiles": "プロファイル",
   "settings.dataIntegrity.docClusters": "クラスター",

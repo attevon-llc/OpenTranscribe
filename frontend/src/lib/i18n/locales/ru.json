@@ -3740,6 +3740,8 @@
   "settings.dataIntegrity.pgFiles": "{{completed}} завершено ({{active}} активных файлов)",
   "settings.dataIntegrity.pgSpeakers": "{{count}} спикеров в базе данных",
   "settings.dataIntegrity.indexNotCreated": "Индекс не создан",
+  "settings.dataIntegrity.indexUnreadable": "Не удалось прочитать этот индекс ({{name}}). Количество документов недоступно; повторите попытку.",
+  "settings.dataIntegrity.overviewUnavailable": "Сведения об индексах недоступны: не удалось связаться с OpenSearch.",
   "settings.dataIntegrity.docSpeakers": "Спикеры",
   "settings.dataIntegrity.docProfiles": "Профили",
   "settings.dataIntegrity.docClusters": "Кластеры",

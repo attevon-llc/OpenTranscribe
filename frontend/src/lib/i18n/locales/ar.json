@@ -3779,6 +3779,8 @@
   "settings.dataIntegrity.pgFiles": "{{completed}} مكتمل ({{active}} ملف نشط)",
   "settings.dataIntegrity.pgSpeakers": "{{count}} متحدث في قاعدة البيانات",
   "settings.dataIntegrity.indexNotCreated": "لم يُنشأ الفهرس",
+  "settings.dataIntegrity.indexUnreadable": "تعذّرت قراءة هذا الفهرس ({{name}}). أعداد المستندات غير متاحة؛ حاول مرة أخرى.",
+  "settings.dataIntegrity.overviewUnavailable": "تفاصيل الفهارس غير متاحة لأنه تعذّر الوصول إلى OpenSearch.",
   "settings.dataIntegrity.docSpeakers": "المتحدثون",
   "settings.dataIntegrity.docProfiles": "الملفات الشخصية",
   "settings.dataIntegrity.docClusters": "المجموعات الصوتية",

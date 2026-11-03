@@ -32,6 +32,7 @@ from unittest.mock import patch
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
+from app.transcription.config import TranscriptionConfig
 from app.transcription.engine.job import RawTranscriptResult
 from tests.unit._plan_contexts import plan_context
 
@@ -595,14 +596,13 @@ class TestAsyncDiarizationServedByReflectsTheRunningDiarizer:
         manager = MagicMock()
         manager.get_diarizer.return_value = fake_diarizer
 
-        class _StubTC:
-            diarizer_backend = "native"
-            enable_native_embeddings = True
-            request_gender = True
+        tc = TranscriptionConfig(
+            diarizer_backend="native", enable_native_embeddings=True, request_gender=True
+        )
 
         async_diarization = _AsyncDiarization(
             audio=MagicMock(),
-            tc=_StubTC(),
+            tc=tc,
             manager=manager,
             task_id="task-served-by",
         )

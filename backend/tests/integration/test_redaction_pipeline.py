@@ -76,9 +76,9 @@ def seeded_file():
     with session_scope() as db:
         from app.models.media import MediaFile
 
-        mf = db.query(MediaFile).filter(MediaFile.id == created["file_id"]).first()
-        if mf:
-            db.delete(mf)  # cascades to segments
+        leftover = db.query(MediaFile).filter(MediaFile.id == created["file_id"]).first()
+        if leftover:
+            db.delete(leftover)  # cascades to segments
             db.commit()
 
 
@@ -98,6 +98,7 @@ def test_detect_and_mask(seeded_file):
         assert result["status"] == "done"
 
         mf = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+        assert mf is not None
         assert mf.redaction_status == "done"
 
         segs = (

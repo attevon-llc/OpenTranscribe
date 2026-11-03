@@ -12,10 +12,13 @@ assert on that shared helper *and* that `create_for_user` reaches it.
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.models.user_asr_settings import UserASRSettings
 from app.services.asr.aws_provider import AWSTranscribeProvider
 from app.services.asr.factory import ASRProviderFactory
 from app.utils.encryption import encrypt_api_key
@@ -34,14 +37,16 @@ class _FakeQuery:
         return self._result
 
 
-class _FakeDB:
+class _FakeDB(Session):
     """Returns the UserSetting row first, then the UserASRSettings row."""
 
     def __init__(self, setting, cfg):
+        super().__init__()
         self._setting = setting
         self._cfg = cfg
 
-    def query(self, model):
+    def query(self, *entities: Any, **kwargs: Any) -> Any:
+        model = entities[0]
         name = getattr(model, "__name__", str(model))
         if name == "UserASRSettings":
             return _FakeQuery(self._cfg)
@@ -61,7 +66,7 @@ def _aws_cfg(**overrides):
         "is_active": True,
     }
     base.update(overrides)
-    return SimpleNamespace(**base)
+    return UserASRSettings(**base)
 
 
 def test_create_from_db_config_forwards_both_aws_credentials():
@@ -115,7 +120,7 @@ def test_aws_config_without_stored_key_still_allows_iam_role(monkeypatch):
 
 
 def test_local_provider_config_skips_decryption():
-    cfg = SimpleNamespace(
+    cfg = UserASRSettings(
         id=1,
         provider="local",
         model_name=None,
@@ -170,7 +175,7 @@ def _gladia_cfg(**overrides):
         "is_active": True,
     }
     base.update(overrides)
-    return SimpleNamespace(**base)
+    return UserASRSettings(**base)
 
 
 def test_create_from_db_config_forwards_gladia_base_url(monkeypatch):

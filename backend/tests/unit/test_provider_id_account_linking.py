@@ -22,12 +22,13 @@ too, unconditionally.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any
 from typing import cast
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
 from app.auth import account_linking
 from app.auth import external_sync
@@ -39,26 +40,27 @@ from app.auth.provider_registry import ExternalIdentity
 from app.auth.saml import provisioning as saml_provisioning
 from app.core.exceptions import AuthenticationError
 from app.core.exceptions import ExternalIdentityLinkRefusedError
+from app.models.user import User
 
 
-class _FakeUser:
-    def __init__(
-        self,
-        email="victim@example.com",
-        role="user",
-        auth_type="ldap",
-        platform_super_admin_link_authorized=False,
-    ):
-        self.id = 1
-        self.email = email
-        self.role = role
-        self.auth_type = auth_type
-        self.ldap_uid = "existing-uid"
-        self.pki_subject_dn = "CN=Existing"
-        self.oidc_subject = "existing-sub"
-        self.saml_subject = "existing-nameid"
-        self.external_id = "existing-ext"
-        self.platform_super_admin_link_authorized = platform_super_admin_link_authorized
+def _make_user(
+    email: str = "victim@example.com",
+    role: str = "user",
+    auth_type: str = "ldap",
+    platform_super_admin_link_authorized: bool = False,
+) -> User:
+    return User(
+        id=1,
+        email=email,
+        role=role,
+        auth_type=auth_type,
+        ldap_uid="existing-uid",
+        pki_subject_dn="CN=Existing",
+        oidc_subject="existing-sub",
+        saml_subject="existing-nameid",
+        external_id="existing-ext",
+        platform_super_admin_link_authorized=platform_super_admin_link_authorized,
+    )
 
 
 class _FakeQuery:
@@ -72,25 +74,23 @@ class _FakeQuery:
         return self._results.pop(0) if self._results else None
 
 
-class _FakeProviderIdSession:
+class _FakeProviderIdSession(Session):
     """The provider-id lookup finds ``user`` directly — no email fallback needed."""
 
-    def __init__(self, user):
-        self._user = user
-
-    def query(self, _model):
-        return _FakeQuery([self._user])
-
-    def refresh(self, _obj):
-        pass
-
-    def commit(self):
-        pass
-
-    def get_bind(self):
+    def __init__(self, user: User) -> None:
         # ``external_sync`` asks the bind's dialect whether it can read the auth_type
         # CHECK (#866); a non-Postgres bind means "unreadable", which admits the provider.
-        return SimpleNamespace(dialect=SimpleNamespace(name="sqlite"))
+        super().__init__(bind=create_engine("sqlite://"))
+        self._user = user
+
+    def query(self, *_entities: Any, **_kwargs: Any) -> Any:
+        return _FakeQuery([self._user])
+
+    def refresh(self, *_args: Any, **_kwargs: Any) -> None:
+        pass
+
+    def commit(self) -> None:
+        pass
 
 
 @pytest.mark.unit
@@ -101,7 +101,7 @@ class TestProviderIdLinkGuardRule:
         """The exploit: the identifier matched, but the person behind it changed."""
         with pytest.raises(AuthenticationError) as exc:
             account_linking.assert_provider_id_link_permitted(
-                _FakeUser(email="victim@example.com"),
+                _make_user(email="victim@example.com"),
                 provider="ldap",
                 source_identifier="recycled-uid",
                 asserted_email="attacker@example.com",
@@ -112,7 +112,7 @@ class TestProviderIdLinkGuardRule:
     def test_matching_asserted_email_is_permitted(self):
         """The ordinary case: same identifier, same person. Must not be blocked."""
         account_linking.assert_provider_id_link_permitted(
-            _FakeUser(email="victim@example.com"),
+            _make_user(email="victim@example.com"),
             provider="ldap",
             source_identifier="existing-uid",
             asserted_email="victim@example.com",
@@ -122,7 +122,7 @@ class TestProviderIdLinkGuardRule:
     def test_no_asserted_email_is_permitted(self):
         """A source with no verified-address concept must still work as before."""
         account_linking.assert_provider_id_link_permitted(
-            _FakeUser(),
+            _make_user(),
             provider="pki",
             source_identifier="CN=Existing",
             asserted_email=None,
@@ -133,7 +133,7 @@ class TestProviderIdLinkGuardRule:
         """Unconditional — a matching email does not lift the super_admin guard."""
         with pytest.raises(AuthenticationError):
             account_linking.assert_provider_id_link_permitted(
-                _FakeUser(email="victim@example.com", role="super_admin"),
+                _make_user(email="victim@example.com", role="super_admin"),
                 provider="oidc",
                 source_identifier="existing-sub",
                 asserted_email="victim@example.com",
@@ -145,7 +145,7 @@ class TestProviderIdLinkGuardRule:
         never produce or refresh a super_admin — the pre-fix behavior is unchanged."""
         with pytest.raises(AuthenticationError) as exc:
             account_linking.assert_provider_id_link_permitted(
-                _FakeUser(
+                _make_user(
                     email="victim@example.com",
                     role="super_admin",
                     platform_super_admin_link_authorized=False,
@@ -160,7 +160,7 @@ class TestProviderIdLinkGuardRule:
     def test_flagged_super_admin_row_is_linked_when_the_flag_is_set(self):
         """Issue #993's escape hatch: the out-of-band-authorized row is permitted."""
         account_linking.assert_provider_id_link_permitted(
-            _FakeUser(
+            _make_user(
                 email="victim@example.com",
                 role="super_admin",
                 platform_super_admin_link_authorized=True,
@@ -176,7 +176,7 @@ class TestProviderIdLinkGuardRule:
         still runs unconditionally, even on an explicitly-authorized row."""
         with pytest.raises(AuthenticationError) as exc:
             account_linking.assert_provider_id_link_permitted(
-                _FakeUser(
+                _make_user(
                     email="victim@example.com",
                     role="super_admin",
                     platform_super_admin_link_authorized=True,
@@ -192,7 +192,7 @@ class TestProviderIdLinkGuardRule:
         with patch.object(account_linking.audit_logger, "log") as log:
             with pytest.raises(AuthenticationError):
                 account_linking.assert_provider_id_link_permitted(
-                    _FakeUser(email="victim@example.com"),
+                    _make_user(email="victim@example.com"),
                     provider="ldap",
                     source_identifier="recycled-uid",
                     asserted_email="attacker@example.com",
@@ -206,7 +206,7 @@ class TestProviderIdLinkGuardRule:
     def test_refusal_response_matches_the_ordinary_failure(self):
         with pytest.raises(AuthenticationError) as exc:
             account_linking.assert_provider_id_link_permitted(
-                _FakeUser(email="victim@example.com"),
+                _make_user(email="victim@example.com"),
                 provider="ldap",
                 source_identifier="recycled-uid",
                 asserted_email="attacker@example.com",
@@ -233,7 +233,7 @@ def _ldap_data(email: str) -> ldap_auth.LdapUserData:
 @pytest.mark.unit
 class TestLdapSyncProviderIdGuard:
     def test_divergent_email_blocks_the_login(self):
-        user = _FakeUser(email="victim@example.com", auth_type="ldap")
+        user = _make_user(email="victim@example.com", auth_type="ldap")
         db = _FakeProviderIdSession(user)
 
         with patch.object(ldap_auth, "_update_ldap_user") as update:
@@ -245,7 +245,7 @@ class TestLdapSyncProviderIdGuard:
 
     def test_matching_email_still_authenticates_normally(self):
         """Common case, unchanged: same uid, same email, ordinary login proceeds."""
-        user = _FakeUser(email="victim@example.com", auth_type="ldap")
+        user = _make_user(email="victim@example.com", auth_type="ldap")
         db = _FakeProviderIdSession(user)
 
         with (
@@ -258,7 +258,7 @@ class TestLdapSyncProviderIdGuard:
         assert result is user
 
     def test_super_admin_account_is_never_taken_over_via_provider_id(self):
-        user = _FakeUser(email="victim@example.com", role="super_admin", auth_type="ldap")
+        user = _make_user(email="victim@example.com", role="super_admin", auth_type="ldap")
         db = _FakeProviderIdSession(user)
 
         with patch.object(ldap_auth, "_update_ldap_user") as update:
@@ -291,7 +291,7 @@ def _pki_data(email: str) -> pki_certificate.PKIUserData:
 @pytest.mark.unit
 class TestPkiSyncProviderIdGuard:
     def test_divergent_email_blocks_the_login(self):
-        user = _FakeUser(email="victim@example.com", auth_type="pki")
+        user = _make_user(email="victim@example.com", auth_type="pki")
         db = _FakeProviderIdSession(user)
 
         with patch.object(pki_provisioning, "_update_pki_user") as update:
@@ -302,7 +302,7 @@ class TestPkiSyncProviderIdGuard:
         assert not update.called
 
     def test_matching_email_still_authenticates_normally(self):
-        user = _FakeUser(email="victim@example.com", auth_type="pki")
+        user = _make_user(email="victim@example.com", auth_type="pki")
         db = _FakeProviderIdSession(user)
 
         with patch.object(pki_provisioning, "_update_pki_user", return_value=user) as update:
@@ -312,7 +312,7 @@ class TestPkiSyncProviderIdGuard:
         assert result is user
 
     def test_super_admin_account_is_never_taken_over_via_provider_id(self):
-        user = _FakeUser(email="victim@example.com", role="super_admin", auth_type="pki")
+        user = _make_user(email="victim@example.com", role="super_admin", auth_type="pki")
         db = _FakeProviderIdSession(user)
 
         with patch.object(pki_provisioning, "_update_pki_user") as update:
@@ -340,7 +340,7 @@ def _oidc_data(email: str) -> dict[str, Any]:
 @pytest.mark.unit
 class TestOidcSyncProviderIdGuard:
     def test_divergent_email_blocks_the_login(self):
-        user = _FakeUser(email="victim@example.com", auth_type="oidc")
+        user = _make_user(email="victim@example.com", auth_type="oidc")
         db = _FakeProviderIdSession(user)
 
         with (
@@ -364,7 +364,7 @@ class TestOidcSyncProviderIdGuard:
         assert not update.called
 
     def test_matching_email_still_authenticates_normally(self):
-        user = _FakeUser(email="victim@example.com", auth_type="oidc")
+        user = _make_user(email="victim@example.com", auth_type="oidc")
         db = _FakeProviderIdSession(user)
 
         with (
@@ -387,7 +387,7 @@ class TestOidcSyncProviderIdGuard:
         assert result is user
 
     def test_super_admin_account_is_never_taken_over_via_provider_id(self):
-        user = _FakeUser(email="victim@example.com", role="super_admin", auth_type="oidc")
+        user = _make_user(email="victim@example.com", role="super_admin", auth_type="oidc")
         db = _FakeProviderIdSession(user)
 
         with (
@@ -420,7 +420,7 @@ def _saml_data(email: str) -> dict[str, Any]:
 @pytest.mark.unit
 class TestSamlSyncProviderIdGuard:
     def test_divergent_email_blocks_the_login(self):
-        user = _FakeUser(email="victim@example.com", auth_type="saml")
+        user = _make_user(email="victim@example.com", auth_type="saml")
         db = _FakeProviderIdSession(user)
 
         with (
@@ -439,7 +439,7 @@ class TestSamlSyncProviderIdGuard:
         assert not update.called
 
     def test_matching_email_still_authenticates_normally(self):
-        user = _FakeUser(email="victim@example.com", auth_type="saml")
+        user = _make_user(email="victim@example.com", auth_type="saml")
         db = _FakeProviderIdSession(user)
 
         with (
@@ -457,7 +457,7 @@ class TestSamlSyncProviderIdGuard:
         assert result is user
 
     def test_super_admin_account_is_never_taken_over_via_provider_id(self):
-        user = _FakeUser(email="victim@example.com", role="super_admin", auth_type="saml")
+        user = _make_user(email="victim@example.com", role="super_admin", auth_type="saml")
         db = _FakeProviderIdSession(user)
 
         with (
@@ -487,7 +487,7 @@ class TestExternalSyncProviderIdGuard:
         )
 
     def test_divergent_email_blocks_the_login(self):
-        user = _FakeUser(email="victim@example.com", auth_type="cloudidp")
+        user = _make_user(email="victim@example.com", auth_type="cloudidp")
         db = cast("Any", _FakeProviderIdSession(user))
 
         with pytest.raises(ExternalIdentityLinkRefusedError):
@@ -496,7 +496,7 @@ class TestExternalSyncProviderIdGuard:
         assert user.email == "victim@example.com", "the account row must be left untouched"
 
     def test_matching_email_still_authenticates_normally(self):
-        user = _FakeUser(email="victim@example.com", auth_type="cloudidp")
+        user = _make_user(email="victim@example.com", auth_type="cloudidp")
         db = cast("Any", _FakeProviderIdSession(user))
 
         result = external_sync.sync_external_user_to_db(db, self._identity("victim@example.com"))
@@ -504,7 +504,7 @@ class TestExternalSyncProviderIdGuard:
         assert cast("Any", result) is user
 
     def test_super_admin_account_is_never_taken_over_via_provider_id(self):
-        user = _FakeUser(email="victim@example.com", role="super_admin", auth_type="cloudidp")
+        user = _make_user(email="victim@example.com", role="super_admin", auth_type="cloudidp")
         db = cast("Any", _FakeProviderIdSession(user))
 
         with pytest.raises(ExternalIdentityLinkRefusedError):
@@ -527,7 +527,7 @@ class TestExternalSyncProviderIdGuard:
 @pytest.mark.unit
 class TestLdapEmailWriteGuard:
     def test_ldap_does_not_clobber_a_stored_email_with_an_empty_one(self):
-        user = _FakeUser(email="victim@example.com", auth_type="ldap")
+        user = _make_user(email="victim@example.com", auth_type="ldap")
         db = _FakeProviderIdSession(user)
 
         ldap_auth._update_ldap_user(db, user, "existing-uid", "", _ldap_data(""))
@@ -535,7 +535,7 @@ class TestLdapEmailWriteGuard:
         assert user.email == "victim@example.com"
 
     def test_ldap_conversion_does_not_clobber_a_stored_email_with_an_empty_one(self):
-        user = _FakeUser(email="victim@example.com", auth_type="local")
+        user = _make_user(email="victim@example.com", auth_type="local")
         db = _FakeProviderIdSession(user)
 
         ldap_auth._convert_local_user_to_ldap(db, user, "existing-uid", "", _ldap_data(""))
@@ -545,7 +545,7 @@ class TestLdapEmailWriteGuard:
     def test_ldap_still_applies_a_genuinely_new_address(self):
         """Control: without it, deleting both write lines entirely would also pass
         the two tests above."""
-        user = _FakeUser(email="victim@example.com", auth_type="ldap")
+        user = _make_user(email="victim@example.com", auth_type="ldap")
         db = _FakeProviderIdSession(user)
 
         new_email = "victim.renamed@example.com"
@@ -557,7 +557,7 @@ class TestLdapEmailWriteGuard:
 class _FakeGuardUser:
     """A minimal stand-in accepted by every provider's update/convert function.
 
-    Deliberately not `_FakeUser` above: OIDC/SAML's convert functions also touch
+    Deliberately not `_make_user` above: OIDC/SAML's convert functions also touch
     `hashed_password` and `is_superuser`/`role`, so this needs a couple more
     writable attributes than the provider-ID guard tests exercise.
     """

@@ -10,10 +10,12 @@ decided by policy, and both account-link guards consulted.
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
 from typing import cast
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy.orm import Session
 
 from app.auth import pki_provisioning
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
@@ -22,6 +24,7 @@ from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import role_implies_superuser
+from app.models.user import User
 
 pytestmark = pytest.mark.unit
 
@@ -47,8 +50,8 @@ def _data(*, is_admin: bool, email: str = "pat@example.com") -> PKIUserData:
     )
 
 
-def _user(role: str, auth_type: str = "pki") -> SimpleNamespace:
-    return SimpleNamespace(
+def _user(role: str, auth_type: str = "pki") -> User:
+    return User(
         email="stored@example.com",
         role=role,
         is_superuser=role_implies_superuser(role),
@@ -58,12 +61,13 @@ def _user(role: str, auth_type: str = "pki") -> SimpleNamespace:
     )
 
 
-class _Db:
-    def __init__(self, found=None):
+class _Db(Session):
+    def __init__(self, found: User | None = None) -> None:
+        super().__init__()
         self.found = found
         self.added: list = []
 
-    def query(self, _model):
+    def query(self, *_entities: Any, **_kwargs: Any) -> Any:
         return self
 
     def filter(self, *_a):
@@ -72,13 +76,13 @@ class _Db:
     def first(self):
         return self.found
 
-    def add(self, obj):
-        self.added.append(obj)
+    def add(self, instance: object, _warn: bool = True) -> None:
+        self.added.append(instance)
 
-    def commit(self):
+    def commit(self) -> None:
         pass
 
-    def refresh(self, _obj):
+    def refresh(self, *_args: Any, **_kwargs: Any) -> None:
         pass
 
 
@@ -165,13 +169,13 @@ class _RaceDb(_Db):
             return None
         return self.by_dn if "pki_subject_dn" in self._crit else self.by_email
 
-    def commit(self):
+    def commit(self) -> None:
         from sqlalchemy.exc import IntegrityError
 
         self.lost_race = True
         raise IntegrityError("insert", {}, Exception("duplicate key ix_user_email"))
 
-    def rollback(self):
+    def rollback(self) -> None:
         pass
 
 

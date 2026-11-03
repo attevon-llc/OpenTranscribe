@@ -10,27 +10,27 @@ import datetime
 
 import pytest
 
+from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.services.ingest_artifacts import textrank
 from app.services.ingest_artifacts.facts import build_facts
 from app.services.ingest_artifacts.keyphrases import extract_keyphrases
 from app.utils.transcript_builders import compute_speaker_stats
 
 
-class _Speaker:
-    def __init__(self, name):
-        self.name = name
-        self.display_name = name
-        self.verified = True
-        self.suggested_name = None
-        self.confidence = None
-
-
-class _Segment:
-    def __init__(self, text, start, end, speaker):
-        self.text = text
-        self.start_time = start
-        self.end_time = end
-        self.speaker = _Speaker(speaker)
+def _segment(text: str, start: float, end: float, speaker: str) -> TranscriptSegment:
+    return TranscriptSegment(
+        text=text,
+        start_time=start,
+        end_time=end,
+        speaker=Speaker(
+            name=speaker,
+            display_name=speaker,
+            verified=True,
+            suggested_name=None,
+            confidence=None,
+        ),
+    )
 
 
 def _make(script):
@@ -39,7 +39,7 @@ def _make(script):
         {"id": i + 1, "text": t, "start_time": s, "end_time": e, "speaker": sp}
         for i, (sp, t, s, e) in enumerate(script)
     ]
-    stats = compute_speaker_stats([_Segment(t, s, e, sp) for sp, t, s, e in script])
+    stats = compute_speaker_stats([_segment(t, s, e, sp) for sp, t, s, e in script])
     return segments, stats
 
 
@@ -185,9 +185,9 @@ def test_compute_speaker_stats_still_matches_build_transcript_and_stats():
     from app.utils.transcript_builders import build_transcript_and_stats
 
     segments = [
-        _Segment("hello there friend", 0.0, 4.0, "Dana"),
-        _Segment("and hello to you", 4.0, 9.0, "Marcus"),
-        _Segment("shall we begin", 9.0, 12.0, "Dana"),
+        _segment("hello there friend", 0.0, 4.0, "Dana"),
+        _segment("and hello to you", 4.0, 9.0, "Marcus"),
+        _segment("shall we begin", 9.0, 12.0, "Dana"),
     ]
     _, inline = build_transcript_and_stats(segments)
     assert inline == compute_speaker_stats(segments)

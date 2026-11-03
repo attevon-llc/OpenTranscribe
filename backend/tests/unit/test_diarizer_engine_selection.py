@@ -38,6 +38,8 @@ from app.transcription.diarizer_native import NativeSpeakerDiarizer
 from app.transcription.engine import diarization_overlap as stages_mod
 from app.transcription.engine.backends import VALID_DIARIZER_BACKENDS
 from app.transcription.model_manager import ModelManager
+from app.utils.hardware_detection import HardwareConfig
+from app.utils.vram_profiler import VRAMProfiler
 
 #: All diar-native tests that stand up a real HTTP server, or drive diarizer_native's
 #: module-level state, run on ONE xdist worker.
@@ -537,27 +539,14 @@ class _MidJobFailureHandler(http.server.BaseHTTPRequestHandler):
         pass
 
 
-class _FakeHW:
-    def log_vram_usage(self, *_a: object, **_kw: object) -> None:
-        pass
-
-    def optimize_memory_usage(self) -> None:
-        pass
+_HW = HardwareConfig(force_device="cpu", force_compute_type="int8")
 
 
-class _FakeProfiler:
-    def snapshot(self, *_a: object, **_kw: object) -> None:
-        pass
-
-    @contextlib.contextmanager
-    def step(self, *_a: object, **_kw: object):
-        yield
-
-
-class _FakeManagerOneNativeDiarizer:
-    """Just enough of ModelManager's surface for _collect_diarization to run."""
+class _FakeManagerOneNativeDiarizer(ModelManager):
+    """A real ModelManager that hands out one fixed diarizer instead of building one."""
 
     def __init__(self, diarizer):
+        super().__init__()
         self._diarizer = diarizer
         self.release_calls = 0
 
@@ -617,7 +606,7 @@ class TestOverlapMidJobFailureDegradesSafely:
             async_diar = stages_mod._AsyncDiarization(audio, config, manager, "task-665")
             caplog.set_level(logging.WARNING)
             diarize_df, overlap_info, embeddings, provider, model = stages_mod._collect_diarization(
-                audio, config, manager, _FakeHW(), _FakeProfiler(), None, async_diar
+                audio, config, manager, _HW, VRAMProfiler(enabled=False), None, async_diar
             )
             assert provider == "pyannote", (
                 "the in-process fallback served this call — the resolved provider must say "
@@ -771,7 +760,7 @@ class TestSaturatedSidecarSkipsSecondAttempt:
             async_diar = stages_mod._AsyncDiarization(audio, config, manager, "task-656")
             diarize_df, _overlap_info, _embeddings, provider, _model = (
                 stages_mod._collect_diarization(
-                    audio, config, manager, _FakeHW(), _FakeProfiler(), None, async_diar
+                    audio, config, manager, _HW, VRAMProfiler(enabled=False), None, async_diar
                 )
             )
 

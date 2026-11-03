@@ -65,6 +65,7 @@ import datetime
 
 import pytest
 
+from app.models.media import MediaFile
 from app.tasks.transcription.metadata_extractor import _map_ffprobe_audio_stream
 from app.tasks.transcription.metadata_extractor import _map_ffprobe_format
 from app.tasks.transcription.metadata_extractor import _parse_media_date
@@ -72,36 +73,6 @@ from app.tasks.transcription.metadata_extractor import _parse_quicktime_format
 from app.tasks.transcription.metadata_extractor import _try_parse_creation_date_from_fields
 from app.tasks.transcription.metadata_extractor import get_important_metadata
 from app.tasks.transcription.metadata_extractor import update_media_file_metadata
-
-
-class _FakeMediaFile:
-    """Minimal stand-in for ``MediaFile`` exposing only the attrs these functions touch."""
-
-    def __init__(self) -> None:
-        self.creation_date = None
-        self.last_modified_date = None
-        self.resolution_width = None
-        self.resolution_height = None
-        self.frame_rate = None
-        self.codec = None
-        self.frame_count = None
-        self.aspect_ratio = None
-        self.audio_channels = None
-        self.audio_sample_rate = None
-        self.audio_bit_depth = None
-        self.duration = None
-        self.device_make = None
-        self.device_model = None
-        self.title = None
-        self.author = None
-        self.description = None
-        self.metadata_raw = None
-        self.metadata_important = None
-        self.important_metadata = None
-        self.metadata = None
-        self.file_size = None
-        self.media_format = None
-
 
 # --- 1. _parse_media_date docstring vs. actual behaviour -------------------------
 
@@ -193,7 +164,7 @@ def test_update_media_file_metadata_leaves_creation_date_none_with_no_date_field
     non-null ``creation_date`` as "the container told us". This test guards against
     that fallback silently being reintroduced.
     """
-    media_file = _FakeMediaFile()
+    media_file = MediaFile()
     extracted_metadata = {
         "File:MIMEType": "audio/mpeg",
         "File:FileType": "MP3",
@@ -212,7 +183,7 @@ def test_update_media_file_metadata_leaves_creation_date_none_with_no_date_field
 
 def test_bad_create_date_falls_through_to_date_time_original() -> None:
     """A malformed CreateDate must not abort the scan of later candidate fields."""
-    media_file = _FakeMediaFile()
+    media_file = MediaFile()
     important_metadata = {
         "CreateDate": "not-a-real-date-at-all",  # raises ValueError inside _parse_media_date
         "DateTimeOriginal": "2023:12:25 14:30:45",  # valid, should win
@@ -225,7 +196,7 @@ def test_bad_create_date_falls_through_to_date_time_original() -> None:
 
 def test_valid_create_date_wins_without_reaching_later_fields() -> None:
     """Control: when CreateDate parses cleanly, it wins over DateTimeOriginal."""
-    media_file = _FakeMediaFile()
+    media_file = MediaFile()
     important_metadata = {
         "CreateDate": "2023:12:25 14:30:45",
         "DateTimeOriginal": "2099:01:01 00:00:00",

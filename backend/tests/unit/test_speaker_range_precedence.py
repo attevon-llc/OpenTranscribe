@@ -9,6 +9,7 @@ test and the deployment env default is 1/20, so a path that loses the user's ran
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Callable
 from unittest.mock import MagicMock
 
 import pytest
@@ -16,7 +17,9 @@ import pytest
 from app.core.config import settings
 from app.models.prompt import UserSetting
 from app.schemas.watch_source import WatchSourceCreate
+from app.services.asr.base import ASRProvider
 from app.services.asr.types import ASRConfig
+from app.services.asr.types import ASRResult
 from app.tasks import rediarize_task as rediarize_module
 from app.tasks.transcription import cloud_asr
 from app.tasks.transcription import pipelines
@@ -130,19 +133,32 @@ def test_local_paths_resolve_the_range_per_file_then_saved(
 # -- cloud ASR ---------------------------------------------------------------------------------
 
 
-class _CapturingProvider:
-    provider_name = "deepgram"
-
-    def __init__(self):
+class _CapturingProvider(ASRProvider):
+    def __init__(self) -> None:
         self.config: ASRConfig | None = None
 
-    def supports_translation(self):
+    @property
+    def provider_name(self) -> str:
+        return "deepgram"
+
+    def supports_translation(self) -> bool:
         return True
 
-    def supports_diarization(self):
+    def supports_diarization(self) -> bool:
         return True
 
-    def transcribe(self, audio_path, config, progress_callback):
+    def supports_vocabulary(self) -> bool:
+        return False
+
+    def validate_connection(self) -> tuple[bool, str, float]:
+        return True, "", 0.0
+
+    def transcribe(
+        self,
+        audio_path: str,
+        config: ASRConfig,
+        progress_callback: Callable[[float, str], None] | None = None,
+    ) -> ASRResult:
         self.config = config
         raise _StopError
 

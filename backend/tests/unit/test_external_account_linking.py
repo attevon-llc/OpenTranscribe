@@ -17,10 +17,12 @@ duplicate account.
 
 from __future__ import annotations
 
+from typing import Any
 from typing import cast
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy.orm import Session
 
 from app.auth import account_linking
 from app.auth import ldap_auth
@@ -28,16 +30,15 @@ from app.auth import pki_auth
 from app.auth import pki_certificate
 from app.auth import pki_provisioning
 from app.core.exceptions import AuthenticationError
+from app.models.user import User
 
 
-class _FakeUser:
-    def __init__(self, email="victim@example.com", role="user", auth_type="local"):
-        self.id = 1
-        self.email = email
-        self.role = role
-        self.auth_type = auth_type
-        self.ldap_uid = None
-        self.pki_subject_dn = None
+def _make_user(
+    email: str = "victim@example.com", role: str = "user", auth_type: str = "local"
+) -> User:
+    return User(
+        id=1, email=email, role=role, auth_type=auth_type, ldap_uid=None, pki_subject_dn=None
+    )
 
 
 class _FakeQuery:
@@ -51,19 +52,20 @@ class _FakeQuery:
         return self._results.pop(0) if self._results else None
 
 
-class _FakeSession:
+class _FakeSession(Session):
     """Returns None for the provider-id lookup, then a user for the email lookup."""
 
-    def __init__(self, email_match):
+    def __init__(self, email_match: User | None) -> None:
+        super().__init__()
         self._results = [None, email_match]
 
-    def query(self, _model):
+    def query(self, *_entities: Any, **_kwargs: Any) -> Any:
         return _FakeQuery(self._results)
 
-    def refresh(self, _obj):
+    def refresh(self, *_args: Any, **_kwargs: Any) -> None:
         pass
 
-    def commit(self):
+    def commit(self) -> None:
         pass
 
 
@@ -74,7 +76,7 @@ class TestLinkGuardRule:
     def test_unverified_source_is_refused(self):
         with pytest.raises(AuthenticationError) as exc:
             account_linking.assert_email_link_permitted(
-                _FakeUser(),
+                _make_user(),
                 provider="ldap",
                 source_identifier="jdoe",
                 email_verified=False,
@@ -86,7 +88,7 @@ class TestLinkGuardRule:
         """The super_admin guard is unconditional — a verified address does not lift it."""
         with pytest.raises(AuthenticationError):
             account_linking.assert_email_link_permitted(
-                _FakeUser(role="super_admin"),
+                _make_user(role="super_admin"),
                 provider="pki",
                 source_identifier="CN=Someone",
                 email_verified=True,
@@ -96,7 +98,7 @@ class TestLinkGuardRule:
     def test_verified_non_privileged_link_is_permitted(self):
         """Returns quietly — the guard must not block a source that does assert."""
         account_linking.assert_email_link_permitted(
-            _FakeUser(),
+            _make_user(),
             provider="cloudidp",
             source_identifier="ext-1",
             email_verified=True,
@@ -107,7 +109,7 @@ class TestLinkGuardRule:
         with patch.object(account_linking.audit_logger, "log") as log:
             with pytest.raises(AuthenticationError):
                 account_linking.assert_email_link_permitted(
-                    _FakeUser(role="super_admin"),
+                    _make_user(role="super_admin"),
                     provider="ldap",
                     source_identifier="jdoe",
                     email_verified=True,
@@ -121,7 +123,7 @@ class TestLinkGuardRule:
         """A distinct error would itself be the oracle the guard exists to remove."""
         with pytest.raises(AuthenticationError) as exc:
             account_linking.assert_email_link_permitted(
-                _FakeUser(),
+                _make_user(),
                 provider="ldap",
                 source_identifier="jdoe",
                 email_verified=False,
@@ -136,7 +138,7 @@ class TestLinkGuardRule:
 class TestLdapSyncRefusesEmailMatch:
     def test_email_matched_local_account_is_not_converted(self):
         """The takeover path: directory ``mail`` pointed at an existing local user."""
-        db = _FakeSession(_FakeUser())
+        db = _FakeSession(_make_user())
         ldap_data = cast(
             "ldap_auth.LdapUserData",
             {
@@ -169,7 +171,7 @@ class TestLdapSyncRefusesEmailMatch:
 @pytest.mark.unit
 class TestPkiSyncRefusesEmailMatch:
     def test_email_matched_local_account_is_not_converted(self):
-        db = _FakeSession(_FakeUser())
+        db = _FakeSession(_make_user())
         pki_data = cast(
             "pki_certificate.PKIUserData",
             {

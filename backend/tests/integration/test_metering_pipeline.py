@@ -31,9 +31,12 @@ Run the full chain against the live stack:
 from __future__ import annotations
 
 import uuid as uuidlib
+from typing import Any
 
 import pytest
+from sqlalchemy.orm import Session
 
+from app.models.media import MediaFile
 from tests.helpers import does_not_raise
 
 
@@ -47,30 +50,31 @@ def _clear_hooks():
     clear_hooks()
 
 
-class _FakeMediaFile:
-    """Minimal stand-in for a finalized MediaFile row."""
+def _make_media_file(file_id: int, org_id: int | None, duration: float | None, user_id: int = 7):
+    """An unpersisted MediaFile carrying just what the completion helper reads."""
+    return MediaFile(
+        id=file_id,
+        uuid=uuidlib.uuid4(),
+        user_id=user_id,
+        organization_id=org_id,
+        duration=duration,
+    )
 
-    def __init__(self, file_id, org_id, duration, user_id=7):
-        self.id = file_id
-        self.uuid = uuidlib.uuid4()
-        self.user_id = user_id
-        self.organization_id = org_id
-        self.duration = duration
 
-
-class _FakeSession:
+class _FakeSession(Session):
     """DB stub whose query(...).filter(...).first() returns a fixed MediaFile."""
 
-    def __init__(self, media_file):
+    def __init__(self, media_file: MediaFile) -> None:
+        super().__init__()
         self._media_file = media_file
 
-    def query(self, *_args, **_kwargs):
+    def query(self, *_args: Any, **_kwargs: Any) -> Any:
         return self
 
-    def filter(self, *_args, **_kwargs):
+    def filter(self, *_args: Any, **_kwargs: Any) -> Any:
         return self
 
-    def first(self):
+    def first(self) -> MediaFile:
         return self._media_file
 
 
@@ -87,7 +91,7 @@ def test_finalize_fires_completion_hook_standalone():
     captured = []
     register_transcription_complete(lambda ctx: captured.append(ctx))
 
-    media_file = _FakeMediaFile(file_id=4242, org_id=99, duration=123.5, user_id=7)
+    media_file = _make_media_file(file_id=4242, org_id=99, duration=123.5, user_id=7)
     db = _FakeSession(media_file)
 
     run_id = "stable-run-id-abc123"
@@ -115,7 +119,7 @@ def test_metering_hook_failure_never_propagates():
 
     register_transcription_complete(_boom)
 
-    db = _FakeSession(_FakeMediaFile(file_id=1, org_id=None, duration=None))
+    db = _FakeSession(_make_media_file(file_id=1, org_id=None, duration=None))
     # Must return cleanly despite the hook raising.
     with does_not_raise("a failing metering hook must never surface to the caller"):
         _fire_completion_metering(db, file_id=1, run_id="r1", provider="local", success=True)
@@ -125,7 +129,7 @@ def test_community_edition_is_noop():
     """With no hook registered (community default), firing is a harmless no-op."""
     from app.tasks.transcription.postprocess import _fire_completion_metering
 
-    db = _FakeSession(_FakeMediaFile(file_id=1, org_id=None, duration=10.0))
+    db = _FakeSession(_make_media_file(file_id=1, org_id=None, duration=10.0))
     with does_not_raise("the community edition has no metering hook, so dispatch is a no-op"):
         _fire_completion_metering(db, file_id=1, run_id="r1", provider="local", success=True)
 
@@ -237,6 +241,6 @@ def test_finalize_chain_writes_usage_event():
                 db.query(UsageEvent).filter(
                     UsageEvent.idempotency_key == f"{created_file_id}:{run_id}"
                 ).delete()
-                mf = db.query(MediaFile).filter(MediaFile.id == created_file_id).first()
-                if mf:
-                    db.delete(mf)
+                leftover = db.query(MediaFile).filter(MediaFile.id == created_file_id).first()
+                if leftover:
+                    db.delete(leftover)

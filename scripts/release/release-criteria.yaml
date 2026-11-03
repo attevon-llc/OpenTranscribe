@@ -350,7 +350,7 @@ stages:
     description: The pre-merge integration gate, run against the live stack
     criteria:
       - id: dev-stack-up
-        description: Postgres answers on 5176 — this suite runs against the live stack, not a fixture
+        description: the isolated --fresh test stack is up and Postgres answers on its offset port — the gate never runs against the dev stack or the NAS data
         severity: blocking
 
       - id: integration-gate

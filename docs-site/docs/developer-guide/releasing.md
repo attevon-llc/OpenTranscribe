@@ -115,7 +115,7 @@ rather than silently ignored.
 | `preflight` | Version agreement, clean worktree, remote ARM64 builder reachable, scanners present, `HUGGINGFACE_TOKEN`, model fixtures, disk, deployment matrix, CHANGELOG section (early notice), live-stack state (informational) | no |
 | `bump` | Writes all five version sources, promotes `[Unreleased]`, refreshes the committed roadmap snapshot, re-verifies, then commits `chore(release): bump version to X.Y.Z` | no |
 | `verify` | Fast gate: consistency, deployment matrix, manifest, structural tests, docs build, visual-baseline freshness | no |
-| `test` | `run-dev-tests.sh --backend-only --e2e-smoke --export-capability` (the integration gate plus the smoke E2E subset); **needs the dev stack up** | no |
+| `test` | `run-dev-tests.sh --backend-only --e2e-smoke --export-capability` (the integration gate plus the smoke E2E subset) on its **own isolated `--fresh` stack** (name `rel-<version>`, port offset 400, NAS overlay never loaded, destroyed before and after; the dev stack is neither needed nor touched). Override with `RELEASE_TEST_FRESH_NAME`, `RELEASE_TEST_PORT_OFFSET`; `RELEASE_TEST_KEEP=1` keeps it for diagnosis | no |
 | `build` | Local images with the version build-args — **pushes nothing** | no |
 | `scan` | Trivy/Grype against the **locally built** images, plus `scripts/check-image-hygiene.sh` on every per-leg tag (`images-carry-no-dev-artifacts`: a leaked `mutants/`, test DB, cache, key or `.env` fails; an image it cannot inspect is `not-measured`) | no |
 | `rehearse` | Cold-cache model download, then fresh-install, upgrade and lite-mode scenarios; **needs the live stack stopped** (it can stop and restore it for you, with approval) | no |

@@ -574,6 +574,12 @@ this file is for.
   outside the repo and need `--yes` plus their `ask` rule. Exit codes: 0 pass,
   1 gate, 2 misuse, 3 precondition, 4 abort. `--force-<stage> "reason"` overrides
   a gate with a MANDATORY reason, recorded as `overridden` (not a pass).
+  The `test` stage runs on its own `--fresh` stack (`release/fresh-stack-lib.sh`: name
+  `rel-<version>`, offset 400, ports READ from `opentr.sh`'s `FRESH_PORT_VARS`, stale stack
+  destroyed first and again at exit, NAS overlay never loaded) so the verdict never depends on
+  the dev DB. A dev-DB gate once failed ~180 tests on `password_change_required` after the seeded
+  admin's password aged past the 60-day expiry; `docker-compose.override.yml` now also sets
+  `PASSWORD_MAX_AGE_DAYS` to 0 for dev. Pinned by `test_release_test_fresh_stack.py`.
   `reset <version>` clears rehearsal history — do it before a real run, or the
   status table reports stale state as current.
   Full guide: `docs-site/docs/developer-guide/releasing.md`.

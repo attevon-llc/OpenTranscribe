@@ -5,7 +5,7 @@
 # the canonical gate and already knows about the RUN_*-gated suites and both FIPS
 # modes. A second definition of "the tests" would drift from it.
 #
-# Requires the dev stack UP (it TCP-probes Postgres on 5176).
+# Brings up (and destroys) its own isolated --fresh stack; the dev stack is neither required nor used.
 #
 # Exit: 0 pass · 1 failures · 3 precondition unmet
 
@@ -24,18 +24,43 @@ export STAGE_ID=test
 # shellcheck source=scripts/release/criteria-lib.sh
 source "$SCRIPT_DIR/criteria-lib.sh"
 
-if ! (exec 3<>/dev/tcp/127.0.0.1/5176) 2>/dev/null; then
-    record dev-stack-up fail "nothing answering on 127.0.0.1:5176" "./opentr.sh start dev"
-    echo -e "${RED}The dev stack must be running for the test stage.${NC}" >&2
-    echo "  ./opentr.sh start dev" >&2
+# The gate runs on its OWN isolated --fresh stack, never the dev stack or the NAS data
+# (rationale + configuration: fresh-stack-lib.sh). Torn down at exit, and again before the
+# next run starts, so every run seeds identically.
+# shellcheck source=scripts/release/fresh-stack-lib.sh
+source "$SCRIPT_DIR/fresh-stack-lib.sh"
+FRESH_NAME="$(fresh_stack_name "$VERSION")"
+PORT_OFFSET="${RELEASE_TEST_PORT_OFFSET:-400}"
+
+fail_precondition() {
+    record dev-stack-up fail "$1" "$2"
+    echo -e "${RED}$1${NC}" >&2
     if [[ "$JSON_OUT" == "true" ]]; then
-        printf '{"stage":"test","version":"%s","status":"fail","criteria":[%s],"next":["./opentr.sh start dev"]}\n' \
-            "$VERSION" "$(criteria_json)"
+        printf '{"stage":"test","version":"%s","status":"fail","criteria":[%s],"next":["%s"]}\n' \
+            "$VERSION" "$(criteria_json)" "$2"
     fi
-    # Exit 3 (precondition unmet) as before. Deliberately NOT via criteria_assert_all_checked:
-    # the gate genuinely never ran, and reporting that as wiring drift (2) would both bury the
-    # real reason and change this stage's exit contract.
+    # Exit 3 (precondition unmet). Deliberately NOT via criteria_assert_all_checked: the gate
+    # genuinely never ran, and reporting that as wiring drift (2) would bury the real reason.
     exit 3
+}
+
+teardown_fresh() {
+    if [[ "${RELEASE_TEST_KEEP:-0}" == "1" ]]; then
+        echo "RELEASE_TEST_KEEP=1: leaving fresh deployment '$FRESH_NAME' up" >&2
+        return
+    fi
+    fresh_stack_teardown "$FRESH_NAME"
+}
+trap teardown_fresh EXIT
+
+echo -e "${BLUE}Starting isolated fresh stack '${FRESH_NAME}' (port offset +${PORT_OFFSET})${NC}" >&2
+if ! fresh_stack_up "$FRESH_NAME" "$PORT_OFFSET"; then
+    fail_precondition "could not start the isolated fresh stack '${FRESH_NAME}'" \
+        "./opentr.sh start dev --fresh ${FRESH_NAME} --port-offset ${PORT_OFFSET}"
+fi
+if ! (exec 3<>/dev/tcp/127.0.0.1/"$POSTGRES_PORT") 2>/dev/null; then
+    fail_precondition "nothing answering on 127.0.0.1:${POSTGRES_PORT} after the fresh stack started" \
+        "./opentr.sh logs postgres"
 fi
 record dev-stack-up pass
 

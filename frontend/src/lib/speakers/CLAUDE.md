@@ -4,7 +4,7 @@
 
 Pure rules and small stateful helpers behind `routes/speakers/+page.svelte`, its section components
 (`components/speakers/ClustersSection.svelte`, `ProfilesSection.svelte`) and the per-segment speaker
-menu (`components/transcript/SegmentSpeakerDropdown.svelte`).
+menu (`components/SegmentSpeakerDropdown.svelte`).
 
 ## Key files
 

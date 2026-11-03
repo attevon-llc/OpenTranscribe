@@ -3,7 +3,7 @@
 Off by default (not in DEFAULT_REDACTION_DETECTORS). When enabled, sends a chunk of
 the transcript to the user's LLM with a strict-JSON prompt asking for PII / toxic /
 profane phrases, then resolves each returned phrase back to char offsets. Time-boxed
-and fully tolerant — any failure returns ``[]`` and never blocks the pipeline.
+and tolerant — a provider failure returns ``[]`` and never blocks the pipeline.
 """
 
 from __future__ import annotations
@@ -12,6 +12,8 @@ import contextlib
 import json
 import logging
 from typing import TYPE_CHECKING
+
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.services.redaction.spans import RedactionSpan
 from app.services.redaction.spans import build_word_offsets
@@ -43,8 +45,9 @@ def detect_with_llm(
 ) -> dict[int, list[RedactionSpan]]:
     """Run LLM detection over segments. Returns {segment_index: [spans]}.
 
-    Best-effort: returns ``{}`` if no LLM is configured or anything fails, and never raises —
-    the pipeline must not block on an opt-in detector.
+    Best-effort: returns ``{}`` if no LLM is configured or anything fails — the pipeline must
+    not block on an opt-in detector. The one exception is a database error while reading the
+    provider settings: it propagates, because a gap recorded now would outlive the outage.
 
     ⚠️ **That makes the return value ambiguous, which is what ``failures`` is for.** ``{}`` is
     what a working model that found nothing returns AND what a provider outage returns, so
@@ -63,11 +66,16 @@ def detect_with_llm(
 
     Returns:
         ``{segment_index: [spans]}`` for the segments that produced spans.
+
+    Raises:
+        SQLAlchemyError: the provider settings could not be read.
     """
     try:
         from app.services.llm_service import LLMService
 
         service = LLMService.create_from_settings(user_id)
+    except SQLAlchemyError:
+        raise
     except Exception as exc:  # noqa: BLE001
         logger.info("LLM redaction detector: no LLM service for user %s (%s)", user_id, exc)
         _report(failures)

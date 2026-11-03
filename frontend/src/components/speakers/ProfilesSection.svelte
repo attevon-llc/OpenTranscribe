@@ -8,10 +8,12 @@
     updateProfile,
     deleteProfile,
     uploadProfileAvatar,
+    deleteProfileAvatar,
     confirmProfileGender
   } from '$lib/api/speakerClusters';
   import type { SpeakerProfile } from '$lib/types/speakerCluster';
   import { avatarFileError } from '$lib/speakers/pageHelpers';
+  import { getErrorMessage } from '$lib/utils/apiError';
 
   /** The page owns loading; this owns the profile edit / delete / avatar / gender flows. */
   export let profiles: SpeakerProfile[] = [];
@@ -26,6 +28,7 @@
   let editProfileName = '';
   let deleteProfileUuid = '';
   let showDeleteProfileModal = false;
+  let removeAvatarUuid = '';
 
   async function handleAvatarUpload(profileUuid: string, event: Event) {
     const input = event.target as HTMLInputElement;
@@ -53,6 +56,18 @@
     } finally {
       avatarUploading.delete(profileUuid);
       avatarUploading = avatarUploading;
+    }
+  }
+
+  async function handleRemoveAvatar() {
+    const profileUuid = removeAvatarUuid;
+    removeAvatarUuid = '';
+    try {
+      await deleteProfileAvatar(profileUuid);
+      profiles = profiles.map(p => p.uuid === profileUuid ? { ...p, avatar_url: null } : p);
+      toastStore.success($t('speakers.avatar.removed'));
+    } catch (err) {
+      toastStore.error(getErrorMessage(err, $t('speakers.avatar.removeError')));
     }
   }
 
@@ -130,6 +145,7 @@
     bind:editProfileName
     {genderConfirmedProfiles}
     on:avatarUpload={(e) => handleAvatarUpload(e.detail.uuid, e.detail.event)}
+    on:removeAvatar={(e) => (removeAvatarUuid = e.detail)}
     on:startEdit={(e) => startEditProfile(e.detail)}
     on:saveProfile={(e) => saveProfile(e.detail)}
     on:cancelEdit={cancelEditProfile}
@@ -148,4 +164,15 @@
   on:confirm={handleDeleteProfile}
   on:cancel={() => { showDeleteProfileModal = false; }}
   on:close={() => { showDeleteProfileModal = false; }}
+/>
+
+<ConfirmationModal
+  isOpen={removeAvatarUuid !== ''}
+  title={$t('speakers.avatar.removeTitle')}
+  message={$t('speakers.avatar.removeMessage')}
+  confirmText={$t('speakers.avatar.removeConfirm')}
+  confirmButtonClass="confirm-button delete-confirm"
+  on:confirm={handleRemoveAvatar}
+  on:cancel={() => { removeAvatarUuid = ''; }}
+  on:close={() => { removeAvatarUuid = ''; }}
 />

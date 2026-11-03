@@ -75,6 +75,15 @@
             {/if}
             <div class="profile-actions">
               {#if !profile.is_shared}
+                {#if profile.avatar_url}
+                  <button class="icon-btn" on:click={() => dispatch('removeAvatar', profile.uuid)} title={$t('speakers.avatar.remove')} aria-label={$t('speakers.avatar.remove')}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="8" r="4" />
+                      <path d="M4 21v-1a6 6 0 0 1 6-6h4" />
+                      <line x1="16" y1="18" x2="22" y2="18" />
+                    </svg>
+                  </button>
+                {/if}
                 <button class="icon-btn" on:click={() => dispatch('startEdit', profile)} title={$t('speakers.profiles.edit')}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />

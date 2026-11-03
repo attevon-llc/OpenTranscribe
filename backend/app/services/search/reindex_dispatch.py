@@ -46,6 +46,16 @@ logger = logging.getLogger(__name__)
 _DEBOUNCE_KEY_TEMPLATE = "transcript_reindex_debounce:{file_uuid}"
 
 
+def reindex_coordination_keys(file_uuid: str) -> list[str]:
+    """Every Redis key the reindex path claims for ``file_uuid`` (debounce + sweep cooldown)."""
+    from app.tasks.search_index_sweep_task import _COOLDOWN_KEY_TEMPLATE
+
+    return [
+        _DEBOUNCE_KEY_TEMPLATE.format(file_uuid=file_uuid),
+        _COOLDOWN_KEY_TEMPLATE.format(file_uuid=file_uuid),
+    ]
+
+
 class ReindexDispatch(enum.Enum):
     """What one dispatch attempt did (issue #1233).
 

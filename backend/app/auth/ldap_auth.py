@@ -208,6 +208,28 @@ def _get_ldap_server(cfg: LdapConfig) -> Server:
     )
 
 
+CLEARTEXT_REFUSAL = (
+    "ldap:// URL without StartTLS would send credentials in cleartext; "
+    "use ldaps:// or enable StartTLS"
+)
+
+
+def transport_problem(cfg: LdapConfig, server: Server) -> str | None:
+    """Describe why binding over ``server`` is unacceptable, or ``None`` if it is fine.
+
+    Transport security is decided from the EFFECTIVE server (``server.ssl``), not from
+    ``cfg.use_ssl``: ldap3 lets the URL scheme override the ``use_ssl`` argument, so an
+    ``ldap://`` address with ``use_ssl=True`` yields a plaintext server.
+    """
+    if server.ssl or cfg.use_tls:
+        return None
+    if cfg.use_ssl:
+        return (
+            f"ldap_use_ssl is enabled but the server address is not ldaps://. {CLEARTEXT_REFUSAL}"
+        )
+    return CLEARTEXT_REFUSAL
+
+
 def _close_connection(conn: Connection | None, name: str) -> None:
     """Safely close an LDAP connection."""
     if conn is None:
@@ -224,25 +246,29 @@ def _connect_and_bind(
 ) -> Connection | None:
     """Open a connection, negotiate encryption per ``cfg``, and bind.
 
-    - ``use_ssl=True``: ``server`` already wraps the socket in TLS (``ldaps://``,
-      handled by :func:`_get_ldap_server`) — bind directly.
-    - ``use_tls=True`` (StartTLS over a plaintext ``ldap://`` connection): negotiate
+    - ``server.ssl`` (the effective server, e.g. ``ldaps://``): the socket is already
+      wrapped in TLS — bind directly.
+    - ``use_tls=True`` on a plaintext server (StartTLS over ``ldap://``): negotiate
       StartTLS explicitly and FAIL CLOSED if negotiation does not succeed, rather
       than silently falling through to a cleartext bind. ``cfg.use_tls`` used to be
       read into ``LdapConfig`` and then never consulted by the bind code — every
       StartTLS deployment was binding in cleartext regardless of the setting.
-    - Neither: plain cleartext bind, unchanged.
+    - Neither: refuse the bind (see :func:`transport_problem`).
 
     Returns:
         A bound ``Connection``, or ``None`` if TLS negotiation or the bind failed.
     """
+    problem = transport_problem(cfg, server)
+    if problem is not None:
+        logger.error("LDAP bind refused: %s", problem)
+        return None
     # The Server's connect_timeout only bounds the TCP connect; without a receive timeout a
     # directory that accepts and then never answers holds this thread indefinitely.
     conn = Connection(
         server, user=user, password=password, auto_bind=False, receive_timeout=cfg.timeout
     )
     try:
-        if cfg.use_tls and not cfg.use_ssl and (not conn.open() or not conn.start_tls()):
+        if cfg.use_tls and not server.ssl and (not conn.open() or not conn.start_tls()):
             logger.error(
                 "LDAP StartTLS negotiation failed; refusing to fall back to a "
                 "cleartext bind (ldap_use_tls is enabled)"

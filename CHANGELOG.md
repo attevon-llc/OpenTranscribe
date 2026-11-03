@@ -81,6 +81,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **LDAP: transport security is now determined from the effective connection.** Unencrypted
+  binds are refused, and the admin connection test reports a mismatched address and TLS setting.
 - **Building the object-key indexes at startup no longer waits indefinitely on another session.**
   The background `CREATE UNIQUE INDEX CONCURRENTLY` waits for every open transaction in the
   database; a single idle-in-transaction session could hold it, and startup, for as long as that

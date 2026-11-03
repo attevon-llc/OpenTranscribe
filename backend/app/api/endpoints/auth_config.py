@@ -556,6 +556,7 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
         from app.auth.ldap_auth import _close_connection
         from app.auth.ldap_auth import _connect_and_bind
         from app.auth.ldap_auth import _get_ldap_server
+        from app.auth.ldap_auth import transport_problem
     except ImportError:
         return AuthMethodTestResponse(
             success=False,
@@ -593,6 +594,10 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
             timeout=10,
         )
         server = _get_ldap_server(cfg)
+        problem = transport_problem(cfg, server)
+        if problem is not None:
+            logger.warning("LDAP connection test refused: %s", problem)
+            return AuthMethodTestResponse(success=False, message=problem)
         conn = _connect_and_bind(cfg, server, cfg.bind_dn, cfg.bind_password)
         if conn is None:
             logger.warning("LDAP connection test failed: bind or StartTLS negotiation refused")

@@ -15,7 +15,10 @@ from app.auth.ldap_auth import _connect_and_bind
 
 
 class FakeServer:
-    pass
+    """Stand-in for ``ldap3.Server``; ``ssl`` is the EFFECTIVE transport (ldaps://)."""
+
+    def __init__(self, ssl: bool = False):
+        self.ssl = ssl
 
 
 class FakeConnection:
@@ -87,18 +90,17 @@ class TestConnectAndBindTls:
         separate StartTLS step is needed or attempted."""
         self._patch(monkeypatch)
         cfg = LdapConfig(enabled=True, server="ldap.example.com", use_ssl=True, use_tls=False)
-        conn = _connect_and_bind(cfg, FakeServer(), "cn=svc", "pw")
+        conn = _connect_and_bind(cfg, FakeServer(ssl=True), "cn=svc", "pw")
         assert conn is not None
         assert conn.start_tls_called is False
         assert conn.bind_called is True
 
-    def test_neither_flag_binds_in_cleartext_unchanged(self, monkeypatch):
+    def test_neither_flag_refuses_the_bind(self, monkeypatch):
         self._patch(monkeypatch)
         cfg = LdapConfig(enabled=True, server="ldap.example.com", use_ssl=False, use_tls=False)
         conn = _connect_and_bind(cfg, FakeServer(), "cn=svc", "pw")
-        assert conn is not None
-        assert conn.start_tls_called is False
-        assert conn.bind_called is True
+        assert conn is None
+        assert not any(c.bind_called for c in FakeConnection.instances)
 
     def test_bind_failure_after_successful_starttls_returns_none(self, monkeypatch):
         self._patch(monkeypatch, bind_result=False)

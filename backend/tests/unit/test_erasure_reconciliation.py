@@ -94,8 +94,15 @@ def _mk_file(db, *, user: User, legal_hold: bool = False, org_id: int | None = N
 
 
 @pytest.fixture()
-def quiet_stores():
-    """Patch object storage / OpenSearch, leaving every relational delete real."""
+def quiet_stores(no_receipt_measurement):
+    """Patch object storage / OpenSearch, leaving every relational delete real.
+
+    The erasure receipt measures every store from a fresh session and, when it cannot ask one
+    (CI runs no OpenSearch, MinIO or Redis), is ``unverified`` and the erasure correctly stays
+    open. That is not what these tests are about, so the repo's ``no_receipt_measurement``
+    stand-in takes the stage out (with ``erase_extras`` below); the receipt is covered against real stores by
+    ``integration/test_erasure_receipt_e2e.py``.
+    """
     with (
         patch(
             "app.services.file_cleanup_service.delete_file_storage_artifacts",
@@ -107,10 +114,10 @@ def quiet_stores():
         ),
         patch("app.services.gdpr_erasure_service._erase_speaker_voiceprints", return_value=0),
         patch("app.services.opensearch_service.remove_profile_embedding", return_value=True),
-        # The receipt refuses to verify while ANY unclassified index exists on the cluster, and a
-        # shared stack always has some (other runs' scratch indices). Which indices exist is not
-        # what these tests are about, and an unverified receipt keeps the erasure open by design.
-        patch("app.services.erasure_receipt.stores_external.unclassified_indices", return_value=[]),
+        # The extra deletes (object prefixes, derived cache, multipart, mirror, lockout) go
+        # straight at MinIO/Redis; unreachable, each appends an error and the erasure stays
+        # partial. Same stand-in the other erasure suites use.
+        patch("app.services.gdpr_erasure_service.erase_extras"),
         patch("app.services.gdpr_erasure_service.audit_logger"),
         patch("app.services.erasure_ledger_service.audit_logger"),
     ):

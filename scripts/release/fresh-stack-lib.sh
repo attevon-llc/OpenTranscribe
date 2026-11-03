@@ -57,6 +57,28 @@ fresh_stack_teardown() {
     done
 }
 
+# fresh_stack_seed_models <name>
+# A --fresh stack gets an ISOLATED, initially empty diar-native model dir
+# (.fresh/<name>/diar-native-models) and expects its backend to provision it from the network
+# AFTER startup. But the diar-native sidecar exits 8 on an empty dir and `up --wait` fails
+# first, so the stack never comes up (release.sh test exit 3). Seed the isolated dir from the
+# existing export (read-only copy; the live export is never mounted or written) so every run
+# starts with the same, complete model set. Source: RELEASE_TEST_DIAR_MODELS_SRC, else
+# DIAR_NATIVE_MODELS_DIR, else ./models/diar-native. No source or an empty one => skip, and
+# the stack falls back to provisioning exactly as before.
+fresh_stack_seed_models() {
+    local name="$1" repo="${REPO_ROOT:-.}" slug src dest
+    slug="$(echo "$name" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//')"
+    src="${RELEASE_TEST_DIAR_MODELS_SRC:-${DIAR_NATIVE_MODELS_DIR:-$repo/models/diar-native}}"
+    dest="$repo/.fresh/${slug:-default}/diar-native-models"
+    if [[ ! -d "$src" || -z "$(ls -A "$src" 2>/dev/null)" ]]; then
+        echo "no diar-native export at $src to seed from; the stack will provision its own" >&2
+        return 0
+    fi
+    mkdir -p "$dest"
+    cp -a "$src"/. "$dest"/
+}
+
 # fresh_stack_up <name> <offset>
 # Destroys any leftover deployment of that name first (stale state => identical seed every
 # run), exports the offset ports + COMPOSE_PROJECT_NAME for the gate, then starts it.
@@ -74,5 +96,6 @@ fresh_stack_up() {
     # The e2e runner and the gate address the app by URL; point them at the offset ports.
     export E2E_FRONTEND_URL="http://localhost:${FRONTEND_PORT:-5173}"
     export E2E_BACKEND_URL="http://localhost:${BACKEND_PORT:-5174}"
+    fresh_stack_seed_models "$name" || return 1
     "$repo/opentr.sh" start dev --fresh "$name" --port-offset "$offset" >&2
 }

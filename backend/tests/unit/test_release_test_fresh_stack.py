@@ -178,3 +178,34 @@ def test_dev_tests_probe_the_offset_ports_not_the_stock_ones() -> None:
     assert probes, "run-dev-tests.sh no longer probes the stack"
     for ln in probes:
         assert "${BACKEND_PORT" in ln or "${FRONTEND_PORT" in ln, f"hard-coded port in probe: {ln}"
+
+
+def test_models_are_seeded_into_the_isolated_dir_before_start(tmp_path: Path) -> None:
+    """An empty isolated diar-native dir makes the sidecar exit 8 and `up --wait` fail."""
+    repo = _stub_repo(tmp_path)
+    src = tmp_path / "export"
+    src.mkdir()
+    (src / "plda_lda.npy").write_bytes(b"x")
+    (src / "diar-provision.json").write_text("{}")
+    log = tmp_path / "calls.log"
+    # The stub start records whether the seeded dir already held the files at start time.
+    stub = repo / "opentr.sh"
+    stub.write_text(
+        stub.read_text()
+        + 'if [[ "$1" == start ]]; then ls "$REPO_ROOT/.fresh/rel-x/diar-native-models" >> "$STUB_LOG"; fi\n'
+    )
+    env = {
+        "STUB_LOG": str(log),
+        "RELEASE_TEST_DIAR_MODELS_SRC": str(src),
+        "RELEASE_TEST_FAST_VOLUMES": "",
+    }
+    _bash("fresh_stack_up rel-x 400", repo, env)
+    seen = log.read_text().splitlines()
+    assert "plda_lda.npy" in seen and "diar-provision.json" in seen
+    # The source export is only read, never modified or mounted.
+    assert sorted(p.name for p in src.iterdir()) == ["diar-provision.json", "plda_lda.npy"]
+    # No source => no seed, no failure.
+    log.write_text("")
+    empty = tmp_path / "none"
+    _bash("fresh_stack_up rel-y 400", repo, {**env, "RELEASE_TEST_DIAR_MODELS_SRC": str(empty)})
+    assert not (repo / ".fresh" / "rel-y").exists()

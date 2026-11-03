@@ -37,6 +37,7 @@ from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.auth.cookies import ACCESS_COOKIE
 from app.auth.oidc.admission import assert_oidc_admission_permitted
+from app.auth.oidc.claims import OIDCUserData
 from app.auth.oidc.config import OIDCConfig
 from app.auth.provider_registry import ExternalIdentity
 from app.auth.proxy.assertion import REFUSAL_DETAIL as PROXY_REFUSAL_DETAIL
@@ -219,11 +220,35 @@ def _hash(password: str) -> str:
 # -- OIDC / SAML / proxy admission (#4-#7) -------------------------------------
 
 
+def _oidc_data(roles: list[str], groups_overage: bool = False) -> OIDCUserData:
+    return {
+        "oidc_subject": "s",
+        "email": "a@example.com",
+        "email_verified": True,
+        "full_name": "A",
+        "username": "a",
+        "is_admin": False,
+        "roles": roles,
+        "claim_keys": [],
+        "roles_claim_source": "id_token",
+        "groups_overage": groups_overage,
+        "groupless_provider": False,
+        "cert_dn": None,
+        "cert_serial": None,
+        "cert_issuer": None,
+        "cert_org": None,
+        "cert_ou": None,
+        "cert_valid_from": None,
+        "cert_valid_until": None,
+        "cert_fingerprint": None,
+    }
+
+
 def test_oidc_blocked_group_is_a_401_with_the_uniform_detail():
     cfg = OIDCConfig(enabled=True, blocked_groups="Contractors")
     with pytest.raises((HTTPException, AuthenticationError)) as exc:
         assert_oidc_admission_permitted(
-            {"oidc_subject": "s", "email": "a@example.com", "roles": ["Contractors"]},
+            _oidc_data(roles=["Contractors"]),
             cfg,
             failure_detail="Invalid access token",
         )
@@ -238,7 +263,7 @@ def test_oidc_unknown_groups_with_a_configured_list_is_the_same_401():
     cfg = OIDCConfig(enabled=True, allowed_groups="Staff")
     with pytest.raises((HTTPException, AuthenticationError)) as exc:
         assert_oidc_admission_permitted(
-            {"oidc_subject": "s", "email": "a@example.com", "roles": [], "groups_overage": True},
+            _oidc_data(roles=[], groups_overage=True),
             cfg,
             failure_detail="Invalid access token",
         )

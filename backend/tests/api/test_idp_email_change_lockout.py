@@ -474,11 +474,8 @@ def test_the_remedy_requires_super_admin(client, admin_token_headers, db_session
 _PROVIDERS = ("ldap", "oidc", "saml", "pki", "external")
 
 
-class _FakeLinkedUser:
-    def __init__(self, email: str, role: str = "user") -> None:
-        self.id = 1
-        self.email = email
-        self.role = role
+def _make_linked_user(email: str, role: str = "user") -> User:
+    return User(id=1, email=email, role=role)
 
 
 @pytest.mark.parametrize("provider", _PROVIDERS)
@@ -486,7 +483,7 @@ def test_every_provider_inherits_the_normalised_comparison(provider):
     from app.auth.account_linking import assert_provider_id_link_permitted
 
     assert_provider_id_link_permitted(
-        _FakeLinkedUser("alice@example.com"),
+        _make_linked_user("alice@example.com"),
         provider=provider,
         source_identifier="identifier",
         asserted_email="  ALICE@Example.COM ",
@@ -500,7 +497,7 @@ def test_every_provider_is_unblocked_once_the_stored_email_is_updated(provider):
     guard reads, so one endpoint remedies all five."""
     from app.auth.account_linking import assert_provider_id_link_permitted
 
-    user = _FakeLinkedUser("alice@example.com")
+    user = _make_linked_user("alice@example.com")
     asserted = "alice.renamed@example.com"
 
     with pytest.raises(AuthenticationError):
@@ -531,7 +528,7 @@ def test_no_provider_gains_a_super_admin_bypass_from_the_remedy(provider):
 
     with pytest.raises(AuthenticationError):
         assert_provider_id_link_permitted(
-            _FakeLinkedUser("root@example.com", role="super_admin"),
+            _make_linked_user("root@example.com", role="super_admin"),
             provider=provider,
             source_identifier="identifier",
             asserted_email="root@example.com",

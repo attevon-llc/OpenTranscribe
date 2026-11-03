@@ -142,7 +142,7 @@ def test_real_opentr_fresh_start_never_loads_the_nas_overlay() -> None:
             "--fresh",
             "rel-pytest-dry",
             "--port-offset",
-            "400",
+            "20000",
             "--dry-run",
         ],
         capture_output=True,
@@ -209,3 +209,16 @@ def test_models_are_seeded_into_the_isolated_dir_before_start(tmp_path: Path) ->
     empty = tmp_path / "none"
     _bash("fresh_stack_up rel-y 400", repo, {**env, "RELEASE_TEST_DIAR_MODELS_SRC": str(empty)})
     assert not (repo / ".fresh" / "rel-y").exists()
+
+
+def _gb(token: str) -> int:
+    return int(re.match(r"(\d+)", token).group(1))  # type: ignore[union-attr]
+
+
+def test_opensearch_tmpfs_is_larger_than_the_low_disk_watermark() -> None:
+    """A cap below the watermark makes OpenSearch block index creation cluster-wide at boot."""
+    compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    low = _gb(re.search(r"watermark\.low=(\d+)gb", compose).group(1) + "gb")  # type: ignore[union-attr]
+    spec = _bash("fresh_stack_fast_volumes", REPO_ROOT).split()
+    size = next(_gb(s.split(":")[1]) for s in spec if s.startswith("opensearch_data:"))
+    assert size > low, f"opensearch_data tmpfs {size}g must exceed the {low}gb low watermark"

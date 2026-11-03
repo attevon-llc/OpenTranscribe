@@ -13,11 +13,16 @@
 #   RELEASE_TEST_PORT_OFFSET  host-port offset  default: 400
 #   RELEASE_TEST_KEEP=1       leave the stack up at exit (diagnosis)
 #   RELEASE_TEST_FAST_VOLUMES  space-separated `volume:size` pairs backed by tmpfs
-#                              default: "opensearch_data:8g postgres_data:4g"; empty disables
+#                              default: "opensearch_data:48g postgres_data:4g"; empty disables
 # Why tmpfs: this host's docker root (/mnt/nas/docker) is network storage, so a named volume's
 # fsync takes seconds. OpenSearch persists cluster state on every create-index and answered 503
 # `process_cluster_event_timeout_exception` (10-20 s per index even idle), which failed 76
 # search/speaker/summary tests and stalled the integration phase. The data is throwaway.
+# The OpenSearch size is NOT arbitrary: docker-compose.yml sets ABSOLUTE disk watermarks
+# (low 30gb / high 20gb / flood 10gb free). An 8g tmpfs sat below all three, so OpenSearch put a
+# cluster-wide create-index block and read-only-allow-delete on every index the moment it
+# started (403 index_create_block_exception on 53 setup steps). tmpfs only uses RAM for
+# what is written, so the cap must simply exceed the low watermark.
 # The stock port set is READ from opentr.sh's FRESH_PORT_VARS, never copied here.
 
 # fresh_stack_name <version>  -> deployment name
@@ -44,7 +49,7 @@ fresh_stack_port_exports() {
 
 # Volumes this lib pre-creates on tmpfs; compose adopts a volume of the project-scoped name.
 fresh_stack_fast_volumes() {
-    echo "${RELEASE_TEST_FAST_VOLUMES-opensearch_data:8g postgres_data:4g}"
+    echo "${RELEASE_TEST_FAST_VOLUMES-opensearch_data:48g postgres_data:4g}"
 }
 
 # fresh_stack_teardown <name>  -> same path as `opentr.sh fresh-destroy` (never signals a process)

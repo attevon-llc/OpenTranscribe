@@ -28,6 +28,7 @@ import logging
 from typing import Any
 
 from celery.exceptions import Retry
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.celery import celery_app
 from app.core.enums import PostProcessingTask
@@ -40,8 +41,13 @@ from app.services.redaction.llm_guard import RedactionNotReadyError
 from app.services.redaction.llm_guard import defer_for_redaction
 from app.services.redaction.llm_guard import resolve_llm_masking
 from app.services.topic_extraction_service import TopicExtractionService
+from app.utils.task_utils import task_error_text
 
 logger = logging.getLogger(__name__)
+
+_EXTRACTION_FAILED = "Failed to extract topics from transcript"
+#: A database error is usually transient (a dropped connection, a pool timeout).
+_DB_RETRY_COUNTDOWN_S = 30
 
 
 def send_topic_extraction_notification(
@@ -217,12 +223,13 @@ def _mark_task_status(
 def _handle_task_error(e: Exception, file_uuid: str) -> dict[str, Any]:
     """Report a task-level failure, opening its **own** short session.
 
-    The caller is mid-provider-call and holds no session by design.
+    The caller is mid-provider-call and holds no session by design. The notification is
+    a fixed sentence: the exception text never reaches the client.
     """
     from app.services.uuid_helpers import get_file_by_uuid
 
-    error_msg = f"Error extracting topics: {str(e)}"
-    logger.error(f"{error_msg} for file {file_uuid}")
+    error_msg = task_error_text(e)
+    logger.error(f"Error extracting topics for file {file_uuid}: {e}")
 
     try:
         with session_scope() as db:
@@ -241,7 +248,7 @@ def _handle_task_error(e: Exception, file_uuid: str) -> dict[str, Any]:
                 user_id=notify[0],
                 file_id=notify[1],
                 status="failed",
-                message=error_msg,
+                message=_EXTRACTION_FAILED,
             )
         except Exception as notify_err:
             logger.debug(f"Failed to send topic extraction failure notification: {notify_err}")
@@ -252,7 +259,9 @@ def _handle_task_error(e: Exception, file_uuid: str) -> dict[str, Any]:
     }
 
 
-@celery_app.task(bind=True, name="ai.extract_topics", priority=NLPPriority.AUTO_PIPELINE)
+@celery_app.task(
+    bind=True, name="ai.extract_topics", priority=NLPPriority.AUTO_PIPELINE, max_retries=2
+)
 @tracks_post_processing(PostProcessingTask.TOPICS, file_param="file_uuid", announce_start=False)
 def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
     """
@@ -356,23 +365,15 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
             )
 
         if not result:
-            error_msg = "Failed to extract topics from transcript"
-            logger.error(f"{error_msg} for file {file_id}")
-
-            _mark_task_status(task_id, "failed", error_message=error_msg)
-
-            # Send failure notification
+            logger.error(f"{_EXTRACTION_FAILED} for file {file_id}")
+            _mark_task_status(task_id, "failed", error_message=_EXTRACTION_FAILED)
             send_topic_extraction_notification(
                 user_id=user_id,
                 file_id=file_id,
                 status="failed",
-                message=error_msg,
+                message=_EXTRACTION_FAILED,
             )
-
-            return {
-                "status": "failed",
-                "error": error_msg,
-            }
+            return {"status": "failed", "error": _EXTRACTION_FAILED}
 
         tag_count = result.tag_count
         collection_count = result.collection_count
@@ -411,8 +412,14 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
         # Celery signals deferral with an exception that subclasses Exception,
         # so the handler below would otherwise report it as a failure.
         raise
+    except SQLAlchemyError as e:
+        if self.request.retries < self.max_retries:
+            logger.warning(f"Database error extracting topics for {file_uuid}; retrying")
+            raise self.retry(exc=e, countdown=_DB_RETRY_COUNTDOWN_S) from e
+        _mark_task_status(task_id, "failed", error_message=task_error_text(e))
+        return _handle_task_error(e, file_uuid)
     except Exception as e:
-        _mark_task_status(task_id, "failed", error_message=str(e))
+        _mark_task_status(task_id, "failed", error_message=task_error_text(e))
         return _handle_task_error(e, file_uuid)
 
 

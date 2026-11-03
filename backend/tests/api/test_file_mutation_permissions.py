@@ -28,6 +28,7 @@ from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.models.sharing import CollectionShare
 from app.services.minio_service import MinIOService
+from app.services.storage_versions import RemovalResult
 from app.services.video_processing_service import VideoProcessingService
 
 API_ENDPOINTS_DIR = pathlib.Path(__file__).resolve().parents[2] / "app" / "api" / "endpoints"
@@ -615,14 +616,23 @@ def test_viewer_cannot_clear_video_cache(
 def _stub_object_storage(monkeypatch):
     """Neutralize MinIO I/O (unreachable in CI, which runs no MinIO container).
 
-    Same stub as ``test_cache_management.py``'s ``_stub_object_storage`` — this
-    test only exercises the permission gate in front of ``clear_video_cache``,
-    not cache-key correctness, so a real bucket-existence check and delete
-    round trip are not part of the claim under test.
+    This test only exercises the permission gate in front of ``clear_video_cache``,
+    not cache-key correctness, so a real bucket-existence check and delete round trip
+    are not part of the claim under test. The seam is ``MinIOService.delete_objects``
+    (what ``clear_derived_cache`` calls); it records its keys so the test can still
+    show the delete ran. Stubbing the older ``delete_object`` left ``delete_objects``
+    talking to a real server, which only a developer's local MinIO answered.
     """
+    deleted: list[list[str]] = []
+
+    def fake_delete_objects(self, bucket, names):
+        deleted.append(list(names))
+        return RemovalResult(len(names))
+
     monkeypatch.setattr(VideoProcessingService, "_ensure_cache_bucket_exists", lambda self: None)
     monkeypatch.setattr(MinIOService, "list_objects", lambda self, b, prefix, recursive=True: [])
-    monkeypatch.setattr(MinIOService, "delete_object", lambda self, b, k: None)
+    monkeypatch.setattr(MinIOService, "delete_objects", fake_delete_objects)
+    return deleted
 
 
 def test_editor_can_clear_video_cache(
@@ -634,6 +644,10 @@ def test_editor_can_clear_video_cache(
     response = client.delete(f"/api/files/{media_file.uuid}/cache", headers=other_user_auth_headers)
 
     assert response.status_code == 204
+    # The editor's request reached the delete, for this file's own derived keys. (The list
+    # also carries the three legacy audio keys that name no file id, so not every key does.)
+    assert len(_stub_object_storage) == 1
+    assert any(k.startswith(f"derived/{media_file.id}_") for k in _stub_object_storage[0])
 
 
 def test_viewer_cannot_refresh_analytics(

@@ -580,6 +580,12 @@ this file is for.
   the dev DB. A dev-DB gate once failed ~180 tests on `password_change_required` after the seeded
   admin's password aged past the 60-day expiry; `docker-compose.override.yml` now also sets
   `PASSWORD_MAX_AGE_DAYS` to 0 for dev. Pinned by `test_release_test_fresh_stack.py`.
+  `fresh_stack_preflight_before/after` (same lib) fail the stage with exit 3 and one reason
+  line, before the long phases: competing gate processes or other `otfresh-*` stacks, an
+  OpenSearch that is slow or carries `blocks.*` settings / `read_only_allow_delete`, data volumes
+  that are not tmpfs, or host load over `RELEASE_TEST_MAX_LOAD`. They never clear or kill anything.
+  The fast OpenSearch volume must exceed compose's absolute disk watermarks (low 30gb), or
+  OpenSearch blocks index creation cluster-wide at boot.
   `reset <version>` clears rehearsal history — do it before a real run, or the
   status table reports stale state as current.
   Full guide: `docs-site/docs/developer-guide/releasing.md`.

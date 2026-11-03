@@ -222,3 +222,120 @@ def test_opensearch_tmpfs_is_larger_than_the_low_disk_watermark() -> None:
     spec = _bash("fresh_stack_fast_volumes", REPO_ROOT).split()
     size = next(_gb(s.split(":")[1]) for s in spec if s.startswith("opensearch_data:"))
     assert size > low, f"opensearch_data tmpfs {size}g must exceed the {low}gb low watermark"
+
+
+# ── preflight checks: each one fails fast with a reason and changes nothing ─────────────────
+
+
+def _run(script: str, tmp_path: Path, stubs: dict[str, str], env: dict[str, str] | None = None):
+    """Run a lib function with stubbed external commands; returns (rc, stderr)."""
+    bindir = tmp_path / "pbin"
+    bindir.mkdir(exist_ok=True)
+    for cmd, body in stubs.items():
+        f = bindir / cmd
+        f.write_text("#!/bin/bash\n" + body + "\n")
+        f.chmod(0o755)
+    base = {k: v for k, v in os.environ.items() if not k.startswith("RELEASE_TEST_")}
+    full = {
+        **base,
+        "PATH": f"{bindir}:{os.environ['PATH']}",
+        "REPO_ROOT": str(REPO_ROOT),
+        **(env or {}),
+    }
+    proc = subprocess.run(
+        ["bash", "-c", f"source {LIB}\n{script}"], capture_output=True, text=True, env=full
+    )
+    return proc.returncode, proc.stderr
+
+
+def test_load_check_uses_the_configured_ceiling(tmp_path: Path) -> None:
+    loadavg = tmp_path / "loadavg"
+    loadavg.write_text("12.50 10.00 9.00 1/100 1\n")
+    env = {"RELEASE_TEST_LOADAVG_FILE": str(loadavg)}
+    assert _run("fresh_stack_check_load", tmp_path, {}, env)[0] == 0
+    rc, err = _run("fresh_stack_check_load", tmp_path, {}, {**env, "RELEASE_TEST_MAX_LOAD": "10"})
+    assert rc == 1 and "12.50" in err and "RELEASE_TEST_MAX_LOAD" in err
+    missing = {"RELEASE_TEST_LOADAVG_FILE": str(tmp_path / "nope")}
+    assert _run("fresh_stack_check_load", tmp_path, {}, missing)[0] == 1
+
+
+def test_volume_check_demands_tmpfs_not_network_storage(tmp_path: Path) -> None:
+    good = 'echo "map[device:tmpfs o:size=48g type:tmpfs]"'
+    bad = 'echo "map[]"'
+    assert _run("fresh_stack_check_volumes rel-x", tmp_path, {"docker": good})[0] == 0
+    rc, err = _run("fresh_stack_check_volumes rel-x", tmp_path, {"docker": bad})
+    assert rc == 1 and "otfresh-rel-x_opensearch_data" in err and "not tmpfs" in err
+    off = {"RELEASE_TEST_FAST_VOLUMES": ""}
+    assert _run("fresh_stack_check_volumes rel-x", tmp_path, {"docker": bad}, off)[0] == 0
+
+
+_CURL = r"""
+args="$*"
+case "$args" in
+  *_cluster/settings*) echo "$OS_SETTINGS" ;;
+  *_all/_settings*) echo "$OS_INDEX_BLOCKS" ;;
+  *-XPUT*|*-XDELETE*) [ "$OS_CREATE_FAILS" = 1 ] && exit 22; echo '{"acknowledged":true}' ;;
+esac
+"""
+
+
+def _os_env(**kw: str) -> dict[str, str]:
+    base = {
+        "OPENSEARCH_PORT": "9",
+        "OS_SETTINGS": '{"persistent":{},"transient":{}}',
+        "OS_INDEX_BLOCKS": "{}",
+        "OS_CREATE_FAILS": "0",
+    }
+    return {**base, **kw}
+
+
+def test_opensearch_check_passes_on_a_clean_fast_cluster(tmp_path: Path) -> None:
+    assert _run("fresh_stack_check_opensearch", tmp_path, {"curl": _CURL}, _os_env())[0] == 0
+
+
+def test_opensearch_check_names_each_way_it_can_be_unusable(tmp_path: Path) -> None:
+    def run(**kw: str):
+        return _run("fresh_stack_check_opensearch", tmp_path, {"curl": _CURL}, _os_env(**kw))
+
+    rc, err = run(OS_CREATE_FAILS="1")
+    assert rc == 1 and "could not create+delete" in err
+    rc, err = run(
+        OS_SETTINGS='{"persistent":{"cluster.blocks.create_index":"true"},"transient":{}}'
+    )
+    assert rc == 1 and "cluster.blocks.create_index" in err
+    rc, err = run(OS_SETTINGS='{"persistent":{},"transient":{"cluster.blocks.read_only":"true"}}')
+    assert rc == 1 and "cluster.blocks.read_only" in err
+    rc, err = run(
+        OS_INDEX_BLOCKS='{"speakers_v4":{"settings":{"index.blocks.read_only_allow_delete":"true"}}}'
+    )
+    assert rc == 1 and "read_only_allow_delete" in err
+    rc, err = run(RELEASE_TEST_OS_MAX_SECONDS="0")
+    assert rc == 1 and "took more than" in err
+
+
+def test_competitor_check_sees_other_gates_and_other_fresh_stacks(tmp_path: Path) -> None:
+    quiet_ps = 'echo "    1 /sbin/init"'
+    busy_ps = 'echo "  4242 /bin/bash ./scripts/run-dev-tests.sh --full"'
+    docker_none = "true"
+    docker_ours = "echo otfresh-rel-x; echo transcribe-app"
+    docker_other = "echo otfresh-rel-x; echo otfresh-v061gate"
+    chk = "fresh_stack_check_no_competitors rel-x"
+    assert _run(chk, tmp_path, {"ps": quiet_ps, "docker": docker_none})[0] == 0
+    assert _run(chk, tmp_path, {"ps": quiet_ps, "docker": docker_ours})[0] == 0
+    rc, err = _run(chk, tmp_path, {"ps": busy_ps, "docker": docker_none})
+    assert rc == 1 and "4242" in err
+    rc, err = _run(chk, tmp_path, {"ps": quiet_ps, "docker": docker_other})
+    assert rc == 1 and "otfresh-v061gate" in err and "otfresh-rel-x " not in err
+
+
+def test_stage_runs_preflight_before_the_build_and_after_the_stack_is_up() -> None:
+    code = "\n".join(
+        ln
+        for ln in STAGE.read_text(encoding="utf-8").splitlines()
+        if not ln.lstrip().startswith("#")
+    )
+    before = code.index("fresh_stack_preflight_before")
+    up = code.index("fresh_stack_up ")
+    after = code.index("fresh_stack_preflight_after")
+    gate = code.index("run-dev-tests.sh")
+    assert before < up < after < gate, "preflight must bracket stack start and precede the gate"

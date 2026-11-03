@@ -104,3 +104,110 @@ fresh_stack_up() {
     fresh_stack_seed_models "$name" || return 1
     "$repo/opentr.sh" start dev --fresh "$name" --port-offset "$offset" >&2
 }
+
+# ── Preflight ────────────────────────────────────────────────────────────────────────────────
+# Cheap checks that turn "an hour into the gate, 76 tests errored" into "exit 3 in seconds,
+# with the reason". Each check prints ONE line on failure and returns 1; none changes anything
+# (nothing is cleared, killed or repaired). Every host-specific value comes from the
+# environment (ports exported by fresh_stack_up, RELEASE_TEST_* knobs) or is derived.
+#   RELEASE_TEST_MAX_LOAD        1-min load ceiling              default 40
+#   RELEASE_TEST_OS_MAX_SECONDS  create+delete index ceiling     default 5
+#   RELEASE_TEST_LOADAVG_FILE    where to read load from         default /proc/loadavg
+
+# fresh_stack_check_no_competitors <name>: no other gate process, no other otfresh stack.
+fresh_stack_check_no_competitors() {
+    local name="$1" pid args mine=" " p busy="" other
+    p=$$
+    local hops=0
+    while [[ "$p" =~ ^[0-9]+$ && "$p" -gt 1 && $hops -lt 64 ]]; do
+        mine+="$p "
+        p="$(sed -n 's/^PPid:[[:space:]]*//p' "/proc/$p/status" 2>/dev/null)"
+        hops=$((hops + 1))
+    done
+    while read -r pid args; do
+        [[ "$mine" == *" $pid "* ]] && continue
+        case "$args" in
+            *release.sh*|*run-dev-tests.sh*|*run-integration-tests.sh*) busy+="${pid}(${args%% *}) " ;;
+        esac
+    done < <(ps -eo pid=,args= 2>/dev/null | grep -Ev " (rg|pgrep|grep) |bash -c")
+    if [[ -n "$busy" ]]; then
+        echo "another gate process is running: $busy" >&2
+        return 1
+    fi
+    other="$(docker ps --format '{{.Label "com.docker.compose.project"}}' 2>/dev/null \
+        | sort -u | grep "^otfresh-" | grep -vx "otfresh-${name}" | tr '\n' ' ' || true)"
+    if [[ -n "$other" ]]; then
+        echo "another fresh stack is running: $other" >&2
+        return 1
+    fi
+}
+
+# fresh_stack_check_opensearch: scratch index round-trip is fast and no blocks are set.
+fresh_stack_check_opensearch() {
+    local base="http://127.0.0.1:${OPENSEARCH_PORT:?OPENSEARCH_PORT not exported}"
+    local max="${RELEASE_TEST_OS_MAX_SECONDS:-5}" idx="zz_preflight_$$" t0 t1 body
+    t0=$(date +%s.%N)
+    if ! curl -sf --max-time 30 -XPUT "$base/$idx" >/dev/null \
+        || ! curl -sf --max-time 30 -XDELETE "$base/$idx" >/dev/null; then
+        echo "OpenSearch could not create+delete a scratch index (blocked or unhealthy)" >&2
+        return 1
+    fi
+    t1=$(date +%s.%N)
+    if python3 -c "import sys; sys.exit(0 if float('$t1')-float('$t0') <= float('$max') else 1)"; then :; else
+        echo "OpenSearch create+delete index took more than ${max}s (slow storage?)" >&2
+        return 1
+    fi
+    body="$(curl -sf --max-time 30 "$base/_cluster/settings?flat_settings=true" || true)"
+    if ! BODY="$body" python3 - <<'PY'
+import json, os, sys
+try:
+    s = json.loads(os.environ["BODY"])
+except ValueError:
+    print("OpenSearch _cluster/settings unreadable", file=sys.stderr); sys.exit(1)
+bad = [k for scope in ("persistent", "transient") for k in s.get(scope, {}) if ".blocks." in k or k.startswith("cluster.blocks")]
+if bad:
+    print("OpenSearch has cluster block settings: " + ", ".join(bad), file=sys.stderr); sys.exit(1)
+PY
+    then return 1; fi
+    body="$(curl -sf --max-time 30 "$base/_all/_settings?flat_settings=true&filter_path=*.settings.index.blocks*" || true)"
+    if [[ "$body" == *read_only_allow_delete* && "$body" == *true* ]]; then
+        echo "OpenSearch has indices with a read_only_allow_delete block (disk watermark?)" >&2
+        return 1
+    fi
+}
+
+# fresh_stack_check_volumes <name>: the fast volumes really are tmpfs, not network storage.
+fresh_stack_check_volumes() {
+    local name="$1" spec vol opts
+    for spec in $(fresh_stack_fast_volumes); do
+        vol="otfresh-${name}_${spec%%:*}"
+        opts="$(docker volume inspect "$vol" --format '{{.Options}}' 2>/dev/null || true)"
+        if [[ "$opts" != *type:tmpfs* ]]; then
+            echo "volume $vol is not tmpfs (options: ${opts:-none}); compose did not adopt the fast volume" >&2
+            return 1
+        fi
+    done
+}
+
+# fresh_stack_check_load: 1-minute load average below the ceiling.
+fresh_stack_check_load() {
+    local max="${RELEASE_TEST_MAX_LOAD:-40}" file="${RELEASE_TEST_LOADAVG_FILE:-/proc/loadavg}" load
+    load="$(cut -d' ' -f1 "$file" 2>/dev/null)"
+    if [[ -z "$load" ]] || ! python3 -c "import sys; sys.exit(0 if float('$load') < float('$max') else 1)" 2>/dev/null; then
+        echo "host 1-min load ${load:-unknown} is not below ${max} (RELEASE_TEST_MAX_LOAD)" >&2
+        return 1
+    fi
+}
+
+# fresh_stack_preflight_before <name>: cheap, runs before the (long) stack build.
+fresh_stack_preflight_before() {
+    fresh_stack_check_no_competitors "$1" && fresh_stack_check_load
+}
+
+# fresh_stack_preflight_after <name>: runs once the stack is healthy, before the long phases.
+fresh_stack_preflight_after() {
+    fresh_stack_check_no_competitors "$1" \
+        && fresh_stack_check_volumes "$1" \
+        && fresh_stack_check_opensearch \
+        && fresh_stack_check_load
+}

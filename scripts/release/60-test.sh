@@ -53,6 +53,9 @@ teardown_fresh() {
 }
 trap teardown_fresh EXIT
 
+PREFLIGHT_WHY="$(fresh_stack_preflight_before "$FRESH_NAME" 2>&1)" \
+    || fail_precondition "preflight: ${PREFLIGHT_WHY}" "fix the cause above, then re-run the test stage"
+
 echo -e "${BLUE}Starting isolated fresh stack '${FRESH_NAME}' (port offset +${PORT_OFFSET})${NC}" >&2
 if ! fresh_stack_up "$FRESH_NAME" "$PORT_OFFSET"; then
     fail_precondition "could not start the isolated fresh stack '${FRESH_NAME}'" \
@@ -62,6 +65,8 @@ if ! (exec 3<>/dev/tcp/127.0.0.1/"$POSTGRES_PORT") 2>/dev/null; then
     fail_precondition "nothing answering on 127.0.0.1:${POSTGRES_PORT} after the fresh stack started" \
         "./opentr.sh logs postgres"
 fi
+PREFLIGHT_WHY="$(fresh_stack_preflight_after "$FRESH_NAME" 2>&1)" \
+    || fail_precondition "preflight: ${PREFLIGHT_WHY}" "fix the cause above, then re-run the test stage"
 record dev-stack-up pass
 
 echo -e "${BLUE}Running the canonical pre-merge gate${NC}" >&2

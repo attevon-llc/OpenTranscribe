@@ -139,3 +139,12 @@ def test_stage_uses_the_lib_and_never_probes_the_dev_stack() -> None:
     assert "trap teardown_fresh EXIT" in code, "the stack must be torn down at exit"
     assert "5176" not in code, "the stage must not probe the dev stack's stock Postgres port"
     assert "opentr.sh start dev" not in code.replace("./opentr.sh start dev --fresh", "")
+
+
+def test_dev_tests_probe_the_offset_ports_not_the_stock_ones() -> None:
+    """A fresh stack lives on offset ports; a hard-coded :5174 probe reports it unreachable."""
+    text = (REPO_ROOT / "scripts" / "run-dev-tests.sh").read_text(encoding="utf-8")
+    probes = [ln for ln in text.splitlines() if "curl -sf http://localhost:" in ln]
+    assert probes, "run-dev-tests.sh no longer probes the stack"
+    for ln in probes:
+        assert "${BACKEND_PORT" in ln or "${FRONTEND_PORT" in ln, f"hard-coded port in probe: {ln}"

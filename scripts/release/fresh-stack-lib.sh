@@ -52,5 +52,8 @@ fresh_stack_up() {
         [[ -n "$kv" ]] && declare -gx "$kv"
     done < <(fresh_stack_port_exports "$offset")
     export COMPOSE_PROJECT_NAME="otfresh-${name}"
+    # The e2e runner and the gate address the app by URL; point them at the offset ports.
+    export E2E_FRONTEND_URL="http://localhost:${FRONTEND_PORT:-5173}"
+    export E2E_BACKEND_URL="http://localhost:${BACKEND_PORT:-5174}"
     "$repo/opentr.sh" start dev --fresh "$name" --port-offset "$offset" >&2
 }

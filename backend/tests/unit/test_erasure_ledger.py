@@ -35,9 +35,12 @@ from sqlalchemy import text
 
 from app.models.erasure import ErasureLedgerEntry
 from app.services import erasure_ledger_service as ledger
+from tests.audit_maintenance import audit_maintenance
 
 #: The only textual columns the table is allowed to have, each backed by a CHECK.
-ENUM_COLUMNS = {"subject_type", "status", "actor_kind", "deferred_reason"}
+#: ``request_digest`` is a fixed-shape sha256 hex string (``ck_erasure_ledger_request_digest``),
+#: not free text.
+ENUM_COLUMNS = {"subject_type", "status", "actor_kind", "deferred_reason", "request_digest"}
 
 
 @pytest.fixture()
@@ -266,8 +269,9 @@ def test_overdue_entries_finds_an_open_request_past_its_deadline(db_session):
     long_ago = datetime.now(UTC) - timedelta(days=1)
     stale.sla_due_at = long_ago
     finished.sla_due_at = long_ago
-    ledger.record_outcome(db_session, finished, {"errors": [], "legal_holds_skipped": 0})
-    db_session.commit()
+    with audit_maintenance(db_session):  # backdating the deadline rewrites an immutable column
+        ledger.record_outcome(db_session, finished, {"errors": [], "legal_holds_skipped": 0})
+        db_session.commit()
 
     overdue = {e.uuid for e in ledger.overdue_entries(db_session)}
 
@@ -307,10 +311,16 @@ def test_the_journal_line_carries_surrogate_keys_and_nothing_else(db_session, jo
         "subject_user_uuid",
         "subject_organization_id",
         "subject_organization_uuid",
+        "subject_file_uuid",
         "status",
         "actor_kind",
         "requested_at",
         "sla_due_at",
+        # A self-service request's grace semantics: reasons, times and a sha256, never text.
+        "deferred_reason",
+        "scheduled_for",
+        "cancelled_at",
+        "request_digest",
     }
 
 
@@ -329,8 +339,11 @@ def test_restore_from_journal_reopens_an_entry_the_database_lost(db_session, jou
     original_uuid, original_requested = entry.uuid, entry.requested_at
     ledger.record_outcome(db_session, entry, {"errors": [], "legal_holds_skipped": 0})
 
-    db_session.query(ErasureLedgerEntry).filter(ErasureLedgerEntry.uuid == original_uuid).delete()
-    db_session.commit()
+    with audit_maintenance(db_session):  # simulate the database losing the row
+        db_session.query(ErasureLedgerEntry).filter(
+            ErasureLedgerEntry.uuid == original_uuid
+        ).delete()
+        db_session.commit()
     assert (
         db_session.query(ErasureLedgerEntry)
         .filter(ErasureLedgerEntry.uuid == original_uuid)
@@ -383,8 +396,9 @@ def test_a_corrupt_journal_line_does_not_stop_the_rest(db_session, journal_dir):
     good_line = path.read_text(encoding="utf-8")
     path.write_text("{not json at all\n" + good_line, encoding="utf-8")
 
-    db_session.query(ErasureLedgerEntry).filter(ErasureLedgerEntry.uuid == entry.uuid).delete()
-    db_session.commit()
+    with audit_maintenance(db_session):  # simulate the database losing the row
+        db_session.query(ErasureLedgerEntry).filter(ErasureLedgerEntry.uuid == entry.uuid).delete()
+        db_session.commit()
 
     assert ledger.restore_from_journal(db_session) == 1
 

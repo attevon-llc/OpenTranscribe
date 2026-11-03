@@ -42,15 +42,21 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from tests.integration.deletion_residue import CENTROID_MATCH_COSINE
+from tests.integration.deletion_residue import LEGAL_SEED_IP
+from tests.integration.deletion_residue import LEGAL_SEED_UA
 from tests.integration.deletion_residue import FkEdge
 from tests.integration.deletion_residue import centroid_residue
+from tests.integration.deletion_residue import delete_legal_seed
+from tests.integration.deletion_residue import legal_acceptance_survivor_findings
 from tests.integration.deletion_residue import media_file_closure
 from tests.integration.deletion_residue import minio_residue
 from tests.integration.deletion_residue import opensearch_planes
 from tests.integration.deletion_residue import opensearch_residue
 from tests.integration.deletion_residue import redis_client
 from tests.integration.deletion_residue import scan_residue
+from tests.integration.deletion_residue import seed_legal_acceptance
 from tests.integration.deletion_residue import teardown_seed
+from tests.integration.deletion_residue import unpopulated_configured_stores
 from tests.integration.deletion_seed import DELRES_PREFIX
 from tests.integration.deletion_seed import SeededChat
 from tests.integration.deletion_seed import SeededFile
@@ -255,6 +261,12 @@ def _assert_seed_reaches_every_store(engine, sf: SeededFile, *, include_owner: b
         )
     for idx in ("transcripts", "transcript_chunks"):
         assert any(idx in f for f in before), f"no {idx} documents seeded: {before}"
+    unseeded = unpopulated_configured_stores(before)
+    assert not unseeded, (
+        "the configuration names these stores but the seed put nothing in them, so the delete "
+        "is never shown to empty them; extend deletion_seed.seed_complete_file or add a reasoned "
+        f"entry to deletion_residue.CONFIGURED_STORE_EXEMPT: {unseeded}"
+    )
     return reached, edge_rows
 
 
@@ -1019,13 +1031,30 @@ def _assert_account_gone(engine, sf: SeededFile, reached, edge_rows) -> None:
 )
 def test_account_deletion_leaves_no_residue(api, engine, admin_id, created, method, path, expected):
     user_uuid, sf, admin_chat = _seed_account(engine, created, admin_id)
-    reached, edge_rows = _assert_seed_reaches_every_store(engine, sf, include_owner=True)
+    with engine.connect() as conn:
+        email = conn.execute(
+            text('SELECT email FROM "user" WHERE id = :u'), {"u": sf.owner_id}
+        ).scalar_one()
+    with engine.begin() as conn:
+        legal_uuid = seed_legal_acceptance(conn, sf.owner_id)
+    personal = [email, LEGAL_SEED_IP, LEGAL_SEED_UA]
+    try:
+        with engine.connect() as conn:
+            # Must-fire: before the delete the row still holds the account and its IP.
+            assert legal_acceptance_survivor_findings(conn, legal_uuid, personal)
+        reached, edge_rows = _assert_seed_reaches_every_store(engine, sf, include_owner=True)
 
-    resp = getattr(api, method)(path.format(uuid=user_uuid))
-    assert resp.status_code == expected, resp.text
+        resp = getattr(api, method)(path.format(uuid=user_uuid))
+        assert resp.status_code == expected, resp.text
 
-    _assert_account_gone(engine, sf, reached, edge_rows)
-    _assert_foreign_citation_kept(engine, admin_chat.message_id, admin_chat.foreign_uuid)
+        _assert_account_gone(engine, sf, reached, edge_rows)
+        _assert_foreign_citation_kept(engine, admin_chat.message_id, admin_chat.foreign_uuid)
+        # The documented survivor: kept, pseudonymised, holding nothing beyond the policy.
+        with engine.connect() as conn:
+            assert legal_acceptance_survivor_findings(conn, legal_uuid, personal) == []
+    finally:
+        with engine.begin() as conn:
+            delete_legal_seed(conn, legal_uuid)
 
 
 # --------------------------------------------------------------------------- the detector

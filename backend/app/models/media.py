@@ -41,6 +41,13 @@ if TYPE_CHECKING:
     from app.models.topic import TopicSuggestion
     from app.models.upload_batch import UploadBatch
     from app.models.user import User
+    from app.services.media_revocation import MediaRevocationReport
+
+
+#: Per-file voiceprint consent states (issue #1356): the single source for the CHECK, the schemas
+#: and the privacy gate. ``unspecified`` = never stated; ``granted`` = the uploader stated the
+#: speakers agreed (a recorded claim, never verified); ``declined`` = no voiceprints for this file.
+VOICEPRINT_CONSENT_STATES = ("unspecified", "granted", "declined")
 
 
 class MediaFile(Base):
@@ -362,6 +369,18 @@ class MediaFile(Base):
     # ``is_quarantined`` directly can never leave a file the organization could release.
     takedown_origin: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
+    # Per-file voiceprint consent (issue #1356, v454). See ``VOICEPRINT_CONSENT_STATES``. Read by
+    # ``services/privacy/policy`` after the layered switches; only ever RESTRICTS.
+    voiceprint_consent: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="unspecified", server_default="unspecified"
+    )
+    voiceprint_consent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    voiceprint_consent_by_user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+
     if TYPE_CHECKING:
         # Non-persisted, TYPE_CHECKING-only: `takedown_service.quarantine_file`/
         # `release_file` stamp these plain (non-`Mapped`) attributes onto the
@@ -373,6 +392,11 @@ class MediaFile(Base):
         # unmapped ORM attribute name collision.
         presign_revoked: bool
         presign_tag_cleared: bool
+        media_revocation: MediaRevocationReport
+        # Response-only URLs `files/crud.set_file_urls` stamps for serialization (declared on
+        # `schemas.media.MediaFile`); same TYPE_CHECKING-only reasoning as above.
+        download_url: str | None
+        thumbnail_url: str | None
 
     # Declared here, not only in v391, because a constraint the database enforces and
     # Python never states is invisible until it fires at runtime — see
@@ -385,6 +409,35 @@ class MediaFile(Base):
     #   * ``ck_media_file_recorded_date_locked_is_manual`` stops a re-derivation from
     #     relabelling a hand-entered date as machine-derived while leaving it locked.
     __table_args__ = (
+        # One owning row per stored object key (v456, issue #1357). Same definitions as
+        # app.db.object_key_indexes, which builds them.
+        Index(
+            "uq_media_file_storage_path",
+            "storage_path",
+            unique=True,
+            postgresql_where=text("storage_path IS NOT NULL AND storage_path <> ''"),
+        ),
+        Index(
+            "uq_media_file_thumbnail_path",
+            "thumbnail_path",
+            unique=True,
+            postgresql_where=text("thumbnail_path IS NOT NULL AND thumbnail_path <> ''"),
+        ),
+        Index(
+            "uq_media_file_playback_path",
+            "playback_path",
+            unique=True,
+            postgresql_where=text("playback_path IS NOT NULL AND playback_path <> ''"),
+        ),
+        CheckConstraint(
+            "voiceprint_consent IN ('unspecified', 'granted', 'declined')",
+            name="ck_media_file_voiceprint_consent",
+        ),
+        Index(
+            "ix_media_file_voiceprint_declined",
+            "id",
+            postgresql_where=text("voiceprint_consent = 'declined'"),
+        ),
         CheckConstraint(
             "takedown_origin IS NULL OR takedown_origin IN ('platform', 'organization')",
             name="ck_media_file_takedown_origin_valid",
@@ -564,6 +617,12 @@ class SpeakerProfile(Base):
     )  # Number of speakers contributing to this embedding
     last_embedding_update: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    # When a person last linked, unlinked, edited or decided on this voiceprint (v450). Written
+    # only by services/speaker_profile_activity (creation is the first
+    # interaction, hence the default); maintenance never moves it (updated_at does).
+    last_interaction_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True, default=func.now()
     )
 
     # Avatar image path in MinIO

@@ -40,6 +40,7 @@ from app.models.media import MediaFile
 from app.services.embedding_mode_service import MODE_V4
 from app.services.embedding_mode_service import EmbeddingModeService
 from app.services.migration_progress_service import migration_progress
+from app.services.privacy.policy import declined_file_ids
 from app.services.privacy.policy import voiceprints_allowed_for_file
 from app.services.privacy.redact_view import PrivacyView
 from app.services.speaker_analysis_models import SegmentResult
@@ -987,6 +988,7 @@ def migrate_profile_documents_to_v4(client, v4_index: str) -> int:
                     "user_id",
                     "organization_id",
                     "segment_count",
+                    "media_file_id",
                     "embedding",
                 ],
             },
@@ -1014,11 +1016,13 @@ def migrate_profile_documents_to_v4(client, v4_index: str) -> int:
                         "organization_id": source.get("organization_id"),
                         "vectors": [],
                         "weights": [],
+                        "file_ids": [],
                         "speaker_count": 0,
                     },
                 )
                 entry["vectors"].append(source["embedding"])
                 entry["weights"].append(weight)
+                entry["file_ids"].append(source.get("media_file_id"))
                 entry["speaker_count"] += 1
             if not scroll_id:
                 break
@@ -1045,6 +1049,17 @@ def migrate_profile_documents_to_v4(client, v4_index: str) -> int:
                 .all()
             )
             profile_names = {row.id: row.name for row in rows}
+
+    # Per-file consent (#1356): a voice from an opted-out file never enters a profile average.
+    with session_scope() as db:
+        declined = declined_file_ids(
+            db, {f for e in profiles.values() for f in e.get("file_ids", [])}
+        )
+    for entry in profiles.values():
+        keep = [i for i, f in enumerate(entry["file_ids"]) if f not in declined]
+        entry["vectors"] = [entry["vectors"][i] for i in keep]
+        entry["weights"] = [entry["weights"][i] for i in keep]
+    profiles = {u: e for u, e in profiles.items() if e["vectors"]}
 
     # Privacy policy (#1280): a profile voiceprint is not written for a scope that is off.
     with session_scope() as db:

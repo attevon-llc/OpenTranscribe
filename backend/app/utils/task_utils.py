@@ -22,6 +22,9 @@ from app.services.task_row_supersede import is_active_row_conflict
 from app.services.task_row_supersede import record_superseded
 from app.services.task_row_supersede import reopen_if_slot_free
 from app.services.task_row_supersede import supersede_active_siblings
+from app.utils.error_classification import ErrorCategory
+
+_LEGAL_REFUSAL_CATEGORY = ErrorCategory.LEGAL_ACCEPTANCE_REQUIRED.value
 
 logger = logging.getLogger(__name__)
 
@@ -649,7 +652,9 @@ def check_for_stuck_files(db: Session, stuck_threshold_hours: float = 2.0) -> li
                 MediaFile.status == FileStatus.ERROR,
                 # Orphaned files
                 MediaFile.status == FileStatus.ORPHANED,
-            )
+            ),
+            # A file the legal processing gate refused would only be refused again.
+            MediaFile.error_category.is_distinct_from(_LEGAL_REFUSAL_CATEGORY),
         )
         .all()
     )

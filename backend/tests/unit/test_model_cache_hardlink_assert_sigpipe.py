@@ -196,15 +196,18 @@ def test_the_offender_list_is_still_trimmed_for_display(tmp_path: Path) -> None:
     )
 
 
-#: Attempts allowed when reproducing the race. ⚠️ IT IS A RACE, SO ONE SHOT IS NOT A TEST.
-#: A single-attempt version of the control below was **2/12 flaky** under pytest on this host
-#: (measured 2026-09-07) even though the standalone harness reproduced 40/40 -- the tree is
-#: smaller in the page cache here, so ``find`` sometimes finishes before ``head`` exits. That
-#: flakiness is the hazard's own signature, not a defect in the fixture: the same "we ran it
-#: and saw nothing" reasoning that licensed the refuted size rule. So the control asserts
-#: "reproduces AT LEAST ONCE in N", which is the honest claim, and reports the observed rate
-#: when it does not.
-_RACE_ATTEMPTS = 25
+#: A stage between ``find`` and ``head`` that makes the SIGPIPE ordering a certainty instead of
+#: a race. It passes the first five lines through, waits until ``head -5`` has certainly exited
+#: and closed the pipe, then writes the rest -- so the write that kills the producer side
+#: ALWAYS lands on a closed pipe. Un-relayed, whether ``find`` is still writing when ``head``
+#: exits depends on how fast the host walks the tree (measured 2026-09-07: 2/12 flaky under
+#: pytest, and the control failed in CI on a fast runner with 0/25), which makes the control a
+#: test of host speed rather than of the fixture.
+_RELAY = (
+    "relay(){ local n=0 l; "
+    'while IFS= read -r l; do printf "%s\\n" "$l"; n=$((n+1)); [ "$n" -eq 5 ] && break; done; '
+    "sleep 1; cat; }; "
+)
 
 
 def test_the_fixture_reproduces_the_abort_against_the_broken_form(tmp_path: Path) -> None:
@@ -221,22 +224,20 @@ def test_the_fixture_reproduces_the_abort_against_the_broken_form(tmp_path: Path
     tree = _build_tree(tmp_path, 130)
     script = (
         f"{_CALLER_OPTIONS}\n"
-        f"offenders=$(find '{tree}' -type f -links +1 2>/dev/null | head -5)\n"
+        f"{_RELAY}\n"
+        f"offenders=$(find '{tree}' -type f -links +1 2>/dev/null | relay | head -5)\n"
         "echo REACHED_END\n"
     )
 
-    aborts = 0
-    for _ in range(_RACE_ATTEMPTS):
-        broken = subprocess.run(
-            ["bash", "-c", script], capture_output=True, text=True, timeout=180, check=False
-        )
-        if broken.returncode == 141 and "REACHED_END" not in broken.stdout:
-            aborts += 1
+    broken = subprocess.run(
+        ["bash", "-c", script], capture_output=True, text=True, timeout=180, check=False
+    )
 
-    assert aborts > 0, (
-        f"the original `find … | head -5` form did not abort ONCE in {_RACE_ATTEMPTS} attempts "
-        "against a 130-offender nested tree, so the cases above are not exercising the hazard "
-        "on this platform. Re-measure the tree shape and size before concluding the fix is "
-        "unnecessary -- and note the refuted premise this file records: a null result over too "
-        "few iterations is not evidence of safety. Do not delete these tests."
+    assert broken.returncode == 141 and "REACHED_END" not in broken.stdout, (
+        "the original `find … | head -5` form, with the producer made to write after `head` "
+        f"exited, did not die of SIGPIPE (exit {broken.returncode}). `set -euo pipefail` no "
+        "longer turns that into a bare abort on this platform, or the fixture no longer yields "
+        "more than five offenders, so the cases above are not exercising the hazard. "
+        "Re-derive the premise before concluding the fix is unnecessary. Do not delete these "
+        f"tests.\n{broken.stdout!r} {broken.stderr!r}"
     )

@@ -408,7 +408,7 @@ def make_media_file(db_session, normal_user):
             uuid=uuid_pkg.uuid4(),
             user_id=normal_user.id,
             filename="dispatch_test.mp3",
-            storage_path="dispatch/dispatch_test.mp3",
+            storage_path=f"dispatch/dispatch_test-{uuid_pkg.uuid4().hex}.mp3",
             file_size=2048,
             content_type="audio/mpeg",
             status=status,

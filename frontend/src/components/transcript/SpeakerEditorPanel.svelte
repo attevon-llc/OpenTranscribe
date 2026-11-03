@@ -6,6 +6,8 @@
   import { formatClock } from '$lib/utils/formatting';
   import SpeakerMerge from '$components/SpeakerMerge.svelte';
   import SpeakerPrivacyNotice from '$components/privacy/SpeakerPrivacyNotice.svelte';
+  import FileVoiceprintConsent from '$components/privacy/FileVoiceprintConsent.svelte';
+  import { user } from '$stores/auth';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
   import { RENAME_PROPAGATION_TIMEOUT_MS } from '$lib/api/speakerClusters';
@@ -167,6 +169,13 @@
   </div>
 
   <SpeakerPrivacyNotice fileUuid={file?.uuid} show={showsGender ? 'both' : 'voiceprints'} />
+  {#if file?.uuid}
+    <FileVoiceprintConsent
+      fileUuid={file.uuid}
+      state={file.voiceprint_consent ?? 'unspecified'}
+      isOwner={!!file.user_id && file.user_id === $user?.uuid}
+    />
+  {/if}
 
   <!-- Speaker Merge UI and Edit Speakers - keyed by speakerListKey to force re-render when speakers change -->
   {#key speakerListKey}

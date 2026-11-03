@@ -550,6 +550,24 @@ sudo systemctl restart docker
 
 ---
 
+## Runbook: Rolling back past self-service erasure
+
+**When**: you are rolling the application back to a release before self-service account erasure,
+or downgrading migration `v455`.
+
+**Why it matters**: older code ignores the new ledger columns and treats a waiting self-service
+request as an ordinary deferred erasure, so it would erase the account **early**.
+
+1. Turn the feature off: **Settings > Privacy & Redaction > policy tab**, or
+   `PUT /api/admin/self-erasure` with `{"enabled": false}`. New requests are refused (404).
+2. List the open requests (ledger entries with `status = deferred` and `deferred_reason =
+   grace_period`) and either let them run or ask the people to cancel from **Settings > Profile & Security**.
+3. Only when none are open, downgrade. The downgrade **refuses** while any request is open, and
+   deletes cancelled requests (their status does not exist in the old schema).
+4. Then roll the code back.
+
+Worst-case execution lag after a waiting period ends is one reconciliation pass (daily by default).
+
 ## Runbook: Failed Database Migration
 
 **Symptoms**: Backend fails to start with Alembic errors. Logs show `alembic.util.exc.CommandError`, `Can't locate revision`, or `Target database is not up to date`.

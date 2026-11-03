@@ -1,7 +1,11 @@
 import axios from 'axios';
 import { isCloudEdition } from '$lib/edition';
 import { parseRetryAfter } from '$lib/utils/retryAfter';
-import { isSessionEndingCode, supportGrantErrorCode } from '$lib/supportAccess/errors';
+import {
+  isSessionEndingCode,
+  SUPPORT_ERROR_TOAST,
+  supportGrantErrorCode,
+} from '$lib/supportAccess/errors';
 import { SUPPORT_GRANT_HEADER, getSupportAccessHeaders } from '$lib/supportAccess/headers';
 
 // Create axios instance with consistent base URL for all environments
@@ -185,12 +189,6 @@ async function handleSupportGrantError(error: {
     // Reporting must never mask the original API error.
   }
 }
-
-const SUPPORT_ERROR_TOAST: Partial<Record<string, string>> = {
-  support_grant_write_required: 'supportAccess.error.readOnly',
-  support_grant_action_not_permitted: 'supportAccess.error.notPermitted',
-  support_access_audit_unavailable: 'supportAccess.error.auditUnavailable',
-};
 
 // Token refresh state — shared across concurrent 401s so only one refresh fires
 let isRefreshing = false;

@@ -178,6 +178,14 @@ class PrepareUploadRequest(BaseModel):
             "Skip speaker diarization entirely; all segments assigned to a single speaker"
         ),
     )
+    voiceprint_consent: Literal["granted", "declined"] | None = Field(
+        None,
+        description=(
+            "The uploader's statement about voice identification for this recording: "
+            "'granted' = the speakers agreed (the uploader's claim, recorded and not verified), "
+            "'declined' = no voiceprints for this file. Omit for 'unspecified'."
+        ),
+    )
     collection_ids: list[UUID] | None = Field(
         None, description="Collection UUIDs to add the file to after creation"
     )
@@ -758,6 +766,10 @@ class MediaFileDetail(MediaFile):
     quarantine_reason: str | None = None
     quarantined_at: datetime | None = None
     legal_hold: bool = False
+
+    #: Per-file voiceprint consent (issue #1356): the uploader's recorded claim, not verified.
+    voiceprint_consent: Literal["unspecified", "granted", "declined"] = "unspecified"
+    voiceprint_consent_at: datetime | None = None
 
     transcript_segments: list[TranscriptSegment] = []
     # Pre-grouped view of transcript_segments (overlap groups kept together).

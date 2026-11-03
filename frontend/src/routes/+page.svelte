@@ -22,6 +22,7 @@
   import { galleryStore, galleryState, hasMoreFiles, isLoadingMore } from '$stores/gallery';
   import { t } from '$stores/locale';
   import { getErrorMessage, getErrorCode } from '$lib/utils/apiError';
+  import { bulkLlmFailureKey } from '$lib/utils/bulkLlmOutcome';
   import { resolveMediaErrorI18nKey } from '$lib/i18n/mediaErrors';
   import { triggerAnchorDownload } from '$lib/export/anchorDownload';
   import { openExportJobStream, type ExportJobStream } from '$lib/export/exportJobStream';
@@ -836,22 +837,22 @@
       const successful = results.filter((r: any) => r.success);
       const failed = results.filter((r: any) => !r.success);
 
-      // Check if LLM is not configured
-      const llmNotAvailable = failed.some((r: any) => r.error === 'LLM_NOT_AVAILABLE');
-      if (llmNotAvailable) {
-        toastStore.error($t('gallery.bulk.llmNotConfigured'));
+      // "Unusable configuration" and "none configured" call for different next steps
+      const llmFailureKey = bulkLlmFailureKey(results);
+      if (llmFailureKey) {
+        toastStore.error($t(llmFailureKey));
         return;
       }
 
       if (successful.length > 0) {
         toastStore.success($t('gallery.bulk.summarizeStarted', { count: successful.length }));
       }
-      if (failed.length > 0 && !llmNotAvailable) {
+      if (failed.length > 0) {
         toastStore.error($t('gallery.bulk.summarizeFailed', { count: failed.length }));
       }
     } catch (err) {
       console.error('Bulk summarize error:', err);
-      toastStore.error($t('gallery.bulk.summarizeFailed', { count: completed.length }));
+      toastStore.error(getErrorMessage(err, $t('gallery.bulk.summarizeFailed', { count: completed.length })));
     }
   }
 
@@ -883,7 +884,7 @@
       }
     } catch (err) {
       console.error('Bulk redact error:', err);
-      toastStore.error($t('gallery.bulk.redactFailed', { count: completed.length }));
+      toastStore.error(getErrorMessage(err, $t('gallery.bulk.redactFailed', { count: completed.length })));
     }
   }
 
@@ -995,6 +996,12 @@
       const successCount = results.filter((r: { success: boolean }) => r.success).length;
       const failCount = results.length - successCount;
 
+      const llmFailureKey = bulkLlmFailureKey(results);
+      if (llmFailureKey) {
+        toastStore.error($t(llmFailureKey));
+        return;
+      }
+
       if (successCount > 0) {
         toastStore.success($t('gallery.bulk.speakerIdStarted', { count: successCount }));
       }
@@ -1003,7 +1010,7 @@
       }
     } catch (err) {
       console.error('Bulk speaker ID error:', err);
-      toastStore.error($t('gallery.bulk.speakerIdFailed', { count: completed.length }));
+      toastStore.error(getErrorMessage(err, $t('gallery.bulk.speakerIdFailed', { count: completed.length })));
     }
   }
 

@@ -18,6 +18,7 @@ from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
+from app.api.endpoints.files.reprocess import refuse_reprocess_if_held
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.db.base import get_db
@@ -29,6 +30,7 @@ from app.models.user import User
 from app.schemas.media import Speaker as SpeakerSchema
 from app.schemas.media import SpeakerUpdate
 from app.schemas.media import split_attribute_confidence
+from app.services.hold_guard import DESTROY_DERIVED_REFUSAL
 from app.services.opensearch_service import update_speaker_display_name
 from app.services.permission_service import PermissionService
 from app.services.permission_service import file_ids_in_scope
@@ -47,9 +49,11 @@ from app.services.speaker_cleanup import detach_from_cluster
 from app.services.speaker_cleanup import lift_profile_blacklist
 from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact
+from app.services.speaker_profile_activity import touch_profile_interaction
 from app.services.speaker_provenance_view import attach_speaker_provenance
 from app.services.speaker_provenance_view import provenance_for_dict
 from app.services.speaker_status_service import SpeakerStatusService
+from app.services.takedown_service import quarantine_list_exempt
 from app.utils.db_helpers import org_stamp_is
 from app.utils.error_handlers import ErrorHandler
 from app.utils.speaker_identity_detail import ORIGIN_ACCEPTED_SUGGESTION
@@ -1924,6 +1928,7 @@ def _handle_create_new_profile_action(
     db.add(new_profile)
     db.flush()  # Get the ID
 
+    touch_profile_interaction(db, [new_profile.id, speaker.profile_id], "human_link")
     speaker.profile_id = new_profile.id
     record_human_identity(speaker, user_id=current_user.id, origin=ORIGIN_PROFILE_CREATED)
     logger.info(
@@ -2310,6 +2315,15 @@ def delete_speaker(
         bypass=ctx.bypass,
     )
 
+    # Deleting the speaker removes every copy of its voice; a hold exists to keep exactly that.
+    refuse_reprocess_if_held(
+        db,
+        int(speaker.media_file_id),
+        actor=current_user,
+        action="speaker_delete",
+        message=DESTROY_DERIVED_REFUSAL,
+    )
+
     # Read before the delete: the CASCADE forgets which clusters averaged this voice.
     impact = capture_speaker_impact(db, [int(speaker.id)], removed=True, reindex=True)
 
@@ -2341,6 +2355,7 @@ def _accept_speaker_profile_match(
     # Assign speaker to profile - cast to int for assignment
     speaker.profile_id = profile_id  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]
+    touch_profile_interaction(db, [profile_id, old_profile_id], "suggestion_decision")
     record_human_identity(speaker, user_id=current_user.id, origin=ORIGIN_ACCEPTED_SUGGESTION)
     db.commit()
 
@@ -2464,10 +2479,12 @@ def _reject_speaker_suggestion(speaker: Speaker, speaker_id: int, db: Session) -
                 db, cluster, [speaker], blacklist=True, tracker=superseded
             )
         unlink_from_profile(db, [speaker], old_profile_id, superseded)
-    for profile_id in sorted(_rejected_profile_ids(db, speaker, old_profile_id)):
+    rejected_ids = sorted(_rejected_profile_ids(db, speaker, old_profile_id))
+    for profile_id in rejected_ids:
         record_unassignment(
             db, [speaker_id], against_speaker_ids=[], profile_id=profile_id, reason=REASON_REJECTED
         )
+    touch_profile_interaction(db, [old_profile_id, *rejected_ids], "suggestion_decision")
 
     # Mark as verified but don't assign to profile - use setattr for proper type handling
     speaker.profile_id = None  # type: ignore[assignment]
@@ -2533,6 +2550,7 @@ def _create_new_speaker_profile(
     # Assign speaker to new profile - use setattr for proper type handling
     speaker.profile_id = new_profile.id  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]
+    touch_profile_interaction(db, [new_profile.id, old_profile_id], "human_link")
     record_human_identity(speaker, user_id=current_user.id, origin=ORIGIN_PROFILE_CREATED)
     db.commit()
 
@@ -2787,7 +2805,7 @@ def _get_profile_based_occurrences(
     )
     if not bypass.sees_all_in_scope:
         query = query.filter(Speaker.user_id == current_user.id)
-    if not bypass.user_is_admin:
+    if not quarantine_list_exempt(bypass):
         query = query.filter(MediaFile.is_quarantined.is_(False))
     tenant_pred = org_scope_pred(MediaFile.organization_id, organization_id)
     if tenant_pred is not None:
@@ -2851,7 +2869,7 @@ def _get_display_name_based_occurrences(
     )
     if not bypass.sees_all_in_scope:
         similar_q = similar_q.filter(Speaker.user_id == current_user.id)
-    if not bypass.user_is_admin:
+    if not quarantine_list_exempt(bypass):
         similar_q = similar_q.filter(MediaFile.is_quarantined.is_(False))
     tenant_pred = org_scope_pred(MediaFile.organization_id, organization_id)
     if tenant_pred is not None:

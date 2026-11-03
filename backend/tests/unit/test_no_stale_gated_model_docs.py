@@ -81,7 +81,6 @@ OPERATOR_FACING_FILES = (
     "scripts/README.md",
     "scripts/build-offline-package.sh",
     "scripts/build-windows-installer.sh",
-    "scripts/test-model-download.sh",
 )
 
 #: A stale repo on the right-hand side of an assignment is an instruction in its own right —

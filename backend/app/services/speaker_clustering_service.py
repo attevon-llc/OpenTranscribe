@@ -32,6 +32,7 @@ from app.models.media import SpeakerProfile
 from app.models.media import TranscriptSegment
 from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
+from app.services.privacy.policy import declined_file_ids
 from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import organizations_with_voiceprints_off
 from app.services.privacy.redact_view import redact_speaker_rows
@@ -49,6 +50,7 @@ from app.services.speaker_cleanup import reconcile_speaker_impact
 from app.services.speaker_cleanup import speaker_blocked_from_cluster
 from app.services.speaker_cleanup import speaker_blocked_from_profile
 from app.services.speaker_cleanup import unlink_from_profile
+from app.services.speaker_profile_activity import touch_profile_interaction
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.services.takedown_service import exclude_quarantined
 from app.utils.speaker_identity_detail import ORIGIN_ACCEPTED_SUGGESTION
@@ -525,6 +527,9 @@ class SpeakerClusteringService:
                     MediaFile, MediaFile.id == Speaker.media_file_id
                 ).filter(self._scope_not_in(MediaFile.organization_id, off_scopes))
             profile_speakers = profile_speakers_query.all()
+            # Per-file consent (#1356): speakers of opted-out files take no part in clustering.
+            _declined = declined_file_ids(self.db, (s.media_file_id for s in profile_speakers))
+            profile_speakers = [s for s in profile_speakers if s.media_file_id not in _declined]
 
             # A speaker still linked to a profile it was unassigned from is data written
             # before #1233 made the unassign unlink: the blacklist is the later decision,
@@ -621,7 +626,13 @@ class SpeakerClusteringService:
                 unlabeled_query = unlabeled_query.join(
                     MediaFile, MediaFile.id == Speaker.media_file_id
                 ).filter(self._scope_not_in(MediaFile.organization_id, off_scopes))
-            unlabeled_rows = unlabeled_query.all()
+            _unlabeled_all = unlabeled_query.add_columns(Speaker.media_file_id).all()
+            _declined_unlabeled = declined_file_ids(
+                self.db, {r.media_file_id for r in _unlabeled_all}
+            )
+            unlabeled_rows = [
+                r for r in _unlabeled_all if r.media_file_id not in _declined_unlabeled
+            ]
             unlabeled_uuid_to_id: dict[str, int] = {str(r.uuid): int(r.id) for r in unlabeled_rows}
             unlabeled_uuids = list(unlabeled_uuid_to_id.keys())
             total_unlabeled = len(unlabeled_uuids)
@@ -1668,6 +1679,9 @@ class SpeakerClusteringService:
             for member in members:
                 speaker = speakers_by_id.get(int(member.speaker_id))
                 if speaker:
+                    touch_profile_interaction(
+                        self.db, [int(profile.id), speaker.profile_id], "human_link"
+                    )
                     speaker.profile_id = profile.id  # type: ignore[assignment]
                     # Members span every file the cluster reaches into, each with
                     # its own indexed label — record before the overwrite (#432).
@@ -1756,7 +1770,9 @@ class SpeakerClusteringService:
         minority_gender = sorted_genders[1][0]
 
         # Batch-fetch all embeddings in one mget call
-        speaker_uuids = [str(s.uuid) for s in speakers]
+        # Per-file consent (#1356): an opted-out file's voice is not part of any average.
+        _declined_here = declined_file_ids(self.db, (s.media_file_id for s in speakers))
+        speaker_uuids = [str(s.uuid) for s in speakers if s.media_file_id not in _declined_here]
         raw_embeddings = get_speaker_embeddings_batch(speaker_uuids)
 
         embeddings: dict[int, np.ndarray] = {}
@@ -2159,6 +2175,9 @@ class SpeakerClusteringService:
                     assigned.add(int(speaker.id))
                     if speaker.profile_id:
                         touched.profile_ids.add(int(speaker.profile_id))
+                    touch_profile_interaction(
+                        self.db, [int(profile.id), speaker.profile_id], "human_link"
+                    )
                     speaker.profile_id = profile.id  # type: ignore[assignment]
                     self._rename_tracker.record(
                         int(speaker.media_file_id), indexed_as, str(profile.name)
@@ -2805,9 +2824,14 @@ class SpeakerClusteringService:
         best_quality = -1.0
         best_speaker_id = None
 
+        # Per-file consent (#1356): a voice from an opted-out file never enters the centroid.
+        excluded_files = declined_file_ids(
+            self.db, (m.speaker.media_file_id for m in members if m.speaker)
+        )
+
         for m in members:
             speaker = m.speaker
-            if not speaker:
+            if not speaker or speaker.media_file_id in excluded_files:
                 continue
 
             emb = self._get_speaker_embedding(speaker)

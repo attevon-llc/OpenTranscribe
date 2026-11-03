@@ -328,11 +328,77 @@ def minio_residue(sf: SeededFile, *, include_owner: bool) -> list[str]:
         needles.append(f"avatars/{sf.owner_id}/")
     findings = []
     for bucket in minio_client.list_buckets():
-        for obj in minio_client.list_objects(bucket.name, recursive=True):
+        # Every VERSION, not just the current listing: on a versioned bucket (which object-lock,
+        # the storage half of a legal hold, requires) a plain delete only adds a delete marker
+        # and the bytes survive as a noncurrent version. On an unversioned bucket the two
+        # listings are identical.
+        for obj in minio_client.list_objects(bucket.name, recursive=True, include_version=True):
             name = obj.object_name or ""
             if any(n in name for n in needles):
-                findings.append(f"minio: {bucket.name}/{name}")
+                version = getattr(obj, "version_id", None)
+                suffix = f" (version {version})" if version and version != "null" else ""
+                findings.append(f"minio: {bucket.name}/{name}{suffix}")
     return findings
+
+
+#: Configured stores a seeded file legitimately leaves empty, with the reason. Everything else
+#: :func:`configured_stores` derives must be populated by the seed before a delete, so a store
+#: added to the configuration is either covered by the residue scan or named here.
+CONFIGURED_STORE_EXEMPT: dict[str, str] = {
+    "bucket:AWS_TRANSCRIBE_BUCKET": "an external AWS bucket, not on the deployment's object store",
+    "index:OPENSEARCH_SUMMARY_INDEX": (
+        "retired by #67: nothing writes it; a summary is the summary plane of transcript_chunks, "
+        "which the seed populates, and legacy documents are purged by file_cleanup_service"
+    ),
+}
+
+
+def configured_stores() -> dict[str, str]:
+    """``{label: name}`` for every index and bucket the app's configuration names.
+
+    Derived from ``Settings``: every ``OPENSEARCH_*_INDEX`` and every ``*_BUCKET`` /
+    ``*_BUCKET_NAME`` field, plus the physical speaker index the voiceprints live in (the
+    ``speakers`` setting is an alias over a versioned index).
+    """
+    from app.core.config import settings
+    from app.services.opensearch_service.aliases import get_active_speaker_index
+
+    stores: dict[str, str] = {}
+    for field in type(settings).model_fields:
+        value = getattr(settings, field, None)
+        if field.startswith("OPENSEARCH_") and field.endswith("_INDEX"):
+            stores[f"index:{field}"] = str(value)
+        elif field.endswith(("_BUCKET", "_BUCKET_NAME")):
+            stores[f"bucket:{field}"] = str(value)
+    stores["index:OPENSEARCH_ACTIVE_SPEAKER_INDEX"] = get_active_speaker_index()
+    return stores
+
+
+def _physical_indices(name: str) -> set[str]:
+    """The concrete indices behind ``name`` (an alias resolves to its targets)."""
+    from app.services.opensearch_service import get_opensearch_client
+
+    client = get_opensearch_client()
+    assert client is not None, "SKIP_OPENSEARCH said a cluster was reachable but it is not"
+    return set(client.indices.get(index=name, ignore_unavailable=True)) or {name}
+
+
+def unpopulated_configured_stores(findings: list[str]) -> list[str]:
+    """Configured stores the pre-delete scan found nothing in, minus the exemptions."""
+    missing = []
+    for label, name in configured_stores().items():
+        if label in CONFIGURED_STORE_EXEMPT:
+            continue
+        if label.startswith("index:"):
+            targets = _physical_indices(name)
+            hit = any(
+                f.startswith("opensearch:") and f.rsplit(" in ", 1)[-1] in targets for f in findings
+            )
+        else:
+            hit = any(f.startswith(f"minio: {name}/") for f in findings)
+        if not hit:
+            missing.append(f"{label}={name}")
+    return missing
 
 
 def redis_residue(sf: SeededFile) -> list[str]:
@@ -388,6 +454,9 @@ class _Teardown:
     def sql(self, statements: list[tuple[str, dict[str, Any]]]) -> None:
         """One transaction per step, so one failure cannot roll another step back."""
         with self.engine.begin() as conn:
+            # Teardown removes seeded audit-protected rows (the notice record): the owner-only
+            # maintenance switch, transaction-local, is how a test does what the app cannot.
+            conn.execute(text("SELECT set_config('opentranscribe.audit_maintenance', 'on', true)"))
             for statement, params in statements:
                 conn.execute(text(statement), params)
 
@@ -552,6 +621,76 @@ def teardown_seed(
     for uid in throwaway_user_ids:
         td.attempt(f"throwaway user {uid}", lambda u=uid: _delete_throwaway_user(engine, u))
     td.raise_if_failed()
+
+
+# --------------------------------------------------------------------------- legal acceptance
+#
+# ``legal_acceptance`` is a DOCUMENTED SURVIVOR of account deletion (v451): the row stays,
+# pseudonymised, as evidence of which terms applied. It is not exempt from the scan; its kept
+# state is asserted exactly by :func:`legal_acceptance_survivor_findings`.
+
+LEGAL_SEED_IP = "198.51.100.23"
+LEGAL_SEED_UA = "DelresLegalAgent/1.0"
+
+
+def seed_legal_acceptance(conn: Connection, user_id: int) -> str:
+    """One acceptance with an IP and user agent. Returns the row uuid."""
+    import uuid as uuid_pkg
+
+    row_uuid = str(uuid_pkg.uuid4())
+    conn.execute(
+        text(
+            "INSERT INTO legal_acceptance (uuid, user_id, document_key, version, sha256,"
+            " ip_address, user_agent, locale) VALUES (:id, :u, 'delres-terms', '1', :sha,"
+            " :ip, :ua, 'en')"
+        ),
+        {"id": row_uuid, "u": user_id, "sha": "d" * 64, "ip": LEGAL_SEED_IP, "ua": LEGAL_SEED_UA},
+    )
+    return row_uuid
+
+
+def legal_acceptance_survivor_findings(
+    conn: Connection, row_uuid: str, personal: list[str]
+) -> list[str]:
+    """Findings unless the row survives in exactly the documented pseudonymised state.
+
+    Kept: the row, its document fields, ``subject_user_uuid``, the retention dates. Not kept:
+    ``user_id``, ``ip_address``, ``user_agent``, and any trace of ``personal`` (email, name,
+    seeded IP / UA) anywhere in the row's text.
+    """
+    row = (
+        conn.execute(
+            text(
+                "SELECT user_id, ip_address, user_agent, subject_erased_at, retain_until,"
+                " la::text AS whole FROM legal_acceptance la WHERE uuid = :u"
+            ),
+            {"u": row_uuid},
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if row is None:
+        return ["postgres: legal_acceptance evidence row was deleted with the account"]
+    findings = []
+    if row["user_id"] is not None:
+        findings.append("postgres: legal_acceptance still names the deleted account")
+    if row["ip_address"] is not None or row["user_agent"] is not None:
+        findings.append("postgres: legal_acceptance kept the IP address or user agent")
+    if row["subject_erased_at"] is None or row["retain_until"] is None:
+        findings.append("postgres: legal_acceptance has no retention clock")
+    findings += [
+        f"postgres: legal_acceptance holds personal data {p!r}"
+        for p in personal
+        if p and p in row["whole"]
+    ]
+    return findings
+
+
+def delete_legal_seed(conn: Connection, row_uuid: str) -> None:
+    """Remove a seeded evidence row. The guard trigger refuses this by design, so teardown
+    disables triggers for its own transaction (``session_replication_role``)."""
+    conn.execute(text("SET LOCAL session_replication_role = replica"))
+    conn.execute(text("DELETE FROM legal_acceptance WHERE uuid = :u"), {"u": row_uuid})
 
 
 def _delete_throwaway_user(engine: Any, user_id: int) -> None:

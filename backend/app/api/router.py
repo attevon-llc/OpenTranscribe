@@ -6,6 +6,7 @@ from . import websockets
 from .endpoints import admin
 from .endpoints import admin_approvals
 from .endpoints import admin_audit_content_access
+from .endpoints import admin_audit_integrity
 from .endpoints import admin_group_mappings
 from .endpoints import admin_hf_token
 from .endpoints import admin_scim_tokens
@@ -28,9 +29,11 @@ from .endpoints import diarization_settings
 from .endpoints import directory_sync_settings
 from .endpoints import embedding_migration
 from .endpoints import engine_settings
+from .endpoints import erasure_receipts
 from .endpoints import first_run_wizard
 from .endpoints import groups
 from .endpoints import legal
+from .endpoints import legal_processing_gate
 from .endpoints import llm_settings
 from .endpoints import llm_status
 from .endpoints import local_models
@@ -46,6 +49,7 @@ from .endpoints import privacy
 from .endpoints import prompts
 from .endpoints import redaction_settings
 from .endpoints import search
+from .endpoints import self_erasure
 from .endpoints import speaker_attribute_migration
 from .endpoints import speaker_clusters
 from .endpoints import speaker_profiles
@@ -148,6 +152,13 @@ include_router_with_consistency(tags.router, prefix="/tags", tags=["tags"])
 include_router_with_consistency(
     support_access.me_router, prefix="/users/me/support-access", tags=["support-access"]
 )
+# The subject's own erasure request (issue #1354); before users.router for the same reason.
+include_router_with_consistency(
+    self_erasure.router, prefix="/users/me/erasure-request", tags=["privacy"]
+)
+include_router_with_consistency(
+    self_erasure.admin_router, prefix="/admin/self-erasure", tags=["admin"]
+)
 include_router_with_consistency(users.router, prefix="/users", tags=["users"])
 include_router_with_consistency(
     support_access.router, prefix="/support-access", tags=["support-access"]
@@ -182,6 +193,17 @@ include_router_with_consistency(
 include_router_with_consistency(
     admin_approvals.router, prefix="/admin/user-approvals", tags=["admin"]
 )
+# Erasure receipts and single-file erasure (issue #1353). /admin refuses a support grant by
+# prefix; the org-admin half is refused under a grant too.
+include_router_with_consistency(erasure_receipts.admin_router, prefix="/admin", tags=["admin"])
+include_router_with_consistency(
+    erasure_receipts.org_router,
+    prefix="/org-admin",
+    tags=["org-admin"],
+    capability="organizations",
+    refuse_under_grant=True,
+)
+
 # Org-admin tenant administration (audit-log read + GDPR erasure). Gated by the
 # "organizations" capability: 404 in the community edition (no orgs), enabled by
 # the cloud capability resolver. require_org_admin further gates each route.
@@ -340,6 +362,12 @@ include_router_with_consistency(
     capability="asr.user_providers",
 )
 include_router_with_consistency(
+    admin_audit_integrity.router,
+    prefix="/admin/security/audit-integrity",
+    tags=["admin"],
+    capability="audit.logs",
+)
+include_router_with_consistency(
     admin_audit_content_access.router,
     prefix="/admin/audit/content-access",
     tags=["admin"],
@@ -352,6 +380,11 @@ include_router_with_consistency(
 include_router_with_consistency(privacy.user_router, prefix="/privacy", tags=["privacy"])
 include_router_with_consistency(
     privacy.admin_router, prefix="/admin/privacy-policy", tags=["admin"]
+)
+# Legal documents required before processing (super_admin). Enforcement is
+# app.legal.processing_gate, at every entry point that starts processing.
+include_router_with_consistency(
+    legal_processing_gate.router, prefix="/admin/legal-processing-gate", tags=["admin"]
 )
 include_router_with_consistency(
     admin_hf_token.router,

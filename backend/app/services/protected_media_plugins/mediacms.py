@@ -30,6 +30,63 @@ if TYPE_CHECKING:  # pragma: no cover - import cost is paid only by type checker
 logger = logging.getLogger(__name__)
 
 
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def _host_identity(host: str, scheme: str | None = None) -> tuple[str, int | None] | None:
+    """Return (lower-cased hostname, port) for ``host`` or ``host:port``, or None if unusable.
+
+    The one rule for "is this the same MediaCMS host": hostname compared case-insensitively
+    and the port compared with an absent port meaning the scheme's default (when ``scheme``
+    is known). Mirrored in the frontend's ``configService.ts::hostIdentity``.
+    """
+    try:
+        parsed = urlparse(f"//{host.strip()}")
+        name = parsed.hostname
+        port = parsed.port
+    except ValueError:
+        return None
+    # userinfo ("user@host") would make a different authority look like the same host.
+    if not name or "@" in host:
+        return None
+    return name.lower(), port or _DEFAULT_PORTS.get(scheme or "")
+
+
+def host_matches(configured: str, candidate: str, scheme: str | None = None) -> bool:
+    """True when a configured source host and a URL's host are the same host."""
+    left = _host_identity(configured, scheme)
+    return left is not None and left == _host_identity(candidate, scheme)
+
+
+def _origin(url: str) -> tuple[str, str, int | None] | None:
+    """Return (scheme, host, effective port) of *url*, or None when it has no usable origin."""
+    try:
+        parsed = urlparse(url)
+        host = parsed.hostname
+        port = parsed.port or _DEFAULT_PORTS.get(parsed.scheme)
+    except ValueError:
+        return None
+    if parsed.scheme not in _DEFAULT_PORTS or not host or parsed.username or parsed.password:
+        return None
+    return parsed.scheme, host.lower(), port
+
+
+def resolve_same_origin_url(base_url: str, server_value: str) -> str | None:
+    """Resolve a server-supplied URL or path against *base_url*; None if it leaves its origin.
+
+    The value comes from the remote server's response, so it is parsed as a reference
+    (never concatenated) and the result must keep the configured scheme, host and port.
+    Anything else fails closed so the user's token is only ever sent to that origin.
+    """
+    if not server_value or any(ord(c) < 0x20 or c == "\\" for c in server_value):
+        return None
+    resolved = urljoin(base_url if base_url.endswith("/") else base_url + "/", server_value)
+    expected = _origin(base_url)
+    if expected is None or _origin(resolved) != expected:
+        return None
+    return resolved
+
+
 def _pin_media_url(url: str, *, purpose: str) -> PinnedTarget:
     """Validate *url* and pin it to the exact address that was validated.
 
@@ -206,23 +263,25 @@ class MediacmsProvider(ProtectedMediaProvider):
                 hosts.add(h)
         return hosts
 
-    def _get_verify_ssl_for_host(self, hostname: str, user_id: int | None = None) -> bool:
-        """Get SSL verification setting for a specific host."""
+    def _get_verify_ssl_for_host(
+        self, hostname: str, user_id: int | None = None, scheme: str | None = None
+    ) -> bool:
+        """Get SSL verification setting for a specific host (``host`` or ``host:port``)."""
         for s in self._get_all_sources(user_id):
-            if s.get("hostname") == hostname:
+            if host_matches(s.get("hostname", ""), hostname, scheme):
                 return bool(s.get("verify_ssl", True))
         # Env fallback
         return os.getenv("MEDIACMS_VERIFY_SSL", "true").lower() not in ("false", "0", "no")
 
     def _get_stored_credentials(
-        self, hostname: str, user_id: int | None = None
+        self, hostname: str, user_id: int | None = None, scheme: str | None = None
     ) -> tuple[str | None, str | None]:
         """Get stored credentials for a specific host.
 
         Checks per-user sources first (own, then shared), then system-level.
         """
         for s in self._get_all_sources(user_id):
-            if s.get("hostname") == hostname:
+            if host_matches(s.get("hostname", ""), hostname, scheme):
                 username = s.get("username") or None
                 password = s.get("password") or None
                 if username and password:
@@ -234,12 +293,17 @@ class MediacmsProvider(ProtectedMediaProvider):
         """Global SSL verification fallback (used when host is unknown)."""
         return os.getenv("MEDIACMS_VERIFY_SSL", "true").lower() not in ("false", "0", "no")
 
+    def _is_allowed_host(self, parsed: Any, user_id: int | None) -> bool:
+        return any(
+            host_matches(h, parsed.netloc, parsed.scheme) for h in self._get_allowed_hosts(user_id)
+        )
+
     def can_handle(self, url: str, user_id: int | None = None) -> bool:
         try:
             parsed = urlparse(url)
             if parsed.scheme not in {"http", "https"}:
                 return False
-            if parsed.netloc not in self._get_allowed_hosts(user_id):
+            if not self._is_allowed_host(parsed, user_id):
                 return False
 
             # Either ?m=<token> query param or /api/v1/media/<token> path
@@ -262,7 +326,7 @@ class MediacmsProvider(ProtectedMediaProvider):
     def _get_token_and_base_url(self, url: str, user_id: int | None = None) -> tuple[str, str]:
         parsed = urlparse(url)
 
-        if parsed.netloc not in self._get_allowed_hosts(user_id):
+        if not self._is_allowed_host(parsed, user_id):
             raise HTTPException(
                 status_code=400,
                 detail="URL hostname is not in the configured media sources",
@@ -312,7 +376,9 @@ class MediacmsProvider(ProtectedMediaProvider):
         # Fall back to stored credentials if none provided in request
         if not media_user or not media_pass:
             parsed = urlparse(url)
-            stored_user, stored_pass = self._get_stored_credentials(parsed.netloc, user_id=user_id)
+            stored_user, stored_pass = self._get_stored_credentials(
+                parsed.netloc, user_id=user_id, scheme=parsed.scheme
+            )
             if not media_user:
                 media_user = stored_user
             if not media_pass:
@@ -330,7 +396,9 @@ class MediacmsProvider(ProtectedMediaProvider):
 
         friendly_token, base_url = self._get_token_and_base_url(url, user_id=user_id)
         parsed = urlparse(url)
-        host_verify_ssl = self._get_verify_ssl_for_host(parsed.netloc, user_id=user_id)
+        host_verify_ssl = self._get_verify_ssl_for_host(
+            parsed.netloc, user_id=user_id, scheme=parsed.scheme
+        )
         auth_payload = {"username": media_user, "password": media_pass}
 
         login_url = f"{base_url}/api/v1/login"
@@ -406,9 +474,10 @@ class MediacmsProvider(ProtectedMediaProvider):
             return {}
 
         # Check which hosts have stored credentials
-        db_sources = self._get_db_sources()
         hosts_with_creds = {
-            s["hostname"] for s in db_sources if s.get("username") and s.get("password")
+            s["hostname"]
+            for s in self._get_all_sources(user_id)
+            if s.get("hostname") and s.get("username") and s.get("password")
         }
 
         return {
@@ -498,16 +567,16 @@ class MediacmsProvider(ProtectedMediaProvider):
                 detail="MediaCMS media info is missing 'original_media_url'",
             )
 
-        # Validate original_media_url to prevent SSRF via malicious server response
-        if "://" in str(original_media_url) or str(original_media_url).startswith("//"):
+        download_url = resolve_same_origin_url(base_url, str(original_media_url))
+        if download_url is None:
             raise HTTPException(
                 status_code=502,
                 detail="MediaCMS returned an invalid media URL",
             )
-
-        download_url = f"{base_url}{original_media_url}"
         parsed = urlparse(url)
-        host_verify_ssl = self._get_verify_ssl_for_host(parsed.netloc, user_id=user_id)
+        host_verify_ssl = self._get_verify_ssl_for_host(
+            parsed.netloc, user_id=user_id, scheme=parsed.scheme
+        )
 
         # Use the auth token for the download request (protected files need it)
         download_headers = {"authorization": f"Token {auth_token}"}

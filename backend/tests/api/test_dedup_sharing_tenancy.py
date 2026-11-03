@@ -419,7 +419,10 @@ def test_failed_duplicate_cleanup_only_touches_the_active_tenant(world):
     same_org_failed = _mk_file(w.db, w.alice, w.org_a.id, file_hash=digest, status="error")
     other_id, same_id = other_org_failed.id, same_org_failed.id
 
-    with patch("app.services.minio_service.delete_file"):
+    with (
+        patch("app.services.file_cleanup_service.delete_file_storage_artifacts", return_value=True),
+        patch("app.services.file_cleanup_service._cleanup_opensearch_for_file", return_value=[]),
+    ):
         cleaned = cleanup_failed_duplicates(w.db, digest, w.alice.id, organization_id=w.org_a.id)
 
     assert cleaned == 1

@@ -13,7 +13,9 @@ import axiosInstance from '$lib/axios';
  */
 
 /** Every layer a decision can be locked by. `consent` only appears for voiceprint creation. */
-export type PrivacyLayer = 'platform' | 'instance' | 'organization' | 'user' | 'consent';
+export type PrivacyLayer = 'platform' | 'instance' | 'organization' | 'user' | 'consent' | 'file';
+/** A file's recorded voiceprint consent: the uploader's claim, never verified by the product. */
+export type FileVoiceprintConsentState = 'unspecified' | 'granted' | 'declined';
 /** The layers ABOVE a user's own switch, i.e. the ones that can lock it. */
 export type UserLockLayer = 'platform' | 'instance' | 'organization';
 /** What a purge deletes. Named profiles, avatars and people's own assignments are always kept. */
@@ -39,6 +41,18 @@ export interface EffectivePrivacy {
 export interface InstancePrivacyPolicy {
   voiceprint_matching_enabled: boolean;
   gender_inference_enabled: boolean;
+  /** When on, a file is opted out of voiceprints unless its uploader recorded `granted`. Default off. */
+  voiceprint_upload_consent_required: boolean;
+}
+
+/** `PATCH /files/{uuid}/voiceprint-consent`. */
+export interface FileVoiceprintConsentResult {
+  state: FileVoiceprintConsentState;
+  previous_state: FileVoiceprintConsentState;
+  changed: boolean;
+  /** Set when voiceprints are being deleted; poll {@link PrivacyApi.getPurgeStatus}. */
+  purge_task_id: string | null;
+  reprocess_to_create_voiceprints: boolean;
 }
 
 /** `GET|PUT /privacy/me`: the caller's own voiceprint switch. */
@@ -78,7 +92,12 @@ export interface PurgeStatus {
   residual_ok: boolean | null;
   residual_unverified: string[];
   audit: PurgeAuditRef[];
+  /** Why a purge ended without running; `files_protected` = every recording was held or taken down. */
+  reason?: string | null;
 }
+
+/** The abort code for a purge whose every recording is under a legal hold or has been taken down. */
+export const PURGE_REASON_FILES_PROTECTED = 'files_protected';
 
 export type PurgeScope = 'personal' | 'all';
 
@@ -120,6 +139,18 @@ export class PrivacyApi {
   /** Readable only by the person who started the purge; anyone else's id is a 404. */
   static async getPurgeStatus(taskId: string): Promise<PurgeStatus> {
     const response = await axiosInstance.get(`/privacy/purge/${encodeURIComponent(taskId)}`);
+    return response.data;
+  }
+
+  /** Owner only. `declined` also queues deletion of the file's existing voiceprints. */
+  static async setFileVoiceprintConsent(
+    fileUuid: string,
+    state: 'granted' | 'declined'
+  ): Promise<FileVoiceprintConsentResult> {
+    const response = await axiosInstance.patch(
+      `/files/${encodeURIComponent(fileUuid)}/voiceprint-consent`,
+      { state }
+    );
     return response.data;
   }
 

@@ -431,6 +431,25 @@ def _clear_process_auth_cache():
 
 
 @pytest.fixture(autouse=True)
+def _unpin_opensearch_client_reexport():
+    """Keep ``app.services.opensearch_service.opensearch_client`` forwarding to the client module.
+
+    The package resolves that name through a module ``__getattr__`` (it is rebound at run
+    time). ``monkeypatch.setattr`` on it records the forwarded value and, on undo, SETS it as
+    a real package attribute, which then shadows ``__getattr__`` for the rest of the worker.
+    A test that patched the client module first and the package second therefore left its
+    fake client pinned there, and a later test reading the package got a ``MagicMock``
+    (``test_owner_listing_tenancy::test_reindex_status_counts_only_the_active_tenant`` after
+    ``test_voiceprint_document_stamps_by_writer``). Removing the pinned entry after every test
+    restores the forwarding, whichever test pinned it.
+    """
+    yield
+    import app.services.opensearch_service as package
+
+    vars(package).pop("opensearch_client", None)
+
+
+@pytest.fixture(autouse=True)
 def _clear_sidecar_readiness_cache():
     """Isolate the diar-native readiness/liveness TTL caches between tests.
 
@@ -463,6 +482,30 @@ def _clear_sidecar_readiness_cache():
 #: of the literal would stop protecting anything the moment either copy changed.
 from tests.db_locks import acquire_ddl_lock_exclusive  # noqa: E402
 from tests.db_locks import acquire_ddl_lock_shared  # noqa: E402
+
+
+@pytest.fixture
+def no_receipt_measurement():
+    """Opt-in: stand in for the erasure receipt's measurement stage.
+
+    For tests that pin what an erasure DESTROYS in the SQL plane. The receipt measures every
+    store of the inventory (OpenSearch, object storage, Redis, the filesystem) from a fresh
+    session, so on a shared stack its outcome depends on whatever other runs have left in those
+    stores -- a stray ``test_*`` index alone makes it ``unverified`` (``os.unclassified``) and
+    the erasure, correctly, refuses to complete. The receipt itself is covered against real
+    stores by ``integration/test_erasure_receipt_e2e.py``.
+    """
+    from unittest.mock import MagicMock
+    from unittest.mock import patch
+
+    with (
+        patch(
+            "app.services.gdpr_erasure_service.receipt_flow.begin",
+            return_value=(MagicMock(), {}),
+        ),
+        patch("app.services.gdpr_erasure_service.receipt_flow.finish"),
+    ):
+        yield
 
 
 @pytest.fixture(scope="function")

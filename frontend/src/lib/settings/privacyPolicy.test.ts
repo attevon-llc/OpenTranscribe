@@ -17,6 +17,7 @@ import {
   privacyErrorCode,
   privacyErrorKey,
   purgeCountTotal,
+  purgeProtectedTotal,
   purgeStoreTotal,
   purgeVerification,
 } from './privacyPolicy';
@@ -90,6 +91,51 @@ describe('error mapping', () => {
     expect(purgeCountTotal(counts)).toBe(9);
     expect(purgeCountTotal(null)).toBe(0);
     expect(purgeStoreTotal(undefined, 'postgres')).toBe(0);
+  });
+
+  describe('protected (kept) recordings', () => {
+    it('counts held and quarantined files, and is 0 when absent, null or zero', () => {
+      expect(purgeProtectedTotal(null)).toBe(0);
+      expect(purgeProtectedTotal(undefined)).toBe(0);
+      expect(purgeProtectedTotal({ postgres: { speakers: 5 } })).toBe(0);
+      expect(
+        purgeProtectedTotal({ postgres: { files_skipped_held: 0, files_skipped_quarantined: 0 } })
+      ).toBe(0);
+      expect(
+        purgeProtectedTotal({
+          postgres: { files_skipped_held: 2, files_skipped_quarantined: 1, profiles_retained: 9 },
+        })
+      ).toBe(3);
+    });
+
+    it('does not count the skip counters as deletions', () => {
+      const counts = { postgres: { speakers: 4, files_skipped_held: 2, profiles_retained: 1 } };
+      expect(purgeStoreTotal(counts, 'postgres')).toBe(4);
+      expect(purgeCountTotal(counts)).toBe(4);
+    });
+
+    it('is verified-except-protected only when something was kept', () => {
+      const base = { residual: { a: 0 }, residual_ok: true, residual_unverified: [] as string[] };
+      expect(
+        purgeVerification({ ...base, counts: { postgres: { profiles_retained: 1 } } })
+      ).toEqual({
+        state: 'verified_except_protected',
+      });
+      expect(
+        purgeVerification({ ...base, counts: { postgres: { files_skipped_held: 0 } } })
+      ).toEqual({
+        state: 'verified',
+      });
+      // Something left over still wins and is reported as such.
+      expect(
+        purgeVerification({
+          ...base,
+          residual: { a: 2 },
+          residual_ok: false,
+          counts: { postgres: { files_skipped_held: 3 } },
+        })
+      ).toEqual({ state: 'remaining', remaining: 2 });
+    });
   });
 
   describe('purgeVerification', () => {

@@ -80,8 +80,10 @@ org path never triggers. ``erase_user`` works in both editions (the speaker
 
 import logging
 from collections.abc import Iterable
+from datetime import datetime
 from typing import Any
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth.audit import AuditEventType
@@ -105,7 +107,13 @@ from app.models.prompt import UserSetting
 from app.models.user import User
 from app.models.watch_source import WatchSource
 from app.services import erasure_ledger_service as ledger
+from app.services.erasure_receipt import flow as receipt_flow
+from app.services.erasure_receipt.destroy_extras import erase_extras
+from app.services.erasure_receipt.measure import Measurement
+from app.services.erasure_receipt.types import Captured
+from app.services.erasure_receipt.types import ErasureScope
 from app.services.file_cleanup_service import purge_media_file
+from app.services.storage_versions import UNVERIFIED_VERSIONS_ERROR
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +128,7 @@ def _erase_speaker_voiceprints(
     user_id: int | None = None,
     organization_id: int | None = None,
     personal_only: bool = False,
+    created_before: datetime | None = None,
     errors: list[dict[str, Any]] | None = None,
 ) -> int:
     """Delete speaker/profile embedding docs (biometric data) from OpenSearch.
@@ -140,6 +149,9 @@ def _erase_speaker_voiceprints(
     Args:
         user_id: Scope the deletion to one user.
         organization_id: Scope the deletion to one organization.
+        created_before: Only documents whose ``created_at`` is at or before this instant (the
+            automatic org-member re-run after a restore). A document with no ``created_at`` does
+            not match and is left in place.
         personal_only: Also require that the doc carries no organization, i.e. only
             personal-workspace docs (the privacy purge's "personal" scope). Without a
             ``user_id`` this is every user's personal docs. Contradicts
@@ -162,6 +174,8 @@ def _erase_speaker_voiceprints(
         terms.append({"term": {"user_id": user_id}})
     if organization_id is not None:
         terms.append({"term": {"organization_id": organization_id}})
+    if created_before is not None:
+        terms.append({"range": {"created_at": {"lte": created_before.isoformat()}}})
     body: dict[str, Any] = {"query": {"bool": {"filter": terms}}}
     if personal_only:
         body["query"]["bool"]["must_not"] = [{"exists": {"field": "organization_id"}}]
@@ -312,6 +326,16 @@ def delete_speaker_docs_by_ids(
     return deleted
 
 
+def _count_legal_acceptances(db: Session, user_id: int) -> int:
+    """Acceptance rows the user delete will pseudonymise rather than remove (v451)."""
+    from app.models.legal_acceptance import LegalAcceptance
+
+    return int(
+        db.query(func.count(LegalAcceptance.id)).filter(LegalAcceptance.user_id == user_id).scalar()
+        or 0
+    )
+
+
 def count_speaker_docs_by_ids(
     doc_ids: Iterable[str],
     *,
@@ -411,7 +435,8 @@ def _erase_avatar_objects(avatar_paths: list[str], errors: list[dict[str, Any]])
 
     for path in avatar_paths:
         try:
-            delete_file(path)
+            if getattr(delete_file(path), "unverified", False):
+                errors.append({"stage": "storage_unverified", "error": UNVERIFIED_VERSIONS_ERROR})
         except Exception as e:  # noqa: BLE001 — record, don't raise; one avatar never blocks the rest
             errors.append(
                 {"stage": "avatar", "error": f"avatar delete failed ({type(e).__name__})"}
@@ -560,6 +585,9 @@ def _new_summary(subject: str, subject_id: int) -> dict[str, Any]:
         "watch_sources_deleted": 0,
         "voiceprints_deleted": 0,
         "users_deleted": 0,
+        # Legal acceptance records are KEPT, pseudonymised by the database (v451,
+        # trg_legal_acceptance_guard), under Art. 17(3)(e). Counted, never deleted here.
+        "legal_acceptances_pseudonymised": 0,
         "legal_holds_skipped": 0,
         "errors": [],
         "complete": True,
@@ -666,6 +694,9 @@ def erase_user(
             actor_user_id=actor_user_id,
         )
 
+    scope = ErasureScope("user", user_id=user_id)
+    captured, before = receipt_flow.begin(db, scope)
+
     files = db.query(MediaFile).filter(MediaFile.user_id == user_id).all()
     _purge_files(db, files, summary)
     avatar_paths = _delete_owner_scoped_rows(db, user_id, summary)
@@ -689,9 +720,11 @@ def erase_user(
     else:
         ledger_entry_id = ledger_entry.id if ledger_entry is not None else None
         try:
+            pseudonymised = _count_legal_acceptances(db, user.id)
             db.delete(user)
             db.commit()
             summary["users_deleted"] = 1
+            summary["legal_acceptances_pseudonymised"] = pseudonymised
         except Exception as e:  # noqa: BLE001 — record, don't raise
             db.rollback()
             # `summary` is returned straight out of this function and becomes the
@@ -720,6 +753,9 @@ def erase_user(
                     .filter(ErasureLedgerEntry.id == ledger_entry_id)
                     .first()
                 )
+
+    erase_extras(scope, captured, summary["errors"])
+    receipt_flow.finish(db, ledger_entry, scope, captured, before, summary)
 
     audit_logger.log(
         event_type=AuditEventType.ADMIN_USER_DELETE,
@@ -755,6 +791,7 @@ def erase_user(
                     "speaker_profiles_deleted",
                     "voiceprints_deleted",
                     "users_deleted",
+                    "legal_acceptances_pseudonymised",
                     "legal_holds_skipped",
                 )
             },
@@ -775,6 +812,7 @@ def erase_org_member_data(
     actor_user_id: int | None = None,
     actor_email: str | None = None,
     ledger_entry: ErasureLedgerEntry | None = None,
+    created_before: datetime | None = None,
 ) -> dict[str, Any]:
     """Erase ONE member's data WITHIN ONE organization (org-admin scope).
 
@@ -799,6 +837,13 @@ def erase_org_member_data(
     Idempotent and never raises; legal-hold files are skipped and reported, and
     the request is recorded in the erasure ledger (``ledger_entry`` is passed by
     the reconciliation sweep when retrying — see :func:`erase_user`).
+
+    ``created_before`` makes this the automatic re-run after a restore: only rows (and
+    voiceprint documents) created at or before that instant are erased, so what the member
+    legitimately created after the original erasure is untouched. A restore can only bring back
+    rows that existed before the erasure, so the cutoff loses nothing. ``None`` is the direct
+    request and erases everything. A time-bounded run takes no erasure receipt: the receipt
+    measures the whole scope, which rightly still holds the newer rows.
     """
     summary = _new_summary("org_member", user_id)
     summary["organization_id"] = org_id
@@ -819,25 +864,36 @@ def erase_org_member_data(
             actor_user_id=actor_user_id,
         )
 
-    files = (
-        db.query(MediaFile)
-        .filter(MediaFile.user_id == user_id, MediaFile.organization_id == org_id)
-        .all()
+    scope = ErasureScope("org_member", user_id=user_id, organization_id=org_id)
+    captured: Captured | None = None
+    before: Measurement | None = None
+    if created_before is None:
+        captured, before = receipt_flow.begin(db, scope)
+
+    file_query = db.query(MediaFile).filter(
+        MediaFile.user_id == user_id, MediaFile.organization_id == org_id
     )
+    if created_before is not None:
+        file_query = file_query.filter(MediaFile.upload_time <= created_before)
+    files = file_query.all()
     _purge_files(db, files, summary)
 
-    profiles = (
-        db.query(SpeakerProfile)
-        .filter(SpeakerProfile.user_id == user_id, SpeakerProfile.organization_id == org_id)
-        .all()
+    profile_query = db.query(SpeakerProfile).filter(
+        SpeakerProfile.user_id == user_id, SpeakerProfile.organization_id == org_id
     )
+    if created_before is not None:
+        profile_query = profile_query.filter(SpeakerProfile.created_at <= created_before)
+    profiles = profile_query.all()
     avatar_paths = _delete_profiles(db, profiles, summary)
 
     # The member's collections in this org are the TENANT's, shared by every
     # member and holding colleagues' files (v422): they stay, de-attributed.
-    db.query(Collection).filter(
+    collection_query = db.query(Collection).filter(
         Collection.user_id == user_id, Collection.organization_id == org_id
-    ).update({Collection.user_id: None}, synchronize_session=False)
+    )
+    if created_before is not None:
+        collection_query = collection_query.filter(Collection.created_at <= created_before)
+    collection_query.update({Collection.user_id: None}, synchronize_session=False)
 
     for model, key in (
         (SpeakerCollection, "speaker_collections_deleted"),
@@ -854,10 +910,12 @@ def erase_org_member_data(
         (CustomVocabulary, "custom_vocabularies_deleted"),
         (WatchSource, "watch_sources_deleted"),
     ):
-        rows = (
-            db.query(model).filter(model.user_id == user_id, model.organization_id == org_id).all()
+        row_query = db.query(model).filter(
+            model.user_id == user_id, model.organization_id == org_id
         )
-        for row in rows:
+        if created_before is not None:
+            row_query = row_query.filter(model.created_at <= created_before)
+        for row in row_query.all():
             db.delete(row)
             summary[key] += 1
 
@@ -868,27 +926,35 @@ def erase_org_member_data(
     # on other members' org files, which no per-file pass can see.
     # The member's organization tags are the TENANT's vocabulary, on colleagues'
     # files (v420), so they stay — but no longer name the erased member.
-    db.query(Tag).filter(Tag.user_id == user_id, Tag.organization_id == org_id).update(
-        {Tag.user_id: None}, synchronize_session=False
-    )
+    tag_query = db.query(Tag).filter(Tag.user_id == user_id, Tag.organization_id == org_id)
+    if created_before is not None:
+        tag_query = tag_query.filter(Tag.created_at <= created_before)
+    tag_query.update({Tag.user_id: None}, synchronize_session=False)
 
     org_file_ids = db.query(MediaFile.id).filter(MediaFile.organization_id == org_id).subquery()
-    summary["comments_deleted"] = (
-        db.query(Comment)
-        .filter(Comment.user_id == user_id, Comment.media_file_id.in_(org_file_ids.select()))
-        .delete(synchronize_session=False)
+    comment_query = db.query(Comment).filter(
+        Comment.user_id == user_id, Comment.media_file_id.in_(org_file_ids.select())
     )
-    summary["tasks_deleted"] = (
-        db.query(Task)
-        .filter(Task.user_id == user_id, Task.media_file_id.in_(org_file_ids.select()))
-        .delete(synchronize_session=False)
+    task_query = db.query(Task).filter(
+        Task.user_id == user_id, Task.media_file_id.in_(org_file_ids.select())
     )
+    if created_before is not None:
+        comment_query = comment_query.filter(Comment.created_at <= created_before)
+        task_query = task_query.filter(Task.created_at <= created_before)
+    summary["comments_deleted"] = comment_query.delete(synchronize_session=False)
+    summary["tasks_deleted"] = task_query.delete(synchronize_session=False)
     db.commit()
     _erase_avatar_objects(avatar_paths, summary["errors"])
 
     summary["voiceprints_deleted"] = _erase_speaker_voiceprints(
-        user_id=user_id, organization_id=org_id, errors=summary["errors"]
+        user_id=user_id,
+        organization_id=org_id,
+        created_before=created_before,
+        errors=summary["errors"],
     )
+    if captured is not None and before is not None:
+        erase_extras(scope, captured, summary["errors"])
+        receipt_flow.finish(db, ledger_entry, scope, captured, before, summary)
 
     audit_logger.log(
         event_type=AuditEventType.ADMIN_USER_DELETE,
@@ -968,6 +1034,9 @@ def erase_organization(
             actor_kind=_actor_kind(actor_user_id, staff_role="org_admin"),
             actor_user_id=actor_user_id,
         )
+
+    scope = ErasureScope("organization", organization_id=org_id)
+    captured, before = receipt_flow.begin(db, scope)
 
     files = db.query(MediaFile).filter(MediaFile.organization_id == org_id).all()
     _purge_files(db, files, summary)
@@ -1058,6 +1127,8 @@ def erase_organization(
             )
 
     summary["memberships_removed"] = member_count
+    erase_extras(scope, captured, summary["errors"])
+    receipt_flow.finish(db, ledger_entry, scope, captured, before, summary)
 
     audit_logger.log(
         event_type=AuditEventType.ADMIN_USER_DELETE,
@@ -1094,4 +1165,70 @@ def erase_organization(
     if ledger_entry is not None:
         summary["ledger_uuid"] = str(ledger_entry.uuid)
     logger.info(f"erase_organization({org_id}) complete: {summary}")
+    return summary
+
+
+def erase_file(
+    db: Session,
+    file_uuid: Any,
+    *,
+    actor_user_id: int | None = None,
+    actor_email: str | None = None,
+    actor_role: str = "super_admin",
+    ledger_entry: ErasureLedgerEntry | None = None,
+) -> dict[str, Any]:
+    """Erase ONE recording on request (Art. 17 for a single file) and issue its receipt.
+
+    The canonical per-file destroy (:func:`purge_media_file`) run through the ledger, so the
+    request has the same evidence as an account erasure: a ledger entry (subject ``file``, the
+    file's surrogate uuid and its organization) and a measured receipt. A file under a legal hold
+    is skipped, reported, and retried by the sweep. Idempotent and never raises.
+    ``DELETE /files/{uuid}`` is unchanged; this is the erasure-request path.
+    """
+    media_file = db.query(MediaFile).filter(MediaFile.uuid == file_uuid).first()
+    summary = _new_summary("file", int(media_file.id) if media_file is not None else 0)
+    if media_file is None:
+        summary["already_erased"] = True
+        if ledger_entry is not None:
+            ledger.record_outcome(db, ledger_entry, summary)
+            summary["ledger_uuid"] = str(ledger_entry.uuid)
+        return summary
+
+    file_id = int(media_file.id)
+    owner_id = int(media_file.user_id)
+    org_id = int(media_file.organization_id) if media_file.organization_id is not None else None
+    org = db.query(Organization).filter(Organization.id == org_id).first() if org_id else None
+    if ledger_entry is None:
+        ledger_entry = ledger.record_request(
+            db,
+            subject_type="file",
+            subject_file_uuid=media_file.uuid,
+            subject_organization_id=org_id,
+            subject_organization_uuid=org.uuid if org else None,
+            actor_kind=_actor_kind(actor_user_id, staff_role=actor_role),
+            actor_user_id=actor_user_id,
+        )
+
+    scope = ErasureScope("file", file_ids=(file_id,))
+    captured, before = receipt_flow.begin(db, scope)
+    _purge_files(db, [media_file], summary)
+    erase_extras(scope, captured, summary["errors"])
+    receipt_flow.finish(db, ledger_entry, scope, captured, before, summary)
+
+    audit_logger.log(
+        event_type=AuditEventType.ADMIN_USER_DELETE,
+        outcome=_resolve_outcome(summary),
+        user_id=actor_user_id,
+        username=actor_email,
+        target_user_id=owner_id,
+        organization_id=org_id,
+        details={
+            "action": "gdpr_erasure_file",
+            **{k: summary[k] for k in ("media_files_deleted", "legal_holds_skipped")},
+        },
+    )
+    ledger.record_outcome(db, ledger_entry, summary)
+    if ledger_entry is not None:
+        summary["ledger_uuid"] = str(ledger_entry.uuid)
+    logger.info(f"erase_file({file_id}) complete")
     return summary

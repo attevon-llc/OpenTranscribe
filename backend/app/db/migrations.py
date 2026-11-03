@@ -18,9 +18,11 @@ from sqlalchemy import create_engine
 from sqlalchemy import inspect
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import SQLAlchemyError
 
 from alembic import command  # type: ignore[attr-defined]
-from app.core.config import settings
+from app.db.migration_connection import migration_connect_args
+from app.db.migration_connection import migration_database_url
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +34,8 @@ def get_alembic_config() -> Config:
     alembic_ini = backend_dir / "alembic.ini"
 
     config = Config(str(alembic_ini))
-    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+    # configparser interpolation: a literal % (percent-encoded password) must be doubled.
+    config.set_main_option("sqlalchemy.url", migration_database_url().replace("%", "%%"))
     return config
 
 
@@ -705,6 +708,70 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE conname = 'speaker_identity_source_user_id_fkey')"
     )
 
+    # v450: legal acceptance context + speaker_profile.last_interaction_at. Keyed on the CHECK the
+    # revision creates last, and on the profile column (same transaction, but both are cheap).
+    has_legal_acceptance_context = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_legal_acceptance_scope')"
+    ) and _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'speaker_profile' AND column_name = 'last_interaction_at')"
+    )
+
+    # v454: per-file voiceprint consent (issue #1356). Keyed on the partial index, created last.
+    has_voiceprint_consent = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname = 'ix_media_file_voiceprint_declined')"
+    )
+
+    # v451: legal acceptance survives user deletion. Keyed on the guard trigger (created last),
+    # the SET NULL rule of the user FK, and the subject CHECK: a column without its trigger
+    # could keep an IP after erasure, so such a database re-runs the revision.
+    has_legal_acceptance_survival = (
+        _check_exists(
+            "SELECT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname = 'trg_legal_acceptance_guard')"
+        )
+        and _check_exists(
+            "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE contype = 'f' "
+            "AND conrelid = 'legal_acceptance'::regclass AND confrelid = '\"user\"'::regclass "
+            "AND confdeltype = 'n')"
+        )
+        and _check_exists(
+            "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_legal_acceptance_subject')"
+        )
+    )
+
+    # v452: the erasure receipt (issue #1353). Keyed on the LAST CHECK the revision creates.
+    has_erasure_receipt = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_erasure_receipt_digest')"
+    )
+
+    # v453: audit row immutability. Keyed on the erasure_ledger guard trigger, created last.
+    has_audit_row_guard = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname = 'trg_audit_guard_erasure_ledger')"
+    ) and _check_exists("SELECT EXISTS(SELECT 1 FROM pg_proc WHERE proname = 'audit_prune')")
+
+    # v455: self-service erasure requests (issues #1354/#1355). Keyed on the LAST object the
+    # revision creates, the unique open-request index.
+    has_self_service_erasure = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_indexes "
+        "WHERE indexname = 'uq_erasure_ledger_open_self_request')"
+    )
+
+    # v456: unique object keys (issue #1357). Keyed on the LAST index the revision builds, the
+    # playback one; the storage_path index can legitimately be absent (duplicates found).
+    has_unique_object_keys = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname = 'uq_media_file_playback_path')"
+    )
+
+    # v457: audit guard follow-ups. Keyed on the LAST trigger the revision creates (the
+    # legal_acceptance TRUNCATE guard) plus the widened erasure_ledger lifecycle list.
+    has_audit_guard_followups = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_trigger "
+        "WHERE tgname = 'trg_audit_guard_truncate_legal_acceptance')"
+    ) and _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname = 'trg_audit_guard_erasure_ledger' "
+        "AND pg_get_triggerdef(oid) LIKE '%index_checked_at%')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -774,9 +841,8 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_legal_acceptance
         and has_takedown_origin
     )
-    # v449: same as v448 plus speaker.identity_source. The newest revision on this chain, so
-    # this is the top of the ladder.
-    if (
+    # Bound to a name: v450 onward are each v449's fingerprint plus one more probe.
+    matches_v449 = (
         matches_v442
         and has_takedown_notice
         and has_takedown_notification
@@ -785,7 +851,78 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_content_hold
         and has_task_active_unique
         and has_identity_source
+    )
+    # v457: same as v456 plus the widened erasure_ledger guard and the receipt guard. The top.
+    if (
+        matches_v449
+        and has_legal_acceptance_context
+        and has_legal_acceptance_survival
+        and has_erasure_receipt
+        and has_audit_row_guard
+        and has_voiceprint_consent
+        and has_self_service_erasure
+        and has_unique_object_keys
+        and has_audit_guard_followups
     ):
+        return "v457_audit_guard_followups"
+    # v456: same as v455 plus the unique object-key indexes.
+    if (
+        matches_v449
+        and has_legal_acceptance_context
+        and has_legal_acceptance_survival
+        and has_erasure_receipt
+        and has_audit_row_guard
+        and has_voiceprint_consent
+        and has_self_service_erasure
+        and has_unique_object_keys
+    ):
+        return "v456_unique_object_keys"
+    # v455: same as v454 plus the self-service erasure request.
+    if (
+        matches_v449
+        and has_legal_acceptance_context
+        and has_legal_acceptance_survival
+        and has_erasure_receipt
+        and has_audit_row_guard
+        and has_voiceprint_consent
+        and has_self_service_erasure
+    ):
+        return "v455_add_self_service_erasure_request"
+    # v454: same as v453 plus the per-file voiceprint consent column.
+    if (
+        matches_v449
+        and has_legal_acceptance_context
+        and has_legal_acceptance_survival
+        and has_erasure_receipt
+        and has_audit_row_guard
+        and has_voiceprint_consent
+    ):
+        return "v454_add_media_file_voiceprint_consent"
+    # v453: same as v452 plus the audit guard.
+    if (
+        matches_v449
+        and has_legal_acceptance_context
+        and has_legal_acceptance_survival
+        and has_erasure_receipt
+        and has_audit_row_guard
+    ):
+        return "v453_audit_row_immutability"
+    # v452: same as v451 plus the erasure receipt.
+    if (
+        matches_v449
+        and has_legal_acceptance_context
+        and has_legal_acceptance_survival
+        and has_erasure_receipt
+    ):
+        return "v452_add_erasure_receipt"
+    # v451: same as v450 plus the survival trigger.
+    if matches_v449 and has_legal_acceptance_context and has_legal_acceptance_survival:
+        return "v451_legal_acceptance_survives_user_deletion"
+    # v450: same as v449 plus the legal acceptance context.
+    if matches_v449 and has_legal_acceptance_context:
+        return "v450_legal_acceptance_context_and_profile_interaction"
+    # v449: same as v448 plus speaker.identity_source.
+    if matches_v449:
         return "v449_add_speaker_identity_source"
     # v448: same as v447 plus the one-active-row-per-file-step guard.
     if (
@@ -1549,7 +1686,7 @@ def _repair_skipped_v230(config) -> None:
     chain was linearised. All SQL is idempotent (IF NOT EXISTS).
     """
 
-    engine = create_engine(settings.DATABASE_URL)
+    engine = create_engine(migration_database_url(), connect_args=migration_connect_args())
     try:
         with engine.connect() as conn:
             missing = not _check_column_exists(conn, "media_file", "upload_batch_id")
@@ -1700,6 +1837,37 @@ def _repair_skipped_v230(config) -> None:
         engine.dispose()
 
 
+#: The retry below runs at most once per process. A dev hot reload starts a new process, but
+#: the common case (all three indexes valid) is one catalog query, so that costs nothing.
+_object_key_retry_done = False
+
+
+def _retry_object_key_indexes() -> None:
+    """Build any object-key unique index v456 had to skip, without blocking writers.
+
+    Uses ``CREATE UNIQUE INDEX CONCURRENTLY`` on an autocommit connection and first drops an
+    INVALID index a failed build left behind. v456 itself builds inside its transaction (and so
+    locks writes while it runs); this retry exists for the indexes it skipped or could not build.
+
+    Never raises: a database problem here is logged and must not stop the backend.
+    """
+    global _object_key_retry_done
+    if _object_key_retry_done:
+        return
+    _object_key_retry_done = True
+    from app.db import object_key_indexes
+
+    engine = create_engine(migration_database_url(), connect_args=migration_connect_args())
+    try:
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            if inspect(conn).has_table("media_file"):
+                object_key_indexes.ensure_indexes_concurrently(conn)
+    except SQLAlchemyError:
+        logger.error("Could not check the media_file object-key indexes", exc_info=True)
+    finally:
+        engine.dispose()
+
+
 def _check_column_exists(conn, table: str, column: str) -> bool:
     """Check if a column exists in a table."""
     result = conn.execute(
@@ -1755,7 +1923,7 @@ def _await_database_available(budget_s: float | None = None) -> None:
     attempt = 0
     while True:
         attempt += 1
-        probe = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
+        probe = create_engine(migration_database_url(), pool_pre_ping=True)
         try:
             with probe.connect() as conn:
                 conn.execute(text("SELECT 1"))
@@ -1802,7 +1970,7 @@ def run_migrations() -> None:
 
     _await_database_available()
 
-    engine = create_engine(settings.DATABASE_URL)
+    engine = create_engine(migration_database_url(), connect_args=migration_connect_args())
 
     # Acquire the advisory lock on a DEDICATED connection held open for the whole
     # upgrade (issue #284 A1.4).
@@ -1816,7 +1984,7 @@ def run_migrations() -> None:
     #
     # A separate engine is used so the engine.dispose() further down (which exists to
     # free pooled connections before Alembic opens its own) cannot close this one.
-    lock_engine = create_engine(settings.DATABASE_URL)
+    lock_engine = create_engine(migration_database_url())
     lock_conn = lock_engine.connect()
     lock_conn.execute(text("SELECT pg_advisory_lock(42)"))
     lock_conn.commit()
@@ -1868,6 +2036,14 @@ def run_migrations() -> None:
         # Post-migration repair: apply any idempotent schema changes from v230
         # that may have been skipped due to a branch merge ordering issue.
         _repair_skipped_v230(config)
+
+        _retry_object_key_indexes()
+
+        # Layer 2 of audit protection: re-apply the app role's grants on EVERY start (this
+        # also repairs a `--no-acl` restore). No-op unless the role split was requested.
+        from app.db.roles import reconcile_from_settings
+
+        reconcile_from_settings()
 
         logger.info("Database migrations complete")
     finally:

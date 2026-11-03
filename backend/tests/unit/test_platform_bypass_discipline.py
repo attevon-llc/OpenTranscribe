@@ -137,21 +137,13 @@ ALLOWLIST: dict[str, str] = {
         "N: reads the is_admin field of an LDAP probe result; not the User flag and not a "
         "content decision"
     ),
-    "api/endpoints/chat/export.py::export_conversation": (
-        "Q: hides a taken-down citation inside the caller's own already-scoped conversation; "
-        "argument is ctx.bypass.user_is_admin"
-    ),
-    "api/endpoints/chat/messages.py::list_messages": (
-        "Q: hides a taken-down citation inside the caller's own already-scoped conversation; "
-        "argument is ctx.bypass.user_is_admin"
-    ),
     "api/endpoints/comments.py::_assert_comment_file_in_scope": (
         "Q: is_hidden_for(is_admin=False) keeps a taken-down file's comments 404; it never "
         "grants anything"
     ),
     "api/endpoints/files/__init__.py::get_thumbnail": (
-        "Q: is_hidden_for runs before the public-file branch and before an org is resolved; "
-        "tenant access itself is decided by bypass.allows"
+        "Q: is_hidden_for(is_admin=False) runs before the public-file branch, after "
+        "bypass.allows on the loaded row; only what that reaches may see a taken-down file"
     ),
     "api/endpoints/files/crud.py::delete_media_file": (
         "P: is_admin only fills the cancel_and_delete/force_delete capability hints in the "
@@ -191,9 +183,9 @@ ALLOWLIST: dict[str, str] = {
     "api/endpoints/files/waveform.py::get_waveform_status": (
         "P: admin-gated instance-wide waveform coverage counts, no tenant content"
     ),
-    "api/endpoints/media_collections.py::get_collection": (
-        "Q: include_quarantined for a collection already authorized through the chokepoint; "
-        "argument is ctx.bypass.user_is_admin"
+    "api/endpoints/watch_sources.py::list_source_files": (
+        "Q: is_hidden_for(is_admin=False) drops a taken-down file's uuid from the history of a "
+        "source already authorized through _get_source_or_404; it never widens access"
     ),
     "api/endpoints/search.py::_source_counts": (
         "Q: quarantine visibility of per-source counts inside the caller's own tenant filter; "
@@ -215,21 +207,9 @@ ALLOWLIST: dict[str, str] = {
         "Q: quarantine visibility of suggestions inside the caller's own tenant filter; "
         "argument is ctx.bypass.user_is_admin"
     ),
-    "api/endpoints/speaker_clusters.py::get_speaker_media_preview": (
-        "Q: include_quarantined for a preview inside the caller's own scope; argument is "
-        "ctx.bypass.user_is_admin"
-    ),
-    "api/endpoints/tags/discovery.py::list_files_for_tag": (
-        "Q: quarantine exclusion inside files already accessible to the caller; argument is "
-        "ctx.bypass.user_is_admin"
-    ),
     "api/endpoints/tasks.py::retry_file_processing": (
         "P: admins skip the retry ceiling, evaluated after the chokepoint passed with "
         "ctx.bypass and min_permission=editor"
-    ),
-    "api/endpoints/transcript_segments.py::update_segment_speaker": (
-        "Q: quarantine visibility of the speaker's file inside the caller's own scope; "
-        "argument is ctx.bypass.user_is_admin"
     ),
     "services/delete_permissions.py::get_deletable_file": (
         "Q: is_hidden_for(is_admin=False) hides a taken-down file from everyone who did not "

@@ -33,7 +33,9 @@ from app.models.media import SpeakerProfile
 from app.models.media import TranscriptSegment
 from app.services.file_provenance import llm_facts
 from app.services.file_provenance import record_stage
+from app.services.llm_service import LLMConfigurationError
 from app.services.llm_service import LLMService
+from app.services.llm_usage import llm_usage_run
 from app.services.metadata_speaker_extractor import MetadataSpeakerExtractor
 from app.services.metadata_speaker_extractor import build_cross_reference_context
 from app.services.metadata_speaker_extractor import cross_reference_attributes
@@ -263,7 +265,12 @@ def _create_llm_service(user_id: int | None) -> LLMService | None:
     failure, so the caller skips quietly instead of logging an error per file.
     """
     if user_id:
-        return LLMService.create_from_user_settings(user_id)
+        try:
+            return LLMService.create_from_user_settings(user_id)
+        except LLMConfigurationError as unusable:
+            # Active-but-broken config: skip, never substitute the system provider.
+            logger.warning("Skipping speaker identification for user %s: %s", user_id, unusable)
+            return None
     return LLMService.create_from_system_settings()
 
 
@@ -598,10 +605,18 @@ def identify_speakers_llm_task(self, file_uuid: str):
     Args:
         file_uuid: UUID of the MediaFile
     """
+    from app.legal.processing_gate import refusal_for_file
+    from app.legal.processing_gate import skipped_result
     from app.utils.task_utils import update_task_status
 
     task_id = self.request.id
     file_id = None
+
+    # The legal processing gate (backstop): LLM speaker identification processes the file.
+    refusal = refusal_for_file(file_uuid=file_uuid)
+    if refusal is not None:
+        logger.info(f"Speaker identification of {file_uuid} refused: {refusal.message}")
+        return skipped_result(refusal)
 
     try:
         # Phase 1 — read (DB session open, Postgres only).
@@ -698,14 +713,15 @@ def _generate_predictions(
         logger.info(f"Using LLM output language: {output_language}")
 
         provenance = llm_facts(llm_service.config)
-        predictions = _run_llm_identification(
-            llm_service,
-            full_transcript,
-            speaker_segments,
-            known_speakers,
-            output_language,
-            _with_gender_context(metadata_context, gender_context, llm_service.config),
-        )
+        with llm_usage_run("speaker_id", file_id=file_id):
+            predictions = _run_llm_identification(
+                llm_service,
+                full_transcript,
+                speaker_segments,
+                known_speakers,
+                output_language,
+                _with_gender_context(metadata_context, gender_context, llm_service.config),
+            )
         if not predictions.get("error"):
             predictions["llm_provenance"] = provenance
 

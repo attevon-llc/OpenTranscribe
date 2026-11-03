@@ -33,6 +33,7 @@ from app.core.celery import celery_app
 from app.core.constants import NLPPriority
 from app.core.enums import PostProcessingTask
 from app.db.session_utils import session_scope
+from app.services.llm_usage import llm_usage_run
 from app.services.post_processing_status import announce_started
 from app.services.post_processing_status import tracks_post_processing
 from app.services.redaction.llm_guard import RedactionNotReadyError
@@ -269,6 +270,15 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
         dict: Contains status, suggestion_id, tag_count, and collection_count
     """
     task_id = self.request.id
+
+    from app.legal.processing_gate import refusal_for_file
+    from app.legal.processing_gate import skipped_result
+
+    # The legal processing gate (backstop): LLM topic extraction processes the file.
+    refusal = refusal_for_file(file_uuid=file_uuid)
+    if refusal is not None:
+        return skipped_result(refusal)
+
     try:
         # Phase 1a — read (DB session open, Postgres only).
         context = _load_file_context(file_uuid)
@@ -337,12 +347,13 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
         # Phase 2 — the slow phase. NO DB session is held here: the service opens
         # a short read scope for the transcript, calls the provider with nothing
         # held, then reopens a short write scope for the TopicSuggestion row.
-        result = extraction_service.extract_topics(
-            media_file_id=file_id,
-            force_regenerate=force_regenerate,
-            progress_callback=notify_progress,
-            redaction_cfg=redaction_cfg,
-        )
+        with llm_usage_run("topics", file_id=file_id):
+            result = extraction_service.extract_topics(
+                media_file_id=file_id,
+                force_regenerate=force_regenerate,
+                progress_callback=notify_progress,
+                redaction_cfg=redaction_cfg,
+            )
 
         if not result:
             error_msg = "Failed to extract topics from transcript"

@@ -76,6 +76,12 @@ class VoiceprintTargets:
         rebuild_cluster_uuids: Clusters that also hold another scope's speakers (or a promoted
             cluster of another scope's profile): their centroid is rebuilt from the rest.
         rebuild_owner_ids: Owners of those clusters.
+        recompute_profile_ids: Profiles a ``files`` scope's speakers were linked to, captured
+            BEFORE the relational purge: their embedding is recomputed from the speakers they
+            have left once the purged speakers' documents are gone. Never deleted. A tenant-wide
+            scope adds the profiles that still hold a voiceprint of a held or quarantined file.
+        keeps_protected: The scope left a held or quarantined file's voiceprints in place, so the
+            stamp- and match-all-based document sweeps (which cannot tell them apart) are skipped.
     """
 
     speaker_uuids: list[str] = field(default_factory=list)
@@ -83,6 +89,8 @@ class VoiceprintTargets:
     cluster_uuids: list[str] = field(default_factory=list)
     rebuild_cluster_uuids: list[str] = field(default_factory=list)
     rebuild_owner_ids: list[int] = field(default_factory=list)
+    recompute_profile_ids: list[int] = field(default_factory=list)
+    keeps_protected: bool = False
 
     def doc_ids(self) -> dict[str, list[str]]:
         """OpenSearch ``_id`` values by kind: ``speaker`` / ``profile`` / ``cluster``."""
@@ -119,7 +127,9 @@ def _scope_speaker_ids(scope: PurgeScope) -> Any:
     return select(Speaker.id).where(*scope.speaker_filters())
 
 
-def org_stamp_clause(scope: PurgeScope, kind: str) -> dict[str, Any] | None:
+def org_stamp_clause(
+    scope: PurgeScope, kind: str, *, keeps_protected: bool = False
+) -> dict[str, Any] | None:
     """Documents of ``kind`` carrying the purged organization's own stamp, or ``None``.
 
     Only an ORGANIZATION scope has one: a positive match on ``organization_id`` is the
@@ -131,8 +141,10 @@ def org_stamp_clause(scope: PurgeScope, kind: str) -> dict[str, Any] | None:
         scope: The purge scope.
         kind: ``speaker`` / ``profile`` / ``cluster`` (the ``document_type`` of the document;
             a speaker document has none).
+        keeps_protected: The purge left a held or quarantined file's voiceprints, which this
+            stamp would also match: no sweep, ids only (orphans wait for the next purge).
     """
-    if scope.kind != "organization":
+    if scope.kind != "organization" or keeps_protected:
         return None
     stamp = {"term": {"organization_id": scope.organization_id}}
     if kind == "speaker":
@@ -504,9 +516,17 @@ def purge_voiceprints_postgres(db: Session, scope: PurgeScope) -> PostgresPurge:
             "promoted_cluster_members_removed",
             "promoted_clusters_deleted",
             "profiles_reset",
+            "files_skipped_held",
+            "files_skipped_quarantined",
+            "profiles_retained",
         )
     }
-    targets = VoiceprintTargets()
+    from app.services.privacy.purge_file_guard import profile_keeps_protected_voice
+    from app.services.privacy.purge_file_guard import scope_protection
+
+    protection = scope_protection(db, scope)
+    counts.update(protection.counts())
+    targets = VoiceprintTargets(keeps_protected=protection.any)
     targets.speaker_uuids = [
         str(r[0]) for r in db.execute(select(Speaker.uuid).where(*scope.speaker_filters()))
     ]
@@ -515,6 +535,28 @@ def purge_voiceprints_postgres(db: Session, scope: PurgeScope) -> PostgresPurge:
     ).all()
     targets.profile_uuids = [str(r[1]) for r in profile_rows]
     scope_profile_ids = [int(r[0]) for r in profile_rows]
+    files_scope = scope.kind == "files"
+    if protection.profiles_retained:
+        # Not in ``scope_profile_ids`` (sql_filters), so neither reset nor deleted: the profile
+        # keeps a protected file's voice, and its embedding is recomputed from what it has.
+        targets.recompute_profile_ids = sorted(
+            int(r[0])
+            for r in db.execute(
+                select(SpeakerProfile.id).where(
+                    *scope.tenant_filters(SpeakerProfile),
+                    profile_keeps_protected_voice(),
+                )
+            )
+        )
+    if files_scope:
+        targets.recompute_profile_ids = sorted(
+            int(r[0])
+            for r in db.execute(
+                select(Speaker.profile_id)
+                .where(*scope.speaker_filters(), Speaker.profile_id.isnot(None))
+                .distinct()
+            )
+        )
 
     (
         reverted,
@@ -531,7 +573,15 @@ def purge_voiceprints_postgres(db: Session, scope: PurgeScope) -> PostgresPurge:
     counts["suggestion_details_cleared"] = details_with_them
     machine_ids = reverted + unlinked
 
-    removed, touched = _remove_from_promoted_clusters(db, machine_ids)
+    # A files scope deletes EVERY in-scope voiceprint, a person-linked speaker's too, so every
+    # in-scope speaker leaves the promoted clusters whose centroid averaged it in (its profile
+    # link stays; the profile's embedding is recomputed without it).
+    leaving = (
+        sorted(int(r[0]) for r in db.execute(_scope_speaker_ids(scope)))
+        if files_scope
+        else machine_ids
+    )
+    removed, touched = _remove_from_promoted_clusters(db, leaving)
     counts["promoted_cluster_members_removed"] = removed
     from app.models.media import SpeakerCluster
 
@@ -663,6 +713,10 @@ def rebuild_trimmed_clusters(db: Session, targets: VoiceprintTargets) -> list[di
     )
 
 
+def _stamp(scope: PurgeScope, targets: VoiceprintTargets, kind: str) -> dict[str, Any] | None:
+    return org_stamp_clause(scope, kind, keeps_protected=targets.keeps_protected)
+
+
 def purge_voiceprint_docs(
     scope: PurgeScope, targets: VoiceprintTargets, errors: list[dict[str, Any]]
 ) -> dict[str, int]:
@@ -675,7 +729,7 @@ def purge_voiceprint_docs(
     from app.services.gdpr_erasure_service import delete_speaker_docs_by_ids
     from app.services.gdpr_erasure_service import delete_speaker_docs_by_query
 
-    if scope.kind == "instance_all":
+    if scope.kind == "instance_all" and not targets.keeps_protected:
         # Everything: no ids to enumerate, and orphan documents with no Postgres row go too.
         # Split by kind so each is counted on its own.
         profile = delete_speaker_docs_by_query(
@@ -700,13 +754,13 @@ def purge_voiceprint_docs(
     label = f"scope {scope.kind}"
     return {
         "speaker_docs_deleted": delete_speaker_docs_by_ids(
-            ids["speaker"], also=org_stamp_clause(scope, "speaker"), errors=errors, label=label
+            ids["speaker"], also=_stamp(scope, targets, "speaker"), errors=errors, label=label
         ),
         "profile_docs_deleted": delete_speaker_docs_by_ids(
-            ids["profile"], also=org_stamp_clause(scope, "profile"), errors=errors, label=label
+            ids["profile"], also=_stamp(scope, targets, "profile"), errors=errors, label=label
         ),
         "cluster_docs_deleted": delete_speaker_docs_by_ids(
-            ids["cluster"], also=org_stamp_clause(scope, "cluster"), errors=errors, label=label
+            ids["cluster"], also=_stamp(scope, targets, "cluster"), errors=errors, label=label
         ),
     }
 

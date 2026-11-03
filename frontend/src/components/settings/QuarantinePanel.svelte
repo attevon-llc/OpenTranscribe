@@ -22,6 +22,7 @@
   import Spinner from '$components/ui/Spinner.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
   import { AdminApi } from '$lib/api/admin';
+  import { mediaRevocationIncomplete } from '$lib/takedownRevocation';
   import { OrgAdminApi } from '$lib/api/orgAdmin';
   import TakedownStatusChip from '$components/takedown/TakedownStatusChip.svelte';
   import { toRows, type QueueRow, type QueueScope } from './quarantineRows';
@@ -84,12 +85,15 @@
   async function release(file: QueueRow, clearLegalHold: boolean) {
     releasingUuid = file.uuid;
     try {
-      if (isOrg) {
-        await OrgAdminApi.releaseFile(file.uuid);
+      const result = isOrg
+        ? await OrgAdminApi.releaseFile(file.uuid)
+        : await AdminApi.releaseFile(file.uuid, clearLegalHold);
+      // Released in the database, but storage kept the block on the media: not a clean success.
+      if (mediaRevocationIncomplete(result)) {
+        toastStore.warning($t('settings.quarantine.releaseRestoreIncomplete'));
       } else {
-        await AdminApi.releaseFile(file.uuid, clearLegalHold);
+        toastStore.success($t('settings.quarantine.releaseSuccess'));
       }
-      toastStore.success($t('settings.quarantine.releaseSuccess'));
       total = Math.max(0, total - 1);
       await load(offset);
     } catch (err) {

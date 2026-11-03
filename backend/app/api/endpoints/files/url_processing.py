@@ -30,6 +30,7 @@ from app.core.constants import VALID_AUDIO_QUALITIES
 from app.core.constants import VALID_VIDEO_QUALITIES
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
+from app.legal.processing_gate import require_processing_allowed
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
@@ -41,6 +42,9 @@ from app.tasks.transcription.requested_options import apply_requested_options
 from app.tasks.youtube_processing import process_youtube_playlist_task
 from app.tasks.youtube_processing import process_youtube_url_task
 from app.utils.file_hash import org_stamp_is
+from app.utils.task_secret_handoff import discard_task_secret
+from app.utils.task_secret_handoff import media_credentials_context
+from app.utils.task_secret_handoff import stash_task_secret
 from app.utils.whisper_model_choice import require_servable_whisper_model
 
 logger = logging.getLogger(__name__)
@@ -73,8 +77,9 @@ class URLProcessingRequest(BaseModel):
     media_password: str | None = Field(
         default=None,
         description=(
-            "Optional password for protected media sources "
-            "(never stored, only used for this request)"
+            "Optional password for protected media sources. Held encrypted with a short "
+            "expiry only until the import finishes or fails, then deleted; never "
+            "returned and never written to the database"
         ),
     )
     collection_ids: list[str] | None = Field(
@@ -577,13 +582,17 @@ def _dispatch_video_task(
     Raises:
         HTTPException: If task dispatch fails.
     """
+    credentials_ref: str | None = None
     try:
+        credentials_ref = stash_task_secret(
+            {"media_username": media_username, "media_password": media_password},
+            context=media_credentials_context(user_id, str(media_file.uuid)),
+        )
         task_result = process_youtube_url_task.delay(
             url=normalized_url,
             user_id=user_id,
             file_uuid=str(media_file.uuid),
-            media_username=media_username,
-            media_password=media_password,
+            media_credentials_ref=credentials_ref,
             collection_ids=collection_ids,
             tag_names=tag_names,
             video_quality=video_quality,
@@ -606,6 +615,7 @@ def _dispatch_video_task(
         raise
     except Exception as e:
         logger.exception(f"Failed to dispatch media processing task: {e}")
+        discard_task_secret(credentials_ref)
         db.delete(media_file)
         db.commit()
         raise HTTPException(
@@ -720,6 +730,8 @@ def process_media_url(
             POST /process-url
             {"url": "https://vimeo.com/123456789"}
     """
+    # The legal processing gate, before yt-dlp fetches anything. The caller owns the import.
+    require_processing_allowed(db, owner_user_id=int(current_user.id), organization_id=ctx.org_id)
     try:
         # Check rate limit before processing
         from app.services.youtube_rate_limiter import youtube_rate_limiter

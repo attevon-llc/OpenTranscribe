@@ -1300,9 +1300,28 @@ def clear_cache_now(
     """
     ctx.bypass.require_deployment_scope("Clearing the derived cache")
     from app.services import cache_management_service
+    from app.services.storage_versions import StorageDeleteIncompleteError
 
     logger.info(f"Manual derived-cache clear by admin {current_user.email}")
-    deleted = cache_management_service.clear_derived_cache()
+    try:
+        deleted = cache_management_service.clear_derived_cache()
+    except HTTPException:
+        raise
+    except StorageDeleteIncompleteError as e:
+        logger.error(f"Derived-cache clear left objects behind: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Some cached objects could not be removed (a storage lock or a refused "
+                "delete). The server log names them; try again after resolving it."
+            ),
+        ) from e
+    except Exception as e:
+        logger.exception("Derived-cache clear failed: object storage unavailable")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Object storage unavailable while clearing the derived cache",
+        ) from e
     return CacheClearResponse(deleted=deleted)
 
 
@@ -3170,14 +3189,7 @@ def quarantine_media_file(
         )
     except TakedownNoticeError as error:
         raise takedown_notice_http_error(error) from None
-    return QuarantineActionResponse(
-        uuid=str(file.uuid),
-        is_quarantined=bool(file.is_quarantined),
-        legal_hold=bool(file.legal_hold),
-        status=str(file.status.value if hasattr(file.status, "value") else file.status),
-        presign_revoked=bool(getattr(file, "presign_revoked", False)),
-        takedown_origin=file.takedown_origin,
-    )
+    return QuarantineActionResponse.from_action(file)
 
 
 @router.post("/files/{file_uuid}/release", response_model=QuarantineActionResponse)
@@ -3220,11 +3232,4 @@ def release_media_file(
         source_ip=source_ip,
         user_agent=user_agent,
     )
-    return QuarantineActionResponse(
-        uuid=str(file.uuid),
-        is_quarantined=bool(file.is_quarantined),
-        legal_hold=bool(file.legal_hold),
-        status=str(file.status.value if hasattr(file.status, "value") else file.status),
-        presign_tag_cleared=bool(getattr(file, "presign_tag_cleared", True)),
-        takedown_origin=file.takedown_origin,
-    )
+    return QuarantineActionResponse.from_action(file)

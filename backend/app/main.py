@@ -310,26 +310,41 @@ def _backfill_quarantine_tags() -> None:
     """
     from app.db.base import SessionLocal
     from app.models.media import MediaFile
-    from app.services.minio_service import set_object_quarantine_tag
+    from app.services.media_revocation import MediaSnapshot
+    from app.services.media_revocation import resolve_enforcement
+    from app.services.media_revocation import revoke_media
 
+    # Read, snapshot and close BEFORE any storage call: no connection idles in a transaction
+    # across the tag writes.
     db = SessionLocal()
     try:
-        rows = db.query(MediaFile).filter(MediaFile.is_quarantined.is_(True)).all()
-        if not rows:
-            return
-        tagged = 0
-        for row in rows:
-            if row.storage_path and set_object_quarantine_tag(str(row.storage_path), True):
-                tagged += 1
-            if row.thumbnail_path:
-                set_object_quarantine_tag(str(row.thumbnail_path), True)
-            if row.playback_path:
-                set_object_quarantine_tag(str(row.playback_path), True)
-        logger.info(
-            f"Quarantine-tag backfill: tagged {tagged}/{len(rows)} already-quarantined file(s)"
-        )
+        rows = [
+            MediaSnapshot.of(row)
+            for row in db.query(MediaFile).filter(MediaFile.is_quarantined.is_(True)).all()
+        ]
     finally:
         db.close()
+    if not rows:
+        return
+    # Resolved ONCE per boot, and one summary line instead of an ERROR per row.
+    enforcement = resolve_enforcement()
+    reports = [revoke_media(row, enforcement=enforcement, log=False) for row in rows]
+    incomplete = [r for r in reports if not r.complete]
+    if not incomplete:
+        logger.info(
+            f"Quarantine-tag backfill: presigned media URLs revoked for all {len(rows)} "
+            f"already-quarantined file(s)"
+        )
+        return
+    reasons = sorted({str(r.reason) for r in incomplete})
+    missing = sorted({p for r in incomplete for p in r.missing_permissions})
+    logger.error(
+        f"Quarantine-tag backfill: presigned media URLs NOT revoked for "
+        f"{len(incomplete)}/{len(rows)} already-quarantined file(s) "
+        f"(reasons: {', '.join(reasons)}; enforcement={enforcement[0]}"
+        + (f"; the storage identity is missing {', '.join(missing)}" if missing else "")
+        + "). See docs/abuse-and-takedown.md."
+    )
 
 
 def _setup_minio():
@@ -397,6 +412,11 @@ def _setup_minio():
             logger.info("Presign identity ready — quarantine will revoke presigned media URLs")
         elif native_s3:
             storage_presign_identity.report_native_s3_revocation_posture(minio_client)
+            # The bucket-policy Deny only enforces a tag that landed: check, at boot rather
+            # than at the first takedown, that this identity can write one.
+            from app.services.media_revocation_probe import report_native_s3_tagging_posture
+
+            report_native_s3_tagging_posture()
         elif settings.STORAGE_PRESIGN_IDENTITY_ENABLED:
             logger.error(
                 "Presign identity NOT provisioned — presigned media URLs will be signed "
@@ -579,10 +599,13 @@ async def _run_thumbnail_migration():
     """Schedule thumbnail migration from JPEG to WebP after a delay."""
     try:
         await asyncio.sleep(45)  # Wait for other startup tasks
+        from app.tasks.thumbnail_migration import backfill_missing_thumbnails
         from app.tasks.thumbnail_migration import migrate_thumbnails_to_webp
 
         result = migrate_thumbnails_to_webp.delay(batch_size=20)
         logger.info(f"Thumbnail migration task scheduled: {result.id}")
+        backfill = backfill_missing_thumbnails.delay()
+        logger.info(f"Thumbnail backfill task scheduled: {backfill.id}")
     except Exception as e:
         logger.error(f"Error scheduling thumbnail migration: {e}")
 
@@ -861,6 +884,19 @@ def _log_tenancy_mode_at_startup() -> None:
         logger.warning(f"Tenancy mode startup check failed (non-fatal): {e}")
 
 
+def _enforce_database_role_or_exit() -> None:
+    """Fail closed: a requested database role split must really be effective (superuser or
+    owner runtime roles are refused)."""
+    from app.db.base import engine
+    from app.db.role_check import enforce_runtime_role
+
+    try:
+        enforce_runtime_role(engine)
+    except RuntimeError as e:
+        logger.critical(f"Audit record protection requested but not effective: {e}")
+        raise SystemExit(1) from e
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager for startup and shutdown events."""
@@ -902,6 +938,8 @@ async def lifespan(app: FastAPI):
             "RUN_MIGRATIONS_ON_STARTUP=false — skipping migrations; a migrate job is "
             "expected to own them. Readiness will verify the schema is at head."
         )
+
+    _enforce_database_role_or_exit()
 
     _log_tenancy_mode_at_startup()
 
@@ -1002,6 +1040,8 @@ async def lifespan(app: FastAPI):
                 )
                 if count:
                     logger.info(f"Upgrade reclaim: removed {count} legacy derived cache object(s)")
+
+            cache_management_service.reclaim_legacy_audio_cache_once(_db)
         finally:
             _db.close()
     except Exception as e:

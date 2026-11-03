@@ -65,7 +65,7 @@ def _requeued_run(db, user, *, status=FileStatus.PROCESSING, requeues=2):
         uuid=uuid.uuid4(),
         user_id=user.id,
         filename="requeued.wav",
-        storage_path=f"user_{user.id}/requeued.wav",
+        storage_path=f"user_{user.id}/requeued-{uuid.uuid4().hex}.wav",
         file_size=1024,
         content_type="audio/wav",
         status=status,

@@ -301,6 +301,25 @@ SPEAKER_CONFIDENCE_LOW = 0.0  # Requires user input (red)
 # (no Redis socket timeout, minio-py's 300 s + 5 retries) let one slow dependency
 # outlast the prober's own timeout and pull a healthy instance from service.
 DEPENDENCY_PROBE_TIMEOUT_SECONDS = 2.0
+# Lifetime of a credential handed to a Celery task through the encrypted Redis handoff
+# (utils/task_secret_handoff.py) instead of as a broker argument. It must outlive: time in
+# the queue (allowance), every retry backoff of process_youtube_url_task (30 + 120 + 480 s)
+# and the failed attempts that precede each retry (early, retriable failures: allowance each).
+# Each attempt reads the secret once at its start, so a long download does not extend it.
+TASK_SECRET_QUEUE_ALLOWANCE_SECONDS = 3600
+TASK_SECRET_RETRY_BACKOFF_TOTAL_SECONDS = 30 + 120 + 480
+TASK_SECRET_FAILED_ATTEMPT_ALLOWANCE_SECONDS = 900
+TASK_SECRET_HANDOFF_TTL_SECONDS = (
+    TASK_SECRET_QUEUE_ALLOWANCE_SECONDS
+    + TASK_SECRET_RETRY_BACKOFF_TOTAL_SECONDS
+    + 3 * TASK_SECRET_FAILED_ATTEMPT_ALLOWANCE_SECONDS
+)
+# Takedown storage calls (quarantine tags, cache-copy deletes) use their own bounded client:
+# the shared one waits up to 5 minutes and retries 5 times, which inside a quarantine request
+# turns one unreachable storage endpoint into a request that hangs for half an hour.
+TAKEDOWN_STORAGE_TIMEOUT_SECONDS = 10.0
+# Wall-clock budget for media_revocation.settle_file's re-read-and-reapply rounds.
+TAKEDOWN_SETTLE_DEADLINE_SECONDS = 60.0
 
 # Cache control settings
 CACHE_CONTROL_MEDIA_MAX_AGE = 86400  # 1 day for media files
@@ -1479,6 +1498,23 @@ DEFAULT_CHAT_MESSAGES_PER_HOUR = 120  # chat.limits.messages_per_hour
 DEFAULT_CHAT_MAX_CONCURRENT_STREAMS = 6  # chat.limits.max_concurrent_streams
 DEFAULT_CHAT_RETENTION_DAYS = 0  # chat.retention_days (0 = keep forever)
 
+# Legal acceptance records of a deleted account are kept, pseudonymised, for this many days
+# after the deletion (v451), then deleted by tasks/legal_retention.py. The database function
+# legal_acceptance_retention_days() reads the setting and applies the floor; v451 freezes a copy
+# of both numbers and its consistency test asserts they still agree. 0 is not allowed: a value
+# below the floor reads as the floor.
+# Hard floor for AUDIT_LOG_RETENTION_DAYS (0 = keep forever is the only value below it that is
+# accepted). Enforced at startup in config and again inside the audit_prune() SQL function.
+AUDIT_RETENTION_FLOOR_DAYS = 365
+
+LEGAL_ACCEPTANCE_RETENTION_DAYS_KEY = "legal.acceptance_retention_days"
+DEFAULT_LEGAL_ACCEPTANCE_RETENTION_DAYS = 2190  # 6 years
+MIN_LEGAL_ACCEPTANCE_RETENTION_DAYS = 365
+
+# Opt-in voiceprint retention (tasks/voiceprint_retention.py). 0 = off; an operator sets e.g. 24.
+PRIVACY_VOICEPRINT_RETENTION_MONTHS_KEY = "privacy.voiceprint_retention_months"
+DEFAULT_PRIVACY_VOICEPRINT_RETENTION_MONTHS = 0
+
 # W2.4: the aggregation tier's speaker-facet/speaker-stats fixes. Both default
 # OFF — they change what an existing question mechanism answers (facet scope)
 # or add a new one (talk-time stats), and either is a measurement-gated rollout
@@ -1775,7 +1811,7 @@ FILE_TYPE_MIME_PREFIXES: dict[str, str] = {"audio": "audio/", "video": "video/"}
 # s3:GetObject on (StringEquals, value STORAGE_QUARANTINE_TAG_VALUE — see
 # storage_presign_identity.QUARANTINE_TAG_VALUE for the case-sensitivity note).
 # Both the policy builder (storage_presign_identity.build_presign_policy) and
-# the tagger (minio_service.set_object_quarantine_tag) import this ONE constant
+# the tagger (minio_service.write_object_quarantine_tag) import this ONE constant
 # rather than hardcoding the string twice.
 STORAGE_QUARANTINE_TAG_KEY = "ot-quarantine"
 
@@ -1860,6 +1896,20 @@ PRIVACY_GENDER_INFERENCE_KEY = "privacy.gender_inference_enabled"
 #: layer is the pre-existing setting below, so their stored inferred gender is hidden.
 DEFAULT_PRIVACY_VOICEPRINT_MATCHING_ENABLED = True
 DEFAULT_PRIVACY_GENDER_INFERENCE_ENABLED = True
+#: ``SystemSettings`` key: ``"true"``/``"false"``. When on, a file whose per-file voiceprint
+#: consent is not ``granted`` is treated as declined (issue #1356). Default OFF. Turning it on
+#: hides voiceprints of existing files (they are ``unspecified``) and deletes nothing.
+PRIVACY_VOICEPRINT_UPLOAD_CONSENT_REQUIRED_KEY = "privacy.voiceprint_upload_consent_required"
+DEFAULT_PRIVACY_VOICEPRINT_UPLOAD_CONSENT_REQUIRED = False
+
+#: Self-service account erasure (issue #1354). OFF by default: in an employer-run deployment erasure
+#: is the controller's process. The grace period is capped so grace plus retry time stays inside the
+#: Art. 12(3) one-month window (``ERASURE_SLA_DAYS`` = 30), because the SLA clock starts at the request.
+GDPR_SELF_ERASURE_ENABLED_KEY = "gdpr.self_erasure_enabled"
+GDPR_SELF_ERASURE_GRACE_DAYS_KEY = "gdpr.self_erasure_grace_days"
+DEFAULT_GDPR_SELF_ERASURE_ENABLED = False
+DEFAULT_GDPR_SELF_ERASURE_GRACE_DAYS = 14
+MAX_GDPR_SELF_ERASURE_GRACE_DAYS = 21
 #: ``UserSetting`` key for the user layer of voiceprint matching. The gender user layer is the
 #: existing ``speaker_attribute_gender_detection_enabled``.
 PRIVACY_USER_VOICEPRINT_MATCHING_KEY = "privacy_voiceprint_matching_enabled"
@@ -1868,3 +1918,21 @@ PRIVACY_USER_GENDER_DETECTION_KEY = "speaker_attribute_gender_detection_enabled"
 #: Entry gates read fresh; only the backstop caches, and the purge task's second pass runs
 #: later than this so a write that raced a switch-off is still caught.
 PRIVACY_WRITE_BACKSTOP_TTL_SECONDS = 10.0
+
+# --- Legal documents required before processing ------------------------------------------
+# ``app.legal.processing_gate``. Both are ``SystemSettings`` rows edited in the admin UI
+# (Settings -> Legal); the coded defaults below turn the gate OFF, the community default.
+#: Comma-separated document keys the owner of a file must have accepted (current text) before
+#: any processing of that file starts. Empty = gate off.
+LEGAL_PROCESSING_REQUIRED_KEYS_KEY = "legal.processing_required_document_keys"
+DEFAULT_LEGAL_PROCESSING_REQUIRED_KEYS = ""
+#: Whose acceptance satisfies the gate: ``"user"`` (the file owner's own), ``"organization"``
+#: (an org-scope acceptance for the file's organization) or ``"either"``.
+LEGAL_PROCESSING_ACCEPTANCE_SCOPE_KEY = "legal.processing_acceptance_scope"
+LEGAL_PROCESSING_ACCEPTANCE_SCOPES = ("user", "organization", "either")
+DEFAULT_LEGAL_PROCESSING_ACCEPTANCE_SCOPE = "either"
+#: How long a resolved gate configuration is trusted. Same window as the privacy backstop.
+LEGAL_PROCESSING_GATE_TTL_SECONDS = PRIVACY_WRITE_BACKSTOP_TTL_SECONDS
+
+#: Reads of the erasure receipts (``/admin/gdpr/erasures``, ``/org-admin/gdpr/erasures``).
+ERASURE_RECEIPT_READ_RATE_LIMIT = "120/minute"

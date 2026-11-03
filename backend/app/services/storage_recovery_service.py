@@ -38,6 +38,7 @@ from dataclasses import field
 from typing import Any
 from typing import Protocol
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -307,6 +308,14 @@ def reingest_objects(
                 media_file.uuid,
                 object_name,
             )
+        except IntegrityError:
+            # Another run (or a normal ingest) registered this key between our snapshot and
+            # now; the unique index on media_file.storage_path refused the second row.
+            db.rollback()
+            seen_paths.add(object_name)
+            summary.skipped_existing += 1
+            logger.info("skip (registered concurrently): %s", object_name)
+            continue
         except Exception as exc:
             db.rollback()
             summary.errors += 1

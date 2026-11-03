@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.core import constants as C  # noqa: N812
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
+from app.services.llm_usage import llm_usage_run
 from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.redaction.config import detection_config_for_all
 from app.services.redaction.config import detector_language_support
@@ -284,11 +285,12 @@ class RedactionService:
                 from app.services.redaction.detectors import llm
 
                 seg_dicts = [{"text": s.text, "words": s.words} for s in segments]
-                llm_spans_by_idx = {
-                    idx: [sp.model_dump() for sp in spans]
-                    for idx, spans in llm.detect_with_llm(
+                with llm_usage_run("redaction", file_id=file_id):
+                    detected = llm.detect_with_llm(
                         seg_dicts, int(media.user_id), failures=llm_failures
-                    ).items()
+                    )
+                llm_spans_by_idx = {
+                    idx: [sp.model_dump() for sp in spans] for idx, spans in detected.items()
                 }
             except Exception as exc:  # noqa: BLE001
                 logger.warning("LLM redaction detection failed for file %s: %s", file_id, exc)

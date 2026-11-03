@@ -39,15 +39,18 @@ from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
+from app.api.endpoints.files.reprocess import refuse_reprocess_if_held
 from app.api.endpoints.prompts import require_usable_prompt_uuid
 from app.auth.audit import AuditEventType
 from app.db.base import get_db
+from app.legal.processing_gate import require_processing_allowed_for_file
 from app.models.media import MediaFile
 from app.models.user import User
 from app.schemas.summary import SpeakerIdentificationResponse
 from app.schemas.summary import SummaryResponse
 from app.schemas.summary import SummaryTaskRequest
 from app.services.content_audit import record_file_event
+from app.services.hold_guard import DESTROY_DERIVED_REFUSAL
 from app.services.llm_service import is_llm_available
 from app.services.platform_bypass import PlatformBypass
 from app.services.summary_export_service import VALID_SUMMARY_EXPORT_FORMATS
@@ -62,7 +65,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/{file_uuid}/summarize", response_model=dict[str, Any])
+@router.post(
+    "/{file_uuid}/summarize",
+    response_model=dict[str, Any],
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 async def trigger_summarization(
     file_uuid: str = Path(..., description="UUID of the media file to summarize"),
     request: SummaryTaskRequest = SummaryTaskRequest(),
@@ -103,6 +110,7 @@ async def trigger_summarization(
         organization_id=ctx.org_id,
         min_permission="editor",
     )
+    require_processing_allowed_for_file(db, media_file)
     file_id = media_file.id
 
     # An explicit prompt must be one the caller may use (system, own, or shared within
@@ -498,7 +506,11 @@ def _redacted_summary(
 # ``transcript_summaries`` index and went with it (#67).
 
 
-@router.post("/{file_uuid}/identify-speakers", response_model=SpeakerIdentificationResponse)
+@router.post(
+    "/{file_uuid}/identify-speakers",
+    response_model=SpeakerIdentificationResponse,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 async def identify_speakers(
     file_uuid: str = Path(..., description="UUID of the media file"),
     current_user: User = Depends(get_current_active_user),
@@ -540,6 +552,7 @@ async def identify_speakers(
         organization_id=ctx.org_id,
         min_permission="editor",
     )
+    require_processing_allowed_for_file(db, media_file)
     file_id = media_file.id
 
     # Check if file has speakers to identify
@@ -608,6 +621,11 @@ def delete_summary(
     )
     file_id = int(media_file.id)
     response_uuid = str(media_file.uuid)
+
+    # A held file's summary is only rebuilt by reprocessing, which the hold refuses.
+    refuse_reprocess_if_held(
+        db, file_id, actor=current_user, action="summary_delete", message=DESTROY_DERIVED_REFUSAL
+    )
 
     # ``dict[Any, Any]`` because ``Query.update`` accepts string OR column keys
     # and its parameter type is invariant in the key.

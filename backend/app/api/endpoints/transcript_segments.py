@@ -297,9 +297,9 @@ def update_segment_speaker(
     # ownership 403, matching the chokepoint's own ordering (`is_hidden_for`
     # runs before the tenant/ownership checks in
     # `get_file_by_uuid_with_permission`).
-    from app.services.takedown_service import is_hidden_for
+    from app.services.takedown_service import is_quarantine_hidden
 
-    if is_hidden_for(media_file, is_admin=ctx.bypass.user_is_admin):
+    if is_quarantine_hidden(ctx.bypass, media_file):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Transcript segment not found"
         )

@@ -210,6 +210,8 @@ def test_the_defaults_inherit_everything(client, gov):
     assert body["instance"] == {
         "voiceprint_matching_enabled": True,
         "gender_inference_enabled": True,
+        # Per-upload voiceprint consent (#1356) is opt-in: the key is present and off.
+        "voiceprint_upload_consent_required": False,
     }
     assert body["effective"]["voiceprint_matching"] == {"enabled": True, "locked_by": None}
     assert body["redaction_floor"] == {

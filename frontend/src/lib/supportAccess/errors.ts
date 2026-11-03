@@ -37,3 +37,10 @@ const SESSION_ENDING: ReadonlySet<SupportGrantErrorCode> = new Set([
 export function isSessionEndingCode(code: SupportGrantErrorCode | null): boolean {
   return code !== null && SESSION_ENDING.has(code);
 }
+
+/** The locale key of the sentence for a refused-action code; the interceptor and call sites share it. */
+export const SUPPORT_ERROR_TOAST: Readonly<Partial<Record<string, string>>> = {
+  support_grant_write_required: 'supportAccess.error.readOnly',
+  support_grant_action_not_permitted: 'supportAccess.error.notPermitted',
+  support_access_audit_unavailable: 'supportAccess.error.auditUnavailable',
+};

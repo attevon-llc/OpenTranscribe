@@ -533,7 +533,9 @@ def test_a_speaker_embedding_removal_failure_is_reported_as_partial(
     # ["speakers", "storage"]. Stubbing at this seam (rather than at `minio_service.
     # delete_file`) is what actually covers it — the storage leg also touches the
     # derived-render cache bucket, so a lower-level stub leaves that path still live.
-    monkeypatch.setattr(fcs, "delete_file_storage_artifacts", lambda file_id, meta: True)
+    monkeypatch.setattr(
+        fcs, "delete_file_storage_artifacts", lambda file_id, meta, unverified=None: True
+    )
 
     events: list[dict] = []
     real_log = acct_module.audit_logger.log

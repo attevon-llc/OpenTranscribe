@@ -43,7 +43,7 @@ def _file_with_speaker(db, user):
         uuid=str(uuid_mod.uuid4()),
         user_id=user.id,
         filename="a.mp4",
-        storage_path="test/a.mp4",
+        storage_path=f"test/a-{uuid_mod.uuid4().hex}.mp4",
         content_type="video/mp4",
         file_size=1000,
     )

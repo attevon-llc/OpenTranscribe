@@ -44,6 +44,7 @@ from app.auth.utils import mask_email_for_display
 from app.core.capabilities import require_capability
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
+from app.legal.processing_gate import require_processing_allowed
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.user import User
@@ -64,6 +65,8 @@ from app.services.delete_permissions import can_delete_file
 from app.services.formatting_service import FormattingService
 from app.services.playback_rendition import resolve_playback
 from app.services.privacy.redact_view import PrivacyView
+from app.services.storage_versions import StorageDeleteIncompleteError
+from app.services.takedown_service import quarantine_list_exempt
 from app.utils.error_handlers import ErrorHandler
 from app.utils.media_types import normalize_media_content_type
 from app.utils.whisper_model_choice import require_servable_whisper_model
@@ -72,6 +75,7 @@ from . import cancel_upload
 from . import complete_upload
 from . import multipart
 from . import prepare_upload
+from . import voiceprint_consent
 from .captions import router as captions_router
 from .crud import _get_or_compute_analytics
 from .crud import delete_media_file
@@ -156,6 +160,7 @@ def _parse_speaker_params_from_headers(request: Request | None) -> SpeakerParams
 # Include all routers
 router.include_router(cancel_upload.router, prefix="", tags=["files"])
 router.include_router(prepare_upload.router, prefix="", tags=["files"])
+router.include_router(voiceprint_consent.router, prefix="", tags=["files"])
 router.include_router(complete_upload.router, prefix="", tags=["files"])
 router.include_router(multipart.router, prefix="", tags=["files"])
 router.include_router(subtitles_router, prefix="", tags=["subtitles"])
@@ -186,6 +191,12 @@ async def upload_media_file(
 ):
     """Upload a media file for transcription"""
     current_user = ctx.user
+    # The legal processing gate, before the upload is stored. The caller owns the file.
+    await run_in_threadpool(
+        lambda: require_processing_allowed(
+            db, owner_user_id=int(current_user.id), organization_id=ctx.org_id
+        )
+    )
     # Get optional headers from prepare step
     existing_file_uuid = request.headers.get("X-File-ID") if request else None
     file_hash = request.headers.get("X-File-Hash") if request else None
@@ -353,7 +364,9 @@ def list_media_files(
         effective_user_id = None
 
     # Abuse/DMCA: hide taken-down files from the gallery for non-admins.
-    base_query = exclude_quarantined(base_query, include_quarantined=ctx.bypass.user_is_admin)
+    base_query = exclude_quarantined(
+        base_query, include_quarantined=quarantine_list_exempt(ctx.bypass)
+    )
 
     # Prepare filters dictionary
     filters = {
@@ -462,7 +475,7 @@ def get_metadata_filters_endpoint(
         ctx.user.id,
         ownership=ownership,
         organization_id=ctx.org_id,
-        include_quarantined=ctx.bypass.user_is_admin,
+        include_quarantined=quarantine_list_exempt(ctx.bypass),
         owner_user_ids=resolve_owner_user_ids(db, owner),
     )
 
@@ -857,7 +870,7 @@ def _resolve_ready_download(
         return None
 
     audio_format = mode.split("_", 1)[1]
-    cached = service.peek_cached_audio(filename, audio_format)
+    cached = service.peek_cached_audio(int(db_file.id), filename, audio_format)
     if cached:
         cache_key, ext, content_type = cached
         dl_name = f"{base_name}.{ext}"
@@ -1206,16 +1219,30 @@ def get_thumbnail(
     db_file = get_file_by_uuid(db, file_uuid)
     validate_file_exists(db_file)
 
-    # Abuse/DMCA takedown (issue #817). This route resolves with plain
-    # `get_file_by_uuid`, so it does NOT inherit the quarantine 404 that
-    # `get_file_by_uuid_with_permission` applies to the detail/stream/download
-    # surfaces — and the `is_public` short-circuit below skips the whole
-    # authorization block, so a taken-down public file was streaming its
-    # thumbnail to unauthenticated callers. The gate goes FIRST, before the
-    # public branch, and uses the same `is_admin` bypass as the permission
-    # helper so admins keep the review visibility they need to release a file.
-    # 404 (not 403) keeps a taken-down file indistinguishable from a missing one.
-    if is_hidden_for(db_file, is_admin=bool(current_user and current_user.is_admin)):
+    # Same order as `get_file_by_uuid_with_permission`: the platform bypass is asked about the
+    # loaded row's own tenant first; only what it reaches may see a taken-down file (review).
+    # Resolved for any signed-in caller, through the SAME resolver get_current_context uses, so
+    # a support-access grant header is honoured (or refused) by exactly the same rules here.
+    platform_allowed = False
+    org_id: int | None = None
+    if current_user is not None:
+        from app.api.deps_context import resolve_org_context
+        from app.api.deps_context import resolve_request_bypass
+
+        org_id, org_role = resolve_org_context(request, db, current_user)
+        org_id, _, bypass = resolve_request_bypass(request, db, current_user, org_id, org_role)
+        platform_allowed = bypass.allows(
+            org_id=db_file.organization_id,
+            owner_id=db_file.user_id,
+            need="read",
+            resource_type="media_file",
+            resource_uuid=str(db_file.uuid),
+        )
+
+    # Abuse/DMCA takedown (issue #817): before the public branch, which skips every other
+    # check. An admin the bypass did not reach (another tenant, multi mode, no grant) is not
+    # exempt. 404 (not 403) keeps a taken-down file indistinguishable from a missing one.
+    if not platform_allowed and is_hidden_for(db_file, is_admin=False):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="File not found",
@@ -1230,22 +1257,6 @@ def get_thumbnail(
                 detail="Authentication required. Use presigned thumbnail_url from file listing.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        from app.api.deps_context import resolve_org_context
-        from app.api.deps_context import resolve_request_bypass
-
-        # Resolve the caller's tenant scope (None = personal) WITHOUT editing
-        # get_optional_current_user (owned by step 1.5), then the bypass through the SAME
-        # resolver get_current_context uses, so a support-access grant header is honoured
-        # (or refused) by exactly the same rules here.
-        org_id, org_role = resolve_org_context(request, db, current_user)
-        org_id, _, bypass = resolve_request_bypass(request, db, current_user, org_id, org_role)
-        platform_allowed = bypass.allows(
-            org_id=db_file.organization_id,
-            owner_id=db_file.user_id,
-            need="read",
-            resource_type="media_file",
-            resource_uuid=str(db_file.uuid),
-        )
         if not platform_allowed and db_file.user_id != current_user.id:
             from app.services.permission_service import PermissionService
 
@@ -1393,11 +1404,22 @@ def clear_video_cache(
 
     except HTTPException:
         raise
+    except StorageDeleteIncompleteError as e:
+        # A lock or refused delete left objects behind: a conflict, not an outage (same
+        # status as POST /admin/settings/cache-config/clear).
+        logger.error(f"Video cache clear for file {file_id} left objects behind: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Some cached objects could not be removed (a storage lock or a refused "
+                "delete). The server log names them."
+            ),
+        ) from e
     except Exception as e:
         logger.exception(f"Error clearing video cache for file {file_id}: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error clearing video cache",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Object storage unavailable while clearing the video cache",
         ) from e
 
 

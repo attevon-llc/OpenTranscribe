@@ -56,6 +56,13 @@ REPROCESS_REFUSAL = (
     "Release the hold before reprocessing. Editing the transcript is still allowed."
 )
 
+#: Refusal text for deleting the summary or a speaker of a held file. Both are rebuilt only by
+#: reprocessing, which a hold also refuses, so deleting them would be unrecoverable.
+DESTROY_DERIVED_REFUSAL = (
+    "refused: the file is under an active legal hold, so its speakers and summary cannot be "
+    "deleted. Release the hold first. Editing the transcript is still allowed."
+)
+
 HELD_BY_PLATFORM = "platform"
 HELD_BY_ORGANIZATION = "organization"
 

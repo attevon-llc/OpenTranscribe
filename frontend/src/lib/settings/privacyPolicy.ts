@@ -39,6 +39,7 @@ export const LOCKED_BY_KEYS: Record<PrivacyLayer, string> = {
   organization: 'privacy.lockedBy.organization',
   user: 'privacy.lockedBy.user',
   consent: 'privacy.lockedBy.consent',
+  file: 'privacy.lockedBy.file',
 };
 
 /** Layers a person at `organization` level cannot override: the ones above it. */
@@ -74,9 +75,32 @@ type GroupedCounts = Record<string, Record<string, number>> | null | undefined;
 
 const finite = (n: number) => (Number.isFinite(n) ? n : 0);
 
-/** The sum of one store's counts (names of kinds are not shown). */
+// Counters a purge reports about what it LEFT (held or taken-down recordings, profiles that keep
+// one of their voices). They ride in the same grouped counts as the deletions but are not deletions.
+const PROTECTED_RECORDING_KEYS = ['files_skipped_held', 'files_skipped_quarantined'];
+const PROTECTED_KEYS = [...PROTECTED_RECORDING_KEYS, 'profiles_retained'];
+
+/** The sum of one store's deletion counts (names of kinds are not shown; kept-counters excluded). */
 export function purgeStoreTotal(counts: GroupedCounts, store: string): number {
-  return Object.values(counts?.[store] ?? {}).reduce((sum, n) => sum + finite(n), 0);
+  return Object.entries(counts?.[store] ?? {})
+    .filter(([kind]) => !PROTECTED_KEYS.includes(kind))
+    .reduce((sum, [, n]) => sum + finite(n), 0);
+}
+
+/** How many recordings a purge left alone because of a legal hold or a takedown. */
+export function purgeProtectedTotal(counts: GroupedCounts): number {
+  return Object.values(counts ?? {}).reduce(
+    (sum, store) =>
+      sum + PROTECTED_RECORDING_KEYS.reduce((inner, key) => inner + finite(store?.[key] ?? 0), 0),
+    0
+  );
+}
+
+/** True when the purge kept anything at all (recordings or profiles). */
+function purgeKeptAnything(counts: GroupedCounts): boolean {
+  return Object.values(counts ?? {}).some((store) =>
+    PROTECTED_KEYS.some((key) => finite(store?.[key] ?? 0) > 0)
+  );
 }
 
 /** The sum of every count a purge reports, over all stores. */
@@ -86,6 +110,7 @@ export function purgeCountTotal(counts: GroupedCounts): number {
 
 export type PurgeVerification =
   | { state: 'verified' }
+  | { state: 'verified_except_protected' }
   | { state: 'remaining'; remaining: number }
   | { state: 'unverified'; unverified: number }
   | { state: 'unknown' };
@@ -98,6 +123,7 @@ export function purgeVerification(status: {
   residual: Record<string, number> | null;
   residual_ok: boolean | null;
   residual_unverified: string[];
+  counts?: GroupedCounts;
 }): PurgeVerification {
   // `== null` also covers a server that predates the measurement and omits the fields.
   if (status.residual == null || status.residual_ok == null) return { state: 'unknown' };
@@ -107,5 +133,9 @@ export function purgeVerification(status: {
   if (unverified.length > 0) {
     return { state: 'unverified', unverified: unverified.length };
   }
-  return status.residual_ok ? { state: 'verified' } : { state: 'unknown' };
+  if (!status.residual_ok) return { state: 'unknown' };
+  // Measured clean, but not because everything was deleted: some recordings were kept.
+  return purgeKeptAnything(status.counts)
+    ? { state: 'verified_except_protected' }
+    : { state: 'verified' };
 }

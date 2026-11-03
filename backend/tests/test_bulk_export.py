@@ -19,7 +19,7 @@ def completed_file(db_session, sample_user):
     file = MediaFile(
         uuid=str(uuid.uuid4()),
         filename="meeting.mp4",
-        storage_path="media/test/meeting.mp4",
+        storage_path=f"media/test/meeting-{uuid.uuid4().hex}.mp4",
         content_type="video/mp4",
         file_size=2048,
         user_id=sample_user.id,

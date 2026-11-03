@@ -1,0 +1,90 @@
+# Optional database role split (docs: Operations -> Audit record integrity).
+#
+# Auto-loaded by opentr.sh / opentranscribe.sh when POSTGRES_APP_USER is set (in .env or the
+# shell). Every app service connects as that unprivileged role; only `backend` (which runs
+# migrations and re-applies the role's grants on startup) keeps the owner password, so a worker
+# that runs ffmpeg or model code on untrusted media never holds owner credentials.
+#
+# Declares no container_name, ports or volumes, so it needs no --fresh re-pinning.
+services:
+  backend:
+    environment:
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-}
+
+  celery-worker:
+    environment:
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-}
+      POSTGRES_PASSWORD: ""
+      MIGRATION_DATABASE_URL: ""
+
+  celery-download-worker:
+    environment:
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-}
+      POSTGRES_PASSWORD: ""
+      MIGRATION_DATABASE_URL: ""
+
+  celery-cpu-worker:
+    environment:
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-}
+      POSTGRES_PASSWORD: ""
+      MIGRATION_DATABASE_URL: ""
+
+  celery-redaction:
+    environment:
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-}
+      POSTGRES_PASSWORD: ""
+      MIGRATION_DATABASE_URL: ""
+
+  celery-cloud-asr-worker:
+    environment:
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-}
+      POSTGRES_PASSWORD: ""
+      MIGRATION_DATABASE_URL: ""
+
+  celery-nlp-worker:
+    environment:
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-}
+      POSTGRES_PASSWORD: ""
+      MIGRATION_DATABASE_URL: ""
+
+  celery-embedding-worker:
+    environment:
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-}
+      POSTGRES_PASSWORD: ""
+      MIGRATION_DATABASE_URL: ""
+
+  celery-beat:
+    environment:
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-}
+      POSTGRES_PASSWORD: ""
+      MIGRATION_DATABASE_URL: ""
+
+  celery-worker-gpu-transcribe:
+    environment:
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-}
+      POSTGRES_PASSWORD: ""
+      MIGRATION_DATABASE_URL: ""
+
+  celery-worker-gpu-diarize:
+    environment:
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-}
+      POSTGRES_PASSWORD: ""
+      MIGRATION_DATABASE_URL: ""
+
+  celery-worker-gpu-scaled:
+    environment:
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-}
+      POSTGRES_PASSWORD: ""
+      MIGRATION_DATABASE_URL: ""

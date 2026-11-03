@@ -30,6 +30,7 @@ from app.models.user import User
 from app.schemas.media import Tag as TagSchema
 from app.schemas.media import TagBase
 from app.schemas.media import TagWithCount
+from app.services.tag_bulk import REQUIRED_PERMISSION
 from app.services.tag_collisions import list_tags_filtered
 from app.services.tag_collisions import list_unused_tag_rows
 from app.services.tag_operations import cleanup_unreferenced_tags
@@ -141,7 +142,9 @@ def list_unused_tags(
     return list_unused_tag_rows(db, user_id=current_user.id, organization_id=ctx.org_id)
 
 
-@router.delete("/cleanup", response_model=dict[str, Any])
+@router.delete(
+    "/cleanup", response_model=dict[str, Any], dependencies=[Depends(refuse_under_support_grant)]
+)
 def cleanup_unused_tags(
     scope: Literal["mine", "all_users"] = Query(
         "mine",
@@ -237,7 +240,11 @@ def cleanup_unused_tags(
         raise ErrorHandler.internal_error("Could not clean up unused tags.") from e
 
 
-@router.post("/files/{file_uuid}/tags", response_model=TagSchema)
+@router.post(
+    "/files/{file_uuid}/tags",
+    response_model=TagSchema,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def add_tag_to_file(
     request: Request,
     file_uuid: str,
@@ -253,8 +260,8 @@ def add_tag_to_file(
     the batched resolver instead — see ``prepare_upload.add_tags_to_file``).
 
     Authorized by ``get_file_by_uuid_with_permission``, which applies the sharing,
-    takedown and tenant (``ctx.org_id``) gates in one place — write access to the
-    *file* is the whole requirement, because tagging does not touch anyone else's
+    takedown and tenant (``ctx.org_id``) gates in one place — ``editor`` access to the
+    *file* (the bulk rail's ``REQUIRED_PERMISSION``) is the whole requirement, because tagging does not touch anyone else's
     vocabulary.
 
     The body is a raw ``dict`` rather than a schema, so a missing ``name`` is
@@ -280,6 +287,8 @@ def add_tag_to_file(
         current_user.id,
         bypass=ctx.bypass,
         organization_id=ctx.org_id,
+        min_permission=REQUIRED_PERMISSION,
+        conceal_inaccessible=True,
     )
     file_id = media_file.id  # Get internal ID for database operations
 
@@ -319,7 +328,11 @@ def add_tag_to_file(
     return tag
 
 
-@router.delete("/files/{file_uuid}/tags/{tag_name}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/files/{file_uuid}/tags/{tag_name}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(refuse_under_support_grant)],
+)
 def remove_tag_from_file(
     file_uuid: str,
     tag_name: str,
@@ -339,6 +352,8 @@ def remove_tag_from_file(
         current_user.id,
         bypass=ctx.bypass,
         organization_id=ctx.org_id,
+        min_permission=REQUIRED_PERMISSION,
+        conceal_inaccessible=True,
     )
     file_id = media_file.id
 

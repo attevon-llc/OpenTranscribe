@@ -21,6 +21,7 @@
   import {
     PrivacyApi,
     PURGE_CONFIRM_WORD,
+    PURGE_REASON_FILES_PROTECTED,
     isTerminalPurgeState,
     type PurgeAccepted,
     type PurgeStatus,
@@ -29,6 +30,7 @@
   import {
     privacyErrorKey,
     purgeCountTotal,
+    purgeProtectedTotal,
     purgeStoreTotal,
     purgeVerification,
   } from '$lib/settings/privacyPolicy';
@@ -60,6 +62,7 @@
   $: canDelete = confirmed && !busy && !following && status === null;
   $: finished = status !== null && isTerminalPurgeState(status.status);
   $: verification = status !== null ? purgeVerification(status) : null;
+  $: protectedTotal = status !== null ? purgeProtectedTotal(status.counts) : 0;
 
   // Every opening starts from a clean slate: a stale ticked box must never pre-arm a delete.
   function syncOpen(open: boolean) {
@@ -195,6 +198,8 @@
       <div class="progress" aria-live="polite">
         {#if status.status === 'completed'}
           <p>{$t('privacy.purge.completed', { total: purgeCountTotal(status.counts) })}</p>
+        {:else if status.status === 'failed' && status.reason === PURGE_REASON_FILES_PROTECTED}
+          <p role="status" data-testid="purge-all-protected">{$t('privacy.purge.allProtected')}</p>
         {:else if status.status === 'failed'}
           <p class="error" role="alert">{$t('privacy.purge.failed')}</p>
         {:else if status.status === 'skipped'}
@@ -210,12 +215,21 @@
                 count: purgeStoreTotal(status.counts, 'opensearch'),
               })}
             </li>
+            {#if protectedTotal > 0}
+              <li data-testid="purge-protected">
+                {$t('privacy.purge.protectedSkipped', { count: protectedTotal })}
+              </li>
+            {/if}
           </ul>
         {/if}
         {#if finished && verification}
           {#if verification.state === 'verified'}
             <p class="verified" data-testid="purge-verification">
               {$t('privacy.purge.residualOk')}
+            </p>
+          {:else if verification.state === 'verified_except_protected'}
+            <p class="verified" data-testid="purge-verification">
+              {$t('privacy.purge.residualOkExceptProtected')}
             </p>
           {:else if verification.state === 'remaining'}
             <p class="error" role="alert" data-testid="purge-verification">

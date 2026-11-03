@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.files.crud import delete_media_file
 from app.api.endpoints.files.crud import get_media_file_by_uuid
@@ -23,6 +24,8 @@ from app.core.exceptions import ASRConfigurationError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.db.base import get_db
+from app.legal.processing_gate import check_processing_allowed_for_file
+from app.legal.processing_gate import require_processing_allowed_for_file
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Tag
@@ -287,6 +290,7 @@ def retry_file_processing(
             min_permission="editor",
         )
         file_id = db_file.id  # Get internal ID for task operations
+        require_processing_allowed_for_file(db, db_file)
 
         # Check if file can be retried
         if db_file.status not in [
@@ -393,6 +397,7 @@ def recover_file(
             min_permission="editor",
         )
         file_id = db_file.id  # Get internal ID for task operations
+        require_processing_allowed_for_file(db, db_file)
 
         success = recover_stuck_file(db, file_id)
         if not success:
@@ -855,11 +860,12 @@ def _handle_summarize_action(
     import os
 
     from app.models.media import MediaFile
+    from app.services.llm_service import LLMConfigurationError
     from app.services.llm_service import LLMService
 
     # Check if LLM is configured
     try:
-        llm_service = LLMService.create_from_settings(user_id=user_id)
+        llm_service = LLMService.create_from_settings(user_id=user_id, raise_on_unusable=True)
         if llm_service is None:
             return BulkActionResult(
                 file_uuid=file_uuid,
@@ -868,6 +874,13 @@ def _handle_summarize_action(
                 error="LLM_NOT_AVAILABLE",
             )
         llm_service.close()
+    except LLMConfigurationError as unusable:
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message=unusable.user_message,
+            error="LLM_CONFIG_UNUSABLE",
+        )
     except Exception:
         # Bulk actions report per-file outcomes instead of aborting the batch,
         # so an unconstructable LLM client becomes this file's failure result.
@@ -916,6 +929,7 @@ def _handle_identify_speakers_action(
     import os
 
     from app.models.media import MediaFile
+    from app.services.llm_service import LLMConfigurationError
     from app.services.llm_service import LLMService
 
     # Via the `speaker_tasks` re-export shim, as every other caller does — it keeps the
@@ -923,7 +937,7 @@ def _handle_identify_speakers_action(
     from app.tasks.speaker_tasks import identify_speakers_llm_task
 
     try:
-        llm_service = LLMService.create_from_settings(user_id=user_id)
+        llm_service = LLMService.create_from_settings(user_id=user_id, raise_on_unusable=True)
         if llm_service is None:
             return BulkActionResult(
                 file_uuid=file_uuid,
@@ -932,6 +946,13 @@ def _handle_identify_speakers_action(
                 error="LLM_NOT_AVAILABLE",
             )
         llm_service.close()
+    except LLMConfigurationError as unusable:
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message=unusable.user_message,
+            error="LLM_CONFIG_UNUSABLE",
+        )
     except Exception:
         # Bulk actions report per-file outcomes instead of aborting the batch.
         logger.exception(f"Could not construct an LLM client for file {file_uuid}")
@@ -1109,6 +1130,12 @@ def _redact_if_enabled(
     return _handle_redact_action(db, file_uuid, file_id)
 
 
+#: Bulk actions that start processing of the file, and so pass the legal processing gate.
+PROCESSING_BULK_ACTIONS = frozenset(
+    {"retry", "recover", "reprocess", "summarize", "redact", "identify_speakers"}
+)
+
+
 def _process_single_file_action(
     db: Session,
     file_uuid: str,
@@ -1145,6 +1172,18 @@ def _process_single_file_action(
         min_permission="editor",
     )
     file_id = db_file.id
+
+    if action in PROCESSING_BULK_ACTIONS:
+        # The legal processing gate, per file, for the file OWNER. A refusal is this file's
+        # result (its code in ``error``); the rest of the batch carries on.
+        refusal = check_processing_allowed_for_file(db, db_file)
+        if refusal is not None:
+            return BulkActionResult(
+                file_uuid=file_uuid,
+                success=False,
+                message=refusal.message,
+                error=refusal.code,
+            )
 
     action_handlers = {
         "retry": lambda: _handle_retry_action(db, file_uuid, file_id, reset_retry_count, is_admin),
@@ -1199,6 +1238,9 @@ def bulk_file_action(
     is_tag_action = request.action in TAG_ACTIONS
     tag = None
     if is_tag_action:
+        # Tagging creates tenant vocabulary, which a support grant never does (same rule as the
+        # tag routes).
+        refuse_under_support_grant(ctx)
         try:
             tag = resolve_bulk_tag(
                 db,

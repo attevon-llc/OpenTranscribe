@@ -7,6 +7,280 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+
+- **Credential handling for protected media imports.** The site login supplied with a protected
+  media URL import is no longer passed to the background worker as a task argument. It is held
+  encrypted in Redis for a limited time under an opaque reference, read by the worker when it
+  runs (including on retries) and deleted when the import finishes or fails. If the entry has
+  expired the import fails with a clear message and can be submitted again. A test now fails if
+  any Celery task takes or is called with a parameter named like a secret. The API field
+  description now states how the value is held.
+- **Download URL construction for MediaCMS imports.** The media path returned by the server is
+  now resolved as a URL reference against the configured MediaCMS address, and any result that
+  differs in scheme, host or port is rejected before a request (or the user's token) is sent.
+- **Audit records in the database can no longer be changed or deleted by the application.**
+  A trigger on the authentication-configuration log, the support-access records, the erasure
+  ledger, the takedown records and the legal acceptance records refuses `DELETE`, `TRUNCATE`
+  and any update outside each table's lifecycle columns, while deleting a user or organization
+  still clears only the actor pointer. In a single-role installation this is an accident guard;
+  setting `POSTGRES_APP_USER` and `POSTGRES_APP_PASSWORD` makes it enforceable by running the
+  backend and workers as an unprivileged database role (grants re-applied on every start,
+  startup refused if the role turns out not to be effective). The owner password is removed
+  from every service except the backend. Settings > Audit Logs shows the measured state and
+  `GET /api/admin/security/audit-integrity` reports it to a super administrator. Migration v453;
+  see Operations > Audit record integrity.
+- **MediaCMS source matching.** A source configured with a port is now recognised, and its
+  stored-credentials hint shown, for URLs on that port: one rule (case-insensitive hostname plus
+  port, with the scheme's default port when none is given) is used by the backend and the upload
+  form. The "stored credentials" hint now also reflects the user's own and shared sources, not
+  only system-level ones.
+
+### Added
+
+
+### Changed
+
+- The storage-key uniqueness check (`GET /api/admin/data-integrity/storage/keys`) and the erasure
+  ledger and receipts (`/api/admin/gdpr/erasures`, `/api/admin/gdpr/erasure-receipt/...`) are
+  API-only in this release; there is no admin screen for them yet.
+- URL-import thumbnails are stored per media file, avatars under a per-upload key, and the
+  `media_file` object-key columns are unique (partial unique indexes, migration v456). The
+  migration never blocks startup: shared legacy thumbnails are regenerated, and shared originals
+  are reported by `GET /api/admin/data-integrity/storage/keys` and resolved with
+  `python -m app.scripts.split_shared_storage_paths`.
+
+- The OpenSearch voiceprint write guard now re-checks the recording's own consent state on every write
+  when the document names a file, and consent hooks receive that file id there.
+- Fixed: the voiceprint retention sweep queued its purge with a `reason` argument the task does not
+  accept; it now passes `purge_reason`.
+
+- **Behaviour change:** erasures of an organization member are now re-run automatically after a
+  restore, limited to rows created at or before the original erasure (newer work is never touched);
+  rows with no creation time are reported. The reconciliation result key `org_member_manual_review`
+  is replaced by `org_member_needs_review`. On the first passes after upgrading, reconciliation
+  re-checks every historical completed erasure, bounded per pass.
+
+
+- **Behaviour change:** legal acceptance records are no longer deleted with the account. Every
+  deletion path (admin delete, GDPR erasure, the first-run wizard) now keeps them, pseudonymised
+  by the database: the user link, IP address and user agent are removed, and the record is
+  deleted after `legal.acceptance_retention_days` (default 2190 days, minimum 365) by a daily
+  sweep. The records are pseudonymised, not anonymous; operators state their own lawful basis
+  (see Legal documents). The database also refuses rewrites of an accepted record. Migration
+  v451; its downgrade deletes the pseudonymised records.
+
+
+### Removed
+
+- `scripts/test-model-download.sh`, superseded by the scenario above (it ran `:latest` with
+  `--gpus all` and was not wired into any gate).
+
+### Fixed
+
+- **Building the object-key indexes at startup no longer waits indefinitely on another session.**
+  The background `CREATE UNIQUE INDEX CONCURRENTLY` waits for every open transaction in the
+  database; a single idle-in-transaction session could hold it, and startup, for as long as that
+  session stayed open. Each statement now waits at most two minutes, reports the index as not
+  built, and the next start retries.
+- **A slow local embedding-model registration no longer leaves a duplicate model.** When the
+  registration outlived its wait, startup registered the same model a second time from the remote
+  registry, leaving two models of one name. The name is now looked up again before registering
+  another, and a lookup by name prefers the deployed model over an undeployed duplicate.
+- **Schema migrations follow the database settings in force when they run.** The migration
+  connection was resolved once at import time, so a process that changed its `POSTGRES_*`
+  settings before calling Alembic still migrated the database it had started with. It is now
+  resolved on each call; an explicit `MIGRATION_DATABASE_URL` still takes precedence.
+- **"Open AI settings" from the summary dialog now shows the settings.** The link opened Settings
+  behind the summary dialog, so nothing appeared to happen; it now closes the summary dialog first.
+- **A refused action in a support session shows one toast, in the user's language.** The same refusal
+  was reported twice, once translated and once as the server's English sentence. The sentence is now
+  translated at the call site and identical toasts on screen collapse into one.
+- **A deletion that skipped every recording now says so.** When each recording in a purge was under
+  a legal hold or taken down, the purge status carried no reason and the dialog and the per-recording
+  voice identification toast read as a failure. The status now has an optional neutral `reason`
+  (`files_protected`), and both screens say nothing was deleted because the recordings are kept.
+  Strings added in all 12 locales.
+- **AI feature availability with an invalid personal LLM setting.** A saved LLM configuration with a
+  non-numeric temperature or context size is now reported as unavailable consistently, so
+  background processing no longer queues AI work that can only be skipped, and a saved AWS Bedrock
+  model without a region is refused when chosen for a chat.
+- **WebSocket sign-in for accounts that are not admitted.** The WebSocket handshake now applies
+  the account approval and expiry checks, so a rejected, expired or (while approval is required)
+  pending account no longer opens a socket.
+
+- **AI features with a broken personal LLM configuration.** When a user had an active LLM
+  configuration that could not be used (missing, invalid or incomplete), AI features could fall
+  back to the server-wide provider. They now report the AI feature as unavailable for that user
+  instead, and never use another provider.
+- **WebSocket sessions after sign-out everywhere.** The WebSocket handshake now applies the
+  per-user revocation time (sign out everywhere, password reset, administrator session
+  termination, role change) like the HTTP routes, so a token issued before it no longer opens a
+  socket.
+
+- **Tag permissions.** Attaching or removing a tag on a single file now needs `editor` access
+  to the file, the same as the bulk tag action. Every tag-changing route (rename, merge, delete,
+  promote, attach, detach, clean up) now refuses a support-access grant, as creating a tag
+  already did. `GET /api/tags/for-files` and the single-file attach and detach routes now answer
+  a file the caller cannot open exactly as they answer an unknown file ("File not found").
+
+
+
+- **The model downloader's speaker-detection step no longer fails on every CPU run.**
+  `scripts/download-models.py` transcribed synthetic sine-wave audio through whisperx before
+  fetching the PyAnnote weights; whisperx found no speech in it and transformers 5.x raised
+  `IndexError: list index out of range` on the empty batch, so the step exited with "Failed to
+  download PyAnnote models: list index out of range". It now downloads
+  `pyannote/speaker-diarization-community-1` directly and loads it the way the backend does,
+  with no transcription or diarization run. The backend itself never used whisperx and returns
+  an empty transcript for audio with no speech.
+- **The model downloader now fetches every PyAnnote model the backend can load in-process,**
+  not only the community-1 diarization pipeline: the WeSpeaker speaker-embedding model (used
+  for voiceprints whenever the native diarization sidecar is unavailable), and, when your token
+  has accepted their agreements, the `speaker-diarization-3.1` fallback with the repos its
+  configuration names and the v3 `pyannote/embedding` model (512-dimension installs). Before
+  this, an offline deployment had none of them and those paths failed on first use. An optional
+  model the token cannot read is reported in the summary and does not fail the download.
+- **A hardlinked model cache no longer fails the whole NLTK download.** NLTK 3.10 refuses
+  multiply-linked files, so a cache seeded with `cp -al`, `rsync --link-dest` or a dedup copy
+  failed all six NLTK packages. The downloader now gives each linked file in `nltk_data` its
+  own copy first, and when it cannot (a read-only mount) fails once with the command that
+  fixes it. See [Offline installation](https://docs.opentranscribe.app/docs/installation/offline-installation).
+
+- The v0.6.0 backend and lite images shipped the build machine's gitignored files:
+  `/app/mutants` (mutmut-mutated source), `test.db`, `celerybeat-schedule*` and
+  `.import_linter_cache`. `backend/.dockerignore` now excludes them, and the frontend and docs
+  ignore files exclude stray databases. The `test.db` held no rows. The published frontend and
+  docs images were clean.
+- `ensure_opensearch_models` fetched every model group into a throwaway container against
+  `:latest`, and hid downloader failures behind `grep || true`. It now runs only the `opensearch`
+  group, uses the install's `OT_IMAGE_TAG`, and prints a warning with the exit status and the
+  last output lines when the downloader fails.
+- `download-models.py --only opensearch` no longer requires `HUGGINGFACE_TOKEN`; the OpenSearch
+  models come from artifacts.opensearch.org, so `ensure_opensearch_models` failed on installs
+  without a token.
+- `backend/.dockerignore` excludes each denylisted name at any depth (for example
+  `app/.pytest_cache`), not only at the context root.
+
+- `presign_revoked` reported `true` when only the original's tag landed (a failed thumbnail or
+  playback-rendition tag was ignored) or when nothing enforced the tag (no MinIO presign
+  identity, no S3 bucket-policy Deny). It is now true only when every object is tagged and the
+  tag is enforced; `presign_tag_cleared` likewise covers every object.
+- Cache key hardening: extracted-audio cache keys now start with the file id. Keys written
+  before this are removed when their file is deleted, erased or taken down, and swept once at
+  startup (`derived/` keys of the old audio shape only, every version on a versioned bucket, at
+  most 5,000 per start, rerun until a pass completes; counts are logged).
+- The startup storage probe no longer reports a refused delete of its own probe object in the
+  media bucket as a missing takedown permission (a takedown never deletes there); it is logged
+  as a leftover object instead.
+- A MinIO presign identity cached as working is re-checked by presigning with it when the
+  provisioning probe fails, so a stale per-process cache cannot report revocation as enforced.
+- The startup quarantine-tag backfill resolves enforcement once and logs one summary line
+  instead of one line per file.
+- The quarantine dialog shows a success only for files whose links were revoked, and only the
+  warning for the rest.
+
+- Every delete path on a versioned bucket (file delete, GDPR erasure, the per-file and admin
+  derived-cache purges, the legacy cache reclaim and the storage orphan sweep) now removes every
+  version and delete marker, through one helper (`services/storage_versions.py`). A plain delete
+  there left the recording, burned-in video and extracted audio retrievable by version id, and
+  object lock (the storage half of a legal hold) only works on versioned buckets. A version that
+  survives (legal hold, retention) now fails the delete and is named; the per-file cache purge
+  used to log such failures at DEBUG and report the erasure complete. Versioning is read once per
+  bucket and cached; a missing read permission never fails a completed delete. New IAM actions:
+  `s3:GetBucketVersioning`, `s3:ListBucketVersions`, `s3:DeleteObjectVersion` (see Object storage
+  in the docs).
+- A re-upload no longer destroys a held failed duplicate: `cleanup_failed_duplicates` now goes
+  through the guarded purge (legal-hold refusal, shared-key check, thumbnail, playback and
+  derived-cache removal) instead of deleting the media object and row directly.
+- A delete whose object versions could not be checked (both versioning reads refused) is reported
+  `unverified`, and file purge and GDPR erasure record it as partial (`storage_unverified`) rather
+  than complete. "Versioning off" is no longer cached, a store without versioning
+  (`NotImplemented`) is not treated as a denial, a missing bucket is "nothing to delete", and an
+  empty prefix is rejected like `None`.
+- The audit `source_ip` and `X-Real-IP` are stored stripped, and IPv6 scope-id forms
+  (`fe80::1%eth0`) are rejected consistently.
+- A file purge no longer deletes an object key another media file still references (a URL
+  import's per-video thumbnail, shared when the same video is imported twice).
+- A malformed `X-Real-IP` from a trusted proxy is no longer recorded as the client address.
+- An audit event OpenSearch rejects outright is now logged at ERROR, not WARNING: it is out of
+  the searchable trail for good.
+- Organization legal-hold audit events (`content.hold.place` / `content.hold.release`) name the
+  held files (`details.file_uuids`, ids only, capped at 100). The hold's file links are deleted
+  with the file, so the audit trail was the only place left to say what a hold had covered, and it
+  did not say.
+- An audit event whose client address is not an IP (a proxy's `unknown`, a hostname) is no longer
+  rejected by OpenSearch's `ip` mapping and dropped from the searchable trail; the raw value is
+  kept as `details.source_unparsed`.
+- Deleting an account through `DELETE /api/admin/users/{uuid}` or `DELETE /api/users/{uuid}` now
+  records the deleted account as the event's typed `target_user_id`, like every other
+  `admin.user.delete` emitter, so filtering the audit log by the subject finds it.
+- Support-access use (`support_access.used`) and platform content access
+  (`platform_admin.content.access`) events carry `resource_type` / `resource_uuid` as typed
+  fields, so an administrator filtering the audit log by a file now sees staff access to it.
+
+- Re-running speaker detection on a file published its task directly instead of going through
+  the shared dispatch check; it now applies the legal processing requirement itself.
+
+### Security
+
+- Quarantine hardening for media URLs: list and detail responses no longer mint a thumbnail
+  or download URL for a quarantined file (the check lives in `set_file_urls`, with a guard
+  test against a second writer); the thumbnail route applies the same platform-bypass rule as
+  the other media routes, so an admin the bypass does not reach no longer sees a quarantined
+  public file of another tenant; a cached bulk or document export result is re-checked
+  against quarantine on replay, and a takedown drops that cached result.
+- Test isolation: a fixture that patched the OpenSearch client re-export left its fake on the
+  package for the rest of the worker, which made a tenancy test order-dependent; the pinned
+  entry is now removed after every test.
+- Quarantine no longer reports a clean success when storage refuses to revoke already-issued
+  media URLs. On `STORAGE_BACKEND=s3` an app identity without `s3:PutObjectTagging` logged a
+  single WARNING while the API answered 200, and issued URLs kept working for
+  `MEDIA_URL_EXPIRE_SECONDS`. The file is still quarantined in the database (that is what every
+  read surface gates on); quarantine and release responses now carry `media_revocation`
+  (`complete`, `reason`, `enforcement`, `missing_permissions`, `exposure_seconds`, per-object
+  outcomes), the audit event is recorded with outcome `partial`, the log is an ERROR naming the
+  missing actions, and the admin UI shows a warning (all 12 locales).
+- On S3, startup now probes whether the app identity can read and write object tags and list
+  and delete in the cache bucket, and logs an ERROR naming each missing action and its bucket; an
+  unreadable bucket policy names `s3:GetBucketPolicy`. The probe uses a per-boot key and the
+  bounded no-retry client, never blocks startup, and can be turned off with
+  `STORAGE_TAG_PROBE_ENABLED=false`.
+- A takedown now deletes the file's copies in the cache bucket (download renders under
+  `derived/`, and bulk ZIP and DOCX/PDF exports, found through per-file markers) and reports
+  them; a copy it cannot list or delete makes the revocation incomplete
+  (`copy_removal_failed`). An export or render finishing during a takedown is deleted after its
+  upload.
+- The S3 bucket-policy check is conservative: a Deny narrowed by an extra condition, a `Not*`
+  element, a named principal or a prefix resource reads as `enforcement_unverified` instead of
+  enforced. The `{"AWS": ["*"]}` principal, `s3:Get*` and a `*` resource are recognised.
+- A quarantine and a release that race now leave storage matching whichever committed last,
+  and each tag write reads the tag set back so a concurrent overwrite is reported, not counted
+  as applied. A playback rendition that finishes during a takedown is tagged through the same
+  path, and a refused tag is an ERROR.
+- Organization-admin quarantine and release responses carry only `action`, `complete`,
+  `exposure_seconds` and a generic `reason`; storage permissions and the enforcer stay on the
+  platform route and in the server log.
+- The audit event of a quarantine or release of an organization's file records only
+  `complete` and a generic `reason` under `media_revocation` (and a generic error code), so the
+  organization's audit read and export carry no storage permissions, enforcer or failed
+  objects. Events on personal files, which only platform admins read, keep the full detail.
+- Quarantine and release no longer hold a database transaction open across their storage
+  calls, use a bounded storage client with no transport retries, and stop re-applying after
+  `TAKEDOWN_SETTLE_DEADLINE_SECONDS`; when the database changed again after the last state
+  that could be applied the result is reported incomplete (`state_changed`), never complete.
+- A watch source's import history no longer links a quarantined file.
+
+### Documentation
+
+- S3 permissions quarantine needs (`s3:GetObjectTagging`, `s3:PutObjectTagging`,
+  `s3:GetBucketPolicy`, optional `s3:PutObjectLegalHold`, and the probe's `s3:PutObject` /
+  `s3:DeleteObject` on both buckets) and an operator recipe to verify an
+  issued URL goes 206 → 403 → 206: Production Deployment, Object Storage, environment variables,
+  upgrading to 0.6.0, `docs/abuse-and-takedown.md`.
+
+
 ## [0.6.0] - 2026-10-31
 
 ### Overview

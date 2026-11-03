@@ -241,3 +241,55 @@ def test_a_builder_that_returns_ddl_is_detected(tmp_path, monkeypatch) -> None:
         """,
     )
     assert resolved == {"build_upgrade_sql", "UPGRADE_SQL"}
+
+
+def test_trigger_ddl_is_ddl() -> None:
+    """MUST FIRE. ``DROP TRIGGER`` takes ACCESS EXCLUSIVE on its table."""
+    assert (
+        _scan("""
+        def test_trigger(db_session):
+            db_session.connection().execute(text("DROP TRIGGER IF EXISTS trg ON audit_log"))
+    """)
+        is True
+    )
+
+
+def test_a_constant_composed_of_builders_and_other_constants_is_detected(
+    tmp_path, monkeypatch
+) -> None:
+    """MUST FIRE. v457's ``"".join(builder(...) for ...)`` and v453's ``A + B + builder()``.
+
+    Neither has a builder call at its root, so a root-only check read both as plain constants.
+    """
+    resolved = _fake_revision(
+        tmp_path,
+        monkeypatch,
+        """
+        def _guard(table: str) -> str:
+            return f"CREATE TRIGGER trg_{table} BEFORE UPDATE ON {table} EXECUTE FUNCTION f()"
+
+        JOINED_SQL = "".join(_guard(t) for t in ("a", "b"))
+        SUMMED_SQL = "SELECT 1;" + _guard("a")
+        PLAIN_SQL = "".join(str(i) for i in (1, 2))
+        """,
+    )
+    assert {"JOINED_SQL", "SUMMED_SQL"} <= resolved
+    assert "PLAIN_SQL" not in resolved
+
+
+def test_only_the_fixture_that_runs_ddl_is_a_ddl_fixture() -> None:
+    """MUST FIRE for ``bare`` and MUST STAY CLEAN for ``seeded``: only the statement differs."""
+    tree = ast.parse(
+        textwrap.dedent("""
+        import pytest
+
+        @pytest.fixture
+        def bare(db_session):
+            db_session.connection().execute(text("DROP INDEX IF EXISTS ix"))
+
+        @pytest.fixture
+        def seeded(db_session):
+            db_session.connection().execute(text("SELECT 1"))
+    """)
+    )
+    assert discipline._ddl_fixtures(tree, set(), frozenset()) == {"bare"}

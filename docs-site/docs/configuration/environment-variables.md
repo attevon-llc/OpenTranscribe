@@ -849,7 +849,15 @@ construction, not the call sites.
 On S3, quarantining a file does not by itself revoke media URLs already issued for it: they stay
 valid for up to `MEDIA_URL_EXPIRE_SECONDS`. See
 [Production Deployment](../operations/production-deployment.md#native-aws-s3-backend-alternative-to-minio)
-for the bucket policy that enforces revocation and the TTL trade-off.
+for the bucket policy that enforces revocation and the TTL trade-off. Revocation also needs the
+app's identity to hold `s3:GetObjectTagging` and `s3:PutObjectTagging` on the media objects and
+`s3:GetBucketPolicy` on the bucket, plus `s3:ListBucket` and `s3:DeleteObject` on the cache bucket
+([permissions](../operations/production-deployment.md#permissions-quarantine-needs-on-s3));
+startup logs an ERROR naming any it lacks.
+
+```bash
+STORAGE_TAG_PROBE_ENABLED=true    # false skips the startup permission probe (a per-boot object under _opentranscribe/probes/); never blocks startup
+```
 
 ### Presigned URLs and large uploads (both backends)
 
@@ -913,6 +921,12 @@ POSTGRES_USER=postgres
 POSTGRES_PASSWORD=auto_generated_on_install
 POSTGRES_DB=opentranscribe
 POSTGRES_SSLMODE=prefer  # disable/allow/prefer/require/verify-ca/verify-full
+
+# Optional audit-record protection: an unprivileged runtime role (see Operations > Audit record integrity)
+POSTGRES_APP_USER=                # blank = single role (default)
+POSTGRES_APP_PASSWORD=
+POSTGRES_APP_ROLE_PROVISION=true  # false when the role is created outside the app
+MIGRATION_DATABASE_URL=           # owner connection string; blank = built from POSTGRES_USER
 ```
 
 Database initialization is handled entirely by Alembic migrations on backend startup. No external SQL init file is needed.
@@ -1167,6 +1181,7 @@ RATE_LIMIT_API_PER_MINUTE=100
 AUDIT_LOG_ENABLED=true
 AUDIT_LOG_FORMAT=json  # or: cef
 AUDIT_LOG_TO_OPENSEARCH=true   # default true
+AUDIT_LOG_RETENTION_DAYS=0     # 0 = keep forever; otherwise >= 365 (prunable Postgres audit tables only)
 
 # Login Banner
 LOGIN_BANNER_ENABLED=false

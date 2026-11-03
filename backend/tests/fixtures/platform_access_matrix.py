@@ -103,6 +103,18 @@ PLATFORM_OP_RULES: tuple[tuple[str, str, str], ...] = (
         "speaker or collection content",
     ),
     (
+        r"^\w+ /api/admin/gdpr/(erasures|erase-file|erasure-receipt)",
+        "platform-ops",
+        "erasure receipts are counts keyed by store name and a digest, never personal data or "
+        "content (issue #1353); erase-file destroys a named recording and returns the same",
+    ),
+    (
+        r"^\w+ /api/admin/self-erasure",
+        "platform-ops",
+        "the self-service erasure switch and grace period: two instance settings, no tenant "
+        "content (issue #1354)",
+    ),
+    (
         r"^\w+ /api/(tasks/system/|tasks/recover-stuck-tasks|tasks/fix-inconsistent-files)",
         "state-repair",
         "pipeline-state repair by id or in bulk; returns counts and status, never content",
@@ -126,7 +138,7 @@ PLATFORM_OP_RULES: tuple[tuple[str, str, str], ...] = (
     ),
     (
         r"^\w+ /api/(admin/(settings|auth-config|first-run-wizard|system|asr-providers|"
-        r"audit/content-access|hf-token|local-models|engine-settings|chat-settings|"
+        r"audit/content-access|security/audit-integrity|hf-token|local-models|engine-settings|chat-settings|"
         r"redaction-policy|backup|directory-sync)|watch-sources/(settings|email-configs)|"
         r"llm-settings/bedrock|asr-settings/local-model)",
         "settings",
@@ -140,9 +152,10 @@ PLATFORM_OP_RULES: tuple[tuple[str, str, str], ...] = (
         "data, it reads none back)",
     ),
     (
-        r"^GET /api/legal/acknowledgments",
+        r"^\w+ /api/admin/legal-processing-gate",
         "settings",
-        "the operator's legal acknowledgment record; deployment-level",
+        "which legal documents a file owner must accept before processing; document keys and a "
+        "scope, never tenant content",
     ),
     (
         r"^GET /api/speakers/debug/cross-media-data",
@@ -562,6 +575,7 @@ ALLOWS_KINDS: dict[str, str] = {
     "api/endpoints/files/crud.py::get_media_file_detail": "media_file",
     "api/endpoints/files/__init__.py::get_thumbnail": "thumbnail",
     "services/speaker_provenance_view.py::_can_see_actor": "media_file",
+    "services/takedown_predicates.py::quarantine_exempt": "media_file",
 }
 
 #: Attribute reads that widen a request's reach, and the call names that create one.

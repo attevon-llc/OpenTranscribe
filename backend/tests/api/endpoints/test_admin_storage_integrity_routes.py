@@ -169,3 +169,19 @@ def test_a_failed_listing_returns_a_fixed_code_not_the_exception_text(monkeypatc
 
     assert result["error"] == "storage_listing_failed"
     assert "SECRET" not in repr(result)
+
+
+def test_key_uniqueness_reports_counts_per_column(client, admin_token_headers):
+    response = client.get(f"{BASE}/keys", headers=admin_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["healthy"] is True
+    for column in ("storage_path", "thumbnail_path", "playback_path"):
+        assert body[column] == {"index_present": True, "duplicate_keys": 0, "duplicate_rows": 0}
+
+
+def test_key_uniqueness_is_admin_only(client, user_token_headers):
+    response = client.get(f"{BASE}/keys", headers=user_token_headers)
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN

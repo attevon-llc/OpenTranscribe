@@ -902,6 +902,37 @@ def unlock_account(identifier: str) -> bool:
     return True
 
 
+def erase_identifier(identifier: str) -> int:
+    """Delete the lockout record of a login identifier (GDPR erasure, issue #1353).
+
+    The record is keyed by the address, so it names the data subject for its whole TTL
+    (``account_lockout_max_duration_minutes`` + 1 day). Both stores are cleared: the Redis one,
+    and the in-memory fallback a replica fell back to while Redis was down.
+
+    Returns:
+        How many records were deleted. Raises if the shared store cannot be reached, so an
+        erasure records that as an error instead of reporting the address gone.
+    """
+    key = _lockout_key(_normalize_identifier(identifier))
+    removed = 0
+    store = _get_store()
+    removed += int(store.delete(key) or 0)
+    if _in_memory_store is not None and store is not _in_memory_store:
+        removed += int(_in_memory_store.delete(key) or 0)
+    return removed
+
+
+def identifier_has_record(identifier: str) -> bool:
+    """Whether a lockout record for ``identifier`` exists (the erasure post-check). Raises if
+    the store cannot be read, so the caller reports unverified rather than absent."""
+    key = _lockout_key(_normalize_identifier(identifier))
+    store = _get_store()
+    present = store.get(key) is not None
+    if not present and _in_memory_store is not None and store is not _in_memory_store:
+        present = _in_memory_store.get(key) is not None
+    return present
+
+
 def cleanup_expired_lockouts() -> int:
     """Clean up expired lockout records to free memory.
 

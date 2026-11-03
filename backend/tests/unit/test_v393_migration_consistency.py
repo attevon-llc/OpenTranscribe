@@ -59,7 +59,7 @@ def _new_file(conn, user_id: int) -> int:
         conn.execute(
             text(
                 "INSERT INTO media_file (uuid, user_id, filename, storage_path, file_size, "
-                "content_type) VALUES (:u, :uid, 'v393.wav', 'x/v393.wav', 1, 'audio/wav') "
+                "content_type) VALUES (:u, :uid, 'v393.wav', 'x/v393-' || :u || '.wav', 1, 'audio/wav') "
                 "RETURNING id"
             ),
             {"u": str(uuid_pkg.uuid4()), "uid": user_id},

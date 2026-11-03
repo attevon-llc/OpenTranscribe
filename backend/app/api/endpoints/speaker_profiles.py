@@ -33,7 +33,9 @@ from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import derived_profile_genders
 from app.services.speaker_matching_service import ConfidenceLevel
 from app.services.speaker_matching_service import SpeakerMatchingService
+from app.services.speaker_profile_activity import touch_profile_interaction
 from app.services.speaker_profile_rename import apply_profile_name_to_speakers
+from app.services.takedown_service import quarantine_list_exempt
 from app.tasks.speaker_update_task import process_speaker_update_background
 from app.utils.db_helpers import org_stamp_is
 from app.utils.error_handlers import ErrorHandler
@@ -374,6 +376,7 @@ def update_speaker_profile(
         if description is not None:
             profile.description = description  # type: ignore[assignment]
 
+        touch_profile_interaction(db, int(profile.id), "human_edit")
         db.commit()
         db.refresh(profile)
 
@@ -786,7 +789,7 @@ def get_speaker_profile_occurrences(
         occurrences = matching_service.find_speaker_occurrences(
             int(profile_id),
             current_user.id,
-            include_quarantined=ctx.bypass.user_is_admin,
+            include_quarantined=quarantine_list_exempt(ctx.bypass),
             organization_id=ctx.org_id,
         )
 
@@ -918,29 +921,27 @@ async def upload_profile_avatar(
         }
         ext = ext_map.get(file.content_type, "jpg")
 
-        # Delete old avatar if exists
-        if profile.avatar_path:
-            try:
-                from app.services.minio_service import delete_file
-
-                await run_in_threadpool(delete_file, profile.avatar_path)
-            except Exception:
-                logger.warning(f"Failed to delete old avatar for profile {profile.uuid}")
-
-        # Upload to MinIO
         import io
 
         from app.services.minio_service import get_file_url
         from app.services.minio_service import upload_file
+        from app.services.speaker_avatar_service import delete_avatar_object
+        from app.services.speaker_avatar_service import new_avatar_key
+        from app.services.speaker_avatar_service import swap_avatar_path
 
-        object_name = f"avatars/{current_user.id}/{profile.uuid}.{ext}"
+        # Upload under a key of this request's own, before any lock is taken.
+        object_name = new_avatar_key(int(current_user.id), profile.uuid, ext)
         await run_in_threadpool(
             upload_file, io.BytesIO(content), len(content), object_name, file.content_type
         )
 
-        # Update profile
-        profile.avatar_path = object_name  # type: ignore[assignment]
-        db.commit()
+        try:
+            previous = swap_avatar_path(db, int(profile.id), object_name)
+        except Exception:
+            db.rollback()
+            await run_in_threadpool(delete_avatar_object, object_name)
+            raise
+        await run_in_threadpool(delete_avatar_object, previous, current=object_name)
         db.refresh(profile)
 
         avatar_url = await run_in_threadpool(get_file_url, object_name, expires=3600)
@@ -968,15 +969,11 @@ def delete_profile_avatar(
         )
 
         if profile.avatar_path:
-            try:
-                from app.services.minio_service import delete_file
+            from app.services.speaker_avatar_service import delete_avatar_object
+            from app.services.speaker_avatar_service import swap_avatar_path
 
-                delete_file(profile.avatar_path)
-            except Exception:
-                logger.warning(f"Failed to delete avatar file for profile {profile.uuid}")
-
-            profile.avatar_path = None  # type: ignore[assignment]
-            db.commit()
+            previous = swap_avatar_path(db, int(profile.id), None)
+            delete_avatar_object(previous)
 
         return None
 
@@ -1026,6 +1023,7 @@ def confirm_profile_gender(
         )
     )
 
+    touch_profile_interaction(db, int(profile.id), "human_edit")
     db.commit()
 
     return {

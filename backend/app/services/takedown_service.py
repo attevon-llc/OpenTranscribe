@@ -31,7 +31,6 @@ are behavior-preserving no-ops for files that were never taken down.
 """
 
 import logging
-import time
 from collections.abc import Callable
 from datetime import UTC
 from datetime import datetime
@@ -45,6 +44,9 @@ from app.core.enums import TakedownOrigin
 from app.models.media import MediaFile
 from app.models.takedown import TakedownNotice
 from app.services.hold_guard import is_held
+from app.services.media_revocation import MediaRevocationReport
+from app.services.media_revocation import MediaSnapshot
+from app.services.media_revocation import settle_file
 from app.services.takedown_authority import TakedownActor
 from app.services.takedown_authority import TakedownRefusedError
 from app.services.takedown_authority import assert_may_quarantine
@@ -63,7 +65,10 @@ from app.services.takedown_predicates import filter_suppressed_file_uuids
 from app.services.takedown_predicates import is_hidden_for
 from app.services.takedown_predicates import is_notification_suppressed
 from app.services.takedown_predicates import is_notification_suppressed_for_uuid
+from app.services.takedown_predicates import is_quarantine_hidden
 from app.services.takedown_predicates import is_review_admin
+from app.services.takedown_predicates import quarantine_exempt
+from app.services.takedown_predicates import quarantine_list_exempt
 
 __all__ = [
     "OWNER_RELEASE_EVENT",
@@ -74,22 +79,18 @@ __all__ = [
     "exclude_quarantined",
     "filter_suppressed_file_uuids",
     "is_hidden_for",
+    "is_quarantine_hidden",
     "is_notification_suppressed",
     "is_notification_suppressed_for_uuid",
     "is_review_admin",
+    "quarantine_exempt",
     "quarantine_file",
+    "quarantine_list_exempt",
     "release_file",
     "stamp_completion_time",
 ]
 
 logger = logging.getLogger(__name__)
-
-# Retry budget for clearing the presigned-URL-revocation tag on release (issue #907).
-# This is the dangerous edge of the two directions: a newly-minted presigned URL for a
-# STILL-TAGGED object is ALSO 403 (measured), so a failed untag leaves a file released
-# in the DB but permanently unplayable until a retry succeeds.
-_PRESIGN_UNTAG_RETRIES = 3
-_PRESIGN_UNTAG_BACKOFF_SECONDS = 0.5
 
 
 def apply_processing_status(file: MediaFile, new_status: FileStatus) -> None:
@@ -143,30 +144,46 @@ def stamp_completion_time(file: MediaFile, when: datetime) -> None:
         file.completed_at = when
 
 
-def _untag_quarantine_with_retry(object_name: str) -> bool:
-    """Clear the presigned-URL-revocation tag, retrying before giving up.
+def _quarantined_reader(db: Session, file_id: int) -> Callable[[], bool]:
+    """Read the file's committed ``is_quarantined`` afresh (READ COMMITTED: each call sees
+    the latest commit), for ``media_revocation.settle_file`` to converge on.
 
-    ``set_object_quarantine_tag`` never raises (it is itself best-effort), so a
-    "failure" here is a ``False`` return — the object still carries the tag, or the
-    call couldn't reach storage. Retried up to :data:`_PRESIGN_UNTAG_RETRIES` times
-    with a short backoff, because an object left tagged after release 403s a
-    BRAND NEW presigned URL too (measured) — this is not "the same URL keeps
-    working a bit longer", it is "the file is unplayable until this succeeds".
-
-    Args:
-        object_name: Object key to untag.
-
-    Returns:
-        True once the tag is confirmed cleared, False if every attempt failed.
+    Each read ends its transaction before returning: ``settle_file`` makes storage calls
+    between reads, and the request's connection must not sit idle in a transaction across
+    them (nothing is pending on the session at this point, so the commit writes nothing).
     """
-    from app.services.minio_service import set_object_quarantine_tag
 
-    for attempt in range(1, _PRESIGN_UNTAG_RETRIES + 1):
-        if set_object_quarantine_tag(object_name, False):
-            return True
-        if attempt < _PRESIGN_UNTAG_RETRIES:
-            time.sleep(_PRESIGN_UNTAG_BACKOFF_SECONDS)
-    return False
+    def _read() -> bool:
+        try:
+            return bool(db.query(MediaFile.is_quarantined).filter(MediaFile.id == file_id).scalar())
+        finally:
+            db.commit()
+
+    return _read
+
+
+def _audit_revocation(
+    report: MediaRevocationReport, *, tenant_visible: bool
+) -> tuple[dict, str | None]:
+    """The ``media_revocation`` audit details and error code for one takedown or release.
+
+    An event on an organization's file is readable by that organization's admins, so it
+    carries only the tenant subset and a generic error code; storage detail stays in the
+    server log and on the platform route's response.
+    """
+    error_code = report.tenant_reason() if tenant_visible else report.reason
+    return report.to_audit(tenant_visible=tenant_visible), error_code
+
+
+def _revocation_outcome(report: MediaRevocationReport) -> AuditOutcome:
+    """Audit outcome of a takedown/release, given what happened to the media URLs.
+
+    The action itself succeeded (the database row is the source of truth every read surface
+    gates on), so it is never ``FAILURE``. An incomplete revocation or restore is
+    ``PARTIAL``, with ``report.reason`` as the error code, so it is never counted among the
+    clean successes.
+    """
+    return AuditOutcome.SUCCESS if report.complete else AuditOutcome.PARTIAL
 
 
 def _lock_and_authorize(
@@ -250,12 +267,14 @@ def quarantine_file(
     (``storage_presign_identity``) whose policy Denies ``s3:GetObject`` on any object
     carrying the ``STORAGE_QUARANTINE_TAG_KEY`` tag this function sets. A URL minted
     BEFORE this call 403s the instant the tag lands — same URL, no re-mint needed.
-    This is MinIO-only (no admin API on native S3) and best-effort/fail-open: if the
-    restricted identity couldn't be provisioned, presigning silently falls back to the
-    root client (today's pre-#907 behavior) and ``file.presign_revoked`` reports
-    ``False``. It also cannot un-download bytes a client already fetched before the
-    tag landed. See ``docs/abuse-and-takedown.md`` for the full writeup, the
-    admin-review 403 consequence, and the S3-operator bucket-policy equivalent.
+    On native S3 the enforcer is the operator-attached bucket-policy Deny instead. The
+    takedown never fails because revocation did: if a tag write is refused (on S3, an app
+    identity without ``s3:GetObjectTagging``/``s3:PutObjectTagging``) or nothing enforces
+    the tag (no presign identity, no bucket policy), the file is still quarantined and
+    ``file.media_revocation`` says what did not happen and why (``media_revocation``
+    module). It also cannot un-download bytes a client already fetched before the tag
+    landed. See ``docs/abuse-and-takedown.md`` for the full writeup, the admin-review 403
+    consequence, and the S3-operator bucket-policy equivalent.
 
     Args:
         db: Database session.
@@ -268,9 +287,10 @@ def quarantine_file(
         source_ip / user_agent: Request metadata for the audit event.
 
     Returns:
-        The updated (committed) media file. Carries a non-persisted
-        ``presign_revoked: bool`` attribute (not a DB column — a storage-plane side
-        effect, not app state) reporting whether the revocation tag was applied.
+        The updated (committed) media file. Carries two non-persisted attributes (not DB
+        columns — storage-plane side effects, not app state): ``media_revocation`` (the
+        :class:`MediaRevocationReport`) and ``presign_revoked`` (its ``complete``: every
+        object tagged AND an enforcer in place).
 
     Raises:
         TakedownRefusedError: The actor may not take this file down.
@@ -325,6 +345,12 @@ def quarantine_file(
 
     db.commit()
     db.refresh(file)
+    media = MediaSnapshot.of(file)
+    file_id = int(file.id)
+    tenant_visible = file.organization_id is not None
+    # End the transaction ``refresh`` opened: storage round trips follow, and they read the
+    # snapshot rather than the (now expired) row.
+    db.commit()
 
     # A takedown changes what the searchable/chat-retrievable corpus may serve —
     # exactly the event `bump_corpus_version` exists for (its own docstring names
@@ -337,56 +363,34 @@ def quarantine_file(
     bump_corpus_version()
 
     # Best-effort storage legal-hold (DB flag is the source of truth).
-    if legal_hold and file.storage_path:
+    if legal_hold and media.storage_path:
         try:
             from app.services.minio_service import set_object_legal_hold
 
-            set_object_legal_hold(str(file.storage_path), True)
+            set_object_legal_hold(media.storage_path, True)
         except Exception as e:  # noqa: BLE001 — advisory; never break the takedown
             logger.warning(f"Storage legal-hold enable failed for file {file.id}: {e}")
 
-    # Best-effort presigned-URL revocation (issue #907) — independent of `legal_hold`,
-    # applies to every quarantine. Each object is tagged in its own try/except so a
-    # thumbnail-tag failure can never be blamed on (or block) the primary-object tag.
-    tagged = False
-    if file.storage_path:
-        try:
-            from app.services.minio_service import set_object_quarantine_tag
+    # Presigned-URL revocation (issue #907): every object a URL can be minted for (the
+    # original, thumbnail and playback rendition; the rendition is not under legal hold, it
+    # is a regenerable copy), independent of `legal_hold`. A failure does not undo the
+    # takedown (`media_revocation`'s module docstring has that decision); it is reported on
+    # the response, in the audit event and as an ERROR, never as a clean success.
+    revocation = settle_file(media, _quarantined_reader(db, file_id))
+    revocation_audit, revocation_error = _audit_revocation(
+        revocation, tenant_visible=tenant_visible
+    )
 
-            tagged = set_object_quarantine_tag(str(file.storage_path), True)
-        except Exception as e:  # noqa: BLE001 — advisory; never break the takedown
-            logger.warning(f"Presigned-URL revocation tag failed for file {file.id}: {e}")
-    if file.thumbnail_path:
-        try:
-            from app.services.minio_service import set_object_quarantine_tag
-
-            set_object_quarantine_tag(str(file.thumbnail_path), True)
-        except Exception as e:  # noqa: BLE001 — advisory; never break the takedown
-            logger.warning(
-                f"Presigned-URL revocation tag failed for file {file.id}'s thumbnail: {e}"
-            )
-    # The playback rendition is the same media in another codec, so an already-minted
-    # URL for it must die with the original's. It is not put under legal hold: it is a
-    # regenerable copy, and the original is the evidentiary one.
-    if file.playback_path:
-        try:
-            from app.services.minio_service import set_object_quarantine_tag
-
-            set_object_quarantine_tag(str(file.playback_path), True)
-        except Exception as e:  # noqa: BLE001 — advisory; never break the takedown
-            logger.warning(
-                f"Presigned-URL revocation tag failed for file {file.id}'s playback rendition: {e}"
-            )
-
-    # Non-persisted (not a DB column — see the TYPE_CHECKING-only declaration on
-    # MediaFile): the quarantine endpoints read this off the returned object
-    # to report the storage-plane outcome to the caller.
-    file.presign_revoked = tagged
+    # Non-persisted (not DB columns — see the TYPE_CHECKING-only declaration on MediaFile):
+    # the quarantine endpoints read these off the returned object.
+    file.media_revocation = revocation
+    file.presign_revoked = revocation.complete
 
     extra: dict = {
         "reason": reason,
         "legal_hold": bool(legal_hold),
-        "presign_revoked": bool(tagged),
+        "presign_revoked": revocation.complete,
+        "media_revocation": revocation_audit,
         "previous_origin": previous_origin.value if previous_origin else None,
         "notice_uuid": notice_uuid,
         "link_uuid": link_uuid,
@@ -401,6 +405,8 @@ def quarantine_file(
         source_ip=source_ip,
         user_agent=user_agent,
         extra=extra,
+        outcome=_revocation_outcome(revocation),
+        error_code=revocation_error,
     )
     # The reason is recorded in the audit event and the notice record, not in the log.
     logger.info(f"File {file.id} ({file.uuid}) quarantined by {actor.role_label} {actor.user.id}")
@@ -438,7 +444,7 @@ def release_file(
     mechanism. Clearing the ``STORAGE_QUARANTINE_TAG_KEY`` tag is what restores the
     file's ALREADY-MINTED presigned URL to working — but also what a BRAND NEW
     presigned URL needs: a still-tagged object 403s a freshly signed URL too
-    (measured). So the untag is retried (:func:`_untag_quarantine_with_retry`) before
+    (measured). So the untag is retried (``media_revocation.restore_media``) before
     giving up, and a final failure logs at ERROR (not the legal-hold sibling's
     WARNING) and is surfaced as ``file.presign_tag_cleared = False`` — a file released
     in the DB but left permanently unplayable until the tag is cleared.
@@ -454,9 +460,9 @@ def release_file(
         source_ip / user_agent: Request metadata for the audit event.
 
     Returns:
-        The updated (committed) media file. Carries a non-persisted
-        ``presign_tag_cleared: bool`` attribute (not a DB column) reporting whether
-        the revocation tag was successfully cleared.
+        The updated (committed) media file. Carries two non-persisted attributes (not DB
+        columns): ``media_revocation`` (the :class:`MediaRevocationReport`) and
+        ``presign_tag_cleared`` (its ``complete``: the tag is gone from every object).
 
     Raises:
         TakedownRefusedError: The actor may not release this file.
@@ -493,6 +499,12 @@ def release_file(
 
     db.commit()
     db.refresh(file)
+    media = MediaSnapshot.of(file)
+    file_id = int(file.id)
+    tenant_visible = file.organization_id is not None
+    lift_object_lock = bool(clear_legal_hold and media.storage_path and not is_held(file))
+    # End the read transaction before the storage round trips below (see quarantine_file).
+    db.commit()
 
     # Release also changes what the corpus may serve (the file is servable
     # again) — same reasoning as the bump in `quarantine_file`. Never raises.
@@ -502,47 +514,31 @@ def release_file(
 
     # The object lock mirrors "held by ANYONE": releasing the platform's hold must not lift it
     # while an organization hold still covers the file (issue #1276).
-    if clear_legal_hold and file.storage_path and not is_held(file):
+    if lift_object_lock and media.storage_path:
         try:
             from app.services.minio_service import set_object_legal_hold
 
-            set_object_legal_hold(str(file.storage_path), False)
+            set_object_legal_hold(media.storage_path, False)
         except Exception as e:  # noqa: BLE001 — advisory; never break the release
             logger.warning(f"Storage legal-hold disable failed for file {file.id}: {e}")
 
-    # Best-effort presigned-URL untag (issue #907), retried — see this function's
-    # docstring for why a failure here is worse than the legal-hold sibling's.
-    # Independent of `clear_legal_hold`, mirroring quarantine_file's tag-on being
-    # independent of `legal_hold`.
-    cleared = True
-    if file.storage_path:
-        cleared = _untag_quarantine_with_retry(str(file.storage_path))
-        if not cleared:
-            logger.error(
-                f"Presign-tag clear FAILED after {_PRESIGN_UNTAG_RETRIES} attempts for file "
-                f"{file.id} ({file.uuid}) — the file is released in the DB but its "
-                "presigned media URL will keep returning 403 until this is retried "
-                "and succeeds."
-            )
-    if file.thumbnail_path and not _untag_quarantine_with_retry(str(file.thumbnail_path)):
-        logger.error(
-            f"Presign-tag clear FAILED after {_PRESIGN_UNTAG_RETRIES} attempts for file "
-            f"{file.id}'s ({file.uuid}) thumbnail."
-        )
-    if file.playback_path and not _untag_quarantine_with_retry(str(file.playback_path)):
-        logger.error(
-            f"Presign-tag clear FAILED after {_PRESIGN_UNTAG_RETRIES} attempts for file "
-            f"{file.id}'s ({file.uuid}) playback rendition — it will not play until retried."
-        )
+    # Presigned-URL untag (issue #907), retried — see this function's docstring for why a
+    # failure here is worse than the legal-hold sibling's. Independent of
+    # `clear_legal_hold`, mirroring quarantine_file's tag-on being independent of `legal_hold`.
+    restoration = settle_file(media, _quarantined_reader(db, file_id))
+    restoration_audit, restoration_error = _audit_revocation(
+        restoration, tenant_visible=tenant_visible
+    )
 
-    # Non-persisted (not a DB column — see the TYPE_CHECKING-only declaration on
-    # MediaFile): the release endpoints read this off the returned object to
-    # report the storage-plane outcome to the caller.
-    file.presign_tag_cleared = cleared
+    # Non-persisted (not DB columns — see the TYPE_CHECKING-only declaration on MediaFile):
+    # the release endpoints read these off the returned object.
+    file.media_revocation = restoration
+    file.presign_tag_cleared = restoration.complete
 
     extra: dict = {
         "cleared_legal_hold": bool(clear_legal_hold),
-        "presign_tag_cleared": bool(cleared),
+        "presign_tag_cleared": restoration.complete,
+        "media_revocation": restoration_audit,
         "previous_origin": previous_origin.value if previous_origin else None,
     }
     if reason:
@@ -556,6 +552,8 @@ def release_file(
         source_ip=source_ip,
         user_agent=user_agent,
         extra=extra,
+        outcome=_revocation_outcome(restoration),
+        error_code=restoration_error,
     )
     logger.info(
         f"File {file.id} ({file.uuid}) released from quarantine by "

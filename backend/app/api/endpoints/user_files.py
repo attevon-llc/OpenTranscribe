@@ -25,6 +25,7 @@ from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
+from app.legal.processing_gate import require_processing_allowed_for_file
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task as TaskModel
@@ -34,6 +35,7 @@ from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.file_provenance_view import build_processing_steps
 from app.services.formatting_service import FormattingService
 from app.services.takedown_service import exclude_quarantined
+from app.services.takedown_service import quarantine_list_exempt
 from app.services.task_recovery_service import task_recovery_service
 from app.utils.db_helpers import owned_in_tenant
 from app.utils.task_utils import get_task_summary_for_media_file
@@ -101,7 +103,7 @@ def get_user_file_status(
             own_in_tenant
         )
         status_query = exclude_quarantined(
-            status_query, include_quarantined=ctx.bypass.user_is_admin
+            status_query, include_quarantined=quarantine_list_exempt(ctx.bypass)
         )
         status_rows = status_query.group_by(MediaFile.status).all()
 
@@ -150,7 +152,7 @@ def get_user_file_status(
         # for uniformity with the other two queries in this handler, and so it stays
         # correct if that filter is ever loosened.
         problem_query = exclude_quarantined(
-            problem_query, include_quarantined=ctx.bypass.user_is_admin
+            problem_query, include_quarantined=quarantine_list_exempt(ctx.bypass)
         )
 
         problem_files = []
@@ -199,7 +201,7 @@ def get_user_file_status(
         # upload would otherwise still report its filename/status/duration here.
         # Applied BEFORE `.limit()` — SQLAlchemy refuses `.filter()` after a LIMIT.
         recent_query = exclude_quarantined(
-            recent_query, include_quarantined=ctx.bypass.user_is_admin
+            recent_query, include_quarantined=quarantine_list_exempt(ctx.bypass)
         ).limit(10)
 
         recent_files = []
@@ -397,6 +399,7 @@ def retry_file_processing(
             min_permission="editor",
         )
         file_id = media_file.id
+        require_processing_allowed_for_file(db, media_file)
 
         # Check if retry is appropriate. A NULL `status` fails this membership test and so
         # lands in this branch — where `.status.value` would raise AttributeError and turn a

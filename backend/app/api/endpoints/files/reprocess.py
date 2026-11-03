@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import ASRConfigurationError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
+from app.legal.processing_gate import require_processing_allowed_for_file
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
@@ -396,6 +397,11 @@ def _dispatch_manual_rediarize(
 
     # The file OWNER's choice and credential: the task detects speakers with them.
     with session_scope() as db:
+        # This publish does not go through dispatch_transcription_pipeline, so it does not
+        # reach _run_pre_dispatch_gate: the legal processing gate is checked here explicitly.
+        media_file = db.query(MediaFile).filter(MediaFile.uuid == file_uuid).first()
+        if media_file is not None:
+            require_processing_allowed_for_file(db, media_file)
         plan = plan_for_user(db, owner_id)
     engine = post_stage_engine(plan.diarization.engine)
     rediarize_task.apply_async(
@@ -534,7 +540,12 @@ def dispatch_selective_tasks(
 
 
 def refuse_reprocess_if_held(
-    db: Session, file_id: int, *, actor: User | None = None, action: str = "reprocess"
+    db: Session,
+    file_id: int,
+    *,
+    actor: User | None = None,
+    action: str = "reprocess",
+    message: str | None = None,
 ) -> None:
     """409 ``FILE_UNDER_LEGAL_HOLD`` when the file is held by the platform or an organization.
 
@@ -564,7 +575,7 @@ def refuse_reprocess_if_held(
                 )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=refusal_detail(state, reveal_uuids=False, message=REPROCESS_REFUSAL),
+            detail=refusal_detail(state, reveal_uuids=False, message=message or REPROCESS_REFUSAL),
         )
 
 
@@ -624,6 +635,9 @@ def process_file_reprocess(
         file_id = media_file.id  # Get internal ID for task operations
 
         refuse_reprocess_if_held(db, int(file_id), actor=current_user)
+        # The legal processing gate, for the file OWNER, before anything is cancelled,
+        # cleared or dispatched. Covers every stage, including the AI ones.
+        require_processing_allowed_for_file(db, media_file)
 
         # Check if file is currently processing
         if media_file.status == FileStatus.PROCESSING and media_file.active_task_id:

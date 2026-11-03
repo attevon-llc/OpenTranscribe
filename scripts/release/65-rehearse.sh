@@ -1,6 +1,7 @@
 #!/bin/bash
-# The three release scenarios: fresh install, upgrade from the previous release,
-# and the lite (CPU-only, cloud-ASR) deployment.
+# The four release scenarios: D the model downloader from a cold cache, then A fresh
+# install, B upgrade from the previous release, and C the lite (CPU-only, cloud-ASR)
+# deployment. D runs first because A seeds its model cache from D's output.
 #
 # This is the stage that proves the release, and the only one that needs the live
 # stack STOPPED — the scenarios run under the installer's stock container names
@@ -23,6 +24,10 @@
 #
 # It publishes nothing: test-lite-mode.sh builds the lite image locally and pins
 # pull_policy: never, so it needs no Docker Hub artifact and creates none.
+#
+# Scenario D (test-cold-model-download.sh) needs no stopped stack and binds nothing; it is
+# here because a fresh install is the moment a real user runs the downloader, and every
+# other scenario skips it (unattended install + seeded cache). See that script's header.
 #
 # Exit: 0 all scenarios passed · 1 a scenario failed · 3 live stack still running ·
 #       4 operator declined a scenario's confirmation prompt (nothing ran —
@@ -121,7 +126,16 @@ teardown_scenario_stack_on_interrupt() {
     fi
 }
 
+# D's cache is several GB, written as uid 1000. Removed (evidence kept) once Scenario A has
+# seeded from it, and from the EXIT trap on every other path.
+purge_cold_cache() {
+    [[ -n "$COLD_CACHE_ROOT" && -d "$COLD_CACHE_ROOT/cache" ]] || return 0
+    TEST_ROOT="$COLD_CACHE_ROOT" ./scripts/release-tests/test-cold-model-download.sh --purge-cache --yes >/dev/null 2>&1 \
+        || echo -e "${YELLOW}could not remove $COLD_CACHE_ROOT/cache — remove it by hand${NC}" >&2
+}
+
 restore_live_stack() {
+    purge_cold_cache
     # Runs before the dev-stack restart on purpose: the scenario stack binds the SAME stock
     # ports the dev stack wants, so starting dev first would race it.
     teardown_scenario_stack_on_interrupt
@@ -141,6 +155,15 @@ restore_live_stack() {
 # On EXIT so an aborted or failed scenario still puts the host back. INT/TERM too: a
 # Ctrl-C mid-rehearsal used to leave the operator's stack down with no hint why.
 trap restore_live_stack EXIT INT TERM
+
+# Scenario D (cold-cache model download). Its criteria are read from the evidence it writes
+# under COLD_CACHE_ROOT, via the same oracle the scenario uses, so this stage and the
+# scenario's own REPORT.md cannot disagree. An unset COLD_CACHE_ROOT (a --patch waiver) leaves
+# every D criterion not-measured, never a pass. A caller-supplied root is honoured but must be
+# EMPTY: the scenario refuses a reused root, because a warm cache is not a cold one.
+cold_rc=0
+COLD_CACHE_ROOT="${COLD_CACHE_ROOT:-}"
+COLD_CACHE_ORACLE="$REPO_ROOT/scripts/release-tests/lib/cold-model-download.py"
 
 if [[ -n "$live_stack_names" ]]; then
     # Automating the stop/restart dance, but NOT the decision. Taking someone's deployment
@@ -171,7 +194,31 @@ if [[ -n "$live_stack_names" ]]; then
         # unchecked, and reporting that as wiring drift would bury the real reason.
         exit 3
     fi
+fi
 
+# Scenario D runs HERE: after the stop was approved, before anything is stopped. It binds no
+# port and uses no stock container name, so its ~10 minutes are not downtime for the live
+# stack. Scenario A, later, installs from what it produced.
+# --- BEGIN cold-cache-scenario ---
+if [[ -z "$PATCH_SKIP_REASON" ]]; then
+    echo -e "${BLUE}Scenario D — cold-cache model download (CPU, empty cache, the image under test)${NC}" >&2
+    COLD_CACHE_ROOT="${COLD_CACHE_ROOT:-/mnt/nvm/opentranscribe-test-runs/ot-reltest-coldcache-$(date +%Y%m%d-%H%M%S)}"
+    TEST_ROOT="$COLD_CACHE_ROOT" ./scripts/release-tests/test-cold-model-download.sh --yes || cold_rc=$?
+    # Seed A only from a cache that passed EVERY D criterion: a run whose downloads exited 0
+    # but left weights missing, or whose nltk tree is suspect, would hand A the gap.
+    cold_all_pass=true
+    for cold_criterion in download weights nltk-hardlink; do
+        cold_seen="$(python3 "$COLD_CACHE_ORACLE" outcome --root "$COLD_CACHE_ROOT" --criterion "$cold_criterion" || true)"
+        [[ "${cold_seen%%$'\t'*}" == "pass" ]] || cold_all_pass=false
+    done
+    if [[ "$cold_all_pass" == "true" ]]; then
+        export OT_COLD_CACHE_SEED="$COLD_CACHE_ROOT/cache"
+        echo -e "${GREEN}Scenario A will seed its model cache from Scenario D's cold download${NC}" >&2
+    fi
+fi
+# --- END cold-cache-scenario ---
+
+if [[ -n "$live_stack_names" ]]; then
     echo -e "${BLUE}Stopping the live stack (data preserved), will restart afterwards...${NC}" >&2
     # ./opentr.sh stop, never docker kill/pkill: a SIGKILLed CUDA context does not always
     # release the device, and that has required a full machine restart here twice.
@@ -337,8 +384,11 @@ else
     export TO_BRANCH
     echo -e "${BLUE}Rehearsing the deployment files from branch: ${TO_BRANCH}${NC}" >&2
 
+
     echo -e "${BLUE}Scenario A — fresh install${NC}" >&2
     ./scripts/release-tests/test-fresh-install.sh --yes || fresh_rc=$?
+    # A has copied (hardlinked or real-copied) what it needed; D's evidence stays, its GB go.
+    purge_cold_cache
 
     teardown_scenario "Scenario A" ./scripts/release-tests/test-fresh-install.sh || upgrade_rc=$?
 
@@ -417,6 +467,48 @@ record lite-mode "$(scenario_outcome "$lite_rc" "$PATCH_SKIP_REASON")" \
     "${PATCH_SKIP_REASON:-test-lite-mode.sh rc=$lite_rc}" \
     "read the REPORT.md under its TEST_ROOT" "${PATCH_SKIP_REASON:+waived}"
 
+# Scenario D, one criterion per question so a red one names what broke. Each reads the
+# scenario's evidence through the oracle; a missing file is not-measured, never a pass.
+# --- BEGIN cold-cache-record ---
+cold_outcome() {
+    local criterion="$1" line
+    if [[ -n "$PATCH_SKIP_REASON" ]]; then
+        printf 'not-measured\t%s\n' "$PATCH_SKIP_REASON"
+        return
+    fi
+    if [[ -z "$COLD_CACHE_ROOT" ]]; then
+        printf 'not-measured\tScenario D did not run\n'
+        return
+    fi
+    if ! line="$(python3 "$COLD_CACHE_ORACLE" outcome --root "$COLD_CACHE_ROOT" --criterion "$criterion")"; then
+        printf 'not-measured\tthe cold-cache oracle could not read %s\n' "$COLD_CACHE_ROOT"
+        return
+    fi
+    printf '%s\n' "$line"
+}
+cold_fix="read $COLD_CACHE_ROOT/REPORT.md and groups/<group>.log"
+# The stage's exit code must agree with what is recorded. D's own exit status normally does,
+# but the evidence is the authority: a scenario that exited 0 having written no TSV (or a
+# failing one) must not leave this stage at 0 beside a blocking criterion it failed.
+cold_derived=0
+cold_tally() {
+    case "${1%%$'\t'*}" in
+        fail)         cold_derived=1 ;;
+        not-measured) (( cold_derived == 1 )) || cold_derived=3 ;;
+    esac
+}
+cold_line="$(cold_outcome download)"; cold_tally "$cold_line"
+record cold-cache-model-download "${cold_line%%$'\t'*}" "${cold_line#*$'\t'}" "$cold_fix" "${PATCH_SKIP_REASON:+waived}"
+cold_line="$(cold_outcome weights)"; cold_tally "$cold_line"
+record cold-cache-weights-present "${cold_line%%$'\t'*}" "${cold_line#*$'\t'}" "$cold_fix" "${PATCH_SKIP_REASON:+waived}"
+cold_line="$(cold_outcome nltk-hardlink)"; cold_tally "$cold_line"
+record cold-cache-nltk-hardlinks-fail-loudly "${cold_line%%$'\t'*}" "${cold_line#*$'\t'}" "$cold_fix" "${PATCH_SKIP_REASON:+waived}"
+# A --patch waiver is recorded waived (a warning), exactly like A-C, and moves no exit code.
+if [[ -z "$PATCH_SKIP_REASON" && $cold_rc -eq 0 ]]; then
+    cold_rc=$cold_derived
+fi
+# --- END cold-cache-record ---
+
 # Both halves of the contract: every declared criterion was recorded above.
 criteria_assert_all_checked
 
@@ -429,14 +521,14 @@ criteria_assert_all_checked
 # rehearsal had run and failed, when none had run at all. `record` above reports; it
 # deliberately does not decide the exit code, so declaring criteria did not change 0/1/3/4.
 rc=0
-if [[ $fresh_rc -eq 4 || $upgrade_rc -eq 4 || $lite_rc -eq 4 || $lite_teardown_rc -eq 4 ]]; then
+if [[ $fresh_rc -eq 4 || $upgrade_rc -eq 4 || $lite_rc -eq 4 || $lite_teardown_rc -eq 4 || $cold_rc -eq 4 ]]; then
     rc=4
-elif [[ $fresh_rc -eq 3 || $upgrade_rc -eq 3 || $lite_rc -eq 3 || $lite_teardown_rc -eq 3 ]]; then
+elif [[ $fresh_rc -eq 3 || $upgrade_rc -eq 3 || $lite_rc -eq 3 || $lite_teardown_rc -eq 3 || $cold_rc -eq 3 ]]; then
     rc=3
-elif [[ $fresh_rc -ne 0 || $upgrade_rc -ne 0 || $lite_rc -ne 0 || $lite_teardown_rc -ne 0 ]]; then
+elif [[ $fresh_rc -ne 0 || $upgrade_rc -ne 0 || $lite_rc -ne 0 || $lite_teardown_rc -ne 0 || $cold_rc -ne 0 ]]; then
     rc=1
 fi
-[[ $rc -eq 0 ]] && echo -e "${GREEN}all three scenarios passed${NC}" >&2
+[[ $rc -eq 0 ]] && echo -e "${GREEN}all four scenarios passed${NC}" >&2
 
 if [[ "$JSON_OUT" == "true" ]]; then
     printf '{"stage":"rehearse","version":"%s","status":"%s","criteria":[%s],"next":%s}\n' \

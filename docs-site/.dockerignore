@@ -48,3 +48,8 @@ Dockerfile*
 *.log
 .cache/
 .npm/
+
+# Dev artifacts that must never reach the build context (see scripts/check-image-hygiene.sh)
+**/*.db
+**/*.sqlite
+**/*.sqlite3

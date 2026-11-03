@@ -32,9 +32,6 @@ CONTENT_GUARDS: dict[str, str] = {
     "DELETE /api/speaker-profiles/profiles/{profile_uuid}": "caller",
     "DELETE /api/speaker-profiles/profiles/{profile_uuid}/avatar": "caller",
     "DELETE /api/speakers/{speaker_uuid}": "bypass",
-    "DELETE /api/tags": "bypass-scope",
-    "DELETE /api/tags/cleanup": "bypass-scope",
-    "DELETE /api/tags/files/{file_uuid}/tags/{tag_name}": "bypass",
     "DELETE /api/watch-sources/{source_uuid}": "caller",
     "DELETE /api/watch-sources/{source_uuid}/emails/{config_uuid}": "caller",
     "DELETE /api/watch-sources/{source_uuid}/files/{file_uuid}": "caller",
@@ -72,6 +69,8 @@ CONTENT_GUARDS: dict[str, str] = {
     "GET /api/files/{file_uuid}/waveform/peaks": "bypass",
     "GET /api/groups": "caller",
     "GET /api/groups/{group_uuid}": "caller",
+    "GET /api/legal/acknowledgments": "caller",
+    "GET /api/legal/documents": "caller",
     "GET /api/llm-settings": "caller",
     "GET /api/llm-settings/config/{config_uuid}": "caller",
     "GET /api/llm-settings/config/{config_uuid}/context-window": "caller",
@@ -99,7 +98,7 @@ CONTENT_GUARDS: dict[str, str] = {
     "GET /api/speakers/{speaker_uuid}/cross-media": "bypass",
     "GET /api/tags": "caller",
     "GET /api/tags/collisions": "caller",
-    "GET /api/tags/for-files": "caller",
+    "GET /api/tags/for-files": "bypass",
     "GET /api/tags/impact": "bypass-scope",
     "GET /api/tags/unused": "caller",
     "GET /api/tags/{tag_uuid}/files": "bypass",
@@ -118,7 +117,6 @@ CONTENT_GUARDS: dict[str, str] = {
     "GET /api/watch-sources/{source_uuid}/emails/available": "caller",
     "GET /api/watch-sources/{source_uuid}/files": "caller",
     "GET /api/watch-sources/{source_uuid}/files/stats": "caller",
-    "PATCH /api/tags/{tag_uuid}": "bypass-scope",
     "POST /api/asr-settings/set-active": "caller",
     "POST /api/asr-settings/test-config/{config_uuid}": "caller",
     "POST /api/collections/{collection_uuid}/media": "caller",
@@ -126,20 +124,13 @@ CONTENT_GUARDS: dict[str, str] = {
     "POST /api/comments/files/{file_uuid}/comments": "bypass",
     "POST /api/custom-vocabulary": "caller",
     "POST /api/custom-vocabulary/bulk": "caller",
-    "POST /api/files/batch-extract": "bypass",
     "POST /api/files/management/bulk-action": "bypass",
-    "POST /api/files/retroactive-auto-label": "caller",
+    "POST /api/legal/acknowledgments": "bypass",
     "POST /api/files/{file_uuid}/analytics/refresh": "bypass",
-    "POST /api/files/{file_uuid}/apply": "bypass",
-    "POST /api/files/{file_uuid}/auto-label": "bypass",
     "POST /api/files/{file_uuid}/cancel": "bypass",
-    "POST /api/files/{file_uuid}/extract": "bypass",
-    "POST /api/files/{file_uuid}/identify-speakers": "bypass",
     "POST /api/files/{file_uuid}/recover": "bypass",
     "POST /api/files/{file_uuid}/reprocess": "bypass",
     "POST /api/files/{file_uuid}/retry": "bypass",
-    "POST /api/files/{file_uuid}/retry-summary": "bypass",
-    "POST /api/files/{file_uuid}/summarize": "bypass",
     "POST /api/files/{file_uuid}/waveform/generate": "bypass",
     "POST /api/groups": "caller",
     "POST /api/groups/{group_uuid}/members": "caller",
@@ -167,9 +158,6 @@ CONTENT_GUARDS: dict[str, str] = {
     "POST /api/speakers/{speaker_uuid}/confirm-gender": "bypass",
     "POST /api/speakers/{speaker_uuid}/merge/{target_speaker_uuid}": "bypass",
     "POST /api/speakers/{speaker_uuid}/verify": "bypass",
-    "POST /api/tags/files/{file_uuid}/tags": "bypass",
-    "POST /api/tags/promote": "bypass-scope",
-    "POST /api/tags/{tag_uuid}/merge": "bypass-scope",
     "POST /api/tasks/retry/{file_uuid}": "bypass",
     "POST /api/user-settings/organization-context/use-shared": "caller",
     "POST /api/watch-sources/{source_uuid}/emails": "caller",
@@ -226,14 +214,13 @@ INLINE_ROLE_ROUTES: dict[str, tuple[str, str]] = {
         "settings",
         "the role only decides which cloud providers the catalog lists; no tenant content",
     ),
-    "GET /api/files/{file_uuid}/thumbnail": (
-        "content-optional-auth",
-        "optional-auth route; the role only decides takedown-review visibility, and the file is "
-        "decided by the chokepoint (see this handler's allows and grant-resolver site rows)",
-    ),
     "POST /api/legal/acknowledgments": (
         "settings",
         "only a super_admin may accept the operator acknowledgment; deployment-level record",
+    ),
+    "GET /api/legal/acknowledgments": (
+        "account-admin",
+        "the role test (platform admin, or org admin for organization=current) only decides which acceptance records are listed; the organization form is filtered on ctx.org_id; the rows carry the accepting account's email and document versions, never tenant media or transcripts",
     ),
     "DELETE /api/admin/users/{user_uuid}": (
         "account-admin",
@@ -317,6 +304,9 @@ INLINE_ROLE_ROUTES: dict[str, tuple[str, str]] = {
 #: an admin reveal unredacted text (``reveal-widener``), keyed ``rel::function``. A widener in a
 #: function that is not listed is ``UNCLASSIFIED``: a new widener is a new decision.
 SCOPE_WIDENER_SITES: dict[str, str] = {
+    "services/takedown_predicates.py::quarantine_list_exempt": (
+        "decides only whether a list may include quarantined rows; the list's own tenant and organization predicates are applied by the caller"
+    ),
     "api/endpoints/files/__init__.py::list_media_files": (
         "widens a list to every user's rows; the gallery list drops the owner filter but keeps the organization predicate"
     ),
@@ -384,6 +374,7 @@ REVEAL_WIDENER_SITES: dict[str, str] = {
 #: ``test_every_scope_widener_still_applies_its_tenant_predicate``. An empty tuple means the
 #: tenant gate is applied by the caller, and the site's reason says where.
 TENANT_MARKERS: dict[str, tuple[str, ...]] = {
+    "services/takedown_predicates.py::quarantine_list_exempt": (),
     "api/endpoints/files/__init__.py::list_media_files": ("org_pred",),
     "api/endpoints/files/filtering.py::get_accessible_owners": ("org_pred",),
     "api/endpoints/search.py::get_degraded_embeddings": ("org_scope_pred",),

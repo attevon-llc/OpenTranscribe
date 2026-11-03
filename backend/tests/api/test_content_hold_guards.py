@@ -28,6 +28,7 @@ from app.services import file_cleanup_service
 from app.services.hold_guard import held_pred
 from app.services.hold_guard import hold_state
 from app.services.hold_guard import not_held_pred
+from app.services.minio_service import QuarantineTagWrite
 
 REASON = "Litigation matter 2026-14"
 
@@ -398,7 +399,15 @@ def test_releasing_the_platforms_hold_does_not_lift_the_object_lock_an_org_hold_
         return True
 
     with (
-        patch("app.services.minio_service.set_object_quarantine_tag", return_value=True),
+        patch(
+            "app.services.minio_service.write_object_quarantine_tag",
+            return_value=QuarantineTagWrite("applied"),
+        ),
+        patch(
+            "app.services.storage_presign_identity.presign_identity_available",
+            return_value=True,
+        ),
+        patch("app.services.media_revocation_cache.remove_cache_copies", return_value=[]),
         patch("app.services.minio_service.set_object_legal_hold", side_effect=_record_lock),
     ):
         quarantine_file(

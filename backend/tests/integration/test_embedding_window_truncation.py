@@ -94,10 +94,17 @@ def embedder():
     # OpenSearch is reachable, so a transport error here is a real failure and must be
     # seen as one. Only the *absence of a model* is a legitimate skip, and that is an
     # empty hit list, not an exception.
+    # Only a DEPLOYED model can embed: a cluster may also hold an undeployed duplicate of the
+    # same name (a retried registration), which `match_all` could list first. Chunk documents
+    # of a model carry no model_state, so this also excludes them.
     found = client.transport.perform_request(
         "POST",
         "/_plugins/_ml/models/_search",
-        body={"query": {"match_all": {}}, "size": 1, "_source": ["model_id"]},
+        body={
+            "query": {"term": {"model_state": "DEPLOYED"}},
+            "size": 1,
+            "_source": ["model_id"],
+        },
     )
     hits = found["hits"]["hits"]
     if not hits:
@@ -105,7 +112,7 @@ def embedder():
             "OpenSearch is up but no ML Commons model is deployed; there is nothing to "
             "measure the truncation of"
         )
-    model_id = hits[0]["_source"]["model_id"]
+    model_id = hits[0]["_id"]
 
     def _embed(texts: list[str]) -> list[list[float]]:
         response = client.transport.perform_request(

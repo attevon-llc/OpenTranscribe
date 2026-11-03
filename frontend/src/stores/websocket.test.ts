@@ -47,6 +47,7 @@ vi.mock('$stores/locale', async () => {
 import { FakeWebSocket, installFakeWebSocket, restoreWebSocket } from '../test-mocks/fakeWebSocket';
 import { websocketStore, unreadCount, connectionStatus } from './websocket';
 import { apiCache, CacheTTL } from '$lib/apiCache';
+import axiosInstance from '$lib/axios';
 
 function openSocket(): FakeWebSocket {
   websocketStore.connect();
@@ -181,6 +182,54 @@ describe('websocket connection lifecycle', () => {
     expect(socket.closedWith?.[0]).toBe(1000);
     expect(get(websocketStore).status).toBe('disconnected');
     expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+});
+
+describe('websocket refusal close codes are terminal', () => {
+  const authMeCalls = () =>
+    vi.mocked(axiosInstance.get).mock.calls.filter(([url]) => url === '/auth/me');
+
+  beforeEach(() => {
+    vi.mocked(axiosInstance.get).mockClear();
+  });
+
+  it.each([4001, 4002, 4003])(
+    'does NOT reconnect after %i and probes the session once',
+    async (code) => {
+      const socket = openSocket();
+      vi.mocked(axiosInstance.get).mockRejectedValueOnce(new Error('401'));
+
+      socket.simulateServerClose(code, 'refused');
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(FakeWebSocket.instances).toHaveLength(1);
+      expect(authMeCalls()).toHaveLength(1);
+      expect(get(websocketStore).status).toBe('error');
+    }
+  );
+
+  it('does not probe the session after 4403 (origin refusal)', async () => {
+    const socket = openSocket();
+
+    socket.simulateServerClose(4403, 'origin');
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(authMeCalls()).toHaveLength(0);
+  });
+
+  it('reconnects once if the probe succeeds, and not again on a second refusal', async () => {
+    const socket = openSocket();
+    vi.mocked(axiosInstance.get).mockResolvedValue({ data: {} });
+
+    socket.simulateServerClose(4003, 'refused');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+
+    FakeWebSocket.latest().simulateServerClose(4003, 'refused');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(authMeCalls()).toHaveLength(1);
   });
 });
 

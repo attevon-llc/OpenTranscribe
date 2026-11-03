@@ -37,7 +37,7 @@ from pydantic import model_validator
 from app.core import constants
 
 #: Every layer a decision can be locked by. ``consent`` only ever appears for voiceprint creation.
-PrivacyLayer = Literal["platform", "instance", "organization", "user", "consent"]
+PrivacyLayer = Literal["platform", "instance", "organization", "user", "consent", "file"]
 #: The layers ABOVE a user's own switch, i.e. the ones that can lock it.
 UserLockLayer = Literal["platform", "instance", "organization"]
 #: What a purge deletes. ``voiceprints`` is every stored embedding and what is derived from it;
@@ -77,6 +77,14 @@ class InstancePrivacyPolicy(BaseModel):
 
     voiceprint_matching_enabled: bool
     gender_inference_enabled: bool
+    voiceprint_upload_consent_required: bool = Field(
+        default=False,
+        description=(
+            "When on, a file is treated as opted out of voice identification unless its "
+            "uploader recorded 'granted'. Existing files are 'unspecified', so turning this on "
+            "hides their voiceprints; nothing is deleted."
+        ),
+    )
 
 
 class InstancePrivacyPolicyUpdate(BaseModel):
@@ -84,8 +92,14 @@ class InstancePrivacyPolicyUpdate(BaseModel):
 
     voiceprint_matching_enabled: bool | None = None
     gender_inference_enabled: bool | None = None
+    voiceprint_upload_consent_required: bool | None = None
 
-    @field_validator("voiceprint_matching_enabled", "gender_inference_enabled", mode="before")
+    @field_validator(
+        "voiceprint_matching_enabled",
+        "gender_inference_enabled",
+        "voiceprint_upload_consent_required",
+        mode="before",
+    )
     @classmethod
     def _no_coercion(cls, value: object) -> object:
         # "no" or 0 must not silently read as False on a switch that hides biometric data.
@@ -338,4 +352,12 @@ class PurgeStatus(BaseModel):
     audit: list[PurgeAuditRef] = Field(
         default_factory=list,
         description="The audit events (one per target) that record this purge, with its counts.",
+    )
+    reason: str | None = Field(
+        default=None,
+        description=(
+            "Why a purge ended without running, as a neutral code. `files_protected`: every "
+            "recording in scope is under a legal hold or has been taken down, so nothing was "
+            "deleted. Absent otherwise."
+        ),
     )

@@ -29,6 +29,7 @@ from app.services.task_row_supersede import reopen_if_slot_free
 from app.utils.error_classification import get_retry_delay
 from app.utils.error_classification import should_retry
 from app.utils.error_classification import stored_category
+from app.utils.task_utils import reset_file_for_retry
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
 
@@ -67,37 +68,6 @@ class TaskRecoveryService:
     def __init__(self, config=None):
         """Initialize with optional configuration override."""
         self.config = config or task_recovery_config
-
-    def _cleanup_transcript_segments(self, db: Session, file_id: int) -> int:
-        """
-        Delete all transcript segments for a file before retry.
-
-        This prevents duplicate segments when transcription is retried due to
-        recovery, errors, or manual reprocessing.
-
-        Args:
-            db: Database session
-            file_id: Media file ID
-
-        Returns:
-            Number of segments deleted
-        """
-        from app.models.media import TranscriptSegment
-
-        segment_count: int = (
-            db.query(TranscriptSegment).filter(TranscriptSegment.media_file_id == file_id).count()
-        )
-
-        if segment_count > 0:
-            db.query(TranscriptSegment).filter(TranscriptSegment.media_file_id == file_id).delete(
-                synchronize_session=False
-            )
-            logger.info(
-                f"Deleted {segment_count} existing segments for file {file_id} before retry"
-            )
-            db.flush()
-
-        return segment_count
 
     def recover_stuck_task(self, db: Session, task: Task, requeue: bool = True) -> bool:
         """
@@ -249,7 +219,8 @@ class TaskRecoveryService:
 
         For files stuck in PROCESSING:
         - If transcription completed: Mark as COMPLETED (no segment deletion)
-        - If transcription incomplete: Reset to PENDING and delete segments
+        - If transcription incomplete: Reset to PENDING through ``reset_file_for_retry``, which
+          leaves a held file or an unregenerable transcript untouched
 
         Args:
             db: Database session
@@ -278,8 +249,10 @@ class TaskRecoveryService:
                         f"{media_file.filename}"
                     )
 
-                    # Delete existing transcript segments to prevent duplicates on retry
-                    self._cleanup_transcript_segments(db, int(media_file.id))
+                    # The guarded reset refuses a held file or an unregenerable transcript;
+                    # the file then stays as found.
+                    if not reset_file_for_retry(db, int(media_file.id)):
+                        continue
 
                     update_media_file_status(db, int(media_file.id), FileStatus.PENDING)
                     stats["files_reset"] += 1
@@ -618,8 +591,10 @@ class TaskRecoveryService:
                     f"Recovering stuck download for file {media_file.id}: {media_file.filename}"
                 )
 
-                # Delete any partial data from failed download
-                self._cleanup_transcript_segments(db, int(media_file.id))
+                # The guarded reset refuses a held file or an unregenerable transcript;
+                # the file then stays as found.
+                if not reset_file_for_retry(db, int(media_file.id)):
+                    continue
 
                 # Reset to QUEUED so download task can retry
                 update_media_file_status(db, int(media_file.id), FileStatus.QUEUED)

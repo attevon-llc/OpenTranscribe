@@ -20,6 +20,7 @@ from app.api.endpoints.files.upload import create_media_file_record
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
+from app.legal.processing_gate import require_processing_allowed
 from app.models.media import CollectionMember
 from app.models.media import FileTag
 from app.models.media import MediaFile
@@ -27,6 +28,7 @@ from app.models.upload_batch import UploadBatch
 from app.models.user import User
 from app.schemas.media import PrepareUploadRequest
 from app.services.collection_visibility import usable_collections
+from app.services.privacy import file_consent
 from app.services.tag_service import on_tags_changed
 from app.services.tag_service import resolve_or_create_tags
 from app.utils import benchmark_timing
@@ -268,6 +270,9 @@ def create_prepared_record(
     db_file.requested_num_speakers = request.num_speakers  # type: ignore[assignment]
     db_file.requested_disable_diarization = True if request.disable_diarization else None  # type: ignore[assignment]
 
+    # The uploader's stated voiceprint consent (issue #1356), recorded with the row and who said it.
+    file_consent.stamp_new_file(db_file, request.voiceprint_consent, int(current_user.id))
+
     db.flush()
 
     # If this is extracted audio, store the video metadata in metadata_important
@@ -323,6 +328,13 @@ async def prepare_upload(
     upload bytes directly to MinIO, bypassing the API container entirely.
     """
     current_user = ctx.user
+    # The legal processing gate, before any row or presigned URL exists. The caller will own
+    # the file, in the request's tenant.
+    await run_in_threadpool(
+        lambda: require_processing_allowed(
+            db, owner_user_id=int(current_user.id), organization_id=ctx.org_id
+        )
+    )
     # The capability resolver may query the database; keep it off the event loop.
     requested_whisper_model = await run_in_threadpool(
         lambda: require_servable_whisper_model(

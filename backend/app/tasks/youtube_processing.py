@@ -30,6 +30,10 @@ from app.tasks.transcription import dispatch_transcription_pipeline
 from app.utils import benchmark_timing
 from app.utils.error_classification import RETRIABLE_CATEGORIES
 from app.utils.error_classification import categorize_error
+from app.utils.task_secret_handoff import TaskSecretUnavailableError
+from app.utils.task_secret_handoff import discard_task_secret
+from app.utils.task_secret_handoff import fetch_task_secret
+from app.utils.task_secret_handoff import media_credentials_context
 from app.utils.task_utils import update_media_file_status
 from app.utils.websocket_notify import send_ws_event_for_file
 
@@ -120,6 +124,61 @@ class YouTubeProcessingResult(TypedDict):
     file_id: int
 
 
+def _apply_pre_download_jitter() -> None:
+    """Sleep a random interval before downloading (avoids bot detection)."""
+    if not settings.YOUTUBE_PRE_DOWNLOAD_JITTER_ENABLED:
+        return
+    import random
+    import time
+
+    jitter_seconds = random.uniform(  # noqa: S311  # nosec B311
+        settings.YOUTUBE_PRE_DOWNLOAD_JITTER_MIN_SECONDS,
+        settings.YOUTUBE_PRE_DOWNLOAD_JITTER_MAX_SECONDS,
+    )
+
+    logger.info(f"Applying pre-download jitter: {jitter_seconds:.1f}s")
+    time.sleep(jitter_seconds)
+
+
+def _apply_collections_and_tags(
+    db, file_id: int, user_id: int, collection_ids: list[str] | None, tag_names: list[str] | None
+) -> None:
+    """Assign the downloaded file to the requested collections and tags."""
+    if not (collection_ids or tag_names):
+        return
+    from uuid import UUID as _UUID
+
+    from app.api.endpoints.files.prepare_upload import add_file_to_collections
+    from app.api.endpoints.files.prepare_upload import add_tags_to_file
+
+    if collection_ids:
+        add_file_to_collections(db, file_id, user_id, [_UUID(c) for c in collection_ids])
+    if tag_names:
+        # Background task: the tag belongs to the file owner.
+        add_tags_to_file(db, file_id, tag_names, user_id)
+    db.commit()
+
+
+def _load_media_credentials(
+    ref: str, user_id: int, file_id: int, file_uuid: str
+) -> tuple[dict[str, str], YouTubeProcessingResult | None]:
+    """Fetch the handed-off credentials, or fail the file with a non-secret message."""
+    try:
+        return fetch_task_secret(ref, context=media_credentials_context(user_id, file_uuid)), None
+    except TaskSecretUnavailableError as exc:
+        reason = str(exc)
+        with session_scope() as db:
+            update_media_file_status(db, file_id, FileStatus.ERROR)
+        send_youtube_notification_via_redis(
+            user_id=user_id,
+            file_id=file_id,
+            status=FileStatus.ERROR,
+            message=reason,
+            progress=0,
+        )
+        return {}, {"status": "error", "message": reason, "file_id": file_id}
+
+
 @celery_app.task(
     name="download.media_url",
     bind=True,
@@ -135,8 +194,7 @@ def process_youtube_url_task(
     url: str,
     user_id: int,
     file_uuid: str,
-    media_username: str | None = None,
-    media_password: str | None = None,
+    media_credentials_ref: str | None = None,
     collection_ids: list[str] | None = None,
     tag_names: list[str] | None = None,
     video_quality: str | None = None,
@@ -158,8 +216,8 @@ def process_youtube_url_task(
         url: YouTube URL to process.
         user_id: ID of the user who initiated the request.
         file_uuid: UUID of the MediaFile record to update.
-        media_username: Optional username for authenticated media downloads.
-        media_password: Optional password for authenticated media downloads.
+        media_credentials_ref: Optional opaque reference to credentials held encrypted in
+            Redis for a short time (utils/task_secret_handoff.py); never the credentials.
         video_quality: Optional video quality override (e.g., "best", "1080p", "720p").
             If None, uses user's saved preference from the database.
         audio_only: Optional override to download only audio (no video stream).
@@ -174,9 +232,14 @@ def process_youtube_url_task(
     Raises:
         Exception: Any error during processing will be caught and returned in result dict.
     """
+    from app.legal.processing_gate import check_processing_allowed_for_file
+    from app.legal.processing_gate import mark_file_refused
     from app.utils.uuid_helpers import get_file_by_uuid
 
     file_id = None  # Initialize to handle exceptions before file_id is assigned
+    media_username: str | None = None
+    media_password: str | None = None
+    keep_credentials = False  # True only while a retry still needs the stored credentials
 
     # Mint the application task_id at task ingress so every subsequent stage
     # (download, thumbnail, MinIO put, DB commit, preprocess, GPU, postprocess)
@@ -195,18 +258,7 @@ def process_youtube_url_task(
     try:
         logger.info(f"Starting YouTube processing task for URL: {url}, file_uuid: {file_uuid}")
 
-        # Apply pre-download jitter (random delay to avoid bot detection)
-        if settings.YOUTUBE_PRE_DOWNLOAD_JITTER_ENABLED:
-            import random
-            import time
-
-            jitter_seconds = random.uniform(  # noqa: S311  # nosec B311
-                settings.YOUTUBE_PRE_DOWNLOAD_JITTER_MIN_SECONDS,
-                settings.YOUTUBE_PRE_DOWNLOAD_JITTER_MAX_SECONDS,
-            )
-
-            logger.info(f"Applying pre-download jitter: {jitter_seconds:.1f}s")
-            time.sleep(jitter_seconds)
+        _apply_pre_download_jitter()
 
         # Resolve UUID to internal integer ID in a short-lived session.
         # A separate session is used intentionally: the notification below
@@ -215,6 +267,22 @@ def process_youtube_url_task(
         with session_scope() as db:
             media_file = get_file_by_uuid(db, file_uuid)
             file_id = int(media_file.id)
+            # The legal processing gate, BEFORE anything is downloaded: the setting may have
+            # changed since the route checked, and recovery re-queues this task directly.
+            refusal = check_processing_allowed_for_file(db, media_file)
+            if refusal is not None:
+                mark_file_refused(db, file_id, refusal)
+                logger.info(f"URL import of {file_uuid} refused: {refusal.message}")
+                return {"status": "skipped", "message": refusal.message, "file_id": file_id}
+
+        if media_credentials_ref:
+            stored, failure = _load_media_credentials(
+                media_credentials_ref, user_id, file_id, file_uuid
+            )
+            if failure is not None:
+                return failure
+            media_username = stored.get("media_username")
+            media_password = stored.get("media_password")
 
         # Send initial processing notification (needs file_id from above)
         send_youtube_notification_via_redis(
@@ -293,21 +361,7 @@ def process_youtube_url_task(
                 with benchmark_timing.stage(task_id, "db_commit"):
                     db.commit()
 
-                # Apply collections and tags if specified
-                if collection_ids or tag_names:
-                    from app.api.endpoints.files.prepare_upload import add_file_to_collections
-                    from app.api.endpoints.files.prepare_upload import add_tags_to_file
-
-                    if collection_ids:
-                        from uuid import UUID as _UUID
-
-                        add_file_to_collections(
-                            db, file_id, user_id, [_UUID(c) for c in collection_ids]
-                        )
-                    if tag_names:
-                        # Background task: the tag belongs to the file owner.
-                        add_tags_to_file(db, file_id, tag_names, user_id)
-                    db.commit()
+                _apply_collections_and_tags(db, file_id, user_id, collection_ids, tag_names)
 
                 # Send completion notification
                 send_youtube_notification_via_redis(
@@ -485,6 +539,7 @@ def process_youtube_url_task(
         # re-raised here before the generic handler below — otherwise this
         # outer except swallows it, converts it into an ordinary error
         # response, and Celery's tracer never sees the retry request at all.
+        keep_credentials = True
         raise
     except Exception as e:
         logger.error(f"Unexpected error in YouTube processing task: {e}")
@@ -504,6 +559,9 @@ def process_youtube_url_task(
             "message": str(e),
             "file_id": file_id if file_id is not None else 0,
         }
+    finally:
+        if not keep_credentials:
+            discard_task_secret(media_credentials_ref)
 
 
 class YouTubePlaylistProcessingResult(TypedDict):
@@ -704,7 +762,19 @@ def process_youtube_playlist_task(
     Raises:
         Exception: Any error during processing will be caught and returned in result dict.
     """
+    from app.legal.processing_gate import check_processing_allowed
+
     logger.info(f"Starting YouTube playlist processing task for URL: {url}")
+    # The legal processing gate, before any placeholder is created or anything downloaded.
+    # The requester owns every file this import creates, in the originating tenant.
+    with session_scope() as db:
+        refusal = check_processing_allowed(
+            db, owner_user_id=user_id, organization_id=organization_id
+        )
+    if refusal is not None:
+        logger.info(f"Playlist import for user {user_id} refused: {refusal.message}")
+        _send_playlist_notification(user_id, "error", refusal.message, 0)
+        return _create_playlist_error_result(refusal.message)
     _send_playlist_notification(user_id, "processing", "Extracting playlist information...", 5)
 
     try:

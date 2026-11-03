@@ -2740,6 +2740,12 @@ start_app() {
     fi
   fi
 
+  # Optional database role split: auto-load when POSTGRES_APP_USER is set (.env or shell).
+  if [ -n "${POSTGRES_APP_USER:-}" ] && [ -f "docker-compose.db-roles.yml" ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.db-roles.yml"
+    echo "🔒 DB role split overlay AUTO-LOADED (POSTGRES_APP_USER is set; workers run without owner credentials)"
+  fi
+
   # Add lite overlay if requested (cloud-only ASR, no GPU)
   if [ -n "$LITE_FLAG" ]; then
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.lite.yml"
@@ -3462,6 +3468,12 @@ reset_and_init() {
     else
       echo "⚠️  --nas specified but docker-compose.nas.yml not found"
     fi
+  fi
+
+  # Optional database role split: auto-load when POSTGRES_APP_USER is set (.env or shell).
+  if [ -n "${POSTGRES_APP_USER:-}" ] && [ -f "docker-compose.db-roles.yml" ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.db-roles.yml"
+    echo "🔒 DB role split overlay AUTO-LOADED (POSTGRES_APP_USER is set; workers run without owner credentials)"
   fi
 
   # Add lite overlay if requested (cloud-only ASR, no GPU)

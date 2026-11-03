@@ -71,6 +71,16 @@ indexing → WebSocket notification.
 - `transcription/hooks.py` — cloud-edition seam. Exceptions are swallowed; **hangs are not**
   (hooks run inside the completion path holding an open `session_scope`). Any outbound call
   in a hook needs a tight timeout.
+- **The legal processing gate runs FIRST in `dispatch._run_pre_dispatch_gate`** (before the
+  duration ceiling and before any before-dispatch hook): `app.legal.processing_gate` checks the
+  FILE OWNER's acceptance of the documents `legal.processing_required_document_keys` names. A
+  refusal marks the file ERROR with `error_category = legal_acceptance_required` (permanent:
+  `check_for_stuck_files` never re-selects it) and raises `LegalAcceptanceRequiredError` (a
+  `DispatchBlockedError`, dict `detail`). Tasks that start processing without going through
+  dispatch (AI steps, manual rediarize, URL imports, watch scans) call the gate in their own body
+  and return `skipped`. `tests/unit/test_processing_gate_coverage.py` derives the processing tasks
+  from `task_routes` (nlp/redaction/download queues, `GPU_PREFERRED_TASKS`, the call-time-routed
+  chain links): a new one fails until it calls the gate or is exempted with a reason.
 - `speaker_tasks.py` — a **re-export shim, NOT dead code**. Keeps legacy task-name routing
   alive; must stay in `celery_app`'s `include=` list.
 - `rename_propagation_task.py` — `propagate_speaker_rename` / `propagate_title_rename`
@@ -245,8 +255,16 @@ indexing → WebSocket notification.
   backup restore brought back. `takedown_service.release_file` calls its
   `notify_hold_released` for latency; **the schedule is the guarantee** — a hold can also
   be cleared by a DB edit or a restore, and a hook alone has a silent failure mode.
-  Design rationale (what the ledger must never store, and why `org_member` entries are
-  never auto-re-erased) lives in `app/services/CLAUDE.md`.
+  Phases: 0 self-service requests that came due (`self_erasure_service.execute_due_requests`), 1-2
+  open entries, 3 completed entries (user/organization row back; `org_member` re-run bounded by time),
+  4 index-level check (`erasure_index_reconcile.run_index_phase`). Result keys: `self_erasure_due`,
+  `self_erasure_executed`, `org_member_rerun`, `org_member_needs_review` (replaced
+  `org_member_manual_review`), `index_resurrections_redeleted`, `index_resurrected_entries`,
+  `index_unverified`. Design rationale (what the ledger must never store, why the org-member re-run is
+  time-bounded) lives in `app/services/CLAUDE.md`.
+- `legal_retention.py` — `legal.acceptance_retention_sweep`, **utility** queue, daily 05:10: deletes pseudonymised `legal_acceptance` rows past `retain_until` (v451) under `SET LOCAL opentranscribe.legal_retention_sweep = 'on'`, the only DELETE the guard trigger admits. Bounded at 500 per tick.
+- `audit_retention.py` — `audit.retention_sweep`, **utility** queue, daily 05:15, no-op while `AUDIT_LOG_RETENTION_DAYS` is 0 (default; positive values must be >= 365, enforced at startup AND inside the `audit_prune` SQL function). Calls `audit_prune` for `auth_config_audit` and `support_access_use` only (SECURITY DEFINER; the only way the app role deletes audit rows). Ledger, takedown and grant rows are never pruned.
+- `voiceprint_retention.py` — `privacy.voiceprint_retention_sweep`, **utility** queue, daily 05:25, off unless `privacy.voiceprint_retention_months` > 0. Selects due files (every linked profile stale by `last_interaction_at`, file older than the cutoff, not held, voiceprints present; at most 200) and dispatches `PurgeScope(kind="files")`; returns `unavailable` while this build's purge has no files scope. Stale profiles left empty are listed, never deleted.
 - `directory_sync_task.py` — LDAP reconciliation/deprovisioning, **cpu** queue.
   `directory.sync_check_schedule` runs from beat every 15 min, reads the DB-stored cron
   (`directory_sync.schedule`), and dispatches `directory.sync_run` when due — so changing the

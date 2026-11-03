@@ -244,6 +244,7 @@ def test_the_instance_layer_defaults_on_and_updates_partially(
     assert client.get(INSTANCE, headers=super_admin_token_headers).json() == {
         "voiceprint_matching_enabled": True,
         "gender_inference_enabled": True,
+        "voiceprint_upload_consent_required": False,  # #1356: opt-in, off by default
     }
     response = client.put(
         INSTANCE, headers=super_admin_token_headers, json={"gender_inference_enabled": False}
@@ -252,6 +253,7 @@ def test_the_instance_layer_defaults_on_and_updates_partially(
     assert response.json() == {
         "voiceprint_matching_enabled": True,
         "gender_inference_enabled": False,
+        "voiceprint_upload_consent_required": False,
     }
     with gov.acting_as(gov.alice):
         assert client.get(EFFECTIVE).json()["gender_inference"] == {

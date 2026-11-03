@@ -90,7 +90,7 @@ def _new_file(conn, user_id: int, **recorded) -> int:
                 "INSERT INTO media_file (uuid, user_id, filename, storage_path, file_size, "
                 "content_type, recorded_date, recorded_date_source, recorded_date_confidence, "
                 "recorded_date_locked) "
-                "VALUES (:u, :uid, 'v390.wav', 'x/v390.wav', 1, 'audio/wav', "
+                "VALUES (:u, :uid, 'v390.wav', 'x/v390-' || :u || '.wav', 1, 'audio/wav', "
                 ":rd, :src, :conf, :locked) RETURNING id"
             ),
             params,

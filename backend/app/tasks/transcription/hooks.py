@@ -63,8 +63,31 @@ class DispatchBlockedError(HTTPException):
     blocker that needs a different one (451 for a legal hold, say).
     """
 
-    def __init__(self, detail: str = "Transcription blocked", status_code: int = 403):
+    def __init__(self, detail: str | dict = "Transcription blocked", status_code: int = 403):
         super().__init__(status_code=status_code, detail=detail)
+
+
+class LegalAcceptanceRequiredError(DispatchBlockedError):
+    """A core refusal: the file owner has not accepted a document the operator requires.
+
+    Raised by ``app.legal.processing_gate`` (and from ``_run_pre_dispatch_gate`` BEFORE any
+    registered hook runs). ``detail`` is ``{"code": <code>, "documents": [...]}`` with ``code``
+    one of ``legal_acceptance_required`` / ``legal_document_unavailable`` (403) or
+    ``legal_gate_unavailable`` (503: the gate could not decide, so it refused).
+    """
+
+    def __init__(self, code: str, document_keys: tuple[str, ...] | list[str] = ()):
+        status_code = 503 if code == "legal_gate_unavailable" else 403
+        super().__init__(
+            detail={"code": code, "documents": list(document_keys)}, status_code=status_code
+        )
+        self.code = code
+        self.document_keys = tuple(document_keys)
+
+    @property
+    def message(self) -> str:
+        """The stable one-line form stored on a refused file (``code: key, key``)."""
+        return f"{self.code}: {', '.join(self.document_keys) or '-'}"
 
 
 @dataclass(frozen=True)

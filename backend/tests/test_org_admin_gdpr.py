@@ -180,6 +180,23 @@ class _FakeOpenSearch:
         return {"count": self.counts.get(index, 0)}
 
 
+@pytest.fixture(autouse=True)
+def _no_receipt_measurement():
+    """These tests pin what the DESTROY reports with a stand-in cluster and an uncommitted
+    session; the receipt's measurement runs in a fresh session against real stores and is
+    covered by ``integration/test_erasure_receipt_e2e.py``. Without this its (correctly)
+    unmeasurable result would be an extra error in every exact-equality assertion here."""
+    with (
+        patch(
+            "app.services.gdpr_erasure_service.receipt_flow.begin",
+            return_value=(MagicMock(), {}),
+        ),
+        patch("app.services.gdpr_erasure_service.receipt_flow.finish"),
+        patch("app.services.gdpr_erasure_service.erase_extras"),
+    ):
+        yield
+
+
 @pytest.fixture()
 def fake_opensearch():
     """Install a :class:`_FakeOpenSearch` at every attribute the erasure reads.

@@ -63,7 +63,9 @@ def _run_raw(tmp_path: Path, *, env_lines: list[str]) -> subprocess.CompletedPro
     is the genuine implementation, not a stand-in.
     """
     text = OPENTRANSCRIBE.read_text(encoding="utf-8")
-    effective_mode = _function_body(text, "effective_deployment_mode")
+    effective_mode = _function_body(
+        COMMON_SH.read_text(encoding="utf-8"), "effective_deployment_mode"
+    )
     pin_lite = _function_body(text, "pin_diar_native_image_for_lite")
 
     env_file = tmp_path / ".env"
@@ -204,8 +206,10 @@ def _run_downloader_resolution(tmp_path: Path, *, env_lines: list[str], machine:
     read_env_value.
     """
     text = OPENTRANSCRIBE.read_text(encoding="utf-8")
-    host_arch = _function_body(text, "host_architecture")
-    effective_mode = _function_body(text, "effective_deployment_mode")
+    host_arch = _function_body(COMMON_SH.read_text(encoding="utf-8"), "host_architecture")
+    effective_mode = _function_body(
+        COMMON_SH.read_text(encoding="utf-8"), "effective_deployment_mode"
+    )
     preflight = _function_body(text, "arm64_deployment_preflight")
     resolver = _function_body(text, "resolve_diar_native_downloader_image")
 

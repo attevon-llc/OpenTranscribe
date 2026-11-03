@@ -264,6 +264,24 @@ function createWebSocketStore() {
   // Keep track of reconnect timeout
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 
+  // The server closes with these codes to REFUSE the connection (auth required/invalid, invalid
+  // message, origin not allowed). Retrying cannot change the answer and only hammers the server.
+  const TERMINAL_CLOSE_CODES = new Set([4001, 4002, 4003, 4403]);
+  // One session probe per refusal streak; cleared by a successful open or by a disconnect.
+  let terminalProbeDone = false;
+
+  // Ask the API once whether the session is still good. A 401/403 goes through the axios
+  // interceptors (session expired -> login, account lifecycle -> blocking screen). If it answers
+  // 200 the token was refreshed meanwhile, so reconnect exactly once.
+  const probeSessionAfterRefusal = async () => {
+    try {
+      await axiosInstance.get('/auth/me');
+    } catch {
+      return;
+    }
+    tryReconnect();
+  };
+
   // Get current state without subscribing
   const getState = (): WebSocketState => {
     let currentState: WebSocketState = initialState;
@@ -309,6 +327,7 @@ function createWebSocketStore() {
 
         // WebSocket event handlers
         socket.onopen = () => {
+          terminalProbeDone = false;
           // Community edition: authentication is handled via httpOnly cookies sent
           // during the WebSocket handshake. The backend WS handler reads the
           // access_token cookie automatically.
@@ -352,6 +371,15 @@ function createWebSocketStore() {
           update((s: WebSocketState) => {
             s.status = 'disconnected';
             s.socket = null;
+
+            if (TERMINAL_CLOSE_CODES.has(event.code)) {
+              s.status = 'error';
+              if (event.code !== 4403 && !terminalProbeDone) {
+                terminalProbeDone = true;
+                void probeSessionAfterRefusal();
+              }
+              return s;
+            }
 
             // Don't attempt to reconnect if closed cleanly or if page is hidden
             const shouldReconnect =
@@ -969,6 +997,7 @@ function createWebSocketStore() {
 
       // The backoff belongs to the session that just ended; the next connect is a first one.
       state.reconnectAttempts = 0;
+      terminalProbeDone = false;
       state.status = 'disconnected';
       return state;
     });

@@ -7,6 +7,7 @@ import type { ChatErrorCode } from '$lib/types/chat';
  */
 const CHAT_ERROR_CODE_SET: Record<ChatErrorCode, true> = {
   llm_unconfigured: true,
+  llm_config_unusable: true,
   quota_exceeded: true,
   rate_limited: true,
   provider_error: true,

@@ -5,6 +5,7 @@ import os
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
+from typing import NoReturn
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -58,6 +59,14 @@ router = APIRouter()
 
 
 logger = logging.getLogger(__name__)
+
+
+class AccountLookupError(Exception):
+    """The login attempt's account lookup raised, so its lockout bucket is unknown."""
+
+
+#: The values ``schemas/auth_config.py`` admits for ``concurrent_session_policy``.
+CONCURRENT_SESSION_POLICIES = frozenset({"reject", "terminate_oldest"})
 
 
 def _perform_authentication(
@@ -128,16 +137,64 @@ def _resolve_lockout_account(db: Session, username: str, user_uuid_str: str) -> 
         user_uuid_str: UUID of the authenticated user, empty when the attempt failed
 
     Returns:
-        The matching ``User`` row, or ``None`` when nothing matched (or the lookup
-        failed — a lookup failure must never break login).
+        The matching ``User`` row, or ``None`` when nothing matched.
+
+    Raises:
+        AccountLookupError: The query itself failed. Kept distinct from "no match":
+            reading it as a miss keyed the lockout bucket on the submitted alias.
     """
     try:
         if user_uuid_str:
             return db.query(User).filter(User.uuid == UUID(user_uuid_str)).first()
         return db.query(User).filter((User.email == username) | (User.ldap_uid == username)).first()
-    except Exception:  # noqa: BLE001 - a lookup failure must never break login
-        logger.debug("Could not resolve account for the login attempt", exc_info=True)
-        return None
+    except Exception as exc:
+        logger.warning("Could not resolve the account for a login attempt", exc_info=True)
+        raise AccountLookupError from exc
+
+
+def _refuse_unresolved_attempt(
+    username: str,
+    auth_success: bool,
+    client_ip: str,
+    user_agent: str,
+    auth_settings: DynamicAuthSettings,
+    auth_method: str,
+) -> NoReturn:
+    """Refuse a login attempt whose account could not be resolved (fail secure).
+
+    Without the account neither its lockout bucket nor its exemption is known, so no
+    such attempt may succeed; the answer is one 503 whatever the password, and a
+    login cannot complete without the database in any case (a session is a row).
+    A failed attempt is still counted on the normalised submitted identifier (the
+    account's own bucket whenever its email was typed) and audited. A correct one is
+    audited only: counting it would lock out a user who retries through an outage,
+    and recording it as a success would clear a counter for an unknown account.
+
+    Raises:
+        HTTPException: 503, identical for both outcomes.
+    """
+    if auth_success:
+        audit_logger.log_login_failure(
+            username=username,
+            source_ip=client_ip,
+            user_agent=user_agent,
+            error_code="ACCOUNT_LOOKUP_FAILED",
+            auth_method=auth_method or "unknown",
+        )
+    else:
+        _handle_lockout_check(
+            username,
+            canonical_identifier(username, None),
+            False,
+            client_ip,
+            user_agent,
+            auth_settings,
+            auth_method=auth_method,
+        )
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Sign-in is temporarily unavailable. Please try again shortly.",
+    )
 
 
 def _is_exempt_from_lockout(user: User | None) -> bool:
@@ -493,6 +550,123 @@ def _generate_login_tokens(
     return response
 
 
+def _enforce_concurrent_session_limit(
+    db: Session,
+    user_db: User,
+    max_concurrent_sessions: int,
+    concurrent_session_policy: str,
+    client_ip: str,
+    user_agent: str,
+) -> None:
+    """Apply the AC-10 concurrent-session policy before a new session is issued.
+
+    Args:
+        db: Database session
+        user_db: The authenticated user row
+        max_concurrent_sessions: The enforced cap (the caller only calls when > 0)
+        concurrent_session_policy: ``reject`` or ``terminate_oldest``; any other
+            value is enforced as ``reject`` (and logged)
+        client_ip: Client IP address, for the audit record
+        user_agent: Client user agent, for the audit record
+
+    Raises:
+        HTTPException: 429 when the cap is reached under the ``reject`` policy.
+    """
+    from app.models.refresh_token import RefreshToken
+
+    # Use SELECT FOR UPDATE to prevent race conditions when checking/modifying sessions
+    # This acquires row-level locks on the user's active sessions
+    # Note: Cannot use with_for_update() on aggregate queries, so we query rows and count
+    sessions_stmt = (
+        select(RefreshToken)
+        .where(
+            RefreshToken.user_id == user_db.id,
+            RefreshToken.revoked_at.is_(None),
+            RefreshToken.expires_at > datetime.now(UTC),
+        )
+        .with_for_update()
+    )
+    active_session_rows = db.execute(sessions_stmt).scalars().all()
+    active_sessions = len(active_session_rows)
+
+    if active_sessions >= max_concurrent_sessions:
+        if concurrent_session_policy not in CONCURRENT_SESSION_POLICIES:
+            # The admin API validates this value; a row written another way or a
+            # mistyped .env value does not pass through it. The stricter policy wins.
+            logger.warning(
+                "Unrecognised concurrent_session_policy %r; enforcing 'reject'",
+                concurrent_session_policy,
+            )
+            concurrent_session_policy = "reject"
+        if concurrent_session_policy == "reject":
+            # AC-10 refusal is an event in its own right; it was previously
+            # invisible to the audit log, so a user repeatedly blocked at the
+            # session cap left no trace a reviewer could find.
+            audit_logger.log(
+                event_type=AuditEventType.AUTH_SESSION_LIMIT_EXCEEDED,
+                user_id=user_db.id,
+                username=str(user_db.email),
+                outcome=AuditOutcome.FAILURE,
+                source_ip=client_ip,
+                user_agent=user_agent,
+                error_code="CONCURRENT_SESSION_LIMIT",
+                details={
+                    "policy": "reject",
+                    "max_concurrent_sessions": max_concurrent_sessions,
+                    "active_sessions": active_sessions,
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=(
+                    f"Maximum {max_concurrent_sessions} concurrent sessions reached. "
+                    "Please logout from another device."
+                ),
+            )
+        elif concurrent_session_policy == "terminate_oldest" and active_session_rows:
+            # Delegate the actual eviction to the shared ceiling enforcer
+            # (issue #632) rather than revoking a single Python-computed
+            # `min()` row: "evict exactly one, mint exactly one" is a
+            # conservation law once active_sessions is already >= the cap, so
+            # it can never bring the count DOWN, only hold it steady — and
+            # with no gap lock, two concurrent logins can each see room for
+            # one more and both mint, netting +1. `enforce_session_ceiling`
+            # is a post-condition instead ("keep the newest N-1, so the
+            # session about to be minted lands at exactly N"), which is what
+            # actually converges regardless of arrival rate. The
+            # `with_for_update()` lock above is kept: `reject` still needs a
+            # stable count to refuse on.
+            evicted_jtis = enforce_session_ceiling(
+                db,
+                user_db.id,
+                max_concurrent_sessions - 1,
+                batch_limit=SESSION_CAP_EVICTION_BATCH_LIMIT,
+            )
+            db.commit()
+
+            # AUTH_SESSION_LIMIT_EXCEEDED, not AUTH_SESSION_EXPIRED: this
+            # session did not time out, it was evicted to make room. The
+            # purpose-built event existed with zero emitters, so searching the
+            # audit log for AC-10 enforcement returned nothing while eviction
+            # noise was indistinguishable from ordinary session expiry.
+            audit_logger.log(
+                event_type=AuditEventType.AUTH_SESSION_LIMIT_EXCEEDED,
+                user_id=user_db.id,
+                username=str(user_db.email),
+                outcome=AuditOutcome.SUCCESS,
+                source_ip=client_ip,
+                user_agent=user_agent,
+                error_code="CONCURRENT_SESSION_LIMIT",
+                details={
+                    "reason": "concurrent_session_limit",
+                    "policy": "terminate_oldest",
+                    "max_concurrent_sessions": max_concurrent_sessions,
+                    "active_sessions": active_sessions,
+                    "sessions_revoked": len(evicted_jtis),
+                },
+            )
+
+
 @router.post("/token", response_model=Token)
 @router.post("/login", response_model=Token)  # Add alias for frontend compatibility
 @limiter.limit(get_auth_rate_limit())
@@ -546,7 +720,12 @@ def login_for_access_token(
         # computing the exemption only on success made it useless, since it is FAILED
         # attempts that lock an account — and check_and_record_attempt short-circuits
         # for exempt callers, so it never cleared the counter on success either.
-        account = _resolve_lockout_account(db, username, user_uuid_str)
+        try:
+            account = _resolve_lockout_account(db, username, user_uuid_str)
+        except AccountLookupError:
+            _refuse_unresolved_attempt(
+                username, auth_success, client_ip, user_agent, auth_settings, actual_auth_method
+            )
         exempt_from_lockout = _is_exempt_from_lockout(account)
 
         # Canonical bucket: every alias of one account (email, ldap_uid, case
@@ -614,91 +793,14 @@ def login_for_access_token(
         concurrent_session_policy = auth_settings.concurrent_session_policy
 
         if max_concurrent_sessions > 0:
-            from app.models.refresh_token import RefreshToken
-
-            # Use SELECT FOR UPDATE to prevent race conditions when checking/modifying sessions
-            # This acquires row-level locks on the user's active sessions
-            # Note: Cannot use with_for_update() on aggregate queries, so we query rows and count
-            sessions_stmt = (
-                select(RefreshToken)
-                .where(
-                    RefreshToken.user_id == user_db.id,
-                    RefreshToken.revoked_at.is_(None),
-                    RefreshToken.expires_at > datetime.now(UTC),
-                )
-                .with_for_update()
+            _enforce_concurrent_session_limit(
+                db,
+                user_db,
+                max_concurrent_sessions,
+                concurrent_session_policy,
+                client_ip,
+                user_agent,
             )
-            active_session_rows = db.execute(sessions_stmt).scalars().all()
-            active_sessions = len(active_session_rows)
-
-            if active_sessions >= max_concurrent_sessions:
-                if concurrent_session_policy == "reject":
-                    # AC-10 refusal is an event in its own right; it was previously
-                    # invisible to the audit log, so a user repeatedly blocked at the
-                    # session cap left no trace a reviewer could find.
-                    audit_logger.log(
-                        event_type=AuditEventType.AUTH_SESSION_LIMIT_EXCEEDED,
-                        user_id=user_db.id,
-                        username=str(user_db.email),
-                        outcome=AuditOutcome.FAILURE,
-                        source_ip=client_ip,
-                        user_agent=user_agent,
-                        error_code="CONCURRENT_SESSION_LIMIT",
-                        details={
-                            "policy": "reject",
-                            "max_concurrent_sessions": max_concurrent_sessions,
-                            "active_sessions": active_sessions,
-                        },
-                    )
-                    raise HTTPException(
-                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                        detail=(
-                            f"Maximum {max_concurrent_sessions} concurrent sessions reached. "
-                            "Please logout from another device."
-                        ),
-                    )
-                elif concurrent_session_policy == "terminate_oldest" and active_session_rows:
-                    # Delegate the actual eviction to the shared ceiling enforcer
-                    # (issue #632) rather than revoking a single Python-computed
-                    # `min()` row: "evict exactly one, mint exactly one" is a
-                    # conservation law once active_sessions is already >= the cap, so
-                    # it can never bring the count DOWN, only hold it steady — and
-                    # with no gap lock, two concurrent logins can each see room for
-                    # one more and both mint, netting +1. `enforce_session_ceiling`
-                    # is a post-condition instead ("keep the newest N-1, so the
-                    # session about to be minted lands at exactly N"), which is what
-                    # actually converges regardless of arrival rate. The
-                    # `with_for_update()` lock above is kept: `reject` still needs a
-                    # stable count to refuse on.
-                    evicted_jtis = enforce_session_ceiling(
-                        db,
-                        user_db.id,
-                        max_concurrent_sessions - 1,
-                        batch_limit=SESSION_CAP_EVICTION_BATCH_LIMIT,
-                    )
-                    db.commit()
-
-                    # AUTH_SESSION_LIMIT_EXCEEDED, not AUTH_SESSION_EXPIRED: this
-                    # session did not time out, it was evicted to make room. The
-                    # purpose-built event existed with zero emitters, so searching the
-                    # audit log for AC-10 enforcement returned nothing while eviction
-                    # noise was indistinguishable from ordinary session expiry.
-                    audit_logger.log(
-                        event_type=AuditEventType.AUTH_SESSION_LIMIT_EXCEEDED,
-                        user_id=user_db.id,
-                        username=str(user_db.email),
-                        outcome=AuditOutcome.SUCCESS,
-                        source_ip=client_ip,
-                        user_agent=user_agent,
-                        error_code="CONCURRENT_SESSION_LIMIT",
-                        details={
-                            "reason": "concurrent_session_limit",
-                            "policy": "terminate_oldest",
-                            "max_concurrent_sessions": max_concurrent_sessions,
-                            "active_sessions": active_sessions,
-                            "sessions_revoked": len(evicted_jtis),
-                        },
-                    )
 
         # Check if MFA is required for this user (FedRAMP IA-2)
         # Pass actual_auth_method so fallback logins still get MFA

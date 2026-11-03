@@ -14,6 +14,7 @@ use them live in `components/settings/` (`OrgPrivacyPolicyPanel`, `InstancePriva
   word `PURGE` before the destructive button enables; resets on every open; follows the purge task and
   reports counts only. The caller supplies `start`, the one API call for its scope.
 - `SpeakerPrivacyNotice.svelte` - the explanation on speaker surfaces (see `speakers/CLAUDE.md`).
+- `FileVoiceprintConsent.svelte` (#1356) - the owner's per-recording voice identification control in the speaker panel: confirm, PATCH `declined`, follow the opt-out purge. The upload checkbox lives in `upload/UploadStepSpeakers.svelte`; its wording records a STATEMENT by the uploader and must never claim consent was verified (pinned in `UploadStepSpeakers.voiceprintConsent.test.ts`).
 
 ## Gotchas
 

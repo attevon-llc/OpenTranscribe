@@ -268,6 +268,7 @@ def get_file_by_uuid_with_permission(
     bypass: PlatformBypass = PlatformBypass.none(),
     organization_id: OrgScope = UNSCOPED,
     min_permission: str = "viewer",
+    conceal_inaccessible: bool = False,
 ) -> MediaFile:
     """
     Get media file by UUID with permission check.
@@ -292,6 +293,10 @@ def get_file_by_uuid_with_permission(
             preserving prior behavior for read-only call sites. Mutating
             endpoints should pass ``min_permission="editor"``. Does not affect
             direct ownership; a non-viewer level asks the bypass for WRITE access.
+        conceal_inaccessible: Answer a file the caller cannot open at all (outside the
+            tenant scope, or neither owned nor shared) exactly like a missing one, 404
+            "File not found", so the route is no existence signal. A share below
+            ``min_permission`` is still a 403: that caller can already see the file.
 
     Returns:
         MediaFile instance
@@ -319,8 +324,11 @@ def get_file_by_uuid_with_permission(
     # Abuse/DMCA takedown: a quarantined file is invisible to non-admins on EVERY
     # read surface (detail, stream, download, thumbnail). 404 (not 403) so a
     # taken-down file is indistinguishable from a missing one — even the owner
-    # and public-share viewers are blocked.
-    if is_hidden_for(file, is_admin=bypass.user_is_admin):
+    # and public-share viewers are blocked. An admin's review visibility was already granted
+    # above, by ``bypass.allows`` on the row's own tenant; an admin it did not reach (multi
+    # mode, no grant) is not exempt here, or a PUBLIC quarantined file of another tenant would
+    # be served to them by the branch below. Same rule as the speaker chokepoint.
+    if is_hidden_for(file, is_admin=False):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="File not found",
@@ -333,10 +341,7 @@ def get_file_by_uuid_with_permission(
     # Tenant gate: a file outside the active scope is invisible (default-deny).
     # Returning 403 keeps parity with the existing no-permission path.
     if not _resource_in_tenant_scope(file, organization_id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to access this file",
-        )
+        raise _file_refusal(conceal_inaccessible)
 
     # Direct ownership (fast path)
     if file.user_id == user_id:
@@ -352,7 +357,13 @@ def get_file_by_uuid_with_permission(
             )
         return file
 
-    raise HTTPException(
+    raise _file_refusal(conceal_inaccessible)
+
+
+def _file_refusal(conceal: bool) -> HTTPException:
+    if conceal:
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    return HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="You do not have permission to access this file",
     )

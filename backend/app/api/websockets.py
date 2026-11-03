@@ -12,6 +12,7 @@ from redis.exceptions import RedisError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 from sqlalchemy.orm import Session
 
+from app.api.endpoints.auth.dependencies import admitted_on_optional_auth
 from app.auth.roles import ELEVATED_ROLES
 from app.auth.token_service import token_service
 from app.core.capabilities import capability_enabled
@@ -242,7 +243,8 @@ def _try_authenticate_token(
     registered external verifier before the local-JWT path, mirroring
     ``get_current_user``. The community edition registers no verifier, so the
     external branch is skipped and behavior is identical (local JWT only). On any
-    failure (no match, invalid token, inactive user) the caller closes with 4003.
+    failure (no match, invalid token, inactive user, or an account the approval or
+    expiry gate refuses, as on optional-auth routes) the caller closes with 4003.
     """
     # Cloud-edition seam: offer the token to registered external verifiers first.
     try:
@@ -261,7 +263,7 @@ def _try_authenticate_token(
                 if external_session_expired(external_identity):
                     return None
                 external_user = sync_external_user_to_db(db, external_identity)
-                if not external_user.is_active:
+                if not external_user.is_active or not admitted_on_optional_auth(external_user, db):
                     return None
                 return external_user
     except Exception as e:
@@ -282,13 +284,18 @@ def _try_authenticate_token(
         if (
             settings.TOKEN_REVOCATION_ENABLED
             and token_jti
-            and token_service.is_token_revoked(token_jti, db=db, user_uuid=user_identifier)
+            and token_service.is_token_revoked(
+                token_jti,
+                db=db,
+                user_uuid=user_identifier,
+                issued_at=payload.get("iat"),
+            )
         ):
             logger.warning("Rejected revoked token on WebSocket (jti=%s...)", token_jti[:8])
             return None
 
         user = db.query(User).filter(User.uuid == user_identifier).first()
-        if user is None or not user.is_active:
+        if user is None or not user.is_active or not admitted_on_optional_auth(user, db):
             return None
         return user  # type: ignore[no-any-return]
     except Exception as e:

@@ -91,6 +91,7 @@ from app.services.hold_guard import refusal_detail
 from app.services.permission_service import PermissionService
 from app.services.privacy.redact_view import PrivacyView
 from app.services.takedown_service import exclude_quarantined
+from app.services.takedown_service import quarantine_list_exempt
 from app.tasks.search_indexing_task import update_file_access_index
 from app.utils.uuid_helpers import get_by_uuid
 from app.utils.uuid_helpers import get_collection_by_uuid_with_permission
@@ -403,7 +404,7 @@ def list_shared_collections(
 
     # Batch: media counts per collection (quarantined files hidden for non-admins)
     media_counts = _visible_media_counts(
-        db, filtered_ids, include_quarantined=ctx.bypass.user_is_admin
+        db, filtered_ids, include_quarantined=quarantine_list_exempt(ctx.bypass)
     )
 
     # Batch: share records for shared_by info
@@ -547,7 +548,7 @@ def list_collections(
     org_pred = _tenant_pred(ctx)
 
     # Member counts hide quarantined files for non-admins (issue #262g).
-    include_quarantined = ctx.bypass.user_is_admin
+    include_quarantined = quarantine_list_exempt(ctx.bypass)
 
     if ownership == "mine":
         accessible_perms = dict(PermissionService.get_accessible_collection_ids(db, user_id))
@@ -825,12 +826,12 @@ def get_collection(
     # Extract media files from collection members. Abuse/DMCA: quarantined
     # files are hidden from every read surface for non-admins — collection
     # detail included (matches the gallery, search, and per-file 404 gate).
-    from app.services.takedown_service import is_hidden_for
+    from app.services.takedown_service import is_quarantine_hidden
 
     media_files = [
         member.media_file
         for member in collection.collection_members
-        if not is_hidden_for(member.media_file, is_admin=ctx.bypass.user_is_admin)
+        if not is_quarantine_hidden(ctx.bypass, member.media_file)
     ]
 
     # Build response with prompt info
@@ -1356,7 +1357,9 @@ def get_collection_media(
     # Abuse/DMCA: quarantined files are hidden from every read surface for
     # non-admins — the paginated collection-media list included (matches the
     # collection detail's is_hidden_for gate and the visible member counts).
-    base_query = exclude_quarantined(base_query, include_quarantined=ctx.bypass.user_is_admin)
+    base_query = exclude_quarantined(
+        base_query, include_quarantined=quarantine_list_exempt(ctx.bypass)
+    )
 
     # Prepare filters dictionary
     filters = {

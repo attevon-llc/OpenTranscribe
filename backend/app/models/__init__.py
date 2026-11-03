@@ -15,6 +15,7 @@ from .custom_vocabulary import CustomVocabulary
 from .email_notification_config import EmailNotificationConfig
 from .email_notification_config import WatchSourceEmail
 from .erasure import ErasureLedgerEntry
+from .erasure import ErasureReceipt
 from .file_facts import FileFacts
 from .group import GroupMapping
 from .group import UserGroup
@@ -132,6 +133,7 @@ __all__ = [
     "ChatMessage",
     "ChatProject",
     "ErasureLedgerEntry",
+    "ErasureReceipt",
     "SupportAccessGrant",
     "SupportAccessUse",
 ]

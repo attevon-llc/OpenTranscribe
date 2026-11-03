@@ -209,7 +209,8 @@ def _migrate_single_thumbnail(row: dict) -> tuple[str, str | None]:
             content_type="image/webp",
         )
 
-        # Delete old JPEG thumbnail
+        # Delete old JPEG thumbnail. Object keys are unique to one row
+        # (uq_media_file_thumbnail_path), so no other row can be pointing at it.
         try:
             delete_file(old_thumbnail_path)
         except Exception as e:
@@ -224,3 +225,46 @@ def _migrate_single_thumbnail(row: dict) -> tuple[str, str | None]:
     except Exception as e:
         logger.error(f"Error migrating thumbnail for file {file_id}: {e}")
         return "failed", None
+
+
+@celery_app.task(name="backfill_missing_thumbnails", bind=True, priority=CPUPriority.ADMIN_BATCH)
+def backfill_missing_thumbnails(self, after_id: int = 0, batch_size: int = 50) -> dict:
+    """Regenerate thumbnails for completed video files that have none.
+
+    Covers the rows whose shared legacy thumbnail key was cleared by the v456 revision
+    (``uq_media_file_thumbnail_path``). Walks ids upward from ``after_id`` and chains itself,
+    so a file whose generation keeps failing is attempted once per run, never in a loop. The
+    session is closed before anything is dispatched.
+
+    Args:
+        after_id: Only consider media files with a larger id.
+        batch_size: Files dispatched per run.
+
+    Returns:
+        ``{"dispatched", "has_more", "last_id"}``.
+    """
+    with session_scope() as db:
+        rows = (
+            db.query(MediaFile.id, MediaFile.user_id, MediaFile.storage_path)
+            .filter(
+                MediaFile.id > after_id,
+                MediaFile.status == FileStatus.COMPLETED,
+                MediaFile.thumbnail_path.is_(None),
+                MediaFile.content_type.like("video/%"),
+                MediaFile.storage_path != "",
+            )
+            .order_by(MediaFile.id)
+            .limit(batch_size + 1)
+            .all()
+        )
+    has_more = len(rows) > batch_size
+    batch = [(int(r[0]), int(r[1]), str(r[2])) for r in rows[:batch_size]]
+
+    from app.tasks.thumbnail import generate_thumbnail_task
+
+    for file_id, user_id, storage_path in batch:
+        generate_thumbnail_task.delay(file_id, user_id, storage_path)
+    last_id = batch[-1][0] if batch else after_id
+    if has_more:
+        backfill_missing_thumbnails.delay(after_id=last_id, batch_size=batch_size)
+    return {"dispatched": len(batch), "has_more": has_more, "last_id": last_id}

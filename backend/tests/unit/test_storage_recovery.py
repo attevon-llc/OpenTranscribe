@@ -149,6 +149,41 @@ def test_reingest_idempotent_skips_existing(db_session, normal_user):
     assert len(rows) == 1
 
 
+def test_a_key_registered_after_the_snapshot_is_a_skip_not_an_error(db_session, normal_user):
+    """Two runs that both snapshotted before either registered: the second must not duplicate.
+
+    ``existing_storage_paths`` is read once up front, so a row committed after it (a concurrent
+    run, or a normal ingest) is invisible to the loop; the unique index on ``storage_path``
+    refuses the second row and the loop counts it as skipped.
+    """
+    key = "media/1/raced.mp4"
+    db_session.add(
+        MediaFile(
+            user_id=normal_user.id,
+            filename="raced.mp4",
+            title="raced",
+            storage_path=key,
+            file_size=10,
+            content_type="video/mp4",
+            status=FileStatus.COMPLETED,
+        )
+    )
+    db_session.commit()
+
+    with (
+        patch.object(recovery, "existing_storage_paths", lambda db: set()),
+        patch.object(recovery, "fingerprint_object", lambda mf: None),
+    ):
+        summary = recovery.reingest_objects(
+            db_session,
+            minio_client=_FakeMinio([_FakeObj(key, 10)]),
+            user=normal_user,
+            dispatch=False,
+        )
+
+    assert (summary.registered, summary.skipped_existing, summary.errors) == (0, 1, 0)
+
+
 def test_dry_run_creates_no_rows(db_session, normal_user):
     client = _FakeMinio([_FakeObj("media/1/x.mp4", 1), _FakeObj("media/1/y.mp4", 2)])
 

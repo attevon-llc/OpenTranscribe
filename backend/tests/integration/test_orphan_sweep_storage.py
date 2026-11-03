@@ -269,8 +269,33 @@ def test_recent_objects_are_skipped(bucket, existing_file, orphan_ids):
     assert _keys(bucket) == before
 
 
+@pytest.fixture
+def anchor_file_id(engine) -> Iterator[int]:
+    """A committed ``media_file`` row of its own, so a snapshot minus the file under test is
+    never empty whatever the target database holds. Its storage key is unique (v456)."""
+    with engine.begin() as conn:
+        owner = conn.execute(text('SELECT id FROM "user" ORDER BY id LIMIT 1')).scalar_one()
+        file_id = conn.execute(
+            text(
+                "INSERT INTO media_file (uuid, user_id, filename, storage_path, file_size, "
+                "content_type, status) VALUES (gen_random_uuid(), :u, :f, :p, 1, "
+                "'audio/wav', 'completed') RETURNING id"
+            ),
+            {
+                "u": owner,
+                "f": f"{DELRES_PREFIX}{new_tag()}.wav",
+                "p": f"none-{uuid_pkg.uuid4().hex}",
+            },
+        ).scalar_one()
+    try:
+        yield int(file_id)
+    finally:
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM media_file WHERE id = :i"), {"i": file_id})
+
+
 def test_a_file_whose_row_appears_after_the_snapshot_is_kept(
-    bucket, engine, old_clock, monkeypatch
+    bucket, engine, anchor_file_id, old_clock, monkeypatch
 ):
     """The window the pre-delete re-check closes: row created after the valid-id snapshot."""
     from app.tasks import storage_orphan_sweep_task as sweeper
@@ -280,16 +305,20 @@ def test_a_file_whose_row_appears_after_the_snapshot_is_kept(
         late_id = conn.execute(
             text(
                 "INSERT INTO media_file (uuid, user_id, filename, storage_path, file_size, "
-                "content_type, status) VALUES (gen_random_uuid(), :u, :f, 'none', 1, "
+                "content_type, status) VALUES (gen_random_uuid(), :u, :f, :p, 1, "
                 "'audio/wav', 'completed') RETURNING id"
             ),
-            {"u": owner, "f": f"{DELRES_PREFIX}{new_tag()}.wav"},
+            {
+                "u": owner,
+                "f": f"{DELRES_PREFIX}{new_tag()}.wav",
+                "p": f"none-{uuid_pkg.uuid4().hex}",
+            },
         ).scalar_one()
     try:
         _put_file(bucket, late_id)
         real_snapshot = sweeper._get_all_file_ids_from_db()
         stale = real_snapshot - {late_id}
-        assert stale, "the database must hold at least one other file for this test"
+        assert anchor_file_id in stale, "the snapshot must hold another file (anchor_file_id)"
         monkeypatch.setattr(sweeper, "_get_all_file_ids_from_db", lambda: stale)
         kept = _file_keys(bucket, late_id)
 

@@ -12,8 +12,10 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
+from app.legal.processing_gate import require_processing_allowed_for_file
 from app.models.user import User
 from app.services.llm_service import is_llm_available
 from app.tasks.summary_retry import retry_summary_if_available
@@ -90,7 +92,7 @@ async def get_summary_status(
     }
 
 
-@router.post("/{file_uuid}/retry-summary")
+@router.post("/{file_uuid}/retry-summary", dependencies=[Depends(refuse_under_support_grant)])
 async def retry_summary(
     file_uuid: str,
     db: Session = Depends(get_db),
@@ -112,6 +114,7 @@ async def retry_summary(
         min_permission="editor",
     )
     file_id = media_file.id
+    require_processing_allowed_for_file(db, media_file)
 
     # Check if retry is needed and possible
     if str(media_file.summary_status) == "disabled":

@@ -3,7 +3,7 @@
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { isOnline } from '$stores/network';
-  import { loadProtectedMediaAuthConfig, getAuthConfigForHost, type ProtectedMediaAuthConfig } from '$lib/services/configService';
+  import { loadProtectedMediaAuthConfig, getAuthConfigForUrl, type ProtectedMediaAuthConfig } from '$lib/services/configService';
   import { getDownloadSettings, getDownloadSystemDefaults, type DownloadSystemDefaults } from '$lib/api/downloadSettings';
   import Spinner from '$components/ui/Spinner.svelte';
   import LegalDocumentViewer from '$components/legal/LegalDocumentViewer.svelte';
@@ -43,7 +43,7 @@
   $: showProtectedMediaAuth = (() => {
     try {
       const url = new URL(mediaUrl);
-      currentAuthConfig = getAuthConfigForHost(url.hostname);
+      currentAuthConfig = getAuthConfigForUrl(url);
       return currentAuthConfig?.auth_type === 'user_password';
     } catch {
       currentAuthConfig = null;

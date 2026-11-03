@@ -212,54 +212,151 @@ def validate_gated_model_access():
         return True, None
 
 
-def validate_pyannote_download():
-    """Validate that all expected PyAnnote models were downloaded to the torch cache"""
-    torch_cache = Path.home() / '.cache' / 'torch' / 'pyannote'
+class GatedPipelineUnavailable(RuntimeError):
+    """``Pipeline.from_pretrained`` returned None: pyannote's report of an unreadable gated repo.
 
-    # Expected PyAnnote model directories
-    expected_models = {
-        'segmentation-3.0': 'models--pyannote--segmentation-3.0',
-        'speaker-diarization-community-1': 'models--pyannote--speaker-diarization-community-1',
-        'wespeaker-voxceleb': 'models--pyannote--wespeaker-voxceleb-resnet34-LM',
-    }
+    Its own class so the gated-access hint is never printed for an ordinary ``OSError``
+    (a full or unwritable cache), which ``PermissionError`` would have been confused with.
+    """
 
-    validation_result = {'all_present': True, 'models': {}}
 
-    if not torch_cache.exists():
-        validation_result['all_present'] = False
-        for model_name in expected_models:
-            validation_result['models'][model_name] = False
-        return validation_result
+def pyannote_repo_plan():
+    """The Hub repos every in-process PyAnnote path in the backend can load, from its own code.
 
-    for model_name, model_dir in expected_models.items():
-        model_path = torch_cache / model_dir
-        is_present = model_path.exists() and model_path.is_dir()
-        validation_result['models'][model_name] = is_present
-        if not is_present:
-            validation_result['all_present'] = False
+    Derived from the backend's constants rather than copied, so renaming a model there
+    changes what this fetches (``tests/unit/test_download_models_pyannote_plan.py``):
 
-    return validation_result
+    * **required** -- ``diarizer.PYANNOTE_V4_MODEL`` (the in-process diarizer, and the
+      source the diar-native export is made from) and the v4 speaker-embedding model
+      (``EmbeddingModeService.get_embedding_model_name(MODE_V4)``), which
+      ``SpeakerEmbeddingService`` loads with ``Model.from_pretrained`` whenever the
+      diar-native sidecar is down or ``USE_NATIVE_SPEAKER_EMBEDDINGS=false``. That is a
+      separate repo from the copy bundled inside community-1.
+    * **optional** -- ``diarizer.PYANNOTE_V3_FALLBACK`` (loaded only when community-1 fails
+      to load) and the v3 embedding model (used only by installs whose speaker index is
+      still 512-d). Both are gated behind their own agreements, so a token without them
+      leaves those paths unprovisioned and is reported, not fatal.
+
+    Pipeline repos may name further model repos in their ``config.yaml``; those are added
+    by ``pipeline_dependency_repos`` after the snapshot, from the file itself.
+
+    Returns:
+        ``(required, optional)`` lists of repo ids.
+    """
+    from app.services.embedding_mode_service import MODE_V3, MODE_V4, EmbeddingModeService
+    from app.transcription.diarizer import PYANNOTE_V3_FALLBACK, PYANNOTE_V4_MODEL
+
+    required = [PYANNOTE_V4_MODEL, EmbeddingModeService.get_embedding_model_name(MODE_V4)]
+    optional = [PYANNOTE_V3_FALLBACK, EmbeddingModeService.get_embedding_model_name(MODE_V3)]
+    return required, optional
+
+
+def pipeline_dependency_repos(snapshot_dir):
+    """Hub repo ids a pipeline snapshot's ``config.yaml`` refers to (``$model/...`` excluded).
+
+    ``speaker-diarization-community-1`` names only its own subfolders; ``-3.1`` names
+    ``pyannote/segmentation-3.0`` and the WeSpeaker repo, which ``from_pretrained`` would
+    otherwise fetch lazily at load time.
+    """
+    import re
+
+    import yaml
+
+    config = Path(snapshot_dir) / 'config.yaml'
+    if not config.is_file():
+        return []
+    params = (yaml.safe_load(config.read_text()) or {}).get('pipeline', {}).get('params', {})
+    repo = re.compile(r'^[A-Za-z0-9][\w.-]*/[\w.-]+$')
+    return [v for v in params.values() if isinstance(v, str) and repo.match(v)]
+
+
+def _snapshot_with_dependencies(repo_id, hf_token, snapshot_download, already=()):
+    """Snapshot ``repo_id`` and every repo its config names, skipping ``already``."""
+    fetched = []
+    pending = [repo_id]
+    while pending:
+        current = pending.pop(0)
+        if current in fetched or current in already:
+            continue
+        print_info(f'  Fetching {current}...')
+        path = snapshot_download(current, token=hf_token)
+        fetched.append(current)
+        pending.extend(pipeline_dependency_repos(path))
+    return fetched
+
+
+def fetch_diarization_pipeline(hf_token):
+    """Fetch every PyAnnote repo the backend can load in-process, and prove community-1 loads.
+
+    No inference runs. Each repo of ``pyannote_repo_plan()`` is fetched with
+    ``snapshot_download`` (plus the repos a pipeline's ``config.yaml`` names), then
+    community-1 is loaded with ``Pipeline.from_pretrained``, the exact call
+    ``SpeakerDiarizer.load_model`` (``app/transcription/diarizer.py``) makes at runtime, so
+    a snapshot the backend could not use fails here instead of on the first transcription.
+
+    This used to transcribe and diarize 30 s of synthetic sine-wave audio through whisperx.
+    whisperx's VAD found no speech in it, and ``FasterWhisperPipeline.transcribe`` handed an
+    empty batch to ``transformers`` 5.x, whose ``Pipeline.__call__`` indexes ``inputs[0]``:
+    ``IndexError: list index out of range``, deterministically, on every CPU run. Nothing in
+    the backend uses whisperx (``Transcriber`` is faster-whisper's
+    ``BatchedInferencePipeline``), and the Whisper weights are the ``whisperx`` group's job.
+
+    Args:
+        hf_token: Hugging Face token with the community-1 agreement accepted.
+
+    Returns:
+        ``(fetched, optional_unavailable)``: repo ids now in the cache, and
+        ``{repo_id: error}`` for optional repos that could not be fetched.
+
+    Raises:
+        GatedPipelineUnavailable: ``from_pretrained`` returned None, which is how pyannote
+            reports a gated repo the token cannot read.
+    """
+    from huggingface_hub import snapshot_download
+    from pyannote.audio import Pipeline
+
+    required, optional = pyannote_repo_plan()
+    fetched = []
+    for repo_id in required:
+        fetched += _snapshot_with_dependencies(repo_id, hf_token, snapshot_download, fetched)
+
+    unavailable = {}
+    for repo_id in optional:
+        try:
+            fetched += _snapshot_with_dependencies(repo_id, hf_token, snapshot_download, fetched)
+        except Exception as exc:
+            unavailable[repo_id] = f'{type(exc).__name__}: {str(exc)[:160]}'
+            print_warning(
+                f'  Optional {repo_id} not fetched ({type(exc).__name__}); the path that '
+                'loads it will need network access. Accept its agreement on Hugging Face to '
+                'include it.'
+            )
+
+    pipeline_repo = required[0]
+    print_info('  Loading the pipeline from the cache (the backend load path, no inference)...')
+    pipeline = Pipeline.from_pretrained(pipeline_repo, token=hf_token)
+    if pipeline is None:
+        raise GatedPipelineUnavailable(
+            f'pyannote returned no pipeline for {pipeline_repo}; '
+            'the token cannot read the gated repo'
+        )
+    del pipeline
+    return fetched, unavailable
 
 
 def download_pyannote_models():
-    """Download PyAnnote models by running full WhisperX pipeline (same as backend)"""
+    """Download the PyAnnote diarization pipeline the backend loads (no inference)."""
     print_header('Downloading PyAnnote Models')
 
     try:
         import logging
         import warnings
 
-        import numpy as np
-        import torch
-        import whisperx
-
         # Suppress noisy-but-harmless library warnings that confuse users:
         # - Lightning checkpoint auto-upgrade notice (cosmetic, not an error)
         # - PyAnnote TF32 reproducibility advisory (we accept the trade-off)
-        # - WhisperX / transformers INFO logs during model load
         warnings.filterwarnings('ignore', message='.*Lightning automatically upgraded.*')
         warnings.filterwarnings('ignore', category=UserWarning, module='pyannote')
-        logging.getLogger('whisperx').setLevel(logging.WARNING)
         logging.getLogger('pyannote').setLevel(logging.WARNING)
         logging.getLogger('lightning').setLevel(logging.ERROR)
 
@@ -310,83 +407,19 @@ def download_pyannote_models():
             error_msg = access_result[0] if isinstance(access_result, tuple) else access_result
             return {'pyannote': {'status': 'failed', 'error': error_msg}}
 
-        # Use default paths (same as backend) - let WhisperX/PyAnnote handle caching
-        print_info('Using WhisperX full pipeline (same as backend) to download all models')
-        print_info('Models will be cached to default locations (managed by WhisperX/PyAnnote)')
+        fetched, unavailable = fetch_diarization_pipeline(hf_token)
+        print_success(f'  {len(fetched)} PyAnnote repo(s) downloaded; the pipeline loads')
 
-        # Detect device
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        compute_type = 'float16' if device == 'cuda' else 'float32'
-        print_info(f'Using device: {device}')
-
-        # Create synthetic audio (30 seconds of silence with some noise for testing)
-        print_info('Creating synthetic test audio (30 seconds)...')
-        sample_rate = 16000
-        duration = 30  # 30 seconds
-
-        # Generate audio with some speech-like characteristics
-        # Use a simple sine wave pattern that mimics speech frequencies
-        t = np.linspace(0, duration, sample_rate * duration)
-        frequencies = [300, 500, 700]  # Speech-like frequencies
-        audio = np.zeros_like(t)
-        for freq in frequencies:
-            audio += 0.1 * np.sin(2 * np.pi * freq * t)
-
-        # Add some noise to make it more realistic
-        audio += 0.05 * np.random.randn(len(t))
-
-        # Normalize
-        audio = audio.astype(np.float32)
-        print_success('  Synthetic audio created')
-
-        # Use WhisperX full pipeline (same as backend)
-        print_info('Step 1/3: Audio ready...')
-        print_success('  Audio prepared')
-
-        # Step 2: Transcribe (same as backend)
-        print_info('Step 2/3: Running WhisperX transcription...')
-        model = whisperx.load_model(
-            os.environ.get('WHISPER_MODEL', 'base'), device=device, compute_type=compute_type
-        )
-        model.transcribe(audio, batch_size=16 if device == 'cuda' else 1)
-        print_success('  Transcription completed')
-        del model
-        torch.cuda.empty_cache() if device == 'cuda' else None
-
-        # Step 3: Diarize (same as backend - downloads PyAnnote models)
-        print_info('Step 3/3: Running speaker diarization (downloads PyAnnote models)...')
-        print_info(
-            '  This downloads: speaker-diarization-community-1 '
-            '(bundles segmentation, embedding, wespeaker-voxceleb)...'
-        )
-
-        try:
-            diarize_model = whisperx.diarize.DiarizationPipeline(
-                use_auth_token=hf_token, device=device
-            )
-        except TypeError:
-            # pyannote-audio 3.3+ renamed use_auth_token → token
-            diarize_model = whisperx.diarize.DiarizationPipeline(token=hf_token, device=device)
-
-        diarize_model(audio, min_speakers=1, max_speakers=20)
-
-        print_success('  Diarization completed')
-        print_success('  All PyAnnote model weights downloaded')
-
-        # Clean up
-        del diarize_model
-        del audio
-        torch.cuda.empty_cache() if device == 'cuda' else None
-
-        # Diarization ran without exception — models are present and working.
-        # (PyAnnote 3.x stores weights in ~/.cache/huggingface/hub/, not the
-        #  old ~/.cache/torch/pyannote/ path, so directory-name checks are
-        #  unreliable. A successful pipeline run is the definitive proof.)
+        # The pipeline loaded from the cache, so every file it needs is present. (PyAnnote
+        # 3.x+ stores weights in ~/.cache/huggingface/hub/, not the old
+        # ~/.cache/torch/pyannote/ path, so directory-name checks are unreliable.)
         return {
             'pyannote': {
-                'model': 'pyannote/speaker-diarization-community-1',
+                'model': fetched[0],
+                'repos': fetched,
+                'optional_unavailable': unavailable,
                 'status': 'downloaded',
-                'validation': {'all_present': True},
+                'validation': {'all_present': not unavailable},
             }
         }
 
@@ -396,7 +429,8 @@ def download_pyannote_models():
 
         # Check if this looks like a gated model access error
         if (
-            'cannot find the requested files' in error_msg.lower()
+            isinstance(e, GatedPipelineUnavailable)
+            or 'cannot find the requested files' in error_msg.lower()
             or 'locate the file on the hub' in error_msg.lower()
             or '403' in error_msg
             or '401' in error_msg
@@ -423,6 +457,99 @@ def download_pyannote_models():
         return {'pyannote': {'status': 'failed', 'error': str(e)}}
 
 
+def _rewrite_as_own_inode(path):
+    """Replace ``path`` by a private copy of itself. Returns True if a link was broken.
+
+    The copy goes to a ``tempfile.mkstemp`` file in the same directory (``O_EXCL``, a random
+    name, so a pre-planted file or symlink at a guessable name is never written through),
+    the source is opened ``O_NOFOLLOW`` and judged by ``fstat`` of what was opened (so a
+    path swapped for a symlink, or already rewritten by a concurrent run, is not copied),
+    the copy and then the directory are fsynced around the ``os.replace``, and the temp file
+    is removed on any failure.
+    """
+    import shutil
+    import stat
+    import tempfile
+
+    src_fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+    try:
+        info = os.fstat(src_fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink <= 1:
+            return False
+        directory, name = os.path.split(path)
+        tmp_fd, tmp = tempfile.mkstemp(prefix=f'.{name}.', suffix='.dehl', dir=directory)
+        try:
+            with os.fdopen(tmp_fd, 'wb') as dst, os.fdopen(os.dup(src_fd), 'rb') as src:
+                shutil.copyfileobj(src, dst)
+                dst.flush()
+                os.fchmod(dst.fileno(), stat.S_IMODE(info.st_mode))
+                os.fsync(dst.fileno())
+            os.utime(tmp, ns=(info.st_atime_ns, info.st_mtime_ns))
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError as cleanup_error:
+                print_warning(f'  Could not remove temp file {tmp}: {cleanup_error}')
+            raise
+    finally:
+        os.close(src_fd)
+    dir_fd = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
+    return True
+
+
+def break_nltk_hardlinks(root):
+    """Give every multiply-linked file under ``root`` its own inode, content unchanged.
+
+    nltk >= 3.10 (``nltk/pathsec.py``, CWE-59) refuses to open any file whose ``st_nlink``
+    exceeds one, and ``nltk.download`` reads the existing package zips before deciding
+    whether to fetch. A cache seeded with ``cp -al``, ``rsync --link-dest`` or a dedup tool
+    therefore failed every package in the group -- one linked ``punkt_tab.zip`` failed both
+    ``punkt_tab`` and ``punkt``. The refusal is intended, so the data is made to comply:
+    each linked file is copied and atomically renamed over the original
+    (``_rewrite_as_own_inode``), leaving any other name for the old inode untouched.
+    nltk_data is ~50 MB, so the duplicated bytes are negligible (unlike the huggingface and
+    torch caches, which are left alone). Symlinks are skipped: nltk judges a link itself.
+
+    Only the standard library is used, so this does not depend on the image's ``app``
+    package. (The rest of this script does: the NLTK group imports
+    ``app.utils.nltk_offline``, the PyAnnote group ``app.transcription.diarizer`` and
+    ``app.services.embedding_mode_service``, from the image it runs in.)
+    ``scripts/common.sh``'s ``ensure_nltk_data_unlinked`` does the same on the host for
+    ``./opentr.sh start``, which runs this downloader only when the corpora are missing.
+
+    Args:
+        root: The NLTK data directory.
+
+    Returns:
+        ``(rewritten, unfixable)``: how many files were given their own inode, and the paths
+        that could not be (read-only mount, directory owned by another account).
+    """
+    import stat
+
+    rewritten = 0
+    unfixable = []
+    for current, _dirs, files in os.walk(root):
+        for name in files:
+            path = os.path.join(current, name)
+            try:
+                info = os.lstat(path)
+            except OSError:
+                continue
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink <= 1:
+                continue
+            try:
+                if _rewrite_as_own_inode(path):
+                    rewritten += 1
+            except OSError:
+                unfixable.append(path)
+    return rewritten, unfixable
+
+
 def download_nltk_data():
     """Download NLTK data files required by transformers/whisperx"""
     print_header('Downloading NLTK Data')
@@ -441,11 +568,47 @@ def download_nltk_data():
         nltk_data_path = Path(os.environ.get('NLTK_DATA') or (Path.home() / '.cache' / 'nltk_data'))
         nltk_data_path.mkdir(parents=True, exist_ok=True)
 
+        rewritten, unfixable = break_nltk_hardlinks(str(nltk_data_path))
+        if rewritten:
+            print_info(
+                f'Gave {rewritten} multiply-linked NLTK file(s) their own inode '
+                '(nltk >= 3.10 refuses hardlinked files)'
+            )
+        if unfixable:
+            print_error(
+                f'{len(unfixable)} NLTK file(s) are hardlinked and could not be rewritten, '
+                f'e.g. {unfixable[0]}'
+            )
+            print_error(
+                'nltk >= 3.10 refuses multiply-linked files (pathsec, CWE-59), so every '
+                'package would fail. The cache was probably seeded with `cp -al`, '
+                '`rsync --link-dest` or a dedup tool.'
+            )
+            print_error(
+                'Fix on the host (content is kept, only the inode changes), then re-run:\n'
+                '     find <MODEL_CACHE_DIR>/nltk_data -type f -links +1 '
+                '-exec sh -c \'cp -p "$1" "$1.dehl" && mv -f "$1.dehl" "$1"\' _ {} \\;'
+            )
+            return {
+                'nltk': {
+                    'status': 'failed',
+                    'error': f'{len(unfixable)} multiply-linked file(s) under {nltk_data_path}',
+                }
+            }
+
         # nltk >= 3.10.4 refuses to install into (or later read from) a directory that is
         # group/world-writable, and the host-created bind mount usually is (umask 002).
-        from app.utils.nltk_offline import ensure_nltk_data_private
-
-        ensure_nltk_data_private([str(nltk_data_path)])
+        try:
+            from app.utils.nltk_offline import ensure_nltk_data_private
+        except ImportError:
+            print_warning(
+                'This backend image predates app.utils.nltk_offline, so group/world write '
+                'is not stripped from the NLTK cache; if nltk later refuses it, run '
+                '`chmod -R go-w` on the nltk_data directory, or use the image matching '
+                "this script's release (OT_IMAGE_TAG)."
+            )
+        else:
+            ensure_nltk_data_private([str(nltk_data_path)])
 
         # Add to NLTK's data path
         if str(nltk_data_path) not in nltk.data.path:
@@ -1137,8 +1300,10 @@ DOWNLOAD_GROUPS = {
 
 #: Groups that need no Hugging Face credential. NLTK corpora come from NLTK's own
 #: CDN, so requiring the token would make the airgap prefetch this selector exists
-#: for fail on a deployment that has not configured one yet.
-GROUPS_WITHOUT_HF_TOKEN = frozenset({'nltk'})
+#: for fail on a deployment that has not configured one yet. The OpenSearch neural
+#: models come from artifacts.opensearch.org, and ensure_opensearch_models runs
+#: `--only opensearch` on installs that may have no token.
+GROUPS_WITHOUT_HF_TOKEN = frozenset({'nltk', 'opensearch'})
 
 
 def main():

@@ -26,15 +26,18 @@ from __future__ import annotations
 
 import uuid as uuid_pkg
 from contextlib import contextmanager
+from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
 
 from app.models.erasure import ErasureLedgerEntry
+from app.models.erasure import ErasureReceipt
 from app.models.media import MediaFile
 from app.models.organization import Organization
 from app.models.user import User
 from app.services import erasure_ledger_service as ledger
+from tests.audit_maintenance import audit_maintenance
 
 
 def _mk_user(db, label: str = "sweep", *, role: str = "user") -> User:
@@ -91,8 +94,15 @@ def _mk_file(db, *, user: User, legal_hold: bool = False, org_id: int | None = N
 
 
 @pytest.fixture()
-def quiet_stores():
-    """Patch object storage / OpenSearch, leaving every relational delete real."""
+def quiet_stores(no_receipt_measurement):
+    """Patch object storage / OpenSearch, leaving every relational delete real.
+
+    The erasure receipt measures every store from a fresh session and, when it cannot ask one
+    (CI runs no OpenSearch, MinIO or Redis), is ``unverified`` and the erasure correctly stays
+    open. That is not what these tests are about, so the repo's ``no_receipt_measurement``
+    stand-in takes the stage out (with ``erase_extras`` below); the receipt is covered against real stores by
+    ``integration/test_erasure_receipt_e2e.py``.
+    """
     with (
         patch(
             "app.services.file_cleanup_service.delete_file_storage_artifacts",
@@ -104,6 +114,10 @@ def quiet_stores():
         ),
         patch("app.services.gdpr_erasure_service._erase_speaker_voiceprints", return_value=0),
         patch("app.services.opensearch_service.remove_profile_embedding", return_value=True),
+        # The extra deletes (object prefixes, derived cache, multipart, mirror, lockout) go
+        # straight at MinIO/Redis; unreachable, each appends an error and the erasure stays
+        # partial. Same stand-in the other erasure suites use.
+        patch("app.services.gdpr_erasure_service.erase_extras"),
         patch("app.services.gdpr_erasure_service.audit_logger"),
         patch("app.services.erasure_ledger_service.audit_logger"),
     ):
@@ -357,17 +371,7 @@ def test_an_id_match_with_a_different_uuid_is_not_treated_as_a_resurrection(db_s
     assert entry.resurrections_detected == 0
 
 
-def test_an_org_member_entry_is_flagged_for_review_and_never_auto_re_erased(db_session, sweep):
-    """The judgement call, pinned so it cannot be "tidied up" into a data-loss bug.
-
-    An org-member erasure never deletes the ``user`` row, so "is the subject present"
-    is always True and cannot distinguish a restore from normal life. The only other
-    signal — "does this member have org rows again?" — is also what a member legitimately
-    uploading to the tenant the next day looks like. So these are reported for manual
-    review, and the member's later work is left alone.
-    """
-    org = _mk_org(db_session)
-    member = _mk_user(db_session, "member")
+def _completed_org_member_entry(db_session, member, org):
     entry = ledger.record_request(
         db_session,
         subject_type="org_member",
@@ -378,16 +382,56 @@ def test_an_org_member_entry_is_flagged_for_review_and_never_auto_re_erased(db_s
     )
     assert entry is not None
     ledger.record_outcome(db_session, entry, {"errors": [], "legal_holds_skipped": 0})
-    # Work the member did AFTER the erasure — a restore-detector that fired on "has org
-    # rows" would destroy this.
+    return entry
+
+
+def test_an_org_members_later_work_is_never_mistaken_for_a_resurrection(db_session, sweep):
+    """The reason the org-member re-run is bounded by time (issue #1355).
+
+    An org-member erasure never deletes the ``user`` row, so "is the subject present" is
+    always True. "Does this member have org rows?" alone is also what a member legitimately
+    uploading to the tenant the next day looks like, so the re-run only touches rows created
+    at or before the erasure completed and the member's later work is left alone.
+    """
+    org = _mk_org(db_session)
+    member = _mk_user(db_session, "member")
+    entry = _completed_org_member_entry(db_session, member, org)
     later = _mk_file(db_session, user=member, org_id=int(org.id))
     later_id = int(later.id)
+    # The column default is the transaction's start; state "after the erasure" explicitly.
+    later.upload_time = entry.completed_at + timedelta(days=1)
+    db_session.commit()
 
     result = sweep()
 
-    assert result["org_member_manual_review"] >= 1
+    assert result["org_member_rerun"] == 0
     assert result["resurrections_reerased"] == 0
+    assert "org_member_needs_review" in result
     assert db_session.query(MediaFile).filter(MediaFile.id == later_id).first() is not None
+    db_session.refresh(entry)
+    assert entry.resurrections_detected == 0
+
+
+def test_an_org_members_restored_files_are_reerased_automatically(db_session, sweep):
+    """A file that predates the erasure completing is what a restore brings back."""
+    org = _mk_org(db_session)
+    member = _mk_user(db_session, "member")
+    entry = _completed_org_member_entry(db_session, member, org)
+    restored = _mk_file(db_session, user=member, org_id=int(org.id))
+    restored_id = int(restored.id)
+    assert restored.upload_time is not None
+    entry.completed_at = restored.upload_time + timedelta(hours=1)
+    db_session.commit()
+    kept = entry.completed_at
+
+    result = sweep()
+
+    assert result["org_member_rerun"] == 1
+    assert db_session.query(MediaFile).filter(MediaFile.id == restored_id).first() is None
+    db_session.refresh(entry)
+    assert entry.resurrections_detected == 1
+    assert entry.status == "complete"
+    assert entry.completed_at == kept
 
 
 def test_the_sweep_reopens_an_entry_the_database_lost_and_re_erases(db_session, sweep):
@@ -410,10 +454,12 @@ def test_the_sweep_reopens_an_entry_the_database_lost_and_re_erases(db_session, 
     assert db_session.query(User).filter(User.id == user_id).first() is None
 
     # The restore: the ledger row disappears, the subject comes back with the same
-    # surrogate keys (the dump predates both).
-    db_session.query(ErasureLedgerEntry).filter(
-        ErasureLedgerEntry.subject_user_id == user_id
-    ).delete()
+    # surrogate keys (the dump predates both). The dump predates the entry's receipts too.
+    with audit_maintenance(db_session):  # the restore drops the receipts and the row alike
+        db_session.query(ErasureReceipt).delete()
+        db_session.query(ErasureLedgerEntry).filter(
+            ErasureLedgerEntry.subject_user_id == user_id
+        ).delete()
     db_session.add(
         User(
             id=user_id,
@@ -445,8 +491,10 @@ def test_the_sweep_is_a_no_op_on_an_empty_ledger(db_session, sweep):
     Also the guard against a sweep whose counters are computed from something other
     than the ledger — every number must be zero when there is nothing to do.
     """
-    db_session.query(ErasureLedgerEntry).delete()
-    db_session.commit()
+    with audit_maintenance(db_session):  # start from an empty ledger (both tables are insert-only)
+        db_session.query(ErasureReceipt).delete()
+        db_session.query(ErasureLedgerEntry).delete()
+        db_session.commit()
 
     result = sweep()
 

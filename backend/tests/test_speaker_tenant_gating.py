@@ -731,6 +731,22 @@ class TestSpeakerBackfill:
         for call in stamps:
             assert {"term": {"organization_id": 9}} in call["body"]["query"]["bool"]["must_not"]
 
+    def test_backfill_stamps_the_legacy_v3_backup_too(self):
+        """The backup is copied back into v3 whenever v3 is found empty (and becomes v3 when
+        it is the only index left), so a doc it holds unstamped is served unstamped, which a
+        personal search reads as personal. The backfill must reach every speaker index."""
+        from app.core.constants import get_speaker_index_v3_backup
+        from app.services.opensearch_service.speaker_maintenance import speaker_embedding_indices
+        from app.tasks.tenant_backfill_task import SpeakerScopeMaps
+        from app.tasks.tenant_backfill_task import _backfill_speaker_docs
+
+        client = FakeOSClient()
+        _backfill_speaker_docs(client, SpeakerScopeMaps(org_to_file_ids={9: [11]}))
+
+        stamped = {call["index"] for call in _stamp_calls(client)}
+        assert get_speaker_index_v3_backup() in stamped
+        assert stamped == set(speaker_embedding_indices())
+
 
 # --------------------------------------------------------------------------- #
 # #262 — cluster backfill: rows + docs stamped from MEMBER speakers' file orgs #

@@ -54,6 +54,7 @@ const sidebars: SidebarsConfig = {
         'user-guide/tags',
         'user-guide/notifications-and-about',
         'user-guide/admin-panel',
+        'user-guide/erase-my-account',
       ],
     },
     {
@@ -99,6 +100,7 @@ const sidebars: SidebarsConfig = {
         'configuration/neural-search-setup',
         'configuration/embedding-migration',
         'configuration/password-policy',
+        'configuration/legal-processing-gate',
       ],
     },
     {
@@ -118,7 +120,9 @@ const sidebars: SidebarsConfig = {
         'operations/performance-tuning',
         'operations/prompt-engineering',
         'operations/security-hardening',
+        'operations/audit-integrity',
         'operations/support-access',
+        'operations/gdpr-erasure',
         'legal/legal-documents',
         'operations/runbooks',
       ],

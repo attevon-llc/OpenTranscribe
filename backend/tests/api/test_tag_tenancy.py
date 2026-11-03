@@ -372,7 +372,7 @@ def test_merge_refuses_to_fold_a_tag_across_tenants(org_world):
     assert w.db.query(Tag).filter(Tag.id.in_([system_id, personal_id])).count() == 2
 
 
-def test_erasing_an_organization_removes_its_tags(org_world, monkeypatch):
+def test_erasing_an_organization_removes_its_tags(org_world, monkeypatch, no_receipt_measurement):
     """tag.organization_id is a plain FK: the org row cannot go while its tags remain."""
     from app.services import gdpr_erasure_service
     from app.services.gdpr_erasure_service import erase_organization

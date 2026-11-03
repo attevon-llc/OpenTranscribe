@@ -510,7 +510,7 @@
           description={$t(EMPTY_COPY[filter].description)}
         />
       {:else if noMatch}
-        <EmptyState title={$t('search.noResults', { query: search.trim() })}>
+        <EmptyState title={$t('tags.manager.empty.noMatchTitle', { query: search.trim() })}>
           <svg
             slot="icon"
             width="40"

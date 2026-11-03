@@ -196,14 +196,14 @@ describe('a search that matches nothing', () => {
     await fireEvent.input(screen.getByLabelText('tags.manager.searchLabel'), {
       target: { value: '  zzz ' },
     });
-    expect(screen.getByText('search.noResults {"query":"zzz"}')).toBeInTheDocument();
+    expect(screen.getByText('tags.manager.empty.noMatchTitle {"query":"zzz"}')).toBeInTheDocument();
     expect(screen.queryByText('tags.manager.empty.allTitle')).toBeNull();
     expect(listRows()).toHaveLength(0);
     expect(screen.getAllByRole('tab')[0].querySelector('.tab-badge')?.textContent).toBe('0');
 
     await fireEvent.click(screen.getByTitle('tags.manager.clearSearch'));
     expect(listRows()).toHaveLength(3);
-    expect(screen.queryByText(/search\.noResults/)).toBeNull();
+    expect(screen.queryByText(/tags\.manager\.empty\.noMatchTitle/)).toBeNull();
   });
 });
 

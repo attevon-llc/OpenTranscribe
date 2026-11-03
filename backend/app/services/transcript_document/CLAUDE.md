@@ -73,3 +73,45 @@ means recording its licence in `NOTICE` in the same commit.
 `tests/api/test_document_export_{redaction_gate,access}.py`, `test_export_reveal_policy.py`; harness
 in `tests/fixtures/document_export.py` (see `backend/tests/CLAUDE.md`). Timing:
 `scripts/bench-transcript-document.py` (manual).
+
+## Exports and redaction — three rules that are not obvious (issue #85)
+
+`subtitle_service.build_subtitle_archive` (the bulk ZIP) and the burned-in-subtitle render
+in `video_processing_service` used to call the subtitle generators with **no redaction
+config**, exporting the raw transcript for everyone — including under the admin
+`redaction.force_export_redacted` floor, which the UI presents as covering exports.
+
+- **A "disabled" policy and an absent one must not be the same value.** `cfg=None` read as
+  "redaction is off" to `_redact_segments_inplace`, and that is exactly what "the caller
+  forgot" looks like, so no gate could ever fire on it. The parameter is now required and
+  non-`Optional` on both paths; a disabled policy is an `EffectiveRedactionConfig` whose
+  `enabled` is False. There is no argument value meaning "unspecified".
+- **⚠️ The subtitle masker mutates the loaded ORM objects, and both export workers COMMIT.**
+  `session_scope` commits on exit, so wiring masking into those tasks would have flushed the
+  masked text into `transcript_segment.text` and destroyed the original transcript — the one
+  thing read-time masking exists to preserve. The API path never noticed because `get_db`
+  closes without committing. `_redact_segments_inplace` now **expunges each segment before
+  mutating it**, so the guarantee is structural rather than a property of whichever caller
+  holds the session. (`formatting_service._apply_redaction` was never exposed: it masks a
+  dict copy.) Pinned by `test_export_redaction_paths.py`'s
+  `test_the_export_never_writes_the_masked_text_back`, which is red without the expunge.
+- **A cached artifact must name the policy it was rendered under.** Burned-in text cannot be
+  masked afterwards, so `generate_cache_key` takes a required keyword-only
+  `redaction_fingerprint`; without it the first reader's render is served to everyone, and an
+  admin enabling the floor would keep serving an already-cached unmasked video. Consequence:
+  `derived_cache_keys` can no longer enumerate a file's objects, so `clear_derived_cache`
+  **lists** the masked variants — a delete that only reads that list leaves a video of the
+  transcript in storage.
+
+Whose policy applies (the **requesting user**, not the file owner) and when it is resolved
+(**run time inside the task**, from a `user_id`, never a serialized config) are argued in
+`redaction/export_policy.py`.
+
+**And one rule that is not about redaction at all (issue #818): the export workers re-check
+QUARANTINE at run time.** Both entry points are permission-filtered at dispatch, but a
+takedown can land in the gap — `build_subtitle_archive` takes `include_quarantined` and
+*skips* a taken-down file like any other unusable entry (one file must not fail the other
+99), while `prepare_media_download_task` wraps its own file read in `exclude_quarantined` so
+a taken-down file is refused exactly as a deleted one is. Sharing/tenant scope is still
+decided once, at the endpoint; only the abuse gate, which is time-varying by design, is
+re-applied.

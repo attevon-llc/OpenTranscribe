@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from app.services.speaker_attribute_service import SpeakerAttributeService
 from app.tasks import speaker_attribute_inference as sai
 
 
@@ -76,8 +77,8 @@ def test_load_models_with_timeout_delegates(monkeypatch):
 
     monkeypatch.setattr("app.utils.hf_hub_offline.load_with_timeout", fake)
 
-    class Svc:
-        def load_models(self):
+    class Svc(SpeakerAttributeService):
+        def load_models(self) -> None:
             pass
 
     svc = Svc()
@@ -105,8 +106,8 @@ def test_run_gender_inference_parallel_aggregates_and_skips_bad_clips(monkeypatc
 
     monkeypatch.setattr(sai, "extract_audio_segment_np", fake_extract)
 
-    class Svc:
-        def _run_inference(self, audio):
+    class Svc(SpeakerAttributeService):
+        def _run_inference(self, audio_np: np.ndarray) -> tuple[str, float]:
             return "female", 0.5
 
     items = [(7, {"start": s, "end": s + 1.0}) for s in clips] + [(8, {"start": 3.0, "end": 4.0})]

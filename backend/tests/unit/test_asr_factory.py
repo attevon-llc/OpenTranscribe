@@ -29,13 +29,16 @@ from __future__ import annotations
 
 import logging
 from types import SimpleNamespace
+from typing import Any
 from typing import cast
 
 import pytest
+from sqlalchemy.orm import Session
 
 from app import models
 from app.core.config import settings
 from app.core.exceptions import ASRConfigurationError
+from app.models.user_asr_settings import UserASRSettings
 from app.services.asr.catalog import ASR_PROVIDER_CATALOG
 from app.services.asr.deepgram_provider import DeepgramProvider
 from app.services.asr.factory import ASRProviderFactory
@@ -66,15 +69,17 @@ class _RaisingQuery:
         raise AttributeError("boom: unrelated attribute-access bug, not a decrypt failure")
 
 
-class _FakeDB:
+class _FakeDB(Session):
     """Dispatches ``UserSetting`` to one canned row, ``UserASRSettings`` to another
     query object (canned row or a raising one, depending on the test)."""
 
     def __init__(self, setting, asr_query):
+        super().__init__()
         self._setting = setting
         self._asr_query = asr_query
 
-    def query(self, model):
+    def query(self, *entities: Any, **kwargs: Any) -> Any:
+        model = entities[0]
         name = getattr(model, "__name__", str(model))
         if name == "UserASRSettings":
             return self._asr_query
@@ -200,7 +205,7 @@ def test_local_provider_bypass_never_attempts_decryption(monkeypatch):
 
     monkeypatch.setattr("app.utils.encryption.decrypt_api_key", _must_not_be_called)
 
-    cfg = SimpleNamespace(
+    cfg = UserASRSettings(
         id=1,
         provider="local",
         model_name=None,
@@ -220,7 +225,7 @@ def test_access_key_id_decrypt_or_raise_runs_for_a_non_aws_provider():
     """``access_key_id`` decryption is gated only on ``getattr(cfg, "access_key_id", None)``
     being truthy — not on ``cfg.provider == "aws"``. A corrupt ``access_key_id`` on a
     deepgram config must raise the same ``ValueError`` an AWS config would."""
-    cfg = SimpleNamespace(
+    cfg = UserASRSettings(
         id=9,
         provider="deepgram",
         model_name="nova-3",
@@ -238,7 +243,7 @@ def test_access_key_id_is_decrypted_but_discarded_for_a_non_aws_provider():
     """When the stray ``access_key_id`` DOES decrypt cleanly, decryption still runs (it is
     forwarded into ``create_from_config``) but the resulting provider silently ignores it —
     ``DeepgramProvider`` has no parameter for it."""
-    cfg = SimpleNamespace(
+    cfg = UserASRSettings(
         id=10,
         provider="deepgram",
         model_name="nova-3",
@@ -283,7 +288,7 @@ def test_create_from_db_config_explicit_local_raises_under_lite_deployment(monke
     DEPLOYMENT_MODE=lite — an explicit choice is no safer than the implicit default when
     the image has no whisperx/faster-whisper installed."""
     monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "lite")
-    cfg = SimpleNamespace(
+    cfg = UserASRSettings(
         id=11,
         provider="local",
         model_name="large-v3-turbo",

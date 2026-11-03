@@ -285,7 +285,7 @@ def _process_playlist_with_db(
             logger.error(f"User {user_id} not found")
             return _create_playlist_error_result("User not found")
 
-        def progress_callback(progress, message, data) -> None:
+        def progress_callback(progress: int, message: str, data: dict) -> None:
             _send_playlist_notification(user_id, "processing", message, progress, data)
 
         try:

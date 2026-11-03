@@ -31,6 +31,7 @@ from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.error_categorization_service import UserErrorReason
 from app.utils.encryption import encrypt_api_key
 from app.utils.error_classification import ErrorCategory
+from tests.unit._asr_stubs import StubASRProvider
 from tests.unit._plan_contexts import make_plan
 
 _KEY = "fixture-key-cccc-3333"
@@ -115,10 +116,9 @@ def _bridged_scope(db_session):
     db_session.commit()
 
 
-class _CountingASR:
-    provider_name = "deepgram"
-
+class _CountingASR(StubASRProvider):
     def __init__(self) -> None:
+        super().__init__("deepgram")
         self.calls = 0
 
     def supports_diarization(self) -> bool:

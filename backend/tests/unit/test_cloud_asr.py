@@ -32,6 +32,7 @@ from app.tasks.transcription.cloud_asr import _convert_asr_result_to_segments
 from app.tasks.transcription.cloud_asr import _run_cloud_asr_pipeline
 from app.tasks.transcription.cloud_asr import _run_parallel_cloud_asr_and_diarization
 from app.tasks.transcription.context import TranscriptionContext
+from tests.unit._asr_stubs import StubASRProvider
 from tests.unit._plan_contexts import make_plan
 
 _CLOUD_ASR = "app.tasks.transcription.cloud_asr"
@@ -90,7 +91,7 @@ def _make_ctx(normal_user, task_id: str, file_id: int = 1) -> TranscriptionConte
     )
 
 
-class FakeASRProvider:
+class FakeASRProvider(StubASRProvider):
     """Stand-in for a real cloud ASR provider's network call."""
 
     def __init__(
@@ -101,7 +102,7 @@ class FakeASRProvider:
         supports_diar=True,
         supports_trans=True,
     ):
-        self.provider_name = provider_name
+        super().__init__(provider_name)
         self._result = result
         self._error = error
         self._supports_diar = supports_diar
@@ -115,7 +116,7 @@ class FakeASRProvider:
     def supports_translation(self):
         return self._supports_trans
 
-    def transcribe(self, audio_file_path, config, progress_callback):
+    def transcribe(self, audio_path, config, progress_callback=None):
         self.calls += 1
         self.captured_config = config
         if self._error:

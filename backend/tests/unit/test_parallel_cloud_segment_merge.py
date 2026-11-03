@@ -25,17 +25,17 @@ from app.services.asr.types import ASRSegment
 from app.services.asr.types import ASRWord
 from app.services.diarization.types import DiarizeResult
 from app.services.diarization.types import DiarizeSegment
+from tests.unit._asr_stubs import StubASRProvider
 from tests.unit._plan_contexts import make_plan
 
 _CLOUD = "app.tasks.transcription.cloud_asr"
 
 
-class _Vendor:
+class _Vendor(StubASRProvider):
     """A transcription vendor returning fixed segments (text only)."""
 
-    provider_name = "openai"
-
     def __init__(self, segments: list[ASRSegment]) -> None:
+        super().__init__("openai")
         self.segments = segments
 
     def supports_translation(self) -> bool:

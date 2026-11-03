@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Callable
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
@@ -433,7 +434,7 @@ def _select_expired_files(
     config: dict,
     cutoff: datetime,
     query_cutoff: datetime,
-    resolve_retention_days,
+    resolve_retention_days: Callable[[int | None], int | None],
 ) -> list[tuple[int, str]]:
     """Return ``(file_id, file_uuid)`` for every file past its effective retention.
 

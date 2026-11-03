@@ -4,8 +4,11 @@ Covers the monolithic WhisperX pipeline, the Engine split-stage fast
 path, and the transcribe-only stage used by the multi-GPU split.
 """
 
+from __future__ import annotations
+
 import logging
 import os
+from typing import TYPE_CHECKING
 
 from app.core.config import settings
 from app.core.enums import TranscriptionStage
@@ -21,6 +24,9 @@ from .user_settings import _get_user_language_settings
 from .user_settings import _get_user_transcription_settings
 from .user_settings import load_vocabulary_terms
 from .user_settings import resolve_speaker_range
+
+if TYPE_CHECKING:
+    from app.transcription import EngineConfig
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +49,7 @@ if _align:
     )
 
 
-def _build_engine_config(overrides: dict):  # -> EngineConfig (imported lazily: heavy)
+def _build_engine_config(overrides: dict) -> EngineConfig:
     """Engine config for one job: DB settings > env, with the job's overrides applied.
 
     Shared by the single-GPU fast path and the gpu-split transcribe stage so both honour the

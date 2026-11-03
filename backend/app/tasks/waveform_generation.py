@@ -143,7 +143,7 @@ def _generate_waveform_for_file(file_id: int, storage_path: str, filename: str) 
         return False
 
 
-def trigger_waveform_generation(file_uuid: str | None = None, skip_existing: bool = True):
+def trigger_waveform_generation(file_uuid: str | None = None, skip_existing: bool = True) -> str:
     """
     Trigger waveform generation task.
 
@@ -153,4 +153,5 @@ def trigger_waveform_generation(file_uuid: str | None = None, skip_existing: boo
     """
     task = generate_waveform_data_task.delay(file_uuid=file_uuid, skip_existing=skip_existing)
     logger.info(f"Triggered waveform generation task: {task.id}")
-    return task.id
+    task_id: str = task.id
+    return task_id

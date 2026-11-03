@@ -5,6 +5,8 @@ passes around; the helpers here own the error paths that mark a file
 FAILED and notify the SPA.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 from dataclasses import dataclass
@@ -25,6 +27,9 @@ from app.transcription import cuda_health
 from app.utils.task_utils import update_task_status
 
 if TYPE_CHECKING:
+    from celery import Task
+
+    from app.services.asr.errors import ASRRateLimitedError
     from app.transcription.diar_sidecar_status import DiarSidecarUnavailableError
 
 logger = logging.getLogger(__name__)
@@ -41,7 +46,7 @@ def plan_of(stage_context: dict) -> PipelinePlan:
 
 
 def retry_on_diar_sidecar_unavailable(
-    task, exc: "DiarSidecarUnavailableError", file_uuid: str
+    task: Task, exc: DiarSidecarUnavailableError, file_uuid: str
 ) -> NoReturn:
     """Shared retry-scheduling helper for issue #656 Step 5.
 
@@ -72,7 +77,7 @@ def retry_on_diar_sidecar_unavailable(
     raise task.retry(exc=exc, countdown=countdown, max_retries=DIAR_SIDECAR_MAX_RETRIES) from exc
 
 
-def retry_on_asr_rate_limit(task, exc, file_uuid: str) -> NoReturn:
+def retry_on_asr_rate_limit(task: Task, exc: ASRRateLimitedError, file_uuid: str) -> NoReturn:
     """Shared retry-scheduling helper for a cloud-ASR vendor throttle/quota response
     (``ASRRateLimitedError``). Extracted alongside :func:`retry_on_diar_sidecar_unavailable`
     for the same reason — keeping ``transcribe_gpu_task``'s own cyclomatic complexity under
@@ -99,7 +104,9 @@ def retry_on_asr_rate_limit(task, exc, file_uuid: str) -> NoReturn:
     raise task.retry(exc=exc, countdown=countdown, max_retries=CLOUD_ASR_MAX_RETRIES) from exc
 
 
-def retry_transcribe_gpu_exception(task, exc, file_uuid: str) -> NoReturn:
+def retry_transcribe_gpu_exception(
+    task: Task, exc: ASRRateLimitedError | DiarSidecarUnavailableError, file_uuid: str
+) -> NoReturn:
     """Single call site for ``transcribe_gpu_task``'s ``except (ASRRateLimitedError,
     DiarSidecarUnavailableError)`` clause — dispatches to the matching ``retry_on_*`` helper.
     Keeping the isinstance check here (rather than in the task body) keeps that function's

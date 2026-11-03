@@ -8,14 +8,20 @@ Memory (issue #1066): at most ``SPEAKER_ATTRIBUTE_MAX_CONCURRENCY`` detections r
 worker host, and a CPU worker drops the model once the last detection finishes.
 """
 
+from __future__ import annotations
+
 import contextlib
 import logging
 import os
 import threading
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from typing import TYPE_CHECKING
 
 from app.services.audio_segment_utils import extract_audio_segment_np
+
+if TYPE_CHECKING:
+    from app.services.speaker_attribute_service import SpeakerAttributeService
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +78,9 @@ def _model_in_use() -> Iterator[None]:
 _MODEL_LOAD_TIMEOUT_SECONDS = 60
 
 
-def _load_models_with_timeout(service, timeout: float = _MODEL_LOAD_TIMEOUT_SECONDS) -> None:
+def _load_models_with_timeout(
+    service: SpeakerAttributeService, timeout: float = _MODEL_LOAD_TIMEOUT_SECONDS
+) -> None:
     """Load the gender-detection model with a bounded wait.
 
     ``Wav2Vec2*.from_pretrained`` makes a HuggingFace Hub metadata request before
@@ -99,7 +107,7 @@ def _load_models_with_timeout(service, timeout: float = _MODEL_LOAD_TIMEOUT_SECO
 def _run_gender_inference_parallel(
     audio_source: str,
     work_items: list[tuple[int, dict]],
-    service,
+    service: SpeakerAttributeService,
 ) -> tuple[dict[int, dict[str, float]], dict[int, int]]:
     """Run gender inference on segments fetched in parallel.
 

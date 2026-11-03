@@ -28,14 +28,14 @@ from app.services.error_categorization_service import CLOUD_ASR_UNUSABLE_MESSAGE
 from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.error_categorization_service import UserErrorReason
 from app.utils.error_classification import ErrorCategory
+from tests.unit._asr_stubs import StubASRProvider
 from tests.unit._plan_contexts import make_plan
 
 _CORE = "app.tasks.transcription.core"
 
 
-class _Provider:
-    def __init__(self, name: str) -> None:
-        self.provider_name = name
+class _Provider(StubASRProvider):
+    pass
 
 
 @contextmanager

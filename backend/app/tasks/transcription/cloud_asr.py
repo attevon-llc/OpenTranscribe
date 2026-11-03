@@ -1,7 +1,11 @@
 """Cloud ASR provider pipeline and cloud diarization merging."""
 
+from __future__ import annotations
+
 import contextlib
 import logging
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from app.core.enums import TranscriptionStage
 from app.db.session_utils import session_scope
@@ -16,10 +20,16 @@ from .user_settings import _get_user_transcription_settings
 from .user_settings import load_vocabulary_terms
 from .user_settings import resolve_speaker_range
 
+if TYPE_CHECKING:
+    from app.services.asr.base import ASRProvider
+    from app.services.asr.types import ASRConfig
+    from app.services.asr.types import ASRResult
+    from app.services.diarization.types import DiarizeResult
+
 logger = logging.getLogger(__name__)
 
 
-def _convert_asr_result_to_segments(result, media_file_id: int) -> list[dict]:
+def _convert_asr_result_to_segments(result: ASRResult, media_file_id: int) -> list[dict]:
     """
     Convert an ASRResult from a cloud provider to the segment dict format used by storage.
 
@@ -69,14 +79,14 @@ def _convert_asr_result_to_segments(result, media_file_id: int) -> list[dict]:
 def _run_parallel_cloud_asr_and_diarization(
     ctx: TranscriptionContext,
     audio_file_path: str,
-    asr_config,
-    asr_provider,
-    progress_callback,
+    asr_config: ASRConfig,
+    asr_provider: ASRProvider,
+    progress_callback: Callable[[float, str], None] | None,
     plan: PipelinePlan,
     min_speakers: int = 1,
     max_speakers: int = 20,
     num_speakers: int | None = None,
-):
+) -> tuple[ASRResult, DiarizeResult | None]:
     """Run cloud ASR and the plan's cloud speaker detector in parallel.
 
     Both are I/O-bound HTTP calls, so ThreadPoolExecutor is the right pattern
@@ -88,7 +98,6 @@ def _run_parallel_cloud_asr_and_diarization(
         ``assign_speakers``, the one merge (plan C7, #1226).
     """
     from concurrent.futures import ThreadPoolExecutor
-    from concurrent.futures import as_completed
 
     from app.services.diarization.factory import DiarizationProviderFactory
     from app.services.diarization.types import DiarizeConfig
@@ -118,22 +127,22 @@ def _run_parallel_cloud_asr_and_diarization(
         ctx.file_id,
     )
 
-    asr_result = None
-    diarize_result = None
-    asr_error = None
-    diarize_error = None
+    asr_result: ASRResult | None = None
+    diarize_result: DiarizeResult | None = None
+    asr_error: Exception | None = None
+    diarize_error: Exception | None = None
 
-    def run_asr():
+    def run_asr() -> ASRResult:
         return asr_provider.transcribe(audio_file_path, asr_config, progress_callback)
 
-    def run_diarize():
+    def run_diarize() -> DiarizeResult:
         return diarize_provider.diarize(audio_file_path, diarize_config)
 
     with ThreadPoolExecutor(max_workers=2, thread_name_prefix="cloud-parallel") as pool:
         asr_future = pool.submit(run_asr)
         diarize_future = pool.submit(run_diarize)
 
-        for future in as_completed([asr_future, diarize_future]):
+        for future in (asr_future, diarize_future):
             with contextlib.suppress(Exception):
                 future.result()  # Errors collected below
 
@@ -162,6 +171,9 @@ def _run_parallel_cloud_asr_and_diarization(
             raise asr_error
         raise RuntimeError(f"Cloud ASR transcription failed: {asr_error}") from asr_error
 
+    if asr_result is None:
+        raise RuntimeError("Cloud ASR transcription returned no result")
+
     # Diarization failure is non-fatal — return ASR result without speakers
     if diarize_error or diarize_result is None:
         logger.warning("Cloud diarization failed, proceeding without speakers: %s", diarize_error)
@@ -170,8 +182,6 @@ def _run_parallel_cloud_asr_and_diarization(
         logger.warning("Cloud diarization returned no speaker turns; proceeding without speakers")
         return asr_result, None
 
-    if asr_result is None:
-        raise RuntimeError("Cloud ASR transcription returned no result")
     logger.info(
         "Parallel cloud pipeline complete: ASR=%s, diarization=%s, file=%d",
         asr_provider.provider_name,
@@ -181,7 +191,9 @@ def _run_parallel_cloud_asr_and_diarization(
     return asr_result, diarize_result
 
 
-def _merge_turns(raw_segments: list[dict], diarize_result, plan: PipelinePlan) -> None:
+def _merge_turns(
+    raw_segments: list[dict], diarize_result: DiarizeResult, plan: PipelinePlan
+) -> None:
     """Assign the detector's speaker turns to the converted segments, in place.
 
     One merge for every engine (``assign_speakers``), at the plan's merge granularity
@@ -206,7 +218,7 @@ def _run_cloud_asr_pipeline(
     min_speakers: int | None,
     max_speakers: int | None,
     num_speakers: int | None,
-    provider=None,
+    provider: ASRProvider | None = None,
     *,
     plan: PipelinePlan,
 ) -> dict:

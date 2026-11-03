@@ -92,6 +92,36 @@ def test_up_destroys_stale_state_first_and_is_isolated(tmp_path: Path) -> None:
     assert all("--fresh" in c or c.startswith("fresh-destroy") for c in calls)
 
 
+def test_fast_volumes_are_created_tmpfs_before_start_and_removed_at_teardown(
+    tmp_path: Path,
+) -> None:
+    repo = _stub_repo(tmp_path)
+    log = tmp_path / "calls.log"
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    docker = bindir / "docker"
+    docker.write_text('#!/bin/bash\necho "docker $*" >> "$STUB_LOG"\n')
+    docker.chmod(0o755)
+    env = {"STUB_LOG": str(log), "PATH": f"{bindir}:{os.environ['PATH']}"}
+    _bash("fresh_stack_up rel-x 400; fresh_stack_teardown rel-x", repo, env)
+    calls = log.read_text().splitlines()
+    creates = [c for c in calls if c.startswith("docker volume create")]
+    assert {c.split()[-1] for c in creates} == {
+        "otfresh-rel-x_opensearch_data",
+        "otfresh-rel-x_postgres_data",
+    }
+    assert all("type=tmpfs" in c for c in creates)
+    start = next(i for i, c in enumerate(calls) if c.startswith("start dev --fresh"))
+    assert all(calls.index(c) < start for c in creates), "volumes must exist before compose starts"
+    # Stale ones are removed before creating (identical seed every run) and again at teardown.
+    assert sum(c.startswith("docker volume rm") for c in calls[:start]) == 2
+    assert sum(c.startswith("docker volume rm") for c in calls[start:]) == 2
+    # Disabled means no volumes touched.
+    log.write_text("")
+    _bash("fresh_stack_up rel-x 400", repo, {**env, "RELEASE_TEST_FAST_VOLUMES": ""})
+    assert "docker volume" not in log.read_text()
+
+
 def test_rerun_behaves_identically(tmp_path: Path) -> None:
     repo = _stub_repo(tmp_path)
     log = tmp_path / "calls.log"

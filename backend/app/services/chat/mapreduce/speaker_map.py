@@ -9,9 +9,13 @@ from __future__ import annotations
 
 import difflib
 import logging
+from typing import TYPE_CHECKING
 from typing import Any
 
 from app.services.chat.mapreduce.file_summaries import DigestScopeHits
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +133,7 @@ def _speaker_summary_text_for_any(summary_data: dict[str, Any], speaker_names: l
 
 
 def scope_speaker_digest_hits(
-    db,
+    db: Session,
     file_uuids: list[str],
     speaker_names: list[str],
     *,

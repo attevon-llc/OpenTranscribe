@@ -265,7 +265,7 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
         try:
             stats = self.minio_service.stat_object(self.cache_bucket, object_name)
             logger.info(f"Cached file size for {object_name}: {stats.size} bytes")
-            return int(stats.size)  # type: ignore[no-any-return]
+            return int(stats.size) if stats.size is not None else None
         except Exception as e:
             logger.error(f"Error getting cached object stats: {e}")
             return None
@@ -432,7 +432,11 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
                 prefix=f"{owned}_",
                 recursive=True,
             )
-            return [obj.object_name for obj in objects if pattern.match(obj.object_name or "")]
+            return [
+                obj.object_name
+                for obj in objects
+                if obj.object_name and pattern.match(obj.object_name)
+            ]
         except Exception as e:  # noqa: BLE001 - listing is a best-effort sweep
             logger.warning(f"Could not list masked derived renders for {filename}: {e}")
             return []

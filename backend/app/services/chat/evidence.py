@@ -10,6 +10,7 @@ the grounding diagnostics (languages, retrieval counters) written to ``meta``.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -25,6 +26,9 @@ from app.services.chat.trace import TraceRecorder
 from app.services.chat.trace import emit as emit_trace
 from app.services.search.chunk_retrieval import ChunkHit
 from app.services.takedown_predicates import quarantined_among
+
+if TYPE_CHECKING:
+    from app.services.chat.aggregation_queries import SessionFactory
 
 
 def _drop_quarantined_hits(db: Session, hits: list[ChunkHit]) -> list[ChunkHit]:
@@ -62,7 +66,7 @@ def _drop_quarantined_hits(db: Session, hits: list[ChunkHit]) -> list[ChunkHit]:
     return [hit for hit in hits if hit.file_uuid not in quarantined]
 
 
-def _emit_expansion(recorder, masked: list, *, enabled: bool) -> None:
+def _emit_expansion(recorder: TraceRecorder | None, masked: list, *, enabled: bool) -> None:
     """Report read-time context expansion (#523) on the trace.
 
     It runs INSIDE ``mask_chunks``, so the count is only knowable after masking
@@ -137,7 +141,10 @@ def _merge_evidence(
 
 
 def _record_languages(
-    session_scope, file_uuids: list[str] | None, masked: list[MaskedChunk], meta: dict[str, Any]
+    session_scope: SessionFactory,
+    file_uuids: list[str] | None,
+    masked: list[MaskedChunk],
+    meta: dict[str, Any],
 ) -> None:
     """Phase 5 of ``_prepare_context``: the languages this turn could draw on."""
     # RAG is English-only (see services/chat/language.py). Recording what the turn

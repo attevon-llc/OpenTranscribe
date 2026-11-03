@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -22,6 +23,9 @@ from app.services.chat.redactor_chunk_plans import _effective_cfg_for_owner
 from app.services.chat.redactor_chunk_plans import _segment_spans
 from app.services.chat.redactor_chunk_plans import _SegmentSpans
 from app.services.search.chunk_retrieval import ChunkHit
+
+if TYPE_CHECKING:
+    from app.services.redaction.config import EffectiveRedactionConfig
 
 logger = logging.getLogger(__name__)
 
@@ -200,7 +204,10 @@ def _gather_sentence_segments(db: Session, sentence: dict) -> list[_SegmentSpans
 
 
 def _gather_digest_plans(
-    db: Session, digests: list[ChunkHit], requester_user_id: int, requester_cfg
+    db: Session,
+    digests: list[ChunkHit],
+    requester_user_id: int,
+    requester_cfg: EffectiveRedactionConfig,
 ) -> list[_DigestPlan]:
     """Phase A for :func:`mask_digests`. Fails closed per SENTENCE, not per section."""
     from app.models.media import MediaFile

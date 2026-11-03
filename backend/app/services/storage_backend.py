@@ -29,6 +29,7 @@ from urllib.parse import urlparse
 if TYPE_CHECKING:  # pragma: no cover - typing only
     import urllib3
     from minio import Minio
+    from minio.credentials import Provider
 
 from app.core.config import settings
 
@@ -91,7 +92,7 @@ def storage_endpoint() -> tuple[str, bool]:
     return f"{settings.MINIO_HOST}:{settings.MINIO_PORT}", settings.MINIO_SECURE
 
 
-def _iam_role_credentials():
+def _iam_role_credentials() -> Provider:
     """AWS credential chain: env vars → IRSA/ECS/EC2 instance metadata.
 
     ``IamAwsProvider`` covers the web-identity token file (EKS/IRSA), the ECS task

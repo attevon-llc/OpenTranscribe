@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import TYPE_CHECKING
 
 from starlette.concurrency import run_in_threadpool
 
@@ -22,6 +23,9 @@ from app.services.chat import limits
 from app.services.chat.hooks import ChatCompletionContext
 from app.services.chat.hooks import fire_message_complete
 from app.services.chat.turn import ChatTurn
+
+if TYPE_CHECKING:
+    from app.services.llm_types import TurnAccountingLLM
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +47,7 @@ def _title_from(question: str) -> str:
 async def _finalize_turn(
     *,
     turn: ChatTurn,
-    llm,
+    llm: TurnAccountingLLM,
     messages: list[dict[str, str]],
     masked_count: int,
     conversation_id: int,
@@ -150,7 +154,7 @@ def _persist_reply(
     turn: ChatTurn,
     used_citations: list[dict],
     total_tokens: int,
-    llm,
+    llm: TurnAccountingLLM,
     is_first_exchange: bool,
     question: str,
 ) -> str | None:
@@ -239,7 +243,7 @@ def _audit_message(
     organization_id: int | None,
     conversation_uuid: str,
     message_uuid: str,
-    llm,
+    llm: TurnAccountingLLM,
     turn: ChatTurn,
     chunk_count: int,
     total_tokens: int,

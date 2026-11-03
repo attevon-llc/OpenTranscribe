@@ -28,7 +28,7 @@ class MigrationLockService:
     transcription stays paused until the last one calls deactivate().
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._client: redis.Redis | None = None
 
     @property

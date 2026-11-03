@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import TYPE_CHECKING
 from typing import Any
 
 from app.services.chat import planner
@@ -24,6 +25,13 @@ from app.services.chat.trace import TraceRecorder
 from app.services.chat.trace import emit as emit_trace
 from app.services.chat.turn import _check_cancelled
 
+if TYPE_CHECKING:
+    from app.services.chat.aggregation_queries import SessionFactory
+    from app.services.chat.query_rewriter import RewriteResult
+    from app.services.chat.router import Route
+    from app.services.chat.speaker_resolver import SpeakerMentionResolution
+    from app.services.llm_types import ChatPrepLLM
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,9 +40,9 @@ def _resolve_speaker_focus(
     question: str,
     user_id: int,
     organization_id: int | None,
-    session_scope,
+    session_scope: SessionFactory,
     file_uuids: list[str] | None = None,
-):
+) -> SpeakerMentionResolution:
     """Phase 1.5 of ``_prepare_context``: a MENTIONED speaker.
 
     Split out so ``_prepare_context`` stays under ruff's complexity limit —
@@ -75,7 +83,7 @@ def _validate_plan_speakers(
     *,
     user_id: int,
     organization_id: int | None,
-    session_scope,
+    session_scope: SessionFactory,
     file_uuids: list[str] | None = None,
 ) -> list[str]:
     """Re-validate planner-supplied names against the real roster (T3, T9).
@@ -132,14 +140,14 @@ def _validate_plan_speakers(
 
 def _maybe_rewrite(
     *,
-    llm,
+    llm: ChatPrepLLM | None,
     history: list[dict[str, str]],
     question: str,
     rewrite_enabled: bool,
     settings: ChatSettings,
     meta: dict[str, Any],
     recorder: TraceRecorder | None = None,
-):
+) -> tuple[str, str | None, RewriteResult | None, int]:
     """Phase 1 of `_prepare_context`: the query-rewrite LLM round trip.
 
     Split out for the same complexity-limit reason as `_resolve_plan` — a
@@ -192,11 +200,11 @@ def _maybe_rewrite(
 def _resolve_plan(
     *,
     settings: ChatSettings,
-    llm,
+    llm: ChatPrepLLM | None,
     history: list[dict[str, str]],
-    rewrite,
+    rewrite: RewriteResult | None,
     question: str,
-    decision,
+    decision: Route,
     assistant_message_uuid: str,
     meta: dict[str, Any],
 ) -> tuple[planner.Plan | None, int]:
@@ -251,7 +259,7 @@ def _resolve_plan(
 def _initial_stage(
     *,
     settings: ChatSettings,
-    llm,
+    llm: ChatPrepLLM | None,
     history: list[dict[str, str]],
     question: str,
     speakers: list[str] | None,

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import TYPE_CHECKING
 from typing import Any
 
 from app.services.chat import citations as citations_mod
@@ -20,6 +21,11 @@ from app.services.chat.redactor import MaskedChunk
 from app.services.chat.settings import ChatSettings
 from app.services.chat.streaming import _redact_delta
 from app.services.chat.turn import ChatTurn
+
+if TYPE_CHECKING:
+    from app.services.chat.mapreduce.overview import Overview
+    from app.services.llm_stream import LLMStreamEvent
+    from app.services.llm_types import ChatLLM
 
 logger = logging.getLogger(__name__)
 
@@ -75,10 +81,10 @@ def _grounding_frames(
     settings: ChatSettings,
     masked: list[MaskedChunk],
     excerpt_ids: list[int],
-    overview,
+    overview: Overview | None,
     overview_block: str,
     prompt_diagnostics: dict[str, Any],
-    llm,
+    llm: ChatLLM,
     answer_tokens: int,
     assistant_message_uuid: str,
 ) -> list[str]:
@@ -178,7 +184,10 @@ def _grounding_frames(
 
 
 async def _text_frame(
-    event, turn: ChatTurn, answer_redactor: OutputRedactor, reasoning_redactor: OutputRedactor
+    event: LLMStreamEvent,
+    turn: ChatTurn,
+    answer_redactor: OutputRedactor,
+    reasoning_redactor: OutputRedactor,
 ) -> str:
     """The ``delta``/``reasoning`` frame for one text event; ``""`` while it is held back."""
     if event.type == "delta":
@@ -196,7 +205,7 @@ async def _text_frame(
     return ""
 
 
-def _provider_error_frame(turn: ChatTurn, event, conversation_uuid: str) -> str:
+def _provider_error_frame(turn: ChatTurn, event: LLMStreamEvent, conversation_uuid: str) -> str:
     """Record a provider ``error`` event on the turn and return its ``error`` frame."""
     # Provider prose (quota text, request IDs, SDK retry counts) goes
     # to the log only; the frame, the persisted row and the API all

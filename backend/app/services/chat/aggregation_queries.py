@@ -15,7 +15,9 @@ import re
 from collections.abc import Callable
 from collections.abc import Iterable
 from collections.abc import Iterator
+from typing import TYPE_CHECKING
 from typing import Any
+from typing import Protocol
 
 from app.core.enums import RecordedDateSource
 from app.services.chat.aggregation import MAX_BUCKETS
@@ -23,6 +25,11 @@ from app.services.chat.aggregation import buckets
 from app.services.chat.router import TemporalHint
 from app.services.takedown_predicates import quarantined_among
 from app.utils.sql_like import escape_like
+
+if TYPE_CHECKING:
+    from sqlalchemy import Select
+    from sqlalchemy.orm import Session
+    from sqlalchemy.sql.elements import ColumnElement
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +52,12 @@ _TITLE_FIELDS = ("title",)
 #: in production, the test's own session in the suites. ``None`` means "this caller has
 #: no Postgres", which every Postgres-backed shape treats as a decline.
 SessionFactory = Callable[[], contextlib.AbstractContextManager[Any]]
+
+
+class SearchClient(Protocol):
+    """The one OpenSearch call the aggregation shapes make (``OpenSearch`` satisfies it)."""
+
+    def search(self, *, index: str, body: dict[str, Any]) -> dict[str, Any]: ...
 
 
 @contextlib.contextmanager
@@ -101,11 +114,11 @@ def _temporal_bounds(hint: TemporalHint | None) -> tuple[str, str] | None:
 
 
 def _accessible_scoped_files(
-    db,
+    db: Session,
     user_id: int,
     organization_id: int | None,
     file_uuids: list[str] | None,
-):
+) -> ColumnElement[bool]:
     """Filter predicate every Postgres aggregation shape must build through.
 
     Wraps ``PermissionService.get_accessible_file_ids_subquery`` with
@@ -147,7 +160,7 @@ def _accessible_scoped_files(
 
 
 def _files_in_period(
-    db,
+    db: Session,
     bounds: tuple[str, str],
     user_id: int,
     organization_id: int | None,
@@ -195,7 +208,7 @@ def _files_in_period(
     start, end = bounds
     scoped_predicate = _accessible_scoped_files(db, user_id, organization_id, file_uuids)
 
-    def _scoped(statement):
+    def _scoped(statement: Select[Any]) -> Select[Any]:
         return statement.where(scoped_predicate)
 
     matched = _scoped(
@@ -231,7 +244,7 @@ def _files_in_period(
     return [str(uuid) for uuid, _source in rows], tally, undated
 
 
-def _search(client, index: str, body: dict[str, Any]) -> dict[str, Any]:
+def _search(client: SearchClient, index: str, body: dict[str, Any]) -> dict[str, Any]:
     """One aggregation search. **No ``search_pipeline``, ever.**
 
     OpenSearch 3.4 throws ``ArrayIndexOutOfBoundsException`` inside
@@ -277,7 +290,7 @@ def _quarantined_among(
 
 
 def _files_matching(
-    client,
+    client: SearchClient,
     index: str,
     filters: list[dict[str, Any]],
     clause: dict[str, Any],
@@ -314,7 +327,7 @@ def _files_matching(
 
 
 def _speaker_tally(
-    client,
+    client: SearchClient,
     index: str,
     filters: list[dict[str, Any]],
     clause: dict[str, Any],
@@ -354,7 +367,7 @@ def _speaker_tally(
 
 
 def _occurrence_count(
-    db,
+    db: Session,
     subject: str,
     user_id: int,
     organization_id: int | None,

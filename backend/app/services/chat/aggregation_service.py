@@ -50,6 +50,7 @@ from app.services.chat.aggregation import choose_shape
 from app.services.chat.aggregation import extract_subject
 from app.services.chat.aggregation import subject_clause
 from app.services.chat.aggregation_queries import _MENTION_FIELDS
+from app.services.chat.aggregation_queries import SearchClient
 from app.services.chat.aggregation_queries import SessionFactory
 from app.services.chat.aggregation_queries import _files_in_period
 from app.services.chat.aggregation_queries import _files_matching
@@ -71,7 +72,7 @@ def answer_aggregation(
     route: Route,
     *,
     session_factory: SessionFactory | None,
-    client,
+    client: SearchClient | None,
     index: str,
     user_id: int,
     organization_id: int | None = None,

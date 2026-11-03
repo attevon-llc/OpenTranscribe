@@ -81,6 +81,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field
+from typing import TYPE_CHECKING
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -92,6 +93,9 @@ from app.services.chat.redactor_chunk_plans import _SegmentSpans
 from app.services.chat.redactor_digest_plans import _DigestPlan
 from app.services.chat.redactor_digest_plans import _gather_digest_plans
 from app.services.search.chunk_retrieval import ChunkHit
+
+if TYPE_CHECKING:
+    from app.services.redaction.config import EffectiveRedactionConfig
 
 logger = logging.getLogger(__name__)
 
@@ -278,7 +282,7 @@ def _egress_style(cfg: Any) -> Any:
     return clone
 
 
-def _mask_inline(text: str, cfg) -> str:
+def _mask_inline(text: str, cfg: EffectiveRedactionConfig) -> str:
     """Detect and mask on the fly — for files whose cached spans aren't ready.
 
     Toxicity classification is skipped: it is the expensive detector and loading
@@ -325,7 +329,7 @@ def _mask_inline(text: str, cfg) -> str:
         return ""
 
 
-def _mask_from_spans(segments: list[_SegmentSpans], cfg) -> str:
+def _mask_from_spans(segments: list[_SegmentSpans], cfg: EffectiveRedactionConfig) -> str:
     """Apply cached spans to gathered segment text. Pure — no I/O, no detectors."""
     from app.services.redaction.service import RedactionService
 

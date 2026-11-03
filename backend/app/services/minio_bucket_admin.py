@@ -4,16 +4,24 @@ The functional upload/download/presign API, legal hold and quarantine tagging st
 ``minio_service``; this module holds the class wrapper and its lifecycle/prefix helpers.
 """
 
+from __future__ import annotations
+
 import datetime
 import io
 import logging
 import os
+from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 from app.core.config import settings
 from app.services import minio_service
 from app.services import storage_presign_identity
 from app.services.storage_backend import clamp_presigned_expiry
 from app.services.storage_backend import rewrite_public_host
+
+if TYPE_CHECKING:
+    from minio.datatypes import Object
+    from urllib3.response import BaseHTTPResponse
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +32,7 @@ class MinIOService:
     Provides an object-oriented interface to the existing functional API.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.client = minio_service.minio_client
 
     def upload_file(
@@ -33,7 +41,7 @@ class MinIOService:
         bucket_name: str,
         object_name: str,
         content_type: str | None = None,
-    ):
+    ) -> None:
         """Upload a file to MinIO bucket."""
         try:
             with open(file_path, "rb") as file_data:
@@ -67,7 +75,9 @@ class MinIOService:
         except Exception as e:
             raise Exception(f"Error uploading bytes: {e}") from e
 
-    def download_file(self, object_name: str, file_path: str, bucket_name: str | None = None):
+    def download_file(
+        self, object_name: str, file_path: str, bucket_name: str | None = None
+    ) -> None:
         """Download a file from MinIO to local path."""
         bucket = bucket_name or settings.MEDIA_BUCKET_NAME
         try:
@@ -75,7 +85,7 @@ class MinIOService:
         except Exception as e:
             raise Exception(f"Error downloading file: {e}") from e
 
-    def get_presigned_url(self, bucket_name: str, object_name: str, expires: int = 3600):
+    def get_presigned_url(self, bucket_name: str, object_name: str, expires: int = 3600) -> str:
         """Get a browser-reachable presigned URL for object access.
 
         Uses the same host-rewrite and expiry clamp as the module-level helpers.
@@ -97,28 +107,33 @@ class MinIOService:
         except Exception as e:
             raise Exception(f"Error getting presigned URL: {e}") from e
 
-    def delete_object(self, bucket_name: str, object_name: str):
+    def delete_object(self, bucket_name: str, object_name: str) -> None:
         """Delete an object from MinIO."""
         try:
             self.client.remove_object(bucket_name, object_name)
         except Exception as e:
             raise Exception(f"Error deleting object: {e}") from e
 
-    def list_objects(self, bucket_name: str, prefix: str | None = None, recursive: bool = False):
+    def list_objects(
+        self, bucket_name: str, prefix: str | None = None, recursive: bool = False
+    ) -> Iterator[Object]:
         """List objects in a bucket."""
         try:
-            return self.client.list_objects(bucket_name, prefix=prefix, recursive=recursive)
+            objects: Iterator[Object] = self.client.list_objects(
+                bucket_name, prefix=prefix, recursive=recursive
+            )
+            return objects
         except Exception as e:
             raise Exception(f"Error listing objects: {e}") from e
 
-    def stat_object(self, bucket_name: str, object_name: str):
+    def stat_object(self, bucket_name: str, object_name: str) -> Object:
         """Get object statistics."""
         try:
             return self.client.stat_object(bucket_name, object_name)
         except Exception as e:
             raise Exception(f"Error getting object stats: {e}") from e
 
-    def get_object(self, bucket_name: str, object_name: str):
+    def get_object(self, bucket_name: str, object_name: str) -> BaseHTTPResponse:
         """Get object from MinIO.
 
         Stays on the ROOT ``self.client`` (issue #907): a server-side read, not a
@@ -138,7 +153,7 @@ class MinIOService:
         except Exception as e:
             raise Exception(f"Error checking bucket existence: {e}") from e
 
-    def make_bucket(self, bucket_name: str):
+    def make_bucket(self, bucket_name: str) -> None:
         """Create a new bucket."""
         try:
             self.client.make_bucket(bucket_name)

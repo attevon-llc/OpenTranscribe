@@ -55,6 +55,9 @@ import logging
 import threading
 import time
 from collections.abc import AsyncGenerator
+from collections.abc import Awaitable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 from typing import Any
 
 import anyio
@@ -95,6 +98,9 @@ from app.services.chat.trace_stream import trace_payload
 from app.services.chat.turn import ChatTurn
 from app.services.chat.turn import _TurnCancelled
 
+if TYPE_CHECKING:
+    from app.services.llm_types import ChatLLM
+
 # Tests patch `_finalize_turn`, `_resolve_output_policy`, `_prepare_context`,
 # `StreamingTraceRecorder` and `_KEEPALIVE_INTERVAL_S` on THIS module, so each one's
 # call site lives here and reads it from these globals. Moving a call site into a
@@ -125,7 +131,11 @@ class _Awaited:
         self.value: Any = None
 
 
-async def _keepalive_until_done(awaitable, holder: _Awaited, trace_q=None):
+async def _keepalive_until_done(
+    awaitable: Awaitable[object],
+    holder: _Awaited,
+    trace_q: asyncio.Queue[WireEvent] | None = None,
+) -> AsyncGenerator[str, None]:
     """Await ``awaitable``, YIELDING frames while it runs.
 
     ⚠️ **Yielding is the entire point, and buffering is the bug this replaces.**
@@ -228,7 +238,7 @@ def _open_trace(
 
 
 async def _answer_frames(
-    llm,
+    llm: ChatLLM,
     messages: list[dict[str, str]],
     kwargs: dict[str, Any],
     *,
@@ -306,8 +316,8 @@ async def _teardown_turn(
     *,
     answer_redactor: OutputRedactor | None,
     reasoning_redactor: OutputRedactor | None,
-    on_teardown,
-    llm,
+    on_teardown: Callable[[], None] | None,
+    llm: ChatLLM,
     messages: list[dict[str, str]],
     masked_count: int,
     conversation_id: int,
@@ -388,8 +398,8 @@ class ChatService:
         max_tokens: int | None,
         top_p: float | None,
         enable_thinking: bool | None = None,
-        llm,
-        on_teardown=None,
+        llm: ChatLLM,
+        on_teardown: Callable[[], None] | None = None,
         assistant_message_uuid: str,
         user_message_uuid: str,
         is_first_exchange: bool,
@@ -430,7 +440,7 @@ class ChatService:
                 generator's own ``finally`` does NOT reliably run when Starlette
                 tears this one down on client disconnect, so a slot released
                 there leaks on every Stop.
-            llm: The caller's ``LLMService``.
+            llm: The caller's ``ChatLLM``.
             assistant_message_uuid: Pre-allocated id for the reply.
             user_message_uuid: Id of the already-persisted user message.
             is_first_exchange: Whether to derive a title from this question.
@@ -486,7 +496,7 @@ class ChatService:
                 # phased and opens its own short sessions. Wrapping it would put
                 # the turn back to holding one transaction across the rewrite,
                 # the counted tier's aggregation and retrieval.
-                def _prep():
+                def _prep() -> tuple[list[MaskedChunk], dict[str, Any], Any, Any, str, str]:
                     return _prepare_context(
                         user_id=user_id,
                         organization_id=organization_id,

@@ -10,6 +10,8 @@ map-reduce framing this whole subpackage implements.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 from typing import Any
 
 from app.services.chat.mapreduce.file_summaries import FileSummary
@@ -21,10 +23,13 @@ from app.services.chat.mapreduce.overview import MAX_REDUCE_CALLS
 from app.services.chat.mapreduce.overview import Overview
 from app.services.chat.mapreduce.overview import _clock
 
+if TYPE_CHECKING:
+    from app.services.llm_types import SupportsChatCompletion
+
 logger = logging.getLogger(__name__)
 
 
-def _summary_display_lines(summary: FileSummary, sanitize) -> list[str]:
+def _summary_display_lines(summary: FileSummary, sanitize: Callable[[str], str]) -> list[str]:
     """The rendered body line for one file's map entry: its LLM summary if it has
     one (#464), else its digest text, else nothing.
 
@@ -180,7 +185,7 @@ class CodeComposer:
         *,
         speaker_focus: str | None = None,
         citation_start: int | None = None,
-        **_kwargs,
+        **_kwargs: Any,
     ) -> Overview:  # noqa: ARG002
         if not summaries:
             if speaker_focus:
@@ -266,7 +271,9 @@ class BatchReducer:
 
     name = "llm-batch"
 
-    def __init__(self, llm, *, batch_files: int = DEFAULT_BATCH_FILES) -> None:
+    def __init__(
+        self, llm: SupportsChatCompletion, *, batch_files: int = DEFAULT_BATCH_FILES
+    ) -> None:
         self.llm = llm
         self.batch_files = max(1, int(batch_files))
 
@@ -277,7 +284,7 @@ class BatchReducer:
         files_in_scope: int = 0,
         *,
         speaker_focus: str | None = None,
-        **_kwargs,
+        **_kwargs: Any,
     ) -> Overview:
         if not summaries:
             # Preserves the exact original shape (`reducer == self.name`) when
@@ -365,7 +372,7 @@ def build_overview(
     question: str,
     summaries: list[FileSummary],
     *,
-    llm=None,
+    llm: SupportsChatCompletion | None = None,
     use_llm: bool = False,
     batch_files: int = DEFAULT_BATCH_FILES,
     files_in_scope: int = 0,

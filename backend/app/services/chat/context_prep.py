@@ -10,6 +10,7 @@ is decided once per turn in :func:`_mask_evidence`, from ``masking.py``'s builde
 from __future__ import annotations
 
 import time
+from typing import TYPE_CHECKING
 from typing import Any
 
 from app.services.chat import planner
@@ -39,6 +40,14 @@ from app.services.chat.trace import TraceRecorder
 from app.services.chat.trace import emit as emit_trace
 from app.services.chat.turn import _check_cancelled
 
+if TYPE_CHECKING:
+    from app.core.config import Settings
+    from app.services.chat.aggregation import AggregationResult
+    from app.services.chat.aggregation_queries import SessionFactory
+    from app.services.chat.recurrence import RecurrenceResult
+    from app.services.chat.router import Route
+    from app.services.llm_types import ChatPrepLLM
+
 # Tests patch `_drop_quarantined_hits`, `_resolve_speaker_focus`, `mask_chunks` and
 # `retrieve_context` on THIS module, so each one's call site lives here and reads it
 # from these globals. Moving a call site into a sibling would leave those patches
@@ -51,7 +60,7 @@ def _apply_speaker_resolution(
     question: str,
     user_id: int,
     organization_id: int | None,
-    session_scope,
+    session_scope: SessionFactory,
     meta: dict[str, Any],
     file_uuids: list[str] | None = None,
     recorder: TraceRecorder | None = None,
@@ -119,7 +128,7 @@ def _run_serial_pipeline(
     *,
     question: str,
     effective_query: str,
-    decision,
+    decision: Route,
     user_id: int,
     organization_id: int | None,
     file_uuids: list[str] | None,
@@ -127,11 +136,11 @@ def _run_serial_pipeline(
     speaker_focus_names: list[str],
     settings: ChatSettings,
     search_mode: str,
-    session_scope,
-    settings_config,
+    session_scope: SessionFactory,
+    settings_config: Settings,
     meta: dict[str, Any],
     recorder: TraceRecorder | None = None,
-):
+) -> tuple[RetrievalResult, AggregationResult | None]:
     """Phases 2+3 of `_prepare_context`: the pre-#403 counted-then-retrieve
     pipeline, unchanged — this is the path every turn takes with the planner
     off (or when it fired nothing), and it must stay BYTE IDENTICAL to before
@@ -246,7 +255,7 @@ def _run_serial_pipeline(
 def _retrieve_or_fanout(
     *,
     plan: planner.Plan | None,
-    decision,
+    decision: Route,
     question: str,
     effective_query: str,
     user_id: int,
@@ -256,12 +265,12 @@ def _retrieve_or_fanout(
     speaker_focus_names: list[str],
     settings: ChatSettings,
     search_mode: str,
-    session_scope,
-    settings_config,
+    session_scope: SessionFactory,
+    settings_config: Settings,
     assistant_message_uuid: str,
     meta: dict[str, Any],
     recorder: TraceRecorder | None = None,
-):
+) -> tuple[RetrievalResult, AggregationResult | None, RecurrenceResult | None]:
     """Phases 2+3 of `_prepare_context`: dispatch to the fan-out or the serial pipeline.
 
     #403: a validated, non-empty plan replaces the serial
@@ -332,7 +341,7 @@ def _retrieve_or_fanout(
 def _drop_quarantined(
     result: RetrievalResult,
     *,
-    session_scope,
+    session_scope: SessionFactory,
     meta: dict[str, Any],
     recorder: TraceRecorder | None,
 ) -> None:
@@ -372,9 +381,9 @@ def _drop_quarantined(
 def _mask_evidence(
     result: RetrievalResult,
     *,
-    llm,
+    llm: ChatPrepLLM | None,
     settings: ChatSettings,
-    session_scope,
+    session_scope: SessionFactory,
     user_id: int,
     organization_id: int | None,
     recorder: TraceRecorder | None,
@@ -459,7 +468,7 @@ def _prepare_context(
     file_uuids: list[str] | None,
     speakers: list[str] | None,
     search_mode: str,
-    llm,
+    llm: ChatPrepLLM | None,
     rewrite_enabled: bool,
     assistant_message_uuid: str = "",
     recorder: TraceRecorder | None = None,

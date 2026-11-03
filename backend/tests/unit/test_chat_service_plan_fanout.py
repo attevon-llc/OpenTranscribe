@@ -18,6 +18,12 @@ import pytest
 from app.services.chat import fanout as chat_fanout
 from app.services.chat import legs
 from app.services.chat import planner
+from app.services.chat.router import INTENT_LOOKUP
+from app.services.chat.router import INTENT_RECURRENCE
+from app.services.chat.router import TIER_AGGREGATE
+from app.services.chat.router import TIER_CHUNK
+from app.services.chat.router import TIER_DIGEST
+from app.services.chat.router import Route
 from app.services.chat.trace import ListTraceRecorder
 from app.services.chat.trace import Outcome
 from app.services.chat.trace import QueryStage
@@ -30,13 +36,16 @@ def _hit(uuid: str, index: int, score: float = 1.0) -> ChunkHit:
     return ChunkHit(file_uuid=uuid, file_id=1, chunk_index=index, content=f"c{index}", score=score)
 
 
-class _FakeRoute:
-    """Minimal stand-in for `router.Route` — only the attributes the fanout reads."""
-
-    def __init__(self, *, wants_aggregate=False, wants_recurrence=False, wants_digest=False):
-        self.wants_aggregate = wants_aggregate
-        self.wants_recurrence = wants_recurrence
-        self.wants_digest = wants_digest
+def _route(*, wants_aggregate=False, wants_recurrence=False, wants_digest=False) -> Route:
+    """A real ``Route`` carrying only the flags the fanout reads."""
+    tiers = [TIER_CHUNK]
+    if wants_aggregate:
+        tiers.append(TIER_AGGREGATE)
+    if wants_digest:
+        tiers.append(TIER_DIGEST)
+    return Route(
+        intent=INTENT_RECURRENCE if wants_recurrence else INTENT_LOOKUP, tiers=tuple(tiers)
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -87,7 +96,7 @@ def test_every_chunk_leg_reuses_the_exact_same_file_scope():
     ):
         result, counted, recurrence_result = chat_fanout._run_plan_fanout(
             plan=plan,
-            decision=_FakeRoute(),
+            decision=_route(),
             effective_query="the question",
             question="the question",
             user_id=1,
@@ -138,7 +147,7 @@ def test_a_plan_never_adds_a_counted_leg_the_router_did_not_also_want():
     ):
         chat_fanout._run_plan_fanout(
             plan=plan,
-            decision=_FakeRoute(wants_aggregate=False),
+            decision=_route(wants_aggregate=False),
             effective_query="q",
             question="q",
             user_id=1,
@@ -176,7 +185,7 @@ def test_unvalidated_plan_speakers_never_reach_a_leg():
     ):
         chat_fanout._run_plan_fanout(
             plan=plan,
-            decision=_FakeRoute(),
+            decision=_route(),
             effective_query="q",
             question="q",
             user_id=1,
@@ -209,7 +218,7 @@ def test_final_chunks_are_reduced_to_a_third_when_a_counted_answer_is_present():
     ):
         result, counted, _recurrence = chat_fanout._run_plan_fanout(
             plan=plan,
-            decision=_FakeRoute(wants_aggregate=True),
+            decision=_route(wants_aggregate=True),
             effective_query="q",
             question="q",
             user_id=1,
@@ -249,7 +258,7 @@ def test_a_fanout_produces_a_planned_parent_with_child_leg_stages_in_the_trace()
     ):
         chat_fanout._run_plan_fanout(
             plan=plan,
-            decision=_FakeRoute(wants_aggregate=True),
+            decision=_route(wants_aggregate=True),
             effective_query="q",
             question="q",
             user_id=1,

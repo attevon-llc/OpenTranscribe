@@ -9,6 +9,7 @@ turn's digest-plane kwargs.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from typing import Any
 
 from app.services.chat.redactor import MaskedChunk
@@ -16,13 +17,18 @@ from app.services.chat.retrieval import RetrievalResult
 from app.services.chat.settings import ChatSettings
 from app.services.search.chunk_retrieval import ChunkHit
 
+if TYPE_CHECKING:
+    from app.services.chat.aggregation_queries import SessionFactory
+    from app.services.chat.mapreduce.overview import Overview
+    from app.services.chat.router import Route
+
 
 def _resolve_summary_tier(
     *,
-    decision,
+    decision: Route,
     file_uuids: list[str] | None,
     settings: ChatSettings,
-    session_scope,
+    session_scope: SessionFactory,
     ranked_digests: list[ChunkHit],
     ranked_digests_masked: list[MaskedChunk],
     user_id: int,
@@ -166,7 +172,9 @@ def _resolve_summary_tier(
     return [], [], None, 0, 0, {}
 
 
-def _overview_citation_start(settings, digest_masked: list, masked: list) -> int | None:
+def _overview_citation_start(
+    settings: ChatSettings, digest_masked: list, masked: list
+) -> int | None:
     """#532 arm (a): the id base for citable overview entries, or ``None`` (off).
 
     Excerpt markers are POSITIONS into the final chunk list, and that list can
@@ -179,7 +187,7 @@ def _overview_citation_start(settings, digest_masked: list, masked: list) -> int
     return len(digest_masked) + len(masked)
 
 
-def _finalize_overview_citations(overview, summaries: list) -> None:
+def _finalize_overview_citations(overview: Overview, summaries: list) -> None:
     """#532 arm (a): attach citation payloads when the composer assigned ids.
 
     A no-op for every turn where the arm is off (``cited_entries`` empty) —
@@ -192,7 +200,9 @@ def _finalize_overview_citations(overview, summaries: list) -> None:
     overview.citation_payloads = tuple(build_overview_citations(overview.cited_entries, summaries))
 
 
-def _overview_diagnostics(summaries: list, map_coverage: dict[str, Any], overview, map_leg):
+def _overview_diagnostics(
+    summaries: list, map_coverage: dict[str, Any], overview: Overview, map_leg: str | None
+) -> dict[str, int]:
     """#532 instrumentation (plan Unit U4), scope-map turns only.
 
     ``{}`` when ``map_leg != "scope_map"`` — the branch lives here rather than
@@ -213,10 +223,10 @@ def _overview_diagnostics(summaries: list, map_coverage: dict[str, Any], overvie
 
 def _build_summaries(
     *,
-    decision,
+    decision: Route,
     file_uuids: list[str] | None,
     settings: ChatSettings,
-    session_scope,
+    session_scope: SessionFactory,
     result: RetrievalResult,
     digest_masked: list[MaskedChunk],
     user_id: int,
@@ -297,7 +307,7 @@ def _compose_overview(
     digest_masked: list[MaskedChunk],
     masked: list[MaskedChunk],
     meta: dict[str, Any],
-):
+) -> Overview | None:
     """Phase 5 of ``_prepare_context``: the ``<overview>`` block, or ``None``."""
     overview = None
     # --- Phase 5: composition and diagnostics. Pure, except the language read

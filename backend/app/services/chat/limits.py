@@ -17,6 +17,8 @@ import logging
 import time
 import uuid
 
+from redis import Redis
+
 from app.core import redis as redis_core
 
 logger = logging.getLogger(__name__)
@@ -71,7 +73,7 @@ def check_hourly_limit(user_id: int, limit: int) -> tuple[bool, int]:
         return True, 0
 
 
-def _drop_legacy_counter(client, key: str) -> None:
+def _drop_legacy_counter(client: Redis, key: str) -> None:
     """Delete a pre-sorted-set counter left at ``key`` by an older version."""
     try:
         if client.type(key) == "string" or client.type(key) == b"string":

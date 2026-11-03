@@ -8,11 +8,17 @@ for the injection-resistance rationale and the layered system prompt.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from app.services.chat.prompt_sanitize import _sanitize_attribute
 from app.services.chat.prompt_sanitize import _sanitize_body_text
 from app.services.chat.prompt_sanitize import _sanitize_chunk_text
 from app.services.chat.redactor import MaskedChunk
 from app.utils.time_format import format_timestamp_simple
+
+if TYPE_CHECKING:
+    from app.services.chat.aggregation import AggregationResult
+    from app.services.chat.recurrence import RecurrenceResult
 
 _EXCERPT_HEADER = "Transcript excerpts:\n\n"
 _EXCERPT_CLOSE = "\n</excerpt>\n\n"
@@ -160,7 +166,7 @@ def _format_seconds(total: float) -> str:
     return f"{seconds}s"
 
 
-def format_counted_block(result) -> str:
+def format_counted_block(result: AggregationResult | None) -> str:
     """Render an :class:`~app.services.chat.aggregation.AggregationResult`.
 
     Concatenation only, and every value is sanitized the same way an excerpt
@@ -221,7 +227,7 @@ _RECURRENCE_OPEN = "<recurrence>\n"
 _RECURRENCE_CLOSE = "</recurrence>\n\n"
 
 
-def format_recurrence_block(result) -> str:
+def format_recurrence_block(result: RecurrenceResult | None) -> str:
     """Render a :class:`~app.services.chat.recurrence.RecurrenceResult`.
 
     Same sanitization posture as :func:`format_counted_block`: every value

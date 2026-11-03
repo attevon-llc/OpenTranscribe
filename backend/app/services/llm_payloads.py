@@ -37,7 +37,9 @@ class LLMPayloadMixin(LLMHost):
         model_lower = self.config.model.lower()
         return any(model_lower.startswith(prefix) for prefix in OPENAI_REASONING_MODEL_PREFIXES)
 
-    def _prepare_claude_payload(self, messages: list[dict[str, str]], **kwargs) -> dict[str, Any]:
+    def _prepare_claude_payload(
+        self, messages: list[dict[str, str]], **kwargs: Any
+    ) -> dict[str, Any]:
         """Prepare payload for Claude/Anthropic API."""
         system_message = ""
         user_messages = []
@@ -78,7 +80,9 @@ class LLMPayloadMixin(LLMHost):
 
         return payload
 
-    def _prepare_ollama_payload(self, messages: list[dict[str, str]], **kwargs) -> dict[str, Any]:
+    def _prepare_ollama_payload(
+        self, messages: list[dict[str, str]], **kwargs: Any
+    ) -> dict[str, Any]:
         """Prepare payload for Ollama native API."""
         payload = {
             "model": self.config.model,
@@ -96,7 +100,9 @@ class LLMPayloadMixin(LLMHost):
 
         return payload
 
-    def _prepare_openai_payload(self, messages: list[dict[str, str]], **kwargs) -> dict[str, Any]:
+    def _prepare_openai_payload(
+        self, messages: list[dict[str, str]], **kwargs: Any
+    ) -> dict[str, Any]:
         """Prepare payload for OpenAI-compatible APIs."""
         payload = {
             "model": self.config.model,
@@ -165,7 +171,7 @@ class LLMPayloadMixin(LLMHost):
 
         return payload
 
-    def _prepare_payload(self, messages: list[dict[str, str]], **kwargs) -> dict[str, Any]:
+    def _prepare_payload(self, messages: list[dict[str, str]], **kwargs: Any) -> dict[str, Any]:
         """
         Prepare request payload for the API based on provider requirements.
 

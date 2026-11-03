@@ -19,8 +19,21 @@ import pytest
 from app.core.chat_metadata_budget import CAPPED_MARKER_KEY
 from app.core.chat_metadata_budget import DEFAULT_MAX_METADATA_BYTES
 from app.core.chat_metadata_budget import DROPPED_KEYS_KEY
+from app.core.enums import LLMProvider
 from app.services.chat.persistence import _persist_reply
 from app.services.chat.turn import ChatTurn
+
+
+class _FakeConfig:
+    provider = LLMProvider.OPENAI
+    model = "m"
+
+
+class _FakeLLM:
+    config = _FakeConfig()
+
+    def estimate_tokens(self, text: str) -> int:
+        return len(text) // 4
 
 
 def _persisted_metadata(metadata: dict[str, Any]) -> dict[str, Any] | None:
@@ -38,9 +51,7 @@ def _persisted_metadata(metadata: dict[str, Any]) -> dict[str, Any] | None:
     def _scope():
         yield db
 
-    llm = SimpleNamespace(
-        config=SimpleNamespace(provider=SimpleNamespace(value="openai"), model="m")
-    )
+    llm = _FakeLLM()
     with patch("app.db.session_utils.session_scope", _scope):
         _persist_reply(
             conversation_id=1,

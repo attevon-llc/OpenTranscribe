@@ -14,7 +14,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from typing import Any
+
+if TYPE_CHECKING:
+    from app.services.llm_types import SupportsChatCompletion
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +100,11 @@ def _sanitize(raw: str, fallback: str) -> str:
 
 
 def rewrite_query(
-    llm, history: list[dict[str, str]], question: str, *, want_plan: bool = False
+    llm: SupportsChatCompletion | None,
+    history: list[dict[str, str]],
+    question: str,
+    *,
+    want_plan: bool = False,
 ) -> RewriteResult:
     """Expand a follow-up question into a standalone query.
 

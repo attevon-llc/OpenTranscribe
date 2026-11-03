@@ -129,3 +129,70 @@ exited 1 and read, in the log, exactly like a real platform mismatch.
 and **must capture the `docker run` exit status**: an image that cannot execute at all prints
 an empty string too, so discarding rc turns "could not check" into "CPU-only confirmed" — the
 #680 failure mode with a green tick, in the stage whose job is to catch it.
+
+### Cutting a release — `./scripts/release.sh`, never by hand
+
+**Do not hand-run git tag / docker push / gh release.** Everything mechanical is a
+stage in `scripts/release/NN-<stage>.sh`; `scripts/release.sh` owns arg parsing,
+the ledger, and dispatch.
+
+```bash
+./scripts/release.sh status                 # where am I? (ledger table)
+./scripts/release.sh explain publish        # preconditions, side effects, reversibility
+./scripts/release.sh reset 0.5.0            # clear rehearsal history before a REAL run
+./scripts/release.sh preflight 0.5.0        # seconds — fails fast
+./scripts/release.sh run 0.5.0              # the whole sequence
+./scripts/release.sh run 0.5.0 --dry-run    # print every command, execute nothing
+./scripts/release.sh scan 0.5.0 --force-scan "reason"   # override, recorded
+```
+
+Stage order (each independently runnable, skippable with `--skip`, resumable with
+`--from`):
+
+```
+preflight → bump → verify → test → build → scan → rehearse
+          → tag → publish → smoke → promote → finish
+```
+
+- **`tag` / `publish` / `promote` / `finish` reach outside this repo.** Each needs
+  `--yes` **and** its `ask` rule in `.claude/settings.json`. They are the only
+  stages that touch Docker Hub or GitHub.
+- **Exit codes are stable** — `0` pass, `1` gate failed, `2` misuse, `3`
+  precondition unmet (live stack up, builder unreachable), `4` operator abort.
+  `--json` on any stage emits a `criteria[]` and a `next[]` of legal moves.
+- **Gates are overridable, never silently.** `--force-<stage> "reason"` requires a
+  reason (there is no bare `--force`) and records `overridden` + operator in the
+  ledger — not a pass.
+- **Ledger** lives in `.release/<version>/steps/` (gitignored). Rehearsal history
+  reads as current until you `reset`, so reset before a real run.
+- `rehearse` runs **four** scenarios: **D** the model downloader from an empty cache, CPU-only,
+  in the built image (the only gate that runs `download-models.py`; v0.6.0 shipped a pyannote
+  group that failed for every user while A-C passed, `scripts/CLAUDE.md`), then fresh install,
+  upgrade, lite. It **requires the live
+  stack stopped**: without approval it refuses (exit 3) and prints the command; with `--yes` or
+  `RELEASE_AUTO_STOP_STACK=true` it runs `./opentr.sh stop`, rehearses, and restarts dev from a
+  trap. It also needs the release branch pushed to origin. `smoke` needs the stack stopped too,
+  and `test` needs the dev stack UP (`docs/design/v060_release_runbook.md` has the sequence).
+  `test-upgrade.sh` now runs to completion across all 18 phases, including the
+  backup/rollback tail — previously masked by a `set -e` harness bug that
+  silently truncated the script at the first non-fatal-by-design digest mismatch
+  (`scripts/CLAUDE.md`'s rehearsal gotchas). That is not a claim the rehearsal
+  always passes. The gap this used to name (#619) was **closed** 2026-08-28, but
+  its fix is a **best-effort settle, not a guarantee**: phases 15/17 wait for each
+  table's content digest to stop moving rather than tracking every async writer by
+  name, so a slow enough write can still land after the synchronization point. See
+  `full-test-matrix.md`'s coverage table for what each leg does and does not prove.
+- Running `test-upgrade.sh`/`test-fresh-install.sh` directly (not through
+  `rehearse`) in a backgrounded or non-interactive shell needs `--yes` — the
+  `I UNDERSTAND` confirmation prompt has no tty to read from and fails with
+  `No such device or address` otherwise.
+
+Full guide: `docs-site/docs/developer-guide/releasing.md` (Developer Guide →
+Releasing). Agent interface: `.claude/skills/release/SKILL.md`. Gate definitions:
+`scripts/release/release-criteria.yaml`.
+
+**Version facts are DERIVED, never recorded.** The Alembic head comes from the
+`down_revision` graph (`scripts/release-tests/lib/alembic-head.py`), and FROM/TO
+from the `VERSION` file + Docker Hub. Never add a checked-in table of versions —
+the last one (`expected-schemas.tsv`) went stale because it was hand-maintained
+and read by nothing.

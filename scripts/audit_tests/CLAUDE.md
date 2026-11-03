@@ -243,3 +243,70 @@ Moved intact from `scripts/CLAUDE.md`. Entry point: `scripts/audit-tests.py` (th
     where `expect(x).toBeTruthy()` is not. `loop-only` also needs single-assignment resolution
     (`endpoints = [...]` then `for e in endpoints:` is as static as the literal) or 22
     table-driven tests are false positives.
+
+### Four tools that keep the suite honest (issue #431)
+
+A test that cannot fail is worse than no test: it buys false confidence and hides the defect it
+was written to catch. These exist because this repo had shipped all four failure modes — an
+assertion that passed against an empty index, a `gpu` marker that selected nothing, 240 security
+tests gated off behind stale env vars, and a progress endpoint returning a hardcoded value that
+no test referenced.
+
+```bash
+python3 scripts/audit-tests.py backend/tests        # 21 AST detectors, exits 1 on new offenders
+cd frontend && npm run test:audit                   # the vitest sibling, 10 detectors
+npm run test:audit:selftest                         #   ...and ITS self-test (prints its case count; 32 when last counted)
+python3 scripts/analyze-test-timing.py <junit.xml> [--baseline baseline.xml]
+./scripts/run-mutation-tests.sh --module spans      # opt-in, never in the gate or CI
+```
+
+- **The auditors are allowlist-gated**, keyed `<file>::<test>::<category>` with a mandatory
+  written reason. The category is part of the key on purpose: an entry keyed by test alone once
+  exempted a test from all six detectors at once.
+- **`--selftest` is not optional ceremony.** It caught two detectors in each auditor that matched
+  *nothing* — silently reporting 0 findings, which is indistinguishable from a clean suite. Any
+  new detector needs a must-fire case and a must-stay-clean case.
+- **`analyze-test-timing.py` finds barriers, not just slow tests.** Unrelated tests from many
+  files sharing a sub-second duration band is a released lock queue, not a coincidence; that is
+  how one worker was found owning 81% of the wall clock.
+- **Coverage says a line RAN; mutation testing says the suite would NOTICE if it were wrong.**
+  Scoped to six security-critical modules. A surviving mutant is a finding — add the missing
+  assertion, or conclude the line is dead and delete it. Never loosen a test to kill one.
+- **Profile before theorising about test speed.** Two plausible hypotheses cost two full
+  measurement cycles on the Redis-retry bug; `python -m cProfile -o out.prof -m pytest <test>`
+  found it in one.
+
+Current (measured 2026-09-12 via `./scripts/run-integration-tests.sh`'s unit/API phase, under
+load — quote the command, not the number, if you are unsure): backend
+**14,746 passed / 79 skipped** in that phase. A prior entry here read 12,882/148 (2026-09-05);
+that is not this run under-reporting, it is the same rot this section warns about — re-derive,
+don't diff against a remembered number. (Re-checked 2026-10-27: `cd backend && pytest tests --collect-only -q -n0`
+lists ~20,200 test ids across all markers, so the 14,746 above predates ~6 weeks of growth; the passed
+count of the unit/API phase itself was not re-run.)
+
+**These numbers rot — re-derive rather than trust them.** Prior values in this file have been
+wrong by over a thousand tests when checked. `./scripts/run-backend-tests.sh --summary` and
+`cd frontend && npm run test` answer in seconds. The root `baseline.xml` referenced by
+`analyze-test-timing.py --baseline` is gitignored and untracked: a fresh worktree has none, and
+the main checkout may hold a stale local copy (an Aug-11, 5,473-test artifact was still there on
+2026-10-28). Regenerate it from a current junit run before trusting any `--baseline` comparison.
+
+**The DDL/`ddl_exclusive` barrier claim in earlier versions of this file was measured and
+refuted (2026-09-05).** Actual cost: DDL modules were **262 s of 2,031 s (12.9%)** and
+**239 s of 1,580 s (15.1%)** summed CPU across two runs — not the previously claimed
+418/1,197. Zero `v3xx_migration_consistency` tests appear above 3.5 s. The 43
+`ddl_exclusive`-marked tests sum to 59.5-68.8 s (3.4-3.8% of total), with the slowest single
+test at 2.91 s and none in the slowest 30 overall. An A/B run with all `ddl_exclusive` tests
+deselected showed the barrier costs only **+12.9 s to +5.8 s** — smaller than the
+**21.0-28.1 s of same-config run-to-run noise** observed between otherwise-identical runs.
+Tellingly, the timing-cluster detector still fires with **zero** DDL tests selected: its
+"barrier suspects" at 13k tests are not the advisory-lock queue, they're the CPU-bound tail
+under 48-way worker contention. The detector's underlying premise — that unrelated tests
+sharing a duration band can't be coincidence — held at 5k tests and does not at 13k.
+
+**The real cost is collection, not any barrier.** `pytest tests/ -k
+"zzz_no_such_test_zzz" -n auto` — matching zero tests — still took **96.3 s wall** (48
+workers each collecting the entire tree); `-n 16` dropped that to 78.3 s, and
+`--collect-only -n0` (single worker) took 44.5 s. That means roughly **96 s of a ~154 s
+suite is spent before a single test runs** — 6-10x the DDL barrier's cost, and the actual
+place to look for a speedup.

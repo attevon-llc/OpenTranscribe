@@ -99,3 +99,20 @@ exemptions (below).
   shares with the main one. Nothing in `opentr.sh` can namespace a path the operator asked for.
 - `setup-watch-source-test-data.sh` resolves containers through `OT_CONTAINER_PREFIX`
   (default `opentranscribe`) — pass `OT_CONTAINER_PREFIX=otfresh-<name>` to seed a fresh deployment.
+
+### Fresh / isolated deployments (data-safety guardrails)
+
+**Use `--fresh` for any throwaway or experimental stack — never develop against the live NAS data again.** A fresh deployment runs in its own `otfresh-<name>` compose project (separate containers AND named volumes) and the NAS/bind overlay is **never** loaded, so the real dataset can't be touched.
+
+```bash
+./opentr.sh start dev --fresh test1 [--port-offset 100] [--seed-benchmark]
+./opentr.sh stop|status --fresh test1        # stop keeps volumes
+./opentr.sh fresh-list                       # list fresh deployments + volumes
+./opentr.sh fresh-destroy test1              # containers+volumes (y/N; the ONLY destructive fresh op)
+./opentr.sh data-paths                       # resolved LIVE data paths — CHECK before deleting anything
+./opentr.sh start dev --dry-run              # print compose files + command, start nothing
+```
+
+`--fresh` refuses to start when any port it needs is already bound (it offers `--port-offset N`) and generates a gitignored `.fresh/<name>.yml` overlay that re-pins every service to `otfresh-<name>-*`. `--port-offset` works by exporting the `*_PORT` vars the compose files already read — never by overlaying a second `ports:` list, which compose would append (issue #343). The offset is remembered in `.fresh/<name>.offset`. **Every** `--with-*` overlay is isolated too (issue #347) — names, ports, and volumes all move — and the overlays used are recorded in `.fresh/<name>.aux`. Do not maintain the list here by hand: it was stale for four overlays at once, and `--with-llm-test` was missing from `opentr.sh`'s dispatch itself, so a fresh stack collided with the main one on `opentranscribe-llm-test-vllm`/5195 and `fresh-destroy` left a multi-GB vLLM holding a GPU. `backend/tests/unit/test_opentr_fresh_aux_isolation.py` now enumerates the flags and fails on any that is neither isolated nor **explicitly exempt with a written reason**. The three exemptions are `--with-watch` / `--with-backup` (they bind live host directories and declare no `container_name` or ports, so there is nothing project-scoped to re-pin — `opentr.sh` warns instead) and `--with-scratch-tmpfs` (it only changes the driver of the already project-namespaced `pipeline_scratch` volume). `--with-pki` is **not** exempt: its overlay publishes `PKI_HTTPS_PORT`, so it is isolated like the rest. ⚠️ `LLM_TEST_GPU_DEVICE_ID` is deliberately **not** offset: a port offset must never renumber a physical card. Details: `scripts/CLAUDE.md`.
+
+**NAS overlay** (non-fresh `start`): auto-detected from `.env`, announced with a `💾 NAS overlay AUTO-LOADED` banner; `--no-nas` suppresses, `--nas` opts in explicitly. When active it writes a `.opentranscribe-live-data` marker into each bind dir — **if you see that marker, you are looking at live data; do not delete.** Full map: `docs-site/docs/operations/fresh-deployments.md`.

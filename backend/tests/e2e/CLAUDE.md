@@ -163,3 +163,17 @@ Both have must-fire and must-stay-clean cases in `e2e/test_preflight_guard.py`.
 
 ⚠️ **An absence-asserting sibling cannot catch this class.** `test_promote_control_absent_for_
 an_already_shared_tag` passed throughout, because a broken store produces absence too.
+
+### E2E (pytest + Playwright)
+
+Tests in `backend/tests/e2e/` (auth, gallery, upload, search, settings, transcript editing, visual). Requires dev environment running (`./opentr.sh start dev`).
+
+```bash
+./scripts/e2e/run-e2e.sh                                        # full suite, headless
+./scripts/e2e/run-e2e-smoke.sh                                  # quick subset
+./scripts/e2e/run-e2e.sh -m upload                              # by marker (upload/search/settings/transcription/gallery/auth/visual)
+DISPLAY=:11 pytest backend/tests/e2e/ -v --headed               # visible on XRDP
+```
+Fixtures, markers, and the `RUN_*` gates: `backend/tests/CLAUDE.md`. Test creds `admin@example.com` / `password`. **E2E suites must never persist changes to dev data** — upload tests delete what they create; edit tests use the cancel path.
+
+Auth-vs-testing rules: the **dev stack relaxes auth security limits** (`docker-compose.override.yml`: rate limit 120/min, lockout threshold 100 — `DEV_*` tunable in `.env`; prod keeps the strict `.env` values since the override is never loaded there). Negative login tests must use a **nonexistent account**, never wrong passwords for `admin@example.com` (progressive per-account lockout poisons the whole suite). Frontend auth is **httpOnly-cookie based** — no JS-readable token; in-page API calls use `fetch(..., {credentials: 'same-origin'})`. `GET /api/auth/session` is the SPA's session probe (200 for anonymous, never 401).

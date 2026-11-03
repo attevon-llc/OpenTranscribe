@@ -41,6 +41,7 @@ from app.services.request_context import RequestContext
 from app.services.tag_bulk import CHANGED_OUTCOMES
 from app.services.tag_bulk import TAG_ACTIONS
 from app.services.tag_bulk import BulkTagOutcome
+from app.services.tag_bulk import BulkTagResolution
 from app.services.tag_bulk import apply_tag_to_file
 from app.services.tag_bulk import refresh_tagged_files
 from app.services.tag_bulk import resolve_bulk_tag
@@ -145,7 +146,6 @@ def get_file_status_detail(
         # button did not enforce.
         retry_config = system_settings_service.get_retry_config(db)
 
-        # Check if file is safe to delete
         is_safe, delete_reason = is_file_safe_to_delete(db, file_id)
 
         # Determine if file is stuck
@@ -296,7 +296,6 @@ def retry_file_processing(
         file_id = db_file.id  # Get internal ID for task operations
         require_processing_allowed_for_file(db, db_file)
 
-        # Check if file can be retried
         if db_file.status not in [
             FileStatus.ERROR,
             FileStatus.CANCELLED,
@@ -1210,13 +1209,13 @@ def bulk_file_action(
 ):
     """Perform bulk actions on multiple files."""
     is_tag_action = request.action in TAG_ACTIONS
-    tag = None
+    resolution = BulkTagResolution(None)
     if is_tag_action:
         # Tagging creates tenant vocabulary, which a support grant never does (same rule as the
         # tag routes).
         refuse_under_support_grant(ctx)
         try:
-            tag = resolve_bulk_tag(
+            resolution = resolve_bulk_tag(
                 db,
                 request.action,
                 request.tag_name,
@@ -1250,7 +1249,7 @@ def bulk_file_action(
                     num_speakers=request.num_speakers,
                     disable_diarization=bool(request.disable_diarization),
                     organization_id=ctx.org_id,
-                    tag=tag,
+                    tag=resolution.tag,
                     is_org_admin=ctx.is_org_admin,
                 )
                 results.append(result)
@@ -1297,6 +1296,7 @@ def bulk_file_action(
                     db,
                     [r.file_uuid for r in results if r.outcome in CHANGED_OUTCOMES],
                     user_id=current_user.id,
+                    created_tag_id=resolution.created_tag_id,
                 )
             except Exception as e:
                 logger.error(f"Could not refresh tags for bulk {request.action}: {e}")

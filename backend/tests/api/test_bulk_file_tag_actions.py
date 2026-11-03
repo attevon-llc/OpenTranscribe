@@ -28,8 +28,10 @@ from app.services.tag_bulk import REMOVE_TAG_ACTION
 from app.services.tag_bulk import REQUIRED_PERMISSION
 from app.services.tag_bulk import TAG_ACTIONS
 from app.services.tag_bulk import BulkTagOutcome
+from app.services.tag_bulk import BulkTagResolution
 from app.services.tag_bulk import BulkTagResult
 from app.services.tag_bulk import apply_tag_to_file
+from app.services.tag_bulk import refresh_tagged_files
 from app.services.tag_bulk import resolve_bulk_tag
 from app.services.tag_service import InvalidTagNameError
 
@@ -230,27 +232,42 @@ def test_resolving_for_remove_never_creates_and_for_add_commits(
     commits = count_commits(monkeypatch, db_session)
     name = word("Resolve")
 
-    assert (
-        resolve_bulk_tag(
-            db_session, "remove_tag", name, user_id=normal_user.id, organization_id=None
-        )
-        is None
+    missing = resolve_bulk_tag(
+        db_session, "remove_tag", name, user_id=normal_user.id, organization_id=None
     )
+    assert missing == BulkTagResolution(None)
     assert db_session.query(Tag).filter(Tag.name == name).count() == 0
     assert commits == []
 
     added = resolve_bulk_tag(
         db_session, "add_tag", name, user_id=normal_user.id, organization_id=None
     )
-    assert added is not None and added.name == name
+    assert added.tag is not None and added.tag.name == name
+    assert added.created_tag_id == added.tag.id
     assert commits == [1]
     again = resolve_bulk_tag(
         db_session, "remove_tag", name.upper(), user_id=normal_user.id, organization_id=None
     )
-    assert again is not None and again.id == added.id
+    assert again == BulkTagResolution(added.tag)
+    existing = resolve_bulk_tag(
+        db_session, "add_tag", name, user_id=normal_user.id, organization_id=None
+    )
+    assert existing == BulkTagResolution(added.tag)
 
     with pytest.raises(InvalidTagNameError):
         resolve_bulk_tag(db_session, "add_tag", None, user_id=normal_user.id, organization_id=None)
+
+
+def test_closing_a_batch_that_created_no_tag_deletes_none(db_session, normal_user, monkeypatch):
+    """Only the batch that inserted a tag may discard it, even on a shared session."""
+    record_reindex(monkeypatch)
+    name = word("Other Batch")
+    resolve_bulk_tag(db_session, "add_tag", name, user_id=normal_user.id, organization_id=None)
+
+    refresh_tagged_files(db_session, [], user_id=normal_user.id)
+
+    db_session.expire_all()
+    assert db_session.query(Tag).filter(Tag.name == name).count() == 1
 
 
 def test_a_strangers_file_is_refused_per_file_with_the_permission_code(

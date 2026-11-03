@@ -362,7 +362,10 @@ def test_bulk_export_stream_recovers_a_completion_during_subscribe(monkeypatch):
         "exported": 2,
         "skipped": 0,
     }
-    fake_redis = _RaceyRedis(result)
+    fake_redis = _RaceyRedis({**result, "file_ids": [1, 2]})
+    monkeypatch.setattr(
+        "app.services.media_revocation_cache.hidden_from_requester", lambda *_a: False
+    )
     monkeypatch.setattr("redis.asyncio.from_url", lambda *args, **kwargs: fake_redis)
 
     owner = User(id=334)

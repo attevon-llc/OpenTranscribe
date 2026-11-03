@@ -111,7 +111,7 @@ stages:
         severity: warn
 
       - id: release-test-secrets
-        description: HUGGINGFACE_TOKEN present, or both rehearsal scenarios die at their first transcription
+        description: HUGGINGFACE_TOKEN present, or rehearsal Scenario D is not-measured and A/B die at their first transcription
         severity: warn
 
       - id: release-test-media
@@ -223,6 +223,14 @@ stages:
         # out of the artifact is the only check that would have caught it.
         severity: blocking
 
+      - id: images-carry-no-dev-artifacts
+        description: scripts/check-image-hygiene.sh is clean on every per-leg local tag (no mutants/, test DBs, caches, keys, .env)
+        # v0.6.0's backend and lite images shipped /app/mutants, test.db,
+        # celerybeat-schedule* and .import_linter_cache from the build host,
+        # because `COPY . .` copies whatever is on disk. Could-not-inspect is
+        # not-measured, which blocks like a failure and is never read as clean.
+        severity: blocking
+
   # ─── The scenarios that prove a real user can install and upgrade. ──────
   rehearse:
     description: The three deployment scenarios, run under the installer's stock names and ports
@@ -253,6 +261,46 @@ stages:
         # non-blocking gate on a first-ever publish is exactly how that happens.
         # It publishes nothing itself: test-lite-mode.sh builds locally and pins
         # pull_policy: never.
+        severity: blocking
+
+      # ─── Scenario D: the model downloader from an EMPTY cache ───────────
+      # v0.6.0 shipped a scripts/download-models.py whose `pyannote` group
+      # exits 1 from a cold cache on EVERY host, CPU and GPU alike (synthetic
+      # sine-wave warm-up -> VAD finds no speech -> transformers 5.10.4 indexes
+      # an empty batch). A, B and C all passed: they install with
+      # OPENTRANSCRIBE_UNATTENDED=1, which skips the download outright, then
+      # seed a warm shared cache. So the command an interactive installer runs
+      # straight after install had never executed under any gate. Scenario D
+      # (scripts/release-tests/test-cold-model-download.sh) runs it from the
+      # IMAGE UNDER TEST, CPU-only, with this checkout's script mounted — the
+      # exact pairing an installed user gets — and its evidence is read back
+      # through scripts/release-tests/lib/cold-model-download.py.
+      - id: cold-cache-model-download
+        description: >-
+          Every DOWNLOAD_GROUPS group of download-models.py (read from the script,
+          never listed here) exits 0, each in its own container, from one empty
+          cache, CPU-only, in the image under test. Failing groups are named. A
+          subset run, a missing HUGGINGFACE_TOKEN, or an image not shown to be the
+          code under test is not-measured, never a pass.
+        severity: blocking
+
+      - id: cold-cache-weights-present
+        description: >-
+          An independent check of what that run left on disk: each group's weights
+          exist and are non-empty (HF hub snapshots, nltk corpora with no
+          multiply-linked file, sentence-transformers, opensearch-ml model plus
+          config.json, the diar-native .onnx export). Exit codes alone are not
+          enough: the downloader treats 'partial' (redaction) and 'skipped'
+          (diar-native) as success.
+        severity: blocking
+
+      - id: cold-cache-nltk-hardlinks-fail-loudly
+        description: >-
+          The nltk group run against a `cp -al` hardlink-seeded nltk_data either
+          exits non-zero NAMING the pathsec refusal, or exits 0 leaving a corpus nltk
+          opens. Exit 0 over multiply-linked files (which nltk >= 3.10 refuses at
+          runtime) is the silent shape that once failed every rehearsal
+          transcription with the cause visible only in a torn-down database.
         severity: blocking
 
   # ─── Version bump. Writes files and commits; publishes nothing. ─────────

@@ -26,6 +26,7 @@ from app.services.speaker_identity_rules import blocked_profile_names
 from app.services.speaker_identity_rules import blocking_profile_ids_named
 from app.services.speaker_identity_rules import lift_profile_blacklist
 from app.services.speaker_identity_rules import speaker_blocked_from_profile
+from app.services.speaker_profile_activity import touch_profile_interaction
 from app.services.takedown_service import exclude_quarantined
 from app.utils.speaker_identity_detail import ORIGIN_ACCEPTED_SUGGESTION
 from app.utils.speaker_identity_detail import ORIGIN_BATCH_ASSIGN
@@ -238,6 +239,7 @@ def _apply_assign(
     b.assigned.add(int(speaker.id))
     if speaker.profile_id:
         b.touched.profile_ids.add(int(speaker.profile_id))
+    touch_profile_interaction(self.db, [int(profile.id), speaker.profile_id], "human_link")
     speaker.profile_id = profile.id
     self._rename_tracker.record(int(speaker.media_file_id), indexed_as, str(profile.name))
     speaker.display_name = profile.name

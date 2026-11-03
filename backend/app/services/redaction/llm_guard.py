@@ -44,7 +44,7 @@ from urllib.parse import urlparse
 from sqlalchemy.orm import Session
 
 from app.core import redaction_defaults
-from app.services.redaction.config import EffectiveRedactionConfig
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.services.redaction.config import resolve_effective_config
 from app.services.redaction.coverage import describe_gap
 from app.services.redaction.coverage import uncovered_detectors

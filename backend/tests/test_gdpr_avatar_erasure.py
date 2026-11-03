@@ -109,6 +109,14 @@ def _run(db, scope: str, user: User, org: Organization, delete_file) -> dict[str
         patch("app.services.opensearch_service.remove_profile_embedding", return_value=None),
         patch("app.services.gdpr_erasure_service._erase_speaker_voiceprints", return_value=0),
         patch("app.services.gdpr_erasure_service.audit_logger", MagicMock()),
+        # The erasure receipt measures real stores in a fresh session (covered by
+        # integration/test_erasure_receipt_e2e.py); this suite pins the destroy order only.
+        patch(
+            "app.services.gdpr_erasure_service.receipt_flow.begin",
+            return_value=(MagicMock(), {}),
+        ),
+        patch("app.services.gdpr_erasure_service.receipt_flow.finish"),
+        patch("app.services.gdpr_erasure_service.erase_extras"),
     ):
         return _SCOPES[scope](db, user, org)
 

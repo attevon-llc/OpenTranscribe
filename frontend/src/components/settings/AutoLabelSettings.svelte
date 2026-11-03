@@ -6,6 +6,7 @@
   import { toastStore } from '$stores/toast';
   import { settingsModalStore } from '$stores/settingsModalStore';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import { llmStatusStore } from '$stores/llmStatus';
   import ProgressBar from '../ui/ProgressBar.svelte';
   import RangeSlider from '../ui/RangeSlider.svelte';
@@ -128,7 +129,7 @@
       // UI state will be updated by WebSocket auto-label-status events
     } catch (err) {
       console.error('[AutoLabelSettings] Error triggering retroactive apply:', err);
-      toastStore.error($t('autoLabel.retroactiveFailed'));
+      toastStore.error(getErrorMessage(err, $t('autoLabel.retroactiveFailed')));
       retroactiveRunning = false;
     }
   }

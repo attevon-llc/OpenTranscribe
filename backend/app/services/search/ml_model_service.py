@@ -17,6 +17,7 @@ from typing import Any
 from app.core.exceptions import ServiceUnavailableError
 from app.services.opensearch_service import get_opensearch_client
 from app.services.search.ml_ingest_pipelines import MLIngestPipelineMixin
+from app.services.search.ml_model_deployment import _IN_FLIGHT_STATES
 from app.services.search.ml_model_deployment import MLModelDeploymentMixin
 from app.services.search.ml_model_registration import MLModelRegistrationMixin
 
@@ -214,6 +215,10 @@ class OpenSearchMLModelService(
     def find_model_by_name(self, model_name: str) -> str | None:
         """Find a model ID by its name.
 
+        Several registrations can share a name (a registration whose task outlived its wait is
+        followed by a second one). The DEPLOYED one wins, then one still being registered or
+        deployed, then any other; the first match alone could be an undeployed duplicate.
+
         Args:
             model_name: The model name to search for.
 
@@ -224,11 +229,19 @@ class OpenSearchMLModelService(
             ServiceUnavailableError: The registry could not be read, which says
                 nothing about whether the model exists.
         """
-        models = self.list_models(raise_on_error=True)
-        for model in models:
-            if model.get("name") == model_name:
-                return model.get("model_id")
-        return None
+        matches = [m for m in self.list_models(raise_on_error=True) if m.get("name") == model_name]
+        if not matches:
+            return None
+
+        def _rank(model: dict[str, Any]) -> int:
+            state = str(model.get("state", "")).upper()
+            if state == "DEPLOYED":
+                return 0
+            return 1 if state in _IN_FLIGHT_STATES else 2
+
+        best = min(matches, key=_rank)  # min() is stable: ties keep search order
+        model_id: str | None = best.get("model_id")
+        return model_id
 
 
 # Module-level singleton

@@ -27,6 +27,7 @@ from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.auth.audit_events import AuditEventType
 from app.core.exceptions import DomainError
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.db.base import get_db
 from app.models.media import Comment
 from app.models.media import MediaFile
@@ -35,7 +36,6 @@ from app.models.speaker import Speaker
 from app.models.user import User
 from app.services.content_audit import record_file_event
 from app.services.platform_bypass import PlatformBypass
-from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.redaction.export_policy import resolve_export_reveal
 from app.services.redaction.reveal_audit import audit_unredacted_reveal
 from app.services.request_context import RequestContext

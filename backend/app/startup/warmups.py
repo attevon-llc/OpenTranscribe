@@ -1,7 +1,7 @@
 """Startup hooks the API lifespan runs inline or as background tasks.
 
 Neural-search bootstrap fast path, usage-hook registration, PII / reranker warm-ups,
-native diarizer provisioning and the boot-time status log lines. Split out of
+native diarizer provisioning, the database role check and the boot-time status log lines. Split out of
 ``app/main.py``; the lifespan imports each name and invokes it.
 """
 
@@ -168,6 +168,19 @@ def _log_password_blocklist_status() -> None:
         )
     except Exception as e:
         logger.warning(f"Password blocklist status check failed (non-fatal): {e}")
+
+
+def _enforce_database_role_or_exit() -> None:
+    """Fail closed: a requested database role split must really be effective (superuser or
+    owner runtime roles are refused)."""
+    from app.db.base import engine
+    from app.db.role_check import enforce_runtime_role
+
+    try:
+        enforce_runtime_role(engine)
+    except RuntimeError as e:
+        logger.critical(f"Audit record protection requested but not effective: {e}")
+        raise SystemExit(1) from e
 
 
 def _log_tenancy_mode_at_startup() -> None:

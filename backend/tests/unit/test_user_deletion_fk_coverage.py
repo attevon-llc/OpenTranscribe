@@ -239,6 +239,24 @@ _OWNER_SCOPED: dict[str, Disposition] = {
 #: No ``WHERE user_id = :id`` sweep can find them, which is why the database rule is
 #: the handler (``v387``) rather than a sixth entry in each hand-maintained list.
 _ACTOR: dict[str, Disposition] = {
+    "legal_acceptance.user_id": Disposition(
+        SET_NULL,
+        "LegalAcceptance",
+        DB_SET_NULL,
+        DB_SET_NULL,
+        "v451. Evidence record of which legal text was accepted; it outlives the account, "
+        "pseudonymised by trg_legal_acceptance_guard (IP and user agent blanked, retention clock "
+        "started) and deleted later by tasks/legal_retention.py. Every deletion path, including "
+        "the first-run wizard's raw DELETE, reaches it through this rule.",
+    ),
+    "media_file.voiceprint_consent_by_user_id": Disposition(
+        SET_NULL,
+        "MediaFile",
+        DB_SET_NULL,
+        DB_SET_NULL,
+        "v454. Records which account stated a file's voiceprint consent; the state itself "
+        "stays with the file when that account is deleted.",
+    ),
     "auth_config_audit.changed_by": Disposition(
         SET_NULL,
         "AuthConfigAudit",

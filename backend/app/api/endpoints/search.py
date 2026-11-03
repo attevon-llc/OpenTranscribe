@@ -33,6 +33,7 @@ from app.db.base import get_db
 from app.models.user import User
 from app.services.collection_visibility import resolve_collection_filter
 from app.services.request_context import RequestContext
+from app.services.takedown_service import quarantine_list_exempt
 
 logger = logging.getLogger(__name__)
 
@@ -216,7 +217,7 @@ def search_transcripts(
         # Abuse/DMCA: the OpenSearch transcript index has no quarantine field, so
         # drop any taken-down files from the result page against the DB (page-sized,
         # one IN query). Admins keep visibility for review.
-        if not ctx.bypass.user_is_admin:
+        if not quarantine_list_exempt(ctx.bypass):
             search_response = _drop_quarantined_search_hits(db, search_response)
 
         payload = _search_response_to_schema(search_response)
@@ -400,7 +401,7 @@ def search_match_count(
             user_id=ctx.user.id,
             file_uuid=file_uuid,
             organization_id=ctx.org_id,
-            is_admin=ctx.bypass.user_is_admin,
+            is_admin=quarantine_list_exempt(ctx.bypass),
         )
     except QuarantineExclusionUnavailableError as e:
         # Literal 503 to match get_available_filters' raise below; this module
@@ -454,7 +455,7 @@ def search_suggestions(
             user_id=ctx.user.id,
             limit=limit,
             organization_id=ctx.org_id,
-            is_admin=ctx.bypass.user_is_admin,
+            is_admin=quarantine_list_exempt(ctx.bypass),
         )
     except QuarantineExclusionUnavailableError as e:
         raise HTTPException(
@@ -493,7 +494,9 @@ def get_available_filters(
     search_service = HybridSearchService()
     try:
         return search_service.get_available_filters(
-            user_id=ctx.user.id, organization_id=ctx.org_id, is_admin=ctx.bypass.user_is_admin
+            user_id=ctx.user.id,
+            organization_id=ctx.org_id,
+            is_admin=quarantine_list_exempt(ctx.bypass),
         )
     except QuarantineExclusionUnavailableError as e:
         # Literal 503 to match _summary_search_payload's masking-outage raise

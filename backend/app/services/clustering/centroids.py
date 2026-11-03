@@ -10,6 +10,7 @@ from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCluster
 from app.models.speaker import SpeakerClusterMember
 from app.services.opensearch_service.client import OpenSearchUnavailableError
+from app.services.privacy.policy import declined_file_ids
 
 if TYPE_CHECKING:
     from app.services.speaker_clustering_service import SpeakerClusteringService
@@ -147,9 +148,13 @@ def _member_voiceprints(
     valid_members: list[SpeakerClusterMember] = []
     best_quality = -1.0
     best_speaker_id = None
+    # Per-file consent (#1356): a voice from an opted-out file never enters the centroid.
+    excluded_files = declined_file_ids(
+        self.db, (m.speaker.media_file_id for m in members if m.speaker)
+    )
     for m in members:
         speaker = m.speaker
-        if not speaker:
+        if not speaker or speaker.media_file_id in excluded_files:
             continue
         emb = self._get_speaker_embedding(speaker)
         if emb is not None:

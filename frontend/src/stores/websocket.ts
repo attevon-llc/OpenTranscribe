@@ -5,7 +5,7 @@ import { t } from '$stores/locale';
 import axiosInstance from '$lib/axios';
 import { reconnectDelayMs } from '$lib/utils/backoff';
 import { isCloudEdition } from '$lib/edition';
-import { sessionSurvivesRevocation } from '$lib/auth/sessionRecheck';
+import { sessionAnswersAfterRefusal, sessionSurvivesRevocation } from '$lib/auth/sessionRecheck';
 import { countUnreadItems } from '$lib/notifications/jobGrouping';
 import type { PostProcessingFrame } from '$lib/notifications/postProcessing';
 import { showNotificationsPanel } from '$stores/notificationsPanel';
@@ -46,6 +46,10 @@ function createWebSocketStore() {
   // Keep track of reconnect timeout
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 
+  // At most one session probe per refusal streak; cleared by a successful open or by a
+  // disconnect.
+  let terminalProbeDone = false;
+
   // Get current state without subscribing
   const getState = (): WebSocketState => {
     let currentState: WebSocketState = initialState;
@@ -83,6 +87,7 @@ function createWebSocketStore() {
 
         // WebSocket event handlers
         socket.onopen = () => {
+          terminalProbeDone = false;
           // Community edition: authentication is handled via httpOnly cookies sent
           // during the WebSocket handshake. The backend WS handler reads the
           // access_token cookie automatically.
@@ -129,8 +134,19 @@ function createWebSocketStore() {
 
             const action = closeAction(
               event.code,
-              typeof document !== 'undefined' && document.hidden
+              typeof document !== 'undefined' && document.hidden,
+              terminalProbeDone
             );
+            if (action === 'probe-session' || action === 'refused') {
+              s.status = 'error';
+              if (action === 'probe-session') {
+                terminalProbeDone = true;
+                void sessionAnswersAfterRefusal().then((answered) => {
+                  if (answered) tryReconnect();
+                });
+              }
+              return s;
+            }
             if (action === 'recheck-session') {
               void sessionSurvivesRevocation().then((live) => {
                 if (live) tryReconnect();
@@ -226,6 +242,7 @@ function createWebSocketStore() {
 
       // The backoff belongs to the session that just ended; the next connect is a first one.
       state.reconnectAttempts = 0;
+      terminalProbeDone = false;
       state.status = 'disconnected';
       return state;
     });

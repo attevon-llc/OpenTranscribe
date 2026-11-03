@@ -100,7 +100,7 @@ def test_video_service_reads_use_their_own_short_sessions(db_session, normal_use
             written["content"] = content
 
     service = vps.VideoProcessingService.__new__(vps.VideoProcessingService)
-    from app.services.redaction.config import EffectiveRedactionConfig
+    from app.core.redaction_config import EffectiveRedactionConfig
 
     service._generate_subtitle_file(
         int(media_file.id), _RecordingPath(), True, EffectiveRedactionConfig(enabled=False)

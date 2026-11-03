@@ -416,6 +416,18 @@ phase_03_pin_local_image() {
                    "this would skip model downloads. Delete it or use a fresh TEST_ROOT."
         fi
         gr_log "hub mode: model cache is empty — models will download from HuggingFace on first start (fresh-user path)"
+    elif [[ -n "${OT_COLD_CACHE_SEED:-}" && -d "${OT_COLD_CACHE_SEED}/huggingface" ]]; then
+        # Set by 65-rehearse.sh when Scenario D's cold run of scripts/download-models.py
+        # succeeded for every group. Seeding from it means this install transcribes on weights
+        # the SHIPPED downloader fetched from an empty cache — the cache a real user who runs
+        # the downloader gets — rather than on whatever the dev stack accumulated over months.
+        # The shared cache is deliberately NOT topped up into it: a gap here is a finding about
+        # the downloader, and filling it from the live cache would hide it.
+        gr_log "seeding model cache from Scenario D's cold download ($OT_COLD_CACHE_SEED) …"
+        mc_seed_cache "$OT_COLD_CACHE_SEED" "$model_cache_dir" \
+            huggingface torch nltk_data sentence-transformers opensearch-ml diar-native
+        echo "cold-download:$OT_COLD_CACHE_SEED" > "$TEST_ROOT/model-cache-source.txt"
+        gr_ok "model cache seeded from the cold-cache downloader run"
     elif [[ -d "$shared_cache" && -f "$shared_cache/.seeded-from-live" ]]; then
         # Repair the SHARED cache first (issue: it had no `diar-native` for four weeks while
         # this scenario asked for one and reported "model cache seeded"). Only test-upgrade.sh
@@ -437,6 +449,7 @@ phase_03_pin_local_image() {
         # proves diarization worked, seeded or not.
         mc_seed_cache "$shared_cache" "$model_cache_dir" \
             huggingface torch nltk_data sentence-transformers pyannote opensearch-ml diar-native
+        echo "shared-warm:$shared_cache" > "$TEST_ROOT/model-cache-source.txt"
         gr_ok "model cache seeded from $shared_cache"
     else
         gr_warn "shared model cache not found at $shared_cache — first start will download models"

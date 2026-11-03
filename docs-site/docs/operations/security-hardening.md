@@ -386,7 +386,11 @@ Events are viewable and exportable (CSV or JSON) in **Settings > Audit Logs**; a
 
 ### Log Retention
 
-Configure log retention based on your compliance requirements:
+`AUDIT_LOG_RETENTION_DAYS` controls retention of the **prunable Postgres audit tables**
+(`auth_config_audit`, `support_access_use`). `0` (the default) keeps them forever; any other
+value must be at least 365 days and is enforced by the database itself. It does **not** manage
+the OpenSearch `audit-logs-*` indices; set their retention with your OpenSearch index
+lifecycle tooling to match your compliance requirements:
 
 | Compliance Framework | Minimum Retention |
 |---------------------|-------------------|
@@ -394,6 +398,9 @@ Configure log retention based on your compliance requirements:
 | HIPAA | 6 years |
 | FedRAMP | 3 years |
 | GDPR | As needed for purpose |
+
+See [Audit record integrity](audit-integrity.md) for how the database tables are protected
+from being rewritten or deleted.
 
 ### FedRAMP/NIST Controls Mapping
 
@@ -471,6 +478,10 @@ erasure was requested, one row per request, with the SLA clock on it.
 - **Restore reconciliation.** Restoring a database backup taken before an erasure can resurrect
   the erased subject. A reconciliation task re-checks every completed ledger entry against the
   live schema after a restore and re-erases any subject it finds has come back.
+
+- **Erasure receipts.** Each erasure is measured per store afterwards and the result is kept as a
+  numbers-only receipt. An erasure is complete only when its receipt is `verified`. See
+  [GDPR Erasure and Receipts](./gdpr-erasure.md).
 
 ## Secrets Management
 

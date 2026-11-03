@@ -25,6 +25,7 @@ from fastapi import status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
@@ -34,6 +35,7 @@ from app.core.env import is_truthy
 from app.core.exceptions import DomainError
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
+from app.legal.processing_gate import require_processing_allowed
 from app.models.user import User
 from app.schemas.media import MediaFile as MediaFileSchema
 from app.schemas.media import PaginatedMediaFileResponse
@@ -41,6 +43,7 @@ from app.schemas.processing_request import ReprocessRequest
 from app.schemas.transcript import TranscriptSegment
 from app.schemas.transcript import TranscriptSegmentUpdate
 from app.services.request_context import RequestContext
+from app.services.storage_versions import StorageDeleteIncompleteError
 from app.utils.whisper_model_choice import require_servable_whisper_model
 
 from . import cancel_upload
@@ -50,6 +53,7 @@ from . import media_delivery
 from . import multipart
 from . import prepare_upload
 from . import single_file
+from . import voiceprint_consent
 from .captions import router as captions_router
 from .crud import delete_media_file
 from .crud import get_media_file_by_uuid
@@ -129,6 +133,7 @@ def _parse_speaker_params_from_headers(request: Request | None) -> SpeakerParams
 # Include all routers
 router.include_router(cancel_upload.router, prefix="", tags=["files"])
 router.include_router(prepare_upload.router, prefix="", tags=["files"])
+router.include_router(voiceprint_consent.router, prefix="", tags=["files"])
 router.include_router(complete_upload.router, prefix="", tags=["files"])
 router.include_router(multipart.router, prefix="", tags=["files"])
 router.include_router(subtitles_router, prefix="", tags=["subtitles"])
@@ -159,6 +164,12 @@ async def upload_media_file(
 ):
     """Upload a media file for transcription"""
     current_user = ctx.user
+    # The legal processing gate, before the upload is stored. The caller owns the file.
+    await run_in_threadpool(
+        lambda: require_processing_allowed(
+            db, owner_user_id=int(current_user.id), organization_id=ctx.org_id
+        )
+    )
     # Get optional headers from prepare step
     existing_file_uuid = request.headers.get("X-File-ID") if request else None
     file_hash = request.headers.get("X-File-Hash") if request else None
@@ -333,11 +344,22 @@ def clear_video_cache(
 
     except (HTTPException, DomainError):
         raise
+    except StorageDeleteIncompleteError as e:
+        # A lock or refused delete left objects behind: a conflict, not an outage (same
+        # status as POST /admin/settings/cache-config/clear).
+        logger.error(f"Video cache clear for file {file_id} left objects behind: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Some cached objects could not be removed (a storage lock or a refused "
+                "delete). The server log names them."
+            ),
+        ) from e
     except Exception as e:
         logger.exception(f"Error clearing video cache for file {file_id}: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error clearing video cache",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Object storage unavailable while clearing the video cache",
         ) from e
 
 

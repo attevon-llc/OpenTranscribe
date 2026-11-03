@@ -173,7 +173,8 @@ as overridden, never as a pass.
 - `test` needs the DEV STACK UP (it probes 5176) and runs `run-dev-tests.sh --backend-only --e2e-smoke
   --export-capability`. If that run is NOT MEASURED (exit 5) the stage maps it to exit 4
   ("aborted: nothing ran"), which is misleading: read the log, do not assume the gate ran.
-- `rehearse` runs three scenarios (fresh install, upgrade, lite) and exits 3 unless `release/prep-0.6.0`
+- `rehearse` runs four scenarios (D cold-cache model download, then fresh install, upgrade, lite;
+  D needs `HUGGINGFACE_TOKEN` and the `build` stage's image) and exits 3 unless `release/prep-0.6.0`
   is PUSHED to origin (scenarios A and C download manifests from it): `git push -u origin
   release/prep-0.6.0` first. The live stack must be down: either `./opentr.sh stop` yourself or pass
   `--yes` / `RELEASE_AUTO_STOP_STACK=true` so it stops the stack and restarts dev on exit.
@@ -210,3 +211,19 @@ as overridden, never as a pass.
     anonymously before every release (`test_object_store_image_pin.py` is offline by design).
   - The lite negative-path check waits 300 s: a mocked provider error is TRANSIENT, so the app
     retries with backoff (about 120 s) before the file goes to ERROR.
+  - **No gate ran the model downloader a user runs, so v0.6.0 shipped one that fails for every user**
+    (found 2026-11-01, after release). `download-models.py --only pyannote` from an empty cache exits 1
+    with `list index out of range` on the published image, on CPU AND on GPU 1: the warm-up feeds
+    synthetic sine-wave audio to whisperx, VAD finds no speech, and transformers 5.10.4's
+    `pipelines/base.py:1205` indexes the empty batch. All three scenarios were green because they install
+    with `OPENTRANSCRIBE_UNATTENDED=1` (the installer then skips `download_ai_models` entirely) and seed a
+    warm shared cache; `scripts/test-model-download.sh` existed but ran `:latest --gpus all` by hand and
+    was wired into nothing. The rehearsal now starts with **Scenario D**
+    (`scripts/release-tests/test-cold-model-download.sh`, criteria `cold-cache-*`): every group, CPU-only,
+    empty cache, in the image under test, plus an independent weights check and a hardlinked-nltk leg; A
+    seeds from its output when it passes. The general lesson: list the commands a user runs on day one and
+    check each is executed by some gate on a COLD machine; a seeded cache is the same blind spot as a
+    pre-built fixture.
+  - The v0.6.0 Lane B risk above ("transformers 5.10 ... must pass a real GPU transcription") was
+    checked by the app's transcription path only. The downloader's pyannote warm-up calls whisperx's
+    transformers pipeline directly, a different path, and that is the one that broke.

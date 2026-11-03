@@ -15,6 +15,7 @@ import {
   type TagSuggestion,
 } from '$lib/api/suggestions';
 import { t } from '$stores/locale';
+import { getErrorMessage } from '$lib/utils/apiError';
 import { toastStore } from '$stores/toast';
 import { redactParams } from './segmentPaging';
 
@@ -140,11 +141,8 @@ export async function startRedactionScan(fileUuid: string): Promise<boolean> {
     toastStore.error(result?.message || tr('settings.contentRedaction.redactTriggerFailed'));
   } catch (err) {
     console.error('Trigger redaction error:', err);
-    // The 409 "redaction is not enabled" carries the reason; show it, not a generic failure.
-    const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
-    toastStore.error(
-      typeof detail === 'string' ? detail : tr('settings.contentRedaction.redactTriggerFailed')
-    );
+    // The server's reason (the 409 "redaction is not enabled", a support-session refusal) beats a generic failure.
+    toastStore.error(getErrorMessage(err, tr('settings.contentRedaction.redactTriggerFailed')));
   }
   return false;
 }

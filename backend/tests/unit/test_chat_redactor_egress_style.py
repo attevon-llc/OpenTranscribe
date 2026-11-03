@@ -29,12 +29,12 @@ from unittest.mock import patch
 import pytest
 
 from app.core import redaction_defaults
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.services.chat import prompt_blocks
 from app.services.chat.redactor import _mask_from_spans
 from app.services.chat.redactor import mask_chunks
 from app.services.chat.redactor import mask_digests
 from app.services.chat.redactor_chunk_plans import _SegmentSpans
-from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.redaction.spans import apply_redactions
 from app.services.search.chunk_retrieval import ChunkHit
 

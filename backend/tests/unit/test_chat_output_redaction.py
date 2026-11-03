@@ -24,12 +24,12 @@ import pytest
 
 from app.core import chat_defaults
 from app.core import redaction_defaults
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.services.chat import service as chat_service
 from app.services.chat.output_redactor import OutputRedactor
 from app.services.chat.redactor import MaskedChunk
 from app.services.chat.settings import ChatSettings
 from app.services.llm_stream import LLMStreamEvent
-from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.search.chunk_retrieval import ChunkHit
 
 # ---------------------------------------------------------------- fixtures

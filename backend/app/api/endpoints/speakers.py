@@ -15,6 +15,7 @@ from app.api.endpoints import speakers_merge
 from app.api.endpoints import speakers_occurrences
 from app.api.endpoints import speakers_suggestions
 from app.api.endpoints.auth import get_current_active_user
+from app.api.endpoints.files.reprocess import refuse_reprocess_if_held
 from app.api.endpoints.speakers_list import list_speakers
 from app.api.endpoints.speakers_profile_workflow import _get_media_file_uuid
 from app.api.endpoints.speakers_profile_workflow import _handle_profile_action
@@ -23,6 +24,7 @@ from app.models.speaker import Speaker
 from app.models.user import User
 from app.schemas.speaker import Speaker as SpeakerSchema
 from app.schemas.speaker import SpeakerUpdate
+from app.services.hold_guard import DESTROY_DERIVED_REFUSAL
 from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.request_context import RequestContext
 from app.services.speaker_cleanup import capture_speaker_impact
@@ -447,6 +449,15 @@ def delete_speaker(
         min_permission="editor",
         forbidden_detail="Requires editor permission",
         bypass=ctx.bypass,
+    )
+
+    # Deleting the speaker removes every copy of its voice; a hold exists to keep exactly that.
+    refuse_reprocess_if_held(
+        db,
+        int(speaker.media_file_id),
+        actor=current_user,
+        action="speaker_delete",
+        message=DESTROY_DERIVED_REFUSAL,
     )
 
     # Read before the delete: the CASCADE forgets which clusters averaged this voice.

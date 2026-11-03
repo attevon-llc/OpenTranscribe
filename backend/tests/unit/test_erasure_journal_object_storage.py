@@ -28,6 +28,7 @@ import pytest
 
 from app.models.erasure import ErasureLedgerEntry
 from app.services import erasure_ledger_service as ledger
+from tests.audit_maintenance import audit_maintenance
 
 _S3_ABSENT = os.environ.get("SKIP_S3", "True").lower() == "true"
 
@@ -146,8 +147,9 @@ def test_restore_reopens_an_entry_the_database_lost_and_is_idempotent(db_session
     )
     assert entry is not None
     entry_uuid, requested_at = entry.uuid, entry.requested_at
-    db_session.query(ErasureLedgerEntry).filter(ErasureLedgerEntry.uuid == entry_uuid).delete()
-    db_session.commit()
+    with audit_maintenance(db_session):  # simulate the database losing the row
+        db_session.query(ErasureLedgerEntry).filter(ErasureLedgerEntry.uuid == entry_uuid).delete()
+        db_session.commit()
 
     assert ledger.restore_from_journal(db_session) == 1
     back = db_session.query(ErasureLedgerEntry).filter(ErasureLedgerEntry.uuid == entry_uuid).one()

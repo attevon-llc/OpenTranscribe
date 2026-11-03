@@ -15,8 +15,11 @@ from app.db.session_utils import get_refreshed_object
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.services import system_settings_service
+from app.utils.error_classification import ErrorCategory
 from app.utils.file_retry import reset_file_for_retry
 from app.utils.task_cancel import cancel_active_task
+
+_LEGAL_REFUSAL_CATEGORY = ErrorCategory.LEGAL_ACCEPTANCE_REQUIRED.value
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +66,9 @@ def check_for_stuck_files(db: Session, stuck_threshold_hours: float = 2.0) -> li
                 MediaFile.status == FileStatus.ERROR,
                 # Orphaned files
                 MediaFile.status == FileStatus.ORPHANED,
-            )
+            ),
+            # A file the legal processing gate refused would only be refused again.
+            MediaFile.error_category.is_distinct_from(_LEGAL_REFUSAL_CATEGORY),
         )
         .all()
     )

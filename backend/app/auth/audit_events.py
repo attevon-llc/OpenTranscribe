@@ -64,6 +64,8 @@ class AuditEventType(StrEnum):
     ADMIN_USER_CREATE = "admin.user.create"
     ADMIN_USER_UPDATE = "admin.user.update"
     ADMIN_USER_DELETE = "admin.user.delete"
+    # A read of an erasure receipt (issue #1353): ids only, never the counts.
+    GDPR_RECEIPT_VIEW = "gdpr.receipt.view"
     ADMIN_ROLE_CHANGE = "admin.role.change"
     ADMIN_SETTINGS_CHANGE = "admin.settings.change"
 
@@ -103,6 +105,10 @@ class AuditEventType(StrEnum):
     # indexed labels that disagree with the policy. ``details`` holds the switch, its from/to
     # value, the scope kind and ids, and file COUNTS: never a name or a file id.
     PRIVACY_LABEL_RESYNC = "privacy.labels.resync"
+    # A file's voiceprint consent state changed (issue #1356). ``details`` holds the file id, the
+    # old and the new state and where the change came from (``upload`` / ``owner``); never a
+    # file name. The state is the uploader's recorded claim, not verified consent.
+    PRIVACY_FILE_CONSENT_CHANGE = "privacy.file_consent.change"
 
     # An audit-log export, by a platform admin or an organization admin (issue #1277):
     # ``details`` holds the format, the row count and whether it was truncated, never the rows.
@@ -133,6 +139,9 @@ class AuditEventType(StrEnum):
 
     # An administrator acknowledged a versioned legal document (key, version, sha256 in details).
     LEGAL_ACKNOWLEDGED = "legal.acknowledged"
+    LEGAL_RECORDS_EXPIRED = "legal.records_expired"
+    # The retention sweep removed audit rows older than AUDIT_LOG_RETENTION_DAYS (counts only).
+    AUDIT_RECORDS_PRUNED = "audit.records_pruned"
 
     # A user saved or removed a third-party service credential of their own (issue #1204,
     # the pyannote.ai key). ``details`` names the provider and purpose only, NEVER the key.

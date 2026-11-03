@@ -25,3 +25,18 @@ export async function sessionSurvivesRevocation(): Promise<boolean> {
   }
   return get(isAuthenticated);
 }
+
+/**
+ * Whether the API still accepts the session after the socket handshake was refused. A
+ * 401/403 goes through the client's interceptors (an expired session returns to /login, an
+ * account lifecycle refusal shows its blocking screen); only a successful answer means the
+ * session was refreshed meanwhile and one reconnect may succeed.
+ */
+export async function sessionAnswersAfterRefusal(): Promise<boolean> {
+  try {
+    await axiosInstance.get('/auth/me');
+  } catch {
+    return false;
+  }
+  return true;
+}

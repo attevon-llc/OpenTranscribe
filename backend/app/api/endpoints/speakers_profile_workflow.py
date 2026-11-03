@@ -21,6 +21,7 @@ from app.services.permission_service import org_scope_pred
 from app.services.platform_bypass import PlatformBypass
 from app.services.privacy.redact_view import PrivacyView
 from app.services.speaker_cleanup import reconcile_speaker_impact
+from app.services.speaker_profile_activity import touch_profile_interaction
 from app.utils.db_helpers import org_stamp_is
 from app.utils.speaker_identity_detail import ORIGIN_PROFILE_ASSIGNED
 from app.utils.speaker_identity_detail import ORIGIN_PROFILE_CREATED
@@ -142,6 +143,7 @@ def auto_create_or_assign_profile(
             lift_profile_blacklist(db, int(speaker.id), int(existing_profile.id))
             # Assign speaker to existing profile
             speaker.profile_id = existing_profile.id
+            touch_profile_interaction(db, [existing_profile.id, old_profile_id], "human_link")
             # A person typed this name (issue #1280). The request that saved the name already
             # recorded it, with the suggestion it accepted; this step must not overwrite that.
             record_human_identity(
@@ -187,6 +189,7 @@ def auto_create_or_assign_profile(
 
             # Assign speaker to new profile
             speaker.profile_id = new_profile.id
+            touch_profile_interaction(db, [new_profile.id, old_profile_id], "human_link")
             record_human_identity(
                 speaker, user_id=user_id, origin=ORIGIN_PROFILE_CREATED, keep_recorded=True
             )
@@ -420,6 +423,7 @@ def _handle_create_new_profile_action(
     db.add(new_profile)
     db.flush()  # Get the ID
 
+    touch_profile_interaction(db, [new_profile.id, speaker.profile_id], "human_link")
     speaker.profile_id = new_profile.id
     record_human_identity(speaker, user_id=current_user.id, origin=ORIGIN_PROFILE_CREATED)
     logger.info(

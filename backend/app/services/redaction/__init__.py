@@ -15,7 +15,7 @@ inside the detector modules so this package imports cleanly in the API process
 and in unit tests without those libraries installed.
 """
 
-from app.services.redaction.config import EffectiveRedactionConfig
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.services.redaction.config import resolve_effective_config
 from app.services.redaction.spans import RedactionSpan
 from app.services.redaction.spans import apply_redactions

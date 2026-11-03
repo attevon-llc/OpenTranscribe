@@ -194,7 +194,7 @@ def _run_row(db, user) -> tuple[MediaFile, Task]:
         uuid=str(uuid.uuid4()),
         user_id=user.id,
         filename="orphan-live.wav",
-        storage_path=f"user_{user.id}/orphan-live.wav",
+        storage_path=f"user_{user.id}/orphan-live-{uuid.uuid4().hex}.wav",
         file_size=1024,
         content_type="audio/wav",
         status=FileStatus.PROCESSING,

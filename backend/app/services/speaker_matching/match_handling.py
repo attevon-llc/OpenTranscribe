@@ -17,6 +17,7 @@ from app.services import embedding_mode_service
 from app.services.opensearch_service import add_speaker_embedding
 from app.services.speaker_matching.thresholds import MATCHING_ORIGIN_TASK
 from app.services.speaker_matching.thresholds import ConfidenceLevel
+from app.services.speaker_profile_activity import touch_profile_interaction
 from app.utils.speaker_identity_detail import ORIGIN_PROFILE_MATCH
 from app.utils.speaker_identity_detail import ORIGIN_VOICE_MATCH
 from app.utils.speaker_identity_detail import voiceprint_detail
@@ -26,6 +27,8 @@ from app.utils.speaker_identity_source import record_suggestion
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
     from app.services.speaker_matching_service import SpeakerMatchingService
 
 logger = logging.getLogger(__name__)
@@ -113,7 +116,7 @@ def record_match_suggestion(
 
 
 def _apply_auto_accept(
-    speaker: Speaker, match: dict[str, Any], match_detail: dict[str, Any]
+    db: "Session", speaker: Speaker, match: dict[str, Any], match_detail: dict[str, Any]
 ) -> None:
     """Give the speaker the matched identity; a voiceprint wrote it, not a person."""
     logger.info(f"Auto-accepting match for speaker {int(speaker.id)} -> {match['suggested_name']}")
@@ -123,6 +126,7 @@ def _apply_auto_accept(
     # Assign to profile if this match came from a profile
     if match.get("profile_id"):
         speaker.profile_id = match["profile_id"]
+        touch_profile_interaction(db, int(match["profile_id"]), "auto_link")
     # A voiceprint wrote this identity, not a person (issue #1280): recorded before the
     # tracker computes the "after" label, which depends on it while voiceprints are off.
     record_machine_identity(
@@ -309,7 +313,7 @@ def handle_speaker_match(
 
     # If high confidence, auto-apply the suggestion
     if match["auto_accept"]:
-        _apply_auto_accept(speaker, match, match_detail)
+        _apply_auto_accept(self.db, speaker, match, match_detail)
 
     # One record call covers both paths above: a suggestion-only bump (no
     # `display_name` write) and a full auto-accept. Captured while the old

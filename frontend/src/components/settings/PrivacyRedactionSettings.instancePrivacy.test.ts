@@ -31,6 +31,7 @@ beforeEach(() => {
   api.getInstance.mockResolvedValue({
     voiceprint_matching_enabled: true,
     gender_inference_enabled: true,
+    voiceprint_upload_consent_required: false,
   });
 });
 

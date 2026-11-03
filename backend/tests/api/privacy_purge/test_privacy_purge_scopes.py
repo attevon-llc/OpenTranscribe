@@ -360,6 +360,7 @@ def test_only_the_initiator_can_read_a_purge_status(
         "residual_ok": None,
         "residual_unverified": [],
         "audit": [],
+        "reason": None,
     }
 
     in_process_task(broker[0])

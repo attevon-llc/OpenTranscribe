@@ -306,6 +306,7 @@ def converse(
     top_p: float | None = None,
     attribution: dict[str, Any] | None = None,
     connection: BedrockConnection | None = None,
+    usage_out: dict[str, int] | None = None,
 ) -> tuple[str, int | None, str | None]:
     """Non-streaming Bedrock completion, built by draining :func:`stream_converse`.
 
@@ -323,6 +324,7 @@ def converse(
         top_p: Nucleus sampling, omitted when None.
         attribution: Tenant/user identifiers for ``requestMetadata``.
         connection: The configuration's own AWS credentials, or None for the server chain.
+        usage_out: Optional dict filled with the prompt/completion/cache token split.
 
     Returns:
         ``(content, usage_tokens, finish_reason)`` — the same shape every other
@@ -352,6 +354,13 @@ def converse(
             prompt = event.prompt_tokens or 0
             completion = event.completion_tokens or 0
             usage_tokens = prompt + completion
+            if usage_out is not None:
+                usage_out.update(
+                    prompt_tokens=prompt,
+                    completion_tokens=completion,
+                    cache_read_tokens=event.cache_read_tokens or 0,
+                    cache_write_tokens=event.cache_write_tokens or 0,
+                )
         elif event.type == "error":
             raise BedrockStreamError(event.message or "Bedrock error")
         elif event.type == "done":

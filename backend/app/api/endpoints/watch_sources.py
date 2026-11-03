@@ -29,6 +29,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.watch_sources_access import _get_source_or_404
 from app.core.config import settings
 from app.db.base import get_db
+from app.legal.processing_gate import require_processing_allowed
 from app.models.user import User
 from app.models.watch_source import WatchSource
 from app.schemas.watch_source import ConnectionTestResponse
@@ -443,6 +444,9 @@ def scan_watch_source(
     from app.tasks.watch_source_tasks import scan_single
 
     source = _get_source_or_404(db, source_uuid, ctx)
+    require_processing_allowed(
+        db, owner_user_id=int(source.user_id), organization_id=source.organization_id
+    )
     if not source.is_enabled:
         raise HTTPException(status_code=400, detail="Enable the source before scanning")
     task = scan_single.delay(source.id)

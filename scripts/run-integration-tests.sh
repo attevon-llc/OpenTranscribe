@@ -89,28 +89,35 @@ if [ ! -x "$VENV_PY" ]; then
     exit 1
 fi
 
+# --- BEGIN stack-probe ---
+# The probed ports follow the same variables the tests read (conftest), so a gate pointed at an
+# isolated stack (POSTGRES_PORT=5876 ...) is not satisfied by whatever listens on the defaults.
+PG_PORT="${POSTGRES_PORT:-5176}"
+S3_PORT="${MINIO_PORT:-5178}"
+OS_PORT="${OPENSEARCH_PORT:-5180}"
 MISSING=()
-port_open 5176 || MISSING+=("Postgres (5176)")
+port_open "$PG_PORT" || MISSING+=("Postgres ($PG_PORT)")
 if [ ${#MISSING[@]} -gt 0 ]; then
     echo -e "${RED}Dev stack not reachable: ${MISSING[*]}${NC}"
     echo -e "Start it with: ${YELLOW}./opentr.sh start dev${NC}"
     exit 1
 fi
 
-echo -e "Postgres:   ${GREEN}up (5176)${NC}"
+echo -e "Postgres:   ${GREEN}up ($PG_PORT)${NC}"
 STACK_INCOMPLETE=()
-if port_open 5178; then
-    echo -e "MinIO:      ${GREEN}up (5178) — S3 tests enabled${NC}"
+if port_open "$S3_PORT"; then
+    echo -e "MinIO:      ${GREEN}up ($S3_PORT) — S3 tests enabled${NC}"
 else
     echo -e "MinIO:      ${YELLOW}down — S3-backed tests cannot run${NC}"
-    STACK_INCOMPLETE+=("MinIO (5178)")
+    STACK_INCOMPLETE+=("MinIO ($S3_PORT)")
 fi
-if port_open 5180; then
-    echo -e "OpenSearch: ${GREEN}up (5180) — search tests enabled${NC}"
+if port_open "$OS_PORT"; then
+    echo -e "OpenSearch: ${GREEN}up ($OS_PORT) — search tests enabled${NC}"
 else
     echo -e "OpenSearch: ${YELLOW}down — search-backed tests cannot run${NC}"
-    STACK_INCOMPLETE+=("OpenSearch (5180)")
+    STACK_INCOMPLETE+=("OpenSearch ($OS_PORT)")
 fi
+# --- END stack-probe ---
 echo ""
 
 cd "$PROJECT_ROOT/backend"

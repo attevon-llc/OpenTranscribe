@@ -48,6 +48,7 @@ from app.startup.maintenance import _run_startup_recovery
 from app.startup.maintenance import _run_tag_tenant_repair
 from app.startup.maintenance import _run_thumbnail_migration
 from app.startup.maintenance import _setup_minio
+from app.startup.warmups import _enforce_database_role_or_exit
 from app.startup.warmups import _initialize_neural_search
 from app.startup.warmups import _log_password_blocklist_status
 from app.startup.warmups import _log_tenancy_mode_at_startup
@@ -116,6 +117,8 @@ async def lifespan(app: FastAPI):
             "RUN_MIGRATIONS_ON_STARTUP=false — skipping migrations; a migrate job is "
             "expected to own them. Readiness will verify the schema is at head."
         )
+
+    _enforce_database_role_or_exit()
 
     _log_tenancy_mode_at_startup()
 
@@ -216,6 +219,8 @@ async def lifespan(app: FastAPI):
                 )
                 if count:
                     logger.info(f"Upgrade reclaim: removed {count} legacy derived cache object(s)")
+
+            cache_management_service.reclaim_legacy_audio_cache_once(_db)
         finally:
             _db.close()
     except Exception as e:

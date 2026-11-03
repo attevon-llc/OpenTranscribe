@@ -189,12 +189,22 @@ def _llm_use(client, cfg_uuid: str) -> bool:
 
 
 def _llm_worker(db, user: User, cfg_uuid: str) -> bool:
+    from app.services.llm_service import LLMConfigFailure
+    from app.services.llm_service import LLMConfigurationError
     from app.services.llm_service import LLMService
 
     cfg = db.query(UserLLMSettings).filter(UserLLMSettings.uuid == cfg_uuid).one()
     _set_setting(db, user, "active_llm_config_id", str(cfg.id))
-    resolved = LLMService._resolve_user_llm_settings(db, user.id)
-    return resolved is not None and resolved.settings.id == cfg.id
+    # A pointer to a configuration the user cannot use is NOT "no configuration": falling back
+    # to the system provider could send transcript text, masked for the user's own (possibly
+    # local) model, to a different one. It fails closed with a fixed NOT_FOUND reason.
+    try:
+        resolved = LLMService._resolve_user_llm_settings(db, user.id)
+    except LLMConfigurationError as refused:
+        assert refused.reason is LLMConfigFailure.NOT_FOUND
+        return False
+    assert resolved is not None, "a usable shared configuration must never read as 'none'"
+    return bool(resolved.settings.id == cfg.id)
 
 
 # --- ASR configurations (carry the owner's provider API key) ---------------- #
@@ -522,6 +532,8 @@ def test_chat_llm_override_scoped(world, viewer, tenant, owner, expected):
 def test_chat_pinned_config_rechecked_at_message_time(world, monkeypatch, viewer, owner, expected):
     """``create_from_config_id`` runs on every chat turn against a stored config id."""
     from app.db import base as db_base
+    from app.services.llm_service import LLMConfigFailure
+    from app.services.llm_service import LLMConfigurationError
     from app.services.llm_service import LLMService
 
     class _Borrowed:
@@ -537,9 +549,16 @@ def test_chat_pinned_config_rechecked_at_message_time(world, monkeypatch, viewer
     monkeypatch.setattr(db_base, "SessionLocal", lambda: _Borrowed(world.db))
     cfg_uuid = _share_llm(world.db, world.users[owner])
     cfg = world.db.query(UserLLMSettings).filter(UserLLMSettings.uuid == cfg_uuid).one()
+    if not expected:
+        # A pinned configuration the viewer can no longer use fails closed (never the system
+        # provider): the chat route turns this into a 400.
+        with pytest.raises(LLMConfigurationError) as refused:
+            LLMService.create_from_config_id(world.users[viewer].id, cfg.id)
+        assert refused.value.reason is LLMConfigFailure.NOT_FOUND
+        return
     svc = LLMService.create_from_config_id(world.users[viewer].id, cfg.id)
     try:
-        assert (svc is not None) is expected
+        assert svc is not None
     finally:
         if svc is not None:
             svc.close()

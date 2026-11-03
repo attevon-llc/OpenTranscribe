@@ -52,4 +52,7 @@ WHITELIST = (
     # PEP 562 module-level __getattr__: the interpreter calls it on a missing attribute of
     # app.services.opensearch_service, never a visible call site.
     _.__getattr__,
+    # Called by the v456 migration (backend/alembic/versions/v456_unique_object_keys.py), which
+    # this guard does not scan; the runner never imports it by name.
+    _.clear_regenerable_duplicates,
 )

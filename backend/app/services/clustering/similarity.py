@@ -14,6 +14,7 @@ from app.core import queues
 from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.services.clustering.recluster_groups import Groups
+from app.services.privacy.policy import declined_file_ids
 
 if TYPE_CHECKING:
     from app.services.speaker_clustering_service import SpeakerClusteringService
@@ -196,7 +197,9 @@ def load_unlabeled_embeddings(
         unlabeled_query = unlabeled_query.join(
             MediaFile, MediaFile.id == Speaker.media_file_id
         ).filter(self._scope_not_in(MediaFile.organization_id, off_scopes))
-    unlabeled_rows = unlabeled_query.all()
+    _unlabeled_all = unlabeled_query.add_columns(Speaker.media_file_id).all()
+    _declined_unlabeled = declined_file_ids(self.db, {r.media_file_id for r in _unlabeled_all})
+    unlabeled_rows = [r for r in _unlabeled_all if r.media_file_id not in _declined_unlabeled]
     unlabeled_uuid_to_id: dict[str, int] = {str(r.uuid): int(r.id) for r in unlabeled_rows}
     unlabeled_uuids = list(unlabeled_uuid_to_id.keys())
     total_unlabeled = len(unlabeled_uuids)

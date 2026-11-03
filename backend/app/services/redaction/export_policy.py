@@ -51,7 +51,7 @@ import hashlib
 import json
 
 from app.core import redaction_defaults
-from app.services.redaction.config import EffectiveRedactionConfig
+from app.core.redaction_config import EffectiveRedactionConfig
 
 
 class ExportRedactionNotReadyError(Exception):

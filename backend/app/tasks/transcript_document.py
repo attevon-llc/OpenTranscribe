@@ -137,7 +137,14 @@ def prepare_transcript_document_task(
         key = f"bulk/{job_id}.{parsed.format}"
         service = VideoProcessingService(MinIOService())
         content_type = CONTENT_TYPES[parsed.format]
+        # Marker first, re-check after the upload: see ``media_revocation_cache``.
+        from app.services.media_revocation_cache import record_bulk_export
+        from app.services.media_revocation_cache import remove_if_quarantined
+
+        record_bulk_export(service.minio_service, service.cache_bucket, [file_id], key)
         service.minio_service.upload_bytes(service.cache_bucket, key, data, content_type)
+        if remove_if_quarantined([file_id], key, requester_id=user_id):
+            raise DocumentExportRefusedError("unavailable")
         filename = f"{prepared.base_filename}.{parsed.format}"
         url = get_presigned_download_url(
             key,
@@ -148,7 +155,16 @@ def prepare_transcript_document_task(
         get_redis().setex(
             f"bulk_export_result:{job_id}",
             RESULT_TTL_S,
-            json.dumps({"url": url, "filename": filename, "exported": 1, "skipped": 0}),
+            json.dumps(
+                {
+                    "url": url,
+                    "filename": filename,
+                    "exported": 1,
+                    "skipped": 0,
+                    # Re-checked on every replay of this cached result (bulk-export-stream).
+                    "file_ids": [file_id],
+                }
+            ),
         )
         _record_export(file_id, user_id, parsed.format)
         publish_bulk_event(

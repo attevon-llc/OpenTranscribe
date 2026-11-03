@@ -134,6 +134,13 @@ def _marker(kind: str) -> Callable[[FakeSchema, re.Match[str]], bool]:
     return rule
 
 
+def _fk_set_null(schema: FakeSchema, m: re.Match[str]) -> bool:
+    """A ``::regclass`` cast raises on a missing table in Postgres, so the fake does too."""
+    table, referenced = m.groups()
+    schema.require({table})
+    return ("fk_set_null", table, referenced) in schema.markers
+
+
 def _setting(schema: FakeSchema, m: re.Match[str]) -> bool:
     schema.require({"system_settings"})
     return ("setting", m.group(1)) in schema.markers
@@ -169,13 +176,30 @@ _RULES: list[tuple[re.Pattern[str], Callable[[FakeSchema, re.Match[str]], bool]]
         ),
         _marker("constraint_def"),
     ),
+    (
+        re.compile(
+            r"pg_constraint WHERE contype = 'f' AND conrelid = '(\w+)'::regclass "
+            r"AND confrelid = '\"?(\w+)\"?'::regclass AND confdeltype = 'n'\)$"
+        ),
+        _fk_set_null,
+    ),
     (re.compile(r"pg_constraint WHERE conname ?= ?'(\w+)'\)$"), _marker("constraint")),
     (
         re.compile(r"pg_enum e .* t\.typname = '(\w+)' AND e\.enumlabel = '(\w+)'\)$"),
         _marker("enum_label"),
     ),
     (re.compile(r"FROM pg_type WHERE typname = '(\w+)'\)$"), _marker("pg_type")),
-    (re.compile(r"pg_trigger WHERE tgname = '(\w+)' AND NOT tgisinternal\)$"), _marker("trigger")),
+    (
+        re.compile(r"pg_trigger WHERE tgname = '(\w+)'(?: AND NOT tgisinternal)?\)$"),
+        _marker("trigger"),
+    ),
+    (
+        re.compile(
+            r"pg_trigger WHERE tgname = '(\w+)' AND pg_get_triggerdef\(oid\) LIKE '%(\w+)%'\)$"
+        ),
+        _marker("trigger_def"),
+    ),
+    (re.compile(r"FROM pg_proc WHERE proname = '(\w+)'\)$"), _marker("proc")),
     (re.compile(r"FROM system_settings WHERE key = '([\w.]+)'\)$"), _setting),
 ]
 

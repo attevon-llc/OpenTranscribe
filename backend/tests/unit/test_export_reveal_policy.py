@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.redaction.config import EffectiveRedactionConfig
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.services.redaction.export_policy import resolve_export_reveal
 
 pytestmark = pytest.mark.unit

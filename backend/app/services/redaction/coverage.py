@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     pass
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from app.services.redaction.config import EffectiveRedactionConfig
+    from app.core.redaction_config import EffectiveRedactionConfig
 
 logger = logging.getLogger(__name__)
 

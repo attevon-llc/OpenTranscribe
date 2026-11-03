@@ -78,7 +78,7 @@ def make_transcribed_file(db_session, user, *, speakers: int = 2):
         uuid=str(uuid_mod.uuid4()),
         user_id=user.id,
         filename="meeting.mp4",
-        storage_path="test/meeting.mp4",
+        storage_path=f"test/meeting-{uuid_mod.uuid4().hex}.mp4",
         content_type="video/mp4",
         file_size=1000,
     )

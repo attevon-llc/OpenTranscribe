@@ -327,6 +327,9 @@ def test_the_downgrade_drops_the_table_and_the_upgrade_restores_it(db_session):
     module = _revision_module()
     conn = db_session.connection()
     try:
+        # Downgrading v389 presupposes v452 (receipts reference the ledger) is already gone;
+        # the whole test is rolled back, so this only models the order a real downgrade has.
+        conn.execute(text("DROP TABLE IF EXISTS erasure_receipt"))
         conn.execute(text(module.DOWNGRADE_SQL))
         conn.execute(text(module.DOWNGRADE_SQL))  # idempotent both ways
         assert "erasure_ledger" not in inspect(conn).get_table_names()

@@ -29,6 +29,7 @@ from app.models.speaker import SpeakerProfile
 from app.services.speaker_cleanup import SpeakerImpact
 from app.services.speaker_identity_rules import record_unassignment
 from app.services.speaker_identity_rules import speaker_blocked_from_profile
+from app.services.speaker_profile_activity import touch_profile_interaction
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.utils.speaker_identity_detail import ORIGIN_CLUSTER_JOIN
 from app.utils.speaker_identity_detail import ORIGIN_CLUSTER_MERGED
@@ -120,6 +121,9 @@ def join_cluster_identity(
     speaker.profile_id = int(profile_id)
     speaker.display_name = name
     speaker.verified = True
+    touch_profile_interaction(
+        db, [int(profile_id), old], "auto_link" if source == "voiceprint" else "human_link"
+    )
     if source == "voiceprint":
         from app.services.embedding_mode_service import voiceprint_model_id
 
@@ -183,6 +187,7 @@ def detach_from_cluster(
         if unlinked:
             impact.profile_ids.add(profile_id)
             impact.relabel_speaker_ids |= unlinked
+            touch_profile_interaction(db, profile_id, "human_unlink")
     if blacklist:
         record_unassignment(db, remove_ids, against_speaker_ids=remaining, profile_id=profile_id)
     cluster.member_count = len(remaining)

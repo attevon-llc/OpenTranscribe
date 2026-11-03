@@ -1,6 +1,7 @@
 <script lang="ts">
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import AuditContentAccessToggle from '$components/settings/AuditContentAccessToggle.svelte';
+  import AuditIntegrityStatus from '$components/settings/AuditIntegrityStatus.svelte';
   import AuditLogFilters from '$components/settings/audit/AuditLogFilters.svelte';
   import AuditLogTable from '$components/settings/audit/AuditLogTable.svelte';
   import {
@@ -118,6 +119,7 @@
     </div>
   {:else}
     <AuditContentAccessToggle />
+    <AuditIntegrityStatus />
     <AuditLogFilters
       bind:filters
       {eventTypes}

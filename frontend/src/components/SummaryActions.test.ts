@@ -17,10 +17,13 @@
  * strings without needing real translations loaded.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/svelte';
+import { render, screen, fireEvent } from '@testing-library/svelte';
 
 const mockAxios = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock('$lib/axios', () => ({ default: mockAxios }));
+
+const modal = vi.hoisted(() => ({ open: vi.fn() }));
+vi.mock('$stores/settingsModalStore', () => ({ settingsModalStore: modal }));
 
 import SummaryActions from './SummaryActions.svelte';
 
@@ -159,7 +162,9 @@ describe('SummaryActions action selection', () => {
 
     const actionsDiv = container.querySelector('.summary-actions');
     expect(actionsDiv?.textContent?.trim()).not.toBe('');
-    expect(container.querySelector('button')).toBeNull();
+    // No generate action; the only control is the way to AI settings.
+    expect(container.querySelectorAll('button')).toHaveLength(1);
+    expect(container.querySelector('[data-testid="open-ai-settings"]')).not.toBeNull();
     expect(container.textContent).toContain('llm.featuresUnavailable');
   });
 
@@ -172,5 +177,25 @@ describe('SummaryActions action selection', () => {
     expect(actionsDiv?.textContent?.trim()).not.toBe('');
     expect(container.querySelector('button')).toBeNull();
     expect(container.textContent).toContain('summary.retryUnavailableHint');
+  });
+});
+
+describe('SummaryActions: AI features unavailable', () => {
+  it('offers a link to AI settings when AI features are unavailable', async () => {
+    render(SummaryActions, {
+      props: baseProps({ llmAvailable: false, summaryStatus: 'pending' }) as never,
+    });
+
+    await fireEvent.click(screen.getByTestId('open-ai-settings'));
+
+    expect(modal.open).toHaveBeenCalledWith('llm-provider');
+  });
+
+  it('does not offer it when AI features are available', () => {
+    render(SummaryActions, {
+      props: baseProps({ llmAvailable: true, summaryStatus: 'pending' }) as never,
+    });
+
+    expect(screen.queryByTestId('open-ai-settings')).toBeNull();
   });
 });

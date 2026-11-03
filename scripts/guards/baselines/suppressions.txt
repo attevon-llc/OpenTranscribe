@@ -26,7 +26,7 @@ noqa::backend/app/auth/proxy/config.py	1	suppression: reason to be added
 noqa::backend/app/auth/saml/provisioning.py	1	suppression: reason to be added
 noqa::backend/app/auth/token_service.py	2	suppression: reason to be added
 noqa::backend/app/core/broker_orphans.py	2	suppression: reason to be added
-noqa::backend/app/core/celery.py	18	suppression: reason to be added
+noqa::backend/app/core/celery.py	19	v0.6.1 merge: release noqa without a rule code; reason to be added
 noqa::backend/app/core/config.py	2	suppression: reason to be added
 noqa::backend/app/core/constants.py	1	suppression: reason to be added
 noqa::backend/app/core/enums.py	1	suppression: reason to be added
@@ -72,7 +72,9 @@ noqa::backend/app/services/chat/retrieval_cache.py	6	suppression: reason to be a
 noqa::backend/app/services/chat/trace.py	2	suppression: reason to be added
 noqa::backend/app/services/content_audit.py	3	suppression: reason to be added
 noqa::backend/app/services/directory_sync_service.py	1	suppression: reason to be added
-noqa::backend/app/services/erasure_ledger_service.py	4	suppression: reason to be added
+noqa::backend/app/services/erasure_ledger_service.py	6	v0.6.1 merge: release noqa without a rule code; reason to be added
+noqa::backend/app/services/erasure_receipt/destroy_extras.py	5	v0.6.1 merge: release noqa without a rule code; reason to be added
+noqa::backend/app/services/erasure_receipt/receipt.py	1	v0.6.1 merge: release noqa without a rule code; reason to be added
 noqa::backend/app/services/file_cleanup_service.py	1	suppression: reason to be added
 noqa::backend/app/services/gdpr_erasure_service.py	1	suppression: reason to be added
 noqa::backend/app/services/ingest_artifacts/textrank.py	1	suppression: reason to be added

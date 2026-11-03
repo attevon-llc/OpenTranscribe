@@ -15,6 +15,7 @@ from datetime import datetime
 from datetime import timedelta
 from typing import TypedDict
 
+from app.auth import lockout_store
 from app.auth.lockout import CAS_MAX_RETRIES
 from app.auth.lockout import LOCKOUT_PREFIX
 from app.auth.lockout import LockoutInfo
@@ -126,6 +127,39 @@ def unlock_account(identifier: str) -> bool:
 
     _save_record(record)
     return True
+
+
+def erase_identifier(identifier: str) -> int:
+    """Delete the lockout record of a login identifier (GDPR erasure, issue #1353).
+
+    The record is keyed by the address, so it names the data subject for its whole TTL
+    (``account_lockout_max_duration_minutes`` + 1 day). Both stores are cleared: the Redis one,
+    and the in-memory fallback a replica fell back to while Redis was down.
+
+    Returns:
+        How many records were deleted. Raises if the shared store cannot be reached, so an
+        erasure records that as an error instead of reporting the address gone.
+    """
+    key = _lockout_key(_normalize_identifier(identifier))
+    removed = 0
+    store = _get_store()
+    removed += int(store.delete(key) or 0)
+    fallback = lockout_store._in_memory_store
+    if fallback is not None and store is not fallback:
+        removed += int(fallback.delete(key) or 0)
+    return removed
+
+
+def identifier_has_record(identifier: str) -> bool:
+    """Whether a lockout record for ``identifier`` exists (the erasure post-check). Raises if
+    the store cannot be read, so the caller reports unverified rather than absent."""
+    key = _lockout_key(_normalize_identifier(identifier))
+    store = _get_store()
+    present = store.get(key) is not None
+    fallback = lockout_store._in_memory_store
+    if not present and fallback is not None and store is not fallback:
+        present = fallback.get(key) is not None
+    return present
 
 
 def cleanup_expired_lockouts() -> int:

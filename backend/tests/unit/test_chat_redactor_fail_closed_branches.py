@@ -31,9 +31,9 @@ from unittest.mock import patch
 import pytest
 
 from app.core import redaction_defaults
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.services.chat.redactor import mask_chunks
 from app.services.chat.redactor import mask_digests
-from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.search.chunk_retrieval import ChunkHit
 
 pytestmark = pytest.mark.unit

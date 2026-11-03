@@ -53,9 +53,22 @@ BACKUP = "docker-compose.backup.yml"
 DIAR = "docker-compose.diar-native.yml"
 GPU_SPLIT = "docker-compose.gpu-split.yml"
 LITE = "docker-compose.lite.yml"
+DB_ROLES = "docker-compose.db-roles.yml"
 
 DIAR_GPU = "docker-compose.diar-native-gpu.yml"
-ALL_OVERLAYS = (BASE, PROD, GPU, BLACKWELL, NGINX, BACKUP, DIAR, DIAR_GPU, GPU_SPLIT, LITE)
+ALL_OVERLAYS = (
+    BASE,
+    PROD,
+    GPU,
+    BLACKWELL,
+    NGINX,
+    BACKUP,
+    DIAR,
+    DIAR_GPU,
+    GPU_SPLIT,
+    LITE,
+    DB_ROLES,
+)
 
 
 def _make_deployment(
@@ -820,3 +833,11 @@ def test_all_overlays_covers_every_overlay_the_selector_can_choose():
         f"ALL_OVERLAYS lists {unused}, which get_compose_files() never mentions — either the "
         f"overlay was renamed and this tuple was not updated, or it is dead."
     )
+
+
+def test_the_db_role_overlay_is_selected_only_when_an_app_role_is_configured(tmp_path):
+    """Workers must lose the owner password exactly when the role split is requested."""
+    with_role, _ = _resolve(tmp_path / "a", env_lines=("POSTGRES_APP_USER=ot_app",))
+    without, _ = _resolve(tmp_path / "b", env_lines=("POSTGRES_APP_USER=",))
+    assert "docker-compose.db-roles.yml" in with_role, with_role
+    assert "docker-compose.db-roles.yml" not in without, without

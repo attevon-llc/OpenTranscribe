@@ -1,0 +1,22 @@
+{
+  "_comment": "Shared by backend/tests/unit/test_mediacms_host_matching.py and frontend/src/lib/services/configService.test.ts. Candidates are what a real URL host looks like (ASCII, punycoded). expected = both sides agree.",
+  "vectors": [
+    {"configured": "m.example.com", "candidate": "m.example.com", "scheme": "https", "expected": true},
+    {"configured": "M.Example.com", "candidate": "m.example.COM", "scheme": "https", "expected": true},
+    {"configured": "m.example.com", "candidate": "m.example.com:443", "scheme": "https", "expected": true},
+    {"configured": "m.example.com:443", "candidate": "m.example.com", "scheme": "https", "expected": true},
+    {"configured": "m.example.com", "candidate": "m.example.com:80", "scheme": "http", "expected": true},
+    {"configured": "m.example.com:8443", "candidate": "m.example.com:8443", "scheme": "https", "expected": true},
+    {"configured": "m.example.com:8443", "candidate": "m.example.com", "scheme": "https", "expected": false},
+    {"configured": "m.example.com", "candidate": "m.example.com:8443", "scheme": "https", "expected": false},
+    {"configured": "m.example.com", "candidate": "m.example.com:80", "scheme": "https", "expected": false},
+    {"configured": "m.example.com", "candidate": "other.example.com", "scheme": "https", "expected": false},
+    {"configured": "", "candidate": "m.example.com", "scheme": "https", "expected": false},
+    {"configured": " m.example.com ", "candidate": "m.example.com", "scheme": "https", "expected": true},
+    {"configured": "user@m.example.com", "candidate": "m.example.com", "scheme": "https", "expected": false},
+    {"configured": "m.example.com\\@evil.example", "candidate": "m.example.com", "scheme": "https", "expected": false},
+    {"configured": "m.example.com\\evil", "candidate": "m.example.com", "scheme": "https", "expected": false},
+    {"configured": "m%2eexample.com", "candidate": "m.example.com", "scheme": "https", "expected": false},
+    {"configured": "bücher.example", "candidate": "xn--bcher-kva.example", "scheme": "https", "expected": false}
+  ]
+}

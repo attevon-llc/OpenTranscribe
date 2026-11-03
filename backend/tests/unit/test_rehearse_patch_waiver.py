@@ -1,4 +1,4 @@
-"""`65-rehearse.sh` must WAIVE its three scenarios under `--patch`, and must run
+"""`65-rehearse.sh` must WAIVE its four scenarios under `--patch`, and must run
 them in full otherwise (issue #784).
 
 `release.sh`'s `patch_prepare()` resolves the waiver once and exports
@@ -50,7 +50,20 @@ stages:
         severity: blocking
       - id: lite-mode
         severity: blocking
+      - id: cold-cache-model-download
+        severity: blocking
+      - id: cold-cache-weights-present
+        severity: blocking
+      - id: cold-cache-nltk-hardlinks-fail-loudly
+        severity: blocking
 """
+
+COLD_ORACLE = REPO_ROOT / "scripts" / "release-tests" / "lib" / "cold-model-download.py"
+COLD_CRITERIA = (
+    "cold-cache-model-download",
+    "cold-cache-weights-present",
+    "cold-cache-nltk-hardlinks-fail-loudly",
+)
 
 _FAKE_DOCKER = """#!/bin/bash
 # Only `ps`/`ps -a --filter ...` calls happen in 65-rehearse.sh; both just need
@@ -65,6 +78,23 @@ exit 0
 
 def _stub_scenario(path: Path, marker: Path, rc: int = 0) -> None:
     path.write_text(f'#!/bin/bash\necho "invoked $0 $*" >> {marker}\nexit {rc}\n')
+    path.chmod(0o755)
+
+
+def _stub_cold_scenario(path: Path, marker: Path) -> None:
+    """Scenario D stand-in: writes the evidence a PASSING run leaves under $TEST_ROOT, which
+    65-rehearse.sh reads back through the REAL oracle (copied beside it)."""
+    path.write_text(
+        "#!/bin/bash\n"
+        f'echo "invoked $0 $*" >> {marker}\n'
+        'mkdir -p "$TEST_ROOT"\n'
+        'printf "nltk\\n" > "$TEST_ROOT/groups-expected.txt"\n'
+        'printf "nltk\\t0\\t1\\n" > "$TEST_ROOT/groups.tsv"\n'
+        'printf "nltk\\tpass\\t\\n" > "$TEST_ROOT/artifacts.tsv"\n'
+        'printf "pass\\tnamed pathsec\\n" > "$TEST_ROOT/hardlink.tsv"\n'
+        'echo "verified stub" > "$TEST_ROOT/provenance.txt"\n'
+        "exit 0\n"
+    )
     path.chmod(0o755)
 
 
@@ -88,6 +118,11 @@ def scratch_repo(tmp_path: Path) -> tuple[Path, Path]:
     marker_dir.mkdir()
     for name in ("test-fresh-install.sh", "test-upgrade.sh", "test-lite-mode.sh"):
         _stub_scenario(tests_dir / name, marker_dir / f"{name}.log")
+    _stub_cold_scenario(
+        tests_dir / "test-cold-model-download.sh", marker_dir / "test-cold-model-download.sh.log"
+    )
+    (tests_dir / "lib").mkdir()
+    shutil.copy(COLD_ORACLE, tests_dir / "lib" / "cold-model-download.py")
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -112,6 +147,8 @@ def _run_rehearse(
         # override is giving the fake repo a fact it has no way to have; it does not
         # weaken anything this module checks, which is waiver behaviour.
         "TO_BRANCH": "master",
+        # Scenario D's evidence root; the default lives under /mnt/nvm, outside the sandbox.
+        "COLD_CACHE_ROOT": str(repo.parent / "coldcache"),
     }
     if patch_skip_reason is not None:
         env["OT_PATCH_SKIP_REASON"] = patch_skip_reason
@@ -131,7 +168,7 @@ def _criteria_by_id(stdout_line: str) -> dict[str, dict]:
 
 
 @pytest.mark.unit
-def test_patch_skip_reason_waives_all_three_scenarios(scratch_repo: tuple[Path, Path]) -> None:
+def test_patch_skip_reason_waives_every_scenario(scratch_repo: tuple[Path, Path]) -> None:
     repo, marker_dir = scratch_repo
     reason = "diff touches none of 8 disqualifying triggers"
 
@@ -140,7 +177,12 @@ def test_patch_skip_reason_waives_all_three_scenarios(scratch_repo: tuple[Path, 
     assert proc.returncode == 0, f"a waived rehearsal must still exit 0:\n{proc.stderr}"
     assert reason in proc.stderr, proc.stderr
 
-    for name in ("test-fresh-install.sh", "test-upgrade.sh", "test-lite-mode.sh"):
+    for name in (
+        "test-fresh-install.sh",
+        "test-upgrade.sh",
+        "test-lite-mode.sh",
+        "test-cold-model-download.sh",
+    ):
         marker = marker_dir / f"{name}.log"
         assert not marker.exists(), (
             f"{name} was invoked despite OT_PATCH_SKIP_REASON being set — the waiver "
@@ -148,7 +190,7 @@ def test_patch_skip_reason_waives_all_three_scenarios(scratch_repo: tuple[Path, 
         )
 
     criteria = _criteria_by_id(proc.stdout.strip().splitlines()[-1])
-    for cid in ("fresh-install", "upgrade-from-previous", "lite-mode"):
+    for cid in ("fresh-install", "upgrade-from-previous", "lite-mode", *COLD_CRITERIA):
         assert criteria[cid]["outcome"] == "not-measured", criteria[cid]
         assert criteria[cid]["severity"] == "warn", (
             f"{cid} must be downgraded to warn via the waived 5th arg, else a waived "
@@ -170,17 +212,22 @@ def test_must_stay_clean_without_the_env_var_every_scenario_actually_runs(
     proc = _run_rehearse(repo, patch_skip_reason=None, json_out=True)
 
     assert proc.returncode == 0, proc.stderr
-    for banner in ("Scenario A", "Scenario B", "Scenario C"):
+    for banner in ("Scenario D", "Scenario A", "Scenario B", "Scenario C"):
         assert banner in proc.stderr, (
             f"{banner} banner missing — the normal path was not taken:\n{proc.stderr}"
         )
 
-    for name in ("test-fresh-install.sh", "test-upgrade.sh", "test-lite-mode.sh"):
+    for name in (
+        "test-fresh-install.sh",
+        "test-upgrade.sh",
+        "test-lite-mode.sh",
+        "test-cold-model-download.sh",
+    ):
         marker = marker_dir / f"{name}.log"
         assert marker.exists(), f"{name} was never invoked with no waiver in effect"
 
     criteria = _criteria_by_id(proc.stdout.strip().splitlines()[-1])
-    for cid in ("fresh-install", "upgrade-from-previous", "lite-mode"):
+    for cid in ("fresh-install", "upgrade-from-previous", "lite-mode", *COLD_CRITERIA):
         assert criteria[cid]["outcome"] == "pass", criteria[cid]
         assert criteria[cid]["severity"] == "blocking", (
             f"an un-waived pass must keep its declared severity, not read as warn: {criteria[cid]}"

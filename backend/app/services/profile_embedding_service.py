@@ -28,6 +28,7 @@ from app.services.opensearch_service.client import OpenSearchUnavailableError
 from app.services.opensearch_service.profiles import SPEAKER_PROFILE_MATCH_THRESHOLD
 from app.services.permission_service import file_ids_in_scope
 from app.services.privacy.policy import Decision
+from app.services.privacy.policy import declined_file_ids
 from app.services.privacy.redact_view import PrivacyView
 from app.utils.cosine_space import raw_cosine_from_opensearch_score
 
@@ -373,6 +374,9 @@ class ProfileEmbeddingService:
                 )
                 .all()
             )
+            # Per-file consent (#1356): a voice from an opted-out file never enters the average.
+            excluded = declined_file_ids(db, (s.media_file_id for s in speakers))
+            speakers = [s for s in speakers if s.media_file_id not in excluded]
 
             if not speakers:
                 logger.warning(f"No speakers assigned to profile {profile_id}")

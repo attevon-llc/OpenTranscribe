@@ -16,6 +16,9 @@ from app.services.formatting_service import FormattingService
 from app.services.media_download_service import MediaDownloadService
 from app.tasks.youtube_processing import process_youtube_url_task
 from app.utils.db_helpers import org_stamp_is
+from app.utils.task_secret_handoff import discard_task_secret
+from app.utils.task_secret_handoff import media_credentials_context
+from app.utils.task_secret_handoff import stash_task_secret
 
 logger = logging.getLogger(__name__)
 
@@ -252,13 +255,17 @@ def _dispatch_url_video_task(
     Raises:
         HTTPException: If task dispatch fails.
     """
+    credentials_ref: str | None = None
     try:
+        credentials_ref = stash_task_secret(
+            {"media_username": media_username, "media_password": media_password},
+            context=media_credentials_context(user_id, str(media_file.uuid)),
+        )
         task_result = process_youtube_url_task.delay(
             url=normalized_url,
             user_id=user_id,
             file_uuid=str(media_file.uuid),
-            media_username=media_username,
-            media_password=media_password,
+            media_credentials_ref=credentials_ref,
             collection_ids=collection_ids,
             tag_names=tag_names,
             video_quality=video_quality,
@@ -281,6 +288,7 @@ def _dispatch_url_video_task(
         raise
     except Exception as e:
         logger.exception(f"Failed to dispatch media processing task: {e}")
+        discard_task_secret(credentials_ref)
         db.delete(media_file)
         db.commit()
         raise HTTPException(

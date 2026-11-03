@@ -456,6 +456,51 @@ fix_pipeline_scratch_permissions() {
   return 1
 }
 
+# Host CPU architecture, normalized to the names Docker/OCI manifests use
+# (amd64 / arm64), so a caller never has to know that `uname -m` says x86_64 on
+# one and aarch64 on the other. Anything else is echoed through unchanged.
+host_architecture() {
+    local machine
+    machine=$(uname -m 2>/dev/null || echo unknown)
+    case "$machine" in
+        x86_64|amd64)   echo "amd64" ;;
+        aarch64|arm64)  echo "arm64" ;;
+        *)              echo "$machine" ;;
+    esac
+}
+
+# The deployment mode this run will actually use, env var beating .env.
+# read_env_value only ever reads .env, so a preflight that exports
+# DEPLOYMENT_MODE (see arm64_deployment_preflight below) would otherwise be
+# invisible to every consumer that asks .env directly.
+effective_deployment_mode() {
+    local mode="${DEPLOYMENT_MODE:-}"
+    if [ -z "$mode" ]; then
+        mode=$(read_env_value DEPLOYMENT_MODE)
+    fi
+    echo "$mode" | tr '[:upper:]' '[:lower:]'
+}
+
+# Backend image the deployment runs: repository from the deployment mode / architecture, tag from
+# OT_IMAGE_TAG (environment, then .env), else latest.
+# Lite installs and arm64 hosts run opentranscribe-backend-lite (the CUDA repository has no
+# capability-matched arm64 leg; opentranscribe.sh's arm64_deployment_preflight defaults arm64 to
+# lite for the same reason, unless OPENTRANSCRIBE_FORCE_FULL_ON_ARM64=true). Same repository rule
+# as opentranscribe.sh's resolve_diar_native_downloader_image; download-models.sh's
+# resolve_downloader_image carries the tag rule.
+resolve_backend_image() {
+  local tag="${OT_IMAGE_TAG:-}"
+  if [ -z "$tag" ] && [ -f .env ]; then
+    tag=$(read_env_value OT_IMAGE_TAG .env)
+  fi
+  local repo="opentranscribe-backend"
+  if [ "$(effective_deployment_mode)" = "lite" ] \
+      || { [ "$(host_architecture)" = "arm64" ] && [ "${OPENTRANSCRIBE_FORCE_FULL_ON_ARM64:-}" != "true" ]; }; then
+    repo="opentranscribe-backend-lite"
+  fi
+  echo "${DOCKERHUB_USERNAME:-davidamacey}/${repo}:${tag:-latest}"
+}
+
 # Ensure OpenSearch neural models are downloaded for offline capability
 ensure_opensearch_models() {
   # Read MODEL_CACHE_DIR from .env if it exists
@@ -492,19 +537,20 @@ ensure_opensearch_models() {
     return 1
   fi
 
+  # The downloader image must be the version this deployment runs (same rule as
+  # download-models.sh's resolve_downloader_image), not whatever :latest is today.
+  local downloader_image
+  downloader_image=$(resolve_backend_image)
+
   # Check if backend Docker image exists (pull if not)
-  if ! docker image inspect davidamacey/opentranscribe-backend:latest > /dev/null 2>&1; then
-    echo "   Backend Docker image not found locally - pulling from Docker Hub..."
-    if ! docker pull davidamacey/opentranscribe-backend:latest > /dev/null 2>&1; then
-      echo "⚠️  Warning: Could not pull backend image - models will download on first use"
+  if ! docker image inspect "$downloader_image" > /dev/null 2>&1; then
+    echo "   Backend Docker image not found locally - pulling $downloader_image from Docker Hub..."
+    if ! docker pull "$downloader_image" > /dev/null 2>&1; then
+      echo "⚠️  Warning: Could not pull $downloader_image - models will download on first use"
       return 1
     fi
   fi
 
-  # Set environment to download only default OpenSearch model
-  export OPENSEARCH_MODELS="all-MiniLM-L6-v2"
-
-  # Run download script (only for OpenSearch models - others handled separately)
   echo "📥 Downloading OpenSearch neural model (all-MiniLM-L6-v2)..."
 
   # Get Hugging Face token from .env if available
@@ -528,19 +574,29 @@ ensure_opensearch_models() {
   # Create opensearch-ml directory if needed
   mkdir -p "$opensearch_models_dir"
 
-  # Download OpenSearch models using Docker (same approach as transcription models)
+  # `--only opensearch`: this container mounts only opensearch-ml, so every other group
+  # the downloader runs would be fetched into a throwaway filesystem and discarded.
   # When using --gpus device=X, Docker isolates that GPU as device 0 in the container
   # Do NOT set CUDA_VISIBLE_DEVICES - PyTorch will automatically use the only available GPU
+  # The output is captured, not piped through `grep || true`: that pipeline's status was
+  # grep's, so a crashed downloader looked identical to a quiet one.
+  local dl_output
+  local dl_status=0
   # shellcheck disable=SC2086
-  docker run --rm \
+  dl_output=$(docker run --rm \
       $gpu_args \
       -e HUGGINGFACE_TOKEN="${HF_TOKEN}" \
       -e USE_GPU="${use_gpu}" \
       -e OPENSEARCH_MODELS="all-MiniLM-L6-v2" \
       -v "$(realpath "$opensearch_models_dir"):/home/appuser/.cache/opensearch-ml" \
       -v "./scripts/download-models.py:/app/download-models.py:ro" \
-      davidamacey/opentranscribe-backend:latest \
-      python /app/download-models.py 2>&1 | grep -E "(Downloading|Downloaded|ERROR|WARNING|Success)" || true
+      "$downloader_image" \
+      python /app/download-models.py --only opensearch 2>&1) || dl_status=$?
+  printf '%s\n' "$dl_output" | grep -E "(Downloading|Downloaded|ERROR|WARNING|Success)" || true
+  if [ "$dl_status" -ne 0 ]; then
+    echo "⚠️  Warning: the OpenSearch model downloader exited with status ${dl_status}"
+    printf '%s\n' "$dl_output" | tail -n 5 | sed 's/^/   | /'
+  fi
 
   # Check if model was actually downloaded
   if [ -d "$opensearch_models_dir/all-MiniLM-L6-v2" ] && [ -n "$(ls -A "$opensearch_models_dir/all-MiniLM-L6-v2" 2>/dev/null)" ]; then
@@ -1831,6 +1887,9 @@ restore_database() {
   echo "ℹ️  MinIO and the OpenSearch SEARCH indices were NOT rolled back — reindex from"
   echo "   Admin → Search if the restored database's file list differs from what they hold."
   echo "   (The speaker/voiceprint indices were handled above — see the line starting 🗣️.)"
+  echo "ℹ️  A dump is taken with --no-acl, so the restored database has no grants for the optional"
+  echo "   application role (POSTGRES_APP_USER): the backend re-applies them on its next start"
+  echo "   (or run: python -m app.db.roles reconcile in a migrate-job deployment)."
   if [ -n "$safety_dump_file" ]; then
     echo "   Pre-restore safety dump of the database this replaced: $safety_dump_file"
   fi

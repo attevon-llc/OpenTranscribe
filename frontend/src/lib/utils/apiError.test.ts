@@ -21,6 +21,22 @@ describe('getErrorMessage', () => {
     await initI18n('en');
   });
 
+  it('translates a support-access refusal instead of showing the server English sentence', () => {
+    const error = {
+      response: {
+        status: 403,
+        data: {
+          detail: {
+            code: 'support_grant_action_not_permitted',
+            message: 'This action is not available under a support access grant.',
+          },
+        },
+      },
+    };
+
+    expect(getErrorMessage(error)).toBe('This action is not available during a support session.');
+  });
+
   it('prefers the FastAPI response.data.detail', () => {
     expect(getErrorMessage({ response: { data: { detail: 'Not authorized' } } })).toBe(
       'Not authorized'
@@ -93,6 +109,31 @@ describe('getErrorMessage', () => {
           response: { data: { detail: { error: 'FILE_NOT_SAFE_TO_DELETE', message: 'busy' } } },
         })
       ).toBe('busy');
+    });
+  });
+
+  describe('a legal processing gate refusal', () => {
+    const refusal = (code: string) => ({
+      response: {
+        status: 403,
+        data: { detail: { code, documents: ['opentranscribe-terms-of-use'] } },
+      },
+    });
+
+    it('translates each stable code to its sentence', () => {
+      expect(getErrorMessage(refusal('legal_acceptance_required'))).toContain(
+        'accepts the required legal documents'
+      );
+      expect(getErrorMessage(refusal('legal_document_unavailable'))).toContain('not available');
+      expect(getErrorMessage(refusal('legal_gate_unavailable'))).toContain('could not be checked');
+    });
+
+    it('leaves an unrelated object code to the generic path', () => {
+      expect(
+        getErrorMessage({
+          response: { data: { detail: { code: 'policy_locked', message: 'locked' } } },
+        })
+      ).toBe('locked');
     });
   });
 

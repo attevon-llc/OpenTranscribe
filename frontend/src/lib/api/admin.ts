@@ -47,6 +47,22 @@ export interface ContentAccessAuditStatus {
   bytes_per_active_user_per_day_estimate: number;
 }
 
+/** `GET /admin/security/audit-integrity`: measured audit record protection (super_admin). */
+export interface AuditIntegrityStatus {
+  split_requested: boolean;
+  enforced: boolean;
+  runtime_role_is_superuser: boolean;
+  runtime_role_owns_tables: boolean;
+  tables: {
+    name: string;
+    insert: boolean;
+    update_columns: string[];
+    delete: boolean;
+    truncate: boolean;
+    guard_trigger_present: boolean;
+  }[];
+}
+
 export interface AccountStatusReport {
   total_users: number;
   active_users: number;
@@ -136,12 +152,48 @@ export interface QuarantinedFilesList {
   total: number;
 }
 
+/**
+ * What a quarantine/release did to the file's already-issued media URLs. The takedown itself
+ * always lands; `complete: false` means an issued URL may still work after a quarantine (or
+ * still 403 after a release). `reason` is a stable code (`tag_write_failed`,
+ * `enforcement_missing`, `enforcement_unverified`, `tag_clear_failed`, `copy_removal_failed`).
+ * Cache-bucket copies (`derived`, `bulk_export`) are deleted, not tagged (outcome `removed`).
+ */
+export interface MediaRevocation {
+  action: 'revoke' | 'restore';
+  complete: boolean;
+  reason: string | null;
+  enforcement: 'presign_identity' | 'bucket_policy' | 'none' | 'unknown' | null;
+  missing_permissions: string[];
+  exposure_seconds: number | null;
+  objects: {
+    role: 'original' | 'thumbnail' | 'playback' | 'derived' | 'bulk_export';
+    outcome: 'applied' | 'absent' | 'removed' | 'failed';
+    error_code: string | null;
+    failed_action: string | null;
+  }[];
+}
+
+/**
+ * The organization-admin view of a revocation: whether it worked, never the operator's storage
+ * permissions or enforcer (those stay on the platform route and in the audit log).
+ */
+export interface OrgMediaRevocation {
+  action: 'revoke' | 'restore';
+  complete: boolean;
+  reason: 'revocation_incomplete' | 'restore_incomplete' | null;
+  exposure_seconds: number | null;
+}
+
 export interface QuarantineActionResult {
   uuid: string;
   is_quarantined: boolean;
   legal_hold: boolean;
   status: string;
   takedown_origin: 'platform' | 'organization' | null;
+  presign_revoked?: boolean | null;
+  presign_tag_cleared?: boolean | null;
+  media_revocation?: MediaRevocation | null;
 }
 
 export class AdminApi {
@@ -441,6 +493,12 @@ export class AdminApi {
 
   static async setContentAccessAudit(enabled: boolean): Promise<ContentAccessAuditStatus> {
     const response = await axiosInstance.put('/admin/audit/content-access', { enabled });
+    return response.data;
+  }
+
+  // Audit record protection status (super_admin)
+  static async getAuditIntegrity(): Promise<AuditIntegrityStatus> {
+    const response = await axiosInstance.get('/admin/security/audit-integrity');
     return response.data;
   }
 

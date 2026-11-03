@@ -8,12 +8,16 @@ import datetime
 import io
 import logging
 import os
+from typing import TYPE_CHECKING
 
 from app.core.config import settings
 from app.services import minio_service
 from app.services import storage_presign_identity
 from app.services.storage_backend import clamp_presigned_expiry
 from app.services.storage_backend import rewrite_public_host
+
+if TYPE_CHECKING:
+    from app.services.storage_versions import RemovalResult
 
 logger = logging.getLogger(__name__)
 
@@ -231,24 +235,24 @@ class MinIOService:
             logger.warning(f"Could not compute prefix stats for {bucket_name}/{prefix}: {e}")
         return count, total
 
-    def delete_prefix(self, bucket_name: str, prefix: str) -> int:
-        """Delete every object under a prefix. Returns the number deleted. Best-effort."""
-        from minio.deleteobjects import DeleteObject
+    def delete_prefix(self, bucket_name: str, prefix: str) -> "RemovalResult":
+        """Delete every object under a prefix, every version of each. Returns the count removed.
 
-        deleted = 0
-        try:
-            names = [
-                obj.object_name
-                for obj in self.client.list_objects(bucket_name, prefix=prefix, recursive=True)
-            ]
-            if not names:
-                return 0
-            errors = self.client.remove_objects(bucket_name, (DeleteObject(n) for n in names))
-            failed = 0
-            for err in errors:
-                failed += 1
-                logger.warning(f"Failed to delete {err.name}: {err.code} {err.message}")
-            deleted = len(names) - failed
-        except Exception as e:
-            logger.warning(f"Could not delete prefix {bucket_name}/{prefix}: {e}")
-        return deleted
+        Raises:
+            storage_versions.StorageDeleteIncompleteError: Something under the prefix survived
+                (named in the error). It used to log and return a smaller count, so a purge of
+                burned-in video and extracted audio read as done with the bytes still stored.
+        """
+        from app.services.storage_versions import remove_completely
+
+        return remove_completely(self.client, bucket_name, prefix=prefix)
+
+    def delete_objects(self, bucket_name: str, names: list[str]) -> "RemovalResult":
+        """Delete the named objects, every version of each. Absent keys are not an error.
+
+        Raises:
+            storage_versions.StorageDeleteIncompleteError: A named object survived.
+        """
+        from app.services.storage_versions import remove_completely
+
+        return remove_completely(self.client, bucket_name, names=names)

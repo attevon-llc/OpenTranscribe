@@ -49,8 +49,8 @@ import html
 import logging
 import re
 
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.services.redaction.config import MASKABLE_CATEGORIES
-from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.search.search_cache import _resolve_redaction_config_for_cache
 from app.services.search.search_types import SearchResponse
 

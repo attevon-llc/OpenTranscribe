@@ -39,6 +39,7 @@ from app.api.endpoints.files.redaction_gate import claim_and_dispatch_redaction_
 from app.auth import audit as audit_module
 from app.auth.audit_events import AuditEventType
 from app.core import redaction_defaults
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.models.organization import Organization
@@ -46,7 +47,6 @@ from app.models.speaker import Speaker
 from app.models.user import User
 from app.services.platform_bypass import PlatformBypass
 from app.services.platform_bypass import SupportGrantView
-from app.services.redaction.config import EffectiveRedactionConfig
 from tests.user_owned_rows import make_user
 
 FORCED_WORD = "acquisition"

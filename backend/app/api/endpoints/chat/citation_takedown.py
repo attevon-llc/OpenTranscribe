@@ -33,20 +33,22 @@ from sqlalchemy.orm import Session
 from app.services.takedown_predicates import quarantined_among
 
 
-def drop_quarantined_citations(db: Session, citations: list[dict], *, is_admin: bool) -> list[dict]:
+def drop_quarantined_citations(
+    db: Session, citations: list[dict], *, include_quarantined: bool
+) -> list[dict]:
     """Drop citations naming a currently-quarantined file.
 
     Args:
         db: Database session.
         citations: A message's persisted citation payloads.
-        is_admin: Admins keep full visibility for takedown review — the same
-            bypass every other quarantine-aware read surface applies.
+        include_quarantined: Whether this request keeps quarantined files for takedown
+            review; pass ``quarantine_list_exempt(ctx.bypass)``, never the bare admin role.
 
     Returns:
-        ``citations`` unchanged when ``is_admin`` or empty; otherwise a new list
+        ``citations`` unchanged when ``include_quarantined`` or empty; otherwise a new list
         with every citation whose ``file_uuid`` is quarantined removed.
     """
-    if is_admin or not citations:
+    if include_quarantined or not citations:
         return citations
 
     uuids = {c["file_uuid"] for c in citations if c.get("file_uuid")}
@@ -58,7 +60,7 @@ def drop_quarantined_citations(db: Session, citations: list[dict], *, is_admin: 
 
 
 def drop_quarantined_citations_bulk(
-    db: Session, list_of_citation_lists: list[list[dict]], *, is_admin: bool
+    db: Session, list_of_citation_lists: list[list[dict]], *, include_quarantined: bool
 ) -> list[list[dict]]:
     """The multi-message sibling of :func:`drop_quarantined_citations`.
 
@@ -70,13 +72,13 @@ def drop_quarantined_citations_bulk(
         db: Database session.
         list_of_citation_lists: One citations list per message, in the same
             order they must be returned in.
-        is_admin: Admins keep full visibility for takedown review.
+        include_quarantined: As for :func:`drop_quarantined_citations`.
 
     Returns:
         A new list of citation lists, each filtered exactly as
         :func:`drop_quarantined_citations` would filter it alone.
     """
-    if is_admin or not list_of_citation_lists:
+    if include_quarantined or not list_of_citation_lists:
         return list_of_citation_lists
 
     uuids: set[str] = set()

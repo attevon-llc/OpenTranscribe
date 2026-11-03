@@ -57,7 +57,7 @@ vi.mock('$stores/uploads', () => ({ uploadsStore: mockUploadsStore }));
 
 vi.mock('$lib/services/configService', () => ({
   loadProtectedMediaAuthConfig: vi.fn().mockResolvedValue(undefined),
-  getAuthConfigForHost: vi.fn().mockReturnValue(null),
+  getAuthConfigForUrl: vi.fn().mockReturnValue(null),
 }));
 
 const mockGetAudioExtractionSettings = vi.hoisted(() => vi.fn());

@@ -44,8 +44,9 @@ class URLProcessingRequest(BaseModel):
     media_password: str | None = Field(
         default=None,
         description=(
-            "Optional password for protected media sources "
-            "(never stored, only used for this request)"
+            "Optional password for protected media sources. Held encrypted with a short "
+            "expiry only until the import finishes or fails, then deleted; never "
+            "returned and never written to the database"
         ),
     )
     collection_ids: list[str] | None = Field(

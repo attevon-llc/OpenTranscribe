@@ -219,7 +219,7 @@ def test_speaker_embedding_read_phase_returns_plain_data(
     assert tracker.depth == 0
     assert inputs["file_id"] == media_file.id
     assert inputs["user_id"] == normal_user.id
-    assert inputs["storage_path"] == "test/meeting.mp4"
+    assert inputs["storage_path"] == media_file.storage_path
     assert len(inputs["processed_segments"]) == 2
     assert inputs["processed_segments"][0] == {
         "start": 0.0,

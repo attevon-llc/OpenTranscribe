@@ -73,6 +73,31 @@ def existing_file(engine) -> Iterator[str]:
 
 
 @pytest.fixture
+def anchor_file(engine) -> Iterator[str]:
+    """A second committed ``media_file`` row, so a snapshot minus the file under test is never
+    empty whatever the target database holds. Its storage key is unique (v456)."""
+    with engine.begin() as conn:
+        owner = conn.execute(text('SELECT id FROM "user" ORDER BY id LIMIT 1')).scalar_one()
+        row = conn.execute(
+            text(
+                "INSERT INTO media_file (uuid, user_id, filename, storage_path, file_size, "
+                "content_type, status) VALUES (gen_random_uuid(), :u, :f, :p, 1, "
+                "'audio/wav', 'completed') RETURNING id, uuid"
+            ),
+            {
+                "u": owner,
+                "f": f"{DELRES_PREFIX}{new_tag()}.wav",
+                "p": f"none-{uuid_pkg.uuid4().hex}",
+            },
+        ).one()
+    try:
+        yield str(row[1])
+    finally:
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM media_file WHERE id = :i"), {"i": row[0]})
+
+
+@pytest.fixture
 def sandbox(monkeypatch) -> Iterator[tuple[object, str]]:
     """Point every index the sweep scans at throwaway names; create only the chunks one."""
     from app.core.config import settings
@@ -112,7 +137,7 @@ def _uuids_in(client, index: str) -> dict[str, int]:
 
 
 def test_dry_run_lists_the_orphans_and_a_forced_run_spares_a_file_that_exists(
-    engine, existing_file, sandbox, monkeypatch
+    engine, existing_file, anchor_file, sandbox, monkeypatch
 ):
     from app.tasks import opensearch_integrity_task as sweeper
 
@@ -127,7 +152,7 @@ def test_dry_run_lists_the_orphans_and_a_forced_run_spares_a_file_that_exists(
     # (so the empty-set refusal does not fire) but not this one.
     real_snapshot = sweeper._get_all_file_uuids_from_db()
     stale_snapshot = real_snapshot - {existing_file}
-    assert stale_snapshot, "the database must hold at least one other file for this test"
+    assert anchor_file in stale_snapshot, "the snapshot must hold another file (anchor_file)"
     monkeypatch.setattr(sweeper, "_get_all_file_uuids_from_db", lambda: stale_snapshot)
 
     unforced = sweeper.run_orphan_cleanup(dry_run=False)[chunks]

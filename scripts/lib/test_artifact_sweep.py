@@ -88,7 +88,7 @@ TEST_INDEX_SPECS: list[ArtifactSpec] = [
         rf'test_(search_filters_quarantine|kw_latency|chat_cache_revoke|digest_plane'
         rf'|label_drift|summary_plane|summary_plane_semantic|completeness|fusion|chunk_prune'
         rf'|rename_chunks|rename_sites|speaker_id_fields|reindex666_chunks'
-        rf'|reindex666_transcripts|org_collection_retrieval|audit_org_scope|priv_chunks)_{_H12}',
+        rf'|reindex666_transcripts|org_collection_retrieval|audit_org_scope|compliance_audit|priv_chunks)_{_H12}',
         TIER_A,
         'integration/test_*_opensearch.py and siblings (one throwaway chunks index each)',
     ),
@@ -111,6 +111,13 @@ TEST_INDEX_SPECS: list[ArtifactSpec] = [
         rf'knn_probe_live_test(_non_ann)?_{_H10}',
         TIER_A,
         'integration/test_knn_probe_live.py',
+    ),
+    # integration/test_erasure_receipt_e2e.py: an index no erasure store classifies.
+    _spec(
+        'erasure-receipt-stray',
+        rf'test_erasure_receipt_stray_{_H12}',
+        TIER_A,
+        'integration/test_erasure_receipt_e2e.py',
     ),
     # delres-absent-*: names a test points settings at so they must NOT exist; registered
     # anyway, so a regression that makes the code under test create one is still swept.
@@ -161,6 +168,30 @@ TEST_BUCKET_SPECS: list[ArtifactSpec] = [
         rf'e2e-orphan-sweep-{_H12}',
         TIER_A,
         'integration/test_orphan_sweep_storage.py',
+    ),
+    _spec(
+        'quarantine-iam',
+        rf'e2e-quarantine-iam-{_H12}',
+        TIER_A,
+        'integration/test_quarantine_tag_permissions_live.py',
+    ),
+    _spec(
+        'legacy-audio-reclaim',
+        rf'e2e-legacy-audio-{_H12}',
+        TIER_A,
+        'integration/test_legacy_audio_cache_reclaim_live.py',
+    ),
+    _spec(
+        'versioned-erasure',
+        rf'e2e-versioned-erasure-{_H12}',
+        TIER_A,
+        'integration/test_versioned_bucket_erasure.py',
+    ),
+    _spec(
+        'storage-key-ownership',
+        rf'e2e-key-owner-{_H12}',
+        TIER_A,
+        'integration/test_storage_key_ownership.py',
     ),
 ]
 

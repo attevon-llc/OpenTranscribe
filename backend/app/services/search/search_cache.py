@@ -20,7 +20,7 @@ from app.services.redaction.config import MASKABLE_CATEGORIES
 from app.services.search.search_types import SearchResponse
 
 if TYPE_CHECKING:  # pragma: no cover - import cost paid only by type checkers
-    from app.services.redaction.config import EffectiveRedactionConfig
+    from app.core.redaction_config import EffectiveRedactionConfig
 
 logger = logging.getLogger(__name__)
 

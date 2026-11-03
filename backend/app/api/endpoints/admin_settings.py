@@ -9,6 +9,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import status
 from sqlalchemy import and_
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -16,6 +17,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_admin_user
+from app.core.exceptions import DomainError
 from app.core.queues import CeleryQueues
 from app.db.base import get_db
 from app.models.media import FileStatus
@@ -263,9 +265,28 @@ def clear_cache_now(
     """
     ctx.bypass.require_deployment_scope("Clearing the derived cache")
     from app.services import cache_management_service
+    from app.services.storage_versions import StorageDeleteIncompleteError
 
     logger.info(f"Manual derived-cache clear by admin {current_user.email}")
-    deleted = cache_management_service.clear_derived_cache()
+    try:
+        deleted = cache_management_service.clear_derived_cache()
+    except (HTTPException, DomainError):
+        raise
+    except StorageDeleteIncompleteError as e:
+        logger.error(f"Derived-cache clear left objects behind: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Some cached objects could not be removed (a storage lock or a refused "
+                "delete). The server log names them; try again after resolving it."
+            ),
+        ) from e
+    except Exception as e:
+        logger.exception("Derived-cache clear failed: object storage unavailable")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Object storage unavailable while clearing the derived cache",
+        ) from e
     return CacheClearResponse(deleted=deleted)
 
 

@@ -32,6 +32,7 @@ from app.services.delete_permissions import can_delete_file
 from app.services.formatting_service import FormattingService
 from app.services.privacy.redact_view import PrivacyView
 from app.services.request_context import RequestContext
+from app.services.takedown_service import quarantine_list_exempt
 
 from .detail_response import set_file_urls
 from .filtering import LIST_SPEAKER_COLUMNS
@@ -238,7 +239,9 @@ def list_media_files(
         effective_user_id = None
 
     # Abuse/DMCA: hide taken-down files from the gallery for non-admins.
-    base_query = exclude_quarantined(base_query, include_quarantined=ctx.bypass.user_is_admin)
+    base_query = exclude_quarantined(
+        base_query, include_quarantined=quarantine_list_exempt(ctx.bypass)
+    )
 
     # Prepare filters dictionary
     filters: dict[str, Any] = {
@@ -300,7 +303,7 @@ def get_metadata_filters_endpoint(
         ctx.user.id,
         ownership=ownership,
         organization_id=ctx.org_id,
-        include_quarantined=ctx.bypass.user_is_admin,
+        include_quarantined=quarantine_list_exempt(ctx.bypass),
         owner_user_ids=resolve_owner_user_ids(db, owner),
     )
 

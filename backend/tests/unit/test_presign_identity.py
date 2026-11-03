@@ -377,3 +377,38 @@ class TestEnsurePresignIdentityGating:
         second = pid.ensure_presign_identity()
 
         assert first == second is False
+
+
+class TestAdminFailureWithAnExistingIdentity:
+    """Another process provisioned the identity; this one's admin call fails.
+
+    Credentials are derived, so the identity is shared. A process that fell back to root
+    here would sign URLs a takedown cannot revoke while another process reports the takedown
+    as enforced by the identity: a wrong verdict caused by a per-process cache.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _minio_with_failing_admin(self, monkeypatch):
+        from app.services import storage_backend
+
+        monkeypatch.setattr(storage_backend, "is_native_s3", lambda: False)
+        monkeypatch.setattr(settings, "STORAGE_PRESIGN_IDENTITY_ENABLED", True)
+        monkeypatch.setattr(settings, "JWT_SECRET_KEY", "admin-failure-test-secret")
+        admin = MagicMock()
+        admin.return_value.add_service_account.side_effect = ConnectionError("admin down")
+        monkeypatch.setattr("minio.minioadmin.MinioAdmin", admin)
+
+    def test_an_identity_that_answers_is_still_used(self, monkeypatch):
+        monkeypatch.setattr(pid, "_derived_identity_works", lambda: True)
+        from app.services.minio_service import minio_client as root_client
+
+        assert pid.ensure_presign_identity() is True
+        assert pid.presign_client() is not root_client
+
+    def test_an_identity_that_does_not_answer_falls_back_with_an_error(self, monkeypatch, caplog):
+        monkeypatch.setattr(pid, "_derived_identity_works", lambda: False)
+
+        with caplog.at_level("ERROR", logger="app.services.storage_presign_identity"):
+            assert pid.ensure_presign_identity() is False
+
+        assert any(r.levelname == "ERROR" for r in caplog.records)

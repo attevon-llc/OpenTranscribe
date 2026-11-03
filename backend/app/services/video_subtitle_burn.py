@@ -12,8 +12,8 @@ import tempfile
 from pathlib import Path
 
 from app.core.config import settings
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.db.session_utils import session_scope
-from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.redaction.config import resolve_effective_config
 from app.services.redaction.export_policy import ExportRedactionNotReadyError
 from app.services.redaction.export_policy import export_masking_is_pending

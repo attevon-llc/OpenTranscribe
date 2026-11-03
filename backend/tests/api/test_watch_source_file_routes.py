@@ -109,6 +109,35 @@ def test_list_returns_the_diagnostic_fields_a_row_carries(
     assert by_name["old.mp4"]["skip_reason"] == "too_old"
 
 
+@pytest.mark.parametrize("quarantined", [True, False])
+def test_a_taken_down_import_is_not_linked_in_the_history(
+    client, db_session, normal_user, user_token_headers, quarantined
+):
+    from app.core.enums import FileStatus
+    from app.models.media import MediaFile
+
+    source = _make_source(db_session, normal_user)
+    media = MediaFile(
+        uuid=uuid_pkg.uuid4(),
+        filename=f"{uuid_pkg.uuid4().hex[:8]}.mp4",
+        storage_path=f"user_{normal_user.id}/file_x/original.mp4",
+        content_type="video/mp4",
+        file_size=10,
+        user_id=normal_user.id,
+        status=FileStatus.COMPLETED,
+        is_quarantined=quarantined,
+    )
+    db_session.add(media)
+    db_session.commit()
+    _make_row(db_session, source, filename="imported.mp4", media_file_id=media.id)
+
+    response = client.get(f"{BASE}/{source.uuid}/files", headers=user_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    (row,) = response.json()["files"]
+    assert row["media_file_uuid"] == (None if quarantined else str(media.uuid))
+
+
 def test_status_filter_returns_only_matching_rows(
     client, db_session, normal_user, user_token_headers
 ):

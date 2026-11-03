@@ -178,7 +178,7 @@ def test_the_external_phase_is_handed_every_object_path(db_session, normal_user,
     }
     handed: list[tuple[int, dict[str, Any]]] = []
 
-    def storage(file_id, artifacts):
+    def storage(file_id, artifacts, unverified=None):
         handed.append((file_id, dict(artifacts)))
         return True
 

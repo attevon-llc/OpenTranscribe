@@ -15,6 +15,7 @@ from app.services.speaker_cleanup import SpeakerImpact
 from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact
 from app.services.speaker_identity_moves import detach_from_cluster
+from app.services.speaker_profile_activity import touch_profile_interaction
 from app.utils.speaker_identity_detail import ORIGIN_CLUSTER_PROMOTED
 from app.utils.speaker_identity_source import record_human_identity
 from app.utils.speaker_labels import canonical_speaker_label_for_row
@@ -135,6 +136,9 @@ def promote_cluster_to_profile(
         for member in members:
             speaker = speakers_by_id.get(int(member.speaker_id))
             if speaker:
+                touch_profile_interaction(
+                    self.db, [int(profile.id), speaker.profile_id], "human_link"
+                )
                 speaker.profile_id = profile.id
                 # Members span every file the cluster reaches into, each with
                 # its own indexed label — record before the overwrite (#432).

@@ -124,6 +124,25 @@ declare -a PATCH_REHEARSAL_TRIGGERS=(
     # days; nothing else in this trigger set would have caught that class of
     # regression.
     'release-manifest.txt'
+    # scripts/download-models.{py,sh}: shipped through the manifest and run by
+    # the installer, NOT baked into the image, so a downloader-only patch has
+    # no Dockerfile or requirements diff. Rehearsal Scenario D is the only
+    # thing that executes it; v0.6.0's pyannote group failed for every user
+    # with all of A-C green.
+    'download-models'
+    # ...and the backend modules download-models.py imports at run time, inside the image.
+    # A backend-only patch to one of them changes what the downloader does with no change
+    # to the script itself (the v0.6.0 pyannote break was exactly a library change).
+    # whisperx group: which repo WHISPER_MODEL resolves to.
+    'backend/app/core/local_whisper_catalog.py'
+    # whisperx group: the snapshot download itself (download_blocking).
+    'backend/app/services/local_models/'
+    # nltk group: the data-dir permission repair before nltk.download.
+    'backend/app/utils/nltk_offline.py'
+    # diar-native group: the provisioner it delegates to entirely.
+    'backend/app/transcription/native_provision.py'
+    # diar-native group: how that provisioner finds the HF token.
+    'backend/app/services/huggingface_token.py'
 )
 
 # patch_rehearsal_waivable TO -> 0 + a reason on stdout when the rehearsal MAY

@@ -9,6 +9,7 @@ failure is appended to the caller's ``errors`` list so the erasure audits PARTIA
 
 import logging
 from collections.abc import Iterable
+from datetime import datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,7 @@ def _erase_speaker_voiceprints(
     user_id: int | None = None,
     organization_id: int | None = None,
     personal_only: bool = False,
+    created_before: datetime | None = None,
     errors: list[dict[str, Any]] | None = None,
 ) -> int:
     """Delete speaker/profile embedding docs (biometric data) from OpenSearch.
@@ -39,6 +41,9 @@ def _erase_speaker_voiceprints(
     Args:
         user_id: Scope the deletion to one user.
         organization_id: Scope the deletion to one organization.
+        created_before: Only documents whose ``created_at`` is at or before this instant (the
+            automatic org-member re-run after a restore). A document with no ``created_at`` does
+            not match and is left in place.
         personal_only: Also require that the doc carries no organization, i.e. only
             personal-workspace docs (the privacy purge's "personal" scope). Without a
             ``user_id`` this is every user's personal docs. Contradicts
@@ -61,6 +66,8 @@ def _erase_speaker_voiceprints(
         terms.append({"term": {"user_id": user_id}})
     if organization_id is not None:
         terms.append({"term": {"organization_id": organization_id}})
+    if created_before is not None:
+        terms.append({"range": {"created_at": {"lte": created_before.isoformat()}}})
     body: dict[str, Any] = {"query": {"bool": {"filter": terms}}}
     if personal_only:
         body["query"]["bool"]["must_not"] = [{"exists": {"field": "organization_id"}}]

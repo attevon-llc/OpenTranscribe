@@ -16,6 +16,7 @@
   import LanguageSettings from '$components/settings/LanguageSettings.svelte';
   import SecuritySettings from '$components/settings/SecuritySettings.svelte';
   import ActiveSessionsPanel from '$components/settings/ActiveSessionsPanel.svelte';
+  import AccountErasureCard from '$components/settings/AccountErasureCard.svelte';
 
   // Managed-edition users never have a local password; the password-change card
   // and the local MFA panel are both handled by the hosted IdP and replaced by a
@@ -365,6 +366,9 @@
   <div class="mfa-card">
     <ActiveSessionsPanel />
   </div>
+
+  <!-- Erase my account: renders nothing unless the deployment switched it on. -->
+  <AccountErasureCard />
   {/if}
 </div>
 

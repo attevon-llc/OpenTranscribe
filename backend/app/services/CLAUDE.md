@@ -66,7 +66,7 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   (`PurgeScope.speaker_filters`, the profile rename, `require_speaker_access`, the segment speaker assignment; `tests/unit/test_speaker_tenant_discipline.py` fails on any new read of the speaker row's own column), and every writer that rebuilds a speaker document passes the file's organization
   (`PreparedFile.organization_id`, the merge plan's `organization_id`) or the voiceprint reads as personal. A removal
   or erasure is never gated by the switch (`speaker_cleanup.profile_move_impact` drops only the aggregate a voice
-  would JOIN while off). User docs: `docs-site/docs/features/privacy-controls.md`.
+  would JOIN while off). **Per-file layer (#1356):** `media_file.voiceprint_consent` (`unspecified|granted|declined`, v454) is a restrict-only layer checked by `policy._file_consent_allows` AFTER the stored layers and BEFORE the consent hooks (`locked_by="file"`); `assert_voiceprint_write_allowed(..., media_file_id=)` re-reads it uncached on every write and hands the hooks the file id; `policy.declined_file_ids(db, ids)` is the ONE exclusion rule every cross-file AVERAGE applies (profile embedding, cluster centroid, recluster, merge, v4 profile backfill), policed by `tests/unit/test_voiceprint_average_sites_honour_file_consent.py` (derives the averaging modules from the code). The write side is `privacy/file_consent.py`: prepare sets, complete only restricts, the owner's `PATCH /files/{uuid}/voiceprint-consent` commits `declined` and then queues `purge_reason="opt_out"` through `policy_admin.start_purge`. `granted` is the uploader's recorded claim, never verified. User docs: `docs-site/docs/features/privacy-controls.md`.
 - **Collection visibility** — `collection_visibility.py` is the one place that answers "which
   collections may this caller see, and which files does that make readable" (#1051, #1275).
   `collection_permission_ranks` / `collection_permission` are the ONE statement behind
@@ -296,6 +296,24 @@ three are needed, and dropping any one reproduces a defect that shipped.
   never "fix" an unwritable `DATA_DIR` with an ephemeral mount; the journal would die
   with the pod.
 
+- **An erasure is complete only when its receipt is `verified`; every new store gets an inventory
+  entry** (issue #1353). `services/erasure_receipt/` counts every store before the destroy and
+  again after it in a fresh session (`flow.begin` / `flow.finish`, around the destroy in each
+  `erase_*`), stores the numbers-only `erasure_receipt` row (`receipt.persist_receipt`), schedules a
+  60 s re-check (`tasks/erasure_receipt_reverify.py`) and puts a non-`verified` outcome on
+  `summary["errors"]`, which is what keeps `complete` false and the ledger entry open. A store the
+  registry cannot count is `unverified`, never 0 (`measure.measure_all` maps a raise to `None`). A
+  new Postgres table reachable from a user, file, speaker or organization needs a `PgStore` in
+  `stores_pg.py` or an `EXEMPT_TABLES` reason (`tests/unit/test_erasure_inventory_coverage.py`
+  derives the foreign-key closure and fails otherwise); a new OpenSearch index needs a pattern in
+  `stores_external.INDEX_PATTERNS`; an edition's own stores use `register_erasure_store`. The
+  deletes the canonical per-file destroy never made (lockout record, noncurrent versions, the
+  account's whole object prefix, multipart uploads, temp objects, derived cache, mirror keys) are
+  `erasure_receipt/destroy_extras.py`; files under a legal hold are excluded from capture, so they
+  are `retained`, never `residual`. `ErasureScope` is the erasure's own scope type (it is not
+  `privacy.purge.PurgeScope`, whose `user` kind is one tenant); `Residual` and `GroupedCounts` live
+  in `privacy/measure.py` for both. Media-mirror deletes go through `media_mirror_erasure.py` only.
+
 Two judgement calls worth not re-litigating blindly:
 
 - **A legal hold retains the ACCOUNT, not just the file, and that is forced by the
@@ -304,11 +322,27 @@ Two judgement calls worth not re-litigating blindly:
   the account's survival is a side effect, made temporary by the ledger entry and the
   sweep. Making it genuinely file-granular means anonymising the account instead —
   a design change, not a patch.
-- **`org_member` entries are never auto-re-erased after a restore.** That scope never
-  deletes the `user` row, so "is the subject present" is always true; the only other
-  signal ("does the member have org rows again?") is indistinguishable from the member
-  legitimately uploading to that tenant the next day, and acting on it would destroy
-  data nobody asked to erase. They are counted as `org_member_manual_review` instead.
+- **`org_member` entries are re-run after a restore, but only up to the erasure time** (#1355).
+  That scope never deletes the `user` row, and "does the member have org rows again?" alone is
+  what a legitimate upload the next day looks like. So `erasure_org_member_rerun.rerun_state`
+  counts only rows created **at or before** the entry's `completed_at`
+  (`erase_org_member_data(created_before=)`; media files use `upload_time`, the rest
+  `created_at`), a NULL timestamp is reported (`org_member_needs_review`) and never deleted, and
+  a time-bounded run takes no erasure receipt (the receipt measures the whole scope, which
+  legitimately holds newer rows). **`completed_at` doubles as that bound once the entry has been
+  resurrected**: `_completion_time` keeps it through a deferral and through the re-run's own
+  completion, so a retry is still bounded; do not "refresh" it.
+- **Self-service erasure is a ledger entry, not a second state machine** (#1354):
+  `self_erasure_service` (request / cancel / `execute_due_requests`), `self_erasure_reauth`
+  (password or TOTP), `deferred` / `grace_period` / `scheduled_for`, terminal status `cancelled`.
+  `open_entries` excludes every grace-period entry (phase 0 of the sweep runs the due ones) and
+  `overdue_entries` excludes `cancelled`. Journal lines carry the grace fields and the **last line
+  per uuid wins** on restore, so a cancelled request is never revived.
+- **Index-level resurrection** (#1355): `erasure_index_reconcile` reuses the receipt registry
+  (`stores_external.classify_index`) and the single speaker-index enumerator; one `filters`
+  aggregation per index for up to 500 entries (`index_checked_at` cursor); an unreachable cluster
+  is `index_unverified` and does not advance the cursor; a live user row with the same id makes the
+  subject ambiguous and it is skipped.
 
 ## Removing a voice: `speaker_cleanup.py` is the only implementation (issue #1214)
 
@@ -681,6 +715,16 @@ every difference between the two backends (issue #284 A1.11/A1.12):
   per-file objects must keep the `user_<uid>/file_<fid>/` prefix or the sweep cannot see it
   (and a file's objects would outlive it unnoticed).
 
+- **Object keys are one per row, enforced by the database (#1357).** `uq_media_file_storage_path`,
+  `_thumbnail_path` and `_playback_path` (v456, defined once in `app/db/object_key_indexes.py`)
+  make a second row naming a key an `IntegrityError`, so a delete can never remove another row's
+  object. That is why there is no shared-key check in the purge path any more. Key shapes: upload
+  `user_<uid>/file_<fid>/<name>`; URL import original `media/<uid>/<uuid>`; URL-import thumbnail
+  `user_<uid>/file_<fid>/thumbnail.jpg`; generated thumbnail `.../thumbnail.webp`; playback
+  `<storage_path>.playback...`; avatar `avatars/<uid>/<profile_uuid>/<random>.<ext>` (swap under a
+  profile row lock via `speaker_avatar_service`, delete only the key replaced). A NEW writer of a
+  stored key must derive it from the row's own id (or a uuid), never from external identity.
+
 ## LLM features (optional)
 
 `llm_service.py` is a **synchronous** client on purpose (Celery tasks; no asyncio conflicts).
@@ -688,7 +732,11 @@ every difference between the two backends (issue #284 A1.11/A1.12):
 deprecated alias for `anthropic`).
 
 - **Resolution order**: `create_from_user_settings(user_id)` → falls back to
-  `create_from_system_settings()` (env `LLM_PROVIDER` + provider keys/endpoints). Empty
+  `create_from_system_settings()` (env `LLM_PROVIDER` + provider keys/endpoints) **only when the
+  user has NO active config**; an active-but-unusable one (bad pointer, dangling id, unknown
+  provider, undecryptable key, Bedrock without region, vllm/custom without `base_url`) raises
+  `LLMConfigurationError` and must never reach the system provider (masking was decided for the
+  user's provider). `create_from_settings` returns `None`, `describe_for_user` returns `None`. Empty
   `LLM_PROVIDER` and no user config = transcription-only; `create_from_system_settings`
   returns `None` and callers must handle it. `custom` is **user-config only** — it always
   returns `None` from system settings.

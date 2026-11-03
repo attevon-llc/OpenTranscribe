@@ -11,10 +11,10 @@ import zipfile
 
 import pytest
 
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
-from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.subtitle_service import SubtitleService
 
 # What `resolve_effective_config` returns on a deployment where nobody enabled

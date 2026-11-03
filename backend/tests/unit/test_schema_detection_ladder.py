@@ -420,6 +420,42 @@ _MODERN_CHAIN: list[Step] = [
         "v449_add_speaker_identity_source",
         markers={("constraint", "speaker_identity_source_user_id_fkey")},
     ),
+    step(
+        "v450_legal_acceptance_context_and_profile_interaction",
+        markers={
+            ("constraint", "ck_legal_acceptance_scope"),
+            col("speaker_profile", "last_interaction_at"),
+        },
+    ),
+    step(
+        "v451_legal_acceptance_survives_user_deletion",
+        markers={
+            ("trigger", "trg_legal_acceptance_guard"),
+            ("fk_set_null", "legal_acceptance", "user"),
+            ("constraint", "ck_legal_acceptance_subject"),
+        },
+    ),
+    step("v452_add_erasure_receipt", markers={("constraint", "ck_erasure_receipt_digest")}),
+    step(
+        "v453_audit_row_immutability",
+        markers={("trigger", "trg_audit_guard_erasure_ledger"), ("proc", "audit_prune")},
+    ),
+    step(
+        "v454_add_media_file_voiceprint_consent",
+        markers={("index", "ix_media_file_voiceprint_declined")},
+    ),
+    step(
+        "v455_add_self_service_erasure_request",
+        markers={("index", "uq_erasure_ledger_open_self_request")},
+    ),
+    step("v456_unique_object_keys", markers={("index", "uq_media_file_playback_path")}),
+    step(
+        "v457_audit_guard_followups",
+        markers={
+            ("trigger", "trg_audit_guard_truncate_legal_acceptance"),
+            ("trigger_def", "trg_audit_guard_erasure_ledger", "index_checked_at"),
+        },
+    ),
 ]
 
 
@@ -511,8 +547,8 @@ def test_every_ladder_revision_is_pinned_by_a_test_above():
     assert {s.expected for s in _LEGACY_CHAIN} <= pinned
     # 43 pre-v367 arms plus the v010 fallback, and one arm per revision from v367 on.
     assert len(_LEGACY_ARMS) == 44
-    assert len(_MODERN_CHAIN) == 50
-    assert len(pinned) == 94
+    assert len(_MODERN_CHAIN) == 58
+    assert len(pinned) == 102
 
 
 def test_on_the_full_image_the_lite_only_rows_are_ignored(monkeypatch):
@@ -594,7 +630,9 @@ def test_every_probe_runs_oldest_era_first_before_any_verdict(lite):
         "conname = 'ck_user_auth_type_valid')",  # v377
         "conname = 'ck_erasure_ledger_counters_numeric'",  # v389
         "FROM user_setting s",  # v434
-        "conname = 'speaker_identity_source_user_id_fkey'",  # v449, the last probe
+        "conname = 'speaker_identity_source_user_id_fkey'",  # v449
+        "conname = 'ck_legal_acceptance_subject'",  # v451
+        "LIKE '%index_checked_at%'",  # v457, the last probe
     ]
     positions = [next(i for i, sql in enumerate(head.queries) if a in sql) for a in anchors]
     assert positions == sorted(positions), f"probe eras ran out of order: {positions}"

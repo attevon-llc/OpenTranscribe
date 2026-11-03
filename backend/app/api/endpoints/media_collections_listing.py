@@ -41,6 +41,7 @@ from app.services.content_hold_queries import collection_hold_summaries
 from app.services.permission_service import PermissionService
 from app.services.request_context import RequestContext
 from app.services.takedown_service import exclude_quarantined
+from app.services.takedown_service import quarantine_list_exempt
 from app.services.uuid_helpers import get_by_uuid
 
 router = APIRouter()
@@ -134,7 +135,7 @@ def list_shared_collections(
 
     # Batch: media counts per collection (quarantined files hidden for non-admins)
     media_counts = _visible_media_counts(
-        db, filtered_ids, include_quarantined=ctx.bypass.user_is_admin
+        db, filtered_ids, include_quarantined=quarantine_list_exempt(ctx.bypass)
     )
 
     # Batch: share records for shared_by info
@@ -370,7 +371,7 @@ def list_collections(
     org_pred = _tenant_pred(ctx)
 
     # Member counts hide quarantined files for non-admins (issue #262g).
-    include_quarantined = ctx.bypass.user_is_admin
+    include_quarantined = quarantine_list_exempt(ctx.bypass)
 
     collection_ids, counts_dict, perm_dict, shared_by_dict = _ownership_page(
         db,

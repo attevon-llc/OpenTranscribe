@@ -31,6 +31,7 @@ from app.core.config import settings
 from app.core.exceptions import DomainError
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
+from app.legal.processing_gate import require_processing_allowed
 from app.models.media import MediaFile
 from app.models.user import User
 from app.services.request_context import RequestContext
@@ -242,6 +243,8 @@ def process_media_url(
             POST /process-url
             {"url": "https://vimeo.com/123456789"}
     """
+    # The legal processing gate, before yt-dlp fetches anything. The caller owns the import.
+    require_processing_allowed(db, owner_user_id=int(current_user.id), organization_id=ctx.org_id)
     try:
         # Check rate limit before processing
         from app.services.youtube_rate_limiter import youtube_rate_limiter

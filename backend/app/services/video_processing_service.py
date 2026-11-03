@@ -18,6 +18,7 @@ import logging
 import re
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import redis.asyncio as redis
 
@@ -25,8 +26,12 @@ from app.core.config import settings
 from app.core.constants import VIDEO_CHUNK_SIZE
 from app.db.session_utils import session_scope
 from app.services.audio_extraction import AudioExtractionMixin
+from app.services.media_revocation_cache import legacy_audio_keys
 from app.services.minio_bucket_admin import MinIOService
 from app.services.video_subtitle_burn import VideoSubtitleBurnMixin
+
+if TYPE_CHECKING:
+    from app.services.storage_versions import RemovalResult
 
 logger = logging.getLogger(__name__)
 
@@ -376,9 +381,11 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
     def derived_cache_keys(self, file_id: int, filename: str) -> list[str]:
         """Every derived-cache key a media file can own **at a known name**. Pure.
 
-        Both subtitle-embedded video variants and all three audio-extract
-        variants. Shared by the delete paths so the list cannot drift between
-        them.
+        Both subtitle-embedded video variants, all three audio-extract variants,
+        and the three pre-hardening audio keys that carry no file id
+        (``media_revocation_cache.legacy_audio_keys``): a file deleted after an
+        upgrade must not leave its old extracted audio behind. Shared by the delete
+        paths so the list cannot drift between them.
 
         ⚠️ This list is no longer exhaustive on its own. Since #85 a burned-in
         render is keyed by the redaction policy it was rendered under, so one file
@@ -401,9 +408,10 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
             self.generate_cache_key(
                 file_id, filename, include_speakers=False, redaction_fingerprint=""
             ),
-            self.audio_cache_key(filename, "mp3"),
-            self.audio_cache_key(filename, "wav"),
-            self.audio_cache_key(filename, "original"),
+            self.audio_cache_key(file_id, filename, "mp3"),
+            self.audio_cache_key(file_id, filename, "wav"),
+            self.audio_cache_key(file_id, filename, "original"),
+            *legacy_audio_keys(filename),
         ]
 
     def _masked_video_cache_keys(self, file_id: int, filename: str) -> list[str]:
@@ -437,7 +445,7 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
             logger.warning(f"Could not list masked derived renders for {filename}: {e}")
             return []
 
-    def clear_derived_cache(self, file_id: int, filename: str) -> None:
+    def clear_derived_cache(self, file_id: int, filename: str) -> "RemovalResult":
         """Delete a file's derived-cache objects. **Takes no DB session.**
 
         Five MinIO round trips plus one listing, so callers must not be holding a
@@ -449,19 +457,21 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
         Args:
             file_id: Internal media file id.
             filename: The file's original filename.
+
+        Returns:
+            The removal count; ``unverified`` is True when old versions could not be checked.
+
+        Raises:
+            storage_versions.StorageDeleteIncompleteError: A cached copy survived (named). This
+                used to be logged at DEBUG and dropped, so an erasure that left a burned-in
+                video of the transcript in storage still audited as complete.
         """
         keys = self.derived_cache_keys(file_id, filename) + self._masked_video_cache_keys(
             file_id, filename
         )
-        for cache_key in keys:
-            try:
-                self.minio_service.delete_object(self.cache_bucket, cache_key)
-                logger.info(f"Cleared cache for {cache_key}")
-            except Exception as cache_error:
-                # Cache file might not exist, which is fine, but we should log for debugging
-                logger.debug(
-                    f"Cache file {cache_key} not found or could not be deleted: {cache_error}"
-                )
+        removed = self.minio_service.delete_objects(self.cache_bucket, keys)
+        logger.info(f"Cleared {removed} derived cache object(s) for file {file_id}")
+        return removed
 
     def check_ffmpeg_availability(self) -> bool:
         """Check if ffmpeg is available on the system."""
